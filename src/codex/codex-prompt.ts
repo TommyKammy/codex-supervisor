@@ -22,6 +22,7 @@ import type {
 } from "../supervisor/agent-runner";
 
 export interface LocalReviewRepairContext {
+  repairIntent?: "same_pr_follow_up" | "high_severity_retry" | "unspecified";
   summaryPath: string;
   findingsPath: string | null;
   relevantFiles: string[];
@@ -64,7 +65,7 @@ function phaseGuidance(state: RunState): string[] {
 
   if (state === "local_review_fix") {
     return [
-      "- Focus only on the active local-review root causes blocking the PR or merge.",
+      "- Focus only on the active local-review root causes driving the current repair pass.",
       "- Make the smallest code change that resolves the current root cause and avoid checkpoint-maintenance work.",
     ];
   }
@@ -327,6 +328,11 @@ function buildCodexStartPrompt(input: BuildCodexStartPromptInput): string {
           "Active local-review repair context:",
           ...(input.localReviewRepairContext
             ? [
+                input.localReviewRepairContext.repairIntent === "same_pr_follow_up"
+                  ? "- Repair intent: same-PR follow-up repair on the current PR head. Keep operator-facing summaries aligned with the saved follow_up_eligible result until a fresh local review says otherwise."
+                  : input.localReviewRepairContext.repairIntent === "high_severity_retry"
+                    ? "- Repair intent: high-severity retry on the current PR head. This is not a same-PR follow-up repair or a manual-review flow."
+                    : "- Repair intent: local-review repair context loaded; determine from the saved artifacts whether this is a same-PR follow-up or a blocking retry.",
                 `- Summary artifact: ${input.localReviewRepairContext.summaryPath}`,
                 input.localReviewRepairContext.findingsPath
                   ? `- Findings artifact: ${input.localReviewRepairContext.findingsPath}`

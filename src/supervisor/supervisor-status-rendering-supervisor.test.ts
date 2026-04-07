@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { formatDetailedStatus, summarizeChecks } from "./supervisor-status-rendering";
+import { buildDetailedStatusSummaryLines } from "./supervisor-status-model";
 import { GitHubPullRequest, IssueRunRecord, PullRequestCheck, SupervisorConfig } from "../core/types";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
@@ -269,6 +270,57 @@ test("formatDetailedStatus shows configured-bot same-head follow-up eligibility 
     reviewThreads,
   });
   assert.match(exhaustedStatus, /review_follow_up state=exhausted remaining=0 head_sha=deadbeef actionable=0/);
+});
+
+test("buildDetailedStatusSummaryLines surfaces same-PR follow-up repair without changing the saved outcome", () => {
+  const statusLines = buildDetailedStatusSummaryLines({
+    config: createConfig({ localReviewFollowUpRepairEnabled: true }),
+    activeRecord: createRecord({
+      state: "local_review_fix",
+      local_review_summary_path: "/tmp/reviews/owner-repo/issue-366/head-deadbeef.md",
+    }),
+    activityContext: {
+      handoffSummary: null,
+      localReviewRoutingSummary: null,
+      changeClassesSummary: null,
+      verificationPolicySummary: null,
+      durableGuardrailSummary: null,
+      externalReviewFollowUpSummary: null,
+      preMergeEvaluation: {
+        status: "follow_up_eligible",
+        outcome: "follow_up_eligible",
+        repair: "same_pr_follow_up_current_head",
+        reason: "follow_up_candidates=1",
+        headStatus: "current",
+        summaryPath: "owner-repo/issue-366/head-deadbeef.md",
+        artifactPath: "owner-repo/issue-366/head-deadbeef.json",
+        ranAt: "2026-03-24T00:11:00Z",
+        mustFixCount: 0,
+        manualReviewCount: 0,
+        followUpCount: 1,
+      },
+      localCiStatus: null,
+      latestRecovery: null,
+      retryContext: {
+        timeoutRetryCount: 0,
+        blockedVerificationRetryCount: 0,
+        repeatedBlockerCount: 0,
+        repeatedFailureSignatureCount: 0,
+        lastFailureSignature: null,
+      },
+      repeatedRecovery: null,
+      recentPhaseChanges: [],
+      localReviewSummaryPath: "owner-repo/issue-366/head-deadbeef.md",
+      externalReviewMissesPath: null,
+      reviewWaits: [],
+    },
+  });
+
+  assert.ok(
+    statusLines.includes(
+      "pre_merge_evaluation status=follow_up_eligible outcome=follow_up_eligible repair=same_pr_follow_up_current_head head=current must_fix=0 manual_review=0 follow_up=1 reason=follow_up_candidates=1 ran_at=2026-03-24T00:11:00Z summary_path=owner-repo/issue-366/head-deadbeef.md artifact_path=owner-repo/issue-366/head-deadbeef.json",
+    ),
+  );
 });
 
 test("formatDetailedStatus marks stalled local-review repair loops explicitly", () => {

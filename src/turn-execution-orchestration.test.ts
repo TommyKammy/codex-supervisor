@@ -230,6 +230,8 @@ test("prepareCodexTurnPrompt loads local-review repair context for local_review_
       "102": createRecord({
         state: "local_review_fix",
         local_review_summary_path: summaryPath,
+        pre_merge_evaluation_outcome: "follow_up_eligible",
+        pre_merge_follow_up_count: 1,
         last_failure_context: createFailureContext("Active local-review blocker."),
       }),
     },
@@ -237,7 +239,7 @@ test("prepareCodexTurnPrompt loads local-review repair context for local_review_
 
   try {
     const prepared = await prepareCodexTurnPrompt({
-      config: createConfig(),
+      config: createConfig({ localReviewFollowUpRepairEnabled: true }),
       stateStore: {
         touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
         save: async () => undefined,
@@ -277,6 +279,7 @@ test("prepareCodexTurnPrompt loads local-review repair context for local_review_
     }
     const prompt = buildCodexPrompt(prepared.turnContext);
     assert.match(prompt, /Active local-review repair context:/);
+    assert.match(prompt, /Repair intent: same-PR follow-up repair on the current PR head\./);
     assert.match(prompt, /Permission guard retry path is fragile/);
     assert.match(prompt, /file=src\/auth\.ts lines=40-44/);
   } finally {

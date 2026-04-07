@@ -429,12 +429,18 @@ test("loadActiveIssueStatusSnapshot exposes typed pre-merge final evaluation con
     });
 
     const snapshot = await loadActiveIssueStatusSnapshot({
-      config: createConfig({ localReviewArtifactDir: path.join(tempDir, "reviews") }),
+      config: createConfig({
+        localReviewArtifactDir: path.join(tempDir, "reviews"),
+        localReviewFollowUpRepairEnabled: true,
+      }),
       activeRecord: createRecord({
+        state: "local_review_fix",
         workspace,
         local_review_summary_path: summaryPath,
         local_review_head_sha: "deadbeef",
         local_review_run_at: "2026-03-24T00:11:00Z",
+        pre_merge_evaluation_outcome: "follow_up_eligible",
+        pre_merge_follow_up_count: 1,
       }),
       github: {
         async getIssue() {
@@ -457,6 +463,7 @@ test("loadActiveIssueStatusSnapshot exposes typed pre-merge final evaluation con
     assert.deepEqual(snapshot.activityContext?.preMergeEvaluation, {
       status: "follow_up_eligible",
       outcome: "follow_up_eligible",
+      repair: "same_pr_follow_up_current_head",
       reason: "follow_up_candidates=1",
       headStatus: "current",
       summaryPath: "owner-repo/issue-58/head-deadbeef.md",

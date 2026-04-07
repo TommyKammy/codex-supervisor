@@ -546,12 +546,14 @@ test("buildIssueExplainSummary surfaces follow-up-eligible pre-merge evaluation 
     issues: {
       [String(issueNumber)]: createRecord({
         issue_number: issueNumber,
-        state: "ready_to_merge",
+        state: "local_review_fix",
         branch: branchName(fixture.config, issueNumber),
         workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
         local_review_summary_path: summaryPath,
         local_review_head_sha: "head-609",
         local_review_run_at: "2026-03-24T00:11:00Z",
+        pre_merge_evaluation_outcome: "follow_up_eligible",
+        pre_merge_follow_up_count: 1,
       }),
     },
   };
@@ -560,6 +562,7 @@ test("buildIssueExplainSummary surfaces follow-up-eligible pre-merge evaluation 
     stateFile: fixture.stateFile,
     repoPath: fixture.repoPath,
     localReviewArtifactDir: path.join(fixture.workspaceRoot, "reviews"),
+    localReviewFollowUpRepairEnabled: true,
   });
 
   const dto = await buildIssueExplainDto(
@@ -589,6 +592,7 @@ test("buildIssueExplainSummary surfaces follow-up-eligible pre-merge evaluation 
   assert.deepEqual(dto.activityContext?.preMergeEvaluation, {
     status: "follow_up_eligible",
     outcome: "follow_up_eligible",
+    repair: "same_pr_follow_up_current_head",
     reason: "follow_up_candidates=1",
     headStatus: "current",
     summaryPath: "owner-repo/issue-609/head-609.md",
@@ -600,6 +604,6 @@ test("buildIssueExplainSummary surfaces follow-up-eligible pre-merge evaluation 
   });
   assert.match(
     renderIssueExplainDto(dto),
-    /^pre_merge_evaluation status=follow_up_eligible outcome=follow_up_eligible head=current must_fix=0 manual_review=0 follow_up=1 reason=follow_up_candidates=1 ran_at=2026-03-24T00:11:00Z summary_path=owner-repo\/issue-609\/head-609\.md artifact_path=owner-repo\/issue-609\/head-609\.json$/m,
+    /^pre_merge_evaluation status=follow_up_eligible outcome=follow_up_eligible repair=same_pr_follow_up_current_head head=current must_fix=0 manual_review=0 follow_up=1 reason=follow_up_candidates=1 ran_at=2026-03-24T00:11:00Z summary_path=owner-repo\/issue-609\/head-609\.md artifact_path=owner-repo\/issue-609\/head-609\.json$/m,
   );
 });
