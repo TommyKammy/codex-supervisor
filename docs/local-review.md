@@ -21,6 +21,7 @@ Policy guidance:
 - `block_ready` is stricter earlier in the flow: gate the draft-to-ready transition
 - `advisory` is non-blocking and fits setups that want saved findings without automation gates
 - `trackedPrCurrentHeadLocalReviewRequired: true` makes tracked codex PRs wait for a fresh local review on every head update before ready-for-review or merge can continue
+- prefer repo-owned preparation and verification commands so issue worktrees can execute the same workflow without host-local helper drift
 
 ## Choosing reviewer roles
 
