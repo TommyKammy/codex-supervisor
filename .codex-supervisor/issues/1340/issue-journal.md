@@ -16,6 +16,7 @@
 ## Latest Codex Summary
 - Added a startup freshness guard for `node dist/index.js ...` that compares a build-time source digest manifest against the current checkout and fails closed with an actionable `npm run build` error before CLI service construction.
 - Added focused regression coverage for the helper, CLI bootstrap boundary, and compiled `dist/index.js` path, including fresh-build pass and stale-manifest hard-fail behavior.
+- Checkpoint committed as `a1d45ce` (`Fail closed on stale dist runtime`) and pushed on `codex/issue-1340`; draft PR opened at `#1341`.
 
 ## Active Failure Context
 - None recorded.
@@ -25,10 +26,10 @@
 - Hypothesis: A build-time manifest recorded in `dist/` can reliably detect when the checked-out runtime sources advanced after the last `npm run build`, and the CLI should fail before any runtime services are created.
 - What changed: Added `src/build-freshness.ts` plus a `postbuild` step that writes `dist/build-manifest.json`; `runCli()` now calls the freshness guard before parsing commands or constructing supervisor services; added focused tests in `src/build-freshness.test.ts`, `src/cli/entrypoint.test.ts`, and `src/build.test.ts`.
 - Current blocker: none
-- Next exact step: Commit the freshness-guard change set on `codex/issue-1340`, then decide whether to open a draft PR from the checkpoint.
+- Next exact step: Monitor draft PR #1341 and address review or CI feedback if it appears.
 - Verification gap: Full `npm test` still includes unrelated baseline failures outside this issue's scope; focused stale-runtime coverage and `npm run build` are passing.
 - Files touched: package.json; src/build-freshness.ts; src/build-freshness.test.ts; src/cli/entrypoint.ts; src/cli/entrypoint.test.ts; src/build.test.ts
 - Rollback concern: The guard hashes non-test TypeScript source plus `package.json` and `tsconfig.json`; if future runtime-critical inputs live elsewhere, the manifest input set will need to expand.
-- Last focused command: npx tsx --test src/build-freshness.test.ts src/cli/entrypoint.test.ts src/build.test.ts
+- Last focused command: gh pr create --draft --base main --head codex/issue-1340 --title "Fail closed on stale dist runtime" --body ...
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
