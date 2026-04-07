@@ -217,6 +217,16 @@ interface CachedFullIssueInventory {
   fetchedAtMs: number;
 }
 
+function shouldBlockTrackedPrRepeatedFailure(args: {
+  record: Pick<IssueRunRecord, "pr_number">;
+  failureContext: FailureContext | null;
+}): boolean {
+  return (
+    args.record.pr_number !== null &&
+    (args.failureContext?.category === "review" || args.failureContext?.category === "manual")
+  );
+}
+
 function isIgnoredSupervisorArtifactPath(
   relativePath: string,
   journalRelativePath: string,
@@ -786,6 +796,32 @@ export class Supervisor {
             last_tracked_pr_progress_summary: trackedPrRepeatFailureDisposition.progressSummary,
             last_tracked_pr_repeat_failure_decision: trackedPrRepeatFailureDisposition.decision,
           });
+        } else if (shouldBlockTrackedPrRepeatedFailure({ record, failureContext: effectiveFailureContext })) {
+          record = this.stateStore.touch(record, {
+            state: "blocked",
+            last_error: truncate(effectiveFailureContext.summary, 1000),
+            last_failure_kind: null,
+            last_tracked_pr_progress_summary: trackedPrRepeatFailureDisposition.progressSummary,
+            last_tracked_pr_repeat_failure_decision: trackedPrRepeatFailureDisposition.decision,
+            blocked_reason: "manual_review",
+          });
+          state.issues[String(record.issue_number)] = record;
+          state.activeIssueNumber = null;
+          await this.stateStore.save(state);
+          await syncExecutionMetricsRunSummarySafely({
+            previousRecord: lifecycle.recordForState,
+            nextRecord: record,
+            issue,
+            pullRequest: pr,
+            recoveryEvents,
+            retentionRootPath: executionMetricsRetentionRootPath(this.config.stateFile),
+            warningContext: "persisting",
+          });
+          await syncJournal(record);
+          return prependRecoveryLog(
+            `Issue #${record.issue_number} blocked after repeated identical review-related failure signatures.`,
+            recoveryLog,
+          );
         } else {
           record = this.stateStore.touch(record, {
             state: "failed",
