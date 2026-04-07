@@ -1291,6 +1291,155 @@ test("reconcileRecoverableBlockedIssueStates clears stale head-scoped review sta
   ]);
 });
 
+test("reconcileRecoverableBlockedIssueStates clears stale head-scoped review state when a tracked PR stays blocked on a new head", async () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+    trackedPrCurrentHeadLocalReviewRequired: true,
+    reviewBotLogins: ["copilot-pull-request-reviewer"],
+  });
+  const failureContext = {
+    category: "review" as const,
+    summary: "Manual review is still required on the refreshed PR head.",
+    signature: "manual-review:thread-1",
+    command: null,
+    details: ["thread=thread-1"],
+    url: "https://example.test/pr/191#discussion_r1",
+    updated_at: "2026-03-13T00:25:00Z",
+  };
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
+        issue_number: 366,
+        state: "blocked",
+        blocked_reason: "manual_review",
+        pr_number: 191,
+        last_head_sha: "head-old-191",
+        local_review_head_sha: "head-old-191",
+        local_review_blocker_summary: "medium issue on the previous head",
+        local_review_summary_path: "/tmp/reviews/issue-366/head-old-191.md",
+        local_review_run_at: "2026-03-13T00:19:00Z",
+        local_review_max_severity: "medium",
+        local_review_findings_count: 2,
+        local_review_root_cause_count: 1,
+        local_review_verified_max_severity: "none",
+        local_review_verified_findings_count: 0,
+        local_review_recommendation: "changes_requested",
+        pre_merge_evaluation_outcome: "manual_review_blocked",
+        pre_merge_manual_review_count: 2,
+        last_local_review_signature: "local-review:medium",
+        repeated_local_review_signature_count: 8,
+        external_review_head_sha: "head-old-191",
+        external_review_misses_path: "/tmp/reviews/issue-366/head-old-191-misses.json",
+        external_review_matched_findings_count: 1,
+        external_review_near_match_findings_count: 1,
+        external_review_missed_findings_count: 1,
+        review_follow_up_head_sha: "head-old-191",
+        review_follow_up_remaining: 1,
+        processed_review_thread_ids: ["thread-1", "thread-1@head-old-191"],
+        processed_review_thread_fingerprints: ["thread-1@head-old-191#comment-1"],
+        last_error: failureContext.summary,
+        last_failure_kind: null,
+        last_failure_context: failureContext,
+        last_failure_signature: failureContext.signature,
+        repeated_failure_signature_count: 137,
+        repeated_blocker_count: 4,
+        repair_attempt_count: 2,
+        timeout_retry_count: 1,
+        blocked_verification_retry_count: 1,
+      }),
+    ],
+  });
+  const issue = createIssue({
+    number: 366,
+    title: "Tracked PR stale local review recovery",
+    updatedAt: "2026-03-13T00:21:00Z",
+  });
+  const pr = createPullRequest({
+    number: 191,
+    title: "Repair push",
+    url: "https://example.test/pr/191",
+    headRefName: "codex/reopen-issue-366",
+    headRefOid: "head-new-191",
+    reviewDecision: "CHANGES_REQUESTED",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => pr,
+      getIssue: async () => issue,
+      getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getUnresolvedReviewThreads: async () => [createReviewThread()],
+    },
+    stateStore,
+    state,
+    config,
+    [issue],
+    {
+      shouldAutoRetryHandoffMissing,
+      inferStateFromPullRequest: () => "blocked",
+      inferFailureContext: () => failureContext,
+      blockedReasonForLifecycleState: () => "manual_review",
+      isOpenPullRequest,
+      syncReviewWaitWindow: () => ({
+        review_wait_started_at: "2026-03-13T00:24:00Z",
+        review_wait_head_sha: "head-new-191",
+      }),
+      syncCopilotReviewRequestObservation: () => ({
+        copilot_review_requested_observed_at: "2026-03-13T00:24:30Z",
+        copilot_review_requested_head_sha: "head-new-191",
+      }),
+      syncCopilotReviewTimeoutState: () => noCopilotReviewTimeoutPatch(),
+    },
+  );
+
+  const updated = state.issues["366"];
+  assert.equal(updated.state, "blocked");
+  assert.equal(updated.blocked_reason, "manual_review");
+  assert.equal(updated.pr_number, 191);
+  assert.equal(updated.last_head_sha, "head-new-191");
+  assert.equal(updated.local_review_head_sha, null);
+  assert.equal(updated.local_review_summary_path, null);
+  assert.equal(updated.pre_merge_evaluation_outcome, null);
+  assert.equal(updated.external_review_head_sha, null);
+  assert.equal(updated.review_follow_up_head_sha, null);
+  assert.equal(updated.review_follow_up_remaining, 0);
+  assert.deepEqual(updated.processed_review_thread_ids, []);
+  assert.deepEqual(updated.processed_review_thread_fingerprints, []);
+  assert.equal(updated.last_error, failureContext.summary);
+  assert.deepEqual(updated.last_failure_context, failureContext);
+  assert.equal(updated.last_failure_signature, failureContext.signature);
+  assert.equal(updated.repeated_failure_signature_count, 1);
+  assert.equal(updated.repeated_local_review_signature_count, 0);
+  assert.equal(updated.repeated_blocker_count, 0);
+  assert.equal(updated.repair_attempt_count, 0);
+  assert.equal(updated.timeout_retry_count, 0);
+  assert.equal(updated.blocked_verification_retry_count, 0);
+  assert.equal(updated.review_wait_started_at, "2026-03-13T00:24:00Z");
+  assert.equal(updated.review_wait_head_sha, "head-new-191");
+  assert.equal(updated.copilot_review_requested_observed_at, "2026-03-13T00:24:30Z");
+  assert.equal(updated.copilot_review_requested_head_sha, "head-new-191");
+  assert.equal(updated.last_recovery_reason, null);
+  assert.equal(saveCalls, 1);
+  assert.deepEqual(recoveryEvents, []);
+});
+
 test("reconcileStaleActiveIssueReservation clears a stale reservation and emits a recovery loggable event", async () => {
   const lockRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-locks-"));
   const state: SupervisorStateFile = {
@@ -4257,7 +4406,7 @@ test("buildTrackedPrStaleFailureConvergencePatch isolates persisted tracked PR r
     last_failure_context: failureContext,
     last_blocker_signature: null,
     last_failure_signature: failureContext.signature,
-    repeated_failure_signature_count: 3,
+    repeated_failure_signature_count: 1,
     blocked_reason: "verification",
     repeated_blocker_count: 0,
     repair_attempt_count: 0,

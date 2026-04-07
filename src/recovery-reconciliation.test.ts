@@ -178,6 +178,100 @@ test("buildTrackedPrStaleFailureConvergencePatch preserves blocked tracked-PR re
   });
 });
 
+test("buildTrackedPrStaleFailureConvergencePatch resets repeat tracking when a tracked PR stays blocked on a new head", () => {
+  const failureContext = {
+    category: "review" as const,
+    summary: "Manual review is still required on the refreshed PR head.",
+    signature: "manual-review:thread-1",
+    command: null,
+    details: ["thread=thread-1"],
+    url: "https://example.test/pr/191#discussion_r1",
+    updated_at: "2026-03-13T00:25:00Z",
+  };
+  const record = createRecord({
+    issue_number: 366,
+    state: "blocked",
+    blocked_reason: "manual_review",
+    pr_number: 191,
+    last_head_sha: "head-old-191",
+    local_review_head_sha: "head-old-191",
+    local_review_summary_path: "/tmp/reviews/issue-366/head-old-191.md",
+    pre_merge_evaluation_outcome: "manual_review_blocked",
+    pre_merge_manual_review_count: 2,
+    last_failure_signature: failureContext.signature,
+    repeated_failure_signature_count: 3,
+    repeated_blocker_count: 2,
+    repair_attempt_count: 4,
+    timeout_retry_count: 2,
+    blocked_verification_retry_count: 1,
+  });
+  const pr = createPullRequest({
+    number: 191,
+    headRefName: "codex/issue-366",
+    headRefOid: "head-new-191",
+  });
+
+  const patch = buildTrackedPrStaleFailureConvergencePatch({
+    record,
+    pr,
+    nextState: "blocked",
+    failureContext,
+    blockedReason: "manual_review",
+    reviewWaitPatch: {
+      review_wait_started_at: "2026-03-13T00:24:00Z",
+      review_wait_head_sha: "head-new-191",
+    },
+  });
+
+  assert.deepEqual(patch, {
+    state: "blocked",
+    last_error: failureContext.summary,
+    last_failure_kind: null,
+    last_failure_context: failureContext,
+    last_blocker_signature: null,
+    last_failure_signature: failureContext.signature,
+    repeated_failure_signature_count: 1,
+    blocked_reason: "manual_review",
+    repeated_blocker_count: 0,
+    repair_attempt_count: 0,
+    timeout_retry_count: 0,
+    blocked_verification_retry_count: 0,
+    pr_number: 191,
+    last_head_sha: "head-new-191",
+    local_review_head_sha: null,
+    local_review_blocker_summary: null,
+    local_review_summary_path: null,
+    local_review_run_at: null,
+    local_review_max_severity: null,
+    local_review_findings_count: 0,
+    local_review_root_cause_count: 0,
+    local_review_verified_max_severity: null,
+    local_review_verified_findings_count: 0,
+    local_review_recommendation: null,
+    local_review_degraded: false,
+    pre_merge_evaluation_outcome: null,
+    pre_merge_must_fix_count: 0,
+    pre_merge_manual_review_count: 0,
+    pre_merge_follow_up_count: 0,
+    last_local_review_signature: null,
+    repeated_local_review_signature_count: 0,
+    latest_local_ci_result: null,
+    external_review_head_sha: null,
+    external_review_misses_path: null,
+    external_review_matched_findings_count: 0,
+    external_review_near_match_findings_count: 0,
+    external_review_missed_findings_count: 0,
+    review_follow_up_head_sha: null,
+    review_follow_up_remaining: 0,
+    last_host_local_pr_blocker_comment_signature: null,
+    last_host_local_pr_blocker_comment_head_sha: null,
+    processed_review_thread_ids: [],
+    processed_review_thread_fingerprints: [],
+    review_wait_started_at: "2026-03-13T00:24:00Z",
+    review_wait_head_sha: "head-new-191",
+  });
+});
+
 function git(cwd: string, args: string[]): string {
   return execFileSync("git", args, {
     cwd,

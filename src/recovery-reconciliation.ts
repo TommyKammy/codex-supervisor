@@ -928,6 +928,14 @@ export function buildTrackedPrStaleFailureConvergencePatch(args: {
     copilotReviewTimeoutPatch = {},
   } = args;
   const headAdvanceResetPatch = resetTrackedPrHeadScopedStateOnAdvance(record, pr.headRefOid);
+  const headAdvanced = Object.keys(headAdvanceResetPatch).length > 0;
+  const failureSignatureBaseRecord = headAdvanced
+    ? {
+      ...record,
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }
+    : record;
 
   return {
     state: nextState,
@@ -935,7 +943,7 @@ export function buildTrackedPrStaleFailureConvergencePatch(args: {
     last_failure_kind: null,
     last_failure_context: failureContext,
     last_blocker_signature: null,
-    ...applyFailureSignature(record, failureContext),
+    ...applyFailureSignature(failureSignatureBaseRecord, failureContext),
     blocked_reason: nextState === "blocked" ? blockedReason : null,
     repeated_blocker_count: 0,
     repair_attempt_count: 0,
@@ -1723,27 +1731,39 @@ export async function reconcileRecoverableBlockedIssueStates(
       const nextBlockedReason = projection.nextBlockedReason;
 
       if (nextState === "blocked") {
+        const headAdvanceResetPatch = resetTrackedPrHeadScopedStateOnAdvance(record, trackedPullRequest.headRefOid);
+        const headAdvanced = Object.keys(headAdvanceResetPatch).length > 0;
+        const failureSignatureBaseRecord = headAdvanced
+          ? {
+            ...record,
+            last_failure_signature: null,
+            repeated_failure_signature_count: 0,
+          }
+          : record;
         const blockedPatch: Partial<IssueRunRecord> = {
           state: "blocked",
           last_error: failureContext ? truncate(failureContext.summary, 1000) : null,
           last_failure_kind: null,
           last_failure_context: failureContext,
           last_blocker_signature: null,
-          ...applyFailureSignature(record, failureContext),
+          ...applyFailureSignature(failureSignatureBaseRecord, failureContext),
           blocked_reason: nextBlockedReason,
           pr_number: trackedPullRequest.number,
           last_head_sha: trackedPullRequest.headRefOid,
+          ...headAdvanceResetPatch,
           ...projection.reviewWaitPatch,
           ...projection.copilotReviewRequestObservationPatch,
           ...projection.copilotReviewTimeoutPatch,
         };
         const blockerSemanticsChanged =
-          nextBlockedReason !== record.blocked_reason
+          headAdvanced
+          || nextBlockedReason !== record.blocked_reason
           || (failureContext?.signature ?? null) !== record.last_failure_signature;
         const nextPatch = blockerSemanticsChanged
           ? {
             ...blockedPatch,
             repeated_blocker_count: 0,
+            repair_attempt_count: 0,
             timeout_retry_count: 0,
             blocked_verification_retry_count: 0,
           }
