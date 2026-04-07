@@ -127,7 +127,22 @@ export async function prepareCodexTurnPrompt(args: {
   });
   const localReviewRepairContext =
     args.record.state === "local_review_fix"
-      ? await loadLocalReviewRepairContext(args.record.local_review_summary_path, args.workspacePath)
+      ? await loadLocalReviewRepairContext(args.record.local_review_summary_path, args.workspacePath).then((context) =>
+          context
+            ? {
+                ...context,
+                repairIntent:
+                  args.record.pre_merge_evaluation_outcome === "follow_up_eligible" &&
+                    (args.record.pre_merge_follow_up_count ?? 0) > 0 &&
+                    args.config.localReviewFollowUpRepairEnabled === true
+                    ? ("same_pr_follow_up" as const)
+                    : args.record.pre_merge_evaluation_outcome === "fix_blocked" &&
+                        args.config.localReviewHighSeverityAction === "retry"
+                      ? ("high_severity_retry" as const)
+                      : ("unspecified" as const),
+              }
+            : null,
+        )
       : null;
 
   let externalReviewMissContext: ExternalReviewMissContext | null = null;

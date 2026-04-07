@@ -92,6 +92,7 @@ test("buildCodexPrompt suppresses stale handoff next actions during local_review
 ### Scratchpad
 - Keep this section short.`,
     localReviewRepairContext: {
+      repairIntent: "high_severity_retry",
       summaryPath: "/tmp/reviews/issue-46/head-deadbeef.md",
       findingsPath: "/tmp/reviews/issue-46/head-deadbeef.json",
       relevantFiles: ["src/codex.ts"],
@@ -409,6 +410,7 @@ test("buildCodexPrompt emphasizes compressed local-review root causes during loc
     journalPath: "/tmp/workspaces/issue-46/.codex-supervisor/issue-journal.md",
     failureContext,
     localReviewRepairContext: {
+      repairIntent: "high_severity_retry",
       summaryPath: "/tmp/reviews/issue-46/head-deadbeef.md",
       findingsPath: "/tmp/reviews/issue-46/head-deadbeef.json",
       relevantFiles: ["src/supervisor.ts", "src/codex.ts"],
@@ -453,7 +455,8 @@ test("buildCodexPrompt emphasizes compressed local-review root causes during loc
   });
 
   assert.match(prompt, /Supervisor state: local_review_fix/);
-  assert.match(prompt, /blocking the PR or merge/);
+  assert.match(prompt, /driving the current repair pass/);
+  assert.match(prompt, /Repair intent: high-severity retry on the current PR head\./);
   assert.match(prompt, /Relevant files to inspect first:/);
   assert.match(prompt, /src\/supervisor\.ts/);
   assert.match(prompt, /State inference sends local-review retries/);
@@ -461,6 +464,42 @@ test("buildCodexPrompt emphasizes compressed local-review root causes during loc
   assert.match(prompt, /Repair retries can loop through the wrong state\./);
   assert.match(prompt, /Committed verifier guardrails:/);
   assert.match(prompt, /Re-check retry mode state handoff/);
+});
+
+test("buildCodexPrompt distinguishes same-PR follow-up repair from blocking retry flows", () => {
+  const prompt = buildCodexPrompt({
+    repoSlug: "owner/repo",
+    issue,
+    branch: "codex/issue-46",
+    workspacePath: "/tmp/workspaces/issue-46",
+    state: "local_review_fix" satisfies RunState,
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+    alwaysReadFiles: [],
+    onDemandMemoryFiles: [],
+    journalPath: "/tmp/workspaces/issue-46/.codex-supervisor/issue-journal.md",
+    localReviewRepairContext: {
+      repairIntent: "same_pr_follow_up",
+      summaryPath: "/tmp/reviews/issue-46/head-deadbeef.md",
+      findingsPath: "/tmp/reviews/issue-46/head-deadbeef.json",
+      relevantFiles: ["src/codex.ts"],
+      rootCauses: [
+        {
+          severity: "medium",
+          summary: "Prompt wording should identify same-PR follow-up repair without implying fix_blocked.",
+          file: "src/codex.ts",
+          lines: "1-200",
+        },
+      ],
+      priorMissPatterns: [],
+      verifierGuardrails: [],
+    },
+  });
+
+  assert.match(prompt, /Repair intent: same-PR follow-up repair on the current PR head\./);
+  assert.match(prompt, /saved follow_up_eligible result/);
+  assert.doesNotMatch(prompt, /manual-review flow/);
 });
 
 test("buildCodexPrompt suppresses flat next-action bullet lists during local_review_fix", () => {

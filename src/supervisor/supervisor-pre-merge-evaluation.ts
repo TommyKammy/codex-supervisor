@@ -7,6 +7,7 @@ import { displayRelativeArtifactPath, localReviewHeadStatus, localReviewIsGating
 export interface SupervisorPreMergeEvaluationDto {
   status: "pending" | "passed" | "blocked" | "follow_up_eligible";
   outcome: LocalReviewArtifact["finalEvaluation"]["outcome"] | null;
+  repair?: "none" | "same_pr_follow_up_current_head" | "high_severity_retry_current_head" | "manual_review_required";
   reason: string;
   headStatus: "none" | "current" | "stale" | "unknown";
   summaryPath: string | null;
@@ -67,10 +68,47 @@ function outcomeReason(artifact: LocalReviewArtifact): string {
   }
 }
 
+function repairDisposition(args: {
+  config: Pick<SupervisorConfig, "localReviewFollowUpRepairEnabled" | "localReviewHighSeverityAction">;
+  record: Pick<IssueRunRecord, "state" | "pre_merge_follow_up_count">;
+  headStatus: SupervisorPreMergeEvaluationDto["headStatus"];
+  artifact: LocalReviewArtifact | null;
+}): SupervisorPreMergeEvaluationDto["repair"] {
+  if (!args.artifact) {
+    return "none";
+  }
+
+  if (args.artifact.finalEvaluation.outcome === "manual_review_blocked") {
+    return "manual_review_required";
+  }
+
+  if (args.headStatus !== "current" || args.record.state !== "local_review_fix") {
+    return "none";
+  }
+
+  if (
+    args.artifact.finalEvaluation.outcome === "follow_up_eligible" &&
+    args.config.localReviewFollowUpRepairEnabled === true &&
+    (args.record.pre_merge_follow_up_count ?? args.artifact.finalEvaluation.followUpCount) > 0
+  ) {
+    return "same_pr_follow_up_current_head";
+  }
+
+  if (
+    args.artifact.finalEvaluation.outcome === "fix_blocked" &&
+    args.config.localReviewHighSeverityAction === "retry"
+  ) {
+    return "high_severity_retry_current_head";
+  }
+
+  return "none";
+}
+
 export async function loadPreMergeEvaluationDto(args: {
   config: SupervisorConfig;
   record: Pick<
     IssueRunRecord,
+    | "state"
     | "local_review_summary_path"
     | "local_review_run_at"
     | "local_review_head_sha"
@@ -92,6 +130,7 @@ export async function loadPreMergeEvaluationDto(args: {
     return {
       status: "pending",
       outcome: null,
+      repair: "none",
       reason: pending,
       headStatus,
       summaryPath,
@@ -115,6 +154,7 @@ export async function loadPreMergeEvaluationDto(args: {
     return {
       status: "pending",
       outcome: null,
+      repair: "none",
       reason: "awaiting_final_evaluation_artifact",
       headStatus,
       summaryPath,
@@ -129,6 +169,12 @@ export async function loadPreMergeEvaluationDto(args: {
   return {
     status: outcomeStatus(artifact.finalEvaluation.outcome),
     outcome: artifact.finalEvaluation.outcome,
+    repair: repairDisposition({
+      config: args.config,
+      record: args.record,
+      headStatus,
+      artifact,
+    }),
     reason: outcomeReason(artifact),
     headStatus,
     summaryPath,
@@ -151,6 +197,7 @@ export function formatPreMergeEvaluationStatusLine(
     "pre_merge_evaluation",
     `status=${evaluation.status}`,
     `outcome=${evaluation.outcome ?? "none"}`,
+    `repair=${evaluation.repair ?? "none"}`,
     `head=${evaluation.headStatus}`,
     `must_fix=${evaluation.mustFixCount}`,
     `manual_review=${evaluation.manualReviewCount}`,
