@@ -489,6 +489,7 @@ test("reconcileRecoverableBlockedIssueStates resumes conflicted tracked PR hando
         },
         last_failure_signature: "handoff-missing",
         repeated_failure_signature_count: 2,
+        repair_attempt_count: 2,
         codex_session_id: "session-366",
       }),
     ],
@@ -684,6 +685,7 @@ test("reconcileRecoverableBlockedIssueStates clears stale tracked-PR review stat
   assert.equal(updated.last_failure_context, null);
   assert.equal(updated.last_failure_signature, null);
   assert.equal(updated.repeated_failure_signature_count, 0);
+  assert.equal(updated.repair_attempt_count, 0);
   assert.equal(updated.codex_session_id, null);
   assert.equal(updated.pr_number, 191);
   assert.equal(updated.last_head_sha, "head-new-191");

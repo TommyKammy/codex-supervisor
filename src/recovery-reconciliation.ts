@@ -1693,6 +1693,7 @@ export async function reconcileRecoverableBlockedIssueStates(
         last_blocker_signature: null,
         ...applyFailureSignature(failureSignatureBaseRecord, null),
         repeated_blocker_count: 0,
+        repair_attempt_count: 0,
         timeout_retry_count: 0,
         blocked_verification_retry_count: 0,
         codex_session_id: null,
