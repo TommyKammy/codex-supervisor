@@ -564,6 +564,168 @@ test("reconcileRecoverableBlockedIssueStates resumes conflicted tracked PR hando
   ]);
 });
 
+test("reconcileRecoverableBlockedIssueStates clears stale tracked-PR review state when a conflicted handoff-missing PR advances heads", async () => {
+  const config = createConfig();
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
+        issue_number: 366,
+        state: "blocked",
+        blocked_reason: "handoff_missing",
+        pr_number: 191,
+        last_head_sha: "head-old-191",
+        local_review_head_sha: "head-old-191",
+        local_review_blocker_summary: "stale local review blocker",
+        local_review_summary_path: "/tmp/reviews/issue-366/head-old-191.md",
+        local_review_run_at: "2026-03-13T00:20:00Z",
+        local_review_max_severity: "medium",
+        local_review_findings_count: 2,
+        local_review_root_cause_count: 1,
+        local_review_verified_max_severity: "low",
+        local_review_verified_findings_count: 1,
+        local_review_recommendation: "changes_requested",
+        pre_merge_evaluation_outcome: "follow_up_eligible",
+        pre_merge_must_fix_count: 0,
+        pre_merge_manual_review_count: 1,
+        pre_merge_follow_up_count: 2,
+        last_local_review_signature: "local-review:medium",
+        repeated_local_review_signature_count: 3,
+        latest_local_ci_result: {
+          outcome: "passed",
+          summary: "Local CI passed on the old head.",
+          ran_at: "2026-03-13T00:22:00Z",
+          head_sha: "head-old-191",
+          execution_mode: "shell",
+          failure_class: null,
+          remediation_target: null,
+        },
+        external_review_head_sha: "head-old-191",
+        external_review_misses_path: "/tmp/reviews/issue-366/head-old-191-misses.json",
+        external_review_matched_findings_count: 1,
+        external_review_near_match_findings_count: 1,
+        external_review_missed_findings_count: 1,
+        review_follow_up_head_sha: "head-old-191",
+        review_follow_up_remaining: 1,
+        last_host_local_pr_blocker_comment_signature: "local-ci:blocker",
+        last_host_local_pr_blocker_comment_head_sha: "head-old-191",
+        processed_review_thread_ids: ["thread-1", "thread-1@head-old-191"],
+        processed_review_thread_fingerprints: ["thread-1@head-old-191#comment-1"],
+        last_error: "Codex started a turn but did not write a durable handoff.",
+        last_failure_kind: null,
+        last_failure_context: {
+          category: "blocked",
+          summary: "Codex started a turn but did not write a durable handoff.",
+          signature: "handoff-missing",
+          command: null,
+          details: ["Update the issue journal before the turn exits."],
+          url: null,
+          updated_at: "2026-03-13T00:20:00Z",
+        },
+        last_failure_signature: "handoff-missing",
+        repeated_failure_signature_count: 2,
+        codex_session_id: "session-366",
+      }),
+    ],
+  });
+  const issue = createIssue({
+    title: "Recovery issue",
+    updatedAt: "2026-03-13T00:21:00Z",
+  });
+  const pr = createPullRequest({
+    number: 191,
+    title: "Recovery implementation",
+    url: "https://example.test/pr/191",
+    headRefName: "codex/reopen-issue-366",
+    headRefOid: "head-new-191",
+    mergeStateStatus: "DIRTY",
+    mergeable: "CONFLICTING",
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => pr,
+      getIssue: async () => {
+        throw new Error("unexpected getIssue call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+    },
+    stateStore,
+    state,
+    config,
+    [issue],
+    {
+      shouldAutoRetryHandoffMissing,
+    },
+  );
+
+  const updated = state.issues["366"];
+  assert.equal(updated.state, "resolving_conflict");
+  assert.equal(updated.blocked_reason, null);
+  assert.equal(updated.last_error, null);
+  assert.equal(updated.last_failure_context, null);
+  assert.equal(updated.last_failure_signature, null);
+  assert.equal(updated.repeated_failure_signature_count, 0);
+  assert.equal(updated.codex_session_id, null);
+  assert.equal(updated.pr_number, 191);
+  assert.equal(updated.last_head_sha, "head-new-191");
+  assert.equal(updated.local_review_head_sha, null);
+  assert.equal(updated.local_review_blocker_summary, null);
+  assert.equal(updated.local_review_summary_path, null);
+  assert.equal(updated.local_review_run_at, null);
+  assert.equal(updated.local_review_max_severity, null);
+  assert.equal(updated.local_review_findings_count, 0);
+  assert.equal(updated.local_review_root_cause_count, 0);
+  assert.equal(updated.local_review_verified_max_severity, null);
+  assert.equal(updated.local_review_verified_findings_count, 0);
+  assert.equal(updated.local_review_recommendation, null);
+  assert.equal(updated.pre_merge_evaluation_outcome, null);
+  assert.equal(updated.pre_merge_must_fix_count, 0);
+  assert.equal(updated.pre_merge_manual_review_count, 0);
+  assert.equal(updated.pre_merge_follow_up_count, 0);
+  assert.equal(updated.last_local_review_signature, null);
+  assert.equal(updated.repeated_local_review_signature_count, 0);
+  assert.equal(updated.latest_local_ci_result, null);
+  assert.equal(updated.external_review_head_sha, null);
+  assert.equal(updated.external_review_misses_path, null);
+  assert.equal(updated.external_review_matched_findings_count, 0);
+  assert.equal(updated.external_review_near_match_findings_count, 0);
+  assert.equal(updated.external_review_missed_findings_count, 0);
+  assert.equal(updated.review_follow_up_head_sha, null);
+  assert.equal(updated.review_follow_up_remaining, 0);
+  assert.equal(updated.last_host_local_pr_blocker_comment_signature, null);
+  assert.equal(updated.last_host_local_pr_blocker_comment_head_sha, null);
+  assert.deepEqual(updated.processed_review_thread_ids, []);
+  assert.deepEqual(updated.processed_review_thread_fingerprints, []);
+  assert.equal(
+    updated.last_recovery_reason,
+    "tracked_pr_head_advanced: resumed issue #366 from blocked to resolving_conflict after tracked PR #191 advanced from head-old-191 to head-new-191",
+  );
+  assert.ok(updated.last_recovery_at);
+  assert.equal(saveCalls, 1);
+  assert.deepEqual(recoveryEvents.map((event) => event.reason), [
+    "tracked_pr_head_advanced: resumed issue #366 from blocked to resolving_conflict after tracked PR #191 advanced from head-old-191 to head-new-191",
+  ]);
+});
+
 test("reconcileRecoverableBlockedIssueStates requeues stale no-PR manual-review stops after fresh GitHub issue updates", async () => {
   const config = createConfig();
   const state: SupervisorStateFile = createSupervisorState({

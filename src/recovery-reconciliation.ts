@@ -1675,6 +1675,15 @@ export async function reconcileRecoverableBlockedIssueStates(
       }
 
       const recoveryEvent = buildTrackedPrResumeRecoveryEvent(record, trackedPullRequest, "resolving_conflict");
+      const headAdvanceResetPatch = resetTrackedPrHeadScopedStateOnAdvance(record, trackedPullRequest.headRefOid);
+      const headAdvanced = Object.keys(headAdvanceResetPatch).length > 0;
+      const failureSignatureBaseRecord = headAdvanced
+        ? {
+          ...record,
+          last_failure_signature: null,
+          repeated_failure_signature_count: 0,
+        }
+        : record;
       const updated = stateStore.touch(record, applyRecoveryEvent({
         state: "resolving_conflict",
         blocked_reason: null,
@@ -1682,13 +1691,14 @@ export async function reconcileRecoverableBlockedIssueStates(
         last_failure_kind: null,
         last_failure_context: null,
         last_blocker_signature: null,
-        ...applyFailureSignature(record, null),
+        ...applyFailureSignature(failureSignatureBaseRecord, null),
         repeated_blocker_count: 0,
         timeout_retry_count: 0,
         blocked_verification_retry_count: 0,
         codex_session_id: null,
         pr_number: trackedPullRequest.number,
         last_head_sha: trackedPullRequest.headRefOid,
+        ...headAdvanceResetPatch,
       }, recoveryEvent));
       state.issues[String(record.issue_number)] = updated;
       changed = true;
