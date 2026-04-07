@@ -837,7 +837,7 @@ function parseSupervisorConfigDocument(raw: Record<string, unknown>, resolvedPat
     localReviewPolicy:
       typeof raw.localReviewPolicy === "string" && VALID_LOCAL_REVIEW_POLICIES.has(raw.localReviewPolicy as LocalReviewPolicy)
         ? (raw.localReviewPolicy as LocalReviewPolicy)
-        : "block_ready",
+        : "block_merge",
     trackedPrCurrentHeadLocalReviewRequired:
       typeof raw.trackedPrCurrentHeadLocalReviewRequired === "boolean"
         ? raw.trackedPrCurrentHeadLocalReviewRequired
