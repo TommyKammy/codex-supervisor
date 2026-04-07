@@ -7,6 +7,7 @@ import path from "node:path";
 import { handlePostTurnPullRequestTransitionsPhase, type PullRequestLifecycleSnapshot } from "./post-turn-pull-request";
 import { IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorStateFile } from "./core/types";
 import { derivePullRequestLifecycleSnapshot as deriveSupervisorPullRequestLifecycleSnapshot } from "./supervisor/supervisor-lifecycle";
+import { inferStateFromPullRequest } from "./pull-request-state";
 import { createConfig, createFailureContext, createIssue, createPullRequest, createRecord } from "./turn-execution-test-helpers";
 
 const SAMPLE_UNIX_WORKSTATION_PATH = `/${"home"}/alice/dev/private-repo`;
@@ -1676,6 +1677,154 @@ Parallelizable: No
   assert.doesNotMatch(createdIssues[0]?.body ?? "", /Execution order:\s*1 of 1/);
   assert.match(createdIssues[0]?.body ?? "", /Source issue: #102/);
   assert.equal(readyCalls, 1);
+  assert.equal(result.record.pre_merge_evaluation_outcome, "follow_up_eligible");
+});
+
+test("handlePostTurnPullRequestTransitionsPhase routes opted-in follow-up-eligible current-head residuals into local_review_fix without creating issues", async (t) => {
+  const { workspacePath, headSha } = await createTrackedIssueBranchRepo();
+  t.after(async () => {
+    await fs.rm(workspacePath, { recursive: true, force: true });
+  });
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+    localReviewFollowUpRepairEnabled: true,
+  });
+  const issue = createIssue({
+    title: "Repair bounded residuals in the same PR",
+  });
+  const readyPr = createPullRequest({
+    title: "Keep residual repair in the tracked PR",
+    isDraft: false,
+    headRefName: "codex/issue-102",
+    headRefOid: headSha,
+  });
+  let createIssueCalls = 0;
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    github: {
+      getPullRequest: async () => {
+        throw new Error("unexpected getPullRequest call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      createIssue: async () => {
+        createIssueCalls += 1;
+        throw new Error("unexpected createIssue call");
+      },
+      markPullRequestReady: async () => {
+        throw new Error("unexpected markPullRequestReady call");
+      },
+    },
+    context: {
+      state: {
+        activeIssueNumber: 102,
+        issues: { "102": createRecord({ state: "pr_open", pr_number: readyPr.number, last_head_sha: headSha }) },
+      },
+      record: createRecord({ state: "pr_open", pr_number: readyPr.number, last_head_sha: headSha }),
+      issue,
+      workspacePath,
+      syncJournal: async () => undefined,
+      memoryArtifacts: {
+        alwaysReadFiles: [],
+        onDemandFiles: [],
+        contextIndexPath: "/tmp/context-index.md",
+        agentsPath: "/tmp/AGENTS.generated.md",
+      },
+      pr: readyPr,
+      options: { dryRun: false },
+    },
+    derivePullRequestLifecycleSnapshot: (record, pr, checks, reviewThreads) => ({
+      recordForState: record,
+      nextState: inferStateFromPullRequest(config, record, pr, checks, reviewThreads),
+      failureContext: null,
+      reviewWaitPatch: {},
+      copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    blockedReasonFromReviewState: (record, pr, checks, reviewThreads) =>
+      record.pre_merge_evaluation_outcome === "manual_review_blocked"
+        ? "manual_review"
+        : record.pre_merge_evaluation_outcome === "fix_blocked"
+          ? "verification"
+          : null,
+    summarizeChecks: (checks) => ({
+      hasPending: checks.some((check) => check.bucket === "pending"),
+      hasFailing: checks.some((check) => check.bucket === "fail"),
+    }),
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
+    runLocalReviewImpl: async () => ({
+      ranAt: "2026-03-24T00:11:00Z",
+      summaryPath: "/tmp/reviews/owner-repo/issue-102/head-116.md",
+      findingsPath: "/tmp/reviews/owner-repo/issue-102/head-116.json",
+      summary: "Local review found a bounded medium-severity residual.",
+      blockerSummary: "medium src/example.ts:20-21 This still needs follow-up.",
+      findingsCount: 1,
+      rootCauseCount: 1,
+      maxSeverity: "medium",
+      verifiedFindingsCount: 0,
+      verifiedMaxSeverity: "none",
+      recommendation: "changes_requested",
+      degraded: false,
+      finalEvaluation: {
+        outcome: "follow_up_eligible",
+        residualFindings: [
+          {
+            findingKey: "src/example.ts|20|21|medium issue|this still needs follow-up.",
+            summary: "This still needs follow-up.",
+            severity: "medium",
+            category: "tests",
+            file: "src/example.ts",
+            start: 20,
+            end: 21,
+            source: "local_review",
+            resolution: "follow_up_candidate",
+            rationale: "Residual non-high-severity finding is eligible for explicit follow-up instead of blocking merge by itself.",
+          },
+        ],
+        mustFixCount: 0,
+        manualReviewCount: 0,
+        followUpCount: 1,
+      },
+      rawOutput: "raw output",
+    }),
+    loadOpenPullRequestSnapshot: async () => ({
+      pr: readyPr,
+      checks: [],
+      reviewThreads: [] satisfies ReviewThread[],
+    }),
+  });
+
+  assert.equal(createIssueCalls, 0);
+  assert.equal(result.record.state, "local_review_fix");
   assert.equal(result.record.pre_merge_evaluation_outcome, "follow_up_eligible");
 });
 

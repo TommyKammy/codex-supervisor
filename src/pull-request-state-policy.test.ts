@@ -412,6 +412,25 @@ test("inferStateFromPullRequest covers local review policy gating combinations",
       expected: "local_review_fix",
     },
     {
+      name: "same-PR follow-up repair escalates follow-up-eligible current-head residuals into local_review_fix",
+      config: {
+        localReviewEnabled: true,
+        localReviewPolicy: "block_merge",
+        localReviewFollowUpRepairEnabled: true,
+        copilotReviewWaitMinutes: 0,
+      },
+      record: {
+        state: "pr_open",
+        local_review_head_sha: "head123",
+        local_review_findings_count: 2,
+        local_review_recommendation: "changes_requested",
+        pre_merge_evaluation_outcome: "follow_up_eligible",
+        pre_merge_follow_up_count: 2,
+      },
+      pr: { isDraft: false, headRefOid: "head123" },
+      expected: "local_review_fix",
+    },
+    {
       name: "blocked escalates verifier-confirmed high severity findings to blocked",
       config: {
         localReviewEnabled: true,

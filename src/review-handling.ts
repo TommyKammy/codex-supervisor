@@ -166,6 +166,19 @@ export function localReviewHighSeverityNeedsRetry(
   );
 }
 
+export function localReviewFollowUpNeedsRepair(
+  config: SupervisorConfig,
+  record: Pick<IssueRunRecord, "local_review_head_sha" | "pre_merge_evaluation_outcome" | "pre_merge_follow_up_count">,
+  pr: GitHubPullRequest,
+): boolean {
+  return (
+    config.localReviewFollowUpRepairEnabled === true &&
+    record.local_review_head_sha === pr.headRefOid &&
+    record.pre_merge_evaluation_outcome === "follow_up_eligible" &&
+    (record.pre_merge_follow_up_count ?? 0) > 0
+  );
+}
+
 export function localReviewRetryLoopCandidate(
   config: SupervisorConfig,
   record: Pick<
