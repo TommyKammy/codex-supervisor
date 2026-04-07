@@ -169,6 +169,7 @@ export interface SupervisorConfig {
   localReviewReviewerThresholds: Record<LocalReviewReviewerType, LocalReviewReviewerThresholdConfig>;
   localReviewPolicy: LocalReviewPolicy;
   trackedPrCurrentHeadLocalReviewRequired?: boolean;
+  localReviewFollowUpRepairEnabled?: boolean;
   localReviewFollowUpIssueCreationEnabled?: boolean;
   localReviewHighSeverityAction: LocalReviewHighSeverityAction;
   reviewBotLogins: string[];

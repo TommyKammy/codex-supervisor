@@ -143,8 +143,35 @@ test("loadConfig keeps local review disabled by default while using the opiniona
   assert.deepEqual(config.localReviewRoles, []);
   assert.equal(config.localReviewPolicy, "block_merge");
   assert.equal(config.trackedPrCurrentHeadLocalReviewRequired, false);
+  assert.equal(config.localReviewFollowUpRepairEnabled, false);
   assert.equal(config.localReviewFollowUpIssueCreationEnabled, false);
   assert.equal(config.localReviewHighSeverityAction, "blocked");
+});
+
+test("loadConfig accepts explicit local review same-PR follow-up repair opt-in", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const configPath = path.join(tempDir, "supervisor.config.json");
+
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "./workspaces",
+      stateFile: "./state.json",
+      codexBinary: "codex",
+      branchPrefix: "codex/issue-",
+      localReviewFollowUpRepairEnabled: true,
+    }),
+    "utf8",
+  );
+
+  const config = loadConfig(configPath);
+  assert.equal(config.localReviewFollowUpRepairEnabled, true);
 });
 
 test("loadConfig accepts explicit local review follow-up issue creation opt-in", async (t) => {
@@ -171,6 +198,43 @@ test("loadConfig accepts explicit local review follow-up issue creation opt-in",
 
   const config = loadConfig(configPath);
   assert.equal(config.localReviewFollowUpIssueCreationEnabled, true);
+});
+
+test("loadConfig rejects enabling same-PR follow-up repair together with follow-up issue creation", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const configPath = path.join(tempDir, "supervisor.config.json");
+
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "./workspaces",
+      stateFile: "./state.json",
+      codexBinary: "codex",
+      branchPrefix: "codex/issue-",
+      localReviewFollowUpRepairEnabled: true,
+      localReviewFollowUpIssueCreationEnabled: true,
+    }),
+    "utf8",
+  );
+
+  const summary = loadConfigSummary(configPath);
+  assert.equal(summary.status, "invalid_config");
+  assert.deepEqual(summary.invalidFields, ["localReviewFollowUpRepairEnabled"]);
+  assert.match(
+    summary.error ?? "",
+    /Invalid config field: localReviewFollowUpRepairEnabled \(cannot enable same-PR local-review follow-up repair together with localReviewFollowUpIssueCreationEnabled\)/,
+  );
+
+  assert.throws(
+    () => loadConfig(configPath),
+    /Invalid config field: localReviewFollowUpRepairEnabled \(cannot enable same-PR local-review follow-up repair together with localReviewFollowUpIssueCreationEnabled\)/,
+  );
 });
 
 test("loadConfigSummary accepts an explicit safer trust diagnostics posture without warning", async (t) => {
@@ -945,6 +1009,28 @@ test("shipped example configs keep local-review follow-up issue creation opt-in"
       raw.localReviewFollowUpIssueCreationEnabled,
       false,
       `${path.relative(rootDir, examplePath)} should keep local-review follow-up issue creation opt-in`,
+    );
+  }
+});
+
+test("shipped example configs keep local-review same-PR follow-up repair opt-in", async () => {
+  const rootDir = path.resolve(__dirname, "..");
+  const examplePaths = [
+    path.join(rootDir, "supervisor.config.example.json"),
+    path.join(rootDir, "supervisor.config.copilot.json"),
+    path.join(rootDir, "supervisor.config.codex.json"),
+    path.join(rootDir, "supervisor.config.coderabbit.json"),
+    path.join(rootDir, "docs", "examples", "atlaspm.supervisor.config.example.json"),
+  ];
+
+  for (const examplePath of examplePaths) {
+    const raw = JSON.parse(await fs.readFile(examplePath, "utf8")) as {
+      localReviewFollowUpRepairEnabled?: unknown;
+    };
+    assert.equal(
+      raw.localReviewFollowUpRepairEnabled,
+      false,
+      `${path.relative(rootDir, examplePath)} should keep local-review same-PR follow-up repair opt-in`,
     );
   }
 });
