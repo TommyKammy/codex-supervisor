@@ -191,11 +191,11 @@ export function localReviewFollowUpNeedsRepair(
   pr: GitHubPullRequest,
 ): boolean {
   return (
+    config.localReviewPolicy !== "advisory" &&
     config.localReviewFollowUpRepairEnabled === true &&
     record.local_review_head_sha === pr.headRefOid &&
-    ((record.pre_merge_evaluation_outcome === "follow_up_eligible" && (record.pre_merge_follow_up_count ?? 0) > 0) ||
-      (record.pre_merge_evaluation_outcome === "manual_review_blocked" &&
-        (record.pre_merge_manual_review_count ?? 0) > 0))
+    record.pre_merge_evaluation_outcome === "follow_up_eligible" &&
+    (record.pre_merge_follow_up_count ?? 0) > 0
   );
 }
 

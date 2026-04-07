@@ -1828,7 +1828,7 @@ test("handlePostTurnPullRequestTransitionsPhase routes opted-in follow-up-eligib
   assert.equal(result.record.pre_merge_evaluation_outcome, "follow_up_eligible");
 });
 
-test("handlePostTurnPullRequestTransitionsPhase routes opted-in current-head manual-review local-review residuals into local_review_fix", async (t) => {
+test("handlePostTurnPullRequestTransitionsPhase keeps current-head manual-review local-review residuals blocked even when same-PR repair is opted in", async (t) => {
   const { workspacePath, headSha } = await createTrackedIssueBranchRepo();
   t.after(async () => {
     await fs.rm(workspacePath, { recursive: true, force: true });
@@ -1932,11 +1932,11 @@ test("handlePostTurnPullRequestTransitionsPhase routes opted-in current-head man
       ranAt: "2026-03-24T00:11:00Z",
       summaryPath: "/tmp/reviews/owner-repo/issue-102/head-116.md",
       findingsPath: "/tmp/reviews/owner-repo/issue-102/head-116.json",
-      summary: "Local review found a current-head residual that still needs direct repair.",
-      blockerSummary: "medium src/ui/panel.tsx:20-21 Browser flow still needs implementation follow-up.",
+      summary: "Local review found an unverified UI regression risk.",
+      blockerSummary: "high src/ui/panel.tsx:20-21 Browser flow still needs manual verification.",
       findingsCount: 1,
       rootCauseCount: 1,
-      maxSeverity: "medium",
+      maxSeverity: "high",
       verifiedFindingsCount: 0,
       verifiedMaxSeverity: "none",
       recommendation: "changes_requested",
@@ -1945,16 +1945,16 @@ test("handlePostTurnPullRequestTransitionsPhase routes opted-in current-head man
         outcome: "manual_review_blocked",
         residualFindings: [
           {
-            findingKey: "src/ui/panel.tsx|20|21|manual review residual|browser flow still needs implementation follow-up.",
-            summary: "Browser flow still needs implementation follow-up.",
-            severity: "medium",
+            findingKey: "src/ui/panel.tsx|20|21|ui regression|browser flow still needs manual verification.",
+            summary: "Browser flow still needs manual verification.",
+            severity: "high",
             category: "behavior",
             file: "src/ui/panel.tsx",
             start: 20,
             end: 21,
             source: "local_review",
             resolution: "manual_review_required",
-            rationale: "Current-head local-review residual can be retried in the same PR when the operator opts in.",
+            rationale: "High-severity finding remains unresolved without verifier confirmation.",
           },
         ],
         mustFixCount: 0,
@@ -1970,10 +1970,10 @@ test("handlePostTurnPullRequestTransitionsPhase routes opted-in current-head man
     }),
   });
 
-  assert.equal(result.record.state, "local_review_fix");
-  assert.equal(result.record.blocked_reason, null);
+  assert.equal(result.record.state, "blocked");
+  assert.equal(result.record.blocked_reason, "manual_review");
   assert.equal(result.record.pre_merge_evaluation_outcome, "manual_review_blocked");
-  assert.match(result.record.last_error ?? "", /same-PR|current-head|repair/i);
+  assert.match(result.record.last_error ?? "", /manual/i);
 });
 
 test("handlePostTurnPullRequestTransitionsPhase reruns local review on a ready PR head update when the tracked current-head gate is enabled", async () => {

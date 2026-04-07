@@ -851,13 +851,6 @@ export async function handlePostTurnPullRequestTransitionsPhase(
       refreshedLifecycle.nextState === "blocked" && effectiveFailureContext
         ? truncate(effectiveFailureContext.summary, 1000)
         : refreshedLifecycle.nextState === "local_review_fix" &&
-            refreshedLifecycle.recordForState.pre_merge_evaluation_outcome === "manual_review_blocked" &&
-            (refreshedLifecycle.recordForState.pre_merge_manual_review_count ?? 0) > 0
-          ? truncate(
-              `Current-head local-review residuals re-entered same-PR repair (${refreshedLifecycle.recordForState.pre_merge_manual_review_count} manual-review residual${refreshedLifecycle.recordForState.pre_merge_manual_review_count === 1 ? "" : "s"}). Codex will continue in local_review_fix until a fresh local review clears them or another blocker takes precedence.`,
-              1000,
-            )
-          : refreshedLifecycle.nextState === "local_review_fix" &&
             localReviewHighSeverityNeedsRetry(config, refreshedLifecycle.recordForState, postReady.pr)
           ? truncate(localReviewFailureSummary(refreshedLifecycle.recordForState), 1000)
           : record.last_error,

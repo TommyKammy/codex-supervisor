@@ -502,7 +502,7 @@ test("buildCodexPrompt distinguishes same-PR follow-up repair from blocking retr
   assert.doesNotMatch(prompt, /manual-review flow/);
 });
 
-test("buildCodexPrompt distinguishes same-PR manual-review residual repair from blocking retry flows", () => {
+test("buildCodexPrompt treats unknown local-review repair intents as generic blocking repair context", () => {
   const prompt = buildCodexPrompt({
     repoSlug: "owner/repo",
     issue,
@@ -516,7 +516,7 @@ test("buildCodexPrompt distinguishes same-PR manual-review residual repair from 
     onDemandMemoryFiles: [],
     journalPath: "/tmp/workspaces/issue-46/.codex-supervisor/issue-journal.md",
     localReviewRepairContext: {
-      repairIntent: "same_pr_manual_review_residual",
+      repairIntent: "unspecified",
       summaryPath: "/tmp/reviews/issue-46/head-deadbeef.md",
       findingsPath: "/tmp/reviews/issue-46/head-deadbeef.json",
       relevantFiles: ["src/codex.ts"],
@@ -533,8 +533,7 @@ test("buildCodexPrompt distinguishes same-PR manual-review residual repair from 
     },
   });
 
-  assert.match(prompt, /Repair intent: same-PR repair for current-head local-review residuals that would otherwise require manual review\./);
-  assert.match(prompt, /saved manual_review_blocked result/);
+  assert.match(prompt, /Repair intent: local-review repair context loaded; determine from the saved artifacts whether this is a same-PR follow-up or a blocking retry\./);
   assert.doesNotMatch(prompt, /high-severity retry/);
 });
 

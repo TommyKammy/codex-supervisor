@@ -431,25 +431,6 @@ test("inferStateFromPullRequest covers local review policy gating combinations",
       expected: "local_review_fix",
     },
     {
-      name: "same-PR follow-up repair escalates current-head manual-review local-review residuals into local_review_fix",
-      config: {
-        localReviewEnabled: true,
-        localReviewPolicy: "block_merge",
-        localReviewFollowUpRepairEnabled: true,
-        copilotReviewWaitMinutes: 0,
-      },
-      record: {
-        state: "pr_open",
-        local_review_head_sha: "head123",
-        local_review_findings_count: 1,
-        local_review_recommendation: "changes_requested",
-        pre_merge_evaluation_outcome: "manual_review_blocked",
-        pre_merge_manual_review_count: 1,
-      },
-      pr: { isDraft: false, headRefOid: "head123" },
-      expected: "local_review_fix",
-    },
-    {
       name: "blocked escalates verifier-confirmed high severity findings to blocked",
       config: {
         localReviewEnabled: true,
@@ -631,6 +612,50 @@ test("inferStateFromPullRequest blocks draft PRs when the current head still nee
   assert.equal(
     inferStateFromPullRequest(config, record, createPullRequest({ isDraft: true, headRefOid: "head123" }), [], []),
     "blocked",
+  );
+});
+
+test("inferStateFromPullRequest keeps manual-review-blocked current heads out of same-PR repair even when opted in", () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+    localReviewFollowUpRepairEnabled: true,
+    copilotReviewWaitMinutes: 0,
+  });
+  const record = createRecord({
+    state: "pr_open",
+    local_review_head_sha: "head123",
+    local_review_findings_count: 1,
+    local_review_recommendation: "changes_requested",
+    pre_merge_evaluation_outcome: "manual_review_blocked",
+    pre_merge_manual_review_count: 1,
+  });
+
+  assert.equal(
+    inferStateFromPullRequest(config, record, createPullRequest({ isDraft: false, headRefOid: "head123" }), [], []),
+    "blocked",
+  );
+});
+
+test("inferStateFromPullRequest keeps advisory follow-up residuals out of same-PR repair even when opted in", () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "advisory",
+    localReviewFollowUpRepairEnabled: true,
+    copilotReviewWaitMinutes: 0,
+  });
+  const record = createRecord({
+    state: "pr_open",
+    local_review_head_sha: "head123",
+    local_review_findings_count: 1,
+    local_review_recommendation: "changes_requested",
+    pre_merge_evaluation_outcome: "follow_up_eligible",
+    pre_merge_follow_up_count: 1,
+  });
+
+  assert.equal(
+    inferStateFromPullRequest(config, record, createPullRequest({ isDraft: false, headRefOid: "head123" }), [], []),
+    "ready_to_merge",
   );
 });
 

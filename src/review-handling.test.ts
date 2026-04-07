@@ -294,7 +294,7 @@ test("opted-in same-PR follow-up repair blocks ready and merge progression on th
   assert.equal(localReviewBlocksMerge(config, record, pr), true);
 });
 
-test("opted-in same-PR repair also blocks ready and merge progression for current-head manual-review local-review residuals", () => {
+test("manual-review-blocked residuals stay out of same-PR follow-up repair", () => {
   const pr = createPullRequest({ isDraft: false, headRefOid: "deadbeef" });
   const record = createRecord({
     local_review_head_sha: "deadbeef",
@@ -306,9 +306,26 @@ test("opted-in same-PR repair also blocks ready and merge progression for curren
     localReviewFollowUpRepairEnabled: true,
   });
 
-  assert.equal(localReviewFollowUpNeedsRepair(config, record, pr), true);
+  assert.equal(localReviewFollowUpNeedsRepair(config, record, pr), false);
   assert.equal(localReviewBlocksReady(config, record, pr), true);
   assert.equal(localReviewBlocksMerge(config, record, pr), true);
+});
+
+test("same-PR follow-up repair stays disabled in advisory mode", () => {
+  const pr = createPullRequest({ isDraft: false, headRefOid: "deadbeef" });
+  const record = createRecord({
+    local_review_head_sha: "deadbeef",
+    pre_merge_evaluation_outcome: "follow_up_eligible",
+    pre_merge_follow_up_count: 1,
+  });
+  const config = createConfig({
+    localReviewPolicy: "advisory",
+    localReviewFollowUpRepairEnabled: true,
+  });
+
+  assert.equal(localReviewFollowUpNeedsRepair(config, record, pr), false);
+  assert.equal(localReviewBlocksReady(config, record, pr), false);
+  assert.equal(localReviewBlocksMerge(config, record, pr), false);
 });
 
 test("local review high-severity actions distinguish retry from blocked", () => {
