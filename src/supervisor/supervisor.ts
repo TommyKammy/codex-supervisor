@@ -159,6 +159,14 @@ import {
   pendingBotReviewThreads,
 } from "../review-thread-reporting";
 import {
+  runSupervisorRunOnce,
+  runSupervisorRunOnceIssuePhase,
+  type RunOnceContinue,
+  type RunOnceCycleContext,
+  type RunOnceIssuePhaseContext,
+  type RunOnceReturn,
+} from "./supervisor-run-once-runtime";
+import {
   BlockedReason,
   CliOptions,
   FailureContext,
@@ -240,27 +248,6 @@ interface PreparedIssueRunContext extends PreparedIssueExecutionContext {
   options: Pick<CliOptions, "dryRun">;
   recoveryEvents: RecoveryEvent[];
   recoveryLog: string | null;
-}
-
-interface RunOnceCycleContext {
-  state: SupervisorStateFile;
-  recoveryEvents: RecoveryEvent[];
-  recoveryLog: string | null;
-}
-
-interface RunOnceIssuePhaseContext extends RunOnceCycleContext {
-  record: IssueRunRecord | null;
-  options: Pick<CliOptions, "dryRun">;
-}
-
-interface RunOnceContinue {
-  kind: "restart";
-  carryoverRecoveryEvents: RecoveryEvent[];
-}
-
-interface RunOnceReturn {
-  kind: "return";
-  message: string;
 }
 
 function formatStatus(record: IssueRunRecord | null, state?: SupervisorStateFile): string {
@@ -1152,33 +1139,16 @@ export class Supervisor {
   }
 
   async runOnce(options: Pick<CliOptions, "dryRun">): Promise<string> {
-    const state = await this.stateStore.load();
-    const quarantine = readJsonParseErrorQuarantine(this.config, state);
-    if (quarantine) {
-      return buildCorruptJsonFailClosedMessage(this.config, quarantine);
-    }
-
-    let carryoverRecoveryEvents: RecoveryEvent[] = [];
-    for (;;) {
-      const cycle = await this.startRunOnceCycle(carryoverRecoveryEvents);
-      if (typeof cycle === "string") {
-        return cycle;
-      }
-      carryoverRecoveryEvents = [];
-
-      const record = await this.normalizeActiveIssueRecordForExecution(cycle.state);
-      const result = await this.runOnceIssuePhase({
-        ...cycle,
-        record,
-        options,
-      });
-      if (result.kind === "restart") {
-        carryoverRecoveryEvents = result.carryoverRecoveryEvents;
-        continue;
-      }
-
-      return result.message;
-    }
+    return runSupervisorRunOnce({
+      options,
+      loadState: () => this.stateStore.load(),
+      readJsonParseErrorQuarantine: (state) => readJsonParseErrorQuarantine(this.config, state),
+      buildCorruptJsonFailClosedMessage: (quarantine) =>
+        buildCorruptJsonFailClosedMessage(this.config, quarantine as JsonStateQuarantine),
+      startRunOnceCycle: (carryoverRecoveryEvents) => this.startRunOnceCycle(carryoverRecoveryEvents),
+      normalizeActiveIssueRecordForExecution: (state) => this.normalizeActiveIssueRecordForExecution(state),
+      runOnceIssuePhase: (context) => this.runOnceIssuePhase(context),
+    });
   }
 
   private async startRunOnceCycle(carryoverRecoveryEvents: RecoveryEvent[]): Promise<RunOnceCycleContext | string> {
@@ -1296,58 +1266,29 @@ export class Supervisor {
   }
 
   private async runOnceIssuePhase(context: RunOnceIssuePhaseContext): Promise<RunOnceContinue | RunOnceReturn> {
-    const { state, record, options, recoveryEvents, recoveryLog } = context;
-    const runnableIssue = await this.resolveRunnableIssueContext(state, record);
-    if (typeof runnableIssue === "string") {
-      return {
-        kind: "return",
-        message: prependRecoveryLog(runnableIssue, recoveryLog),
-      };
-    }
-    if (runnableIssue.kind === "restart") {
-      return {
-        kind: "restart",
-        carryoverRecoveryEvents: recoveryEvents,
-      };
-    }
-
-    try {
-      const issue = runnableIssue.issue;
-      const preparedIssue = await prepareIssueExecutionContext({
-        github: this.github,
-        config: this.config,
-        stateStore: this.stateStore,
-        state,
-        record: runnableIssue.record,
-        issue,
-        options,
-      });
-      if (typeof preparedIssue === "string") {
-        return {
-          kind: "return",
-          message: prependRecoveryLog(preparedIssue, recoveryLog),
-        };
-      }
-      if (isRestartRunOnce(preparedIssue)) {
-        return {
-          kind: "restart",
-          carryoverRecoveryEvents: [...recoveryEvents, ...(preparedIssue.recoveryEvents ?? [])],
-        };
-      }
-
-      return {
-        kind: "return",
-        message: await this.runPreparedIssue({
-          ...preparedIssue,
+    return runSupervisorRunOnceIssuePhase({
+      ...context,
+      resolveRunnableIssueContext: (state, record) => this.resolveRunnableIssueContext(state, record),
+      prepareIssueExecutionContext: (runnableIssue, state, options) =>
+        prepareIssueExecutionContext({
+          github: this.github,
+          config: this.config,
+          stateStore: this.stateStore,
           state,
+          record: runnableIssue.record,
+          issue: runnableIssue.issue,
           options,
-          recoveryEvents,
-          recoveryLog,
         }),
-      };
-    } finally {
-      await runnableIssue.issueLock.release();
-    }
+      isRestartRunOnce,
+      runPreparedIssue: (preparedIssue, runContext) =>
+        this.runPreparedIssue({
+          ...preparedIssue,
+          state: runContext.state,
+          options: runContext.options,
+          recoveryEvents: runContext.recoveryEvents,
+          recoveryLog: runContext.recoveryLog,
+        }),
+    });
   }
 }
 
