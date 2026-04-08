@@ -12,6 +12,7 @@ import {
 } from "../review-thread-reporting";
 import {
   localReviewBlocksMerge,
+  localReviewDegradedNeedsBlock,
   localReviewFailureContext,
   localReviewHighSeverityNeedsBlock,
   localReviewRetryLoopStalled,
@@ -112,6 +113,10 @@ export function inferFailureContext(
     );
     if (stalledBotReviewContext) {
       return stalledBotReviewContext;
+    }
+
+    if (localReviewDegradedNeedsBlock(config, record, pr)) {
+      return localReviewFailureContext(record);
     }
 
     if (localReviewBlocksMerge(config, record, pr)) {
