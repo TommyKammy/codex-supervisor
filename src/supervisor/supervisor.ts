@@ -113,6 +113,10 @@ import {
 import { loadActiveIssueStatusSnapshot } from "./supervisor-selection-active-status";
 import { summarizeSupervisorStatusRecords } from "./supervisor-selection-status-records";
 import { inferFailureContext } from "./supervisor-failure-context";
+import {
+  isIgnoredSupervisorArtifactPath,
+  parseGitStatusPorcelainV1Paths,
+} from "../core/git-workspace-helpers";
 import { StateStore } from "../core/state-store";
 import { diagnoseSupervisorHost, loadStateReadonlyForDoctor, renderDoctorReport } from "../doctor";
 import { buildSetupConfigPreview, type SetupConfigPreviewSelectableReviewProviderProfile } from "../setup-config-preview";
@@ -224,48 +228,6 @@ function shouldBlockTrackedPrRepeatedFailure(args: {
     args.record.pr_number !== null &&
     (args.failureContext?.category === "review" || args.failureContext?.category === "manual")
   );
-}
-
-function isIgnoredSupervisorArtifactPath(
-  relativePath: string,
-  journalRelativePath: string,
-): boolean {
-  return relativePath === journalRelativePath
-    || relativePath === ".codex-supervisor/turn-in-progress.json"
-    || relativePath === ".codex-supervisor/replay"
-    || relativePath.startsWith(".codex-supervisor/replay/")
-    || relativePath === ".codex-supervisor/pre-merge"
-    || relativePath.startsWith(".codex-supervisor/pre-merge/")
-    || relativePath === ".codex-supervisor/execution-metrics"
-    || relativePath.startsWith(".codex-supervisor/execution-metrics/");
-}
-
-function parseGitStatusPorcelainV1Paths(statusOutput: string): string[][] {
-  const fields = statusOutput.split("\0");
-  const entries: string[][] = [];
-
-  for (let index = 0; index < fields.length; index += 1) {
-    const field = fields[index];
-    if (field.length < 4) {
-      continue;
-    }
-
-    const statusCode = field.slice(0, 2);
-    const paths = [field.slice(3)].filter((entry) => entry.length > 0);
-    if (statusCode.includes("R") || statusCode.includes("C")) {
-      const pairedPath = fields[index + 1] ?? "";
-      if (pairedPath.length > 0) {
-        paths.push(pairedPath);
-        index += 1;
-      }
-    }
-
-    if (paths.length > 0) {
-      entries.push(paths);
-    }
-  }
-
-  return entries;
 }
 
 function buildLongReconciliationWarning(snapshot: {
