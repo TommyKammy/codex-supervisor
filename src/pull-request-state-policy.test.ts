@@ -321,7 +321,7 @@ test("inferStateFromPullRequest covers local review policy gating combinations",
       expected: "ready_to_merge",
     },
     {
-      name: "block_merge blocks merge for ready PRs with actionable findings on the current head",
+      name: "block_merge routes current-head must-fix local-review findings into same-PR repair",
       config: { localReviewEnabled: true, localReviewPolicy: "block_merge", copilotReviewWaitMinutes: 0 },
       record: {
         state: "pr_open",
@@ -332,7 +332,7 @@ test("inferStateFromPullRequest covers local review policy gating combinations",
         pre_merge_must_fix_count: 2,
       },
       pr: { isDraft: false, headRefOid: "head123" },
-      expected: "blocked",
+      expected: "local_review_fix",
     },
     {
       name: "block_merge allows follow-up-eligible final evaluation to proceed on the current head",
@@ -635,6 +635,52 @@ test("inferStateFromPullRequest routes opted-in manual-review-blocked current he
     inferStateFromPullRequest(config, record, createPullRequest({ isDraft: false, headRefOid: "head123" }), [], []),
     "local_review_fix",
   );
+});
+
+test("inferStateFromPullRequest routes current-head fix-blocked residuals into same-PR repair on a clean lane", () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+    copilotReviewWaitMinutes: 0,
+  });
+  const record = createRecord({
+    state: "pr_open",
+    local_review_head_sha: "head123",
+    local_review_findings_count: 2,
+    local_review_recommendation: "changes_requested",
+    pre_merge_evaluation_outcome: "fix_blocked",
+    pre_merge_must_fix_count: 2,
+  });
+
+  assert.equal(
+    inferStateFromPullRequest(config, record, createPullRequest({ isDraft: false, headRefOid: "head123" }), [], []),
+    "local_review_fix",
+  );
+});
+
+test("inferStateFromPullRequest keeps current-head fix-blocked residuals blocked when GitHub still requires review", () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+    humanReviewBlocksMerge: true,
+    copilotReviewWaitMinutes: 0,
+  });
+  const record = createRecord({
+    state: "pr_open",
+    local_review_head_sha: "head123",
+    local_review_findings_count: 2,
+    local_review_recommendation: "changes_requested",
+    pre_merge_evaluation_outcome: "fix_blocked",
+    pre_merge_must_fix_count: 2,
+  });
+  const pr = createPullRequest({
+    isDraft: false,
+    headRefOid: "head123",
+    reviewDecision: "REVIEW_REQUIRED",
+  });
+
+  assert.equal(inferStateFromPullRequest(config, record, pr, passingChecks(), []), "blocked");
+  assert.equal(blockedReasonFromReviewState(config, record, pr, passingChecks(), []), "verification");
 });
 
 test("inferStateFromPullRequest keeps same-PR manual-review residuals blocked when GitHub still requires review", () => {

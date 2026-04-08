@@ -186,7 +186,11 @@ export function localReviewFollowUpNeedsRepair(
   config: SupervisorConfig,
   record: Pick<
     IssueRunRecord,
-    "local_review_head_sha" | "pre_merge_evaluation_outcome" | "pre_merge_manual_review_count" | "pre_merge_follow_up_count"
+    | "local_review_head_sha"
+    | "pre_merge_evaluation_outcome"
+    | "pre_merge_must_fix_count"
+    | "pre_merge_manual_review_count"
+    | "pre_merge_follow_up_count"
   >,
   pr: GitHubPullRequest,
 ): boolean {
@@ -199,10 +203,37 @@ export function localReviewFollowUpNeedsRepair(
   );
 }
 
-export function reviewDecisionAllowsSamePrManualReviewRepair(
+export function localReviewFixBlockedNeedsRepair(
+  config: SupervisorConfig,
+  record: Pick<
+    IssueRunRecord,
+    | "local_review_head_sha"
+    | "pre_merge_evaluation_outcome"
+    | "pre_merge_must_fix_count"
+    | "pre_merge_manual_review_count"
+    | "pre_merge_follow_up_count"
+  >,
+  pr: GitHubPullRequest,
+): boolean {
+  return (
+    config.localReviewPolicy !== "advisory" &&
+    record.local_review_head_sha === pr.headRefOid &&
+    reviewDecisionAllowsSamePrRepair(pr) &&
+    record.pre_merge_evaluation_outcome === "fix_blocked" &&
+    (record.pre_merge_must_fix_count ?? 0) > 0
+  );
+}
+
+export function reviewDecisionAllowsSamePrRepair(
   pr: Pick<GitHubPullRequest, "reviewDecision">,
 ): boolean {
   return pr.reviewDecision !== "REVIEW_REQUIRED" && pr.reviewDecision !== "CHANGES_REQUESTED";
+}
+
+export function reviewDecisionAllowsSamePrManualReviewRepair(
+  pr: Pick<GitHubPullRequest, "reviewDecision">,
+): boolean {
+  return reviewDecisionAllowsSamePrRepair(pr);
 }
 
 export function localReviewManualReviewNeedsRepair(
@@ -217,7 +248,7 @@ export function localReviewManualReviewNeedsRepair(
     config.localReviewPolicy !== "advisory" &&
     config.localReviewManualReviewRepairEnabled === true &&
     record.local_review_head_sha === pr.headRefOid &&
-    reviewDecisionAllowsSamePrManualReviewRepair(pr) &&
+    reviewDecisionAllowsSamePrRepair(pr) &&
     record.pre_merge_evaluation_outcome === "manual_review_blocked" &&
     (record.pre_merge_manual_review_count ?? 0) > 0
   );
@@ -230,6 +261,7 @@ export function localReviewRetryLoopCandidate(
     | "local_review_head_sha"
     | "local_review_verified_max_severity"
     | "pre_merge_evaluation_outcome"
+    | "pre_merge_must_fix_count"
     | "pre_merge_manual_review_count"
     | "pre_merge_follow_up_count"
     | "repeated_local_review_signature_count"
@@ -247,12 +279,13 @@ export function localReviewRetryLoopCandidate(
   const checkSummary = summarizeChecks(checks);
   const manualThreads = manualReviewThreads(config, reviewThreads);
   const unresolvedBotThreads = configuredBotReviewThreads(config, reviewThreads);
+  const retryLoopNeedsRepair =
+    localReviewFixBlockedNeedsRepair(config, record, pr) ||
+    localReviewManualReviewNeedsRepair(config, record, pr) ||
+    localReviewFollowUpNeedsRepair(config, record, pr) ||
+    (record.pre_merge_evaluation_outcome !== "fix_blocked" && localReviewHighSeverityNeedsRetry(config, record, pr));
   return (
-    (
-      localReviewHighSeverityNeedsRetry(config, record, pr) ||
-      localReviewFollowUpNeedsRepair(config, record, pr) ||
-      localReviewManualReviewNeedsRepair(config, record, pr)
-    ) &&
+    retryLoopNeedsRepair &&
     !checkSummary.hasFailing &&
     !checkSummary.hasPending &&
     unresolvedBotThreads.length === 0 &&
@@ -268,6 +301,7 @@ export function localReviewRetryLoopStalled(
     | "local_review_head_sha"
     | "local_review_verified_max_severity"
     | "pre_merge_evaluation_outcome"
+    | "pre_merge_must_fix_count"
     | "pre_merge_manual_review_count"
     | "pre_merge_follow_up_count"
     | "repeated_local_review_signature_count"
@@ -341,11 +375,17 @@ export function localReviewRepairContinuationSummary(
     | "local_review_verified_max_severity"
     | "local_review_degraded"
     | "pre_merge_evaluation_outcome"
+    | "pre_merge_must_fix_count"
     | "pre_merge_manual_review_count"
     | "pre_merge_follow_up_count"
   >,
   pr: GitHubPullRequest,
 ): string | null {
+  if (localReviewFixBlockedNeedsRepair(config, record, pr)) {
+    const mustFixCount = record.pre_merge_must_fix_count ?? 0;
+    return `Local review found ${mustFixCount} unresolved must-fix residual${mustFixCount === 1 ? "" : "s"} on the current PR head. Codex will continue with a same-PR repair pass before the PR can proceed.`;
+  }
+
   if (localReviewManualReviewNeedsRepair(config, record, pr)) {
     const manualReviewCount = record.pre_merge_manual_review_count ?? 0;
     return `Local review found ${manualReviewCount} unresolved manual-review residual${manualReviewCount === 1 ? "" : "s"} on the current PR head. Codex will continue with a same-PR repair pass before the PR can proceed.`;
@@ -398,6 +438,7 @@ export function localReviewRepairContinuationFailureContext(
     | "local_review_degraded"
     | "local_review_summary_path"
     | "pre_merge_evaluation_outcome"
+    | "pre_merge_must_fix_count"
     | "pre_merge_manual_review_count"
     | "pre_merge_follow_up_count"
   >,

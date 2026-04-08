@@ -2,7 +2,7 @@ import path from "node:path";
 import { readJsonIfExists } from "../core/utils";
 import type { GitHubPullRequest, IssueRunRecord, SupervisorConfig } from "../core/types";
 import type { LocalReviewArtifact } from "../local-review/types";
-import { reviewDecisionAllowsSamePrManualReviewRepair } from "../review-handling";
+import { reviewDecisionAllowsSamePrManualReviewRepair, reviewDecisionAllowsSamePrRepair } from "../review-handling";
 import { displayRelativeArtifactPath, localReviewHeadStatus, localReviewIsGating } from "./supervisor-status-summary-helpers";
 
 export interface SupervisorPreMergeEvaluationDto {
@@ -10,6 +10,7 @@ export interface SupervisorPreMergeEvaluationDto {
   outcome: LocalReviewArtifact["finalEvaluation"]["outcome"] | null;
   repair?:
     | "none"
+    | "same_pr_fix_blocked_current_head"
     | "same_pr_follow_up_current_head"
     | "same_pr_manual_review_current_head"
     | "high_severity_retry_current_head"
@@ -79,7 +80,7 @@ function repairDisposition(args: {
     SupervisorConfig,
     "localReviewFollowUpRepairEnabled" | "localReviewManualReviewRepairEnabled" | "localReviewHighSeverityAction"
   >;
-  record: Pick<IssueRunRecord, "state" | "pre_merge_follow_up_count" | "pre_merge_manual_review_count">;
+  record: Pick<IssueRunRecord, "state" | "pre_merge_must_fix_count" | "pre_merge_follow_up_count" | "pre_merge_manual_review_count">;
   pr: Pick<GitHubPullRequest, "reviewDecision" | "configuredBotTopLevelReviewStrength"> | null;
   gating: boolean;
   headStatus: SupervisorPreMergeEvaluationDto["headStatus"];
@@ -118,6 +119,17 @@ function repairDisposition(args: {
 
   if (
     args.artifact.finalEvaluation.outcome === "fix_blocked" &&
+    args.pr !== null &&
+    reviewDecisionAllowsSamePrRepair(args.pr) &&
+    (args.record.pre_merge_must_fix_count ?? args.artifact.finalEvaluation.mustFixCount) > 0
+  ) {
+    return "same_pr_fix_blocked_current_head";
+  }
+
+  if (
+    args.artifact.finalEvaluation.outcome === "fix_blocked" &&
+    args.pr !== null &&
+    reviewDecisionAllowsSamePrRepair(args.pr) &&
     args.config.localReviewHighSeverityAction === "retry"
   ) {
     return "high_severity_retry_current_head";
@@ -131,6 +143,7 @@ export async function loadPreMergeEvaluationDto(args: {
   record: Pick<
     IssueRunRecord,
     | "state"
+    | "pre_merge_must_fix_count"
     | "local_review_summary_path"
     | "local_review_run_at"
     | "local_review_head_sha"

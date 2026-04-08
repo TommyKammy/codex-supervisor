@@ -22,7 +22,7 @@ import type {
 } from "../supervisor/agent-runner";
 
 export interface LocalReviewRepairContext {
-  repairIntent?: "same_pr_follow_up" | "same_pr_manual_review" | "high_severity_retry" | "unspecified";
+  repairIntent?: "same_pr_fix_blocked" | "same_pr_follow_up" | "same_pr_manual_review" | "high_severity_retry" | "unspecified";
   summaryPath: string;
   findingsPath: string | null;
   relevantFiles: string[];
@@ -330,6 +330,8 @@ function buildCodexStartPrompt(input: BuildCodexStartPromptInput): string {
             ? [
                 input.localReviewRepairContext.repairIntent === "same_pr_follow_up"
                   ? "- Repair intent: same-PR follow-up repair on the current PR head. Keep operator-facing summaries aligned with the saved follow_up_eligible result until a fresh local review says otherwise."
+                  : input.localReviewRepairContext.repairIntent === "same_pr_fix_blocked"
+                    ? "- Repair intent: same-PR must-fix repair on the current PR head. Keep operator-facing summaries aligned with the saved fix_blocked result until a fresh local review says otherwise."
                   : input.localReviewRepairContext.repairIntent === "same_pr_manual_review"
                     ? "- Repair intent: same-PR manual-review residual repair on the current PR head. Keep operator-facing summaries aligned with the saved manual_review_blocked result until a fresh local review says otherwise."
                   : input.localReviewRepairContext.repairIntent === "high_severity_retry"
