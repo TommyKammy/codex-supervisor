@@ -1,6 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { runCommand } from "./core/command";
+import {
+  isIgnoredSupervisorArtifactPath,
+  normalizeGitPath,
+  parseGitStatusPorcelainV1Paths,
+  parseGitWorktreePaths,
+} from "./core/git-workspace-helpers";
 import { trackedIssueJournalPath } from "./core/journal";
 import {
   inferStateFromPullRequest,
@@ -86,70 +92,6 @@ type StaleStabilizingNoPrBranchState = "recoverable" | "already_satisfied_on_mai
 type FailedNoPrBranchRecoveryState = "recoverable" | "already_satisfied_on_main" | "manual_review_required";
 const FAILED_NO_PR_ALREADY_SATISFIED_SIGNATURE = "failed-no-pr-already-satisfied-on-main";
 const FAILED_NO_PR_MANUAL_REVIEW_SIGNATURE = "failed-no-pr-manual-review-required";
-
-function isIgnoredSupervisorArtifactPath(
-  relativePath: string,
-  journalRelativePath: string,
-): boolean {
-  return relativePath === journalRelativePath
-    || relativePath === ".codex-supervisor/turn-in-progress.json"
-    || relativePath === ".codex-supervisor/replay"
-    || relativePath.startsWith(".codex-supervisor/replay/")
-    || relativePath === ".codex-supervisor/pre-merge"
-    || relativePath.startsWith(".codex-supervisor/pre-merge/")
-    || relativePath === ".codex-supervisor/execution-metrics"
-    || relativePath.startsWith(".codex-supervisor/execution-metrics/");
-}
-
-function parseGitStatusPorcelainV1Paths(statusOutput: string): string[][] {
-  const fields = statusOutput.split("\0");
-  const entries: string[][] = [];
-
-  for (let index = 0; index < fields.length; index += 1) {
-    const field = fields[index];
-    if (field.length < 4) {
-      continue;
-    }
-
-    const statusCode = field.slice(0, 2);
-    const paths = [field.slice(3)].filter((entry) => entry.length > 0);
-    if (statusCode.includes("R") || statusCode.includes("C")) {
-      const pairedPath = fields[index + 1] ?? "";
-      if (pairedPath.length > 0) {
-        paths.push(pairedPath);
-        index += 1;
-      }
-    }
-
-    if (paths.length > 0) {
-      entries.push(paths);
-    }
-  }
-
-  return entries;
-}
-
-function normalizeGitPath(targetPath: string): string {
-  try {
-    return fs.realpathSync.native?.(targetPath) ?? fs.realpathSync(targetPath);
-  } catch {
-    return path.resolve(targetPath);
-  }
-}
-
-function parseGitWorktreePaths(stdout: string): Set<string> {
-  const worktreePaths = new Set<string>();
-
-  for (const rawLine of stdout.split("\n")) {
-    if (!rawLine.startsWith("worktree ")) {
-      continue;
-    }
-
-    worktreePaths.add(normalizeGitPath(rawLine.slice("worktree ".length).trim()));
-  }
-
-  return worktreePaths;
-}
 
 function buildFailedNoPrBranchFailureContext(args: {
   record: Pick<IssueRunRecord, "issue_number">;
