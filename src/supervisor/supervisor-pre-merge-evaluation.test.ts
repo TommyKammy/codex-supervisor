@@ -279,3 +279,62 @@ test("loadPreMergeEvaluationDto keeps current-head manual-review residuals in ma
     await fs.rm(tempDir, { recursive: true, force: true });
   }
 });
+
+test("loadPreMergeEvaluationDto keeps current-head manual-review residuals in manual review when local review is advisory", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "pre-merge-eval-"));
+  const summaryPath = path.join(tempDir, "owner-repo", "issue-58", "local-review-summary.md");
+  const artifactPath = `${summaryPath.slice(0, -3)}.json`;
+
+  try {
+    await fs.mkdir(path.dirname(summaryPath), { recursive: true });
+    await fs.writeFile(
+      artifactPath,
+      JSON.stringify({
+        ranAt: "2026-03-24T00:11:00Z",
+        finalEvaluation: {
+          outcome: "manual_review_blocked",
+          mustFixCount: 0,
+          manualReviewCount: 1,
+          followUpCount: 0,
+        },
+      }),
+      "utf8",
+    );
+
+    const dto = await loadPreMergeEvaluationDto({
+      config: createConfig({
+        localReviewEnabled: true,
+        localReviewPolicy: "advisory",
+        localReviewManualReviewRepairEnabled: true,
+        localReviewArtifactDir: tempDir,
+      }),
+      record: createRecord({
+        state: "local_review_fix",
+        local_review_head_sha: "head-current",
+        local_review_summary_path: summaryPath,
+        local_review_run_at: "2026-03-24T00:11:00Z",
+        pre_merge_manual_review_count: 1,
+      }),
+      pr: createPullRequest({
+        headRefOid: "head-current",
+        isDraft: false,
+      }),
+    });
+
+    assert.deepEqual(dto, {
+      status: "blocked",
+      outcome: "manual_review_blocked",
+      repair: "manual_review_required",
+      reason: "manual_review_residuals=1",
+      headStatus: "current",
+      summaryPath: "owner-repo/issue-58/local-review-summary.md",
+      artifactPath: "owner-repo/issue-58/local-review-summary.json",
+      ranAt: "2026-03-24T00:11:00Z",
+      mustFixCount: 0,
+      manualReviewCount: 1,
+      followUpCount: 0,
+    });
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});

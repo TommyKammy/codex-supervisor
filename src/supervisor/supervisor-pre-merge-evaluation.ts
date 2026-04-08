@@ -81,6 +81,7 @@ function repairDisposition(args: {
   >;
   record: Pick<IssueRunRecord, "state" | "pre_merge_follow_up_count" | "pre_merge_manual_review_count">;
   pr: Pick<GitHubPullRequest, "reviewDecision" | "configuredBotTopLevelReviewStrength"> | null;
+  gating: boolean;
   headStatus: SupervisorPreMergeEvaluationDto["headStatus"];
   artifact: LocalReviewArtifact | null;
 }): SupervisorPreMergeEvaluationDto["repair"] {
@@ -90,6 +91,7 @@ function repairDisposition(args: {
 
   if (args.artifact.finalEvaluation.outcome === "manual_review_blocked") {
     if (
+      args.gating &&
       args.headStatus === "current" &&
       args.record.state === "local_review_fix" &&
       args.config.localReviewManualReviewRepairEnabled === true &&
@@ -193,6 +195,7 @@ export async function loadPreMergeEvaluationDto(args: {
       config: args.config,
       record: args.record,
       pr: args.pr,
+      gating,
       headStatus,
       artifact,
     }),

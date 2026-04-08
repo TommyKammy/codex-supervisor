@@ -6,42 +6,42 @@
 - Workspace: .
 - Journal: .codex-supervisor/issues/1344/issue-journal.md
 - Current phase: local_review_fix
-- Attempt count: 12 (implementation=2, repair=3)
-- Last head SHA: 00a3d30b153883ae58910ee19c1f32fc2b724c9c
+- Attempt count: 13 (implementation=2, repair=4)
+- Last head SHA: aec7552637462a4e614654d0211e571ec54abe90
 - Blocked reason: none
-- Last failure signature: local-review:medium:none:3:0:clean
+- Last failure signature: local-review:medium:none:1:0:clean
 - Repeated failure signature count: 2
-- Updated at: 2026-04-08T05:31:55.795Z
+- Updated at: 2026-04-08T06:10:38.191Z
 
 ## Latest Codex Summary
-Tightened the same-PR manual-review repair gate so it now fails closed on any aggregate GitHub `CHANGES_REQUESTED`, instead of treating a configured bot’s `nitpick_only` top-level review as sufficient proof that the block is bot-only. I added regressions in the review-handling, policy, and post-turn flows for that mixed-review case, and updated the operator docs and shipped example config to document `localReviewManualReviewRepairEnabled` separately from `localReviewFollowUpRepairEnabled`.
+The repair is in on `codex/issue-1344` and pushed as `aec7552` to PR #1345. I unified the same-PR manual-review repair summary/failure-context logic in `review-handling`, then reused it in the steady-state supervisor refresh and the ready-to-merge refresh so `last_error`, `last_failure_context`, and failure-signature tracking no longer fall back to stale manual-review-blocked text after a restart or later cycle. I also fixed the pre-merge DTO so current-head `manual_review_blocked` still reports `manual_review_required` when the manual-repair opt-in is off.
 
-The repair is committed and pushed on `codex/issue-1344` as `00a3d30` (`Fail closed same-PR manual-review repair on changes requested`). I updated the issue journal working notes and left the transient untracked `.codex-supervisor/` artifacts alone.
+Verification passed with `npx tsx --test src/review-handling.test.ts src/post-turn-pull-request.test.ts src/pull-request-state-policy.test.ts src/supervisor/supervisor-pre-merge-evaluation.test.ts src/supervisor/supervisor-execution-cleanup.test.ts` and `npm run build`. I updated the issue journal working notes and left the transient untracked `.codex-supervisor/` artifacts alone.
 
-Summary: Fail closed same-PR manual-review repair on aggregate `CHANGES_REQUESTED` and document the separate manual-review opt-in
+Summary: Preserve same-PR manual-review repair context across supervisor refresh paths and keep default-disabled pre-merge DTOs fail-closed
 State hint: local_review_fix
 Blocked reason: none
-Tests: `npx tsx --test src/pull-request-state-policy.test.ts src/post-turn-pull-request.test.ts src/review-handling.test.ts`; `npm run build`
-Next action: Recheck PR #1345 on head `00a3d30` for any remaining local-review findings, review-thread follow-up, or CI drift
-Failure signature: local-review:medium:none:3:0:clean
+Tests: `npx tsx --test src/review-handling.test.ts src/post-turn-pull-request.test.ts src/pull-request-state-policy.test.ts src/supervisor/supervisor-pre-merge-evaluation.test.ts src/supervisor/supervisor-execution-cleanup.test.ts`; `npm run build`
+Next action: Recheck PR #1345 on head `aec7552` for any remaining local-review findings, review-thread follow-up, or CI drift
+Failure signature: local-review:medium:none:1:0:clean
 
 ## Active Failure Context
 - Category: blocked
-- Summary: Local review found 3 actionable finding(s) across 3 root cause(s); max severity=medium; verified high-severity findings=0; verified max severity=none.
+- Summary: Local review found 1 actionable finding(s) across 1 root cause(s); max severity=medium; verified high-severity findings=0; verified max severity=none.
 - Details:
-  - findings=3
-  - root_causes=3
+  - findings=1
+  - root_causes=1
   - summary=<redacted-local-path>
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the remaining manual-review same-PR repair drift came from duplicated lifecycle logic, where the post-turn transition knew how to describe `manual_review_blocked` same-PR repair but the steady-state supervisor refresh and ready-to-merge refresh still only synthesized failure context and `last_error` for high-severity retry.
-- What changed: Added shared helpers in `src/review-handling.ts` for local-review repair continuation summaries and failure-context synthesis, then wired both `src/supervisor/supervisor.ts` refresh sites and `src/post-turn-pull-request.ts` to use the same logic. This keeps `last_failure_context`, `last_failure_signature`, and operator-facing `last_error` aligned for current-head manual-review same-PR repair after refreshes and restarts. Also fixed `src/supervisor/supervisor-pre-merge-evaluation.ts` so a current-head `manual_review_blocked` artifact still reports `manual_review_required` when `localReviewManualReviewRepairEnabled` is off, instead of falling through to `repair: "none"`. Added regressions in `src/review-handling.test.ts`, `src/supervisor/supervisor-pre-merge-evaluation.test.ts`, and `src/supervisor/supervisor-execution-cleanup.test.ts` for the shared helper behavior, the default-disabled DTO path, and both supervisor refresh paths.
+- Hypothesis: the last remaining drift was limited to the pre-merge DTO path. `loadPreMergeEvaluationDto()` could still expose `repair: "same_pr_manual_review_current_head"` after an operator switched local review to advisory, because it checked the opt-in flag and PR review state but never revalidated that local review was still gating.
+- What changed: Threaded the existing `localReviewIsGating()` result into `repairDisposition()` in `src/supervisor/supervisor-pre-merge-evaluation.ts` and now require that gating signal before reporting `same_pr_manual_review_current_head`. This keeps the DTO aligned with `localReviewManualReviewNeedsRepair()` and fails closed back to `manual_review_required` in advisory mode. Added a focused regression in `src/supervisor/supervisor-pre-merge-evaluation.test.ts` covering opted-in advisory mode with current-head `manual_review_blocked` residuals.
 - Current blocker: none
-- Next exact step: Commit and push this repair checkpoint, then recheck PR #1345 on the new head for any remaining local-review findings, review-thread follow-up, or CI drift.
-- Verification gap: None for this checkpoint after `npx tsx --test src/review-handling.test.ts src/post-turn-pull-request.test.ts src/pull-request-state-policy.test.ts src/supervisor/supervisor-pre-merge-evaluation.test.ts src/supervisor/supervisor-execution-cleanup.test.ts` and `npm run build`.
-- Files touched: src/review-handling.ts; src/review-handling.test.ts; src/post-turn-pull-request.ts; src/supervisor/supervisor.ts; src/supervisor/supervisor-pre-merge-evaluation.ts; src/supervisor/supervisor-pre-merge-evaluation.test.ts; src/supervisor/supervisor-execution-cleanup.test.ts
-- Rollback concern: Low. The change is narrow and mostly consolidates existing repair-lane behavior; the main risk is future divergence if a new local-review repair lane bypasses the shared summary/failure-context helpers.
+- Next exact step: Commit and push this advisory-mode DTO repair checkpoint, then recheck PR #1345 on the new head for any remaining local-review findings, review-thread follow-up, or CI drift.
+- Verification gap: None for this checkpoint after `npx tsx --test src/pull-request-state-policy.test.ts src/post-turn-pull-request.test.ts src/review-handling.test.ts src/supervisor/supervisor-pre-merge-evaluation.test.ts` and `npm run build`.
+- Files touched: src/supervisor/supervisor-pre-merge-evaluation.ts; src/supervisor/supervisor-pre-merge-evaluation.test.ts
+- Rollback concern: Low. The patch only tightens DTO eligibility for the same-PR manual-review repair label, so the main rollback risk is reintroducing a contract mismatch between operator-facing status and the runtime repair state machine.
 - Last focused command: `npm run build`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
