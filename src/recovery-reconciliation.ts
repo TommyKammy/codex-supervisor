@@ -50,6 +50,11 @@ import {
   sanitizeRecoveryReason,
   shouldAutoRecoverFailedNoPr,
 } from "./recovery-support";
+import {
+  buildTrackedPrResumeRecoveryEvent,
+  reconcileStaleFailedTrackedPrRecord,
+  reconcileTrackedMergedButOpenIssuesInModule,
+} from "./recovery-tracked-pr-reconciliation";
 import { buildTrackedPrStaleFailureConvergencePatch } from "./recovery-tracked-pr-support";
 import {
   captureIssueJournalFingerprint,
@@ -663,27 +668,6 @@ export async function requeueIssueForOperator(
   };
 }
 
-function buildTrackedPrResumeRecoveryEvent(
-  record: Pick<IssueRunRecord, "issue_number" | "state" | "last_head_sha">,
-  pr: Pick<import("./core/types").GitHubPullRequest, "number" | "headRefOid">,
-  nextState: IssueRunRecord["state"],
-): RecoveryEvent {
-  const previousHead = record.last_head_sha ?? "unknown";
-  const nextHead = pr.headRefOid;
-
-  if (record.last_head_sha !== null && record.last_head_sha !== pr.headRefOid) {
-    return buildRecoveryEvent(
-      record.issue_number,
-      `tracked_pr_head_advanced: resumed issue #${record.issue_number} from ${record.state} to ${nextState} after tracked PR #${pr.number} advanced from ${previousHead} to ${nextHead}`,
-    );
-  }
-
-  return buildRecoveryEvent(
-    record.issue_number,
-    `tracked_pr_lifecycle_recovered: resumed issue #${record.issue_number} from ${record.state} to ${nextState} using fresh tracked PR #${pr.number} facts at head ${nextHead}`,
-  );
-}
-
 export { buildTrackedPrStaleFailureConvergencePatch } from "./recovery-tracked-pr-support";
 
 export async function cleanupExpiredDoneWorkspaces(
@@ -856,180 +840,20 @@ export async function reconcileTrackedMergedButOpenIssues(
     maxRecords?: number | null;
   } = {},
 ): Promise<RecoveryEvent[]> {
-  const defaultMaxRecordsPerCycle = 25;
-  const maxRecordsPerCycle =
-    typeof options.maxRecords === "number" && Number.isFinite(options.maxRecords) && options.maxRecords >= 1
-      ? Math.floor(options.maxRecords)
-      : defaultMaxRecordsPerCycle;
-  let saveNeeded = false;
-  const recoveryEvents: RecoveryEvent[] = [];
-  const issueByNumber = new Map(issues.map((issue) => [issue.number, issue]));
-  const selectedRecords = options.onlyIssueNumber === undefined || options.onlyIssueNumber === null
-    ? Object.values(state.issues)
-    : [state.issues[String(options.onlyIssueNumber)]].filter((record): record is IssueRunRecord => record !== undefined);
-  const prBearingRecords = selectedRecords.filter((record): record is IssueRunRecord => record.pr_number !== null);
-  const records = options.onlyIssueNumber === undefined || options.onlyIssueNumber === null
-    ? orderTrackedMergedButOpenRecordsForResume(
-      prBearingRecords,
-      trackedMergedButOpenLastProcessedIssueNumber(state),
-    )
-    : prBearingRecords;
-  let processedRecords = 0;
-  let lastProcessedIssueNumber: number | null = null;
-
-  for (const record of records) {
-    if (processedRecords >= maxRecordsPerCycle) {
-      break;
-    }
-    processedRecords += 1;
-    lastProcessedIssueNumber = record.issue_number;
-
-    await updateReconciliationProgress?.({
-      targetIssueNumber: record.issue_number,
-      targetPrNumber: record.pr_number,
-      waitStep: null,
-    });
-
-    const trackedPrNumber = record.pr_number;
-    if (trackedPrNumber === null) {
-      continue;
-    }
-
-    const trackedPullRequest = await github.getPullRequestIfExists(trackedPrNumber);
-    if (trackedPullRequest && !matchesTrackedBranch(record, trackedPullRequest)) {
-      if (state.activeIssueNumber === record.issue_number) {
-        continue;
-      }
-
-      const recoveryEvent = buildRecoveryEvent(
-        record.issue_number,
-        `stale_pr_context_cleanup: cleared tracked PR #${trackedPullRequest.number} because it belongs to branch ${trackedPullRequest.headRefName}`,
-      );
-      const updated = stateStore.touch(record, applyRecoveryEvent({
-        pr_number: null,
-        state: record.state === "stabilizing" ? "queued" : record.state,
-      }, recoveryEvent));
-      state.issues[String(record.issue_number)] = updated;
-      saveNeeded = true;
-      recoveryEvents.push(recoveryEvent);
-      continue;
-    }
-
-    if (!trackedPullRequest || (!trackedPullRequest.mergedAt && trackedPullRequest.state !== "MERGED")) {
-      continue;
-    }
-
-    let issue = issueByNumber.get(record.issue_number);
-    if (issue?.state === "OPEN" && record.state === "merging") {
-      issue = await github.getIssue(record.issue_number);
-    } else if (!issue) {
-      issue = await github.getIssue(record.issue_number);
-    }
-
-    if (!issue) {
-      continue;
-    }
-
-    const recoveryEvent = buildRecoveryEvent(
-      record.issue_number,
-      `merged_pr_convergence: tracked PR #${trackedPullRequest.number} merged; marked issue #${record.issue_number} done`,
-    );
-
-    if (issue.state !== "OPEN") {
-      const patch = doneResetPatch({
-        pr_number: trackedPullRequest.number,
-        last_head_sha: trackedPullRequest.headRefOid,
-      });
-      if (needsRecordUpdate(record, patch)) {
-        const updated = stateStore.touch(record, applyRecoveryEvent(patch, recoveryEvent));
-        state.issues[String(record.issue_number)] = updated;
-        saveNeeded = true;
-        recoveryEvents.push(recoveryEvent);
-        await syncExecutionMetricsRunSummarySafely({
-          previousRecord: record,
-          nextRecord: updated,
-          issue,
-          pullRequest: trackedPullRequest,
-          recoveryEvents: [recoveryEvent],
-          retentionRootPath: executionMetricsRetentionRootPath(config.stateFile),
-          warningContext: "reconciling",
-        });
-        await syncPostMergeAuditArtifactSafely({
-          config,
-          previousRecord: record,
-          nextRecord: updated,
-          issue,
-          pullRequest: trackedPullRequest,
-          warningContext: "reconciling",
-        });
-      }
-      if (state.activeIssueNumber === record.issue_number) {
-        state.activeIssueNumber = null;
-        saveNeeded = true;
-      }
-      continue;
-    }
-
-    const mergedAtMs = Date.parse(trackedPullRequest.mergedAt ?? "");
-    const issueUpdatedAtMs = Date.parse(issue.updatedAt);
-    if (
-      !Number.isFinite(mergedAtMs) ||
-      !Number.isFinite(issueUpdatedAtMs) ||
-      issueUpdatedAtMs > mergedAtMs
-    ) {
-      continue;
-    }
-
-    await github.closeIssue(
-      record.issue_number,
-      `Closed automatically because tracked PR #${trackedPullRequest.number} was merged.`,
-    );
-
-    const patch = doneResetPatch({
-      pr_number: trackedPullRequest.number,
-      last_head_sha: trackedPullRequest.headRefOid,
-    });
-    const updated = stateStore.touch(record, applyRecoveryEvent(patch, recoveryEvent));
-    state.issues[String(record.issue_number)] = updated;
-    if (state.activeIssueNumber === record.issue_number) {
-      state.activeIssueNumber = null;
-    }
-    saveNeeded = true;
-    recoveryEvents.push(recoveryEvent);
-    await syncExecutionMetricsRunSummarySafely({
-      previousRecord: record,
-      nextRecord: updated,
-      issue,
-      pullRequest: trackedPullRequest,
-      recoveryEvents: [recoveryEvent],
-      retentionRootPath: executionMetricsRetentionRootPath(config.stateFile),
-      warningContext: "reconciling",
-    });
-    await syncPostMergeAuditArtifactSafely({
-      config,
-      previousRecord: record,
-      nextRecord: updated,
-      issue,
-      pullRequest: trackedPullRequest,
-      warningContext: "reconciling",
-    });
-  }
-
-  if (options.onlyIssueNumber === undefined || options.onlyIssueNumber === null) {
-    const nextLastProcessedIssueNumber =
-      processedRecords === 0 || processedRecords >= records.length
-        ? null
-        : lastProcessedIssueNumber;
-    if (setTrackedMergedButOpenLastProcessedIssueNumber(state, nextLastProcessedIssueNumber)) {
-      saveNeeded = true;
-    }
-  }
-
-  if (saveNeeded) {
-    await stateStore.save(state);
-  }
-
-  return recoveryEvents;
+  return reconcileTrackedMergedButOpenIssuesInModule(
+    github,
+    stateStore,
+    state,
+    config,
+    issues,
+    {
+      buildRecoveryEvent,
+      applyRecoveryEvent,
+      doneResetPatch,
+    },
+    updateReconciliationProgress,
+    options,
+  );
 }
 
 export async function reconcileStaleFailedIssueStates(
@@ -1230,56 +1054,21 @@ export async function reconcileStaleFailedIssueStates(
       continue;
     }
 
-    const pr = await github.getPullRequestIfExists(record.pr_number);
-    if (!pr || !deps.isOpenPullRequest(pr)) {
-      continue;
-    }
-
-    const checks = await github.getChecks(pr.number);
-    const reviewThreads = await github.getUnresolvedReviewThreads(pr.number);
-    const projection = projectTrackedPrLifecycle({
+    if (await reconcileStaleFailedTrackedPrRecord(
+      github,
+      stateStore,
+      state,
       config,
       record,
-      pr,
-      checks,
-      reviewThreads,
-      inferStateFromPullRequest: deps.inferStateFromPullRequest,
-      blockedReasonForLifecycleState: deps.blockedReasonForLifecycleState,
-      syncReviewWaitWindow: deps.syncReviewWaitWindow,
-      syncCopilotReviewRequestObservation: deps.syncCopilotReviewRequestObservation,
-      syncCopilotReviewTimeoutState: deps.syncCopilotReviewTimeoutState,
-    });
-    const nextState = projection.nextState;
-    await updateReconciliationProgress?.({
-      waitStep:
-        nextState === "waiting_ci"
-          ? (deps.inferGitHubWaitStep?.(config, projection.recordForState, pr, checks) ?? null)
-          : null,
-    });
-
-    if (projection.shouldSuppressRecovery) {
-      continue;
+      deps,
+      {
+        buildRecoveryEvent,
+        applyRecoveryEvent,
+      },
+      updateReconciliationProgress,
+    )) {
+      changed = true;
     }
-
-    const failureContext =
-      nextState === "blocked"
-        ? deps.inferFailureContext(config, projection.recordForState, pr, checks, reviewThreads)
-        : null;
-    const patch = buildTrackedPrStaleFailureConvergencePatch({
-      record,
-      pr,
-      nextState,
-      failureContext,
-      blockedReason: projection.nextBlockedReason,
-      reviewWaitPatch: projection.reviewWaitPatch,
-      copilotReviewRequestObservationPatch: projection.copilotReviewRequestObservationPatch,
-      copilotReviewTimeoutPatch: projection.copilotReviewTimeoutPatch,
-    });
-    const recoveryEvent = buildTrackedPrResumeRecoveryEvent(record, pr, nextState);
-
-    const updated = stateStore.touch(record, applyRecoveryEvent(patch, recoveryEvent));
-    state.issues[String(record.issue_number)] = updated;
-    changed = true;
   }
 
   if (changed) {
@@ -1403,7 +1192,12 @@ export async function reconcileRecoverableBlockedIssueStates(
         continue;
       }
 
-      const recoveryEvent = buildTrackedPrResumeRecoveryEvent(record, trackedPullRequest, "resolving_conflict");
+      const recoveryEvent = buildTrackedPrResumeRecoveryEvent(
+        record,
+        trackedPullRequest,
+        "resolving_conflict",
+        buildRecoveryEvent,
+      );
       const headAdvanceResetPatch = resetTrackedPrHeadScopedStateOnAdvance(record, trackedPullRequest.headRefOid);
       const headAdvanced = Object.keys(headAdvanceResetPatch).length > 0;
       const failureSignatureBaseRecord = headAdvanced
@@ -1527,7 +1321,12 @@ export async function reconcileRecoverableBlockedIssueStates(
         copilotReviewRequestObservationPatch: projection.copilotReviewRequestObservationPatch,
         copilotReviewTimeoutPatch: projection.copilotReviewTimeoutPatch,
       });
-      const recoveryEvent = buildTrackedPrResumeRecoveryEvent(record, trackedPullRequest, nextState);
+      const recoveryEvent = buildTrackedPrResumeRecoveryEvent(
+        record,
+        trackedPullRequest,
+        nextState,
+        buildRecoveryEvent,
+      );
       const updated = stateStore.touch(record, applyRecoveryEvent(patch, recoveryEvent));
       state.issues[String(record.issue_number)] = updated;
       changed = true;
