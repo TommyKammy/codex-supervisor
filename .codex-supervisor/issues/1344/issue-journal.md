@@ -5,29 +5,43 @@
 - Branch: codex/issue-1344
 - Workspace: .
 - Journal: .codex-supervisor/issues/1344/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 4c9c11e5c919afc8463f343254502c69041b2b4d
+- Current phase: local_review_fix
+- Attempt count: 9 (implementation=2, repair=3)
+- Last head SHA: 9a667d1d5ea808783f57c4f40f5c08751f1340a9
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-04-07T22:10:27.965Z
+- Last failure signature: local-review:high:high:6:3:clean
+- Repeated failure signature count: 2
+- Updated at: 2026-04-08T04:32:36.369Z
 
 ## Latest Codex Summary
-- None yet.
+Tightened the same-PR `manual_review_blocked` repair gate so human review decisions cannot reopen the auto-repair lane. I added `reviewDecisionAllowsSamePrManualReviewRepair()` in `src/review-handling.ts`, reused it from `src/supervisor/supervisor-pre-merge-evaluation.ts`, and now keep `CHANGES_REQUESTED` blocked unless the top-level review is explicitly the configured bot's `nitpick_only` signal. Focused regressions now cover the helper path, the post-turn transition, and the pre-merge status DTO.
+
+Local verification passed with `npx tsx --test src/supervisor/supervisor-pre-merge-evaluation.test.ts src/pull-request-state-policy.test.ts src/post-turn-pull-request.test.ts src/review-handling.test.ts` and `npm run build`.
+
+Summary: Tightened same-PR manual-review repair gating to keep human `CHANGES_REQUESTED` blocked and added focused regressions
+State hint: addressing_review
+Blocked reason: none
+Tests: `npx tsx --test src/supervisor/supervisor-pre-merge-evaluation.test.ts src/pull-request-state-policy.test.ts src/post-turn-pull-request.test.ts src/review-handling.test.ts`; `npm run build`
+Next action: Commit and push this repair, then recheck PR #1345 for any remaining local-review findings
+Failure signature: local-review:high:high:6:3:clean
 
 ## Active Failure Context
-- None recorded.
+- Category: blocked
+- Summary: Local review found 6 actionable finding(s) across 6 root cause(s); max severity=high; verified high-severity findings=3; verified max severity=high.
+- Details:
+  - findings=6
+  - root_causes=6
+  - summary=<redacted-local-path>
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: The same-PR local-review repair gate only recognized `follow_up_eligible`, so current-head local-review `manual_review_blocked` residuals were forced into manual review even when the operator opted into same-PR repair.
-- What changed: Expanded the opt-in same-PR repair predicates to include current-head `manual_review_blocked` local-review residuals, kept CI/review/conflict precedence intact, updated post-turn/operator-facing repair messaging, and added focused regression coverage for policy, post-turn routing, repair context prompts, and pre-merge status rendering.
+- Hypothesis: The same-PR `manual_review_blocked` repair lane is only safe when local review is the only remaining blocker on the current head; human `CHANGES_REQUESTED` and `REVIEW_REQUIRED` decisions must keep the PR in manual review unless the top-level signal is explicitly a configured-bot `nitpick_only` review.
+- What changed: Added `reviewDecisionAllowsSamePrManualReviewRepair()` in `src/review-handling.ts` and switched both `localReviewManualReviewNeedsRepair()` and `repairDisposition()` in `src/supervisor/supervisor-pre-merge-evaluation.ts` to use it. Added focused regressions in `src/review-handling.test.ts`, `src/post-turn-pull-request.test.ts`, and `src/supervisor/supervisor-pre-merge-evaluation.test.ts` for the human `CHANGES_REQUESTED` case.
 - Current blocker: none
-- Next exact step: Commit the focused same-PR manual-review residual repair changes on `codex/issue-1344` and leave the branch ready for PR/update.
-- Verification gap: None on the targeted regression path; requested tests and `npm run build` passed locally.
-- Files touched: src/review-handling.ts; src/post-turn-pull-request.ts; src/turn-execution-orchestration.ts; src/codex/codex-prompt.ts; src/supervisor/supervisor-pre-merge-evaluation.ts; src/review-handling.test.ts; src/pull-request-state-policy.test.ts; src/post-turn-pull-request.test.ts; src/supervisor/supervisor-pre-merge-evaluation.test.ts; src/codex/codex-prompt.test.ts
-- Rollback concern: Low to moderate; the change broadens an existing opt-in lane only when `localReviewFollowUpRepairEnabled` is true, but reverting should preserve the new regression tests or revert them together with the predicate changes.
-- Last focused command: npx tsx --test src/pull-request-state-policy.test.ts src/post-turn-pull-request.test.ts src/review-handling.test.ts && npm run build
+- Next exact step: Commit and push this guardrail fix, then recheck PR #1345 on the new head for any remaining local-review findings, review-thread follow-up, or CI drift.
+- Verification gap: None for this repair checkpoint after `npx tsx --test src/supervisor/supervisor-pre-merge-evaluation.test.ts src/pull-request-state-policy.test.ts src/post-turn-pull-request.test.ts src/review-handling.test.ts` and `npm run build`.
+- Files touched: src/review-handling.ts; src/supervisor/supervisor-pre-merge-evaluation.ts; src/review-handling.test.ts; src/post-turn-pull-request.test.ts; src/supervisor/supervisor-pre-merge-evaluation.test.ts
+- Rollback concern: Low. The change only narrows the same-PR manual-review repair lane to avoid overriding real human review decisions.
+- Last focused command: npm run build
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.

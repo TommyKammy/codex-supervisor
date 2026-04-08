@@ -349,6 +349,42 @@ test("manual-review-blocked residuals stay out of same-PR repair when GitHub sti
   assert.equal(localReviewBlocksMerge(config, record, pr), true);
 });
 
+test("manual-review-blocked residuals stay out of same-PR repair when GitHub has human changes requested", () => {
+  const pr = createPullRequest({
+    isDraft: false,
+    headRefOid: "deadbeef",
+    reviewDecision: "CHANGES_REQUESTED",
+  });
+  const record = createRecord({
+    local_review_head_sha: "deadbeef",
+    pre_merge_evaluation_outcome: "manual_review_blocked",
+    pre_merge_manual_review_count: 1,
+  });
+  const config = createConfig({
+    localReviewPolicy: "block_merge",
+    localReviewFollowUpRepairEnabled: true,
+    humanReviewBlocksMerge: true,
+  });
+
+  assert.equal(localReviewManualReviewNeedsRepair(config, record, pr), false);
+  assert.equal(
+    localReviewRetryLoopCandidate(
+      config,
+      record,
+      pr,
+      [],
+      [],
+      () => [],
+      () => [],
+      () => ({ hasFailing: false, hasPending: false }),
+      () => false,
+    ),
+    false,
+  );
+  assert.equal(localReviewBlocksReady(config, record, pr), true);
+  assert.equal(localReviewBlocksMerge(config, record, pr), true);
+});
+
 test("same-PR follow-up repair stays disabled in advisory mode", () => {
   const pr = createPullRequest({ isDraft: false, headRefOid: "deadbeef" });
   const record = createRecord({

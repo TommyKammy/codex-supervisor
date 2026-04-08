@@ -2094,6 +2094,155 @@ test("handlePostTurnPullRequestTransitionsPhase refreshes stale manual-review bl
   assert.doesNotMatch(result.record.last_error ?? "", /manual verification before the PR can proceed/i);
 });
 
+test("handlePostTurnPullRequestTransitionsPhase keeps human changes requested out of same-PR manual-review repair", async () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+    localReviewFollowUpRepairEnabled: true,
+  });
+  const issue = createIssue({
+    title: "Do not auto-repair through human changes requested",
+  });
+  const readyPr = createPullRequest({
+    title: "Do not auto-repair through human changes requested",
+    isDraft: false,
+    headRefName: "codex/issue-102",
+    headRefOid: "head-117",
+    reviewDecision: "CHANGES_REQUESTED",
+  });
+  const record = createRecord({
+    state: "draft_pr",
+    pr_number: readyPr.number,
+    last_head_sha: readyPr.headRefOid,
+  });
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    github: {
+      getPullRequest: async () => {
+        throw new Error("unexpected getPullRequest call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      createIssue: async () => {
+        throw new Error("unexpected createIssue call");
+      },
+      markPullRequestReady: async () => {
+        throw new Error("unexpected markPullRequestReady call");
+      },
+    },
+    context: {
+      state: {
+        activeIssueNumber: 102,
+        issues: { "102": record },
+      },
+      record,
+      issue,
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+      syncJournal: async () => undefined,
+      memoryArtifacts: {
+        alwaysReadFiles: [],
+        onDemandFiles: [],
+        contextIndexPath: "/tmp/context-index.md",
+        agentsPath: "/tmp/AGENTS.generated.md",
+      },
+      pr: readyPr,
+      options: { dryRun: false },
+    },
+    derivePullRequestLifecycleSnapshot: (record, pr, checks, reviewThreads) => ({
+      recordForState: record,
+      nextState: inferStateFromPullRequest(config, record, pr, checks, reviewThreads),
+      failureContext: null,
+      reviewWaitPatch: {},
+      copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    blockedReasonFromReviewState: (record, pr, checks, reviewThreads) =>
+      inferStateFromPullRequest(config, record, pr, checks, reviewThreads) === "blocked" &&
+      record.pre_merge_evaluation_outcome === "manual_review_blocked"
+        ? "manual_review"
+        : null,
+    summarizeChecks: () => ({
+      hasPending: false,
+      hasFailing: false,
+    }),
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
+    runLocalReviewImpl: async () => ({
+      ranAt: "2026-03-24T00:11:00Z",
+      summaryPath: "/tmp/reviews/owner-repo/issue-102/head-117.md",
+      findingsPath: "/tmp/reviews/owner-repo/issue-102/head-117.json",
+      summary: "Local review requires human follow-up.",
+      blockerSummary: "high src/ui/panel.tsx:20-21 Browser flow still needs manual verification.",
+      findingsCount: 1,
+      rootCauseCount: 1,
+      maxSeverity: "high",
+      verifiedFindingsCount: 0,
+      verifiedMaxSeverity: "none",
+      recommendation: "changes_requested",
+      degraded: false,
+      finalEvaluation: {
+        outcome: "manual_review_blocked",
+        residualFindings: [
+          {
+            findingKey: "src/ui/panel.tsx|20|21|ui regression|browser flow still needs manual verification.",
+            summary: "Browser flow still needs manual verification.",
+            severity: "high",
+            category: "behavior",
+            file: "src/ui/panel.tsx",
+            start: 20,
+            end: 21,
+            source: "local_review",
+            resolution: "manual_review_required",
+            rationale: "High-severity finding remains unresolved without verifier confirmation.",
+          },
+        ],
+        mustFixCount: 0,
+        manualReviewCount: 1,
+        followUpCount: 0,
+      },
+      rawOutput: "raw output",
+    }),
+    loadOpenPullRequestSnapshot: async () => ({
+      pr: readyPr,
+      checks: [],
+      reviewThreads: [] satisfies ReviewThread[],
+    }),
+  });
+
+  assert.equal(result.record.state, "blocked");
+  assert.equal(result.record.blocked_reason, "manual_review");
+  assert.equal(result.record.pre_merge_evaluation_outcome, "manual_review_blocked");
+  assert.match(result.record.last_error ?? "", /manual verification before the PR can proceed/i);
+  assert.doesNotMatch(result.record.last_error ?? "", /same-PR repair pass/i);
+});
+
 test("handlePostTurnPullRequestTransitionsPhase reruns local review on a ready PR head update when the tracked current-head gate is enabled", async () => {
   const config = createConfig({
     localReviewEnabled: true,
