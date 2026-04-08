@@ -30,6 +30,7 @@ const EXPECTED_TOP_LEVEL_ENTRIES = {
     "persisted-artifact-promotion.ts",
     "post-turn-pull-request.ts",
     "pull-request-failure-context.ts",
+    "pull-request-state-policy.ts",
     "pull-request-state-test-helpers.ts",
     "pull-request-state.ts",
     "recovery-reconciliation.ts",

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { blockedReasonFromReviewState, inferStateFromPullRequest } from "./pull-request-state";
+import { blockedReasonFromReviewState, inferGitHubWaitStep, inferStateFromPullRequest } from "./pull-request-state";
 import { GitHubPullRequest, IssueRunRecord, SupervisorConfig } from "./core/types";
 import {
   createConfig,
@@ -75,6 +75,28 @@ test("inferStateFromPullRequest keeps pending checks from reaching ready_to_merg
   const checks = [{ name: "build", state: "IN_PROGRESS", bucket: "pending", workflow: "CI" }] as const;
 
   assert.equal(inferStateFromPullRequest(config, record, createPullRequest(), [...checks], []), "waiting_ci");
+});
+
+test("inferGitHubWaitStep reports configured bot initial grace wait before provider activity arrives", () => {
+  const config = createConfig({
+    reviewBotLogins: ["coderabbitai[bot]"],
+    configuredBotInitialGraceWaitSeconds: 90,
+  });
+  const record = createRecord({
+    state: "pr_open",
+    last_head_sha: "head123",
+  });
+  const pr = createPullRequest({
+    currentHeadCiGreenAt: "2026-03-16T00:00:00Z",
+  });
+
+  const originalDateNow = Date.now;
+  Date.now = () => Date.parse("2026-03-16T00:00:30Z");
+  try {
+    assert.equal(inferGitHubWaitStep(config, record, pr, passingChecks()), "configured_bot_initial_grace_wait");
+  } finally {
+    Date.now = originalDateNow;
+  }
 });
 
 test("inferStateFromPullRequest softens nitpick-only configured-bot top-level changes requests when no configured-bot threads remain", () => {
