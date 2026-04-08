@@ -46,17 +46,16 @@ export function resetTrackedPrHeadScopedStateOnAdvance(
   nextHeadSha: string,
 ): Partial<IssueRunRecord> {
   const localReviewHeadStale =
-    record.local_review_head_sha !== null && record.local_review_head_sha !== nextHeadSha;
+    record.local_review_head_sha != null && record.local_review_head_sha !== nextHeadSha;
   const externalReviewHeadStale =
-    record.external_review_head_sha !== null && record.external_review_head_sha !== nextHeadSha;
+    record.external_review_head_sha != null && record.external_review_head_sha !== nextHeadSha;
   const reviewFollowUpHeadStale =
-    record.review_follow_up_head_sha !== null && record.review_follow_up_head_sha !== nextHeadSha;
+    record.review_follow_up_head_sha != null && record.review_follow_up_head_sha !== nextHeadSha;
   const blockerCommentHeadStale =
-    record.last_host_local_pr_blocker_comment_head_sha !== null
+    record.last_host_local_pr_blocker_comment_head_sha != null
     && record.last_host_local_pr_blocker_comment_head_sha !== nextHeadSha;
   const localCiHeadStale =
-    record.latest_local_ci_result?.head_sha !== undefined
-    && record.latest_local_ci_result?.head_sha !== null
+    record.latest_local_ci_result?.head_sha != null
     && record.latest_local_ci_result.head_sha !== nextHeadSha;
   const headScopedStateDiverged =
     localReviewHeadStale
