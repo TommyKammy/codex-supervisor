@@ -304,7 +304,7 @@ test("manual-review-blocked residuals enter same-PR repair when opted in on the 
   });
   const config = createConfig({
     localReviewPolicy: "block_merge",
-    localReviewFollowUpRepairEnabled: true,
+    localReviewManualReviewRepairEnabled: true,
   });
 
   assert.equal(localReviewFollowUpNeedsRepair(config, record, pr), false);
@@ -326,7 +326,7 @@ test("manual-review-blocked residuals stay out of same-PR repair when GitHub sti
   });
   const config = createConfig({
     localReviewPolicy: "block_merge",
-    localReviewFollowUpRepairEnabled: true,
+    localReviewManualReviewRepairEnabled: true,
     humanReviewBlocksMerge: true,
   });
 
@@ -362,7 +362,7 @@ test("manual-review-blocked residuals stay out of same-PR repair when GitHub has
   });
   const config = createConfig({
     localReviewPolicy: "block_merge",
-    localReviewFollowUpRepairEnabled: true,
+    localReviewManualReviewRepairEnabled: true,
     humanReviewBlocksMerge: true,
   });
 
@@ -550,7 +550,7 @@ test("local review retry loop helpers also stall repeated same-PR follow-up repa
 test("local review retry loop helpers keep manual-review residual repairs out of the lane when CI or review blockers remain", () => {
   const config = createConfig({
     localReviewPolicy: "block_merge",
-    localReviewFollowUpRepairEnabled: true,
+    localReviewManualReviewRepairEnabled: true,
     humanReviewBlocksMerge: true,
   });
   const pr = createPullRequest({ isDraft: false });
@@ -594,7 +594,7 @@ test("local review retry loop helpers keep manual-review residual repairs out of
 test("local review retry loop helpers also stall repeated same-PR manual-review repairs on a clean path", () => {
   const config = createConfig({
     localReviewPolicy: "block_merge",
-    localReviewFollowUpRepairEnabled: true,
+    localReviewManualReviewRepairEnabled: true,
     sameFailureSignatureRepeatLimit: 2,
     humanReviewBlocksMerge: true,
   });

@@ -802,7 +802,9 @@ export async function handlePostTurnPullRequestTransitionsPhase(
   }
 
   const postReady = await loadOpenPullRequestSnapshotImpl(pr.number);
-  const repeatedLocalReviewSignatureCount =
+  const currentHeadLocalReviewTracked =
+    record.last_head_sha === postReady.pr.headRefOid && record.local_review_head_sha === postReady.pr.headRefOid;
+  const retryLoopCandidate =
     !ranLocalReviewThisCycle &&
     localReviewRetryLoopCandidate(
       config,
@@ -814,12 +816,11 @@ export async function handlePostTurnPullRequestTransitionsPhase(
       args.configuredBotReviewThreads,
       args.summarizeChecks,
       args.mergeConflictDetected,
-    ) &&
-    record.last_head_sha === postReady.pr.headRefOid &&
-    record.local_review_head_sha === postReady.pr.headRefOid
+    );
+  const repeatedLocalReviewSignatureCount =
+    retryLoopCandidate && currentHeadLocalReviewTracked
       ? record.repeated_local_review_signature_count + 1
-      : localReviewHighSeverityNeedsRetry(config, record, postReady.pr) &&
-          record.local_review_head_sha === postReady.pr.headRefOid
+      : !ranLocalReviewThisCycle && currentHeadLocalReviewTracked
         ? 0
         : record.repeated_local_review_signature_count;
   const refreshedLifecycle = args.derivePullRequestLifecycleSnapshot(

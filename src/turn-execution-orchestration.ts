@@ -138,7 +138,7 @@ export async function prepareCodexTurnPrompt(args: {
                     ? ("same_pr_follow_up" as const)
                     : args.record.pre_merge_evaluation_outcome === "manual_review_blocked" &&
                         (args.record.pre_merge_manual_review_count ?? 0) > 0 &&
-                        args.config.localReviewFollowUpRepairEnabled === true
+                        args.config.localReviewManualReviewRepairEnabled === true
                       ? ("same_pr_manual_review" as const)
                     : args.record.pre_merge_evaluation_outcome === "fix_blocked" &&
                         args.config.localReviewHighSeverityAction === "retry"

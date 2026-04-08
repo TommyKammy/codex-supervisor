@@ -619,7 +619,7 @@ test("inferStateFromPullRequest routes opted-in manual-review-blocked current he
   const config = createConfig({
     localReviewEnabled: true,
     localReviewPolicy: "block_merge",
-    localReviewFollowUpRepairEnabled: true,
+    localReviewManualReviewRepairEnabled: true,
     copilotReviewWaitMinutes: 0,
   });
   const record = createRecord({
@@ -641,7 +641,7 @@ test("inferStateFromPullRequest keeps same-PR manual-review residuals blocked wh
   const config = createConfig({
     localReviewEnabled: true,
     localReviewPolicy: "block_merge",
-    localReviewFollowUpRepairEnabled: true,
+    localReviewManualReviewRepairEnabled: true,
     humanReviewBlocksMerge: true,
     copilotReviewWaitMinutes: 0,
   });
@@ -715,7 +715,7 @@ test("inferStateFromPullRequest preserves CI, review-thread, and conflict preced
   const baseConfig = createConfig({
     localReviewEnabled: true,
     localReviewPolicy: "block_merge",
-    localReviewFollowUpRepairEnabled: true,
+    localReviewManualReviewRepairEnabled: true,
     humanReviewBlocksMerge: true,
     reviewBotLogins: ["copilot-pull-request-reviewer"],
   });
@@ -824,7 +824,7 @@ test("inferStateFromPullRequest preserves CI, review-thread, and conflict preced
   const baseConfig = createConfig({
     localReviewEnabled: true,
     localReviewPolicy: "block_merge",
-    localReviewFollowUpRepairEnabled: true,
+    localReviewManualReviewRepairEnabled: true,
     humanReviewBlocksMerge: true,
     reviewBotLogins: ["copilot-pull-request-reviewer"],
   });

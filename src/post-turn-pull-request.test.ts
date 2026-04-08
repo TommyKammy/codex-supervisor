@@ -1836,7 +1836,7 @@ test("handlePostTurnPullRequestTransitionsPhase routes current-head manual-revie
   const config = createConfig({
     localReviewEnabled: true,
     localReviewPolicy: "block_merge",
-    localReviewFollowUpRepairEnabled: true,
+    localReviewManualReviewRepairEnabled: true,
   });
   const issue = createIssue({
     title: "Repair current-head manual-review residuals in the same PR",
@@ -1980,7 +1980,7 @@ test("handlePostTurnPullRequestTransitionsPhase refreshes stale manual-review bl
   const config = createConfig({
     localReviewEnabled: true,
     localReviewPolicy: "block_merge",
-    localReviewFollowUpRepairEnabled: true,
+    localReviewManualReviewRepairEnabled: true,
   });
   const issue = createIssue({
     title: "Refresh same-PR manual-review repair messaging on re-entry",
@@ -2098,7 +2098,7 @@ test("handlePostTurnPullRequestTransitionsPhase keeps human changes requested ou
   const config = createConfig({
     localReviewEnabled: true,
     localReviewPolicy: "block_merge",
-    localReviewFollowUpRepairEnabled: true,
+    localReviewManualReviewRepairEnabled: true,
   });
   const issue = createIssue({
     title: "Do not auto-repair through human changes requested",
@@ -2241,6 +2241,125 @@ test("handlePostTurnPullRequestTransitionsPhase keeps human changes requested ou
   assert.equal(result.record.pre_merge_evaluation_outcome, "manual_review_blocked");
   assert.match(result.record.last_error ?? "", /manual verification before the PR can proceed/i);
   assert.doesNotMatch(result.record.last_error ?? "", /same-PR repair pass/i);
+});
+
+test("handlePostTurnPullRequestTransitionsPhase resets repeated manual-review repair signatures when the same-head lane becomes ineligible", async () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+    localReviewManualReviewRepairEnabled: true,
+  });
+  const issue = createIssue({
+    title: "Reset repeated same-head manual-review repair signatures when review blocks the lane",
+  });
+  const readyPr = createPullRequest({
+    title: "Reset repeated same-head manual-review repair signatures when review blocks the lane",
+    isDraft: false,
+    headRefName: "codex/issue-102",
+    headRefOid: "head-118",
+    reviewDecision: "CHANGES_REQUESTED",
+  });
+  const record = createRecord({
+    state: "local_review_fix",
+    pr_number: readyPr.number,
+    last_head_sha: readyPr.headRefOid,
+    local_review_head_sha: readyPr.headRefOid,
+    pre_merge_evaluation_outcome: "manual_review_blocked",
+    pre_merge_manual_review_count: 1,
+    repeated_local_review_signature_count: 2,
+  });
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: {
+      touch: (currentRecord, patch) => ({ ...currentRecord, ...patch, updated_at: currentRecord.updated_at }),
+      save: async () => undefined,
+    },
+    github: {
+      getPullRequest: async () => {
+        throw new Error("unexpected getPullRequest call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      createIssue: async () => {
+        throw new Error("unexpected createIssue call");
+      },
+      markPullRequestReady: async () => {
+        throw new Error("unexpected markPullRequestReady call");
+      },
+    },
+    context: {
+      state: {
+        activeIssueNumber: 102,
+        issues: { "102": record },
+      },
+      record,
+      issue,
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+      syncJournal: async () => undefined,
+      memoryArtifacts: {
+        alwaysReadFiles: [],
+        onDemandFiles: [],
+        contextIndexPath: "/tmp/context-index.md",
+        agentsPath: "/tmp/AGENTS.generated.md",
+      },
+      pr: readyPr,
+      options: { dryRun: false },
+    },
+    derivePullRequestLifecycleSnapshot: (currentRecord, pr, checks, reviewThreads) => ({
+      recordForState: currentRecord,
+      nextState: inferStateFromPullRequest(config, currentRecord, pr, checks, reviewThreads),
+      failureContext: null,
+      reviewWaitPatch: {},
+      copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    blockedReasonFromReviewState: (currentRecord, pr, checks, reviewThreads) =>
+      inferStateFromPullRequest(config, currentRecord, pr, checks, reviewThreads) === "blocked" &&
+      currentRecord.pre_merge_evaluation_outcome === "manual_review_blocked"
+        ? "manual_review"
+        : null,
+    summarizeChecks: () => ({
+      hasPending: false,
+      hasFailing: false,
+    }),
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
+    runLocalReviewImpl: async () => {
+      throw new Error("unexpected runLocalReviewImpl call");
+    },
+    loadOpenPullRequestSnapshot: async () => ({
+      pr: readyPr,
+      checks: [],
+      reviewThreads: [] satisfies ReviewThread[],
+    }),
+  });
+
+  assert.equal(result.record.state, "blocked");
+  assert.equal(result.record.blocked_reason, "manual_review");
+  assert.equal(result.record.repeated_local_review_signature_count, 0);
 });
 
 test("handlePostTurnPullRequestTransitionsPhase reruns local review on a ready PR head update when the tracked current-head gate is enabled", async () => {

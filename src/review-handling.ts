@@ -218,7 +218,7 @@ export function localReviewManualReviewNeedsRepair(
 ): boolean {
   return (
     config.localReviewPolicy !== "advisory" &&
-    config.localReviewFollowUpRepairEnabled === true &&
+    config.localReviewManualReviewRepairEnabled === true &&
     record.local_review_head_sha === pr.headRefOid &&
     reviewDecisionAllowsSamePrManualReviewRepair(pr) &&
     record.pre_merge_evaluation_outcome === "manual_review_blocked" &&

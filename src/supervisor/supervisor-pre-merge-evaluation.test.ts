@@ -70,7 +70,7 @@ test("loadPreMergeEvaluationDto marks opted-in current-head manual-review local-
       config: createConfig({
         localReviewEnabled: true,
         localReviewPolicy: "block_merge",
-        localReviewFollowUpRepairEnabled: true,
+        localReviewManualReviewRepairEnabled: true,
         localReviewArtifactDir: tempDir,
       }),
       record: createRecord({
@@ -126,7 +126,7 @@ test("loadPreMergeEvaluationDto keeps current-head manual-review residuals in ma
       config: createConfig({
         localReviewEnabled: true,
         localReviewPolicy: "block_merge",
-        localReviewFollowUpRepairEnabled: true,
+        localReviewManualReviewRepairEnabled: true,
         localReviewArtifactDir: tempDir,
       }),
       record: createRecord({
@@ -186,7 +186,7 @@ test("loadPreMergeEvaluationDto keeps current-head manual-review residuals in ma
       config: createConfig({
         localReviewEnabled: true,
         localReviewPolicy: "block_merge",
-        localReviewFollowUpRepairEnabled: true,
+        localReviewManualReviewRepairEnabled: true,
         localReviewArtifactDir: tempDir,
       }),
       record: createRecord({
