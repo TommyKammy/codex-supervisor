@@ -278,6 +278,32 @@ test("localReviewRepairContinuationSummary prefers same-PR manual-review repair 
 
   assert.match(summary ?? "", /2 unresolved manual-review residuals on the current PR head/i);
   assert.match(summary ?? "", /same-PR repair pass/i);
+  assert.equal(failureContext?.summary, summary);
+  assert.equal(failureContext?.signature, "local-review:medium:none:1:0:clean");
+});
+
+test("localReviewRepairContinuationFailureContext preserves current-head fix-blocked repair messaging", () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+  });
+  const record = createRecord({
+    local_review_head_sha: "deadbeef",
+    pre_merge_evaluation_outcome: "fix_blocked",
+    pre_merge_must_fix_count: 1,
+    local_review_findings_count: 2,
+    local_review_root_cause_count: 1,
+    local_review_max_severity: "medium",
+    local_review_verified_findings_count: 0,
+    local_review_verified_max_severity: "none",
+  });
+
+  const summary = localReviewRepairContinuationSummary(config, record, createPullRequest());
+  const failureContext = localReviewRepairContinuationFailureContext(config, record, createPullRequest());
+
+  assert.match(summary ?? "", /1 unresolved must-fix residual on the current PR head/i);
+  assert.match(summary ?? "", /same-PR repair pass/i);
+  assert.equal(failureContext?.summary, summary);
   assert.equal(failureContext?.signature, "local-review:medium:none:1:0:clean");
 });
 
@@ -300,6 +326,27 @@ test("localReviewRepairContinuationSummary falls back to the high-severity retry
     localReviewRepairContinuationSummary(config, record, createPullRequest()),
     localReviewFailureSummary(record),
   );
+});
+
+test("localReviewRepairContinuationFailureContext returns null when no continuation repair lane applies", () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+    localReviewManualReviewRepairEnabled: true,
+  });
+  const record = createRecord({
+    local_review_head_sha: "head-old",
+    pre_merge_evaluation_outcome: "manual_review_blocked",
+    pre_merge_manual_review_count: 2,
+    local_review_findings_count: 3,
+    local_review_root_cause_count: 1,
+    local_review_max_severity: "medium",
+    local_review_verified_findings_count: 0,
+    local_review_verified_max_severity: "none",
+  });
+
+  assert.equal(localReviewRepairContinuationSummary(config, record, createPullRequest()), null);
+  assert.equal(localReviewRepairContinuationFailureContext(config, record, createPullRequest()), null);
 });
 
 test("block_ready keeps stale local reviews blocking the ready transition", () => {
