@@ -728,6 +728,128 @@ test("reconcileRecoverableBlockedIssueStates clears stale tracked-PR review stat
   ]);
 });
 
+test("reconcileRecoverableBlockedIssueStates reopens configured-bot follow-up when last_head_sha is current but local review state is stale", async () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    trackedPrCurrentHeadLocalReviewRequired: true,
+    reviewBotLogins: ["copilot-pull-request-reviewer"],
+    humanReviewBlocksMerge: false,
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
+        issue_number: 366,
+        state: "blocked",
+        blocked_reason: "verification",
+        pr_number: 191,
+        last_head_sha: "head-new-191",
+        local_review_head_sha: "head-old-191",
+        local_review_blocker_summary: "stale local review blocker",
+        local_review_summary_path: "/tmp/reviews/issue-366/head-old-191.md",
+        local_review_run_at: "2026-03-13T00:20:00Z",
+        local_review_max_severity: "medium",
+        local_review_findings_count: 2,
+        local_review_root_cause_count: 1,
+        local_review_verified_max_severity: "low",
+        local_review_verified_findings_count: 1,
+        local_review_recommendation: "changes_requested",
+        pre_merge_evaluation_outcome: "follow_up_eligible",
+        pre_merge_follow_up_count: 2,
+        last_local_review_signature: "local-review:medium",
+        repeated_local_review_signature_count: 3,
+        review_follow_up_head_sha: "head-old-191",
+        review_follow_up_remaining: 1,
+        processed_review_thread_ids: ["thread-1@head-new-191"],
+        processed_review_thread_fingerprints: ["thread-1@head-new-191#comment-1"],
+        last_error: "Configured bot thread was already processed on the current head.",
+        last_failure_kind: null,
+        last_failure_context: {
+          category: "manual",
+          summary: "Configured bot thread was already processed on the current head.",
+          signature: "stalled-bot:thread-1",
+          command: null,
+          details: ["processed_on_current_head=yes"],
+          url: "https://example.test/pr/191#discussion_r1",
+          updated_at: "2026-03-13T00:22:00Z",
+        },
+        last_failure_signature: "stalled-bot:thread-1",
+        repeated_failure_signature_count: 2,
+      }),
+    ],
+  });
+  const issue = createIssue({
+    title: "Tracked PR partial reconciliation",
+    updatedAt: "2026-03-13T00:23:00Z",
+  });
+  const pr = createPullRequest({
+    number: 191,
+    title: "Repair push",
+    url: "https://example.test/pr/191",
+    headRefName: "codex/reopen-issue-366",
+    headRefOid: "head-new-191",
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => pr,
+      getIssue: async () => issue,
+      getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getUnresolvedReviewThreads: async () => [createReviewThread()],
+    },
+    stateStore,
+    state,
+    config,
+    [issue],
+    {
+      shouldAutoRetryHandoffMissing,
+      isOpenPullRequest,
+      syncCopilotReviewTimeoutState: () => noCopilotReviewTimeoutPatch(),
+    },
+  );
+
+  const updated = state.issues["366"];
+  assert.equal(updated.state, "addressing_review");
+  assert.equal(updated.blocked_reason, null);
+  assert.equal(updated.last_error, null);
+  assert.equal(updated.last_failure_context, null);
+  assert.equal(updated.last_failure_signature, null);
+  assert.equal(updated.repeated_failure_signature_count, 0);
+  assert.equal(updated.last_head_sha, "head-new-191");
+  assert.equal(updated.local_review_head_sha, null);
+  assert.equal(updated.local_review_summary_path, null);
+  assert.equal(updated.pre_merge_evaluation_outcome, null);
+  assert.equal(updated.review_follow_up_head_sha, null);
+  assert.equal(updated.review_follow_up_remaining, 0);
+  assert.deepEqual(updated.processed_review_thread_ids, []);
+  assert.deepEqual(updated.processed_review_thread_fingerprints, []);
+  assert.equal(
+    updated.last_recovery_reason,
+    "tracked_pr_lifecycle_recovered: resumed issue #366 from blocked to addressing_review using fresh tracked PR #191 facts at head head-new-191",
+  );
+  assert.ok(updated.last_recovery_at);
+  assert.equal(saveCalls, 1);
+  assert.deepEqual(recoveryEvents.map((event) => event.reason), [
+    "tracked_pr_lifecycle_recovered: resumed issue #366 from blocked to addressing_review using fresh tracked PR #191 facts at head head-new-191",
+  ]);
+});
+
 test("reconcileRecoverableBlockedIssueStates requeues stale no-PR manual-review stops after fresh GitHub issue updates", async () => {
   const config = createConfig();
   const state: SupervisorStateFile = createSupervisorState({

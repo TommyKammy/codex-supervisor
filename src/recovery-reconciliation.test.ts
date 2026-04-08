@@ -272,6 +272,77 @@ test("buildTrackedPrStaleFailureConvergencePatch resets repeat tracking when a t
   });
 });
 
+test("buildTrackedPrStaleFailureConvergencePatch clears stale head-scoped state even when last_head_sha already matches the PR head", () => {
+  const record = createRecord({
+    issue_number: 366,
+    state: "blocked",
+    blocked_reason: "manual_review",
+    pr_number: 191,
+    last_head_sha: "head-new-191",
+    local_review_head_sha: "head-old-191",
+    local_review_blocker_summary: "medium issue on the old head",
+    local_review_summary_path: "/tmp/reviews/issue-366/head-old-191.md",
+    local_review_run_at: "2026-03-12T00:00:00Z",
+    local_review_max_severity: "medium",
+    local_review_findings_count: 2,
+    local_review_root_cause_count: 1,
+    local_review_verified_max_severity: "low",
+    local_review_verified_findings_count: 1,
+    local_review_recommendation: "changes_requested",
+    pre_merge_evaluation_outcome: "follow_up_eligible",
+    pre_merge_must_fix_count: 0,
+    pre_merge_manual_review_count: 0,
+    pre_merge_follow_up_count: 2,
+    last_local_review_signature: "local-review:medium",
+    repeated_local_review_signature_count: 4,
+    latest_local_ci_result: {
+      outcome: "passed",
+      summary: "Local CI passed on the old head.",
+      ran_at: "2026-03-12T00:05:00Z",
+      head_sha: "head-old-191",
+      execution_mode: "shell",
+      failure_class: null,
+      remediation_target: null,
+    },
+    external_review_head_sha: "head-old-191",
+    external_review_misses_path: "/tmp/reviews/issue-366/head-old-191-misses.json",
+    external_review_matched_findings_count: 1,
+    external_review_near_match_findings_count: 1,
+    external_review_missed_findings_count: 1,
+    review_follow_up_head_sha: "head-old-191",
+    review_follow_up_remaining: 1,
+    last_host_local_pr_blocker_comment_signature: "local-ci:blocker",
+    last_host_local_pr_blocker_comment_head_sha: "head-old-191",
+    processed_review_thread_ids: ["thread-1@head-new-191"],
+    processed_review_thread_fingerprints: ["thread-1@head-new-191#comment-1"],
+    last_failure_signature: "stalled-bot:thread-1",
+    repeated_failure_signature_count: 3,
+  });
+  const pr = createPullRequest({
+    number: 191,
+    headRefName: "codex/issue-366",
+    headRefOid: "head-new-191",
+  });
+
+  const patch = buildTrackedPrStaleFailureConvergencePatch({
+    record,
+    pr,
+    nextState: "local_review",
+    failureContext: null,
+    blockedReason: null,
+  });
+
+  assert.equal(patch.state, "local_review");
+  assert.equal(patch.last_head_sha, "head-new-191");
+  assert.equal(patch.local_review_head_sha, null);
+  assert.equal(patch.pre_merge_evaluation_outcome, null);
+  assert.equal(patch.review_follow_up_head_sha, null);
+  assert.deepEqual(patch.processed_review_thread_ids, []);
+  assert.deepEqual(patch.processed_review_thread_fingerprints, []);
+  assert.equal(patch.last_failure_signature, null);
+  assert.equal(patch.repeated_failure_signature_count, 0);
+});
+
 function git(cwd: string, args: string[]): string {
   return execFileSync("git", args, {
     cwd,
