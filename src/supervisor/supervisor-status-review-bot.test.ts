@@ -304,6 +304,42 @@ test("externalSignalReadinessDiagnostics treats observed external checks as CI s
   );
 });
 
+test("externalSignalReadinessDiagnostics stops waiting for provider review when a draft PR is blocked by degraded local review", async (t) => {
+  const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-degraded-draft-review-"));
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+
+  assert.deepEqual(
+    externalSignalReadinessDiagnostics(
+      createConfig({
+        repoPath,
+        reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+        localReviewEnabled: true,
+      }),
+      createRecord({
+        local_review_head_sha: "head-sha",
+        local_review_degraded: true,
+        local_review_recommendation: "changes_requested",
+      }),
+      createPr({
+        isDraft: true,
+        currentHeadCiGreenAt: "2026-03-16T00:08:00Z",
+        configuredBotCurrentHeadObservedAt: null,
+      }),
+      [{ bucket: "pass" }],
+      [],
+      configuredBotReviewThreads,
+    ),
+    {
+      status: "blocked_by_local_review",
+      ci: "passing",
+      review: "local_review_blocked",
+      workflows: "absent",
+    },
+  );
+});
+
 test("externalSignalReadinessDiagnostics treats blocking configured-bot top-level reviews as feedback", async (t) => {
   const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-configured-review-"));
   t.after(async () => {

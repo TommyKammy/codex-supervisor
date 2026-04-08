@@ -152,7 +152,13 @@ export async function loadPreMergeEvaluationDto(args: {
     | "local_review_head_sha"
     | "local_review_findings_count"
     | "local_review_recommendation"
-  >;
+  > &
+    Partial<
+      Pick<
+        IssueRunRecord,
+        "local_review_degraded" | "pre_merge_evaluation_outcome" | "pre_merge_manual_review_count" | "pre_merge_follow_up_count"
+      >
+    >;
   pr: GitHubPullRequest | null;
 }): Promise<SupervisorPreMergeEvaluationDto | null> {
   const headStatus = localReviewHeadStatus(args.record, args.pr);

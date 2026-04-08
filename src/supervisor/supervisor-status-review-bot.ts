@@ -8,6 +8,7 @@ import {
   reviewProviderProfileFromConfig,
 } from "../core/review-providers";
 import { GitHubPullRequest, IssueRunRecord, ReviewThread, SupervisorConfig } from "../core/types";
+import { localReviewDegradedNeedsBlock } from "../review-handling";
 
 type ReviewThreadClassifier = (config: SupervisorConfig, reviewThreads: ReviewThread[]) => ReviewThread[];
 const DEFAULT_CONFIGURED_BOT_SETTLED_WAIT_MS = 5_000;
@@ -448,6 +449,7 @@ export function externalSignalReadinessDiagnostics(
     observed.hasSignal,
     topLevelReviewEffect,
   );
+  const draftLocalReviewBlocked = pr.isDraft && localReviewDegradedNeedsBlock(config, activeRecord, pr);
   const ci =
     hasFailingChecks
       ? "failing"
@@ -467,6 +469,8 @@ export function externalSignalReadinessDiagnostics(
   const review =
     !repoExpectsConfiguredBotReview(config)
       ? "disabled"
+      : draftLocalReviewBlocked
+        ? "local_review_blocked"
       : unresolvedConfiguredThreads.length > 0 || topLevelReviewEffect === "blocking"
         ? "feedback_present"
         : observed.hasSignal || topLevelReviewEffect !== "none"
@@ -484,6 +488,8 @@ export function externalSignalReadinessDiagnostics(
   const status =
     ci === "failing" || review === "feedback_present"
       ? "blocked_by_ci_or_review_feedback"
+      : review === "local_review_blocked"
+        ? "blocked_by_local_review"
       : hasRepoReadinessGap
         ? "repo_not_ready_for_expected_signals"
         : ci === "awaiting_signal" ||
