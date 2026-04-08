@@ -381,6 +381,7 @@ Default note:
 - `localReviewPolicy`
 - `trackedPrCurrentHeadLocalReviewRequired`
 - `localReviewFollowUpRepairEnabled`
+- `localReviewManualReviewRepairEnabled`
 - `localReviewFollowUpIssueCreationEnabled`
 - `localReviewHighSeverityAction`
 - `localReviewArtifactDir`
@@ -392,9 +393,11 @@ Default local-review posture:
 
 - shipped starter profiles and default config loading keep `localReviewEnabled: false`
 - `localReviewFollowUpRepairEnabled: false` is the safe default, so same-PR repair of `follow_up_eligible` residual local-review work stays off until you opt in
+- `localReviewManualReviewRepairEnabled: false` is the safe default, so same-PR repair of current-head `manual_review_blocked` local-review residuals stays off until you opt in
 - `localReviewFollowUpIssueCreationEnabled: false` is the safe default, so follow-up issue creation stays advisory until you opt in
-- once you intentionally enable local review, the recommended baseline is `localReviewAutoDetect: true`, `localReviewRoles: []`, `localReviewPolicy: "block_merge"`, `trackedPrCurrentHeadLocalReviewRequired: false`, `localReviewFollowUpRepairEnabled: false`, `localReviewFollowUpIssueCreationEnabled: false`, and `localReviewHighSeverityAction: "blocked"`
+- once you intentionally enable local review, the recommended baseline is `localReviewAutoDetect: true`, `localReviewRoles: []`, `localReviewPolicy: "block_merge"`, `trackedPrCurrentHeadLocalReviewRequired: false`, `localReviewFollowUpRepairEnabled: false`, `localReviewManualReviewRepairEnabled: false`, `localReviewFollowUpIssueCreationEnabled: false`, and `localReviewHighSeverityAction: "blocked"`
 - `localReviewFollowUpRepairEnabled` and `localReviewFollowUpIssueCreationEnabled` are mutually exclusive
+- `localReviewManualReviewRepairEnabled` is separate from `localReviewFollowUpRepairEnabled`: the follow-up flag only covers `follow_up_eligible` residuals, while the manual-review flag covers current-head `manual_review_blocked` residuals only when GitHub is not still reporting an aggregate review block
 - use `trackedPrCurrentHeadLocalReviewRequired: true` only when your workflow explicitly requires a fresh current-head local review before ready-for-review or merge can continue
 
 ### Workspace cleanup

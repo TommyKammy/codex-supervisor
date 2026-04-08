@@ -57,6 +57,7 @@
   "localReviewPolicy": "block_merge",
   "trackedPrCurrentHeadLocalReviewRequired": false,
   "localReviewFollowUpRepairEnabled": false,
+  "localReviewManualReviewRepairEnabled": false,
   "localReviewFollowUpIssueCreationEnabled": false,
   "localReviewHighSeverityAction": "blocked",
   "reviewBotLogins": [

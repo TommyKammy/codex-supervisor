@@ -200,12 +200,9 @@ export function localReviewFollowUpNeedsRepair(
 }
 
 export function reviewDecisionAllowsSamePrManualReviewRepair(
-  pr: Pick<GitHubPullRequest, "reviewDecision" | "configuredBotTopLevelReviewStrength">,
+  pr: Pick<GitHubPullRequest, "reviewDecision">,
 ): boolean {
-  return (
-    pr.reviewDecision !== "REVIEW_REQUIRED" &&
-    (pr.reviewDecision !== "CHANGES_REQUESTED" || pr.configuredBotTopLevelReviewStrength === "nitpick_only")
-  );
+  return pr.reviewDecision !== "REVIEW_REQUIRED" && pr.reviewDecision !== "CHANGES_REQUESTED";
 }
 
 export function localReviewManualReviewNeedsRepair(

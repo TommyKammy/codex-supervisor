@@ -11,6 +11,7 @@ import {
   localReviewRetryLoopCandidate,
   localReviewRetryLoopStalled,
   nextLocalReviewSignatureTracking,
+  reviewDecisionAllowsSamePrManualReviewRepair,
 } from "./review-handling";
 import { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "./core/types";
 
@@ -383,6 +384,42 @@ test("manual-review-blocked residuals stay out of same-PR repair when GitHub has
   );
   assert.equal(localReviewBlocksReady(config, record, pr), true);
   assert.equal(localReviewBlocksMerge(config, record, pr), true);
+});
+
+test("manual-review same-PR repair fails closed on aggregate changes requested even when the configured bot was nitpick-only", () => {
+  const pr = createPullRequest({
+    isDraft: false,
+    headRefOid: "deadbeef",
+    reviewDecision: "CHANGES_REQUESTED",
+    configuredBotTopLevelReviewStrength: "nitpick_only",
+  });
+  const record = createRecord({
+    local_review_head_sha: "deadbeef",
+    pre_merge_evaluation_outcome: "manual_review_blocked",
+    pre_merge_manual_review_count: 1,
+  });
+  const config = createConfig({
+    localReviewPolicy: "block_merge",
+    localReviewManualReviewRepairEnabled: true,
+    humanReviewBlocksMerge: true,
+  });
+
+  assert.equal(reviewDecisionAllowsSamePrManualReviewRepair(pr), false);
+  assert.equal(localReviewManualReviewNeedsRepair(config, record, pr), false);
+  assert.equal(
+    localReviewRetryLoopCandidate(
+      config,
+      record,
+      pr,
+      [],
+      [],
+      () => [],
+      () => [],
+      () => ({ hasFailing: false, hasPending: false }),
+      () => false,
+    ),
+    false,
+  );
 });
 
 test("same-PR follow-up repair stays disabled in advisory mode", () => {

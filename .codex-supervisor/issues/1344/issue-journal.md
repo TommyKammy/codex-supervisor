@@ -6,28 +6,28 @@
 - Workspace: .
 - Journal: .codex-supervisor/issues/1344/issue-journal.md
 - Current phase: local_review_fix
-- Attempt count: 10 (implementation=2, repair=1)
-- Last head SHA: 23fd198f202dd233b44d925ddda2d7a04a897d15
+- Attempt count: 11 (implementation=2, repair=2)
+- Last head SHA: e22e844054fbd0b135658e2543ae074986f0d176
 - Blocked reason: none
-- Last failure signature: local-review:medium:none:2:0:clean
+- Last failure signature: local-review:high:high:2:1:clean
 - Repeated failure signature count: 2
-- Updated at: 2026-04-08T04:54:57.938Z
+- Updated at: 2026-04-08T05:14:55.961Z
 
 ## Latest Codex Summary
-Split same-PR local-review repair into two explicit opt-ins so `manual_review_blocked` no longer rides on `localReviewFollowUpRepairEnabled`. The new `localReviewManualReviewRepairEnabled` flag defaults to `false`, and the manual-review repair lane now checks that flag in [review-handling.ts](src/review-handling.ts), [supervisor-pre-merge-evaluation.ts](src/supervisor/supervisor-pre-merge-evaluation.ts), and [turn-execution-orchestration.ts](src/turn-execution-orchestration.ts).
+Added a dedicated `localReviewManualReviewRepairEnabled` opt-in so same-PR repair for `manual_review_blocked` residuals is fail-closed by default, while leaving `localReviewFollowUpRepairEnabled` scoped to `follow_up_eligible` residuals. I also changed the post-ready retry accounting so same-head local-review repeat counts reset whenever the retry lane is inactive, which prevents stale counts from immediately tripping the repeat limit when the manual-review lane temporarily exits and later reopens.
 
-Adjusted [post-turn-pull-request.ts](src/post-turn-pull-request.ts) so same-head local-review retry counters reset whenever the retry lane is inactive after a post-ready refresh, which prevents stale counts from prematurely tripping the repeat limit when manual-review auto-repair temporarily exits and later becomes eligible again. Added focused regressions in [config.test.ts](src/config.test.ts), [review-handling.test.ts](src/review-handling.test.ts), [pull-request-state-policy.test.ts](src/pull-request-state-policy.test.ts), [post-turn-pull-request.test.ts](src/post-turn-pull-request.test.ts), and [supervisor-pre-merge-evaluation.test.ts](src/supervisor/supervisor-pre-merge-evaluation.test.ts).
+The change is committed and pushed on `codex/issue-1344` as `e22e844` to update PR #1345. I updated the issue journal’s Codex Working Notes. The remaining untracked files in `.codex-supervisor/` are transient supervisor artifacts and were left out of the commit.
 
 Summary: Added a fail-closed manual-review same-PR repair opt-in and reset stale same-head retry counters when the lane exits
 State hint: local_review_fix
 Blocked reason: none
 Tests: `npx tsx --test src/pull-request-state-policy.test.ts src/post-turn-pull-request.test.ts src/review-handling.test.ts src/supervisor/supervisor-pre-merge-evaluation.test.ts src/config.test.ts`; `npm run build`
-Next action: Commit and push this repair checkpoint, then recheck PR #1345 for any remaining local-review findings or CI drift
-Failure signature: none
+Next action: Recheck PR #1345 on head `e22e844` for any remaining local-review findings, review follow-up, or CI drift
+Failure signature: local-review:high:high:2:1:clean
 
 ## Active Failure Context
 - Category: blocked
-- Summary: Local review found 2 actionable finding(s) across 2 root cause(s); max severity=medium; verified high-severity findings=0; verified max severity=none.
+- Summary: Local review found 2 actionable finding(s) across 2 root cause(s); max severity=high; verified high-severity findings=1; verified max severity=high.
 - Details:
   - findings=2
   - root_causes=2
@@ -35,13 +35,13 @@ Failure signature: none
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: `manual_review_blocked` same-PR repair must be guarded by its own explicit opt-in and must drop any same-head repeat count whenever the repair lane is not currently eligible, otherwise existing follow-up opt-ins broaden behavior and stale counters can force premature blocking.
-- What changed: Added `localReviewManualReviewRepairEnabled` with a fail-closed default in `src/core/types.ts` and `src/core/config.ts`, then rewired the manual-review same-PR lane in `src/review-handling.ts`, `src/supervisor/supervisor-pre-merge-evaluation.ts`, and `src/turn-execution-orchestration.ts` to use that new flag instead of `localReviewFollowUpRepairEnabled`. Updated `src/post-turn-pull-request.ts` so repeated local-review signatures reset to `0` whenever the current-head retry lane is inactive after the post-ready refresh. Added focused regressions in `src/config.test.ts`, `src/review-handling.test.ts`, `src/pull-request-state-policy.test.ts`, `src/post-turn-pull-request.test.ts`, and `src/supervisor/supervisor-pre-merge-evaluation.test.ts`.
+- Hypothesis: same-PR repair for current-head `manual_review_blocked` residuals must fail closed on any aggregate GitHub `CHANGES_REQUESTED` because the current PR hydration only exposes the aggregate review decision plus the configured bot's own top-level strength, not actor attribution for the blocking review decision.
+- What changed: Tightened `reviewDecisionAllowsSamePrManualReviewRepair` in `src/review-handling.ts` so manual-review same-PR repair now rejects both `REVIEW_REQUIRED` and aggregate `CHANGES_REQUESTED` instead of softening `CHANGES_REQUESTED` based on `configuredBotTopLevelReviewStrength`. Added regressions in `src/review-handling.test.ts`, `src/pull-request-state-policy.test.ts`, and `src/post-turn-pull-request.test.ts` covering the mixed-review case where the configured bot is `nitpick_only` but GitHub still reports aggregate `CHANGES_REQUESTED`. Updated `docs/configuration.md`, `docs/getting-started.md`, `docs/local-review.md`, `docs/examples/atlaspm.md`, and `docs/examples/atlaspm.supervisor.config.example.json` so the shipped operator docs and example config document `localReviewManualReviewRepairEnabled` separately from `localReviewFollowUpRepairEnabled`.
 - Current blocker: none
 - Next exact step: Commit and push this repair checkpoint, then recheck PR #1345 on the new head for any remaining local-review findings, review-thread follow-up, or CI drift.
-- Verification gap: None for this checkpoint after `npx tsx --test src/pull-request-state-policy.test.ts src/post-turn-pull-request.test.ts src/review-handling.test.ts src/supervisor/supervisor-pre-merge-evaluation.test.ts src/config.test.ts` and `npm run build`.
-- Files touched: src/core/types.ts; src/core/config.ts; src/review-handling.ts; src/supervisor/supervisor-pre-merge-evaluation.ts; src/turn-execution-orchestration.ts; src/post-turn-pull-request.ts; src/config.test.ts; src/review-handling.test.ts; src/pull-request-state-policy.test.ts; src/post-turn-pull-request.test.ts; src/supervisor/supervisor-pre-merge-evaluation.test.ts
-- Rollback concern: Low. The behavior change is fail-closed by default and the repeat-counter reset only applies when the current-head retry lane is inactive after a post-ready refresh.
-- Last focused command: `npx tsx --test src/pull-request-state-policy.test.ts src/post-turn-pull-request.test.ts src/review-handling.test.ts src/supervisor/supervisor-pre-merge-evaluation.test.ts src/config.test.ts`
+- Verification gap: None for this checkpoint after `npx tsx --test src/pull-request-state-policy.test.ts src/post-turn-pull-request.test.ts src/review-handling.test.ts` and `npm run build`.
+- Files touched: src/review-handling.ts; src/review-handling.test.ts; src/pull-request-state-policy.test.ts; src/post-turn-pull-request.test.ts; docs/configuration.md; docs/getting-started.md; docs/local-review.md; docs/examples/atlaspm.md; docs/examples/atlaspm.supervisor.config.example.json
+- Rollback concern: Low. The code path is narrower than before because aggregate GitHub `CHANGES_REQUESTED` now always keeps manual-review same-PR repair fail-closed until actor-aware attribution exists.
+- Last focused command: `npx tsx --test src/pull-request-state-policy.test.ts src/post-turn-pull-request.test.ts src/review-handling.test.ts`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.

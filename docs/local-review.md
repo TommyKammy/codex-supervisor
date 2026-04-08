@@ -4,7 +4,7 @@ This guide holds the detailed local-review swarm reference so the landing docs c
 
 ## What local review is for
 
-`codex-supervisor` can run a local review swarm on pull requests before merge. It is disabled by default in shipped starter configs and in default config loading behavior. Once an operator intentionally enables it, the recommended once enabled posture uses `localReviewAutoDetect: true`, `localReviewRoles: []`, `localReviewPolicy: "block_merge"`, `trackedPrCurrentHeadLocalReviewRequired: false`, `localReviewFollowUpRepairEnabled: false`, `localReviewFollowUpIssueCreationEnabled: false`, and `localReviewHighSeverityAction: "blocked"`.
+`codex-supervisor` can run a local review swarm on pull requests before merge. It is disabled by default in shipped starter configs and in default config loading behavior. Once an operator intentionally enables it, the recommended once enabled posture uses `localReviewAutoDetect: true`, `localReviewRoles: []`, `localReviewPolicy: "block_merge"`, `trackedPrCurrentHeadLocalReviewRequired: false`, `localReviewFollowUpRepairEnabled: false`, `localReviewManualReviewRepairEnabled: false`, `localReviewFollowUpIssueCreationEnabled: false`, and `localReviewHighSeverityAction: "blocked"`.
 
 The recommended starting policy is `block_merge`, because it preserves the usual ready-for-review flow while still making the swarm a practical merge gate on the current PR head.
 
@@ -14,6 +14,7 @@ Core behavior:
 - `localReviewPolicy` controls whether the swarm is advisory or blocking
 - `trackedPrCurrentHeadLocalReviewRequired` adds an opt-in freshness gate for tracked codex PRs without changing the underlying policy once the current head has been reviewed
 - `localReviewFollowUpRepairEnabled` is a separate opt-in: leave it `false` unless you explicitly want same-PR repair to handle `follow_up_eligible` residual findings on the current pull request
+- `localReviewManualReviewRepairEnabled` is a separate opt-in: leave it `false` unless you explicitly want same-PR repair to handle current-head `manual_review_blocked` residual findings when GitHub is otherwise clear
 - `localReviewFollowUpIssueCreationEnabled` is a separate opt-in: leave it `false` to keep follow-up issue creation advisory unless an operator explicitly enables auto-creation
 - verifier-confirmed high-severity findings can trigger `local_review_fix`
 - findings are written as Markdown and JSON artifacts
@@ -27,6 +28,7 @@ Policy guidance:
 - `trackedPrCurrentHeadLocalReviewRequired: false` keeps the enabled baseline opinionated without adding a separate freshness gate
 - `trackedPrCurrentHeadLocalReviewRequired: true` is the stricter opt-in mode: tracked codex PRs wait for a fresh local review on every head update before ready-for-review or merge can continue
 - `localReviewFollowUpRepairEnabled: false` keeps same-PR repair disabled; set it to `true` only when you explicitly want follow-up-eligible residuals repaired on the current PR instead of being left advisory
+- `localReviewManualReviewRepairEnabled: false` keeps same-PR repair of current-head `manual_review_blocked` residuals disabled; set it to `true` only when you explicitly want those residuals routed back into `local_review_fix` after GitHub review blockers, CI blockers, and conflicts are already clear
 - `localReviewFollowUpIssueCreationEnabled: false` keeps follow-up issue creation advisory-only; set it to `true` only when you explicitly want the supervisor to open follow-up issues automatically from local-review findings
 - `localReviewFollowUpRepairEnabled` and `localReviewFollowUpIssueCreationEnabled` cannot both be `true`: same-PR repair and automatic follow-up issue creation are mutually exclusive routing choices
 
@@ -50,6 +52,7 @@ Example:
   "localReviewPolicy": "block_merge",
   "trackedPrCurrentHeadLocalReviewRequired": false,
   "localReviewFollowUpRepairEnabled": false,
+  "localReviewManualReviewRepairEnabled": false,
   "localReviewFollowUpIssueCreationEnabled": false,
   "localReviewHighSeverityAction": "blocked"
 }
