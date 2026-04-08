@@ -165,6 +165,7 @@ export function localReviewRequiresManualReview(
     config.localReviewPolicy === "block_merge" &&
     record.local_review_head_sha === pr.headRefOid &&
     record.pre_merge_evaluation_outcome === "manual_review_blocked" &&
+    (record.pre_merge_manual_review_count ?? 0) > 0 &&
     !localReviewManualReviewNeedsRepair(config, record, pr)
   );
 }

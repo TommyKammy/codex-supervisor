@@ -47,6 +47,9 @@ function pendingReason(headStatus: SupervisorPreMergeEvaluationDto["headStatus"]
 }
 
 function blockedReason(artifact: LocalReviewArtifact): string {
+  if (artifact.degraded && artifact.finalEvaluation.manualReviewCount === 0) {
+    return "degraded_local_review";
+  }
   if (artifact.finalEvaluation.outcome === "manual_review_blocked") {
     return `manual_review_residuals=${artifact.finalEvaluation.manualReviewCount}`;
   }
@@ -102,7 +105,7 @@ function repairDisposition(args: {
     ) {
       return "same_pr_manual_review_current_head";
     }
-    return "manual_review_required";
+    return args.artifact.finalEvaluation.manualReviewCount > 0 ? "manual_review_required" : "none";
   }
 
   if (args.headStatus !== "current" || args.record.state !== "local_review_fix") {

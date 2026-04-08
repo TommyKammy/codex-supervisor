@@ -101,6 +101,61 @@ test("loadPreMergeEvaluationDto marks opted-in current-head manual-review local-
   }
 });
 
+test("loadPreMergeEvaluationDto distinguishes degraded local review from manual-review residuals", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "pre-merge-eval-"));
+  const summaryPath = path.join(tempDir, "owner-repo", "issue-58", "local-review-summary.md");
+  const artifactPath = `${summaryPath.slice(0, -3)}.json`;
+
+  try {
+    await fs.mkdir(path.dirname(summaryPath), { recursive: true });
+    await fs.writeFile(
+      artifactPath,
+      JSON.stringify({
+        ranAt: "2026-03-24T00:11:00Z",
+        degraded: true,
+        finalEvaluation: {
+          outcome: "manual_review_blocked",
+          mustFixCount: 0,
+          manualReviewCount: 0,
+          followUpCount: 1,
+        },
+      }),
+      "utf8",
+    );
+
+    const dto = await loadPreMergeEvaluationDto({
+      config: createConfig({
+        localReviewEnabled: true,
+        localReviewPolicy: "block_merge",
+        localReviewArtifactDir: tempDir,
+      }),
+      record: createRecord({
+        state: "blocked",
+        local_review_head_sha: "head-current",
+        local_review_summary_path: summaryPath,
+        local_review_run_at: "2026-03-24T00:11:00Z",
+      }),
+      pr: createPullRequest({ headRefOid: "head-current", isDraft: false }),
+    });
+
+    assert.deepEqual(dto, {
+      status: "blocked",
+      outcome: "manual_review_blocked",
+      repair: "none",
+      reason: "degraded_local_review",
+      headStatus: "current",
+      summaryPath: "owner-repo/issue-58/local-review-summary.md",
+      artifactPath: "owner-repo/issue-58/local-review-summary.json",
+      ranAt: "2026-03-24T00:11:00Z",
+      mustFixCount: 0,
+      manualReviewCount: 0,
+      followUpCount: 1,
+    });
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("loadPreMergeEvaluationDto marks current-head fix-blocked local-review residuals as same-PR repair", async () => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "pre-merge-eval-"));
   const summaryPath = path.join(tempDir, "owner-repo", "issue-58", "local-review-summary.md");
