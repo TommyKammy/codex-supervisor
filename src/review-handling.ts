@@ -193,13 +193,17 @@ export function localReviewDegradedNeedsBlock(
 
 export function localReviewHighSeverityNeedsRetry(
   config: SupervisorConfig,
-  record: Pick<IssueRunRecord, "local_review_head_sha" | "local_review_verified_max_severity">,
-  pr: GitHubPullRequest,
+  record: Pick<
+    IssueRunRecord,
+    "local_review_head_sha" | "local_review_verified_max_severity" | "pre_merge_evaluation_outcome"
+  >,
+  pr: Pick<GitHubPullRequest, "headRefOid" | "reviewDecision">,
 ): boolean {
   return (
     config.localReviewPolicy !== "advisory" &&
     record.local_review_head_sha === pr.headRefOid &&
     record.local_review_verified_max_severity === "high" &&
+    (record.pre_merge_evaluation_outcome !== "fix_blocked" || reviewDecisionAllowsSamePrRepair(pr)) &&
     config.localReviewHighSeverityAction === "retry"
   );
 }

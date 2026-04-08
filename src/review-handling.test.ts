@@ -621,6 +621,25 @@ test("localReviewHighSeverityNeedsRetry only escalates verifier-confirmed high f
   );
 });
 
+test("localReviewHighSeverityNeedsRetry keeps current-head fix-blocked retries behind review gates", () => {
+  const config = createConfig({ localReviewPolicy: "block_merge", localReviewHighSeverityAction: "retry" });
+  const record = createRecord({
+    local_review_head_sha: "deadbeef",
+    local_review_verified_max_severity: "high",
+    pre_merge_evaluation_outcome: "fix_blocked",
+  });
+
+  assert.equal(
+    localReviewHighSeverityNeedsRetry(config, record, createPullRequest({ reviewDecision: "REVIEW_REQUIRED" })),
+    false,
+  );
+  assert.equal(
+    localReviewHighSeverityNeedsRetry(config, record, createPullRequest({ reviewDecision: "CHANGES_REQUESTED" })),
+    false,
+  );
+  assert.equal(localReviewHighSeverityNeedsRetry(config, record, createPullRequest({ reviewDecision: "APPROVED" })), true);
+});
+
 test("local review retry loop helpers require a clean path and stall after repeated identical signatures", () => {
   const config = createConfig({
     localReviewPolicy: "block_ready",
