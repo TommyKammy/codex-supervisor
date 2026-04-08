@@ -76,6 +76,7 @@ function outcomeReason(artifact: LocalReviewArtifact): string {
 function repairDisposition(args: {
   config: Pick<SupervisorConfig, "localReviewFollowUpRepairEnabled" | "localReviewHighSeverityAction">;
   record: Pick<IssueRunRecord, "state" | "pre_merge_follow_up_count" | "pre_merge_manual_review_count">;
+  pr: Pick<GitHubPullRequest, "reviewDecision"> | null;
   headStatus: SupervisorPreMergeEvaluationDto["headStatus"];
   artifact: LocalReviewArtifact | null;
 }): SupervisorPreMergeEvaluationDto["repair"] {
@@ -93,9 +94,17 @@ function repairDisposition(args: {
   if (
     args.artifact.finalEvaluation.outcome === "manual_review_blocked" &&
     args.config.localReviewFollowUpRepairEnabled === true &&
+    args.pr?.reviewDecision !== "REVIEW_REQUIRED" &&
     (args.record.pre_merge_manual_review_count ?? args.artifact.finalEvaluation.manualReviewCount) > 0
   ) {
     return "same_pr_manual_review_current_head";
+  }
+
+  if (
+    args.artifact.finalEvaluation.outcome === "manual_review_blocked" &&
+    args.pr?.reviewDecision === "REVIEW_REQUIRED"
+  ) {
+    return "manual_review_required";
   }
 
   if (
@@ -184,6 +193,7 @@ export async function loadPreMergeEvaluationDto(args: {
     repair: repairDisposition({
       config: args.config,
       record: args.record,
+      pr: args.pr,
       headStatus,
       artifact,
     }),
