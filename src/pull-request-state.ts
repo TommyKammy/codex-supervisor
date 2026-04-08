@@ -7,6 +7,7 @@ import {
   localReviewHighSeverityNeedsRetry,
   localReviewRequiresManualReview,
   localReviewRetryLoopStalled,
+  reviewDecisionAllowsSamePrRepair,
 } from "./review-handling";
 import { shouldRunLocalReview } from "./local-review";
 import {
@@ -886,6 +887,7 @@ export function inferStateFromPullRequest(
 
   if (
     localReviewFixBlockedNeedsRepair(config, record, pr) &&
+    reviewDecisionAllowsSamePrRepair(pr) &&
     !checkSummary.hasFailing &&
     !checkSummary.hasPending &&
     unresolvedBotThreads.length === 0 &&
