@@ -9,10 +9,10 @@ import {
 import {
   localReviewBlocksReady,
   localReviewFailureContext,
-  localReviewFailureSummary,
   localReviewHighSeverityNeedsBlock,
-  localReviewHighSeverityNeedsRetry,
   localReviewManualReviewNeedsRepair,
+  localReviewRepairContinuationFailureContext,
+  localReviewRepairContinuationSummary,
   localReviewRequiresManualReview,
   localReviewRetryLoopCandidate,
   localReviewRetryLoopStalled,
@@ -830,6 +830,10 @@ export async function handlePostTurnPullRequestTransitionsPhase(
     postReady.reviewThreads,
     { repeated_local_review_signature_count: repeatedLocalReviewSignatureCount },
   );
+  const localReviewRepairSummary =
+    refreshedLifecycle.nextState === "local_review_fix"
+      ? localReviewRepairContinuationSummary(config, refreshedLifecycle.recordForState, postReady.pr)
+      : null;
   const postReadyLocalReviewFailureContext =
     refreshedLifecycle.nextState === "blocked" &&
     localReviewRetryLoopStalled(
@@ -847,12 +851,8 @@ export async function handlePostTurnPullRequestTransitionsPhase(
       : refreshedLifecycle.nextState === "blocked" &&
           localReviewHighSeverityNeedsBlock(config, refreshedLifecycle.recordForState, postReady.pr)
         ? localReviewFailureContext(refreshedLifecycle.recordForState)
-        : refreshedLifecycle.nextState === "local_review_fix" &&
-            (
-              localReviewHighSeverityNeedsRetry(config, refreshedLifecycle.recordForState, postReady.pr) ||
-              localReviewManualReviewNeedsRepair(config, refreshedLifecycle.recordForState, postReady.pr)
-            )
-          ? localReviewFailureContext(refreshedLifecycle.recordForState)
+        : refreshedLifecycle.nextState === "local_review_fix"
+          ? localReviewRepairContinuationFailureContext(config, refreshedLifecycle.recordForState, postReady.pr)
           : null;
   const effectiveFailureContext = refreshedLifecycle.failureContext ?? postReadyLocalReviewFailureContext;
   record = stateStore.touch(record, {
@@ -867,15 +867,8 @@ export async function handlePostTurnPullRequestTransitionsPhase(
     last_error:
       refreshedLifecycle.nextState === "blocked" && effectiveFailureContext
         ? truncate(effectiveFailureContext.summary, 1000)
-        : refreshedLifecycle.nextState === "local_review_fix" &&
-            localReviewManualReviewNeedsRepair(config, refreshedLifecycle.recordForState, postReady.pr)
-          ? truncate(
-              `Local review found ${(refreshedLifecycle.recordForState.pre_merge_manual_review_count ?? 0)} unresolved manual-review residual${(refreshedLifecycle.recordForState.pre_merge_manual_review_count ?? 0) === 1 ? "" : "s"} on the current PR head. Codex will continue with a same-PR repair pass before the PR can proceed.`,
-              1000,
-            )
-          : refreshedLifecycle.nextState === "local_review_fix" &&
-              localReviewHighSeverityNeedsRetry(config, refreshedLifecycle.recordForState, postReady.pr)
-            ? truncate(localReviewFailureSummary(refreshedLifecycle.recordForState), 1000)
+        : localReviewRepairSummary
+          ? truncate(localReviewRepairSummary, 1000)
           : record.last_error,
     last_failure_context: effectiveFailureContext,
     ...args.applyFailureSignature(record, effectiveFailureContext),

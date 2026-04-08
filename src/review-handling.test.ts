@@ -8,6 +8,9 @@ import {
   localReviewManualReviewNeedsRepair,
   localReviewHighSeverityNeedsBlock,
   localReviewHighSeverityNeedsRetry,
+  localReviewFailureSummary,
+  localReviewRepairContinuationFailureContext,
+  localReviewRepairContinuationSummary,
   localReviewRetryLoopCandidate,
   localReviewRetryLoopStalled,
   nextLocalReviewSignatureTracking,
@@ -248,6 +251,52 @@ test("local review gating respects enabled policy requirements for ready and mer
       pr,
     ),
     false,
+  );
+});
+
+test("localReviewRepairContinuationSummary prefers same-PR manual-review repair messaging", () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+    localReviewManualReviewRepairEnabled: true,
+  });
+  const record = createRecord({
+    local_review_head_sha: "deadbeef",
+    pre_merge_evaluation_outcome: "manual_review_blocked",
+    pre_merge_manual_review_count: 2,
+    local_review_findings_count: 3,
+    local_review_root_cause_count: 1,
+    local_review_max_severity: "medium",
+    local_review_verified_findings_count: 0,
+    local_review_verified_max_severity: "none",
+  });
+
+  const summary = localReviewRepairContinuationSummary(config, record, createPullRequest());
+  const failureContext = localReviewRepairContinuationFailureContext(config, record, createPullRequest());
+
+  assert.match(summary ?? "", /2 unresolved manual-review residuals on the current PR head/i);
+  assert.match(summary ?? "", /same-PR repair pass/i);
+  assert.equal(failureContext?.signature, "local-review:medium:none:1:0:clean");
+});
+
+test("localReviewRepairContinuationSummary falls back to the high-severity retry summary", () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_ready",
+    localReviewHighSeverityAction: "retry",
+  });
+  const record = createRecord({
+    local_review_head_sha: "deadbeef",
+    local_review_findings_count: 3,
+    local_review_root_cause_count: 2,
+    local_review_max_severity: "high",
+    local_review_verified_findings_count: 1,
+    local_review_verified_max_severity: "high",
+  });
+
+  assert.equal(
+    localReviewRepairContinuationSummary(config, record, createPullRequest()),
+    localReviewFailureSummary(record),
   );
 });
 

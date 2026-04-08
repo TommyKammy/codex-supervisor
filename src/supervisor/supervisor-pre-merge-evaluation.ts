@@ -88,29 +88,22 @@ function repairDisposition(args: {
     return "none";
   }
 
-  if (args.headStatus !== "current" || args.record.state !== "local_review_fix") {
-    if (args.artifact.finalEvaluation.outcome === "manual_review_blocked") {
-      return "manual_review_required";
+  if (args.artifact.finalEvaluation.outcome === "manual_review_blocked") {
+    if (
+      args.headStatus === "current" &&
+      args.record.state === "local_review_fix" &&
+      args.config.localReviewManualReviewRepairEnabled === true &&
+      args.pr !== null &&
+      reviewDecisionAllowsSamePrManualReviewRepair(args.pr) &&
+      (args.record.pre_merge_manual_review_count ?? args.artifact.finalEvaluation.manualReviewCount) > 0
+    ) {
+      return "same_pr_manual_review_current_head";
     }
-    return "none";
-  }
-
-  if (
-    args.artifact.finalEvaluation.outcome === "manual_review_blocked" &&
-    args.config.localReviewManualReviewRepairEnabled === true &&
-    args.pr !== null &&
-    reviewDecisionAllowsSamePrManualReviewRepair(args.pr) &&
-    (args.record.pre_merge_manual_review_count ?? args.artifact.finalEvaluation.manualReviewCount) > 0
-  ) {
-    return "same_pr_manual_review_current_head";
-  }
-
-  if (
-    args.artifact.finalEvaluation.outcome === "manual_review_blocked" &&
-    args.pr !== null &&
-    !reviewDecisionAllowsSamePrManualReviewRepair(args.pr)
-  ) {
     return "manual_review_required";
+  }
+
+  if (args.headStatus !== "current" || args.record.state !== "local_review_fix") {
+    return "none";
   }
 
   if (
