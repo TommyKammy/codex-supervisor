@@ -1828,7 +1828,7 @@ test("handlePostTurnPullRequestTransitionsPhase routes opted-in follow-up-eligib
   assert.equal(result.record.pre_merge_evaluation_outcome, "follow_up_eligible");
 });
 
-test("handlePostTurnPullRequestTransitionsPhase keeps current-head manual-review local-review residuals blocked even when same-PR repair is opted in", async (t) => {
+test("handlePostTurnPullRequestTransitionsPhase routes current-head manual-review local-review residuals into same-PR repair when opted in", async (t) => {
   const { workspacePath, headSha } = await createTrackedIssueBranchRepo();
   t.after(async () => {
     await fs.rm(workspacePath, { recursive: true, force: true });
@@ -1970,10 +1970,10 @@ test("handlePostTurnPullRequestTransitionsPhase keeps current-head manual-review
     }),
   });
 
-  assert.equal(result.record.state, "blocked");
-  assert.equal(result.record.blocked_reason, "manual_review");
+  assert.equal(result.record.state, "local_review_fix");
+  assert.equal(result.record.blocked_reason, null);
   assert.equal(result.record.pre_merge_evaluation_outcome, "manual_review_blocked");
-  assert.match(result.record.last_error ?? "", /manual/i);
+  assert.match(result.record.last_error ?? "", /same-PR repair pass/i);
 });
 
 test("handlePostTurnPullRequestTransitionsPhase reruns local review on a ready PR head update when the tracked current-head gate is enabled", async () => {

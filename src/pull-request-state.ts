@@ -1,5 +1,6 @@
 import {
   localReviewFollowUpNeedsRepair,
+  localReviewManualReviewNeedsRepair,
   localReviewBlocksMerge,
   localReviewHighSeverityNeedsBlock,
   localReviewHighSeverityNeedsRetry,
@@ -884,6 +885,17 @@ export function inferStateFromPullRequest(
 
   if (
     localReviewFollowUpNeedsRepair(config, record, pr) &&
+    !checkSummary.hasFailing &&
+    !checkSummary.hasPending &&
+    unresolvedBotThreads.length === 0 &&
+    (!config.humanReviewBlocksMerge || manualThreads.length === 0) &&
+    !mergeConflictDetected(pr)
+  ) {
+    return "local_review_fix";
+  }
+
+  if (
+    localReviewManualReviewNeedsRepair(config, record, pr) &&
     !checkSummary.hasFailing &&
     !checkSummary.hasPending &&
     unresolvedBotThreads.length === 0 &&

@@ -615,7 +615,7 @@ test("inferStateFromPullRequest blocks draft PRs when the current head still nee
   );
 });
 
-test("inferStateFromPullRequest keeps manual-review-blocked current heads out of same-PR repair even when opted in", () => {
+test("inferStateFromPullRequest routes opted-in manual-review-blocked current heads into same-PR repair on a clean lane", () => {
   const config = createConfig({
     localReviewEnabled: true,
     localReviewPolicy: "block_merge",
@@ -633,7 +633,7 @@ test("inferStateFromPullRequest keeps manual-review-blocked current heads out of
 
   assert.equal(
     inferStateFromPullRequest(config, record, createPullRequest({ isDraft: false, headRefOid: "head123" }), [], []),
-    "blocked",
+    "local_review_fix",
   );
 });
 
@@ -791,5 +791,78 @@ test("inferStateFromPullRequest preserves CI, review-thread, and conflict preced
       ],
     ),
     "blocked",
+  );
+});
+
+test("inferStateFromPullRequest preserves CI, review-thread, and conflict precedence over same-PR manual-review repair", () => {
+  const baseConfig = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+    localReviewFollowUpRepairEnabled: true,
+    humanReviewBlocksMerge: true,
+    reviewBotLogins: ["copilot-pull-request-reviewer"],
+  });
+  const record = createRecord({
+    state: "local_review_fix",
+    pr_number: 44,
+    local_review_head_sha: "head123",
+    local_review_findings_count: 1,
+    local_review_recommendation: "changes_requested",
+    pre_merge_evaluation_outcome: "manual_review_blocked",
+    pre_merge_manual_review_count: 1,
+  });
+
+  assert.equal(
+    inferStateFromPullRequest(
+      baseConfig,
+      record,
+      createPullRequest({ isDraft: false }),
+      [{ name: "test", state: "FAILURE", bucket: "fail", workflow: "CI" }],
+      [],
+    ),
+    "repairing_ci",
+  );
+
+  assert.equal(
+    inferStateFromPullRequest(
+      baseConfig,
+      record,
+      createPullRequest({ isDraft: false }),
+      passingChecks(),
+      [
+        createReviewThread({
+          comments: {
+            nodes: [
+              {
+                id: "comment-1",
+                body: "Please address this review finding.",
+                createdAt: "2026-03-11T00:00:00Z",
+                url: "https://example.test/pr/44#discussion_r1",
+                author: {
+                  login: "copilot-pull-request-reviewer",
+                  typeName: "Bot",
+                },
+              },
+            ],
+          },
+        }),
+      ],
+    ),
+    "addressing_review",
+  );
+
+  assert.equal(
+    inferStateFromPullRequest(
+      baseConfig,
+      record,
+      createPullRequest({
+        isDraft: false,
+        mergeStateStatus: "DIRTY",
+        mergeable: "CONFLICTING",
+      }),
+      passingChecks(),
+      [],
+    ),
+    "resolving_conflict",
   );
 });

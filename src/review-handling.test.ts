@@ -5,6 +5,7 @@ import {
   localReviewBlocksMerge,
   localReviewBlocksReady,
   localReviewFollowUpNeedsRepair,
+  localReviewManualReviewNeedsRepair,
   localReviewHighSeverityNeedsBlock,
   localReviewHighSeverityNeedsRetry,
   localReviewRetryLoopCandidate,
@@ -294,7 +295,7 @@ test("opted-in same-PR follow-up repair blocks ready and merge progression on th
   assert.equal(localReviewBlocksMerge(config, record, pr), true);
 });
 
-test("manual-review-blocked residuals stay out of same-PR follow-up repair", () => {
+test("manual-review-blocked residuals enter same-PR repair when opted in on the current head", () => {
   const pr = createPullRequest({ isDraft: false, headRefOid: "deadbeef" });
   const record = createRecord({
     local_review_head_sha: "deadbeef",
@@ -307,6 +308,7 @@ test("manual-review-blocked residuals stay out of same-PR follow-up repair", () 
   });
 
   assert.equal(localReviewFollowUpNeedsRepair(config, record, pr), false);
+  assert.equal(localReviewManualReviewNeedsRepair(config, record, pr), true);
   assert.equal(localReviewBlocksReady(config, record, pr), true);
   assert.equal(localReviewBlocksMerge(config, record, pr), true);
 });
@@ -514,6 +516,51 @@ test("local review retry loop helpers keep manual-review residual repairs out of
       () => false,
     ),
     false,
+  );
+});
+
+test("local review retry loop helpers also stall repeated same-PR manual-review repairs on a clean path", () => {
+  const config = createConfig({
+    localReviewPolicy: "block_merge",
+    localReviewFollowUpRepairEnabled: true,
+    sameFailureSignatureRepeatLimit: 2,
+    humanReviewBlocksMerge: true,
+  });
+  const pr = createPullRequest({ isDraft: false });
+  const record = createRecord({
+    local_review_head_sha: "deadbeef",
+    pre_merge_evaluation_outcome: "manual_review_blocked",
+    pre_merge_manual_review_count: 1,
+    repeated_local_review_signature_count: 2,
+  });
+
+  assert.equal(
+    localReviewRetryLoopCandidate(
+      config,
+      record,
+      pr,
+      [],
+      [],
+      () => [],
+      () => [],
+      () => ({ hasFailing: false, hasPending: false }),
+      () => false,
+    ),
+    true,
+  );
+  assert.equal(
+    localReviewRetryLoopStalled(
+      config,
+      record,
+      pr,
+      [],
+      [],
+      () => [],
+      () => [],
+      () => ({ hasFailing: false, hasPending: false }),
+      () => false,
+    ),
+    true,
   );
 });
 

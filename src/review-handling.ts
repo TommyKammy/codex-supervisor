@@ -165,7 +165,7 @@ export function localReviewRequiresManualReview(
     config.localReviewPolicy === "block_merge" &&
     record.local_review_head_sha === pr.headRefOid &&
     record.pre_merge_evaluation_outcome === "manual_review_blocked" &&
-    !localReviewFollowUpNeedsRepair(config, record, pr)
+    !localReviewManualReviewNeedsRepair(config, record, pr)
   );
 }
 
@@ -199,6 +199,23 @@ export function localReviewFollowUpNeedsRepair(
   );
 }
 
+export function localReviewManualReviewNeedsRepair(
+  config: SupervisorConfig,
+  record: Pick<
+    IssueRunRecord,
+    "local_review_head_sha" | "pre_merge_evaluation_outcome" | "pre_merge_manual_review_count" | "pre_merge_follow_up_count"
+  >,
+  pr: GitHubPullRequest,
+): boolean {
+  return (
+    config.localReviewPolicy !== "advisory" &&
+    config.localReviewFollowUpRepairEnabled === true &&
+    record.local_review_head_sha === pr.headRefOid &&
+    record.pre_merge_evaluation_outcome === "manual_review_blocked" &&
+    (record.pre_merge_manual_review_count ?? 0) > 0
+  );
+}
+
 export function localReviewRetryLoopCandidate(
   config: SupervisorConfig,
   record: Pick<
@@ -224,7 +241,11 @@ export function localReviewRetryLoopCandidate(
   const manualThreads = manualReviewThreads(config, reviewThreads);
   const unresolvedBotThreads = configuredBotReviewThreads(config, reviewThreads);
   return (
-    (localReviewHighSeverityNeedsRetry(config, record, pr) || localReviewFollowUpNeedsRepair(config, record, pr)) &&
+    (
+      localReviewHighSeverityNeedsRetry(config, record, pr) ||
+      localReviewFollowUpNeedsRepair(config, record, pr) ||
+      localReviewManualReviewNeedsRepair(config, record, pr)
+    ) &&
     !checkSummary.hasFailing &&
     !checkSummary.hasPending &&
     unresolvedBotThreads.length === 0 &&

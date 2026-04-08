@@ -502,6 +502,42 @@ test("buildCodexPrompt distinguishes same-PR follow-up repair from blocking retr
   assert.doesNotMatch(prompt, /manual-review flow/);
 });
 
+test("buildCodexPrompt distinguishes same-PR manual-review repair from blocking retry flows", () => {
+  const prompt = buildCodexPrompt({
+    repoSlug: "owner/repo",
+    issue,
+    branch: "codex/issue-46",
+    workspacePath: "/tmp/workspaces/issue-46",
+    state: "local_review_fix" satisfies RunState,
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+    alwaysReadFiles: [],
+    onDemandMemoryFiles: [],
+    journalPath: "/tmp/workspaces/issue-46/.codex-supervisor/issue-journal.md",
+    localReviewRepairContext: {
+      repairIntent: "same_pr_manual_review",
+      summaryPath: "/tmp/reviews/issue-46/head-deadbeef.md",
+      findingsPath: "/tmp/reviews/issue-46/head-deadbeef.json",
+      relevantFiles: ["src/codex.ts"],
+      rootCauses: [
+        {
+          severity: "high",
+          summary: "Prompt wording should identify same-PR manual-review repair without implying the PR is waiting on a person.",
+          file: "src/codex.ts",
+          lines: "1-200",
+        },
+      ],
+      priorMissPatterns: [],
+      verifierGuardrails: [],
+    },
+  });
+
+  assert.match(prompt, /Repair intent: same-PR manual-review residual repair on the current PR head\./);
+  assert.match(prompt, /saved manual_review_blocked result/);
+  assert.doesNotMatch(prompt, /high-severity retry/);
+});
+
 test("buildCodexPrompt treats unknown local-review repair intents as generic blocking repair context", () => {
   const prompt = buildCodexPrompt({
     repoSlug: "owner/repo",
