@@ -1,4 +1,5 @@
 import {
+  localReviewFixBlockedNeedsRepair,
   localReviewFollowUpNeedsRepair,
   localReviewManualReviewNeedsRepair,
   localReviewBlocksMerge,
@@ -880,6 +881,17 @@ export function inferStateFromPullRequest(
   }
 
   if (localReviewHighSeverityNeedsRetry(config, record, pr)) {
+    return "local_review_fix";
+  }
+
+  if (
+    localReviewFixBlockedNeedsRepair(config, record, pr) &&
+    !checkSummary.hasFailing &&
+    !checkSummary.hasPending &&
+    unresolvedBotThreads.length === 0 &&
+    (!config.humanReviewBlocksMerge || manualThreads.length === 0) &&
+    !mergeConflictDetected(pr)
+  ) {
     return "local_review_fix";
   }
 

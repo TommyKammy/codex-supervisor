@@ -1976,6 +1976,152 @@ test("handlePostTurnPullRequestTransitionsPhase routes current-head manual-revie
   assert.match(result.record.last_error ?? "", /same-PR repair pass/i);
 });
 
+test("handlePostTurnPullRequestTransitionsPhase routes current-head fix-blocked local-review residuals into same-PR repair", async (t) => {
+  const { workspacePath, headSha } = await createTrackedIssueBranchRepo();
+  t.after(async () => {
+    await fs.rm(workspacePath, { recursive: true, force: true });
+  });
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+  });
+  const issue = createIssue({
+    title: "Repair current-head must-fix residuals in the same PR",
+  });
+  const readyPr = createPullRequest({
+    title: "Keep must-fix residual repair in the tracked PR",
+    isDraft: false,
+    headRefName: "codex/issue-102",
+    headRefOid: headSha,
+  });
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    github: {
+      getPullRequest: async () => {
+        throw new Error("unexpected getPullRequest call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      createIssue: async () => {
+        throw new Error("unexpected createIssue call");
+      },
+      markPullRequestReady: async () => {
+        throw new Error("unexpected markPullRequestReady call");
+      },
+    },
+    context: {
+      state: {
+        activeIssueNumber: 102,
+        issues: { "102": createRecord({ state: "pr_open", pr_number: readyPr.number, last_head_sha: headSha }) },
+      },
+      record: createRecord({ state: "pr_open", pr_number: readyPr.number, last_head_sha: headSha }),
+      issue,
+      workspacePath,
+      syncJournal: async () => undefined,
+      memoryArtifacts: {
+        alwaysReadFiles: [],
+        onDemandFiles: [],
+        contextIndexPath: "/tmp/context-index.md",
+        agentsPath: "/tmp/AGENTS.generated.md",
+      },
+      pr: readyPr,
+      options: { dryRun: false },
+    },
+    derivePullRequestLifecycleSnapshot: (record, pr, checks, reviewThreads) => ({
+      recordForState: record,
+      nextState: inferStateFromPullRequest(config, record, pr, checks, reviewThreads),
+      failureContext: null,
+      reviewWaitPatch: {},
+      copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    blockedReasonFromReviewState: (record) =>
+      record.pre_merge_evaluation_outcome === "manual_review_blocked"
+        ? "manual_review"
+        : record.pre_merge_evaluation_outcome === "fix_blocked"
+          ? "verification"
+          : null,
+    summarizeChecks: (checks) => ({
+      hasPending: checks.some((check) => check.bucket === "pending"),
+      hasFailing: checks.some((check) => check.bucket === "fail"),
+    }),
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
+    runLocalReviewImpl: async () => ({
+      ranAt: "2026-03-24T00:11:00Z",
+      summaryPath: "/tmp/reviews/owner-repo/issue-102/head-116.md",
+      findingsPath: "/tmp/reviews/owner-repo/issue-102/head-116.json",
+      summary: "Local review found a must-fix regression.",
+      blockerSummary: "medium src/example.ts:20-21 This still needs a direct fix.",
+      findingsCount: 1,
+      rootCauseCount: 1,
+      maxSeverity: "medium",
+      verifiedFindingsCount: 0,
+      verifiedMaxSeverity: "none",
+      recommendation: "changes_requested",
+      degraded: false,
+      finalEvaluation: {
+        outcome: "fix_blocked",
+        residualFindings: [
+          {
+            findingKey: "src/example.ts|20|21|medium issue|this still needs a direct fix.",
+            summary: "This still needs a direct fix.",
+            severity: "medium",
+            category: "logic",
+            file: "src/example.ts",
+            start: 20,
+            end: 21,
+            source: "local_review",
+            resolution: "must_fix",
+            rationale: "A must-fix residual remains on the current head.",
+          },
+        ],
+        mustFixCount: 1,
+        manualReviewCount: 0,
+        followUpCount: 0,
+      },
+      rawOutput: "raw output",
+    }),
+    loadOpenPullRequestSnapshot: async () => ({
+      pr: readyPr,
+      checks: [],
+      reviewThreads: [] satisfies ReviewThread[],
+    }),
+  });
+
+  assert.equal(result.record.state, "local_review_fix");
+  assert.equal(result.record.blocked_reason, null);
+  assert.equal(result.record.pre_merge_evaluation_outcome, "fix_blocked");
+  assert.match(result.record.last_error ?? "", /same-PR repair pass/i);
+});
+
 test("handlePostTurnPullRequestTransitionsPhase refreshes stale manual-review blocker text when same-PR repair re-enters without rerunning local review", async () => {
   const config = createConfig({
     localReviewEnabled: true,
