@@ -5,8 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { loadConfig } from "./core/config";
+import { buildTrackedPrStaleFailureConvergencePatch } from "./recovery-tracked-pr-support";
 import {
-  buildTrackedPrStaleFailureConvergencePatch,
   cleanupExpiredDoneWorkspaces,
   inspectOrphanedWorkspacePruneCandidates,
   pruneOrphanedWorkspacesForOperator,
