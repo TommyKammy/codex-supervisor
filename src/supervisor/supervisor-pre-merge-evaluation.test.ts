@@ -156,6 +156,65 @@ test("loadPreMergeEvaluationDto marks current-head fix-blocked local-review resi
   }
 });
 
+test("loadPreMergeEvaluationDto keeps current-head fix-blocked local-review residuals blocked when GitHub requires review", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "pre-merge-eval-"));
+  const summaryPath = path.join(tempDir, "owner-repo", "issue-58", "local-review-summary.md");
+  const artifactPath = `${summaryPath.slice(0, -3)}.json`;
+
+  try {
+    await fs.mkdir(path.dirname(summaryPath), { recursive: true });
+    await fs.writeFile(
+      artifactPath,
+      JSON.stringify({
+        ranAt: "2026-03-24T00:11:00Z",
+        finalEvaluation: {
+          outcome: "fix_blocked",
+          mustFixCount: 1,
+          manualReviewCount: 0,
+          followUpCount: 0,
+        },
+      }),
+      "utf8",
+    );
+
+    const dto = await loadPreMergeEvaluationDto({
+      config: createConfig({
+        localReviewEnabled: true,
+        localReviewPolicy: "block_merge",
+        localReviewArtifactDir: tempDir,
+      }),
+      record: createRecord({
+        state: "local_review_fix",
+        local_review_head_sha: "head-current",
+        local_review_summary_path: summaryPath,
+        local_review_run_at: "2026-03-24T00:11:00Z",
+        pre_merge_must_fix_count: 1,
+      }),
+      pr: createPullRequest({
+        headRefOid: "head-current",
+        isDraft: false,
+        reviewDecision: "REVIEW_REQUIRED",
+      }),
+    });
+
+    assert.deepEqual(dto, {
+      status: "blocked",
+      outcome: "fix_blocked",
+      repair: "none",
+      reason: "must_fix_residuals=1",
+      headStatus: "current",
+      summaryPath: "owner-repo/issue-58/local-review-summary.md",
+      artifactPath: "owner-repo/issue-58/local-review-summary.json",
+      ranAt: "2026-03-24T00:11:00Z",
+      mustFixCount: 1,
+      manualReviewCount: 0,
+      followUpCount: 0,
+    });
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("loadPreMergeEvaluationDto keeps current-head manual-review residuals in manual review when GitHub requires review", async () => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "pre-merge-eval-"));
   const summaryPath = path.join(tempDir, "owner-repo", "issue-58", "local-review-summary.md");

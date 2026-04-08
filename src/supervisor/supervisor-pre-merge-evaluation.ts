@@ -2,7 +2,7 @@ import path from "node:path";
 import { readJsonIfExists } from "../core/utils";
 import type { GitHubPullRequest, IssueRunRecord, SupervisorConfig } from "../core/types";
 import type { LocalReviewArtifact } from "../local-review/types";
-import { reviewDecisionAllowsSamePrManualReviewRepair } from "../review-handling";
+import { reviewDecisionAllowsSamePrManualReviewRepair, reviewDecisionAllowsSamePrRepair } from "../review-handling";
 import { displayRelativeArtifactPath, localReviewHeadStatus, localReviewIsGating } from "./supervisor-status-summary-helpers";
 
 export interface SupervisorPreMergeEvaluationDto {
@@ -119,6 +119,8 @@ function repairDisposition(args: {
 
   if (
     args.artifact.finalEvaluation.outcome === "fix_blocked" &&
+    args.pr !== null &&
+    reviewDecisionAllowsSamePrRepair(args.pr) &&
     (args.record.pre_merge_must_fix_count ?? args.artifact.finalEvaluation.mustFixCount) > 0
   ) {
     return "same_pr_fix_blocked_current_head";
@@ -126,6 +128,8 @@ function repairDisposition(args: {
 
   if (
     args.artifact.finalEvaluation.outcome === "fix_blocked" &&
+    args.pr !== null &&
+    reviewDecisionAllowsSamePrRepair(args.pr) &&
     args.config.localReviewHighSeverityAction === "retry"
   ) {
     return "high_severity_retry_current_head";

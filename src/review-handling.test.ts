@@ -15,6 +15,7 @@ import {
   localReviewRetryLoopCandidate,
   localReviewRetryLoopStalled,
   nextLocalReviewSignatureTracking,
+  reviewDecisionAllowsSamePrRepair,
   reviewDecisionAllowsSamePrManualReviewRepair,
 } from "./review-handling";
 import { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "./core/types";
@@ -358,6 +359,42 @@ test("current-head fix-blocked residuals enter same-PR repair on the current hea
   });
 
   assert.equal(localReviewFixBlockedNeedsRepair(config, record, pr), true);
+  assert.equal(localReviewBlocksReady(config, record, pr), true);
+  assert.equal(localReviewBlocksMerge(config, record, pr), true);
+});
+
+test("current-head fix-blocked residuals stay out of same-PR repair when GitHub still requires review", () => {
+  const pr = createPullRequest({
+    isDraft: false,
+    headRefOid: "deadbeef",
+    reviewDecision: "REVIEW_REQUIRED",
+  });
+  const record = createRecord({
+    local_review_head_sha: "deadbeef",
+    pre_merge_evaluation_outcome: "fix_blocked",
+    pre_merge_must_fix_count: 2,
+  });
+  const config = createConfig({
+    localReviewPolicy: "block_merge",
+    humanReviewBlocksMerge: true,
+  });
+
+  assert.equal(reviewDecisionAllowsSamePrRepair(pr), false);
+  assert.equal(localReviewFixBlockedNeedsRepair(config, record, pr), false);
+  assert.equal(
+    localReviewRetryLoopCandidate(
+      config,
+      record,
+      pr,
+      [],
+      [],
+      () => [],
+      () => [],
+      () => ({ hasFailing: false, hasPending: false }),
+      () => false,
+    ),
+    false,
+  );
   assert.equal(localReviewBlocksReady(config, record, pr), true);
   assert.equal(localReviewBlocksMerge(config, record, pr), true);
 });
