@@ -76,6 +76,7 @@ export function localReviewBlocksReady(
     | "local_review_findings_count"
     | "local_review_recommendation"
     | "pre_merge_evaluation_outcome"
+    | "pre_merge_manual_review_count"
     | "pre_merge_follow_up_count"
   >,
   pr: GitHubPullRequest,
@@ -119,6 +120,7 @@ export function localReviewBlocksMerge(
     | "local_review_findings_count"
     | "local_review_recommendation"
     | "pre_merge_evaluation_outcome"
+    | "pre_merge_manual_review_count"
     | "pre_merge_follow_up_count"
   >,
   pr: GitHubPullRequest,
@@ -152,14 +154,18 @@ export function localReviewBlocksMerge(
 
 export function localReviewRequiresManualReview(
   config: SupervisorConfig,
-  record: Pick<IssueRunRecord, "local_review_head_sha" | "pre_merge_evaluation_outcome">,
+  record: Pick<
+    IssueRunRecord,
+    "local_review_head_sha" | "pre_merge_evaluation_outcome" | "pre_merge_manual_review_count" | "pre_merge_follow_up_count"
+  >,
   pr: GitHubPullRequest,
 ): boolean {
   return (
     config.localReviewEnabled &&
     config.localReviewPolicy === "block_merge" &&
     record.local_review_head_sha === pr.headRefOid &&
-    record.pre_merge_evaluation_outcome === "manual_review_blocked"
+    record.pre_merge_evaluation_outcome === "manual_review_blocked" &&
+    !localReviewManualReviewNeedsRepair(config, record, pr)
   );
 }
 
@@ -178,14 +184,42 @@ export function localReviewHighSeverityNeedsRetry(
 
 export function localReviewFollowUpNeedsRepair(
   config: SupervisorConfig,
-  record: Pick<IssueRunRecord, "local_review_head_sha" | "pre_merge_evaluation_outcome" | "pre_merge_follow_up_count">,
+  record: Pick<
+    IssueRunRecord,
+    "local_review_head_sha" | "pre_merge_evaluation_outcome" | "pre_merge_manual_review_count" | "pre_merge_follow_up_count"
+  >,
   pr: GitHubPullRequest,
 ): boolean {
   return (
+    config.localReviewPolicy !== "advisory" &&
     config.localReviewFollowUpRepairEnabled === true &&
     record.local_review_head_sha === pr.headRefOid &&
     record.pre_merge_evaluation_outcome === "follow_up_eligible" &&
     (record.pre_merge_follow_up_count ?? 0) > 0
+  );
+}
+
+export function reviewDecisionAllowsSamePrManualReviewRepair(
+  pr: Pick<GitHubPullRequest, "reviewDecision">,
+): boolean {
+  return pr.reviewDecision !== "REVIEW_REQUIRED" && pr.reviewDecision !== "CHANGES_REQUESTED";
+}
+
+export function localReviewManualReviewNeedsRepair(
+  config: SupervisorConfig,
+  record: Pick<
+    IssueRunRecord,
+    "local_review_head_sha" | "pre_merge_evaluation_outcome" | "pre_merge_manual_review_count" | "pre_merge_follow_up_count"
+  >,
+  pr: GitHubPullRequest,
+): boolean {
+  return (
+    config.localReviewPolicy !== "advisory" &&
+    config.localReviewManualReviewRepairEnabled === true &&
+    record.local_review_head_sha === pr.headRefOid &&
+    reviewDecisionAllowsSamePrManualReviewRepair(pr) &&
+    record.pre_merge_evaluation_outcome === "manual_review_blocked" &&
+    (record.pre_merge_manual_review_count ?? 0) > 0
   );
 }
 
@@ -196,6 +230,7 @@ export function localReviewRetryLoopCandidate(
     | "local_review_head_sha"
     | "local_review_verified_max_severity"
     | "pre_merge_evaluation_outcome"
+    | "pre_merge_manual_review_count"
     | "pre_merge_follow_up_count"
     | "repeated_local_review_signature_count"
     | "processed_review_thread_ids"
@@ -213,7 +248,11 @@ export function localReviewRetryLoopCandidate(
   const manualThreads = manualReviewThreads(config, reviewThreads);
   const unresolvedBotThreads = configuredBotReviewThreads(config, reviewThreads);
   return (
-    (localReviewHighSeverityNeedsRetry(config, record, pr) || localReviewFollowUpNeedsRepair(config, record, pr)) &&
+    (
+      localReviewHighSeverityNeedsRetry(config, record, pr) ||
+      localReviewFollowUpNeedsRepair(config, record, pr) ||
+      localReviewManualReviewNeedsRepair(config, record, pr)
+    ) &&
     !checkSummary.hasFailing &&
     !checkSummary.hasPending &&
     unresolvedBotThreads.length === 0 &&
@@ -229,6 +268,7 @@ export function localReviewRetryLoopStalled(
     | "local_review_head_sha"
     | "local_review_verified_max_severity"
     | "pre_merge_evaluation_outcome"
+    | "pre_merge_manual_review_count"
     | "pre_merge_follow_up_count"
     | "repeated_local_review_signature_count"
     | "processed_review_thread_ids"
@@ -289,6 +329,35 @@ export function localReviewFailureSummary(
   return `Local review found ${record.local_review_findings_count} actionable finding(s) across ${record.local_review_root_cause_count} root cause(s); max severity=${record.local_review_max_severity ?? "unknown"}; verified high-severity findings=${record.local_review_verified_findings_count}; verified max severity=${record.local_review_verified_max_severity ?? "none"}.`;
 }
 
+export function localReviewRepairContinuationSummary(
+  config: SupervisorConfig,
+  record: Pick<
+    IssueRunRecord,
+    | "local_review_head_sha"
+    | "local_review_findings_count"
+    | "local_review_root_cause_count"
+    | "local_review_max_severity"
+    | "local_review_verified_findings_count"
+    | "local_review_verified_max_severity"
+    | "local_review_degraded"
+    | "pre_merge_evaluation_outcome"
+    | "pre_merge_manual_review_count"
+    | "pre_merge_follow_up_count"
+  >,
+  pr: GitHubPullRequest,
+): string | null {
+  if (localReviewManualReviewNeedsRepair(config, record, pr)) {
+    const manualReviewCount = record.pre_merge_manual_review_count ?? 0;
+    return `Local review found ${manualReviewCount} unresolved manual-review residual${manualReviewCount === 1 ? "" : "s"} on the current PR head. Codex will continue with a same-PR repair pass before the PR can proceed.`;
+  }
+
+  if (localReviewHighSeverityNeedsRetry(config, record, pr)) {
+    return localReviewFailureSummary(record);
+  }
+
+  return null;
+}
+
 export function localReviewFailureContext(
   record: Pick<
     IssueRunRecord,
@@ -314,6 +383,27 @@ export function localReviewFailureContext(
     url: null,
     updated_at: nowIso(),
   };
+}
+
+export function localReviewRepairContinuationFailureContext(
+  config: SupervisorConfig,
+  record: Pick<
+    IssueRunRecord,
+    | "local_review_head_sha"
+    | "local_review_findings_count"
+    | "local_review_root_cause_count"
+    | "local_review_max_severity"
+    | "local_review_verified_findings_count"
+    | "local_review_verified_max_severity"
+    | "local_review_degraded"
+    | "local_review_summary_path"
+    | "pre_merge_evaluation_outcome"
+    | "pre_merge_manual_review_count"
+    | "pre_merge_follow_up_count"
+  >,
+  pr: GitHubPullRequest,
+): FailureContext | null {
+  return localReviewRepairContinuationSummary(config, record, pr) ? localReviewFailureContext(record) : null;
 }
 
 export function localReviewStallFailureContext(

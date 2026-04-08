@@ -15,6 +15,8 @@ import {
 import {
   branchName,
   createConfig,
+  createIssue,
+  createPullRequest,
   createRecord,
   createSupervisorFixture,
   executionReadyBody,
@@ -265,6 +267,234 @@ test("runPreparedIssue skips pre-turn persistence when the Codex session lock is
   assert.equal(persisted.issues[String(issueNumber)]?.attempt_count, 4);
   assert.equal(persisted.issues[String(issueNumber)]?.implementation_attempt_count, 3);
   assert.equal(persisted.issues[String(issueNumber)]?.repair_attempt_count, 1);
+});
+
+test("runPreparedIssue refreshes current-head manual-review repair state before a dry-run turn", async () => {
+  const fixture = await createSupervisorFixture();
+  fixture.config.localReviewEnabled = true;
+  fixture.config.localReviewPolicy = "block_merge";
+  fixture.config.localReviewManualReviewRepairEnabled = true;
+
+  const issueNumber = 123;
+  const branch = branchName(fixture.config, issueNumber);
+  const workspacePath = path.join(fixture.workspaceRoot, `issue-${issueNumber}`);
+  const journalPath = path.join(workspacePath, ".codex-supervisor/issue-journal.md");
+  const staleManualReviewMessage =
+    "Local review requires manual verification before the PR can proceed (2 unresolved manual-review residuals).";
+  const initialRecord = createRecord({
+    issue_number: issueNumber,
+    state: "local_review_fix",
+    branch,
+    workspace: workspacePath,
+    journal_path: journalPath,
+    pr_number: 44,
+    codex_session_id: null,
+    local_review_head_sha: "head-123",
+    local_review_findings_count: 3,
+    local_review_root_cause_count: 1,
+    local_review_max_severity: "medium",
+    local_review_verified_findings_count: 0,
+    local_review_verified_max_severity: "none",
+    local_review_recommendation: "changes_requested",
+    pre_merge_evaluation_outcome: "manual_review_blocked",
+    pre_merge_manual_review_count: 2,
+    last_error: staleManualReviewMessage,
+    last_failure_context: null,
+    last_failure_signature: null,
+    repeated_failure_signature_count: 0,
+    blocked_reason: "manual_review",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: initialRecord,
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const supervisor = new Supervisor(fixture.config);
+  const pr = createPullRequest({
+    number: 44,
+    isDraft: false,
+    headRefName: branch,
+    headRefOid: "head-123",
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Refresh same-PR local-review repair context",
+    body: executionReadyBody("Keep same-PR local-review repair state durable across refreshes."),
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+
+  const result = await (
+    supervisor as unknown as {
+      runPreparedIssue: (context: {
+        state: SupervisorStateFile;
+        record: IssueRunRecord;
+        issue: GitHubIssue;
+        previousCodexSummary: string | null;
+        previousError: string | null;
+        workspacePath: string;
+        journalPath: string;
+        syncJournal: (record: IssueRunRecord) => Promise<void>;
+        memoryArtifacts: {
+          alwaysReadFiles: string[];
+          onDemandFiles: string[];
+          contextIndexPath: string;
+          agentsPath: string;
+        };
+        workspaceStatus: {
+          branch: string;
+          headSha: string;
+          hasUncommittedChanges: boolean;
+          baseAhead: number;
+          baseBehind: number;
+          remoteBranchExists: boolean;
+          remoteAhead: number;
+          remoteBehind: number;
+        };
+        pr: GitHubPullRequest | null;
+        checks: PullRequestCheck[];
+        reviewThreads: ReviewThread[];
+        options: { dryRun: boolean };
+        recoveryLog: string | null;
+      }) => Promise<string>;
+    }
+  ).runPreparedIssue({
+    state,
+    record: initialRecord,
+    issue,
+    previousCodexSummary: null,
+    previousError: staleManualReviewMessage,
+    workspacePath,
+    journalPath,
+    syncJournal: async () => undefined,
+    memoryArtifacts: {
+      alwaysReadFiles: [],
+      onDemandFiles: [],
+      contextIndexPath: "/tmp/context-index.md",
+      agentsPath: "/tmp/AGENTS.generated.md",
+    },
+    workspaceStatus: {
+      branch,
+      headSha: "head-123",
+      hasUncommittedChanges: false,
+      baseAhead: 0,
+      baseBehind: 0,
+      remoteBranchExists: true,
+      remoteAhead: 0,
+      remoteBehind: 0,
+    },
+    pr,
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [],
+    options: { dryRun: true },
+    recoveryLog: null,
+  });
+
+  assert.match(result, /Dry run: would invoke Codex for issue #123\./);
+  assert.equal(state.issues["123"]?.state, "local_review_fix");
+  assert.match(state.issues["123"]?.last_error ?? "", /2 unresolved manual-review residuals on the current PR head/i);
+  assert.match(state.issues["123"]?.last_error ?? "", /same-PR repair pass/i);
+  assert.doesNotMatch(state.issues["123"]?.last_error ?? "", /manual verification before the PR can proceed/i);
+  assert.equal(state.issues["123"]?.last_failure_context?.signature, "local-review:medium:none:1:0:clean");
+  assert.equal(state.issues["123"]?.last_failure_signature, "local-review:medium:none:1:0:clean");
+  assert.equal(state.issues["123"]?.blocked_reason, null);
+});
+
+test("handlePostTurnMergeAndCompletion preserves same-PR manual-review repair context when ready_to_merge goes stale", async () => {
+  const fixture = await createSupervisorFixture();
+  fixture.config.localReviewEnabled = true;
+  fixture.config.localReviewPolicy = "block_merge";
+  fixture.config.localReviewManualReviewRepairEnabled = true;
+
+  const issueNumber = 124;
+  const branch = branchName(fixture.config, issueNumber);
+  const workspacePath = path.join(fixture.workspaceRoot, `issue-${issueNumber}`);
+  const journalPath = path.join(workspacePath, ".codex-supervisor/issue-journal.md");
+  const staleManualReviewMessage =
+    "Local review requires manual verification before the PR can proceed (2 unresolved manual-review residuals).";
+  const readyRecord = createRecord({
+    issue_number: issueNumber,
+    state: "ready_to_merge",
+    branch,
+    workspace: workspacePath,
+    journal_path: journalPath,
+    pr_number: 44,
+    codex_session_id: null,
+    local_review_head_sha: "head-124",
+    local_review_findings_count: 3,
+    local_review_root_cause_count: 1,
+    local_review_max_severity: "medium",
+    local_review_verified_findings_count: 0,
+    local_review_verified_max_severity: "none",
+    local_review_recommendation: "changes_requested",
+    pre_merge_evaluation_outcome: "manual_review_blocked",
+    pre_merge_manual_review_count: 2,
+    last_error: staleManualReviewMessage,
+    last_failure_context: null,
+    last_failure_signature: null,
+    repeated_failure_signature_count: 0,
+    blocked_reason: null,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: readyRecord,
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const issue = createIssue({
+    number: issueNumber,
+    title: "Refresh ready_to_merge manual-review repair state",
+    body: executionReadyBody("Keep same-PR local-review repair state durable after a ready refresh."),
+  });
+  const pr = createPullRequest({
+    number: 44,
+    isDraft: false,
+    headRefName: branch,
+    headRefOid: "head-124",
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { loadOpenPullRequestSnapshot: (prNumber: number) => Promise<unknown> }).loadOpenPullRequestSnapshot =
+    async (prNumber: number) => {
+      assert.equal(prNumber, 44);
+      return {
+        pr,
+        checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+        reviewThreads: [],
+      };
+    };
+
+  const updated = await (
+    supervisor as unknown as {
+      handlePostTurnMergeAndCompletion: (
+        state: SupervisorStateFile,
+        issue: GitHubIssue,
+        record: IssueRunRecord,
+        pr: GitHubPullRequest,
+        options: { dryRun: boolean },
+      ) => Promise<IssueRunRecord>;
+    }
+  ).handlePostTurnMergeAndCompletion(state, issue, readyRecord, pr, { dryRun: false });
+
+  assert.equal(updated.state, "local_review_fix");
+  assert.match(updated.last_error ?? "", /2 unresolved manual-review residuals on the current PR head/i);
+  assert.match(updated.last_error ?? "", /same-PR repair pass/i);
+  assert.doesNotMatch(updated.last_error ?? "", /manual verification before the PR can proceed/i);
+  assert.equal(updated.last_failure_context?.signature, "local-review:medium:none:1:0:clean");
+  assert.equal(updated.last_failure_signature, "local-review:medium:none:1:0:clean");
+  assert.equal(updated.blocked_reason, null);
 });
 
 test("executeCodexTurn ignores a held session lock when the agent runner cannot resume", async () => {

@@ -34,10 +34,9 @@ import {
 import {
   hasProcessedReviewThread,
   localReviewBlocksReady,
-  localReviewFailureContext,
-  localReviewFailureSummary,
   localReviewHighSeverityNeedsBlock,
-  localReviewHighSeverityNeedsRetry,
+  localReviewRepairContinuationFailureContext,
+  localReviewRepairContinuationSummary,
   localReviewRetryLoopCandidate,
   localReviewRetryLoopStalled,
   localReviewStallFailureContext,
@@ -753,11 +752,14 @@ export class Supervisor {
 
     if (pr) {
       const lifecycle = derivePullRequestLifecycleSnapshot(this.config, record, pr, checks, reviewThreads);
+      const localReviewRepairSummary =
+        lifecycle.nextState === "local_review_fix"
+          ? localReviewRepairContinuationSummary(this.config, lifecycle.recordForState, pr)
+          : null;
       const effectiveFailureContext =
         lifecycle.failureContext ??
-        (lifecycle.nextState === "local_review_fix" &&
-        localReviewHighSeverityNeedsRetry(this.config, lifecycle.recordForState, pr)
-          ? localReviewFailureContext(lifecycle.recordForState)
+        (lifecycle.nextState === "local_review_fix"
+          ? localReviewRepairContinuationFailureContext(this.config, lifecycle.recordForState, pr)
           : null);
       record = this.stateStore.touch(record, {
         pr_number: pr.number,
@@ -768,7 +770,9 @@ export class Supervisor {
         last_error:
           lifecycle.nextState === "blocked" && effectiveFailureContext
             ? truncate(effectiveFailureContext.summary, 1000)
-            : record.last_error,
+            : localReviewRepairSummary
+              ? truncate(localReviewRepairSummary, 1000)
+              : record.last_error,
         last_failure_context: effectiveFailureContext,
         ...applyFailureSignature(record, effectiveFailureContext),
         blocked_reason:
@@ -980,11 +984,14 @@ export class Supervisor {
         ...lifecycle.mergeLatencyVisibilityPatch,
         ...lifecycle.copilotTimeoutPatch,
       };
+      const localReviewRepairSummary =
+        lifecycle.nextState === "local_review_fix"
+          ? localReviewRepairContinuationSummary(this.config, lifecycle.recordForState, currentPr)
+          : null;
       const effectiveFailureContext =
         lifecycle.failureContext ??
-        (lifecycle.nextState === "local_review_fix" &&
-        localReviewHighSeverityNeedsRetry(this.config, lifecycle.recordForState, currentPr)
-          ? localReviewFailureContext(lifecycle.recordForState)
+        (lifecycle.nextState === "local_review_fix"
+          ? localReviewRepairContinuationFailureContext(this.config, lifecycle.recordForState, currentPr)
           : null);
       const staleReadyToMerge = currentPr.headRefOid !== pr.headRefOid && lifecycle.nextState === "ready_to_merge";
 
@@ -997,9 +1004,8 @@ export class Supervisor {
               ? nextRecord.last_error
               : lifecycle.nextState === "blocked" && effectiveFailureContext
               ? truncate(effectiveFailureContext.summary, 1000)
-              : lifecycle.nextState === "local_review_fix" &&
-                  localReviewHighSeverityNeedsRetry(this.config, lifecycle.recordForState, currentPr)
-                ? truncate(localReviewFailureSummary(lifecycle.recordForState), 1000)
+              : localReviewRepairSummary
+                ? truncate(localReviewRepairSummary, 1000)
                 : nextRecord.last_error,
           last_failure_context: effectiveFailureContext,
           ...applyFailureSignature(nextRecord, effectiveFailureContext),

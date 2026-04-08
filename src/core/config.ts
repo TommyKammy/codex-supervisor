@@ -844,6 +844,10 @@ function parseSupervisorConfigDocument(raw: Record<string, unknown>, resolvedPat
         : false,
     localReviewFollowUpRepairEnabled:
       typeof raw.localReviewFollowUpRepairEnabled === "boolean" ? raw.localReviewFollowUpRepairEnabled : false,
+    localReviewManualReviewRepairEnabled:
+      typeof raw.localReviewManualReviewRepairEnabled === "boolean"
+        ? raw.localReviewManualReviewRepairEnabled
+        : false,
     localReviewFollowUpIssueCreationEnabled:
       typeof raw.localReviewFollowUpIssueCreationEnabled === "boolean"
         ? raw.localReviewFollowUpIssueCreationEnabled

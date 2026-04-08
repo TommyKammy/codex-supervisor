@@ -615,6 +615,103 @@ test("inferStateFromPullRequest blocks draft PRs when the current head still nee
   );
 });
 
+test("inferStateFromPullRequest routes opted-in manual-review-blocked current heads into same-PR repair on a clean lane", () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+    localReviewManualReviewRepairEnabled: true,
+    copilotReviewWaitMinutes: 0,
+  });
+  const record = createRecord({
+    state: "pr_open",
+    local_review_head_sha: "head123",
+    local_review_findings_count: 1,
+    local_review_recommendation: "changes_requested",
+    pre_merge_evaluation_outcome: "manual_review_blocked",
+    pre_merge_manual_review_count: 1,
+  });
+
+  assert.equal(
+    inferStateFromPullRequest(config, record, createPullRequest({ isDraft: false, headRefOid: "head123" }), [], []),
+    "local_review_fix",
+  );
+});
+
+test("inferStateFromPullRequest keeps same-PR manual-review residuals blocked when GitHub still requires review", () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+    localReviewManualReviewRepairEnabled: true,
+    humanReviewBlocksMerge: true,
+    copilotReviewWaitMinutes: 0,
+  });
+  const record = createRecord({
+    state: "pr_open",
+    local_review_head_sha: "head123",
+    local_review_findings_count: 1,
+    local_review_recommendation: "changes_requested",
+    pre_merge_evaluation_outcome: "manual_review_blocked",
+    pre_merge_manual_review_count: 1,
+  });
+  const pr = createPullRequest({
+    isDraft: false,
+    headRefOid: "head123",
+    reviewDecision: "REVIEW_REQUIRED",
+  });
+
+  assert.equal(inferStateFromPullRequest(config, record, pr, passingChecks(), []), "blocked");
+  assert.equal(blockedReasonFromReviewState(config, record, pr, passingChecks(), []), "manual_review");
+});
+
+test("inferStateFromPullRequest keeps same-PR manual-review residuals blocked on aggregate changes requested even when the configured bot was nitpick-only", () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+    localReviewManualReviewRepairEnabled: true,
+    humanReviewBlocksMerge: true,
+    copilotReviewWaitMinutes: 0,
+  });
+  const record = createRecord({
+    state: "pr_open",
+    local_review_head_sha: "head123",
+    local_review_findings_count: 1,
+    local_review_recommendation: "changes_requested",
+    pre_merge_evaluation_outcome: "manual_review_blocked",
+    pre_merge_manual_review_count: 1,
+  });
+  const pr = createPullRequest({
+    isDraft: false,
+    headRefOid: "head123",
+    reviewDecision: "CHANGES_REQUESTED",
+    configuredBotTopLevelReviewStrength: "nitpick_only",
+  });
+
+  assert.equal(inferStateFromPullRequest(config, record, pr, passingChecks(), []), "blocked");
+  assert.equal(blockedReasonFromReviewState(config, record, pr, passingChecks(), []), "manual_review");
+});
+
+test("inferStateFromPullRequest keeps advisory follow-up residuals out of same-PR repair even when opted in", () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "advisory",
+    localReviewFollowUpRepairEnabled: true,
+    copilotReviewWaitMinutes: 0,
+  });
+  const record = createRecord({
+    state: "pr_open",
+    local_review_head_sha: "head123",
+    local_review_findings_count: 1,
+    local_review_recommendation: "changes_requested",
+    pre_merge_evaluation_outcome: "follow_up_eligible",
+    pre_merge_follow_up_count: 1,
+  });
+
+  assert.equal(
+    inferStateFromPullRequest(config, record, createPullRequest({ isDraft: false, headRefOid: "head123" }), [], []),
+    "ready_to_merge",
+  );
+});
+
 test("inferStateFromPullRequest does not stall local-review retries when CI adds a fresh signal", () => {
   const config = createConfig({
     localReviewEnabled: true,
@@ -645,7 +742,7 @@ test("inferStateFromPullRequest preserves CI, review-thread, and conflict preced
   const baseConfig = createConfig({
     localReviewEnabled: true,
     localReviewPolicy: "block_merge",
-    localReviewFollowUpRepairEnabled: true,
+    localReviewManualReviewRepairEnabled: true,
     humanReviewBlocksMerge: true,
     reviewBotLogins: ["copilot-pull-request-reviewer"],
   });
@@ -657,6 +754,115 @@ test("inferStateFromPullRequest preserves CI, review-thread, and conflict preced
     local_review_recommendation: "changes_requested",
     pre_merge_evaluation_outcome: "follow_up_eligible",
     pre_merge_follow_up_count: 1,
+  });
+
+  assert.equal(
+    inferStateFromPullRequest(
+      baseConfig,
+      record,
+      createPullRequest({ isDraft: false }),
+      [{ name: "test", state: "FAILURE", bucket: "fail", workflow: "CI" }],
+      [],
+    ),
+    "repairing_ci",
+  );
+
+  assert.equal(
+    inferStateFromPullRequest(
+      baseConfig,
+      record,
+      createPullRequest({ isDraft: false }),
+      passingChecks(),
+      [
+        createReviewThread({
+          comments: {
+            nodes: [
+              {
+                id: "comment-1",
+                body: "Please address this review finding.",
+                createdAt: "2026-03-11T00:00:00Z",
+                url: "https://example.test/pr/44#discussion_r1",
+                author: {
+                  login: "copilot-pull-request-reviewer",
+                  typeName: "Bot",
+                },
+              },
+            ],
+          },
+        }),
+      ],
+    ),
+    "addressing_review",
+  );
+
+  assert.equal(
+    inferStateFromPullRequest(
+      baseConfig,
+      record,
+      createPullRequest({
+        isDraft: false,
+        mergeStateStatus: "DIRTY",
+        mergeable: "CONFLICTING",
+      }),
+      passingChecks(),
+      [],
+    ),
+    "resolving_conflict",
+  );
+
+  assert.equal(
+    inferStateFromPullRequest(
+      baseConfig,
+      createRecord({
+        state: "local_review_fix",
+        pr_number: 44,
+        local_review_head_sha: "head123",
+        local_review_findings_count: 1,
+        local_review_recommendation: "changes_requested",
+        pre_merge_evaluation_outcome: "manual_review_blocked",
+        pre_merge_manual_review_count: 1,
+      }),
+      createPullRequest({ isDraft: false }),
+      passingChecks(),
+      [
+        createReviewThread({
+          comments: {
+            nodes: [
+              {
+                id: "comment-1",
+                body: "Human review still needs a response.",
+                createdAt: "2026-03-11T00:00:00Z",
+                url: "https://example.test/pr/44#discussion_r1",
+                author: {
+                  login: "tommykammy",
+                  typeName: "User",
+                },
+              },
+            ],
+          },
+        }),
+      ],
+    ),
+    "blocked",
+  );
+});
+
+test("inferStateFromPullRequest preserves CI, review-thread, and conflict precedence over same-PR manual-review repair", () => {
+  const baseConfig = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+    localReviewManualReviewRepairEnabled: true,
+    humanReviewBlocksMerge: true,
+    reviewBotLogins: ["copilot-pull-request-reviewer"],
+  });
+  const record = createRecord({
+    state: "local_review_fix",
+    pr_number: 44,
+    local_review_head_sha: "head123",
+    local_review_findings_count: 1,
+    local_review_recommendation: "changes_requested",
+    pre_merge_evaluation_outcome: "manual_review_blocked",
+    pre_merge_manual_review_count: 1,
   });
 
   assert.equal(

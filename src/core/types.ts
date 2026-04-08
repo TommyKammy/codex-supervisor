@@ -170,6 +170,7 @@ export interface SupervisorConfig {
   localReviewPolicy: LocalReviewPolicy;
   trackedPrCurrentHeadLocalReviewRequired?: boolean;
   localReviewFollowUpRepairEnabled?: boolean;
+  localReviewManualReviewRepairEnabled?: boolean;
   localReviewFollowUpIssueCreationEnabled?: boolean;
   localReviewHighSeverityAction: LocalReviewHighSeverityAction;
   reviewBotLogins: string[];

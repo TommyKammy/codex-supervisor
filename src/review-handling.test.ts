@@ -5,11 +5,16 @@ import {
   localReviewBlocksMerge,
   localReviewBlocksReady,
   localReviewFollowUpNeedsRepair,
+  localReviewManualReviewNeedsRepair,
   localReviewHighSeverityNeedsBlock,
   localReviewHighSeverityNeedsRetry,
+  localReviewFailureSummary,
+  localReviewRepairContinuationFailureContext,
+  localReviewRepairContinuationSummary,
   localReviewRetryLoopCandidate,
   localReviewRetryLoopStalled,
   nextLocalReviewSignatureTracking,
+  reviewDecisionAllowsSamePrManualReviewRepair,
 } from "./review-handling";
 import { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "./core/types";
 
@@ -249,6 +254,52 @@ test("local review gating respects enabled policy requirements for ready and mer
   );
 });
 
+test("localReviewRepairContinuationSummary prefers same-PR manual-review repair messaging", () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+    localReviewManualReviewRepairEnabled: true,
+  });
+  const record = createRecord({
+    local_review_head_sha: "deadbeef",
+    pre_merge_evaluation_outcome: "manual_review_blocked",
+    pre_merge_manual_review_count: 2,
+    local_review_findings_count: 3,
+    local_review_root_cause_count: 1,
+    local_review_max_severity: "medium",
+    local_review_verified_findings_count: 0,
+    local_review_verified_max_severity: "none",
+  });
+
+  const summary = localReviewRepairContinuationSummary(config, record, createPullRequest());
+  const failureContext = localReviewRepairContinuationFailureContext(config, record, createPullRequest());
+
+  assert.match(summary ?? "", /2 unresolved manual-review residuals on the current PR head/i);
+  assert.match(summary ?? "", /same-PR repair pass/i);
+  assert.equal(failureContext?.signature, "local-review:medium:none:1:0:clean");
+});
+
+test("localReviewRepairContinuationSummary falls back to the high-severity retry summary", () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_ready",
+    localReviewHighSeverityAction: "retry",
+  });
+  const record = createRecord({
+    local_review_head_sha: "deadbeef",
+    local_review_findings_count: 3,
+    local_review_root_cause_count: 2,
+    local_review_max_severity: "high",
+    local_review_verified_findings_count: 1,
+    local_review_verified_max_severity: "high",
+  });
+
+  assert.equal(
+    localReviewRepairContinuationSummary(config, record, createPullRequest()),
+    localReviewFailureSummary(record),
+  );
+});
+
 test("block_ready keeps stale local reviews blocking the ready transition", () => {
   const pr = createPullRequest({ headRefOid: "head-new" });
   const staleRecord = createRecord({
@@ -292,6 +343,149 @@ test("opted-in same-PR follow-up repair blocks ready and merge progression on th
   assert.equal(localReviewFollowUpNeedsRepair(config, record, pr), true);
   assert.equal(localReviewBlocksReady(config, record, pr), true);
   assert.equal(localReviewBlocksMerge(config, record, pr), true);
+});
+
+test("manual-review-blocked residuals enter same-PR repair when opted in on the current head", () => {
+  const pr = createPullRequest({ isDraft: false, headRefOid: "deadbeef" });
+  const record = createRecord({
+    local_review_head_sha: "deadbeef",
+    pre_merge_evaluation_outcome: "manual_review_blocked",
+    pre_merge_manual_review_count: 1,
+  });
+  const config = createConfig({
+    localReviewPolicy: "block_merge",
+    localReviewManualReviewRepairEnabled: true,
+  });
+
+  assert.equal(localReviewFollowUpNeedsRepair(config, record, pr), false);
+  assert.equal(localReviewManualReviewNeedsRepair(config, record, pr), true);
+  assert.equal(localReviewBlocksReady(config, record, pr), true);
+  assert.equal(localReviewBlocksMerge(config, record, pr), true);
+});
+
+test("manual-review-blocked residuals stay out of same-PR repair when GitHub still requires human review", () => {
+  const pr = createPullRequest({
+    isDraft: false,
+    headRefOid: "deadbeef",
+    reviewDecision: "REVIEW_REQUIRED",
+  });
+  const record = createRecord({
+    local_review_head_sha: "deadbeef",
+    pre_merge_evaluation_outcome: "manual_review_blocked",
+    pre_merge_manual_review_count: 1,
+  });
+  const config = createConfig({
+    localReviewPolicy: "block_merge",
+    localReviewManualReviewRepairEnabled: true,
+    humanReviewBlocksMerge: true,
+  });
+
+  assert.equal(localReviewManualReviewNeedsRepair(config, record, pr), false);
+  assert.equal(
+    localReviewRetryLoopCandidate(
+      config,
+      record,
+      pr,
+      [],
+      [],
+      () => [],
+      () => [],
+      () => ({ hasFailing: false, hasPending: false }),
+      () => false,
+    ),
+    false,
+  );
+  assert.equal(localReviewBlocksReady(config, record, pr), true);
+  assert.equal(localReviewBlocksMerge(config, record, pr), true);
+});
+
+test("manual-review-blocked residuals stay out of same-PR repair when GitHub has human changes requested", () => {
+  const pr = createPullRequest({
+    isDraft: false,
+    headRefOid: "deadbeef",
+    reviewDecision: "CHANGES_REQUESTED",
+  });
+  const record = createRecord({
+    local_review_head_sha: "deadbeef",
+    pre_merge_evaluation_outcome: "manual_review_blocked",
+    pre_merge_manual_review_count: 1,
+  });
+  const config = createConfig({
+    localReviewPolicy: "block_merge",
+    localReviewManualReviewRepairEnabled: true,
+    humanReviewBlocksMerge: true,
+  });
+
+  assert.equal(localReviewManualReviewNeedsRepair(config, record, pr), false);
+  assert.equal(
+    localReviewRetryLoopCandidate(
+      config,
+      record,
+      pr,
+      [],
+      [],
+      () => [],
+      () => [],
+      () => ({ hasFailing: false, hasPending: false }),
+      () => false,
+    ),
+    false,
+  );
+  assert.equal(localReviewBlocksReady(config, record, pr), true);
+  assert.equal(localReviewBlocksMerge(config, record, pr), true);
+});
+
+test("manual-review same-PR repair fails closed on aggregate changes requested even when the configured bot was nitpick-only", () => {
+  const pr = createPullRequest({
+    isDraft: false,
+    headRefOid: "deadbeef",
+    reviewDecision: "CHANGES_REQUESTED",
+    configuredBotTopLevelReviewStrength: "nitpick_only",
+  });
+  const record = createRecord({
+    local_review_head_sha: "deadbeef",
+    pre_merge_evaluation_outcome: "manual_review_blocked",
+    pre_merge_manual_review_count: 1,
+  });
+  const config = createConfig({
+    localReviewPolicy: "block_merge",
+    localReviewManualReviewRepairEnabled: true,
+    humanReviewBlocksMerge: true,
+  });
+
+  assert.equal(reviewDecisionAllowsSamePrManualReviewRepair(pr), false);
+  assert.equal(localReviewManualReviewNeedsRepair(config, record, pr), false);
+  assert.equal(
+    localReviewRetryLoopCandidate(
+      config,
+      record,
+      pr,
+      [],
+      [],
+      () => [],
+      () => [],
+      () => ({ hasFailing: false, hasPending: false }),
+      () => false,
+    ),
+    false,
+  );
+});
+
+test("same-PR follow-up repair stays disabled in advisory mode", () => {
+  const pr = createPullRequest({ isDraft: false, headRefOid: "deadbeef" });
+  const record = createRecord({
+    local_review_head_sha: "deadbeef",
+    pre_merge_evaluation_outcome: "follow_up_eligible",
+    pre_merge_follow_up_count: 1,
+  });
+  const config = createConfig({
+    localReviewPolicy: "advisory",
+    localReviewFollowUpRepairEnabled: true,
+  });
+
+  assert.equal(localReviewFollowUpNeedsRepair(config, record, pr), false);
+  assert.equal(localReviewBlocksReady(config, record, pr), false);
+  assert.equal(localReviewBlocksMerge(config, record, pr), false);
 });
 
 test("local review high-severity actions distinguish retry from blocked", () => {
@@ -434,6 +628,95 @@ test("local review retry loop helpers also stall repeated same-PR follow-up repa
       configuredBotReviewThreads,
       summarizeChecks,
       mergeConflictDetected,
+    ),
+    true,
+  );
+});
+
+test("local review retry loop helpers keep manual-review residual repairs out of the lane when CI or review blockers remain", () => {
+  const config = createConfig({
+    localReviewPolicy: "block_merge",
+    localReviewManualReviewRepairEnabled: true,
+    humanReviewBlocksMerge: true,
+  });
+  const pr = createPullRequest({ isDraft: false });
+  const record = createRecord({
+    local_review_head_sha: "deadbeef",
+    pre_merge_evaluation_outcome: "manual_review_blocked",
+    pre_merge_manual_review_count: 1,
+  });
+
+  assert.equal(
+    localReviewRetryLoopCandidate(
+      config,
+      record,
+      pr,
+      [{ name: "test", state: "FAILURE", bucket: "fail", workflow: "CI" }],
+      [],
+      () => [],
+      () => [],
+      () => ({ hasFailing: true, hasPending: false }),
+      () => false,
+    ),
+    false,
+  );
+
+  assert.equal(
+    localReviewRetryLoopCandidate(
+      config,
+      record,
+      pr,
+      [],
+      [createReviewThread()],
+      () => [createReviewThread()],
+      () => [],
+      () => ({ hasFailing: false, hasPending: false }),
+      () => false,
+    ),
+    false,
+  );
+});
+
+test("local review retry loop helpers also stall repeated same-PR manual-review repairs on a clean path", () => {
+  const config = createConfig({
+    localReviewPolicy: "block_merge",
+    localReviewManualReviewRepairEnabled: true,
+    sameFailureSignatureRepeatLimit: 2,
+    humanReviewBlocksMerge: true,
+  });
+  const pr = createPullRequest({ isDraft: false });
+  const record = createRecord({
+    local_review_head_sha: "deadbeef",
+    pre_merge_evaluation_outcome: "manual_review_blocked",
+    pre_merge_manual_review_count: 1,
+    repeated_local_review_signature_count: 2,
+  });
+
+  assert.equal(
+    localReviewRetryLoopCandidate(
+      config,
+      record,
+      pr,
+      [],
+      [],
+      () => [],
+      () => [],
+      () => ({ hasFailing: false, hasPending: false }),
+      () => false,
+    ),
+    true,
+  );
+  assert.equal(
+    localReviewRetryLoopStalled(
+      config,
+      record,
+      pr,
+      [],
+      [],
+      () => [],
+      () => [],
+      () => ({ hasFailing: false, hasPending: false }),
+      () => false,
     ),
     true,
   );

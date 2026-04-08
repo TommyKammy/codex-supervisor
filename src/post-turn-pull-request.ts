@@ -9,9 +9,10 @@ import {
 import {
   localReviewBlocksReady,
   localReviewFailureContext,
-  localReviewFailureSummary,
   localReviewHighSeverityNeedsBlock,
-  localReviewHighSeverityNeedsRetry,
+  localReviewManualReviewNeedsRepair,
+  localReviewRepairContinuationFailureContext,
+  localReviewRepairContinuationSummary,
   localReviewRequiresManualReview,
   localReviewRetryLoopCandidate,
   localReviewRetryLoopStalled,
@@ -444,9 +445,19 @@ export async function handlePostTurnPullRequestTransitionsPhase(
           : null;
       const signatureTracking = nextLocalReviewSignatureTracking(record, refreshed.pr.headRefOid, actionableSignature);
       const manualReviewBlocked = localReview.finalEvaluation.outcome === "manual_review_blocked";
+      const manualReviewNeedsRepair = localReviewManualReviewNeedsRepair(
+        config,
+        {
+          local_review_head_sha: refreshed.pr.headRefOid,
+          pre_merge_evaluation_outcome: localReview.finalEvaluation.outcome,
+          pre_merge_manual_review_count: localReview.finalEvaluation.manualReviewCount,
+          pre_merge_follow_up_count: localReview.finalEvaluation.followUpCount,
+        },
+        refreshed.pr,
+      );
 
       record = stateStore.touch(record, {
-        state: manualReviewBlocked ? "blocked" : "draft_pr",
+        state: manualReviewNeedsRepair ? "local_review_fix" : manualReviewBlocked ? "blocked" : "draft_pr",
         local_review_head_sha: refreshed.pr.headRefOid,
         local_review_blocker_summary: localReview.blockerSummary,
         local_review_summary_path: localReview.summaryPath,
@@ -469,7 +480,7 @@ export async function handlePostTurnPullRequestTransitionsPhase(
         external_review_near_match_findings_count: 0,
         external_review_missed_findings_count: 0,
         blocked_reason:
-          manualReviewBlocked
+          manualReviewBlocked && !manualReviewNeedsRepair
             ? "manual_review"
             : localReview.recommendation !== "ready" && config.localReviewHighSeverityAction === "blocked" && localReview.verifiedMaxSeverity === "high"
             ? "verification"
@@ -479,6 +490,8 @@ export async function handlePostTurnPullRequestTransitionsPhase(
             ? truncate(
                 localReview.degraded
                   ? "Local review completed in a degraded state."
+                  : manualReviewNeedsRepair
+                    ? `Local review found ${localReview.finalEvaluation.manualReviewCount} unresolved manual-review residual${localReview.finalEvaluation.manualReviewCount === 1 ? "" : "s"} on the current PR head. Codex will continue with a same-PR repair pass before the PR can proceed.`
                   : manualReviewBlocked
                     ? `Local review requires manual verification before the PR can proceed (${localReview.finalEvaluation.manualReviewCount} unresolved manual-review residual${localReview.finalEvaluation.manualReviewCount === 1 ? "" : "s"}).`
                   : localReview.verifiedMaxSeverity === "high" && config.localReviewHighSeverityAction === "retry"
@@ -789,7 +802,9 @@ export async function handlePostTurnPullRequestTransitionsPhase(
   }
 
   const postReady = await loadOpenPullRequestSnapshotImpl(pr.number);
-  const repeatedLocalReviewSignatureCount =
+  const currentHeadLocalReviewTracked =
+    record.last_head_sha === postReady.pr.headRefOid && record.local_review_head_sha === postReady.pr.headRefOid;
+  const retryLoopCandidate =
     !ranLocalReviewThisCycle &&
     localReviewRetryLoopCandidate(
       config,
@@ -801,12 +816,11 @@ export async function handlePostTurnPullRequestTransitionsPhase(
       args.configuredBotReviewThreads,
       args.summarizeChecks,
       args.mergeConflictDetected,
-    ) &&
-    record.last_head_sha === postReady.pr.headRefOid &&
-    record.local_review_head_sha === postReady.pr.headRefOid
+    );
+  const repeatedLocalReviewSignatureCount =
+    retryLoopCandidate && currentHeadLocalReviewTracked
       ? record.repeated_local_review_signature_count + 1
-      : localReviewHighSeverityNeedsRetry(config, record, postReady.pr) &&
-          record.local_review_head_sha === postReady.pr.headRefOid
+      : !ranLocalReviewThisCycle && currentHeadLocalReviewTracked
         ? 0
         : record.repeated_local_review_signature_count;
   const refreshedLifecycle = args.derivePullRequestLifecycleSnapshot(
@@ -816,6 +830,10 @@ export async function handlePostTurnPullRequestTransitionsPhase(
     postReady.reviewThreads,
     { repeated_local_review_signature_count: repeatedLocalReviewSignatureCount },
   );
+  const localReviewRepairSummary =
+    refreshedLifecycle.nextState === "local_review_fix"
+      ? localReviewRepairContinuationSummary(config, refreshedLifecycle.recordForState, postReady.pr)
+      : null;
   const postReadyLocalReviewFailureContext =
     refreshedLifecycle.nextState === "blocked" &&
     localReviewRetryLoopStalled(
@@ -828,14 +846,13 @@ export async function handlePostTurnPullRequestTransitionsPhase(
       args.configuredBotReviewThreads,
       args.summarizeChecks,
       args.mergeConflictDetected,
-    )
+        )
       ? localReviewStallFailureContext(refreshedLifecycle.recordForState)
       : refreshedLifecycle.nextState === "blocked" &&
           localReviewHighSeverityNeedsBlock(config, refreshedLifecycle.recordForState, postReady.pr)
         ? localReviewFailureContext(refreshedLifecycle.recordForState)
-        : refreshedLifecycle.nextState === "local_review_fix" &&
-            localReviewHighSeverityNeedsRetry(config, refreshedLifecycle.recordForState, postReady.pr)
-          ? localReviewFailureContext(refreshedLifecycle.recordForState)
+        : refreshedLifecycle.nextState === "local_review_fix"
+          ? localReviewRepairContinuationFailureContext(config, refreshedLifecycle.recordForState, postReady.pr)
           : null;
   const effectiveFailureContext = refreshedLifecycle.failureContext ?? postReadyLocalReviewFailureContext;
   record = stateStore.touch(record, {
@@ -850,9 +867,8 @@ export async function handlePostTurnPullRequestTransitionsPhase(
     last_error:
       refreshedLifecycle.nextState === "blocked" && effectiveFailureContext
         ? truncate(effectiveFailureContext.summary, 1000)
-        : refreshedLifecycle.nextState === "local_review_fix" &&
-            localReviewHighSeverityNeedsRetry(config, refreshedLifecycle.recordForState, postReady.pr)
-          ? truncate(localReviewFailureSummary(refreshedLifecycle.recordForState), 1000)
+        : localReviewRepairSummary
+          ? truncate(localReviewRepairSummary, 1000)
           : record.last_error,
     last_failure_context: effectiveFailureContext,
     ...args.applyFailureSignature(record, effectiveFailureContext),

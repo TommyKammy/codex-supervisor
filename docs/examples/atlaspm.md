@@ -43,6 +43,7 @@ This is one concrete way to use `codex-supervisor` against a local checkout of `
   "localReviewConfidenceThreshold": 0.7,
   "localReviewPolicy": "block_merge",
   "localReviewFollowUpRepairEnabled": false,
+  "localReviewManualReviewRepairEnabled": false,
   "localReviewFollowUpIssueCreationEnabled": false,
   "localReviewHighSeverityAction": "blocked",
   "reviewBotLogins": ["copilot-pull-request-reviewer"],
@@ -84,6 +85,7 @@ This is one concrete way to use `codex-supervisor` against a local checkout of `
 - Use `block_ready` when you want the swarm to stop draft PRs before `gh pr ready`, and `advisory` when you only want saved findings without merge gating.
 - Keep `trackedPrCurrentHeadLocalReviewRequired: false` for the recommended enabled baseline. Set it to `true` only when tracked codex PRs must always refresh local review on the current head before either ready-for-review or merge can proceed.
 - Keep `localReviewFollowUpRepairEnabled: false` unless you explicitly want `follow_up_eligible` local-review residuals handled on the current PR instead of staying advisory.
+- Keep `localReviewManualReviewRepairEnabled: false` unless you explicitly want current-head `manual_review_blocked` local-review residuals routed back into same-PR repair once GitHub review blockers, CI blockers, and conflicts are already clear.
 - Keep `localReviewFollowUpIssueCreationEnabled: false` unless you explicitly want local-review findings to create GitHub follow-up issues automatically.
 - Do not enable `localReviewFollowUpRepairEnabled` and `localReviewFollowUpIssueCreationEnabled` at the same time; they represent incompatible follow-up routing choices.
 - `localReviewHighSeverityAction: "blocked"` is the safer default for solo operators because verifier-confirmed high-severity findings stop the merge until a human decides the next step.
