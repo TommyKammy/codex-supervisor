@@ -637,6 +637,32 @@ test("inferStateFromPullRequest routes opted-in manual-review-blocked current he
   );
 });
 
+test("inferStateFromPullRequest keeps same-PR manual-review residuals blocked when GitHub still requires review", () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+    localReviewFollowUpRepairEnabled: true,
+    humanReviewBlocksMerge: true,
+    copilotReviewWaitMinutes: 0,
+  });
+  const record = createRecord({
+    state: "pr_open",
+    local_review_head_sha: "head123",
+    local_review_findings_count: 1,
+    local_review_recommendation: "changes_requested",
+    pre_merge_evaluation_outcome: "manual_review_blocked",
+    pre_merge_manual_review_count: 1,
+  });
+  const pr = createPullRequest({
+    isDraft: false,
+    headRefOid: "head123",
+    reviewDecision: "REVIEW_REQUIRED",
+  });
+
+  assert.equal(inferStateFromPullRequest(config, record, pr, passingChecks(), []), "blocked");
+  assert.equal(blockedReasonFromReviewState(config, record, pr, passingChecks(), []), "manual_review");
+});
+
 test("inferStateFromPullRequest keeps advisory follow-up residuals out of same-PR repair even when opted in", () => {
   const config = createConfig({
     localReviewEnabled: true,
