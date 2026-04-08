@@ -209,7 +209,7 @@ export function determineCopilotReviewTimeout(
   const configuredBotTimeoutEnabled =
     requiresConfiguredBotCurrentHeadSignal(config) && (config.configuredBotCurrentHeadSignalTimeoutMinutes ?? 0) > 0;
   const currentHeadSignalStartedAt = configuredBotTimeoutEnabled
-    ? configuredBotCurrentHeadSignalWaitStartAt(config, record, pr)
+    ? configuredBotCurrentHeadSignalTimeoutStartAt(config, record, pr)
     : null;
   const currentHeadSignalTimeout: CopilotReviewTimeoutStatus = currentHeadSignalStartedAt
     ? (() => {
@@ -529,13 +529,30 @@ function configuredBotCurrentHeadSignalWaitStartAt(
   return currentHeadCiGreenAt;
 }
 
+function configuredBotCurrentHeadSignalTimeoutStartAt(
+  config: SupervisorConfig,
+  record: IssueRunRecord,
+  pr: GitHubPullRequest,
+): string | null {
+  const waitStartedAt = configuredBotCurrentHeadSignalWaitStartAt(config, record, pr);
+  if (!waitStartedAt) {
+    return null;
+  }
+
+  const waitStartedAtMs = Date.parse(waitStartedAt);
+  if (Number.isNaN(waitStartedAtMs)) {
+    return null;
+  }
+
+  return new Date(waitStartedAtMs + configuredBotInitialGraceWaitMs(config)).toISOString();
+}
+
 function configuredBotCurrentHeadSignalPending(
   config: SupervisorConfig,
   record: IssueRunRecord,
   pr: GitHubPullRequest,
 ): boolean {
-  const timeoutMinutes = config.configuredBotCurrentHeadSignalTimeoutMinutes ?? 0;
-  if (!requiresConfiguredBotCurrentHeadSignal(config) || timeoutMinutes <= 0) {
+  if (!requiresConfiguredBotCurrentHeadSignal(config)) {
     return false;
   }
 
