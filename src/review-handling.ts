@@ -470,7 +470,15 @@ export function localReviewRepairContinuationFailureContext(
   >,
   pr: GitHubPullRequest,
 ): FailureContext | null {
-  return localReviewRepairContinuationSummary(config, record, pr) ? localReviewFailureContext(record) : null;
+  const continuationSummary = localReviewRepairContinuationSummary(config, record, pr);
+  if (!continuationSummary) {
+    return null;
+  }
+
+  return {
+    ...localReviewFailureContext(record),
+    summary: continuationSummary,
+  };
 }
 
 export function localReviewStallFailureContext(
