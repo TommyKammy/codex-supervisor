@@ -1,8 +1,7 @@
 import path from "node:path";
 import { runCommand } from "../core/command";
-import { loadConfig, summarizeCadenceDiagnostics, summarizeLocalCiContract, summarizeTrustDiagnostics } from "../core/config";
+import { loadConfig } from "../core/config";
 import { GitHubClient } from "../github";
-import { describeGsdIntegration } from "../gsd";
 import { issueJournalPath, trackedIssueJournalPath } from "../core/journal";
 import { acquireFileLock, LockHandle } from "../core/lock";
 import {
@@ -98,30 +97,21 @@ import {
 } from "./supervisor-execution-policy";
 import {
   buildCandidateDiscoverySummary,
-  buildLastKnownGoodSnapshotReadinessSummary,
-  buildReadinessSummary,
-  buildSelectionSummary,
-  buildSelectionWhySummary,
-  formatCandidateDiscoveryBehaviorLine,
 } from "./supervisor-selection-readiness-summary";
 import { buildIssueLintDto, type SupervisorIssueLintDto } from "./supervisor-selection-issue-lint";
 import {
-  buildIssueExplainDto,
   renderIssueExplainDto,
   SupervisorExplainDto,
 } from "./supervisor-selection-issue-explain";
-import { loadActiveIssueStatusSnapshot } from "./supervisor-selection-active-status";
-import { summarizeSupervisorStatusRecords } from "./supervisor-selection-status-records";
 import { inferFailureContext } from "./supervisor-failure-context";
 import {
   isIgnoredSupervisorArtifactPath,
   parseGitStatusPorcelainV1Paths,
 } from "../core/git-workspace-helpers";
 import { StateStore } from "../core/state-store";
-import { diagnoseSupervisorHost, loadStateReadonlyForDoctor, renderDoctorReport } from "../doctor";
+import { renderDoctorReport } from "../doctor";
 import { buildSetupConfigPreview, type SetupConfigPreviewSelectableReviewProviderProfile } from "../setup-config-preview";
 import { updateSetupConfig, type SetupConfigChanges } from "../setup-config-write";
-import { diagnoseSetupReadiness } from "../setup-readiness";
 import {
   blockedReasonForLifecycleState,
   determineTrackedPrRepeatFailureDisposition,
@@ -132,18 +122,9 @@ import {
   shouldRunCodex,
   shouldStopForRepeatedFailureSignature,
 } from "./supervisor-lifecycle";
+import { mergeConflictDetected, sanitizeStatusValue, summarizeChecks } from "./supervisor-status-rendering";
 import {
-  mergeConflictDetected,
-  summarizeChecks,
-  sanitizeStatusValue,
-} from "./supervisor-status-rendering";
-import { buildDetailedStatusModel, buildDetailedStatusSummaryLines } from "./supervisor-status-model";
-import {
-  buildInventoryOperatorStatus,
-  formatInventoryOperatorPostureLine,
-  formatInventoryRefreshDiagnosticLines,
   formatInventoryRefreshStatusLine,
-  formatLastSuccessfulInventorySnapshotStatusLine,
 } from "../inventory-refresh-state";
 import {
   type SupervisorExecutionMetricsRollupResultDto,
@@ -153,17 +134,13 @@ import {
 } from "./supervisor-mutation-report";
 import {
   buildInventoryRefreshWarningMessage,
-  buildTrackedIssueDtos,
-  renderGitHubRateLimitLine,
   renderSupervisorStatusDto,
   SupervisorStatusDto,
 } from "./supervisor-status-report";
-import { buildTrackedPrMismatch } from "./tracked-pr-mismatch";
 import { acquireSupervisorLoopRuntimeLock, readSupervisorLoopRuntime } from "./supervisor-loop-runtime-state";
 import {
   clearCurrentReconciliationPhase,
   readCurrentReconciliationPhase,
-  readCurrentReconciliationPhaseSnapshot,
   writeCurrentReconciliationPhase,
 } from "./supervisor-reconciliation-phase";
 import {
@@ -187,13 +164,11 @@ import {
   FailureContext,
   GitHubIssue,
   GitHubPullRequest,
-  GitHubRateLimitTelemetry,
   IssueRunRecord,
   JsonStateQuarantine,
   PullRequestCheck,
   ReviewThread,
   RunState,
-  StateLoadFinding,
   SupervisorConfig,
   SupervisorStateFile,
   WorkspaceStatus,
@@ -204,6 +179,12 @@ import {
   getWorkspaceStatus,
   pushBranch,
 } from "../core/workspace";
+import {
+  buildSupervisorDoctorReport,
+  buildSupervisorExplainReport,
+  buildSupervisorSetupReadinessReport,
+  buildSupervisorStatusReport,
+} from "./supervisor-read-only-reporting";
 
 interface ReadyIssueContext {
   kind: "ready";
@@ -212,7 +193,6 @@ interface ReadyIssueContext {
   issueLock: LockHandle;
 }
 
-const LONG_RECONCILIATION_WARNING_THRESHOLD_MS = 5 * 60 * 1000;
 const FULL_ISSUE_INVENTORY_REUSE_TTL_MS = 5 * 60 * 1000;
 
 interface CachedFullIssueInventory {
@@ -228,33 +208,6 @@ function shouldBlockTrackedPrRepeatedFailure(args: {
     args.record.pr_number !== null &&
     (args.failureContext?.category === "review" || args.failureContext?.category === "manual")
   );
-}
-
-function buildLongReconciliationWarning(snapshot: {
-  phase: string;
-  startedAt: string | null;
-} | null): string | null {
-  if (snapshot === null || snapshot.startedAt === null) {
-    return null;
-  }
-
-  const startedAtMs = Date.parse(snapshot.startedAt);
-  if (Number.isNaN(startedAtMs)) {
-    return null;
-  }
-
-  const elapsedMs = Date.now() - startedAtMs;
-  if (elapsedMs <= LONG_RECONCILIATION_WARNING_THRESHOLD_MS) {
-    return null;
-  }
-
-  return [
-    "reconciliation_warning=long_running",
-    `phase=${snapshot.phase}`,
-    `elapsed_seconds=${Math.floor(elapsedMs / 1000)}`,
-    `threshold_seconds=${Math.floor(LONG_RECONCILIATION_WARNING_THRESHOLD_MS / 1000)}`,
-    `started_at=${snapshot.startedAt}`,
-  ].join(" ");
 }
 
 async function ensureRecordJournalContext(
@@ -327,52 +280,7 @@ function formatStatus(record: IssueRunRecord | null, state?: SupervisorStateFile
   ].join(" ");
 }
 
-const MAX_RENDERED_STATUS_STATE_LOAD_FINDINGS = 5;
 const CORRUPT_JSON_FAIL_CLOSED_PREFIX = "Blocked execution-changing command: corrupted JSON supervisor state detected";
-
-function formatStatusStateLoadFinding(finding: StateLoadFinding): string {
-  const issueNumber = finding.issue_number === null ? "none" : String(finding.issue_number);
-  return [
-    "state_load_finding",
-    `backend=${finding.backend}`,
-    `scope=${finding.scope}`,
-    `issue_number=${issueNumber}`,
-    `location=${sanitizeStatusValue(finding.location)}`,
-    `message=${sanitizeStatusValue(finding.message)}`,
-  ].join(" ");
-}
-
-function buildStateLoadDiagnosticLines(
-  config: SupervisorConfig,
-  state: SupervisorStateFile,
-): string[] {
-  if (config.stateBackend !== "json") {
-    return [];
-  }
-
-  const findings = (state.load_findings ?? []).filter((finding) => finding.backend === "json");
-  if (findings.length === 0) {
-    return [];
-  }
-
-  const lines = [
-    [
-      "state_diagnostic",
-      "severity=hard",
-      "backend=json",
-      "summary=corrupted_json_state_forced_empty_fallback_not_missing_bootstrap",
-      `findings=${findings.length}`,
-      `location=${sanitizeStatusValue(config.stateFile)}`,
-    ].join(" "),
-    ...findings.slice(0, MAX_RENDERED_STATUS_STATE_LOAD_FINDINGS).map((finding) => formatStatusStateLoadFinding(finding)),
-  ];
-
-  if (findings.length > MAX_RENDERED_STATUS_STATE_LOAD_FINDINGS) {
-    lines.push(`state_load_finding_omitted count=${findings.length - MAX_RENDERED_STATUS_STATE_LOAD_FINDINGS}`);
-  }
-
-  return lines;
-}
 
 function readJsonParseErrorQuarantine(
   config: SupervisorConfig,
@@ -1066,343 +974,12 @@ export class Supervisor {
   }
 
   async statusReport(options: Pick<CliOptions, "why"> = { why: false }): Promise<SupervisorStatusDto> {
-    const state = await this.stateStore.load();
-    const stateDiagnosticLines = buildStateLoadDiagnosticLines(this.config, state);
-    const trustDiagnostics = summarizeTrustDiagnostics(this.config);
-    const cadenceDiagnostics = summarizeCadenceDiagnostics(this.config);
-    const candidateDiscoverySummary = formatCandidateDiscoveryBehaviorLine(this.config);
-    const localCiContract = summarizeLocalCiContract(this.config);
-    const loopRuntime = await readSupervisorLoopRuntime(this.config.stateFile);
-    const gsdSummary = await describeGsdIntegration(this.config);
-    const statusRecords = summarizeSupervisorStatusRecords(state);
-    const trackedIssues = buildTrackedIssueDtos(state);
-    const inventoryStatus = buildInventoryOperatorStatus({
-      state,
-      activeRecord: statusRecords.activeRecord,
-      trackedRecords: trackedIssues.map((issue) => ({ pr_number: issue.prNumber ?? null })),
-    });
-    const inventoryPostureLine = formatInventoryOperatorPostureLine(inventoryStatus);
-    const inventoryRefreshStatusLine = formatInventoryRefreshStatusLine(state.inventory_refresh_failure);
-    const inventoryRefreshDiagnosticLines = formatInventoryRefreshDiagnosticLines(state.inventory_refresh_failure);
-    const inventorySnapshotStatusLine = formatLastSuccessfulInventorySnapshotStatusLine(
-      state.last_successful_inventory_snapshot,
-    );
-    const inventoryRefreshWarning = buildInventoryRefreshWarningMessage(state);
-    const githubWithRateLimitTelemetry = this.github as GitHubClient & {
-      getRateLimitTelemetry?: () => Promise<GitHubRateLimitTelemetry>;
-    };
-    const loadGitHubRateLimitStatus = async () => {
-      let githubRateLimit: GitHubRateLimitTelemetry | null = null;
-      let githubRateLimitWarning: string | null = null;
-      if (typeof githubWithRateLimitTelemetry.getRateLimitTelemetry === "function") {
-        try {
-          githubRateLimit = await githubWithRateLimitTelemetry.getRateLimitTelemetry();
-        } catch (error) {
-          githubRateLimitWarning = error instanceof Error ? error.message : String(error);
-        }
-      }
-      return {
-        githubRateLimit,
-        githubRateLimitWarning,
-        githubRateLimitLines: githubRateLimit
-          ? [
-            renderGitHubRateLimitLine("rest", githubRateLimit.rest),
-            renderGitHubRateLimitLine("graphql", githubRateLimit.graphql),
-          ]
-          : [],
-      };
-    };
-    const reconciliationSnapshot = await readCurrentReconciliationPhaseSnapshot(this.config);
-    const reconciliationPhase = reconciliationSnapshot?.phase ?? null;
-    const reconciliationWarning = buildLongReconciliationWarning(reconciliationSnapshot);
-    const reconciliationProgress = reconciliationSnapshot === null
-      ? null
-      : {
-        phase: reconciliationSnapshot.phase,
-        startedAt: reconciliationSnapshot.startedAt,
-        targetIssueNumber: reconciliationSnapshot.targetIssueNumber,
-        targetPrNumber: reconciliationSnapshot.targetPrNumber,
-        waitStep: reconciliationSnapshot.waitStep,
-      };
-    const trackedPrMismatchLines: string[] = [];
-    for (const record of Object.values(state.issues)) {
-      if (record.pr_number === null) {
-        continue;
-      }
-
-      try {
-        const pr = await this.github.getPullRequestIfExists(record.pr_number);
-        if (!pr || pr.state !== "OPEN" || pr.mergedAt) {
-          continue;
-        }
-
-        const checks = await this.github.getChecks(pr.number);
-        const reviewThreads = await this.github.getUnresolvedReviewThreads(pr.number);
-        const mismatch = buildTrackedPrMismatch(this.config, record, pr, checks, reviewThreads);
-        if (!mismatch) {
-          continue;
-        }
-
-        trackedPrMismatchLines.push(mismatch.summaryLine, ...mismatch.detailLines, mismatch.guidanceLine);
-      } catch {
-        // Degrade status diagnostics if tracked PR hydration fails.
-      }
-    }
-
-    if (!statusRecords.activeRecord) {
-      const detailedStatusLines = buildDetailedStatusModel({
-        config: this.config,
-        activeRecord: null,
-        latestRecord: statusRecords.latestRecord,
-        latestRecoveryRecord: statusRecords.latestRecoveryRecord,
-        trackedIssueCount: statusRecords.trackedIssueCount,
-        pr: null,
-        checks: [],
-        reviewThreads: [],
-        manualReviewThreads,
-        configuredBotReviewThreads,
-        pendingBotReviewThreads,
-        summarizeChecks,
-        mergeConflictDetected,
-      });
-      if (state.inventory_refresh_failure) {
-        const readinessSummary = buildLastKnownGoodSnapshotReadinessSummary(this.config, state);
-        const whyLines = options.why ? await buildSelectionWhySummary(this.github, this.config, state) : [];
-        const githubRateLimitStatus = await loadGitHubRateLimitStatus();
-        const inactiveDetailedStatusLines =
-          [
-            ...detailedStatusLines,
-            inventoryPostureLine,
-            ...(inventoryRefreshStatusLine === null ? [] : [inventoryRefreshStatusLine]),
-            ...inventoryRefreshDiagnosticLines,
-            ...(inventorySnapshotStatusLine === null ? [] : [inventorySnapshotStatusLine]),
-            ...githubRateLimitStatus.githubRateLimitLines,
-          ];
-        return {
-          gsdSummary,
-          trustDiagnostics,
-          cadenceDiagnostics,
-          githubRateLimit: githubRateLimitStatus.githubRateLimit,
-          inventoryStatus,
-          candidateDiscoverySummary,
-          candidateDiscovery: buildCandidateDiscoverySummary(this.config, null),
-          localCiContract,
-          loopRuntime,
-          activeIssue: null,
-          selectionSummary: null,
-          trackedIssues,
-          runnableIssues: readinessSummary?.runnableIssues ?? [],
-          blockedIssues: readinessSummary?.blockedIssues ?? [],
-          detailedStatusLines: [...inactiveDetailedStatusLines, ...trackedPrMismatchLines, ...stateDiagnosticLines],
-          reconciliationPhase,
-          reconciliationProgress,
-          reconciliationWarning,
-          readinessLines: readinessSummary?.readinessLines ?? [],
-          whyLines,
-          warning: inventoryRefreshWarning
-            ? {
-              kind: "readiness",
-              message: truncate(
-                sanitizeStatusValue(
-                  [inventoryRefreshWarning, githubRateLimitStatus.githubRateLimitWarning].filter(Boolean).join(" | "),
-                ),
-                200,
-              ) ?? "",
-            }
-            : githubRateLimitStatus.githubRateLimitWarning
-              ? {
-                kind: "readiness",
-                message: truncate(sanitizeStatusValue(githubRateLimitStatus.githubRateLimitWarning), 200) ?? "",
-              }
-              : null,
-        };
-      }
-      try {
-        const candidateDiscoveryDiagnostics =
-          typeof this.github.getCandidateDiscoveryDiagnostics === "function"
-            ? await this.github.getCandidateDiscoveryDiagnostics()
-            : null;
-        const candidateDiscovery = buildCandidateDiscoverySummary(this.config, candidateDiscoveryDiagnostics);
-        const readinessSummary = await buildReadinessSummary(
-          this.github,
-          this.config,
-          state,
-          candidateDiscoveryDiagnostics,
-        );
-        const whyLines = options.why ? await buildSelectionWhySummary(this.github, this.config, state) : [];
-        const selectionSummary = options.why ? await buildSelectionSummary(this.github, this.config, state) : null;
-        const githubRateLimitStatus = await loadGitHubRateLimitStatus();
-        const inactiveDetailedStatusLines =
-          [
-            ...detailedStatusLines,
-            inventoryPostureLine,
-            ...(inventoryRefreshStatusLine === null ? [] : [inventoryRefreshStatusLine]),
-            ...inventoryRefreshDiagnosticLines,
-            ...(inventorySnapshotStatusLine === null ? [] : [inventorySnapshotStatusLine]),
-            ...githubRateLimitStatus.githubRateLimitLines,
-          ];
-        return {
-          gsdSummary,
-          trustDiagnostics,
-          cadenceDiagnostics,
-          githubRateLimit: githubRateLimitStatus.githubRateLimit,
-          inventoryStatus,
-          candidateDiscoverySummary,
-          candidateDiscovery,
-          localCiContract,
-          loopRuntime,
-          activeIssue: null,
-          selectionSummary,
-          trackedIssues,
-          runnableIssues: readinessSummary.runnableIssues,
-          blockedIssues: readinessSummary.blockedIssues,
-          detailedStatusLines: [...inactiveDetailedStatusLines, ...trackedPrMismatchLines, ...stateDiagnosticLines],
-          reconciliationPhase,
-          reconciliationProgress,
-          reconciliationWarning,
-          readinessLines: readinessSummary.readinessLines,
-          whyLines,
-          warning: null,
-        };
-      } catch (error) {
-        const message = sanitizeStatusValue(error instanceof Error ? error.message : String(error));
-        const githubRateLimitStatus = await loadGitHubRateLimitStatus();
-        const inactiveDetailedStatusLines =
-          [
-            ...detailedStatusLines,
-            inventoryPostureLine,
-            ...(inventoryRefreshStatusLine === null ? [] : [inventoryRefreshStatusLine]),
-            ...inventoryRefreshDiagnosticLines,
-            ...githubRateLimitStatus.githubRateLimitLines,
-          ];
-        return {
-          gsdSummary,
-          trustDiagnostics,
-          cadenceDiagnostics,
-          githubRateLimit: githubRateLimitStatus.githubRateLimit,
-          inventoryStatus,
-          candidateDiscoverySummary,
-          candidateDiscovery: buildCandidateDiscoverySummary(this.config, null),
-          localCiContract,
-          loopRuntime,
-          activeIssue: null,
-          selectionSummary: null,
-          trackedIssues,
-          runnableIssues: [],
-          blockedIssues: [],
-          detailedStatusLines: [...inactiveDetailedStatusLines, ...trackedPrMismatchLines, ...stateDiagnosticLines],
-          reconciliationPhase,
-          reconciliationProgress,
-          reconciliationWarning,
-          readinessLines: [],
-          whyLines: [],
-          warning: {
-            kind: "readiness",
-            message: truncate(
-              sanitizeStatusValue([message, githubRateLimitStatus.githubRateLimitWarning].filter(Boolean).join(" | ")),
-              200,
-            ) ?? "",
-          },
-        };
-      }
-    }
-
-    const activeStatus = await loadActiveIssueStatusSnapshot({
+    return buildSupervisorStatusReport({
+      config: this.config,
       github: this.github,
-      config: this.config,
-      activeRecord: statusRecords.activeRecord,
+      stateStore: this.stateStore,
+      options,
     });
-    const detailedStatusLines = buildDetailedStatusModel({
-      config: this.config,
-      activeRecord: statusRecords.activeRecord,
-      latestRecord: statusRecords.latestRecord,
-      latestRecoveryRecord: statusRecords.latestRecoveryRecord,
-      trackedIssueCount: statusRecords.trackedIssueCount,
-      pr: activeStatus.pr,
-      checks: activeStatus.checks,
-      reviewThreads: activeStatus.reviewThreads,
-      manualReviewThreads,
-      configuredBotReviewThreads,
-      pendingBotReviewThreads,
-      summarizeChecks,
-      mergeConflictDetected,
-    });
-    const summaryLines = buildDetailedStatusSummaryLines({
-      config: this.config,
-      activeRecord: statusRecords.activeRecord,
-      latestRecoveryRecord: statusRecords.latestRecoveryRecord,
-      activityContext: activeStatus.activityContext,
-      handoffSummary: activeStatus.handoffSummary,
-      localReviewRoutingSummary: activeStatus.localReviewRoutingSummary,
-      changeClassesSummary: activeStatus.changeClassesSummary,
-      verificationPolicySummary: activeStatus.verificationPolicySummary,
-      durableGuardrailSummary: activeStatus.durableGuardrailSummary,
-      externalReviewFollowUpSummary: activeStatus.externalReviewFollowUpSummary,
-      executionMetricsSummaryLines: activeStatus.executionMetricsSummaryLines,
-    });
-    const githubRateLimitStatus = await loadGitHubRateLimitStatus();
-    const detailedStatusLinesWithInventory =
-      [
-        ...detailedStatusLines,
-        inventoryPostureLine,
-        ...(inventoryRefreshStatusLine === null ? [] : [inventoryRefreshStatusLine]),
-        ...inventoryRefreshDiagnosticLines,
-        ...(inventorySnapshotStatusLine === null ? [] : [inventorySnapshotStatusLine]),
-        ...githubRateLimitStatus.githubRateLimitLines,
-      ];
-
-    return {
-      gsdSummary,
-      trustDiagnostics,
-      cadenceDiagnostics,
-      githubRateLimit: githubRateLimitStatus.githubRateLimit,
-      inventoryStatus,
-      candidateDiscoverySummary,
-      candidateDiscovery: buildCandidateDiscoverySummary(this.config, null),
-      localCiContract,
-      loopRuntime,
-      activeIssue: {
-        issueNumber: statusRecords.activeRecord.issue_number,
-        state: statusRecords.activeRecord.state,
-        branch: statusRecords.activeRecord.branch,
-        prNumber: statusRecords.activeRecord.pr_number,
-        blockedReason: statusRecords.activeRecord.blocked_reason,
-        activityContext: activeStatus.activityContext,
-      },
-      selectionSummary: {
-        selectedIssueNumber: null,
-        selectionReason: null,
-      },
-      trackedIssues,
-      runnableIssues: [],
-      blockedIssues: [],
-      detailedStatusLines: [...detailedStatusLinesWithInventory, ...summaryLines, ...trackedPrMismatchLines, ...stateDiagnosticLines],
-      reconciliationPhase,
-      reconciliationProgress,
-      reconciliationWarning,
-      readinessLines: [],
-      whyLines: [],
-      warning: activeStatus.warningMessage || inventoryRefreshWarning
-        ? {
-          kind: "status",
-          message: truncate(
-            sanitizeStatusValue(
-              [
-                activeStatus.warningMessage,
-                inventoryRefreshWarning,
-                githubRateLimitStatus.githubRateLimitWarning,
-              ].filter(Boolean).join(" | "),
-            ),
-            200,
-          ) ?? "",
-        }
-        : githubRateLimitStatus.githubRateLimitWarning
-          ? {
-            kind: "status",
-            message: truncate(sanitizeStatusValue(githubRateLimitStatus.githubRateLimitWarning), 200) ?? "",
-          }
-          : null,
-    };
   }
 
   async explain(issueNumber: number): Promise<string> {
@@ -1528,8 +1105,12 @@ export class Supervisor {
   }
 
   async explainReport(issueNumber: number): Promise<SupervisorExplainDto> {
-    const state = await this.stateStore.load();
-    return buildIssueExplainDto(this.github, this.config, state, issueNumber);
+    return buildSupervisorExplainReport({
+      config: this.config,
+      github: this.github,
+      stateStore: this.stateStore,
+      issueNumber,
+    });
   }
 
   async issueLint(issueNumber: number): Promise<SupervisorIssueLintDto> {
@@ -1541,17 +1122,16 @@ export class Supervisor {
   }
 
   async doctorReport() {
-    return diagnoseSupervisorHost({
+    return buildSupervisorDoctorReport({
       config: this.config,
-      authStatus: () => this.github.authStatus(),
-      loadState: () => loadStateReadonlyForDoctor(this.config),
+      github: this.github,
     });
   }
 
   async setupReadinessReport() {
-    return diagnoseSetupReadiness({
+    return buildSupervisorSetupReadinessReport({
       configPath: this.configPath,
-      authStatus: () => this.github.authStatus(),
+      github: this.github,
     });
   }
 
