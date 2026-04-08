@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { projectTrackedPrLifecycle } from "./tracked-pr-lifecycle-projection";
+import { projectTrackedPrLifecycle, resetTrackedPrHeadScopedStateOnAdvance } from "./tracked-pr-lifecycle-projection";
 import {
   createConfig,
   createPullRequest,
@@ -175,4 +175,61 @@ test("projectTrackedPrLifecycle passes the fully patched tracked PR record into 
   assert.equal(projection.recordForState.copilot_review_timeout_reason, "review pending");
   assert.equal(projection.nextState, "blocked");
   assert.equal(projection.nextBlockedReason, "verification");
+});
+
+test("resetTrackedPrHeadScopedStateOnAdvance ignores omitted optional same-head fields", () => {
+  const record = {
+    ...createRecord({
+      last_head_sha: "head-191",
+      local_review_head_sha: "head-191",
+      processed_review_thread_ids: ["thread-1@head-191"],
+      processed_review_thread_fingerprints: ["thread-1@head-191#comment-1"],
+    }),
+    external_review_head_sha: undefined,
+    review_follow_up_head_sha: undefined,
+    last_host_local_pr_blocker_comment_head_sha: undefined,
+    latest_local_ci_result: undefined,
+  } as unknown as ReturnType<typeof createRecord>;
+
+  assert.deepEqual(resetTrackedPrHeadScopedStateOnAdvance(record, "head-191"), {});
+});
+
+test("projectTrackedPrLifecycle preserves processed bot-thread state when optional same-head fields are omitted", () => {
+  const config = createConfig({ reviewBotLogins: ["copilot-pull-request-reviewer"] });
+  const record = {
+    ...createRecord({
+      state: "addressing_review",
+      blocked_reason: null,
+      pr_number: 191,
+      last_head_sha: "head-191",
+      local_review_head_sha: "head-191",
+      processed_review_thread_ids: ["thread-1@head-191"],
+      processed_review_thread_fingerprints: ["thread-1@head-191#comment-1"],
+      review_wait_started_at: "2026-03-16T10:00:00Z",
+      review_wait_head_sha: "head-191",
+    }),
+    external_review_head_sha: undefined,
+    review_follow_up_head_sha: undefined,
+    last_host_local_pr_blocker_comment_head_sha: undefined,
+    latest_local_ci_result: undefined,
+  } as unknown as ReturnType<typeof createRecord>;
+  const pr = createPullRequest({
+    number: 191,
+    headRefOid: "head-191",
+    reviewDecision: "CHANGES_REQUESTED",
+    configuredBotTopLevelReviewStrength: "blocking",
+  });
+
+  const projection = projectTrackedPrLifecycle({
+    config,
+    record,
+    pr,
+    checks: passingChecks(),
+    reviewThreads: [createReviewThread()],
+  });
+
+  assert.equal(projection.nextState, "blocked");
+  assert.equal(projection.nextBlockedReason, "manual_review");
+  assert.deepEqual(projection.recordForState.processed_review_thread_ids, ["thread-1@head-191"]);
+  assert.deepEqual(projection.recordForState.processed_review_thread_fingerprints, ["thread-1@head-191#comment-1"]);
 });
