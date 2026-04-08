@@ -1976,6 +1976,124 @@ test("handlePostTurnPullRequestTransitionsPhase routes current-head manual-revie
   assert.match(result.record.last_error ?? "", /same-PR repair pass/i);
 });
 
+test("handlePostTurnPullRequestTransitionsPhase refreshes stale manual-review blocker text when same-PR repair re-enters without rerunning local review", async () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+    localReviewFollowUpRepairEnabled: true,
+  });
+  const issue = createIssue({
+    title: "Refresh same-PR manual-review repair messaging on re-entry",
+  });
+  const readyPr = createPullRequest({
+    title: "Refresh same-PR manual-review repair messaging on re-entry",
+    isDraft: false,
+    headRefName: "codex/issue-102",
+    headRefOid: "head-116",
+  });
+  const record = createRecord({
+    state: "blocked",
+    pr_number: readyPr.number,
+    last_head_sha: readyPr.headRefOid,
+    local_review_head_sha: readyPr.headRefOid,
+    pre_merge_evaluation_outcome: "manual_review_blocked",
+    pre_merge_manual_review_count: 2,
+    pre_merge_follow_up_count: 0,
+    last_error: "Local review requires manual verification before the PR can proceed (2 unresolved manual-review residuals).",
+  });
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    github: {
+      getPullRequest: async () => {
+        throw new Error("unexpected getPullRequest call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      createIssue: async () => {
+        throw new Error("unexpected createIssue call");
+      },
+      markPullRequestReady: async () => {
+        throw new Error("unexpected markPullRequestReady call");
+      },
+    },
+    context: {
+      state: {
+        activeIssueNumber: 102,
+        issues: { "102": record },
+      },
+      record,
+      issue,
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+      syncJournal: async () => undefined,
+      memoryArtifacts: {
+        alwaysReadFiles: [],
+        onDemandFiles: [],
+        contextIndexPath: "/tmp/context-index.md",
+        agentsPath: "/tmp/AGENTS.generated.md",
+      },
+      pr: readyPr,
+      options: { dryRun: false },
+    },
+    derivePullRequestLifecycleSnapshot: (record, pr, checks, reviewThreads) => ({
+      recordForState: record,
+      nextState: inferStateFromPullRequest(config, record, pr, checks, reviewThreads),
+      failureContext: null,
+      reviewWaitPatch: {},
+      copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    blockedReasonFromReviewState: (record) =>
+      record.pre_merge_evaluation_outcome === "manual_review_blocked" ? "manual_review" : null,
+    summarizeChecks: () => ({
+      hasPending: false,
+      hasFailing: false,
+    }),
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
+    runLocalReviewImpl: async () => {
+      throw new Error("unexpected runLocalReviewImpl call");
+    },
+    loadOpenPullRequestSnapshot: async () => ({
+      pr: readyPr,
+      checks: [],
+      reviewThreads: [] satisfies ReviewThread[],
+    }),
+  });
+
+  assert.equal(result.record.state, "local_review_fix");
+  assert.equal(result.record.pre_merge_evaluation_outcome, "manual_review_blocked");
+  assert.match(result.record.last_error ?? "", /2 unresolved manual-review residuals on the current PR head/i);
+  assert.match(result.record.last_error ?? "", /same-PR repair pass/i);
+  assert.doesNotMatch(result.record.last_error ?? "", /manual verification before the PR can proceed/i);
+});
+
 test("handlePostTurnPullRequestTransitionsPhase reruns local review on a ready PR head update when the tracked current-head gate is enabled", async () => {
   const config = createConfig({
     localReviewEnabled: true,

@@ -334,7 +334,7 @@ function buildCodexStartPrompt(input: BuildCodexStartPromptInput): string {
                     ? "- Repair intent: same-PR manual-review residual repair on the current PR head. Keep operator-facing summaries aligned with the saved manual_review_blocked result until a fresh local review says otherwise."
                   : input.localReviewRepairContext.repairIntent === "high_severity_retry"
                     ? "- Repair intent: high-severity retry on the current PR head. This is not a same-PR follow-up repair or a manual-review flow."
-                    : "- Repair intent: local-review repair context loaded; determine from the saved artifacts whether this is a same-PR follow-up or a blocking retry.",
+                    : "- Repair intent: local-review repair context loaded; determine from the saved artifacts whether this is a same-PR follow-up, a same-PR manual-review residual repair, or a blocking retry.",
                 `- Summary artifact: ${input.localReviewRepairContext.summaryPath}`,
                 input.localReviewRepairContext.findingsPath
                   ? `- Findings artifact: ${input.localReviewRepairContext.findingsPath}`

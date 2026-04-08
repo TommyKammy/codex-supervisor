@@ -569,7 +569,10 @@ test("buildCodexPrompt treats unknown local-review repair intents as generic blo
     },
   });
 
-  assert.match(prompt, /Repair intent: local-review repair context loaded; determine from the saved artifacts whether this is a same-PR follow-up or a blocking retry\./);
+  assert.match(
+    prompt,
+    /Repair intent: local-review repair context loaded; determine from the saved artifacts whether this is a same-PR follow-up, a same-PR manual-review residual repair, or a blocking retry\./,
+  );
   assert.doesNotMatch(prompt, /high-severity retry/);
 });
 

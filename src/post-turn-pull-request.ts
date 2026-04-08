@@ -868,7 +868,10 @@ export async function handlePostTurnPullRequestTransitionsPhase(
         ? truncate(effectiveFailureContext.summary, 1000)
         : refreshedLifecycle.nextState === "local_review_fix" &&
             localReviewManualReviewNeedsRepair(config, refreshedLifecycle.recordForState, postReady.pr)
-          ? record.last_error
+          ? truncate(
+              `Local review found ${(refreshedLifecycle.recordForState.pre_merge_manual_review_count ?? 0)} unresolved manual-review residual${(refreshedLifecycle.recordForState.pre_merge_manual_review_count ?? 0) === 1 ? "" : "s"} on the current PR head. Codex will continue with a same-PR repair pass before the PR can proceed.`,
+              1000,
+            )
           : refreshedLifecycle.nextState === "local_review_fix" &&
               localReviewHighSeverityNeedsRetry(config, refreshedLifecycle.recordForState, postReady.pr)
             ? truncate(localReviewFailureSummary(refreshedLifecycle.recordForState), 1000)
