@@ -279,13 +279,13 @@ export function localReviewRetryLoopCandidate(
   const checkSummary = summarizeChecks(checks);
   const manualThreads = manualReviewThreads(config, reviewThreads);
   const unresolvedBotThreads = configuredBotReviewThreads(config, reviewThreads);
+  const retryLoopNeedsRepair =
+    localReviewFixBlockedNeedsRepair(config, record, pr) ||
+    localReviewManualReviewNeedsRepair(config, record, pr) ||
+    localReviewFollowUpNeedsRepair(config, record, pr) ||
+    (record.pre_merge_evaluation_outcome !== "fix_blocked" && localReviewHighSeverityNeedsRetry(config, record, pr));
   return (
-    (
-      localReviewFixBlockedNeedsRepair(config, record, pr) ||
-      localReviewHighSeverityNeedsRetry(config, record, pr) ||
-      localReviewFollowUpNeedsRepair(config, record, pr) ||
-      localReviewManualReviewNeedsRepair(config, record, pr)
-    ) &&
+    retryLoopNeedsRepair &&
     !checkSummary.hasFailing &&
     !checkSummary.hasPending &&
     unresolvedBotThreads.length === 0 &&
