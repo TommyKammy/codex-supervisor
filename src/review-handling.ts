@@ -70,15 +70,13 @@ export function hasProcessedReviewThread(
 
 export function localReviewBlocksReady(
   config: SupervisorConfig,
-  record: Pick<
-    IssueRunRecord,
-    | "local_review_head_sha"
-    | "local_review_findings_count"
-    | "local_review_recommendation"
-    | "pre_merge_evaluation_outcome"
-    | "pre_merge_manual_review_count"
-    | "pre_merge_follow_up_count"
-  >,
+  record: Pick<IssueRunRecord, "local_review_head_sha" | "local_review_findings_count" | "local_review_recommendation"> &
+    Partial<
+      Pick<
+        IssueRunRecord,
+        "local_review_degraded" | "pre_merge_evaluation_outcome" | "pre_merge_manual_review_count" | "pre_merge_follow_up_count"
+      >
+    >,
   pr: GitHubPullRequest,
 ): boolean {
   if (!config.localReviewEnabled) {
@@ -91,6 +89,10 @@ export function localReviewBlocksReady(
 
   if (config.localReviewPolicy === "block_ready") {
     return record.local_review_head_sha !== pr.headRefOid || localReviewHasActionableFindings(record, pr);
+  }
+
+  if (localReviewDegradedNeedsBlock(config, record, pr)) {
+    return true;
   }
 
   if (localReviewFollowUpNeedsRepair(config, record, pr)) {
@@ -114,15 +116,13 @@ export function localReviewBlocksReady(
 
 export function localReviewBlocksMerge(
   config: SupervisorConfig,
-  record: Pick<
-    IssueRunRecord,
-    | "local_review_head_sha"
-    | "local_review_findings_count"
-    | "local_review_recommendation"
-    | "pre_merge_evaluation_outcome"
-    | "pre_merge_manual_review_count"
-    | "pre_merge_follow_up_count"
-  >,
+  record: Pick<IssueRunRecord, "local_review_head_sha" | "local_review_findings_count" | "local_review_recommendation"> &
+    Partial<
+      Pick<
+        IssueRunRecord,
+        "local_review_degraded" | "pre_merge_evaluation_outcome" | "pre_merge_manual_review_count" | "pre_merge_follow_up_count"
+      >
+    >,
   pr: GitHubPullRequest,
 ): boolean {
   if (!config.localReviewEnabled || pr.isDraft) {
@@ -166,6 +166,27 @@ export function localReviewRequiresManualReview(
     record.local_review_head_sha === pr.headRefOid &&
     record.pre_merge_evaluation_outcome === "manual_review_blocked" &&
     (record.pre_merge_manual_review_count ?? 0) > 0 &&
+    !localReviewManualReviewNeedsRepair(config, record, pr)
+  );
+}
+
+export function localReviewDegradedNeedsBlock(
+  config: SupervisorConfig,
+  record: Pick<IssueRunRecord, "local_review_head_sha" | "local_review_recommendation"> &
+    Partial<
+      Pick<
+        IssueRunRecord,
+        "local_review_degraded" | "pre_merge_evaluation_outcome" | "pre_merge_manual_review_count" | "pre_merge_follow_up_count"
+      >
+    >,
+  pr: GitHubPullRequest,
+): boolean {
+  return (
+    config.localReviewEnabled &&
+    config.localReviewPolicy !== "advisory" &&
+    record.local_review_head_sha === pr.headRefOid &&
+    record.local_review_degraded === true &&
+    record.local_review_recommendation !== "ready" &&
     !localReviewManualReviewNeedsRepair(config, record, pr)
   );
 }

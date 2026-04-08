@@ -3261,6 +3261,256 @@ test("handlePostTurnPullRequestTransitionsPhase keeps degraded current-head loca
   assert.match(result.record.last_error ?? "", /degraded state/i);
 });
 
+test("handlePostTurnPullRequestTransitionsPhase blocks draft PRs when current-head local review degrades", async () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+  });
+  const issue = createIssue({ title: "Block degraded draft PR local review" });
+  const draftPr = createPullRequest({ title: "Draft degraded local review", isDraft: true, headRefOid: "head-118" });
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    github: {
+      getPullRequest: async () => {
+        throw new Error("unexpected getPullRequest call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      markPullRequestReady: async () => {
+        throw new Error("unexpected markPullRequestReady call");
+      },
+    },
+    context: {
+      state: {
+        activeIssueNumber: 104,
+        issues: { "104": createRecord({ state: "draft_pr", pr_number: draftPr.number, last_head_sha: "head-118" }) },
+      },
+      record: createRecord({ state: "draft_pr", pr_number: draftPr.number, last_head_sha: "head-118" }),
+      issue,
+      workspacePath: path.join("/tmp/workspaces", "issue-104"),
+      syncJournal: async () => undefined,
+      memoryArtifacts: {
+        alwaysReadFiles: [],
+        onDemandFiles: [],
+        contextIndexPath: "/tmp/context-index.md",
+        agentsPath: "/tmp/AGENTS.generated.md",
+      },
+      pr: draftPr,
+      options: { dryRun: false },
+    },
+    derivePullRequestLifecycleSnapshot: (record, pr, checks, reviewThreads) => ({
+      recordForState: record,
+      nextState: inferStateFromPullRequest(config, record, pr, checks, reviewThreads),
+      failureContext: null,
+      reviewWaitPatch: {},
+      copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    blockedReasonFromReviewState: (record, pr, checks, reviewThreads) =>
+      resolveBlockedReasonFromReviewState(config, record, pr, checks, reviewThreads),
+    summarizeChecks: () => ({
+      hasPending: false,
+      hasFailing: false,
+    }),
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runLocalReviewImpl: async () => ({
+      ranAt: "2026-03-24T00:11:00Z",
+      summaryPath: "/tmp/reviews/owner-repo/issue-104/head-118.md",
+      findingsPath: "/tmp/reviews/owner-repo/issue-104/head-118.json",
+      summary: "One local review role failed after surfacing a follow-up candidate on the draft head.",
+      blockerSummary: "degraded local review; inspect the saved artifact",
+      findingsCount: 1,
+      rootCauseCount: 1,
+      maxSeverity: "medium",
+      verifiedFindingsCount: 0,
+      verifiedMaxSeverity: "none",
+      recommendation: "changes_requested",
+      degraded: true,
+      finalEvaluation: {
+        outcome: "follow_up_eligible",
+        residualFindings: [
+          {
+            findingKey: "src/ui/panel.tsx|20|21|retry path|retry path should preserve prior findings.",
+            summary: "Retry path should preserve prior findings.",
+            severity: "medium",
+            category: "correctness",
+            file: "src/ui/panel.tsx",
+            start: 20,
+            end: 21,
+            source: "local_review",
+            resolution: "follow_up_candidate",
+            rationale: "Residual non-high-severity finding is advisory, but the degraded run still blocks draft readiness.",
+          },
+        ],
+        mustFixCount: 0,
+        manualReviewCount: 0,
+        followUpCount: 1,
+      },
+      rawOutput: "raw output",
+    }),
+    loadOpenPullRequestSnapshot: async () => ({
+      pr: draftPr,
+      checks: [],
+      reviewThreads: [] satisfies ReviewThread[],
+    }),
+  });
+
+  assert.equal(result.record.state, "blocked");
+  assert.equal(result.record.blocked_reason, "verification");
+  assert.equal(result.record.local_review_degraded, true);
+  assert.equal(result.record.pre_merge_evaluation_outcome, "follow_up_eligible");
+  assert.match(result.record.last_error ?? "", /degraded state/i);
+});
+
+test("handlePostTurnPullRequestTransitionsPhase still marks degraded advisory draft PRs ready", async (t) => {
+  const { workspacePath, headSha } = await createTrackedIssueBranchRepo();
+  t.after(async () => {
+    await fs.rm(workspacePath, { recursive: true, force: true });
+  });
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "advisory",
+  });
+  const issue = createIssue({ title: "Promote degraded advisory draft PRs" });
+  const draftPr = createPullRequest({
+    title: "Advisory degraded draft local review",
+    isDraft: true,
+    headRefName: "codex/issue-102",
+    headRefOid: headSha,
+  });
+  const readyPr = createPullRequest({
+    title: "Advisory degraded draft local review",
+    isDraft: false,
+    headRefName: "codex/issue-102",
+    headRefOid: headSha,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "draft_pr",
+        pr_number: draftPr.number,
+        branch: "codex/issue-102",
+        workspace: workspacePath,
+        local_review_head_sha: headSha,
+        local_review_degraded: true,
+        local_review_recommendation: "changes_requested",
+        pre_merge_evaluation_outcome: "follow_up_eligible",
+        pre_merge_follow_up_count: 1,
+      }),
+    },
+  };
+
+  let readyCalls = 0;
+  let snapshotLoads = 0;
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    github: {
+      getPullRequest: async () => {
+        throw new Error("unexpected getPullRequest call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      markPullRequestReady: async (prNumber: number) => {
+        assert.equal(prNumber, draftPr.number);
+        readyCalls += 1;
+      },
+    },
+    context: {
+      state,
+      record: state.issues["102"]!,
+      issue,
+      workspacePath,
+      syncJournal: async () => undefined,
+      memoryArtifacts: {
+        alwaysReadFiles: [],
+        onDemandFiles: [],
+        contextIndexPath: "/tmp/context-index.md",
+        agentsPath: "/tmp/AGENTS.generated.md",
+      },
+      pr: draftPr,
+      options: { dryRun: false },
+    },
+    derivePullRequestLifecycleSnapshot: (record, pr) => ({
+      recordForState: record,
+      nextState: pr.isDraft ? "draft_pr" : "pr_open",
+      failureContext: null,
+      reviewWaitPatch: {},
+      copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    blockedReasonFromReviewState: () => null,
+    summarizeChecks: (checks) => ({
+      hasPending: checks.some((check) => check.bucket === "pending"),
+      hasFailing: checks.some((check) => check.bucket === "fail"),
+    }),
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runLocalReviewImpl: async () => {
+      throw new Error("unexpected runLocalReviewImpl call");
+    },
+    loadOpenPullRequestSnapshot: async () => {
+      snapshotLoads += 1;
+      return {
+        pr: snapshotLoads === 1 ? draftPr : readyPr,
+        checks: [] satisfies PullRequestCheck[],
+        reviewThreads: [] satisfies ReviewThread[],
+      };
+    },
+  });
+
+  assert.equal(readyCalls, 1);
+  assert.equal(snapshotLoads, 2);
+  assert.equal(result.record.state, "pr_open");
+  assert.equal(result.record.blocked_reason, null);
+});
+
 test("handlePostTurnPullRequestTransitionsPhase emits typed review-wait change events", async () => {
   const config = createConfig();
   const issue = createIssue({ title: "Emit review wait changes" });

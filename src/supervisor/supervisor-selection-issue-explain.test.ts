@@ -607,3 +607,68 @@ test("buildIssueExplainSummary surfaces follow-up-eligible pre-merge evaluation 
     /^pre_merge_evaluation status=follow_up_eligible outcome=follow_up_eligible repair=same_pr_follow_up_current_head head=current must_fix=0 manual_review=0 follow_up=1 reason=follow_up_candidates=1 ran_at=2026-03-24T00:11:00Z summary_path=owner-repo\/issue-609\/head-609\.md artifact_path=owner-repo\/issue-609\/head-609\.json$/m,
   );
 });
+
+test("buildIssueExplainDto reports local-review-blocked external readiness for degraded draft PRs", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 610;
+  const issue = createIssue({
+    number: issueNumber,
+    title: "Explain degraded draft local review readiness",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        blocked_reason: "verification",
+        branch: branchName(fixture.config, issueNumber),
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        local_review_head_sha: "head-610",
+        local_review_degraded: true,
+        local_review_recommendation: "changes_requested",
+        pre_merge_evaluation_outcome: "follow_up_eligible",
+        pre_merge_follow_up_count: 1,
+      }),
+    },
+  };
+  const config = createConfig({
+    workspaceRoot: fixture.workspaceRoot,
+    stateFile: fixture.stateFile,
+    repoPath: fixture.repoPath,
+    localReviewEnabled: true,
+    reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+  });
+
+  const dto = await buildIssueExplainDto(
+    {
+      getIssue: async () => issue,
+      listAllIssues: async () => [issue],
+      listCandidateIssues: async () => [issue],
+      resolvePullRequestForBranch: async () => ({
+        number: issueNumber,
+        title: "Explain degraded draft local review readiness",
+        url: `https://example.test/pull/${issueNumber}`,
+        state: "OPEN",
+        createdAt: "2026-03-24T00:00:00Z",
+        updatedAt: "2026-03-24T00:00:00Z",
+        isDraft: true,
+        reviewDecision: null,
+        mergeStateStatus: "CLEAN",
+        headRefName: branchName(fixture.config, issueNumber),
+        headRefOid: "head-610",
+        currentHeadCiGreenAt: "2026-03-24T00:12:00Z",
+      }),
+      getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    config,
+    state,
+    issueNumber,
+  );
+
+  assert.equal(
+    dto.externalSignalReadinessSummary,
+    "external_signal_readiness status=blocked_by_local_review ci=passing review=local_review_blocked workflows=absent",
+  );
+});

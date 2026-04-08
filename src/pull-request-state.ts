@@ -1,4 +1,5 @@
 import {
+  localReviewDegradedNeedsBlock,
   localReviewFixBlockedNeedsRepair,
   localReviewFollowUpNeedsRepair,
   localReviewManualReviewNeedsRepair,
@@ -729,6 +730,10 @@ export function blockedReasonFromReviewState(
     return "manual_review";
   }
 
+  if (localReviewDegradedNeedsBlock(config, record, pr)) {
+    return "verification";
+  }
+
   if (localReviewHighSeverityNeedsBlock(config, record, pr) || localReviewBlocksMerge(config, record, pr)) {
     return "verification";
   }
@@ -963,6 +968,10 @@ export function inferStateFromPullRequest(
   }
 
   if (localReviewRequiresManualReview(config, record, pr)) {
+    return "blocked";
+  }
+
+  if (localReviewDegradedNeedsBlock(config, record, pr)) {
     return "blocked";
   }
 

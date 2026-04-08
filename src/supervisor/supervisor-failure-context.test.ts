@@ -254,6 +254,32 @@ test("inferFailureContext returns local review blocker context", () => {
   assert.match(context?.summary ?? "", /Local review found 2 actionable finding/);
 });
 
+test("inferFailureContext returns degraded local review blocker context for current-head draft PRs", () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+  });
+  const pr = createPullRequest({
+    isDraft: true,
+  });
+  const record = createRecord({
+    local_review_head_sha: pr.headRefOid,
+    local_review_findings_count: 1,
+    local_review_root_cause_count: 1,
+    local_review_max_severity: "medium",
+    local_review_verified_findings_count: 0,
+    local_review_verified_max_severity: null,
+    local_review_recommendation: "changes_requested",
+    local_review_degraded: true,
+  });
+
+  const context = inferFailureContext(config, record, pr, [], []);
+
+  assert.equal(context?.category, "blocked");
+  assert.equal(context?.summary, "Local review completed in a degraded state.");
+  assert.match(context?.signature ?? "", /:degraded$/);
+});
+
 test("inferFailureContext returns merge conflict context when no earlier blocker applies", () => {
   const context = inferFailureContext(
     createConfig(),
