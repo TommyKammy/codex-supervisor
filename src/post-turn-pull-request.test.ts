@@ -7,7 +7,7 @@ import path from "node:path";
 import { handlePostTurnPullRequestTransitionsPhase, type PullRequestLifecycleSnapshot } from "./post-turn-pull-request";
 import { IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorStateFile } from "./core/types";
 import { derivePullRequestLifecycleSnapshot as deriveSupervisorPullRequestLifecycleSnapshot } from "./supervisor/supervisor-lifecycle";
-import { inferStateFromPullRequest } from "./pull-request-state";
+import { blockedReasonFromReviewState as resolveBlockedReasonFromReviewState, inferStateFromPullRequest } from "./pull-request-state";
 import { createConfig, createFailureContext, createIssue, createPullRequest, createRecord } from "./turn-execution-test-helpers";
 
 const SAMPLE_UNIX_WORKSTATION_PATH = `/${"home"}/alice/dev/private-repo`;
@@ -1911,12 +1911,7 @@ test("handlePostTurnPullRequestTransitionsPhase routes current-head manual-revie
       repeated_failure_signature_count: 0,
     }),
     blockedReasonFromReviewState: (record, pr, checks, reviewThreads) =>
-      inferStateFromPullRequest(config, record, pr, checks, reviewThreads) === "blocked" &&
-      record.pre_merge_evaluation_outcome === "manual_review_blocked"
-        ? "manual_review"
-        : record.pre_merge_evaluation_outcome === "fix_blocked"
-          ? "verification"
-          : null,
+      resolveBlockedReasonFromReviewState(config, record, pr, checks, reviewThreads),
     summarizeChecks: (checks) => ({
       hasPending: checks.some((check) => check.bucket === "pending"),
       hasFailing: checks.some((check) => check.bucket === "fail"),
@@ -3138,6 +3133,132 @@ test("handlePostTurnPullRequestTransitionsPhase blocks draft PRs when local revi
   assert.equal(result.record.blocked_reason, "manual_review");
   assert.equal(result.record.pre_merge_evaluation_outcome, "manual_review_blocked");
   assert.match(result.record.last_error ?? "", /manual/i);
+});
+
+test("handlePostTurnPullRequestTransitionsPhase keeps degraded current-head local review separate from manual-review blockers", async () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+  });
+  const issue = createIssue({ title: "Keep degraded local review out of manual review" });
+  const readyPr = createPullRequest({ title: "Degraded local review gate", isDraft: false, headRefOid: "head-117" });
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    github: {
+      getPullRequest: async () => {
+        throw new Error("unexpected getPullRequest call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      markPullRequestReady: async () => {
+        throw new Error("unexpected markPullRequestReady call");
+      },
+    },
+    context: {
+      state: {
+        activeIssueNumber: 103,
+        issues: { "103": createRecord({ state: "pr_open", pr_number: readyPr.number, last_head_sha: "head-117" }) },
+      },
+      record: createRecord({ state: "pr_open", pr_number: readyPr.number, last_head_sha: "head-117" }),
+      issue,
+      workspacePath: path.join("/tmp/workspaces", "issue-103"),
+      syncJournal: async () => undefined,
+      memoryArtifacts: {
+        alwaysReadFiles: [],
+        onDemandFiles: [],
+        contextIndexPath: "/tmp/context-index.md",
+        agentsPath: "/tmp/AGENTS.generated.md",
+      },
+      pr: readyPr,
+      options: { dryRun: false },
+    },
+    derivePullRequestLifecycleSnapshot: (record, pr, checks, reviewThreads) => ({
+      recordForState: record,
+      nextState: inferStateFromPullRequest(config, record, pr, checks, reviewThreads),
+      failureContext: null,
+      reviewWaitPatch: {},
+      copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    blockedReasonFromReviewState: (record, pr, checks, reviewThreads) =>
+      resolveBlockedReasonFromReviewState(config, record, pr, checks, reviewThreads),
+    summarizeChecks: () => ({
+      hasPending: false,
+      hasFailing: false,
+    }),
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runLocalReviewImpl: async () => ({
+      ranAt: "2026-03-24T00:11:00Z",
+      summaryPath: "/tmp/reviews/owner-repo/issue-103/head-117.md",
+      findingsPath: "/tmp/reviews/owner-repo/issue-103/head-117.json",
+      summary: "One local review role failed after surfacing a medium-severity follow-up candidate.",
+      blockerSummary: "degraded local review; inspect the saved artifact",
+      findingsCount: 1,
+      rootCauseCount: 1,
+      maxSeverity: "medium",
+      verifiedFindingsCount: 0,
+      verifiedMaxSeverity: "none",
+      recommendation: "changes_requested",
+      degraded: true,
+      finalEvaluation: {
+        outcome: "manual_review_blocked",
+        residualFindings: [
+          {
+            findingKey: "src/ui/panel.tsx|20|21|retry path|retry path should preserve prior findings.",
+            summary: "Retry path should preserve prior findings.",
+            severity: "medium",
+            category: "correctness",
+            file: "src/ui/panel.tsx",
+            start: 20,
+            end: 21,
+            source: "local_review",
+            resolution: "follow_up_candidate",
+            rationale: "Residual non-high-severity finding is eligible for explicit follow-up instead of blocking merge by itself.",
+          },
+        ],
+        mustFixCount: 0,
+        manualReviewCount: 0,
+        followUpCount: 1,
+      },
+      rawOutput: "raw output",
+    }),
+    loadOpenPullRequestSnapshot: async () => ({
+      pr: readyPr,
+      checks: [],
+      reviewThreads: [] satisfies ReviewThread[],
+    }),
+  });
+
+  assert.equal(result.record.state, "blocked");
+  assert.equal(result.record.blocked_reason, "verification");
+  assert.equal(result.record.local_review_degraded, true);
+  assert.equal(result.record.pre_merge_evaluation_outcome, "manual_review_blocked");
+  assert.equal(result.record.pre_merge_manual_review_count, 0);
+  assert.match(result.record.last_error ?? "", /degraded state/i);
 });
 
 test("handlePostTurnPullRequestTransitionsPhase emits typed review-wait change events", async () => {

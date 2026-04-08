@@ -596,6 +596,27 @@ test("blockedReasonFromReviewState reports manual_review for manual-review-block
   );
 });
 
+test("blockedReasonFromReviewState reports verification for degraded local review without manual-review residuals", () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+    copilotReviewWaitMinutes: 0,
+  });
+  const record = createRecord({
+    state: "pr_open",
+    local_review_head_sha: "head123",
+    local_review_degraded: true,
+    pre_merge_evaluation_outcome: "manual_review_blocked",
+    pre_merge_manual_review_count: 0,
+    pre_merge_follow_up_count: 1,
+  });
+
+  assert.equal(
+    blockedReasonFromReviewState(config, record, createPullRequest({ headRefOid: "head123" }), [], []),
+    "verification",
+  );
+});
+
 test("inferStateFromPullRequest blocks draft PRs when the current head still needs manual verification", () => {
   const config = createConfig({
     localReviewEnabled: true,
