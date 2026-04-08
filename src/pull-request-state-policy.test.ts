@@ -643,6 +643,27 @@ test("inferStateFromPullRequest blocks draft PRs when the current-head local rev
   );
 });
 
+test("inferStateFromPullRequest keeps degraded advisory draft PRs out of verification blocking", () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "advisory",
+    copilotReviewWaitMinutes: 0,
+  });
+  const record = createRecord({
+    state: "draft_pr",
+    local_review_head_sha: "head123",
+    local_review_degraded: true,
+    local_review_recommendation: "changes_requested",
+    pre_merge_evaluation_outcome: "follow_up_eligible",
+    pre_merge_manual_review_count: 0,
+    pre_merge_follow_up_count: 1,
+  });
+  const pr = createPullRequest({ isDraft: true, headRefOid: "head123" });
+
+  assert.equal(inferStateFromPullRequest(config, record, pr, [], []), "draft_pr");
+  assert.equal(blockedReasonFromReviewState(config, record, pr, [], []), null);
+});
+
 test("inferStateFromPullRequest blocks draft PRs when the current head still needs manual verification", () => {
   const config = createConfig({
     localReviewEnabled: true,

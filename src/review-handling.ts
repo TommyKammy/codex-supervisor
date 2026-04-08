@@ -183,6 +183,7 @@ export function localReviewDegradedNeedsBlock(
 ): boolean {
   return (
     config.localReviewEnabled &&
+    config.localReviewPolicy !== "advisory" &&
     record.local_review_head_sha === pr.headRefOid &&
     record.local_review_degraded === true &&
     record.local_review_recommendation !== "ready" &&
