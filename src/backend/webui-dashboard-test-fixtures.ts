@@ -119,11 +119,15 @@ export class FakeElement {
   }
 
   set innerHTML(value: string) {
-    this.innerHtmlValue = value;
     this.textContentValue = "";
-    if (value === "") {
-      this.children.length = 0;
+    this.children.length = 0;
+    if (value !== "") {
+      this.innerHtmlValue = "";
+      throw new Error(
+        "FakeElement.innerHTML only supports clearing content; extend the fake DOM before using markup writes.",
+      );
     }
+    this.innerHtmlValue = value;
   }
 
   get textContent(): string {
@@ -640,25 +644,39 @@ function createHtmlHarness(
     return await next.response;
   };
 
-  const context = {
-    console,
-    Date,
+  const localStorage = options.localStorage ?? new FakeStorage();
+  const prompt = options.prompt ?? (() => null);
+  const confirm = options.confirm ?? (() => true);
+  const setTimeoutFn = options.manualTimers?.setTimeout ?? setTimeout;
+  const clearTimeoutFn = options.manualTimers?.clearTimeout ?? clearTimeout;
+  const window = {
+    confirm,
+    prompt,
     document,
     EventSource: MockEventSource,
     fetch,
-    setTimeout: options.manualTimers?.setTimeout ?? setTimeout,
-    clearTimeout: options.manualTimers?.clearTimeout ?? clearTimeout,
-    window: {
-      confirm: options.confirm ?? (() => true),
-      localStorage: options.localStorage ?? new FakeStorage(),
-      prompt: options.prompt ?? (() => null),
-    },
-    localStorage: options.localStorage ?? new FakeStorage(),
+    setTimeout: setTimeoutFn,
+    clearTimeout: clearTimeoutFn,
+    localStorage,
+  };
+  const context = {
+    console,
+    Date,
+    document: window.document,
+    EventSource: window.EventSource,
+    fetch: window.fetch,
+    setTimeout: window.setTimeout,
+    clearTimeout: window.clearTimeout,
+    confirm: window.confirm,
+    prompt: window.prompt,
+    window,
+    localStorage: window.localStorage,
   };
 
   vm.runInNewContext(extractInlineScript(html), context);
 
   return {
+    context,
     document,
     fetchCalls,
     remainingFetches: queue,
