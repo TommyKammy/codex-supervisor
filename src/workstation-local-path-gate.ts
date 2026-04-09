@@ -36,16 +36,67 @@ function formatJournalNormalizationFailureDetail(journalPath: string, error: unk
 export function buildWorkstationLocalPathFailureContext(args: {
   gateLabel: string;
   details: string[];
+  summary?: string;
 }): FailureContext {
   return {
     category: "blocked",
-    summary: `Tracked durable artifacts failed workstation-local path hygiene ${args.gateLabel}.`,
+    summary:
+      args.summary
+      ?? `Tracked durable artifacts failed workstation-local path hygiene ${args.gateLabel}.`,
     signature: WORKSTATION_LOCAL_PATH_HYGIENE_FAILURE_SIGNATURE,
     command: "npm run verify:paths",
     details: args.details,
     url: null,
     updated_at: nowIso(),
   };
+}
+
+function summarizeWorkstationLocalPathMatches(
+  findings: Awaited<ReturnType<typeof findForbiddenWorkstationLocalPaths>>,
+  limit = 3,
+): string {
+  const countsByFile = new Map<
+    string,
+    { count: number; reasons: Map<string, number> }
+  >();
+
+  for (const finding of findings) {
+    const existing = countsByFile.get(finding.filePath);
+    if (existing) {
+      existing.count += 1;
+      existing.reasons.set(finding.reason, (existing.reasons.get(finding.reason) ?? 0) + 1);
+      continue;
+    }
+
+    countsByFile.set(finding.filePath, {
+      count: 1,
+      reasons: new Map([[finding.reason, 1]]),
+    });
+  }
+
+  const sortedFiles = [...countsByFile.entries()].sort((left, right) => {
+    if (right[1].count !== left[1].count) {
+      return right[1].count - left[1].count;
+    }
+
+    return left[0].localeCompare(right[0]);
+  });
+
+  const visibleFiles = sortedFiles.slice(0, limit).map(([filePath, summary]) => {
+    const dominantReason = [...summary.reasons.entries()].sort((left, right) => {
+      if (right[1] !== left[1]) {
+        return right[1] - left[1];
+      }
+
+      return left[0].localeCompare(right[0]);
+    })[0]?.[0];
+
+    return `${filePath} (${summary.count} match${summary.count === 1 ? "" : "es"}${dominantReason ? `, ${dominantReason}` : ""})`;
+  });
+
+  const remainingCount = sortedFiles.length - visibleFiles.length;
+  const tail = remainingCount > 0 ? `; +${remainingCount} more file${remainingCount === 1 ? "" : "s"}` : "";
+  return visibleFiles.length > 0 ? `First fix: ${visibleFiles.join("; ")}${tail}.` : "";
 }
 
 async function redactSupervisorOwnedJournalLeaks(
@@ -99,11 +150,15 @@ export async function runWorkstationLocalPathGate(args: {
     return { ok: true, failureContext: null, rewrittenJournalPaths };
   }
 
+  const remediationSummary = summarizeWorkstationLocalPathMatches(findings);
   return {
     ok: false,
     failureContext: buildWorkstationLocalPathFailureContext({
       gateLabel: args.gateLabel,
       details: [...normalizationErrors, ...findings.map(formatWorkstationLocalPathMatch)],
+      summary: remediationSummary
+        ? `Tracked durable artifacts failed workstation-local path hygiene ${args.gateLabel}. ${remediationSummary}`
+        : undefined,
     }),
     rewrittenJournalPaths,
   };

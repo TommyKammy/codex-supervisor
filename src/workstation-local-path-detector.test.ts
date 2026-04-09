@@ -231,3 +231,50 @@ test("runtime gate fails closed when supervisor-owned journal normalization thro
     /\.codex-supervisor\/issues\/181\/issue-journal\.md:5/,
   );
 });
+
+test("runtime gate surfaces the highest-signal offending file first in the failure summary", async (t) => {
+  const repoPath = await createTrackedRepo();
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+
+  await fs.mkdir(path.join(repoPath, "docs"), { recursive: true });
+  await fs.writeFile(
+    path.join(repoPath, "docs", "guide.md"),
+    `Workspace note: ${SAMPLE_FORBIDDEN_PATH}\n`,
+    "utf8",
+  );
+  await fs.mkdir(path.join(repoPath, "src"), { recursive: true });
+  await fs.writeFile(
+    path.join(repoPath, "src", "config.ts"),
+    [
+      `const one = ${JSON.stringify(SAMPLE_FORBIDDEN_PATH)};`,
+      `const two = ${JSON.stringify(["", "home", "alice", "dev", "private-repo", "src", "two.ts"].join("/"))};`,
+      `const three = ${JSON.stringify(["", "home", "alice", "dev", "private-repo", "src", "three.ts"].join("/"))};`,
+    ].join("\n"),
+    "utf8",
+  );
+  git(repoPath, "add", "docs/guide.md", "src/config.ts");
+
+  const gateResult = await runWorkstationLocalPathGate({
+    workspacePath: repoPath,
+    gateLabel: "before marking PR #116 ready",
+  });
+
+  assert.equal(gateResult.ok, false);
+  const summary = gateResult.failureContext?.summary ?? "";
+  assert.match(summary, /workstation-local path hygiene before marking PR #116 ready/);
+  assert.match(summary, /src\/config\.ts \(3 matches, Linux user home directory\)/);
+  assert.ok(
+    summary.indexOf("src/config.ts") < summary.indexOf("docs/guide.md"),
+    `expected the denser file to be summarized before the secondary file\nsummary: ${summary}`,
+  );
+  assert.match(
+    gateResult.failureContext?.details.join("\n") ?? "",
+    /- src\/config\.ts:1 matched \/home\/<user>\/ \(Linux user home directory\) via "\/home\/alice\/dev\/private-repo"/i,
+  );
+  assert.match(
+    gateResult.failureContext?.details.join("\n") ?? "",
+    /- docs\/guide\.md:1 matched \/home\/<user>\/ \(Linux user home directory\) via "\/home\/alice\/dev\/private-repo"/i,
+  );
+});
