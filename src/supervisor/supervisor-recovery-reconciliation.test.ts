@@ -1485,6 +1485,116 @@ test("reconcileRecoverableBlockedIssueStates persists refreshed tracked PR lifec
   assert.deepEqual(recoveryEvents, []);
 });
 
+test("reconcileRecoverableBlockedIssueStates suppresses duplicate tracked PR recovery churn when the same blocker persists", async () => {
+  const config = createConfig();
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
+        state: "blocked",
+        blocked_reason: "verification",
+        pr_number: 191,
+        last_head_sha: "head-191",
+        last_error: "Ready-for-review promotion is blocked by local verification.",
+        last_failure_kind: null,
+        last_failure_context: {
+          category: "blocked",
+          summary: "Ready-for-review promotion is blocked by local verification.",
+          signature: "local-verification-blocked",
+          command: null,
+          details: ["tracked_pr=head-191"],
+          url: null,
+          updated_at: "2026-03-13T00:20:00Z",
+        },
+        last_failure_signature: "local-verification-blocked",
+        repeated_failure_signature_count: 3,
+      }),
+    ],
+  });
+  const issue = createIssue({
+    title: "Recovery issue",
+    updatedAt: "2026-03-13T00:21:00Z",
+  });
+  const pr = createPullRequest({
+    number: 191,
+    title: "Recovery implementation",
+    url: "https://example.test/pr/191",
+    headRefName: "codex/reopen-issue-366",
+    headRefOid: "head-191",
+    isDraft: true,
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const firstRecoveryEvents = await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => pr,
+      getIssue: async () => issue,
+      getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    stateStore,
+    state,
+    config,
+    [issue],
+    {
+      shouldAutoRetryHandoffMissing,
+      inferStateFromPullRequest: () => "draft_pr",
+      inferFailureContext: () => null,
+      blockedReasonForLifecycleState: () => null,
+      isOpenPullRequest,
+      syncReviewWaitWindow: () => ({}),
+      syncCopilotReviewRequestObservation: () => ({}),
+      syncCopilotReviewTimeoutState: noCopilotReviewTimeoutPatch,
+    },
+  );
+
+  assert.deepEqual(firstRecoveryEvents.map((event) => event.reason), [
+    "tracked_pr_lifecycle_recovered: resumed issue #366 from blocked to draft_pr using fresh tracked PR #191 facts at head head-191",
+  ]);
+  assert.equal(state.issues["366"]?.state, "draft_pr");
+  assert.equal(saveCalls, 1);
+
+  const secondRecoveryEvents = await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => pr,
+      getIssue: async () => issue,
+      getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    stateStore,
+    state,
+    config,
+    [issue],
+    {
+      shouldAutoRetryHandoffMissing,
+      inferStateFromPullRequest: () => "draft_pr",
+      inferFailureContext: () => null,
+      blockedReasonForLifecycleState: () => null,
+      isOpenPullRequest,
+      syncReviewWaitWindow: () => ({}),
+      syncCopilotReviewRequestObservation: () => ({}),
+      syncCopilotReviewTimeoutState: noCopilotReviewTimeoutPatch,
+    },
+  );
+
+  assert.deepEqual(secondRecoveryEvents, []);
+  assert.equal(state.issues["366"]?.state, "draft_pr");
+  assert.equal(state.issues["366"]?.last_recovery_reason, "tracked_pr_lifecycle_recovered: resumed issue #366 from blocked to draft_pr using fresh tracked PR #191 facts at head head-191");
+  assert.equal(saveCalls, 1);
+});
+
 test("reconcileRecoverableBlockedIssueStates clears stale head-scoped review state after a tracked PR repair push", async () => {
   const config = createConfig({
     localReviewEnabled: true,

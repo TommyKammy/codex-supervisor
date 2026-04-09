@@ -34,6 +34,17 @@ type ApplyRecoveryEvent = (
   recoveryEvent: RecoveryEvent,
 ) => Partial<IssueRunRecord>;
 
+function needsRecordUpdate(record: IssueRunRecord, patch: Partial<IssueRunRecord>): boolean {
+  for (const [key, value] of Object.entries(patch)) {
+    const recordValue = record[key as keyof IssueRunRecord];
+    if (JSON.stringify(recordValue) !== JSON.stringify(value)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function matchesTrackedBranch(
   record: Pick<IssueRunRecord, "branch">,
   pr: Pick<GitHubPullRequest, "headRefName">,
@@ -75,17 +86,6 @@ function orderTrackedMergedButOpenRecordsForResume(
   }
 
   return [...ordered.slice(nextIndex), ...ordered.slice(0, nextIndex)];
-}
-
-function needsRecordUpdate(record: IssueRunRecord, patch: Partial<IssueRunRecord>): boolean {
-  for (const [key, value] of Object.entries(patch)) {
-    const recordValue = record[key as keyof IssueRunRecord];
-    if (JSON.stringify(recordValue) !== JSON.stringify(value)) {
-      return true;
-    }
-  }
-
-  return false;
 }
 
 export function buildTrackedPrResumeRecoveryEvent(
@@ -427,6 +427,9 @@ export async function reconcileStaleFailedTrackedPrRecord(
     copilotReviewRequestObservationPatch: projection.copilotReviewRequestObservationPatch,
     copilotReviewTimeoutPatch: projection.copilotReviewTimeoutPatch,
   });
+  if (!needsRecordUpdate(record, patch)) {
+    return false;
+  }
   const recoveryEvent = buildTrackedPrResumeRecoveryEvent(record, pr, nextState, helpers.buildRecoveryEvent);
 
   const updated = stateStore.touch(record, helpers.applyRecoveryEvent(patch, recoveryEvent));
