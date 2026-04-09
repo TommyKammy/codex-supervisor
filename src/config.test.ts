@@ -8,6 +8,7 @@ import {
   findRepoOwnedWorkspacePreparationCandidate,
   loadConfig,
   loadConfigSummary,
+  loadConfigSummaryFromDocument,
   summarizeCadenceDiagnostics,
 } from "./core/config";
 import { SupervisorConfig } from "./core/types";
@@ -82,6 +83,32 @@ test("loadConfigSummary reports missing required fields without throwing", async
   ]);
   assert.equal(summary.config, null);
   assert.match(summary.error ?? "", /Missing or invalid config field: repoSlug/);
+});
+
+test("loadConfigSummaryFromDocument resolves config-relative paths for in-memory previews", () => {
+  const configPath = path.join(process.cwd(), "fixtures", "supervisor.config.json");
+
+  const summary = loadConfigSummaryFromDocument(
+    {
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "./workspaces",
+      stateFile: "./state.json",
+      codexBinary: "./bin/codex",
+      branchPrefix: "codex/issue-",
+    },
+    configPath,
+  );
+
+  assert.equal(summary.status, "ready");
+  assert.equal(summary.configPath, configPath);
+  assert.equal(summary.config?.repoPath, path.join(path.dirname(configPath)));
+  assert.equal(summary.config?.workspaceRoot, path.join(path.dirname(configPath), "workspaces"));
+  assert.equal(summary.config?.stateFile, path.join(path.dirname(configPath), "state.json"));
+  assert.equal(summary.config?.codexBinary, path.join(path.dirname(configPath), "bin", "codex"));
+  assert.deepEqual(summary.missingRequiredFields, []);
+  assert.deepEqual(summary.invalidFields, []);
 });
 
 test("loadConfigSummary surfaces the default trust diagnostics posture", async (t) => {

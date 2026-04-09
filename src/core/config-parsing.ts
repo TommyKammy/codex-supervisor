@@ -1,0 +1,511 @@
+import path from "node:path";
+import {
+  CopilotReviewTimeoutAction,
+  ExecutionSafetyMode,
+  LocalCiCommandConfig,
+  LocalReviewHighSeverityAction,
+  LocalReviewPolicy,
+  LocalReviewReviewerThresholdConfig,
+  LocalReviewReviewerType,
+  ReasoningEffort,
+  RunState,
+  ShellLocalCiCommandConfig,
+  StructuredLocalCiCommandConfig,
+  SupervisorConfig,
+  TrustMode,
+} from "./types";
+import { DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH } from "./journal";
+import { mapConfiguredReviewProviders } from "./review-providers";
+import { isValidGitRefName, resolveMaybeRelative } from "./utils";
+import { DEFAULT_CANDIDATE_DISCOVERY_FETCH_WINDOW } from "./config-constants";
+
+const VALID_REASONING_EFFORTS = new Set<ReasoningEffort>(["none", "low", "medium", "high", "xhigh"]);
+const VALID_TRUST_MODES = new Set<TrustMode>(["trusted_repo_and_authors", "untrusted_or_mixed"]);
+const VALID_EXECUTION_SAFETY_MODES = new Set<ExecutionSafetyMode>(["unsandboxed_autonomous", "operator_gated"]);
+const VALID_LOCAL_REVIEW_POLICIES = new Set<LocalReviewPolicy>(["advisory", "block_ready", "block_merge"]);
+const VALID_LOCAL_REVIEW_HIGH_SEVERITY_ACTIONS = new Set<LocalReviewHighSeverityAction>(["retry", "blocked"]);
+const VALID_COPILOT_REVIEW_TIMEOUT_ACTIONS = new Set<CopilotReviewTimeoutAction>(["continue", "block"]);
+const VALID_LOCAL_REVIEW_MINIMUM_SEVERITIES = new Set<LocalReviewReviewerThresholdConfig["minimumSeverity"]>(["low", "medium", "high"]);
+const VALID_RUN_STATES = new Set<RunState>([
+  "queued",
+  "planning",
+  "reproducing",
+  "implementing",
+  "local_review_fix",
+  "stabilizing",
+  "draft_pr",
+  "local_review",
+  "pr_open",
+  "repairing_ci",
+  "resolving_conflict",
+  "waiting_ci",
+  "addressing_review",
+  "ready_to_merge",
+  "merging",
+  "done",
+  "blocked",
+  "failed",
+]);
+
+function resolveCommandLikeValue(baseDir: string, value: string): string {
+  if (path.isAbsolute(value)) {
+    return value;
+  }
+
+  return /[\\/]/.test(value) ? resolveMaybeRelative(baseDir, value) : value;
+}
+
+function normalizeStringArray(value: unknown, fieldName: string): string[] {
+  if (!Array.isArray(value)) {
+    throw new Error(`${fieldName} must be an array of strings.`);
+  }
+
+  return value.map((entry, index) => {
+    if (typeof entry !== "string") {
+      throw new Error(`${fieldName}[${index}] must be a string.`);
+    }
+
+    return entry;
+  });
+}
+
+export function normalizeLocalCiCommand(value: unknown): LocalCiCommandConfig | undefined {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed !== "" ? trimmed : undefined;
+  }
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const raw = value as Record<string, unknown>;
+  if (raw.mode === "structured") {
+    if (typeof raw.executable !== "string" || raw.executable.trim() === "") {
+      throw new Error("localCiCommand.executable must be a non-empty string.");
+    }
+
+    const structuredCommand: StructuredLocalCiCommandConfig = {
+      mode: "structured",
+      executable: raw.executable.trim(),
+    };
+
+    if ("args" in raw) {
+      structuredCommand.args = normalizeStringArray(raw.args, "localCiCommand.args");
+    }
+
+    return structuredCommand;
+  }
+
+  if (raw.mode === "shell") {
+    if (typeof raw.command !== "string" || raw.command.trim() === "") {
+      throw new Error("localCiCommand.command must be a non-empty string.");
+    }
+
+    const shellCommand: ShellLocalCiCommandConfig = {
+      mode: "shell",
+      command: raw.command.trim(),
+    };
+    return shellCommand;
+  }
+
+  throw new Error("localCiCommand must be a non-empty string or an object with mode structured|shell.");
+}
+
+export function displayLocalCiCommand(command: LocalCiCommandConfig | undefined): string | null {
+  if (typeof command === "string") {
+    const trimmed = command.trim();
+    return trimmed !== "" ? trimmed : null;
+  }
+
+  if (!command) {
+    return null;
+  }
+
+  if (command.mode === "structured") {
+    return [command.executable, ...(command.args ?? [])].join(" ").trim() || null;
+  }
+
+  return command.command.trim() || null;
+}
+
+function assertString(value: unknown, label: string): string {
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new Error(`Missing or invalid config field: ${label}`);
+  }
+
+  return value;
+}
+
+function assertPattern(value: string, label: string, pattern: RegExp): string {
+  if (!pattern.test(value)) {
+    throw new Error(`Invalid config field: ${label}`);
+  }
+
+  return value;
+}
+
+function assertGitRefName(value: string, label: string): string {
+  if (!isValidGitRefName(value)) {
+    throw new Error(`Invalid config field: ${label}`);
+  }
+
+  return value;
+}
+
+function assertBranchPrefix(value: string, label: string): string {
+  if (!isValidGitRefName(`${value}1`)) {
+    throw new Error(`Invalid config field: ${label}`);
+  }
+
+  return value;
+}
+
+function parseNonNegativeNumberWithDefault(value: unknown, field: string, defaultValue: number): number {
+  if (value === undefined) {
+    return defaultValue;
+  }
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    throw new Error(`Invalid config field: ${field}`);
+  }
+
+  return value;
+}
+
+function parseReviewerThresholdConfig(
+  value: unknown,
+  defaults: LocalReviewReviewerThresholdConfig,
+): LocalReviewReviewerThresholdConfig {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return defaults;
+  }
+
+  const raw = value as Record<string, unknown>;
+  return {
+    confidenceThreshold:
+      typeof raw.confidenceThreshold === "number" &&
+      Number.isFinite(raw.confidenceThreshold) &&
+      raw.confidenceThreshold >= 0 &&
+      raw.confidenceThreshold <= 1
+        ? raw.confidenceThreshold
+        : defaults.confidenceThreshold,
+    minimumSeverity:
+      typeof raw.minimumSeverity === "string" &&
+      VALID_LOCAL_REVIEW_MINIMUM_SEVERITIES.has(raw.minimumSeverity as LocalReviewReviewerThresholdConfig["minimumSeverity"])
+        ? (raw.minimumSeverity as LocalReviewReviewerThresholdConfig["minimumSeverity"])
+        : defaults.minimumSeverity,
+  };
+}
+
+function parseReviewerThresholds(
+  value: unknown,
+  defaults: Record<LocalReviewReviewerType, LocalReviewReviewerThresholdConfig>,
+): Record<LocalReviewReviewerType, LocalReviewReviewerThresholdConfig> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return defaults;
+  }
+
+  const raw = value as Record<string, unknown>;
+  return {
+    generic: parseReviewerThresholdConfig(raw.generic, defaults.generic),
+    specialist: parseReviewerThresholdConfig(raw.specialist, defaults.specialist),
+  };
+}
+
+function parseReasoningPolicy(value: unknown): Partial<Record<RunState, ReasoningEffort>> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([key, raw]) => VALID_RUN_STATES.has(key as RunState) && typeof raw === "string" && VALID_REASONING_EFFORTS.has(raw as ReasoningEffort))
+    .map(([key, raw]) => [key as RunState, raw as ReasoningEffort]);
+
+  return Object.fromEntries(entries) as Partial<Record<RunState, ReasoningEffort>>;
+}
+
+export function parseSupervisorConfigDocument(raw: Record<string, unknown>, resolvedPath: string): SupervisorConfig {
+  const configDir = path.dirname(resolvedPath);
+  const defaultLocalReviewConfidenceThreshold =
+    typeof raw.localReviewConfidenceThreshold === "number" &&
+    Number.isFinite(raw.localReviewConfidenceThreshold) &&
+    raw.localReviewConfidenceThreshold >= 0 &&
+    raw.localReviewConfidenceThreshold <= 1
+      ? raw.localReviewConfidenceThreshold
+      : 0.7;
+
+  return {
+    repoPath: resolveMaybeRelative(configDir, assertString(raw.repoPath, "repoPath")),
+    repoSlug: assertPattern(assertString(raw.repoSlug, "repoSlug"), "repoSlug", /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),
+    defaultBranch: assertGitRefName(assertString(raw.defaultBranch, "defaultBranch"), "defaultBranch"),
+    workspaceRoot: resolveMaybeRelative(configDir, assertString(raw.workspaceRoot, "workspaceRoot")),
+    stateBackend:
+      raw.stateBackend === "sqlite" || raw.stateBackend === "json"
+        ? raw.stateBackend
+        : "json",
+    stateFile: resolveMaybeRelative(configDir, assertString(raw.stateFile, "stateFile")),
+    stateBootstrapFile:
+      typeof raw.stateBootstrapFile === "string" && raw.stateBootstrapFile.trim() !== ""
+        ? resolveMaybeRelative(configDir, raw.stateBootstrapFile)
+        : undefined,
+    codexBinary: resolveCommandLikeValue(configDir, assertString(raw.codexBinary, "codexBinary")),
+    trustMode:
+      typeof raw.trustMode === "string" && VALID_TRUST_MODES.has(raw.trustMode as TrustMode)
+        ? (raw.trustMode as TrustMode)
+        : "trusted_repo_and_authors",
+    executionSafetyMode:
+      typeof raw.executionSafetyMode === "string" &&
+      VALID_EXECUTION_SAFETY_MODES.has(raw.executionSafetyMode as ExecutionSafetyMode)
+        ? (raw.executionSafetyMode as ExecutionSafetyMode)
+        : "unsandboxed_autonomous",
+    codexModelStrategy:
+      raw.codexModelStrategy === "fixed" || raw.codexModelStrategy === "alias" || raw.codexModelStrategy === "inherit"
+        ? raw.codexModelStrategy
+        : "inherit",
+    codexModel:
+      typeof raw.codexModel === "string" && raw.codexModel.trim() !== ""
+        ? raw.codexModel.trim()
+        : undefined,
+    boundedRepairModelStrategy:
+      raw.boundedRepairModelStrategy === "fixed" ||
+      raw.boundedRepairModelStrategy === "alias" ||
+      raw.boundedRepairModelStrategy === "inherit"
+        ? raw.boundedRepairModelStrategy
+        : undefined,
+    boundedRepairModel:
+      typeof raw.boundedRepairModel === "string" && raw.boundedRepairModel.trim() !== ""
+        ? raw.boundedRepairModel.trim()
+        : undefined,
+    localReviewModelStrategy:
+      raw.localReviewModelStrategy === "fixed" || raw.localReviewModelStrategy === "alias" || raw.localReviewModelStrategy === "inherit"
+        ? raw.localReviewModelStrategy
+        : undefined,
+    localReviewModel:
+      typeof raw.localReviewModel === "string" && raw.localReviewModel.trim() !== ""
+        ? raw.localReviewModel.trim()
+        : undefined,
+    codexReasoningEffortByState: parseReasoningPolicy(raw.codexReasoningEffortByState),
+    codexReasoningEscalateOnRepeatedFailure:
+      typeof raw.codexReasoningEscalateOnRepeatedFailure === "boolean"
+        ? raw.codexReasoningEscalateOnRepeatedFailure
+        : true,
+    sharedMemoryFiles: Array.isArray(raw.sharedMemoryFiles)
+      ? raw.sharedMemoryFiles.filter((value): value is string => typeof value === "string")
+      : [],
+    gsdEnabled:
+      typeof raw.gsdEnabled === "boolean"
+        ? raw.gsdEnabled
+        : false,
+    gsdAutoInstall:
+      typeof raw.gsdAutoInstall === "boolean"
+        ? raw.gsdAutoInstall
+        : false,
+    gsdInstallScope:
+      raw.gsdInstallScope === "local" || raw.gsdInstallScope === "global"
+        ? raw.gsdInstallScope
+        : "global",
+    gsdCodexConfigDir:
+      typeof raw.gsdCodexConfigDir === "string" && raw.gsdCodexConfigDir.trim() !== ""
+        ? resolveMaybeRelative(configDir, raw.gsdCodexConfigDir)
+        : undefined,
+    gsdPlanningFiles: Array.isArray(raw.gsdPlanningFiles)
+      ? raw.gsdPlanningFiles.filter((value): value is string => typeof value === "string" && value.trim() !== "")
+      : ["PROJECT.md", "REQUIREMENTS.md", "ROADMAP.md", "STATE.md"],
+    localReviewEnabled:
+      typeof raw.localReviewEnabled === "boolean"
+        ? raw.localReviewEnabled
+        : false,
+    localReviewAutoDetect:
+      typeof raw.localReviewAutoDetect === "boolean"
+        ? raw.localReviewAutoDetect
+        : true,
+    localReviewRoles: Array.isArray(raw.localReviewRoles)
+      ? raw.localReviewRoles.filter((value): value is string => typeof value === "string" && value.trim() !== "")
+      : [],
+    localReviewArtifactDir:
+      typeof raw.localReviewArtifactDir === "string" && raw.localReviewArtifactDir.trim() !== ""
+        ? resolveMaybeRelative(configDir, raw.localReviewArtifactDir)
+        : path.join(path.dirname(resolveMaybeRelative(configDir, assertString(raw.stateFile, "stateFile"))), "reviews"),
+    localReviewConfidenceThreshold: defaultLocalReviewConfidenceThreshold,
+    localReviewReviewerThresholds: parseReviewerThresholds(raw.localReviewReviewerThresholds, {
+      generic: {
+        confidenceThreshold: defaultLocalReviewConfidenceThreshold,
+        minimumSeverity: "low",
+      },
+      specialist: {
+        confidenceThreshold: defaultLocalReviewConfidenceThreshold,
+        minimumSeverity: "low",
+      },
+    }),
+    localReviewPolicy:
+      typeof raw.localReviewPolicy === "string" && VALID_LOCAL_REVIEW_POLICIES.has(raw.localReviewPolicy as LocalReviewPolicy)
+        ? (raw.localReviewPolicy as LocalReviewPolicy)
+        : "block_merge",
+    trackedPrCurrentHeadLocalReviewRequired:
+      typeof raw.trackedPrCurrentHeadLocalReviewRequired === "boolean"
+        ? raw.trackedPrCurrentHeadLocalReviewRequired
+        : false,
+    localReviewFollowUpRepairEnabled:
+      typeof raw.localReviewFollowUpRepairEnabled === "boolean" ? raw.localReviewFollowUpRepairEnabled : false,
+    localReviewManualReviewRepairEnabled:
+      typeof raw.localReviewManualReviewRepairEnabled === "boolean"
+        ? raw.localReviewManualReviewRepairEnabled
+        : false,
+    localReviewFollowUpIssueCreationEnabled:
+      typeof raw.localReviewFollowUpIssueCreationEnabled === "boolean"
+        ? raw.localReviewFollowUpIssueCreationEnabled
+        : false,
+    localReviewHighSeverityAction:
+      typeof raw.localReviewHighSeverityAction === "string" &&
+      VALID_LOCAL_REVIEW_HIGH_SEVERITY_ACTIONS.has(raw.localReviewHighSeverityAction as LocalReviewHighSeverityAction)
+        ? (raw.localReviewHighSeverityAction as LocalReviewHighSeverityAction)
+        : "blocked",
+    reviewBotLogins: Array.isArray(raw.reviewBotLogins)
+      ? raw.reviewBotLogins
+          .filter((value): value is string => typeof value === "string" && value.trim() !== "")
+          .map((value) => value.trim().toLowerCase())
+      : ["copilot-pull-request-reviewer"],
+    configuredReviewProviders: mapConfiguredReviewProviders(
+      Array.isArray(raw.reviewBotLogins)
+        ? raw.reviewBotLogins.filter((value): value is string => typeof value === "string")
+        : ["copilot-pull-request-reviewer"],
+    ),
+    humanReviewBlocksMerge:
+      typeof raw.humanReviewBlocksMerge === "boolean"
+        ? raw.humanReviewBlocksMerge
+        : true,
+    issueJournalRelativePath:
+      typeof raw.issueJournalRelativePath === "string" && raw.issueJournalRelativePath.trim() !== ""
+        ? raw.issueJournalRelativePath
+        : DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH,
+    issueJournalMaxChars:
+      typeof raw.issueJournalMaxChars === "number" && raw.issueJournalMaxChars >= 2000
+        ? raw.issueJournalMaxChars
+        : 6000,
+    issueLabel: typeof raw.issueLabel === "string" ? raw.issueLabel : undefined,
+    issueSearch: typeof raw.issueSearch === "string" ? raw.issueSearch : undefined,
+    workspacePreparationCommand: normalizeLocalCiCommand(raw.workspacePreparationCommand),
+    localCiCommand: normalizeLocalCiCommand(raw.localCiCommand),
+    candidateDiscoveryFetchWindow:
+      typeof raw.candidateDiscoveryFetchWindow === "number" &&
+      Number.isFinite(raw.candidateDiscoveryFetchWindow) &&
+      Number.isInteger(raw.candidateDiscoveryFetchWindow) &&
+      raw.candidateDiscoveryFetchWindow > 0
+        ? raw.candidateDiscoveryFetchWindow
+        : DEFAULT_CANDIDATE_DISCOVERY_FETCH_WINDOW,
+    skipTitlePrefixes: Array.isArray(raw.skipTitlePrefixes)
+      ? raw.skipTitlePrefixes.filter((value): value is string => typeof value === "string")
+      : ["Epic:"],
+    branchPrefix: assertBranchPrefix(assertString(raw.branchPrefix, "branchPrefix"), "branchPrefix"),
+    pollIntervalSeconds:
+      typeof raw.pollIntervalSeconds === "number" && raw.pollIntervalSeconds > 0
+        ? raw.pollIntervalSeconds
+        : 120,
+    mergeCriticalRecheckSeconds:
+      typeof raw.mergeCriticalRecheckSeconds === "number" &&
+      Number.isFinite(raw.mergeCriticalRecheckSeconds) &&
+      Number.isInteger(raw.mergeCriticalRecheckSeconds) &&
+      raw.mergeCriticalRecheckSeconds > 0
+        ? raw.mergeCriticalRecheckSeconds
+        : undefined,
+    copilotReviewWaitMinutes:
+      typeof raw.copilotReviewWaitMinutes === "number" && raw.copilotReviewWaitMinutes >= 0
+        ? raw.copilotReviewWaitMinutes
+        : 10,
+    copilotReviewTimeoutAction:
+      typeof raw.copilotReviewTimeoutAction === "string" &&
+      VALID_COPILOT_REVIEW_TIMEOUT_ACTIONS.has(raw.copilotReviewTimeoutAction as CopilotReviewTimeoutAction)
+        ? (raw.copilotReviewTimeoutAction as CopilotReviewTimeoutAction)
+        : "continue",
+    configuredBotRateLimitWaitMinutes:
+      typeof raw.configuredBotRateLimitWaitMinutes === "number" &&
+      Number.isFinite(raw.configuredBotRateLimitWaitMinutes) &&
+      raw.configuredBotRateLimitWaitMinutes >= 0
+        ? raw.configuredBotRateLimitWaitMinutes
+        : 0,
+    configuredBotInitialGraceWaitSeconds:
+      typeof raw.configuredBotInitialGraceWaitSeconds === "number" &&
+      Number.isFinite(raw.configuredBotInitialGraceWaitSeconds) &&
+      raw.configuredBotInitialGraceWaitSeconds >= 0
+        ? raw.configuredBotInitialGraceWaitSeconds
+        : 90,
+    configuredBotSettledWaitSeconds:
+      typeof raw.configuredBotSettledWaitSeconds === "number" &&
+      Number.isFinite(raw.configuredBotSettledWaitSeconds) &&
+      raw.configuredBotSettledWaitSeconds >= 0
+        ? raw.configuredBotSettledWaitSeconds
+        : 5,
+    configuredBotRequireCurrentHeadSignal:
+      typeof raw.configuredBotRequireCurrentHeadSignal === "boolean"
+        ? raw.configuredBotRequireCurrentHeadSignal
+        : false,
+    configuredBotCurrentHeadSignalTimeoutMinutes:
+      typeof raw.configuredBotCurrentHeadSignalTimeoutMinutes === "number" &&
+      Number.isFinite(raw.configuredBotCurrentHeadSignalTimeoutMinutes) &&
+      raw.configuredBotCurrentHeadSignalTimeoutMinutes >= 0
+        ? raw.configuredBotCurrentHeadSignalTimeoutMinutes
+        : 10,
+    configuredBotCurrentHeadSignalTimeoutAction:
+      typeof raw.configuredBotCurrentHeadSignalTimeoutAction === "string" &&
+      VALID_COPILOT_REVIEW_TIMEOUT_ACTIONS.has(raw.configuredBotCurrentHeadSignalTimeoutAction as CopilotReviewTimeoutAction)
+        ? (raw.configuredBotCurrentHeadSignalTimeoutAction as CopilotReviewTimeoutAction)
+        : "block",
+    codexExecTimeoutMinutes:
+      typeof raw.codexExecTimeoutMinutes === "number" && raw.codexExecTimeoutMinutes > 0
+        ? raw.codexExecTimeoutMinutes
+        : 30,
+    maxCodexAttemptsPerIssue:
+      typeof raw.maxCodexAttemptsPerIssue === "number" && raw.maxCodexAttemptsPerIssue > 0
+        ? raw.maxCodexAttemptsPerIssue
+        : 30,
+    maxImplementationAttemptsPerIssue:
+      typeof raw.maxImplementationAttemptsPerIssue === "number" && raw.maxImplementationAttemptsPerIssue > 0
+        ? raw.maxImplementationAttemptsPerIssue
+        : typeof raw.maxCodexAttemptsPerIssue === "number" && raw.maxCodexAttemptsPerIssue > 0
+          ? raw.maxCodexAttemptsPerIssue
+          : 30,
+    maxRepairAttemptsPerIssue:
+      typeof raw.maxRepairAttemptsPerIssue === "number" && raw.maxRepairAttemptsPerIssue > 0
+        ? raw.maxRepairAttemptsPerIssue
+        : typeof raw.maxCodexAttemptsPerIssue === "number" && raw.maxCodexAttemptsPerIssue > 0
+          ? raw.maxCodexAttemptsPerIssue
+          : 30,
+    timeoutRetryLimit:
+      typeof raw.timeoutRetryLimit === "number" && raw.timeoutRetryLimit >= 0
+        ? raw.timeoutRetryLimit
+        : 2,
+    blockedVerificationRetryLimit:
+      typeof raw.blockedVerificationRetryLimit === "number" && raw.blockedVerificationRetryLimit >= 0
+        ? raw.blockedVerificationRetryLimit
+        : 3,
+    sameBlockerRepeatLimit:
+      typeof raw.sameBlockerRepeatLimit === "number" && raw.sameBlockerRepeatLimit >= 0
+        ? raw.sameBlockerRepeatLimit
+        : 2,
+    sameFailureSignatureRepeatLimit:
+      typeof raw.sameFailureSignatureRepeatLimit === "number" && raw.sameFailureSignatureRepeatLimit >= 0
+        ? raw.sameFailureSignatureRepeatLimit
+        : 3,
+    maxDoneWorkspaces:
+      typeof raw.maxDoneWorkspaces === "number" && Number.isFinite(raw.maxDoneWorkspaces)
+        ? raw.maxDoneWorkspaces
+        : 24,
+    cleanupDoneWorkspacesAfterHours:
+      typeof raw.cleanupDoneWorkspacesAfterHours === "number" && Number.isFinite(raw.cleanupDoneWorkspacesAfterHours)
+        ? raw.cleanupDoneWorkspacesAfterHours
+        : 24,
+    cleanupOrphanedWorkspacesAfterHours: parseNonNegativeNumberWithDefault(
+      raw.cleanupOrphanedWorkspacesAfterHours,
+      "cleanupOrphanedWorkspacesAfterHours",
+      24,
+    ),
+    mergeMethod:
+      raw.mergeMethod === "merge" || raw.mergeMethod === "squash" || raw.mergeMethod === "rebase"
+        ? raw.mergeMethod
+        : "squash",
+    draftPrAfterAttempt:
+      typeof raw.draftPrAfterAttempt === "number" && raw.draftPrAfterAttempt >= 1
+        ? raw.draftPrAfterAttempt
+        : 1,
+  };
+}
