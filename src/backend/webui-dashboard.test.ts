@@ -1,7 +1,5 @@
 import assert from "node:assert/strict";
-import { setImmediate as waitForTurn } from "node:timers/promises";
 import test from "node:test";
-import vm from "node:vm";
 import {
   createSetupConfigUpdateResult,
   createSetupField,
@@ -16,608 +14,30 @@ import { renderSupervisorDashboardHtml } from "./webui-dashboard";
 import { renderDashboardPageLayout } from "./webui-dashboard-page-layout";
 import { renderDashboardPageSections } from "./webui-dashboard-page-sections";
 import { DASHBOARD_PANEL_REGISTRY } from "./webui-dashboard-panel-layout";
+import {
+  createDashboardDoctorFixture as createDoctor,
+  createDashboardExplainFixture as createExplain,
+  createDashboardHarness,
+  createDashboardIssueLintFixture as createIssueLint,
+  createDashboardServerFixture,
+  createDashboardStatusFixture as createStatus,
+  createDeferred,
+  type FakeElement,
+  FakeStorage,
+  jsonResponse,
+  MockEventSource,
+  type MockResponseLike,
+  createSetupHarness,
+  textResponse,
+  ThrowingStorage,
+} from "./webui-dashboard-test-fixtures";
 import { WEBUI_MUTATION_AUTH_HEADER, WEBUI_MUTATION_AUTH_STORAGE_KEY } from "./webui-mutation-auth";
 import { renderSupervisorSetupHtml } from "./webui-setup";
-
-interface MockResponseLike {
-  ok: boolean;
-  status?: number;
-  headers?: { get(name: string): string | null };
-  json(): Promise<unknown>;
-  text(): Promise<string>;
-}
-
-interface FetchCall {
-  path: string;
-  method: string;
-  body: string | null;
-  headers: Record<string, string> | null;
-}
-
-interface QueuedFetchResponse {
-  path: string;
-  method?: string;
-  body?: string;
-  response: MockResponseLike | Promise<MockResponseLike>;
-}
-
-interface Deferred<T> {
-  promise: Promise<T>;
-  resolve(value: T | PromiseLike<T>): void;
-  reject(reason?: unknown): void;
-}
-
-interface ManualTimerController {
-  setTimeout(callback: () => void, delay?: number): number;
-  clearTimeout(id: number): void;
-  advanceTime(ms: number): Promise<void>;
-}
 
 const SAMPLE_MACOS_WORKSPACE_ROOT = `/${"Users"}/example/dev/work`;
 
 const unavailableManagedRestart = createUnavailableManagedRestart();
-
-class FakeStorage {
-  private readonly entries = new Map<string, string>();
-
-  getItem(key: string): string | null {
-    return this.entries.get(key) ?? null;
-  }
-
-  setItem(key: string, value: string): void {
-    this.entries.set(key, String(value));
-  }
-
-  removeItem(key: string): void {
-    this.entries.delete(key);
-  }
-
-  clear(): void {
-    this.entries.clear();
-  }
-}
-
-class ThrowingStorage extends FakeStorage {
-  setItem(): void {
-    throw new Error("setItem failed");
-  }
-
-  removeItem(): void {
-    throw new Error("removeItem failed");
-  }
-}
-
-class FakeClassList {
-  private readonly names = new Set<string>();
-
-  constructor(private readonly owner: FakeElement) {}
-
-  syncFromString(value: string): void {
-    this.names.clear();
-    for (const name of value.split(/\s+/u).filter(Boolean)) {
-      this.names.add(name);
-    }
-  }
-
-  add(...names: string[]): void {
-    for (const name of names) {
-      this.names.add(name);
-    }
-    this.owner.syncClassName(Array.from(this.names).join(" "));
-  }
-
-  remove(...names: string[]): void {
-    for (const name of names) {
-      this.names.delete(name);
-    }
-    this.owner.syncClassName(Array.from(this.names).join(" "));
-  }
-
-  contains(name: string): boolean {
-    return this.names.has(name);
-  }
-}
-
-class FakeElement {
-  readonly children: FakeElement[] = [];
-  readonly classList = new FakeClassList(this);
-  readonly listeners = new Map<string, Array<(event: unknown) => unknown>>();
-
-  parentElement: FakeElement | null = null;
-  hidden = false;
-  value = "";
-  disabled = false;
-  type = "";
-
-  private classNameValue = "";
-  private idValue: string | null;
-  private innerHtmlValue = "";
-  private textContentValue = "";
-
-  constructor(
-    readonly tagName: string,
-    id: string | null = null,
-    private readonly ownerDocument: FakeDocument | null = null,
-  ) {
-    this.idValue = id;
-  }
-
-  get id(): string | null {
-    return this.idValue;
-  }
-
-  set id(value: string | null) {
-    this.ownerDocument?.unregisterElement(this);
-    this.idValue = value;
-    this.ownerDocument?.registerElement(this);
-  }
-
-  get className(): string {
-    return this.classNameValue;
-  }
-
-  set className(value: string) {
-    this.syncClassName(value);
-    this.classList.syncFromString(value);
-  }
-
-  get innerHTML(): string {
-    return this.innerHtmlValue;
-  }
-
-  set innerHTML(value: string) {
-    this.innerHtmlValue = value;
-    this.textContentValue = "";
-    if (value === "") {
-      this.children.length = 0;
-    }
-  }
-
-  get textContent(): string {
-    if (this.children.length === 0) {
-      return this.textContentValue;
-    }
-    return [this.textContentValue, ...this.children.map((child) => child.textContent)].join("");
-  }
-
-  set textContent(value: string) {
-    this.textContentValue = value;
-    this.innerHtmlValue = "";
-    this.children.length = 0;
-  }
-
-  syncClassName(value: string): void {
-    this.classNameValue = value;
-  }
-
-  appendChild(child: FakeElement): FakeElement {
-    if (child.parentElement) {
-      const previousIndex = child.parentElement.children.indexOf(child);
-      if (previousIndex >= 0) {
-        child.parentElement.children.splice(previousIndex, 1);
-      }
-    }
-    child.parentElement = this;
-    this.children.push(child);
-    return child;
-  }
-
-  addEventListener(type: string, listener: (event: unknown) => unknown): void {
-    const existing = this.listeners.get(type) ?? [];
-    existing.push(listener);
-    this.listeners.set(type, existing);
-  }
-
-  async dispatch(type: string, event: Record<string, unknown> = {}): Promise<void> {
-    for (const listener of this.listeners.get(type) ?? []) {
-      await listener(event);
-    }
-  }
-}
-
-class FakeDocument {
-  private readonly elements = new Map<string, FakeElement>();
-
-  constructor(
-    elements: Array<{
-      tagName: string;
-      id: string;
-      hidden: boolean;
-      disabled: boolean;
-    }>,
-  ) {
-    for (const element of elements) {
-      const fakeElement = new FakeElement(element.tagName, element.id, this);
-      fakeElement.hidden = element.hidden;
-      fakeElement.disabled = element.disabled;
-      this.elements.set(element.id, fakeElement);
-    }
-  }
-
-  registerElement(element: FakeElement): void {
-    if (element.id) {
-      this.elements.set(element.id, element);
-    }
-  }
-
-  unregisterElement(element: FakeElement): void {
-    if (element.id && this.elements.get(element.id) === element) {
-      this.elements.delete(element.id);
-    }
-  }
-
-  getElementById(id: string): FakeElement | null {
-    return this.elements.get(id) ?? null;
-  }
-
-  createElement(tagName: string): FakeElement {
-    return new FakeElement(tagName, null, this);
-  }
-}
-
-class MockEventSource {
-  static instances: MockEventSource[] = [];
-  readonly listeners = new Map<string, Array<(event: { type: string; data: string }) => unknown>>();
-
-  constructor(readonly url: string) {
-    MockEventSource.instances.push(this);
-  }
-
-  addEventListener(type: string, listener: (event: { type: string; data: string }) => unknown): void {
-    const existing = this.listeners.get(type) ?? [];
-    existing.push(listener);
-    this.listeners.set(type, existing);
-  }
-
-  async dispatch(type: string, data: unknown = {}): Promise<void> {
-    const event = {
-      type,
-      data: typeof data === "string" ? data : JSON.stringify(data),
-    };
-    for (const listener of this.listeners.get(type) ?? []) {
-      await listener(event);
-    }
-  }
-}
-
-function createDeferred<T>(): Deferred<T> {
-  let resolve!: (value: T | PromiseLike<T>) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
-  });
-  return { promise, resolve, reject };
-}
-
-function jsonResponse(body: unknown, statusCode = 200): MockResponseLike {
-  const normalizedBody = typeof body === "string" ? body : JSON.stringify(body);
-  return {
-    ok: statusCode >= 200 && statusCode < 300,
-    status: statusCode,
-    headers: {
-      get(name: string): string | null {
-        return name.toLowerCase() === "content-type" ? "application/json; charset=utf-8" : null;
-      },
-    },
-    async json(): Promise<unknown> {
-      return body;
-    },
-    async text(): Promise<string> {
-      return normalizedBody;
-    },
-  };
-}
-
-function textResponse(body: string, statusCode = 200, contentType = "text/plain; charset=utf-8"): MockResponseLike {
-  return {
-    ok: statusCode >= 200 && statusCode < 300,
-    status: statusCode,
-    headers: {
-      get(name: string): string | null {
-        return name.toLowerCase() === "content-type" ? contentType : null;
-      },
-    },
-    async json(): Promise<unknown> {
-      return JSON.parse(body);
-    },
-    async text(): Promise<string> {
-      return body;
-    },
-  };
-}
-
-function createManualTimerController(): ManualTimerController {
-  let now = 0;
-  let nextId = 1;
-  const timers = new Map<number, { runAt: number; callback: () => void }>();
-
-  const runDueTimers = async () => {
-    while (true) {
-      const dueTimers = Array.from(timers.entries())
-        .filter(([, timer]) => timer.runAt <= now)
-        .sort((left, right) => left[1].runAt - right[1].runAt || left[0] - right[0]);
-      if (dueTimers.length === 0) {
-        return;
-      }
-      for (const [id, timer] of dueTimers) {
-        if (!timers.delete(id)) {
-          continue;
-        }
-        timer.callback();
-        await flushAsyncWork();
-      }
-    }
-  };
-
-  return {
-    setTimeout(callback: () => void, delay = 0): number {
-      const id = nextId;
-      nextId += 1;
-      timers.set(id, {
-        runAt: now + Math.max(0, Number(delay) || 0),
-        callback,
-      });
-      return id;
-    },
-    clearTimeout(id: number): void {
-      timers.delete(id);
-    },
-    async advanceTime(ms: number): Promise<void> {
-      now += Math.max(0, Number(ms) || 0);
-      await runDueTimers();
-    },
-  };
-}
-
-function createStatus(args: {
-  selectedIssueNumber?: number | null;
-  includeWhyLines?: boolean;
-  detailedStatusLines?: string[];
-  localCiContract?: {
-    configured: boolean;
-    command: string | null;
-    recommendedCommand?: string | null;
-    source: "config" | "repo_script_candidate";
-    summary: string;
-  } | null;
-  loopRuntime?: {
-    state: "running" | "off" | "unknown";
-    pid: number | null;
-    startedAt: string | null;
-    detail: string | null;
-  } | null;
-  trackedIssues?: Array<{
-    issueNumber: number;
-    state: string;
-    branch: string;
-    prNumber: number | null;
-    blockedReason: string | null;
-  }>;
-  blockedIssues?: Array<{
-    issueNumber: number;
-    title: string;
-    blockedBy: string;
-  }>;
-  runnableIssues?: Array<{
-    issueNumber: number;
-    title: string;
-    readiness: string;
-  }>;
-  candidateDiscovery?: {
-    fetchWindow: number;
-    strategy: string;
-    truncated: boolean;
-    observedMatchingOpenIssues: number | null;
-    warning: string | null;
-  } | null;
-} = {}) {
-  const selectedIssueNumber = args.selectedIssueNumber ?? null;
-  const includeWhyLines = args.includeWhyLines ?? true;
-  return {
-    activeIssue: null,
-    selectionSummary: {
-      selectedIssueNumber,
-      selectionReason: selectedIssueNumber === null ? "no_runnable_issue" : "selected",
-    },
-    trackedIssues: args.trackedIssues ?? [],
-    runnableIssues: args.runnableIssues ?? [],
-    blockedIssues: args.blockedIssues ?? [],
-    loopRuntime:
-      args.loopRuntime ?? {
-        state: "off",
-        pid: null,
-        startedAt: null,
-        detail: null,
-      },
-    reconciliationPhase: null,
-    warning: null,
-    detailedStatusLines: args.detailedStatusLines ?? [],
-    readinessLines: [],
-    whyLines: includeWhyLines
-      ? selectedIssueNumber === null
-        ? ["selected_issue=none"]
-        : [`selected_issue=#${selectedIssueNumber}`]
-      : [],
-    localCiContract: args.localCiContract ?? null,
-    candidateDiscoverySummary: null,
-    candidateDiscovery: args.candidateDiscovery ?? null,
-    reconciliationWarning: null,
-  };
-}
-
-function createDoctor() {
-  return {
-    overallStatus: "pass",
-    checks: [{ name: "github_auth", status: "pass", summary: "GitHub auth ok." }],
-  };
-}
-
-function createExplain(issueNumber: number, overrides: Record<string, unknown> = {}) {
-  return {
-    issueNumber,
-    title: "Issue " + issueNumber,
-    state: "queued",
-    blockedReason: "none",
-    runnable: true,
-    selectionReason: "selected",
-    failureSummary: null,
-    lastError: null,
-    changeRiskLines: [],
-    externalReviewFollowUpSummary: null,
-    latestRecoverySummary: null,
-    activityContext: null,
-    reasons: ["selected"],
-    ...overrides,
-  };
-}
-
-function createIssueLint(issueNumber: number) {
-  return {
-    issueNumber,
-    title: "Issue " + issueNumber,
-    executionReady: true,
-    missingRequired: [],
-    missingRecommended: [],
-    metadataErrors: [],
-    highRiskBlockingAmbiguity: null,
-    repairGuidance: [],
-  };
-}
-
-function extractInlineScript(html: string): string {
-  const match = html.match(/<script>([\s\S]+)<\/script>/u);
-  if (!match) {
-    throw new Error("Expected the HTML to contain an inline script.");
-  }
-  return match[1];
-}
-
-async function flushAsyncWork(turns = 8): Promise<void> {
-  for (let index = 0; index < turns; index += 1) {
-    await waitForTurn();
-  }
-}
-
-function createDashboardHarness(
-  queue: QueuedFetchResponse[],
-  options: {
-    confirm?: () => boolean;
-    localStorage?: FakeStorage;
-    prompt?: () => string | null;
-  } = {},
-) {
-  MockEventSource.instances.length = 0;
-  const html = renderSupervisorDashboardHtml();
-  return createHtmlHarness(html, queue, options);
-}
-
-function createSetupHarness(
-  queue: QueuedFetchResponse[],
-  options: {
-    localStorage?: FakeStorage;
-    prompt?: () => string | null;
-  } = {},
-) {
-  const html = renderSupervisorSetupHtml();
-  return createHtmlHarness(html, queue, { manualTimers: createManualTimerController(), ...options });
-}
-
-function createHtmlHarness(
-  html: string,
-  queue: QueuedFetchResponse[],
-  options: {
-    confirm?: () => boolean;
-    localStorage?: FakeStorage;
-    prompt?: () => string | null;
-    manualTimers?: ManualTimerController;
-  } = {},
-) {
-  MockEventSource.instances.length = 0;
-  const elementDescriptors = Array.from(
-    html.matchAll(/<([a-z0-9-]+)([^>]*)\sid="([^"]+)"([^>]*)>/giu),
-    (match) => {
-      const attributes = `${match[2]} ${match[4]}`;
-      return {
-        tagName: match[1],
-        id: match[3],
-        hidden: /\bhidden\b/iu.test(attributes),
-        disabled: /\bdisabled\b/iu.test(attributes),
-      };
-    },
-  );
-  const document = new FakeDocument(elementDescriptors);
-  const overviewGrid = document.getElementById("overview-grid");
-  const detailsGrid = document.getElementById("details-grid");
-  if (overviewGrid && detailsGrid) {
-    for (const panel of DASHBOARD_PANEL_REGISTRY) {
-      const panelElement = document.getElementById("panel-" + panel.id);
-      if (!panelElement) {
-        continue;
-      }
-      if (panel.section === "overview") {
-        overviewGrid.appendChild(panelElement);
-        continue;
-      }
-      detailsGrid.appendChild(panelElement);
-    }
-  }
-  const fetchCalls: FetchCall[] = [];
-
-  const fetch = async (
-    path: string,
-    init?: { method?: string; body?: string; headers?: Record<string, string> },
-  ): Promise<MockResponseLike> => {
-    const next = queue.shift();
-    assert.ok(next, `Unexpected fetch for ${path}`);
-    assert.equal(path, next.path);
-    assert.equal(init?.method ?? "GET", next.method ?? "GET");
-    if (next.body !== undefined) {
-      assert.equal(init?.body ?? null, next.body);
-    }
-    fetchCalls.push({
-      path,
-      method: init?.method ?? "GET",
-      body: init?.body ?? null,
-      headers: init?.headers ?? null,
-    });
-    return await next.response;
-  };
-
-  const context = {
-    console,
-    Date,
-    document,
-    EventSource: MockEventSource,
-    fetch,
-    setTimeout: options.manualTimers?.setTimeout ?? setTimeout,
-    clearTimeout: options.manualTimers?.clearTimeout ?? clearTimeout,
-    window: {
-      confirm: options.confirm ?? (() => true),
-      localStorage: options.localStorage ?? new FakeStorage(),
-      prompt: options.prompt ?? (() => null),
-    },
-    localStorage: options.localStorage ?? new FakeStorage(),
-  };
-
-  vm.runInNewContext(extractInlineScript(html), context);
-
-  return {
-    document,
-    fetchCalls,
-    remainingFetches: queue,
-    get eventSource(): MockEventSource | null {
-      return MockEventSource.instances[0] ?? null;
-    },
-    async flush(): Promise<void> {
-      await flushAsyncWork();
-    },
-    async advanceTime(ms: number): Promise<void> {
-      await options.manualTimers?.advanceTime(ms);
-      await flushAsyncWork();
-    },
-  };
-}
+const dashboardServer = createDashboardServerFixture();
 
 function findChildByText(element: FakeElement, pattern: RegExp): FakeElement | undefined {
   return element.children.find((child) => pattern.test(child.textContent));
@@ -844,10 +264,11 @@ test("dashboard keeps requeue disabled until the selected issue finishes loading
   const explainResponse = createDeferred<MockResponseLike>();
   const issueLintResponse = createDeferred<MockResponseLike>();
   const harness = createDashboardHarness([
-    { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
-    { path: "/api/issues/42/explain", response: explainResponse.promise },
-    { path: "/api/issues/42/issue-lint", response: issueLintResponse.promise },
+    ...dashboardServer.page(),
+    ...dashboardServer.issue(42, {
+      explain: explainResponse.promise,
+      issueLint: issueLintResponse.promise,
+    }),
   ]);
   await harness.flush();
 
@@ -876,8 +297,9 @@ test("dashboard keeps requeue disabled until the selected issue finishes loading
 
 test("dashboard derives the selected issue from typed status fields without parsing why lines", async () => {
   const harness = createDashboardHarness([
-    { path: "/api/status?why=true", response: jsonResponse(createStatus({ selectedIssueNumber: 42, includeWhyLines: false })) },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+    ...dashboardServer.page({
+      status: createStatus({ selectedIssueNumber: 42, includeWhyLines: false }),
+    }),
   ]);
   await harness.flush();
 
@@ -897,21 +319,17 @@ test("dashboard derives the selected issue from typed status fields without pars
 
 test("dashboard does not claim loop mode is off while typed runtime status reports the loop is running", async () => {
   const harness = createDashboardHarness([
-    {
-      path: "/api/status?why=true",
-      response: jsonResponse(
-        createStatus({
-          selectedIssueNumber: 42,
-          loopRuntime: {
-            state: "running",
-            pid: 4242,
-            startedAt: "2026-03-25T00:00:00.000Z",
-            detail: "pid 4242",
-          },
-        }),
-      ),
-    },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+    ...dashboardServer.page({
+      status: createStatus({
+        selectedIssueNumber: 42,
+        loopRuntime: {
+          state: "running",
+          pid: 4242,
+          startedAt: "2026-03-25T00:00:00.000Z",
+          detail: "pid 4242",
+        },
+      }),
+    }),
   ]);
   await harness.flush();
 
@@ -928,20 +346,16 @@ test("dashboard does not claim loop mode is off while typed runtime status repor
 
 test("dashboard renders the loop-off presentation only when typed runtime status reports loop off", async () => {
   const harness = createDashboardHarness([
-    {
-      path: "/api/status?why=true",
-      response: jsonResponse(
-        createStatus({
-          loopRuntime: {
-            state: "off",
-            pid: null,
-            startedAt: null,
-            detail: null,
-          },
-        }),
-      ),
-    },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+    ...dashboardServer.page({
+      status: createStatus({
+        loopRuntime: {
+          state: "off",
+          pid: null,
+          startedAt: null,
+          detail: null,
+        },
+      }),
+    }),
   ]);
   await harness.flush();
 
@@ -1194,18 +608,13 @@ test("dashboard lets operators inspect typed runnable and blocked issues without
 
 test("dashboard folds current state into hero badges and action buttons", async () => {
   const harness = createDashboardHarness([
-    {
-      path: "/api/status?why=true",
-      response: jsonResponse(
-        createStatus({
-          selectedIssueNumber: 42,
-          runnableIssues: [{ issueNumber: 42, title: "Ready issue", readiness: "execution_ready" }],
-        }),
-      ),
-    },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
-    { path: "/api/issues/42/explain", response: jsonResponse(createExplain(42)) },
-    { path: "/api/issues/42/issue-lint", response: jsonResponse(createIssueLint(42)) },
+    ...dashboardServer.page({
+      status: createStatus({
+        selectedIssueNumber: 42,
+        runnableIssues: [{ issueNumber: 42, title: "Ready issue", readiness: "execution_ready" }],
+      }),
+    }),
+    ...dashboardServer.issue(42),
   ]);
   await harness.flush();
 
@@ -1229,10 +638,7 @@ test("dashboard folds current state into hero badges and action buttons", async 
 });
 
 test("dashboard avoids duplicate queue hero actions when no issue is focused", async () => {
-  const harness = createDashboardHarness([
-    { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
-  ]);
+  const harness = createDashboardHarness([...dashboardServer.page()]);
   await harness.flush();
 
   const heroPrimaryButton = harness.document.getElementById("hero-primary-button");
@@ -1246,17 +652,12 @@ test("dashboard avoids duplicate queue hero actions when no issue is focused", a
 
 test("dashboard hero issue-details action loads focused issue details when needed", async () => {
   const harness = createDashboardHarness([
-    {
-      path: "/api/status?why=true",
-      response: jsonResponse(
-        createStatus({
-          runnableIssues: [{ issueNumber: 42, title: "Ready issue", readiness: "execution_ready" }],
-        }),
-      ),
-    },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
-    { path: "/api/issues/42/explain", response: jsonResponse(createExplain(42)) },
-    { path: "/api/issues/42/issue-lint", response: jsonResponse(createIssueLint(42)) },
+    ...dashboardServer.page({
+      status: createStatus({
+        runnableIssues: [{ issueNumber: 42, title: "Ready issue", readiness: "execution_ready" }],
+      }),
+    }),
+    ...dashboardServer.issue(42),
   ]);
   await harness.flush();
 
@@ -1278,10 +679,10 @@ test("dashboard hero issue-details action loads focused issue details when neede
 
 test("dashboard keeps requeue disabled after an issue load fails", async () => {
   const harness = createDashboardHarness([
-    { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
-    { path: "/api/issues/42/explain", response: jsonResponse({ error: "Explain failed." }, 500) },
-    { path: "/api/issues/42/issue-lint", response: jsonResponse(createIssueLint(42)) },
+    ...dashboardServer.page(),
+    ...dashboardServer.issue(42, {
+      explain: jsonResponse({ error: "Explain failed." }, 500),
+    }),
   ]);
   await harness.flush();
 
@@ -1312,10 +713,7 @@ test("dashboard keeps requeue disabled after an issue load fails", async () => {
 });
 
 test("dashboard opens the details disclosure when a sidebar detail link is selected", async () => {
-  const harness = createDashboardHarness([
-    { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
-  ]);
+  const harness = createDashboardHarness([...dashboardServer.page()]);
   await harness.flush();
 
   const detailsDisclosure = harness.document.getElementById("details-disclosure") as FakeElement & { open?: boolean };
@@ -1331,16 +729,12 @@ test("dashboard opens the details disclosure when a sidebar detail link is selec
 
 test("dashboard next state prefers stale-data recovery over stale selected issue guidance", async () => {
   const harness = createDashboardHarness([
-    {
-      path: "/api/status?why=true",
-      response: jsonResponse(
-        createStatus({
-          selectedIssueNumber: 42,
-          runnableIssues: [{ issueNumber: 42, title: "Ready issue", readiness: "execution_ready" }],
-        }),
-      ),
-    },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+    ...dashboardServer.page({
+      status: createStatus({
+        selectedIssueNumber: 42,
+        runnableIssues: [{ issueNumber: 42, title: "Ready issue", readiness: "execution_ready" }],
+      }),
+    }),
   ]);
   await harness.flush();
 
@@ -1361,46 +755,41 @@ test("dashboard next state prefers stale-data recovery over stale selected issue
 
 test("dashboard renders typed issue activity context without scraping legacy summary lines", async () => {
   const harness = createDashboardHarness([
-    { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
-    {
-      path: "/api/issues/42/explain",
-      response: jsonResponse(
-        createExplain(42, {
-          externalReviewFollowUpSummary: null,
-          latestRecoverySummary: "legacy recovery line that should only be used as fallback",
-          activityContext: {
-            handoffSummary: "blocker: wait for typed dashboard issue detail rendering",
-            localReviewRoutingSummary: null,
-            changeClassesSummary: null,
-            verificationPolicySummary: "verification_policy intensity=standard driver=changed_files:backend",
-            durableGuardrailSummary: "durable_guardrails verifier=committed:.codex/verifier-guardrails.json#1 external_review=none",
-            externalReviewFollowUpSummary: "external_review_follow_up unresolved=2 actions=durable_guardrail:1|regression_test:1",
-            latestRecovery: {
-              issueNumber: 42,
-              at: "2026-03-22T00:00:00Z",
-              reason: "tracked_pr_head_advanced",
-              detail: "resumed issue #42 after tracked PR #42 advanced",
-            },
-            localReviewSummaryPath: null,
-            externalReviewMissesPath: null,
-            reviewWaits: [
-              {
-                kind: "configured_bot_initial_grace_wait",
-                status: "active",
-                provider: "coderabbit",
-                pauseReason: "awaiting_initial_provider_activity",
-                recentObservation: "required_checks_green",
-                observedAt: "2099-01-01T00:00:30.000Z",
-                configuredWaitSeconds: 90,
-                waitUntil: "2099-01-01T00:02:00.000Z",
-              },
-            ],
+    ...dashboardServer.page(),
+    ...dashboardServer.issue(42, {
+      explain: createExplain(42, {
+        externalReviewFollowUpSummary: null,
+        latestRecoverySummary: "legacy recovery line that should only be used as fallback",
+        activityContext: {
+          handoffSummary: "blocker: wait for typed dashboard issue detail rendering",
+          localReviewRoutingSummary: null,
+          changeClassesSummary: null,
+          verificationPolicySummary: "verification_policy intensity=standard driver=changed_files:backend",
+          durableGuardrailSummary: "durable_guardrails verifier=committed:.codex/verifier-guardrails.json#1 external_review=none",
+          externalReviewFollowUpSummary: "external_review_follow_up unresolved=2 actions=durable_guardrail:1|regression_test:1",
+          latestRecovery: {
+            issueNumber: 42,
+            at: "2026-03-22T00:00:00Z",
+            reason: "tracked_pr_head_advanced",
+            detail: "resumed issue #42 after tracked PR #42 advanced",
           },
-        }),
-      ),
-    },
-    { path: "/api/issues/42/issue-lint", response: jsonResponse(createIssueLint(42)) },
+          localReviewSummaryPath: null,
+          externalReviewMissesPath: null,
+          reviewWaits: [
+            {
+              kind: "configured_bot_initial_grace_wait",
+              status: "active",
+              provider: "coderabbit",
+              pauseReason: "awaiting_initial_provider_activity",
+              recentObservation: "required_checks_green",
+              observedAt: "2099-01-01T00:00:30.000Z",
+              configuredWaitSeconds: 90,
+              waitUntil: "2099-01-01T00:02:00.000Z",
+            },
+          ],
+        },
+      }),
+    }),
   ]);
   await harness.flush();
 
@@ -1429,62 +818,57 @@ test("dashboard renders typed issue activity context without scraping legacy sum
 
 test("dashboard renders typed issue detail sections for operator context", async () => {
   const harness = createDashboardHarness([
-    { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
-    {
-      path: "/api/issues/42/explain",
-      response: jsonResponse(
-        createExplain(42, {
-          state: "blocked",
-          blockedReason: "manual_review",
-          runnable: false,
-          selectionReason: null,
-          reasons: [
-            "manual_block manual_review",
-            "local_state blocked",
-          ],
-          failureSummary: "Latest verification failed while waiting for review feedback.",
-          lastError: "review status remained unresolved after retry window",
-          changeRiskLines: [
-            "change_classes backend|tests",
-            "verification_policy intensity=standard driver=changed_files:backend",
-          ],
-          externalReviewFollowUpSummary: null,
-          latestRecoverySummary: "legacy recovery line that should only be used as fallback",
-          activityContext: {
-            handoffSummary: "blocker: wait for typed dashboard issue detail rendering",
-            localReviewRoutingSummary: "local_review_routing path=.codex/reviews/issue-42.md follow_up=required",
-            changeClassesSummary: "change_classes backend|tests",
-            verificationPolicySummary: "verification_policy intensity=standard driver=changed_files:backend",
-            durableGuardrailSummary:
-              "durable_guardrails verifier=committed:.codex/verifier-guardrails.json#1 external_review=none",
-            externalReviewFollowUpSummary:
-              "external_review_follow_up unresolved=2 actions=durable_guardrail:1|regression_test:1",
-            latestRecovery: {
-              issueNumber: 42,
-              at: "2026-03-22T00:00:00Z",
-              reason: "tracked_pr_head_advanced",
-              detail: "resumed issue #42 after tracked PR #42 advanced",
-            },
-            localReviewSummaryPath: ".codex/reviews/issue-42.md",
-            externalReviewMissesPath: ".codex/reviews/issue-42-misses.json",
-            reviewWaits: [
-              {
-                kind: "configured_bot_initial_grace_wait",
-                status: "active",
-                provider: "coderabbit",
-                pauseReason: "awaiting_initial_provider_activity",
-                recentObservation: "required_checks_green",
-                observedAt: "2099-01-01T00:00:30.000Z",
-                configuredWaitSeconds: 90,
-                waitUntil: "2099-01-01T00:02:00.000Z",
-              },
-            ],
+    ...dashboardServer.page(),
+    ...dashboardServer.issue(42, {
+      explain: createExplain(42, {
+        state: "blocked",
+        blockedReason: "manual_review",
+        runnable: false,
+        selectionReason: null,
+        reasons: [
+          "manual_block manual_review",
+          "local_state blocked",
+        ],
+        failureSummary: "Latest verification failed while waiting for review feedback.",
+        lastError: "review status remained unresolved after retry window",
+        changeRiskLines: [
+          "change_classes backend|tests",
+          "verification_policy intensity=standard driver=changed_files:backend",
+        ],
+        externalReviewFollowUpSummary: null,
+        latestRecoverySummary: "legacy recovery line that should only be used as fallback",
+        activityContext: {
+          handoffSummary: "blocker: wait for typed dashboard issue detail rendering",
+          localReviewRoutingSummary: "local_review_routing path=.codex/reviews/issue-42.md follow_up=required",
+          changeClassesSummary: "change_classes backend|tests",
+          verificationPolicySummary: "verification_policy intensity=standard driver=changed_files:backend",
+          durableGuardrailSummary:
+            "durable_guardrails verifier=committed:.codex/verifier-guardrails.json#1 external_review=none",
+          externalReviewFollowUpSummary:
+            "external_review_follow_up unresolved=2 actions=durable_guardrail:1|regression_test:1",
+          latestRecovery: {
+            issueNumber: 42,
+            at: "2026-03-22T00:00:00Z",
+            reason: "tracked_pr_head_advanced",
+            detail: "resumed issue #42 after tracked PR #42 advanced",
           },
-        }),
-      ),
-    },
-    { path: "/api/issues/42/issue-lint", response: jsonResponse(createIssueLint(42)) },
+          localReviewSummaryPath: ".codex/reviews/issue-42.md",
+          externalReviewMissesPath: ".codex/reviews/issue-42-misses.json",
+          reviewWaits: [
+            {
+              kind: "configured_bot_initial_grace_wait",
+              status: "active",
+              provider: "coderabbit",
+              pauseReason: "awaiting_initial_provider_activity",
+              recentObservation: "required_checks_green",
+              observedAt: "2099-01-01T00:00:30.000Z",
+              configuredWaitSeconds: 90,
+              waitUntil: "2099-01-01T00:02:00.000Z",
+            },
+          ],
+        },
+      }),
+    }),
   ]);
   await harness.flush();
 
@@ -1610,20 +994,21 @@ test("dashboard surfaces typed retry risk, recovery-loop context, and phase chan
 
 test("dashboard preserves a successful command result when the refresh step fails", async () => {
   const harness = createDashboardHarness([
-    { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
-    {
-      path: "/api/commands/run-once",
-      method: "POST",
-      body: JSON.stringify({ dryRun: false }),
-      response: jsonResponse({
+    ...dashboardServer.page(),
+    dashboardServer.command(
+      "/api/commands/run-once",
+      {
         command: "run-once",
         dryRun: false,
         summary: "run-once complete",
-      }),
-    },
-    { path: "/api/status?why=true", response: jsonResponse({ error: "Status refresh failed." }, 500) },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+      },
+      {
+        body: JSON.stringify({ dryRun: false }),
+      },
+    ),
+    ...dashboardServer.page({
+      status: jsonResponse({ error: "Status refresh failed." }, 500),
+    }),
   ]);
   await harness.flush();
 
@@ -1660,26 +1045,22 @@ test("dashboard retries a mutation command after prompting for the local mutatio
   const storage = new FakeStorage();
   const harness = createDashboardHarness(
     [
-      { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
-      { path: "/api/doctor", response: jsonResponse(createDoctor()) },
-      {
-        path: "/api/commands/run-once",
-        method: "POST",
-        body: JSON.stringify({ dryRun: false }),
-        response: jsonResponse({ error: "Mutation auth required." }, 401),
-      },
-      {
-        path: "/api/commands/run-once",
-        method: "POST",
-        body: JSON.stringify({ dryRun: false }),
-        response: jsonResponse({
+      ...dashboardServer.page(),
+      dashboardServer.command(
+        "/api/commands/run-once",
+        jsonResponse({ error: "Mutation auth required." }, 401),
+        { body: JSON.stringify({ dryRun: false }) },
+      ),
+      dashboardServer.command(
+        "/api/commands/run-once",
+        {
           command: "run-once",
           dryRun: false,
           summary: "run-once complete",
-        }),
-      },
-      { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
-      { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+        },
+        { body: JSON.stringify({ dryRun: false }) },
+      ),
+      ...dashboardServer.page(),
     ],
     {
       localStorage: storage,
@@ -1705,14 +1086,10 @@ test("dashboard retries a mutation command after prompting for the local mutatio
 
 test("dashboard surfaces non-JSON mutation failures without throwing a parse error", async () => {
   const harness = createDashboardHarness([
-    { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
-    {
-      path: "/api/commands/run-once",
-      method: "POST",
+    ...dashboardServer.page(),
+    dashboardServer.command("/api/commands/run-once", textResponse("proxy failure", 502), {
       body: JSON.stringify({ dryRun: false }),
-      response: textResponse("proxy failure", 502),
-    },
+    }),
   ]);
   await harness.flush();
 
@@ -1731,16 +1108,11 @@ test("dashboard surfaces non-JSON mutation failures without throwing a parse err
 test("dashboard shows an in-flight safe command state until the command resolves", async () => {
   const runOnceResponse = createDeferred<MockResponseLike>();
   const harness = createDashboardHarness([
-    { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
-    {
-      path: "/api/commands/run-once",
-      method: "POST",
+    ...dashboardServer.page(),
+    dashboardServer.command("/api/commands/run-once", runOnceResponse.promise, {
       body: JSON.stringify({ dryRun: false }),
-      response: runOnceResponse.promise,
-    },
-    { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+    }),
+    ...dashboardServer.page(),
   ]);
   await harness.flush();
 
@@ -1787,10 +1159,7 @@ test("dashboard shows an in-flight safe command state until the command resolves
 });
 
 test("dashboard makes live connection and freshness state explicit during SSE reconnects", async () => {
-  const harness = createDashboardHarness([
-    { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
-  ]);
+  const harness = createDashboardHarness([...dashboardServer.page()]);
   await harness.flush();
 
   const connectionState = harness.document.getElementById("connection-state");
@@ -1819,10 +1188,7 @@ test("dashboard makes live connection and freshness state explicit during SSE re
 
 test("dashboard reports a rejected safe command when the operator declines confirmation", async () => {
   const harness = createDashboardHarness(
-    [
-      { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
-      { path: "/api/doctor", response: jsonResponse(createDoctor()) },
-    ],
+    [...dashboardServer.page()],
     {
       confirm: () => false,
     },
@@ -1851,10 +1217,7 @@ test("dashboard reports a rejected safe command when the operator declines confi
 });
 
 test("dashboard reports a rejected requeue command before issue details load", async () => {
-  const harness = createDashboardHarness([
-    { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
-  ]);
+  const harness = createDashboardHarness([...dashboardServer.page()]);
   await harness.flush();
 
   const requeueButton = harness.document.getElementById("requeue-button");
@@ -1876,24 +1239,23 @@ test("dashboard reports a rejected requeue command before issue details load", a
 
 test("dashboard adopts the refreshed selected issue after a command-triggered status change", async () => {
   const harness = createDashboardHarness([
-    { path: "/api/status?why=true", response: jsonResponse(createStatus({ selectedIssueNumber: 42 })) },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
-    { path: "/api/issues/42/explain", response: jsonResponse(createExplain(42)) },
-    { path: "/api/issues/42/issue-lint", response: jsonResponse(createIssueLint(42)) },
-    {
-      path: "/api/commands/run-once",
-      method: "POST",
-      body: JSON.stringify({ dryRun: false }),
-      response: jsonResponse({
+    ...dashboardServer.page({
+      status: createStatus({ selectedIssueNumber: 42 }),
+    }),
+    ...dashboardServer.issue(42),
+    dashboardServer.command(
+      "/api/commands/run-once",
+      {
         command: "run-once",
         dryRun: false,
         summary: "run-once complete",
-      }),
-    },
-    { path: "/api/status?why=true", response: jsonResponse(createStatus({ selectedIssueNumber: 77 })) },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
-    { path: "/api/issues/77/explain", response: jsonResponse(createExplain(77)) },
-    { path: "/api/issues/77/issue-lint", response: jsonResponse(createIssueLint(77)) },
+      },
+      { body: JSON.stringify({ dryRun: false }) },
+    ),
+    ...dashboardServer.page({
+      status: createStatus({ selectedIssueNumber: 77 }),
+    }),
+    ...dashboardServer.issue(77),
   ]);
   await harness.flush();
 
@@ -1921,28 +1283,27 @@ test("dashboard adopts the refreshed selected issue after a command-triggered st
 
 test("dashboard correlates command results and subsequent supervisor events in one operator timeline", async () => {
   const harness = createDashboardHarness([
-    { path: "/api/status?why=true", response: jsonResponse(createStatus({ selectedIssueNumber: 42 })) },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
-    { path: "/api/issues/42/explain", response: jsonResponse(createExplain(42)) },
-    { path: "/api/issues/42/issue-lint", response: jsonResponse(createIssueLint(42)) },
-    {
-      path: "/api/commands/run-once",
-      method: "POST",
-      body: JSON.stringify({ dryRun: false }),
-      response: jsonResponse({
+    ...dashboardServer.page({
+      status: createStatus({ selectedIssueNumber: 42 }),
+    }),
+    ...dashboardServer.issue(42),
+    dashboardServer.command(
+      "/api/commands/run-once",
+      {
         command: "run-once",
         dryRun: false,
         summary: "run-once complete",
-      }),
-    },
-    { path: "/api/status?why=true", response: jsonResponse(createStatus({ selectedIssueNumber: 77 })) },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
-    { path: "/api/issues/77/explain", response: jsonResponse(createExplain(77)) },
-    { path: "/api/issues/77/issue-lint", response: jsonResponse(createIssueLint(77)) },
-    { path: "/api/status?why=true", response: jsonResponse(createStatus({ selectedIssueNumber: 77 })) },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
-    { path: "/api/issues/77/explain", response: jsonResponse(createExplain(77)) },
-    { path: "/api/issues/77/issue-lint", response: jsonResponse(createIssueLint(77)) },
+      },
+      { body: JSON.stringify({ dryRun: false }) },
+    ),
+    ...dashboardServer.page({
+      status: createStatus({ selectedIssueNumber: 77 }),
+    }),
+    ...dashboardServer.issue(77),
+    ...dashboardServer.page({
+      status: createStatus({ selectedIssueNumber: 77 }),
+    }),
+    ...dashboardServer.issue(77),
   ]);
   await harness.flush();
 
@@ -1977,15 +1338,15 @@ test("dashboard correlates command results and subsequent supervisor events in o
 
 test("dashboard enriches requeue commands with typed recovery and refresh context in the operator timeline", async () => {
   const harness = createDashboardHarness([
-    { path: "/api/status?why=true", response: jsonResponse(createStatus({ selectedIssueNumber: 42 })) },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
-    { path: "/api/issues/42/explain", response: jsonResponse(createExplain(42, { state: "blocked" })) },
-    { path: "/api/issues/42/issue-lint", response: jsonResponse(createIssueLint(42)) },
-    {
-      path: "/api/commands/requeue",
-      method: "POST",
-      body: JSON.stringify({ issueNumber: 42 }),
-      response: jsonResponse({
+    ...dashboardServer.page({
+      status: createStatus({ selectedIssueNumber: 42 }),
+    }),
+    ...dashboardServer.issue(42, {
+      explain: createExplain(42, { state: "blocked" }),
+    }),
+    dashboardServer.command(
+      "/api/commands/requeue",
+      {
         action: "requeue",
         issueNumber: 42,
         outcome: "mutated",
@@ -1994,16 +1355,21 @@ test("dashboard enriches requeue commands with typed recovery and refresh contex
         previousRecordSnapshot: null,
         nextState: "queued",
         recoveryReason: "operator_requested",
-      }),
-    },
-    { path: "/api/status?why=true", response: jsonResponse(createStatus({ selectedIssueNumber: 42 })) },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
-    { path: "/api/issues/42/explain", response: jsonResponse(createExplain(42, { state: "queued" })) },
-    { path: "/api/issues/42/issue-lint", response: jsonResponse(createIssueLint(42)) },
-    { path: "/api/status?why=true", response: jsonResponse(createStatus({ selectedIssueNumber: 42 })) },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
-    { path: "/api/issues/42/explain", response: jsonResponse(createExplain(42, { state: "queued" })) },
-    { path: "/api/issues/42/issue-lint", response: jsonResponse(createIssueLint(42)) },
+      },
+      { body: JSON.stringify({ issueNumber: 42 }) },
+    ),
+    ...dashboardServer.page({
+      status: createStatus({ selectedIssueNumber: 42 }),
+    }),
+    ...dashboardServer.issue(42, {
+      explain: createExplain(42, { state: "queued" }),
+    }),
+    ...dashboardServer.page({
+      status: createStatus({ selectedIssueNumber: 42 }),
+    }),
+    ...dashboardServer.issue(42, {
+      explain: createExplain(42, { state: "queued" }),
+    }),
   ]);
   await harness.flush();
 
@@ -4227,28 +3593,27 @@ test("setup shell backs off reconnect polling after repeated readiness failures"
 
 test("dashboard leaves unrelated later supervisor events unlabeled in the operator timeline", async () => {
   const harness = createDashboardHarness([
-    { path: "/api/status?why=true", response: jsonResponse(createStatus({ selectedIssueNumber: 42 })) },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
-    { path: "/api/issues/42/explain", response: jsonResponse(createExplain(42)) },
-    { path: "/api/issues/42/issue-lint", response: jsonResponse(createIssueLint(42)) },
-    {
-      path: "/api/commands/run-once",
-      method: "POST",
-      body: JSON.stringify({ dryRun: false }),
-      response: jsonResponse({
+    ...dashboardServer.page({
+      status: createStatus({ selectedIssueNumber: 42 }),
+    }),
+    ...dashboardServer.issue(42),
+    dashboardServer.command(
+      "/api/commands/run-once",
+      {
         command: "run-once",
         dryRun: false,
         summary: "run-once complete",
-      }),
-    },
-    { path: "/api/status?why=true", response: jsonResponse(createStatus({ selectedIssueNumber: 77 })) },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
-    { path: "/api/issues/77/explain", response: jsonResponse(createExplain(77)) },
-    { path: "/api/issues/77/issue-lint", response: jsonResponse(createIssueLint(77)) },
-    { path: "/api/status?why=true", response: jsonResponse(createStatus({ selectedIssueNumber: 77 })) },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
-    { path: "/api/issues/77/explain", response: jsonResponse(createExplain(77)) },
-    { path: "/api/issues/77/issue-lint", response: jsonResponse(createIssueLint(77)) },
+      },
+      { body: JSON.stringify({ dryRun: false }) },
+    ),
+    ...dashboardServer.page({
+      status: createStatus({ selectedIssueNumber: 77 }),
+    }),
+    ...dashboardServer.issue(77),
+    ...dashboardServer.page({
+      status: createStatus({ selectedIssueNumber: 77 }),
+    }),
+    ...dashboardServer.issue(77),
   ]);
   await harness.flush();
 
@@ -4280,16 +3645,11 @@ test("dashboard leaves unrelated later supervisor events unlabeled in the operat
 test("dashboard prevents duplicate command posts while a command is already in flight", async () => {
   const commandResponse = createDeferred<MockResponseLike>();
   const harness = createDashboardHarness([
-    { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
-    {
-      path: "/api/commands/run-once",
-      method: "POST",
+    ...dashboardServer.page(),
+    dashboardServer.command("/api/commands/run-once", commandResponse.promise, {
       body: JSON.stringify({ dryRun: false }),
-      response: commandResponse.promise,
-    },
-    { path: "/api/status?why=true", response: jsonResponse(createStatus()) },
-    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+    }),
+    ...dashboardServer.page(),
   ]);
   await harness.flush();
 
