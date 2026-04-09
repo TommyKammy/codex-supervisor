@@ -130,3 +130,18 @@ test("normalizeStateForSave canonicalizes legacy inventory artifact paths", () =
     "/tmp/inventory-refresh-failures/legacy-preview.json",
   );
 });
+
+test("normalizeState helpers coerce invalid top-level active issue and issues payloads", () => {
+  const raw = {
+    activeIssueNumber: "7",
+    issues: [],
+  } as unknown as SupervisorStateFile;
+
+  const loaded = normalizeStateForLoad(raw);
+  const saved = normalizeStateForSave(raw);
+
+  assert.equal(loaded.activeIssueNumber, null);
+  assert.deepEqual(loaded.issues, {});
+  assert.equal(saved.activeIssueNumber, null);
+  assert.deepEqual(saved.issues, {});
+});

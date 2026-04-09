@@ -22,6 +22,20 @@ function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): 
   return actualKeys.length === keys.length && actualKeys.every((key) => keys.includes(key));
 }
 
+function normalizeActiveIssueNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function normalizeIssues(value: unknown): Record<string, IssueRunRecord> {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => [key, normalizeIssueRecord(entry as IssueRunRecord)]),
+  );
+}
+
 function normalizeInventoryRefreshDiagnostics(
   diagnostics: unknown,
 ): InventoryRefreshDiagnosticEntry[] | undefined {
@@ -198,9 +212,7 @@ function normalizeLastSuccessfulInventorySnapshot(
 }
 
 export function normalizeStateForLoad(raw: SupervisorStateFile | null | undefined): SupervisorStateFile {
-  const issues = Object.fromEntries(
-    Object.entries(raw?.issues ?? {}).map(([key, value]) => [key, normalizeIssueRecord(value as IssueRunRecord)]),
-  );
+  const issues = normalizeIssues(raw?.issues);
   const reconciliationState = raw?.reconciliation_state
     && typeof raw.reconciliation_state === "object"
     && raw.reconciliation_state !== null
@@ -244,7 +256,7 @@ export function normalizeStateForLoad(raw: SupervisorStateFile | null | undefine
     : undefined;
 
   return {
-    activeIssueNumber: raw?.activeIssueNumber ?? null,
+    activeIssueNumber: normalizeActiveIssueNumber(raw?.activeIssueNumber),
     issues,
     ...(reconciliationState ? { reconciliation_state: reconciliationState } : {}),
     ...(inventoryRefreshFailure ? { inventory_refresh_failure: inventoryRefreshFailure } : {}),
@@ -257,9 +269,7 @@ export function normalizeStateForLoad(raw: SupervisorStateFile | null | undefine
 }
 
 export function normalizeStateForSave(raw: SupervisorStateFile | null | undefined): SupervisorStateFile {
-  const issues = Object.fromEntries(
-    Object.entries(raw?.issues ?? {}).map(([key, value]) => [key, normalizeIssueRecord(value as IssueRunRecord)]),
-  );
+  const issues = normalizeIssues(raw?.issues);
   const reconciliationState = raw?.reconciliation_state
     && typeof raw.reconciliation_state === "object"
     && raw.reconciliation_state !== null
@@ -303,7 +313,7 @@ export function normalizeStateForSave(raw: SupervisorStateFile | null | undefine
     : undefined;
 
   return {
-    activeIssueNumber: raw?.activeIssueNumber ?? null,
+    activeIssueNumber: normalizeActiveIssueNumber(raw?.activeIssueNumber),
     issues,
     ...(reconciliationState ? { reconciliation_state: reconciliationState } : {}),
     ...(inventoryRefreshFailure ? { inventory_refresh_failure: inventoryRefreshFailure } : {}),

@@ -48,6 +48,7 @@ function validateSqliteSchemaVersion(db: DatabaseSync): void {
 }
 
 function readSqliteState(db: DatabaseSync): SupervisorStateFile {
+  const activeIssueLocation = "sqlite metadata row activeIssueNumber";
   const activeRow = db
     .prepare("SELECT value FROM metadata WHERE key = 'activeIssueNumber'")
     .get() as { value?: string } | undefined;
@@ -86,10 +87,25 @@ function readSqliteState(db: DatabaseSync): SupervisorStateFile {
       }
     }),
   );
+  const parsedActiveIssueNumber =
+    activeRow?.value && activeRow.value.trim() !== "" ? Number.parseInt(activeRow.value, 10) : null;
+  const activeIssueNumber = Number.isInteger(parsedActiveIssueNumber) ? parsedActiveIssueNumber : null;
+
+  if (activeIssueNumber !== null && !Object.hasOwn(issues, String(activeIssueNumber))) {
+    findings.push({
+      backend: "sqlite",
+      kind: "active_issue_downgrade",
+      scope: "metadata",
+      location: activeIssueLocation,
+      issue_number: activeIssueNumber,
+      message:
+        `Dropped sqlite active issue ${activeIssueNumber} because the referenced issue row was not loaded.`,
+    });
+  }
 
   return withLoadFindings({
     activeIssueNumber:
-      activeRow?.value && activeRow.value.trim() !== "" ? Number.parseInt(activeRow.value, 10) : null,
+      activeIssueNumber !== null && Object.hasOwn(issues, String(activeIssueNumber)) ? activeIssueNumber : null,
     issues,
     ...(reconciliationStateRow?.value
       ? (() => {
@@ -196,23 +212,26 @@ export async function saveToSqlite(stateFilePath: string, state: SupervisorState
     db.exec("BEGIN IMMEDIATE");
 
     try {
+      const normalizedReconciliationState = normalizeStateForSave({
+        activeIssueNumber: null,
+        issues: {},
+        reconciliation_state: state.reconciliation_state,
+      }).reconciliation_state;
+
       db.prepare(`
         INSERT INTO metadata(key, value)
         VALUES (?, ?)
         ON CONFLICT(key) DO UPDATE SET value = excluded.value
       `).run("activeIssueNumber", state.activeIssueNumber === null ? "" : String(state.activeIssueNumber));
-      db.prepare(`
-        INSERT INTO metadata(key, value)
-        VALUES (?, ?)
-        ON CONFLICT(key) DO UPDATE SET value = excluded.value
-      `).run(
-        "reconciliation_state",
-        JSON.stringify(normalizeStateForSave({
-          activeIssueNumber: null,
-          issues: {},
-          reconciliation_state: state.reconciliation_state,
-        }).reconciliation_state ?? {}),
-      );
+      if (normalizedReconciliationState === undefined) {
+        db.prepare("DELETE FROM metadata WHERE key = ?").run("reconciliation_state");
+      } else {
+        db.prepare(`
+          INSERT INTO metadata(key, value)
+          VALUES (?, ?)
+          ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        `).run("reconciliation_state", JSON.stringify(normalizedReconciliationState));
+      }
       db.prepare(`
         INSERT INTO metadata(key, value)
         VALUES (?, ?)

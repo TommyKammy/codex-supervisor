@@ -247,8 +247,8 @@ export interface FailureContext {
 
 export interface StateLoadFinding {
   backend: "json" | "sqlite";
-  kind: "parse_error";
-  scope: "state_file" | "issue_row";
+  kind: "parse_error" | "active_issue_downgrade";
+  scope: "state_file" | "issue_row" | "metadata";
   location: string;
   issue_number: number | null;
   message: string;
