@@ -54,3 +54,32 @@ test("syncCopilotReviewRequestObservation records an observed time when GitHub o
   assert.ok(patch.copilot_review_requested_observed_at);
   assert.equal(Number.isNaN(Date.parse(patch.copilot_review_requested_observed_at ?? "")), false);
 });
+
+test("syncCopilotReviewRequestObservation clears a stale same-head observation once the request is gone", () => {
+  const patch = syncCopilotReviewRequestObservation(
+    createConfig({
+      reviewBotLogins: ["copilot-pull-request-reviewer"],
+    }),
+    createRecord({
+      issue_number: 116,
+      state: "waiting_ci",
+      copilot_review_requested_observed_at: "2026-03-16T00:00:00Z",
+      copilot_review_requested_head_sha: "head-116",
+    }),
+    createPullRequest({
+      number: 116,
+      title: "Stale Copilot request observation",
+      url: "https://example.test/pr/116",
+      headRefName: "codex/reopen-issue-116",
+      headRefOid: "head-116",
+      copilotReviewState: "not_requested",
+      copilotReviewRequestedAt: null,
+      copilotReviewArrivedAt: null,
+    }),
+  );
+
+  assert.deepEqual(patch, {
+    copilot_review_requested_observed_at: null,
+    copilot_review_requested_head_sha: null,
+  });
+});

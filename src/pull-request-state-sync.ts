@@ -29,6 +29,8 @@ export function syncCopilotReviewRequestObservation(
   record: IssueRunRecord,
   pr: GitHubPullRequest,
 ): Partial<IssueRunRecord> {
+  const copilotReviewState = pr.copilotReviewState ?? "not_requested";
+
   if (!reviewProviderWaitPolicyFromConfig(config).shouldTrackRequestedState || pr.isDraft || copilotReviewArrived(pr)) {
     return {
       copilot_review_requested_observed_at: null,
@@ -43,17 +45,17 @@ export function syncCopilotReviewRequestObservation(
     };
   }
 
-  if (
-    record.copilot_review_requested_observed_at &&
-    record.copilot_review_requested_head_sha === pr.headRefOid
-  ) {
-    return {
-      copilot_review_requested_observed_at: record.copilot_review_requested_observed_at,
-      copilot_review_requested_head_sha: record.copilot_review_requested_head_sha,
-    };
-  }
+  if (copilotReviewState === "requested") {
+    if (
+      record.copilot_review_requested_observed_at &&
+      record.copilot_review_requested_head_sha === pr.headRefOid
+    ) {
+      return {
+        copilot_review_requested_observed_at: record.copilot_review_requested_observed_at,
+        copilot_review_requested_head_sha: record.copilot_review_requested_head_sha,
+      };
+    }
 
-  if ((pr.copilotReviewState ?? "not_requested") === "requested") {
     return {
       copilot_review_requested_observed_at: nowIso(),
       copilot_review_requested_head_sha: pr.headRefOid,
