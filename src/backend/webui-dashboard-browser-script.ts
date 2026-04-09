@@ -33,6 +33,11 @@ import {
   liveBadgeClass,
   metricClass,
 } from "./webui-dashboard-browser-view-model";
+import {
+  buildIssueExplainSections,
+  formatLatestRecovery,
+  formatReviewWaits,
+} from "./webui-dashboard-browser-issue-details";
 import { WEBUI_MUTATION_AUTH_HEADER, WEBUI_MUTATION_AUTH_STORAGE_KEY } from "./webui-mutation-auth";
 import {
   formatBrowserToken,
@@ -87,6 +92,9 @@ const injectedBrowserLogic = [
   liveBadgeClass,
   formatRefreshTime,
   describeLoopRuntime,
+  formatLatestRecovery,
+  formatReviewWaits,
+  buildIssueExplainSections,
 ]
   .map((helper) => helper.toString().replace(/__name\([^;]+;\s*/gu, ""))
   .join("\n\n");
@@ -741,57 +749,8 @@ export function renderDashboardBrowserScript(): string {
         renderHeroSummary();
       }
 
-      function formatLatestRecovery(activityContext, fallbackSummary) {
-        const latestRecovery = activityContext && activityContext.latestRecovery;
-        if (latestRecovery) {
-          return (
-            "issue=#" +
-            latestRecovery.issueNumber +
-            " at=" +
-            latestRecovery.at +
-            " reason=" +
-            latestRecovery.reason +
-            (latestRecovery.detail ? " detail=" + latestRecovery.detail : "")
-          );
-        }
-        if (fallbackSummary) {
-          return fallbackSummary;
-        }
-        return "none";
-      }
-
-      function formatReviewWaits(activityContext) {
-        const reviewWaits = activityContext && Array.isArray(activityContext.reviewWaits) ? activityContext.reviewWaits : [];
-        if (reviewWaits.length === 0) {
-          return "none";
-        }
-        return reviewWaits
-          .map((reviewWait) =>
-            reviewWait.kind +
-            " status=" +
-            reviewWait.status +
-            " provider=" +
-            reviewWait.provider +
-            " pause_reason=" +
-            reviewWait.pauseReason +
-            " recent_observation=" +
-            reviewWait.recentObservation +
-            " observed_at=" +
-            (reviewWait.observedAt || "none") +
-            " configured_wait_seconds=" +
-            (reviewWait.configuredWaitSeconds === null ? "none" : reviewWait.configuredWaitSeconds) +
-            " wait_until=" +
-            (reviewWait.waitUntil || "none")
-          )
-          .join(" | ");
-      }
-
-      function buildDetailItems(pairs) {
-        return pairs.filter((pair) => pair[1] !== null && pair[1] !== undefined && pair[1] !== "" && pair[1] !== "none");
-      }
-
       function appendDetailSection(container, title, pairs) {
-        const items = buildDetailItems(pairs);
+        const items = pairs.filter((pair) => pair[1] !== null && pair[1] !== undefined && pair[1] !== "" && pair[1] !== "none");
         if (!container || items.length === 0) {
           return;
         }
@@ -821,51 +780,16 @@ export function renderDashboardBrowserScript(): string {
           return;
         }
 
-        const activityContext = explain.activityContext || null;
         elements.issueExplain.innerHTML = "";
         elements.issueExplain.className = "detail-grid";
 
-        appendDetailSection(elements.issueExplain, "Selection context", [
-          ["state", explain.state],
-          ["blocked_reason", explain.blockedReason],
-          ["runnable", explain.runnable ? "yes" : "no"],
-          ["selection_reason", explain.selectionReason || "none"],
-          ["reasons", (explain.reasons || []).join(" | ") || "none"],
-        ]);
-
-        appendDetailSection(elements.issueExplain, "Operator activity", [
-          ["handoff_summary", activityContext ? activityContext.handoffSummary || "none" : "none"],
-          ["local_review_routing", activityContext ? activityContext.localReviewRoutingSummary || "none" : "none"],
-          ["verification_policy", activityContext ? activityContext.verificationPolicySummary || "none" : "none"],
-          ["durable_guardrails", activityContext ? activityContext.durableGuardrailSummary || "none" : "none"],
-          [
-            "follow_up",
-            explain.externalReviewFollowUpSummary ||
-              (activityContext ? activityContext.externalReviewFollowUpSummary || "none" : "none"),
-          ],
-          ["change_risk", (explain.changeRiskLines || []).join(" | ") || "none"],
-        ]);
-
-        appendDetailSection(elements.issueExplain, "Review waits", [
-          ["waits", formatReviewWaits(activityContext)],
-          ["local_review_summary_path", activityContext ? activityContext.localReviewSummaryPath || "none" : "none"],
-          ["external_review_misses_path", activityContext ? activityContext.externalReviewMissesPath || "none" : "none"],
-        ]);
-
-        appendDetailSection(elements.issueExplain, "Latest recovery", [
-          ["latest_recovery", formatLatestRecovery(activityContext, explain.latestRecoverySummary)],
-        ]);
-
-        appendDetailSection(elements.issueExplain, "Retry and recovery", [
-          ["retry_summary", formatRetryContextSummary(activityContext) || "none"],
-          ["recovery_loop", formatRecoveryLoopSummary(activityContext) || "none"],
-          ["recent_phase_changes", formatRecentPhaseChanges(activityContext) || "none"],
-        ]);
-
-        appendDetailSection(elements.issueExplain, "Recent failure", [
-          ["failure_summary", explain.failureSummary || "none"],
-          ["last_error", explain.lastError || "none"],
-        ]);
+        for (const section of buildIssueExplainSections(explain, {
+          formatRetryContextSummary,
+          formatRecoveryLoopSummary,
+          formatRecentPhaseChanges,
+        })) {
+          appendDetailSection(elements.issueExplain, section.title, section.items);
+        }
 
         if (elements.issueExplain.children.length === 0) {
           elements.issueExplain.className = "detail-stack";
