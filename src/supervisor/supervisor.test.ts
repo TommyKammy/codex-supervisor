@@ -3,6 +3,11 @@ import assert from "node:assert/strict";
 import { createSupervisorLoopController, createSupervisorService, Supervisor } from "./index";
 import { createConfig } from "./supervisor-test-helpers";
 import { GitHubIssue, IssueRunRecord, SupervisorStateFile } from "../core/types";
+import type {
+  SupervisorExecutionMetricsRollupResultDto,
+  SupervisorMutationResultDto,
+  SupervisorOrphanPruneResultDto,
+} from "./supervisor-mutation-report";
 
 async function withStubbedDateNow<T>(nowIso: string, run: () => Promise<T>): Promise<T> {
   const originalDateNow = Date.now;
@@ -24,6 +29,74 @@ test("supervisor module exports the supervisor application service factory", () 
 
 test("supervisor module exports the supervisor loop controller factory", () => {
   assert.equal(typeof createSupervisorLoopController, "function");
+});
+
+test("Supervisor delegates mutation commands to the dedicated mutation runtime", async () => {
+  const calls: string[] = [];
+  const requeueResult: SupervisorMutationResultDto = {
+    action: "requeue",
+    issueNumber: 91,
+    outcome: "mutated",
+    summary: "requeued",
+    previousState: "blocked",
+    previousRecordSnapshot: null,
+    nextState: "queued",
+    recoveryReason: "operator_requeue",
+  };
+  const pruneResult: SupervisorOrphanPruneResultDto = {
+    action: "prune-orphaned-workspaces",
+    outcome: "completed",
+    summary: "pruned",
+    pruned: [],
+    skipped: [],
+  };
+  const rollupResult: SupervisorExecutionMetricsRollupResultDto = {
+    action: "rollup-execution-metrics",
+    outcome: "completed",
+    summary: "rolled up",
+    artifactPath: "/tmp/daily-rollups.json",
+    runSummaryCount: 2,
+  };
+  const resetResult = {
+    action: "reset-corrupt-json-state",
+    outcome: "mutated",
+    summary: "reset",
+    stateFile: "/tmp/state.json",
+    quarantinedFile: "/tmp/state.json.quarantine",
+    quarantinedAt: "2026-03-20T00:00:00.000Z",
+  } as const;
+
+  const supervisor = new Supervisor(createConfig(), {
+    mutationRuntime: {
+      runRecoveryAction: async (action, issueNumber) => {
+        calls.push(`runRecoveryAction:${action}:${issueNumber}`);
+        return requeueResult;
+      },
+      pruneOrphanedWorkspaces: async () => {
+        calls.push("pruneOrphanedWorkspaces");
+        return pruneResult;
+      },
+      rollupExecutionMetrics: async () => {
+        calls.push("rollupExecutionMetrics");
+        return rollupResult;
+      },
+      resetCorruptJsonState: async () => {
+        calls.push("resetCorruptJsonState");
+        return resetResult;
+      },
+    },
+  });
+
+  assert.deepEqual(await supervisor.runRecoveryAction("requeue", 91), requeueResult);
+  assert.deepEqual(await supervisor.pruneOrphanedWorkspaces(), pruneResult);
+  assert.deepEqual(await supervisor.rollupExecutionMetrics(), rollupResult);
+  assert.deepEqual(await supervisor.resetCorruptJsonState(), resetResult);
+  assert.deepEqual(calls, [
+    "runRecoveryAction:requeue:91",
+    "pruneOrphanedWorkspaces",
+    "rollupExecutionMetrics",
+    "resetCorruptJsonState",
+  ]);
 });
 
 test("runOnce preserves carryover recovery context when the restarted cycle exits early", async () => {

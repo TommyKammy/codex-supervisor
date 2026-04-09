@@ -2117,6 +2117,56 @@ test("runRecoveryAction refuses to mutate while the supervisor run lock is held"
   assert.equal(persisted.issues[String(issueNumber)]?.codex_session_id, "session-91");
 });
 
+test("runRecoveryAction fails closed on ambiguous-owner supervisor run locks", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const issueNumber = 91;
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        branch: branchName(fixture.config, issueNumber),
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        blocked_reason: "verification",
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const lockPath = path.resolve(path.dirname(fixture.stateFile), "locks", "supervisor", "run.lock");
+  await fs.mkdir(path.dirname(lockPath), { recursive: true });
+  await fs.writeFile(
+    lockPath,
+    `${JSON.stringify({
+      pid: 999_999,
+      label: "supervisor-loop",
+      acquired_at: "2026-03-20T00:00:00.000Z",
+      host: "other-host",
+      owner: "other-user",
+    }, null, 2)}\n`,
+    "utf8",
+  );
+
+  const supervisor = new Supervisor(fixture.config);
+  await assert.rejects(
+    supervisor.runRecoveryAction("requeue", issueNumber),
+    /Cannot run recovery action while supervisor is active: .*ambiguous owner metadata/,
+  );
+  assert.deepEqual(JSON.parse(await fs.readFile(lockPath, "utf8")), {
+    pid: 999_999,
+    label: "supervisor-loop",
+    acquired_at: "2026-03-20T00:00:00.000Z",
+    host: "other-host",
+    owner: "other-user",
+  });
+});
+
 test("runRecoveryAction fail-closes requeue while corrupted JSON state is quarantined", async (t) => {
   const fixture = await createSupervisorFixture();
   t.after(async () => {
