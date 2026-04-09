@@ -361,6 +361,43 @@ test("externalSignalReadinessDiagnostics stops waiting for provider review when 
   );
 });
 
+test("externalSignalReadinessDiagnostics preserves degraded local-review blocking ahead of draft-skip review suppression", async (t) => {
+  const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-degraded-draft-skip-review-"));
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+
+  assert.deepEqual(
+    externalSignalReadinessDiagnostics(
+      createConfig({
+        repoPath,
+        reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+        localReviewEnabled: true,
+      }),
+      createRecord({
+        local_review_head_sha: "head-sha",
+        local_review_degraded: true,
+        local_review_recommendation: "changes_requested",
+      }),
+      createPr({
+        isDraft: true,
+        currentHeadCiGreenAt: "2026-03-16T00:08:00Z",
+        configuredBotCurrentHeadObservedAt: null,
+        configuredBotDraftSkipAt: "2026-03-16T00:10:00Z",
+      }),
+      [{ bucket: "pass" }],
+      [],
+      configuredBotReviewThreads,
+    ),
+    {
+      status: "blocked_by_local_review",
+      ci: "passing",
+      review: "local_review_blocked",
+      workflows: "absent",
+    },
+  );
+});
+
 test("externalSignalReadinessDiagnostics keeps degraded advisory draft PRs on the normal provider wait path", async (t) => {
   const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-advisory-degraded-draft-review-"));
   t.after(async () => {

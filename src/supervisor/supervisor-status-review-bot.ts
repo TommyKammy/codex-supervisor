@@ -481,13 +481,13 @@ export function externalSignalReadinessDiagnostics(
   const review =
     !repoExpectsConfiguredBotReview(config)
       ? "disabled"
-      : configuredBotReviewNotExpectedWhileDraft(config, pr)
-        ? "not_expected_while_draft"
       : draftLocalReviewBlocked
         ? "local_review_blocked"
+      : configuredBotReviewNotExpectedWhileDraft(config, pr)
+        ? "not_expected_while_draft"
       : unresolvedConfiguredThreads.length > 0 || topLevelReviewEffect === "blocking"
         ? "feedback_present"
-        : observed.hasSignal || topLevelReviewEffect !== "none"
+      : observed.hasSignal || topLevelReviewEffect !== "none"
           ? "signal_observed"
           : observed.observedReview === "copilot_requested"
             ? "pending_delivery"
