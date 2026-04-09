@@ -13,6 +13,8 @@ import {
 } from "./setup-test-fixtures";
 import { MISSING_WORKSPACE_PREPARATION_CONTRACT_WARNING } from "../core/config";
 import { renderSupervisorDashboardHtml } from "./webui-dashboard";
+import { renderDashboardPageLayout } from "./webui-dashboard-page-layout";
+import { renderDashboardPageSections } from "./webui-dashboard-page-sections";
 import { DASHBOARD_PANEL_REGISTRY } from "./webui-dashboard-panel-layout";
 import { WEBUI_MUTATION_AUTH_HEADER, WEBUI_MUTATION_AUTH_STORAGE_KEY } from "./webui-mutation-auth";
 import { renderSupervisorSetupHtml } from "./webui-setup";
@@ -635,6 +637,61 @@ test("dashboard shell renders panels from the typed default layout in the curren
   assert.match(
     html,
     /data-panel-id="status"[\s\S]*data-panel-id="doctor"[\s\S]*data-panel-id="issue-details"[\s\S]*data-panel-id="tracked-history"[\s\S]*data-panel-id="operator-actions"[\s\S]*data-panel-id="live-events"[\s\S]*data-panel-id="operator-timeline"/u,
+  );
+});
+
+test("dashboard page layout helper keeps the summary shell, details grids, and script slots stable", () => {
+  const html = renderDashboardPageLayout({
+    repoSlugMarkup: "owner/repo",
+    detailsMenuMarkup: "<nav id=\"sentinel-nav\">details nav</nav>",
+    overviewPanelsMarkup: "<article id=\"overview-sentinel\">overview panel</article>",
+    detailPanelsMarkup: "<article id=\"details-sentinel\">details panel</article>",
+    footerMarkup: "<footer id=\"footer-sentinel\">footer</footer>",
+    browserScript: "window.__dashboardSentinel = true;",
+  });
+
+  assert.match(
+    html,
+    /<main class="page-shell" data-dashboard-root>[\s\S]*id="repo-slug-value" class="masthead-repo">owner\/repo[\s\S]*<aside class="side-nav">[\s\S]*id="sentinel-nav"[\s\S]*id="overview-grid" class="overview-grid" aria-label="overview" data-panel-grid="overview">[\s\S]*id="overview-sentinel"[\s\S]*id="details-grid" class="details-grid" aria-label="details" data-panel-grid="details">[\s\S]*id="details-sentinel"[\s\S]*id="footer-sentinel"[\s\S]*<script>window\.__dashboardSentinel = true;/u,
+  );
+});
+
+test("dashboard page section helper renders escaped setup context and panel-linked navigation", () => {
+  const sections = renderDashboardPageSections(createSetupReadinessReport({
+    ready: true,
+    overallStatus: "configured",
+    fields: [
+      createSetupField("repoSlug", { value: "owner/<repo>\"" }),
+      createSetupField("repoPath", { value: "/Users/<example>/dev/\"repo" }),
+      createSetupField("workspaceRoot", { value: `${SAMPLE_MACOS_WORKSPACE_ROOT}"trees` }),
+    ],
+    blockers: [],
+    hostReadiness: {
+      overallStatus: "pass",
+      checks: [],
+    },
+    providerPosture: createSetupProviderPosture({
+      profile: "codex",
+      provider: "codex",
+      reviewers: ["codex"],
+      signalSource: "reviewBotLogins",
+      configured: true,
+      summary: "Review provider posture uses codex via reviewBotLogins.",
+    }),
+    trustPosture: createSetupTrustPosture({
+      warning: null,
+    }),
+  }));
+
+  assert.match(sections.repoSlugMarkup, /owner\/&lt;repo&gt;&quot;/u);
+  assert.match(sections.footerMarkup, /id="repo-path-value" class="context-path">\/Users\/&lt;example&gt;\/dev\/&quot;repo/u);
+  assert.match(sections.footerMarkup, /id="workspace-root-value" class="context-path">\/Users\/example\/dev\/work&quot;trees/u);
+  assert.match(sections.detailsMenuMarkup, /id="nav-summary-top"/u);
+  assert.match(sections.detailsMenuMarkup, /id="nav-panel-operator-actions"/u);
+  assert.match(sections.overviewPanelsMarkup, /data-panel-id="status"[\s\S]*data-panel-id="doctor"/u);
+  assert.match(
+    sections.detailPanelsMarkup,
+    /data-panel-id="issue-details"[\s\S]*data-panel-id="tracked-history"[\s\S]*data-panel-id="operator-actions"[\s\S]*data-panel-id="live-events"[\s\S]*data-panel-id="operator-timeline"/u,
   );
 });
 
