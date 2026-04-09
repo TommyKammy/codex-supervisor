@@ -243,6 +243,27 @@ test("reviewBotDiagnostics tracks observed review signal precedence", () => {
   });
 });
 
+test("reviewBotDiagnostics does not expect configured provider review while a draft PR is waiting for ready-for-review", () => {
+  assert.deepEqual(
+    reviewBotDiagnostics(
+      createConfig({ reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"] }),
+      createRecord(),
+      createPr({
+        isDraft: true,
+        configuredBotDraftSkipAt: "2026-03-16T00:10:00Z",
+        currentHeadCiGreenAt: "2026-03-16T00:08:00Z",
+      }),
+      [],
+      configuredBotReviewThreads,
+    ),
+    {
+      status: "review_not_expected_while_draft",
+      observedReview: "draft_skip",
+      nextCheck: "ready_for_review",
+    },
+  );
+});
+
 test("externalSignalReadinessDiagnostics marks bootstrap repos without workflows as not ready for expected signals", async (t) => {
   const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-bootstrap-"));
   t.after(async () => {
@@ -372,6 +393,38 @@ test("externalSignalReadinessDiagnostics keeps degraded advisory draft PRs on th
       status: "awaiting_expected_signals",
       ci: "passing",
       review: "awaiting_signal",
+      workflows: "absent",
+    },
+  );
+});
+
+test("externalSignalReadinessDiagnostics does not treat draft-skip provider review as an active missing signal", async (t) => {
+  const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-draft-skip-review-"));
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+
+  assert.deepEqual(
+    externalSignalReadinessDiagnostics(
+      createConfig({
+        repoPath,
+        reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+      }),
+      createRecord(),
+      createPr({
+        isDraft: true,
+        currentHeadCiGreenAt: "2026-03-16T00:08:00Z",
+        configuredBotCurrentHeadObservedAt: null,
+        configuredBotDraftSkipAt: "2026-03-16T00:10:00Z",
+      }),
+      [{ bucket: "pass" }],
+      [],
+      configuredBotReviewThreads,
+    ),
+    {
+      status: "signals_observed",
+      ci: "passing",
+      review: "not_expected_while_draft",
       workflows: "absent",
     },
   );
