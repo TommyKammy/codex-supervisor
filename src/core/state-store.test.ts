@@ -211,6 +211,43 @@ test("StateStore sqlite roundtrip preserves tracked merged reconciliation resume
   });
 });
 
+test("StateStore sqlite save removes reconciliation metadata when the state is absent", async () => {
+  await withTempDir(async (dir) => {
+    const statePath = path.join(dir, "state.sqlite");
+    const store = new StateStore(statePath, { backend: "sqlite" });
+
+    await store.save({
+      activeIssueNumber: null,
+      issues: {
+        "403": createRecord(403),
+      },
+      reconciliation_state: {
+        tracked_merged_but_open_last_processed_issue_number: 403,
+      },
+    });
+    await store.save({
+      activeIssueNumber: null,
+      issues: {},
+    });
+
+    const db = new DatabaseSync(statePath);
+    try {
+      const reconciliationStateRow = db
+        .prepare("SELECT value FROM metadata WHERE key = 'reconciliation_state'")
+        .get() as { value?: string } | undefined;
+      assert.equal(reconciliationStateRow, undefined);
+    } finally {
+      db.close();
+    }
+
+    const loaded = await store.load();
+    assert.deepEqual(loaded, {
+      activeIssueNumber: null,
+      issues: {},
+    });
+  });
+});
+
 test("StateStore json load realigns last-known-good snapshot issue_count with normalized issues", async () => {
   await withTempDir(async (dir) => {
     const statePath = path.join(dir, "state.json");
@@ -856,9 +893,9 @@ test("StateStore sqlite load captures structured corruption findings for malform
 
     const loaded = await store.load();
 
-    assert.equal(loaded.activeIssueNumber, 403);
+    assert.equal(loaded.activeIssueNumber, null);
     assert.deepEqual(loaded.issues, {});
-    assert.equal(loaded.load_findings?.length, 1);
+    assert.equal(loaded.load_findings?.length, 2);
     assert.deepEqual(loaded.load_findings?.[0], {
       backend: "sqlite",
       kind: "parse_error",
@@ -868,6 +905,14 @@ test("StateStore sqlite load captures structured corruption findings for malform
       message: loaded.load_findings?.[0]?.message ?? "",
     });
     assert.match(loaded.load_findings?.[0]?.message ?? "", /failed to parse json/i);
+    assert.deepEqual(loaded.load_findings?.[1], {
+      backend: "sqlite",
+      kind: "active_issue_downgrade",
+      scope: "metadata",
+      location: "sqlite metadata row activeIssueNumber",
+      issue_number: 403,
+      message: "Dropped sqlite active issue 403 because the referenced issue row was not loaded.",
+    });
   });
 });
 
