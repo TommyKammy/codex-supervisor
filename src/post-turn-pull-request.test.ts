@@ -8,6 +8,8 @@ import { handlePostTurnPullRequestTransitionsPhase, type PullRequestLifecycleSna
 import { IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorStateFile } from "./core/types";
 import { derivePullRequestLifecycleSnapshot as deriveSupervisorPullRequestLifecycleSnapshot } from "./supervisor/supervisor-lifecycle";
 import { blockedReasonFromReviewState as resolveBlockedReasonFromReviewState, inferStateFromPullRequest } from "./pull-request-state";
+import type { GitHubClient } from "./github";
+import type { LocalReviewResult, PreMergeFinalEvaluation, PreMergeResidualFinding } from "./local-review";
 import { createConfig, createFailureContext, createIssue, createPullRequest, createRecord } from "./turn-execution-test-helpers";
 
 const SAMPLE_UNIX_WORKSTATION_PATH = `/${"home"}/alice/dev/private-repo`;
@@ -40,6 +42,248 @@ async function createTrackedIssueBranchRepo(branch = "codex/issue-102"): Promise
   return {
     workspacePath,
     headSha: git(workspacePath, "rev-parse", "HEAD").trim(),
+  };
+}
+
+const TEST_MEMORY_ARTIFACTS = {
+  alwaysReadFiles: [],
+  onDemandFiles: [],
+  contextIndexPath: "/tmp/context-index.md",
+  agentsPath: "/tmp/AGENTS.generated.md",
+};
+
+function createNoopStateStore() {
+  return {
+    touch: (record: IssueRunRecord, patch: Partial<IssueRunRecord>) => ({ ...record, ...patch, updated_at: record.updated_at }),
+    save: async () => undefined,
+  };
+}
+
+function createDefaultGithub(
+  overrides: Partial<
+    Pick<GitHubClient, "getPullRequest" | "getChecks" | "getUnresolvedReviewThreads" | "markPullRequestReady" | "createIssue" | "addIssueComment">
+  > = {},
+) {
+  return {
+    getPullRequest: async () => {
+      throw new Error("unexpected getPullRequest call");
+    },
+    getChecks: async () => {
+      throw new Error("unexpected getChecks call");
+    },
+    getUnresolvedReviewThreads: async () => {
+      throw new Error("unexpected getUnresolvedReviewThreads call");
+    },
+    markPullRequestReady: async () => {
+      throw new Error("unexpected markPullRequestReady call");
+    },
+    ...overrides,
+  };
+}
+
+function createLifecycleSnapshot(
+  recordForState: IssueRunRecord,
+  nextState: PullRequestLifecycleSnapshot["nextState"],
+  overrides: Partial<PullRequestLifecycleSnapshot> = {},
+): PullRequestLifecycleSnapshot {
+  return {
+    recordForState,
+    nextState,
+    failureContext: null,
+    reviewWaitPatch: {},
+    copilotRequestObservationPatch: {},
+    mergeLatencyVisibilityPatch: {
+      provider_success_observed_at: null,
+      provider_success_head_sha: null,
+      merge_readiness_last_evaluated_at: null,
+    },
+    copilotTimeoutPatch: {
+      copilot_review_timed_out_at: null,
+      copilot_review_timeout_action: null,
+      copilot_review_timeout_reason: null,
+    },
+    ...overrides,
+  };
+}
+
+function summarizeChecks(checks: PullRequestCheck[]) {
+  return {
+    hasPending: checks.some((check) => check.bucket === "pending"),
+    hasFailing: checks.some((check) => check.bucket === "fail"),
+  };
+}
+
+function createPostTurnContext({
+  issue,
+  pr,
+  workspacePath,
+  state,
+  record,
+  syncJournal = async () => undefined,
+}: {
+  issue: ReturnType<typeof createIssue>;
+  pr: ReturnType<typeof createPullRequest>;
+  workspacePath: string;
+  state: SupervisorStateFile;
+  record: IssueRunRecord;
+  syncJournal?: () => Promise<void>;
+}) {
+  return {
+    state,
+    record,
+    issue,
+    workspacePath,
+    syncJournal,
+    memoryArtifacts: TEST_MEMORY_ARTIFACTS,
+    pr,
+    options: { dryRun: false },
+  };
+}
+
+function createTrackedPullRequestFixture({
+  issueNumber = 102,
+  issueTitle,
+  issueBody,
+  prTitle,
+  isDraft,
+  workspacePath = path.join("/tmp/workspaces", `issue-${issueNumber}`),
+  headSha = "head-116",
+  recordOverrides = {},
+}: {
+  issueNumber?: number;
+  issueTitle: string;
+  issueBody?: string;
+  prTitle: string;
+  isDraft: boolean;
+  workspacePath?: string;
+  headSha?: string;
+  recordOverrides?: Partial<IssueRunRecord>;
+}) {
+  const issue = createIssue({ title: issueTitle, body: issueBody });
+  const pr = createPullRequest({
+    title: prTitle,
+    isDraft,
+    headRefName: `codex/issue-${issueNumber}`,
+    headRefOid: headSha,
+  });
+  const record = createRecord({
+    state: isDraft ? "draft_pr" : "pr_open",
+    pr_number: pr.number,
+    ...(isDraft ? {} : { last_head_sha: headSha }),
+    ...recordOverrides,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: { [String(issueNumber)]: createRecord({ ...record }) },
+  };
+
+  return { issue, pr, record, state, workspacePath, headSha };
+}
+
+function createResidualFinding(overrides: Partial<PreMergeResidualFinding>): PreMergeResidualFinding {
+  return {
+    findingKey: "src/example.ts|20|21|medium issue|this still needs follow-up.",
+    summary: "This still needs follow-up.",
+    severity: "medium",
+    category: "tests",
+    file: "src/example.ts",
+    start: 20,
+    end: 21,
+    source: "local_review",
+    resolution: "follow_up_candidate",
+    rationale: "Residual non-high-severity finding is eligible for explicit follow-up instead of blocking merge by itself.",
+    ...overrides,
+  };
+}
+
+function createFollowUpEligibleEvaluation(overrides: Partial<PreMergeFinalEvaluation> = {}): PreMergeFinalEvaluation {
+  const residualFindings = [createResidualFinding({})];
+  return {
+    outcome: "follow_up_eligible",
+    residualFindings,
+    mustFixCount: 0,
+    manualReviewCount: 0,
+    followUpCount: residualFindings.length,
+    ...overrides,
+  };
+}
+
+function createManualReviewBlockedEvaluation(overrides: Partial<PreMergeFinalEvaluation> = {}): PreMergeFinalEvaluation {
+  const residualFindings = [
+    createResidualFinding({
+      findingKey: "src/ui/panel.tsx|20|21|ui regression|browser flow still needs manual verification.",
+      summary: "Browser flow still needs manual verification.",
+      severity: "high",
+      category: "behavior",
+      file: "src/ui/panel.tsx",
+      resolution: "manual_review_required",
+      rationale: "High-severity finding remains unresolved without verifier confirmation.",
+    }),
+  ];
+  return {
+    outcome: "manual_review_blocked",
+    residualFindings,
+    mustFixCount: 0,
+    manualReviewCount: 1,
+    followUpCount: 0,
+    ...overrides,
+  };
+}
+
+function createFixBlockedEvaluation(overrides: Partial<PreMergeFinalEvaluation> = {}): PreMergeFinalEvaluation {
+  const residualFindings = [
+    createResidualFinding({
+      findingKey: "src/example.ts|20|21|medium issue|this still needs a direct fix.",
+      summary: "This still needs a direct fix.",
+      category: "logic",
+      resolution: "must_fix",
+      rationale: "A must-fix residual remains on the current head.",
+    }),
+  ];
+  return {
+    outcome: "fix_blocked",
+    residualFindings,
+    mustFixCount: residualFindings.length,
+    manualReviewCount: 0,
+    followUpCount: 0,
+    ...overrides,
+  };
+}
+
+function createLocalReviewResult({
+  issueNumber = 102,
+  headSha = "head-116",
+  summary,
+  blockerSummary,
+  maxSeverity,
+  degraded = false,
+  recommendation = "changes_requested",
+  finalEvaluation,
+}: {
+  issueNumber?: number;
+  headSha?: string;
+  summary: string;
+  blockerSummary: string;
+  maxSeverity: "none" | "low" | "medium" | "high";
+  degraded?: boolean;
+  recommendation?: "ready" | "changes_requested";
+  finalEvaluation: PreMergeFinalEvaluation;
+}): LocalReviewResult {
+  return {
+    ranAt: "2026-03-24T00:11:00Z",
+    summaryPath: `/tmp/reviews/owner-repo/issue-${issueNumber}/${headSha}.md`,
+    findingsPath: `/tmp/reviews/owner-repo/issue-${issueNumber}/${headSha}.json`,
+    summary,
+    blockerSummary,
+    findingsCount: finalEvaluation.residualFindings.length,
+    rootCauseCount: finalEvaluation.residualFindings.length,
+    maxSeverity,
+    verifiedFindingsCount: 0,
+    verifiedMaxSeverity: "none" as const,
+    recommendation,
+    degraded,
+    finalEvaluation,
+    rawOutput: "raw output",
   };
 }
 
@@ -1510,9 +1754,9 @@ test("handlePostTurnPullRequestTransitionsPhase creates follow-up issues only wh
     localReviewPolicy: "block_merge",
     localReviewFollowUpIssueCreationEnabled: true,
   });
-  const issue = createIssue({
-    title: "Track residual post-merge work",
-    body: `## Summary
+  const { issue, pr: draftPr, record, state } = createTrackedPullRequestFixture({
+    issueTitle: "Track residual post-merge work",
+    issueBody: `## Summary
 Allow merge after local review while tracking bounded residual work.
 
 ## Scope
@@ -1534,32 +1778,18 @@ Parallelizable: No
 
 ## Execution order
 1 of 1`,
-  });
-  const draftPr = createPullRequest({
-    title: "Create residual follow-up issues",
+    prTitle: "Create residual follow-up issues",
     isDraft: true,
-    headRefName: "codex/issue-102",
-    headRefOid: headSha,
+    workspacePath,
+    headSha,
   });
   const createdIssues: Array<{ title: string; body: string }> = [];
   let readyCalls = 0;
 
   const result = await handlePostTurnPullRequestTransitionsPhase({
     config,
-    stateStore: {
-      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
-      save: async () => undefined,
-    },
-    github: {
-      getPullRequest: async () => {
-        throw new Error("unexpected getPullRequest call");
-      },
-      getChecks: async () => {
-        throw new Error("unexpected getChecks call");
-      },
-      getUnresolvedReviewThreads: async () => {
-        throw new Error("unexpected getUnresolvedReviewThreads call");
-      },
+    stateStore: createNoopStateStore(),
+    github: createDefaultGithub({
       createIssue: async (title: string, body: string) => {
         createdIssues.push({ title, body });
         return createIssue({
@@ -1572,42 +1802,12 @@ Parallelizable: No
       markPullRequestReady: async () => {
         readyCalls += 1;
       },
-    },
-    context: {
-      state: {
-        activeIssueNumber: 102,
-        issues: { "102": createRecord({ state: "draft_pr", pr_number: draftPr.number }) },
-      },
-      record: createRecord({ state: "draft_pr", pr_number: draftPr.number }),
-      issue,
-      workspacePath,
-      syncJournal: async () => undefined,
-      memoryArtifacts: {
-        alwaysReadFiles: [],
-        onDemandFiles: [],
-        contextIndexPath: "/tmp/context-index.md",
-        agentsPath: "/tmp/AGENTS.generated.md",
-      },
-      pr: draftPr,
-      options: { dryRun: false },
-    },
-    derivePullRequestLifecycleSnapshot: (record, pr) => ({
-      recordForState: record,
-      nextState: "waiting_ci",
-      failureContext: null,
-      reviewWaitPatch: { review_wait_started_at: "2026-03-13T06:26:22Z", review_wait_head_sha: pr.headRefOid },
-      copilotRequestObservationPatch: {},
-      mergeLatencyVisibilityPatch: {
-        provider_success_observed_at: null,
-        provider_success_head_sha: null,
-        merge_readiness_last_evaluated_at: null,
-      },
-      copilotTimeoutPatch: {
-        copilot_review_timed_out_at: null,
-        copilot_review_timeout_action: null,
-        copilot_review_timeout_reason: null,
-      },
     }),
+    context: createPostTurnContext({ state, record, issue, workspacePath, pr: draftPr }),
+    derivePullRequestLifecycleSnapshot: (currentRecord, pr) =>
+      createLifecycleSnapshot(currentRecord, "waiting_ci", {
+        reviewWaitPatch: { review_wait_started_at: "2026-03-13T06:26:22Z", review_wait_head_sha: pr.headRefOid },
+      }),
     applyFailureSignature: () => ({
       last_failure_signature: null,
       repeated_failure_signature_count: 0,
@@ -1625,41 +1825,15 @@ Parallelizable: No
       ok: true,
       failureContext: null,
     }),
-    runLocalReviewImpl: async () => ({
-      ranAt: "2026-03-24T00:11:00Z",
-      summaryPath: "/tmp/reviews/owner-repo/issue-102/head-116.md",
-      findingsPath: "/tmp/reviews/owner-repo/issue-102/head-116.json",
-      summary: "Local review found a bounded medium-severity residual.",
-      blockerSummary: "medium src/example.ts:20-21 This still needs follow-up.",
-      findingsCount: 1,
-      rootCauseCount: 1,
-      maxSeverity: "medium",
-      verifiedFindingsCount: 0,
-      verifiedMaxSeverity: "none",
-      recommendation: "changes_requested",
-      degraded: false,
-      finalEvaluation: {
-        outcome: "follow_up_eligible",
-        residualFindings: [
-          {
-            findingKey: "src/example.ts|20|21|medium issue|this still needs follow-up.",
-            summary: "This still needs follow-up.",
-            severity: "medium",
-            category: "tests",
-            file: "src/example.ts",
-            start: 20,
-            end: 21,
-            source: "local_review",
-            resolution: "follow_up_candidate",
-            rationale: "Residual non-high-severity finding is eligible for explicit follow-up instead of blocking merge by itself.",
-          },
-        ],
-        mustFixCount: 0,
-        manualReviewCount: 0,
-        followUpCount: 1,
-      },
-      rawOutput: "raw output",
-    }),
+    runLocalReviewImpl: async () =>
+      createLocalReviewResult({
+        issueNumber: 102,
+        headSha,
+        summary: "Local review found a bounded medium-severity residual.",
+        blockerSummary: "medium src/example.ts:20-21 This still needs follow-up.",
+        maxSeverity: "medium",
+        finalEvaluation: createFollowUpEligibleEvaluation(),
+      }),
     loadOpenPullRequestSnapshot: async () => ({
       pr: draftPr,
       checks: [],
@@ -1690,33 +1864,19 @@ test("handlePostTurnPullRequestTransitionsPhase routes opted-in follow-up-eligib
     localReviewPolicy: "block_merge",
     localReviewFollowUpRepairEnabled: true,
   });
-  const issue = createIssue({
-    title: "Repair bounded residuals in the same PR",
-  });
-  const readyPr = createPullRequest({
-    title: "Keep residual repair in the tracked PR",
+  const { issue, pr: readyPr, record, state } = createTrackedPullRequestFixture({
+    issueTitle: "Repair bounded residuals in the same PR",
+    prTitle: "Keep residual repair in the tracked PR",
     isDraft: false,
-    headRefName: "codex/issue-102",
-    headRefOid: headSha,
+    workspacePath,
+    headSha,
   });
   let createIssueCalls = 0;
 
   const result = await handlePostTurnPullRequestTransitionsPhase({
     config,
-    stateStore: {
-      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
-      save: async () => undefined,
-    },
-    github: {
-      getPullRequest: async () => {
-        throw new Error("unexpected getPullRequest call");
-      },
-      getChecks: async () => {
-        throw new Error("unexpected getChecks call");
-      },
-      getUnresolvedReviewThreads: async () => {
-        throw new Error("unexpected getUnresolvedReviewThreads call");
-      },
+    stateStore: createNoopStateStore(),
+    github: createDefaultGithub({
       createIssue: async () => {
         createIssueCalls += 1;
         throw new Error("unexpected createIssue call");
@@ -1724,42 +1884,10 @@ test("handlePostTurnPullRequestTransitionsPhase routes opted-in follow-up-eligib
       markPullRequestReady: async () => {
         throw new Error("unexpected markPullRequestReady call");
       },
-    },
-    context: {
-      state: {
-        activeIssueNumber: 102,
-        issues: { "102": createRecord({ state: "pr_open", pr_number: readyPr.number, last_head_sha: headSha }) },
-      },
-      record: createRecord({ state: "pr_open", pr_number: readyPr.number, last_head_sha: headSha }),
-      issue,
-      workspacePath,
-      syncJournal: async () => undefined,
-      memoryArtifacts: {
-        alwaysReadFiles: [],
-        onDemandFiles: [],
-        contextIndexPath: "/tmp/context-index.md",
-        agentsPath: "/tmp/AGENTS.generated.md",
-      },
-      pr: readyPr,
-      options: { dryRun: false },
-    },
-    derivePullRequestLifecycleSnapshot: (record, pr, checks, reviewThreads) => ({
-      recordForState: record,
-      nextState: inferStateFromPullRequest(config, record, pr, checks, reviewThreads),
-      failureContext: null,
-      reviewWaitPatch: {},
-      copilotRequestObservationPatch: {},
-      mergeLatencyVisibilityPatch: {
-        provider_success_observed_at: null,
-        provider_success_head_sha: null,
-        merge_readiness_last_evaluated_at: null,
-      },
-      copilotTimeoutPatch: {
-        copilot_review_timed_out_at: null,
-        copilot_review_timeout_action: null,
-        copilot_review_timeout_reason: null,
-      },
     }),
+    context: createPostTurnContext({ state, record, issue, workspacePath, pr: readyPr }),
+    derivePullRequestLifecycleSnapshot: (currentRecord, pr, checks, reviewThreads) =>
+      createLifecycleSnapshot(currentRecord, inferStateFromPullRequest(config, currentRecord, pr, checks, reviewThreads)),
     applyFailureSignature: () => ({
       last_failure_signature: null,
       repeated_failure_signature_count: 0,
@@ -1770,10 +1898,7 @@ test("handlePostTurnPullRequestTransitionsPhase routes opted-in follow-up-eligib
         : record.pre_merge_evaluation_outcome === "fix_blocked"
           ? "verification"
           : null,
-    summarizeChecks: (checks) => ({
-      hasPending: checks.some((check) => check.bucket === "pending"),
-      hasFailing: checks.some((check) => check.bucket === "fail"),
-    }),
+    summarizeChecks,
     configuredBotReviewThreads: () => [],
     manualReviewThreads: () => [],
     mergeConflictDetected: () => false,
@@ -1781,41 +1906,15 @@ test("handlePostTurnPullRequestTransitionsPhase routes opted-in follow-up-eligib
       ok: true,
       failureContext: null,
     }),
-    runLocalReviewImpl: async () => ({
-      ranAt: "2026-03-24T00:11:00Z",
-      summaryPath: "/tmp/reviews/owner-repo/issue-102/head-116.md",
-      findingsPath: "/tmp/reviews/owner-repo/issue-102/head-116.json",
-      summary: "Local review found a bounded medium-severity residual.",
-      blockerSummary: "medium src/example.ts:20-21 This still needs follow-up.",
-      findingsCount: 1,
-      rootCauseCount: 1,
-      maxSeverity: "medium",
-      verifiedFindingsCount: 0,
-      verifiedMaxSeverity: "none",
-      recommendation: "changes_requested",
-      degraded: false,
-      finalEvaluation: {
-        outcome: "follow_up_eligible",
-        residualFindings: [
-          {
-            findingKey: "src/example.ts|20|21|medium issue|this still needs follow-up.",
-            summary: "This still needs follow-up.",
-            severity: "medium",
-            category: "tests",
-            file: "src/example.ts",
-            start: 20,
-            end: 21,
-            source: "local_review",
-            resolution: "follow_up_candidate",
-            rationale: "Residual non-high-severity finding is eligible for explicit follow-up instead of blocking merge by itself.",
-          },
-        ],
-        mustFixCount: 0,
-        manualReviewCount: 0,
-        followUpCount: 1,
-      },
-      rawOutput: "raw output",
-    }),
+    runLocalReviewImpl: async () =>
+      createLocalReviewResult({
+        issueNumber: 102,
+        headSha,
+        summary: "Local review found a bounded medium-severity residual.",
+        blockerSummary: "medium src/example.ts:20-21 This still needs follow-up.",
+        maxSeverity: "medium",
+        finalEvaluation: createFollowUpEligibleEvaluation(),
+      }),
     loadOpenPullRequestSnapshot: async () => ({
       pr: readyPr,
       checks: [],
@@ -1838,84 +1937,35 @@ test("handlePostTurnPullRequestTransitionsPhase routes current-head manual-revie
     localReviewPolicy: "block_merge",
     localReviewManualReviewRepairEnabled: true,
   });
-  const issue = createIssue({
-    title: "Repair current-head manual-review residuals in the same PR",
-  });
-  const readyPr = createPullRequest({
-    title: "Keep manual-review residual repair in the tracked PR",
+  const { issue, pr: readyPr, record, state } = createTrackedPullRequestFixture({
+    issueTitle: "Repair current-head manual-review residuals in the same PR",
+    prTitle: "Keep manual-review residual repair in the tracked PR",
     isDraft: false,
-    headRefName: "codex/issue-102",
-    headRefOid: headSha,
+    workspacePath,
+    headSha,
   });
 
   const result = await handlePostTurnPullRequestTransitionsPhase({
     config,
-    stateStore: {
-      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
-      save: async () => undefined,
-    },
-    github: {
-      getPullRequest: async () => {
-        throw new Error("unexpected getPullRequest call");
-      },
-      getChecks: async () => {
-        throw new Error("unexpected getChecks call");
-      },
-      getUnresolvedReviewThreads: async () => {
-        throw new Error("unexpected getUnresolvedReviewThreads call");
-      },
+    stateStore: createNoopStateStore(),
+    github: createDefaultGithub({
       createIssue: async () => {
         throw new Error("unexpected createIssue call");
       },
       markPullRequestReady: async () => {
         throw new Error("unexpected markPullRequestReady call");
       },
-    },
-    context: {
-      state: {
-        activeIssueNumber: 102,
-        issues: { "102": createRecord({ state: "pr_open", pr_number: readyPr.number, last_head_sha: headSha }) },
-      },
-      record: createRecord({ state: "pr_open", pr_number: readyPr.number, last_head_sha: headSha }),
-      issue,
-      workspacePath,
-      syncJournal: async () => undefined,
-      memoryArtifacts: {
-        alwaysReadFiles: [],
-        onDemandFiles: [],
-        contextIndexPath: "/tmp/context-index.md",
-        agentsPath: "/tmp/AGENTS.generated.md",
-      },
-      pr: readyPr,
-      options: { dryRun: false },
-    },
-    derivePullRequestLifecycleSnapshot: (record, pr, checks, reviewThreads) => ({
-      recordForState: record,
-      nextState: inferStateFromPullRequest(config, record, pr, checks, reviewThreads),
-      failureContext: null,
-      reviewWaitPatch: {},
-      copilotRequestObservationPatch: {},
-      mergeLatencyVisibilityPatch: {
-        provider_success_observed_at: null,
-        provider_success_head_sha: null,
-        merge_readiness_last_evaluated_at: null,
-      },
-      copilotTimeoutPatch: {
-        copilot_review_timed_out_at: null,
-        copilot_review_timeout_action: null,
-        copilot_review_timeout_reason: null,
-      },
     }),
+    context: createPostTurnContext({ state, record, issue, workspacePath, pr: readyPr }),
+    derivePullRequestLifecycleSnapshot: (currentRecord, pr, checks, reviewThreads) =>
+      createLifecycleSnapshot(currentRecord, inferStateFromPullRequest(config, currentRecord, pr, checks, reviewThreads)),
     applyFailureSignature: () => ({
       last_failure_signature: null,
       repeated_failure_signature_count: 0,
     }),
     blockedReasonFromReviewState: (record, pr, checks, reviewThreads) =>
       resolveBlockedReasonFromReviewState(config, record, pr, checks, reviewThreads),
-    summarizeChecks: (checks) => ({
-      hasPending: checks.some((check) => check.bucket === "pending"),
-      hasFailing: checks.some((check) => check.bucket === "fail"),
-    }),
+    summarizeChecks,
     configuredBotReviewThreads: () => [],
     manualReviewThreads: () => [],
     mergeConflictDetected: () => false,
@@ -1923,41 +1973,15 @@ test("handlePostTurnPullRequestTransitionsPhase routes current-head manual-revie
       ok: true,
       failureContext: null,
     }),
-    runLocalReviewImpl: async () => ({
-      ranAt: "2026-03-24T00:11:00Z",
-      summaryPath: "/tmp/reviews/owner-repo/issue-102/head-116.md",
-      findingsPath: "/tmp/reviews/owner-repo/issue-102/head-116.json",
-      summary: "Local review found an unverified UI regression risk.",
-      blockerSummary: "high src/ui/panel.tsx:20-21 Browser flow still needs manual verification.",
-      findingsCount: 1,
-      rootCauseCount: 1,
-      maxSeverity: "high",
-      verifiedFindingsCount: 0,
-      verifiedMaxSeverity: "none",
-      recommendation: "changes_requested",
-      degraded: false,
-      finalEvaluation: {
-        outcome: "manual_review_blocked",
-        residualFindings: [
-          {
-            findingKey: "src/ui/panel.tsx|20|21|ui regression|browser flow still needs manual verification.",
-            summary: "Browser flow still needs manual verification.",
-            severity: "high",
-            category: "behavior",
-            file: "src/ui/panel.tsx",
-            start: 20,
-            end: 21,
-            source: "local_review",
-            resolution: "manual_review_required",
-            rationale: "High-severity finding remains unresolved without verifier confirmation.",
-          },
-        ],
-        mustFixCount: 0,
-        manualReviewCount: 1,
-        followUpCount: 0,
-      },
-      rawOutput: "raw output",
-    }),
+    runLocalReviewImpl: async () =>
+      createLocalReviewResult({
+        issueNumber: 102,
+        headSha,
+        summary: "Local review found an unverified UI regression risk.",
+        blockerSummary: "high src/ui/panel.tsx:20-21 Browser flow still needs manual verification.",
+        maxSeverity: "high",
+        finalEvaluation: createManualReviewBlockedEvaluation(),
+      }),
     loadOpenPullRequestSnapshot: async () => ({
       pr: readyPr,
       checks: [],
@@ -1980,74 +2004,28 @@ test("handlePostTurnPullRequestTransitionsPhase routes current-head fix-blocked 
     localReviewEnabled: true,
     localReviewPolicy: "block_merge",
   });
-  const issue = createIssue({
-    title: "Repair current-head must-fix residuals in the same PR",
-  });
-  const readyPr = createPullRequest({
-    title: "Keep must-fix residual repair in the tracked PR",
+  const { issue, pr: readyPr, record, state } = createTrackedPullRequestFixture({
+    issueTitle: "Repair current-head must-fix residuals in the same PR",
+    prTitle: "Keep must-fix residual repair in the tracked PR",
     isDraft: false,
-    headRefName: "codex/issue-102",
-    headRefOid: headSha,
+    workspacePath,
+    headSha,
   });
 
   const result = await handlePostTurnPullRequestTransitionsPhase({
     config,
-    stateStore: {
-      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
-      save: async () => undefined,
-    },
-    github: {
-      getPullRequest: async () => {
-        throw new Error("unexpected getPullRequest call");
-      },
-      getChecks: async () => {
-        throw new Error("unexpected getChecks call");
-      },
-      getUnresolvedReviewThreads: async () => {
-        throw new Error("unexpected getUnresolvedReviewThreads call");
-      },
+    stateStore: createNoopStateStore(),
+    github: createDefaultGithub({
       createIssue: async () => {
         throw new Error("unexpected createIssue call");
       },
       markPullRequestReady: async () => {
         throw new Error("unexpected markPullRequestReady call");
       },
-    },
-    context: {
-      state: {
-        activeIssueNumber: 102,
-        issues: { "102": createRecord({ state: "pr_open", pr_number: readyPr.number, last_head_sha: headSha }) },
-      },
-      record: createRecord({ state: "pr_open", pr_number: readyPr.number, last_head_sha: headSha }),
-      issue,
-      workspacePath,
-      syncJournal: async () => undefined,
-      memoryArtifacts: {
-        alwaysReadFiles: [],
-        onDemandFiles: [],
-        contextIndexPath: "/tmp/context-index.md",
-        agentsPath: "/tmp/AGENTS.generated.md",
-      },
-      pr: readyPr,
-      options: { dryRun: false },
-    },
-    derivePullRequestLifecycleSnapshot: (record, pr, checks, reviewThreads) => ({
-      recordForState: record,
-      nextState: inferStateFromPullRequest(config, record, pr, checks, reviewThreads),
-      failureContext: null,
-      reviewWaitPatch: {},
-      copilotRequestObservationPatch: {},
-      mergeLatencyVisibilityPatch: {
-        provider_success_observed_at: null,
-        provider_success_head_sha: null,
-        merge_readiness_last_evaluated_at: null,
-      },
-      copilotTimeoutPatch: {
-        copilot_review_timed_out_at: null,
-        copilot_review_timeout_action: null,
-        copilot_review_timeout_reason: null,
-      },
     }),
+    context: createPostTurnContext({ state, record, issue, workspacePath, pr: readyPr }),
+    derivePullRequestLifecycleSnapshot: (currentRecord, pr, checks, reviewThreads) =>
+      createLifecycleSnapshot(currentRecord, inferStateFromPullRequest(config, currentRecord, pr, checks, reviewThreads)),
     applyFailureSignature: () => ({
       last_failure_signature: null,
       repeated_failure_signature_count: 0,
@@ -2058,10 +2036,7 @@ test("handlePostTurnPullRequestTransitionsPhase routes current-head fix-blocked 
         : record.pre_merge_evaluation_outcome === "fix_blocked"
           ? "verification"
           : null,
-    summarizeChecks: (checks) => ({
-      hasPending: checks.some((check) => check.bucket === "pending"),
-      hasFailing: checks.some((check) => check.bucket === "fail"),
-    }),
+    summarizeChecks,
     configuredBotReviewThreads: () => [],
     manualReviewThreads: () => [],
     mergeConflictDetected: () => false,
@@ -2069,41 +2044,15 @@ test("handlePostTurnPullRequestTransitionsPhase routes current-head fix-blocked 
       ok: true,
       failureContext: null,
     }),
-    runLocalReviewImpl: async () => ({
-      ranAt: "2026-03-24T00:11:00Z",
-      summaryPath: "/tmp/reviews/owner-repo/issue-102/head-116.md",
-      findingsPath: "/tmp/reviews/owner-repo/issue-102/head-116.json",
-      summary: "Local review found a must-fix regression.",
-      blockerSummary: "medium src/example.ts:20-21 This still needs a direct fix.",
-      findingsCount: 1,
-      rootCauseCount: 1,
-      maxSeverity: "medium",
-      verifiedFindingsCount: 0,
-      verifiedMaxSeverity: "none",
-      recommendation: "changes_requested",
-      degraded: false,
-      finalEvaluation: {
-        outcome: "fix_blocked",
-        residualFindings: [
-          {
-            findingKey: "src/example.ts|20|21|medium issue|this still needs a direct fix.",
-            summary: "This still needs a direct fix.",
-            severity: "medium",
-            category: "logic",
-            file: "src/example.ts",
-            start: 20,
-            end: 21,
-            source: "local_review",
-            resolution: "must_fix",
-            rationale: "A must-fix residual remains on the current head.",
-          },
-        ],
-        mustFixCount: 1,
-        manualReviewCount: 0,
-        followUpCount: 0,
-      },
-      rawOutput: "raw output",
-    }),
+    runLocalReviewImpl: async () =>
+      createLocalReviewResult({
+        issueNumber: 102,
+        headSha,
+        summary: "Local review found a must-fix regression.",
+        blockerSummary: "medium src/example.ts:20-21 This still needs a direct fix.",
+        maxSeverity: "medium",
+        finalEvaluation: createFixBlockedEvaluation(),
+      }),
     loadOpenPullRequestSnapshot: async () => ({
       pr: readyPr,
       checks: [],
@@ -3009,70 +2958,27 @@ test("handlePostTurnPullRequestTransitionsPhase blocks draft PRs when local revi
     localReviewEnabled: true,
     localReviewPolicy: "block_merge",
   });
-  const issue = createIssue({ title: "Require manual browser verification before ready" });
-  const draftPr = createPullRequest({ title: "Manual verification gate", isDraft: true });
+  const { issue, pr: draftPr, record, state, workspacePath } = createTrackedPullRequestFixture({
+    issueTitle: "Require manual browser verification before ready",
+    prTitle: "Manual verification gate",
+    isDraft: true,
+  });
   let readyCalls = 0;
 
   const result = await handlePostTurnPullRequestTransitionsPhase({
     config,
-    stateStore: {
-      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
-      save: async () => undefined,
-    },
-    github: {
-      getPullRequest: async () => {
-        throw new Error("unexpected getPullRequest call");
-      },
-      getChecks: async () => {
-        throw new Error("unexpected getChecks call");
-      },
-      getUnresolvedReviewThreads: async () => {
-        throw new Error("unexpected getUnresolvedReviewThreads call");
-      },
+    stateStore: createNoopStateStore(),
+    github: createDefaultGithub({
       markPullRequestReady: async () => {
         readyCalls += 1;
       },
-    },
-    context: {
-      state: {
-        activeIssueNumber: 102,
-        issues: { "102": createRecord({ state: "draft_pr", pr_number: draftPr.number }) },
-      },
-      record: createRecord({ state: "draft_pr", pr_number: draftPr.number }),
-      issue,
-      workspacePath: path.join("/tmp/workspaces", "issue-102"),
-      syncJournal: async () => undefined,
-      memoryArtifacts: {
-        alwaysReadFiles: [],
-        onDemandFiles: [],
-        contextIndexPath: "/tmp/context-index.md",
-        agentsPath: "/tmp/AGENTS.generated.md",
-      },
-      pr: draftPr,
-      options: { dryRun: false },
-    },
-    derivePullRequestLifecycleSnapshot: (record, pr) => ({
-      recordForState: record,
-      nextState:
-        record.pre_merge_evaluation_outcome === "manual_review_blocked"
-          ? "blocked"
-          : pr.isDraft
-            ? "draft_pr"
-            : "pr_open",
-      failureContext: null,
-      reviewWaitPatch: {},
-      copilotRequestObservationPatch: {},
-      mergeLatencyVisibilityPatch: {
-        provider_success_observed_at: null,
-        provider_success_head_sha: null,
-        merge_readiness_last_evaluated_at: null,
-      },
-      copilotTimeoutPatch: {
-        copilot_review_timed_out_at: null,
-        copilot_review_timeout_action: null,
-        copilot_review_timeout_reason: null,
-      },
     }),
+    context: createPostTurnContext({ state, record, issue, workspacePath, pr: draftPr }),
+    derivePullRequestLifecycleSnapshot: (currentRecord, pr) =>
+      createLifecycleSnapshot(
+        currentRecord,
+        currentRecord.pre_merge_evaluation_outcome === "manual_review_blocked" ? "blocked" : pr.isDraft ? "draft_pr" : "pr_open",
+      ),
     applyFailureSignature: () => ({
       last_failure_signature: null,
       repeated_failure_signature_count: 0,
@@ -3086,41 +2992,14 @@ test("handlePostTurnPullRequestTransitionsPhase blocks draft PRs when local revi
     configuredBotReviewThreads: () => [],
     manualReviewThreads: () => [],
     mergeConflictDetected: () => false,
-    runLocalReviewImpl: async () => ({
-      ranAt: "2026-03-24T00:11:00Z",
-      summaryPath: "/tmp/reviews/owner-repo/issue-102/head-116.md",
-      findingsPath: "/tmp/reviews/owner-repo/issue-102/head-116.json",
-      summary: "Local review found an unverified UI regression risk.",
-      blockerSummary: "high src/ui/panel.tsx:20-21 Browser flow still needs manual verification.",
-      findingsCount: 1,
-      rootCauseCount: 1,
-      maxSeverity: "high",
-      verifiedFindingsCount: 0,
-      verifiedMaxSeverity: "none",
-      recommendation: "changes_requested",
-      degraded: false,
-      finalEvaluation: {
-        outcome: "manual_review_blocked",
-        residualFindings: [
-          {
-            findingKey: "src/ui/panel.tsx|20|21|ui regression|browser flow still needs manual verification.",
-            summary: "Browser flow still needs manual verification.",
-            severity: "high",
-            category: "behavior",
-            file: "src/ui/panel.tsx",
-            start: 20,
-            end: 21,
-            source: "local_review",
-            resolution: "manual_review_required",
-            rationale: "High-severity finding remains unresolved without verifier confirmation.",
-          },
-        ],
-        mustFixCount: 0,
-        manualReviewCount: 1,
-        followUpCount: 0,
-      },
-      rawOutput: "raw output",
-    }),
+    runLocalReviewImpl: async () =>
+      createLocalReviewResult({
+        issueNumber: 102,
+        summary: "Local review found an unverified UI regression risk.",
+        blockerSummary: "high src/ui/panel.tsx:20-21 Browser flow still needs manual verification.",
+        maxSeverity: "high",
+        finalEvaluation: createManualReviewBlockedEvaluation(),
+      }),
     loadOpenPullRequestSnapshot: async () => ({
       pr: draftPr,
       checks: [],
@@ -3395,12 +3274,12 @@ test("handlePostTurnPullRequestTransitionsPhase still marks degraded advisory dr
     localReviewEnabled: true,
     localReviewPolicy: "advisory",
   });
-  const issue = createIssue({ title: "Promote degraded advisory draft PRs" });
-  const draftPr = createPullRequest({
-    title: "Advisory degraded draft local review",
+  const { issue, pr: draftPr, workspacePath: trackedWorkspacePath } = createTrackedPullRequestFixture({
+    issueTitle: "Promote degraded advisory draft PRs",
+    prTitle: "Advisory degraded draft local review",
     isDraft: true,
-    headRefName: "codex/issue-102",
-    headRefOid: headSha,
+    workspacePath,
+    headSha,
   });
   const readyPr = createPullRequest({
     title: "Advisory degraded draft local review",
@@ -3429,66 +3308,21 @@ test("handlePostTurnPullRequestTransitionsPhase still marks degraded advisory dr
   let snapshotLoads = 0;
   const result = await handlePostTurnPullRequestTransitionsPhase({
     config,
-    stateStore: {
-      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
-      save: async () => undefined,
-    },
-    github: {
-      getPullRequest: async () => {
-        throw new Error("unexpected getPullRequest call");
-      },
-      getChecks: async () => {
-        throw new Error("unexpected getChecks call");
-      },
-      getUnresolvedReviewThreads: async () => {
-        throw new Error("unexpected getUnresolvedReviewThreads call");
-      },
+    stateStore: createNoopStateStore(),
+    github: createDefaultGithub({
       markPullRequestReady: async (prNumber: number) => {
         assert.equal(prNumber, draftPr.number);
         readyCalls += 1;
       },
-    },
-    context: {
-      state,
-      record: state.issues["102"]!,
-      issue,
-      workspacePath,
-      syncJournal: async () => undefined,
-      memoryArtifacts: {
-        alwaysReadFiles: [],
-        onDemandFiles: [],
-        contextIndexPath: "/tmp/context-index.md",
-        agentsPath: "/tmp/AGENTS.generated.md",
-      },
-      pr: draftPr,
-      options: { dryRun: false },
-    },
-    derivePullRequestLifecycleSnapshot: (record, pr) => ({
-      recordForState: record,
-      nextState: pr.isDraft ? "draft_pr" : "pr_open",
-      failureContext: null,
-      reviewWaitPatch: {},
-      copilotRequestObservationPatch: {},
-      mergeLatencyVisibilityPatch: {
-        provider_success_observed_at: null,
-        provider_success_head_sha: null,
-        merge_readiness_last_evaluated_at: null,
-      },
-      copilotTimeoutPatch: {
-        copilot_review_timed_out_at: null,
-        copilot_review_timeout_action: null,
-        copilot_review_timeout_reason: null,
-      },
     }),
+    context: createPostTurnContext({ state, record: state.issues["102"]!, issue, workspacePath: trackedWorkspacePath, pr: draftPr }),
+    derivePullRequestLifecycleSnapshot: (currentRecord, pr) => createLifecycleSnapshot(currentRecord, pr.isDraft ? "draft_pr" : "pr_open"),
     applyFailureSignature: () => ({
       last_failure_signature: null,
       repeated_failure_signature_count: 0,
     }),
     blockedReasonFromReviewState: () => null,
-    summarizeChecks: (checks) => ({
-      hasPending: checks.some((check) => check.bucket === "pending"),
-      hasFailing: checks.some((check) => check.bucket === "fail"),
-    }),
+    summarizeChecks,
     configuredBotReviewThreads: () => [],
     manualReviewThreads: () => [],
     mergeConflictDetected: () => false,
