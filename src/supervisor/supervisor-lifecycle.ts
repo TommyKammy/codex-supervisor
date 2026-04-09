@@ -8,10 +8,12 @@ import {
   blockedReasonFromReviewState,
   inferStateFromPullRequest,
   syncMergeLatencyVisibility,
+} from "../pull-request-state";
+import {
   syncCopilotReviewRequestObservation,
   syncCopilotReviewTimeoutState,
   syncReviewWaitWindow,
-} from "../pull-request-state";
+} from "../pull-request-state-sync";
 import { projectTrackedPrLifecycle } from "../tracked-pr-lifecycle-projection";
 import {
   localReviewHighSeverityNeedsBlock,

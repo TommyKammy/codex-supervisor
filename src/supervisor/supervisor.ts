@@ -22,10 +22,12 @@ import {
   buildCopilotReviewTimeoutFailureContext,
   inferStateFromPullRequest,
   inferGitHubWaitStep,
+} from "../pull-request-state";
+import {
   syncCopilotReviewRequestObservation,
   syncCopilotReviewTimeoutState,
   syncReviewWaitWindow,
-} from "../pull-request-state";
+} from "../pull-request-state-sync";
 import {
   hasStaleStabilizingNoPrRecoveryBudgetRemaining,
   inferStateWithoutPullRequest,

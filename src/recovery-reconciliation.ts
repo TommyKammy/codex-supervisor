@@ -3,10 +3,12 @@ import path from "node:path";
 import { runCommand } from "./core/command";
 import {
   inferStateFromPullRequest,
+} from "./pull-request-state";
+import {
   syncCopilotReviewRequestObservation,
   syncCopilotReviewTimeoutState,
   syncReviewWaitWindow,
-} from "./pull-request-state";
+} from "./pull-request-state-sync";
 import {
   blockedReasonForLifecycleState,
   isOpenPullRequest,

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { ensureWorkspace } from "../core/workspace";
-import { syncCopilotReviewRequestObservation } from "../pull-request-state";
+import { syncCopilotReviewRequestObservation } from "../pull-request-state-sync";
 import { Supervisor } from "./supervisor";
 import { GitHubIssue, GitHubPullRequest, PullRequestCheck, ReviewThread, SupervisorStateFile } from "../core/types";
 import {
