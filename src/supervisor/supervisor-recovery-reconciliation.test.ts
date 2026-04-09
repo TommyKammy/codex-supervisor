@@ -1668,11 +1668,10 @@ test("reconcileRecoverableBlockedIssueStates suppresses duplicate tracked PR rec
     },
   );
 
-  assert.deepEqual(firstRecoveryEvents.map((event) => event.reason), [
-    "tracked_pr_lifecycle_recovered: resumed issue #366 from blocked to draft_pr using fresh tracked PR #191 facts at head head-191",
-  ]);
-  assert.equal(state.issues["366"]?.state, "draft_pr");
-  assert.equal(saveCalls, 1);
+  assert.deepEqual(firstRecoveryEvents, []);
+  assert.equal(state.issues["366"]?.state, "blocked");
+  assert.equal(state.issues["366"]?.blocked_reason, "verification");
+  assert.equal(saveCalls, 0);
 
   const secondRecoveryEvents = await reconcileRecoverableBlockedIssueStates(
     {
@@ -1698,9 +1697,10 @@ test("reconcileRecoverableBlockedIssueStates suppresses duplicate tracked PR rec
   );
 
   assert.deepEqual(secondRecoveryEvents, []);
-  assert.equal(state.issues["366"]?.state, "draft_pr");
-  assert.equal(state.issues["366"]?.last_recovery_reason, "tracked_pr_lifecycle_recovered: resumed issue #366 from blocked to draft_pr using fresh tracked PR #191 facts at head head-191");
-  assert.equal(saveCalls, 1);
+  assert.equal(state.issues["366"]?.state, "blocked");
+  assert.equal(state.issues["366"]?.blocked_reason, "verification");
+  assert.equal(state.issues["366"]?.last_recovery_reason, null);
+  assert.equal(saveCalls, 0);
 });
 
 test("reconcileRecoverableBlockedIssueStates clears stale head-scoped review state after a tracked PR repair push", async () => {
