@@ -28,20 +28,20 @@ Failure signature: PRRT_kwDORgvdZ855xaMp
 ## Active Failure Context
 - Category: review
 - Summary: 1 unresolved automated review thread(s) remain.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1396#discussion_r3056163385
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1396
 - Details:
-  - src/backend/webui-dashboard-browser-issue-details.ts:100 summary=_⚠️ Potential issue_ | _🟡 Minor_ **Normalize nullish review-wait fields before string assembly.** Several optional fields are concatenated directly, so missing values can rende... url=https://github.com/TommyKammy/codex-supervisor/pull/1396#discussion_r3056163385
+  - src/backend/webui-dashboard-browser-view-model.test.ts summary=Only one unresolved review thread remains after push, and `gh` reports it as `isOutdated: true`; the locale/time assertion fix is already on the branch, so the remaining action is manual thread resolution or re-review. url=https://github.com/TommyKammy/codex-supervisor/pull/1396
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: The remaining review feedback was valid and is addressed by normalizing every nullable review-wait field before assembling the operator-visible string, with focused regression coverage to keep `undefined`/`null` out of the dashboard.
-- What changed: Normalized `formatReviewWaits` in `webui-dashboard-browser-issue-details.ts` so missing review-wait fields consistently render as `"none"` including the `undefined` case for `configuredWaitSeconds`, and added regression coverage in `webui-dashboard-browser-issue-details.test.ts` for a review-wait entry with nullish values across every optional field.
-- Current blocker: none
-- Next exact step: Commit and push the review-fix checkpoint on `codex/issue-1389`, then re-check PR #1396 for any still-open review thread state that now only needs manual resolution.
+- Hypothesis: All actionable automated review feedback is now implemented on `codex/issue-1389`; the only remaining unresolved thread is an outdated CodeRabbit note whose underlying test fix is already present on the branch.
+- What changed: Normalized `formatReviewWaits` in `webui-dashboard-browser-issue-details.ts` so missing review-wait fields consistently render as `"none"` including the `undefined` case for `configuredWaitSeconds`, added regression coverage in `webui-dashboard-browser-issue-details.test.ts` for a review-wait entry with nullish values across every optional field, committed the slice as `bac7bd1`, and pushed it to PR #1396.
+- Current blocker: manual review thread resolution/re-review only
+- Next exact step: Leave PR #1396 for manual thread resolution or re-review, since the remaining unresolved thread is outdated and no additional local code change is indicated by the live PR data.
 - Verification gap: None for this review-fix slice; focused helper tests, dashboard/server rendering tests, and the full build all passed locally after the change.
 - Files touched: `.codex-supervisor/issues/1389/issue-journal.md`, `src/backend/webui-dashboard-browser-issue-details.ts`, `src/backend/webui-dashboard-browser-issue-details.test.ts`
 - Rollback concern: The only behavior change is that incomplete review-wait DTOs now render stable `"none"` placeholders instead of leaking `undefined` or `null`; if an operator depended on those broken tokens for debugging, that output is now sanitized.
-- Last focused command: `npm run build`
+- Last focused command: `python3 /home/tommy/.codex/plugins/cache/openai-curated/github/b4940fd0a222022ecd7852e20a4c89ed36b9e9de/skills/gh-address-comments/scripts/fetch_comments.py | jq '.review_threads[] | select(.isResolved == false) | {id, path, line, isOutdated, comments: [.comments.nodes[] | {author: .author.login, body: .body}]}'`
 ### Scratchpad
 - Reproduced focused failure first with `npx tsx --test src/backend/webui-dashboard-browser-view-model.test.ts` (`MODULE_NOT_FOUND` for the new extraction seam), then implemented the module and reran targeted tests.
 - Reproduced two runtime injection failures while extracting issue-detail helpers: first `buildDetailItems is not defined`, then `import_webui_dashboard_browser_logic is not defined`; fixed both by keeping helper internals self-contained and passing imported retry/recovery formatters explicitly at call time.
@@ -52,3 +52,5 @@ Failure signature: PRRT_kwDORgvdZ855xaMp
 - Addressed review thread `PRRT_kwDORgvdZ855xaMp` by normalizing every nullable review-wait field, including `configuredWaitSeconds === undefined`, to `"none"` before string assembly in `formatReviewWaits()`.
 - Added a regression test that covers a review-wait object whose optional fields are all `null`/`undefined` and asserts the rendered summary is stable and operator-safe.
 - Commands run for this review-fix slice: `gh auth status`; `npx tsx --test src/backend/webui-dashboard-browser-issue-details.test.ts src/backend/webui-dashboard-browser-view-model.test.ts`; `npx tsx --test src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts --test-name-pattern 'dashboard|snapshot|format|render'`; `npm run build`
+- Committed the review-wait normalization as `bac7bd1` (`Normalize dashboard review wait formatting`) and pushed `codex/issue-1389` to update PR #1396.
+- Live PR thread fetch after the push shows only one unresolved thread remains, `PRRT_kwDORgvdZ855xQb0`, and GitHub reports it as `isOutdated: true`; no unresolved live thread remains for the just-fixed review-wait helper.
