@@ -581,9 +581,12 @@ test("prepareIssueExecutionContext blocks remote-ahead publication when tracked 
     },
   });
 
-  assert.equal(
+  if (typeof result !== "string") {
+    assert.fail(`expected a string result, got ${typeof result}`);
+  }
+  assert.match(
     result,
-    "Issue #240 blocked: tracked durable artifacts failed workstation-local path hygiene before publication.",
+    /^Issue #240 blocked: tracked durable artifacts failed workstation-local path hygiene before publication\./,
   );
   assert.equal(pushCalls, 0);
   assert.equal(resolvePullRequestCalls, 0);
@@ -940,9 +943,12 @@ test("prepareIssueExecutionContext blocks publication when tracked durable artif
     },
   });
 
-  assert.equal(
+  if (typeof result !== "string") {
+    assert.fail(`expected a string result, got ${typeof result}`);
+  }
+  assert.match(
     result,
-    "Issue #240 blocked: tracked durable artifacts failed workstation-local path hygiene before publication.",
+    /^Issue #240 blocked: tracked durable artifacts failed workstation-local path hygiene before publication\./,
   );
   assert.equal(pushCalls, 0);
   assert.equal(createPullRequestCalls, 0);
