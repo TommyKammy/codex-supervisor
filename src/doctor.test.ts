@@ -1292,6 +1292,109 @@ test("diagnoseSupervisorHost exposes tracked PR mismatches when GitHub is ready 
   );
 });
 
+test("diagnoseSupervisorHost preserves draft tracked PR verification blockers instead of suggesting a no-op rerun", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-doctor-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = path.join(root, "repo");
+  const workspaceRoot = path.join(root, "workspaces");
+  const workspace = path.join(workspaceRoot, "issue-174");
+  const stateFile = path.join(root, "state.json");
+  await fs.mkdir(repoPath, { recursive: true });
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  execFileSync("git", ["init", "-b", "main"], { cwd: repoPath });
+  await fs.writeFile(path.join(repoPath, "README.md"), "fixture\n", "utf8");
+  execFileSync("git", ["add", "README.md"], { cwd: repoPath });
+  execFileSync("git", ["commit", "-m", "fixture"], {
+    cwd: repoPath,
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Codex",
+      GIT_AUTHOR_EMAIL: "codex@example.com",
+      GIT_COMMITTER_NAME: "Codex",
+      GIT_COMMITTER_EMAIL: "codex@example.com",
+    },
+  });
+  execFileSync("git", ["-C", repoPath, "worktree", "add", "-b", "codex/reopen-issue-174", workspace], {
+    encoding: "utf8",
+  });
+
+  const config = createConfig({
+    repoPath,
+    workspaceRoot,
+    stateFile,
+    codexBinary: process.execPath,
+    localCiCommand: "npm run verify:paths",
+  });
+  const trackedState: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "174": createRecord({
+        issue_number: 174,
+        state: "blocked",
+        branch: "codex/reopen-issue-174",
+        workspace,
+        pr_number: 274,
+        blocked_reason: "verification",
+        last_head_sha: "head-draft-274",
+        last_error: "Configured local CI command failed before marking PR #274 ready.",
+        last_failure_signature: "local-ci-gate-non_zero_exit",
+        latest_local_ci_result: {
+          outcome: "failed",
+          summary: "Configured local CI command failed before marking PR #274 ready.",
+          ran_at: "2026-03-13T00:10:00Z",
+          head_sha: "head-draft-274",
+          execution_mode: "legacy_shell_string",
+          failure_class: "non_zero_exit",
+          remediation_target: "repo_owned_command",
+        },
+      }),
+    },
+  };
+  const draftPr = createPullRequest({
+    number: 274,
+    headRefName: "codex/reopen-issue-174",
+    headRefOid: "head-draft-274",
+    isDraft: true,
+  });
+
+  const diagnostics = await diagnoseSupervisorHost({
+    config,
+    authStatus: async () => ({ ok: true, message: null }),
+    loadState: async () => trackedState,
+    github: {
+      getCandidateDiscoveryDiagnostics: async () => ({
+        fetchWindow: 100,
+        observedMatchingOpenIssues: 1,
+        truncated: false,
+      }),
+      getPullRequestIfExists: async () => draftPr,
+      getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getUnresolvedReviewThreads: async () => [],
+    },
+  });
+
+  assert.equal(diagnostics.checks.find((check) => check.name === "worktrees")?.status, "warn");
+  assert.match(
+    renderDoctorReport(diagnostics),
+    /doctor_detail name=worktrees detail=tracked_pr_ready_promotion_blocked issue=#174 pr=#274 github_state=draft_pr local_state=blocked local_blocked_reason=verification stale_local_blocker=yes/,
+  );
+  assert.match(
+    renderDoctorReport(diagnostics),
+    /doctor_detail name=worktrees detail=tracked_pr_ready_promotion_gate issue=#174 pr=#274 gate=local_ci summary=Configured local CI command failed before marking PR #274 ready\./,
+  );
+  assert.match(
+    renderDoctorReport(diagnostics),
+    /doctor_detail name=worktrees detail=recovery_guidance=PR #274 is still draft because ready-for-review promotion is blocked by local verification\. The same blocker is still present, so rerunning the supervisor alone will not help\. Failed gate: npm run verify:paths\. Fix the gate in the tracked workspace first, then rerun it to promote the PR\./,
+  );
+  assert.doesNotMatch(
+    renderDoctorReport(diagnostics),
+    /doctor_detail name=worktrees detail=tracked_pr_mismatch /,
+  );
+});
+
 test("diagnoseSupervisorHost exposes host-local CI blocker details for tracked PR mismatches", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-doctor-"));
   t.after(async () => {

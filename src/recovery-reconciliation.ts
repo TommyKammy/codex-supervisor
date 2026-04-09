@@ -815,15 +815,28 @@ export async function reconcileRecoverableBlockedIssueStates(
         continue;
       }
 
-      const failureContext =
-        nextState === "blocked"
+      const preserveDraftReadyPromotionBlocker =
+        nextState === "draft_pr"
+        && record.blocked_reason === "verification"
+        && trackedPullRequest.isDraft;
+      const inferredFailureContext =
+        nextState === "blocked" || preserveDraftReadyPromotionBlocker
           ? inferFailureContextImpl(config, projection.recordForState, trackedPullRequest, checks, reviewThreads)
           : null;
-      const nextBlockedReason = projection.nextBlockedReason;
+      const failureContext =
+        inferredFailureContext
+        ?? (preserveDraftReadyPromotionBlocker ? record.last_failure_context : null);
+      const nextBlockedReason = preserveDraftReadyPromotionBlocker
+        ? "verification"
+        : projection.nextBlockedReason;
 
-      if (nextState === "blocked") {
+      if (nextState === "blocked" || preserveDraftReadyPromotionBlocker) {
         const headAdvanceResetPatch = resetTrackedPrHeadScopedStateOnAdvance(record, trackedPullRequest.headRefOid);
         const headAdvanced = Object.keys(headAdvanceResetPatch).length > 0;
+        const blockerSemanticsChanged =
+          headAdvanced
+          || nextBlockedReason !== record.blocked_reason
+          || (failureContext?.signature ?? null) !== record.last_failure_signature;
         const failureSignatureBaseRecord = headAdvanced
           ? {
             ...record,
@@ -831,13 +844,20 @@ export async function reconcileRecoverableBlockedIssueStates(
             repeated_failure_signature_count: 0,
           }
           : record;
+        const failureSignaturePatch =
+          preserveDraftReadyPromotionBlocker && !blockerSemanticsChanged
+            ? {
+              last_failure_signature: record.last_failure_signature,
+              repeated_failure_signature_count: record.repeated_failure_signature_count,
+            }
+            : applyFailureSignature(failureSignatureBaseRecord, failureContext);
         const blockedPatch: Partial<IssueRunRecord> = {
           state: "blocked",
           last_error: failureContext ? truncate(failureContext.summary, 1000) : null,
           last_failure_kind: null,
           last_failure_context: failureContext,
           last_blocker_signature: null,
-          ...applyFailureSignature(failureSignatureBaseRecord, failureContext),
+          ...failureSignaturePatch,
           blocked_reason: nextBlockedReason,
           pr_number: trackedPullRequest.number,
           last_head_sha: trackedPullRequest.headRefOid,
@@ -846,10 +866,6 @@ export async function reconcileRecoverableBlockedIssueStates(
           ...projection.copilotReviewRequestObservationPatch,
           ...projection.copilotReviewTimeoutPatch,
         };
-        const blockerSemanticsChanged =
-          headAdvanced
-          || nextBlockedReason !== record.blocked_reason
-          || (failureContext?.signature ?? null) !== record.last_failure_signature;
         const nextPatch = blockerSemanticsChanged
           ? {
             ...blockedPatch,

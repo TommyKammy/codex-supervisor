@@ -2591,7 +2591,7 @@ test("status preserves draft tracked PR lifecycle when ready-for-review promotio
   );
   assert.match(
     report.detailedStatusLines.join("\n"),
-    /^recovery_guidance=PR #274 is still draft because ready-for-review promotion is blocked by local verification\. Failed gate: npm run verify:paths\. Fix the gate in the tracked workspace, rerun it, then rerun the supervisor to promote the PR\.$/m,
+    /^recovery_guidance=PR #274 is still draft because ready-for-review promotion is blocked by local verification\. The same blocker is still present, so rerunning the supervisor alone will not help\. Failed gate: npm run verify:paths\. Fix the gate in the tracked workspace first, then rerun it to promote the PR\.$/m,
   );
   assert.doesNotMatch(report.detailedStatusLines.join("\n"), /^tracked_pr_mismatch /m);
 
@@ -2606,7 +2606,7 @@ test("status preserves draft tracked PR lifecycle when ready-for-review promotio
   );
   assert.match(
     status,
-    /^recovery_guidance=PR #274 is still draft because ready-for-review promotion is blocked by local verification\. Failed gate: npm run verify:paths\. Fix the gate in the tracked workspace, rerun it, then rerun the supervisor to promote the PR\.$/m,
+    /^recovery_guidance=PR #274 is still draft because ready-for-review promotion is blocked by local verification\. The same blocker is still present, so rerunning the supervisor alone will not help\. Failed gate: npm run verify:paths\. Fix the gate in the tracked workspace first, then rerun it to promote the PR\.$/m,
   );
   assert.doesNotMatch(status, /^tracked_pr_mismatch /m);
 });

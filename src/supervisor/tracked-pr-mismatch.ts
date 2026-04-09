@@ -249,7 +249,8 @@ export function buildTrackedPrMismatch(
       ].join(" "),
       guidanceLine:
         `recovery_guidance=PR #${pr.number} is still draft because ready-for-review promotion is blocked by local verification. ` +
-        `Failed gate: ${readyPromotionGate.failedGate}. Fix the gate in the tracked workspace, rerun it, then rerun the supervisor to promote the PR.`,
+        `The same blocker is still present, so rerunning the supervisor alone will not help. ` +
+        `Failed gate: ${readyPromotionGate.failedGate}. Fix the gate in the tracked workspace first, then rerun it to promote the PR.`,
       detailLines: readyPromotionGate.detailLines,
     };
   }
