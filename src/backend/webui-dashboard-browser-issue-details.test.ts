@@ -74,6 +74,26 @@ test("formatLatestRecovery falls back when typed recovery data is incomplete", (
   );
 });
 
+test("formatReviewWaits normalizes nullish fields to stable placeholders", () => {
+  assert.equal(
+    formatReviewWaits({
+      reviewWaits: [
+        {
+          kind: undefined,
+          status: null,
+          provider: undefined,
+          pauseReason: null,
+          recentObservation: undefined,
+          observedAt: null,
+          configuredWaitSeconds: undefined,
+          waitUntil: null,
+        },
+      ],
+    }),
+    "none status=none provider=none pause_reason=none recent_observation=none observed_at=none configured_wait_seconds=none wait_until=none",
+  );
+});
+
 test("buildIssueExplainSections keeps only non-empty typed detail sections", () => {
   const sections = buildIssueExplainSections({
     state: "blocked",

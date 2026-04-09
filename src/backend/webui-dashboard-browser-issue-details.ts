@@ -82,23 +82,34 @@ export function formatReviewWaits(activityContext: DashboardIssueDetailsActivity
     return "none";
   }
   return reviewWaits
-    .map((reviewWait) =>
-      reviewWait.kind +
-      " status=" +
-      reviewWait.status +
-      " provider=" +
-      reviewWait.provider +
-      " pause_reason=" +
-      reviewWait.pauseReason +
-      " recent_observation=" +
-      reviewWait.recentObservation +
-      " observed_at=" +
-      (reviewWait.observedAt || "none") +
-      " configured_wait_seconds=" +
-      (reviewWait.configuredWaitSeconds === null ? "none" : reviewWait.configuredWaitSeconds) +
-      " wait_until=" +
-      (reviewWait.waitUntil || "none"),
-    )
+    .map((reviewWait) => {
+      const kind = reviewWait.kind ?? "none";
+      const status = reviewWait.status ?? "none";
+      const provider = reviewWait.provider ?? "none";
+      const pauseReason = reviewWait.pauseReason ?? "none";
+      const recentObservation = reviewWait.recentObservation ?? "none";
+      const observedAt = reviewWait.observedAt ?? "none";
+      const configuredWaitSeconds = reviewWait.configuredWaitSeconds == null ? "none" : reviewWait.configuredWaitSeconds;
+      const waitUntil = reviewWait.waitUntil ?? "none";
+
+      return (
+        kind +
+        " status=" +
+        status +
+        " provider=" +
+        provider +
+        " pause_reason=" +
+        pauseReason +
+        " recent_observation=" +
+        recentObservation +
+        " observed_at=" +
+        observedAt +
+        " configured_wait_seconds=" +
+        configuredWaitSeconds +
+        " wait_until=" +
+        waitUntil
+      );
+    })
     .join(" | ");
 }
 
