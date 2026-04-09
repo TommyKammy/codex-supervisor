@@ -42,6 +42,38 @@ test("issue detail helpers prefer typed recovery context and render review waits
   assert.equal(formatReviewWaits(null), "none");
 });
 
+test("formatLatestRecovery falls back when typed recovery data is incomplete", () => {
+  assert.equal(
+    formatLatestRecovery(
+      {
+        latestRecovery: {
+          issueNumber: 42,
+          at: null,
+          reason: "tracked_pr_head_advanced",
+          detail: "resumed issue #42 after tracked PR #42 advanced",
+        },
+      },
+      "legacy recovery line",
+    ),
+    "legacy recovery line",
+  );
+
+  assert.equal(
+    formatLatestRecovery(
+      {
+        latestRecovery: {
+          issueNumber: null,
+          at: "2026-03-22T00:00:00Z",
+          reason: null,
+          detail: "resumed issue #42 after tracked PR #42 advanced",
+        },
+      },
+      null,
+    ),
+    "none",
+  );
+});
+
 test("buildIssueExplainSections keeps only non-empty typed detail sections", () => {
   const sections = buildIssueExplainSections({
     state: "blocked",

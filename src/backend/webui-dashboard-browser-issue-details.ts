@@ -61,15 +61,14 @@ export function formatLatestRecovery(
 ): string {
   const latestRecovery = activityContext?.latestRecovery;
   if (latestRecovery) {
-    return (
-      "issue=#" +
-      latestRecovery.issueNumber +
-      " at=" +
-      latestRecovery.at +
-      " reason=" +
-      latestRecovery.reason +
-      (latestRecovery.detail ? " detail=" + latestRecovery.detail : "")
-    );
+    const issueNumber = Number.isInteger(latestRecovery.issueNumber) ? latestRecovery.issueNumber : null;
+    const at = latestRecovery.at?.trim() || null;
+    const reason = latestRecovery.reason?.trim() || null;
+    const detail = latestRecovery.detail?.trim() || null;
+
+    if (issueNumber !== null && at && reason) {
+      return "issue=#" + issueNumber + " at=" + at + " reason=" + reason + (detail ? " detail=" + detail : "");
+    }
   }
   if (fallbackSummary) {
     return fallbackSummary;
