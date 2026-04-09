@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import path from "node:path";
 import { runCommand } from "./core/command";
 import {
   inferStateFromPullRequest,
@@ -24,8 +23,7 @@ import { inspectFileLock } from "./core/lock";
 import { RecoveryEvent } from "./run-once-cycle-prelude";
 import { StateStore } from "./core/state-store";
 import { GitHubIssue, IssueRunRecord, PullRequestCheck, ReviewThread, RunState, SupervisorConfig, SupervisorStateFile } from "./core/types";
-import { hoursSince, nowIso, truncate } from "./core/utils";
-import { branchNameForIssue, cleanupWorkspace, isSafeCleanupTarget } from "./core/workspace";
+import { nowIso, truncate } from "./core/utils";
 import {
   executionMetricsRetentionRootPath,
   syncExecutionMetricsRunSummarySafely,
@@ -34,11 +32,8 @@ import { syncPostMergeAuditArtifactSafely } from "./supervisor/post-merge-audit-
 import { resetTrackedPrHeadScopedStateOnAdvance } from "./tracked-pr-lifecycle-projection";
 import {
   buildSupervisorMutationRecordSnapshot,
-  type PrunedOrphanedWorkspaceResultDto,
-  type SkippedOrphanedWorkspaceResultDto,
   type SupervisorMutationRecordSnapshotDto,
   type SupervisorMutationResultDto,
-  type SupervisorOrphanPruneResultDto,
 } from "./supervisor/supervisor-mutation-report";
 import {
   getStaleStabilizingNoPrRecoveryCount,
@@ -46,17 +41,22 @@ import {
 } from "./no-pull-request-state";
 import { applyFailureSignature } from "./supervisor/supervisor-failure-helpers";
 import {
-  buildFailedNoPrBranchFailureContext,
-  classifyFailedNoPrBranchRecovery,
   doneResetPatch,
   sanitizeRecoveryReason,
-  shouldAutoRecoverFailedNoPr,
 } from "./recovery-support";
+import { reconcileStaleFailedNoPrRecord } from "./recovery-no-pr-reconciliation";
 import {
   buildTrackedPrResumeRecoveryEvent,
   reconcileStaleFailedTrackedPrRecord,
   reconcileTrackedMergedButOpenIssuesInModule,
 } from "./recovery-tracked-pr-reconciliation";
+export {
+  inspectOrphanedWorkspacePruneCandidates,
+  pruneOrphanedWorkspacesForOperator,
+  type OrphanedWorkspacePruneCandidate,
+  type OrphanedWorkspacePruneEligibility,
+} from "./recovery-workspace-reconciliation";
+import { cleanupExpiredDoneWorkspaces as cleanupExpiredDoneWorkspacesInModule } from "./recovery-workspace-reconciliation";
 import { buildTrackedPrStaleFailureConvergencePatch } from "./recovery-tracked-pr-support";
 import {
   captureIssueJournalFingerprint,
@@ -144,27 +144,6 @@ async function hasDurableTurnUpdateSince(
   return updatedAtMs >= startedAtMs;
 }
 
-async function cleanupRecordWorkspace(config: SupervisorConfig, record: IssueRunRecord): Promise<boolean> {
-  if (!isSafeCleanupTarget(config, record.workspace, record.branch)) {
-    console.warn(
-      `Skipped unsafe cleanup target workspace=${record.workspace} branch=${record.branch} for issue #${record.issue_number}.`,
-    );
-    return false;
-  }
-
-  await cleanupWorkspace(config.repoPath, record.workspace, record.branch);
-  return true;
-}
-
-function parseIssueNumberFromWorkspaceName(workspaceName: string): number | null {
-  const match = /^issue-([1-9]\d*)$/.exec(workspaceName);
-  if (!match) {
-    return null;
-  }
-
-  return Number.parseInt(match[1], 10);
-}
-
 function trackedMergedButOpenLastProcessedIssueNumber(state: SupervisorStateFile): number | null {
   return state.reconciliation_state?.tracked_merged_but_open_last_processed_issue_number ?? null;
 }
@@ -205,289 +184,6 @@ function orderTrackedMergedButOpenRecordsForResume(
     ...records.slice(nextIndex),
     ...records.slice(0, nextIndex),
   ];
-}
-
-export type OrphanedWorkspacePruneEligibility = "eligible" | "locked" | "recent" | "unsafe_target";
-
-export interface OrphanedWorkspacePruneCandidate {
-  issueNumber: number;
-  workspaceName: string;
-  workspacePath: string;
-  branch: string | null;
-  eligibility: OrphanedWorkspacePruneEligibility;
-  reason: string;
-  modifiedAt: string | null;
-}
-
-interface InspectOrphanedWorkspacePruneCandidatesOptions {
-  now?: Date;
-}
-
-function orphanedWorkspaceGracePeriodHours(config: SupervisorConfig): number {
-  const gracePeriodHours = config.cleanupOrphanedWorkspacesAfterHours ?? 24;
-  if (!Number.isFinite(gracePeriodHours) || gracePeriodHours < 0) {
-    throw new Error("Invalid config field: cleanupOrphanedWorkspacesAfterHours");
-  }
-
-  return gracePeriodHours;
-}
-
-function updateLatestModifiedMs(currentModifiedMs: number, candidateModifiedMs: number): number {
-  if (Number.isNaN(currentModifiedMs) || candidateModifiedMs > currentModifiedMs) {
-    return candidateModifiedMs;
-  }
-
-  return currentModifiedMs;
-}
-
-function readExistingAncestorModifiedMs(candidatePath: string, workspaceRootPath: string): number | null {
-  let existingAncestorPath = path.dirname(candidatePath);
-
-  while (
-    existingAncestorPath === workspaceRootPath
-    || existingAncestorPath.startsWith(`${workspaceRootPath}${path.sep}`)
-  ) {
-    try {
-      return fs.statSync(existingAncestorPath).mtimeMs;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-        return null;
-      }
-
-      const parentPath = path.dirname(existingAncestorPath);
-      if (parentPath === existingAncestorPath) {
-        return null;
-      }
-      existingAncestorPath = parentPath;
-    }
-  }
-
-  return null;
-}
-
-async function readOrphanedWorkspaceActivityTimestamp(workspacePath: string): Promise<string | null> {
-  const resolvedWorkspacePath = path.resolve(workspacePath);
-  let latestModifiedMs = Number.NaN;
-  try {
-    latestModifiedMs = fs.statSync(resolvedWorkspacePath).mtimeMs;
-  } catch {
-    latestModifiedMs = Number.NaN;
-  }
-
-  try {
-    const [unstagedResult, stagedResult] = await Promise.all([
-      runCommand(
-        "git",
-        ["-C", workspacePath, "ls-files", "--modified", "--others", "--exclude-standard", "-z"],
-      ),
-      runCommand("git", ["-C", workspacePath, "diff", "--name-only", "--cached", "-z"]),
-    ]);
-    const dirtyPaths = new Set(
-      `${unstagedResult.stdout}${stagedResult.stdout}`
-        .split("\0")
-        .filter((relativePath) => relativePath.length > 0),
-    );
-
-    for (const relativePath of dirtyPaths) {
-      const candidatePath = path.resolve(resolvedWorkspacePath, relativePath);
-      if (!candidatePath.startsWith(`${resolvedWorkspacePath}${path.sep}`)) {
-        continue;
-      }
-
-      try {
-        latestModifiedMs = updateLatestModifiedMs(latestModifiedMs, fs.statSync(candidatePath).mtimeMs);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-          continue;
-        }
-
-        const ancestorModifiedMs = readExistingAncestorModifiedMs(candidatePath, resolvedWorkspacePath);
-        if (ancestorModifiedMs !== null) {
-          latestModifiedMs = updateLatestModifiedMs(latestModifiedMs, ancestorModifiedMs);
-        }
-      }
-    }
-  } catch {
-    // Fall back to the workspace directory timestamp if git cannot report dirty paths.
-  }
-
-  if (Number.isNaN(latestModifiedMs)) {
-    return null;
-  }
-
-  return new Date(latestModifiedMs).toISOString();
-}
-
-export async function inspectOrphanedWorkspacePruneCandidates(
-  config: SupervisorConfig,
-  state: SupervisorStateFile,
-  options: InspectOrphanedWorkspacePruneCandidatesOptions = {},
-): Promise<OrphanedWorkspacePruneCandidate[]> {
-  const gracePeriodHours = orphanedWorkspaceGracePeriodHours(config);
-  const referencedWorkspaces = new Set(
-    Object.values(state.issues).map((record) => path.resolve(record.workspace)),
-  );
-  const candidates: OrphanedWorkspacePruneCandidate[] = [];
-  const now = options.now ?? new Date();
-  let workspaceEntries: fs.Dirent[];
-  try {
-    workspaceEntries = fs.readdirSync(config.workspaceRoot, { withFileTypes: true });
-  } catch {
-    return candidates;
-  }
-
-  for (const entry of workspaceEntries) {
-    if (!entry.isDirectory()) {
-      continue;
-    }
-
-    const issueNumber = parseIssueNumberFromWorkspaceName(entry.name);
-    if (issueNumber === null) {
-      continue;
-    }
-
-    const workspacePath = path.join(config.workspaceRoot, entry.name);
-    if (referencedWorkspaces.has(path.resolve(workspacePath))) {
-      continue;
-    }
-
-    if (!fs.existsSync(path.join(workspacePath, ".git"))) {
-      continue;
-    }
-
-    const modifiedAt = await readOrphanedWorkspaceActivityTimestamp(workspacePath);
-
-    let branch: string | null = null;
-    try {
-      branch = branchNameForIssue(config, issueNumber);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      candidates.push({
-        issueNumber,
-        workspaceName: entry.name,
-        workspacePath,
-        branch: null,
-        eligibility: "unsafe_target",
-        reason: message,
-        modifiedAt,
-      });
-      continue;
-    }
-
-    if (!isSafeCleanupTarget(config, workspacePath, branch)) {
-      candidates.push({
-        issueNumber,
-        workspaceName: entry.name,
-        workspacePath,
-        branch,
-        eligibility: "unsafe_target",
-        reason: "unsafe cleanup target",
-        modifiedAt,
-      });
-      continue;
-    }
-
-    const issueLockPath = path.join(path.dirname(config.stateFile), "locks", "issues", `issue-${issueNumber}.lock`);
-    const issueLock = await inspectFileLock(issueLockPath);
-    if (issueLock.status === "live" || issueLock.status === "ambiguous_owner") {
-      candidates.push({
-        issueNumber,
-        workspaceName: entry.name,
-        workspacePath,
-        branch,
-        eligibility: "locked",
-        reason: issueLock.status === "live"
-          ? `issue lock held by pid ${issueLock.payload?.pid ?? "unknown"}`
-          : `issue lock has ambiguous owner metadata for pid ${issueLock.payload?.pid ?? "unknown"}`,
-        modifiedAt,
-      });
-      continue;
-    }
-
-    if (modifiedAt) {
-      const ageMs = now.getTime() - Date.parse(modifiedAt);
-      if (ageMs >= 0 && ageMs < gracePeriodHours * 60 * 60 * 1000) {
-        candidates.push({
-          issueNumber,
-          workspaceName: entry.name,
-          workspacePath,
-          branch,
-          eligibility: "recent",
-          reason: `workspace modified within ${gracePeriodHours}h grace period`,
-          modifiedAt,
-        });
-        continue;
-      }
-    }
-
-    candidates.push({
-      issueNumber,
-      workspaceName: entry.name,
-      workspacePath,
-      branch,
-      eligibility: "eligible",
-      reason: "safe orphaned git worktree",
-      modifiedAt,
-    });
-  }
-
-  candidates.sort((left, right) => left.issueNumber - right.issueNumber || left.workspaceName.localeCompare(right.workspaceName));
-  return candidates;
-}
-
-export async function pruneOrphanedWorkspacesForOperator(
-  config: SupervisorConfig,
-  state: SupervisorStateFile,
-): Promise<SupervisorOrphanPruneResultDto> {
-  const candidates = await inspectOrphanedWorkspacePruneCandidates(config, state);
-  const pruned: PrunedOrphanedWorkspaceResultDto[] = [];
-  const skipped: SkippedOrphanedWorkspaceResultDto[] = [];
-
-  for (const candidate of candidates) {
-    if (candidate.eligibility === "eligible" && candidate.branch) {
-      await cleanupWorkspace(config.repoPath, candidate.workspacePath, candidate.branch);
-      pruned.push({
-        issueNumber: candidate.issueNumber,
-        workspaceName: candidate.workspaceName,
-        workspacePath: candidate.workspacePath,
-        branch: candidate.branch,
-        modifiedAt: candidate.modifiedAt,
-        reason: candidate.reason,
-      });
-      continue;
-    }
-
-    if (candidate.eligibility === "eligible") {
-      skipped.push({
-        issueNumber: candidate.issueNumber,
-        workspaceName: candidate.workspaceName,
-        workspacePath: candidate.workspacePath,
-        branch: candidate.branch,
-        modifiedAt: candidate.modifiedAt,
-        eligibility: "unsafe_target",
-        reason: candidate.reason,
-      });
-      continue;
-    }
-
-    skipped.push({
-      issueNumber: candidate.issueNumber,
-      workspaceName: candidate.workspaceName,
-      workspacePath: candidate.workspacePath,
-      branch: candidate.branch,
-      modifiedAt: candidate.modifiedAt,
-      eligibility: candidate.eligibility,
-      reason: candidate.reason,
-    });
-  }
-
-  return {
-    action: "prune-orphaned-workspaces",
-    outcome: "completed",
-    summary: `Pruned ${pruned.length} orphaned workspace(s); skipped ${skipped.length} orphaned workspace(s).`,
-    pruned,
-    skipped,
-  };
 }
 
 export function buildRecoveryEvent(issueNumber: number, reason: string): RecoveryEvent {
@@ -676,57 +372,7 @@ export async function cleanupExpiredDoneWorkspaces(
   config: SupervisorConfig,
   state: SupervisorStateFile,
 ): Promise<RecoveryEvent[]> {
-  if (config.cleanupDoneWorkspacesAfterHours < 0 && config.maxDoneWorkspaces < 0) {
-    return [];
-  }
-
-  const recoveryEvents: RecoveryEvent[] = [];
-  const doneRecords = Object.values(state.issues)
-    .filter((record) => record.state === "done")
-    .sort((left, right) => left.updated_at.localeCompare(right.updated_at));
-
-  const existingDoneRecords = doneRecords.filter((record) =>
-    fs.existsSync(path.join(record.workspace, ".git")),
-  );
-
-  const cleanedWorkspacePaths = new Set<string>();
-
-  if (config.maxDoneWorkspaces >= 0 && existingDoneRecords.length > config.maxDoneWorkspaces) {
-    const overflowCount = existingDoneRecords.length - config.maxDoneWorkspaces;
-    const overflowRecords = existingDoneRecords.slice(0, overflowCount);
-    for (const record of overflowRecords) {
-      if (await cleanupRecordWorkspace(config, record)) {
-        recoveryEvents.push(buildRecoveryEvent(
-          record.issue_number,
-          `done_workspace_cleanup: removed tracked done workspace for issue #${record.issue_number}`,
-        ));
-      }
-      cleanedWorkspacePaths.add(record.workspace);
-    }
-  }
-
-  if (config.cleanupDoneWorkspacesAfterHours < 0) {
-    return recoveryEvents;
-  }
-
-  for (const record of doneRecords) {
-    if (cleanedWorkspacePaths.has(record.workspace)) {
-      continue;
-    }
-
-    if (hoursSince(record.updated_at) < config.cleanupDoneWorkspacesAfterHours) {
-      continue;
-    }
-
-    if (await cleanupRecordWorkspace(config, record)) {
-      recoveryEvents.push(buildRecoveryEvent(
-        record.issue_number,
-        `done_workspace_cleanup: removed tracked done workspace for issue #${record.issue_number}`,
-      ));
-    }
-  }
-
-  return recoveryEvents;
+  return cleanupExpiredDoneWorkspacesInModule(config, state, buildRecoveryEvent);
 }
 
 export async function reconcileMergedIssueClosures(
@@ -941,6 +587,7 @@ export async function reconcileStaleFailedIssueStates(
       } catch {
         issueState = null;
       }
+      issueStateByNumber.set(record.issue_number, issueState);
     }
 
     if (issueState !== "OPEN") {
@@ -948,111 +595,19 @@ export async function reconcileStaleFailedIssueStates(
     }
 
     if (record.pr_number === null) {
-      if (!shouldAutoRecoverFailedNoPr(record, config)) {
-        continue;
-      }
-
-      const branchRecovery = await classifyFailedNoPrBranchRecovery({
+      if (await reconcileStaleFailedNoPrRecord({
+        github,
+        stateStore,
+        state,
         config,
         record,
+        issueStateByNumber,
         ensureOriginDefaultBranchFetched,
-        isSafeCleanupTarget,
-      });
-      if (branchRecovery.state !== "recoverable") {
-        const branchRecoveryState = branchRecovery.state;
-        const shouldMarkAlreadySatisfiedOnMain = branchRecoveryState === "already_satisfied_on_main";
-        const failureContext = shouldMarkAlreadySatisfiedOnMain
-          ? null
-          : buildFailedNoPrBranchFailureContext({
-              record,
-              branchRecoveryState,
-              headSha: branchRecovery.headSha,
-              defaultBranch: config.defaultBranch,
-            });
-        const recoveryEvent = buildRecoveryEvent(
-          record.issue_number,
-          shouldMarkAlreadySatisfiedOnMain
-            ? branchRecovery.headSha === record.last_head_sha
-              ? `already_satisfied_on_main: marked issue #${record.issue_number} done after failed no-PR recovery found no meaningful branch changes`
-              : `already_satisfied_on_main: marked issue #${record.issue_number} done after failed no-PR recovery found only supervisor-owned branch divergence`
-            : `failed_no_pr_manual_review: blocked issue #${record.issue_number} after failed no-PR recovery found an unsafe or ambiguous workspace state`,
-        );
-        const patch: Partial<IssueRunRecord> = shouldMarkAlreadySatisfiedOnMain
-          ? doneResetPatch({
-              pr_number: null,
-              codex_session_id: null,
-              last_head_sha: branchRecovery.headSha ?? record.last_head_sha,
-            })
-          : (() => {
-              const manualReviewFailureContext = buildFailedNoPrBranchFailureContext({
-                record,
-                branchRecoveryState,
-                headSha: branchRecovery.headSha,
-                defaultBranch: config.defaultBranch,
-              });
-              return {
-                state: "blocked",
-                pr_number: null,
-                codex_session_id: null,
-                blocked_reason: "manual_review",
-                last_error: truncate(manualReviewFailureContext.summary, 1000),
-                last_failure_kind: null,
-                last_failure_context: manualReviewFailureContext,
-                last_blocker_signature: null,
-                repeated_blocker_count: 0,
-                stale_stabilizing_no_pr_recovery_count: 0,
-                last_head_sha: branchRecovery.headSha ?? record.last_head_sha,
-                ...applyFailureSignature(record, manualReviewFailureContext),
-              };
-            })();
-        const updated = stateStore.touch(record, applyRecoveryEvent(patch, recoveryEvent));
-        state.issues[String(record.issue_number)] = updated;
+        buildRecoveryEvent,
+        applyRecoveryEvent,
+      })) {
         changed = true;
-        continue;
       }
-
-      const repeatLimit = Math.max(config.sameFailureSignatureRepeatLimit, 1);
-      const nextRepeatCount = (record.stale_stabilizing_no_pr_recovery_count ?? 0) + 1;
-      const shouldStopRepeatedRecovery = nextRepeatCount >= repeatLimit;
-      const failureContext = {
-        category: "blocked" as const,
-        summary: shouldStopRepeatedRecovery
-          ? `Issue #${record.issue_number} re-entered recoverable failed no-PR recovery ${nextRepeatCount} times; manual intervention is required.`
-          : `Issue #${record.issue_number} re-entered recoverable failed no-PR recovery; the supervisor will retry while the repeat count remains below ${repeatLimit}.`,
-        signature: STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE,
-        command: null,
-        details: [
-          "state=failed",
-          "tracked_pr=none",
-          "branch_state=recoverable",
-          `repeat_count=${nextRepeatCount}/${repeatLimit}`,
-          "operator_action=confirm whether the implementation already landed elsewhere or retarget the tracked issue manually",
-        ],
-        url: null,
-        updated_at: nowIso(),
-      };
-      const recoveryEvent = buildRecoveryEvent(
-        record.issue_number,
-        shouldStopRepeatedRecovery
-          ? `stale_state_manual_stop: blocked issue #${record.issue_number} after repeated recoverable failed no-PR recovery without a tracked PR`
-          : `failed_no_pr_branch_recovery: requeued issue #${record.issue_number} from failed to queued after finding a recoverable no-PR branch ahead of origin/${config.defaultBranch} at ${branchRecovery.headSha ?? "unknown"}`,
-      );
-      const patch: Partial<IssueRunRecord> = {
-        state: shouldStopRepeatedRecovery ? "blocked" : "queued",
-        pr_number: null,
-        codex_session_id: null,
-        blocked_reason: shouldStopRepeatedRecovery ? "manual_review" : null,
-        last_error: truncate(failureContext.summary, 1000),
-        last_failure_kind: null,
-        last_failure_context: failureContext,
-        last_failure_signature: failureContext.signature,
-        repeated_failure_signature_count: 0,
-        stale_stabilizing_no_pr_recovery_count: nextRepeatCount,
-        last_head_sha: branchRecovery.headSha ?? record.last_head_sha,
-      };
-      const updated = stateStore.touch(record, applyRecoveryEvent(patch, recoveryEvent));
-      state.issues[String(record.issue_number)] = updated;
-      changed = true;
       continue;
     }
 

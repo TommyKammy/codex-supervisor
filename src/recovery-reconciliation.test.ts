@@ -564,6 +564,58 @@ test("cleanupExpiredDoneWorkspaces returns recovery events for tracked done work
   assert.match(git(repoPath, ["branch", "--list", newerBranch]), new RegExp(newerBranch));
 });
 
+test("cleanupExpiredDoneWorkspaces skips tracked done directories that are no longer git worktrees", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-recovery-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = path.join(root, "repo");
+  const workspaceRoot = path.join(root, "workspaces");
+  const stateFile = path.join(root, "state.json");
+  await fs.mkdir(repoPath, { recursive: true });
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  git(repoPath, ["init", "-b", "main"]);
+  await fs.writeFile(path.join(repoPath, "README.md"), "# fixture\n", "utf8");
+  git(repoPath, ["add", "README.md"]);
+  git(repoPath, ["commit", "-m", "seed"]);
+
+  const issueNumber = 205;
+  const branch = "codex/issue-205";
+  const workspace = path.join(workspaceRoot, `issue-${issueNumber}`);
+  await fs.mkdir(workspace, { recursive: true });
+  await fs.writeFile(path.join(workspace, "keep.txt"), "preserve me\n", "utf8");
+  git(repoPath, ["branch", branch]);
+
+  const config = createConfig({
+    repoPath,
+    workspaceRoot,
+    stateFile,
+    cleanupDoneWorkspacesAfterHours: 0,
+    maxDoneWorkspaces: -1,
+    cleanupOrphanedWorkspacesAfterHours: 24,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "done",
+        branch,
+        workspace,
+        updated_at: "2026-03-01T00:00:00Z",
+      }),
+    },
+  };
+
+  const recoveryEvents = await cleanupExpiredDoneWorkspaces(config, state);
+
+  assert.deepEqual(recoveryEvents, []);
+  await fs.access(workspace);
+  assert.equal(await fs.readFile(path.join(workspace, "keep.txt"), "utf8"), "preserve me\n");
+  assert.match(git(repoPath, ["branch", "--list", branch]), new RegExp(branch));
+});
+
 test("orphan prune inspection fails fast on invalid orphan cleanup grace config", async () => {
   const config = createConfig({
     workspaceRoot: path.join(os.tmpdir(), "codex-supervisor-missing-workspaces"),
