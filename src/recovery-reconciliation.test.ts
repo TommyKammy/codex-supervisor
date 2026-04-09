@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { loadConfig } from "./core/config";
 import { buildTrackedPrStaleFailureConvergencePatch } from "./recovery-tracked-pr-support";
+import { buildTrackedPrResumeRecoveryEvent } from "./recovery-tracked-pr-reconciliation";
 import {
   cleanupExpiredDoneWorkspaces,
   inspectOrphanedWorkspacePruneCandidates,
@@ -13,6 +14,36 @@ import {
 } from "./recovery-reconciliation";
 import { type SupervisorStateFile } from "./core/types";
 import { createConfig, createPullRequest, createRecord } from "./turn-execution-test-helpers";
+
+test("buildTrackedPrResumeRecoveryEvent reports draft ready-promotion verification blockers explicitly", () => {
+  const event = buildTrackedPrResumeRecoveryEvent(
+    createRecord({
+      issue_number: 366,
+      state: "blocked",
+      blocked_reason: "verification",
+      last_head_sha: "head-191",
+    }),
+    createPullRequest({
+      number: 191,
+      headRefName: "codex/issue-366",
+      headRefOid: "head-191",
+      isDraft: true,
+    }),
+    "blocked",
+    (issueNumber, reason) => ({
+      issueNumber,
+      reason,
+      at: "2026-03-13T00:30:00Z",
+    }),
+  );
+
+  assert.deepEqual(event, {
+    issueNumber: 366,
+    reason:
+      "tracked_pr_ready_promotion_blocked: refreshed issue #366 while tracked PR #191 remains draft because ready-for-review promotion is blocked by local verification at head head-191",
+    at: "2026-03-13T00:30:00Z",
+  });
+});
 
 test("buildTrackedPrStaleFailureConvergencePatch clears stale failure state when a tracked PR advances heads", () => {
   const record = createRecord({

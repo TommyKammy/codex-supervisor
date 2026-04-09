@@ -2518,6 +2518,99 @@ test("status surfaces tracked PR mismatches when GitHub is ready but local state
   );
 });
 
+test("status preserves draft tracked PR lifecycle when ready-for-review promotion is blocked by local verification", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 174;
+  const prNumber = 274;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        branch,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: prNumber,
+        blocked_reason: "verification",
+        last_error: "Configured local CI command failed before marking PR #274 ready.",
+        last_head_sha: "head-draft-274",
+        last_failure_signature: "local-ci-gate-non_zero_exit",
+        latest_local_ci_result: {
+          outcome: "failed",
+          summary: "Configured local CI command failed before marking PR #274 ready.",
+          ran_at: "2026-03-13T00:10:00Z",
+          head_sha: "head-draft-274",
+          execution_mode: "legacy_shell_string",
+          failure_class: "non_zero_exit",
+          remediation_target: "repo_owned_command",
+        },
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Tracked draft PR ready gate",
+    body: executionReadyBody("Surface draft PR ready-promotion blockers as lifecycle-aware verification gates."),
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const draftPr = createPullRequest({
+    number: prNumber,
+    headRefName: branch,
+    headRefOid: "head-draft-274",
+    isDraft: true,
+  });
+
+  const supervisor = new Supervisor({
+    ...fixture.config,
+    localCiCommand: "npm run verify:paths",
+  });
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [trackedIssue],
+    listAllIssues: async () => [trackedIssue],
+    getPullRequestIfExists: async () => draftPr,
+    getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const report = await supervisor.statusReport();
+  assert.match(
+    report.detailedStatusLines.join("\n"),
+    /^tracked_pr_ready_promotion_blocked issue=#174 pr=#274 github_state=draft_pr local_state=blocked local_blocked_reason=verification stale_local_blocker=yes$/m,
+  );
+  assert.match(
+    report.detailedStatusLines.join("\n"),
+    /^tracked_pr_ready_promotion_gate issue=#174 pr=#274 gate=local_ci summary=Configured local CI command failed before marking PR #274 ready\.$/m,
+  );
+  assert.match(
+    report.detailedStatusLines.join("\n"),
+    /^recovery_guidance=PR #274 is still draft because ready-for-review promotion is blocked by local verification\. Failed gate: npm run verify:paths\. Fix the gate in the tracked workspace, rerun it, then rerun the supervisor to promote the PR\.$/m,
+  );
+  assert.doesNotMatch(report.detailedStatusLines.join("\n"), /^tracked_pr_mismatch /m);
+
+  const status = await supervisor.status();
+  assert.match(
+    status,
+    /^tracked_pr_ready_promotion_blocked issue=#174 pr=#274 github_state=draft_pr local_state=blocked local_blocked_reason=verification stale_local_blocker=yes$/m,
+  );
+  assert.match(
+    status,
+    /^tracked_pr_ready_promotion_gate issue=#174 pr=#274 gate=local_ci summary=Configured local CI command failed before marking PR #274 ready\.$/m,
+  );
+  assert.match(
+    status,
+    /^recovery_guidance=PR #274 is still draft because ready-for-review promotion is blocked by local verification\. Failed gate: npm run verify:paths\. Fix the gate in the tracked workspace, rerun it, then rerun the supervisor to promote the PR\.$/m,
+  );
+  assert.doesNotMatch(status, /^tracked_pr_mismatch /m);
+});
+
 test("status surfaces host-local CI blocker details for tracked PR mismatches", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 171;

@@ -89,13 +89,25 @@ function needsRecordUpdate(record: IssueRunRecord, patch: Partial<IssueRunRecord
 }
 
 export function buildTrackedPrResumeRecoveryEvent(
-  record: Pick<IssueRunRecord, "issue_number" | "state" | "last_head_sha">,
-  pr: Pick<GitHubPullRequest, "number" | "headRefOid">,
+  record: Pick<IssueRunRecord, "issue_number" | "state" | "last_head_sha" | "blocked_reason">,
+  pr: Pick<GitHubPullRequest, "number" | "headRefOid" | "isDraft">,
   nextState: IssueRunRecord["state"],
   buildRecoveryEvent: BuildRecoveryEvent,
 ): RecoveryEvent {
   const previousHead = record.last_head_sha ?? "unknown";
   const nextHead = pr.headRefOid;
+
+  if (
+    record.state === "blocked"
+    && nextState === "blocked"
+    && record.blocked_reason === "verification"
+    && pr.isDraft
+  ) {
+    return buildRecoveryEvent(
+      record.issue_number,
+      `tracked_pr_ready_promotion_blocked: refreshed issue #${record.issue_number} while tracked PR #${pr.number} remains draft because ready-for-review promotion is blocked by local verification at head ${nextHead}`,
+    );
+  }
 
   if (record.last_head_sha !== null && record.last_head_sha !== pr.headRefOid) {
     return buildRecoveryEvent(
