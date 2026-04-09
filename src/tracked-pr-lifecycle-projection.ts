@@ -9,10 +9,12 @@ import type {
 } from "./core/types";
 import {
   inferStateFromPullRequest,
+} from "./pull-request-state";
+import {
   syncCopilotReviewRequestObservation,
   syncCopilotReviewTimeoutState,
   syncReviewWaitWindow,
-} from "./pull-request-state";
+} from "./pull-request-state-sync";
 import { blockedReasonForLifecycleState } from "./supervisor/supervisor-lifecycle";
 
 interface ProjectTrackedPrLifecycleArgs {
