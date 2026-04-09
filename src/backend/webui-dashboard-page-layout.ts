@@ -15,6 +15,7 @@ export function renderDashboardPageLayout({
   footerMarkup,
   browserScript,
 }: DashboardPageLayoutInput): string {
+  const safeBrowserScript = browserScript.replace(/<\/script/giu, "<\\/script");
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -1185,7 +1186,7 @@ ${footerMarkup}
       </div>
     </main>
 
-    <script>${browserScript}
+    <script>${safeBrowserScript}
     </script>
   </body>
 </html>`;

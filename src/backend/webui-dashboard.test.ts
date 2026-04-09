@@ -656,6 +656,20 @@ test("dashboard page layout helper keeps the summary shell, details grids, and s
   );
 });
 
+test("dashboard page layout helper escapes inline script closing tags", () => {
+  const html = renderDashboardPageLayout({
+    repoSlugMarkup: "owner/repo",
+    detailsMenuMarkup: "<nav>details nav</nav>",
+    overviewPanelsMarkup: "<article>overview panel</article>",
+    detailPanelsMarkup: "<article>details panel</article>",
+    footerMarkup: "<footer>footer</footer>",
+    browserScript: "window.__dashboardSentinel = '</script><div>broken</div>';",
+  });
+
+  assert.match(html, /window\.__dashboardSentinel = '<\\\/script><div>broken<\/div>';/u);
+  assert.equal(html.match(/<\/script>/gu)?.length, 1);
+});
+
 test("dashboard page section helper renders escaped setup context and panel-linked navigation", () => {
   const sections = renderDashboardPageSections(createSetupReadinessReport({
     ready: true,
