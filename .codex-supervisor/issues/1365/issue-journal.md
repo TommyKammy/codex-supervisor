@@ -14,7 +14,7 @@
 - Updated at: 2026-04-09T00:17:33.577Z
 
 ## Latest Codex Summary
-Validated the unresolved CodeRabbit thread on PR [#1372](https://github.com/TommyKammy/codex-supervisor/pull/1372) and confirmed the review comment was correct: `syncCopilotReviewRequestObservation` preserved a stale same-head observation even after `copilotReviewState` fell back to `not_requested`.
+Validated the unresolved CodeRabbit thread on PR [#1372](https://github.com/TommyKammy/codex-supervisor/pull/1372), confirmed the review comment was correct, and pushed the fix on `codex/issue-1365` at `50810de`.
 
 Implemented a minimal fix in `src/pull-request-state-sync.ts` so same-head request observations are only preserved while the PR still reports `requested`, and added a regression test in `src/pull-request-state-sync.test.ts` that proves the stale state is cleared once the request disappears. The worktree still includes untracked supervisor runtime artifacts under `.codex-supervisor/`, which I left out of scope.
 
@@ -22,7 +22,7 @@ Summary: Fixed the PR #1372 review thread by clearing stale same-head Copilot re
 State hint: addressing_review
 Blocked reason: none
 Tests: `npx tsx --test src/pull-request-state-sync.test.ts`; `npx tsx --test src/pull-request-state-policy.test.ts src/review-handling.test.ts src/supervisor/supervisor-pre-merge-evaluation.test.ts`; `npm run build`
-Next action: Commit and push the review fix to `codex/issue-1365`, then monitor PR #1372 for refreshed CI and thread state
+Next action: Monitor PR #1372 for refreshed CI and whether the automated review thread clears or needs a follow-up response
 Failure signature: none
 
 ## Active Failure Context
@@ -37,11 +37,11 @@ Failure signature: none
 - Hypothesis: The sync-helper extraction remains behavior-safe as long as request-state persistence only survives while GitHub still reports `copilotReviewState: "requested"` for the current head.
 - What changed: Tightened `syncCopilotReviewRequestObservation` in `src/pull-request-state-sync.ts` so same-head observations are preserved only inside the `requested` branch, and added a regression test in `src/pull-request-state-sync.test.ts` covering a same-head `requested -> not_requested` transition.
 - Current blocker: none.
-- Next exact step: Commit and push the review-fix patch to PR #1372, then watch for CI and whether the automated thread clears or needs a follow-up response.
+- Next exact step: Watch PR #1372 for the post-push CI cycle and check whether the automated review thread clears or needs a written response.
 - Verification gap: none for the scoped issue verification; full repo test sweep not run.
 - Files touched: `.codex-supervisor/issues/1365/issue-journal.md`, `src/pull-request-state-sync.test.ts`, `src/pull-request-state-sync.ts`.
 - Rollback concern: low; the change is isolated to stale request observation cleanup and covered by targeted regression plus the existing policy/pre-merge suite.
-- Last focused commands: `npx tsx --test src/pull-request-state-sync.test.ts`; `npx tsx --test src/pull-request-state-policy.test.ts src/review-handling.test.ts src/supervisor/supervisor-pre-merge-evaluation.test.ts`; `npm run build`
+- Last focused commands: `npx tsx --test src/pull-request-state-sync.test.ts`; `npx tsx --test src/pull-request-state-policy.test.ts src/review-handling.test.ts src/supervisor/supervisor-pre-merge-evaluation.test.ts`; `npm run build`; `git push origin codex/issue-1365`
 ### Scratchpad
 - Reproduced first with `npx tsx --test src/pull-request-state-sync.test.ts` failing on `Cannot find module './pull-request-state-sync'`.
 - Review fix detail: preserve `copilot_review_requested_*` only when `pr.copilotReviewState ?? "not_requested"` is still `requested`; otherwise clear the stale same-head observation.
