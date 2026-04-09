@@ -24,6 +24,20 @@ import {
   humanizeTimelineValue,
   parseSelectedIssueNumber,
 } from "./webui-dashboard-browser-logic";
+import {
+  buildWorkflowSteps,
+  countCandidateIssues,
+  describeLoopRuntime,
+  formatKeyValueBlock,
+  formatRefreshTime,
+  liveBadgeClass,
+  metricClass,
+} from "./webui-dashboard-browser-view-model";
+import {
+  buildIssueExplainSections,
+  formatLatestRecovery,
+  formatReviewWaits,
+} from "./webui-dashboard-browser-issue-details";
 import { WEBUI_MUTATION_AUTH_HEADER, WEBUI_MUTATION_AUTH_STORAGE_KEY } from "./webui-mutation-auth";
 import {
   formatBrowserToken,
@@ -71,6 +85,16 @@ const injectedBrowserLogic = [
   describeTimelineEvent,
   collectTimelineEventIssueNumbers,
   parseSelectedIssueNumber,
+  countCandidateIssues,
+  buildWorkflowSteps,
+  metricClass,
+  formatKeyValueBlock,
+  liveBadgeClass,
+  formatRefreshTime,
+  describeLoopRuntime,
+  formatLatestRecovery,
+  formatReviewWaits,
+  buildIssueExplainSections,
 ]
   .map((helper) => helper.toString().replace(/__name\([^;]+;\s*/gu, ""))
   .join("\n\n");
@@ -287,95 +311,6 @@ export function renderDashboardBrowserScript(): string {
         container.appendChild(card);
       }
 
-      function countCandidateIssues(status) {
-        const observed = status && status.candidateDiscovery ? status.candidateDiscovery.observedMatchingOpenIssues : null;
-        return typeof observed === "number" ? String(observed) : "n/a";
-      }
-
-      function buildWorkflowSteps(status) {
-        const selectedIssueNumber = parseSelectedIssueNumber(status);
-        const runnableCount = Array.isArray(status && status.runnableIssues) ? status.runnableIssues.length : 0;
-        const blockedCount = Array.isArray(status && status.blockedIssues) ? status.blockedIssues.length : 0;
-        const trackedCount = Array.isArray(status && status.trackedIssues) ? status.trackedIssues.length : 0;
-        const candidateDiscovery = status && status.candidateDiscovery ? status.candidateDiscovery : null;
-        const normalizedPhase =
-          status && typeof status.reconciliationPhase === "string" ? status.reconciliationPhase.toLowerCase() : "steady";
-
-        let currentStepId = "observe";
-        let currentDetail = "Supervisor is watching the queue and waiting for the next actionable signal.";
-
-        if (selectedIssueNumber !== null) {
-          currentStepId = "execute";
-          currentDetail = "Issue " + formatIssueRef(selectedIssueNumber) + " is the current active focus.";
-        } else if (blockedCount > 0 && runnableCount === 0) {
-          currentStepId = "recover";
-          currentDetail = "No runnable issue is available, so the supervisor is waiting on recovery or unblock work.";
-        } else if (runnableCount > 0) {
-          currentStepId = "select";
-          currentDetail = "Runnable candidates are available and ready for selection.";
-        } else if (trackedCount > 0 || candidateDiscovery || /discover|scan|triage|queue|reconcile|refresh/u.test(normalizedPhase)) {
-          currentStepId = "triage";
-          currentDetail = "Tracked work and queue signals are being reconciled before an issue is selected.";
-        }
-
-        const stepOrder = ["observe", "triage", "select", "execute", "recover"];
-        const currentIndex = stepOrder.indexOf(currentStepId);
-
-        return [
-          {
-            id: "observe",
-            title: "Observe",
-            detail: currentStepId === "observe" ? currentDetail : "Connection and freshness checks keep the workspace current.",
-            state: currentIndex > 0 ? "done" : currentIndex === 0 ? "current" : "idle",
-          },
-          {
-            id: "triage",
-            title: "Triage",
-            detail:
-              currentStepId === "triage"
-                ? currentDetail
-                : trackedCount > 0
-                  ? String(trackedCount) + " tracked issues remain in the working set."
-                  : "Queue discovery and reconciliation determine the next candidate.",
-            state: currentIndex > 1 ? "done" : currentIndex === 1 ? "current" : "idle",
-          },
-          {
-            id: "select",
-            title: "Select",
-            detail:
-              currentStepId === "select"
-                ? currentDetail
-                : runnableCount > 0
-                  ? String(runnableCount) + " runnable issue(s) are available."
-                  : "No runnable issue is currently waiting for handoff.",
-            state: currentIndex > 2 ? "done" : currentIndex === 2 ? "current" : "idle",
-          },
-          {
-            id: "execute",
-            title: "Execute",
-            detail:
-              currentStepId === "execute"
-                ? currentDetail
-                : selectedIssueNumber !== null
-                  ? "Selected issue is " + formatIssueRef(selectedIssueNumber) + "."
-                  : "No active issue is currently executing.",
-            state: currentIndex > 3 ? "done" : currentIndex === 3 ? "current" : "idle",
-          },
-          {
-            id: "recover",
-            title: "Recover",
-            detail:
-              currentStepId === "recover"
-                ? currentDetail
-                : blockedCount > 0
-                  ? String(blockedCount) + " blocked issue(s) need unblock or recovery."
-                  : "Recovery remains quiet while runnable work is available.",
-            state:
-              currentIndex === 4 ? "current warn" : blockedCount > 0 && currentStepId !== "recover" ? "warn" : "idle",
-          },
-        ];
-      }
-
       function renderWorkflow(status) {
         if (!elements.statusWorkflow) {
           return;
@@ -406,27 +341,6 @@ export function renderDashboardBrowserScript(): string {
         }
       }
 
-      function metricClass(status) {
-        if (status === "pass") return "ok";
-        if (status === "warn") return "warn";
-        if (status === "fail") return "fail";
-        return "";
-      }
-
-      function formatKeyValueBlock(entries) {
-        return entries
-          .filter((entry) => entry[1] !== null && entry[1] !== undefined && entry[1] !== "")
-          .map(([label, value]) => label + ": " + value)
-          .join("\\n");
-      }
-
-      function liveBadgeClass(tone) {
-        if (tone === "ok") return "ok";
-        if (tone === "warn") return "warn";
-        if (tone === "fail") return "fail";
-        return "";
-      }
-
       function setLiveBadgeState(element, label, tone) {
         if (!element) {
           return;
@@ -442,10 +356,6 @@ export function renderDashboardBrowserScript(): string {
         }
         setText(element, label);
         element.className = [baseClassName, tone || "info"].filter(Boolean).join(" ");
-      }
-
-      function formatRefreshTime(timestamp) {
-        return timestamp === null ? "never" : new Date(timestamp).toLocaleTimeString();
       }
 
       function renderLiveState() {
@@ -472,32 +382,6 @@ export function renderDashboardBrowserScript(): string {
         renderPrimaryActionSummary();
         renderAttentionSummary();
         renderHeroSummary();
-      }
-
-      function describeLoopRuntime(loopRuntime) {
-        const runtimeState = loopRuntime && typeof loopRuntime.state === "string" ? loopRuntime.state : "unknown";
-        if (runtimeState === "running") {
-          return {
-            modeBadge: "Mode: web + loop running",
-            summary: "Loop mode is running on this host",
-            chipLabel: "loop running",
-            chipTone: "ok",
-          };
-        }
-        if (runtimeState === "off") {
-          return {
-            modeBadge: "Mode: web only (loop off)",
-            summary: "Loop mode is off on this host",
-            chipLabel: "loop off",
-            chipTone: "ok",
-          };
-        }
-        return {
-          modeBadge: "Mode: local WebUI",
-          summary: "Loop status is unavailable on this host",
-          chipLabel: "loop unknown",
-          chipTone: "info",
-        };
       }
 
       function renderLoopRuntime(status) {
@@ -865,57 +749,8 @@ export function renderDashboardBrowserScript(): string {
         renderHeroSummary();
       }
 
-      function formatLatestRecovery(activityContext, fallbackSummary) {
-        const latestRecovery = activityContext && activityContext.latestRecovery;
-        if (latestRecovery) {
-          return (
-            "issue=#" +
-            latestRecovery.issueNumber +
-            " at=" +
-            latestRecovery.at +
-            " reason=" +
-            latestRecovery.reason +
-            (latestRecovery.detail ? " detail=" + latestRecovery.detail : "")
-          );
-        }
-        if (fallbackSummary) {
-          return fallbackSummary;
-        }
-        return "none";
-      }
-
-      function formatReviewWaits(activityContext) {
-        const reviewWaits = activityContext && Array.isArray(activityContext.reviewWaits) ? activityContext.reviewWaits : [];
-        if (reviewWaits.length === 0) {
-          return "none";
-        }
-        return reviewWaits
-          .map((reviewWait) =>
-            reviewWait.kind +
-            " status=" +
-            reviewWait.status +
-            " provider=" +
-            reviewWait.provider +
-            " pause_reason=" +
-            reviewWait.pauseReason +
-            " recent_observation=" +
-            reviewWait.recentObservation +
-            " observed_at=" +
-            (reviewWait.observedAt || "none") +
-            " configured_wait_seconds=" +
-            (reviewWait.configuredWaitSeconds === null ? "none" : reviewWait.configuredWaitSeconds) +
-            " wait_until=" +
-            (reviewWait.waitUntil || "none")
-          )
-          .join(" | ");
-      }
-
-      function buildDetailItems(pairs) {
-        return pairs.filter((pair) => pair[1] !== null && pair[1] !== undefined && pair[1] !== "" && pair[1] !== "none");
-      }
-
       function appendDetailSection(container, title, pairs) {
-        const items = buildDetailItems(pairs);
+        const items = pairs.filter((pair) => pair[1] !== null && pair[1] !== undefined && pair[1] !== "" && pair[1] !== "none");
         if (!container || items.length === 0) {
           return;
         }
@@ -945,51 +780,16 @@ export function renderDashboardBrowserScript(): string {
           return;
         }
 
-        const activityContext = explain.activityContext || null;
         elements.issueExplain.innerHTML = "";
         elements.issueExplain.className = "detail-grid";
 
-        appendDetailSection(elements.issueExplain, "Selection context", [
-          ["state", explain.state],
-          ["blocked_reason", explain.blockedReason],
-          ["runnable", explain.runnable ? "yes" : "no"],
-          ["selection_reason", explain.selectionReason || "none"],
-          ["reasons", (explain.reasons || []).join(" | ") || "none"],
-        ]);
-
-        appendDetailSection(elements.issueExplain, "Operator activity", [
-          ["handoff_summary", activityContext ? activityContext.handoffSummary || "none" : "none"],
-          ["local_review_routing", activityContext ? activityContext.localReviewRoutingSummary || "none" : "none"],
-          ["verification_policy", activityContext ? activityContext.verificationPolicySummary || "none" : "none"],
-          ["durable_guardrails", activityContext ? activityContext.durableGuardrailSummary || "none" : "none"],
-          [
-            "follow_up",
-            explain.externalReviewFollowUpSummary ||
-              (activityContext ? activityContext.externalReviewFollowUpSummary || "none" : "none"),
-          ],
-          ["change_risk", (explain.changeRiskLines || []).join(" | ") || "none"],
-        ]);
-
-        appendDetailSection(elements.issueExplain, "Review waits", [
-          ["waits", formatReviewWaits(activityContext)],
-          ["local_review_summary_path", activityContext ? activityContext.localReviewSummaryPath || "none" : "none"],
-          ["external_review_misses_path", activityContext ? activityContext.externalReviewMissesPath || "none" : "none"],
-        ]);
-
-        appendDetailSection(elements.issueExplain, "Latest recovery", [
-          ["latest_recovery", formatLatestRecovery(activityContext, explain.latestRecoverySummary)],
-        ]);
-
-        appendDetailSection(elements.issueExplain, "Retry and recovery", [
-          ["retry_summary", formatRetryContextSummary(activityContext) || "none"],
-          ["recovery_loop", formatRecoveryLoopSummary(activityContext) || "none"],
-          ["recent_phase_changes", formatRecentPhaseChanges(activityContext) || "none"],
-        ]);
-
-        appendDetailSection(elements.issueExplain, "Recent failure", [
-          ["failure_summary", explain.failureSummary || "none"],
-          ["last_error", explain.lastError || "none"],
-        ]);
+        for (const section of buildIssueExplainSections(explain, {
+          formatRetryContextSummary,
+          formatRecoveryLoopSummary,
+          formatRecentPhaseChanges,
+        })) {
+          appendDetailSection(elements.issueExplain, section.title, section.items);
+        }
 
         if (elements.issueExplain.children.length === 0) {
           elements.issueExplain.className = "detail-stack";
