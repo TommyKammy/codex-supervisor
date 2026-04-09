@@ -8,8 +8,6 @@ import {
   cleanupExpiredDoneWorkspaces,
   formatRecoveryLog,
   prependRecoveryLog,
-  pruneOrphanedWorkspacesForOperator,
-  requeueIssueForOperator,
   reconcileMergedIssueClosures,
   reconcileParentEpicClosures,
   reconcileRecoverableBlockedIssueStates,
@@ -80,7 +78,6 @@ import {
   shouldAutoRetryTimeout,
 } from "./supervisor-failure-helpers";
 import { AgentRunner, createCodexAgentRunner } from "./agent-runner";
-import { syncRetainedExecutionMetricsDailyRollups } from "./execution-metrics-aggregation";
 import {
   executionMetricsRetentionRootPath,
   syncExecutionMetricsRunSummarySafely,
@@ -134,6 +131,13 @@ import {
   type SupervisorOrphanPruneResultDto,
   type SupervisorRecoveryAction,
 } from "./supervisor-mutation-report";
+import {
+  buildCorruptJsonFailClosedMessage,
+  createSupervisorMutationRuntime,
+  isCorruptJsonFailClosedMessage,
+  readJsonParseErrorQuarantine,
+  type SupervisorMutationRuntime,
+} from "./supervisor-mutation-runtime";
 import {
   buildInventoryRefreshWarningMessage,
   renderSupervisorStatusDto,
@@ -269,61 +273,23 @@ function formatStatus(record: IssueRunRecord | null, state?: SupervisorStateFile
   ].join(" ");
 }
 
-const CORRUPT_JSON_FAIL_CLOSED_PREFIX = "Blocked execution-changing command: corrupted JSON supervisor state detected";
-
-function readJsonParseErrorQuarantine(
-  config: SupervisorConfig,
-  state: SupervisorStateFile,
-): JsonStateQuarantine | null {
-  if (config.stateBackend !== "json") {
-    return null;
-  }
-
-  const quarantine = state.json_state_quarantine;
-  if (
-    !quarantine ||
-    quarantine.kind !== "parse_error" ||
-    quarantine.marker_file !== config.stateFile ||
-    typeof quarantine.quarantined_file !== "string" ||
-    quarantine.quarantined_file.trim() === ""
-  ) {
-    return null;
-  }
-
-  const matchingFindings = (state.load_findings ?? []).filter((finding) =>
-    finding.backend === "json" &&
-    finding.kind === "parse_error" &&
-    finding.scope === "state_file" &&
-    finding.location === config.stateFile &&
-    finding.issue_number === null
-  );
-
-  return matchingFindings.length > 0 ? quarantine : null;
-}
-
-function buildCorruptJsonFailClosedMessage(config: SupervisorConfig, quarantine: JsonStateQuarantine): string {
-  return [
-    `${CORRUPT_JSON_FAIL_CLOSED_PREFIX} at ${config.stateFile}.`,
-    `Quarantined payload: ${quarantine.quarantined_file}.`,
-    "Run status, doctor, or reset-corrupt-json-state before retrying.",
-  ].join(" ");
-}
-
-function isCorruptJsonFailClosedMessage(message: string): boolean {
-  return message.startsWith(CORRUPT_JSON_FAIL_CLOSED_PREFIX);
-}
-
 export class Supervisor {
   private readonly github: GitHubClient;
   private readonly stateStore: StateStore;
   private readonly agentRunner: AgentRunner;
+  private readonly mutationRuntime: SupervisorMutationRuntime;
   private readonly onEvent?: SupervisorEventSink;
   private readonly configPath?: string;
   private cachedFullIssueInventory: CachedFullIssueInventory | null = null;
 
   constructor(
     public readonly config: SupervisorConfig,
-    options: { agentRunner?: AgentRunner; onEvent?: SupervisorEventSink; configPath?: string } = {},
+    options: {
+      agentRunner?: AgentRunner;
+      mutationRuntime?: SupervisorMutationRuntime;
+      onEvent?: SupervisorEventSink;
+      configPath?: string;
+    } = {},
   ) {
     this.github = new GitHubClient(config);
     this.stateStore = new StateStore(config.stateFile, {
@@ -331,6 +297,11 @@ export class Supervisor {
       bootstrapFilePath: config.stateBootstrapFile,
     });
     this.agentRunner = options.agentRunner ?? createCodexAgentRunner({ config });
+    this.mutationRuntime = options.mutationRuntime ?? createSupervisorMutationRuntime({
+      config,
+      stateStore: this.stateStore,
+      lockPath: this.lockPath.bind(this),
+    });
     this.onEvent = options.onEvent;
     this.configPath = options.configPath;
   }
@@ -979,99 +950,15 @@ export class Supervisor {
     action: SupervisorRecoveryAction,
     issueNumber: number,
   ): Promise<SupervisorMutationResultDto> {
-    if (action !== "requeue") {
-      throw new Error(`Unsupported recovery action: ${String(action)}`);
-    }
-
-    const lock = await acquireFileLock(this.lockPath("supervisor", "run"), `supervisor-recovery-${action}`, {
-      allowAmbiguousOwnerCleanup: true,
-    });
-    if (!lock.acquired) {
-      throw new Error(`Cannot run recovery action while supervisor is active: ${lock.reason ?? "lock unavailable"}`);
-    }
-
-    try {
-      const state = await this.stateStore.load();
-      const quarantine = readJsonParseErrorQuarantine(this.config, state);
-      if (quarantine) {
-        return {
-          action,
-          issueNumber,
-          outcome: "rejected",
-          summary: buildCorruptJsonFailClosedMessage(this.config, quarantine),
-          previousState: null,
-          previousRecordSnapshot: null,
-          nextState: null,
-          recoveryReason: null,
-        };
-      }
-      return requeueIssueForOperator(this.stateStore, state, issueNumber);
-    } finally {
-      await lock.release();
-    }
+    return this.mutationRuntime.runRecoveryAction(action, issueNumber);
   }
 
   async pruneOrphanedWorkspaces(): Promise<SupervisorOrphanPruneResultDto> {
-    const lock = await acquireFileLock(this.lockPath("supervisor", "run"), "supervisor-recovery-prune-orphaned-workspaces", {
-      allowAmbiguousOwnerCleanup: true,
-    });
-    if (!lock.acquired) {
-      throw new Error(`Cannot run recovery action while supervisor is active: ${lock.reason ?? "lock unavailable"}`);
-    }
-
-    try {
-      const state = await this.stateStore.load();
-      const quarantine = readJsonParseErrorQuarantine(this.config, state);
-      if (quarantine) {
-        return {
-          action: "prune-orphaned-workspaces",
-          outcome: "rejected",
-          summary: buildCorruptJsonFailClosedMessage(this.config, quarantine),
-          pruned: [],
-          skipped: [],
-        };
-      }
-      return pruneOrphanedWorkspacesForOperator(this.config, state);
-    } finally {
-      await lock.release();
-    }
+    return this.mutationRuntime.pruneOrphanedWorkspaces();
   }
 
   async rollupExecutionMetrics(): Promise<SupervisorExecutionMetricsRollupResultDto> {
-    const lock = await acquireFileLock(this.lockPath("supervisor", "run"), "supervisor-recovery-rollup-execution-metrics", {
-      allowAmbiguousOwnerCleanup: true,
-    });
-    if (!lock.acquired) {
-      throw new Error(`Cannot run recovery action while supervisor is active: ${lock.reason ?? "lock unavailable"}`);
-    }
-
-    try {
-      const state = await this.stateStore.load();
-      const quarantine = readJsonParseErrorQuarantine(this.config, state);
-      if (quarantine) {
-        return {
-          action: "rollup-execution-metrics",
-          outcome: "rejected",
-          summary: buildCorruptJsonFailClosedMessage(this.config, quarantine),
-          artifactPath: null,
-          runSummaryCount: 0,
-        };
-      }
-      const result = await syncRetainedExecutionMetricsDailyRollups({
-        stateFilePath: this.config.stateFile,
-      });
-      return {
-        action: "rollup-execution-metrics",
-        outcome: "completed",
-        summary:
-          `Wrote daily execution metrics rollups from ${result.runSummaryCount} retained run summar` +
-          `${result.runSummaryCount === 1 ? "y" : "ies"}.`,
-        artifactPath: result.artifactPath,
-        runSummaryCount: result.runSummaryCount,
-      };
-    } finally {
-      await lock.release();
-    }
+    return this.mutationRuntime.rollupExecutionMetrics();
   }
 
   async postMergeAuditSummaryReport(): Promise<PostMergeAuditPatternSummaryDto> {
@@ -1079,18 +966,7 @@ export class Supervisor {
   }
 
   async resetCorruptJsonState() {
-    const lock = await acquireFileLock(this.lockPath("supervisor", "run"), "supervisor-recovery-reset-corrupt-json-state", {
-      allowAmbiguousOwnerCleanup: true,
-    });
-    if (!lock.acquired) {
-      throw new Error(`Cannot run recovery action while supervisor is active: ${lock.reason ?? "lock unavailable"}`);
-    }
-
-    try {
-      return this.stateStore.resetCorruptJsonState();
-    } finally {
-      await lock.release();
-    }
+    return this.mutationRuntime.resetCorruptJsonState();
   }
 
   async explainReport(issueNumber: number): Promise<SupervisorExplainDto> {
