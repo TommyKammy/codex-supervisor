@@ -1,160 +1,32 @@
-import fs from "node:fs/promises";
-import path from "node:path";
 import {
   CandidateDiscoveryDiagnostics,
   GitHubIssue,
-  InventoryRefreshDiagnosticEntry,
   GitHubPullRequest,
-  GitHubRateLimitBudget,
   GitHubRateLimitTelemetry,
   IssueComment,
   IssueRunRecord,
-  PullRequestReview,
   PullRequestCheck,
+  PullRequestReview,
   ReviewThread,
   SupervisorConfig,
 } from "../core/types";
-import { DEFAULT_CANDIDATE_DISCOVERY_FETCH_WINDOW } from "../core/config";
-import { CommandOptions, CommandResult, runCommand } from "../core/command";
-import {
-  normalizeRollupChecks,
-  PullRequestStatusCheckRollupResponse,
-} from "./github-hydration";
-import { GitHubPullRequestHydrator } from "./github-pull-request-hydrator";
+import { CommandOptions, runCommand } from "../core/command";
+import { GitHubInventoryClient, GitHubInventoryRefreshError, ListAllIssuesOptions } from "./github-inventory";
+import { GitHubMutationClient } from "./github-mutations";
+import { GitHubReviewSurfaceClient, PullRequestReviewSurfaceOptions } from "./github-review-surface";
 import { GitHubTransport, isGitHubRateLimitFailure } from "./github-transport";
-import type { GitHubCommandRunner } from "./github-transport";
-import { ensureDir, parseJson, truncate, truncatePreservingStartAndEnd, writeFileAtomic, writeJsonAtomic } from "../core/utils";
 
 export { isTransientGitHubCommandFailure } from "./github-transport";
 export { isGitHubRateLimitFailure } from "./github-transport";
 export { inferCopilotReviewLifecycle } from "./github-review-signals";
 export type { GitHubCommandRunner } from "./github-transport";
-
-const POST_CREATE_PR_LOOKUP_RETRY_LIMIT = 2;
-const POST_CREATE_PR_LOOKUP_BASE_DELAY_MS = 200;
-const FULL_ISSUE_INVENTORY_PAGE_SIZE = 100;
-const PULL_REQUEST_GRAPHQL_SURFACE_CACHE_MAX_ENTRIES = 128;
-const MALFORMED_INVENTORY_CAPTURE_LIMIT_ENV = "CODEX_SUPERVISOR_MALFORMED_INVENTORY_CAPTURE_LIMIT";
-const DEFAULT_MALFORMED_INVENTORY_CAPTURE_LIMIT = 10;
-const INVENTORY_FAILURE_OUTPUT_LIMIT = 2_000;
-
-interface InventoryCaptureArtifact {
-  transport: "primary" | "fallback";
-  source: string;
-  message: string;
-  page: number | null;
-  rawArtifactPath: string;
-  previewArtifactPath: string;
-  command: string[];
-  parseStage: "primary_json_parse" | "fallback_json_parse";
-  parseError: string;
-  stdoutBytes: number;
-  stderrBytes: number;
-  capturedAt: string;
-  workingDirectory: string;
-}
-
-interface ListAllIssuesOptions {
-  captureDir?: string | null;
-}
-
-export class GitHubInventoryRefreshError extends Error {
-  readonly diagnostics: InventoryRefreshDiagnosticEntry[];
-
-  constructor(message: string, diagnostics: InventoryRefreshDiagnosticEntry[], options?: { cause?: unknown }) {
-    super(message, options);
-    this.name = "GitHubInventoryRefreshError";
-    this.diagnostics = diagnostics.map((entry) => ({
-      ...entry,
-      ...(entry.command ? { command: [...entry.command] } : {}),
-    }));
-  }
-}
-
-function looksLikeJsonArrayPayload(raw: string): boolean {
-  return raw.trimStart().startsWith("[");
-}
-
-function inventoryCaptureTimestamp(isoTimestamp: string): string {
-  return isoTimestamp.replace(/[-:]/g, "").replace(/\.\d{3}Z$/u, (match) => match);
-}
-
-function inventoryCaptureSourceSlug(source: string, page?: number): string {
-  if (source === "gh issue list") {
-    return "gh-issue-list";
-  }
-
-  if (page !== undefined) {
-    return `rest-page-${page}`;
-  }
-
-  return source
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
-function inventoryCaptureBaseName(source: string, capturedAt: string, page?: number): string {
-  return `${inventoryCaptureTimestamp(capturedAt)}-${inventoryCaptureSourceSlug(source, page)}`;
-}
-
-function inventoryCaptureLimit(): number {
-  const raw = process.env[MALFORMED_INVENTORY_CAPTURE_LIMIT_ENV];
-  if (!raw) {
-    return DEFAULT_MALFORMED_INVENTORY_CAPTURE_LIMIT;
-  }
-
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MALFORMED_INVENTORY_CAPTURE_LIMIT;
-}
-
-function renderInventoryFailureOutput(result: CommandResult): string | null {
-  return truncatePreservingStartAndEnd(
-    [result.stderr.trim(), result.stdout.trim()].filter(Boolean).join("\n"),
-    INVENTORY_FAILURE_OUTPUT_LIMIT,
-  );
-}
-
-interface GitHubRestIssue {
-  number: number;
-  title: string;
-  body: string | null;
-  created_at: string;
-  updated_at: string;
-  html_url: string;
-  state: string;
-  labels?: Array<{ name: string }>;
-  pull_request?: unknown;
-}
-
-interface GitHubSearchIssuesResponse {
-  items: GitHubRestIssue[];
-}
-
-interface GitHubRateLimitResourcePayload {
-  limit: number;
-  remaining: number;
-  reset: number;
-  resource: string;
-}
-
-interface GitHubRateLimitResponse {
-  resources?: {
-    core?: GitHubRateLimitResourcePayload;
-    graphql?: GitHubRateLimitResourcePayload;
-  };
-}
-
-interface PullRequestReviewSurfaceOptions {
-  purpose?: "status" | "action";
-  headSha?: string | null;
-  reviewSurfaceVersion?: string | null;
-}
+export { GitHubInventoryRefreshError } from "./github-inventory";
 
 export class GitHubClient {
-  private readonly pullRequestHydrator: GitHubPullRequestHydrator;
+  private readonly inventory: GitHubInventoryClient;
+  private readonly mutations: GitHubMutationClient;
+  private readonly reviewSurface: GitHubReviewSurfaceClient;
   private readonly transport: GitHubTransport;
-  private readonly pullRequestGraphqlSurfaceCache = new Map<string, Promise<unknown>>();
 
   constructor(
     private readonly config: SupervisorConfig,
@@ -165,75 +37,27 @@ export class GitHubClient {
     private readonly now: () => number = Date.now,
   ) {
     this.transport = new GitHubTransport(commandRunner, delay);
-    this.pullRequestHydrator = new GitHubPullRequestHydrator(
+    this.inventory = new GitHubInventoryClient(
+      this.config,
+      (args) => this.runGhCommand(args, { stdoutCaptureLimitBytes: null }),
+      this.now,
+    );
+    this.reviewSurface = new GitHubReviewSurfaceClient(
       this.config,
       (args, options = {}) => this.runGhCommand(args, options),
       this.now,
     );
-  }
-
-  private repoOwnerAndName(): { owner: string; repo: string } {
-    const [owner, repo] = this.config.repoSlug.split("/", 2);
-    if (!owner || !repo) {
-      throw new Error(`Invalid repoSlug: ${this.config.repoSlug}`);
-    }
-
-    return { owner, repo };
+    this.mutations = new GitHubMutationClient(
+      this.config,
+      (args, options = {}) => this.runGhCommand(args, options),
+      (branch) => this.reviewSurface.findOpenPullRequest(branch),
+      (branch) => this.reviewSurface.findLatestPullRequestForBranch(branch),
+      this.delay,
+    );
   }
 
   private async runGhCommand(args: string[], options: CommandOptions = {}) {
     return this.transport.run(args, options);
-  }
-
-  private getCachedPullRequestGraphqlSurface<T>(
-    cacheKey: string,
-    fetcher: () => Promise<T>,
-  ): Promise<T> {
-    const cached = this.pullRequestGraphqlSurfaceCache.get(cacheKey) as Promise<T> | undefined;
-    if (cached) {
-      this.pullRequestGraphqlSurfaceCache.delete(cacheKey);
-      this.pullRequestGraphqlSurfaceCache.set(cacheKey, cached);
-      return cached;
-    }
-
-    const promise = fetcher().catch((error) => {
-      this.pullRequestGraphqlSurfaceCache.delete(cacheKey);
-      throw error;
-    });
-    this.pullRequestGraphqlSurfaceCache.set(cacheKey, promise);
-
-    while (this.pullRequestGraphqlSurfaceCache.size > PULL_REQUEST_GRAPHQL_SURFACE_CACHE_MAX_ENTRIES) {
-      const oldestKey = this.pullRequestGraphqlSurfaceCache.keys().next().value;
-      if (!oldestKey) {
-        break;
-      }
-      this.pullRequestGraphqlSurfaceCache.delete(oldestKey);
-    }
-
-    return promise;
-  }
-
-  private maybeGetCachedPullRequestGraphqlSurface<T>(
-    kind: "threads" | "external-review-surface",
-    prNumber: number,
-    options: PullRequestReviewSurfaceOptions,
-    fetcher: () => Promise<T>,
-  ): Promise<T> {
-    if (options.purpose !== "status" || !options.headSha || !options.reviewSurfaceVersion) {
-      return fetcher();
-    }
-
-    return this.getCachedPullRequestGraphqlSurface(
-      `${kind}:${prNumber}:${options.headSha}:${options.reviewSurfaceVersion}`,
-      fetcher,
-    );
-  }
-
-  private async hydratePullRequestForPurpose(
-    pr: GitHubPullRequest | null,
-    purpose: "status" | "action",
-  ): Promise<GitHubPullRequest | null> {
-    return purpose === "action" ? this.hydratePullRequestForAction(pr) : this.hydratePullRequestForStatus(pr);
   }
 
   async authStatus(): Promise<{ ok: boolean; message: string | null }> {
@@ -249,583 +73,59 @@ export class GitHubClient {
 
       return {
         ok: false,
-        message: truncate([result.stderr.trim(), result.stdout.trim()].filter(Boolean).join("\n"), 500),
+        message: result.stderr.trim() || result.stdout.trim() || null,
       };
     } catch (error) {
       return {
         ok: false,
-        message: truncate(error instanceof Error ? error.message : String(error), 500),
+        message: error instanceof Error ? error.message : String(error),
       };
     }
   }
 
-  private classifyRateLimitBudget(limit: number, remaining: number): GitHubRateLimitBudget["state"] {
-    if (remaining <= 0) {
-      return "exhausted";
-    }
-
-    return remaining / Math.max(limit, 1) <= 0.1 ? "low" : "healthy";
-  }
-
-  private mapRateLimitBudget(
-    resource: GitHubRateLimitResourcePayload | undefined,
-    fallbackResource: "core" | "graphql",
-  ): GitHubRateLimitBudget {
-    if (!resource) {
-      throw new Error(`GitHub rate_limit response omitted ${fallbackResource} budget data.`);
-    }
-
-    return {
-      resource: resource.resource || fallbackResource,
-      limit: resource.limit,
-      remaining: resource.remaining,
-      resetAt: new Date(resource.reset * 1000).toISOString(),
-      state: this.classifyRateLimitBudget(resource.limit, resource.remaining),
-    };
-  }
-
   async getRateLimitTelemetry(): Promise<GitHubRateLimitTelemetry> {
-    const result = await this.runGhCommand(["api", "rate_limit"]);
-    const payload = parseJson<GitHubRateLimitResponse>(result.stdout, "gh api rate_limit");
-
-    return {
-      rest: this.mapRateLimitBudget(payload.resources?.core, "core"),
-      graphql: this.mapRateLimitBudget(payload.resources?.graphql, "graphql"),
-    };
+    return this.inventory.getRateLimitTelemetry();
   }
 
   async listAllIssues(options: ListAllIssuesOptions = {}): Promise<GitHubIssue[]> {
-    const command = [
-      "issue",
-      "list",
-      "--repo",
-      this.config.repoSlug,
-      "--state",
-      "all",
-      "--limit",
-      "500",
-      "--json",
-      "number,title,body,createdAt,updatedAt,url,labels,state",
-    ];
-    const result = await this.runGhCommand(command, { stdoutCaptureLimitBytes: null });
-    try {
-      return parseJson<GitHubIssue[]>(result.stdout, "gh issue list");
-    } catch (error) {
-      const primaryCapture = await this.captureMalformedInventoryPayload({
-        transport: "primary",
-        source: "gh issue list",
-        captureDir: options.captureDir,
-        args: command,
-        result,
-        parseStage: "primary_json_parse",
-        parseError: error,
-      });
-      const primaryDiagnostic = this.buildInventoryRefreshDiagnostic({
-        transport: "primary",
-        source: "gh issue list",
-        message: error instanceof Error ? error.message : String(error),
-        capture: primaryCapture,
-      });
-      const primaryFailureMessage = [
-        primaryDiagnostic.message,
-        renderInventoryFailureOutput(result),
-        primaryCapture ? `Malformed inventory raw payload: ${primaryCapture.rawArtifactPath}` : null,
-        primaryCapture ? `Malformed inventory preview: ${primaryCapture.previewArtifactPath}` : null,
-      ]
-        .filter(Boolean)
-        .join("\n");
-      if (isGitHubRateLimitFailure(primaryFailureMessage) || !looksLikeJsonArrayPayload(result.stdout)) {
-        throw new GitHubInventoryRefreshError(primaryFailureMessage, [primaryDiagnostic], { cause: error });
-      }
-      return this.listAllIssuesViaRestApi(primaryDiagnostic, options);
-    }
-  }
-
-  private candidateDiscoveryPageSize(): number {
-    return this.config.candidateDiscoveryFetchWindow ?? DEFAULT_CANDIDATE_DISCOVERY_FETCH_WINDOW;
-  }
-
-  private mapRestIssue(issue: GitHubRestIssue): GitHubIssue | null {
-    if (issue.pull_request) {
-      return null;
-    }
-
-    return {
-      number: issue.number,
-      title: issue.title,
-      body: issue.body ?? "",
-      createdAt: issue.created_at,
-      updatedAt: issue.updated_at,
-      url: issue.html_url,
-      labels: issue.labels?.map((label) => ({ name: label.name })),
-      state: issue.state.toUpperCase(),
-    };
-  }
-
-  private sortCandidateIssues(issues: GitHubIssue[]): GitHubIssue[] {
-    return [...issues].sort((left, right) => {
-      const createdAtOrder = left.createdAt.localeCompare(right.createdAt);
-      if (createdAtOrder !== 0) {
-        return createdAtOrder;
-      }
-
-      return left.number - right.number;
-    });
-  }
-
-  private async listRepositoryCandidateIssuePage(page: number, perPage: number): Promise<GitHubIssue[]> {
-    const { owner, repo } = this.repoOwnerAndName();
-    const args = [
-      "api",
-      `repos/${owner}/${repo}/issues`,
-      "--method",
-      "GET",
-      "-f",
-      "state=open",
-      "-f",
-      `per_page=${perPage}`,
-      "-f",
-      `page=${page}`,
-    ];
-
-    if (this.config.issueLabel) {
-      args.push("-f", `labels=${this.config.issueLabel}`);
-    }
-
-    const result = await this.runGhCommand(args);
-    const issues = parseJson<GitHubRestIssue[]>(result.stdout, `gh api repos/${owner}/${repo}/issues page=${page}`);
-    return issues
-      .map((issue) => this.mapRestIssue(issue))
-      .filter((issue): issue is GitHubIssue => issue !== null);
-  }
-
-  private async listAllIssuesViaRestApi(
-    primaryDiagnostic: InventoryRefreshDiagnosticEntry,
-    options: ListAllIssuesOptions,
-  ): Promise<GitHubIssue[]> {
-    try {
-      const { owner, repo } = this.repoOwnerAndName();
-      const issues: GitHubIssue[] = [];
-
-      for (let page = 1; ; page += 1) {
-        const result = await this.runGhCommand([
-          "api",
-          `repos/${owner}/${repo}/issues`,
-          "--method",
-          "GET",
-          "-f",
-          "state=all",
-          "-f",
-          `per_page=${FULL_ISSUE_INVENTORY_PAGE_SIZE}`,
-          "-f",
-          `page=${page}`,
-        ], { stdoutCaptureLimitBytes: null });
-        let pageResponse: GitHubRestIssue[];
-        try {
-          pageResponse = parseJson<GitHubRestIssue[]>(
-            result.stdout,
-            `gh api repos/${owner}/${repo}/issues page=${page}`,
-          );
-        } catch (parseError) {
-          const fallbackCapture = await this.captureMalformedInventoryPayload({
-            transport: "fallback",
-            source: `gh api repos/${owner}/${repo}/issues`,
-            page,
-            captureDir: options.captureDir,
-            args: [
-              "api",
-              `repos/${owner}/${repo}/issues`,
-              "--method",
-              "GET",
-              "-f",
-              "state=all",
-              "-f",
-              `per_page=${FULL_ISSUE_INVENTORY_PAGE_SIZE}`,
-              "-f",
-              `page=${page}`,
-            ],
-            result,
-            parseStage: "fallback_json_parse",
-            parseError,
-          });
-          const fallbackDiagnostic = this.buildInventoryRefreshDiagnostic({
-            transport: "fallback",
-            source: `gh api repos/${owner}/${repo}/issues`,
-            message: parseError instanceof Error ? parseError.message : String(parseError),
-            page,
-            capture: fallbackCapture,
-          });
-          const fallbackMessage = [
-            fallbackDiagnostic.message,
-            fallbackCapture ? `Malformed inventory raw payload: ${fallbackCapture.rawArtifactPath}` : null,
-            fallbackCapture ? `Malformed inventory preview: ${fallbackCapture.previewArtifactPath}` : null,
-          ]
-            .filter(Boolean)
-            .join("\n");
-          throw new GitHubInventoryRefreshError(
-            [
-              "Failed to load full issue inventory.",
-              `Primary transport: ${primaryDiagnostic.message}`,
-              primaryDiagnostic.raw_artifact_path
-                ? `Malformed inventory raw payload: ${primaryDiagnostic.raw_artifact_path}`
-                : null,
-              primaryDiagnostic.preview_artifact_path
-                ? `Malformed inventory preview: ${primaryDiagnostic.preview_artifact_path}`
-                : primaryDiagnostic.artifact_path
-                  ? `Malformed inventory preview: ${primaryDiagnostic.artifact_path}`
-                  : null,
-              `Fallback transport: ${fallbackMessage}`,
-            ].filter(Boolean).join("\n"),
-            [primaryDiagnostic, fallbackDiagnostic],
-            { cause: parseError },
-          );
-        }
-        const pageIssues = pageResponse
-          .map((issue) => this.mapRestIssue(issue))
-          .filter((issue): issue is GitHubIssue => issue !== null);
-
-        issues.push(...pageIssues);
-        if (pageResponse.length < FULL_ISSUE_INVENTORY_PAGE_SIZE) {
-          break;
-        }
-      }
-
-      return issues;
-    } catch (fallbackError) {
-      if (fallbackError instanceof GitHubInventoryRefreshError) {
-        throw fallbackError;
-      }
-      const fallbackDiagnostic = this.buildInventoryRefreshDiagnostic({
-        transport: "fallback",
-        source: `gh api repos/${this.repoOwnerAndName().owner}/${this.repoOwnerAndName().repo}/issues`,
-        message: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
-      });
-      throw new GitHubInventoryRefreshError(
-        [
-          "Failed to load full issue inventory.",
-          `Primary transport: ${primaryDiagnostic.message}`,
-          primaryDiagnostic.raw_artifact_path
-            ? `Malformed inventory raw payload: ${primaryDiagnostic.raw_artifact_path}`
-            : null,
-          primaryDiagnostic.preview_artifact_path
-            ? `Malformed inventory preview: ${primaryDiagnostic.preview_artifact_path}`
-            : primaryDiagnostic.artifact_path
-              ? `Malformed inventory preview: ${primaryDiagnostic.artifact_path}`
-              : null,
-          `Fallback transport: ${fallbackDiagnostic.message}`,
-        ].join("\n"),
-        [primaryDiagnostic, fallbackDiagnostic],
-        { cause: fallbackError },
-      );
-    }
-  }
-
-  private async captureMalformedInventoryPayload(args: {
-    transport: "primary" | "fallback";
-    source: string;
-    captureDir?: string | null;
-    args: string[];
-    result: CommandResult;
-    parseStage: "primary_json_parse" | "fallback_json_parse";
-    parseError: unknown;
-    page?: number;
-  }): Promise<InventoryCaptureArtifact | null> {
-    const captureDir = args.captureDir?.trim();
-    if (!captureDir) {
-      return null;
-    }
-
-    const capturedAt = new Date(this.now()).toISOString();
-    const baseName = inventoryCaptureBaseName(args.source, capturedAt, args.page);
-    const rawArtifactPath = path.join(captureDir, `${baseName}-raw.json`);
-    const previewArtifactPath = path.join(captureDir, `${baseName}-preview.json`);
-    const parseMessage = args.parseError instanceof Error ? args.parseError.message : String(args.parseError);
-    const workingDirectory = process.cwd();
-    const stdoutBytes = Buffer.byteLength(args.result.stdout, "utf8");
-    const stderrBytes = Buffer.byteLength(args.result.stderr, "utf8");
-    await ensureDir(captureDir);
-    await writeFileAtomic(rawArtifactPath, args.result.stdout);
-    try {
-      await writeJsonAtomic(previewArtifactPath, {
-        capturedAt,
-        transport: args.transport,
-        source: args.source,
-        page: args.page ?? null,
-        parseStage: args.parseStage,
-        rawArtifactPath,
-        previewArtifactPath,
-        command: ["gh", ...args.args],
-        parseError: parseMessage,
-        stdoutPreview: truncatePreservingStartAndEnd(args.result.stdout, INVENTORY_FAILURE_OUTPUT_LIMIT) ?? "",
-        stderrPreview: truncatePreservingStartAndEnd(args.result.stderr, INVENTORY_FAILURE_OUTPUT_LIMIT) ?? "",
-        stdoutBytes,
-        stderrBytes,
-        context: {
-          repoSlug: this.config.repoSlug,
-          workingDirectory,
-          pid: process.pid,
-          platform: process.platform,
-          nodeVersion: process.version,
-          ghHost: process.env.GH_HOST ?? null,
-          ghRepo: process.env.GH_REPO ?? null,
-          ghConfigDir: process.env.GH_CONFIG_DIR ?? null,
-        },
-      });
-    } catch (error) {
-      await fs.rm(rawArtifactPath, { force: true }).catch(() => undefined);
-      throw error;
-    }
-    await this.pruneMalformedInventoryCaptures(captureDir);
-    return {
-      transport: args.transport,
-      source: args.source,
-      message: parseMessage,
-      page: args.page ?? null,
-      rawArtifactPath,
-      previewArtifactPath,
-      command: ["gh", ...args.args],
-      parseStage: args.parseStage,
-      parseError: parseMessage,
-      stdoutBytes,
-      stderrBytes,
-      capturedAt,
-      workingDirectory,
-    };
-  }
-
-  private buildInventoryRefreshDiagnostic(args: {
-    transport: "primary" | "fallback";
-    source: string;
-    message: string;
-    page?: number;
-    capture?: InventoryCaptureArtifact | null;
-  }): InventoryRefreshDiagnosticEntry {
-    const { capture } = args;
-    return {
-      transport: args.transport,
-      source: args.source,
-      message: args.message,
-      ...(args.page !== undefined ? { page: args.page } : {}),
-      ...(capture
-        ? {
-          raw_artifact_path: capture.rawArtifactPath,
-          preview_artifact_path: capture.previewArtifactPath,
-          command: capture.command,
-          parse_stage: capture.parseStage,
-          parse_error: capture.parseError,
-          stdout_bytes: capture.stdoutBytes,
-          stderr_bytes: capture.stderrBytes,
-          captured_at: capture.capturedAt,
-          working_directory: capture.workingDirectory,
-        }
-        : {}),
-    };
-  }
-
-  private async pruneMalformedInventoryCaptures(captureDir: string): Promise<void> {
-    const entries = await fs.readdir(captureDir, { withFileTypes: true });
-    const captureEventPattern = /^(\d{8}T\d{6}\.\d{3}Z-.*?)(?:-(?:raw|preview))?\.json$/u;
-    const captureEvents = Array.from(new Set(
-      entries
-        .flatMap((entry) => {
-          if (!entry.isFile()) {
-            return [];
-          }
-
-          const match = entry.name.match(captureEventPattern);
-          return match?.[1] ? [match[1]] : [];
-        }),
-    ))
-      .sort();
-    const extraEvents = captureEvents.length - inventoryCaptureLimit();
-    if (extraEvents <= 0) {
-      return;
-    }
-
-    await Promise.all(
-      captureEvents.slice(0, extraEvents).flatMap((baseName) => ([
-        fs.rm(path.join(captureDir, `${baseName}.json`), { force: true }),
-        fs.rm(path.join(captureDir, `${baseName}-raw.json`), { force: true }),
-        fs.rm(path.join(captureDir, `${baseName}-preview.json`), { force: true }),
-      ])),
-    );
-  }
-
-  private buildCandidateSearchQuery(): string {
-    const qualifiers = [`repo:${this.config.repoSlug}`, "is:issue", "is:open"];
-    if (this.config.issueLabel) {
-      qualifiers.push(`label:"${this.config.issueLabel.replace(/["\\]/g, "\\$&")}"`);
-    }
-
-    if (this.config.issueSearch && this.config.issueSearch.trim() !== "") {
-      qualifiers.push(this.config.issueSearch.trim());
-    }
-
-    return qualifiers.join(" ");
-  }
-
-  private async listSearchCandidateIssuePage(page: number, perPage: number): Promise<GitHubIssue[]> {
-    const args = [
-      "api",
-      "search/issues",
-      "--method",
-      "GET",
-      "-f",
-      `q=${this.buildCandidateSearchQuery()}`,
-      "-f",
-      `per_page=${perPage}`,
-      "-f",
-      `page=${page}`,
-    ];
-    const result = await this.runGhCommand(args);
-    const response = parseJson<GitHubSearchIssuesResponse>(result.stdout, `gh api search/issues page=${page}`);
-    return response.items
-      .map((issue) => this.mapRestIssue(issue))
-      .filter((issue): issue is GitHubIssue => issue !== null);
-  }
-
-  private async fetchAllCandidateIssues(): Promise<GitHubIssue[]> {
-    const perPage = this.candidateDiscoveryPageSize();
-    const issues: GitHubIssue[] = [];
-
-    for (let page = 1; ; page += 1) {
-      const pageIssues =
-        this.config.issueSearch && this.config.issueSearch.trim() !== ""
-          ? await this.listSearchCandidateIssuePage(page, perPage)
-          : await this.listRepositoryCandidateIssuePage(page, perPage);
-      issues.push(...pageIssues);
-      if (pageIssues.length < perPage) {
-        break;
-      }
-    }
-
-    return this.sortCandidateIssues(issues);
+    return this.inventory.listAllIssues(options);
   }
 
   async listCandidateIssues(): Promise<GitHubIssue[]> {
-    return this.fetchAllCandidateIssues();
+    return this.inventory.listCandidateIssues();
   }
 
   async getCandidateDiscoveryDiagnostics(): Promise<CandidateDiscoveryDiagnostics> {
-    const fetchWindow = this.candidateDiscoveryPageSize();
-    const issues = await this.fetchAllCandidateIssues();
-    return {
-      fetchWindow,
-      observedMatchingOpenIssues: issues.length,
-      truncated: false,
-    };
+    return this.inventory.getCandidateDiscoveryDiagnostics();
   }
 
   async getIssue(issueNumber: number): Promise<GitHubIssue> {
-    const result = await this.runGhCommand([
-      "issue",
-      "view",
-      String(issueNumber),
-      "--repo",
-      this.config.repoSlug,
-      "--json",
-      "number,title,body,createdAt,updatedAt,url,labels,state",
-    ]);
-    return parseJson<GitHubIssue>(result.stdout, `gh issue view #${issueNumber}`);
+    return this.inventory.getIssue(issueNumber);
   }
 
   async findOpenPullRequest(
     branch: string,
     options: { purpose?: "status" | "action" } = {},
   ): Promise<GitHubPullRequest | null> {
-    const result = await this.runGhCommand([
-      "pr",
-      "list",
-      "--repo",
-      this.config.repoSlug,
-      "--state",
-      "open",
-      "--head",
-      branch,
-      "--limit",
-      "1",
-      "--json",
-      "number,title,url,state,createdAt,updatedAt,isDraft,reviewDecision,mergeStateStatus,mergeable,headRefName,headRefOid,mergedAt",
-    ]);
-    const pullRequests = parseJson<GitHubPullRequest[]>(result.stdout, `gh pr list --head ${branch}`);
-    return this.hydratePullRequestForPurpose(pullRequests[0] ?? null, options.purpose ?? "status");
+    return this.reviewSurface.findOpenPullRequest(branch, options);
   }
 
   async findLatestPullRequestForBranch(
     branch: string,
     options: { purpose?: "status" | "action" } = {},
   ): Promise<GitHubPullRequest | null> {
-    const result = await this.runGhCommand([
-      "pr",
-      "list",
-      "--repo",
-      this.config.repoSlug,
-      "--state",
-      "all",
-      "--head",
-      branch,
-      "--limit",
-      "20",
-      "--json",
-      "number,title,url,state,createdAt,updatedAt,isDraft,reviewDecision,mergeStateStatus,mergeable,headRefName,headRefOid,mergedAt",
-    ]);
-    const pullRequests = parseJson<GitHubPullRequest[]>(result.stdout, `gh pr list --all --head ${branch}`);
-    const sorted = [...pullRequests].sort((left, right) => {
-      const leftTimestamp = Date.parse(left.updatedAt ?? left.createdAt);
-      const rightTimestamp = Date.parse(right.updatedAt ?? right.createdAt);
-      return rightTimestamp - leftTimestamp;
-    });
-    return this.hydratePullRequestForPurpose(sorted[0] ?? null, options.purpose ?? "status");
+    return this.reviewSurface.findLatestPullRequestForBranch(branch, options);
   }
 
   async getPullRequest(prNumber: number): Promise<GitHubPullRequest> {
-    const result = await this.runGhCommand([
-      "pr",
-      "view",
-      String(prNumber),
-      "--repo",
-      this.config.repoSlug,
-      "--json",
-      "number,title,url,state,createdAt,updatedAt,isDraft,reviewDecision,mergeStateStatus,mergeable,headRefName,headRefOid,mergedAt",
-    ]);
-    const pullRequest = parseJson<GitHubPullRequest>(result.stdout, `gh pr view #${prNumber}`);
-    return (await this.hydratePullRequestForAction(pullRequest)) as GitHubPullRequest;
+    return this.reviewSurface.getPullRequest(prNumber);
   }
 
   async getPullRequestIfExists(
     prNumber: number,
     options: { purpose?: "status" | "action" } = {},
   ): Promise<GitHubPullRequest | null> {
-    const result = await this.runGhCommand(
-      [
-        "pr",
-        "view",
-        String(prNumber),
-        "--repo",
-        this.config.repoSlug,
-        "--json",
-        "number,title,url,state,createdAt,updatedAt,isDraft,reviewDecision,mergeStateStatus,mergeable,headRefName,headRefOid,mergedAt",
-      ],
-      { allowExitCodes: [0, 1] },
-    );
-
-    if (result.exitCode === 0) {
-      const pullRequest = parseJson<GitHubPullRequest>(result.stdout, `gh pr view #${prNumber}`);
-      return this.hydratePullRequestForPurpose(pullRequest, options.purpose ?? "status");
-    }
-
-    const stderr = result.stderr.toLowerCase();
-    if (
-      stderr.includes("pull request not found") ||
-      stderr.includes("could not find pull request") ||
-      stderr.includes("no pull requests match")
-    ) {
-      return null;
-    }
-
-    throw new Error(
-      `Failed to get pull request #${prNumber}: ${result.stderr.trim() || `exit code ${result.exitCode}`}`,
-    );
+    return this.reviewSurface.getPullRequestIfExists(prNumber, options);
   }
 
   async resolvePullRequestForBranch(
@@ -833,129 +133,15 @@ export class GitHubClient {
     trackedPrNumber: number | null,
     options: { purpose?: "status" | "action" } = {},
   ): Promise<GitHubPullRequest | null> {
-    const purpose = options.purpose ?? "status";
-    const openPullRequest = await this.findOpenPullRequest(branch, { purpose });
-    if (openPullRequest) {
-      return openPullRequest;
-    }
-
-    if (trackedPrNumber !== null) {
-      const trackedPullRequest = await this.getPullRequestIfExists(trackedPrNumber, { purpose });
-      if (trackedPullRequest && trackedPullRequest.headRefName === branch) {
-        return trackedPullRequest;
-      }
-    }
-
-    return this.findLatestPullRequestForBranch(branch, { purpose });
+    return this.reviewSurface.resolvePullRequestForBranch(branch, trackedPrNumber, options);
   }
 
   async getMergedPullRequestsClosingIssue(issueNumber: number): Promise<GitHubPullRequest[]> {
-    const { owner, repo } = this.repoOwnerAndName();
-    const query = `
-      query($owner: String!, $repo: String!, $number: Int!) {
-        repository(owner: $owner, name: $repo) {
-          issue(number: $number) {
-            closedByPullRequestsReferences(first: 20) {
-              nodes {
-                number
-                title
-                url
-                state
-                createdAt
-                updatedAt
-                isDraft
-                reviewDecision
-                mergeStateStatus
-                mergeable
-                headRefName
-                headRefOid
-                mergedAt
-              }
-            }
-          }
-        }
-      }
-    `;
-
-    const result = await this.runGhCommand([
-      "api",
-      "graphql",
-      "-f",
-      `query=${query}`,
-      "-F",
-      `owner=${owner}`,
-      "-F",
-      `repo=${repo}`,
-      "-F",
-      `number=${issueNumber}`,
-    ]);
-
-    const parsed = parseJson<{
-      data?: {
-        repository?: {
-          issue?: {
-            closedByPullRequestsReferences?: {
-              nodes?: GitHubPullRequest[];
-            };
-          };
-        };
-      };
-    }>(result.stdout, `gh api graphql closedByPullRequestsReferences issue=${issueNumber}`);
-
-    const pullRequests = parsed.data?.repository?.issue?.closedByPullRequestsReferences?.nodes ?? [];
-    return pullRequests
-      .filter((pullRequest) => Boolean(pullRequest?.mergedAt || pullRequest?.state === "MERGED"))
-      .sort((left, right) => Date.parse(right.mergedAt ?? right.updatedAt ?? right.createdAt) - Date.parse(left.mergedAt ?? left.updatedAt ?? left.createdAt));
+    return this.reviewSurface.getMergedPullRequestsClosingIssue(issueNumber);
   }
 
   async getChecks(prNumber: number): Promise<PullRequestCheck[]> {
-    const result = await this.runGhCommand(
-      [
-        "pr",
-        "checks",
-        String(prNumber),
-        "--repo",
-        this.config.repoSlug,
-        "--json",
-        "bucket,state,name,workflow,link",
-      ],
-      { allowExitCodes: [0, 1, 8] },
-    );
-
-    const trimmed = result.stdout.trim();
-    if (trimmed !== "") {
-      try {
-        return parseJson<PullRequestCheck[]>(trimmed, `gh pr checks #${prNumber}`);
-      } catch {
-        // Fall back to statusCheckRollup when gh pr checks emitted non-JSON or incompatible JSON.
-      }
-    }
-
-    const fallback = await this.runGhCommand(
-      [
-        "pr",
-        "view",
-        String(prNumber),
-        "--repo",
-        this.config.repoSlug,
-        "--json",
-        "statusCheckRollup",
-      ],
-      { allowExitCodes: [0, 1] },
-    );
-
-    const fallbackTrimmed = fallback.stdout.trim();
-    if (fallback.exitCode === 0 && fallbackTrimmed !== "") {
-      return normalizeRollupChecks(parseJson<PullRequestStatusCheckRollupResponse>(fallbackTrimmed, `gh pr view statusCheckRollup #${prNumber}`));
-    }
-
-    if (result.exitCode !== 0) {
-      throw new Error(
-        `Failed to get checks for PR #${prNumber}: ${truncate(result.stderr.trim() || fallback.stderr.trim(), 500) ?? `exit code ${result.exitCode}`}`,
-      );
-    }
-
-    return [];
+    return this.reviewSurface.getChecks(prNumber);
   }
 
   async createPullRequest(
@@ -963,236 +149,38 @@ export class GitHubClient {
     record: IssueRunRecord,
     options?: { draft?: boolean },
   ): Promise<GitHubPullRequest> {
-    const title = `${issue.title} (#${issue.number})`;
-    const body = [
-      `Closes #${issue.number}`,
-      "",
-      "This PR was opened by codex-supervisor.",
-      "",
-      record.last_codex_summary ? `Latest Codex summary:\n\n${truncate(record.last_codex_summary, 1500)}` : "",
-    ]
-      .filter(Boolean)
-      .join("\n");
-
-    await this.runGhCommand([
-      "pr",
-      "create",
-      "--repo",
-      this.config.repoSlug,
-      "--base",
-      this.config.defaultBranch,
-      "--head",
-      record.branch,
-      "--title",
-      title,
-      "--body",
-      body,
-      ...(options?.draft ? ["--draft"] : []),
-    ]);
-
-    const created = await this.findPullRequestAfterCreation(record.branch);
-    if (!created) {
-      throw new Error(`Failed to locate PR after creation for branch ${record.branch}`);
-    }
-
-    return created;
+    return this.mutations.createPullRequest(issue, record, options);
   }
 
   async createIssue(title: string, body: string): Promise<GitHubIssue> {
-    const { owner, repo } = this.repoOwnerAndName();
-    const result = await this.runGhCommand([
-      "api",
-      `repos/${owner}/${repo}/issues`,
-      "--method",
-      "POST",
-      "-f",
-      `title=${title}`,
-      "-f",
-      `body=${body}`,
-    ]);
-
-    const created = parseJson<GitHubRestIssue>(result.stdout, `gh api repos/${owner}/${repo}/issues`);
-    const mapped = this.mapRestIssue(created);
-    if (!mapped) {
-      throw new Error("Created GitHub issue response unexpectedly described a pull request.");
-    }
-
-    return mapped;
-  }
-
-  private async findPullRequestAfterCreation(branch: string): Promise<GitHubPullRequest | null> {
-    for (let attempt = 0; attempt <= POST_CREATE_PR_LOOKUP_RETRY_LIMIT; attempt += 1) {
-      const pullRequest = await this.findOpenPullRequest(branch);
-      if (pullRequest) {
-        return pullRequest;
-      }
-
-      if (attempt < POST_CREATE_PR_LOOKUP_RETRY_LIMIT) {
-        await this.delay(POST_CREATE_PR_LOOKUP_BASE_DELAY_MS * (attempt + 1));
-      }
-    }
-
-    return this.findLatestPullRequestForBranch(branch);
+    return this.mutations.createIssue(title, body);
   }
 
   async enableAutoMerge(prNumber: number, headSha: string): Promise<void> {
-    const strategyFlag =
-      this.config.mergeMethod === "merge"
-        ? "--merge"
-        : this.config.mergeMethod === "rebase"
-          ? "--rebase"
-          : "--squash";
-
-    await this.runGhCommand([
-      "pr",
-      "merge",
-      String(prNumber),
-      "--repo",
-      this.config.repoSlug,
-      "--auto",
-      "--delete-branch",
-      "--match-head-commit",
-      headSha,
-      strategyFlag,
-    ]);
+    return this.mutations.enableAutoMerge(prNumber, headSha);
   }
 
   async markPullRequestReady(prNumber: number): Promise<void> {
-    await this.runGhCommand(
-      ["pr", "ready", String(prNumber), "--repo", this.config.repoSlug],
-      { allowExitCodes: [0, 1] },
-    );
+    return this.mutations.markPullRequestReady(prNumber);
   }
 
   async addIssueComment(issueNumber: number, body: string): Promise<void> {
-    await this.runGhCommand([
-      "issue",
-      "comment",
-      String(issueNumber),
-      "--repo",
-      this.config.repoSlug,
-      "--body",
-      body,
-    ]);
+    return this.mutations.addIssueComment(issueNumber, body);
   }
 
   async closeIssue(issueNumber: number, comment?: string): Promise<void> {
-    const args = [
-      "issue",
-      "close",
-      String(issueNumber),
-      "--repo",
-      this.config.repoSlug,
-    ];
-
-    if (comment && comment.trim() !== "") {
-      args.push("--comment", comment);
-    }
-
-    await this.runGhCommand(args, { allowExitCodes: [0, 1] });
+    return this.mutations.closeIssue(issueNumber, comment);
   }
 
   async closePullRequest(prNumber: number, comment?: string): Promise<void> {
-    const args = [
-      "pr",
-      "close",
-      String(prNumber),
-      "--repo",
-      this.config.repoSlug,
-    ];
-
-    if (comment && comment.trim() !== "") {
-      args.push("--comment", comment);
-    }
-
-    await this.runGhCommand(args, { allowExitCodes: [0, 1] });
+    return this.mutations.closePullRequest(prNumber, comment);
   }
 
   async getUnresolvedReviewThreads(
     prNumber: number,
     options: PullRequestReviewSurfaceOptions = {},
   ): Promise<ReviewThread[]> {
-    return this.maybeGetCachedPullRequestGraphqlSurface(
-      "threads",
-      prNumber,
-      options,
-      () => this.fetchUnresolvedReviewThreads(prNumber),
-    );
-  }
-
-  private async fetchUnresolvedReviewThreads(prNumber: number): Promise<ReviewThread[]> {
-    const { owner, repo } = this.repoOwnerAndName();
-
-    const query = `
-      query($owner: String!, $repo: String!, $number: Int!) {
-        repository(owner: $owner, name: $repo) {
-          pullRequest(number: $number) {
-            reviewThreads(first: 100) {
-              nodes {
-                id
-                isResolved
-                isOutdated
-                path
-                line
-                comments(last: 100) {
-                  nodes {
-                    id
-                    body
-                    createdAt
-                    url
-                    author {
-                      login
-                      __typename
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    `;
-
-    const result = await this.runGhCommand([
-      "api",
-      "graphql",
-      "-f",
-      `query=${query}`,
-      "-F",
-      `owner=${owner}`,
-      "-F",
-      `repo=${repo}`,
-      "-F",
-      `number=${prNumber}`,
-    ]);
-
-    const payload = parseJson<{
-      data?: {
-        repository?: {
-          pullRequest?: {
-            reviewThreads?: {
-              nodes?: ReviewThread[];
-            };
-          };
-        };
-      };
-    }>(result.stdout, `gh api graphql reviewThreads pr=${prNumber}`);
-
-    const threads = payload.data?.repository?.pullRequest?.reviewThreads?.nodes ?? [];
-    return threads.map((thread) => ({
-      ...thread,
-      comments: {
-        nodes: thread.comments.nodes.map((comment) => ({
-          ...comment,
-          author: comment.author
-            ? {
-                login: comment.author.login,
-                typeName: (comment.author as { __typename?: string }).__typename ?? null,
-              }
-            : null,
-        })),
-      },
-    })).filter((thread) => !thread.isResolved && !thread.isOutdated);
+    return this.reviewSurface.getUnresolvedReviewThreads(prNumber, options);
   }
 
   async getExternalReviewSurface(
@@ -1202,149 +190,6 @@ export class GitHubClient {
     reviews: PullRequestReview[];
     issueComments: IssueComment[];
   }> {
-    return this.maybeGetCachedPullRequestGraphqlSurface(
-      "external-review-surface",
-      prNumber,
-      options,
-      () => this.fetchExternalReviewSurface(prNumber),
-    );
-  }
-
-  private async fetchExternalReviewSurface(prNumber: number): Promise<{
-    reviews: PullRequestReview[];
-    issueComments: IssueComment[];
-  }> {
-    const { owner, repo } = this.repoOwnerAndName();
-    const query = `
-      query($owner: String!, $repo: String!, $number: Int!) {
-        repository(owner: $owner, name: $repo) {
-          pullRequest(number: $number) {
-            reviews(last: 100) {
-              nodes {
-                id
-                body
-                submittedAt
-                url
-                state
-                author {
-                  login
-                  __typename
-                }
-              }
-            }
-            comments(last: 100) {
-              nodes {
-                id
-                body
-                createdAt
-                url
-                author {
-                  login
-                  __typename
-                }
-              }
-            }
-          }
-        }
-      }
-    `;
-
-    const result = await this.runGhCommand([
-      "api",
-      "graphql",
-      "-f",
-      `query=${query}`,
-      "-F",
-      `owner=${owner}`,
-      "-F",
-      `repo=${repo}`,
-      "-F",
-      `number=${prNumber}`,
-    ]);
-
-    const payload = parseJson<{
-      data?: {
-        repository?: {
-          pullRequest?: {
-            reviews?: {
-              nodes?: Array<{
-                id?: string | null;
-                body?: string | null;
-                submittedAt?: string | null;
-                url?: string | null;
-                state?: string | null;
-                author?: {
-                  login?: string | null;
-                  __typename?: string | null;
-                } | null;
-              }>;
-            };
-            comments?: {
-              nodes?: Array<{
-                id?: string | null;
-                body?: string | null;
-                createdAt?: string | null;
-                url?: string | null;
-                author?: {
-                  login?: string | null;
-                  __typename?: string | null;
-                } | null;
-              }>;
-            };
-          } | null;
-        };
-      };
-    }>(result.stdout, `gh api graphql external review surface pr=${prNumber}`);
-
-    const pullRequest = payload.data?.repository?.pullRequest;
-    return {
-      reviews:
-        pullRequest?.reviews?.nodes?.flatMap((review) =>
-          review?.id
-            ? [
-                {
-                  id: review.id,
-                  body: review.body ?? null,
-                  submittedAt: review.submittedAt ?? null,
-                  url: review.url ?? null,
-                  state: review.state ?? null,
-                  author: review.author
-                    ? {
-                        login: review.author.login ?? null,
-                        typeName: review.author.__typename ?? null,
-                      }
-                    : null,
-                },
-              ]
-            : [],
-        ) ?? [],
-      issueComments:
-        pullRequest?.comments?.nodes?.flatMap((comment) =>
-          comment?.id
-            ? [
-                {
-                  id: comment.id,
-                  body: comment.body ?? "",
-                  createdAt: comment.createdAt ?? "",
-                  url: comment.url ?? null,
-                  author: comment.author
-                    ? {
-                        login: comment.author.login ?? null,
-                        typeName: comment.author.__typename ?? null,
-                      }
-                    : null,
-                },
-              ]
-            : [],
-        ) ?? [],
-    };
-  }
-
-  private async hydratePullRequestForStatus(pr: GitHubPullRequest | null): Promise<GitHubPullRequest | null> {
-    return this.pullRequestHydrator.hydrateForStatus(pr);
-  }
-
-  private async hydratePullRequestForAction(pr: GitHubPullRequest | null): Promise<GitHubPullRequest | null> {
-    return this.pullRequestHydrator.hydrateForAction(pr);
+    return this.reviewSurface.getExternalReviewSurface(prNumber, options);
   }
 }
