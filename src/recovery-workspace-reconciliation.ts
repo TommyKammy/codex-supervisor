@@ -144,6 +144,10 @@ async function cleanupRecordWorkspace(config: SupervisorConfig, record: IssueRun
   return true;
 }
 
+function hasWorkspaceGitDir(workspacePath: string): boolean {
+  return fs.existsSync(path.join(workspacePath, ".git"));
+}
+
 export async function inspectOrphanedWorkspacePruneCandidates(
   config: SupervisorConfig,
   state: SupervisorStateFile,
@@ -330,9 +334,7 @@ export async function cleanupExpiredDoneWorkspaces(
     .filter((record) => record.state === "done")
     .sort((left, right) => left.updated_at.localeCompare(right.updated_at));
 
-  const existingDoneRecords = doneRecords.filter((record) =>
-    fs.existsSync(path.join(record.workspace, ".git")),
-  );
+  const existingDoneRecords = doneRecords.filter((record) => hasWorkspaceGitDir(record.workspace));
 
   const cleanedWorkspacePaths = new Set<string>();
 
@@ -356,6 +358,10 @@ export async function cleanupExpiredDoneWorkspaces(
 
   for (const record of doneRecords) {
     if (cleanedWorkspacePaths.has(record.workspace)) {
+      continue;
+    }
+
+    if (!hasWorkspaceGitDir(record.workspace)) {
       continue;
     }
 
