@@ -38,6 +38,13 @@ import {
   formatLatestRecovery,
   formatReviewWaits,
 } from "./webui-dashboard-browser-issue-details";
+import {
+  createDashboardControlLayer,
+} from "./webui-dashboard-browser-controls";
+import {
+  registerDashboardDomInteractions,
+  wireDashboardEventStream,
+} from "./webui-dashboard-browser-interactions";
 import { WEBUI_MUTATION_AUTH_HEADER, WEBUI_MUTATION_AUTH_STORAGE_KEY } from "./webui-mutation-auth";
 import {
   formatBrowserToken,
@@ -61,6 +68,9 @@ const injectedBrowserLogic = [
   buildMutationHeaders,
   readMutationResponsePayload,
   postMutationJsonWithAuth,
+  createDashboardControlLayer,
+  registerDashboardDomInteractions,
+  wireDashboardEventStream,
   buildOverviewSummary,
   buildNextIssueSummary,
   buildPrimaryActionSummary,
@@ -1429,147 +1439,13 @@ export function renderDashboardBrowserScript(): string {
         }
       }
 
-      async function postCommand(path, body) {
-        return postMutationJsonWithAuth(fetch, window, path, body, {
-          mutationAuthStorageKey,
-          mutationAuthHeader,
-          fallbackBody: "{}",
-        });
-      }
-
-      async function runCommand(args) {
-        const previousStatus = elements.commandStatus ? elements.commandStatus.textContent : "";
-        const previousSelectedIssueNumber = state.selectedIssueNumber;
-        state.commandResult = buildInFlightCommandResult(args.label);
-        renderCommandResult();
-        try {
-          const result = await postCommand(args.path, args.body);
-          state.commandResult = addCommandGuidance(
-            result,
-            "Status refreshed automatically after completion. Review the operator timeline for follow-up context.",
-          );
-          setCommandCorrelation(args.label, [args.issueNumber, previousSelectedIssueNumber]);
-          pushTimeline({
-            kind: "command",
-            at: new Date().toISOString(),
-            summary: describeTimelineCommandResult(state.commandResult),
-            detail: JSON.stringify(state.commandResult, null, 2),
-            commandLabel: null,
-          });
-          renderCommandResult();
-          try {
-            await refreshStatusAndDoctor();
-            extendCommandCorrelation(state.selectedIssueNumber);
-            pushTimeline({
-              kind: "refresh",
-              at: new Date().toISOString(),
-              summary: describeCommandSelectionChange(previousSelectedIssueNumber, state.selectedIssueNumber),
-              detail:
-                "Refreshed /api/status and /api/doctor after " +
-                args.label +
-                ". Follow-up issue: " +
-                formatIssueRef(state.selectedIssueNumber) +
-                ".",
-              commandLabel: args.label,
-            });
-            const issueNumberToLoad = state.selectedIssueNumber ?? state.loadedIssueNumber;
-            if (issueNumberToLoad !== null) {
-              await loadIssue(issueNumberToLoad);
-            }
-          } catch (error) {
-            state.commandResult = addCommandGuidance(
-              state.commandResult,
-              "Command completed, but the dashboard refresh failed. Use the warning above before relying on the visible state.",
-            );
-            renderCommandResult();
-            reportRefreshError(error);
-          }
-        } catch (error) {
-          setText(elements.commandStatus, previousStatus || "Command failed.");
-          state.commandCorrelation = null;
-          state.commandResult = {
-            action: args.label,
-            outcome: "rejected",
-            summary: error instanceof Error ? error.message : String(error),
-            guidance: "No dashboard refresh was attempted because the command request failed.",
-          };
-          pushTimeline({
-            kind: "command",
-            at: new Date().toISOString(),
-            summary: state.commandResult.summary || "Command failed.",
-            detail: JSON.stringify(state.commandResult, null, 2),
-            commandLabel: null,
-          });
-          renderCommandResult();
-        }
-      }
-
       function pushEvent(event) {
         state.events.unshift(event);
         state.events = state.events.slice(0, 40);
         renderEvents();
       }
 
-      async function runCommandWithLock(args) {
-        if (state.commandInFlight) {
-          return;
-        }
-
-        state.commandInFlight = true;
-        renderSelectedIssue();
-        try {
-          await runCommand(args);
-        } finally {
-          state.commandInFlight = false;
-          renderSelectedIssue();
-        }
-      }
-
-      function wireEvents() {
-        const source = new EventSource("/api/events");
-        state.connectionPhase = "connecting";
-        renderLiveState();
-
-        source.addEventListener("open", () => {
-          state.connectionPhase = "open";
-          renderLiveState();
-        });
-
-        source.addEventListener("error", () => {
-          state.connectionPhase = "reconnecting";
-          renderLiveState();
-        });
-
-        const onEvent = async (rawEvent) => {
-          let parsed = { type: rawEvent.type, family: "event", at: new Date().toISOString(), raw: rawEvent.data };
-          try {
-            parsed = JSON.parse(rawEvent.data);
-          } catch {}
-          pushEvent(parsed);
-          pushTimeline({
-            kind: "event",
-            at: parsed.at || new Date().toISOString(),
-            summary: describeTimelineEvent(parsed),
-            detail: JSON.stringify(parsed, null, 2),
-            commandLabel: correlationLabelForEvent(parsed),
-          });
-          try {
-            await refreshStatusAndDoctor();
-            const issueNumberToLoad = state.selectedIssueNumber ?? state.loadedIssueNumber;
-            if (issueNumberToLoad !== null) {
-              await loadIssue(issueNumberToLoad);
-            }
-          } catch (error) {
-            reportRefreshError(error);
-          }
-        };
-
-        for (const eventType of knownEventTypes) {
-          source.addEventListener(eventType, onEvent);
-        }
-      }
-
-      elements.issueForm?.addEventListener("submit", async (event) => {
+      async function handleIssueSubmit(event) {
         event.preventDefault();
         const parsed = Number.parseInt(elements.issueNumberInput?.value || "", 10);
         if (!Number.isInteger(parsed) || parsed <= 0) {
@@ -1582,120 +1458,57 @@ export function renderDashboardBrowserScript(): string {
         } catch (error) {
           setText(elements.issueSummary, error instanceof Error ? error.message : String(error));
         }
-      });
-
-      elements.trackedHistoryToggle?.addEventListener("click", () => {
-        state.showDoneTrackedIssues = !state.showDoneTrackedIssues;
-        renderTrackedHistory();
-      });
-
-      for (const navigationLink of [
-        elements.navOverviewHeading,
-        elements.navPanelStatus,
-        elements.navPanelDoctor,
-        elements.navPanelIssueDetails,
-        elements.navPanelTrackedHistory,
-        elements.navPanelOperatorActions,
-        elements.navPanelLiveEvents,
-        elements.navPanelOperatorTimeline,
-      ]) {
-        navigationLink?.addEventListener("click", () => {
-          openDetailsSection();
-        });
       }
 
-      elements.runOnceButton?.addEventListener("click", async () => {
-        openDetailsSection();
-        await runCommandWithLock({
-          label: "run-once",
-          path: "/api/commands/run-once",
-          body: { dryRun: false },
-        });
+      function handleTrackedHistoryToggle() {
+        state.showDoneTrackedIssues = !state.showDoneTrackedIssues;
+        renderTrackedHistory();
+      }
+
+      const controls = createDashboardControlLayer({
+        postMutationJsonWithAuthImpl: postMutationJsonWithAuth,
+        fetchImpl: fetch,
+        host: window,
+        mutationAuthStorageKey,
+        mutationAuthHeader,
+        state,
+        elements,
+        openDetailsSection,
+        openFocusedIssueDetails,
+        refreshStatusAndDoctor,
+        loadIssue,
+        rejectCommand,
+        reportRefreshError,
+        renderSelectedIssue,
+        renderCommandResult,
+        setText,
+        buildInFlightCommandResult,
+        addCommandGuidance,
+        setCommandCorrelation,
+        pushTimeline,
+        describeTimelineCommandResult,
+        extendCommandCorrelation,
+        describeCommandSelectionChange,
+        formatIssueRef,
+        buildNextIssueSummary,
+        getHeroPrimaryActionConfig,
+        getHeroSecondaryActionConfig,
       });
 
-      elements.requeueButton?.addEventListener("click", async () => {
-        if (state.explain === null) {
-          rejectCommand("requeue", "Load an issue successfully before requeueing.", "requeue cancelled");
-          return;
-        }
-
-        await runCommandWithLock({
-          label: "requeue",
-          path: "/api/commands/requeue",
-          issueNumber: state.explain.issueNumber,
-          body: { issueNumber: state.explain.issueNumber },
-        });
-      });
-
-      elements.pruneWorkspacesButton?.addEventListener("click", async () => {
-        if (!window.confirm("Confirm prune of orphaned workspaces?")) {
-          rejectCommand(
-            "prune-orphaned-workspaces",
-            "Operator declined confirmation.",
-            "prune-orphaned-workspaces cancelled",
-          );
-          return;
-        }
-
-        await runCommandWithLock({
-          label: "prune-orphaned-workspaces",
-          path: "/api/commands/prune-orphaned-workspaces",
-          body: {},
-        });
-      });
-
-      elements.resetJsonStateButton?.addEventListener("click", async () => {
-        if (!window.confirm("Confirm reset of the corrupt JSON state marker?")) {
-          rejectCommand(
-            "reset-corrupt-json-state",
-            "Operator declined confirmation.",
-            "reset-corrupt-json-state cancelled",
-          );
-          return;
-        }
-
-        await runCommandWithLock({
-          label: "reset-corrupt-json-state",
-          path: "/api/commands/reset-corrupt-json-state",
-          body: {},
-        });
-      });
-
-      elements.heroPrimaryButton?.addEventListener("click", async () => {
-        const nextIssue = buildNextIssueSummary(state.status);
-        const primaryActionConfig = getHeroPrimaryActionConfig(nextIssue);
-        if (primaryActionConfig.mode === "refresh") {
-          try {
-            await refreshStatusAndDoctor();
-          } catch (error) {
-            reportRefreshError(error);
-          }
-          return;
-        }
-
-        if (primaryActionConfig.mode === "issue") {
-          await openFocusedIssueDetails();
-          return;
-        }
-
-        openDetailsSection();
-      });
-
-      elements.heroSecondaryButton?.addEventListener("click", async () => {
-        const nextIssue = buildNextIssueSummary(state.status);
-        const secondaryActionConfig = getHeroSecondaryActionConfig(nextIssue);
-        if (secondaryActionConfig.hidden) {
-          return;
-        }
-        if (secondaryActionConfig.mode === "issue") {
-          await openFocusedIssueDetails();
-          return;
-        }
-        openDetailsSection();
-      });
-
-      elements.heroTertiaryButton?.addEventListener("click", () => {
-        openDetailsSection();
+      registerDashboardDomInteractions({
+        elements,
+        handleIssueSubmit,
+        handleTrackedHistoryToggle,
+        openDetailsSection,
+        handleRunOnceClick: controls.handleRunOnceClick,
+        handleRequeueClick: controls.handleRequeueClick,
+        handlePruneWorkspacesClick: async () =>
+          controls.handlePruneWorkspacesClick(() => window.confirm("Confirm prune of orphaned workspaces?")),
+        handleResetJsonStateClick: async () =>
+          controls.handleResetJsonStateClick(() => window.confirm("Confirm reset of the corrupt JSON state marker?")),
+        handleHeroPrimaryClick: controls.handleHeroPrimaryClick,
+        handleHeroSecondaryClick: controls.handleHeroSecondaryClick,
+        handleHeroTertiaryClick: controls.handleHeroTertiaryClick,
       });
 
       async function bootstrap() {
@@ -1716,7 +1529,19 @@ export function renderDashboardBrowserScript(): string {
         }
 
         renderCommandResult();
-        wireEvents();
+        wireDashboardEventStream({
+          EventSourceCtor: EventSource,
+          knownEventTypes,
+          state,
+          renderLiveState,
+          pushEvent,
+          pushTimeline,
+          describeTimelineEvent,
+          correlationLabelForEvent,
+          refreshStatusAndDoctor,
+          loadIssue,
+          reportRefreshError,
+        });
         renderEvents();
         renderOperatorTimeline();
       }
