@@ -41,6 +41,10 @@ function latestConfiguredBotActionableSignalAt(pr: GitHubPullRequest): string | 
   return candidates.reduce((latest, candidate) => (candidate.timestampMs > latest.timestampMs ? candidate : latest)).value;
 }
 
+function configuredBotReviewNotExpectedWhileDraft(config: SupervisorConfig, pr: GitHubPullRequest): boolean {
+  return configuredReviewProviderKinds(config).includes("coderabbit") && pr.isDraft && Boolean(pr.configuredBotDraftSkipAt);
+}
+
 function configuredBotDraftSkipRewaitStartAt(
   config: SupervisorConfig,
   pr: GitHubPullRequest,
@@ -400,6 +404,14 @@ export function reviewBotDiagnostics(
     };
   }
 
+  if (configuredBotReviewNotExpectedWhileDraft(config, pr)) {
+    return {
+      status: "review_not_expected_while_draft",
+      observedReview: "draft_skip",
+      nextCheck: "ready_for_review",
+    };
+  }
+
   const observed = summarizeObservedReviewSignal(config, activeRecord, pr, reviewThreads, configuredBotReviewThreads);
   if (observed.hasSignal) {
     return {
@@ -471,9 +483,11 @@ export function externalSignalReadinessDiagnostics(
       ? "disabled"
       : draftLocalReviewBlocked
         ? "local_review_blocked"
+      : configuredBotReviewNotExpectedWhileDraft(config, pr)
+        ? "not_expected_while_draft"
       : unresolvedConfiguredThreads.length > 0 || topLevelReviewEffect === "blocking"
         ? "feedback_present"
-        : observed.hasSignal || topLevelReviewEffect !== "none"
+      : observed.hasSignal || topLevelReviewEffect !== "none"
           ? "signal_observed"
           : observed.observedReview === "copilot_requested"
             ? "pending_delivery"
