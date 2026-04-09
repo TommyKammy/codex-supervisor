@@ -1,6 +1,5 @@
 import { GitHubClient } from "./github";
 import {
-  LOCAL_REVIEW_DEGRADED_BLOCKER_SUMMARY,
   runLocalReview,
   shouldRunLocalReview,
   type LocalReviewResult,
@@ -10,14 +9,12 @@ import {
   localReviewBlocksReady,
   localReviewFailureContext,
   localReviewHighSeverityNeedsBlock,
-  localReviewManualReviewNeedsRepair,
   localReviewRepairContinuationFailureContext,
   localReviewRepairContinuationSummary,
   localReviewRequiresManualReview,
   localReviewRetryLoopCandidate,
   localReviewRetryLoopStalled,
   localReviewStallFailureContext,
-  nextLocalReviewSignatureTracking,
 } from "./review-handling";
 import { IssueJournalSync, MemoryArtifacts } from "./run-once-issue-preparation";
 import { StateStore } from "./core/state-store";
@@ -47,6 +44,10 @@ import {
 } from "./supervisor/supervisor-events";
 import { parseIssueMetadata } from "./issue-metadata";
 import { commitAndPushTrackedFiles, getWorkspaceStatus } from "./core/workspace";
+import {
+  derivePostTurnLocalReviewDecision,
+  derivePostTurnLocalReviewFailurePatch,
+} from "./post-turn-pull-request-policy";
 
 export interface PostTurnPullRequestContext {
   state: SupervisorStateFile;
@@ -439,76 +440,15 @@ export async function handlePostTurnPullRequestTransitionsPhase(
         alwaysReadFiles: memoryArtifacts.alwaysReadFiles,
         onDemandFiles: memoryArtifacts.onDemandFiles,
       });
-      const actionableSignature =
-        localReview.recommendation !== "ready"
-          ? `local-review:${localReview.maxSeverity ?? "unknown"}:${localReview.rootCauseCount}:${localReview.degraded ? "degraded" : "clean"}`
-          : null;
-      const signatureTracking = nextLocalReviewSignatureTracking(record, refreshed.pr.headRefOid, actionableSignature);
-      const manualReviewBlocked = localReview.finalEvaluation.outcome === "manual_review_blocked";
-      const manualReviewResidualBlocked = manualReviewBlocked && localReview.finalEvaluation.manualReviewCount > 0;
-      const manualReviewNeedsRepair = localReviewManualReviewNeedsRepair(
+      const localReviewDecision = derivePostTurnLocalReviewDecision({
         config,
-        {
-          local_review_head_sha: refreshed.pr.headRefOid,
-          pre_merge_evaluation_outcome: localReview.finalEvaluation.outcome,
-          pre_merge_manual_review_count: localReview.finalEvaluation.manualReviewCount,
-          pre_merge_follow_up_count: localReview.finalEvaluation.followUpCount,
-        },
-        refreshed.pr,
-      );
-
-      record = stateStore.touch(record, {
-        state: manualReviewNeedsRepair ? "local_review_fix" : manualReviewResidualBlocked ? "blocked" : "draft_pr",
-        local_review_head_sha: refreshed.pr.headRefOid,
-        local_review_blocker_summary: localReview.blockerSummary,
-        local_review_summary_path: localReview.summaryPath,
-        local_review_run_at: localReview.ranAt,
-        local_review_max_severity: localReview.maxSeverity,
-        local_review_findings_count: localReview.findingsCount,
-        local_review_root_cause_count: localReview.rootCauseCount,
-        local_review_verified_max_severity: localReview.verifiedMaxSeverity,
-        local_review_verified_findings_count: localReview.verifiedFindingsCount,
-        local_review_recommendation: localReview.recommendation,
-        local_review_degraded: localReview.degraded,
-        pre_merge_evaluation_outcome: localReview.finalEvaluation.outcome,
-        pre_merge_must_fix_count: localReview.finalEvaluation.mustFixCount,
-        pre_merge_manual_review_count: localReview.finalEvaluation.manualReviewCount,
-        pre_merge_follow_up_count: localReview.finalEvaluation.followUpCount,
-        ...signatureTracking,
-        external_review_head_sha: null,
-        external_review_misses_path: null,
-        external_review_matched_findings_count: 0,
-        external_review_near_match_findings_count: 0,
-        external_review_missed_findings_count: 0,
-        blocked_reason:
-          manualReviewResidualBlocked && !manualReviewNeedsRepair
-            ? "manual_review"
-            : localReview.recommendation !== "ready" && config.localReviewHighSeverityAction === "blocked" && localReview.verifiedMaxSeverity === "high"
-            ? "verification"
-            : null,
-        last_error:
-          localReview.recommendation !== "ready"
-            ? truncate(
-                localReview.degraded
-                  ? "Local review completed in a degraded state."
-                  : manualReviewNeedsRepair
-                    ? `Local review found ${localReview.finalEvaluation.manualReviewCount} unresolved manual-review residual${localReview.finalEvaluation.manualReviewCount === 1 ? "" : "s"} on the current PR head. Codex will continue with a same-PR repair pass before the PR can proceed.`
-                  : manualReviewResidualBlocked
-                    ? `Local review requires manual verification before the PR can proceed (${localReview.finalEvaluation.manualReviewCount} unresolved manual-review residual${localReview.finalEvaluation.manualReviewCount === 1 ? "" : "s"}).`
-                  : localReview.verifiedMaxSeverity === "high" && config.localReviewHighSeverityAction === "retry"
-                    ? `Local review found high-severity issues (${localReview.findingsCount} actionable findings across ${localReview.rootCauseCount} root cause(s)). Codex will continue with a repair pass before the PR can proceed.`
-                    : localReview.verifiedMaxSeverity === "high" && config.localReviewHighSeverityAction === "blocked"
-                      ? `Local review found high-severity issues (${localReview.findingsCount} actionable findings across ${localReview.rootCauseCount} root cause(s)). Manual attention is required before the PR can proceed.`
-                      : `Local review requested changes (${localReview.findingsCount} actionable findings across ${localReview.rootCauseCount} root cause(s)).`,
-                500,
-              )
-            : null,
+        record,
+        pr: refreshed.pr,
+        localReview,
       });
+      record = stateStore.touch(record, localReviewDecision.recordPatch);
 
-      if (
-        localReview.finalEvaluation.outcome === "follow_up_eligible" &&
-        config.localReviewFollowUpIssueCreationEnabled === true
-      ) {
+      if (localReviewDecision.shouldCreateFollowUpIssues) {
         await createResidualFollowUpIssues({
           github,
           issue,
@@ -517,34 +457,7 @@ export async function handlePostTurnPullRequestTransitionsPhase(
         });
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      record = stateStore.touch(record, {
-        state: "draft_pr",
-        local_review_head_sha: refreshed.pr.headRefOid,
-        local_review_blocker_summary: LOCAL_REVIEW_DEGRADED_BLOCKER_SUMMARY,
-        local_review_summary_path: null,
-        local_review_run_at: nowIso(),
-        local_review_max_severity: null,
-        local_review_findings_count: 0,
-        local_review_root_cause_count: 0,
-        local_review_verified_max_severity: null,
-        local_review_verified_findings_count: 0,
-        local_review_recommendation: "unknown",
-        local_review_degraded: true,
-        pre_merge_evaluation_outcome: null,
-        pre_merge_must_fix_count: 0,
-        pre_merge_manual_review_count: 0,
-        pre_merge_follow_up_count: 0,
-        last_local_review_signature: null,
-        repeated_local_review_signature_count: 0,
-        external_review_head_sha: null,
-        external_review_misses_path: null,
-        external_review_matched_findings_count: 0,
-        external_review_near_match_findings_count: 0,
-        external_review_missed_findings_count: 0,
-        blocked_reason: "verification",
-        last_error: `Local review failed: ${truncate(message, 500) ?? "unknown error"}`,
-      });
+      record = stateStore.touch(record, derivePostTurnLocalReviewFailurePatch({ pr: refreshed.pr, error }));
     }
 
     state.issues[String(record.issue_number)] = record;
