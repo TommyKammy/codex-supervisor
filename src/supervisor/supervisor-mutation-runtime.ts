@@ -83,6 +83,15 @@ export function createSupervisorMutationRuntime(
 ): SupervisorMutationRuntime {
   const { config, stateStore, lockPath } = options;
 
+  async function acquireMutationRunLock(label: string) {
+    const lock = await acquireFileLock(lockPath("supervisor", "run"), label);
+    if (!lock.acquired) {
+      throw new Error(`Cannot run recovery action while supervisor is active: ${lock.reason ?? "lock unavailable"}`);
+    }
+
+    return lock;
+  }
+
   return {
     async runRecoveryAction(
       action: SupervisorRecoveryAction,
@@ -92,12 +101,7 @@ export function createSupervisorMutationRuntime(
         throw new Error(`Unsupported recovery action: ${String(action)}`);
       }
 
-      const lock = await acquireFileLock(lockPath("supervisor", "run"), `supervisor-recovery-${action}`, {
-        allowAmbiguousOwnerCleanup: true,
-      });
-      if (!lock.acquired) {
-        throw new Error(`Cannot run recovery action while supervisor is active: ${lock.reason ?? "lock unavailable"}`);
-      }
+      const lock = await acquireMutationRunLock(`supervisor-recovery-${action}`);
 
       try {
         const state = await stateStore.load();
@@ -121,16 +125,7 @@ export function createSupervisorMutationRuntime(
     },
 
     async pruneOrphanedWorkspaces(): Promise<SupervisorOrphanPruneResultDto> {
-      const lock = await acquireFileLock(
-        lockPath("supervisor", "run"),
-        "supervisor-recovery-prune-orphaned-workspaces",
-        {
-          allowAmbiguousOwnerCleanup: true,
-        },
-      );
-      if (!lock.acquired) {
-        throw new Error(`Cannot run recovery action while supervisor is active: ${lock.reason ?? "lock unavailable"}`);
-      }
+      const lock = await acquireMutationRunLock("supervisor-recovery-prune-orphaned-workspaces");
 
       try {
         const state = await stateStore.load();
@@ -151,16 +146,7 @@ export function createSupervisorMutationRuntime(
     },
 
     async rollupExecutionMetrics(): Promise<SupervisorExecutionMetricsRollupResultDto> {
-      const lock = await acquireFileLock(
-        lockPath("supervisor", "run"),
-        "supervisor-recovery-rollup-execution-metrics",
-        {
-          allowAmbiguousOwnerCleanup: true,
-        },
-      );
-      if (!lock.acquired) {
-        throw new Error(`Cannot run recovery action while supervisor is active: ${lock.reason ?? "lock unavailable"}`);
-      }
+      const lock = await acquireMutationRunLock("supervisor-recovery-rollup-execution-metrics");
 
       try {
         const state = await stateStore.load();
@@ -192,16 +178,7 @@ export function createSupervisorMutationRuntime(
     },
 
     async resetCorruptJsonState(): Promise<JsonCorruptStateResetResult> {
-      const lock = await acquireFileLock(
-        lockPath("supervisor", "run"),
-        "supervisor-recovery-reset-corrupt-json-state",
-        {
-          allowAmbiguousOwnerCleanup: true,
-        },
-      );
-      if (!lock.acquired) {
-        throw new Error(`Cannot run recovery action while supervisor is active: ${lock.reason ?? "lock unavailable"}`);
-      }
+      const lock = await acquireMutationRunLock("supervisor-recovery-reset-corrupt-json-state");
 
       try {
         return stateStore.resetCorruptJsonState();
