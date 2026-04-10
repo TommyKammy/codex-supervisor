@@ -358,9 +358,11 @@ test("GitHubClient reuses cached external review surface for same-head status re
                   nodes: [
                     {
                       id: "comment-1",
+                      databaseId: 1001,
                       body: "Top-level follow-up.",
                       createdAt: "2026-03-13T02:25:00Z",
                       url: "https://example.test/comments/1",
+                      viewerDidAuthor: true,
                       author: {
                         login: "copilot-pull-request-reviewer",
                         __typename: "Bot",
@@ -432,6 +434,30 @@ test("GitHubClient refreshes external review surface for action reads even on th
   });
 
   assert.equal(graphqlCalls, 2);
+});
+
+test("GitHubClient updates an existing issue comment", async () => {
+  const config = createConfig();
+  let capturedArgs: string[] | null = null;
+  const client = new GitHubClient(config, async (_command, args) => {
+    capturedArgs = args;
+    return {
+      exitCode: 0,
+      stdout: "",
+      stderr: "",
+    };
+  });
+
+  await client.updateIssueComment(123, "Updated sticky status body");
+
+  assert.deepEqual(capturedArgs, [
+    "api",
+    "repos/owner/repo/issues/comments/123",
+    "--method",
+    "PATCH",
+    "-f",
+    "body=Updated sticky status body",
+  ]);
 });
 
 test("GitHubClient fetches REST and GraphQL rate-limit telemetry from a single rate_limit response", async () => {

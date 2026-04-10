@@ -445,9 +445,11 @@ export class GitHubReviewSurfaceClient {
             comments(last: 100) {
               nodes {
                 id
+                databaseId
                 body
                 createdAt
                 url
+                viewerDidAuthor
                 author {
                   login
                   __typename
@@ -492,9 +494,11 @@ export class GitHubReviewSurfaceClient {
             comments?: {
               nodes?: Array<{
                 id?: string | null;
+                databaseId?: number | null;
                 body?: string | null;
                 createdAt?: string | null;
                 url?: string | null;
+                viewerDidAuthor?: boolean | null;
                 author?: {
                   login?: string | null;
                   __typename?: string | null;
@@ -534,9 +538,11 @@ export class GitHubReviewSurfaceClient {
             ? [
                 {
                   id: comment.id,
+                  databaseId: comment.databaseId ?? null,
                   body: comment.body ?? "",
                   createdAt: comment.createdAt ?? "",
                   url: comment.url ?? null,
+                  viewerDidAuthor: comment.viewerDidAuthor ?? null,
                   author: comment.author
                     ? {
                         login: comment.author.login ?? null,
