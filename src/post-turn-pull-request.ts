@@ -413,9 +413,24 @@ export async function handlePostTurnPullRequestTransitionsPhase(
   let ranLocalReviewThisCycle = false;
   const refreshed = await loadOpenPullRequestSnapshotImpl(pr.number);
   const refreshedCheckSummary = args.summarizeChecks(refreshed.checks);
+  const shouldRefreshSameHeadRepairLocalReview =
+    record.state === "local_review_fix" &&
+    record.last_head_sha === refreshed.pr.headRefOid &&
+    record.local_review_head_sha === refreshed.pr.headRefOid &&
+    localReviewRetryLoopCandidate(
+      config,
+      record,
+      refreshed.pr,
+      refreshed.checks,
+      refreshed.reviewThreads,
+      args.manualReviewThreads,
+      args.configuredBotReviewThreads,
+      args.summarizeChecks,
+      args.mergeConflictDetected,
+    );
 
   if (
-    shouldRunLocalReview(config, record, refreshed.pr) &&
+    (shouldRunLocalReview(config, record, refreshed.pr) || shouldRefreshSameHeadRepairLocalReview) &&
     !refreshedCheckSummary.hasPending &&
     !refreshedCheckSummary.hasFailing &&
     args.configuredBotReviewThreads(config, refreshed.reviewThreads).length === 0 &&

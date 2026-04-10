@@ -2066,6 +2066,140 @@ test("handlePostTurnPullRequestTransitionsPhase routes current-head fix-blocked 
   assert.match(result.record.last_error ?? "", /same-PR repair pass/i);
 });
 
+test("handlePostTurnPullRequestTransitionsPhase refreshes same-head follow-up repair state with a fresh local review before stalling", async () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+    localReviewFollowUpRepairEnabled: true,
+    sameFailureSignatureRepeatLimit: 2,
+  });
+  const issue = createIssue({
+    title: "Refresh stale same-head follow-up repair state before stalling",
+  });
+  const readyPr = createPullRequest({
+    title: "Refresh stale same-head follow-up repair state before stalling",
+    isDraft: false,
+    headRefName: "codex/issue-322",
+    headRefOid: "head-328",
+  });
+  const record = createRecord({
+    state: "local_review_fix",
+    issue_number: 322,
+    pr_number: readyPr.number,
+    last_head_sha: readyPr.headRefOid,
+    local_review_head_sha: readyPr.headRefOid,
+    pre_merge_evaluation_outcome: "follow_up_eligible",
+    pre_merge_follow_up_count: 2,
+    local_review_findings_count: 2,
+    local_review_root_cause_count: 2,
+    local_review_max_severity: "medium",
+    local_review_verified_findings_count: 0,
+    local_review_verified_max_severity: "none",
+    local_review_recommendation: "changes_requested",
+    repeated_local_review_signature_count: 2,
+    last_local_review_signature: "local-review:medium:2:clean",
+    last_error: "Local review found 2 unresolved follow-up residuals on the current PR head. Codex will continue with a same-PR repair pass before the PR can proceed.",
+  });
+  let localReviewCalls = 0;
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: {
+      touch: (currentRecord, patch) => ({ ...currentRecord, ...patch, updated_at: currentRecord.updated_at }),
+      save: async () => undefined,
+    },
+    github: createDefaultGithub({
+      createIssue: async () => {
+        throw new Error("unexpected createIssue call");
+      },
+      markPullRequestReady: async () => {
+        throw new Error("unexpected markPullRequestReady call");
+      },
+    }),
+    context: {
+      state: {
+        activeIssueNumber: 322,
+        issues: { "322": record },
+      },
+      record,
+      issue,
+      workspacePath: path.join("/tmp/workspaces", "issue-322"),
+      syncJournal: async () => undefined,
+      memoryArtifacts: TEST_MEMORY_ARTIFACTS,
+      pr: readyPr,
+      options: { dryRun: false },
+    },
+    derivePullRequestLifecycleSnapshot: (currentRecord, pr, checks, reviewThreads) => ({
+      recordForState: currentRecord,
+      nextState: inferStateFromPullRequest(config, currentRecord, pr, checks, reviewThreads),
+      failureContext: null,
+      reviewWaitPatch: {},
+      copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    blockedReasonFromReviewState: (currentRecord, pr, checks, reviewThreads) =>
+      resolveBlockedReasonFromReviewState(config, currentRecord, pr, checks, reviewThreads),
+    summarizeChecks,
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
+    runLocalReviewImpl: async () => {
+      localReviewCalls += 1;
+      return {
+        ranAt: "2026-03-24T00:11:00Z",
+        summaryPath: "/tmp/reviews/owner-repo/issue-322/head-328.md",
+        findingsPath: "/tmp/reviews/owner-repo/issue-322/head-328.json",
+        summary: "Focused verification passed and the saved residual findings no longer reproduce on the current head.",
+        blockerSummary: "",
+        findingsCount: 0,
+        rootCauseCount: 0,
+        maxSeverity: "none",
+        verifiedFindingsCount: 0,
+        verifiedMaxSeverity: "none",
+        recommendation: "ready" as const,
+        degraded: false,
+        finalEvaluation: {
+          outcome: "mergeable" as const,
+          residualFindings: [],
+          mustFixCount: 0,
+          manualReviewCount: 0,
+          followUpCount: 0,
+        },
+        rawOutput: "raw output",
+      };
+    },
+    loadOpenPullRequestSnapshot: async () => ({
+      pr: readyPr,
+      checks: [],
+      reviewThreads: [] satisfies ReviewThread[],
+    }),
+  });
+
+  assert.equal(localReviewCalls, 1);
+  assert.equal(result.record.state, "ready_to_merge");
+  assert.equal(result.record.pre_merge_evaluation_outcome, "mergeable");
+  assert.equal(result.record.repeated_local_review_signature_count, 0);
+  assert.equal(result.record.last_failure_signature, null);
+  assert.equal(result.record.blocked_reason, null);
+});
+
 test("handlePostTurnPullRequestTransitionsPhase refreshes stale manual-review blocker text when same-PR repair re-enters without rerunning local review", async () => {
   const config = createConfig({
     localReviewEnabled: true,
