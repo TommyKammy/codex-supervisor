@@ -358,9 +358,11 @@ test("GitHubClient reuses cached external review surface for same-head status re
                   nodes: [
                     {
                       id: "comment-1",
+                      databaseId: 1001,
                       body: "Top-level follow-up.",
                       createdAt: "2026-03-13T02:25:00Z",
                       url: "https://example.test/comments/1",
+                      viewerDidAuthor: true,
                       author: {
                         login: "copilot-pull-request-reviewer",
                         __typename: "Bot",
@@ -446,11 +448,11 @@ test("GitHubClient updates an existing issue comment", async () => {
     };
   });
 
-  await client.updateIssueComment("comment-123", "Updated sticky status body");
+  await client.updateIssueComment(123, "Updated sticky status body");
 
   assert.deepEqual(capturedArgs, [
     "api",
-    "repos/owner/repo/issues/comments/comment-123",
+    "repos/owner/repo/issues/comments/123",
     "--method",
     "PATCH",
     "-f",

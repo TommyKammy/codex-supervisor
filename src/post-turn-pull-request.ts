@@ -222,7 +222,12 @@ function findOwnedTrackedPrStatusComment(
   issueComments: IssueComment[],
   marker: string,
 ): IssueComment | null {
-  const matchingComments = issueComments.filter((comment) => comment.body.includes(marker));
+  const matchingComments = issueComments.filter(
+    (comment) =>
+      comment.body.includes(marker) &&
+      comment.viewerDidAuthor === true &&
+      typeof comment.databaseId === "number",
+  );
   if (matchingComments.length === 0) {
     return null;
   }
@@ -256,8 +261,9 @@ async function publishTrackedPrStatusComment(args: {
       reviewSurfaceVersion: args.pr.updatedAt,
     });
     const existingComment = findOwnedTrackedPrStatusComment(surface.issueComments, marker);
-    if (existingComment) {
-      await args.github.updateIssueComment(existingComment.id, bodyWithMarker);
+    const existingCommentDatabaseId = existingComment?.databaseId;
+    if (typeof existingCommentDatabaseId === "number") {
+      await args.github.updateIssueComment(existingCommentDatabaseId, bodyWithMarker);
       return;
     }
   }

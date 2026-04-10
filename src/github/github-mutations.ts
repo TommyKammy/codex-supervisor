@@ -131,11 +131,11 @@ export class GitHubMutationClient {
     ]);
   }
 
-  async updateIssueComment(commentId: string, body: string): Promise<void> {
+  async updateIssueComment(commentDatabaseId: number, body: string): Promise<void> {
     const { owner, repo } = this.repoOwnerAndName();
     await this.runGhCommand([
       "api",
-      `repos/${owner}/${repo}/issues/comments/${commentId}`,
+      `repos/${owner}/${repo}/issues/comments/${commentDatabaseId}`,
       "--method",
       "PATCH",
       "-f",

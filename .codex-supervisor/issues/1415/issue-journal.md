@@ -5,29 +5,43 @@
 - Branch: codex/issue-1415
 - Workspace: .
 - Journal: .codex-supervisor/issues/1415/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 98401144e24d6551e0c9fc38210c6538f539ac56
+- Current phase: addressing_review
+- Attempt count: 3 (implementation=2, repair=1)
+- Last head SHA: 0735f41c63a1e8b31932bb0fa461d416e0bbc968
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-04-10T23:36:07.682Z
+- Last failure signature: PRRT_kwDORgvdZ856QkMo|PRRT_kwDORgvdZ856QkMt
+- Repeated failure signature count: 1
+- Updated at: 2026-04-10T23:49:51.845Z
 
 ## Latest Codex Summary
-- Added sticky tracked-PR host-local blocker comment publishing with deterministic marker lookup and GitHub comment updates, plus focused regression tests for restart-safe reuse.
+Addressed both open CodeRabbit findings on PR [#1419](https://github.com/TommyKammy/codex-supervisor/pull/1419) without widening scope. The tracked-PR sticky comment update path now uses a REST-compatible issue-comment `databaseId` from the GraphQL review surface, and owned-comment reuse now requires `viewerDidAuthor` so a copied marker on someone else's comment falls back to posting a fresh supervisor-owned sticky comment instead of attempting an unauthorized update.
+
+Focused verification passed cleanly after the review fix: `npx tsx --test src/github/github.test.ts src/post-turn-pull-request.test.ts` and `npm run build`. I also added regression coverage for both the numeric update path and the uneditable-marker fallback before updating this journal.
+
+Summary: Fixed the tracked-PR sticky comment review findings by using comment database IDs and editable-only ownership checks
+State hint: addressing_review
+Blocked reason: none
+Tests: `npx tsx --test src/github/github.test.ts src/post-turn-pull-request.test.ts`; `npm run build`
+Next action: commit the review fix, push `codex/issue-1415`, and update PR #1419 for another review pass
+Failure signature: PRRT_kwDORgvdZ856QkMo|PRRT_kwDORgvdZ856QkMt
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: 2 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1419#discussion_r3067169661
+- Details:
+  - src/github/github-mutations.ts:143 summary=_⚠️ Potential issue_ | _🔴 Critical_ 🧩 Analysis chain 🏁 Script executed: Repository: TommyKammy/codex-supervisor Length of output: 3906 --- **Query `databaseId` for PR issue c... url=https://github.com/TommyKammy/codex-supervisor/pull/1419#discussion_r3067169661
+  - src/post-turn-pull-request.ts:231 summary=_⚠️ Potential issue_ | _🟠 Major_ **Don't treat marker-only matches as "owned" comments.** `findOwnedTrackedPrStatusComment()` matches any PR conversation comment that contains ... url=https://github.com/TommyKammy/codex-supervisor/pull/1419#discussion_r3067169666
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: Duplicate tracked-PR blocker comments were caused by a create-only GitHub path plus local dedupe fields that do not survive process restarts.
-- What changed: Added `GitHubClient.updateIssueComment()` and REST PATCH support; post-turn tracked-PR blocker publishing now appends a deterministic hidden marker, searches PR conversation comments for an owned match, updates that comment when found, and only creates a new comment when no owned comment exists. Added focused tests for the mutation path and restart-safe update behavior.
+- Hypothesis: The remaining review blockers were real. The restart-safe sticky-comment update path was using GraphQL node IDs against a REST PATCH endpoint, and marker-only matching could select comments the current actor could not edit.
+- What changed: Extended the PR comment review surface to include `databaseId` and `viewerDidAuthor`, changed `GitHubClient.updateIssueComment()` to require the numeric database ID, and tightened tracked-PR sticky comment reuse so only editable marked comments are reused. Added a regression test for update-via-databaseId and another for the fallback create path when a marker exists on an uneditable comment.
 - Current blocker: none.
-- Next exact step: review the diff, commit the checkpoint, and continue with any follow-on sticky publisher abstraction cleanup if needed.
+- Next exact step: commit and push the review fix, then refresh PR #1419 so the unresolved automated threads can be re-evaluated.
 - Verification gap: none for the scoped issue verification; broader full-suite coverage not run this turn.
 - Files touched: src/github/github.ts; src/github/github-mutations.ts; src/github/github.test.ts; src/post-turn-pull-request.ts; src/post-turn-pull-request.test.ts
 - Rollback concern: The marker format now defines ownership for tracked PR host-local blocker comments; changing it later would strand older sticky comments unless migration or fallback matching is added.
 - Last focused command: `npm run build`
 ### Scratchpad
-- Keep this section short. The supervisor may compact older notes automatically.
+- 2026-04-11: Focused commands run for the review fix: `npx tsx --test src/github/github.test.ts src/post-turn-pull-request.test.ts`; `npm run build`

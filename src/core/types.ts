@@ -480,10 +480,12 @@ export interface PullRequestReview {
 
 export interface IssueComment {
   id: string;
+  databaseId?: number | null;
   body: string;
   createdAt: string;
   url: string | null;
   author: ExternalReviewActor | null;
+  viewerDidAuthor?: boolean | null;
 }
 
 export interface WorkspaceStatus {

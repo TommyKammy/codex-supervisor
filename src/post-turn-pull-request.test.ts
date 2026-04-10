@@ -1191,7 +1191,7 @@ test("handlePostTurnPullRequestTransitionsPhase updates the owned tracked PR hos
     activeIssueNumber: 102,
     issues: { "102": createRecord({ issue_number: 102, state: "draft_pr", pr_number: draftPr.number }) },
   };
-  const updateCalls: Array<{ commentId: string; body: string }> = [];
+  const updateCalls: Array<{ commentId: number; body: string }> = [];
   let addCalls = 0;
 
   const result = await handlePostTurnPullRequestTransitionsPhase({
@@ -1206,6 +1206,7 @@ test("handlePostTurnPullRequestTransitionsPhase updates the owned tracked PR hos
         issueComments: [
           {
             id: "comment-42",
+            databaseId: 42,
             body: [
               "Supervisor host-local workspace_preparation blocker on tracked PR head `old-head`.",
               "",
@@ -1213,6 +1214,7 @@ test("handlePostTurnPullRequestTransitionsPhase updates the owned tracked PR hos
             ].join("\n"),
             createdAt: "2026-03-16T01:00:00Z",
             url: "https://example.test/comments/42",
+            viewerDidAuthor: true,
             author: {
               login: "codex-supervisor[bot]",
               typeName: "Bot",
@@ -1220,7 +1222,7 @@ test("handlePostTurnPullRequestTransitionsPhase updates the owned tracked PR hos
           },
         ],
       }),
-      updateIssueComment: async (commentId: string, body: string) => {
+      updateIssueComment: async (commentId: number, body: string) => {
         updateCalls.push({ commentId, body });
       },
     }),
@@ -1263,7 +1265,7 @@ test("handlePostTurnPullRequestTransitionsPhase updates the owned tracked PR hos
   assert.equal(result.record.state, "blocked");
   assert.equal(addCalls, 0);
   assert.equal(updateCalls.length, 1);
-  assert.equal(updateCalls[0]?.commentId, "comment-42");
+  assert.equal(updateCalls[0]?.commentId, 42);
   assert.match(
     updateCalls[0]?.body ?? "",
     /<!-- codex-supervisor:tracked-pr-status-comment issue=102 pr=116 kind=host-local-blocker -->/,
@@ -1274,6 +1276,99 @@ test("handlePostTurnPullRequestTransitionsPhase updates the owned tracked PR hos
     result.record.last_host_local_pr_blocker_comment_signature,
     "workspace-preparation-gate-workspace_toolchain_missing",
   );
+});
+
+test("handlePostTurnPullRequestTransitionsPhase creates a fresh tracked PR blocker comment when marker match is not editable", async () => {
+  const config = createConfig({
+    workspacePreparationCommand: "npm ci",
+    localCiCommand: "npm run ci:local",
+  });
+  const issue = createIssue({ title: "Replace uneditable tracked PR host-local blocker comment" });
+  const draftPr = createPullRequest({ title: "Tracked PR host-local blocker", isDraft: true, number: 116, headRefOid: "head-116" });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: { "102": createRecord({ issue_number: 102, state: "draft_pr", pr_number: draftPr.number }) },
+  };
+  const addCalls: Array<{ prNumber: number; body: string }> = [];
+  let updateCalls = 0;
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: createNoopStateStore(),
+    github: createDefaultGithub({
+      addIssueComment: async (prNumber: number, body: string) => {
+        addCalls.push({ prNumber, body });
+      },
+      getExternalReviewSurface: async () => ({
+        reviews: [],
+        issueComments: [
+          {
+            id: "comment-99",
+            databaseId: 99,
+            body: [
+              "Copied marker from a different participant.",
+              "",
+              "<!-- codex-supervisor:tracked-pr-status-comment issue=102 pr=116 kind=host-local-blocker -->",
+            ].join("\n"),
+            createdAt: "2026-03-16T01:00:00Z",
+            url: "https://example.test/comments/99",
+            viewerDidAuthor: false,
+            author: {
+              login: "someone-else",
+              typeName: "User",
+            },
+          },
+        ],
+      }),
+      updateIssueComment: async () => {
+        updateCalls += 1;
+      },
+    }),
+    context: createPostTurnContext({
+      state,
+      record: state.issues["102"]!,
+      issue,
+      pr: draftPr,
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+    }),
+    derivePullRequestLifecycleSnapshot: (record) => createLifecycleSnapshot(record, "draft_pr"),
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    blockedReasonFromReviewState: () => null,
+    summarizeChecks,
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runWorkspacePreparationCommand: async () => {
+      throw Object.assign(new Error("workspace toolchain is not installed in this workspace"), {
+        stderr: "workspace toolchain is not installed in this workspace",
+      });
+    },
+    runLocalCiCommand: async () => {
+      throw new Error("unexpected local CI call");
+    },
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
+    loadOpenPullRequestSnapshot: async () => ({
+      pr: draftPr,
+      checks: [],
+      reviewThreads: [] satisfies ReviewThread[],
+    }),
+  });
+
+  assert.equal(result.record.state, "blocked");
+  assert.equal(updateCalls, 0);
+  assert.equal(addCalls.length, 1);
+  assert.equal(addCalls[0]?.prNumber, draftPr.number);
+  assert.match(
+    addCalls[0]?.body ?? "",
+    /<!-- codex-supervisor:tracked-pr-status-comment issue=102 pr=116 kind=host-local-blocker -->/,
+  );
+  assert.match(addCalls[0]?.body ?? "", /head `head-116`/);
 });
 
 test("handlePostTurnPullRequestTransitionsPhase blocks draft-to-ready promotion when workstation-local path hygiene fails", async () => {
