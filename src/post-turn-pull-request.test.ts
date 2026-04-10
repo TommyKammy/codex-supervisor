@@ -1394,16 +1394,21 @@ test("handlePostTurnPullRequestTransitionsPhase comments once when workstation-l
   const firstResult = await runScenario(firstState);
   assert.equal(firstResult.record.state, "blocked");
   assert.equal(commentBodies.length, 1);
+  assert.equal(firstResult.record.last_host_local_pr_blocker_comment_head_sha, draftPr.headRefOid);
+  assert.equal(firstResult.record.last_host_local_pr_blocker_comment_signature, "workstation-local-path-hygiene-failed");
   assert.match(commentBodies[0] ?? "", /still draft because ready-for-review promotion is blocked locally/i);
   assert.match(commentBodies[0] ?? "", /gate name: `workstation_local_path_hygiene`/i);
   assert.match(commentBodies[0] ?? "", /First fix: docs\/guide\.md/i);
   assert.match(commentBodies[0] ?? "", /rerunning the supervisor alone will not help yet/i);
   assert.doesNotMatch(commentBodies[0] ?? "", /\.codex-supervisor\/issues\/181\/issue-journal\.md:4 matched/);
 
-  const dedupedState = createState({
-    last_host_local_pr_blocker_comment_head_sha: draftPr.headRefOid,
-    last_host_local_pr_blocker_comment_signature: "workstation-local-path-hygiene-failed",
-  });
+  const dedupedState: SupervisorStateFile = {
+    ...firstState,
+    issues: {
+      ...firstState.issues,
+      "102": firstResult.record,
+    },
+  };
   const dedupedResult = await runScenario(dedupedState);
   assert.equal(dedupedResult.record.state, "blocked");
   assert.equal(commentBodies.length, 1);

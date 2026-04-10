@@ -803,6 +803,20 @@ export async function handlePostTurnPullRequestTransitionsPhase(
       state.issues[String(record.issue_number)] = record;
       await stateStore.save(state);
       await syncJournal(record);
+      record = await maybeCommentOnTrackedPrHostLocalBlocker({
+        github,
+        stateStore,
+        state,
+        record,
+        pr: refreshed.pr,
+        syncJournal,
+        gateType: "workstation_local_path_hygiene",
+        blockerSignature: failureContext.signature,
+        failureClass: failureContext.signature,
+        remediationTarget: "workspace_contents",
+        summary: failureContext.summary,
+        details: failureContext.details,
+      });
       return {
         record,
         pr: refreshed.pr,
