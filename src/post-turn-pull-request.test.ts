@@ -1272,6 +1272,148 @@ test("handlePostTurnPullRequestTransitionsPhase blocks draft-to-ready promotion 
   assert.match(result.record.last_failure_context?.details[0] ?? "", /docs\/guide\.md:1/);
 });
 
+test("handlePostTurnPullRequestTransitionsPhase comments once when workstation-local path hygiene blocks tracked ready promotion", async (t) => {
+  const { workspacePath, headSha } = await createTrackedIssueBranchRepo();
+  t.after(async () => {
+    await fs.rm(workspacePath, { recursive: true, force: true });
+  });
+
+  const config = createConfig({ localCiCommand: "npm run ci:local" });
+  const issue = createIssue({ title: "Comment on tracked ready-promotion path hygiene blockers" });
+  const draftPr = createPullRequest({
+    title: "Tracked PR path hygiene blocker",
+    isDraft: true,
+    headRefOid: headSha,
+  });
+  const commentBodies: string[] = [];
+
+  const createState = (recordOverrides: Partial<IssueRunRecord> = {}): SupervisorStateFile => ({
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "draft_pr",
+        pr_number: draftPr.number,
+        last_head_sha: headSha,
+        ...recordOverrides,
+      }),
+    },
+  });
+
+  const runScenario = async (state: SupervisorStateFile) =>
+    handlePostTurnPullRequestTransitionsPhase({
+      config,
+      stateStore: {
+        touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+        save: async () => undefined,
+      },
+      github: {
+        getPullRequest: async () => {
+          throw new Error("unexpected getPullRequest call");
+        },
+        getChecks: async () => {
+          throw new Error("unexpected getChecks call");
+        },
+        getUnresolvedReviewThreads: async () => {
+          throw new Error("unexpected getUnresolvedReviewThreads call");
+        },
+        markPullRequestReady: async () => {
+          throw new Error("unexpected markPullRequestReady call");
+        },
+        addIssueComment: async (_prNumber: number, body: string) => {
+          commentBodies.push(body);
+        },
+      },
+      context: {
+        state,
+        record: state.issues["102"]!,
+        issue,
+        workspacePath,
+        syncJournal: async () => undefined,
+        memoryArtifacts: {
+          alwaysReadFiles: [],
+          onDemandFiles: [],
+          contextIndexPath: "/tmp/context-index.md",
+          agentsPath: "/tmp/AGENTS.generated.md",
+        },
+        pr: draftPr,
+        options: { dryRun: false },
+      },
+      derivePullRequestLifecycleSnapshot: (record) => ({
+        recordForState: record,
+        nextState: "draft_pr",
+        failureContext: null,
+        reviewWaitPatch: {},
+        copilotRequestObservationPatch: {},
+        mergeLatencyVisibilityPatch: {
+          provider_success_observed_at: null,
+          provider_success_head_sha: null,
+          merge_readiness_last_evaluated_at: null,
+        },
+        copilotTimeoutPatch: {
+          copilot_review_timed_out_at: null,
+          copilot_review_timeout_action: null,
+          copilot_review_timeout_reason: null,
+        },
+      }),
+      applyFailureSignature: (_record, failureContext) => ({
+        last_failure_signature: failureContext?.signature ?? null,
+        repeated_failure_signature_count: failureContext ? 1 : 0,
+      }),
+      blockedReasonFromReviewState: () => null,
+      summarizeChecks: () => ({
+        hasPending: false,
+        hasFailing: false,
+      }),
+      configuredBotReviewThreads: () => [],
+      manualReviewThreads: () => [],
+      mergeConflictDetected: () => false,
+      runLocalCiCommand: async () => undefined,
+      runWorkstationLocalPathGate: async () => ({
+        ok: false,
+        failureContext: {
+          ...createFailureContext(
+            "Tracked durable artifacts failed workstation-local path hygiene before marking PR #116 ready. First fix: docs/guide.md (2 matches, unix_home); .codex-supervisor/issues/181/issue-journal.md (1 match, macos_home).",
+          ),
+          signature: "workstation-local-path-hygiene-failed",
+          command: "npm run verify:paths",
+          details: [
+            `docs/guide.md:1 matched /${"home"}/ via "${SAMPLE_UNIX_WORKSTATION_PATH}"`,
+            `docs/guide.md:5 matched /${"home"}/ via "${SAMPLE_UNIX_WORKSTATION_PATH}/tmp"`,
+            `.codex-supervisor/issues/181/issue-journal.md:4 matched /${"Users"}/ via "${SAMPLE_MACOS_WORKSTATION_PATH}"`,
+          ],
+        },
+      }),
+      loadOpenPullRequestSnapshot: async () => ({
+        pr: draftPr,
+        checks: [],
+        reviewThreads: [] satisfies ReviewThread[],
+      }),
+    });
+
+  const firstState = createState();
+  const firstResult = await runScenario(firstState);
+  assert.equal(firstResult.record.state, "blocked");
+  assert.equal(commentBodies.length, 1);
+  assert.equal(firstResult.record.last_host_local_pr_blocker_comment_head_sha, draftPr.headRefOid);
+  assert.equal(firstResult.record.last_host_local_pr_blocker_comment_signature, "workstation-local-path-hygiene-failed");
+  assert.match(commentBodies[0] ?? "", /still draft because ready-for-review promotion is blocked locally/i);
+  assert.match(commentBodies[0] ?? "", /gate name: `workstation_local_path_hygiene`/i);
+  assert.match(commentBodies[0] ?? "", /First fix: docs\/guide\.md/i);
+  assert.match(commentBodies[0] ?? "", /rerunning the supervisor alone will not help yet/i);
+  assert.doesNotMatch(commentBodies[0] ?? "", /\.codex-supervisor\/issues\/181\/issue-journal\.md:4 matched/);
+
+  const dedupedState: SupervisorStateFile = {
+    ...firstState,
+    issues: {
+      ...firstState.issues,
+      "102": firstResult.record,
+    },
+  };
+  const dedupedResult = await runScenario(dedupedState);
+  assert.equal(dedupedResult.record.state, "blocked");
+  assert.equal(commentBodies.length, 1);
+});
+
 test("handlePostTurnPullRequestTransitionsPhase redacts supervisor-owned cross-issue journals before ready promotion", async (t) => {
   const workspacePath = await createTrackedRepo();
   t.after(async () => {
