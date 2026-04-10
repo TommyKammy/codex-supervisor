@@ -21,6 +21,7 @@ import { StateStore } from "./core/state-store";
 import {
   FailureContext,
   GitHubIssue,
+  IssueComment,
   GitHubPullRequest,
   IssueRunRecord,
   LatestLocalCiResult,
@@ -91,6 +92,7 @@ type HostLocalTrackedPrBlockerGateType =
   | "workstation_local_path_hygiene";
 
 const SUPERVISOR_JOURNAL_NORMALIZATION_COMMIT_MESSAGE = "Normalize supervisor-owned issue journals for path hygiene";
+const TRACKED_PR_STATUS_COMMENT_MARKER_PREFIX = "codex-supervisor:tracked-pr-status-comment";
 
 function workspacePreparationFailureClass(
   signature: string | null | undefined,
@@ -208,8 +210,63 @@ function buildTrackedPrReadyPromotionPathHygieneComment(args: {
   ].join("\n");
 }
 
+function buildTrackedPrStatusCommentMarker(args: {
+  issueNumber: number;
+  prNumber: number;
+  kind: "host-local-blocker";
+}): string {
+  return `<!-- ${TRACKED_PR_STATUS_COMMENT_MARKER_PREFIX} issue=${args.issueNumber} pr=${args.prNumber} kind=${args.kind} -->`;
+}
+
+function findOwnedTrackedPrStatusComment(
+  issueComments: IssueComment[],
+  marker: string,
+): IssueComment | null {
+  const matchingComments = issueComments.filter((comment) => comment.body.includes(marker));
+  if (matchingComments.length === 0) {
+    return null;
+  }
+
+  matchingComments.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  return matchingComments[0] ?? null;
+}
+
+async function publishTrackedPrStatusComment(args: {
+  github: Partial<Pick<GitHubClient, "addIssueComment" | "getExternalReviewSurface" | "updateIssueComment">>;
+  issueNumber: number;
+  pr: GitHubPullRequest;
+  kind: "host-local-blocker";
+  body: string;
+}): Promise<void> {
+  if (!args.github.addIssueComment) {
+    return;
+  }
+
+  const marker = buildTrackedPrStatusCommentMarker({
+    issueNumber: args.issueNumber,
+    prNumber: args.pr.number,
+    kind: args.kind,
+  });
+  const bodyWithMarker = `${args.body}\n\n${marker}`;
+
+  if (args.github.getExternalReviewSurface && args.github.updateIssueComment) {
+    const surface = await args.github.getExternalReviewSurface(args.pr.number, {
+      purpose: "action",
+      headSha: args.pr.headRefOid,
+      reviewSurfaceVersion: args.pr.updatedAt,
+    });
+    const existingComment = findOwnedTrackedPrStatusComment(surface.issueComments, marker);
+    if (existingComment) {
+      await args.github.updateIssueComment(existingComment.id, bodyWithMarker);
+      return;
+    }
+  }
+
+  await args.github.addIssueComment(args.pr.number, bodyWithMarker);
+}
+
 async function maybeCommentOnTrackedPrHostLocalBlocker(args: {
-  github: Partial<Pick<GitHubClient, "addIssueComment">>;
+  github: Partial<Pick<GitHubClient, "addIssueComment" | "getExternalReviewSurface" | "updateIssueComment">>;
   stateStore: Pick<StateStore, "touch" | "save">;
   state: SupervisorStateFile;
   record: IssueRunRecord;
@@ -238,9 +295,12 @@ async function maybeCommentOnTrackedPrHostLocalBlocker(args: {
   }
 
   try {
-    await args.github.addIssueComment(
-      args.pr.number,
-      buildTrackedPrHostLocalBlockerComment({
+    await publishTrackedPrStatusComment({
+      github: args.github,
+      issueNumber: args.record.issue_number,
+      pr: args.pr,
+      kind: "host-local-blocker",
+      body: buildTrackedPrHostLocalBlockerComment({
         pr: args.pr,
         gateType: args.gateType,
         blockerSignature: args.blockerSignature,
@@ -249,11 +309,11 @@ async function maybeCommentOnTrackedPrHostLocalBlocker(args: {
         summary: args.summary,
         details: args.details,
       }),
-    );
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.warn(
-      `Failed to post tracked PR host-local blocker comment for PR #${args.pr.number}: ${truncate(message, 500) ?? "unknown error"}`,
+      `Failed to publish tracked PR host-local blocker comment for PR #${args.pr.number}: ${truncate(message, 500) ?? "unknown error"}`,
     );
     return args.record;
   }

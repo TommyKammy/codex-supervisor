@@ -168,6 +168,10 @@ export class GitHubClient {
     return this.mutations.addIssueComment(issueNumber, body);
   }
 
+  async updateIssueComment(commentId: string, body: string): Promise<void> {
+    return this.mutations.updateIssueComment(commentId, body);
+  }
+
   async closeIssue(issueNumber: number, comment?: string): Promise<void> {
     return this.mutations.closeIssue(issueNumber, comment);
   }

@@ -434,6 +434,30 @@ test("GitHubClient refreshes external review surface for action reads even on th
   assert.equal(graphqlCalls, 2);
 });
 
+test("GitHubClient updates an existing issue comment", async () => {
+  const config = createConfig();
+  let capturedArgs: string[] | null = null;
+  const client = new GitHubClient(config, async (_command, args) => {
+    capturedArgs = args;
+    return {
+      exitCode: 0,
+      stdout: "",
+      stderr: "",
+    };
+  });
+
+  await client.updateIssueComment("comment-123", "Updated sticky status body");
+
+  assert.deepEqual(capturedArgs, [
+    "api",
+    "repos/owner/repo/issues/comments/comment-123",
+    "--method",
+    "PATCH",
+    "-f",
+    "body=Updated sticky status body",
+  ]);
+});
+
 test("GitHubClient fetches REST and GraphQL rate-limit telemetry from a single rate_limit response", async () => {
   const config = createConfig();
   const client = new GitHubClient(config, async (_command, args) => {

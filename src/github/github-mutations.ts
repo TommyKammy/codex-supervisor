@@ -131,6 +131,18 @@ export class GitHubMutationClient {
     ]);
   }
 
+  async updateIssueComment(commentId: string, body: string): Promise<void> {
+    const { owner, repo } = this.repoOwnerAndName();
+    await this.runGhCommand([
+      "api",
+      `repos/${owner}/${repo}/issues/comments/${commentId}`,
+      "--method",
+      "PATCH",
+      "-f",
+      `body=${body}`,
+    ]);
+  }
+
   async closeIssue(issueNumber: number, comment?: string): Promise<void> {
     const args = [
       "issue",
