@@ -5,18 +5,29 @@
 - Branch: codex/issue-1412
 - Workspace: .
 - Journal: .codex-supervisor/issues/1412/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 895ce344f89239f32df89f9a0ad189ba79dca2d4
+- Current phase: stabilizing
+- Attempt count: 2 (implementation=2, repair=0)
+- Last head SHA: 421253211507d9f018f19fa9fdff9d536f8c4afa
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-04-10T00:52:13.984Z
+- Updated at: 2026-04-10T01:03:39.000Z
 
 ## Latest Codex Summary
-- Reproduced the gap with a focused test: workstation-local path hygiene could block ready promotion without posting the existing deduplicated tracked-PR host-local blocker comment.
-- Fixed the ready-promotion path to reuse `maybeCommentOnTrackedPrHostLocalBlocker(...)` for `workstation_local_path_hygiene`, with concise remediation-first comment text and existing `(head SHA, blocker signature)` dedupe state.
-- Verified with targeted transition/recovery/status tests and `npm run build`.
+Re-verified the existing implementation commit `4212532` (`Post deduped ready-promotion blocker comments`) and prepared the branch for publication. The code change remains scoped to [src/post-turn-pull-request.ts](src/post-turn-pull-request.ts) and [src/post-turn-pull-request.test.ts](src/post-turn-pull-request.test.ts), where tracked draft PRs now post a concise deduplicated top-level comment when `workstation_local_path_hygiene` blocks ready-for-review promotion.
+
+The comment body is still remediation-first, explains that the PR remains draft because promotion is blocked locally, names the gate, summarizes the first-fix offenders, and states that rerunning the supervisor alone will not clear the blocker. Focused verification passed again on the committed checkpoint.
+
+Verification ran clean:
+`npx tsx --test src/post-turn-pull-request.test.ts src/recovery-reconciliation.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts`
+`npm run build`
+
+Summary: Re-verified the deduplicated tracked-PR ready-promotion blocker comment change and prepared the branch for draft PR publication.
+State hint: stabilizing
+Blocked reason: none
+Tests: `npx tsx --test src/post-turn-pull-request.test.ts src/recovery-reconciliation.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `npm run build`
+Next action: Push `codex/issue-1412`, open the draft PR, and leave the manual `npm run verify:paths` smoke test as the remaining validation gap
+Failure signature: none
 
 ## Active Failure Context
 - None recorded.
@@ -26,10 +37,10 @@
 - Hypothesis: The tracked ready-promotion blocker comment gap existed because the workstation-local path hygiene gate returned before the tracked PR host-local comment helper was reused on that path.
 - What changed: Added a focused regression test for deduplicated workstation-local path hygiene comments, extended tracked PR blocker comment rendering for `workstation_local_path_hygiene`, and hooked the existing dedupe helper into the actual ready-promotion path hygiene gate.
 - Current blocker: none.
-- Next exact step: Review the diff, then commit the source and journal changes on `codex/issue-1412`.
+- Next exact step: Push `codex/issue-1412` and open the draft PR for review.
 - Verification gap: Manual PR smoke test against a real tracked draft PR blocked by `npm run verify:paths` is still not exercised in this workspace.
 - Files touched: `src/post-turn-pull-request.ts`, `src/post-turn-pull-request.test.ts`, `.codex-supervisor/issues/1412/issue-journal.md`.
 - Rollback concern: Low; the change is scoped to tracked draft ready-promotion blocker comments and reuses existing dedupe state fields.
-- Last focused command: `npm run build`
+- Last focused commands: `npx tsx --test src/post-turn-pull-request.test.ts src/recovery-reconciliation.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `npm run build`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
