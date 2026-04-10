@@ -11,10 +11,10 @@
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-04-10T01:03:39.000Z
+- Updated at: 2026-04-10T01:05:00.000Z
 
 ## Latest Codex Summary
-Re-verified the existing implementation commit `4212532` (`Post deduped ready-promotion blocker comments`) and prepared the branch for publication. The code change remains scoped to [src/post-turn-pull-request.ts](src/post-turn-pull-request.ts) and [src/post-turn-pull-request.test.ts](src/post-turn-pull-request.test.ts), where tracked draft PRs now post a concise deduplicated top-level comment when `workstation_local_path_hygiene` blocks ready-for-review promotion.
+Re-verified the existing implementation commit `4212532` (`Post deduped ready-promotion blocker comments`), pushed `codex/issue-1412`, and opened draft PR #1413. The code change remains scoped to [src/post-turn-pull-request.ts](src/post-turn-pull-request.ts) and [src/post-turn-pull-request.test.ts](src/post-turn-pull-request.test.ts), where tracked draft PRs now post a concise deduplicated top-level comment when `workstation_local_path_hygiene` blocks ready-for-review promotion.
 
 The comment body is still remediation-first, explains that the PR remains draft because promotion is blocked locally, names the gate, summarizes the first-fix offenders, and states that rerunning the supervisor alone will not clear the blocker. Focused verification passed again on the committed checkpoint.
 
@@ -22,11 +22,11 @@ Verification ran clean:
 `npx tsx --test src/post-turn-pull-request.test.ts src/recovery-reconciliation.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts`
 `npm run build`
 
-Summary: Re-verified the deduplicated tracked-PR ready-promotion blocker comment change and prepared the branch for draft PR publication.
-State hint: stabilizing
+Summary: Re-verified the deduplicated tracked-PR ready-promotion blocker comment change, pushed the branch, and opened draft PR #1413.
+State hint: draft_pr
 Blocked reason: none
 Tests: `npx tsx --test src/post-turn-pull-request.test.ts src/recovery-reconciliation.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `npm run build`
-Next action: Push `codex/issue-1412`, open the draft PR, and leave the manual `npm run verify:paths` smoke test as the remaining validation gap
+Next action: Keep PR #1413 in draft pending manual smoke validation against a real tracked draft PR blocked by `npm run verify:paths`
 Failure signature: none
 
 ## Active Failure Context
@@ -37,7 +37,7 @@ Failure signature: none
 - Hypothesis: The tracked ready-promotion blocker comment gap existed because the workstation-local path hygiene gate returned before the tracked PR host-local comment helper was reused on that path.
 - What changed: Added a focused regression test for deduplicated workstation-local path hygiene comments, extended tracked PR blocker comment rendering for `workstation_local_path_hygiene`, and hooked the existing dedupe helper into the actual ready-promotion path hygiene gate.
 - Current blocker: none.
-- Next exact step: Push `codex/issue-1412` and open the draft PR for review.
+- Next exact step: Run the manual smoke test against PR #1413 or hand off for review if that validation is deferred.
 - Verification gap: Manual PR smoke test against a real tracked draft PR blocked by `npm run verify:paths` is still not exercised in this workspace.
 - Files touched: `src/post-turn-pull-request.ts`, `src/post-turn-pull-request.test.ts`, `.codex-supervisor/issues/1412/issue-journal.md`.
 - Rollback concern: Low; the change is scoped to tracked draft ready-promotion blocker comments and reuses existing dedupe state fields.
