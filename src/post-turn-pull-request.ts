@@ -85,7 +85,10 @@ export interface PullRequestLifecycleSnapshot {
   >;
 }
 
-type HostLocalTrackedPrBlockerGateType = "workspace_preparation" | "local_ci";
+type HostLocalTrackedPrBlockerGateType =
+  | "workspace_preparation"
+  | "local_ci"
+  | "workstation_local_path_hygiene";
 
 const SUPERVISOR_JOURNAL_NORMALIZATION_COMMIT_MESSAGE = "Normalize supervisor-owned issue journals for path hygiene";
 
@@ -126,18 +129,80 @@ function buildTrackedPrHostLocalBlockerComment(args: {
   pr: Pick<GitHubPullRequest, "headRefOid">;
   gateType: HostLocalTrackedPrBlockerGateType;
   blockerSignature: string;
-  failureClass: string;
-  remediationTarget: string;
+  failureClass: string | null;
+  remediationTarget: string | null;
   summary: string;
+  details?: string[] | null;
 }): string {
+  if (args.gateType === "workstation_local_path_hygiene") {
+    return buildTrackedPrReadyPromotionPathHygieneComment(args);
+  }
+
   return [
     `Supervisor host-local ${args.gateType} blocker on tracked PR head \`${args.pr.headRefOid}\`.`,
     "",
     `- gate type: \`${args.gateType}\``,
     `- blocker signature: \`${args.blockerSignature}\``,
-    `- failure class: \`${args.failureClass}\``,
-    `- remediation target: \`${args.remediationTarget}\``,
+    `- failure class: \`${args.failureClass ?? "unknown"}\``,
+    `- remediation target: \`${args.remediationTarget ?? "unknown"}\``,
     `- summary: ${args.summary}`,
+    "",
+    "GitHub checks may still be green because this blocker is host-local to the supervisor workspace.",
+  ].join("\n");
+}
+
+function summarizeWorkstationLocalPathFirstFix(details: string[] | null | undefined): string | null {
+  if (!details || details.length === 0) {
+    return null;
+  }
+
+  const countsByFile = new Map<string, number>();
+  for (const detail of details) {
+    const match = detail.match(/^-?\s*([^:\s][^:]*)\:\d+\s+matched\b/);
+    if (!match) {
+      continue;
+    }
+    const filePath = match[1]?.trim();
+    if (!filePath) {
+      continue;
+    }
+    countsByFile.set(filePath, (countsByFile.get(filePath) ?? 0) + 1);
+  }
+
+  if (countsByFile.size === 0) {
+    return null;
+  }
+
+  const sortedFiles = [...countsByFile.entries()].sort((left, right) => {
+    if (right[1] !== left[1]) {
+      return right[1] - left[1];
+    }
+    return left[0].localeCompare(right[0]);
+  });
+  const visibleFiles = sortedFiles
+    .slice(0, 3)
+    .map(([filePath, count]) => `${filePath} (${count} match${count === 1 ? "" : "es"})`);
+  const remainingCount = sortedFiles.length - visibleFiles.length;
+  const tail = remainingCount > 0 ? `; +${remainingCount} more file${remainingCount === 1 ? "" : "s"}` : "";
+  return `First fix: ${visibleFiles.join("; ")}${tail}.`;
+}
+
+function buildTrackedPrReadyPromotionPathHygieneComment(args: {
+  pr: Pick<GitHubPullRequest, "headRefOid">;
+  blockerSignature: string;
+  summary: string;
+  details?: string[] | null;
+}): string {
+  const firstFix = summarizeWorkstationLocalPathFirstFix(args.details);
+  const conciseSummary = args.summary.replace(/\s+First fix:.*$/i, "").trim();
+  return [
+    `Tracked PR head \`${args.pr.headRefOid}\` is still draft because ready-for-review promotion is blocked locally.`,
+    "",
+    `- gate name: \`workstation_local_path_hygiene\``,
+    `- blocker signature: \`${args.blockerSignature}\``,
+    `- what failed: ${conciseSummary}`,
+    ...(firstFix ? [`- ${firstFix}`] : []),
+    "- rerunning the supervisor alone will not help yet; fix the tracked workspace artifacts first, then rerun promotion.",
     "",
     "GitHub checks may still be green because this blocker is host-local to the supervisor workspace.",
   ].join("\n");
@@ -155,6 +220,7 @@ async function maybeCommentOnTrackedPrHostLocalBlocker(args: {
   failureClass: string | null;
   remediationTarget: string | null;
   summary: string | null;
+  details?: string[] | null;
 }): Promise<IssueRunRecord> {
   if (!args.github.addIssueComment) {
     return args.record;
@@ -181,6 +247,7 @@ async function maybeCommentOnTrackedPrHostLocalBlocker(args: {
         failureClass: args.failureClass,
         remediationTarget: args.remediationTarget,
         summary: args.summary,
+        details: args.details,
       }),
     );
   } catch (error) {
@@ -512,6 +579,20 @@ export async function handlePostTurnPullRequestTransitionsPhase(
       state.issues[String(record.issue_number)] = record;
       await stateStore.save(state);
       await syncJournal(record);
+      record = await maybeCommentOnTrackedPrHostLocalBlocker({
+        github,
+        stateStore,
+        state,
+        record,
+        pr: refreshed.pr,
+        syncJournal,
+        gateType: "workstation_local_path_hygiene",
+        blockerSignature: failureContext?.signature ?? null,
+        failureClass: failureContext?.signature ?? null,
+        remediationTarget: "workspace_contents",
+        summary: failureContext?.summary ?? null,
+        details: failureContext?.details,
+      });
       return {
         record,
         pr: refreshed.pr,
@@ -636,6 +717,7 @@ export async function handlePostTurnPullRequestTransitionsPhase(
         failureClass: workspacePreparationFailureClass(failureContext?.signature),
         remediationTarget: workspacePreparationRemediationTarget(workspacePreparationFailureClass(failureContext?.signature)),
         summary: failureContext?.summary ?? null,
+        details: failureContext?.details,
       });
       return {
         record,
@@ -682,6 +764,7 @@ export async function handlePostTurnPullRequestTransitionsPhase(
         failureClass: localCiGate.latestResult?.failure_class ?? null,
         remediationTarget: localCiGate.latestResult?.remediation_target ?? null,
         summary: failureContext?.summary ?? localCiGate.latestResult?.summary ?? null,
+        details: failureContext?.details,
       });
       return {
         record,
