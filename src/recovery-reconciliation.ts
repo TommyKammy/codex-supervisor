@@ -41,9 +41,9 @@ import {
 } from "./no-pull-request-state";
 import { applyFailureSignature } from "./supervisor/supervisor-failure-helpers";
 import {
-  buildUnsafeNoPrDoneFailureContext,
+  buildUnsafeNoPrFailureContext,
   doneResetPatch,
-  hasUnsafeNoPrDoneRecoveryReason,
+  shouldReconsiderNoPrDoneRecord,
   sanitizeRecoveryReason,
 } from "./recovery-support";
 import { reconcileStaleFailedNoPrRecord } from "./recovery-no-pr-reconciliation";
@@ -645,33 +645,12 @@ export async function reconcileStaleDoneIssueStates(
   const recoveryEvents: RecoveryEvent[] = [];
   const issueStateByNumber = new Map(issues.map((issue) => [issue.number, issue.state ?? null]));
 
-  for (const record of Object.values(state.issues)) {
-    if (record.state !== "done" || !hasUnsafeNoPrDoneRecoveryReason(record)) {
-      continue;
-    }
-
-    let issueState = issueStateByNumber.get(record.issue_number) ?? null;
-    if (!issueStateByNumber.has(record.issue_number)) {
-      try {
-        issueState = (await github.getIssue(record.issue_number)).state ?? null;
-      } catch {
-        issueState = null;
-      }
-      issueStateByNumber.set(record.issue_number, issueState);
-    }
-
-    if (issueState !== "OPEN") {
-      continue;
-    }
-
-    const failureContext = buildUnsafeNoPrDoneFailureContext({
-      issueNumber: record.issue_number,
-      detail: "The stale no-PR done record was downgraded to manual review so the supervisor does not treat the issue as complete.",
-    });
-    const recoveryEvent = buildRecoveryEvent(
-      record.issue_number,
-      `stale_done_manual_review: blocked issue #${record.issue_number} after reconsidering an open no-PR done record with no authoritative completion signal`,
-    );
+  const downgradeToManualReview = (
+    record: IssueRunRecord,
+    failureContext: NonNullable<IssueRunRecord["last_failure_context"]>,
+    reason: string,
+  ): void => {
+    const recoveryEvent = buildRecoveryEvent(record.issue_number, reason);
     const updated = stateStore.touch(
       record,
       applyRecoveryEvent({
@@ -693,6 +672,49 @@ export async function reconcileStaleDoneIssueStates(
     }
     changed = true;
     recoveryEvents.push(recoveryEvent);
+  };
+
+  for (const record of Object.values(state.issues)) {
+    if (record.state !== "done" || !shouldReconsiderNoPrDoneRecord(record)) {
+      continue;
+    }
+
+    let issueState = issueStateByNumber.get(record.issue_number) ?? null;
+    if (!issueStateByNumber.has(record.issue_number)) {
+      try {
+        issueState = (await github.getIssue(record.issue_number)).state ?? null;
+      } catch {
+        const failureContext = buildUnsafeNoPrFailureContext({
+          issueNumber: record.issue_number,
+          localState: "done",
+          githubIssueState: "UNKNOWN",
+          detail: "The stale no-PR done record was downgraded to manual review because GitHub revalidation failed and the supervisor cannot safely preserve a terminal local state.",
+        });
+        downgradeToManualReview(
+          record,
+          failureContext,
+          `stale_done_revalidation_failed_manual_review: blocked issue #${record.issue_number} after GitHub revalidation failed for a no-PR done record with no authoritative completion signal`,
+        );
+        continue;
+      }
+      issueStateByNumber.set(record.issue_number, issueState);
+    }
+
+    if (issueState !== "OPEN") {
+      continue;
+    }
+
+    const failureContext = buildUnsafeNoPrFailureContext({
+      issueNumber: record.issue_number,
+      localState: "done",
+      githubIssueState: "OPEN",
+      detail: "The stale no-PR done record was downgraded to manual review so the supervisor does not treat the issue as complete.",
+    });
+    downgradeToManualReview(
+      record,
+      failureContext,
+      `stale_done_manual_review: blocked issue #${record.issue_number} after reconsidering an open no-PR done record with no authoritative completion signal`,
+    );
   }
 
   if (changed) {
@@ -1222,8 +1244,10 @@ export async function reconcileStaleActiveIssueReservation(args: {
     : null;
 
   const staleNoPrManualReviewContext = shouldMarkAlreadySatisfiedOnMain
-    ? buildUnsafeNoPrDoneFailureContext({
+    ? buildUnsafeNoPrFailureContext({
         issueNumber: record.issue_number,
+        localState: "stabilizing",
+        githubIssueState: "OPEN",
         detail: "Stale stabilizing recovery found no meaningful branch changes, so the supervisor cannot treat the open issue as complete without authoritative completion evidence.",
       })
     : null;

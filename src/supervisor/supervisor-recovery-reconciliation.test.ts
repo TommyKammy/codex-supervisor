@@ -1091,8 +1091,7 @@ test("reconcileStaleDoneIssueStates downgrades stale open no-PR done records to 
     last_failure_signature: null,
     last_blocker_signature: null,
     repeated_failure_signature_count: 0,
-    last_recovery_reason:
-      "already_satisfied_on_main: marked issue #366 done after stale stabilizing recovery found no meaningful branch changes",
+    last_recovery_reason: null,
   });
   const state: SupervisorStateFile = createSupervisorState({
     issues: [record],
@@ -1135,10 +1134,80 @@ test("reconcileStaleDoneIssueStates downgrades stale open no-PR done records to 
   assert.equal(state.issues["366"]?.state, "blocked");
   assert.equal(state.issues["366"]?.blocked_reason, "manual_review");
   assert.match(state.issues["366"]?.last_error ?? "", /locally marked done without authoritative completion evidence/);
+  assert.deepEqual(state.issues["366"]?.last_failure_context?.details ?? [], [
+    "state=done",
+    "tracked_pr=none",
+    "github_issue_state=OPEN",
+    "completion_evidence=missing",
+    "operator_action=confirm whether the issue should be requeued or whether completion landed outside the tracked PR flow",
+  ]);
   assert.equal(recoveryEvents.length, 1);
   assert.equal(
     recoveryEvents[0]?.reason,
     "stale_done_manual_review: blocked issue #366 after reconsidering an open no-PR done record with no authoritative completion signal",
+  );
+});
+
+test("reconcileStaleDoneIssueStates downgrades suspicious no-PR done records when GitHub revalidation fails", async () => {
+  const record = createRecord({
+    issue_number: 366,
+    state: "done",
+    pr_number: null,
+    codex_session_id: null,
+    blocked_reason: null,
+    last_error: null,
+    last_failure_kind: null,
+    last_failure_context: null,
+    last_failure_signature: null,
+    last_blocker_signature: null,
+    repeated_failure_signature_count: 0,
+    last_recovery_reason: null,
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [record],
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:22:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const recoveryEvents = await reconcileStaleDoneIssueStates(
+    {
+      getIssue: async (issueNumber: number) => {
+        assert.equal(issueNumber, 366);
+        throw new Error("GitHub unavailable");
+      },
+    },
+    stateStore,
+    state,
+    [],
+  );
+
+  assert.equal(saveCalls, 1);
+  assert.equal(state.issues["366"]?.state, "blocked");
+  assert.equal(state.issues["366"]?.blocked_reason, "manual_review");
+  assert.match(state.issues["366"]?.last_error ?? "", /GitHub revalidation could not confirm the current issue state/);
+  assert.deepEqual(state.issues["366"]?.last_failure_context?.details ?? [], [
+    "state=done",
+    "tracked_pr=none",
+    "github_issue_state=UNKNOWN",
+    "completion_evidence=missing",
+    "operator_action=confirm whether the issue should be requeued or whether completion landed outside the tracked PR flow",
+  ]);
+  assert.equal(recoveryEvents.length, 1);
+  assert.equal(
+    recoveryEvents[0]?.reason,
+    "stale_done_revalidation_failed_manual_review: blocked issue #366 after GitHub revalidation failed for a no-PR done record with no authoritative completion signal",
   );
 });
 
@@ -2358,10 +2427,17 @@ test("reconcileStaleActiveIssueReservation blocks already-satisfied-on-main stal
   assert.equal(state.issues["366"]?.blocked_reason, "manual_review");
   assert.match(
     state.issues["366"]?.last_error ?? "",
-    /locally marked done without authoritative completion evidence/,
+    /stale stabilizing recovery without authoritative completion evidence/,
   );
   assert.equal(state.issues["366"]?.last_failure_kind, null);
   assert.equal(state.issues["366"]?.last_failure_context?.category, "blocked");
+  assert.deepEqual(state.issues["366"]?.last_failure_context?.details ?? [], [
+    "state=stabilizing",
+    "tracked_pr=none",
+    "github_issue_state=OPEN",
+    "completion_evidence=missing",
+    "operator_action=confirm whether the issue should be requeued or whether completion landed outside the tracked PR flow",
+  ]);
   assert.equal(state.issues["366"]?.last_failure_signature, null);
   assert.equal(state.issues["366"]?.repeated_failure_signature_count, 0);
   assert.equal(state.issues["366"]?.stale_stabilizing_no_pr_recovery_count, 0);

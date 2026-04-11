@@ -15,46 +15,38 @@ type FailedNoPrBranchRecoveryState = "recoverable" | "already_satisfied_on_main"
 
 const FAILED_NO_PR_ALREADY_SATISFIED_SIGNATURE = "failed-no-pr-already-satisfied-on-main";
 const FAILED_NO_PR_MANUAL_REVIEW_SIGNATURE = "failed-no-pr-manual-review-required";
+const UNSAFE_NO_PR_REVALIDATION_SIGNATURE = "unsafe-no-pr-revalidation-failed";
 
-function normalizeRecoveryReason(reason: string | null | undefined): string {
-  return (reason ?? "").toLowerCase();
-}
-
-export function hasUnsafeNoPrDoneRecoveryReason(
-  record: Pick<IssueRunRecord, "pr_number" | "last_recovery_reason">,
+export function shouldReconsiderNoPrDoneRecord(
+  record: Pick<IssueRunRecord, "pr_number">,
 ): boolean {
-  if (record.pr_number !== null) {
-    return false;
-  }
-
-  const reason = normalizeRecoveryReason(record.last_recovery_reason);
-  if (!reason.includes("no meaningful branch changes")) {
-    return false;
-  }
-
-  return (
-    reason.includes("already_satisfied_on_main") ||
-    reason.includes("failed no-pr recovery") ||
-    reason.includes("failed no pr recovery") ||
-    reason.includes("failed no-pr zero-diff") ||
-    reason.includes("failed no pr zero-diff") ||
-    reason.includes("stale stabilizing recovery")
-  );
+  return record.pr_number === null;
 }
 
-export function buildUnsafeNoPrDoneFailureContext(args: {
+export function buildUnsafeNoPrFailureContext(args: {
   issueNumber: number;
+  localState: "done" | "stabilizing";
+  githubIssueState: "OPEN" | "UNKNOWN";
   detail: string;
 }): NonNullable<IssueRunRecord["last_failure_context"]> {
+  const localStateSummary = args.localState === "done"
+    ? `Issue #${args.issueNumber} is locally marked done without authoritative completion evidence`
+    : `Issue #${args.issueNumber} is in stale stabilizing recovery without authoritative completion evidence`;
+  const githubStateSummary = args.githubIssueState === "OPEN"
+    ? "but GitHub still reports the issue as open."
+    : "and GitHub revalidation could not confirm the current issue state.";
+
   return {
     category: "blocked",
-    summary: `Issue #${args.issueNumber} is locally marked done without authoritative completion evidence, but GitHub still reports the issue as open. ${args.detail}`,
-    signature: FAILED_NO_PR_ALREADY_SATISFIED_SIGNATURE,
+    summary: `${localStateSummary}, ${githubStateSummary} ${args.detail}`,
+    signature: args.githubIssueState === "OPEN"
+      ? FAILED_NO_PR_ALREADY_SATISFIED_SIGNATURE
+      : UNSAFE_NO_PR_REVALIDATION_SIGNATURE,
     command: null,
     details: [
-      "state=done",
+      `state=${args.localState}`,
       "tracked_pr=none",
-      "github_issue_state=OPEN",
+      `github_issue_state=${args.githubIssueState}`,
       "completion_evidence=missing",
       "operator_action=confirm whether the issue should be requeued or whether completion landed outside the tracked PR flow",
     ],
