@@ -43,6 +43,7 @@ import {
   maybeBuildReviewWaitChangedEvent,
   type SupervisorEventSink,
 } from "./supervisor/supervisor-events";
+import { buildTrackedPrMismatch } from "./supervisor/tracked-pr-mismatch";
 import { reviewBotDiagnostics } from "./supervisor/supervisor-status-review-bot";
 import { parseIssueMetadata } from "./issue-metadata";
 import { commitAndPushTrackedFiles, getWorkspaceStatus } from "./core/workspace";
@@ -95,6 +96,9 @@ type HostLocalTrackedPrBlockerGateType =
 const SUPERVISOR_JOURNAL_NORMALIZATION_COMMIT_MESSAGE = "Normalize supervisor-owned issue journals for path hygiene";
 const TRACKED_PR_STATUS_COMMENT_MARKER_PREFIX = "codex-supervisor:tracked-pr-status-comment";
 const TRACKED_PR_STATUS_COMMENT_REASON_CODE_DRAFT_REVIEW_PROVIDER_SUPPRESSED = "draft_review_provider_suppressed";
+const TRACKED_PR_STATUS_COMMENT_REASON_CODE_MANUAL_REVIEW = "manual_review";
+const TRACKED_PR_STATUS_COMMENT_REASON_CODE_REQUIRED_CHECK_MISMATCH = "required_check_mismatch";
+const TRACKED_PR_STATUS_COMMENT_REASON_CODE_TRACKED_LIFECYCLE_MISMATCH = "tracked_lifecycle_mismatch";
 
 type TrackedPrStatusCommentKind = "status" | "host-local-blocker";
 
@@ -236,6 +240,148 @@ function buildTrackedPrDraftReviewSuppressedComment(args: {
     "",
     "GitHub checks may still be pending because external review-provider work does not start while the PR remains draft.",
   ].join("\n");
+}
+
+function compactEvidenceLines(details: string[] | null | undefined, limit = 3): string[] {
+  if (!details || details.length === 0) {
+    return [];
+  }
+
+  return details
+    .map((detail) => detail.replace(/\s+/g, " ").trim())
+    .filter((detail) => detail.length > 0)
+    .slice(0, limit);
+}
+
+function buildTrackedPrPersistentStatusComment(args: {
+  pr: Pick<GitHubPullRequest, "headRefOid" | "number">;
+  reasonCode: string;
+  summary: string;
+  evidence: string[];
+  nextAction: string;
+  automaticRetry: "yes" | "no";
+}): string {
+  return [
+    `Tracked PR head \`${args.pr.headRefOid}\` remains stopped near merge.`,
+    "",
+    `- reason code: \`${args.reasonCode}\``,
+    `- summary: ${args.summary}`,
+    ...args.evidence.map((detail) => `- evidence: ${detail}`),
+    `- automatic retry: ${args.automaticRetry}`,
+    `- next action: ${args.nextAction}`,
+  ].join("\n");
+}
+
+function buildRequiredCheckMismatchEvidence(args: {
+  pr: Pick<GitHubPullRequest, "mergeStateStatus" | "mergeable">;
+  checks: PullRequestCheck[];
+}): string[] {
+  const sortedChecks = [...args.checks]
+    .map((check) => `check=${check.name}:${check.bucket}:${check.state}`)
+    .sort();
+
+  return [
+    `merge_state=${args.pr.mergeStateStatus}`,
+    `mergeable=${args.pr.mergeable ?? "unknown"}`,
+    ...sortedChecks,
+  ];
+}
+
+function hasPersistentTrackedPrMergeStageSignal(args: {
+  record: Pick<IssueRunRecord, "merge_readiness_last_evaluated_at" | "provider_success_head_sha" | "provider_success_observed_at">;
+  pr: Pick<GitHubPullRequest, "headRefOid">;
+}): boolean {
+  return Boolean(
+    args.record.provider_success_observed_at &&
+      args.record.merge_readiness_last_evaluated_at &&
+      args.record.provider_success_head_sha === args.pr.headRefOid &&
+      args.record.merge_readiness_last_evaluated_at !== args.record.provider_success_observed_at,
+  );
+}
+
+function derivePersistentTrackedPrStatusComment(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+  failureContext: FailureContext | null;
+  summarizeChecks: (checks: PullRequestCheck[]) => { hasPending: boolean; hasFailing: boolean };
+}): { blockerSignature: string; body: string } | null {
+  if (args.pr.isDraft) {
+    return null;
+  }
+
+  const checkSummary = args.summarizeChecks(args.checks);
+  if (checkSummary.hasPending || checkSummary.hasFailing) {
+    return null;
+  }
+
+  if (args.record.state === "blocked" && args.record.blocked_reason === "manual_review") {
+    const summary =
+      args.failureContext?.summary ?? "Unresolved manual or unconfigured review feedback still requires human attention.";
+    return {
+      blockerSignature: args.failureContext?.signature ?? TRACKED_PR_STATUS_COMMENT_REASON_CODE_MANUAL_REVIEW,
+      body: buildTrackedPrPersistentStatusComment({
+        pr: args.pr,
+        reasonCode: TRACKED_PR_STATUS_COMMENT_REASON_CODE_MANUAL_REVIEW,
+        summary,
+        evidence: compactEvidenceLines(args.failureContext?.details),
+        nextAction:
+          "Resolve the remaining manual review blocker or complete the required manual verification, then rerun the supervisor.",
+        automaticRetry: "no",
+      }),
+    };
+  }
+
+  if (!hasPersistentTrackedPrMergeStageSignal({ record: args.record, pr: args.pr })) {
+    return null;
+  }
+
+  const mismatch = buildTrackedPrMismatch(
+    args.config,
+    args.record,
+    args.pr,
+    args.checks,
+    args.reviewThreads,
+  );
+  if (mismatch) {
+    return {
+      blockerSignature: mismatch.summaryLine,
+      body: buildTrackedPrPersistentStatusComment({
+        pr: args.pr,
+        reasonCode: TRACKED_PR_STATUS_COMMENT_REASON_CODE_TRACKED_LIFECYCLE_MISMATCH,
+        summary: mismatch.summaryLine,
+        evidence: mismatch.detailLines,
+        nextAction: mismatch.guidanceLine.replace(/^recovery_guidance=/, ""),
+        automaticRetry: "no",
+      }),
+    };
+  }
+
+  if (args.pr.mergeStateStatus === "BLOCKED") {
+    const fullEvidence = buildRequiredCheckMismatchEvidence({
+      pr: args.pr,
+      checks: args.checks,
+    });
+    const evidence = fullEvidence.slice(0, 4);
+    return {
+      blockerSignature:
+        `merge-state:${args.pr.mergeStateStatus}:${args.pr.mergeable ?? "unknown"}:${fullEvidence.join("|")}`,
+      body: buildTrackedPrPersistentStatusComment({
+        pr: args.pr,
+        reasonCode: TRACKED_PR_STATUS_COMMENT_REASON_CODE_REQUIRED_CHECK_MISMATCH,
+        summary:
+          "GitHub is not merge-ready even though the tracked PR has no failing or pending checks on the current head.",
+        evidence,
+        nextAction:
+          "Inspect required checks and branch protection for this PR, then rerun the supervisor after GitHub reports the PR as merge-ready.",
+        automaticRetry: "no",
+      }),
+    };
+  }
+
+  return null;
 }
 
 function buildTrackedPrStatusCommentMarker(args: {
@@ -411,6 +557,69 @@ async function maybeCommentOnTrackedPrDraftReviewSuppressed(args: {
   const updatedRecord = args.stateStore.touch(args.record, {
     last_host_local_pr_blocker_comment_head_sha: args.pr.headRefOid,
     last_host_local_pr_blocker_comment_signature: blockerSignature,
+  });
+  args.state.issues[String(updatedRecord.issue_number)] = updatedRecord;
+  await args.stateStore.save(args.state);
+  await args.syncJournal(updatedRecord);
+  return updatedRecord;
+}
+
+async function maybeCommentOnTrackedPrPersistentStatus(args: {
+  github: Partial<Pick<GitHubClient, "addIssueComment" | "getExternalReviewSurface" | "updateIssueComment">>;
+  stateStore: Pick<StateStore, "touch" | "save">;
+  state: SupervisorStateFile;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+  syncJournal: IssueJournalSync;
+  config: SupervisorConfig;
+  failureContext: FailureContext | null;
+  summarizeChecks: (checks: PullRequestCheck[]) => { hasPending: boolean; hasFailing: boolean };
+}): Promise<IssueRunRecord> {
+  if (!args.github.addIssueComment) {
+    return args.record;
+  }
+
+  const comment = derivePersistentTrackedPrStatusComment({
+    config: args.config,
+    record: args.record,
+    pr: args.pr,
+    checks: args.checks,
+    reviewThreads: args.reviewThreads,
+    failureContext: args.failureContext,
+    summarizeChecks: args.summarizeChecks,
+  });
+  if (!comment) {
+    return args.record;
+  }
+
+  if (
+    args.record.last_host_local_pr_blocker_comment_head_sha === args.pr.headRefOid
+    && args.record.last_host_local_pr_blocker_comment_signature === comment.blockerSignature
+  ) {
+    return args.record;
+  }
+
+  try {
+    await publishTrackedPrStatusComment({
+      github: args.github,
+      issueNumber: args.record.issue_number,
+      pr: args.pr,
+      kind: "status",
+      body: comment.body,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(
+      `Failed to publish tracked PR merge-stage status comment for PR #${args.pr.number}: ${truncate(message, 500) ?? "unknown error"}`,
+    );
+    return args.record;
+  }
+
+  const updatedRecord = args.stateStore.touch(args.record, {
+    last_host_local_pr_blocker_comment_head_sha: args.pr.headRefOid,
+    last_host_local_pr_blocker_comment_signature: comment.blockerSignature,
   });
   args.state.issues[String(updatedRecord.issue_number)] = updatedRecord;
   await args.stateStore.save(args.state);
@@ -1074,6 +1283,20 @@ export async function handlePostTurnPullRequestTransitionsPhase(
   });
   state.issues[String(record.issue_number)] = record;
   await stateStore.save(state);
+  await syncJournal(record);
+  record = await maybeCommentOnTrackedPrPersistentStatus({
+    github,
+    stateStore,
+    state,
+    record,
+    pr: postReady.pr,
+    checks: postReady.checks,
+    reviewThreads: postReady.reviewThreads,
+    syncJournal,
+    config,
+    failureContext: effectiveFailureContext,
+    summarizeChecks: args.summarizeChecks,
+  });
   if (
     record.state === "draft_pr"
     && reviewBotDiagnostics(
