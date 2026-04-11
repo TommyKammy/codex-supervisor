@@ -1929,6 +1929,89 @@ test("handlePostTurnPullRequestTransitionsPhase comments when a tracked PR stays
   assert.match(commentBodies[0] ?? "", /<!-- codex-supervisor:tracked-pr-status-comment issue=102 pr=116 kind=status -->/);
 });
 
+test("handlePostTurnPullRequestTransitionsPhase comments when a tracked PR stays blocked on stale configured-bot review state near merge", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["copilot-pull-request-reviewer"],
+  });
+  const issue = createIssue({ title: "Comment on persistent stale configured-bot blockers" });
+  const pr = createPullRequest({
+    title: "Tracked PR stale configured-bot blocker",
+    number: 116,
+    isDraft: false,
+    headRefOid: "head-116",
+    mergeStateStatus: "CLEAN",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        issue_number: 102,
+        state: "blocked",
+        pr_number: pr.number,
+        last_head_sha: pr.headRefOid,
+        blocked_reason: "stale_review_bot",
+      }),
+    },
+  };
+  const commentBodies: string[] = [];
+  const staleBotFailureContext = {
+    ...createFailureContext(
+      "1 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
+    ),
+    signature: "stalled-bot:thread-1",
+    details: ["reviewer=copilot-pull-request-reviewer file=src/review.ts line=42 processed_on_current_head=yes"],
+    url: "https://example.test/review/1",
+  };
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: createNoopStateStore(),
+    github: createDefaultGithub({
+      addIssueComment: async (_prNumber: number, body: string) => {
+        commentBodies.push(body);
+      },
+    }),
+    context: createPostTurnContext({
+      state,
+      record: state.issues["102"]!,
+      issue,
+      pr,
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+    }),
+    derivePullRequestLifecycleSnapshot: (recordForState) =>
+      createLifecycleSnapshot(recordForState, "blocked", {
+        failureContext: staleBotFailureContext,
+      }),
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    blockedReasonFromReviewState: () => "stale_review_bot",
+    summarizeChecks,
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runLocalCiCommand: async () => undefined,
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
+    loadOpenPullRequestSnapshot: async () => ({
+      pr,
+      checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      reviewThreads: [] satisfies ReviewThread[],
+    }),
+  });
+
+  assert.equal(result.record.state, "blocked");
+  assert.equal(result.record.blocked_reason, "stale_review_bot");
+  assert.equal(commentBodies.length, 1);
+  assert.match(commentBodies[0] ?? "", /reason code: `stale_review_bot`/i);
+  assert.match(commentBodies[0] ?? "", /configured bot review thread\(s\) remain unresolved/i);
+  assert.match(commentBodies[0] ?? "", /processed_on_current_head=yes/i);
+  assert.match(commentBodies[0] ?? "", /<!-- codex-supervisor:tracked-pr-status-comment issue=102 pr=116 kind=status -->/);
+});
+
 test("handlePostTurnPullRequestTransitionsPhase comments when merge readiness stays blocked after checks pass", async () => {
   const config = createConfig();
   const issue = createIssue({ title: "Comment on persistent tracked PR merge-readiness mismatches" });
