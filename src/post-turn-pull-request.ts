@@ -272,6 +272,17 @@ function buildTrackedPrPersistentStatusComment(args: {
   ].join("\n");
 }
 
+function buildRequiredCheckMismatchEvidence(args: {
+  pr: Pick<GitHubPullRequest, "mergeStateStatus" | "mergeable">;
+  checks: PullRequestCheck[];
+}): string[] {
+  return [
+    `merge_state=${args.pr.mergeStateStatus}`,
+    `mergeable=${args.pr.mergeable ?? "unknown"}`,
+    ...args.checks.map((check) => `check=${check.name}:${check.bucket}:${check.state}`),
+  ].slice(0, 4);
+}
+
 function derivePersistentTrackedPrStatusComment(args: {
   config: SupervisorConfig;
   record: IssueRunRecord;
@@ -329,18 +340,18 @@ function derivePersistentTrackedPrStatusComment(args: {
   }
 
   if (args.pr.mergeStateStatus === "BLOCKED") {
+    const evidence = buildRequiredCheckMismatchEvidence({
+      pr: args.pr,
+      checks: args.checks,
+    });
     return {
-      blockerSignature: `merge-state:${args.pr.mergeStateStatus}:${args.pr.mergeable ?? "unknown"}`,
+      blockerSignature: `merge-state:${args.pr.mergeStateStatus}:${args.pr.mergeable ?? "unknown"}:${evidence.join("|")}`,
       body: buildTrackedPrPersistentStatusComment({
         pr: args.pr,
         reasonCode: TRACKED_PR_STATUS_COMMENT_REASON_CODE_REQUIRED_CHECK_MISMATCH,
         summary:
           "GitHub is not merge-ready even though the tracked PR has no failing or pending checks on the current head.",
-        evidence: [
-          `merge_state=${args.pr.mergeStateStatus}`,
-          `mergeable=${args.pr.mergeable ?? "unknown"}`,
-          ...args.checks.map((check) => `check=${check.name}:${check.bucket}:${check.state}`),
-        ].slice(0, 4),
+        evidence,
         nextAction:
           "Inspect required checks and branch protection for this PR, then rerun the supervisor after GitHub reports the PR as merge-ready.",
         automaticRetry: "no",
@@ -1250,6 +1261,7 @@ export async function handlePostTurnPullRequestTransitionsPhase(
   });
   state.issues[String(record.issue_number)] = record;
   await stateStore.save(state);
+  await syncJournal(record);
   record = await maybeCommentOnTrackedPrPersistentStatus({
     github,
     stateStore,
