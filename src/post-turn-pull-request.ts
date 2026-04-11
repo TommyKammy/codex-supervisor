@@ -522,6 +522,15 @@ function buildStaleConfiguredBotReplyBody(args: {
   ].join("\n\n");
 }
 
+function staleConfiguredBotReplyThreadId(signature: string | null | undefined): string | null {
+  if (!signature?.startsWith("stalled-bot:")) {
+    return null;
+  }
+
+  const threadId = signature.slice("stalled-bot:".length).trim();
+  return threadId.length > 0 ? threadId : null;
+}
+
 async function maybeReplyOnTrackedPrStaleConfiguredBotReview(args: {
   github: Partial<Pick<GitHubClient, "replyToReviewThread">>;
   stateStore: Pick<StateStore, "touch" | "save">;
@@ -545,28 +554,20 @@ async function maybeReplyOnTrackedPrStaleConfiguredBotReview(args: {
     return args.record;
   }
 
-  const replyThread = configuredBotReviewThreads(args.config, args.reviewThreads)[0];
+  const replyThreadId = staleConfiguredBotReplyThreadId(blockerSignature);
+  const replyThread =
+    replyThreadId == null
+      ? null
+      : configuredBotReviewThreads(args.config, args.reviewThreads).find((thread) => thread.id === replyThreadId) ?? null;
   if (!replyThread) {
     return args.record;
   }
 
-  try {
-    await args.github.replyToReviewThread(
-      replyThread.id,
-      buildStaleConfiguredBotReplyBody({
-        pr: args.pr,
-        thread: replyThread,
-        failureContext: args.failureContext,
-      }),
-    );
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.warn(
-      `Failed to publish stale configured-bot reply for PR #${args.pr.number}: ${truncate(message, 500) ?? "unknown error"}`,
-    );
-    return args.record;
-  }
-
+  const replyBody = buildStaleConfiguredBotReplyBody({
+    pr: args.pr,
+    thread: replyThread,
+    failureContext: args.failureContext,
+  });
   const updatedRecord = args.stateStore.touch(args.record, {
     last_stale_review_bot_reply_head_sha: args.pr.headRefOid,
     last_stale_review_bot_reply_signature: blockerSignature,
@@ -574,6 +575,17 @@ async function maybeReplyOnTrackedPrStaleConfiguredBotReview(args: {
   args.state.issues[String(updatedRecord.issue_number)] = updatedRecord;
   await args.stateStore.save(args.state);
   await args.syncJournal(updatedRecord);
+
+  try {
+    await args.github.replyToReviewThread(replyThread.id, replyBody);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(
+      `Failed to publish stale configured-bot reply for PR #${args.pr.number}: ${truncate(message, 500) ?? "unknown error"}`,
+    );
+    return updatedRecord;
+  }
+
   return updatedRecord;
 }
 
@@ -706,8 +718,23 @@ async function maybeCommentOnTrackedPrPersistentStatus(args: {
   failureContext: FailureContext | null;
   summarizeChecks: (checks: PullRequestCheck[]) => { hasPending: boolean; hasFailing: boolean };
 }): Promise<IssueRunRecord> {
-  if (args.record.state === "blocked" && args.record.blocked_reason === "stale_review_bot") {
-    if (args.config.staleConfiguredBotReviewPolicy === "reply_only") {
+  const comment = derivePersistentTrackedPrStatusComment({
+    config: args.config,
+    record: args.record,
+    pr: args.pr,
+    checks: args.checks,
+    reviewThreads: args.reviewThreads,
+    failureContext: args.failureContext,
+    summarizeChecks: args.summarizeChecks,
+  });
+
+  if (
+    args.record.state === "blocked" &&
+    args.record.blocked_reason === "stale_review_bot" &&
+    args.config.staleConfiguredBotReviewPolicy === "reply_only" &&
+    comment &&
+    args.github.replyToReviewThread
+  ) {
       return maybeReplyOnTrackedPrStaleConfiguredBotReview({
         github: args.github,
         stateStore: args.stateStore,
@@ -719,22 +746,12 @@ async function maybeCommentOnTrackedPrPersistentStatus(args: {
         config: args.config,
         failureContext: args.failureContext,
       });
-    }
   }
 
   if (!args.github.addIssueComment) {
     return args.record;
   }
 
-  const comment = derivePersistentTrackedPrStatusComment({
-    config: args.config,
-    record: args.record,
-    pr: args.pr,
-    checks: args.checks,
-    reviewThreads: args.reviewThreads,
-    failureContext: args.failureContext,
-    summarizeChecks: args.summarizeChecks,
-  });
   if (!comment) {
     const previouslyPublishedCommentOnCurrentHead =
       args.record.last_host_local_pr_blocker_comment_head_sha === args.pr.headRefOid
