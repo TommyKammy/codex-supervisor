@@ -98,7 +98,6 @@ const TRACKED_PR_STATUS_COMMENT_MARKER_PREFIX = "codex-supervisor:tracked-pr-sta
 const TRACKED_PR_STATUS_COMMENT_REASON_CODE_DRAFT_REVIEW_PROVIDER_SUPPRESSED = "draft_review_provider_suppressed";
 const TRACKED_PR_STATUS_COMMENT_REASON_CODE_MANUAL_REVIEW = "manual_review";
 const TRACKED_PR_STATUS_COMMENT_REASON_CODE_REQUIRED_CHECK_MISMATCH = "required_check_mismatch";
-const TRACKED_PR_STATUS_COMMENT_REASON_CODE_MERGEABILITY_MISMATCH = "mergeability_mismatch";
 const TRACKED_PR_STATUS_COMMENT_REASON_CODE_TRACKED_LIFECYCLE_MISMATCH = "tracked_lifecycle_mismatch";
 
 type TrackedPrStatusCommentKind = "status" | "host-local-blocker";
