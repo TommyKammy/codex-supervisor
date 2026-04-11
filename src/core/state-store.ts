@@ -188,6 +188,14 @@ export class StateStore {
         hasOwn(patch, "last_recovery_reason") ? patch.last_recovery_reason ?? null : record.last_recovery_reason ?? null,
       last_recovery_at:
         hasOwn(patch, "last_recovery_at") ? patch.last_recovery_at ?? null : record.last_recovery_at ?? null,
+      issue_definition_fingerprint:
+        hasOwn(patch, "issue_definition_fingerprint")
+          ? patch.issue_definition_fingerprint ?? null
+          : record.issue_definition_fingerprint ?? null,
+      issue_definition_updated_at:
+        hasOwn(patch, "issue_definition_updated_at")
+          ? patch.issue_definition_updated_at ?? null
+          : record.issue_definition_updated_at ?? null,
       last_failure_kind:
         hasOwn(patch, "last_failure_kind") ? patch.last_failure_kind ?? null : record.last_failure_kind ?? null,
       last_failure_context:

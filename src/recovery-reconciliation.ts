@@ -19,6 +19,7 @@ import {
   hasAvailableIssueLabels,
   lintExecutionReadyIssueBody,
 } from "./issue-metadata";
+import { buildIssueDefinitionFingerprint, issueDefinitionFreshnessPatch } from "./issue-definition-freshness";
 import { inspectFileLock } from "./core/lock";
 import { RecoveryEvent } from "./run-once-cycle-prelude";
 import { StateStore } from "./core/state-store";
@@ -242,6 +243,53 @@ function shouldReconsiderBlockedNoPrStaleManualStop(
     localStopObservedAtMs !== null &&
     issueUpdatedAtMs > localStopObservedAtMs
   );
+}
+
+function shouldReconsiderGenericNoPrIssueDefinitionChange(
+  record: Pick<
+    IssueRunRecord,
+    | "state"
+    | "blocked_reason"
+    | "pr_number"
+    | "issue_definition_fingerprint"
+    | "last_failure_context"
+    | "last_recovery_at"
+    | "updated_at"
+  >,
+  issue: Pick<GitHubIssue, "title" | "body" | "labels" | "updatedAt">,
+): boolean {
+  if (record.pr_number !== null) {
+    return false;
+  }
+
+  if (record.state !== "blocked" && record.state !== "failed") {
+    return false;
+  }
+
+  if (record.state === "blocked" && (
+    record.blocked_reason === "requirements"
+    || record.blocked_reason === "clarification"
+    || record.blocked_reason === "permissions"
+    || record.blocked_reason === "secrets"
+  )) {
+    return false;
+  }
+
+  if (!record.issue_definition_fingerprint) {
+    return false;
+  }
+
+  const issueUpdatedAtMs = Date.parse(issue.updatedAt);
+  const localStopObservedAtMs = latestFiniteTimestamp(
+    record.last_failure_context?.updated_at,
+    record.last_recovery_at,
+    record.updated_at,
+  );
+  if (!Number.isFinite(issueUpdatedAtMs) || localStopObservedAtMs === null || issueUpdatedAtMs <= localStopObservedAtMs) {
+    return false;
+  }
+
+  return buildIssueDefinitionFingerprint(issue) !== record.issue_definition_fingerprint;
 }
 
 export function applyRecoveryEvent(
@@ -822,6 +870,31 @@ export async function reconcileRecoverableBlockedIssueStates(
         repeated_failure_signature_count: 0,
         stale_stabilizing_no_pr_recovery_count: 0,
         codex_session_id: null,
+        ...applyRecoveryEvent({}, recoveryEvent),
+      });
+      state.issues[String(record.issue_number)] = updated;
+      changed = true;
+      recoveryEvents.push(recoveryEvent);
+      continue;
+    }
+
+    if (shouldReconsiderGenericNoPrIssueDefinitionChange(record, issue)) {
+      const recoveryEvent = buildRecoveryEvent(
+        record.issue_number,
+        `github_issue_definition_changed: requeued issue #${record.issue_number} after a material GitHub issue definition change invalidated the stale no-PR ${record.state} state`,
+      );
+      const updated = stateStore.touch(record, {
+        state: "queued",
+        blocked_reason: null,
+        last_error: null,
+        last_failure_kind: null,
+        last_failure_context: null,
+        last_blocker_signature: null,
+        last_failure_signature: null,
+        repeated_failure_signature_count: 0,
+        stale_stabilizing_no_pr_recovery_count: 0,
+        codex_session_id: null,
+        ...issueDefinitionFreshnessPatch(issue),
         ...applyRecoveryEvent({}, recoveryEvent),
       });
       state.issues[String(record.issue_number)] = updated;

@@ -1,6 +1,7 @@
 import path from "node:path";
 import { GitHubClient } from "./github";
 import { canProceedWithDegradedContinuationAfterInventoryRefreshFailure } from "./inventory-refresh-state";
+import { issueDefinitionFreshnessPatch } from "./issue-definition-freshness";
 import {
   findBlockingIssue,
   findHighRiskBlockingAmbiguity,
@@ -501,6 +502,7 @@ export async function resolveRunnableIssueContext(
         last_failure_context: failureContext,
         ...applyFailureSignature(record, failureContext),
         blocked_reason: "requirements",
+        ...issueDefinitionFreshnessPatch(issue),
       });
       state.issues[String(blockedRecord.issue_number)] = blockedRecord;
       state.activeIssueNumber = null;
@@ -540,6 +542,7 @@ export async function resolveRunnableIssueContext(
           last_failure_context: failureContext,
           ...applyFailureSignature(record, failureContext),
           blocked_reason: "requirements",
+          ...issueDefinitionFreshnessPatch(issue),
         });
         state.issues[String(blockedRecord.issue_number)] = blockedRecord;
         state.activeIssueNumber = null;
@@ -575,6 +578,7 @@ export async function resolveRunnableIssueContext(
         last_failure_context: failureContext,
         ...applyFailureSignature(record, failureContext),
         blocked_reason: "clarification",
+        ...issueDefinitionFreshnessPatch(issue),
       });
       state.issues[String(blockedRecord.issue_number)] = blockedRecord;
       state.activeIssueNumber = null;
@@ -605,6 +609,7 @@ export async function resolveRunnableIssueContext(
         last_failure_context: failureContext,
         ...applyFailureSignature(record, failureContext),
         blocked_reason: "permissions",
+        ...issueDefinitionFreshnessPatch(issue),
       });
       state.issues[String(blockedRecord.issue_number)] = blockedRecord;
       state.activeIssueNumber = null;
@@ -634,6 +639,7 @@ export async function resolveRunnableIssueContext(
         last_failure_context: failureContext,
         ...applyFailureSignature(record, failureContext),
         blocked_reason: "requirements",
+        ...issueDefinitionFreshnessPatch(issue),
       });
       state.issues[String(blockedRecord.issue_number)] = blockedRecord;
       state.activeIssueNumber = null;

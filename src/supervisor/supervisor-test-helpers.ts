@@ -122,6 +122,8 @@ export function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunR
     last_codex_summary: null,
     last_recovery_reason: null,
     last_recovery_at: null,
+    issue_definition_fingerprint: null,
+    issue_definition_updated_at: null,
     last_error: "Codex completed without updating the issue journal for issue #366.",
     last_failure_kind: null,
     last_failure_context: {

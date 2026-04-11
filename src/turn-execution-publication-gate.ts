@@ -13,6 +13,7 @@ import {
   WorkspaceStatus,
 } from "./core/types";
 import { truncate } from "./core/utils";
+import { issueDefinitionFreshnessPatch } from "./issue-definition-freshness";
 import {
   buildWorkstationLocalPathFailureContext,
   runWorkstationLocalPathGate,
@@ -103,6 +104,7 @@ export async function applyCodexTurnPublicationGate(args: {
         last_failure_context: failureContext,
         ...args.applyFailureSignature(record, failureContext),
         blocked_reason: "verification",
+        ...issueDefinitionFreshnessPatch(args.issue),
       });
       args.state.issues[String(record.issue_number)] = record;
       await args.stateStore.save(args.state);
@@ -142,6 +144,7 @@ export async function applyCodexTurnPublicationGate(args: {
           last_failure_context: failureContext,
           ...args.applyFailureSignature(record, failureContext),
           blocked_reason: "verification",
+          ...issueDefinitionFreshnessPatch(args.issue),
         });
         args.state.issues[String(record.issue_number)] = record;
         await args.stateStore.save(args.state);
@@ -175,6 +178,7 @@ export async function applyCodexTurnPublicationGate(args: {
         last_failure_context: failureContext,
         ...args.applyFailureSignature(record, failureContext),
         blocked_reason: "verification",
+        ...issueDefinitionFreshnessPatch(args.issue),
       });
       args.state.issues[String(record.issue_number)] = record;
       await args.stateStore.save(args.state);
@@ -211,6 +215,7 @@ export async function applyCodexTurnPublicationGate(args: {
         last_failure_context: failureContext,
         ...args.applyFailureSignature(record, failureContext),
         blocked_reason: "verification",
+        ...issueDefinitionFreshnessPatch(args.issue),
       });
       args.state.issues[String(record.issue_number)] = record;
       await args.stateStore.save(args.state);
