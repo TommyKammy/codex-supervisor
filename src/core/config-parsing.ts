@@ -25,11 +25,7 @@ const VALID_TRUST_MODES = new Set<TrustMode>(["trusted_repo_and_authors", "untru
 const VALID_EXECUTION_SAFETY_MODES = new Set<ExecutionSafetyMode>(["unsandboxed_autonomous", "operator_gated"]);
 const VALID_LOCAL_REVIEW_POLICIES = new Set<LocalReviewPolicy>(["advisory", "block_ready", "block_merge"]);
 const VALID_LOCAL_REVIEW_HIGH_SEVERITY_ACTIONS = new Set<LocalReviewHighSeverityAction>(["retry", "blocked"]);
-const VALID_STALE_CONFIGURED_BOT_REVIEW_POLICIES = new Set<StaleConfiguredBotReviewPolicy>([
-  "diagnose_only",
-  "reply_only",
-  "reply_and_resolve",
-]);
+const VALID_STALE_CONFIGURED_BOT_REVIEW_POLICIES = new Set<StaleConfiguredBotReviewPolicy>(["diagnose_only", "reply_only"]);
 const VALID_COPILOT_REVIEW_TIMEOUT_ACTIONS = new Set<CopilotReviewTimeoutAction>(["continue", "block"]);
 const VALID_LOCAL_REVIEW_MINIMUM_SEVERITIES = new Set<LocalReviewReviewerThresholdConfig["minimumSeverity"]>(["low", "medium", "high"]);
 const VALID_RUN_STATES = new Set<RunState>([
@@ -73,6 +69,23 @@ function normalizeStringArray(value: unknown, fieldName: string): string[] {
 
     return entry;
   });
+}
+
+function parseStaleConfiguredBotReviewPolicy(value: unknown): StaleConfiguredBotReviewPolicy {
+  if (typeof value === "undefined") {
+    return "diagnose_only";
+  }
+
+  if (
+    typeof value === "string" &&
+    VALID_STALE_CONFIGURED_BOT_REVIEW_POLICIES.has(value as StaleConfiguredBotReviewPolicy)
+  ) {
+    return value as StaleConfiguredBotReviewPolicy;
+  }
+
+  throw new Error(
+    `Invalid config field: staleConfiguredBotReviewPolicy (unsupported value: ${String(value)}; supported values: diagnose_only, reply_only)`,
+  );
 }
 
 export function normalizeLocalCiCommand(value: unknown): LocalCiCommandConfig | undefined {
@@ -366,13 +379,7 @@ export function parseSupervisorConfigDocument(raw: Record<string, unknown>, reso
       VALID_LOCAL_REVIEW_HIGH_SEVERITY_ACTIONS.has(raw.localReviewHighSeverityAction as LocalReviewHighSeverityAction)
         ? (raw.localReviewHighSeverityAction as LocalReviewHighSeverityAction)
         : "blocked",
-    staleConfiguredBotReviewPolicy:
-      typeof raw.staleConfiguredBotReviewPolicy === "string" &&
-      VALID_STALE_CONFIGURED_BOT_REVIEW_POLICIES.has(
-        raw.staleConfiguredBotReviewPolicy as StaleConfiguredBotReviewPolicy,
-      )
-        ? (raw.staleConfiguredBotReviewPolicy as StaleConfiguredBotReviewPolicy)
-        : "diagnose_only",
+    staleConfiguredBotReviewPolicy: parseStaleConfiguredBotReviewPolicy(raw.staleConfiguredBotReviewPolicy),
     reviewBotLogins: Array.isArray(raw.reviewBotLogins)
       ? raw.reviewBotLogins
           .filter((value): value is string => typeof value === "string" && value.trim() !== "")

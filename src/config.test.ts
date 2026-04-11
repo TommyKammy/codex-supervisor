@@ -841,7 +841,7 @@ test("loadConfig accepts explicit stale configured-bot reply_only policy", async
   assert.equal(config.staleConfiguredBotReviewPolicy, "reply_only");
 });
 
-test("loadConfig accepts explicit stale configured-bot reply_and_resolve policy", async (t) => {
+test("loadConfig rejects unsupported explicit stale configured-bot review policies", async (t) => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
   t.after(async () => {
     await fs.rm(tempDir, { recursive: true, force: true });
@@ -864,8 +864,18 @@ test("loadConfig accepts explicit stale configured-bot reply_and_resolve policy"
     "utf8",
   );
 
-  const config = loadConfig(configPath);
-  assert.equal(config.staleConfiguredBotReviewPolicy, "reply_and_resolve");
+  const summary = loadConfigSummary(configPath);
+  assert.equal(summary.status, "invalid_config");
+  assert.deepEqual(summary.invalidFields, ["staleConfiguredBotReviewPolicy"]);
+  assert.match(
+    summary.error ?? "",
+    /Invalid config field: staleConfiguredBotReviewPolicy \(unsupported value: reply_and_resolve; supported values: diagnose_only, reply_only\)/,
+  );
+
+  assert.throws(
+    () => loadConfig(configPath),
+    /Invalid config field: staleConfiguredBotReviewPolicy \(unsupported value: reply_and_resolve; supported values: diagnose_only, reply_only\)/,
+  );
 });
 
 test("loadConfig accepts an explicit mergeCriticalRecheckSeconds override", async (t) => {
