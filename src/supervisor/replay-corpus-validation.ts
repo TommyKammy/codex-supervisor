@@ -34,6 +34,7 @@ const BLOCKED_REASONS = [
   "verification",
   "review_bot_timeout",
   "copilot_timeout",
+  "stale_review_bot",
   "manual_review",
   "manual_pr_closed",
   "handoff_missing",

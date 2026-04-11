@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { configuredBotReviewThreads, manualReviewThreads } from "./supervisor/supervisor-reporting";
-import { ReviewThread, SupervisorConfig } from "./core/types";
+import { staleConfiguredBotReviewThreads } from "./review-thread-reporting";
+import { GitHubPullRequest, IssueRunRecord, ReviewThread, SupervisorConfig } from "./core/types";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
   return {
@@ -89,4 +90,30 @@ test("configuredBotReviewThreads normalizes configured bot logins before classif
 
   assert.equal(configuredBotReviewThreads(config, [thread]).length, 1);
   assert.equal(manualReviewThreads(config, [thread]).length, 0);
+});
+
+test("staleConfiguredBotReviewThreads requires current-head processing evidence before classifying stale bot blockers", () => {
+  const config = createConfig({
+    reviewBotLogins: ["copilot-pull-request-reviewer"],
+  });
+  const pr: Pick<GitHubPullRequest, "headRefOid"> = { headRefOid: "head123" };
+  const record: Pick<
+    IssueRunRecord,
+    | "processed_review_thread_ids"
+    | "processed_review_thread_fingerprints"
+    | "last_head_sha"
+    | "review_follow_up_head_sha"
+    | "review_follow_up_remaining"
+  > = {
+    processed_review_thread_ids: ["thread-1@head123"],
+    processed_review_thread_fingerprints: ["thread-1@head123#comment-1"],
+    last_head_sha: "head123",
+    review_follow_up_head_sha: null,
+    review_follow_up_remaining: 0,
+  };
+  const processedThread = createReviewThread();
+  const unprocessedThread = createReviewThread({ id: "thread-2" });
+
+  assert.deepEqual(staleConfiguredBotReviewThreads(config, record, pr, [processedThread]), [processedThread]);
+  assert.deepEqual(staleConfiguredBotReviewThreads(config, record, pr, [unprocessedThread]), []);
 });

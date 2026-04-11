@@ -20,6 +20,7 @@ import {
   configuredBotReviewThreads,
   manualReviewThreads,
   pendingBotReviewThreads,
+  staleConfiguredBotReviewThreads,
 } from "./review-thread-reporting";
 import {
   BlockedReason,
@@ -726,12 +727,28 @@ export function blockedReasonFromReviewState(
 ): Exclude<BlockedReason, null> | null {
   const manualThreads = manualReviewThreads(config, reviewThreads);
   const unresolvedBotThreads = effectiveConfiguredBotReviewThreads(config, pr, checks, reviewThreads);
+  const staleBotThreads =
+    manualThreads.length === 0 ? staleConfiguredBotReviewThreads(config, record, pr, unresolvedBotThreads) : [];
+  const checkSummary = summarizeChecks(checks);
   const copilotTimeout = determineCopilotReviewTimeout(config, record, pr);
   if (copilotTimeout.timedOut && copilotTimeout.action === "block") {
     return "review_bot_timeout";
   }
 
-  if (manualThreads.length > 0 || unresolvedBotThreads.length > 0) {
+  if (manualThreads.length > 0) {
+    return "manual_review";
+  }
+
+  if (
+    staleBotThreads.length > 0 &&
+    !checkSummary.hasPending &&
+    !checkSummary.hasFailing &&
+    !mergeConflictDetected(pr)
+  ) {
+    return "stale_review_bot";
+  }
+
+  if (unresolvedBotThreads.length > 0) {
     return "manual_review";
   }
 

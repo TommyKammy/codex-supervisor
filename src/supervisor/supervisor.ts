@@ -638,7 +638,9 @@ export class Supervisor {
             last_failure_kind: null,
             last_tracked_pr_progress_summary: trackedPrRepeatFailureDisposition.progressSummary,
             last_tracked_pr_repeat_failure_decision: trackedPrRepeatFailureDisposition.decision,
-            blocked_reason: "manual_review",
+            blocked_reason:
+              blockedReasonForLifecycleState(this.config, lifecycle.recordForState, pr, checks, reviewThreads) ??
+              "manual_review",
           });
           state.issues[String(record.issue_number)] = record;
           state.activeIssueNumber = null;

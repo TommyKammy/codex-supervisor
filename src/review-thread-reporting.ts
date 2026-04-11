@@ -108,6 +108,35 @@ export function actionableBotReviewThreads(
     : [];
 }
 
+export function staleConfiguredBotReviewThreads(
+  config: SupervisorConfig,
+  record: Pick<
+    IssueRunRecord,
+    | "processed_review_thread_ids"
+    | "processed_review_thread_fingerprints"
+    | "last_head_sha"
+    | "review_follow_up_head_sha"
+    | "review_follow_up_remaining"
+  >,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
+  reviewThreads: ReviewThread[],
+): ReviewThread[] {
+  const configuredThreads = configuredBotReviewThreads(config, reviewThreads);
+  if (configuredThreads.length === 0) {
+    return [];
+  }
+
+  if (pendingBotReviewThreads(config, record, pr, configuredThreads).length > 0) {
+    return [];
+  }
+
+  if (configuredBotReviewFollowUpState(record, pr, configuredThreads) === "eligible") {
+    return [];
+  }
+
+  return configuredThreads;
+}
+
 export function buildReviewFailureContext(reviewThreads: ReviewThread[]): FailureContext | null {
   if (reviewThreads.length === 0) {
     return null;
