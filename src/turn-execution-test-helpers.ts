@@ -122,6 +122,8 @@ export function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunR
     last_host_local_pr_blocker_comment_head_sha: null,
     last_stale_review_bot_reply_signature: null,
     last_stale_review_bot_reply_head_sha: null,
+    stale_review_bot_reply_progress_keys: [],
+    stale_review_bot_resolve_progress_keys: [],
     blocked_reason: null,
     processed_review_thread_ids: [],
     processed_review_thread_fingerprints: [],

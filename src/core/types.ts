@@ -379,6 +379,8 @@ export interface IssueRunRecord {
   last_host_local_pr_blocker_comment_head_sha?: string | null;
   last_stale_review_bot_reply_signature?: string | null;
   last_stale_review_bot_reply_head_sha?: string | null;
+  stale_review_bot_reply_progress_keys?: string[];
+  stale_review_bot_resolve_progress_keys?: string[];
   blocked_reason: BlockedReason;
   processed_review_thread_ids: string[];
   processed_review_thread_fingerprints: string[];

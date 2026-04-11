@@ -148,6 +148,8 @@ export function normalizeIssueRecord(value: IssueRunRecord): IssueRunRecord {
     last_tracked_pr_repeat_failure_decision: value.last_tracked_pr_repeat_failure_decision ?? null,
     last_host_local_pr_blocker_comment_signature: value.last_host_local_pr_blocker_comment_signature ?? null,
     last_host_local_pr_blocker_comment_head_sha: value.last_host_local_pr_blocker_comment_head_sha ?? null,
+    stale_review_bot_reply_progress_keys: value.stale_review_bot_reply_progress_keys ?? [],
+    stale_review_bot_resolve_progress_keys: value.stale_review_bot_resolve_progress_keys ?? [],
     blocked_reason: value.blocked_reason ?? null,
     review_follow_up_head_sha: value.review_follow_up_head_sha ?? null,
     review_follow_up_remaining: value.review_follow_up_remaining ?? 0,
