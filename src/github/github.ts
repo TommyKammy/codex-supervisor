@@ -172,6 +172,10 @@ export class GitHubClient {
     return this.mutations.updateIssueComment(commentDatabaseId, body);
   }
 
+  async replyToReviewThread(threadId: string, body: string): Promise<void> {
+    return this.mutations.replyToReviewThread(threadId, body);
+  }
+
   async closeIssue(issueNumber: number, comment?: string): Promise<void> {
     return this.mutations.closeIssue(issueNumber, comment);
   }

@@ -51,6 +51,7 @@ import {
   derivePostTurnLocalReviewDecision,
   derivePostTurnLocalReviewFailurePatch,
 } from "./post-turn-pull-request-policy";
+import { configuredBotReviewThreads, latestReviewComment } from "./review-thread-reporting";
 
 export interface PostTurnPullRequestContext {
   state: SupervisorStateFile;
@@ -504,6 +505,90 @@ async function publishTrackedPrStatusComment(args: {
   await args.github.addIssueComment(args.pr.number, bodyWithMarker);
 }
 
+function buildStaleConfiguredBotReplyBody(args: {
+  pr: GitHubPullRequest;
+  thread: ReviewThread;
+  failureContext: FailureContext | null;
+}): string {
+  const latestComment = latestReviewComment(args.thread);
+  const location = `${args.thread.path ?? "unknown"}:${args.thread.line ?? "?"}`;
+  const evidence = args.failureContext?.details?.[0] ?? `location=${location} processed_on_current_head=yes`;
+  const sourceLink = latestComment?.url ?? args.failureContext?.url;
+  const sourceLine = sourceLink ? ` Source: ${sourceLink}` : "";
+  return [
+    `The supervisor reprocessed this configured-bot finding on the current head \`${args.pr.headRefOid}\` and classified it as stale.`,
+    `Evidence: ${evidence}.${sourceLine}`,
+    "Leaving thread resolution to a human operator.",
+  ].join("\n\n");
+}
+
+function staleConfiguredBotReplyThreadId(signature: string | null | undefined): string | null {
+  if (!signature?.startsWith("stalled-bot:")) {
+    return null;
+  }
+
+  const threadId = signature.slice("stalled-bot:".length).trim();
+  return threadId.length > 0 ? threadId : null;
+}
+
+async function maybeReplyOnTrackedPrStaleConfiguredBotReview(args: {
+  github: Partial<Pick<GitHubClient, "replyToReviewThread">>;
+  stateStore: Pick<StateStore, "touch" | "save">;
+  state: SupervisorStateFile;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  reviewThreads: ReviewThread[];
+  syncJournal: IssueJournalSync;
+  config: SupervisorConfig;
+  failureContext: FailureContext | null;
+}): Promise<IssueRunRecord> {
+  if (!args.github.replyToReviewThread) {
+    return args.record;
+  }
+
+  const blockerSignature = args.failureContext?.signature ?? TRACKED_PR_STATUS_COMMENT_REASON_CODE_STALE_REVIEW_BOT;
+  if (
+    args.record.last_stale_review_bot_reply_head_sha === args.pr.headRefOid &&
+    args.record.last_stale_review_bot_reply_signature === blockerSignature
+  ) {
+    return args.record;
+  }
+
+  const replyThreadId = staleConfiguredBotReplyThreadId(blockerSignature);
+  const replyThread =
+    replyThreadId == null
+      ? null
+      : configuredBotReviewThreads(args.config, args.reviewThreads).find((thread) => thread.id === replyThreadId) ?? null;
+  if (!replyThread) {
+    return args.record;
+  }
+
+  const replyBody = buildStaleConfiguredBotReplyBody({
+    pr: args.pr,
+    thread: replyThread,
+    failureContext: args.failureContext,
+  });
+
+  try {
+    await args.github.replyToReviewThread(replyThread.id, replyBody);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(
+      `Failed to publish stale configured-bot reply for PR #${args.pr.number}: ${truncate(message, 500) ?? "unknown error"}`,
+    );
+    return args.record;
+  }
+
+  const updatedRecord = args.stateStore.touch(args.record, {
+    last_stale_review_bot_reply_head_sha: args.pr.headRefOid,
+    last_stale_review_bot_reply_signature: blockerSignature,
+  });
+  args.state.issues[String(updatedRecord.issue_number)] = updatedRecord;
+  await args.stateStore.save(args.state);
+  await args.syncJournal(updatedRecord);
+  return updatedRecord;
+}
+
 async function maybeCommentOnTrackedPrHostLocalBlocker(args: {
   github: Partial<Pick<GitHubClient, "addIssueComment" | "getExternalReviewSurface" | "updateIssueComment">>;
   stateStore: Pick<StateStore, "touch" | "save">;
@@ -616,7 +701,12 @@ async function maybeCommentOnTrackedPrDraftReviewSuppressed(args: {
 }
 
 async function maybeCommentOnTrackedPrPersistentStatus(args: {
-  github: Partial<Pick<GitHubClient, "addIssueComment" | "getExternalReviewSurface" | "updateIssueComment">>;
+  github: Partial<
+    Pick<
+      GitHubClient,
+      "addIssueComment" | "getExternalReviewSurface" | "updateIssueComment" | "replyToReviewThread"
+    >
+  >;
   stateStore: Pick<StateStore, "touch" | "save">;
   state: SupervisorStateFile;
   record: IssueRunRecord;
@@ -628,10 +718,6 @@ async function maybeCommentOnTrackedPrPersistentStatus(args: {
   failureContext: FailureContext | null;
   summarizeChecks: (checks: PullRequestCheck[]) => { hasPending: boolean; hasFailing: boolean };
 }): Promise<IssueRunRecord> {
-  if (!args.github.addIssueComment) {
-    return args.record;
-  }
-
   const comment = derivePersistentTrackedPrStatusComment({
     config: args.config,
     record: args.record,
@@ -641,6 +727,38 @@ async function maybeCommentOnTrackedPrPersistentStatus(args: {
     failureContext: args.failureContext,
     summarizeChecks: args.summarizeChecks,
   });
+
+  if (
+    args.record.state === "blocked" &&
+    args.record.blocked_reason === "stale_review_bot" &&
+    args.config.staleConfiguredBotReviewPolicy === "reply_only" &&
+    comment &&
+    args.github.replyToReviewThread
+  ) {
+    const repliedRecord = await maybeReplyOnTrackedPrStaleConfiguredBotReview({
+      github: args.github,
+      stateStore: args.stateStore,
+      state: args.state,
+      record: args.record,
+      pr: args.pr,
+      reviewThreads: args.reviewThreads,
+      syncJournal: args.syncJournal,
+      config: args.config,
+      failureContext: args.failureContext,
+    });
+    const replyHandled =
+      repliedRecord.last_stale_review_bot_reply_head_sha === args.pr.headRefOid &&
+      repliedRecord.last_stale_review_bot_reply_signature ===
+        (args.failureContext?.signature ?? TRACKED_PR_STATUS_COMMENT_REASON_CODE_STALE_REVIEW_BOT);
+    if (replyHandled) {
+      return repliedRecord;
+    }
+  }
+
+  if (!args.github.addIssueComment) {
+    return args.record;
+  }
+
   if (!comment) {
     const previouslyPublishedCommentOnCurrentHead =
       args.record.last_host_local_pr_blocker_comment_head_sha === args.pr.headRefOid
@@ -865,7 +983,12 @@ export interface HandlePostTurnPullRequestTransitionsArgs {
   config: SupervisorConfig;
   stateStore: Pick<StateStore, "touch" | "save">;
   github: Pick<GitHubClient, "getPullRequest" | "getChecks" | "getUnresolvedReviewThreads" | "markPullRequestReady"> &
-    Partial<Pick<GitHubClient, "createIssue" | "addIssueComment">>;
+    Partial<
+      Pick<
+        GitHubClient,
+        "createIssue" | "addIssueComment" | "getExternalReviewSurface" | "updateIssueComment" | "replyToReviewThread"
+      >
+    >;
   context: PostTurnPullRequestContext;
   derivePullRequestLifecycleSnapshot: (
     record: IssueRunRecord,
