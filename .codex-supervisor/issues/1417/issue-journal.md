@@ -5,41 +5,48 @@
 - Branch: codex/issue-1417
 - Workspace: .
 - Journal: .codex-supervisor/issues/1417/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 5 (implementation=2, repair=3)
-- Last head SHA: 410b3a456a4f814ebb797767260146b490f57f29
+- Current phase: repairing_ci
+- Attempt count: 6 (implementation=2, repair=4)
+- Last head SHA: 0353ba62a7f7118bac8c3a6fe9801c92f44ea154
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-04-11T01:15:14.834Z
+- Last failure signature: build (ubuntu-latest):fail
+- Repeated failure signature count: 3
+- Updated at: 2026-04-11T01:19:42.266Z
 
 ## Latest Codex Summary
-Fetched the live PR review threads with the GitHub review-thread workflow, confirmed both unresolved CodeRabbit comments were valid on `e8ffcbf31a885804f885a250b2551b179079730f`, and fixed them in [src/post-turn-pull-request.ts#L275](src/post-turn-pull-request.ts#L275) and [src/post-turn-pull-request.ts#L316](src/post-turn-pull-request.ts#L316). Required-check mismatch signatures now use the full sorted check fingerprint while the sticky comment body stays compact, and lifecycle-mismatch / `mergeStateStatus === "BLOCKED"` comments now require a persisted merge-stage signal derived from the existing `provider_success_*` plus `merge_readiness_last_evaluated_at` fields so first-observation settle windows stay quiet.
+Repaired the failing Ubuntu CI gate for PR #1421 by removing the committed workstation-local skill-cache path from [.codex-supervisor/issues/1417/issue-journal.md](.codex-supervisor/issues/1417/issue-journal.md). The feature code from the prior turn remains unchanged; this turn only publishes the already-redacted journal content that `npm run verify:paths` requires on Linux.
 
-I added focused regressions in [src/post-turn-pull-request.test.ts#L121](src/post-turn-pull-request.test.ts#L121), [src/post-turn-pull-request.test.ts#L1919](src/post-turn-pull-request.test.ts#L1919), [src/post-turn-pull-request.test.ts#L1998](src/post-turn-pull-request.test.ts#L1998), and [src/post-turn-pull-request.test.ts#L2065](src/post-turn-pull-request.test.ts#L2065), then verified with the focused file, the broader issue test set, and `npm run build`. I committed and pushed the fix as `410b3a4`; a fresh `fetch_comments.py` run shows both targeted CodeRabbit threads are now resolved on the new head. CodeRabbit also posted a top-level rate-limit notice on the PR conversation, and `gh pr view` currently reports `mergeStateStatus=UNSTABLE` while checks settle on the pushed head.
+`gh run view 24271286569 --log-failed` showed the exact failure in `npm run verify:paths`, pointing at the tracked journal entry that still mentioned an absolute home-directory skill path on head `0353ba62a7f7118bac8c3a6fe9801c92f44ea154`. Local verification now passes with `npm run verify:paths` and `npm run build`, so the remaining step is pushing the journal-only repair and waiting for refreshed CI on the PR.
 
-Summary: Fixed the live merge-stage sticky-comment review regressions, added regression coverage, pushed `410b3a4`, and confirmed the targeted review threads resolved on the new head.
-State hint: addressing_review
+Summary: Repaired the tracked journal path that broke Ubuntu `verify:paths`; the feature code is unchanged and local verification now passes.
+State hint: repairing_ci
 Blocked reason: none
-Tests: `npx tsx --test src/post-turn-pull-request.test.ts`; `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/doctor.test.ts src/post-turn-pull-request.test.ts src/recovery-reconciliation.test.ts`; `npm run build`
-Next action: Watch PR #1421 on head `410b3a456a4f814ebb797767260146b490f57f29` for refreshed CI after the new push; review threads are resolved, so only follow up if new review feedback or failing checks appear.
-Failure signature: none
+Tests: `npm run verify:paths`; `npm run build`
+Next action: Push the journal-only repair to `codex/issue-1417`, then watch PR #1421 for refreshed CI and only re-enter if a new failure appears.
+Failure signature: build (ubuntu-latest):fail
 
 ## Active Failure Context
-- None recorded.
+- Category: checks
+- Summary: PR #1421 has failing checks.
+- Command or source: gh pr checks
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1421
+- Details:
+  - build (ubuntu-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/24271286569/job/70876664664
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: CodeRabbit's two remaining review complaints were both valid on `e8ffcbf`, and the existing `provider_success_*` plus merge-readiness timestamps were sufficient to express the required persistence gate without adding new record schema.
-- What changed: Reworked `buildRequiredCheckMismatchEvidence(...)` to return a full sorted check fingerprint, used the full fingerprint for `blockerSignature` while keeping the comment body compact, added `hasPersistentTrackedPrMergeStageSignal(...)` to require a persisted merge-stage signal before lifecycle-mismatch or `BLOCKED` merge-stage comments, added focused regression coverage for first-observation suppression plus full-signature republish/reorder behavior, committed the result as `410b3a4`, and pushed `codex/issue-1417`.
+- Hypothesis: The failing Ubuntu CI job is not a code regression; `npm run verify:paths` is rejecting a committed absolute workstation path that remained in the tracked issue journal on head `0353ba62a7f7118bac8c3a6fe9801c92f44ea154`.
+- What changed: The worktree journal already redacted the recorded skill-script path to `python3 <redacted-local-path>`, which removes the forbidden absolute skill-cache reference that broke `verify:paths`; this turn is validating and publishing that journal-only repair.
 - Current blocker: none
-- Next exact step: Watch PR #1421 on head `410b3a456a4f814ebb797767260146b490f57f29` for CI completion and only take further action if new review feedback or failing checks appear.
-- Verification gap: None locally after the focused test file, the broader issue verification set, `npm run build`, and the post-push review-thread refresh; only fresh CI remains.
-- Files touched: `src/post-turn-pull-request.ts`, `src/post-turn-pull-request.test.ts`, `.codex-supervisor/issues/1417/issue-journal.md`
+- Next exact step: Push the journal-only path redaction on `codex/issue-1417`, then watch PR #1421 for the refreshed CI result and only re-enter if a new failure appears.
+- Verification gap: Fresh remote CI is still needed after the journal-only repair is pushed.
+- Files touched: `.codex-supervisor/issues/1417/issue-journal.md`
 - Rollback concern: The implementation reuses `last_host_local_pr_blocker_comment_*` dedupe fields for broader sticky-status comments, so reverting should restore the older draft/host-local-only publication behavior if comment churn appears.
-- Last focused command: `python3 /home/tommy/.codex/plugins/cache/openai-curated/github/fb0a18376bcd9f2604047fbe7459ec5aed70c64b/skills/gh-address-comments/scripts/fetch_comments.py`
+- Last focused command: `gh run view 24271286569 --log-failed`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
+- 2026-04-11: `gh run view 24271286569 --log-failed` shows Ubuntu CI failed in `npm run verify:paths` because `.codex-supervisor/issues/1417/issue-journal.md` still contained an absolute skill-cache script path on the committed PR head.
+- 2026-04-11: Local `npm run verify:paths` passes once the journal uses `python3 <redacted-local-path>` instead of the absolute workstation path.
 - 2026-04-11: After pushing `410b3a4`, `fetch_comments.py` showed `PRRT_kwDORgvdZ856Q64P` outdated/resolved and `PRRT_kwDORgvdZ856Q64R` resolved on the new head; no unresolved review threads remain.
 - 2026-04-11: `gh pr view 1421 --json headRefOid,mergeStateStatus,reviewDecision,url` reports head `410b3a456a4f814ebb797767260146b490f57f29` with `mergeStateStatus=UNSTABLE` while checks re-evaluate.
 - 2026-04-11: `fetch_comments.py` on PR #1421 confirmed `PRRT_kwDORgvdZ856Q64P` and `PRRT_kwDORgvdZ856Q64R` are the only unresolved non-outdated review threads on head `e8ffcbf31a885804f885a250b2551b179079730f`.
