@@ -2264,6 +2264,230 @@ test("handlePostTurnPullRequestTransitionsPhase syncs the journal even when pers
   assert.equal(syncJournalCalls, 1);
 });
 
+test("handlePostTurnPullRequestTransitionsPhase updates the sticky tracked PR status comment when a persistent blocker clears", async () => {
+  const config = createConfig();
+  const issue = createIssue({ title: "Clear tracked PR sticky status comment when progress resumes" });
+  const pr = createPullRequest({
+    title: "Tracked PR blocker clears",
+    number: 116,
+    isDraft: false,
+    headRefOid: "head-116",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        issue_number: 102,
+        state: "waiting_ci",
+        pr_number: pr.number,
+        last_head_sha: pr.headRefOid,
+        provider_success_observed_at: "2026-04-11T00:00:00.000Z",
+        provider_success_head_sha: pr.headRefOid,
+        merge_readiness_last_evaluated_at: "2026-04-11T00:05:00.000Z",
+        last_host_local_pr_blocker_comment_head_sha: pr.headRefOid,
+        last_host_local_pr_blocker_comment_signature:
+          "merge-state:BLOCKED:MERGEABLE:merge_state=BLOCKED|mergeable=MERGEABLE|check=build:pass:SUCCESS",
+      }),
+    },
+  };
+  const updateCalls: Array<{ commentId: number; body: string }> = [];
+  let addCalls = 0;
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: createNoopStateStore(),
+    github: createDefaultGithub({
+      addIssueComment: async () => {
+        addCalls += 1;
+      },
+      getExternalReviewSurface: async () => ({
+        reviews: [],
+        issueComments: [
+          {
+            id: "comment-42",
+            databaseId: 42,
+            body: [
+              "Tracked PR head `head-116` remains stopped near merge.",
+              "",
+              "<!-- codex-supervisor:tracked-pr-status-comment issue=102 pr=116 kind=status -->",
+            ].join("\n"),
+            createdAt: "2026-04-11T00:06:00.000Z",
+            url: "https://example.test/comments/42",
+            viewerDidAuthor: true,
+            author: {
+              login: "codex-supervisor[bot]",
+              typeName: "Bot",
+            },
+          },
+        ],
+      }),
+      updateIssueComment: async (commentId: number, body: string) => {
+        updateCalls.push({ commentId, body });
+      },
+    }),
+    context: createPostTurnContext({
+      state,
+      record: state.issues["102"]!,
+      issue,
+      pr,
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+    }),
+    derivePullRequestLifecycleSnapshot: (recordForState) =>
+      createLifecycleSnapshot(recordForState, "ready_to_merge", {
+        failureContext: null,
+        mergeLatencyVisibilityPatch: {
+          provider_success_observed_at: "2026-04-11T00:00:00.000Z",
+          provider_success_head_sha: pr.headRefOid,
+          merge_readiness_last_evaluated_at: "2026-04-11T00:10:00.000Z",
+        },
+      }),
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    blockedReasonFromReviewState: () => null,
+    summarizeChecks,
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runLocalCiCommand: async () => undefined,
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
+    loadOpenPullRequestSnapshot: async () => ({
+      pr,
+      checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      reviewThreads: [] satisfies ReviewThread[],
+    }),
+  });
+
+  assert.equal(result.record.state, "ready_to_merge");
+  assert.equal(addCalls, 0);
+  assert.equal(updateCalls.length, 1);
+  assert.equal(updateCalls[0]?.commentId, 42);
+  assert.match(updateCalls[0]?.body ?? "", /blocker cleared/i);
+  assert.match(updateCalls[0]?.body ?? "", /ready_to_merge/i);
+  assert.match(updateCalls[0]?.body ?? "", /<!-- codex-supervisor:tracked-pr-status-comment issue=102 pr=116 kind=status -->/);
+});
+
+test("handlePostTurnPullRequestTransitionsPhase does not churn cleared sticky tracked PR status comments on repeated identical cycles", async () => {
+  const config = createConfig();
+  const issue = createIssue({ title: "Do not churn cleared tracked PR sticky status comments" });
+  const pr = createPullRequest({
+    title: "Tracked PR blocker stays cleared",
+    number: 116,
+    isDraft: false,
+    headRefOid: "head-116",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+  const updateCalls: Array<{ commentId: number; body: string }> = [];
+
+  const runScenario = async (state: SupervisorStateFile) =>
+    handlePostTurnPullRequestTransitionsPhase({
+      config,
+      stateStore: createNoopStateStore(),
+      github: createDefaultGithub({
+        addIssueComment: async () => {
+          throw new Error("unexpected addIssueComment call");
+        },
+        getExternalReviewSurface: async () => ({
+          reviews: [],
+          issueComments: [
+            {
+              id: "comment-42",
+              databaseId: 42,
+              body: [
+                "Tracked PR head `head-116` remains stopped near merge.",
+                "",
+                "<!-- codex-supervisor:tracked-pr-status-comment issue=102 pr=116 kind=status -->",
+              ].join("\n"),
+              createdAt: "2026-04-11T00:06:00.000Z",
+              url: "https://example.test/comments/42",
+              viewerDidAuthor: true,
+              author: {
+                login: "codex-supervisor[bot]",
+                typeName: "Bot",
+              },
+            },
+          ],
+        }),
+        updateIssueComment: async (commentId: number, body: string) => {
+          updateCalls.push({ commentId, body });
+        },
+      }),
+      context: createPostTurnContext({
+        state,
+        record: state.issues["102"]!,
+        issue,
+        pr,
+        workspacePath: path.join("/tmp/workspaces", "issue-102"),
+      }),
+      derivePullRequestLifecycleSnapshot: (recordForState) =>
+        createLifecycleSnapshot(recordForState, "ready_to_merge", {
+          failureContext: null,
+          mergeLatencyVisibilityPatch: {
+            provider_success_observed_at: "2026-04-11T00:00:00.000Z",
+            provider_success_head_sha: pr.headRefOid,
+            merge_readiness_last_evaluated_at: "2026-04-11T00:10:00.000Z",
+          },
+        }),
+      applyFailureSignature: (_record, failureContext) => ({
+        last_failure_signature: failureContext?.signature ?? null,
+        repeated_failure_signature_count: failureContext ? 1 : 0,
+      }),
+      blockedReasonFromReviewState: () => null,
+      summarizeChecks,
+      configuredBotReviewThreads: () => [],
+      manualReviewThreads: () => [],
+      mergeConflictDetected: () => false,
+      runLocalCiCommand: async () => undefined,
+      runWorkstationLocalPathGate: async () => ({
+        ok: true,
+        failureContext: null,
+      }),
+      loadOpenPullRequestSnapshot: async () => ({
+        pr,
+        checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+        reviewThreads: [] satisfies ReviewThread[],
+      }),
+    });
+
+  const firstState: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        issue_number: 102,
+        state: "waiting_ci",
+        pr_number: pr.number,
+        last_head_sha: pr.headRefOid,
+        provider_success_observed_at: "2026-04-11T00:00:00.000Z",
+        provider_success_head_sha: pr.headRefOid,
+        merge_readiness_last_evaluated_at: "2026-04-11T00:05:00.000Z",
+        last_host_local_pr_blocker_comment_head_sha: pr.headRefOid,
+        last_host_local_pr_blocker_comment_signature:
+          "merge-state:BLOCKED:MERGEABLE:merge_state=BLOCKED|mergeable=MERGEABLE|check=build:pass:SUCCESS",
+      }),
+    },
+  };
+
+  const firstResult = await runScenario(firstState);
+  const secondState: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": firstResult.record,
+    },
+  };
+  const secondResult = await runScenario(secondState);
+
+  assert.equal(firstResult.record.last_host_local_pr_blocker_comment_signature, "cleared:ready_to_merge");
+  assert.equal(secondResult.record.last_host_local_pr_blocker_comment_signature, "cleared:ready_to_merge");
+  assert.equal(updateCalls.length, 1);
+});
+
 test("handlePostTurnPullRequestTransitionsPhase redacts supervisor-owned cross-issue journals before ready promotion", async (t) => {
   const workspacePath = await createTrackedRepo();
   t.after(async () => {

@@ -99,6 +99,7 @@ const TRACKED_PR_STATUS_COMMENT_REASON_CODE_DRAFT_REVIEW_PROVIDER_SUPPRESSED = "
 const TRACKED_PR_STATUS_COMMENT_REASON_CODE_MANUAL_REVIEW = "manual_review";
 const TRACKED_PR_STATUS_COMMENT_REASON_CODE_REQUIRED_CHECK_MISMATCH = "required_check_mismatch";
 const TRACKED_PR_STATUS_COMMENT_REASON_CODE_TRACKED_LIFECYCLE_MISMATCH = "tracked_lifecycle_mismatch";
+const TRACKED_PR_STATUS_COMMENT_REASON_CODE_CLEARED = "cleared";
 
 type TrackedPrStatusCommentKind = "status" | "host-local-blocker";
 
@@ -269,6 +270,37 @@ function buildTrackedPrPersistentStatusComment(args: {
     ...args.evidence.map((detail) => `- evidence: ${detail}`),
     `- automatic retry: ${args.automaticRetry}`,
     `- next action: ${args.nextAction}`,
+  ].join("\n");
+}
+
+function isTrackedPrActiveStatusState(state: RunState): boolean {
+  switch (state) {
+    case "local_review":
+    case "local_review_fix":
+    case "stabilizing":
+    case "pr_open":
+    case "repairing_ci":
+    case "resolving_conflict":
+    case "waiting_ci":
+    case "addressing_review":
+    case "ready_to_merge":
+      return true;
+    default:
+      return false;
+  }
+}
+
+function buildTrackedPrClearedStatusComment(args: {
+  pr: Pick<GitHubPullRequest, "headRefOid" | "number">;
+  state: RunState;
+}): string {
+  return [
+    `Tracked PR head \`${args.pr.headRefOid}\` blocker cleared; progress has resumed.`,
+    "",
+    `- reason code: \`${TRACKED_PR_STATUS_COMMENT_REASON_CODE_CLEARED}\``,
+    `- current supervisor state: \`${args.state}\``,
+    "- automatic retry: yes",
+    `- next action: continue the tracked PR workflow for PR #${args.pr.number} from the current active state.`,
   ].join("\n");
 }
 
@@ -591,7 +623,45 @@ async function maybeCommentOnTrackedPrPersistentStatus(args: {
     summarizeChecks: args.summarizeChecks,
   });
   if (!comment) {
-    return args.record;
+    const previouslyPublishedCommentOnCurrentHead =
+      args.record.last_host_local_pr_blocker_comment_head_sha === args.pr.headRefOid
+      && args.record.last_host_local_pr_blocker_comment_signature != null;
+    if (!previouslyPublishedCommentOnCurrentHead || !isTrackedPrActiveStatusState(args.record.state)) {
+      return args.record;
+    }
+
+    const blockerSignature = `${TRACKED_PR_STATUS_COMMENT_REASON_CODE_CLEARED}:${args.record.state}`;
+    if (args.record.last_host_local_pr_blocker_comment_signature === blockerSignature) {
+      return args.record;
+    }
+
+    try {
+      await publishTrackedPrStatusComment({
+        github: args.github,
+        issueNumber: args.record.issue_number,
+        pr: args.pr,
+        kind: "status",
+        body: buildTrackedPrClearedStatusComment({
+          pr: args.pr,
+          state: args.record.state,
+        }),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(
+        `Failed to publish cleared tracked PR status comment for PR #${args.pr.number}: ${truncate(message, 500) ?? "unknown error"}`,
+      );
+      return args.record;
+    }
+
+    const updatedRecord = args.stateStore.touch(args.record, {
+      last_host_local_pr_blocker_comment_head_sha: args.pr.headRefOid,
+      last_host_local_pr_blocker_comment_signature: blockerSignature,
+    });
+    args.state.issues[String(updatedRecord.issue_number)] = updatedRecord;
+    await args.stateStore.save(args.state);
+    await args.syncJournal(updatedRecord);
+    return updatedRecord;
   }
 
   if (
