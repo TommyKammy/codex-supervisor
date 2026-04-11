@@ -1310,7 +1310,7 @@ test("shipped CodeRabbit starter profile enables strict current-head provider ga
   assert.equal(raw.configuredBotCurrentHeadSignalTimeoutAction, "block");
 });
 
-test("repo gitignore ignores .DS_Store without hiding host-specific coderabbit config", async (t) => {
+test("repo gitignore ignores workstation noise and live issue journals without hiding intentional files", async (t) => {
   const rootDir = path.resolve(__dirname, "..");
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-gitignore-"));
   t.after(async () => {
@@ -1319,6 +1319,10 @@ test("repo gitignore ignores .DS_Store without hiding host-specific coderabbit c
 
   await fs.copyFile(path.join(rootDir, ".gitignore"), path.join(tempDir, ".gitignore"));
   await fs.writeFile(path.join(tempDir, ".DS_Store"), "", "utf8");
+  await fs.mkdir(path.join(tempDir, ".codex-supervisor", "issues", "1443"), { recursive: true });
+  await fs.mkdir(path.join(tempDir, ".codex-supervisor", "issues", "fixtures"), { recursive: true });
+  await fs.writeFile(path.join(tempDir, ".codex-supervisor", "issues", "1443", "issue-journal.md"), "", "utf8");
+  await fs.writeFile(path.join(tempDir, ".codex-supervisor", "issues", "fixtures", "journal-fixture.md"), "", "utf8");
   await fs.writeFile(path.join(tempDir, "supervisor.config.coderabbit.json"), "{}", "utf8");
 
   execFileSync("git", ["init"], {
@@ -1331,6 +1335,12 @@ test("repo gitignore ignores .DS_Store without hiding host-specific coderabbit c
     encoding: "utf8",
   }).trim();
   assert.equal(ignoredPath, ".DS_Store");
+
+  const ignoredJournalPath = execFileSync("git", ["check-ignore", ".codex-supervisor/issues/1443/issue-journal.md"], {
+    cwd: tempDir,
+    encoding: "utf8",
+  }).trim();
+  assert.equal(ignoredJournalPath, ".codex-supervisor/issues/1443/issue-journal.md");
 
   const coderabbitExitCode = (() => {
     try {
@@ -1345,6 +1355,20 @@ test("repo gitignore ignores .DS_Store without hiding host-specific coderabbit c
     }
   })();
   assert.equal(coderabbitExitCode, 1);
+
+  const fixtureExitCode = (() => {
+    try {
+      execFileSync("git", ["check-ignore", ".codex-supervisor/issues/fixtures/journal-fixture.md"], {
+        cwd: tempDir,
+        stdio: "ignore",
+      });
+      return 0;
+    } catch (error) {
+      const exitCode = (error as NodeJS.ErrnoException & { status?: number }).status;
+      return typeof exitCode === "number" ? exitCode : -1;
+    }
+  })();
+  assert.equal(fixtureExitCode, 1);
 });
 
 test("README stays a lightweight landing page with provider profile guidance and a docs map", async () => {
