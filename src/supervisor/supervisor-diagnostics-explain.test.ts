@@ -434,7 +434,7 @@ Expose stale tracked PR mismatch diagnostics.
   );
   assert.match(
     explanation,
-    /^recovery_guidance=Tracked PR facts are fresher than local state; run the supervisor again to refresh tracked PR state\. Explicit requeue is unavailable for tracked PR work\.$/m,
+    /^recovery_guidance=Tracked PR facts are fresher than local state; run a one-shot supervisor cycle such as `node dist\/index\.js run-once --config \.\.\. --dry-run` to refresh tracked PR state\. Explicit requeue is unavailable for tracked PR work\.$/m,
   );
 });
 

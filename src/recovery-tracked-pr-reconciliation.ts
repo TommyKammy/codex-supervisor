@@ -16,6 +16,14 @@ import {
 import { syncPostMergeAuditArtifactSafely } from "./supervisor/post-merge-audit-artifact";
 import { buildTrackedPrStaleFailureConvergencePatch } from "./recovery-tracked-pr-support";
 import { projectTrackedPrLifecycle } from "./tracked-pr-lifecycle-projection";
+import { inferGitHubWaitStep, inferStateFromPullRequest } from "./pull-request-state";
+import {
+  syncCopilotReviewRequestObservation,
+  syncCopilotReviewTimeoutState,
+  syncReviewWaitWindow,
+} from "./pull-request-state-sync";
+import { blockedReasonForLifecycleState, isOpenPullRequest } from "./supervisor/supervisor-lifecycle";
+import { inferFailureContext } from "./supervisor/supervisor-failure-context";
 
 type RecoveryGitHubLike = Pick<
   import("./github").GitHubClient,
@@ -33,6 +41,18 @@ type ApplyRecoveryEvent = (
   patch: Partial<IssueRunRecord>,
   recoveryEvent: RecoveryEvent,
 ) => Partial<IssueRunRecord>;
+
+const TRACKED_PR_LIFECYCLE_REFRESH_STATES = new Set<IssueRunRecord["state"]>([
+  "draft_pr",
+  "local_review",
+  "pr_open",
+  "repairing_ci",
+  "resolving_conflict",
+  "waiting_ci",
+  "addressing_review",
+  "ready_to_merge",
+  "merging",
+]);
 
 function needsRecordUpdate(record: IssueRunRecord, patch: Partial<IssueRunRecord>): boolean {
   for (const [key, value] of Object.entries(patch)) {
@@ -123,7 +143,10 @@ export function buildTrackedPrResumeRecoveryEvent(
 }
 
 export async function reconcileTrackedMergedButOpenIssuesInModule(
-  github: Pick<RecoveryGitHubLike, "closeIssue" | "getIssue" | "getPullRequestIfExists">,
+  github: Pick<
+    RecoveryGitHubLike,
+    "closeIssue" | "getChecks" | "getIssue" | "getPullRequestIfExists" | "getUnresolvedReviewThreads"
+  >,
   stateStore: StateStoreLike,
   state: SupervisorStateFile,
   config: SupervisorConfig,
@@ -132,6 +155,12 @@ export async function reconcileTrackedMergedButOpenIssuesInModule(
     buildRecoveryEvent: BuildRecoveryEvent;
     applyRecoveryEvent: ApplyRecoveryEvent;
     doneResetPatch: typeof import("./recovery-support").doneResetPatch;
+    inferGitHubWaitStep?: (
+      config: SupervisorConfig,
+      record: IssueRunRecord,
+      pr: NonNullable<Awaited<ReturnType<RecoveryGitHubLike["getPullRequestIfExists"]>>>,
+      checks: PullRequestCheck[],
+    ) => string | null;
   },
   updateReconciliationProgress: ((patch: {
     targetIssueNumber?: number | null;
@@ -203,6 +232,71 @@ export async function reconcileTrackedMergedButOpenIssuesInModule(
     }
 
     if (!trackedPullRequest || (!trackedPullRequest.mergedAt && trackedPullRequest.state !== "MERGED")) {
+      if (!trackedPullRequest || !isOpenPullRequest(trackedPullRequest)) {
+        continue;
+      }
+
+      if (!TRACKED_PR_LIFECYCLE_REFRESH_STATES.has(record.state)) {
+        continue;
+      }
+
+      const checks = await github.getChecks(trackedPullRequest.number);
+      const reviewThreads = await github.getUnresolvedReviewThreads(trackedPullRequest.number);
+      const projection = projectTrackedPrLifecycle({
+        config,
+        record,
+        pr: trackedPullRequest,
+        checks,
+        reviewThreads,
+        inferStateFromPullRequest,
+        blockedReasonForLifecycleState,
+        syncReviewWaitWindow,
+        syncCopilotReviewRequestObservation,
+        syncCopilotReviewTimeoutState,
+      });
+      const inferredWaitStep =
+        projection.nextState === "waiting_ci"
+          ? (helpers.inferGitHubWaitStep?.(config, projection.recordForState, trackedPullRequest, checks) ?? null)
+          : null;
+      await updateReconciliationProgress?.({
+        waitStep: inferredWaitStep,
+      });
+      if (projection.shouldSuppressRecovery) {
+        continue;
+      }
+
+      const nextState = projection.nextState;
+      if (nextState === record.state) {
+        continue;
+      }
+      const failureContext =
+        nextState === "blocked"
+          ? inferFailureContext(config, projection.recordForState, trackedPullRequest, checks, reviewThreads)
+          : null;
+      const patch = buildTrackedPrStaleFailureConvergencePatch({
+        record,
+        pr: trackedPullRequest,
+        nextState,
+        failureContext,
+        blockedReason: projection.nextBlockedReason,
+        reviewWaitPatch: projection.reviewWaitPatch,
+        copilotReviewRequestObservationPatch: projection.copilotReviewRequestObservationPatch,
+        copilotReviewTimeoutPatch: projection.copilotReviewTimeoutPatch,
+      });
+      if (!needsRecordUpdate(record, patch)) {
+        continue;
+      }
+
+      const recoveryEvent = buildTrackedPrResumeRecoveryEvent(
+        record,
+        trackedPullRequest,
+        nextState,
+        helpers.buildRecoveryEvent,
+      );
+      const updated = stateStore.touch(record, helpers.applyRecoveryEvent(patch, recoveryEvent));
+      state.issues[String(record.issue_number)] = updated;
+      saveNeeded = true;
+      recoveryEvents.push(recoveryEvent);
       continue;
     }
 
@@ -404,9 +498,7 @@ export async function reconcileStaleFailedTrackedPrRecord(
   const nextState = projection.nextState;
   await updateReconciliationProgress?.({
     waitStep:
-      nextState === "waiting_ci"
-        ? (deps.inferGitHubWaitStep?.(config, projection.recordForState, pr, checks) ?? null)
-        : null,
+      nextState === "waiting_ci" ? (deps.inferGitHubWaitStep?.(config, projection.recordForState, pr, checks) ?? null) : null,
   });
 
   if (projection.shouldSuppressRecovery) {

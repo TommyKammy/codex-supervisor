@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import { runCommand } from "./core/command";
 import {
+  inferGitHubWaitStep,
   inferStateFromPullRequest,
 } from "./pull-request-state";
 import {
@@ -548,6 +549,7 @@ export async function reconcileTrackedMergedButOpenIssues(
       buildRecoveryEvent,
       applyRecoveryEvent,
       doneResetPatch,
+      inferGitHubWaitStep,
     },
     updateReconciliationProgress,
     options,

@@ -3115,6 +3115,97 @@ test("reconcileTrackedMergedButOpenIssues refreshes open issue snapshots for mer
   ]);
 });
 
+test("reconcileTrackedMergedButOpenIssues reports the inferred wait step when open tracked PR refresh resumes in waiting_ci", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["coderabbitai[bot]"],
+    configuredBotInitialGraceWaitSeconds: 90,
+  });
+  const record = createRecord({
+    issue_number: 366,
+    state: "pr_open",
+    pr_number: 191,
+    last_head_sha: "head-191",
+    branch: "codex/reopen-issue-366",
+    blocked_reason: null,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "366": record,
+    },
+  };
+  const openPr = createTrackedPrRecoveryPullRequest({
+    headRefOid: "head-191",
+    currentHeadCiGreenAt: "2026-03-16T00:00:00Z",
+  });
+
+  let saveCalls = 0;
+  const progressUpdates: Array<{
+    targetIssueNumber?: number | null;
+    targetPrNumber?: number | null;
+    waitStep?: string | null;
+  }> = [];
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-16T00:00:31Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const originalDateNow = Date.now;
+  Date.now = () => Date.parse("2026-03-16T00:00:30Z");
+  try {
+    const recoveryEvents = await reconcileTrackedMergedButOpenIssues(
+      {
+        getPullRequestIfExists: async () => openPr,
+        getIssue: async () => {
+          throw new Error("unexpected getIssue call");
+        },
+        closeIssue: async () => {
+          throw new Error("unexpected closeIssue call");
+        },
+        closePullRequest: async () => {
+          throw new Error("unexpected closePullRequest call");
+        },
+        getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+        getMergedPullRequestsClosingIssue: async () => [],
+        getUnresolvedReviewThreads: async () => [],
+      },
+      stateStore,
+      state,
+      config,
+      [createTrackedPrRecoveryIssue()],
+      async (patch) => {
+        progressUpdates.push(patch);
+      },
+    );
+
+    assert.equal(saveCalls, 1);
+    assert.equal(state.issues["366"]?.state, "waiting_ci");
+    assert.deepEqual(progressUpdates, [
+      {
+        targetIssueNumber: 366,
+        targetPrNumber: 191,
+        waitStep: null,
+      },
+      {
+        waitStep: "configured_bot_initial_grace_wait",
+      },
+    ]);
+    assert.deepEqual(recoveryEvents.map((event) => event.reason), [
+      "tracked_pr_lifecycle_recovered: resumed issue #366 from pr_open to waiting_ci using fresh tracked PR #191 facts at head head-191",
+    ]);
+  } finally {
+    Date.now = originalDateNow;
+  }
+});
+
 test("reconcileTrackedMergedButOpenIssues can restrict convergence to the active merging issue", async () => {
   const activeRecord = createRecord({
     issue_number: 366,
@@ -3427,10 +3518,13 @@ test("reconcileTrackedMergedButOpenIssues resumes from persisted progress in the
     { maxRecords: 1 },
   );
 
-  assert.deepEqual(firstCycleEvents, []);
+  assert.deepEqual(firstCycleEvents.map((event) => event.reason), [
+    "tracked_pr_head_advanced: resumed issue #366 from waiting_ci to ready_to_merge after tracked PR #191 advanced from abcdef1 to open-head-191",
+  ]);
   assert.deepEqual(prLookups, [191]);
   assert.equal(saveCalls, 1);
-  assert.equal(state.issues["366"]?.state, "waiting_ci");
+  assert.equal(state.issues["366"]?.state, "ready_to_merge");
+  assert.equal(state.issues["366"]?.last_head_sha, "open-head-191");
   assert.equal(state.issues["367"]?.state, "merging");
 
   const secondCycleEvents = await reconcileTrackedMergedButOpenIssues(

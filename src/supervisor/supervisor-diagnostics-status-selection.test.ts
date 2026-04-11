@@ -2504,7 +2504,7 @@ test("status surfaces tracked PR mismatches when GitHub is ready but local state
   );
   assert.match(
     report.detailedStatusLines.join("\n"),
-    /^recovery_guidance=Tracked PR facts are fresher than local state; run the supervisor again to refresh tracked PR state\. Explicit requeue is unavailable for tracked PR work\.$/m,
+    /^recovery_guidance=Tracked PR facts are fresher than local state; run a one-shot supervisor cycle such as `node dist\/index\.js run-once --config \.\.\. --dry-run` to refresh tracked PR state\. Explicit requeue is unavailable for tracked PR work\.$/m,
   );
 
   const status = await supervisor.status();
@@ -2514,7 +2514,7 @@ test("status surfaces tracked PR mismatches when GitHub is ready but local state
   );
   assert.match(
     status,
-    /^recovery_guidance=Tracked PR facts are fresher than local state; run the supervisor again to refresh tracked PR state\. Explicit requeue is unavailable for tracked PR work\.$/m,
+    /^recovery_guidance=Tracked PR facts are fresher than local state; run a one-shot supervisor cycle such as `node dist\/index\.js run-once --config \.\.\. --dry-run` to refresh tracked PR state\. Explicit requeue is unavailable for tracked PR work\.$/m,
   );
 });
 
