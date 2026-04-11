@@ -26,6 +26,7 @@ const SUPPORTED_BLOCKED_REASONS: BlockedReason[] = [
   "permissions",
   "secrets",
   "verification",
+  "stale_review_bot",
   "manual_review",
   "manual_pr_closed",
   "handoff_missing",

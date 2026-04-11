@@ -133,7 +133,7 @@ test("runOnce reprocesses a configured bot review thread once after a new PR hea
   const record = persisted.issues[String(issueNumber)];
   assert.equal(record.state, "blocked");
   assert.equal(record.last_head_sha, runHeadSha);
-  assert.equal(record.blocked_reason, "manual_review");
+  assert.equal(record.blocked_reason, "stale_review_bot");
   assert.deepEqual(record.processed_review_thread_ids, ["thread-1@head-a", `thread-1@${runHeadSha}`]);
   assert.deepEqual(record.processed_review_thread_fingerprints, ["thread-1@head-a#comment-1", `thread-1@${runHeadSha}#comment-1`]);
   assert.equal(record.last_failure_context?.category, "manual");

@@ -253,6 +253,64 @@ test("inferStateFromPullRequest still blocks a configured-bot thread on non-jour
   ];
 
   assert.equal(inferStateFromPullRequest(config, record, pr, passingChecks(), reviewThreads), "blocked");
+  assert.equal(blockedReasonFromReviewState(config, record, pr, passingChecks(), reviewThreads), "stale_review_bot");
+});
+
+test("blockedReasonFromReviewState keeps mixed unresolved human and configured-bot review on manual_review", () => {
+  const config = createConfig({
+    reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+    humanReviewBlocksMerge: true,
+  });
+  const record = createRecord({
+    state: "pr_open",
+    last_head_sha: "head123",
+    processed_review_thread_ids: ["thread-1@head123"],
+    processed_review_thread_fingerprints: ["thread-1@head123#comment-1"],
+  });
+  const pr = createPullRequest({
+    configuredBotCurrentHeadObservedAt: "2026-03-13T02:04:00Z",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+  const reviewThreads = [
+    createReviewThread({
+      id: "thread-1",
+      comments: {
+        nodes: [
+          {
+            id: "comment-1",
+            body: "This configured-bot finding is now stale on the current head.",
+            createdAt: "2026-03-13T02:05:00Z",
+            url: "https://example.test/pr/44#discussion_r1",
+            author: {
+              login: "coderabbitai[bot]",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+    createReviewThread({
+      id: "thread-2",
+      comments: {
+        nodes: [
+          {
+            id: "comment-2",
+            body: "A human reviewer still needs to confirm this.",
+            createdAt: "2026-03-13T02:06:00Z",
+            url: "https://example.test/pr/44#discussion_r2",
+            author: {
+              login: "reviewer-human",
+              typeName: "User",
+            },
+          },
+        ],
+      },
+    }),
+  ];
+
+  assert.equal(inferStateFromPullRequest(config, record, pr, passingChecks(), reviewThreads), "blocked");
   assert.equal(blockedReasonFromReviewState(config, record, pr, passingChecks(), reviewThreads), "manual_review");
 });
 
