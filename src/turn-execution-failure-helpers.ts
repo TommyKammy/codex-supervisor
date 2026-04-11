@@ -1,15 +1,18 @@
 import { StateStore } from "./core/state-store";
 import { CodexTurnResult, FailureContext, GitHubIssue, IssueRunRecord, SupervisorStateFile } from "./core/types";
+import { issueDefinitionFreshnessPatch } from "./issue-definition-freshness";
 import { truncate, truncatePreservingStartAndEnd } from "./core/utils";
 import { syncExecutionMetricsRunSummarySafely } from "./supervisor/execution-metrics-run-summary";
 
 type TurnExecutionFailureStateStore = Pick<StateStore, "save" | "touch">;
+type IssueDefinitionAwareIssue = Pick<GitHubIssue, "createdAt">
+  & Partial<Pick<GitHubIssue, "title" | "body" | "labels" | "updatedAt">>;
 
 interface PersistTurnExecutionFailureArgs {
   stateStore: TurnExecutionFailureStateStore;
   state: SupervisorStateFile;
   record: IssueRunRecord;
-  issue: Pick<GitHubIssue, "createdAt">;
+  issue: IssueDefinitionAwareIssue;
   syncJournal: (record: IssueRunRecord) => Promise<void>;
   issueNumber: number;
   error: unknown;
@@ -30,7 +33,7 @@ interface PersistCodexExitFailureArgs {
   stateStore: TurnExecutionFailureStateStore;
   state: SupervisorStateFile;
   record: IssueRunRecord;
-  issue: Pick<GitHubIssue, "createdAt">;
+  issue: IssueDefinitionAwareIssue;
   syncJournal: (record: IssueRunRecord) => Promise<void>;
   issueNumber: number;
   codexResult: Pick<CodexTurnResult, "lastMessage" | "stderr" | "stdout">;
@@ -51,7 +54,7 @@ interface PersistMissingJournalHandoffArgs {
   stateStore: TurnExecutionFailureStateStore;
   state: SupervisorStateFile;
   record: IssueRunRecord;
-  issue: Pick<GitHubIssue, "createdAt">;
+  issue: IssueDefinitionAwareIssue;
   syncJournal: (record: IssueRunRecord) => Promise<void>;
   issueNumber: number;
   buildCodexFailureContext: (
@@ -70,7 +73,7 @@ interface PersistHintedCodexTurnStateArgs {
   stateStore: TurnExecutionFailureStateStore;
   state: SupervisorStateFile;
   record: IssueRunRecord;
-  issue: Pick<GitHubIssue, "createdAt">;
+  issue: IssueDefinitionAwareIssue;
   syncJournal: (record: IssueRunRecord) => Promise<void>;
   issueNumber: number;
   lastMessage: string;
@@ -123,12 +126,34 @@ async function persistTurnFailurePatch(args: {
   stateStore: TurnExecutionFailureStateStore;
   state: SupervisorStateFile;
   record: IssueRunRecord;
-  issue: Pick<GitHubIssue, "createdAt">;
+  issue: IssueDefinitionAwareIssue;
   syncJournal: (record: IssueRunRecord) => Promise<void>;
   patch: Partial<IssueRunRecord>;
   retentionRootPath?: string;
 }): Promise<IssueRunRecord> {
-  const updated = args.stateStore.touch(args.record, args.patch);
+  let issueDefinitionPatch: ReturnType<typeof issueDefinitionFreshnessPatch> | null = null;
+  if (
+    typeof args.issue.title === "string"
+    && typeof args.issue.body === "string"
+    && Array.isArray(args.issue.labels)
+    && typeof args.issue.updatedAt === "string"
+  ) {
+    issueDefinitionPatch = issueDefinitionFreshnessPatch({
+      title: args.issue.title,
+      body: args.issue.body,
+      labels: args.issue.labels,
+      updatedAt: args.issue.updatedAt,
+    });
+  }
+  const effectivePatch = (args.patch.state === "blocked" || args.patch.state === "failed")
+    && ((args.patch.pr_number ?? args.record.pr_number) === null)
+    && issueDefinitionPatch
+    ? {
+        ...args.patch,
+        ...issueDefinitionPatch,
+      }
+    : args.patch;
+  const updated = args.stateStore.touch(args.record, effectivePatch);
   args.state.issues[String(args.record.issue_number)] = updated;
   await args.stateStore.save(args.state);
   await syncExecutionMetricsRunSummarySafely({

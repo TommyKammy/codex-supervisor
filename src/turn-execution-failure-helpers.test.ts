@@ -205,3 +205,58 @@ test("persistCodexTurnExitFailure preserves timeout summaries from bounded Codex
   assert.match(updated.last_failure_context?.details[0] ?? "", /Command timed out after 1800000ms: codex exec/);
   assert.match(updated.last_failure_context?.details[0] ?? "", /\n\.\.\.\n/);
 });
+
+test("persistCodexTurnExitFailure skips issue-definition freshness when labels are unavailable", async () => {
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 105,
+    issues: {
+      "105": createRecord({
+        issue_number: 105,
+        state: "stabilizing",
+        pr_number: null,
+        issue_definition_fingerprint: "existing-fingerprint",
+        issue_definition_updated_at: "2026-03-24T02:59:00Z",
+      }),
+    },
+  };
+
+  const updated = await persistCodexTurnExitFailure({
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: "2026-03-24T03:15:00Z" }),
+      save: async () => undefined,
+    },
+    state,
+    record: state.issues["105"]!,
+    issue: {
+      createdAt: "2026-03-24T03:00:00Z",
+      title: "Partial issue snapshot",
+      body: "## Summary\nPartial payload\n",
+      updatedAt: "2026-03-24T03:10:00Z",
+    },
+    syncJournal: async () => undefined,
+    issueNumber: 105,
+    codexResult: {
+      lastMessage: "Summary: codex failed",
+      stderr: "boom",
+      stdout: "",
+    },
+    classifyFailure: () => "command_error",
+    buildCodexFailureContext: (category, summary, details) => ({
+      category,
+      summary,
+      signature: `${category}:${summary}`,
+      command: null,
+      details,
+      url: null,
+      updated_at: "2026-03-24T03:15:00Z",
+    }),
+    applyFailureSignature: () => ({
+      last_failure_signature: "codex-exit",
+      repeated_failure_signature_count: 1,
+    }),
+  });
+
+  assert.equal(updated.state, "failed");
+  assert.equal(updated.issue_definition_fingerprint, "existing-fingerprint");
+  assert.equal(updated.issue_definition_updated_at, "2026-03-24T02:59:00Z");
+});

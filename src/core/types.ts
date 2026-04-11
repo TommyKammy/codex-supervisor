@@ -364,6 +364,8 @@ export interface IssueRunRecord {
   last_codex_summary: string | null;
   last_recovery_reason: string | null;
   last_recovery_at: string | null;
+  issue_definition_fingerprint?: string | null;
+  issue_definition_updated_at?: string | null;
   last_error: string | null;
   last_failure_kind: FailureKind;
   last_failure_context: FailureContext | null;

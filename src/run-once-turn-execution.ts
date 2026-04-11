@@ -59,6 +59,7 @@ import {
   clearInterruptedTurnMarker,
   writeInterruptedTurnMarker,
 } from "./interrupted-turn-marker";
+import { issueDefinitionFreshnessPatch } from "./issue-definition-freshness";
 import { applyCodexTurnPublicationGate } from "./turn-execution-publication-gate";
 
 export {
@@ -470,6 +471,7 @@ export async function executeCodexTurnPhase(
             last_failure_context: failureContext,
             ...args.applyFailureSignature(record, failureContext),
             blocked_reason: "verification",
+            ...issueDefinitionFreshnessPatch(issue),
           });
           state.issues[String(record.issue_number)] = record;
           await stateStore.save(state);
@@ -512,6 +514,7 @@ export async function executeCodexTurnPhase(
               last_failure_context: failureContext,
               ...args.applyFailureSignature(record, failureContext),
               blocked_reason: "verification",
+              ...issueDefinitionFreshnessPatch(issue),
             });
             state.issues[String(record.issue_number)] = record;
             await stateStore.save(state);
@@ -642,6 +645,9 @@ export async function executeCodexTurnPhase(
             ? args.blockedReasonFromReviewState(postRunSnapshot?.recordForState ?? record, pr, checks, reviewThreads)
             : null,
         state: postRunState,
+        ...((pr === null && (postRunState === "blocked" || postRunState === "failed"))
+          ? issueDefinitionFreshnessPatch(issue)
+          : {}),
       });
       state.issues[String(record.issue_number)] = record;
       await stateStore.save(state);

@@ -136,6 +136,8 @@ export function normalizeIssueRecord(value: IssueRunRecord): IssueRunRecord {
     stale_stabilizing_no_pr_recovery_count: value.stale_stabilizing_no_pr_recovery_count ?? 0,
     last_recovery_reason: value.last_recovery_reason ?? null,
     last_recovery_at: value.last_recovery_at ?? null,
+    issue_definition_fingerprint: value.issue_definition_fingerprint ?? null,
+    issue_definition_updated_at: value.issue_definition_updated_at ?? null,
     last_failure_kind: value.last_failure_kind ?? null,
     last_failure_context: value.last_failure_context ?? null,
     last_runtime_error: value.last_runtime_error ?? null,
