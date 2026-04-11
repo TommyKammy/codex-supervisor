@@ -204,6 +204,10 @@ export class StateStore {
         hasOwn(patch, "last_host_local_pr_blocker_comment_head_sha")
           ? patch.last_host_local_pr_blocker_comment_head_sha ?? null
           : record.last_host_local_pr_blocker_comment_head_sha ?? null,
+      stale_review_bot_reply_progress_keys:
+        patch.stale_review_bot_reply_progress_keys ?? record.stale_review_bot_reply_progress_keys ?? [],
+      stale_review_bot_resolve_progress_keys:
+        patch.stale_review_bot_resolve_progress_keys ?? record.stale_review_bot_resolve_progress_keys ?? [],
       blocked_reason:
         hasOwn(patch, "blocked_reason") ? patch.blocked_reason ?? null : record.blocked_reason ?? null,
       updated_at: nowIso(),

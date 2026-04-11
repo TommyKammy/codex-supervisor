@@ -30,7 +30,7 @@ export type TrustMode = "trusted_repo_and_authors" | "untrusted_or_mixed";
 export type ExecutionSafetyMode = "unsandboxed_autonomous" | "operator_gated";
 export type LocalReviewPolicy = "advisory" | "block_ready" | "block_merge";
 export type LocalReviewHighSeverityAction = "retry" | "blocked";
-export type StaleConfiguredBotReviewPolicy = "diagnose_only" | "reply_only";
+export type StaleConfiguredBotReviewPolicy = "diagnose_only" | "reply_only" | "reply_and_resolve";
 export type CopilotReviewState = "not_requested" | "requested" | "arrived";
 export type PullRequestHydrationProvenance = "fresh" | "cached";
 export type CopilotReviewTimeoutAction = "continue" | "block";
@@ -379,6 +379,8 @@ export interface IssueRunRecord {
   last_host_local_pr_blocker_comment_head_sha?: string | null;
   last_stale_review_bot_reply_signature?: string | null;
   last_stale_review_bot_reply_head_sha?: string | null;
+  stale_review_bot_reply_progress_keys?: string[];
+  stale_review_bot_resolve_progress_keys?: string[];
   blocked_reason: BlockedReason;
   processed_review_thread_ids: string[];
   processed_review_thread_fingerprints: string[];
