@@ -3,4 +3,5 @@ dist/
 .DS_Store
 .local/
 .codex-supervisor/issue-journal.md
+.codex-supervisor/issues/*/issue-journal.md
 supervisor.config.json
