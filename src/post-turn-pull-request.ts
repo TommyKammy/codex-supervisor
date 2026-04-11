@@ -43,6 +43,7 @@ import {
   maybeBuildReviewWaitChangedEvent,
   type SupervisorEventSink,
 } from "./supervisor/supervisor-events";
+import { reviewBotDiagnostics } from "./supervisor/supervisor-status-review-bot";
 import { parseIssueMetadata } from "./issue-metadata";
 import { commitAndPushTrackedFiles, getWorkspaceStatus } from "./core/workspace";
 import {
@@ -93,6 +94,9 @@ type HostLocalTrackedPrBlockerGateType =
 
 const SUPERVISOR_JOURNAL_NORMALIZATION_COMMIT_MESSAGE = "Normalize supervisor-owned issue journals for path hygiene";
 const TRACKED_PR_STATUS_COMMENT_MARKER_PREFIX = "codex-supervisor:tracked-pr-status-comment";
+const TRACKED_PR_STATUS_COMMENT_REASON_CODE_DRAFT_REVIEW_PROVIDER_SUPPRESSED = "draft_review_provider_suppressed";
+
+type TrackedPrStatusCommentKind = "status" | "host-local-blocker";
 
 function workspacePreparationFailureClass(
   signature: string | null | undefined,
@@ -141,13 +145,16 @@ function buildTrackedPrHostLocalBlockerComment(args: {
   }
 
   return [
-    `Supervisor host-local ${args.gateType} blocker on tracked PR head \`${args.pr.headRefOid}\`.`,
+    `Tracked PR head \`${args.pr.headRefOid}\` is still draft because ready-for-review promotion is blocked locally.`,
     "",
+    `- reason code: \`${trackedPrReadyPromotionBlockedReasonCode(args.gateType)}\``,
     `- gate type: \`${args.gateType}\``,
     `- blocker signature: \`${args.blockerSignature}\``,
     `- failure class: \`${args.failureClass ?? "unknown"}\``,
     `- remediation target: \`${args.remediationTarget ?? "unknown"}\``,
     `- summary: ${args.summary}`,
+    "- automatic retry: no",
+    "- next action: fix the tracked workspace blocker, then rerun the supervisor to retry ready-for-review promotion.",
     "",
     "GitHub checks may still be green because this blocker is host-local to the supervisor workspace.",
   ].join("\n");
@@ -200,31 +207,52 @@ function buildTrackedPrReadyPromotionPathHygieneComment(args: {
   return [
     `Tracked PR head \`${args.pr.headRefOid}\` is still draft because ready-for-review promotion is blocked locally.`,
     "",
+    `- reason code: \`${trackedPrReadyPromotionBlockedReasonCode("workstation_local_path_hygiene")}\``,
     `- gate name: \`workstation_local_path_hygiene\``,
     `- blocker signature: \`${args.blockerSignature}\``,
     `- what failed: ${conciseSummary}`,
     ...(firstFix ? [`- ${firstFix}`] : []),
+    "- automatic retry: no",
     "- rerunning the supervisor alone will not help yet; fix the tracked workspace artifacts first, then rerun promotion.",
     "",
     "GitHub checks may still be green because this blocker is host-local to the supervisor workspace.",
   ].join("\n");
 }
 
+function trackedPrReadyPromotionBlockedReasonCode(gateType: HostLocalTrackedPrBlockerGateType): string {
+  return `ready_promotion_blocked_${gateType}`;
+}
+
+function buildTrackedPrDraftReviewSuppressedComment(args: {
+  pr: Pick<GitHubPullRequest, "headRefOid" | "number">;
+}): string {
+  return [
+    `Tracked PR head \`${args.pr.headRefOid}\` is still draft because provider review is intentionally suppressed.`,
+    "",
+    `- reason code: \`${TRACKED_PR_STATUS_COMMENT_REASON_CODE_DRAFT_REVIEW_PROVIDER_SUPPRESSED}\``,
+    "- what is happening: configured provider review stays suppressed until this PR is ready for review.",
+    "- automatic retry: yes",
+    `- next action: keep the tracked workspace moving toward ready-for-review promotion for PR #${args.pr.number}; the supervisor will retry automatically on later cycles.`,
+    "",
+    "GitHub checks may still be pending because external review-provider work does not start while the PR remains draft.",
+  ].join("\n");
+}
+
 function buildTrackedPrStatusCommentMarker(args: {
   issueNumber: number;
   prNumber: number;
-  kind: "host-local-blocker";
+  kind: TrackedPrStatusCommentKind;
 }): string {
   return `<!-- ${TRACKED_PR_STATUS_COMMENT_MARKER_PREFIX} issue=${args.issueNumber} pr=${args.prNumber} kind=${args.kind} -->`;
 }
 
 function findOwnedTrackedPrStatusComment(
   issueComments: IssueComment[],
-  marker: string,
+  markers: string[],
 ): IssueComment | null {
   const matchingComments = issueComments.filter(
     (comment) =>
-      comment.body.includes(marker) &&
+      markers.some((marker) => comment.body.includes(marker)) &&
       comment.viewerDidAuthor === true &&
       typeof comment.databaseId === "number",
   );
@@ -240,7 +268,7 @@ async function publishTrackedPrStatusComment(args: {
   github: Partial<Pick<GitHubClient, "addIssueComment" | "getExternalReviewSurface" | "updateIssueComment">>;
   issueNumber: number;
   pr: GitHubPullRequest;
-  kind: "host-local-blocker";
+  kind: TrackedPrStatusCommentKind;
   body: string;
 }): Promise<void> {
   if (!args.github.addIssueComment) {
@@ -253,6 +281,14 @@ async function publishTrackedPrStatusComment(args: {
     kind: args.kind,
   });
   const bodyWithMarker = `${args.body}\n\n${marker}`;
+  const editableMarkers = [
+    marker,
+    buildTrackedPrStatusCommentMarker({
+      issueNumber: args.issueNumber,
+      prNumber: args.pr.number,
+      kind: args.kind === "status" ? "host-local-blocker" : "status",
+    }),
+  ];
 
   if (args.github.getExternalReviewSurface && args.github.updateIssueComment) {
     const surface = await args.github.getExternalReviewSurface(args.pr.number, {
@@ -260,7 +296,7 @@ async function publishTrackedPrStatusComment(args: {
       headSha: args.pr.headRefOid,
       reviewSurfaceVersion: args.pr.updatedAt,
     });
-    const existingComment = findOwnedTrackedPrStatusComment(surface.issueComments, marker);
+    const existingComment = findOwnedTrackedPrStatusComment(surface.issueComments, editableMarkers);
     const existingCommentDatabaseId = existingComment?.databaseId;
     if (typeof existingCommentDatabaseId === "number") {
       await args.github.updateIssueComment(existingCommentDatabaseId, bodyWithMarker);
@@ -305,7 +341,7 @@ async function maybeCommentOnTrackedPrHostLocalBlocker(args: {
       github: args.github,
       issueNumber: args.record.issue_number,
       pr: args.pr,
-      kind: "host-local-blocker",
+      kind: "status",
       body: buildTrackedPrHostLocalBlockerComment({
         pr: args.pr,
         gateType: args.gateType,
@@ -327,6 +363,54 @@ async function maybeCommentOnTrackedPrHostLocalBlocker(args: {
   const updatedRecord = args.stateStore.touch(args.record, {
     last_host_local_pr_blocker_comment_head_sha: args.pr.headRefOid,
     last_host_local_pr_blocker_comment_signature: args.blockerSignature,
+  });
+  args.state.issues[String(updatedRecord.issue_number)] = updatedRecord;
+  await args.stateStore.save(args.state);
+  await args.syncJournal(updatedRecord);
+  return updatedRecord;
+}
+
+async function maybeCommentOnTrackedPrDraftReviewSuppressed(args: {
+  github: Partial<Pick<GitHubClient, "addIssueComment" | "getExternalReviewSurface" | "updateIssueComment">>;
+  stateStore: Pick<StateStore, "touch" | "save">;
+  state: SupervisorStateFile;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  syncJournal: IssueJournalSync;
+}): Promise<IssueRunRecord> {
+  if (!args.github.addIssueComment) {
+    return args.record;
+  }
+
+  const blockerSignature = TRACKED_PR_STATUS_COMMENT_REASON_CODE_DRAFT_REVIEW_PROVIDER_SUPPRESSED;
+  if (
+    args.record.last_host_local_pr_blocker_comment_head_sha === args.pr.headRefOid
+    && args.record.last_host_local_pr_blocker_comment_signature === blockerSignature
+  ) {
+    return args.record;
+  }
+
+  try {
+    await publishTrackedPrStatusComment({
+      github: args.github,
+      issueNumber: args.record.issue_number,
+      pr: args.pr,
+      kind: "status",
+      body: buildTrackedPrDraftReviewSuppressedComment({
+        pr: args.pr,
+      }),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(
+      `Failed to publish tracked PR draft suppression status comment for PR #${args.pr.number}: ${truncate(message, 500) ?? "unknown error"}`,
+    );
+    return args.record;
+  }
+
+  const updatedRecord = args.stateStore.touch(args.record, {
+    last_host_local_pr_blocker_comment_head_sha: args.pr.headRefOid,
+    last_host_local_pr_blocker_comment_signature: blockerSignature,
   });
   args.state.issues[String(updatedRecord.issue_number)] = updatedRecord;
   await args.stateStore.save(args.state);
@@ -990,6 +1074,25 @@ export async function handlePostTurnPullRequestTransitionsPhase(
   });
   state.issues[String(record.issue_number)] = record;
   await stateStore.save(state);
+  if (
+    record.state === "draft_pr"
+    && reviewBotDiagnostics(
+      config,
+      record,
+      postReady.pr,
+      postReady.reviewThreads,
+      args.configuredBotReviewThreads,
+    ).status === "review_not_expected_while_draft"
+  ) {
+    record = await maybeCommentOnTrackedPrDraftReviewSuppressed({
+      github,
+      stateStore,
+      state,
+      record,
+      pr: postReady.pr,
+      syncJournal,
+    });
+  }
   emitSupervisorEvent(args.emitEvent, maybeBuildReviewWaitChangedEvent(args.context.record, record, postReady.pr.number));
 
   return {

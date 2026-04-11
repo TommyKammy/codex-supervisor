@@ -966,7 +966,7 @@ test("handlePostTurnPullRequestTransitionsPhase comments once when workspace pre
   assert.equal(result.record.state, "blocked");
   assert.equal(comments.length, 1);
   assert.equal(comments[0]?.prNumber, 116);
-  assert.match(comments[0]?.body ?? "", /host-local workspace_preparation blocker/i);
+  assert.match(comments[0]?.body ?? "", /still draft because ready-for-review promotion is blocked locally/i);
   assert.match(comments[0]?.body ?? "", /head `head-116`/);
   assert.match(comments[0]?.body ?? "", /failure class: `workspace_toolchain_missing`/);
   assert.match(comments[0]?.body ?? "", /remediation target: `workspace_environment`/);
@@ -1210,7 +1210,7 @@ test("handlePostTurnPullRequestTransitionsPhase updates the owned tracked PR hos
             body: [
               "Supervisor host-local workspace_preparation blocker on tracked PR head `old-head`.",
               "",
-              "<!-- codex-supervisor:tracked-pr-status-comment issue=102 pr=116 kind=host-local-blocker -->",
+              "<!-- codex-supervisor:tracked-pr-status-comment issue=102 pr=116 kind=status -->",
             ].join("\n"),
             createdAt: "2026-03-16T01:00:00Z",
             url: "https://example.test/comments/42",
@@ -1268,7 +1268,7 @@ test("handlePostTurnPullRequestTransitionsPhase updates the owned tracked PR hos
   assert.equal(updateCalls[0]?.commentId, 42);
   assert.match(
     updateCalls[0]?.body ?? "",
-    /<!-- codex-supervisor:tracked-pr-status-comment issue=102 pr=116 kind=host-local-blocker -->/,
+    /<!-- codex-supervisor:tracked-pr-status-comment issue=102 pr=116 kind=status -->/,
   );
   assert.match(updateCalls[0]?.body ?? "", /head `head-116`/);
   assert.equal(result.record.last_host_local_pr_blocker_comment_head_sha, draftPr.headRefOid);
@@ -1308,7 +1308,7 @@ test("handlePostTurnPullRequestTransitionsPhase creates a fresh tracked PR block
             body: [
               "Copied marker from a different participant.",
               "",
-              "<!-- codex-supervisor:tracked-pr-status-comment issue=102 pr=116 kind=host-local-blocker -->",
+              "<!-- codex-supervisor:tracked-pr-status-comment issue=102 pr=116 kind=status -->",
             ].join("\n"),
             createdAt: "2026-03-16T01:00:00Z",
             url: "https://example.test/comments/99",
@@ -1366,7 +1366,7 @@ test("handlePostTurnPullRequestTransitionsPhase creates a fresh tracked PR block
   assert.equal(addCalls[0]?.prNumber, draftPr.number);
   assert.match(
     addCalls[0]?.body ?? "",
-    /<!-- codex-supervisor:tracked-pr-status-comment issue=102 pr=116 kind=host-local-blocker -->/,
+    /<!-- codex-supervisor:tracked-pr-status-comment issue=102 pr=116 kind=status -->/,
   );
   assert.match(addCalls[0]?.body ?? "", /head `head-116`/);
 });
@@ -1620,6 +1620,216 @@ test("handlePostTurnPullRequestTransitionsPhase comments once when workstation-l
   const dedupedResult = await runScenario(dedupedState);
   assert.equal(dedupedResult.record.state, "blocked");
   assert.equal(commentBodies.length, 1);
+});
+
+test("handlePostTurnPullRequestTransitionsPhase comments once when tracked draft PR review is intentionally suppressed", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+  });
+  const issue = createIssue({ title: "Comment when draft suppresses provider review" });
+  const draftPr = createPullRequest({
+    title: "Tracked PR awaiting ready-for-review",
+    isDraft: true,
+    configuredBotDraftSkipAt: "2026-03-16T00:10:00Z",
+    currentHeadCiGreenAt: "2026-03-16T00:08:00Z",
+  });
+  const commentBodies: string[] = [];
+
+  const createState = (recordOverrides: Partial<IssueRunRecord> = {}): SupervisorStateFile => ({
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "draft_pr",
+        pr_number: draftPr.number,
+        last_head_sha: draftPr.headRefOid,
+        ...recordOverrides,
+      }),
+    },
+  });
+
+  const runScenario = async (state: SupervisorStateFile) =>
+    handlePostTurnPullRequestTransitionsPhase({
+      config,
+      stateStore: {
+        touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+        save: async () => undefined,
+      },
+      github: {
+        getPullRequest: async () => {
+          throw new Error("unexpected getPullRequest call");
+        },
+        getChecks: async () => {
+          throw new Error("unexpected getChecks call");
+        },
+        getUnresolvedReviewThreads: async () => {
+          throw new Error("unexpected getUnresolvedReviewThreads call");
+        },
+        markPullRequestReady: async () => {
+          throw new Error("unexpected markPullRequestReady call");
+        },
+        addIssueComment: async (_prNumber: number, body: string) => {
+          commentBodies.push(body);
+        },
+      },
+      context: {
+        state,
+        record: state.issues["102"]!,
+        issue,
+        workspacePath: path.join("/tmp/workspaces", "issue-102"),
+        syncJournal: async () => undefined,
+        memoryArtifacts: TEST_MEMORY_ARTIFACTS,
+        pr: draftPr,
+        options: { dryRun: false },
+      },
+      derivePullRequestLifecycleSnapshot: (record) => createLifecycleSnapshot(record, "draft_pr"),
+      applyFailureSignature: (_record, failureContext) => ({
+        last_failure_signature: failureContext?.signature ?? null,
+        repeated_failure_signature_count: failureContext ? 1 : 0,
+      }),
+      blockedReasonFromReviewState: () => null,
+      summarizeChecks: () => ({
+        hasPending: true,
+        hasFailing: false,
+      }),
+      configuredBotReviewThreads: () => [],
+      manualReviewThreads: () => [],
+      mergeConflictDetected: () => false,
+      runLocalCiCommand: async () => undefined,
+      runWorkstationLocalPathGate: async () => ({
+        ok: true,
+        failureContext: null,
+      }),
+      loadOpenPullRequestSnapshot: async () => ({
+        pr: draftPr,
+        checks: [{ name: "build", state: "IN_PROGRESS", bucket: "pending", workflow: "CI" }],
+        reviewThreads: [] satisfies ReviewThread[],
+      }),
+    });
+
+  const firstState = createState();
+  const firstResult = await runScenario(firstState);
+  assert.equal(firstResult.record.state, "draft_pr");
+  assert.equal(commentBodies.length, 1);
+  assert.match(commentBodies[0] ?? "", /still draft because provider review is intentionally suppressed/i);
+  assert.match(commentBodies[0] ?? "", /reason code: `draft_review_provider_suppressed`/i);
+  assert.match(commentBodies[0] ?? "", /automatic retry: yes/i);
+  assert.match(
+    commentBodies[0] ?? "",
+    /<!-- codex-supervisor:tracked-pr-status-comment issue=102 pr=116 kind=status -->/,
+  );
+
+  const dedupedState: SupervisorStateFile = {
+    ...firstState,
+    issues: {
+      ...firstState.issues,
+      "102": firstResult.record,
+    },
+  };
+  const dedupedResult = await runScenario(dedupedState);
+  assert.equal(dedupedResult.record.state, "draft_pr");
+  assert.equal(commentBodies.length, 1);
+});
+
+test("handlePostTurnPullRequestTransitionsPhase updates the sticky tracked PR status comment when draft suppression turns into a local promotion blocker", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+    localCiCommand: "npm run ci:local",
+  });
+  const issue = createIssue({ title: "Update tracked PR sticky status comment across blocker classes" });
+  const draftPr = createPullRequest({
+    title: "Tracked PR status comment migration",
+    isDraft: true,
+    number: 116,
+    headRefOid: "head-116",
+    configuredBotDraftSkipAt: "2026-03-16T00:10:00Z",
+    currentHeadCiGreenAt: "2026-03-16T00:08:00Z",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        issue_number: 102,
+        state: "draft_pr",
+        pr_number: draftPr.number,
+        last_head_sha: draftPr.headRefOid,
+      }),
+    },
+  };
+  const updateCalls: Array<{ commentId: number; body: string }> = [];
+  let addCalls = 0;
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: createNoopStateStore(),
+    github: createDefaultGithub({
+      addIssueComment: async () => {
+        addCalls += 1;
+      },
+      getExternalReviewSurface: async () => ({
+        reviews: [],
+        issueComments: [
+          {
+            id: "comment-42",
+            databaseId: 42,
+            body: [
+              "Tracked PR head `head-116` is still draft because provider review is intentionally suppressed.",
+              "",
+              "<!-- codex-supervisor:tracked-pr-status-comment issue=102 pr=116 kind=status -->",
+            ].join("\n"),
+            createdAt: "2026-03-16T01:00:00Z",
+            url: "https://example.test/comments/42",
+            viewerDidAuthor: true,
+            author: {
+              login: "codex-supervisor[bot]",
+              typeName: "Bot",
+            },
+          },
+        ],
+      }),
+      updateIssueComment: async (commentId: number, body: string) => {
+        updateCalls.push({ commentId, body });
+      },
+    }),
+    context: createPostTurnContext({
+      state,
+      record: state.issues["102"]!,
+      issue,
+      pr: draftPr,
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+    }),
+    derivePullRequestLifecycleSnapshot: (record) => createLifecycleSnapshot(record, "draft_pr"),
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    blockedReasonFromReviewState: () => null,
+    summarizeChecks,
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runLocalCiCommand: async () => {
+      throw Object.assign(new Error("local CI failed"), {
+        stderr: "local CI failed",
+      });
+    },
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
+    loadOpenPullRequestSnapshot: async () => ({
+      pr: draftPr,
+      checks: [],
+      reviewThreads: [] satisfies ReviewThread[],
+    }),
+  });
+
+  assert.equal(result.record.state, "blocked");
+  assert.equal(addCalls, 0);
+  assert.equal(updateCalls.length, 1);
+  assert.equal(updateCalls[0]?.commentId, 42);
+  assert.match(updateCalls[0]?.body ?? "", /still draft because ready-for-review promotion is blocked locally/i);
+  assert.match(updateCalls[0]?.body ?? "", /reason code: `ready_promotion_blocked_local_ci`/i);
+  assert.match(updateCalls[0]?.body ?? "", /<!-- codex-supervisor:tracked-pr-status-comment issue=102 pr=116 kind=status -->/);
 });
 
 test("handlePostTurnPullRequestTransitionsPhase redacts supervisor-owned cross-issue journals before ready promotion", async (t) => {
