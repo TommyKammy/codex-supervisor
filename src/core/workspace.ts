@@ -4,6 +4,8 @@ import { runCommand } from "./command";
 import { EnsuredWorkspace, SupervisorConfig, WorkspaceRestoreMetadata, WorkspaceStatus } from "./types";
 import { ensureDir, isValidGitRefName } from "./utils";
 
+const LIVE_ISSUE_JOURNAL_PATH_GLOB = ".codex-supervisor/issues/*/issue-journal.md";
+
 function assertIssueNumber(issueNumber: number): void {
   if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
     throw new Error(`Invalid issue number: ${issueNumber}`);
@@ -175,6 +177,23 @@ function buildEnsuredWorkspace(
   };
 }
 
+async function protectTrackedLiveIssueJournals(workspacePath: string): Promise<void> {
+  const trackedPathsResult = await runCommand(
+    "git",
+    ["-C", workspacePath, "ls-files", "-z", "--", LIVE_ISSUE_JOURNAL_PATH_GLOB],
+  );
+  const trackedPaths = trackedPathsResult.stdout
+    .split("\0")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+
+  if (trackedPaths.length === 0) {
+    return;
+  }
+
+  await runCommand("git", ["-C", workspacePath, "update-index", "--skip-worktree", "--", ...trackedPaths]);
+}
+
 export function formatWorkspaceRestoreStatusLine(restore: WorkspaceRestoreMetadata): string {
   return `workspace_restore source=${restore.source} ref=${restore.ref}`;
 }
@@ -270,6 +289,7 @@ export async function ensureWorkspace(
 
   if (fs.existsSync(path.join(workspacePath, ".git"))) {
     await assertReusableExistingWorkspace(config, workspacePath, branch);
+    await protectTrackedLiveIssueJournals(workspacePath);
     return buildEnsuredWorkspace(workspacePath, {
       source: "existing_workspace",
       ref: branch,
@@ -282,6 +302,7 @@ export async function ensureWorkspace(
 
   if (await branchExists(config.repoPath, branch)) {
     await runCommand("git", ["-C", config.repoPath, "worktree", "add", workspacePath, branch]);
+    await protectTrackedLiveIssueJournals(workspacePath);
     return buildEnsuredWorkspace(workspacePath, {
       source: "local_branch",
       ref: branch,
@@ -290,6 +311,7 @@ export async function ensureWorkspace(
 
   if (remoteBranchExists) {
     await runCommand("git", ["-C", config.repoPath, "worktree", "add", "-b", branch, workspacePath, `origin/${branch}`]);
+    await protectTrackedLiveIssueJournals(workspacePath);
     return buildEnsuredWorkspace(workspacePath, {
       source: "remote_branch",
       ref: `origin/${branch}`,
@@ -307,6 +329,7 @@ export async function ensureWorkspace(
     workspacePath,
     bootstrapBaseRef,
   ]);
+  await protectTrackedLiveIssueJournals(workspacePath);
 
   return buildEnsuredWorkspace(workspacePath, {
     source: "bootstrap_default_branch",
