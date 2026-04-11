@@ -13,6 +13,7 @@ import {
   reconcileParentEpicClosures,
   reconcileRecoverableBlockedIssueStates,
   reconcileStaleFailedIssueStates,
+  reconcileStaleDoneIssueStates,
   reconcileStaleActiveIssueReservation,
   reconcileTrackedMergedButOpenIssues,
 } from "../recovery-reconciliation";
@@ -1075,6 +1076,139 @@ test("reconcileRecoverableBlockedIssueStates keeps stale no-PR manual-review sto
   assert.equal(saveCalls, 0);
   assert.deepEqual(recoveryEvents, []);
   assert.deepEqual(state.issues["366"], original);
+});
+
+test("reconcileStaleDoneIssueStates downgrades stale open no-PR done records to manual review", async () => {
+  const record = createRecord({
+    issue_number: 366,
+    state: "done",
+    pr_number: null,
+    codex_session_id: null,
+    blocked_reason: null,
+    last_error: null,
+    last_failure_kind: null,
+    last_failure_context: null,
+    last_failure_signature: null,
+    last_blocker_signature: null,
+    repeated_failure_signature_count: 0,
+    last_recovery_reason: null,
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [record],
+  });
+  const issues = [
+    createIssue({
+      number: 366,
+      updatedAt: "2026-03-13T00:21:00Z",
+      state: "OPEN",
+    }),
+  ];
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:22:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const recoveryEvents = await reconcileStaleDoneIssueStates(
+    {
+      getIssue: async (issueNumber: number) => {
+        assert.equal(issueNumber, 366);
+        return issues[0]!;
+      },
+    },
+    stateStore,
+    state,
+    issues,
+  );
+
+  assert.equal(saveCalls, 1);
+  assert.equal(state.issues["366"]?.state, "blocked");
+  assert.equal(state.issues["366"]?.blocked_reason, "manual_review");
+  assert.match(state.issues["366"]?.last_error ?? "", /locally marked done without authoritative completion evidence/);
+  assert.deepEqual(state.issues["366"]?.last_failure_context?.details ?? [], [
+    "state=done",
+    "tracked_pr=none",
+    "github_issue_state=OPEN",
+    "completion_evidence=missing",
+    "operator_action=confirm whether the issue should be requeued or whether completion landed outside the tracked PR flow",
+  ]);
+  assert.equal(recoveryEvents.length, 1);
+  assert.equal(
+    recoveryEvents[0]?.reason,
+    "stale_done_manual_review: blocked issue #366 after reconsidering an open no-PR done record with no authoritative completion signal",
+  );
+});
+
+test("reconcileStaleDoneIssueStates downgrades suspicious no-PR done records when GitHub revalidation fails", async () => {
+  const record = createRecord({
+    issue_number: 366,
+    state: "done",
+    pr_number: null,
+    codex_session_id: null,
+    blocked_reason: null,
+    last_error: null,
+    last_failure_kind: null,
+    last_failure_context: null,
+    last_failure_signature: null,
+    last_blocker_signature: null,
+    repeated_failure_signature_count: 0,
+    last_recovery_reason: null,
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [record],
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:22:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const recoveryEvents = await reconcileStaleDoneIssueStates(
+    {
+      getIssue: async (issueNumber: number) => {
+        assert.equal(issueNumber, 366);
+        throw new Error("GitHub unavailable");
+      },
+    },
+    stateStore,
+    state,
+    [],
+  );
+
+  assert.equal(saveCalls, 1);
+  assert.equal(state.issues["366"]?.state, "blocked");
+  assert.equal(state.issues["366"]?.blocked_reason, "manual_review");
+  assert.match(state.issues["366"]?.last_error ?? "", /GitHub revalidation could not confirm the current issue state/);
+  assert.deepEqual(state.issues["366"]?.last_failure_context?.details ?? [], [
+    "state=done",
+    "tracked_pr=none",
+    "github_issue_state=UNKNOWN",
+    "completion_evidence=missing",
+    "operator_action=confirm whether the issue should be requeued or whether completion landed outside the tracked PR flow",
+  ]);
+  assert.equal(recoveryEvents.length, 1);
+  assert.equal(
+    recoveryEvents[0]?.reason,
+    "stale_done_revalidation_failed_manual_review: blocked issue #366 after GitHub revalidation failed for a no-PR done record with no authoritative completion signal",
+  );
 });
 
 test("reconcileRecoverableBlockedIssueStates clears stale same-head review-thread blockers after GitHub reports them resolved", async () => {
@@ -2241,7 +2375,7 @@ test("reconcileStaleActiveIssueReservation blocks a repeated stale stabilizing n
   );
 });
 
-test("reconcileStaleActiveIssueReservation converges already-satisfied-on-main stale stabilizing no-PR recovery to done", async () => {
+test("reconcileStaleActiveIssueReservation blocks already-satisfied-on-main stale stabilizing no-PR recovery for manual review", async () => {
   const config = createConfig();
   const lockRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-locks-"));
   const state: SupervisorStateFile = {
@@ -2287,13 +2421,23 @@ test("reconcileStaleActiveIssueReservation converges already-satisfied-on-main s
   });
 
   assert.equal(state.activeIssueNumber, null);
-  assert.equal(state.issues["366"]?.state, "done");
+  assert.equal(state.issues["366"]?.state, "blocked");
   assert.equal(state.issues["366"]?.pr_number, null);
   assert.equal(state.issues["366"]?.codex_session_id, null);
-  assert.equal(state.issues["366"]?.blocked_reason, null);
-  assert.equal(state.issues["366"]?.last_error, null);
+  assert.equal(state.issues["366"]?.blocked_reason, "manual_review");
+  assert.match(
+    state.issues["366"]?.last_error ?? "",
+    /stale stabilizing recovery without authoritative completion evidence/,
+  );
   assert.equal(state.issues["366"]?.last_failure_kind, null);
-  assert.equal(state.issues["366"]?.last_failure_context, null);
+  assert.equal(state.issues["366"]?.last_failure_context?.category, "blocked");
+  assert.deepEqual(state.issues["366"]?.last_failure_context?.details ?? [], [
+    "state=stabilizing",
+    "tracked_pr=none",
+    "github_issue_state=OPEN",
+    "completion_evidence=missing",
+    "operator_action=confirm whether the issue should be requeued or whether completion landed outside the tracked PR flow",
+  ]);
   assert.equal(state.issues["366"]?.last_failure_signature, null);
   assert.equal(state.issues["366"]?.repeated_failure_signature_count, 0);
   assert.equal(state.issues["366"]?.stale_stabilizing_no_pr_recovery_count, 0);
@@ -2301,7 +2445,7 @@ test("reconcileStaleActiveIssueReservation converges already-satisfied-on-main s
   assert.equal(recoveryEvents.length, 1);
   assert.match(
     formatRecoveryLog(recoveryEvents) ?? "",
-    /recovery issue=#366 reason=already_satisfied_on_main: marked issue #366 done after stale stabilizing recovery found no meaningful branch changes/,
+    /recovery issue=#366 reason=stale_stabilizing_no_pr_manual_review: blocked issue #366 after stale stabilizing recovery found an open issue with no authoritative completion signal/,
   );
 });
 

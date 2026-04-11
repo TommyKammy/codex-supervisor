@@ -41,7 +41,9 @@ import {
 } from "./no-pull-request-state";
 import { applyFailureSignature } from "./supervisor/supervisor-failure-helpers";
 import {
+  buildUnsafeNoPrFailureContext,
   doneResetPatch,
+  shouldReconsiderNoPrDoneRecord,
   sanitizeRecoveryReason,
 } from "./recovery-support";
 import { reconcileStaleFailedNoPrRecord } from "./recovery-no-pr-reconciliation";
@@ -633,6 +635,95 @@ export async function reconcileStaleFailedIssueStates(
   }
 }
 
+export async function reconcileStaleDoneIssueStates(
+  github: Pick<RecoveryGitHubLike, "getIssue">,
+  stateStore: StateStoreLike,
+  state: SupervisorStateFile,
+  issues: GitHubIssue[],
+): Promise<RecoveryEvent[]> {
+  let changed = false;
+  const recoveryEvents: RecoveryEvent[] = [];
+  const issueStateByNumber = new Map(issues.map((issue) => [issue.number, issue.state ?? null]));
+
+  const downgradeToManualReview = (
+    record: IssueRunRecord,
+    failureContext: NonNullable<IssueRunRecord["last_failure_context"]>,
+    reason: string,
+  ): void => {
+    const recoveryEvent = buildRecoveryEvent(record.issue_number, reason);
+    const updated = stateStore.touch(
+      record,
+      applyRecoveryEvent({
+        state: "blocked",
+        blocked_reason: "manual_review",
+        codex_session_id: null,
+        last_error: truncate(failureContext.summary, 1000),
+        last_failure_kind: null,
+        last_failure_context: failureContext,
+        last_blocker_signature: null,
+        last_failure_signature: null,
+        repeated_failure_signature_count: 0,
+        stale_stabilizing_no_pr_recovery_count: 0,
+      }, recoveryEvent),
+    );
+    state.issues[String(record.issue_number)] = updated;
+    if (state.activeIssueNumber === record.issue_number) {
+      state.activeIssueNumber = null;
+    }
+    changed = true;
+    recoveryEvents.push(recoveryEvent);
+  };
+
+  for (const record of Object.values(state.issues)) {
+    if (record.state !== "done" || !shouldReconsiderNoPrDoneRecord(record)) {
+      continue;
+    }
+
+    let issueState = issueStateByNumber.get(record.issue_number) ?? null;
+    if (!issueStateByNumber.has(record.issue_number)) {
+      try {
+        issueState = (await github.getIssue(record.issue_number)).state ?? null;
+      } catch {
+        const failureContext = buildUnsafeNoPrFailureContext({
+          issueNumber: record.issue_number,
+          localState: "done",
+          githubIssueState: "UNKNOWN",
+          detail: "The stale no-PR done record was downgraded to manual review because GitHub revalidation failed and the supervisor cannot safely preserve a terminal local state.",
+        });
+        downgradeToManualReview(
+          record,
+          failureContext,
+          `stale_done_revalidation_failed_manual_review: blocked issue #${record.issue_number} after GitHub revalidation failed for a no-PR done record with no authoritative completion signal`,
+        );
+        continue;
+      }
+      issueStateByNumber.set(record.issue_number, issueState);
+    }
+
+    if (issueState !== "OPEN") {
+      continue;
+    }
+
+    const failureContext = buildUnsafeNoPrFailureContext({
+      issueNumber: record.issue_number,
+      localState: "done",
+      githubIssueState: "OPEN",
+      detail: "The stale no-PR done record was downgraded to manual review so the supervisor does not treat the issue as complete.",
+    });
+    downgradeToManualReview(
+      record,
+      failureContext,
+      `stale_done_manual_review: blocked issue #${record.issue_number} after reconsidering an open no-PR done record with no authoritative completion signal`,
+    );
+  }
+
+  if (changed) {
+    await stateStore.save(state);
+  }
+
+  return recoveryEvents;
+}
+
 export async function reconcileRecoverableBlockedIssueStates(
   github: Pick<RecoveryGitHubLike, "getPullRequestIfExists" | "getIssue" | "getChecks" | "getUnresolvedReviewThreads">,
   stateStore: StateStoreLike,
@@ -1152,10 +1243,19 @@ export async function reconcileStaleActiveIssueReservation(args: {
       }
     : null;
 
+  const staleNoPrManualReviewContext = shouldMarkAlreadySatisfiedOnMain
+    ? buildUnsafeNoPrFailureContext({
+        issueNumber: record.issue_number,
+        localState: "stabilizing",
+        githubIssueState: "OPEN",
+        detail: "Stale stabilizing recovery found no meaningful branch changes, so the supervisor cannot treat the open issue as complete without authoritative completion evidence.",
+      })
+    : null;
+
   const recoveryEvent = buildRecoveryEvent(
     record.issue_number,
     shouldMarkAlreadySatisfiedOnMain
-      ? `already_satisfied_on_main: marked issue #${record.issue_number} done after stale stabilizing recovery found no meaningful branch changes`
+      ? `stale_stabilizing_no_pr_manual_review: blocked issue #${record.issue_number} after stale stabilizing recovery found an open issue with no authoritative completion signal`
       : shouldStopRepeatedStaleNoPrLoop
       ? `stale_state_manual_stop: blocked issue #${record.issue_number} after repeated stale stabilizing recovery without a tracked PR`
       : shouldRequeueStabilizing
@@ -1163,10 +1263,19 @@ export async function reconcileStaleActiveIssueReservation(args: {
       : `stale_state_cleanup: cleared stale active reservation after ${missingLockReason}`,
   );
   const patch: Partial<IssueRunRecord> = shouldMarkAlreadySatisfiedOnMain
-    ? doneResetPatch({
+    ? {
+        state: "blocked",
         pr_number: null,
         codex_session_id: null,
-      })
+        blocked_reason: "manual_review",
+        last_error: truncate(staleNoPrManualReviewContext?.summary ?? "", 1000),
+        last_failure_kind: null,
+        last_failure_context: staleNoPrManualReviewContext,
+        last_blocker_signature: null,
+        last_failure_signature: null,
+        repeated_failure_signature_count: 0,
+        stale_stabilizing_no_pr_recovery_count: 0,
+      }
     : {
         state: shouldStopRepeatedStaleNoPrLoop ? "blocked" : shouldRequeueStabilizing ? "queued" : record.state,
         pr_number: shouldRequeueStabilizing ? null : record.pr_number,
