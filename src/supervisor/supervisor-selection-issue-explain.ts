@@ -134,7 +134,11 @@ export function buildNonRunnableLocalStateReasons(record: IssueRunRecord, config
   const reasons: string[] = [];
 
   if (record.state === "blocked") {
-    if (record.blocked_reason === "manual_review" || record.blocked_reason === "manual_pr_closed") {
+    if (
+      record.blocked_reason === "manual_review" ||
+      record.blocked_reason === "manual_pr_closed" ||
+      record.blocked_reason === "stale_review_bot"
+    ) {
       reasons.push(`manual_block ${record.blocked_reason}`);
     } else if (record.blocked_reason === "verification" && !shouldAutoRetryBlockedVerification(record, config)) {
       if (!hasAttemptBudgetRemaining(record, config, "implementation")) {

@@ -97,6 +97,7 @@ const SUPERVISOR_JOURNAL_NORMALIZATION_COMMIT_MESSAGE = "Normalize supervisor-ow
 const TRACKED_PR_STATUS_COMMENT_MARKER_PREFIX = "codex-supervisor:tracked-pr-status-comment";
 const TRACKED_PR_STATUS_COMMENT_REASON_CODE_DRAFT_REVIEW_PROVIDER_SUPPRESSED = "draft_review_provider_suppressed";
 const TRACKED_PR_STATUS_COMMENT_REASON_CODE_MANUAL_REVIEW = "manual_review";
+const TRACKED_PR_STATUS_COMMENT_REASON_CODE_STALE_REVIEW_BOT = "stale_review_bot";
 const TRACKED_PR_STATUS_COMMENT_REASON_CODE_REQUIRED_CHECK_MISMATCH = "required_check_mismatch";
 const TRACKED_PR_STATUS_COMMENT_REASON_CODE_TRACKED_LIFECYCLE_MISMATCH = "tracked_lifecycle_mismatch";
 const TRACKED_PR_STATUS_COMMENT_REASON_CODE_CLEARED = "cleared";
@@ -361,6 +362,24 @@ function derivePersistentTrackedPrStatusComment(args: {
         evidence: compactEvidenceLines(args.failureContext?.details),
         nextAction:
           "Resolve the remaining manual review blocker or complete the required manual verification, then rerun the supervisor.",
+        automaticRetry: "no",
+      }),
+    };
+  }
+
+  if (args.record.state === "blocked" && args.record.blocked_reason === "stale_review_bot") {
+    const summary =
+      args.failureContext?.summary
+      ?? "Configured bot review state is stale on the current head and now requires manual attention.";
+    return {
+      blockerSignature: args.failureContext?.signature ?? TRACKED_PR_STATUS_COMMENT_REASON_CODE_STALE_REVIEW_BOT,
+      body: buildTrackedPrPersistentStatusComment({
+        pr: args.pr,
+        reasonCode: TRACKED_PR_STATUS_COMMENT_REASON_CODE_STALE_REVIEW_BOT,
+        summary,
+        evidence: compactEvidenceLines(args.failureContext?.details),
+        nextAction:
+          "Inspect the stale configured-bot review state on the current head, then rerun the supervisor after the blocker is cleared or explicitly resolved.",
         automaticRetry: "no",
       }),
     };
