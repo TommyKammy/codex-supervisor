@@ -568,13 +568,6 @@ async function maybeReplyOnTrackedPrStaleConfiguredBotReview(args: {
     thread: replyThread,
     failureContext: args.failureContext,
   });
-  const updatedRecord = args.stateStore.touch(args.record, {
-    last_stale_review_bot_reply_head_sha: args.pr.headRefOid,
-    last_stale_review_bot_reply_signature: blockerSignature,
-  });
-  args.state.issues[String(updatedRecord.issue_number)] = updatedRecord;
-  await args.stateStore.save(args.state);
-  await args.syncJournal(updatedRecord);
 
   try {
     await args.github.replyToReviewThread(replyThread.id, replyBody);
@@ -583,9 +576,16 @@ async function maybeReplyOnTrackedPrStaleConfiguredBotReview(args: {
     console.warn(
       `Failed to publish stale configured-bot reply for PR #${args.pr.number}: ${truncate(message, 500) ?? "unknown error"}`,
     );
-    return updatedRecord;
+    return args.record;
   }
 
+  const updatedRecord = args.stateStore.touch(args.record, {
+    last_stale_review_bot_reply_head_sha: args.pr.headRefOid,
+    last_stale_review_bot_reply_signature: blockerSignature,
+  });
+  args.state.issues[String(updatedRecord.issue_number)] = updatedRecord;
+  await args.stateStore.save(args.state);
+  await args.syncJournal(updatedRecord);
   return updatedRecord;
 }
 
