@@ -612,6 +612,7 @@ export async function reconcileStaleFailedIssueStates(
   }) => Promise<void>) | null = null,
 ): Promise<void> {
   let changed = false;
+  const issuesByNumber = new Map(issues.map((issue) => [issue.number, issue]));
   const issueStateByNumber = new Map(issues.map((issue) => [issue.number, issue.state ?? null]));
   let failedNoPrFetchPromise: Promise<void> | null = null;
   const ensureOriginDefaultBranchFetched = (): Promise<void> => {
@@ -630,21 +631,49 @@ export async function reconcileStaleFailedIssueStates(
       waitStep: null,
     });
 
-    let issueState = issueStateByNumber.get(record.issue_number) ?? null;
-    if (!issueStateByNumber.has(record.issue_number)) {
+    let issue = issuesByNumber.get(record.issue_number);
+    if (!issue) {
       try {
-        issueState = (await github.getIssue(record.issue_number)).state ?? null;
+        issue = await github.getIssue(record.issue_number);
       } catch {
-        issueState = null;
+        issue = undefined;
       }
-      issueStateByNumber.set(record.issue_number, issueState);
+      if (issue) {
+        issuesByNumber.set(record.issue_number, issue);
+      }
     }
+    const issueState = issue?.state ?? null;
+    issueStateByNumber.set(record.issue_number, issueState);
 
     if (issueState !== "OPEN") {
       continue;
     }
 
     if (record.pr_number === null) {
+      if (issue && shouldReconsiderGenericNoPrIssueDefinitionChange(record, issue)) {
+        const recoveryEvent = buildRecoveryEvent(
+          record.issue_number,
+          `github_issue_definition_changed: requeued issue #${record.issue_number} after a material GitHub issue definition change invalidated the stale no-PR ${record.state} state`,
+        );
+        const updated = stateStore.touch(record, {
+          state: "queued",
+          blocked_reason: null,
+          last_error: null,
+          last_failure_kind: null,
+          last_failure_context: null,
+          last_blocker_signature: null,
+          last_failure_signature: null,
+          repeated_failure_signature_count: 0,
+          stale_stabilizing_no_pr_recovery_count: 0,
+          codex_session_id: null,
+          ...issueDefinitionFreshnessPatch(issue),
+          ...applyRecoveryEvent({}, recoveryEvent),
+        });
+        state.issues[String(record.issue_number)] = updated;
+        changed = true;
+        continue;
+      }
+
       if (await reconcileStaleFailedNoPrRecord({
         github,
         stateStore,

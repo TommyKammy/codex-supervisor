@@ -135,6 +135,7 @@ async function persistTurnFailurePatch(args: {
   if (
     typeof args.issue.title === "string"
     && typeof args.issue.body === "string"
+    && Array.isArray(args.issue.labels)
     && typeof args.issue.updatedAt === "string"
   ) {
     issueDefinitionPatch = issueDefinitionFreshnessPatch({

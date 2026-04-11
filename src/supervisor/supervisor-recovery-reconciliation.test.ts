@@ -2718,6 +2718,120 @@ test("reconcileMergedIssueClosures clears a stale active issue pointer even when
   assert.deepEqual(state.issues["366"], original);
 });
 
+test("reconcileStaleFailedIssueStates requeues failed no-PR issues when the issue definition changes materially", async () => {
+  const config = createConfig();
+  const originalIssue = createIssue({
+    number: 366,
+    body: executionReadyBody("Refresh stale failed no-PR issues after issue-definition changes."),
+    updatedAt: "2026-03-13T00:20:00Z",
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
+        issue_number: 366,
+        state: "failed",
+        pr_number: null,
+        codex_session_id: null,
+        last_error: "Codex failed against a stale issue definition.",
+        last_failure_kind: "codex_exit",
+        last_failure_context: {
+          category: "codex",
+          summary: "Codex failed against the stale issue definition.",
+          signature: "codex-failed",
+          command: "codex exec",
+          details: ["state=failed", "tracked_pr=none"],
+          url: "https://example.test/issues/366",
+          updated_at: "2026-03-13T00:20:00Z",
+        },
+        last_failure_signature: "codex-failed",
+        repeated_failure_signature_count: 2,
+        stale_stabilizing_no_pr_recovery_count: 1,
+        issue_definition_fingerprint: buildIssueDefinitionFingerprint(originalIssue),
+        issue_definition_updated_at: originalIssue.updatedAt,
+        last_recovery_reason: "codex_failed: failed issue #366 after codex exited non-zero",
+        last_recovery_at: "2026-03-13T00:20:00Z",
+        updated_at: "2026-03-13T00:20:00Z",
+      }),
+    ],
+  });
+  const issue = createIssue({
+    number: 366,
+    body: originalIssue.body.replace(
+      "- supervisor treats this issue as runnable",
+      "- supervisor requeues stale failed no-PR issues when the issue definition changes materially",
+    ),
+    updatedAt: "2026-03-13T00:21:00Z",
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  await reconcileStaleFailedIssueStates(
+    {
+      getIssue: async () => issue,
+      getPullRequestIfExists: async () => {
+        throw new Error("unexpected getPullRequestIfExists call");
+      },
+      getMergedPullRequestsClosingIssue: async () => {
+        throw new Error("unexpected getMergedPullRequestsClosingIssue call");
+      },
+      closeIssue: async () => {
+        throw new Error("unexpected closeIssue call");
+      },
+      closePullRequest: async () => {
+        throw new Error("unexpected closePullRequest call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+    },
+    stateStore,
+    state,
+    config,
+    [issue],
+    {
+      inferStateFromPullRequest,
+      inferFailureContext,
+      blockedReasonForLifecycleState,
+      isOpenPullRequest,
+      syncReviewWaitWindow,
+      syncCopilotReviewRequestObservation,
+      syncCopilotReviewTimeoutState,
+    },
+  );
+
+  const updated = state.issues["366"];
+  assert.equal(updated.state, "queued");
+  assert.equal(updated.blocked_reason, null);
+  assert.equal(updated.last_error, null);
+  assert.equal(updated.last_failure_kind, null);
+  assert.equal(updated.last_failure_context, null);
+  assert.equal(updated.last_failure_signature, null);
+  assert.equal(updated.repeated_failure_signature_count, 0);
+  assert.equal(updated.stale_stabilizing_no_pr_recovery_count, 0);
+  assert.equal(
+    updated.last_recovery_reason,
+    "github_issue_definition_changed: requeued issue #366 after a material GitHub issue definition change invalidated the stale no-PR failed state",
+  );
+  assert.equal(updated.issue_definition_fingerprint, buildIssueDefinitionFingerprint(issue));
+  assert.equal(updated.issue_definition_updated_at, issue.updatedAt);
+  assert.equal(saveCalls, 1);
+});
+
 test("reconcileParentEpicClosures clears a stale active issue pointer even when the parent record already matches the done patch", async () => {
   const original = createRecord({
     issue_number: 123,
