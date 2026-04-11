@@ -5,42 +5,43 @@
 - Branch: codex/issue-1416
 - Workspace: .
 - Journal: .codex-supervisor/issues/1416/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 3 (implementation=2, repair=1)
-- Last head SHA: 2753ceff05a151fa2fc9ce85ac3695a53aa40807
+- Current phase: repairing_ci
+- Attempt count: 4 (implementation=2, repair=2)
+- Last head SHA: 48d41ab4228b55e56f0a688148403fb605f4ec07
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ856QtdC
-- Repeated failure signature count: 1
-- Updated at: 2026-04-11T00:20:54Z
+- Last failure signature: build (ubuntu-latest):fail
+- Repeated failure signature count: 3
+- Updated at: 2026-04-11T00:25:15.206Z
 
 ## Latest Codex Summary
-I re-checked the live PR review state with the `gh-address-comments` GraphQL helper and confirmed the only unresolved review thread on [#1420](https://github.com/TommyKammy/codex-supervisor/pull/1420) is the missing create-path assertion for the sticky tracked-PR status marker. The comment was valid: the draft-suppression test verified the message body but did not assert the appended `kind=status` marker that later dedupe and update paths depend on.
+I inspected the failing Ubuntu Actions run for PR #1420 and confirmed the breakage is a path-hygiene failure in the tracked issue journal, not a feature regression. Commit `48d41ab` recorded an absolute workstation path in the `Tests:` line of [issue-journal.md](.codex-supervisor/issues/1416/issue-journal.md), which caused `npm run verify:paths` to fail on CI before the build reached TypeScript compilation.
 
-I added that missing assertion in [src/post-turn-pull-request.test.ts](src/post-turn-pull-request.test.ts), kept production code unchanged, and reran the focused test file successfully.
+I kept the existing local journal sanitization, reran the failing command locally, and verified the branch with the issue's focused test/build commands. Production files under `src/` are unchanged in this repair; the only tracked fix is the journal cleanup needed to unblock CI.
 
-Summary: Added the missing `kind=status` create-path assertion to the draft-suppression test and reverified the modified test file.
-State hint: addressing_review
+Summary: Reproduced the Ubuntu path-hygiene failure, confirmed the local journal already removed the offending absolute path, and reverified the branch so the sanitized journal can be pushed as the CI repair.
+State hint: repairing_ci
 Blocked reason: none
-Tests: `python3 /home/tommy/.codex/plugins/cache/openai-curated/github/fb0a18376bcd9f2604047fbe7459ec5aed70c64b/skills/gh-address-comments/scripts/fetch_comments.py`; `npx tsx --test src/post-turn-pull-request.test.ts`
-Next action: Let the supervisor refresh PR #1420 review state and confirm the automated thread is cleared or outdated on the new head.
-Failure signature: none
+Tests: `python3 <gh-fix-ci>/scripts/inspect_pr_checks.py --repo . --pr 1420 --json`; `npm run verify:paths`; `npx tsx --test src/post-turn-pull-request.test.ts src/supervisor/supervisor-status-review-bot.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `npm run build`
+Next action: Wait for PR #1420 checks to refresh on the repaired branch head and confirm the Ubuntu build clears.
+Failure signature: build (ubuntu-latest):fail
 
 ## Active Failure Context
-- Category: review
-- Summary: 1 unresolved automated review thread(s) remain.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1420#discussion_r3067219031
+- Category: checks
+- Summary: PR #1420 has failing checks.
+- Command or source: gh pr checks
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1420
 - Details:
-  - src/post-turn-pull-request.test.ts:1727 summary=_⚠️ Potential issue_ | _🟡 Minor_ **Assert the sticky marker on the create path.** This test verifies the suppression body, but it would still pass if freshly added comments sto... url=https://github.com/TommyKammy/codex-supervisor/pull/1420#discussion_r3067219031
+  - build (ubuntu-latest) (fail/FAILURE) https://github.com/TommyKammy/codex-supervisor/actions/runs/24270141826/job/70873310708
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: The remaining automated review feedback is a valid test-coverage gap only; production behavior is already correct, but the create path for draft-suppression comments was not asserting the sticky `kind=status` marker.
-- What changed: Confirmed PR #1420 has one unresolved review thread, added the missing `kind=status` assertion to the draft-suppression test, reran `npx tsx --test src/post-turn-pull-request.test.ts` successfully, and prepared the review-fix checkpoint for PR update.
+- Hypothesis: The only remaining CI blocker is the committed absolute workstation path in the tracked issue journal; once the sanitized journal is pushed, the Ubuntu build should clear.
+- What changed: Inspected the failing GitHub Actions run for PR #1420, confirmed `npm run verify:paths` failed on a committed absolute workstation path in the journal's `Tests:` line from commit `48d41ab`, and verified the current working tree already removes that path.
 - Current blocker: none
-- Next exact step: Push the review-fix checkpoint on `codex/issue-1416`, then let the supervisor re-read PR #1420 review state.
-- Verification gap: none for the targeted review fix; the modified test file passed locally after the assertion was added.
-- Files touched: src/post-turn-pull-request.test.ts; .codex-supervisor/issues/1416/issue-journal.md
+- Next exact step: Push the repaired branch head and recheck PR #1420 checks for a clean Ubuntu build.
+- Verification gap: none for the CI repair; the reproduced failing command and the issue verification commands all pass locally on the sanitized journal.
+- Files touched: .codex-supervisor/issues/1416/issue-journal.md
 - Rollback concern: Existing legacy `kind=host-local-blocker` comments are migrated opportunistically by updating either marker kind in place; removing that compatibility path would strand older sticky comments.
-- Last focused command: npx tsx --test src/post-turn-pull-request.test.ts
+- Last focused command: npm run build
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
