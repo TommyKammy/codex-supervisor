@@ -4,7 +4,8 @@ import { runCommand } from "./command";
 import { EnsuredWorkspace, SupervisorConfig, WorkspaceRestoreMetadata, WorkspaceStatus } from "./types";
 import { ensureDir, isValidGitRefName } from "./utils";
 
-const LIVE_ISSUE_JOURNAL_PATH_GLOB = ".codex-supervisor/issues/*/issue-journal.md";
+const LIVE_ISSUE_JOURNAL_PATH_GLOB = ".codex-supervisor/issues/[0-9]*/issue-journal.md";
+const LIVE_ISSUE_JOURNAL_PATH_REGEX = /^\.codex-supervisor\/issues\/\d+\/issue-journal\.md$/u;
 
 function assertIssueNumber(issueNumber: number): void {
   if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
@@ -185,7 +186,8 @@ async function protectTrackedLiveIssueJournals(workspacePath: string): Promise<v
   const trackedPaths = trackedPathsResult.stdout
     .split("\0")
     .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0);
+    .filter((entry) => entry.length > 0)
+    .filter((entry) => LIVE_ISSUE_JOURNAL_PATH_REGEX.test(entry));
 
   if (trackedPaths.length === 0) {
     return;
