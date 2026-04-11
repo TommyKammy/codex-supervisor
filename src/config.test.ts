@@ -1322,7 +1322,7 @@ test("repo gitignore ignores workstation noise and live issue journals without h
   await fs.mkdir(path.join(tempDir, ".codex-supervisor", "issues", "1443"), { recursive: true });
   await fs.mkdir(path.join(tempDir, ".codex-supervisor", "issues", "fixtures"), { recursive: true });
   await fs.writeFile(path.join(tempDir, ".codex-supervisor", "issues", "1443", "issue-journal.md"), "", "utf8");
-  await fs.writeFile(path.join(tempDir, ".codex-supervisor", "issues", "fixtures", "journal-fixture.md"), "", "utf8");
+  await fs.writeFile(path.join(tempDir, ".codex-supervisor", "issues", "fixtures", "issue-journal.md"), "", "utf8");
   await fs.writeFile(path.join(tempDir, "supervisor.config.coderabbit.json"), "{}", "utf8");
 
   execFileSync("git", ["init"], {
@@ -1358,7 +1358,7 @@ test("repo gitignore ignores workstation noise and live issue journals without h
 
   const fixtureExitCode = (() => {
     try {
-      execFileSync("git", ["check-ignore", ".codex-supervisor/issues/fixtures/journal-fixture.md"], {
+      execFileSync("git", ["check-ignore", ".codex-supervisor/issues/fixtures/issue-journal.md"], {
         cwd: tempDir,
         stdio: "ignore",
       });
