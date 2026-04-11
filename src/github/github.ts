@@ -176,6 +176,10 @@ export class GitHubClient {
     return this.mutations.replyToReviewThread(threadId, body);
   }
 
+  async resolveReviewThread(threadId: string): Promise<void> {
+    return this.mutations.resolveReviewThread(threadId);
+  }
+
   async closeIssue(issueNumber: number, comment?: string): Promise<void> {
     return this.mutations.closeIssue(issueNumber, comment);
   }

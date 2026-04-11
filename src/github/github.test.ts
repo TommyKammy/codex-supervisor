@@ -223,6 +223,38 @@ test("GitHubClient fetches the newest unresolved review thread comments", async 
   assert.equal(threads[0]?.comments.nodes.at(-1)?.author?.typeName, "Bot");
 });
 
+test("GitHubClient resolves a review thread via GraphQL mutation", async () => {
+  const config = createConfig();
+  let resolveMutation: string | null = null;
+  const client = new GitHubClient(config, async (_command, args) => {
+    if (args[0] === "api" && args[1] === "graphql") {
+      resolveMutation = args.find((arg) => arg.startsWith("query=")) ?? null;
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          data: {
+            resolveReviewThread: {
+              thread: {
+                id: "thread-44",
+                isResolved: true,
+              },
+            },
+          },
+        }),
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  await client.resolveReviewThread("thread-44");
+
+  assert.ok(resolveMutation);
+  assert.match(resolveMutation, /resolveReviewThread/);
+  assert.match(resolveMutation, /threadId: \$threadId/);
+});
+
 test("GitHubClient reuses cached unresolved review threads for same-head status reads", async () => {
   const config = createConfig();
   let graphqlCalls = 0;

@@ -841,6 +841,33 @@ test("loadConfig accepts explicit stale configured-bot reply_only policy", async
   assert.equal(config.staleConfiguredBotReviewPolicy, "reply_only");
 });
 
+test("loadConfig accepts explicit stale configured-bot reply_and_resolve policy", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  const configPath = path.join(tempDir, "supervisor.config.json");
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "./.local/worktrees",
+      stateBackend: "json",
+      stateFile: "./.local/state.json",
+      codexBinary: "codex",
+      branchPrefix: "codex/issue-",
+      staleConfiguredBotReviewPolicy: "reply_and_resolve",
+    }),
+    "utf8",
+  );
+
+  const config = loadConfig(configPath);
+  assert.equal(config.staleConfiguredBotReviewPolicy, "reply_and_resolve");
+});
+
 test("loadConfig accepts an explicit mergeCriticalRecheckSeconds override", async (t) => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
   t.after(async () => {

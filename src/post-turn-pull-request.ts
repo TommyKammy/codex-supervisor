@@ -509,30 +509,44 @@ function buildStaleConfiguredBotReplyBody(args: {
   pr: GitHubPullRequest;
   thread: ReviewThread;
   failureContext: FailureContext | null;
+  resolveAfterReply: boolean;
 }): string {
   const latestComment = latestReviewComment(args.thread);
   const location = `${args.thread.path ?? "unknown"}:${args.thread.line ?? "?"}`;
-  const evidence = args.failureContext?.details?.[0] ?? `location=${location} processed_on_current_head=yes`;
+  const evidenceLine =
+    args.failureContext?.details?.find((detail) => {
+      const fileMatch = detail.match(/\bfile=([^\s]+)/);
+      const lineMatch = detail.match(/\bline=(\d+)/);
+      return fileMatch?.[1] === (args.thread.path ?? "unknown") && lineMatch?.[1] === String(args.thread.line ?? "?");
+    }) ??
+    args.failureContext?.details?.[0] ??
+    `location=${location} processed_on_current_head=yes`;
   const sourceLink = latestComment?.url ?? args.failureContext?.url;
   const sourceLine = sourceLink ? ` Source: ${sourceLink}` : "";
   return [
     `The supervisor reprocessed this configured-bot finding on the current head \`${args.pr.headRefOid}\` and classified it as stale.`,
-    `Evidence: ${evidence}.${sourceLine}`,
-    "Leaving thread resolution to a human operator.",
+    `Evidence: ${evidenceLine}.${sourceLine}`,
+    args.resolveAfterReply
+      ? "Under the configured `reply_and_resolve` policy, the supervisor is auto-resolving this stale thread now."
+      : "Leaving thread resolution to a human operator.",
   ].join("\n\n");
 }
 
-function staleConfiguredBotReplyThreadId(signature: string | null | undefined): string | null {
-  if (!signature?.startsWith("stalled-bot:")) {
-    return null;
+function staleConfiguredBotReplyThreadIds(signature: string | null | undefined): string[] {
+  if (!signature) {
+    return [];
   }
 
-  const threadId = signature.slice("stalled-bot:".length).trim();
-  return threadId.length > 0 ? threadId : null;
+  return signature
+    .split("|")
+    .map((part) => part.trim())
+    .filter((part) => part.startsWith("stalled-bot:"))
+    .map((part) => part.slice("stalled-bot:".length).trim())
+    .filter((threadId) => threadId.length > 0);
 }
 
-async function maybeReplyOnTrackedPrStaleConfiguredBotReview(args: {
-  github: Partial<Pick<GitHubClient, "replyToReviewThread">>;
+async function maybeHandleTrackedPrStaleConfiguredBotReview(args: {
+  github: Partial<Pick<GitHubClient, "replyToReviewThread" | "resolveReviewThread">>;
   stateStore: Pick<StateStore, "touch" | "save">;
   state: SupervisorStateFile;
   record: IssueRunRecord;
@@ -541,8 +555,12 @@ async function maybeReplyOnTrackedPrStaleConfiguredBotReview(args: {
   syncJournal: IssueJournalSync;
   config: SupervisorConfig;
   failureContext: FailureContext | null;
+  resolveAfterReply: boolean;
 }): Promise<IssueRunRecord> {
   if (!args.github.replyToReviewThread) {
+    return args.record;
+  }
+  if (args.resolveAfterReply && !args.github.resolveReviewThread) {
     return args.record;
   }
 
@@ -554,27 +572,36 @@ async function maybeReplyOnTrackedPrStaleConfiguredBotReview(args: {
     return args.record;
   }
 
-  const replyThreadId = staleConfiguredBotReplyThreadId(blockerSignature);
-  const replyThread =
-    replyThreadId == null
-      ? null
-      : configuredBotReviewThreads(args.config, args.reviewThreads).find((thread) => thread.id === replyThreadId) ?? null;
-  if (!replyThread) {
+  const configuredThreads = configuredBotReviewThreads(args.config, args.reviewThreads);
+  const replyThreadIds = staleConfiguredBotReplyThreadIds(blockerSignature);
+  if (replyThreadIds.length === 0) {
     return args.record;
   }
 
-  const replyBody = buildStaleConfiguredBotReplyBody({
-    pr: args.pr,
-    thread: replyThread,
-    failureContext: args.failureContext,
-  });
+  const replyThreads = replyThreadIds
+    .map((threadId) => configuredThreads.find((thread) => thread.id === threadId) ?? null)
+    .filter((thread): thread is ReviewThread => thread !== null);
+  if (replyThreads.length !== replyThreadIds.length) {
+    return args.record;
+  }
 
   try {
-    await args.github.replyToReviewThread(replyThread.id, replyBody);
+    for (const replyThread of replyThreads) {
+      const replyBody = buildStaleConfiguredBotReplyBody({
+        pr: args.pr,
+        thread: replyThread,
+        failureContext: args.failureContext,
+        resolveAfterReply: args.resolveAfterReply,
+      });
+      await args.github.replyToReviewThread(replyThread.id, replyBody);
+      if (args.resolveAfterReply) {
+        await args.github.resolveReviewThread?.(replyThread.id);
+      }
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.warn(
-      `Failed to publish stale configured-bot reply for PR #${args.pr.number}: ${truncate(message, 500) ?? "unknown error"}`,
+      `Failed to ${args.resolveAfterReply ? "reply-and-resolve" : "publish"} stale configured-bot reply for PR #${args.pr.number}: ${truncate(message, 500) ?? "unknown error"}`,
     );
     return args.record;
   }
@@ -704,7 +731,7 @@ async function maybeCommentOnTrackedPrPersistentStatus(args: {
   github: Partial<
     Pick<
       GitHubClient,
-      "addIssueComment" | "getExternalReviewSurface" | "updateIssueComment" | "replyToReviewThread"
+      "addIssueComment" | "getExternalReviewSurface" | "updateIssueComment" | "replyToReviewThread" | "resolveReviewThread"
     >
   >;
   stateStore: Pick<StateStore, "touch" | "save">;
@@ -713,6 +740,7 @@ async function maybeCommentOnTrackedPrPersistentStatus(args: {
   pr: GitHubPullRequest;
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
+  manualReviewThreadCount: number;
   syncJournal: IssueJournalSync;
   config: SupervisorConfig;
   failureContext: FailureContext | null;
@@ -728,14 +756,18 @@ async function maybeCommentOnTrackedPrPersistentStatus(args: {
     summarizeChecks: args.summarizeChecks,
   });
 
-  if (
+  const canAutoHandleStaleConfiguredBotReview =
     args.record.state === "blocked" &&
     args.record.blocked_reason === "stale_review_bot" &&
-    args.config.staleConfiguredBotReviewPolicy === "reply_only" &&
     comment &&
-    args.github.replyToReviewThread
-  ) {
-    const repliedRecord = await maybeReplyOnTrackedPrStaleConfiguredBotReview({
+    args.manualReviewThreadCount === 0 &&
+    !args.summarizeChecks(args.checks).hasPending &&
+    !args.summarizeChecks(args.checks).hasFailing &&
+    (args.config.staleConfiguredBotReviewPolicy === "reply_only" ||
+      args.config.staleConfiguredBotReviewPolicy === "reply_and_resolve");
+
+  if (canAutoHandleStaleConfiguredBotReview && args.github.replyToReviewThread) {
+    const repliedRecord = await maybeHandleTrackedPrStaleConfiguredBotReview({
       github: args.github,
       stateStore: args.stateStore,
       state: args.state,
@@ -745,6 +777,7 @@ async function maybeCommentOnTrackedPrPersistentStatus(args: {
       syncJournal: args.syncJournal,
       config: args.config,
       failureContext: args.failureContext,
+      resolveAfterReply: args.config.staleConfiguredBotReviewPolicy === "reply_and_resolve",
     });
     const replyHandled =
       repliedRecord.last_stale_review_bot_reply_head_sha === args.pr.headRefOid &&
@@ -1504,6 +1537,7 @@ export async function handlePostTurnPullRequestTransitionsPhase(
     pr: postReady.pr,
     checks: postReady.checks,
     reviewThreads: postReady.reviewThreads,
+    manualReviewThreadCount: args.manualReviewThreads(config, postReady.reviewThreads).length,
     syncJournal,
     config,
     failureContext: effectiveFailureContext,

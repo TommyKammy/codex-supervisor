@@ -156,6 +156,17 @@ export class GitHubMutationClient {
     ]);
   }
 
+  async resolveReviewThread(threadId: string): Promise<void> {
+    await this.runGhCommand([
+      "api",
+      "graphql",
+      "-f",
+      "query=mutation($threadId: ID!) { resolveReviewThread(input: { threadId: $threadId }) { thread { id isResolved } } }",
+      "-f",
+      `threadId=${threadId}`,
+    ]);
+  }
+
   async closeIssue(issueNumber: number, comment?: string): Promise<void> {
     const args = [
       "issue",
