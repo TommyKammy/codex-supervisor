@@ -174,6 +174,7 @@ test("loadConfig keeps local review disabled by default while using the opiniona
   assert.equal(config.localReviewManualReviewRepairEnabled, false);
   assert.equal(config.localReviewFollowUpIssueCreationEnabled, false);
   assert.equal(config.localReviewHighSeverityAction, "blocked");
+  assert.equal(config.staleConfiguredBotReviewPolicy, "diagnose_only");
 });
 
 test("loadConfig accepts explicit local review same-PR follow-up repair opt-in", async (t) => {
@@ -811,6 +812,33 @@ test("loadConfig accepts strict current-head configured-bot signal settings", as
   assert.equal(config.configuredBotRequireCurrentHeadSignal, true);
   assert.equal(config.configuredBotCurrentHeadSignalTimeoutMinutes, 12);
   assert.equal(config.configuredBotCurrentHeadSignalTimeoutAction, "block");
+});
+
+test("loadConfig accepts explicit stale configured-bot reply_only policy", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  const configPath = path.join(tempDir, "supervisor.config.json");
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "./.local/worktrees",
+      stateBackend: "json",
+      stateFile: "./.local/state.json",
+      codexBinary: "codex",
+      branchPrefix: "codex/issue-",
+      staleConfiguredBotReviewPolicy: "reply_only",
+    }),
+    "utf8",
+  );
+
+  const config = loadConfig(configPath);
+  assert.equal(config.staleConfiguredBotReviewPolicy, "reply_only");
 });
 
 test("loadConfig accepts an explicit mergeCriticalRecheckSeconds override", async (t) => {

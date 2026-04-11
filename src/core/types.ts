@@ -30,6 +30,7 @@ export type TrustMode = "trusted_repo_and_authors" | "untrusted_or_mixed";
 export type ExecutionSafetyMode = "unsandboxed_autonomous" | "operator_gated";
 export type LocalReviewPolicy = "advisory" | "block_ready" | "block_merge";
 export type LocalReviewHighSeverityAction = "retry" | "blocked";
+export type StaleConfiguredBotReviewPolicy = "diagnose_only" | "reply_only";
 export type CopilotReviewState = "not_requested" | "requested" | "arrived";
 export type PullRequestHydrationProvenance = "fresh" | "cached";
 export type CopilotReviewTimeoutAction = "continue" | "block";
@@ -173,6 +174,7 @@ export interface SupervisorConfig {
   localReviewManualReviewRepairEnabled?: boolean;
   localReviewFollowUpIssueCreationEnabled?: boolean;
   localReviewHighSeverityAction: LocalReviewHighSeverityAction;
+  staleConfiguredBotReviewPolicy?: StaleConfiguredBotReviewPolicy;
   reviewBotLogins: string[];
   configuredReviewProviders?: ConfiguredReviewProvider[];
   humanReviewBlocksMerge: boolean;
@@ -375,6 +377,8 @@ export interface IssueRunRecord {
   last_tracked_pr_repeat_failure_decision?: "retry_on_progress" | "stop_no_progress" | null;
   last_host_local_pr_blocker_comment_signature?: string | null;
   last_host_local_pr_blocker_comment_head_sha?: string | null;
+  last_stale_review_bot_reply_signature?: string | null;
+  last_stale_review_bot_reply_head_sha?: string | null;
   blocked_reason: BlockedReason;
   processed_review_thread_ids: string[];
   processed_review_thread_fingerprints: string[];
