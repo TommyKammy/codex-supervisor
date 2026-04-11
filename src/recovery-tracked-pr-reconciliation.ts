@@ -16,7 +16,7 @@ import {
 import { syncPostMergeAuditArtifactSafely } from "./supervisor/post-merge-audit-artifact";
 import { buildTrackedPrStaleFailureConvergencePatch } from "./recovery-tracked-pr-support";
 import { projectTrackedPrLifecycle } from "./tracked-pr-lifecycle-projection";
-import { inferStateFromPullRequest } from "./pull-request-state";
+import { inferGitHubWaitStep, inferStateFromPullRequest } from "./pull-request-state";
 import {
   syncCopilotReviewRequestObservation,
   syncCopilotReviewTimeoutState,
@@ -155,6 +155,12 @@ export async function reconcileTrackedMergedButOpenIssuesInModule(
     buildRecoveryEvent: BuildRecoveryEvent;
     applyRecoveryEvent: ApplyRecoveryEvent;
     doneResetPatch: typeof import("./recovery-support").doneResetPatch;
+    inferGitHubWaitStep?: (
+      config: SupervisorConfig,
+      record: IssueRunRecord,
+      pr: NonNullable<Awaited<ReturnType<RecoveryGitHubLike["getPullRequestIfExists"]>>>,
+      checks: PullRequestCheck[],
+    ) => string | null;
   },
   updateReconciliationProgress: ((patch: {
     targetIssueNumber?: number | null;
@@ -247,6 +253,13 @@ export async function reconcileTrackedMergedButOpenIssuesInModule(
         syncReviewWaitWindow,
         syncCopilotReviewRequestObservation,
         syncCopilotReviewTimeoutState,
+      });
+      const inferredWaitStep =
+        projection.nextState === "waiting_ci"
+          ? (helpers.inferGitHubWaitStep?.(config, projection.recordForState, trackedPullRequest, checks) ?? null)
+          : null;
+      await updateReconciliationProgress?.({
+        waitStep: inferredWaitStep,
       });
       if (projection.shouldSuppressRecovery) {
         continue;
@@ -485,9 +498,7 @@ export async function reconcileStaleFailedTrackedPrRecord(
   const nextState = projection.nextState;
   await updateReconciliationProgress?.({
     waitStep:
-      nextState === "waiting_ci"
-        ? (deps.inferGitHubWaitStep?.(config, projection.recordForState, pr, checks) ?? null)
-        : null,
+      nextState === "waiting_ci" ? (deps.inferGitHubWaitStep?.(config, projection.recordForState, pr, checks) ?? null) : null,
   });
 
   if (projection.shouldSuppressRecovery) {
