@@ -130,6 +130,22 @@ function summarizeChecks(checks: PullRequestCheck[]) {
   };
 }
 
+function createPersistentMergeStagePatch(headSha: string) {
+  return {
+    provider_success_observed_at: "2026-04-11T00:00:00.000Z",
+    provider_success_head_sha: headSha,
+    merge_readiness_last_evaluated_at: "2026-04-11T00:05:00.000Z",
+  };
+}
+
+function createInitialMergeStageObservationPatch(headSha: string) {
+  return {
+    provider_success_observed_at: "2026-04-11T00:00:00.000Z",
+    provider_success_head_sha: headSha,
+    merge_readiness_last_evaluated_at: "2026-04-11T00:00:00.000Z",
+  };
+}
+
 function createPostTurnContext({
   issue,
   pr,
@@ -1955,6 +1971,7 @@ test("handlePostTurnPullRequestTransitionsPhase comments when merge readiness st
     derivePullRequestLifecycleSnapshot: (recordForState) =>
       createLifecycleSnapshot(recordForState, "pr_open", {
         failureContext: null,
+        mergeLatencyVisibilityPatch: createPersistentMergeStagePatch(pr.headRefOid),
       }),
     applyFailureSignature: (_record, failureContext) => ({
       last_failure_signature: failureContext?.signature ?? null,
@@ -1985,7 +2002,76 @@ test("handlePostTurnPullRequestTransitionsPhase comments when merge readiness st
   assert.match(commentBodies[0] ?? "", /<!-- codex-supervisor:tracked-pr-status-comment issue=102 pr=116 kind=status -->/);
 });
 
-test("handlePostTurnPullRequestTransitionsPhase republishes merge-readiness blocker comment when required-check evidence changes on the same head", async () => {
+test("handlePostTurnPullRequestTransitionsPhase skips merge-stage sticky comments on the first clean-check observation", async () => {
+  const config = createConfig();
+  const issue = createIssue({ title: "Suppress first-observation merge-stage blocker comment" });
+  const pr = createPullRequest({
+    title: "Tracked PR merge-readiness blocker",
+    number: 116,
+    isDraft: false,
+    headRefOid: "head-116",
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        issue_number: 102,
+        state: "waiting_ci",
+        pr_number: pr.number,
+        last_head_sha: pr.headRefOid,
+      }),
+    },
+  };
+  const commentBodies: string[] = [];
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: createNoopStateStore(),
+    github: createDefaultGithub({
+      addIssueComment: async (_prNumber: number, body: string) => {
+        commentBodies.push(body);
+      },
+    }),
+    context: createPostTurnContext({
+      state,
+      record: state.issues["102"]!,
+      issue,
+      pr,
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+    }),
+    derivePullRequestLifecycleSnapshot: (recordForState) =>
+      createLifecycleSnapshot(recordForState, "pr_open", {
+        failureContext: null,
+        mergeLatencyVisibilityPatch: createInitialMergeStageObservationPatch(pr.headRefOid),
+      }),
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    blockedReasonFromReviewState: () => null,
+    summarizeChecks,
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runLocalCiCommand: async () => undefined,
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
+    loadOpenPullRequestSnapshot: async () => ({
+      pr,
+      checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      reviewThreads: [] satisfies ReviewThread[],
+    }),
+  });
+
+  assert.equal(result.record.state, "pr_open");
+  assert.equal(commentBodies.length, 0);
+});
+
+test("handlePostTurnPullRequestTransitionsPhase republishes merge-readiness blocker comment when full required-check evidence changes on the same head", async () => {
   const config = createConfig();
   const issue = createIssue({ title: "Refresh merge-readiness blocker comment when required checks change" });
   const pr = createPullRequest({
@@ -2017,6 +2103,7 @@ test("handlePostTurnPullRequestTransitionsPhase republishes merge-readiness bloc
       derivePullRequestLifecycleSnapshot: (recordForState) =>
         createLifecycleSnapshot(recordForState, "pr_open", {
           failureContext: null,
+          mergeLatencyVisibilityPatch: createPersistentMergeStagePatch(pr.headRefOid),
         }),
       applyFailureSignature: (_record, failureContext) => ({
         last_failure_signature: failureContext?.signature ?? null,
@@ -2047,10 +2134,15 @@ test("handlePostTurnPullRequestTransitionsPhase republishes merge-readiness bloc
         state: "waiting_ci",
         pr_number: pr.number,
         last_head_sha: pr.headRefOid,
+        ...createPersistentMergeStagePatch(pr.headRefOid),
       }),
     },
   };
-  const firstChecks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+  const firstChecks: PullRequestCheck[] = [
+    { name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" },
+    { name: "lint", state: "SUCCESS", bucket: "pass", workflow: "CI" },
+    { name: "unit", state: "SUCCESS", bucket: "pass", workflow: "CI" },
+  ];
   const firstResult = await runScenario(firstState, firstChecks);
 
   const secondState: SupervisorStateFile = {
@@ -2059,16 +2151,41 @@ test("handlePostTurnPullRequestTransitionsPhase republishes merge-readiness bloc
       "102": firstResult.record,
     },
   };
-  const secondChecks: PullRequestCheck[] = [{ name: "lint", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+  const secondChecks: PullRequestCheck[] = [
+    { name: "unit", state: "SUCCESS", bucket: "pass", workflow: "CI" },
+    { name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" },
+    { name: "typecheck", state: "SUCCESS", bucket: "pass", workflow: "CI" },
+  ];
   const secondResult = await runScenario(secondState, secondChecks);
+
+  const thirdState: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": secondResult.record,
+    },
+  };
+  const thirdChecks: PullRequestCheck[] = [
+    { name: "typecheck", state: "SUCCESS", bucket: "pass", workflow: "CI" },
+    { name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" },
+    { name: "unit", state: "SUCCESS", bucket: "pass", workflow: "CI" },
+  ];
+  const thirdResult = await runScenario(thirdState, thirdChecks);
 
   assert.equal(commentBodies.length, 2);
   assert.notEqual(
     firstResult.record.last_host_local_pr_blocker_comment_signature,
     secondResult.record.last_host_local_pr_blocker_comment_signature,
   );
+  assert.equal(
+    secondResult.record.last_host_local_pr_blocker_comment_signature,
+    thirdResult.record.last_host_local_pr_blocker_comment_signature,
+  );
   assert.match(commentBodies[0] ?? "", /check=build:pass:SUCCESS/);
-  assert.match(commentBodies[1] ?? "", /check=lint:pass:SUCCESS/);
+  assert.match(commentBodies[0] ?? "", /check=lint:pass:SUCCESS/);
+  assert.doesNotMatch(commentBodies[0] ?? "", /check=unit:pass:SUCCESS/);
+  assert.match(commentBodies[1] ?? "", /check=build:pass:SUCCESS/);
+  assert.match(commentBodies[1] ?? "", /check=typecheck:pass:SUCCESS/);
+  assert.doesNotMatch(commentBodies[1] ?? "", /check=unit:pass:SUCCESS/);
 });
 
 test("handlePostTurnPullRequestTransitionsPhase syncs the journal even when persistent status commenting is skipped", async () => {

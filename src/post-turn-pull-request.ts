@@ -276,11 +276,27 @@ function buildRequiredCheckMismatchEvidence(args: {
   pr: Pick<GitHubPullRequest, "mergeStateStatus" | "mergeable">;
   checks: PullRequestCheck[];
 }): string[] {
+  const sortedChecks = [...args.checks]
+    .map((check) => `check=${check.name}:${check.bucket}:${check.state}`)
+    .sort();
+
   return [
     `merge_state=${args.pr.mergeStateStatus}`,
     `mergeable=${args.pr.mergeable ?? "unknown"}`,
-    ...args.checks.map((check) => `check=${check.name}:${check.bucket}:${check.state}`),
-  ].slice(0, 4);
+    ...sortedChecks,
+  ];
+}
+
+function hasPersistentTrackedPrMergeStageSignal(args: {
+  record: Pick<IssueRunRecord, "merge_readiness_last_evaluated_at" | "provider_success_head_sha" | "provider_success_observed_at">;
+  pr: Pick<GitHubPullRequest, "headRefOid">;
+}): boolean {
+  return Boolean(
+    args.record.provider_success_observed_at &&
+      args.record.merge_readiness_last_evaluated_at &&
+      args.record.provider_success_head_sha === args.pr.headRefOid &&
+      args.record.merge_readiness_last_evaluated_at !== args.record.provider_success_observed_at,
+  );
 }
 
 function derivePersistentTrackedPrStatusComment(args: {
@@ -318,6 +334,10 @@ function derivePersistentTrackedPrStatusComment(args: {
     };
   }
 
+  if (!hasPersistentTrackedPrMergeStageSignal({ record: args.record, pr: args.pr })) {
+    return null;
+  }
+
   const mismatch = buildTrackedPrMismatch(
     args.config,
     args.record,
@@ -340,12 +360,14 @@ function derivePersistentTrackedPrStatusComment(args: {
   }
 
   if (args.pr.mergeStateStatus === "BLOCKED") {
-    const evidence = buildRequiredCheckMismatchEvidence({
+    const fullEvidence = buildRequiredCheckMismatchEvidence({
       pr: args.pr,
       checks: args.checks,
     });
+    const evidence = fullEvidence.slice(0, 4);
     return {
-      blockerSignature: `merge-state:${args.pr.mergeStateStatus}:${args.pr.mergeable ?? "unknown"}:${evidence.join("|")}`,
+      blockerSignature:
+        `merge-state:${args.pr.mergeStateStatus}:${args.pr.mergeable ?? "unknown"}:${fullEvidence.join("|")}`,
       body: buildTrackedPrPersistentStatusComment({
         pr: args.pr,
         reasonCode: TRACKED_PR_STATUS_COMMENT_REASON_CODE_REQUIRED_CHECK_MISMATCH,
