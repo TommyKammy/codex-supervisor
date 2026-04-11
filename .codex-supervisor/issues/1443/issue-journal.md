@@ -35,12 +35,12 @@ Failure signature: PRRT_kwDORgvdZ856VEIF
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: The remaining review gap was narrower than the original downtime bug: open tracked-PR resume reconciliation cleared reconciliation-progress `waitStep` at loop start but did not repopulate it when fresh GitHub facts projected the record into `waiting_ci`.
-- What changed: Mirrored the stale-failed tracked-PR path in merged/open resume reconciliation by threading `inferGitHubWaitStep` into `reconcileTrackedMergedButOpenIssuesInModule`, updating reconciliation progress with the inferred GitHub wait step before applying the recovery patch, and adding a regression that proves an open `pr_open` record refreshed into `waiting_ci` reports `configured_bot_initial_grace_wait`.
+- What changed: Mirrored the stale-failed tracked-PR path in merged/open resume reconciliation by threading `inferGitHubWaitStep` into `reconcileTrackedMergedButOpenIssuesInModule`, updating reconciliation progress with the inferred GitHub wait step before applying the recovery patch, adding a regression that proves an open `pr_open` record refreshed into `waiting_ci` reports `configured_bot_initial_grace_wait`, and pushing the review fix as commit `10f115e` on `codex/issue-1443`.
 - Current blocker: none
-- Next exact step: Commit and push the review fix to `codex/issue-1443`, then leave PR #1445 ready for re-review.
+- Next exact step: Wait for PR #1445 re-review or resolve the thread manually if the operator wants an explicit reply/resolution action.
 - Verification gap: The full `src/supervisor/supervisor-execution-orchestration.test.ts` suite still contains a pre-existing unrelated stale no-PR test failure outside this tracked-PR issue scope; the targeted tracked-PR regressions and the issue's required verification commands passed.
 - Files touched: src/recovery-tracked-pr-reconciliation.ts; src/recovery-reconciliation.ts; src/supervisor/tracked-pr-mismatch.ts; src/supervisor/supervisor-execution-orchestration.test.ts; src/supervisor/supervisor-recovery-reconciliation.test.ts; src/supervisor/supervisor-diagnostics-status-selection.test.ts; src/supervisor/supervisor-diagnostics-explain.test.ts
 - Rollback concern: The added wait-step projection is intentionally limited to the open tracked-PR resume path and only updates reconciliation progress, so it should not perturb persisted issue state or same-state retry accounting.
-- Last focused command: npm run build
+- Last focused command: git push origin codex/issue-1443
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
