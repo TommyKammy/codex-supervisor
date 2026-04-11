@@ -12,6 +12,7 @@ import {
   reconcileParentEpicClosures,
   reconcileRecoverableBlockedIssueStates,
   reconcileStaleActiveIssueReservation,
+  reconcileStaleDoneIssueStates,
   reconcileStaleFailedIssueStates,
   reconcileTrackedMergedButOpenIssues,
 } from "../recovery-reconciliation";
@@ -1086,6 +1087,8 @@ export class Supervisor {
           syncCopilotReviewTimeoutState,
           inferGitHubWaitStep,
         }, updateReconciliationProgress),
+      reconcileStaleDoneIssueStates: (state, issues) =>
+        reconcileStaleDoneIssueStates(this.github, this.stateStore, state, issues),
       reconcileRecoverableBlockedIssueStates: (state, issues, options) =>
         reconcileRecoverableBlockedIssueStates(this.github, this.stateStore, state, this.config, issues, {
           shouldAutoRetryHandoffMissing,

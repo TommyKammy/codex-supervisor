@@ -59,6 +59,10 @@ interface RunOnceCyclePreludeArgs {
     issues: GitHubIssue[],
     updateReconciliationProgress: (patch: ReconciliationProgressPatch) => Promise<void>,
   ) => Promise<void>;
+  reconcileStaleDoneIssueStates?: (
+    state: SupervisorStateFile,
+    issues: GitHubIssue[],
+  ) => Promise<RecoveryEvent[]>;
   reconcileRecoverableBlockedIssueStates: (
     state: SupervisorStateFile,
     issues: GitHubIssue[],
@@ -267,6 +271,13 @@ export async function runOnceCyclePrelude(
 
     await setReconciliationPhase("stale_failed_issue_states");
     await args.reconcileStaleFailedIssueStates(state, issues, updateReconciliationProgress);
+
+    if (args.reconcileStaleDoneIssueStates) {
+      await setReconciliationPhase("stale_done_issue_states");
+      const staleDoneEvents = await args.reconcileStaleDoneIssueStates(state, issues);
+      recoveryEvents.push(...staleDoneEvents);
+      emitRecoveryEvents(staleDoneEvents);
+    }
 
     await setReconciliationPhase("recoverable_blocked_issue_states");
     const recoverableBlockedEvents = await args.reconcileRecoverableBlockedIssueStates(state, issues, {

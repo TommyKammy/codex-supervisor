@@ -16,6 +16,53 @@ type FailedNoPrBranchRecoveryState = "recoverable" | "already_satisfied_on_main"
 const FAILED_NO_PR_ALREADY_SATISFIED_SIGNATURE = "failed-no-pr-already-satisfied-on-main";
 const FAILED_NO_PR_MANUAL_REVIEW_SIGNATURE = "failed-no-pr-manual-review-required";
 
+function normalizeRecoveryReason(reason: string | null | undefined): string {
+  return (reason ?? "").toLowerCase();
+}
+
+export function hasUnsafeNoPrDoneRecoveryReason(
+  record: Pick<IssueRunRecord, "pr_number" | "last_recovery_reason">,
+): boolean {
+  if (record.pr_number !== null) {
+    return false;
+  }
+
+  const reason = normalizeRecoveryReason(record.last_recovery_reason);
+  if (!reason.includes("no meaningful branch changes")) {
+    return false;
+  }
+
+  return (
+    reason.includes("already_satisfied_on_main") ||
+    reason.includes("failed no-pr recovery") ||
+    reason.includes("failed no pr recovery") ||
+    reason.includes("failed no-pr zero-diff") ||
+    reason.includes("failed no pr zero-diff") ||
+    reason.includes("stale stabilizing recovery")
+  );
+}
+
+export function buildUnsafeNoPrDoneFailureContext(args: {
+  issueNumber: number;
+  detail: string;
+}): NonNullable<IssueRunRecord["last_failure_context"]> {
+  return {
+    category: "blocked",
+    summary: `Issue #${args.issueNumber} is locally marked done without authoritative completion evidence, but GitHub still reports the issue as open. ${args.detail}`,
+    signature: FAILED_NO_PR_ALREADY_SATISFIED_SIGNATURE,
+    command: null,
+    details: [
+      "state=done",
+      "tracked_pr=none",
+      "github_issue_state=OPEN",
+      "completion_evidence=missing",
+      "operator_action=confirm whether the issue should be requeued or whether completion landed outside the tracked PR flow",
+    ],
+    url: null,
+    updated_at: nowIso(),
+  };
+}
+
 export function sanitizeRecoveryReason(reason: string): string {
   return reason.replace(/\r?\n/g, "\\n");
 }

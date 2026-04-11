@@ -279,6 +279,99 @@ test("runOnceCyclePrelude rehydrates tracked blocked PRs before reserving select
   ]);
 });
 
+test("runOnceCyclePrelude reconciles stale done no-PR records before reserving a new issue", async () => {
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "77": createRecord({
+        issue_number: 77,
+        state: "done",
+        pr_number: null,
+        blocked_reason: null,
+        codex_session_id: null,
+        last_recovery_reason:
+          "already_satisfied_on_main: marked issue #77 done after failed no-PR recovery found no meaningful branch changes",
+      }),
+    },
+  };
+  const issues: GitHubIssue[] = [
+    {
+      number: 77,
+      title: "Stale done issue",
+      body: "",
+      createdAt: "2026-03-26T00:00:00Z",
+      updatedAt: "2026-03-26T00:00:00Z",
+      url: "https://example.test/issues/77",
+      state: "OPEN",
+    },
+  ];
+  const calls: string[] = [];
+
+  const result = await runOnceCyclePrelude({
+    stateStore: {
+      load: async () => state,
+      save: async () => {
+        calls.push("save");
+      },
+    },
+    carryoverRecoveryEvents: [],
+    reconcileStaleActiveIssueReservation: async () => [],
+    handleAuthFailure: async () => null,
+    listAllIssues: async () => issues,
+    reserveRunnableIssueSelection: async (loadedState) => {
+      calls.push(`reserve:${loadedState.issues["77"]?.state}`);
+      return false;
+    },
+    reconcileTrackedMergedButOpenIssues: async () => {
+      calls.push("tracked_merged");
+      return [];
+    },
+    reconcileMergedIssueClosures: async () => {
+      calls.push("merged_closures");
+      return [];
+    },
+    reconcileStaleFailedIssueStates: async () => {
+      calls.push("stale_failed");
+    },
+    reconcileStaleDoneIssueStates: async (loadedState, loadedIssues) => {
+      calls.push("stale_done");
+      assert.equal(loadedState, state);
+      assert.equal(loadedIssues, issues);
+      loadedState.issues["77"] = {
+        ...loadedState.issues["77"]!,
+        state: "blocked",
+        blocked_reason: "manual_review",
+      };
+      return [];
+    },
+    reconcileRecoverableBlockedIssueStates: async () => {
+      calls.push("recoverable_blocked");
+      return [];
+    },
+    reconcileParentEpicClosures: async () => {
+      calls.push("parent_epics");
+    },
+    cleanupExpiredDoneWorkspaces: async () => {
+      calls.push("cleanup");
+      return [];
+    },
+  });
+
+  assert.ok(!("kind" in result));
+  assert.deepEqual(calls, [
+    "save",
+    "tracked_merged",
+    "merged_closures",
+    "stale_failed",
+    "stale_done",
+    "recoverable_blocked",
+    "reserve:blocked",
+    "recoverable_blocked",
+    "parent_epics",
+    "cleanup",
+  ]);
+});
+
 test("runOnceCyclePrelude reconciles tracked PR-open issues before reserving a new issue", async () => {
   const state: SupervisorStateFile = {
     activeIssueNumber: null,
