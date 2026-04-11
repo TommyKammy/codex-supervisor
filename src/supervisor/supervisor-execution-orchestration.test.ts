@@ -328,7 +328,7 @@ test("runOnce reconciles tracked PR state before reserving a new runnable issue"
   const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
   assert.equal(persisted.activeIssueNumber, selectedIssueNumber);
   assert.equal(persisted.issues[String(selectedIssueNumber)]?.state, "reproducing");
-  assert.equal(persisted.issues[String(unrelatedIssueNumber)]?.state, "waiting_ci");
+  assert.equal(persisted.issues[String(unrelatedIssueNumber)]?.state, "ready_to_merge");
   assert.equal(persisted.issues[String(unrelatedIssueNumber)]?.pr_number, 192);
 });
 
@@ -430,6 +430,101 @@ test("runOnce converges stale failed tracked PR state before selecting the resum
   assert.equal(
     record.last_recovery_reason,
     "tracked_pr_lifecycle_recovered: resumed issue #366 from failed to draft_pr using fresh tracked PR #191 facts at head head-191",
+  );
+  assert.ok(record.last_recovery_at);
+});
+
+test("runOnce refreshes stale waiting_ci tracked PR review state after downtime before stopping on the new blocked state", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 366;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = createSupervisorState({
+    activeIssueNumber: issueNumber,
+    issues: [
+      createTrackedSupervisorRecord(fixture.config, fixture.workspaceRoot, issueNumber, {
+        state: "waiting_ci",
+        pr_number: 191,
+        last_head_sha: "head-191",
+        codex_session_id: "thread-366",
+      }),
+    ],
+  });
+  await writeSupervisorState(fixture.stateFile, state);
+
+  const issue = createTrackedIssue(issueNumber, {
+    title: "Refresh stale waiting_ci tracked PR state",
+    body: executionReadyBody("Refresh tracked PR lifecycle state from GitHub after downtime."),
+  });
+  const pr = createTrackedPullRequest(fixture.config, issueNumber, {
+    number: 191,
+    title: "Recovery implementation",
+    isDraft: false,
+    headRefOid: "head-191",
+    reviewDecision: "CHANGES_REQUESTED",
+  });
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { loadOpenPullRequestSnapshot: (prNumber: number) => Promise<unknown> }).loadOpenPullRequestSnapshot = async (
+    prNumber: number,
+  ) => {
+    assert.equal(prNumber, pr.number);
+    return {
+      pr,
+      checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      reviewThreads: [createReviewThread({ id: "thread-191", isResolved: false })],
+    };
+  };
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [issue],
+    listCandidateIssues: async () => [issue],
+    getIssue: async (requestedIssueNumber: number) => {
+      assert.equal(requestedIssueNumber, issueNumber);
+      return issue;
+    },
+    resolvePullRequestForBranch: async (requestedBranch: string, prNumber: number | null) => {
+      assert.equal(requestedBranch, branch);
+      assert.equal(prNumber, pr.number);
+      return pr;
+    },
+    getChecks: async (prNumber: number) => {
+      assert.equal(prNumber, pr.number);
+      return [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+    },
+    getUnresolvedReviewThreads: async (prNumber: number) => {
+      assert.equal(prNumber, pr.number);
+      return [createReviewThread({ id: "thread-191", isResolved: false })];
+    },
+    getPullRequestIfExists: async (prNumber: number) => {
+      assert.equal(prNumber, pr.number);
+      return pr;
+    },
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: true });
+  assert.match(
+    message,
+    /recovery issue=#366 reason=tracked_pr_lifecycle_recovered: resumed issue #366 from waiting_ci to blocked using fresh tracked PR #191 facts at head head-191; No matching open issue found\./,
+  );
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  const record = persisted.issues[String(issueNumber)];
+  assert.equal(persisted.activeIssueNumber, null);
+  assert.equal(record.state, "blocked");
+  assert.equal(record.blocked_reason, "manual_review");
+  assert.equal(record.pr_number, pr.number);
+  assert.match(record.last_error ?? "", /review/i);
+  assert.ok(record.last_failure_context);
+  assert.equal(
+    record.last_recovery_reason,
+    "tracked_pr_lifecycle_recovered: resumed issue #366 from waiting_ci to blocked using fresh tracked PR #191 facts at head head-191",
   );
   assert.ok(record.last_recovery_at);
 });

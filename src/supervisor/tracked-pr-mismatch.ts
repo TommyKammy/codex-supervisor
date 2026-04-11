@@ -274,7 +274,7 @@ export function buildTrackedPrMismatch(
       `stale_local_blocker=${staleLocalBlocker ? "yes" : "no"}`,
     ].join(" "),
     guidanceLine:
-      "recovery_guidance=Tracked PR facts are fresher than local state; run the supervisor again to refresh tracked PR state. Explicit requeue is unavailable for tracked PR work.",
+      "recovery_guidance=Tracked PR facts are fresher than local state; run a one-shot supervisor cycle such as `node dist/index.js run-once --config ... --dry-run` to refresh tracked PR state. Explicit requeue is unavailable for tracked PR work.",
     detailLines: buildTrackedPrHostLocalCiDetailLines(config, record, pr, checks),
   };
 }

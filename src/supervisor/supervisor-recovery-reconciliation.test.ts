@@ -3427,10 +3427,13 @@ test("reconcileTrackedMergedButOpenIssues resumes from persisted progress in the
     { maxRecords: 1 },
   );
 
-  assert.deepEqual(firstCycleEvents, []);
+  assert.deepEqual(firstCycleEvents.map((event) => event.reason), [
+    "tracked_pr_head_advanced: resumed issue #366 from waiting_ci to ready_to_merge after tracked PR #191 advanced from abcdef1 to open-head-191",
+  ]);
   assert.deepEqual(prLookups, [191]);
   assert.equal(saveCalls, 1);
-  assert.equal(state.issues["366"]?.state, "waiting_ci");
+  assert.equal(state.issues["366"]?.state, "ready_to_merge");
+  assert.equal(state.issues["366"]?.last_head_sha, "open-head-191");
   assert.equal(state.issues["367"]?.state, "merging");
 
   const secondCycleEvents = await reconcileTrackedMergedButOpenIssues(
