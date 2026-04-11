@@ -25,7 +25,11 @@ const VALID_TRUST_MODES = new Set<TrustMode>(["trusted_repo_and_authors", "untru
 const VALID_EXECUTION_SAFETY_MODES = new Set<ExecutionSafetyMode>(["unsandboxed_autonomous", "operator_gated"]);
 const VALID_LOCAL_REVIEW_POLICIES = new Set<LocalReviewPolicy>(["advisory", "block_ready", "block_merge"]);
 const VALID_LOCAL_REVIEW_HIGH_SEVERITY_ACTIONS = new Set<LocalReviewHighSeverityAction>(["retry", "blocked"]);
-const VALID_STALE_CONFIGURED_BOT_REVIEW_POLICIES = new Set<StaleConfiguredBotReviewPolicy>(["diagnose_only", "reply_only"]);
+const VALID_STALE_CONFIGURED_BOT_REVIEW_POLICIES = new Set<StaleConfiguredBotReviewPolicy>([
+  "diagnose_only",
+  "reply_only",
+  "reply_and_resolve",
+]);
 const VALID_COPILOT_REVIEW_TIMEOUT_ACTIONS = new Set<CopilotReviewTimeoutAction>(["continue", "block"]);
 const VALID_LOCAL_REVIEW_MINIMUM_SEVERITIES = new Set<LocalReviewReviewerThresholdConfig["minimumSeverity"]>(["low", "medium", "high"]);
 const VALID_RUN_STATES = new Set<RunState>([
@@ -84,7 +88,7 @@ function parseStaleConfiguredBotReviewPolicy(value: unknown): StaleConfiguredBot
   }
 
   throw new Error(
-    `Invalid config field: staleConfiguredBotReviewPolicy (unsupported value: ${String(value)}; supported values: diagnose_only, reply_only)`,
+    `Invalid config field: staleConfiguredBotReviewPolicy (unsupported value: ${String(value)}; supported values: diagnose_only, reply_only, reply_and_resolve)`,
   );
 }
 

@@ -841,7 +841,7 @@ test("loadConfig accepts explicit stale configured-bot reply_only policy", async
   assert.equal(config.staleConfiguredBotReviewPolicy, "reply_only");
 });
 
-test("loadConfig rejects unsupported explicit stale configured-bot review policies", async (t) => {
+test("loadConfig accepts explicit stale configured-bot reply_and_resolve policy", async (t) => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
   t.after(async () => {
     await fs.rm(tempDir, { recursive: true, force: true });
@@ -864,17 +864,44 @@ test("loadConfig rejects unsupported explicit stale configured-bot review polici
     "utf8",
   );
 
+  const config = loadConfig(configPath);
+  assert.equal(config.staleConfiguredBotReviewPolicy, "reply_and_resolve");
+});
+
+test("loadConfig rejects unsupported explicit stale configured-bot review policies", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  const configPath = path.join(tempDir, "supervisor.config.json");
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "./.local/worktrees",
+      stateBackend: "json",
+      stateFile: "./.local/state.json",
+      codexBinary: "codex",
+      branchPrefix: "codex/issue-",
+      staleConfiguredBotReviewPolicy: "resolve_only",
+    }),
+    "utf8",
+  );
+
   const summary = loadConfigSummary(configPath);
   assert.equal(summary.status, "invalid_config");
   assert.deepEqual(summary.invalidFields, ["staleConfiguredBotReviewPolicy"]);
   assert.match(
     summary.error ?? "",
-    /Invalid config field: staleConfiguredBotReviewPolicy \(unsupported value: reply_and_resolve; supported values: diagnose_only, reply_only\)/,
+    /Invalid config field: staleConfiguredBotReviewPolicy \(unsupported value: resolve_only; supported values: diagnose_only, reply_only, reply_and_resolve\)/,
   );
 
   assert.throws(
     () => loadConfig(configPath),
-    /Invalid config field: staleConfiguredBotReviewPolicy \(unsupported value: reply_and_resolve; supported values: diagnose_only, reply_only\)/,
+    /Invalid config field: staleConfiguredBotReviewPolicy \(unsupported value: resolve_only; supported values: diagnose_only, reply_only, reply_and_resolve\)/,
   );
 });
 
