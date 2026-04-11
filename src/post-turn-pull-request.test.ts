@@ -1713,6 +1713,10 @@ test("handlePostTurnPullRequestTransitionsPhase comments once when tracked draft
   assert.match(commentBodies[0] ?? "", /still draft because provider review is intentionally suppressed/i);
   assert.match(commentBodies[0] ?? "", /reason code: `draft_review_provider_suppressed`/i);
   assert.match(commentBodies[0] ?? "", /automatic retry: yes/i);
+  assert.match(
+    commentBodies[0] ?? "",
+    /<!-- codex-supervisor:tracked-pr-status-comment issue=102 pr=116 kind=status -->/,
+  );
 
   const dedupedState: SupervisorStateFile = {
     ...firstState,
