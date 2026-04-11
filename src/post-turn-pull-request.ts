@@ -735,17 +735,24 @@ async function maybeCommentOnTrackedPrPersistentStatus(args: {
     comment &&
     args.github.replyToReviewThread
   ) {
-      return maybeReplyOnTrackedPrStaleConfiguredBotReview({
-        github: args.github,
-        stateStore: args.stateStore,
-        state: args.state,
-        record: args.record,
-        pr: args.pr,
-        reviewThreads: args.reviewThreads,
-        syncJournal: args.syncJournal,
-        config: args.config,
-        failureContext: args.failureContext,
-      });
+    const repliedRecord = await maybeReplyOnTrackedPrStaleConfiguredBotReview({
+      github: args.github,
+      stateStore: args.stateStore,
+      state: args.state,
+      record: args.record,
+      pr: args.pr,
+      reviewThreads: args.reviewThreads,
+      syncJournal: args.syncJournal,
+      config: args.config,
+      failureContext: args.failureContext,
+    });
+    const replyHandled =
+      repliedRecord.last_stale_review_bot_reply_head_sha === args.pr.headRefOid &&
+      repliedRecord.last_stale_review_bot_reply_signature ===
+        (args.failureContext?.signature ?? TRACKED_PR_STATUS_COMMENT_REASON_CODE_STALE_REVIEW_BOT);
+    if (replyHandled) {
+      return repliedRecord;
+    }
   }
 
   if (!args.github.addIssueComment) {
