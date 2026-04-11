@@ -518,9 +518,7 @@ function buildStaleConfiguredBotReplyBody(args: {
       const fileMatch = detail.match(/\bfile=([^\s]+)/);
       const lineMatch = detail.match(/\bline=(\d+)/);
       return fileMatch?.[1] === (args.thread.path ?? "unknown") && lineMatch?.[1] === String(args.thread.line ?? "?");
-    }) ??
-    args.failureContext?.details?.[0] ??
-    `location=${location} processed_on_current_head=yes`;
+    }) ?? `location=${location} processed_on_current_head=yes`;
   const sourceLink = latestComment?.url ?? args.failureContext?.url;
   const sourceLine = sourceLink ? ` Source: ${sourceLink}` : "";
   return [

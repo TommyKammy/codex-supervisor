@@ -2397,6 +2397,138 @@ test("handlePostTurnPullRequestTransitionsPhase replies and resolves stale confi
   assert.equal(resolveCalls.length, 2);
 });
 
+test("handlePostTurnPullRequestTransitionsPhase does not reuse another stale thread's evidence when replying", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["copilot-pull-request-reviewer"],
+    staleConfiguredBotReviewPolicy: "reply_and_resolve",
+  });
+  const issue = createIssue({ title: "Keep stale reply evidence pinned to the matching thread" });
+  const pr = createPullRequest({
+    title: "Tracked PR stale configured-bot blocker with unmatched evidence",
+    number: 116,
+    isDraft: false,
+    headRefOid: "head-116",
+    mergeStateStatus: "CLEAN",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        issue_number: 102,
+        state: "blocked",
+        pr_number: pr.number,
+        last_head_sha: pr.headRefOid,
+        blocked_reason: "stale_review_bot",
+      }),
+    },
+  };
+  const replyCalls: Array<{ threadId: string; body: string }> = [];
+  const resolveCalls: string[] = [];
+  const staleBotFailureContext = {
+    ...createFailureContext(
+      "2 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
+    ),
+    signature: "stalled-bot:thread-1|stalled-bot:thread-2",
+    details: ["reviewer=copilot-pull-request-reviewer file=src/review-a.ts line=42 processed_on_current_head=yes"],
+    url: "https://example.test/review/1",
+  };
+  const reviewThreads = [
+    createReviewThread({
+      id: "thread-1",
+      path: "src/review-a.ts",
+      line: 42,
+      comments: {
+        nodes: [
+          {
+            id: "comment-1",
+            body: "This finding is stale on the current head.",
+            createdAt: "2026-03-13T02:05:00Z",
+            url: "https://example.test/pr/116#discussion_r1",
+            author: {
+              login: "copilot-pull-request-reviewer",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+    createReviewThread({
+      id: "thread-2",
+      path: "src/review-b.ts",
+      line: 84,
+      comments: {
+        nodes: [
+          {
+            id: "comment-2",
+            body: "This second finding is also stale on the current head.",
+            createdAt: "2026-03-13T02:07:00Z",
+            url: "https://example.test/pr/116#discussion_r2",
+            author: {
+              login: "copilot-pull-request-reviewer",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  ] satisfies ReviewThread[];
+
+  await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: createNoopStateStore(),
+    github: createDefaultGithub({
+      addIssueComment: async () => {
+        throw new Error("unexpected addIssueComment call");
+      },
+      replyToReviewThread: async (threadId: string, body: string) => {
+        replyCalls.push({ threadId, body });
+      },
+      resolveReviewThread: async (threadId: string) => {
+        resolveCalls.push(threadId);
+      },
+    }),
+    context: createPostTurnContext({
+      state,
+      record: state.issues["102"]!,
+      issue,
+      pr,
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+    }),
+    derivePullRequestLifecycleSnapshot: (recordForState) =>
+      createLifecycleSnapshot(recordForState, "blocked", {
+        failureContext: staleBotFailureContext,
+      }),
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    blockedReasonFromReviewState: () => "stale_review_bot",
+    summarizeChecks,
+    configuredBotReviewThreads: () => reviewThreads,
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runLocalCiCommand: async () => undefined,
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
+    loadOpenPullRequestSnapshot: async () => ({
+      pr,
+      checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      reviewThreads,
+    }),
+  });
+
+  assert.deepEqual(
+    replyCalls.map((call) => call.threadId),
+    ["thread-1", "thread-2"],
+  );
+  assert.deepEqual(resolveCalls, ["thread-1", "thread-2"]);
+  assert.match(replyCalls[0]?.body ?? "", /file=src\/review-a\.ts line=42 processed_on_current_head=yes/i);
+  assert.match(replyCalls[1]?.body ?? "", /location=src\/review-b\.ts:84 processed_on_current_head=yes/i);
+  assert.doesNotMatch(replyCalls[1]?.body ?? "", /file=src\/review-a\.ts line=42 processed_on_current_head=yes/i);
+});
+
 test("handlePostTurnPullRequestTransitionsPhase keeps reply_and_resolve suppressed while unresolved human review remains", async () => {
   const config = createConfig({
     reviewBotLogins: ["copilot-pull-request-reviewer"],
