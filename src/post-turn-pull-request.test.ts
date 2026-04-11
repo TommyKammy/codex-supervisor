@@ -1832,6 +1832,159 @@ test("handlePostTurnPullRequestTransitionsPhase updates the sticky tracked PR st
   assert.match(updateCalls[0]?.body ?? "", /<!-- codex-supervisor:tracked-pr-status-comment issue=102 pr=116 kind=status -->/);
 });
 
+test("handlePostTurnPullRequestTransitionsPhase comments when a tracked PR stays blocked on persistent manual review near merge", async () => {
+  const config = createConfig({
+    humanReviewBlocksMerge: true,
+  });
+  const issue = createIssue({ title: "Comment on persistent tracked PR manual-review blockers" });
+  const pr = createPullRequest({
+    title: "Tracked PR manual-review blocker",
+    number: 116,
+    isDraft: false,
+    headRefOid: "head-116",
+    mergeStateStatus: "CLEAN",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        issue_number: 102,
+        state: "pr_open",
+        pr_number: pr.number,
+        last_head_sha: pr.headRefOid,
+      }),
+    },
+  };
+  const commentBodies: string[] = [];
+  const manualReviewFailureContext = {
+    ...createFailureContext("1 unresolved manual or unconfigured review thread(s) require human attention."),
+    signature: "manual:thread-1",
+    details: [
+      "src/review.ts:42 reviewer=human-reviewer summary=Please verify this behavior in a live environment. url=https://example.test/review/1",
+    ],
+    url: "https://example.test/review/1",
+  };
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: createNoopStateStore(),
+    github: createDefaultGithub({
+      addIssueComment: async (_prNumber: number, body: string) => {
+        commentBodies.push(body);
+      },
+    }),
+    context: createPostTurnContext({
+      state,
+      record: state.issues["102"]!,
+      issue,
+      pr,
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+    }),
+    derivePullRequestLifecycleSnapshot: (recordForState) =>
+      createLifecycleSnapshot(recordForState, "blocked", {
+        failureContext: manualReviewFailureContext,
+      }),
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    blockedReasonFromReviewState: () => "manual_review",
+    summarizeChecks,
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runLocalCiCommand: async () => undefined,
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
+    loadOpenPullRequestSnapshot: async () => ({
+      pr,
+      checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      reviewThreads: [] satisfies ReviewThread[],
+    }),
+  });
+
+  assert.equal(result.record.state, "blocked");
+  assert.equal(result.record.blocked_reason, "manual_review");
+  assert.equal(commentBodies.length, 1);
+  assert.match(commentBodies[0] ?? "", /reason code: `manual_review`/i);
+  assert.match(commentBodies[0] ?? "", /require human attention/i);
+  assert.match(commentBodies[0] ?? "", /<!-- codex-supervisor:tracked-pr-status-comment issue=102 pr=116 kind=status -->/);
+});
+
+test("handlePostTurnPullRequestTransitionsPhase comments when merge readiness stays blocked after checks pass", async () => {
+  const config = createConfig();
+  const issue = createIssue({ title: "Comment on persistent tracked PR merge-readiness mismatches" });
+  const pr = createPullRequest({
+    title: "Tracked PR merge-readiness blocker",
+    number: 116,
+    isDraft: false,
+    headRefOid: "head-116",
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        issue_number: 102,
+        state: "waiting_ci",
+        pr_number: pr.number,
+        last_head_sha: pr.headRefOid,
+      }),
+    },
+  };
+  const commentBodies: string[] = [];
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: createNoopStateStore(),
+    github: createDefaultGithub({
+      addIssueComment: async (_prNumber: number, body: string) => {
+        commentBodies.push(body);
+      },
+    }),
+    context: createPostTurnContext({
+      state,
+      record: state.issues["102"]!,
+      issue,
+      pr,
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+    }),
+    derivePullRequestLifecycleSnapshot: (recordForState) =>
+      createLifecycleSnapshot(recordForState, "pr_open", {
+        failureContext: null,
+      }),
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    blockedReasonFromReviewState: () => null,
+    summarizeChecks,
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runLocalCiCommand: async () => undefined,
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
+    loadOpenPullRequestSnapshot: async () => ({
+      pr,
+      checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      reviewThreads: [] satisfies ReviewThread[],
+    }),
+  });
+
+  assert.equal(result.record.state, "pr_open");
+  assert.equal(commentBodies.length, 1);
+  assert.match(commentBodies[0] ?? "", /reason code: `required_check_mismatch`/i);
+  assert.match(commentBodies[0] ?? "", /merge_state=BLOCKED/i);
+  assert.match(commentBodies[0] ?? "", /Inspect required checks and branch protection/i);
+  assert.match(commentBodies[0] ?? "", /<!-- codex-supervisor:tracked-pr-status-comment issue=102 pr=116 kind=status -->/);
+});
+
 test("handlePostTurnPullRequestTransitionsPhase redacts supervisor-owned cross-issue journals before ready promotion", async (t) => {
   const workspacePath = await createTrackedRepo();
   t.after(async () => {
