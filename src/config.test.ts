@@ -1320,9 +1320,11 @@ test("repo gitignore ignores workstation noise and live issue journals without h
   await fs.copyFile(path.join(rootDir, ".gitignore"), path.join(tempDir, ".gitignore"));
   await fs.writeFile(path.join(tempDir, ".DS_Store"), "", "utf8");
   await fs.mkdir(path.join(tempDir, ".codex-supervisor", "issues", "1443"), { recursive: true });
+  await fs.mkdir(path.join(tempDir, ".codex-supervisor", "issues", "1443abc"), { recursive: true });
   await fs.mkdir(path.join(tempDir, ".codex-supervisor", "issues", "fixtures"), { recursive: true });
   await fs.writeFile(path.join(tempDir, ".codex-supervisor", "issues", "1443", "issue-journal.md"), "", "utf8");
-  await fs.writeFile(path.join(tempDir, ".codex-supervisor", "issues", "fixtures", "journal-fixture.md"), "", "utf8");
+  await fs.writeFile(path.join(tempDir, ".codex-supervisor", "issues", "1443abc", "issue-journal.md"), "", "utf8");
+  await fs.writeFile(path.join(tempDir, ".codex-supervisor", "issues", "fixtures", "issue-journal.md"), "", "utf8");
   await fs.writeFile(path.join(tempDir, "supervisor.config.coderabbit.json"), "{}", "utf8");
 
   execFileSync("git", ["init"], {
@@ -1342,6 +1344,20 @@ test("repo gitignore ignores workstation noise and live issue journals without h
   }).trim();
   assert.equal(ignoredJournalPath, ".codex-supervisor/issues/1443/issue-journal.md");
 
+  const nonNumericIssueLikeExitCode = (() => {
+    try {
+      execFileSync("git", ["check-ignore", ".codex-supervisor/issues/1443abc/issue-journal.md"], {
+        cwd: tempDir,
+        stdio: "ignore",
+      });
+      return 0;
+    } catch (error) {
+      const exitCode = (error as NodeJS.ErrnoException & { status?: number }).status;
+      return typeof exitCode === "number" ? exitCode : -1;
+    }
+  })();
+  assert.equal(nonNumericIssueLikeExitCode, 1);
+
   const coderabbitExitCode = (() => {
     try {
       execFileSync("git", ["check-ignore", "supervisor.config.coderabbit.json"], {
@@ -1358,7 +1374,7 @@ test("repo gitignore ignores workstation noise and live issue journals without h
 
   const fixtureExitCode = (() => {
     try {
-      execFileSync("git", ["check-ignore", ".codex-supervisor/issues/fixtures/journal-fixture.md"], {
+      execFileSync("git", ["check-ignore", ".codex-supervisor/issues/fixtures/issue-journal.md"], {
         cwd: tempDir,
         stdio: "ignore",
       });

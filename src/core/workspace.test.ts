@@ -319,27 +319,42 @@ test("ensureWorkspace bootstraps from the fresh default-branch ref instead of st
   assert.notEqual(branchHeadSha, originDefaultSha);
 });
 
-test("ensureWorkspace hides tracked live issue journals while preserving intentional files outside the live path", async () => {
+test("ensureWorkspace hides tracked live issue journals while preserving intentional files outside the numeric live path", async () => {
   const config = await createRepositoryFixture();
   const trackedJournalPath = path.join(config.repoPath, ".codex-supervisor", "issues", "811", "issue-journal.md");
+  const trackedIssueLikeFixturePath = path.join(config.repoPath, ".codex-supervisor", "issues", "811abc", "issue-journal.md");
   const trackedFixturePath = path.join(config.repoPath, ".codex-supervisor", "issues", "fixtures", "issue-journal.md");
   const issueNumber = 811;
   const branch = `${config.branchPrefix}${issueNumber}`;
 
   await fs.mkdir(path.dirname(trackedJournalPath), { recursive: true });
+  await fs.mkdir(path.dirname(trackedIssueLikeFixturePath), { recursive: true });
   await fs.mkdir(path.dirname(trackedFixturePath), { recursive: true });
   await fs.writeFile(trackedJournalPath, "# live journal\n", "utf8");
+  await fs.writeFile(trackedIssueLikeFixturePath, "# numeric-looking fixture\n", "utf8");
   await fs.writeFile(trackedFixturePath, "# intentional fixture\n", "utf8");
-  await git(config.repoPath, "add", ".codex-supervisor/issues/811/issue-journal.md", ".codex-supervisor/issues/fixtures/issue-journal.md");
+  await git(
+    config.repoPath,
+    "add",
+    ".codex-supervisor/issues/811/issue-journal.md",
+    ".codex-supervisor/issues/811abc/issue-journal.md",
+    ".codex-supervisor/issues/fixtures/issue-journal.md",
+  );
   await git(config.repoPath, "commit", "-m", "Track journal fixture paths");
   await git(config.repoPath, "push", "origin", config.defaultBranch);
 
   const ensured = await ensureWorkspace(config, issueNumber, branch);
 
   await fs.appendFile(path.join(ensured.workspacePath, ".codex-supervisor", "issues", "811", "issue-journal.md"), "runtime note\n", "utf8");
+  await fs.appendFile(
+    path.join(ensured.workspacePath, ".codex-supervisor", "issues", "811abc", "issue-journal.md"),
+    "tracked issue-like fixture note\n",
+    "utf8",
+  );
   await fs.appendFile(path.join(ensured.workspacePath, ".codex-supervisor", "issues", "fixtures", "issue-journal.md"), "tracked fixture note\n", "utf8");
 
   const workspaceStatus = await gitOutput(ensured.workspacePath, "status", "--short");
+  assert.match(workspaceStatus, /\.codex-supervisor\/issues\/811abc\/issue-journal\.md/u);
   assert.match(workspaceStatus, /\.codex-supervisor\/issues\/fixtures\/issue-journal\.md/u);
   assert.doesNotMatch(workspaceStatus, /\.codex-supervisor\/issues\/811\/issue-journal\.md/u);
 });
