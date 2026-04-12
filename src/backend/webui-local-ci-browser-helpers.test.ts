@@ -17,7 +17,7 @@ test("local CI browser helpers summarize a repo-owned candidate contract consist
   };
 
   assert.deepEqual(buildLocalCiContractStatusLines(contract), [
-    "local ci configured=no source=repo script candidate command=none recommended command=npm run verify:pre-pr",
+    "local ci configured=no source=repo script candidate command=none recommended command=npm run verify:pre-pr warning=none",
     "Repo-owned local CI candidate exists but localCiCommand is unset. Recommended command: npm run verify:pre-pr.",
   ]);
   assert.deepEqual(buildLocalCiContractChecklistItems(contract), [{
