@@ -51,12 +51,19 @@ test("buildWorkflowSteps surfaces recover as the current step when only blocked 
   );
 });
 
-test("describeLoopRuntime summarizes running, off, and unknown states", () => {
-  assert.deepEqual(describeLoopRuntime({ state: "running" }), {
-    modeBadge: "Mode: web + loop running",
-    summary: "Loop mode is running on this host",
-    chipLabel: "loop running",
+test("describeLoopRuntime summarizes running, off, and unknown states with host mode detail", () => {
+  assert.deepEqual(describeLoopRuntime({ state: "running", hostMode: "tmux" }), {
+    modeBadge: "Mode: web + loop running (tmux)",
+    summary: "Loop mode is running on this host via tmux",
+    chipLabel: "loop running via tmux",
     chipTone: "ok",
+  });
+
+  assert.deepEqual(describeLoopRuntime({ state: "running", hostMode: "direct" }), {
+    modeBadge: "Mode: web + loop running (direct)",
+    summary: "Loop mode is running on this host directly",
+    chipLabel: "loop running directly",
+    chipTone: "warn",
   });
 
   assert.deepEqual(describeLoopRuntime({ state: "off" }), {

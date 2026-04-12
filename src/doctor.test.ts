@@ -101,6 +101,14 @@ test("renderDoctorReport only warns for the legacy shared issue journal path", (
     },
     candidateDiscoverySummary: "doctor_candidate_discovery fetch_window=100 strategy=paginated",
     candidateDiscoveryWarning: null,
+    loopRuntime: {
+      state: "off" as const,
+      hostMode: "unknown" as const,
+      pid: null,
+      startedAt: null,
+      detail: null,
+    },
+    loopHostWarning: null,
     trustDiagnostics: {
       trustMode: "untrusted_or_mixed" as const,
       executionSafetyMode: "operator_gated" as const,
@@ -124,6 +132,45 @@ test("renderDoctorReport only warns for the legacy shared issue journal path", (
       },
     }),
     /doctor_warning kind=config/,
+  );
+});
+
+test("renderDoctorReport includes loop host diagnostics and macOS tmux drift warnings", () => {
+  const report = renderDoctorReport({
+    overallStatus: "warn",
+    checks: [],
+    cadenceDiagnostics: {
+      pollIntervalSeconds: 120,
+      mergeCriticalRecheckSeconds: null,
+      mergeCriticalEffectiveSeconds: 120,
+      mergeCriticalRecheckEnabled: false,
+    },
+    candidateDiscoverySummary: "doctor_candidate_discovery fetch_window=100 strategy=paginated",
+    candidateDiscoveryWarning: null,
+    trustDiagnostics: {
+      trustMode: "untrusted_or_mixed",
+      executionSafetyMode: "operator_gated",
+      warning: null,
+      configWarning: null,
+    },
+    loopRuntime: {
+      state: "running",
+      hostMode: "direct",
+      pid: 4242,
+      startedAt: "2026-03-25T00:00:00.000Z",
+      detail: "supervisor-loop-runtime",
+    },
+    loopHostWarning:
+      "macOS loop runtime is active outside tmux. Restart it with ./scripts/start-loop-tmux.sh and stop unsupported direct hosts before relying on steady-state automation.",
+  });
+
+  assert.match(
+    report,
+    /doctor_loop_runtime state=running host_mode=direct pid=4242 started_at=2026-03-25T00:00:00.000Z detail=supervisor-loop-runtime/,
+  );
+  assert.match(
+    report,
+    /doctor_warning kind=loop_host detail=macOS loop runtime is active outside tmux\. Restart it with \.\/scripts\/start-loop-tmux\.sh and stop unsupported direct hosts before relying on steady-state automation\./,
   );
 });
 
@@ -1288,7 +1335,7 @@ test("diagnoseSupervisorHost exposes tracked PR mismatches when GitHub is ready 
   );
   assert.match(
     renderDoctorReport(diagnostics),
-    /doctor_detail name=worktrees detail=recovery_guidance=Tracked PR facts are fresher than local state; run the supervisor again to refresh tracked PR state\. Explicit requeue is unavailable for tracked PR work\./,
+    /doctor_detail name=worktrees detail=recovery_guidance=Tracked PR facts are fresher than local state; run a one-shot supervisor cycle such as `node dist\/index\.js run-once --config \.\.\. --dry-run` to refresh tracked PR state\. Explicit requeue is unavailable for tracked PR work\./,
   );
 });
 

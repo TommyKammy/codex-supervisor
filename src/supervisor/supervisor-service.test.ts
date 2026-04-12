@@ -205,6 +205,7 @@ test("createSupervisorService preserves typed operator observability fields on s
     candidateDiscovery: null,
     loopRuntime: {
       state: "off",
+      hostMode: "unknown",
       pid: null,
       startedAt: null,
       detail: null,

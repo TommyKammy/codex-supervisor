@@ -32,7 +32,7 @@ import {
   type SupervisorStatusDto,
 } from "./supervisor-status-report";
 import { buildTrackedPrMismatch } from "./tracked-pr-mismatch";
-import { readSupervisorLoopRuntime } from "./supervisor-loop-runtime-state";
+import { buildMacOsLoopHostWarning, readSupervisorLoopRuntime } from "./supervisor-loop-runtime-state";
 import { loadActiveIssueStatusSnapshot } from "./supervisor-selection-active-status";
 import {
   buildCandidateDiscoverySummary,
@@ -162,6 +162,7 @@ export async function buildSupervisorStatusReport(args: {
   const candidateDiscoverySummary = formatCandidateDiscoveryBehaviorLine(config);
   const localCiContract = summarizeLocalCiContract(config);
   const loopRuntime = await readSupervisorLoopRuntime(config.stateFile);
+  const loopHostWarning = buildMacOsLoopHostWarning(loopRuntime);
   const gsdSummary = await describeGsdIntegration(config);
   const statusRecords = summarizeSupervisorStatusRecords(state);
   const trackedIssues = buildTrackedIssueDtos(state);
@@ -266,22 +267,19 @@ export async function buildSupervisorStatusReport(args: {
         reconciliationWarning,
         readinessLines: readinessSummary?.readinessLines ?? [],
         whyLines,
-        warning: inventoryRefreshWarning
+        warning: loopHostWarning || inventoryRefreshWarning || githubRateLimitStatus.githubRateLimitWarning
           ? {
-            kind: "readiness",
+            kind: loopHostWarning ? "status" : "readiness",
             message: truncate(
               sanitizeStatusValue(
-                [inventoryRefreshWarning, githubRateLimitStatus.githubRateLimitWarning].filter(Boolean).join(" | "),
+                [loopHostWarning, inventoryRefreshWarning, githubRateLimitStatus.githubRateLimitWarning]
+                  .filter(Boolean)
+                  .join(" | "),
               ),
               200,
             ) ?? "",
           }
-          : githubRateLimitStatus.githubRateLimitWarning
-            ? {
-              kind: "readiness",
-              message: truncate(sanitizeStatusValue(githubRateLimitStatus.githubRateLimitWarning), 200) ?? "",
-            }
-            : null,
+          : null,
       };
     }
 
@@ -325,7 +323,12 @@ export async function buildSupervisorStatusReport(args: {
         reconciliationWarning,
         readinessLines: readinessSummary.readinessLines,
         whyLines,
-        warning: null,
+        warning: loopHostWarning
+          ? {
+            kind: "status",
+            message: truncate(sanitizeStatusValue(loopHostWarning), 200) ?? "",
+          }
+          : null,
       };
     } catch (error) {
       const message = sanitizeStatusValue(error instanceof Error ? error.message : String(error));
@@ -360,9 +363,11 @@ export async function buildSupervisorStatusReport(args: {
         readinessLines: [],
         whyLines: [],
         warning: {
-          kind: "readiness",
+          kind: loopHostWarning ? "status" : "readiness",
           message: truncate(
-            sanitizeStatusValue([message, githubRateLimitStatus.githubRateLimitWarning].filter(Boolean).join(" | ")),
+            sanitizeStatusValue(
+              [loopHostWarning, message, githubRateLimitStatus.githubRateLimitWarning].filter(Boolean).join(" | "),
+            ),
             200,
           ) ?? "",
         },
@@ -445,11 +450,13 @@ export async function buildSupervisorStatusReport(args: {
     readinessLines: [],
     whyLines: [],
     warning: activeStatus.warningMessage || inventoryRefreshWarning
+      || loopHostWarning
       ? {
         kind: "status",
         message: truncate(
           sanitizeStatusValue(
             [
+              loopHostWarning,
               activeStatus.warningMessage,
               inventoryRefreshWarning,
               githubRateLimitStatus.githubRateLimitWarning,

@@ -9,6 +9,7 @@ interface LockPayload {
   acquired_at: string;
   host?: string;
   owner?: string;
+  launcher?: string;
 }
 
 export interface ExistingLockState {
@@ -37,6 +38,11 @@ function currentLockOwner(): string {
   }
 
   return process.env.USER ?? process.env.USERNAME ?? "unknown";
+}
+
+function currentLauncher(): string | undefined {
+  const launcher = process.env.CODEX_SUPERVISOR_LAUNCHER?.trim();
+  return launcher ? launcher : undefined;
 }
 
 function isPidAlive(pid: number): boolean {
@@ -116,6 +122,7 @@ export async function acquireFileLock(
         acquired_at: nowIso(),
         host: os.hostname(),
         owner: currentLockOwner(),
+        launcher: currentLauncher(),
       };
       await handle.writeFile(`${JSON.stringify(payload, null, 2)}\n`, "utf8");
       await handle.close();

@@ -81,6 +81,17 @@ export function renderGitHubRateLimitLine(resource: "rest" | "graphql", budget: 
   return `github_rate_limit resource=${resource} status=${budget.state} remaining=${budget.remaining} limit=${budget.limit} reset_at=${budget.resetAt}`;
 }
 
+export function renderLoopRuntimeLine(loopRuntime: SupervisorLoopRuntimeDto): string {
+  return [
+    "loop_runtime",
+    `state=${loopRuntime.state}`,
+    `host_mode=${loopRuntime.hostMode}`,
+    `pid=${loopRuntime.pid === null ? "none" : String(loopRuntime.pid)}`,
+    `started_at=${loopRuntime.startedAt ?? "none"}`,
+    `detail=${sanitizeStatusValue(loopRuntime.detail ?? "none")}`,
+  ].join(" ");
+}
+
 export function renderSupervisorStatusDto(dto: SupervisorStatusDto): string {
   const localCiContract = dto.localCiContract ?? {
     configured: false,
@@ -117,6 +128,7 @@ export function renderSupervisorStatusDto(dto: SupervisorStatusDto): string {
   const lines = [
     ...dto.detailedStatusLines,
     ...githubRateLimitLines,
+    renderLoopRuntimeLine(dto.loopRuntime),
     `trust_mode=${trustDiagnostics.trustMode}`,
     `execution_safety_mode=${trustDiagnostics.executionSafetyMode}`,
     ...trustWarnings.map((warning) => renderStatusWarningLine(warning, sanitizeStatusValue)),

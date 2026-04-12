@@ -18,6 +18,7 @@ function createStatusDto(label: string, why: boolean): SupervisorStatusDto {
     candidateDiscovery: null,
     loopRuntime: {
       state: "off",
+      hostMode: "unknown",
       pid: null,
       startedAt: null,
       detail: null,
@@ -96,6 +97,14 @@ function createStubService(args?: {
     },
     candidateDiscoverySummary: "candidate_discovery fetch_window=100 strategy=paginated",
     candidateDiscoveryWarning: null,
+    loopRuntime: {
+      state: "off",
+      hostMode: "unknown",
+      pid: null,
+      startedAt: null,
+      detail: null,
+    },
+    loopHostWarning: null,
   };
   const setupReadinessReport: SetupReadinessReport = {
     kind: "setup_readiness",
