@@ -80,6 +80,8 @@ export interface SupervisorExplainDto {
   reasons: string[];
   lastError: string | null;
   failureSummary: string | null;
+  runtimeFailureKind?: IssueRunRecord["last_runtime_failure_kind"] | null;
+  runtimeFailureSummary?: string | null;
 }
 
 async function buildExplainChangeRiskSummary(args: {
@@ -377,6 +379,8 @@ export async function buildIssueExplainDto(
     reasons,
     lastError: record?.last_error ?? null,
     failureSummary: record?.last_failure_context?.summary ?? null,
+    runtimeFailureKind: record?.last_runtime_failure_kind ?? null,
+    runtimeFailureSummary: record?.last_runtime_failure_context?.summary ?? null,
   };
 }
 
@@ -420,6 +424,12 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
   }
   if (dto.failureSummary) {
     lines.push(`failure_summary=${dto.failureSummary}`);
+  }
+  if (dto.runtimeFailureKind) {
+    lines.push(`runtime_failure_kind=${dto.runtimeFailureKind}`);
+  }
+  if (dto.runtimeFailureSummary) {
+    lines.push(`runtime_failure_summary=${dto.runtimeFailureSummary}`);
   }
 
   return lines.join("\n");

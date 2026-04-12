@@ -13,6 +13,30 @@ import { STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE } from "./no-pull-request-st
 
 type StateStoreLike = Pick<StateStore, "touch">;
 
+function preserveOriginalRuntimeFailureContext(record: IssueRunRecord): Partial<IssueRunRecord> {
+  if (
+    record.last_runtime_error !== null && record.last_runtime_error !== undefined
+    || record.last_runtime_failure_kind !== null && record.last_runtime_failure_kind !== undefined
+    || record.last_runtime_failure_context !== null && record.last_runtime_failure_context !== undefined
+  ) {
+    return {};
+  }
+
+  if (
+    record.last_error === null
+    && record.last_failure_kind === null
+    && record.last_failure_context === null
+  ) {
+    return {};
+  }
+
+  return {
+    last_runtime_error: record.last_error,
+    last_runtime_failure_kind: record.last_failure_kind,
+    last_runtime_failure_context: record.last_failure_context,
+  };
+}
+
 export async function reconcileStaleFailedNoPrRecord(args: {
   github: Pick<import("./github").GitHubClient, "getIssue">;
   stateStore: StateStoreLike;
@@ -84,6 +108,7 @@ export async function reconcileStaleFailedNoPrRecord(args: {
       repeated_blocker_count: 0,
       stale_stabilizing_no_pr_recovery_count: 0,
       last_head_sha: branchRecovery.headSha ?? record.last_head_sha,
+      ...preserveOriginalRuntimeFailureContext(record),
       ...applyFailureSignature(record, manualReviewFailureContext),
     };
     const updated = stateStore.touch(record, applyRecoveryEvent(patch, recoveryEvent));
