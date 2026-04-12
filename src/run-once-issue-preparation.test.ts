@@ -872,6 +872,67 @@ test("prepareIssueExecutionContext creates a draft PR after checkpointed workspa
   ]);
 });
 
+test("prepareIssueExecutionContext leaves checkpointed dry-run publication as a draft_pr transition without creating a PR", async () => {
+  const record = createRecord({
+    implementation_attempt_count: 2,
+    state: "stabilizing",
+  });
+  const state = createState(record);
+  const issue = createIssue();
+  const workspaceStatus = createWorkspaceStatus({
+    baseAhead: 2,
+    remoteBranchExists: true,
+    remoteAhead: 0,
+  });
+
+  const result = await prepareIssueExecutionContext({
+    github: {
+      resolvePullRequestForBranch: async () => null,
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      createPullRequest: async () => {
+        throw new Error("unexpected createPullRequest call");
+      },
+    },
+    config: createConfig({ draftPrAfterAttempt: 1 }),
+    stateStore: {
+      touch(currentRecord, patch) {
+        return { ...currentRecord, ...patch };
+      },
+      async save() {},
+    },
+    state,
+    record,
+    issue,
+    options: { dryRun: true },
+    ensureWorkspace: async () => "/tmp/workspaces/issue-240",
+    syncIssueJournal: async () => {},
+    syncMemoryArtifacts: async () => ({
+      contextIndexPath: "/tmp/context-index.md",
+      agentsPath: "/tmp/AGENTS.generated.md",
+      alwaysReadFiles: [],
+      onDemandFiles: [],
+    }),
+    getWorkspaceStatus: async () => workspaceStatus,
+    pushBranch: async () => {
+      throw new Error("unexpected pushBranch call");
+    },
+    runWorkstationLocalPathGate: async () => {
+      throw new Error("unexpected runWorkstationLocalPathGate call");
+    },
+  });
+
+  assert.equal(typeof result, "object");
+  assert.ok(result && !isRestartRunOnce(result) && typeof result !== "string");
+  assert.equal(result.pr, null);
+  assert.deepEqual(result.checks, []);
+  assert.deepEqual(result.reviewThreads, []);
+});
+
 test("prepareIssueExecutionContext blocks publication when tracked durable artifacts fail workstation-local path hygiene", async (t) => {
   const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), "prepare-issue-path-hygiene-"));
   t.after(async () => {

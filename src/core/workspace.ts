@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { runCommand } from "./command";
+import { isIgnoredSupervisorArtifactPath, parseGitStatusPorcelainV1Paths } from "./git-workspace-helpers";
 import { EnsuredWorkspace, SupervisorConfig, WorkspaceRestoreMetadata, WorkspaceStatus } from "./types";
 import { ensureDir, isValidGitRefName } from "./utils";
 
@@ -349,7 +350,7 @@ export async function getWorkspaceStatus(
   const [headResult, branchResult, statusResult, baseResult, remoteExistsResult] = await Promise.all([
     runCommand("git", ["-C", workspacePath, "rev-parse", "HEAD"]),
     runCommand("git", ["-C", workspacePath, "rev-parse", "--abbrev-ref", "HEAD"]),
-    runCommand("git", ["-C", workspacePath, "status", "--short"]),
+    runCommand("git", ["-C", workspacePath, "status", "--porcelain=v1", "-z", "--untracked-files=all"]),
     runCommand("git", ["-C", workspacePath, "rev-list", "--left-right", "--count", `${defaultBranchRef}...HEAD`]),
     runCommand(
       "git",
@@ -382,10 +383,13 @@ export async function getWorkspaceStatus(
       .map((value) => Number(value));
   }
 
+  const hasMeaningfulUncommittedChanges = parseGitStatusPorcelainV1Paths(statusResult.stdout)
+    .some((paths) => paths.some((relativePath) => !isIgnoredSupervisorArtifactPath(relativePath)));
+
   return {
     branch: branchResult.stdout.trim(),
     headSha: headResult.stdout.trim(),
-    hasUncommittedChanges: statusResult.stdout.trim().length > 0,
+    hasUncommittedChanges: hasMeaningfulUncommittedChanges,
     baseAhead: baseAhead || 0,
     baseBehind: baseBehind || 0,
     remoteBranchExists,

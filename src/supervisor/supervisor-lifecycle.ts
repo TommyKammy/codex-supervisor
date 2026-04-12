@@ -363,7 +363,7 @@ export function shouldRunCodex(
   config: SupervisorConfig,
 ): boolean {
   if (!pr) {
-    return true;
+    return record.state !== "draft_pr";
   }
 
   const inferred = inferStateFromPullRequest(config, record, pr, checks, reviewThreads);
