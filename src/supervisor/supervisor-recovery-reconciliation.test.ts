@@ -2360,6 +2360,142 @@ test("reconcileStaleActiveIssueReservation does not block interrupted turns when
   await assert.rejects(fs.access(path.join(workspacePath, ".codex-supervisor", "turn-in-progress.json")));
 });
 
+test("reconcileStaleActiveIssueReservation blocks interrupted turns when the canonical journal mtime only matches start time", async () => {
+  const lockRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-locks-"));
+  const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-interrupted-journal-"));
+  const journalPath = path.join(workspacePath, ".codex-supervisor", "issues", "366", "issue-journal.md");
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  await fs.writeFile(journalPath, "# issue journal\n", "utf8");
+  await fs.writeFile(
+    path.join(workspacePath, ".codex-supervisor", "turn-in-progress.json"),
+    `${JSON.stringify({
+      issueNumber: 366,
+      state: "addressing_review",
+      startedAt: "2026-03-26T00:05:00.000Z",
+      journalFingerprint: null,
+    }, null, 2)}\n`,
+    "utf8",
+  );
+  const startTime = new Date("2026-03-26T00:05:00.000Z");
+  await fs.utimes(journalPath, startTime, startTime);
+
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 366,
+    issues: {
+      "366": createRecord({
+        issue_number: 366,
+        state: "addressing_review",
+        workspace: workspacePath,
+        journal_path: journalPath,
+        codex_session_id: "session-366",
+        updated_at: "2026-03-26T00:05:00.000Z",
+      }),
+    },
+  };
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(record: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...record,
+        ...patch,
+        updated_at: "2026-03-26T00:10:00.000Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const recoveryEvents = await reconcileStaleActiveIssueReservation({
+    stateStore,
+    state,
+    issueLockPath: (issueNumber) => path.join(lockRoot, "locks", "issues", String(issueNumber)),
+    sessionLockPath: (sessionId) => path.join(lockRoot, "locks", "sessions", String(sessionId)),
+  });
+
+  assert.equal(state.activeIssueNumber, null);
+  assert.equal(state.issues["366"]?.state, "blocked");
+  assert.equal(state.issues["366"]?.blocked_reason, "handoff_missing");
+  assert.equal(state.issues["366"]?.codex_session_id, null);
+  assert.match(
+    state.issues["366"]?.last_failure_context?.details?.join("\n") ?? "",
+    /durable_progress_evidence=journal_unchanged/,
+  );
+  assert.equal(saveCalls, 1);
+  assert.equal(recoveryEvents.length, 1);
+  assert.match(
+    formatRecoveryLog(recoveryEvents) ?? "",
+    /recovery issue=#366 reason=interrupted_turn_recovery: blocked issue #366 after an in-progress Codex turn ended without a durable handoff/,
+  );
+  await assert.rejects(fs.access(path.join(workspacePath, ".codex-supervisor", "turn-in-progress.json")));
+});
+
+test("reconcileStaleActiveIssueReservation reports interrupted-turn progress as unverifiable when timestamps cannot be compared", async () => {
+  const lockRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-locks-"));
+  const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-interrupted-journal-"));
+  const journalPath = path.join(workspacePath, ".codex-supervisor", "issues", "366", "issue-journal.md");
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  await fs.writeFile(journalPath, "# issue journal\n", "utf8");
+  await fs.writeFile(
+    path.join(workspacePath, ".codex-supervisor", "turn-in-progress.json"),
+    `${JSON.stringify({
+      issueNumber: 366,
+      state: "addressing_review",
+      startedAt: "not-a-timestamp",
+      journalFingerprint: null,
+    }, null, 2)}\n`,
+    "utf8",
+  );
+
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 366,
+    issues: {
+      "366": createRecord({
+        issue_number: 366,
+        state: "addressing_review",
+        workspace: workspacePath,
+        journal_path: journalPath,
+        codex_session_id: "session-366",
+        updated_at: "2026-03-26T00:05:00.000Z",
+      }),
+    },
+  };
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(record: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...record,
+        ...patch,
+        updated_at: "2026-03-26T00:10:00.000Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const recoveryEvents = await reconcileStaleActiveIssueReservation({
+    stateStore,
+    state,
+    issueLockPath: (issueNumber) => path.join(lockRoot, "locks", "issues", String(issueNumber)),
+    sessionLockPath: (sessionId) => path.join(lockRoot, "locks", "sessions", String(sessionId)),
+  });
+
+  assert.equal(state.activeIssueNumber, null);
+  assert.equal(state.issues["366"]?.state, "blocked");
+  assert.equal(state.issues["366"]?.blocked_reason, "handoff_missing");
+  assert.equal(state.issues["366"]?.codex_session_id, null);
+  assert.match(
+    state.issues["366"]?.last_failure_context?.details?.join("\n") ?? "",
+    /durable_progress_evidence=progress_unverifiable/,
+  );
+  assert.equal(saveCalls, 1);
+  assert.equal(recoveryEvents.length, 1);
+  await assert.rejects(fs.access(path.join(workspacePath, ".codex-supervisor", "turn-in-progress.json")));
+});
+
 test("reconcileStaleActiveIssueReservation requeues a stale stabilizing issue without a tracked PR", async () => {
   const config = createConfig();
   const lockRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-locks-"));

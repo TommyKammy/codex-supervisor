@@ -129,7 +129,8 @@ type DurableTurnUpdateEvidence =
   | "record_updated_at_advanced"
   | "journal_unchanged"
   | "journal_missing"
-  | "record_updated_at_stale";
+  | "record_updated_at_stale"
+  | "progress_unverifiable";
 
 async function detectDurableTurnUpdateSince(
   record: Pick<IssueRunRecord, "journal_path" | "updated_at">,
@@ -153,7 +154,7 @@ async function detectDurableTurnUpdateSince(
   if (record.journal_path && Number.isFinite(startedAtMs)) {
     try {
       const journalStats = await fs.promises.stat(record.journal_path);
-      if (journalStats.mtimeMs >= startedAtMs) {
+      if (journalStats.mtimeMs > startedAtMs) {
         return { hasDurableUpdate: true, evidence: "journal_mtime_advanced" };
       }
       return { hasDurableUpdate: false, evidence: "journal_unchanged" };
@@ -167,10 +168,10 @@ async function detectDurableTurnUpdateSince(
 
   const updatedAtMs = Date.parse(record.updated_at);
   if (!Number.isFinite(updatedAtMs) || !Number.isFinite(startedAtMs)) {
-    return { hasDurableUpdate: false, evidence: "record_updated_at_stale" };
+    return { hasDurableUpdate: false, evidence: "progress_unverifiable" };
   }
 
-  return updatedAtMs >= startedAtMs
+  return updatedAtMs > startedAtMs
     ? { hasDurableUpdate: true, evidence: "record_updated_at_advanced" }
     : { hasDurableUpdate: false, evidence: "record_updated_at_stale" };
 }
@@ -1301,7 +1302,7 @@ export async function reconcileStaleActiveIssueReservation(args: {
       command: null,
       details: [
         `started_at=${interruptedTurnMarker.startedAt}`,
-        `durable_progress_evidence=${interruptedTurnUpdate?.evidence ?? "record_updated_at_stale"}`,
+        `durable_progress_evidence=${interruptedTurnUpdate?.evidence ?? "progress_unverifiable"}`,
         "Update the Codex Working Notes section before ending the turn.",
       ],
       url: null,
