@@ -29,6 +29,10 @@ import {
   formatInventoryRefreshStatusLine,
   formatLastSuccessfulInventorySnapshotStatusLine,
 } from "../inventory-refresh-state";
+import {
+  findLatestBlockedPreservedPartialWorkIncident,
+  formatBlockedPreservedPartialWorkLine,
+} from "./supervisor-preserved-partial-work";
 
 type ReadinessSummaryGitHub =
   Pick<GitHubClient, "listAllIssues" | "listCandidateIssues">
@@ -252,6 +256,18 @@ function buildReadinessSummaryFromIssues(
     });
   }
 
+  const blockedPartialWorkIncident =
+    runnableIssues.length === 0 ? findLatestBlockedPreservedPartialWorkIncident(state) : null;
+  const surfacedBlockedPartialWorkIncident =
+    blockedPartialWorkIncident &&
+      blockedIssues.some(
+        (issue) =>
+          issue.issueNumber === blockedPartialWorkIncident.record.issue_number &&
+          issue.blockedBy === "local_state:blocked",
+      )
+      ? blockedPartialWorkIncident
+      : null;
+
   return {
     runnableIssues,
     blockedIssues,
@@ -260,6 +276,9 @@ function buildReadinessSummaryFromIssues(
       ...(candidateDiscoveryWarningLine === null ? [] : [candidateDiscoveryWarningLine]),
       `runnable_issues=${runnableIssues.length > 0 ? runnableIssues.map((issue) => `#${issue.issueNumber} ready=${issue.readiness}`).join(",") : "none"}`,
       `blocked_issues=${blockedIssues.length > 0 ? blockedIssues.map((issue) => `#${issue.issueNumber} blocked_by=${issue.blockedBy}`).join("; ") : "none"}`,
+      ...(surfacedBlockedPartialWorkIncident === null
+        ? []
+        : [formatBlockedPreservedPartialWorkLine(surfacedBlockedPartialWorkIncident)]),
     ],
   };
 }
@@ -277,9 +296,14 @@ export async function buildSelectionWhySummary(
   }
 
   const summary = await buildSelectionSummary(github, config, state);
+  const blockedPartialWorkIncident =
+    summary.selectedIssueNumber === null && summary.selectionReason?.startsWith("blocked_partial_work_manual_review")
+      ? findLatestBlockedPreservedPartialWorkIncident(state)
+      : null;
   return [
     summary.selectedIssueNumber === null ? "selected_issue=none" : `selected_issue=#${summary.selectedIssueNumber}`,
     `selection_reason=${summary.selectionReason ?? "no_runnable_issue"}`,
+    ...(blockedPartialWorkIncident === null ? [] : [formatBlockedPreservedPartialWorkLine(blockedPartialWorkIncident)]),
   ];
 }
 
@@ -297,6 +321,8 @@ export async function buildSelectionSummary(
 
   const candidateIssues = await github.listCandidateIssues();
   const issues = await github.listAllIssues();
+  const blockedPartialWorkIncident = findLatestBlockedPreservedPartialWorkIncident(state);
+  let blockedPartialWorkBlocked = false;
 
   for (const issue of candidateIssues) {
     if (config.skipTitlePrefixes.some((prefix) => issue.title.startsWith(prefix))) {
@@ -330,6 +356,9 @@ export async function buildSelectionSummary(
       !isEligibleForSelection(existing, config) &&
       !(isAutonomousExecutionTrustBlockedRecord(existing) && trustDecision.allowed)
     ) {
+      if (blockedPartialWorkIncident?.record.issue_number === issue.number) {
+        blockedPartialWorkBlocked = true;
+      }
       continue;
     }
 
@@ -341,7 +370,10 @@ export async function buildSelectionSummary(
 
   return {
     selectedIssueNumber: null,
-    selectionReason: "no_runnable_issue",
+    selectionReason:
+      blockedPartialWorkIncident === null || !blockedPartialWorkBlocked
+        ? "no_runnable_issue"
+        : `blocked_partial_work_manual_review issue=#${blockedPartialWorkIncident.record.issue_number}`,
   };
 }
 

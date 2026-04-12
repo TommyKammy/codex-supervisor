@@ -333,6 +333,88 @@ Execution order: 3 of 3`,
   ]);
 });
 
+test("buildReadinessSummary and buildSelectionWhySummary distinguish blocked preserved partial work from an empty backlog", async () => {
+  const config = createConfig();
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "145": createRecord({
+        issue_number: 145,
+        state: "blocked",
+        blocked_reason: "manual_review",
+        updated_at: "2026-04-12T00:10:00Z",
+        last_failure_context: {
+          category: "manual",
+          summary: "Issue #145 needs manual review because the preserved workspace contains partial work.",
+          signature: "manual-review-preserved-partial-work",
+          command: null,
+          details: [
+            "preserved_partial_work=yes",
+            "tracked_files=feature.txt|src/workflow.ts",
+          ],
+          url: "https://example.test/issues/145",
+          updated_at: "2026-04-12T00:10:00Z",
+        },
+      }),
+    },
+  };
+  const blockedIssue = createIssue({
+    number: 145,
+    title: "Manual review for preserved partial work",
+    body: `## Summary
+Hold the preserved workspace for manual review.
+
+## Scope
+- keep the preserved worktree available for operator inspection
+
+## Acceptance criteria
+- selection output stays explicit about the manual-review hold
+
+## Verification
+- npm test -- src/supervisor/supervisor-selection-readiness-summary.test.ts`,
+  });
+
+  const readinessSummary = await buildReadinessSummary(
+    {
+      listCandidateIssues: async () => [blockedIssue],
+      listAllIssues: async () => [blockedIssue],
+    },
+    config,
+    state,
+  );
+
+  assert.deepEqual(readinessSummary, {
+    runnableIssues: [],
+    blockedIssues: [
+      {
+        issueNumber: 145,
+        title: "Manual review for preserved partial work",
+        blockedBy: "local_state:blocked",
+      },
+    ],
+    readinessLines: [
+      "runnable_issues=none",
+      "blocked_issues=#145 blocked_by=local_state:blocked",
+      "blocked_partial_work issue=#145 blocked_reason=manual_review partial_work=preserved tracked_files=feature.txt|src/workflow.ts",
+    ],
+  });
+
+  const whyLines = await buildSelectionWhySummary(
+    {
+      listCandidateIssues: async () => [blockedIssue],
+      listAllIssues: async () => [blockedIssue],
+    },
+    config,
+    state,
+  );
+
+  assert.deepEqual(whyLines, [
+    "selected_issue=none",
+    "selection_reason=blocked_partial_work_manual_review issue=#145",
+    "blocked_partial_work issue=#145 blocked_reason=manual_review partial_work=preserved tracked_files=feature.txt|src/workflow.ts",
+  ]);
+});
+
 test("buildReadinessSummary keeps downstream siblings blocked while predecessor final evaluation is unresolved", async () => {
   const config = createConfig();
   const state: SupervisorStateFile = {

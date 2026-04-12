@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { resolveRunnableIssueContext } from "./run-once-issue-selection";
+import {
+  formatNoRunnableIssueFoundMessage,
+  resolveRunnableIssueContext,
+} from "./run-once-issue-selection";
 import { GitHubIssue, IssueRunRecord, SupervisorConfig, SupervisorStateFile } from "./core/types";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
@@ -252,6 +255,42 @@ test("resolveRunnableIssueContext keeps the acquired lock attached to a ready is
   assert.equal(state.activeIssueNumber, 92);
   assert.equal(state.issues["92"]?.issue_number, 92);
   assert.equal(savedStates.length, 1);
+});
+
+test("formatNoRunnableIssueFoundMessage distinguishes blocked preserved partial work from an empty backlog", () => {
+  const genericState: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  assert.equal(formatNoRunnableIssueFoundMessage(genericState), "No matching open issue found.");
+
+  const blockedState: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "145": createRecord(145, {
+        state: "blocked",
+        blocked_reason: "manual_review",
+        updated_at: "2026-04-12T00:10:00Z",
+        last_failure_context: {
+          category: "manual",
+          summary: "Issue #145 needs manual review because preserved partial work is waiting in the workspace.",
+          signature: "manual-review-preserved-partial-work",
+          command: null,
+          details: [
+            "preserved_partial_work=yes",
+            "tracked_files=feature.txt|src/workflow.ts",
+          ],
+          url: "https://example.test/issues/145",
+          updated_at: "2026-04-12T00:10:00Z",
+        },
+      }),
+    },
+  };
+
+  assert.equal(
+    formatNoRunnableIssueFoundMessage(blockedState),
+    "No runnable issue is available. Latest blocked issue #145 is waiting on manual review with preserved partial work.",
+  );
 });
 
 test("resolveRunnableIssueContext blocks safer-mode autonomous execution without the trusted-input label", async () => {
