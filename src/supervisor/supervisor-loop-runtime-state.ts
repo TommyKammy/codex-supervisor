@@ -41,7 +41,7 @@ function normalizeLoopHostModeFromLauncher(
 
 function inferLoopHostMode(runtimeLock: ExistingLockState): SupervisorLoopHostMode {
   if (runtimeLock.status === "live") {
-    return normalizeLoopHostModeFromLauncher(runtimeLock.payload?.launcher, "direct");
+    return normalizeLoopHostModeFromLauncher(runtimeLock.payload?.launcher, "unknown");
   }
   if (runtimeLock.status === "ambiguous_owner") {
     return normalizeLoopHostModeFromLauncher(runtimeLock.payload?.launcher, "unknown");
@@ -53,7 +53,7 @@ export function buildMacOsLoopHostWarning(
   loopRuntime: Pick<SupervisorLoopRuntimeDto, "state" | "hostMode">,
   platform: NodeJS.Platform = process.platform,
 ): string | null {
-  if (platform !== "darwin" || loopRuntime.state !== "running" || loopRuntime.hostMode === "tmux") {
+  if (platform !== "darwin" || loopRuntime.state !== "running" || loopRuntime.hostMode !== "direct") {
     return null;
   }
 

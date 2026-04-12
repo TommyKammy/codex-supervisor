@@ -85,9 +85,9 @@ export function renderLoopRuntimeLine(loopRuntime: SupervisorLoopRuntimeDto): st
   return [
     "loop_runtime",
     `state=${loopRuntime.state}`,
-    `host_mode=${loopRuntime.hostMode}`,
+    `host_mode=${sanitizeStatusValue(loopRuntime.hostMode)}`,
     `pid=${loopRuntime.pid === null ? "none" : String(loopRuntime.pid)}`,
-    `started_at=${loopRuntime.startedAt ?? "none"}`,
+    `started_at=${sanitizeStatusValue(loopRuntime.startedAt ?? "none")}`,
     `detail=${sanitizeStatusValue(loopRuntime.detail ?? "none")}`,
   ].join(" ");
 }
