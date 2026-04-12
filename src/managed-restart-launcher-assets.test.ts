@@ -71,6 +71,37 @@ async function assertMissingBinaryMessage(relativePath: string, requiredCommands
   }
 }
 
+async function assertMissingCommandMessage(
+  relativePath: string,
+  requiredCommands: string[],
+  expectedMessage: string,
+): Promise<void> {
+  const scriptPath = path.join(process.cwd(), relativePath);
+  const pathDir = await createMissingNodePath(requiredCommands);
+
+  try {
+    await assert.rejects(
+      async () => execFileAsync(bashPath, [scriptPath], {
+        env: {
+          HOME: os.tmpdir(),
+          PATH: pathDir,
+        },
+      }),
+      (error: unknown) => {
+        assert.equal(typeof error, "object");
+        assert.notEqual(error, null);
+        assert.equal((error as NodeJS.ErrnoException).code, 1);
+        const stderr = (error as { stderr?: string }).stderr ?? "";
+        assert.equal(stderr.trim(), expectedMessage);
+        assert.doesNotMatch(stderr, /command not found/u);
+        return true;
+      },
+    );
+  } finally {
+    await fs.rm(pathDir, { recursive: true, force: true });
+  }
+}
+
 test("dedicated WebUI launcher assets enable managed restart for launcher-backed WebUI sessions", async () => {
   const [
     runWeb,
@@ -122,10 +153,31 @@ test("existing loop launcher assets stay scoped to loop mode without managed res
   assert.doesNotMatch(systemdTemplate, /^Environment=CODEX_SUPERVISOR_MANAGED_RESTART(?:_LAUNCHER)?=/mu);
 });
 
+test("macOS tmux loop launcher assets define a single-session contract with explicit launcher metadata", async () => {
+  const [startTmuxLoop, stopTmuxLoop] = await Promise.all([
+    readRepoFile("scripts/start-loop-tmux.sh"),
+    readRepoFile("scripts/stop-loop-tmux.sh"),
+  ]);
+
+  assert.match(startTmuxLoop, /TMUX_SESSION_NAME="\$\{TMUX_SESSION_NAME:-codex-supervisor-loop\}"/u);
+  assert.match(startTmuxLoop, /CODEX_SUPERVISOR_LAUNCHER="\$\{CODEX_SUPERVISOR_LAUNCHER:-tmux\}"/u);
+  assert.match(startTmuxLoop, /CODEX_SUPERVISOR_TMUX_SESSION="\$\{CODEX_SUPERVISOR_TMUX_SESSION:-\$\{TMUX_SESSION_NAME\}\}"/u);
+  assert.match(startTmuxLoop, /has-session -t "\$\{TMUX_SESSION_NAME\}"/u);
+  assert.match(startTmuxLoop, /new-session -d -s "\$\{TMUX_SESSION_NAME\}"/u);
+  assert.match(startTmuxLoop, /CODEX_SUPERVISOR_CONFIG=/u);
+  assert.match(startTmuxLoop, /scripts\/run-loop\.sh/u);
+
+  assert.match(stopTmuxLoop, /TMUX_SESSION_NAME="\$\{TMUX_SESSION_NAME:-codex-supervisor-loop\}"/u);
+  assert.match(stopTmuxLoop, /has-session -t "\$\{TMUX_SESSION_NAME\}"/u);
+  assert.match(stopTmuxLoop, /kill-session -t "\$\{TMUX_SESSION_NAME\}"/u);
+});
+
 test("launcher-backed WebUI shell scripts keep their explicit missing-binary diagnostics under set -euo pipefail", async () => {
   await Promise.all([
     assertMissingBinaryMessage("scripts/run-web.sh", ["dirname"]),
     assertMissingBinaryMessage("scripts/install-launchd-web.sh", ["dirname"]),
     assertMissingBinaryMessage("scripts/install-systemd-web.sh", ["dirname"]),
+    assertMissingCommandMessage("scripts/start-loop-tmux.sh", ["dirname", "node", "npm"], "tmux must be available on PATH"),
+    assertMissingCommandMessage("scripts/stop-loop-tmux.sh", ["dirname"], "tmux must be available on PATH"),
   ]);
 });
