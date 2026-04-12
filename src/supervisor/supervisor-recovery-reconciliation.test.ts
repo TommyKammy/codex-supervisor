@@ -2351,11 +2351,15 @@ test("reconcileStaleActiveIssueReservation does not block interrupted turns when
   assert.equal(state.issues["366"]?.state, "addressing_review");
   assert.equal(state.issues["366"]?.blocked_reason, null);
   assert.equal(state.issues["366"]?.codex_session_id, null);
+  assert.match(
+    state.issues["366"]?.last_recovery_reason ?? "",
+    /durable_progress_evidence=journal_mtime_advanced/,
+  );
   assert.equal(saveCalls, 1);
   assert.equal(recoveryEvents.length, 1);
   assert.match(
     formatRecoveryLog(recoveryEvents) ?? "",
-    /recovery issue=#366 reason=stale_state_cleanup: cleared stale active reservation after issue lock and session lock were missing/,
+    /recovery issue=#366 reason=stale_state_cleanup: cleared stale active reservation after issue lock and session lock were missing; durable_progress_evidence=journal_mtime_advanced/,
   );
   await assert.rejects(fs.access(path.join(workspacePath, ".codex-supervisor", "turn-in-progress.json")));
 });

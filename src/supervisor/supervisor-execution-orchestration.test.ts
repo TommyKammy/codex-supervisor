@@ -1370,6 +1370,7 @@ test("runOnce clears a stale interrupted-turn marker when the journal changed af
   assert.equal(interruptedRecord.codex_session_id, null);
   assert.equal(interruptedRecord.blocked_reason, null);
   assert.equal(interruptedRecord.last_error, null);
+  assert.match(interruptedRecord.last_recovery_reason ?? "", /durable_progress_evidence=journal_changed/);
   await assert.rejects(fs.access(interruptedTurnMarkerPath(interruptedWorkspace)));
 });
 

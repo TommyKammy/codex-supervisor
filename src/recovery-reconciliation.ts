@@ -176,6 +176,15 @@ async function detectDurableTurnUpdateSince(
     : { hasDurableUpdate: false, evidence: "record_updated_at_stale" };
 }
 
+function appendInterruptedTurnEvidence(
+  reason: string,
+  interruptedTurnUpdate: { evidence: DurableTurnUpdateEvidence } | null,
+): string {
+  return interruptedTurnUpdate
+    ? `${reason}; durable_progress_evidence=${interruptedTurnUpdate.evidence}`
+    : reason;
+}
+
 function trackedMergedButOpenLastProcessedIssueNumber(state: SupervisorStateFile): number | null {
   return state.reconciliation_state?.tracked_merged_but_open_last_processed_issue_number ?? null;
 }
@@ -1310,7 +1319,10 @@ export async function reconcileStaleActiveIssueReservation(args: {
     };
     const recoveryEvent = buildRecoveryEvent(
       record.issue_number,
-      `interrupted_turn_recovery: blocked issue #${record.issue_number} after an in-progress Codex turn ended without a durable handoff`,
+      appendInterruptedTurnEvidence(
+        `interrupted_turn_recovery: blocked issue #${record.issue_number} after an in-progress Codex turn ended without a durable handoff`,
+        interruptedTurnUpdate,
+      ),
     );
     const patch: Partial<IssueRunRecord> = {
       state: "blocked",
@@ -1391,13 +1403,16 @@ export async function reconcileStaleActiveIssueReservation(args: {
 
   const recoveryEvent = buildRecoveryEvent(
     record.issue_number,
-    shouldMarkAlreadySatisfiedOnMain
-      ? `stale_stabilizing_no_pr_manual_review: blocked issue #${record.issue_number} after stale stabilizing recovery found an open issue with no authoritative completion signal`
-      : shouldStopRepeatedStaleNoPrLoop
-      ? `stale_state_manual_stop: blocked issue #${record.issue_number} after repeated stale stabilizing recovery without a tracked PR`
-      : shouldRequeueStabilizing
-      ? `stale_state_cleanup: requeued stabilizing issue #${record.issue_number} after ${missingLockReason}`
-      : `stale_state_cleanup: cleared stale active reservation after ${missingLockReason}`,
+    appendInterruptedTurnEvidence(
+      shouldMarkAlreadySatisfiedOnMain
+        ? `stale_stabilizing_no_pr_manual_review: blocked issue #${record.issue_number} after stale stabilizing recovery found an open issue with no authoritative completion signal`
+        : shouldStopRepeatedStaleNoPrLoop
+        ? `stale_state_manual_stop: blocked issue #${record.issue_number} after repeated stale stabilizing recovery without a tracked PR`
+        : shouldRequeueStabilizing
+        ? `stale_state_cleanup: requeued stabilizing issue #${record.issue_number} after ${missingLockReason}`
+        : `stale_state_cleanup: cleared stale active reservation after ${missingLockReason}`,
+      interruptedTurnUpdate,
+    ),
   );
   const patch: Partial<IssueRunRecord> = shouldMarkAlreadySatisfiedOnMain
     ? {
