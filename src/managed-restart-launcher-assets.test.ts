@@ -44,6 +44,11 @@ async function createMissingNodePath(commands: string[]): Promise<string> {
   return pathDir;
 }
 
+async function writeExecutable(filePath: string, contents: string): Promise<void> {
+  await fs.writeFile(filePath, contents, { mode: 0o755 });
+  await fs.chmod(filePath, 0o755);
+}
+
 async function assertMissingBinaryMessage(relativePath: string, requiredCommands: string[]): Promise<void> {
   const scriptPath = path.join(process.cwd(), relativePath);
   const pathDir = await createMissingNodePath(requiredCommands);
@@ -180,4 +185,39 @@ test("launcher-backed WebUI shell scripts keep their explicit missing-binary dia
     assertMissingCommandMessage("scripts/start-loop-tmux.sh", ["dirname", "node", "npm"], "tmux must be available on PATH"),
     assertMissingCommandMessage("scripts/stop-loop-tmux.sh", ["dirname"], "tmux must be available on PATH"),
   ]);
+});
+
+test("tmux loop start script preserves idempotency before checking node and npm", async () => {
+  const scriptPath = path.join(process.cwd(), "scripts/start-loop-tmux.sh");
+  const pathDir = await fs.mkdtemp(path.join(os.tmpdir(), "managed-restart-tmux-"));
+  const dirnamePath = (await execFileAsync(bashPath, ["-lc", "command -v dirname"])).stdout.trim();
+
+  try {
+    await fs.symlink(dirnamePath, path.join(pathDir, "dirname"));
+    await writeExecutable(
+      path.join(pathDir, "tmux"),
+      `#!/bin/bash
+set -euo pipefail
+
+if [[ "$1" == "has-session" ]]; then
+  exit 0
+fi
+
+echo "unexpected tmux invocation: $*" >&2
+exit 1
+`,
+    );
+
+    const { stdout, stderr } = await execFileAsync(bashPath, [scriptPath], {
+      env: {
+        HOME: os.tmpdir(),
+        PATH: pathDir,
+      },
+    });
+
+    assert.equal(stderr, "");
+    assert.equal(stdout.trim(), "codex-supervisor loop tmux session already running: codex-supervisor-loop");
+  } finally {
+    await fs.rm(pathDir, { recursive: true, force: true });
+  }
 });

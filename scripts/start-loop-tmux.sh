@@ -21,14 +21,14 @@ if [[ -z "${TMUX_BIN}" ]]; then
   exit 1
 fi
 
-if [[ -z "${NODE_BIN}" || -z "${NPM_BIN}" ]]; then
-  echo "node and npm must be available on PATH" >&2
-  exit 1
-fi
-
 if "${TMUX_BIN}" has-session -t "${TMUX_SESSION_NAME}" >/dev/null 2>&1; then
   echo "codex-supervisor loop tmux session already running: ${TMUX_SESSION_NAME}"
   exit 0
+fi
+
+if [[ -z "${NODE_BIN}" || -z "${NPM_BIN}" ]]; then
+  echo "node and npm must be available on PATH" >&2
+  exit 1
 fi
 
 SESSION_COMMAND="$(
