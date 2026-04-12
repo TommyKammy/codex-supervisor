@@ -200,3 +200,59 @@ test("findForbiddenWorkstationLocalPaths classifies mixed-prefix path lists with
     ],
   );
 });
+
+test("findForbiddenWorkstationLocalPaths skips tracked files omitted by sparse checkout", async (t) => {
+  const repoPath = await createTrackedRepo();
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+
+  const currentJournalPath = path.join(repoPath, ".codex-supervisor", "issues", "102", "issue-journal.md");
+  const otherJournalPath = path.join(repoPath, ".codex-supervisor", "issues", "181", "issue-journal.md");
+  const visibleDocPath = path.join(repoPath, "docs", "guide.md");
+  await fs.mkdir(path.dirname(currentJournalPath), { recursive: true });
+  await fs.mkdir(path.dirname(otherJournalPath), { recursive: true });
+  await fs.mkdir(path.dirname(visibleDocPath), { recursive: true });
+  await fs.writeFile(currentJournalPath, "# Issue #102\n", "utf8");
+  await fs.writeFile(otherJournalPath, `- What changed: ${buildMacHomePath("alice", "Dev", "private-repo")}\n`, "utf8");
+  await fs.writeFile(visibleDocPath, `Visible leak: ${buildUnixHomePath("alice", "dev", "private-repo")}\n`, "utf8");
+  git(
+    repoPath,
+    "add",
+    ".codex-supervisor/issues/102/issue-journal.md",
+    ".codex-supervisor/issues/181/issue-journal.md",
+    "docs/guide.md",
+  );
+  git(repoPath, "commit", "-m", "seed sparse checkout fixture");
+
+  git(repoPath, "sparse-checkout", "init", "--no-cone");
+  await fs.writeFile(
+    path.join(repoPath, ".git", "info", "sparse-checkout"),
+    ["/README.md", "/docs/", "/.codex-supervisor/issues/102/"].join("\n").concat("\n"),
+    "utf8",
+  );
+  git(repoPath, "read-tree", "-mu", "HEAD");
+
+  await assert.rejects(fs.access(otherJournalPath), { code: "ENOENT" });
+
+  const findings = await findForbiddenWorkstationLocalPaths(repoPath);
+
+  assert.deepEqual(
+    findings.map((finding) => ({
+      filePath: finding.filePath,
+      line: finding.line,
+      prefix: finding.prefix,
+      reason: finding.reason,
+      match: finding.match,
+    })),
+    [
+      {
+        filePath: "docs/guide.md",
+        line: 1,
+        prefix: "/home/<user>/",
+        reason: "Linux user home directory",
+        match: buildUnixHomePath("alice", "dev", "private-repo"),
+      },
+    ],
+  );
+});
