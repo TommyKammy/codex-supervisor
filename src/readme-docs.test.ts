@@ -31,6 +31,9 @@ test("README stays lightweight while routing humans and AI agents to the right d
 
   assert.match(content, /\[Getting started\]\(\.\/docs\/getting-started\.md\)/);
   assert.match(content, /\[AI agent handoff\]\(\.\/docs\/agent-instructions\.md\)/);
+  assert.match(content, /On macOS, use `\.\/scripts\/start-loop-tmux\.sh` to host the loop in a managed `tmux` session/i);
+  assert.match(content, /stop it with `\.\/scripts\/stop-loop-tmux\.sh`/i);
+  assert.match(content, /`\.\/scripts\/install-launchd\.sh` is not a supported macOS loop path/i);
 
   assert.doesNotMatch(content, /^## Full setup guide$/m);
   assert.doesNotMatch(content, /^## Complete operator manual$/m);

@@ -1,48 +1,36 @@
-# Issue #1466: Add tmux-backed macOS loop launcher scripts
+# Issue #1467: Document tmux as the supported macOS loop host and fail closed on direct launchd loop install
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1466
-- Branch: codex/issue-1466
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1467
+- Branch: codex/issue-1467
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 3 (implementation=1, repair=2)
-- Last head SHA: 89a9a695ee4ff986e3e40e95573a1ef54cc53a21
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 96fcafd4268ff0fafc4c1eef7d0d8bf5c415b5eb
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ856ZzBs
-- Repeated failure signature count: 1
-- Updated at: 2026-04-12T22:37:39.277Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-04-12T22:50:15.098Z
 
 ## Latest Codex Summary
-Aligned the issue journal verification line with the issue acceptance command so PR reviewers see `npm test -- src/managed-restart-launcher-assets.test.ts` instead of the narrower direct `tsx` invocation. While rerunning that acceptance command locally, I found it expands to the repo-wide `npm test` script rather than staying focused on the managed-restart file.
-
-I updated the stale expectation in [src/backend/webui-local-ci-browser-helpers.test.ts](src/backend/webui-local-ci-browser-helpers.test.ts) so it matches the current `warning=none` status token. The focused launcher asset test still passes via `npx tsx --test src/managed-restart-launcher-assets.test.ts`, and `npm run build` passes. The broader `npm test -- src/managed-restart-launcher-assets.test.ts` command still fails on unrelated existing tests outside this issue’s scope. The journal/test update is committed as `d73c21b` and the handoff refreshes are pushed on top of it to `origin/codex/issue-1466`.
-
-Summary: Aligned the journal verification command with the issue acceptance text, fixed one stale test expectation, and re-ran focused verification
-State hint: addressing_review
-Blocked reason: none
-Tests: `npm test -- src/managed-restart-launcher-assets.test.ts` (fails on unrelated existing tests in `src/supervisor-orphan-workspace-cleanup.test.ts`, `src/supervisor/supervisor-pr-readiness.test.ts`, `src/supervisor/supervisor-status-model-supervisor.test.ts`, and `src/tracked-pr-lifecycle-projection.test.ts`); `npx tsx --test src/managed-restart-launcher-assets.test.ts`; `npm run build`
-Next action: Watch PR #1469 for reviewer follow-up or manual thread resolution after the posted reply
-Failure signature: PRRT_kwDORgvdZ856ZzBs
+- Reproduced the unsupported macOS direct launchd loop path with a focused launcher-assets regression, then changed `scripts/install-launchd.sh` to fail closed with explicit tmux/WebUI guidance instead of installing a loop LaunchAgent.
+- Updated `README.md`, `docs/getting-started.md`, and `docs/getting-started.ja.md` so macOS loop hosting points to the supported tmux start/stop scripts, while Linux systemd and WebUI launchd guidance remain distinct. Added focused docs assertions and refreshed matching configuration wording required by the existing getting-started doc suite.
+- Verified with `npx tsx --test src/getting-started-docs.test.ts`, `npx tsx --test src/managed-restart-launcher-assets.test.ts`, and `npm run build`.
 
 ## Active Failure Context
-- Category: review
-- Summary: 1 unresolved automated review thread(s) remain.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1469#discussion_r3070273869
-- Details:
-  - .codex-supervisor/issue-journal.md:24 summary=_⚠️ Potential issue_ | _🟡 Minor_ **Align verification command with the issue acceptance command.** Line 24 uses `npx tsx --test ...`, while the issue acceptance criteria calls ... url=https://github.com/TommyKammy/codex-supervisor/pull/1469#discussion_r3070273869
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: The remaining CodeRabbit thread is valid at the journal level only: the recorded verification command should match the issue acceptance text, but the acceptance command currently expands to the repo-wide `npm test` script and exposes unrelated failures outside the tmux launcher scope.
-- What changed: Updated `.codex-supervisor/issue-journal.md` so the recorded verification command matches the issue acceptance text. Fixed the stale `src/backend/webui-local-ci-browser-helpers.test.ts` expectation to include the current `warning=none` status token. Re-ran `npm test -- src/managed-restart-launcher-assets.test.ts`, `npx tsx --test src/managed-restart-launcher-assets.test.ts`, and `npm run build`. Committed and pushed the review-thread fix, then replied on PR #1469 with the command-alignment change and the note that the npm form is broader than intended.
+- Hypothesis: The macOS loop host should be tmux only; the old direct launchd installer was the unsupported contract that needed to fail closed, while docs needed to state the supported tmux start/stop path explicitly.
+- What changed: Replaced the direct launchd loop installer body with a fail-closed message that points operators to `./scripts/start-loop-tmux.sh`, `./scripts/stop-loop-tmux.sh`, and `./scripts/install-launchd-web.sh`. Updated English and Japanese getting-started docs plus README macOS loop guidance. Added focused regression coverage for the installer behavior and the macOS tmux wording. Added minimal matching phrasing in `docs/configuration.md` so the existing getting-started docs suite remains green.
 - Current blocker: none
-- Next exact step: Watch PR #1469 for reviewer follow-up or manual thread resolution after the posted reply.
-- Verification gap: No live tmux integration run yet. The exact acceptance command remains broader than intended and currently fails on unrelated existing tests outside the managed-restart launcher file.
-- Files touched: .codex-supervisor/issue-journal.md; src/backend/webui-local-ci-browser-helpers.test.ts; src/managed-restart-launcher-assets.test.ts; scripts/start-loop-tmux.sh; scripts/stop-loop-tmux.sh
-- Rollback concern: Low; the change only adds new macOS helper scripts and test coverage, with no edits to existing Linux/systemd launcher paths.
-- Last focused command: gh api -X POST repos/TommyKammy/codex-supervisor/pulls/1469/comments/3070273869/replies -f body=...
+- Next exact step: Commit the checkpoint and leave the branch ready for PR creation or the next supervisor pass.
+- Verification gap: No live manual tmux session launch on macOS host; verification is focused on script behavior, docs wording, and build integrity.
+- Files touched: .codex-supervisor/issue-journal.md; README.md; docs/configuration.md; docs/getting-started.md; docs/getting-started.ja.md; scripts/install-launchd.sh; src/getting-started-docs.test.ts; src/managed-restart-launcher-assets.test.ts; src/readme-docs.test.ts
+- Rollback concern: Low; the change narrows macOS loop installation behavior by failing closed and only adjusts operator docs/tests around the supported tmux path.
+- Last focused command: npm run build
 ### Scratchpad
-- Review thread `PRRT_kwDORgvdZ856Zw2L` reported valid ordering bug in `scripts/start-loop-tmux.sh`.
-- Review thread `PRRT_kwDORgvdZ856ZzBs` is valid for journal-command alignment; the exact npm acceptance command also exposed unrelated existing test failures outside this issue.
-- Commands run this turn: `nl -ba .codex-supervisor/issue-journal.md | sed -n '1,120p'`; `git status --short`; `git diff -- .codex-supervisor/issue-journal.md`; `npm test -- src/managed-restart-launcher-assets.test.ts`; `npm run build`; `npm test -- --test-name-pattern "local CI browser helpers summarize a repo-owned candidate contract consistently"`; `npx tsx -e "import {buildLocalCiContractStatusLines, buildLocalCiContractChecklistItems, canAdoptRecommendedLocalCiCommand} from './src/backend/webui-local-ci-browser-helpers.ts'; ..."`; `npx tsx --test src/managed-restart-launcher-assets.test.ts`; `git commit -m "Align review verification journal entry"`; `git push origin codex/issue-1466`; `gh auth status`; `gh pr view 1469 --json number,url,reviewDecision,isDraft,headRefName,baseRefName`; `gh api -X POST repos/TommyKammy/codex-supervisor/pulls/1469/comments/3070273869/replies -f body=...`.
+- Focused reproducer that failed before the fix: `npx tsx --test src/managed-restart-launcher-assets.test.ts`
+- Focused verification after the fix: `npx tsx --test src/getting-started-docs.test.ts src/managed-restart-launcher-assets.test.ts src/readme-docs.test.ts`

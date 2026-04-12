@@ -232,6 +232,7 @@ Typical examples:
 - `cargo test`
 
 The repo owns the command contract. The supervisor should only execute the configured entrypoint and react to its exit code.
+If no local CI contract is configured, preserve backward compatibility by not inventing one.
 
 ## The Config Questions Most Beginners Ask
 
@@ -426,8 +427,8 @@ Operational notes:
 - when a repo exposes a canonical pre-PR entrypoint such as `ci:local` or `verify:pre-pr`, keep that command definition in the managed repo rather than in supervisor inference logic
 - the repo is the source of truth for the command contents, and the supervisor should only run the configured entrypoint and observe its exit status
 - `No repo-owned local CI contract is configured.` means no canonical repo-owned local gate is active
-- `Repo-owned local CI candidate exists but localCiCommand is unset.` means setup or readiness found a repo script candidate, but the supervisor will not run it until you configure `localCiCommand`
-- `Repo-owned local CI contract is configured.` means the configured command is active and fail-closed, so PR publication stays blocked until the command passes again
+- `Repo-owned local CI candidate exists but localCiCommand is unset.` means setup or readiness found a repo script candidate, but codex-supervisor will not run it until localCiCommand is configured. This warning is advisory only.
+- `Repo-owned local CI contract is configured.` means the configured command is active and fail-closed, so when configured local CI fails, PR publication stays blocked until the command passes again
 
 Operator rule:
 
