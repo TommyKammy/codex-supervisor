@@ -1541,6 +1541,84 @@ Decide whether to keep the current production auth token flow or replace it befo
   );
 });
 
+test("status distinguishes blocked preserved partial work from an empty backlog", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const issueNumber = 145;
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        blocked_reason: "manual_review",
+        branch: branchName(fixture.config, issueNumber),
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        updated_at: "2026-04-12T00:10:00Z",
+        last_failure_context: {
+          category: "manual",
+          summary: "Issue #145 needs manual review because the workspace preserves partial work.",
+          signature: "manual-review-preserved-partial-work",
+          command: null,
+          details: [
+            "preserved_partial_work=yes",
+            "tracked_files=feature.txt|src/workflow.ts",
+          ],
+          url: "https://example.test/issues/145",
+          updated_at: "2026-04-12T00:10:00Z",
+        },
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const blockedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Manual review for preserved partial work",
+    body: executionReadyBody(
+      "Keep the preserved worktree available until the operator manually reviews the partial work.",
+    ),
+    createdAt: "2026-04-12T00:00:00Z",
+    updatedAt: "2026-04-12T00:00:00Z",
+    url: "https://example.test/issues/145",
+    labels: [],
+    state: "OPEN",
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [blockedIssue],
+    listAllIssues: async () => [blockedIssue],
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const report = await supervisor.statusReport({ why: true });
+  assert.match(report.readinessLines.join("\n"), /^runnable_issues=none$/m);
+  assert.match(report.readinessLines.join("\n"), /^blocked_issues=#145 blocked_by=local_state:blocked$/m);
+  assert.match(
+    report.readinessLines.join("\n"),
+    /^blocked_partial_work issue=#145 blocked_reason=manual_review partial_work=preserved tracked_files=feature\.txt\|src\/workflow\.ts$/m,
+  );
+  assert.deepEqual(report.whyLines, [
+    "selected_issue=none",
+    "selection_reason=blocked_partial_work_manual_review issue=#145",
+    "blocked_partial_work issue=#145 blocked_reason=manual_review partial_work=preserved tracked_files=feature.txt|src/workflow.ts",
+  ]);
+
+  const status = await supervisor.status({ why: true });
+  assert.match(status, /^No active issue\.$/m);
+  assert.match(status, /^selection_reason=blocked_partial_work_manual_review issue=#145$/m);
+  assert.match(
+    status,
+    /^blocked_partial_work issue=#145 blocked_reason=manual_review partial_work=preserved tracked_files=feature\.txt\|src\/workflow\.ts$/m,
+  );
+});
+
 test("status makes safer-mode trust gating explicit while allowing trusted-input issues", async () => {
   const fixture = await createSupervisorFixture();
   const state: SupervisorStateFile = {

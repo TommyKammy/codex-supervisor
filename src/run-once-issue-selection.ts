@@ -43,6 +43,7 @@ import {
   emitSupervisorEvent,
   type SupervisorEventSink,
 } from "./supervisor/supervisor-events";
+import { findLatestBlockedPreservedPartialWorkIncident } from "./supervisor/supervisor-preserved-partial-work";
 
 export interface ReadyIssueContext {
   kind: "ready";
@@ -100,6 +101,20 @@ interface ReserveRunnableIssueSelectionArgs {
 type DegradedDependencyCheckResult =
   | { kind: "ready" }
   | { kind: "blocked"; reason: string };
+
+export function formatNoRunnableIssueFoundMessage(
+  state: Pick<SupervisorStateFile, "issues">,
+): string {
+  const blockedPartialWorkIncident = findLatestBlockedPreservedPartialWorkIncident(state);
+  if (blockedPartialWorkIncident === null) {
+    return "No matching open issue found.";
+  }
+
+  return [
+    "No runnable issue is available.",
+    `Latest blocked issue #${blockedPartialWorkIncident.record.issue_number} is waiting on manual review with preserved partial work.`,
+  ].join(" ");
+}
 
 function canContinueActiveIssueDuringInventoryDegradation(state: SupervisorStateFile): boolean {
   return canProceedWithDegradedContinuationAfterInventoryRefreshFailure({
@@ -365,7 +380,7 @@ async function selectIssueRecord(
     if (!record) {
       state.activeIssueNumber = null;
       await stateStore.save(state);
-      return "No matching open issue found.";
+      return formatNoRunnableIssueFoundMessage(state);
     }
 
     return {
