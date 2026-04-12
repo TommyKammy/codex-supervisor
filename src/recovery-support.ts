@@ -4,6 +4,7 @@ import { runCommand } from "./core/command";
 import {
   isIgnoredSupervisorArtifactPath,
   normalizeGitPath,
+  parseGitStatusPorcelainV1Entries,
   parseGitStatusPorcelainV1Paths,
   parseGitWorktreePaths,
 } from "./core/git-workspace-helpers";
@@ -177,6 +178,11 @@ export async function classifyFailedNoPrBranchRecovery(args: {
     const meaningfulWorkspaceChanges = parseGitStatusPorcelainV1Paths(workspaceStatusResult.stdout)
       .filter((paths) =>
         paths.some((relativePath) => !isIgnoredSupervisorArtifactPath(relativePath, journalRelativePath)));
+    const meaningfulTrackedWorkspaceChanges = parseGitStatusPorcelainV1Entries(workspaceStatusResult.stdout)
+      .filter((entry) => entry.statusCode !== "??")
+      .map((entry) => entry.paths)
+      .filter((paths) =>
+        paths.some((relativePath) => !isIgnoredSupervisorArtifactPath(relativePath, journalRelativePath)));
 
     if (baseAhead > 0 && meaningfulBaseDiff.length > 0 && meaningfulWorkspaceChanges.length === 0) {
       return { state: "recoverable", headSha: headResult.stdout.trim() || null };
@@ -192,7 +198,7 @@ export async function classifyFailedNoPrBranchRecovery(args: {
       preservedTrackedFiles: [
         ...new Set([
           ...meaningfulBaseDiff,
-          ...meaningfulWorkspaceChanges.flatMap((paths) => paths),
+          ...meaningfulTrackedWorkspaceChanges.flatMap((paths) => paths),
         ]),
       ].sort(),
     };

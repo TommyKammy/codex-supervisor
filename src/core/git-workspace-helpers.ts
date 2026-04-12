@@ -1,6 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 
+export type GitStatusPorcelainV1Entry = {
+  statusCode: string;
+  paths: string[];
+};
+
 export function isIgnoredSupervisorArtifactPath(
   relativePath: string,
   journalRelativePath: string,
@@ -15,9 +20,9 @@ export function isIgnoredSupervisorArtifactPath(
     || relativePath.startsWith(".codex-supervisor/execution-metrics/");
 }
 
-export function parseGitStatusPorcelainV1Paths(statusOutput: string): string[][] {
+export function parseGitStatusPorcelainV1Entries(statusOutput: string): GitStatusPorcelainV1Entry[] {
   const fields = statusOutput.split("\0");
-  const entries: string[][] = [];
+  const entries: GitStatusPorcelainV1Entry[] = [];
 
   for (let index = 0; index < fields.length; index += 1) {
     const field = fields[index];
@@ -36,11 +41,18 @@ export function parseGitStatusPorcelainV1Paths(statusOutput: string): string[][]
     }
 
     if (paths.length > 0) {
-      entries.push(paths);
+      entries.push({
+        statusCode,
+        paths,
+      });
     }
   }
 
   return entries;
+}
+
+export function parseGitStatusPorcelainV1Paths(statusOutput: string): string[][] {
+  return parseGitStatusPorcelainV1Entries(statusOutput).map((entry) => entry.paths);
 }
 
 export function normalizeGitPath(targetPath: string): string {

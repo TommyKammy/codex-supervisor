@@ -118,3 +118,46 @@ test("classifyFailedNoPrBranchRecovery reports preserved tracked files when dirt
     preservedTrackedFiles: ["feature.txt"],
   });
 });
+
+test("classifyFailedNoPrBranchRecovery does not treat untracked-only workspace files as preserved tracked work", async (t) => {
+  const { repoPath, workspaceRoot } = await createRepositoryWithOrigin();
+  const rootPath = path.dirname(repoPath);
+  t.after(async () => {
+    await fs.rm(rootPath, { recursive: true, force: true });
+  });
+
+  const branch = "codex/issue-368";
+  const workspacePath = path.join(workspaceRoot, "issue-368");
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  await runCommand("git", ["-C", repoPath, "worktree", "add", "-b", branch, workspacePath, "main"]);
+  await fs.writeFile(path.join(workspacePath, "scratch.txt"), "untracked work\n");
+  const headSha = (await runCommand("git", ["-C", workspacePath, "rev-parse", "HEAD"])).stdout.trim();
+
+  const config = createConfig({
+    repoPath,
+    workspaceRoot,
+  });
+  const record = createRecord({
+    issue_number: 368,
+    branch,
+    workspace: workspacePath,
+  });
+
+  const result = await classifyFailedNoPrBranchRecovery({
+    config,
+    record,
+    ensureOriginDefaultBranchFetched: async () => {
+      await runCommand("git", ["-C", repoPath, "fetch", "origin", config.defaultBranch]);
+    },
+    isSafeCleanupTarget: (currentConfig, currentWorkspacePath, currentBranch) =>
+      currentWorkspacePath === workspacePath
+      && currentBranch === branch
+      && currentConfig.workspaceRoot === workspaceRoot,
+  });
+
+  assert.deepEqual(result, {
+    state: "manual_review_required",
+    headSha,
+    preservedTrackedFiles: [],
+  });
+});

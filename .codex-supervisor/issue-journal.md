@@ -5,29 +5,38 @@
 - Branch: codex/issue-1456
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 9439b93d1dabd2d84642028923ede107a02e3da3
+- Current phase: addressing_review
+- Attempt count: 3 (implementation=2, repair=1)
+- Last head SHA: c48946c41610f49e1584285f45db3a524d870732
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-04-12T06:52:21.544Z
+- Last failure signature: PRRT_kwDORgvdZ856WZIX
+- Repeated failure signature count: 1
+- Updated at: 2026-04-12T07:09:52.507Z
 
 ## Latest Codex Summary
-- None yet.
+Summary: Pushed `codex/issue-1456`, opened draft PR #1459 at https://github.com/TommyKammy/codex-supervisor/pull/1459, and updated the issue journal handoff to reflect the live PR checkpoint.
+State hint: pr_open
+Blocked reason: none
+Tests: Not rerun this turn; prior checkpoint verification remains `npx tsx --test src/supervisor/supervisor-diagnostics-explain.test.ts`, `npx tsx --test src/supervisor/supervisor-selection-issue-explain.test.ts`, `npx tsx --test src/supervisor/supervisor-status-rendering.test.ts`, `npx tsx --test src/recovery-support.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`, and `npm run build`
+Next action: Watch draft PR #1459 for CI and review feedback, then address any failing checks or comments
+Failure signature: PRRT_kwDORgvdZ856WZIX
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: 1 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1459#discussion_r3069131661
+- Details:
+  - src/recovery-support.ts:197 summary=_⚠️ Potential issue_ | _🟠 Major_ 🧩 Analysis chain 🏁 Script executed: Repository: TommyKammy/codex-supervisor Length of output: 5587 --- 🏁 Script executed: Repository: TommyK... url=https://github.com/TommyKammy/codex-supervisor/pull/1459#discussion_r3069131661
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: No-PR manual-review recovery already preserves enough context to identify saved tracked work; the missing piece is recording that signal explicitly and rendering it in operator-facing status/explain output.
-- What changed: Added preserved tracked-file metadata to failed no-PR manual-review failure contexts, surfaced it as `partial_work=preserved ...` in `status` and `explain`, and added focused regression coverage for recovery classification, explain DTO/rendering, and status rendering.
+- Hypothesis: The remaining review blocker was valid because failed no-PR recovery treated `??` porcelain entries as preserved tracked work; filtering those entries only at preserved-work aggregation keeps manual-review blocking intact while restoring the tracked-work distinction.
+- What changed: Added `parseGitStatusPorcelainV1Entries` so failed no-PR recovery can inspect porcelain status codes, filtered `??` entries out of `preservedTrackedFiles` while keeping workspace dirtiness checks unchanged, and added an untracked-only regression test alongside rerunning focused status/explain coverage and `npm run build`.
 - Current blocker: none
-- Next exact step: Commit the focused change set, then open or update the draft PR checkpoint if needed.
-- Verification gap: Did not rerun the broad `npm test -- ...` package script because it executes the whole suite; used focused `npx tsx --test ...` coverage plus `npm run build`.
-- Files touched: src/recovery-support.ts; src/recovery-no-pr-reconciliation.ts; src/supervisor/supervisor-preserved-partial-work.ts; src/supervisor/supervisor-selection-issue-explain.ts; src/supervisor/supervisor-detailed-status-assembly.ts; src/recovery-support.test.ts; src/supervisor/supervisor-recovery-reconciliation.test.ts; src/supervisor/supervisor-diagnostics-explain.test.ts; src/supervisor/supervisor-selection-issue-explain.test.ts; src/supervisor/supervisor-status-rendering.test.ts; src/backend/supervisor-http-server.test.ts; src/backend/webui-dashboard-browser-smoke.test.ts; src/supervisor/supervisor-service.test.ts
+- Next exact step: Commit the review fix, push `codex/issue-1456`, and update PR #1459 so the unresolved CodeRabbit thread can be re-reviewed or resolved.
+- Verification gap: Did not rerun the broad `npm test -- ...` package script because it executes the whole suite; reran focused `npx tsx --test src/core/git-workspace-helpers.test.ts src/recovery-support.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts src/supervisor/supervisor-status-rendering.test.ts` plus `npm run build`.
+- Files touched: src/core/git-workspace-helpers.ts; src/recovery-support.ts; src/recovery-no-pr-reconciliation.ts; src/supervisor/supervisor-preserved-partial-work.ts; src/supervisor/supervisor-selection-issue-explain.ts; src/supervisor/supervisor-detailed-status-assembly.ts; src/recovery-support.test.ts; src/supervisor/supervisor-recovery-reconciliation.test.ts; src/supervisor/supervisor-diagnostics-explain.test.ts; src/supervisor/supervisor-selection-issue-explain.test.ts; src/supervisor/supervisor-status-rendering.test.ts; src/backend/supervisor-http-server.test.ts; src/backend/webui-dashboard-browser-smoke.test.ts; src/supervisor/supervisor-service.test.ts
 - Rollback concern: The new `SupervisorExplainDto.preservedPartialWorkSummary` field required stub updates in backend/service tests; any downstream handwritten DTO fixture will now need the nullable field.
-- Last focused command: npm run build
+- Last focused command: npx tsx --test src/core/git-workspace-helpers.test.ts src/recovery-support.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts src/supervisor/supervisor-selection-issue-explain.test.ts src/supervisor/supervisor-status-rendering.test.ts
 ### Scratchpad
-- Keep this section short. The supervisor may compact older notes automatically.
+- 2026-04-12: Addressed PRRT_kwDORgvdZ856WZIX by excluding `??` entries from failed no-PR `preservedTrackedFiles`; untracked-only work still yields `manual_review_required` but no longer advertises preserved tracked partial work.
