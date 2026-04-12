@@ -207,7 +207,17 @@ export async function findForbiddenWorkstationLocalPaths(
     }
 
     const absolutePath = path.join(workspacePath, filePath);
-    const rawContents = await fs.readFile(absolutePath);
+    let rawContents: Buffer;
+    try {
+      rawContents = await fs.readFile(absolutePath);
+    } catch (error) {
+      const maybeErr = error as NodeJS.ErrnoException;
+      if (maybeErr.code === "ENOENT") {
+        continue;
+      }
+
+      throw error;
+    }
     if (isBinary(rawContents)) {
       continue;
     }

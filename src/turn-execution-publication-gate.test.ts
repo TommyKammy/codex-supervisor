@@ -213,6 +213,106 @@ test("applyCodexTurnPublicationGate redacts supervisor-owned cross-issue journal
   assert.equal(git(workspacePath, "status", "--short", "--untracked-files=no").trim(), "");
 });
 
+test("applyCodexTurnPublicationGate tolerates tracked cross-issue journals omitted by sparse checkout", async (t) => {
+  const workspacePath = await createTrackedRepo();
+  t.after(async () => {
+    await fs.rm(workspacePath, { recursive: true, force: true });
+  });
+  git(workspacePath, "checkout", "-b", "codex/issue-102");
+
+  const currentJournalPath = path.join(workspacePath, ".codex-supervisor", "issues", "102", "issue-journal.md");
+  const otherJournalPath = path.join(workspacePath, ".codex-supervisor", "issues", "181", "issue-journal.md");
+  await fs.mkdir(path.dirname(currentJournalPath), { recursive: true });
+  await fs.mkdir(path.dirname(otherJournalPath), { recursive: true });
+  await fs.writeFile(currentJournalPath, "# Issue #102\n", "utf8");
+  await fs.writeFile(
+    otherJournalPath,
+    [
+      "# Issue #181: stale leak",
+      "",
+      "## Codex Working Notes",
+      "### Current Handoff",
+      `- What changed: reproduced a leak from ${SAMPLE_MACOS_WORKSTATION_PATH}.`,
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  git(workspacePath, "add", ".codex-supervisor/issues/102/issue-journal.md", ".codex-supervisor/issues/181/issue-journal.md");
+  git(workspacePath, "commit", "-m", "seed sparse cross-issue journal leak");
+
+  git(workspacePath, "sparse-checkout", "init", "--no-cone");
+  await fs.writeFile(
+    path.join(workspacePath, ".git", "info", "sparse-checkout"),
+    ["/README.md", "/.codex-supervisor/issues/102/"].join("\n").concat("\n"),
+    "utf8",
+  );
+  git(workspacePath, "read-tree", "-mu", "HEAD");
+  await assert.rejects(fs.access(otherJournalPath), { code: "ENOENT" });
+
+  let createPullRequestCalls = 0;
+  const issue = createIssue({ title: "Gate sparse cross-issue journal hygiene without blocking publication" });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "stabilizing",
+        pr_number: null,
+        implementation_attempt_count: 1,
+        workspace: workspacePath,
+        journal_path: currentJournalPath,
+      }),
+    },
+  };
+
+  const result = await applyCodexTurnPublicationGate({
+    config: createConfig({
+      localCiCommand: "npm run ci:local",
+      issueJournalRelativePath: ".codex-supervisor/issues/{issueNumber}/issue-journal.md",
+    }),
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    state,
+    record: state.issues["102"]!,
+    issue,
+    workspacePath,
+    workspaceStatus: {
+      branch: "codex/issue-102",
+      headSha: git(workspacePath, "rev-parse", "HEAD").trim(),
+      hasUncommittedChanges: false,
+      baseAhead: 1,
+      baseBehind: 0,
+      remoteBranchExists: false,
+      remoteAhead: 0,
+      remoteBehind: 0,
+    },
+    github: {
+      resolvePullRequestForBranch: async () => null,
+      createPullRequest: async () => {
+        createPullRequestCalls += 1;
+        return createPullRequest({ number: 200, isDraft: true, headRefOid: "head-102" });
+      },
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    syncJournal: async () => undefined,
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    runLocalCiCommand: async () => undefined,
+    syncExecutionMetricsRunSummary: async () => undefined,
+  });
+
+  assert.equal(result.kind, "ready");
+  assert.equal(createPullRequestCalls, 1);
+  assert.equal(result.record.state, "stabilizing");
+  assert.equal(result.record.last_failure_signature, null);
+  assert.equal(git(workspacePath, "log", "-1", "--pretty=%s").trim(), "seed sparse cross-issue journal leak");
+  assert.equal(git(workspacePath, "status", "--short", "--untracked-files=no").trim(), "");
+});
+
 test("applyCodexTurnPublicationGate blocks draft PR creation when local CI fails", async () => {
   const issue = createIssue({ title: "Gate draft PR creation" });
   const state: SupervisorStateFile = {
