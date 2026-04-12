@@ -44,6 +44,11 @@ async function createMissingNodePath(commands: string[]): Promise<string> {
   return pathDir;
 }
 
+async function writeExecutable(filePath: string, contents: string): Promise<void> {
+  await fs.writeFile(filePath, contents, { mode: 0o755 });
+  await fs.chmod(filePath, 0o755);
+}
+
 async function assertMissingBinaryMessage(relativePath: string, requiredCommands: string[]): Promise<void> {
   const scriptPath = path.join(process.cwd(), relativePath);
   const pathDir = await createMissingNodePath(requiredCommands);
@@ -62,6 +67,37 @@ async function assertMissingBinaryMessage(relativePath: string, requiredCommands
         assert.equal((error as NodeJS.ErrnoException).code, 1);
         const stderr = (error as { stderr?: string }).stderr ?? "";
         assert.equal(stderr.trim(), "node and npm must be available on PATH");
+        assert.doesNotMatch(stderr, /command not found/u);
+        return true;
+      },
+    );
+  } finally {
+    await fs.rm(pathDir, { recursive: true, force: true });
+  }
+}
+
+async function assertMissingCommandMessage(
+  relativePath: string,
+  requiredCommands: string[],
+  expectedMessage: string,
+): Promise<void> {
+  const scriptPath = path.join(process.cwd(), relativePath);
+  const pathDir = await createMissingNodePath(requiredCommands);
+
+  try {
+    await assert.rejects(
+      async () => execFileAsync(bashPath, [scriptPath], {
+        env: {
+          HOME: os.tmpdir(),
+          PATH: pathDir,
+        },
+      }),
+      (error: unknown) => {
+        assert.equal(typeof error, "object");
+        assert.notEqual(error, null);
+        assert.equal((error as NodeJS.ErrnoException).code, 1);
+        const stderr = (error as { stderr?: string }).stderr ?? "";
+        assert.equal(stderr.trim(), expectedMessage);
         assert.doesNotMatch(stderr, /command not found/u);
         return true;
       },
@@ -122,10 +158,66 @@ test("existing loop launcher assets stay scoped to loop mode without managed res
   assert.doesNotMatch(systemdTemplate, /^Environment=CODEX_SUPERVISOR_MANAGED_RESTART(?:_LAUNCHER)?=/mu);
 });
 
+test("macOS tmux loop launcher assets define a single-session contract with explicit launcher metadata", async () => {
+  const [startTmuxLoop, stopTmuxLoop] = await Promise.all([
+    readRepoFile("scripts/start-loop-tmux.sh"),
+    readRepoFile("scripts/stop-loop-tmux.sh"),
+  ]);
+
+  assert.match(startTmuxLoop, /TMUX_SESSION_NAME="\$\{TMUX_SESSION_NAME:-codex-supervisor-loop\}"/u);
+  assert.match(startTmuxLoop, /CODEX_SUPERVISOR_LAUNCHER="\$\{CODEX_SUPERVISOR_LAUNCHER:-tmux\}"/u);
+  assert.match(startTmuxLoop, /CODEX_SUPERVISOR_TMUX_SESSION="\$\{CODEX_SUPERVISOR_TMUX_SESSION:-\$\{TMUX_SESSION_NAME\}\}"/u);
+  assert.match(startTmuxLoop, /has-session -t "\$\{TMUX_SESSION_NAME\}"/u);
+  assert.match(startTmuxLoop, /new-session -d -s "\$\{TMUX_SESSION_NAME\}"/u);
+  assert.match(startTmuxLoop, /CODEX_SUPERVISOR_CONFIG=/u);
+  assert.match(startTmuxLoop, /scripts\/run-loop\.sh/u);
+
+  assert.match(stopTmuxLoop, /TMUX_SESSION_NAME="\$\{TMUX_SESSION_NAME:-codex-supervisor-loop\}"/u);
+  assert.match(stopTmuxLoop, /has-session -t "\$\{TMUX_SESSION_NAME\}"/u);
+  assert.match(stopTmuxLoop, /kill-session -t "\$\{TMUX_SESSION_NAME\}"/u);
+});
+
 test("launcher-backed WebUI shell scripts keep their explicit missing-binary diagnostics under set -euo pipefail", async () => {
   await Promise.all([
     assertMissingBinaryMessage("scripts/run-web.sh", ["dirname"]),
     assertMissingBinaryMessage("scripts/install-launchd-web.sh", ["dirname"]),
     assertMissingBinaryMessage("scripts/install-systemd-web.sh", ["dirname"]),
+    assertMissingCommandMessage("scripts/start-loop-tmux.sh", ["dirname", "node", "npm"], "tmux must be available on PATH"),
+    assertMissingCommandMessage("scripts/stop-loop-tmux.sh", ["dirname"], "tmux must be available on PATH"),
   ]);
+});
+
+test("tmux loop start script preserves idempotency before checking node and npm", async () => {
+  const scriptPath = path.join(process.cwd(), "scripts/start-loop-tmux.sh");
+  const pathDir = await fs.mkdtemp(path.join(os.tmpdir(), "managed-restart-tmux-"));
+  const dirnamePath = (await execFileAsync(bashPath, ["-lc", "command -v dirname"])).stdout.trim();
+
+  try {
+    await fs.symlink(dirnamePath, path.join(pathDir, "dirname"));
+    await writeExecutable(
+      path.join(pathDir, "tmux"),
+      `#!/bin/bash
+set -euo pipefail
+
+if [[ "$1" == "has-session" ]]; then
+  exit 0
+fi
+
+echo "unexpected tmux invocation: $*" >&2
+exit 1
+`,
+    );
+
+    const { stdout, stderr } = await execFileAsync(bashPath, [scriptPath], {
+      env: {
+        HOME: os.tmpdir(),
+        PATH: pathDir,
+      },
+    });
+
+    assert.equal(stderr, "");
+    assert.equal(stdout.trim(), "codex-supervisor loop tmux session already running: codex-supervisor-loop");
+  } finally {
+    await fs.rm(pathDir, { recursive: true, force: true });
+  }
 });
