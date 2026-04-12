@@ -22,12 +22,12 @@
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: sparse-checkout failures were coming from workstation-local path scanning reading every tracked file from disk, including cross-issue supervisor journals omitted from the current sparse workspace.
-- What changed: added a sparse-checkout repro in publication-gate and path-scanner tests, then taught `findForbiddenWorkstationLocalPaths()` to skip tracked files that are absent from the working tree instead of throwing `ENOENT`.
+- What changed: added sparse-checkout repros in publication-gate and path-scanner tests, taught `findForbiddenWorkstationLocalPaths()` to skip tracked files that are absent from the working tree instead of throwing `ENOENT`, committed the fix, and opened draft PR #1464.
 - Current blocker: none.
-- Next exact step: stage the scanner, regression tests, and this journal, then commit the sparse-workspace checkpoint on `codex/issue-1463`.
+- Next exact step: watch PR #1464 for CI and review feedback, then address any follow-up if the supervisor re-enters this issue.
 - Verification gap: focused regression suite and `npm run build` passed; no broader full-suite run beyond the issue-requested tests.
 - Files touched: .codex-supervisor/issue-journal.md; src/turn-execution-publication-gate.test.ts; src/workstation-local-paths.test.ts; src/workstation-local-paths.ts
 - Rollback concern: skipping `ENOENT` for tracked-but-absent files intentionally treats out-of-sparse artifacts as non-inspectable in the current workspace, so future callers should not rely on this scanner to report leaks from paths the sparse checkout has hidden.
-- Last focused command: npm run build
+- Last focused command: gh pr create --draft --base main --head codex/issue-1463 --title "Prevent sparse cross-issue journals from blocking no-PR publication" --body ...
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
