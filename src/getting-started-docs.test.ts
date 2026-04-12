@@ -153,6 +153,24 @@ test("getting-started points operators to doctor for the effective orphan cleanu
   assert.match(content, /preserved=locked,recent,unsafe_target/i);
 });
 
+test("getting-started documents tmux as the supported macOS loop host and keeps Linux and WebUI guidance distinct", async () => {
+  const [gettingStarted, japaneseGettingStarted] = await Promise.all([
+    readGettingStarted(),
+    readJapaneseGettingStarted(),
+  ]);
+
+  assert.match(gettingStarted, /On macOS, the supported background loop host is `tmux`\./);
+  assert.match(gettingStarted, /`\.\/scripts\/start-loop-tmux\.sh`/);
+  assert.match(gettingStarted, /`\.\/scripts\/stop-loop-tmux\.sh`/);
+  assert.match(gettingStarted, /`\.\/scripts\/install-launchd\.sh` now fails closed/i);
+  assert.match(gettingStarted, /If you want a launcher-managed background loop on Linux, use `\.\/scripts\/install-systemd\.sh`/);
+  assert.match(gettingStarted, /For a launcher-managed WebUI on macOS, use `\.\/scripts\/install-launchd-web\.sh`/);
+
+  assert.match(japaneseGettingStarted, /macOS でサポートしている常駐 loop host は `tmux`/);
+  assert.match(japaneseGettingStarted, /`\.\/scripts\/start-loop-tmux\.sh`/);
+  assert.match(japaneseGettingStarted, /`\.\/scripts\/stop-loop-tmux\.sh`/);
+});
+
 test("japanese docs keep overview and getting-started responsibilities separate", async () => {
   const [overview, gettingStarted] = await Promise.all([
     readJapaneseOverview(),

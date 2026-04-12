@@ -369,6 +369,13 @@ If you want a local operator view over the same supervisor service, you can also
 node dist/index.js web --config /path/to/supervisor.config.json
 ```
 
+Host-specific loop guidance:
+
+- On macOS, the supported background loop host is `tmux`. Start it with `./scripts/start-loop-tmux.sh` and stop it with `./scripts/stop-loop-tmux.sh`.
+- `./scripts/install-launchd.sh` now fails closed because a direct launchd-hosted loop is not a supported macOS path.
+- If you want a launcher-managed background loop on Linux, use `./scripts/install-systemd.sh`.
+- For a launcher-managed WebUI on macOS, use `./scripts/install-launchd-web.sh`. That launchd path is still supported because it hosts the WebUI entrypoint rather than the loop.
+
 The WebUI uses the same `SupervisorService` boundary as the CLI. It reads the same typed status, doctor, explain, and issue-lint data, and it only exposes the current safe command set: `run-once`, `requeue`, `prune-orphaned-workspaces`, and `reset-corrupt-json-state`.
 
 In normal operation, the supervisor will:

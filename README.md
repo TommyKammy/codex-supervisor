@@ -96,6 +96,8 @@ Before the first run, keep the [Configuration guide](./docs/configuration.md) op
    node dist/index.js loop --config /path/to/supervisor.config.json
    ```
 
+   On macOS, use `./scripts/start-loop-tmux.sh` to host the loop in a managed `tmux` session, and stop it with `./scripts/stop-loop-tmux.sh`. `./scripts/install-launchd.sh` is not a supported macOS loop path.
+
    If you want the local operator dashboard, start the WebUI against the same config:
 
    ```bash

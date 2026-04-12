@@ -49,6 +49,11 @@ async function writeExecutable(filePath: string, contents: string): Promise<void
   await fs.chmod(filePath, 0o755);
 }
 
+async function symlinkResolvedCommand(pathDir: string, commandName: string): Promise<void> {
+  const commandPath = (await execFileAsync(bashPath, ["-lc", `command -v ${commandName}`])).stdout.trim();
+  await fs.symlink(commandPath, path.join(pathDir, commandName));
+}
+
 async function assertMissingBinaryMessage(relativePath: string, requiredCommands: string[]): Promise<void> {
   const scriptPath = path.join(process.cwd(), relativePath);
   const pathDir = await createMissingNodePath(requiredCommands);
@@ -219,5 +224,57 @@ exit 1
     assert.equal(stdout.trim(), "codex-supervisor loop tmux session already running: codex-supervisor-loop");
   } finally {
     await fs.rm(pathDir, { recursive: true, force: true });
+  }
+});
+
+test("macOS direct launchd loop installer fails closed with tmux guidance before calling launchctl", async () => {
+  const scriptPath = path.join(process.cwd(), "scripts/install-launchd.sh");
+  const pathDir = await fs.mkdtemp(path.join(os.tmpdir(), "managed-restart-launchd-"));
+  const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "managed-restart-launchd-home-"));
+  const launchctlLogPath = path.join(homeDir, "launchctl.log");
+
+  try {
+    await Promise.all([
+      symlinkResolvedCommand(pathDir, "dirname"),
+      symlinkResolvedCommand(pathDir, "id"),
+      symlinkResolvedCommand(pathDir, "mkdir"),
+      symlinkResolvedCommand(pathDir, "sed"),
+    ]);
+    await writeExecutable(
+      path.join(pathDir, "launchctl"),
+      `#!/bin/bash
+set -euo pipefail
+echo "$*" >> "${launchctlLogPath}"
+exit 0
+`,
+    );
+
+    await assert.rejects(
+      async () => execFileAsync(bashPath, [scriptPath], {
+        env: {
+          HOME: homeDir,
+          PATH: pathDir,
+          NODE_BIN: "/usr/bin/node",
+          NPM_BIN: "/usr/bin/npm",
+        },
+      }),
+      (error: unknown) => {
+        assert.equal(typeof error, "object");
+        assert.notEqual(error, null);
+        assert.equal((error as NodeJS.ErrnoException).code, 1);
+        const stderr = (error as { stderr?: string }).stderr ?? "";
+        assert.match(stderr, /direct launchd loop install is unsupported on macOS/u);
+        assert.match(stderr, /supported macOS loop host is tmux/u);
+        assert.match(stderr, /\.\/scripts\/start-loop-tmux\.sh/u);
+        assert.match(stderr, /\.\/scripts\/stop-loop-tmux\.sh/u);
+        assert.doesNotMatch(stderr, /command not found/u);
+        return true;
+      },
+    );
+
+    await assert.rejects(fs.access(launchctlLogPath));
+  } finally {
+    await fs.rm(pathDir, { recursive: true, force: true });
+    await fs.rm(homeDir, { recursive: true, force: true });
   }
 });
