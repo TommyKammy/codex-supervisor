@@ -466,6 +466,16 @@ async function hydratePullRequestContext(
     !nextWorkspaceStatus.hasUncommittedChanges &&
     args.record.implementation_attempt_count >= args.config.draftPrAfterAttempt
   ) {
+    if (args.options.dryRun) {
+      return {
+        record,
+        pr: null,
+        checks: [],
+        reviewThreads: [],
+        workspaceStatus: nextWorkspaceStatus,
+      };
+    }
+
     const pathHygieneBlocked = await blockPublicationForPathHygieneFailure();
     if (pathHygieneBlocked) {
       return pathHygieneBlocked;

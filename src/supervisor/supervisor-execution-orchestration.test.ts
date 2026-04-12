@@ -1511,6 +1511,114 @@ test("runOnce preserves stale no-PR recovery tracking across a successful no-PR 
   );
 });
 
+test("runOnce dry-run resumes stale no-PR recovery into draft PR publication for a clean checkpoint branch", async () => {
+  const fixture = await createSupervisorFixture({
+    codexScriptLines: [
+      "#!/bin/sh",
+      "set -eu",
+      "echo unexpected codex invocation >&2",
+      "exit 99",
+      "",
+    ],
+  });
+  const issueNumber = 91;
+  const branch = branchName(fixture.config, issueNumber);
+  const workspace = path.join(fixture.workspaceRoot, `issue-${issueNumber}`);
+
+  git(["-C", fixture.repoPath, "checkout", "-b", branch]);
+  await fs.writeFile(path.join(fixture.repoPath, "feature.txt"), "recoverable checkpoint\n", "utf8");
+  git(["-C", fixture.repoPath, "add", "feature.txt"]);
+  git(["-C", fixture.repoPath, "commit", "-m", "recoverable checkpoint"]);
+  git(["-C", fixture.repoPath, "checkout", "main"]);
+
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "stabilizing",
+        branch,
+        workspace,
+        journal_path: path.join(workspace, ".codex-supervisor", "issue-journal.md"),
+        pr_number: null,
+        codex_session_id: "stale-session",
+        implementation_attempt_count: 2,
+        last_error:
+          "Issue #91 re-entered stale stabilizing recovery without a tracked PR; the supervisor will retry while the repeat count remains below 3.",
+        last_failure_context: {
+          category: "blocked",
+          summary:
+            "Issue #91 re-entered stale stabilizing recovery without a tracked PR; the supervisor will retry while the repeat count remains below 3.",
+          signature: "stale-stabilizing-no-pr-recovery-loop",
+          command: null,
+          details: [
+            "state=stabilizing",
+            "tracked_pr=none",
+            "branch_state=recoverable",
+            "repeat_count=1/3",
+            "operator_action=confirm whether the implementation already landed elsewhere or retarget the tracked issue manually",
+          ],
+          url: null,
+          updated_at: "2026-03-13T00:00:00.000Z",
+        },
+        last_failure_signature: "stale-stabilizing-no-pr-recovery-loop",
+        repeated_failure_signature_count: 1,
+        stale_stabilizing_no_pr_recovery_count: 1,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Resume stale no-PR publication from a clean checkpoint",
+    body: executionReadyBody("Resume stale no-PR publication from a clean checkpoint."),
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [issue],
+    listCandidateIssues: async () => [issue],
+    getIssue: async () => issue,
+    resolvePullRequestForBranch: async (branchName: string, prNumber: number | null) => {
+      assert.equal(branchName, branch);
+      assert.equal(prNumber, null);
+      return null;
+    },
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+    getPullRequestIfExists: async () => null,
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: true });
+  assert.match(
+    message,
+    /recovery issue=#91 reason=stale_state_cleanup: requeued stabilizing issue #91 after issue lock and session lock were missing/,
+  );
+  assert.match(message, /state=draft_pr/);
+  assert.doesNotMatch(message, /would invoke Codex/u);
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  const record = persisted.issues[String(issueNumber)]!;
+  assert.equal(persisted.activeIssueNumber, issueNumber);
+  assert.equal(record.state, "draft_pr");
+  assert.equal(record.pr_number, null);
+  assert.equal(record.codex_session_id, null);
+});
+
 test("runOnce lets queued stale no-PR recovery use its own retry budget after implementation attempts are exhausted", async () => {
   const fixture = await createSupervisorFixture({
     codexScriptLines: [

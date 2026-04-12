@@ -41,6 +41,8 @@ test("isIgnoredSupervisorArtifactPath matches supervisor-owned artifacts and pre
     isIgnoredSupervisorArtifactPath(".codex-supervisor/issues/1359/issue-journal.md", ".codex-supervisor/issues/1359/issue-journal.md"),
     true,
   );
+  assert.equal(isIgnoredSupervisorArtifactPath(".codex-supervisor/issue-journal.md"), true);
+  assert.equal(isIgnoredSupervisorArtifactPath(".codex-supervisor/issues/2468/issue-journal.md"), true);
   assert.equal(isIgnoredSupervisorArtifactPath("src/user-change.ts", ".codex-supervisor/issues/1359/issue-journal.md"), false);
 });
 

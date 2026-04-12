@@ -6,11 +6,15 @@ export type GitStatusPorcelainV1Entry = {
   paths: string[];
 };
 
+const ISSUE_JOURNAL_RELATIVE_PATH_REGEX = /^\.codex-supervisor\/issues\/\d+\/issue-journal\.md$/u;
+
 export function isIgnoredSupervisorArtifactPath(
   relativePath: string,
-  journalRelativePath: string,
+  journalRelativePath?: string,
 ): boolean {
   return relativePath === journalRelativePath
+    || relativePath === ".codex-supervisor/issue-journal.md"
+    || ISSUE_JOURNAL_RELATIVE_PATH_REGEX.test(relativePath)
     || relativePath === ".codex-supervisor/turn-in-progress.json"
     || relativePath === ".codex-supervisor/replay"
     || relativePath.startsWith(".codex-supervisor/replay/")

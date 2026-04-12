@@ -571,6 +571,7 @@ test("shouldRunCodex only returns true for actionable supervisor states", () => 
   const reviewThreads: ReviewThread[] = [];
 
   assert.equal(shouldRunCodex(createRecord({ state: "queued", pr_number: null }), null, [], [], config), true);
+  assert.equal(shouldRunCodex(createRecord({ state: "draft_pr", pr_number: null }), null, [], [], config), false);
   assert.equal(
     shouldRunCodex(createRecord({ state: "draft_pr" }), createPullRequest({ isDraft: true }), checks, reviewThreads, config),
     false,
