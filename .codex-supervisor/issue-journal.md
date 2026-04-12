@@ -35,13 +35,13 @@ Failure signature: PRRT_kwDORgvdZ856Zw2L
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: The open CodeRabbit thread is valid because `scripts/start-loop-tmux.sh` currently validates `node`/`npm` before honoring an already-running tmux session, so the fix should move `has-session` ahead of that validation and lock the ordering down with an executable test.
-- What changed: Reordered `scripts/start-loop-tmux.sh` so `tmux has-session` returns success before the `node`/`npm` availability check, preserving start idempotency for already-running sessions. Added a focused test in `src/managed-restart-launcher-assets.test.ts` that stubs `tmux`, removes `node`/`npm` from `PATH`, and asserts the script still exits successfully with the existing-session message.
+- What changed: Reordered `scripts/start-loop-tmux.sh` so `tmux has-session` returns success before the `node`/`npm` availability check, preserving start idempotency for already-running sessions. Added a focused test in `src/managed-restart-launcher-assets.test.ts` that stubs `tmux`, removes `node`/`npm` from `PATH`, and asserts the script still exits successfully with the existing-session message. Committed as `a7d02eb` and pushed to `origin/codex/issue-1466`.
 - Current blocker: none
-- Next exact step: Commit and push the review fix to `codex/issue-1466`, then watch PR #1469 for CI and reviewer follow-up.
+- Next exact step: Watch PR #1469 for CI and reviewer follow-up, then resolve or answer the remaining review thread if maintainers want a GitHub-side acknowledgment.
 - Verification gap: No live tmux integration run yet; verification remains focused on asset/runtime contract coverage plus `npm run build`.
 - Files touched: .codex-supervisor/issue-journal.md; src/managed-restart-launcher-assets.test.ts; scripts/start-loop-tmux.sh; scripts/stop-loop-tmux.sh
 - Rollback concern: Low; the change only adds new macOS helper scripts and test coverage, with no edits to existing Linux/systemd launcher paths.
-- Last focused command: npx tsx --test src/managed-restart-launcher-assets.test.ts
+- Last focused command: git push origin codex/issue-1466
 ### Scratchpad
 - Review thread `PRRT_kwDORgvdZ856Zw2L` reported valid ordering bug in `scripts/start-loop-tmux.sh`.
-- Commands run this turn: `gh auth status`; `gh pr view 1469 --json number,url,reviewDecision,isDraft,headRefName,baseRefName`; `npx tsx --test src/managed-restart-launcher-assets.test.ts`; `npm run build`.
+- Commands run this turn: `gh auth status`; `gh pr view 1469 --json number,url,reviewDecision,isDraft,headRefName,baseRefName`; `npx tsx --test src/managed-restart-launcher-assets.test.ts`; `npm run build`; `git commit -m "Fix tmux launcher idempotency review"`; `git push origin codex/issue-1466`.
