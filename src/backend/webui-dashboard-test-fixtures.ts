@@ -370,6 +370,7 @@ export function createDashboardStatusFixture(args: {
   } | null;
   loopRuntime?: {
     state: "running" | "off" | "unknown";
+    hostMode?: "tmux" | "direct" | "unknown";
     pid: number | null;
     startedAt: string | null;
     detail: string | null;
@@ -398,6 +399,9 @@ export function createDashboardStatusFixture(args: {
     observedMatchingOpenIssues: number | null;
     warning: string | null;
   } | null;
+  warning?: {
+    message: string;
+  } | null;
 } = {}) {
   const selectedIssueNumber = args.selectedIssueNumber ?? null;
   const includeWhyLines = args.includeWhyLines ?? true;
@@ -413,12 +417,13 @@ export function createDashboardStatusFixture(args: {
     loopRuntime:
       args.loopRuntime ?? {
         state: "off",
+        hostMode: "unknown",
         pid: null,
         startedAt: null,
         detail: null,
       },
     reconciliationPhase: null,
-    warning: null,
+    warning: args.warning ?? null,
     detailedStatusLines: args.detailedStatusLines ?? [],
     readinessLines: [],
     whyLines: includeWhyLines

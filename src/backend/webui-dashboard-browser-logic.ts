@@ -40,6 +40,7 @@ export interface DashboardCandidateDiscoveryLike {
 
 export interface DashboardLoopRuntimeLike {
   state?: "running" | "off" | "unknown" | null;
+  hostMode?: "tmux" | "direct" | "unknown" | null;
   pid?: number | null;
   startedAt?: string | null;
   detail?: string | null;

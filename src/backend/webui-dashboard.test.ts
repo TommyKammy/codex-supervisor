@@ -324,6 +324,7 @@ test("dashboard does not claim loop mode is off while typed runtime status repor
         selectedIssueNumber: 42,
         loopRuntime: {
           state: "running",
+          hostMode: "tmux",
           pid: 4242,
           startedAt: "2026-03-25T00:00:00.000Z",
           detail: "pid 4242",
@@ -339,8 +340,39 @@ test("dashboard does not claim loop mode is off while typed runtime status repor
   assert.ok(loopStateSummary);
 
   assert.match(loopModeBadge.textContent, /loop running/u);
+  assert.match(loopModeBadge.textContent, /tmux/u);
   assert.doesNotMatch(loopModeBadge.textContent, /loop off/u);
-  assert.match(loopStateSummary.textContent, /Loop mode is running on this host/u);
+  assert.match(loopStateSummary.textContent, /Loop mode is running on this host via tmux/u);
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
+test("dashboard warns when a macOS loop is reported as running directly instead of through tmux", async () => {
+  const harness = createDashboardHarness([
+    ...dashboardServer.page({
+      status: createStatus({
+        loopRuntime: {
+          state: "running",
+          hostMode: "direct",
+          pid: 4242,
+          startedAt: "2026-03-25T00:00:00.000Z",
+          detail: "pid 4242",
+        },
+        warning: {
+          message:
+            "macOS loop runtime is active outside tmux. Restart it with ./scripts/start-loop-tmux.sh and stop unsupported direct hosts before relying on steady-state automation.",
+        },
+      }),
+    }),
+  ]);
+  await harness.flush();
+
+  const loopModeBadge = harness.document.getElementById("loop-mode-badge");
+  const overviewWarning = harness.document.getElementById("overview-warning");
+  assert.ok(loopModeBadge);
+  assert.ok(overviewWarning);
+
+  assert.match(loopModeBadge.textContent ?? "", /direct/u);
+  assert.match(overviewWarning.textContent ?? "", /outside tmux/u);
   assert.equal(harness.remainingFetches.length, 0);
 });
 
@@ -350,6 +382,7 @@ test("dashboard renders the loop-off presentation only when typed runtime status
       status: createStatus({
         loopRuntime: {
           state: "off",
+          hostMode: "unknown",
           pid: null,
           startedAt: null,
           detail: null,

@@ -11,7 +11,7 @@ export interface DashboardLoopRuntimeSummary {
   modeBadge: string;
   summary: string;
   chipLabel: string;
-  chipTone: "ok" | "info";
+  chipTone: "ok" | "warn" | "info";
 }
 
 function formatIssueRef(issueNumber: number | null | undefined): string {
@@ -149,12 +149,24 @@ export function formatRefreshTime(timestamp: string | null): string {
 
 export function describeLoopRuntime(loopRuntime: DashboardLoopRuntimeLike | null | undefined): DashboardLoopRuntimeSummary {
   const runtimeState = typeof loopRuntime?.state === "string" ? loopRuntime.state : "unknown";
+  const hostMode = typeof loopRuntime?.hostMode === "string" ? loopRuntime.hostMode : "unknown";
   if (runtimeState === "running") {
+    if (hostMode === "tmux") {
+      return {
+        modeBadge: "Mode: web + loop running (tmux)",
+        summary: "Loop mode is running on this host via tmux",
+        chipLabel: "loop running via tmux",
+        chipTone: "ok",
+      };
+    }
+
     return {
-      modeBadge: "Mode: web + loop running",
-      summary: "Loop mode is running on this host",
-      chipLabel: "loop running",
-      chipTone: "ok",
+      modeBadge: `Mode: web + loop running (${hostMode})`,
+      summary: hostMode === "direct"
+        ? "Loop mode is running on this host directly"
+        : "Loop mode is running on this host with unknown host metadata",
+      chipLabel: hostMode === "direct" ? "loop running directly" : "loop running with unknown host",
+      chipTone: "warn",
     };
   }
   if (runtimeState === "off") {

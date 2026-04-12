@@ -297,6 +297,14 @@ function createStubService(args?: {
     },
     candidateDiscoverySummary: "candidate_discovery fetch_window=100 strategy=paginated",
     candidateDiscoveryWarning: null,
+    loopRuntime: {
+      state: "off",
+      hostMode: "unknown",
+      pid: null,
+      startedAt: null,
+      detail: null,
+    },
+    loopHostWarning: null,
   };
   const setupReadinessReport: SetupReadinessReport = args?.setupReadinessReport ?? createSetupReadinessReport();
   const setupConfigPreview: SetupConfigPreview = args?.setupConfigPreview ?? createSetupConfigPreview();
@@ -337,6 +345,7 @@ function createStubService(args?: {
         },
         loopRuntime: {
           state: "off",
+          hostMode: "unknown",
           pid: null,
           startedAt: null,
           detail: null,
@@ -555,6 +564,7 @@ test("createSupervisorHttpServer serves read-only supervisor DTOs as JSON", asyn
     },
     loopRuntime: {
       state: "off",
+      hostMode: "unknown",
       pid: null,
       startedAt: null,
       detail: null,
@@ -600,6 +610,14 @@ test("createSupervisorHttpServer serves read-only supervisor DTOs as JSON", asyn
     },
     candidateDiscoverySummary: "candidate_discovery fetch_window=100 strategy=paginated",
     candidateDiscoveryWarning: null,
+    loopRuntime: {
+      state: "off",
+      hostMode: "unknown",
+      pid: null,
+      startedAt: null,
+      detail: null,
+    },
+    loopHostWarning: null,
   });
 
   const postMergeAuditSummaryResponse = await readJson({ server, path: "/api/post-merge-audits/summary" });

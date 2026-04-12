@@ -228,6 +228,7 @@ test("renderSupervisorStatusDto appends canonical github rate-limit lines from d
     candidateDiscovery: null,
     loopRuntime: {
       state: "off",
+      hostMode: "unknown",
       pid: null,
       startedAt: null,
       detail: null,
@@ -247,6 +248,36 @@ test("renderSupervisorStatusDto appends canonical github rate-limit lines from d
 
   assert.match(status, /^github_rate_limit resource=rest status=low remaining=75 limit=5000 reset_at=2026-03-27T00:30:00.000Z$/m);
   assert.match(status, /^github_rate_limit resource=graphql status=exhausted remaining=0 limit=5000 reset_at=2026-03-27T00:15:00.000Z$/m);
+});
+
+test("renderSupervisorStatusDto sanitizes loop runtime host and timestamp tokens", () => {
+  const status = renderSupervisorStatusDto({
+    gsdSummary: null,
+    candidateDiscovery: null,
+    loopRuntime: {
+      state: "running",
+      hostMode: "direct\nlegacy" as unknown as "direct",
+      pid: 4242,
+      startedAt: "2026-03-27T00:15:00.000Z\nlegacy",
+      detail: "supervisor-loop-runtime",
+    },
+    activeIssue: null,
+    selectionSummary: null,
+    trackedIssues: [],
+    runnableIssues: [],
+    blockedIssues: [],
+    detailedStatusLines: [],
+    reconciliationPhase: null,
+    reconciliationWarning: null,
+    readinessLines: [],
+    whyLines: [],
+    warning: null,
+  });
+
+  assert.match(
+    status,
+    /^loop_runtime state=running host_mode=direct\\nlegacy pid=4242 started_at=2026-03-27T00:15:00.000Z\\nlegacy detail=supervisor-loop-runtime$/m,
+  );
 });
 
 test("status omits execution-safety warnings when the trust posture does not require one", async (t) => {
@@ -862,6 +893,15 @@ test("statusReport exposes typed loop runtime state from the host runtime marker
   t.after(async () => {
     await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
   });
+  const previousLauncher = process.env.CODEX_SUPERVISOR_LAUNCHER;
+  delete process.env.CODEX_SUPERVISOR_LAUNCHER;
+  t.after(() => {
+    if (previousLauncher === undefined) {
+      delete process.env.CODEX_SUPERVISOR_LAUNCHER;
+      return;
+    }
+    process.env.CODEX_SUPERVISOR_LAUNCHER = previousLauncher;
+  });
 
   const supervisor = new Supervisor(fixture.config);
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
@@ -882,11 +922,15 @@ test("statusReport exposes typed loop runtime state from the host runtime marker
 
   assert.deepEqual(report.loopRuntime, {
     state: "running",
+    hostMode: "unknown",
     pid: process.pid,
     startedAt: report.loopRuntime?.startedAt ?? null,
     detail: "supervisor-loop-runtime",
   });
   assert.match(report.loopRuntime?.startedAt ?? "", /^\d{4}-\d{2}-\d{2}T/u);
+
+  const status = await supervisor.status();
+  assert.match(status, /^loop_runtime state=running host_mode=unknown pid=\d+ started_at=\d{4}-\d{2}-\d{2}T.* detail=supervisor-loop-runtime$/m);
 });
 
 test("acquireSupervisorLock fails closed on ambiguous-owner run locks", async (t) => {
@@ -967,6 +1011,7 @@ test("acquireLoopRuntimeLock fails closed on ambiguous-owner loop runtime locks 
   const report = await supervisor.statusReport();
   assert.deepEqual(report.loopRuntime, {
     state: "unknown",
+    hostMode: "unknown",
     pid: 999_999,
     startedAt: "2026-03-20T00:00:00.000Z",
     detail: "supervisor-loop-runtime",

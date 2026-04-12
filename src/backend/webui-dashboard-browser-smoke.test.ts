@@ -63,6 +63,14 @@ function createStubService(args?: { pruneCalls?: number[] }): SupervisorService 
     },
     candidateDiscoverySummary: "doctor_candidate_discovery fetch_window=100 strategy=paginated",
     candidateDiscoveryWarning: null,
+    loopRuntime: {
+      state: "off",
+      hostMode: "unknown",
+      pid: null,
+      startedAt: null,
+      detail: null,
+    },
+    loopHostWarning: null,
   };
 
   return {
@@ -77,6 +85,7 @@ function createStubService(args?: { pruneCalls?: number[] }): SupervisorService 
       candidateDiscovery: null,
       loopRuntime: {
         state: "off",
+        hostMode: "unknown",
         pid: null,
         startedAt: null,
         detail: null,
@@ -376,6 +385,14 @@ function createFirstRunSetupService(args: {
     },
     candidateDiscoverySummary: "doctor_candidate_discovery fetch_window=100 strategy=paginated",
     candidateDiscoveryWarning: null,
+    loopRuntime: {
+      state: "off",
+      hostMode: "unknown",
+      pid: null,
+      startedAt: null,
+      detail: null,
+    },
+    loopHostWarning: null,
   };
 
   let readiness: SetupReadinessReport = {
@@ -472,6 +489,7 @@ function createFirstRunSetupService(args: {
       candidateDiscovery: null,
       loopRuntime: {
         state: "off",
+        hostMode: "unknown",
         pid: null,
         startedAt: null,
         detail: null,

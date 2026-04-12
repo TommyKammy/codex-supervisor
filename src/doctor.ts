@@ -25,6 +25,11 @@ import {
 } from "./core/types";
 import { inspectOrphanedWorkspacePruneCandidates } from "./recovery-reconciliation";
 import {
+  buildMacOsLoopHostWarning,
+  readSupervisorLoopRuntime,
+  type SupervisorLoopRuntimeDto,
+} from "./supervisor/supervisor-loop-runtime-state";
+import {
   formatCandidateDiscoveryBehaviorLine,
   formatCandidateDiscoveryWarningDetail,
 } from "./supervisor/supervisor-selection-readiness-summary";
@@ -47,6 +52,8 @@ export interface DoctorDiagnostics {
   cadenceDiagnostics: CadenceDiagnosticsSummary;
   candidateDiscoverySummary: string;
   candidateDiscoveryWarning: string | null;
+  loopRuntime?: SupervisorLoopRuntimeDto;
+  loopHostWarning?: string | null;
   orphanPolicySummary?: string;
   workspacePreparationContract?: WorkspacePreparationContractSummary;
   localCiContract?: LocalCiContractSummary;
@@ -559,6 +566,7 @@ export async function diagnoseSupervisorHost(args: DiagnoseSupervisorHostArgs): 
     diagnoseStateFile(args.config),
     diagnoseWorktrees(args.config, loadState, github),
   ]);
+  const loopRuntime = await readSupervisorLoopRuntime(args.config.stateFile);
   const candidateDiscoveryWarning = formatCandidateDiscoveryWarningDetail(
     await github.getCandidateDiscoveryDiagnostics().catch(() => null),
   );
@@ -570,6 +578,8 @@ export async function diagnoseSupervisorHost(args: DiagnoseSupervisorHostArgs): 
     cadenceDiagnostics: summarizeCadenceDiagnostics(args.config),
     candidateDiscoverySummary: formatCandidateDiscoveryBehaviorLine(args.config, "doctor_candidate_discovery"),
     candidateDiscoveryWarning,
+    loopRuntime,
+    loopHostWarning: buildMacOsLoopHostWarning(loopRuntime),
     orphanPolicySummary: formatOrphanPolicySummary(args.config),
     workspacePreparationContract: summarizeWorkspacePreparationContract(args.config),
     localCiContract: summarizeLocalCiContract(args.config),
@@ -644,6 +654,14 @@ export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
       : String(diagnostics.cadenceDiagnostics.mergeCriticalRecheckSeconds);
   const trustWarnings = buildTrustAndConfigWarnings(diagnostics.trustDiagnostics);
   const candidateDiscoveryWarning = buildWarning("candidate_discovery", diagnostics.candidateDiscoveryWarning);
+  const loopHostWarning = buildWarning("loop_host", diagnostics.loopHostWarning ?? null);
+  const loopRuntime = diagnostics.loopRuntime ?? {
+    state: "off" as const,
+    hostMode: "unknown" as const,
+    pid: null,
+    startedAt: null,
+    detail: null,
+  };
   const workspacePreparationWarning = workspacePreparationContract.warning ?? localCiContract.warning ?? null;
   const configWarnings = workspacePreparationWarning === null ? [] : [renderDoctorWarningLine(buildWarning("config", workspacePreparationWarning)!, sanitizeDoctorValue)];
 
@@ -652,11 +670,13 @@ export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
     `doctor_posture trust_mode=${diagnostics.trustDiagnostics.trustMode} execution_safety_mode=${diagnostics.trustDiagnostics.executionSafetyMode}`,
     `doctor_cadence poll_interval_seconds=${diagnostics.cadenceDiagnostics.pollIntervalSeconds} merge_critical_recheck_seconds=${mergeCriticalRecheckSeconds} merge_critical_effective_seconds=${diagnostics.cadenceDiagnostics.mergeCriticalEffectiveSeconds} enabled=${diagnostics.cadenceDiagnostics.mergeCriticalRecheckEnabled}`,
     diagnostics.candidateDiscoverySummary,
+    `doctor_loop_runtime state=${loopRuntime.state} host_mode=${loopRuntime.hostMode} pid=${loopRuntime.pid === null ? "none" : String(loopRuntime.pid)} started_at=${loopRuntime.startedAt ?? "none"} detail=${sanitizeDoctorValue(loopRuntime.detail ?? "none")}`,
     ...(diagnostics.orphanPolicySummary ? [diagnostics.orphanPolicySummary] : []),
     `doctor_workspace_preparation configured=${workspacePreparationContract.configured} source=${workspacePreparationContract.source} command=${sanitizeDoctorValue(workspacePreparationContract.command ?? "none")} summary=${sanitizeDoctorValue(workspacePreparationContract.summary)}`,
     `doctor_local_ci configured=${localCiContract.configured} source=${localCiContract.source} command=${sanitizeDoctorValue(localCiContract.command ?? "none")} summary=${sanitizeDoctorValue(localCiContract.summary)}`,
     ...trustWarnings.map((warning) => renderDoctorWarningLine(warning, sanitizeDoctorValue)),
     ...configWarnings,
+    ...(loopHostWarning === null ? [] : [renderDoctorWarningLine(loopHostWarning, sanitizeDoctorValue)]),
     ...(candidateDiscoveryWarning === null ? [] : [renderDoctorWarningLine(candidateDiscoveryWarning, sanitizeDoctorValue)]),
     ...diagnostics.checks.map(
       (check) =>

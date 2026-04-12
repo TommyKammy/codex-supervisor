@@ -26,6 +26,7 @@ function createStatusDto(overrides: Partial<SupervisorStatusDto> = {}): Supervis
     candidateDiscovery: null,
     loopRuntime: {
       state: "off",
+      hostMode: "unknown",
       pid: null,
       startedAt: null,
       detail: null,

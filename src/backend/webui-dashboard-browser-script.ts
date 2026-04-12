@@ -441,11 +441,11 @@ export function renderDashboardBrowserScript(): string {
       }
 
       function readLoopBadgeLabel(status) {
-        const loopRuntime = describeLoopRuntime(status && status.loopRuntime);
-        if (loopRuntime.chipLabel === "loop running") {
+        const loopRuntime = status && status.loopRuntime;
+        if (loopRuntime && loopRuntime.state === "running") {
           return "Loop mode: running";
         }
-        if (loopRuntime.chipLabel === "loop off") {
+        if (loopRuntime && loopRuntime.state === "off") {
           return "Loop mode: off";
         }
         return "Loop mode: unknown";
