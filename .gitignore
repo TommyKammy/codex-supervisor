@@ -4,4 +4,5 @@ dist/
 .local/
 .codex-supervisor/issue-journal.md
 .codex-supervisor/issues/[0-9]*/issue-journal.md
+!.codex-supervisor/issues/*[!0-9]*/issue-journal.md
 supervisor.config.json
