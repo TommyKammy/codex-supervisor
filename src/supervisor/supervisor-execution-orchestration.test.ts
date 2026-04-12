@@ -1245,6 +1245,9 @@ test("runOnce blocks an interrupted active turn before selecting the next runnab
     interruptedRecord.last_error ?? "",
     /Codex started a turn for issue #91 but no durable handoff was recorded before the process exited\./,
   );
+  const failureDetails = interruptedRecord.last_failure_context?.details?.join("\n") ?? "";
+  assert.match(failureDetails, /durable_progress_evidence=journal_unchanged/);
+  assert.doesNotMatch(failureDetails, /durable_progress_evidence=record_updated_at_stale/);
   await assert.rejects(fs.access(interruptedTurnMarkerPath(interruptedWorkspace)));
 });
 
@@ -1367,6 +1370,7 @@ test("runOnce clears a stale interrupted-turn marker when the journal changed af
   assert.equal(interruptedRecord.codex_session_id, null);
   assert.equal(interruptedRecord.blocked_reason, null);
   assert.equal(interruptedRecord.last_error, null);
+  assert.match(interruptedRecord.last_recovery_reason ?? "", /durable_progress_evidence=journal_changed/);
   await assert.rejects(fs.access(interruptedTurnMarkerPath(interruptedWorkspace)));
 });
 
@@ -1742,18 +1746,24 @@ test("runOnce converges a stale no-PR issue to done when only supervisor-owned w
   const message = await supervisor.runOnce({ dryRun: false });
   assert.match(
     message,
-    /recovery issue=#92 reason=already_satisfied_on_main: marked issue #92 done after stale stabilizing recovery found no meaningful branch changes/,
+    /recovery issue=#92 reason=stale_stabilizing_no_pr_manual_review: blocked issue #92 after stale stabilizing recovery found an open issue with no authoritative completion signal; No matching open issue found\./,
   );
 
   const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
   const record = persisted.issues[String(issueNumber)]!;
   assert.equal(persisted.activeIssueNumber, null);
-  assert.equal(record.state, "done");
+  assert.equal(record.state, "blocked");
   assert.equal(record.pr_number, null);
   assert.equal(record.codex_session_id, null);
-  assert.equal(record.blocked_reason, null);
-  assert.equal(record.last_error, null);
-  assert.equal(record.last_failure_context, null);
+  assert.equal(record.blocked_reason, "manual_review");
+  assert.match(record.last_error ?? "", /stale stabilizing recovery without authoritative completion evidence/);
+  assert.deepEqual(record.last_failure_context?.details ?? [], [
+    "state=stabilizing",
+    "tracked_pr=none",
+    "github_issue_state=OPEN",
+    "completion_evidence=missing",
+    "operator_action=confirm whether the issue should be requeued or whether completion landed outside the tracked PR flow",
+  ]);
   assert.equal(record.last_failure_signature, null);
   assert.equal(record.repeated_failure_signature_count, 0);
   assert.equal(record.stale_stabilizing_no_pr_recovery_count, 0);
