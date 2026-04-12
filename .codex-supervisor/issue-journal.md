@@ -1,33 +1,33 @@
-# Issue #1326: [codex] Document local-review follow-up issue creation as an opt-in flag
+# Issue #1454: Preserve original runtime failure context across no-PR manual-review recovery
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1326
-- Branch: codex/issue-1326
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1454
+- Branch: codex/issue-1454
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: ff02ebdde0ebb65d975c0138514acb28f17a53c3
+- Last head SHA: 1f70eca4fc7d3691c7506fe116a78147172c0748
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-04-07T03:11:37.023Z
+- Updated at: 2026-04-12T06:37:39.674Z
 
 ## Latest Codex Summary
-- Added explicit `localReviewFollowUpIssueCreationEnabled: false` coverage to shipped example configs and documented the flag as an opt-in local-review setting in the config and local-review docs.
+- None yet.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: The runtime default already existed; the missing discoverability gap was that shipped example configs and operator-facing docs did not surface `localReviewFollowUpIssueCreationEnabled` as an explicit opt-in flag.
-- What changed: Added a focused `src/config.test.ts` assertion that all shipped example configs carry `localReviewFollowUpIssueCreationEnabled: false`; updated starter/example JSON configs plus `docs/configuration.md`, `docs/local-review.md`, `docs/getting-started.md`, and `docs/examples/atlaspm.md` to document the explicit false default and opt-in behavior.
+- Hypothesis: Failed no-PR reconciliation was replacing `last_failure_*` with a generic manual-review blocker, and older failed records without populated `last_runtime_*` lost the original `codex_exit` context entirely. `explain` also only surfaced the blocker summary.
+- What changed: Added a fallback snapshot in `src/recovery-no-pr-reconciliation.ts` so failed no-PR manual-review reconciliation copies the pre-reconciliation runtime failure into `last_runtime_*` when those fields are empty before replacing `last_failure_*`. Extended `src/supervisor/supervisor-selection-issue-explain.ts` to emit `runtime_failure_kind` and `runtime_failure_summary`. Added regression coverage in the recovery reconciliation and explain test files.
 - Current blocker: none
-- Next exact step: Commit the verified docs/example-config change set on `codex/issue-1326` and proceed to PR/draft PR handling if requested by the supervisor loop.
-- Verification gap: none for the scoped docs/example-config change; focused test and full build both passed locally.
-- Files touched: src/config.test.ts; supervisor.config.example.json; supervisor.config.copilot.json; supervisor.config.codex.json; supervisor.config.coderabbit.json; docs/examples/atlaspm.supervisor.config.example.json; docs/configuration.md; docs/local-review.md; docs/getting-started.md; docs/examples/atlaspm.md
-- Rollback concern: low; changes are limited to docs/example-config discoverability plus a focused regression test.
-- Last focused command: npm run build
+- Next exact step: Commit the checkpoint on `codex/issue-1454`, then open or update a draft PR if needed by the supervisor loop.
+- Verification gap: `npm test -- ...` still expands to the broader suite and hits an unrelated existing failure in `local CI browser helpers summarize a repo-owned candidate contract consistently`; isolated `npx tsx --test` runs for the touched test files passed, and `npm run build` passed.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/recovery-no-pr-reconciliation.ts`, `src/supervisor/supervisor-selection-issue-explain.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `src/supervisor/supervisor-diagnostics-explain.test.ts`
+- Rollback concern: low; change is scoped to failed no-PR manual-review reconciliation and explain rendering, but reverting would again hide original runtime failure details for older failed records that lack `last_runtime_*`.
+- Last focused command: `npm run build`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.

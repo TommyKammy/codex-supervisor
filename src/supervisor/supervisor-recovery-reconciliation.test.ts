@@ -4640,6 +4640,17 @@ test("reconcileStaleFailedIssueStates blocks failed no-PR issues for manual revi
     },
     last_failure_signature: "provider-capacity",
     repeated_failure_signature_count: 1,
+    last_runtime_error: "Selected model is at capacity. Please try a different model.",
+    last_runtime_failure_kind: "codex_exit",
+    last_runtime_failure_context: {
+      category: "codex",
+      summary: "Selected model is at capacity. Please try a different model.",
+      signature: "provider-capacity",
+      command: null,
+      details: ["provider=codex"],
+      url: null,
+      updated_at: "2026-03-13T00:20:00Z",
+    },
     codex_session_id: "session-366",
   });
   const state: SupervisorStateFile = createSupervisorState({
@@ -4709,6 +4720,11 @@ test("reconcileStaleFailedIssueStates blocks failed no-PR issues for manual revi
   assert.equal(updated.blocked_reason, "manual_review");
   assert.equal(updated.last_failure_kind, null);
   assert.equal(updated.last_failure_context?.signature, "failed-no-pr-manual-review-required");
+  assert.equal(updated.last_runtime_failure_kind, "codex_exit");
+  assert.equal(updated.last_runtime_error, "Selected model is at capacity. Please try a different model.");
+  assert.equal(updated.last_runtime_failure_context?.category, "codex");
+  assert.equal(updated.last_runtime_failure_context?.summary, "Selected model is at capacity. Please try a different model.");
+  assert.equal(updated.last_runtime_failure_context?.signature, "provider-capacity");
   assert.match(updated.last_error ?? "", /not safe for automatic recovery/i);
   assert.deepEqual(updated.last_failure_context?.details ?? [], [
     "state=failed",
@@ -4724,6 +4740,123 @@ test("reconcileStaleFailedIssueStates blocks failed no-PR issues for manual revi
     "failed_no_pr_manual_review: blocked issue #366 after failed no-PR recovery found an unsafe or ambiguous workspace state",
   );
   assert.ok(updated.last_recovery_at);
+  assert.equal(saveCalls, 1);
+});
+
+test("reconcileStaleFailedIssueStates snapshots the original runtime failure when no-PR manual review replaces failure context", async () => {
+  const { repoPath, workspaceRoot, baseHead } = await createRepositoryWithOrigin();
+  const workspacePath = await createIssueWorktree({
+    repoPath,
+    workspaceRoot,
+    issueNumber: 366,
+    branch: "codex/reopen-issue-366",
+  });
+  const journalPath = path.join(workspacePath, ".codex-supervisor", "issue-journal.md");
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  await fs.writeFile(journalPath, "# local journal\n");
+  await fs.writeFile(path.join(workspacePath, "feature.txt"), "recoverable checkpoint\n");
+  await runCommand("git", ["-C", workspacePath, "add", "feature.txt"]);
+  await runCommand("git", ["-C", workspacePath, "commit", "-m", "recoverable checkpoint"]);
+  await fs.writeFile(path.join(workspacePath, "feature.txt"), "recoverable checkpoint\nextra dirty edit\n");
+
+  const config = createConfig({
+    repoPath,
+    workspaceRoot,
+  });
+  const originalFailureContext = {
+    category: "codex" as const,
+    summary: "Selected model is at capacity. Please try a different model.",
+    signature: "provider-capacity",
+    command: null,
+    details: ["provider=codex"],
+    url: null,
+    updated_at: "2026-03-13T00:20:00Z",
+  };
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
+        issue_number: 366,
+        state: "failed",
+        branch: "codex/reopen-issue-366",
+        workspace: workspacePath,
+        journal_path: journalPath,
+        pr_number: null,
+        last_head_sha: baseHead,
+        last_error: originalFailureContext.summary,
+        last_failure_kind: "codex_exit",
+        last_failure_context: originalFailureContext,
+        last_failure_signature: "provider-capacity",
+        repeated_failure_signature_count: 1,
+        last_runtime_error: null,
+        last_runtime_failure_kind: null,
+        last_runtime_failure_context: null,
+        codex_session_id: "session-366",
+      }),
+    ],
+  });
+  const issue = createIssue({
+    number: 366,
+    title: "Preserve runtime failure snapshot for failed no-PR manual review",
+    updatedAt: "2026-03-13T00:21:00Z",
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  await reconcileStaleFailedIssueStates(
+    {
+      getPullRequestIfExists: async () => {
+        throw new Error("unexpected getPullRequestIfExists call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      closeIssue: async () => {
+        throw new Error("unexpected closeIssue call");
+      },
+      closePullRequest: async () => {
+        throw new Error("unexpected closePullRequest call");
+      },
+      getIssue: async () => {
+        throw new Error("unexpected getIssue call");
+      },
+      getMergedPullRequestsClosingIssue: async () => [],
+    },
+    stateStore,
+    state,
+    config,
+    [issue],
+    {
+      inferStateFromPullRequest: () => "draft_pr",
+      inferFailureContext: () => null,
+      blockedReasonForLifecycleState: () => null,
+      isOpenPullRequest: () => true,
+      syncReviewWaitWindow: () => ({}),
+      syncCopilotReviewRequestObservation: () => ({}),
+      syncCopilotReviewTimeoutState: noCopilotReviewTimeoutPatch,
+    },
+  );
+
+  const updated = state.issues["366"];
+  assert.equal(updated.blocked_reason, "manual_review");
+  assert.equal(updated.last_failure_context?.signature, "failed-no-pr-manual-review-required");
+  assert.equal(updated.last_runtime_error, originalFailureContext.summary);
+  assert.equal(updated.last_runtime_failure_kind, "codex_exit");
+  assert.deepEqual(updated.last_runtime_failure_context, originalFailureContext);
   assert.equal(saveCalls, 1);
 });
 

@@ -311,6 +311,85 @@ Wait for a human review before proceeding.
   assert.match(explanation, /^reason_2=local_state blocked$/m);
 });
 
+test("explain preserves original runtime failure context for no-PR manual-review recovery", async () => {
+  const fixture = await createSupervisorFixture();
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "99": createRecord({
+        issue_number: 99,
+        state: "blocked",
+        branch: branchName(fixture.config, 99),
+        workspace: path.join(fixture.workspaceRoot, "issue-99"),
+        journal_path: null,
+        blocked_reason: "manual_review",
+        last_error: "Issue #99 cannot be reconciled automatically because the preserved no-PR branch is not safe for automatic recovery.",
+        last_failure_context: {
+          category: "blocked",
+          summary: "Issue #99 cannot be reconciled automatically because the preserved no-PR branch is not safe for automatic recovery.",
+          signature: "failed-no-pr-manual-review-required",
+          command: null,
+          details: [
+            "state=failed",
+            "tracked_pr=none",
+            "branch_state=manual_review_required",
+          ],
+          url: null,
+          updated_at: "2026-03-13T00:25:00Z",
+        },
+        last_runtime_error: "Selected model is at capacity. Please try a different model.",
+        last_runtime_failure_kind: "codex_exit",
+        last_runtime_failure_context: {
+          category: "codex",
+          summary: "Selected model is at capacity. Please try a different model.",
+          signature: "provider-capacity",
+          command: null,
+          details: ["provider=codex"],
+          url: null,
+          updated_at: "2026-03-13T00:20:00Z",
+        },
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const blockedIssue: GitHubIssue = {
+    number: 99,
+    title: "Preserve runtime failure context after no-PR manual review recovery",
+    body: `## Summary
+Keep the original runtime failure visible after no-PR manual-review recovery.
+
+## Scope
+- preserve runtime failure diagnostics alongside the manual-review blocker
+
+## Acceptance criteria
+- explain shows both the manual-review blocker and the original runtime failure summary
+
+## Verification
+- npm test -- src/supervisor/supervisor-diagnostics-explain.test.ts`,
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: "https://example.test/issues/99",
+    labels: [],
+    state: "OPEN",
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => blockedIssue,
+    listAllIssues: async () => [blockedIssue],
+    listCandidateIssues: async () => [blockedIssue],
+  };
+
+  const explanation = await supervisor.explain(99);
+
+  assert.match(explanation, /^state=blocked$/m);
+  assert.match(explanation, /^blocked_reason=manual_review$/m);
+  assert.match(explanation, /^failure_summary=Issue #99 cannot be reconciled automatically because the preserved no-PR branch is not safe for automatic recovery\.$/m);
+  assert.match(explanation, /^runtime_failure_kind=codex_exit$/m);
+  assert.match(explanation, /^runtime_failure_summary=Selected model is at capacity\. Please try a different model\.$/m);
+});
+
 test("explain reports stale configured-bot blockers distinctly from generic manual review", async () => {
   const fixture = await createSupervisorFixture();
   const state: SupervisorStateFile = {
