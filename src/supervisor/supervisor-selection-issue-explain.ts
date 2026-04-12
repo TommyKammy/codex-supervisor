@@ -55,6 +55,7 @@ import {
   type SupervisorIssueActivityContextDto,
 } from "./supervisor-operator-activity-context";
 import { formatPreMergeEvaluationStatusLine, loadPreMergeEvaluationDto } from "./supervisor-pre-merge-evaluation";
+import { summarizePreservedPartialWork } from "./supervisor-preserved-partial-work";
 
 export type ExplainIssueGitHub = Pick<GitHubClient, "getIssue" | "listAllIssues" | "listCandidateIssues"> &
   Partial<ActiveStatusGitHub>;
@@ -80,6 +81,7 @@ export interface SupervisorExplainDto {
   reasons: string[];
   lastError: string | null;
   failureSummary: string | null;
+  preservedPartialWorkSummary: string | null;
   runtimeFailureKind?: IssueRunRecord["last_runtime_failure_kind"] | null;
   runtimeFailureSummary?: string | null;
 }
@@ -379,6 +381,7 @@ export async function buildIssueExplainDto(
     reasons,
     lastError: record?.last_error ?? null,
     failureSummary: record?.last_failure_context?.summary ?? null,
+    preservedPartialWorkSummary: summarizePreservedPartialWork(record?.last_failure_context),
     runtimeFailureKind: record?.last_runtime_failure_kind ?? null,
     runtimeFailureSummary: record?.last_runtime_failure_context?.summary ?? null,
   };
@@ -424,6 +427,9 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
   }
   if (dto.failureSummary) {
     lines.push(`failure_summary=${dto.failureSummary}`);
+  }
+  if (dto.preservedPartialWorkSummary) {
+    lines.push(dto.preservedPartialWorkSummary);
   }
   if (dto.runtimeFailureKind) {
     lines.push(`runtime_failure_kind=${dto.runtimeFailureKind}`);

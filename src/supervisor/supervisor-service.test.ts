@@ -291,6 +291,7 @@ test("createSupervisorService preserves typed operator observability fields on s
     reasons: [],
     lastError: null,
     failureSummary: null,
+    preservedPartialWorkSummary: null,
   };
 
   const service = createSupervisorServiceFromStub({

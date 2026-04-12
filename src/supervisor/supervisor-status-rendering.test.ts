@@ -232,6 +232,7 @@ test("formatDetailedStatus renders core lines before appended summaries", () => 
       "external_review head=none reviewed_head_sha=none matched=0 near_match=0 missed=0",
       "review_bot_profile profile=none provider=none reviewers=none signal_source=none",
       "review_bot_diagnostics status=disabled observed_review=none expected_reviewers=none next_check=none",
+      "external_signal_readiness status=repo_not_ready_for_expected_signals ci=repo_not_configured review=disabled workflows=absent",
       "copilot_review state=not_requested requested_at=none arrived_at=none timed_out_at=none timeout_action=none",
       "pr_hydration provenance=unknown head_sha=deadbeef",
       "configured_bot_top_level_review strength=none submitted_at=none effect=none",
@@ -250,6 +251,40 @@ test("formatDetailedStatus renders core lines before appended summaries", () => 
       "external_review_misses_path=owner-repo/issue-58/external-review-misses-head-deadbeef.json",
     ].join("\n"),
   );
+});
+
+test("formatDetailedStatus surfaces preserved partial work for blocked no-PR manual review", () => {
+  const status = formatDetailedStatus({
+    config: createConfig(),
+    activeRecord: createRecord({
+      blocked_reason: "manual_review",
+      last_error: "Issue #366 cannot be reconciled automatically because the preserved no-PR branch is not safe for automatic recovery.",
+      last_failure_context: {
+        category: "blocked",
+        summary: "Issue #366 cannot be reconciled automatically because the preserved no-PR branch is not safe for automatic recovery.",
+        signature: "failed-no-pr-manual-review-required",
+        command: null,
+        details: [
+          "state=failed",
+          "tracked_pr=none",
+          "branch_state=manual_review_required",
+          "preserved_partial_work=yes",
+          "tracked_file_count=2",
+          "tracked_files=feature.txt|src/workflow.ts",
+          "operator_action=inspect the preserved workspace and resolve the unsafe or ambiguous branch state before requeueing manually",
+        ],
+        url: null,
+        updated_at: "2026-03-11T14:05:00Z",
+      },
+    }),
+    latestRecord: null,
+    trackedIssueCount: 1,
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+  });
+
+  assert.match(status, /^partial_work=preserved tracked_files=feature\.txt\|src\/workflow\.ts$/m);
 });
 
 test("buildChangeClassesStatusLine reports a sorted multi-class summary", () => {

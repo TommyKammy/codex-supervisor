@@ -333,6 +333,9 @@ test("explain preserves original runtime failure context for no-PR manual-review
             "state=failed",
             "tracked_pr=none",
             "branch_state=manual_review_required",
+            "preserved_partial_work=yes",
+            "tracked_file_count=1",
+            "tracked_files=feature.txt",
           ],
           url: null,
           updated_at: "2026-03-13T00:25:00Z",
@@ -386,6 +389,7 @@ Keep the original runtime failure visible after no-PR manual-review recovery.
   assert.match(explanation, /^state=blocked$/m);
   assert.match(explanation, /^blocked_reason=manual_review$/m);
   assert.match(explanation, /^failure_summary=Issue #99 cannot be reconciled automatically because the preserved no-PR branch is not safe for automatic recovery\.$/m);
+  assert.match(explanation, /^partial_work=preserved tracked_files=feature\.txt$/m);
   assert.match(explanation, /^runtime_failure_kind=codex_exit$/m);
   assert.match(explanation, /^runtime_failure_summary=Selected model is at capacity\. Please try a different model\.$/m);
 });

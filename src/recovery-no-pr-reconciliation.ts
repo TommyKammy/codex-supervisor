@@ -95,6 +95,7 @@ export async function reconcileStaleFailedNoPrRecord(args: {
       branchRecoveryState: branchRecovery.state,
       headSha: branchRecovery.headSha,
       defaultBranch: config.defaultBranch,
+      preservedTrackedFiles: branchRecovery.preservedTrackedFiles,
     });
     const patch: Partial<IssueRunRecord> = {
       state: "blocked",
