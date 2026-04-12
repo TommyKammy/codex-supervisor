@@ -1245,6 +1245,10 @@ test("runOnce blocks an interrupted active turn before selecting the next runnab
     interruptedRecord.last_error ?? "",
     /Codex started a turn for issue #91 but no durable handoff was recorded before the process exited\./,
   );
+  assert.match(
+    interruptedRecord.last_failure_context?.details?.join("\n") ?? "",
+    /durable_progress_evidence=journal_unchanged|durable_progress_evidence=record_updated_at_stale/,
+  );
   await assert.rejects(fs.access(interruptedTurnMarkerPath(interruptedWorkspace)));
 });
 

@@ -123,29 +123,56 @@ function needsRecordUpdate(record: IssueRunRecord, patch: Partial<IssueRunRecord
   return false;
 }
 
-async function hasDurableTurnUpdateSince(
+type DurableTurnUpdateEvidence =
+  | "journal_changed"
+  | "journal_mtime_advanced"
+  | "record_updated_at_advanced"
+  | "journal_unchanged"
+  | "journal_missing"
+  | "record_updated_at_stale";
+
+async function detectDurableTurnUpdateSince(
   record: Pick<IssueRunRecord, "journal_path" | "updated_at">,
   marker: {
     startedAt: string;
     journalFingerprint: import("./interrupted-turn-marker").InterruptedTurnMarker["journalFingerprint"];
   },
-): Promise<boolean> {
+): Promise<{ hasDurableUpdate: boolean; evidence: DurableTurnUpdateEvidence }> {
   if (record.journal_path && marker.journalFingerprint) {
     const currentJournalFingerprint = await captureIssueJournalFingerprint(record.journal_path);
     if (!currentJournalFingerprint.exists) {
-      return false;
+      return { hasDurableUpdate: false, evidence: "journal_missing" };
     }
 
-    return !sameIssueJournalFingerprint(currentJournalFingerprint, marker.journalFingerprint);
+    return sameIssueJournalFingerprint(currentJournalFingerprint, marker.journalFingerprint)
+      ? { hasDurableUpdate: false, evidence: "journal_unchanged" }
+      : { hasDurableUpdate: true, evidence: "journal_changed" };
+  }
+
+  const startedAtMs = Date.parse(marker.startedAt);
+  if (record.journal_path && Number.isFinite(startedAtMs)) {
+    try {
+      const journalStats = await fs.promises.stat(record.journal_path);
+      if (journalStats.mtimeMs >= startedAtMs) {
+        return { hasDurableUpdate: true, evidence: "journal_mtime_advanced" };
+      }
+      return { hasDurableUpdate: false, evidence: "journal_unchanged" };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return { hasDurableUpdate: false, evidence: "journal_missing" };
+      }
+      throw error;
+    }
   }
 
   const updatedAtMs = Date.parse(record.updated_at);
-  const startedAtMs = Date.parse(marker.startedAt);
   if (!Number.isFinite(updatedAtMs) || !Number.isFinite(startedAtMs)) {
-    return false;
+    return { hasDurableUpdate: false, evidence: "record_updated_at_stale" };
   }
 
-  return updatedAtMs >= startedAtMs;
+  return updatedAtMs >= startedAtMs
+    ? { hasDurableUpdate: true, evidence: "record_updated_at_advanced" }
+    : { hasDurableUpdate: false, evidence: "record_updated_at_stale" };
 }
 
 function trackedMergedButOpenLastProcessedIssueNumber(state: SupervisorStateFile): number | null {
@@ -1258,10 +1285,14 @@ export async function reconcileStaleActiveIssueReservation(args: {
   }
 
   const interruptedTurnMarker = await readInterruptedTurnMarker(record.workspace);
+  const interruptedTurnUpdate =
+    interruptedTurnMarker && interruptedTurnMarker.issueNumber === record.issue_number
+      ? await detectDurableTurnUpdateSince(record, interruptedTurnMarker)
+      : null;
   if (
     interruptedTurnMarker &&
     interruptedTurnMarker.issueNumber === record.issue_number &&
-    !(await hasDurableTurnUpdateSince(record, interruptedTurnMarker))
+    !interruptedTurnUpdate?.hasDurableUpdate
   ) {
     const failureContext = {
       category: "blocked" as const,
@@ -1270,6 +1301,7 @@ export async function reconcileStaleActiveIssueReservation(args: {
       command: null,
       details: [
         `started_at=${interruptedTurnMarker.startedAt}`,
+        `durable_progress_evidence=${interruptedTurnUpdate?.evidence ?? "record_updated_at_stale"}`,
         "Update the Codex Working Notes section before ending the turn.",
       ],
       url: null,
