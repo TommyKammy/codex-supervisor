@@ -420,6 +420,64 @@ test("buildIssueExplainDto degrades when PR resolution fails", async () => {
   });
 });
 
+test("buildIssueExplainDto surfaces preserved partial work for no-PR manual-review recovery", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 607;
+  const issue = createIssue({
+    number: issueNumber,
+    title: "Explain preserved partial work",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        branch: branchName(fixture.config, issueNumber),
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        blocked_reason: "manual_review",
+        last_error: "Issue #607 cannot be reconciled automatically because the preserved no-PR branch is not safe for automatic recovery.",
+        last_failure_context: {
+          category: "blocked",
+          summary: "Issue #607 cannot be reconciled automatically because the preserved no-PR branch is not safe for automatic recovery.",
+          signature: "failed-no-pr-manual-review-required",
+          command: null,
+          details: [
+            "state=failed",
+            "tracked_pr=none",
+            "branch_state=manual_review_required",
+            "preserved_partial_work=yes",
+            "tracked_file_count=2",
+            "tracked_files=feature.txt|src/workflow.ts",
+          ],
+          url: null,
+          updated_at: "2026-03-22T02:00:00Z",
+        },
+      }),
+    },
+  };
+  const config = createConfig({
+    workspaceRoot: fixture.workspaceRoot,
+    stateFile: fixture.stateFile,
+    repoPath: fixture.repoPath,
+  });
+
+  const dto = await buildIssueExplainDto(
+    {
+      getIssue: async () => issue,
+      listAllIssues: async () => [issue],
+      listCandidateIssues: async () => [issue],
+    },
+    config,
+    state,
+    issueNumber,
+  );
+
+  assert.equal(dto.preservedPartialWorkSummary, "partial_work=preserved tracked_files=feature.txt|src/workflow.ts");
+  assert.match(renderIssueExplainDto(dto), /^partial_work=preserved tracked_files=feature\.txt\|src\/workflow\.ts$/m);
+});
+
 test("buildIssueExplainSummary surfaces repeated stale cleanup risk for no-PR recovery loops", async () => {
   const config = createConfig({
     sameFailureSignatureRepeatLimit: 3,

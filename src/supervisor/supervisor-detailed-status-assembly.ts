@@ -29,6 +29,7 @@ import { buildIssueActivityContext, formatLocalCiStatusLine } from "./supervisor
 import type { IssueRunRecord } from "../core/types";
 import type { BuildDetailedStatusModelArgs } from "./supervisor-status-model";
 import { truncate } from "../core/utils";
+import { summarizePreservedPartialWork } from "./supervisor-preserved-partial-work";
 
 function unresolvedReviewThreads(reviewThreads: BuildDetailedStatusModelArgs["reviewThreads"]) {
   return reviewThreads.filter((thread) => !thread.isResolved && !thread.isOutdated);
@@ -252,6 +253,10 @@ export function buildActiveDetailedStatusLines(
       lines.push(
         `failure_details=${truncate(sanitizeStatusValue(activeRecord.last_failure_context.details.join(" | ")), 300) ?? "none"}`,
       );
+    }
+    const partialWorkSummary = summarizePreservedPartialWork(activeRecord.last_failure_context);
+    if (partialWorkSummary) {
+      lines.push(partialWorkSummary);
     }
   }
 

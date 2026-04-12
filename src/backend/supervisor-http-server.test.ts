@@ -440,6 +440,7 @@ function createStubService(args?: {
         reasons: ["selected for execution"],
         lastError: null,
         failureSummary: null,
+        preservedPartialWorkSummary: null,
       };
     },
     queryIssueLint: async (issueNumber) => {
@@ -830,6 +831,7 @@ test("createSupervisorHttpServer serves read-only supervisor DTOs as JSON", asyn
     reasons: ["selected for execution"],
     lastError: null,
     failureSummary: null,
+    preservedPartialWorkSummary: null,
   });
 
   const issueLintResponse = await readJson({ server, path: "/api/issues/42/issue-lint" });

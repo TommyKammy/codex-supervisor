@@ -64,8 +64,10 @@ export function buildFailedNoPrBranchFailureContext(args: {
   branchRecoveryState: Exclude<FailedNoPrBranchRecoveryState, "recoverable">;
   headSha: string | null;
   defaultBranch: string;
+  preservedTrackedFiles?: string[];
 }): NonNullable<IssueRunRecord["last_failure_context"]> {
   const { record, branchRecoveryState, headSha, defaultBranch } = args;
+  const preservedTrackedFiles = [...new Set(args.preservedTrackedFiles ?? [])].sort();
   const branchSummary = branchRecoveryState === "already_satisfied_on_main"
     ? `Issue #${record.issue_number} failed without a tracked PR, and the preserved branch no longer differs from origin/${defaultBranch}. Confirm whether the implementation already landed elsewhere before requeueing manually.`
     : `Issue #${record.issue_number} failed without a tracked PR, and the preserved workspace is not safe for automatic recovery. Manual review is required.`;
@@ -86,6 +88,13 @@ export function buildFailedNoPrBranchFailureContext(args: {
       `branch_state=${branchRecoveryState}`,
       `default_branch=origin/${defaultBranch}`,
       `head_sha=${headSha ?? "unknown"}`,
+      ...(preservedTrackedFiles.length > 0
+        ? [
+          "preserved_partial_work=yes",
+          `tracked_file_count=${preservedTrackedFiles.length}`,
+          `tracked_files=${preservedTrackedFiles.join("|")}`,
+        ]
+        : []),
       operatorAction,
     ],
     url: null,
@@ -105,7 +114,7 @@ export async function classifyFailedNoPrBranchRecovery(args: {
     workspacePath: string,
     branchName: string,
   ) => boolean;
-}): Promise<{ state: FailedNoPrBranchRecoveryState; headSha: string | null }> {
+}): Promise<{ state: FailedNoPrBranchRecoveryState; headSha: string | null; preservedTrackedFiles?: string[] }> {
   const { config, record } = args;
   if (!args.isSafeCleanupTarget(config, record.workspace, record.branch) || !fs.existsSync(path.join(record.workspace, ".git"))) {
     return { state: "manual_review_required", headSha: null };
@@ -177,7 +186,16 @@ export async function classifyFailedNoPrBranchRecovery(args: {
       return { state: "already_satisfied_on_main", headSha: headResult.stdout.trim() || null };
     }
 
-    return { state: "manual_review_required", headSha: headResult.stdout.trim() || null };
+    return {
+      state: "manual_review_required",
+      headSha: headResult.stdout.trim() || null,
+      preservedTrackedFiles: [
+        ...new Set([
+          ...meaningfulBaseDiff,
+          ...meaningfulWorkspaceChanges.flatMap((paths) => paths),
+        ]),
+      ].sort(),
+    };
   } catch {
     return { state: "manual_review_required", headSha: null };
   }

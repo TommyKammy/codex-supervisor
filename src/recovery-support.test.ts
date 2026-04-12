@@ -72,3 +72,49 @@ test("classifyFailedNoPrBranchRecovery identifies a clean preserved branch ahead
   });
   assert.equal(fetchCount, 1);
 });
+
+test("classifyFailedNoPrBranchRecovery reports preserved tracked files when dirty tracked work blocks automatic recovery", async (t) => {
+  const { repoPath, workspaceRoot } = await createRepositoryWithOrigin();
+  const rootPath = path.dirname(repoPath);
+  t.after(async () => {
+    await fs.rm(rootPath, { recursive: true, force: true });
+  });
+
+  const branch = "codex/issue-367";
+  const workspacePath = path.join(workspaceRoot, "issue-367");
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  await runCommand("git", ["-C", repoPath, "worktree", "add", "-b", branch, workspacePath, "main"]);
+  await fs.writeFile(path.join(workspacePath, "feature.txt"), "meaningful change\n");
+  await runCommand("git", ["-C", workspacePath, "add", "feature.txt"]);
+  await runCommand("git", ["-C", workspacePath, "commit", "-m", "meaningful checkpoint"]);
+  await fs.writeFile(path.join(workspacePath, "feature.txt"), "meaningful change\ndirty edit\n");
+  const headSha = (await runCommand("git", ["-C", workspacePath, "rev-parse", "HEAD"])).stdout.trim();
+
+  const config = createConfig({
+    repoPath,
+    workspaceRoot,
+  });
+  const record = createRecord({
+    issue_number: 367,
+    branch,
+    workspace: workspacePath,
+  });
+
+  const result = await classifyFailedNoPrBranchRecovery({
+    config,
+    record,
+    ensureOriginDefaultBranchFetched: async () => {
+      await runCommand("git", ["-C", repoPath, "fetch", "origin", config.defaultBranch]);
+    },
+    isSafeCleanupTarget: (currentConfig, currentWorkspacePath, currentBranch) =>
+      currentWorkspacePath === workspacePath
+      && currentBranch === branch
+      && currentConfig.workspaceRoot === workspaceRoot,
+  });
+
+  assert.deepEqual(result, {
+    state: "manual_review_required",
+    headSha,
+    preservedTrackedFiles: ["feature.txt"],
+  });
+});

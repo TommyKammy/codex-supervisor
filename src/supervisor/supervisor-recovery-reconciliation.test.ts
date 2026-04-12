@@ -4732,6 +4732,9 @@ test("reconcileStaleFailedIssueStates blocks failed no-PR issues for manual revi
     "branch_state=manual_review_required",
     "default_branch=origin/main",
     `head_sha=${updated.last_head_sha ?? "unknown"}`,
+    "preserved_partial_work=yes",
+    "tracked_file_count=1",
+    "tracked_files=feature.txt",
     "operator_action=inspect the preserved workspace and resolve the unsafe or ambiguous branch state before requeueing manually",
   ]);
   assert.equal(updated.stale_stabilizing_no_pr_recovery_count, 0);

@@ -1,17 +1,17 @@
-# Issue #1454: Preserve original runtime failure context across no-PR manual-review recovery
+# Issue #1456: Surface preserved partial-work incidents in status and explain
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1454
-- Branch: codex/issue-1454
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1456
+- Branch: codex/issue-1456
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 1f70eca4fc7d3691c7506fe116a78147172c0748
+- Last head SHA: 9439b93d1dabd2d84642028923ede107a02e3da3
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-04-12T06:37:39.674Z
+- Updated at: 2026-04-12T06:52:21.544Z
 
 ## Latest Codex Summary
 - None yet.
@@ -21,13 +21,13 @@
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: Failed no-PR reconciliation was replacing `last_failure_*` with a generic manual-review blocker, and older failed records without populated `last_runtime_*` lost the original `codex_exit` context entirely. `explain` also only surfaced the blocker summary.
-- What changed: Added a fallback snapshot in `src/recovery-no-pr-reconciliation.ts` so failed no-PR manual-review reconciliation copies the pre-reconciliation runtime failure into `last_runtime_*` when those fields are empty before replacing `last_failure_*`. Extended `src/supervisor/supervisor-selection-issue-explain.ts` to emit `runtime_failure_kind` and `runtime_failure_summary`. Added regression coverage in the recovery reconciliation and explain test files.
+- Hypothesis: No-PR manual-review recovery already preserves enough context to identify saved tracked work; the missing piece is recording that signal explicitly and rendering it in operator-facing status/explain output.
+- What changed: Added preserved tracked-file metadata to failed no-PR manual-review failure contexts, surfaced it as `partial_work=preserved ...` in `status` and `explain`, and added focused regression coverage for recovery classification, explain DTO/rendering, and status rendering.
 - Current blocker: none
-- Next exact step: Commit the checkpoint on `codex/issue-1454`, then open or update a draft PR if needed by the supervisor loop.
-- Verification gap: `npm test -- ...` still expands to the broader suite and hits an unrelated existing failure in `local CI browser helpers summarize a repo-owned candidate contract consistently`; isolated `npx tsx --test` runs for the touched test files passed, and `npm run build` passed.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/recovery-no-pr-reconciliation.ts`, `src/supervisor/supervisor-selection-issue-explain.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `src/supervisor/supervisor-diagnostics-explain.test.ts`
-- Rollback concern: low; change is scoped to failed no-PR manual-review reconciliation and explain rendering, but reverting would again hide original runtime failure details for older failed records that lack `last_runtime_*`.
-- Last focused command: `npm run build`
+- Next exact step: Commit the focused change set, then open or update the draft PR checkpoint if needed.
+- Verification gap: Did not rerun the broad `npm test -- ...` package script because it executes the whole suite; used focused `npx tsx --test ...` coverage plus `npm run build`.
+- Files touched: src/recovery-support.ts; src/recovery-no-pr-reconciliation.ts; src/supervisor/supervisor-preserved-partial-work.ts; src/supervisor/supervisor-selection-issue-explain.ts; src/supervisor/supervisor-detailed-status-assembly.ts; src/recovery-support.test.ts; src/supervisor/supervisor-recovery-reconciliation.test.ts; src/supervisor/supervisor-diagnostics-explain.test.ts; src/supervisor/supervisor-selection-issue-explain.test.ts; src/supervisor/supervisor-status-rendering.test.ts; src/backend/supervisor-http-server.test.ts; src/backend/webui-dashboard-browser-smoke.test.ts; src/supervisor/supervisor-service.test.ts
+- Rollback concern: The new `SupervisorExplainDto.preservedPartialWorkSummary` field required stub updates in backend/service tests; any downstream handwritten DTO fixture will now need the nullable field.
+- Last focused command: npm run build
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
