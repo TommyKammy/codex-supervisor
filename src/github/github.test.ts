@@ -388,6 +388,102 @@ test("GitHubClient fetches unresolved review threads from JSON payloads larger t
   assert.equal(threads[0]?.comments.nodes[0]?.body, largeBody);
 });
 
+test("GitHubClient forwards unbounded stdout capture options through review-surface hydration", async () => {
+  const config = createConfig();
+  const largeBody = "Blocking issue: ".concat("x".repeat(70_000));
+  const prListPayload = JSON.stringify([
+    createPullRequest({
+      number: 443,
+      title: "Large review payload",
+      url: "https://example.test/pull/443",
+      headRefName: "codex/issue-443",
+      headRefOid: "head-443",
+    }),
+  ]);
+  const reviewSummaryPayload = JSON.stringify({
+    data: {
+      repository: {
+        pullRequest: {
+          reviewRequests: {
+            nodes: [
+              {
+                requestedReviewer: {
+                  login: "copilot-pull-request-reviewer",
+                },
+              },
+            ],
+          },
+          reviews: {
+            nodes: [
+              {
+                submittedAt: "2026-04-14T01:02:03Z",
+                state: "CHANGES_REQUESTED",
+                body: `Please address these blocking concerns.\n\n${largeBody}`,
+                commit: {
+                  oid: "head-443",
+                },
+                author: {
+                  login: "copilot-pull-request-reviewer",
+                },
+              },
+            ],
+          },
+          comments: {
+            nodes: [],
+          },
+          reviewThreads: {
+            nodes: [],
+          },
+          timelineItems: {
+            nodes: [
+              {
+                __typename: "ReviewRequestedEvent",
+                createdAt: "2026-04-14T01:00:00Z",
+                requestedReviewer: {
+                  login: "copilot-pull-request-reviewer",
+                },
+              },
+            ],
+          },
+          commits: {
+            nodes: [],
+          },
+        },
+      },
+    },
+  });
+
+  const client = new GitHubClient(config, async (_command, args, options) => {
+    if (args[0] === "pr" && args[1] === "list") {
+      return {
+        exitCode: 0,
+        stdout: prListPayload,
+        stderr: "",
+      };
+    }
+
+    if (args[0] === "api" && args[1] === "graphql") {
+      return {
+        exitCode: 0,
+        stdout:
+          options?.stdoutCaptureLimitBytes === null
+            ? reviewSummaryPayload
+            : truncateLikeDefaultStdoutCapture(reviewSummaryPayload),
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  const pullRequest = await client.findOpenPullRequest("codex/issue-443", { purpose: "status" });
+
+  assert.equal(pullRequest?.number, 443);
+  assert.equal(pullRequest?.configuredBotTopLevelReviewStrength, "blocking");
+  assert.equal(pullRequest?.configuredBotTopLevelReviewSubmittedAt, "2026-04-14T01:02:03Z");
+  assert.equal(pullRequest?.copilotReviewState, "arrived");
+});
+
 test("GitHubClient refreshes unresolved review threads when the review surface version changes", async () => {
   const config = createConfig();
   let graphqlCalls = 0;

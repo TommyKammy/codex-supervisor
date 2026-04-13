@@ -33,7 +33,7 @@ export class GitHubReviewSurfaceClient {
   ) {
     this.pullRequestHydrator = new GitHubPullRequestHydrator(
       this.config,
-      (args) => this.runGhCommand(args),
+      (args, options) => this.runGhCommand(args, options),
       this.now,
     );
   }
