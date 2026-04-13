@@ -1715,6 +1715,101 @@ test("reconcileRecoverableBlockedIssueStates keeps same-head draft tracked PRs b
   assert.deepEqual(recoveryEvents, []);
 });
 
+test("reconcileRecoverableBlockedIssueStates keeps same-head draft tracked PR host-local blockers blocked when the current head observation exists without a persisted comment", async () => {
+  const config = createConfig({
+    localCiCommand: "npm run verify:paths",
+  });
+  const failureContext = {
+    category: "blocked" as const,
+    summary: "Tracked durable artifacts failed workstation-local path hygiene before marking PR #191 ready.",
+    signature: "workstation-local-path-hygiene-failed",
+    command: "npm run verify:paths",
+    details: ["First fix: .codex-supervisor/issue-journal.md (1 match)."],
+    url: null,
+    updated_at: "2026-03-13T00:20:00Z",
+  };
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
+        state: "blocked",
+        blocked_reason: "verification",
+        pr_number: 191,
+        last_head_sha: "head-191",
+        last_error: failureContext.summary,
+        last_failure_kind: null,
+        last_failure_context: failureContext,
+        last_failure_signature: failureContext.signature,
+        repeated_failure_signature_count: 1,
+        last_observed_host_local_pr_blocker_head_sha: "head-191",
+        last_observed_host_local_pr_blocker_signature: failureContext.signature,
+        latest_local_ci_result: null,
+        last_host_local_pr_blocker_comment_signature: null,
+        last_host_local_pr_blocker_comment_head_sha: null,
+      }),
+    ],
+  });
+  const issue = createIssue({
+    title: "Recovery issue",
+    updatedAt: "2026-03-13T00:21:00Z",
+  });
+  const pr = createPullRequest({
+    number: 191,
+    title: "Recovery implementation",
+    url: "https://example.test/pr/191",
+    headRefName: "codex/reopen-issue-366",
+    headRefOid: "head-191",
+    isDraft: true,
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => pr,
+      getIssue: async () => issue,
+      getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    stateStore,
+    state,
+    config,
+    [issue],
+    {
+      shouldAutoRetryHandoffMissing,
+      inferStateFromPullRequest,
+      inferFailureContext,
+      blockedReasonForLifecycleState,
+      isOpenPullRequest,
+      syncReviewWaitWindow,
+      syncCopilotReviewRequestObservation,
+      syncCopilotReviewTimeoutState,
+    },
+  );
+
+  const updated = state.issues["366"];
+  assert.equal(updated.state, "blocked");
+  assert.equal(updated.blocked_reason, "verification");
+  assert.equal(updated.last_error, failureContext.summary);
+  assert.equal(updated.last_failure_signature, failureContext.signature);
+  assert.equal(updated.last_observed_host_local_pr_blocker_head_sha, "head-191");
+  assert.equal(updated.last_observed_host_local_pr_blocker_signature, failureContext.signature);
+  assert.equal(updated.last_recovery_reason, null);
+  assert.equal(saveCalls, 0);
+  assert.deepEqual(recoveryEvents, []);
+});
+
 test("reconcileRecoverableBlockedIssueStates only falls back to getIssue for blocked tracked PR records", async () => {
   const config = createConfig();
   const state: SupervisorStateFile = createSupervisorState({
@@ -6180,6 +6275,8 @@ test("buildTrackedPrStaleFailureConvergencePatch isolates persisted tracked PR r
     external_review_missed_findings_count: 0,
     review_follow_up_head_sha: null,
     review_follow_up_remaining: 0,
+    last_observed_host_local_pr_blocker_signature: null,
+    last_observed_host_local_pr_blocker_head_sha: null,
     last_host_local_pr_blocker_comment_signature: null,
     last_host_local_pr_blocker_comment_head_sha: null,
     processed_review_thread_ids: [],
