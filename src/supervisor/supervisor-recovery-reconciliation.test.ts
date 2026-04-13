@@ -1915,7 +1915,7 @@ test("reconcileRecoverableBlockedIssueStates persists refreshed tracked PR lifec
   assert.deepEqual(recoveryEvents, []);
 });
 
-test("reconcileRecoverableBlockedIssueStates suppresses duplicate tracked PR recovery churn when the same blocker persists", async () => {
+test("reconcileRecoverableBlockedIssueStates clears stale same-head tracked PR ready-promotion blockers without fresh evidence", async () => {
   const config = createConfig();
   const state: SupervisorStateFile = createSupervisorState({
     issues: [
@@ -1937,6 +1937,29 @@ test("reconcileRecoverableBlockedIssueStates suppresses duplicate tracked PR rec
         },
         last_failure_signature: "local-verification-blocked",
         repeated_failure_signature_count: 3,
+        last_tracked_pr_progress_snapshot: JSON.stringify({
+          headRefOid: "head-old-191",
+          reviewDecision: null,
+          mergeStateStatus: "CLEAN",
+          copilotReviewState: null,
+          copilotReviewRequestedAt: null,
+          copilotReviewArrivedAt: null,
+          configuredBotCurrentHeadObservedAt: null,
+          configuredBotCurrentHeadStatusState: null,
+          currentHeadCiGreenAt: "2026-03-13T00:18:00Z",
+          configuredBotRateLimitedAt: null,
+          configuredBotDraftSkipAt: null,
+          configuredBotTopLevelReviewStrength: null,
+          configuredBotTopLevelReviewSubmittedAt: null,
+          checks: ["build:pass:SUCCESS:CI"],
+          unresolvedReviewThreadIds: [],
+        }),
+        last_recovery_reason:
+          "tracked_pr_lifecycle_recovered: resumed issue #366 from blocked to draft_pr using fresh tracked PR #191 facts at head head-old-191",
+        last_recovery_at: "2026-03-13T00:18:00Z",
+        latest_local_ci_result: null,
+        last_host_local_pr_blocker_comment_signature: null,
+        last_host_local_pr_blocker_comment_head_sha: null,
       }),
     ],
   });
@@ -1967,7 +1990,7 @@ test("reconcileRecoverableBlockedIssueStates suppresses duplicate tracked PR rec
     },
   };
 
-  const firstRecoveryEvents = await reconcileRecoverableBlockedIssueStates(
+  const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
     {
       getPullRequestIfExists: async () => pr,
       getIssue: async () => issue,
@@ -1990,39 +2013,26 @@ test("reconcileRecoverableBlockedIssueStates suppresses duplicate tracked PR rec
     },
   );
 
-  assert.deepEqual(firstRecoveryEvents, []);
-  assert.equal(state.issues["366"]?.state, "blocked");
-  assert.equal(state.issues["366"]?.blocked_reason, "verification");
-  assert.equal(saveCalls, 0);
-
-  const secondRecoveryEvents = await reconcileRecoverableBlockedIssueStates(
-    {
-      getPullRequestIfExists: async () => pr,
-      getIssue: async () => issue,
-      getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
-      getUnresolvedReviewThreads: async () => [],
-    },
-    stateStore,
-    state,
-    config,
-    [issue],
-    {
-      shouldAutoRetryHandoffMissing,
-      inferStateFromPullRequest: () => "draft_pr",
-      inferFailureContext: () => null,
-      blockedReasonForLifecycleState: () => null,
-      isOpenPullRequest,
-      syncReviewWaitWindow: () => ({}),
-      syncCopilotReviewRequestObservation: () => ({}),
-      syncCopilotReviewTimeoutState: noCopilotReviewTimeoutPatch,
-    },
+  const updated = state.issues["366"];
+  assert.equal(updated?.state, "draft_pr");
+  assert.equal(updated?.blocked_reason, null);
+  assert.equal(updated?.last_error, null);
+  assert.equal(updated?.last_failure_context, null);
+  assert.equal(updated?.last_failure_signature, null);
+  assert.equal(updated?.repeated_failure_signature_count, 0);
+  assert.equal(updated?.repeated_blocker_count, 0);
+  assert.equal(updated?.repair_attempt_count, 0);
+  assert.equal(updated?.timeout_retry_count, 0);
+  assert.equal(updated?.blocked_verification_retry_count, 0);
+  assert.equal(updated?.last_head_sha, "head-191");
+  assert.equal(
+    updated?.last_recovery_reason,
+    "tracked_pr_lifecycle_recovered: resumed issue #366 from blocked to draft_pr using fresh tracked PR #191 facts at head head-191",
   );
-
-  assert.deepEqual(secondRecoveryEvents, []);
-  assert.equal(state.issues["366"]?.state, "blocked");
-  assert.equal(state.issues["366"]?.blocked_reason, "verification");
-  assert.equal(state.issues["366"]?.last_recovery_reason, null);
-  assert.equal(saveCalls, 0);
+  assert.deepEqual(recoveryEvents.map((event) => event.reason), [
+    "tracked_pr_lifecycle_recovered: resumed issue #366 from blocked to draft_pr using fresh tracked PR #191 facts at head head-191",
+  ]);
+  assert.equal(saveCalls, 1);
 });
 
 test("reconcileRecoverableBlockedIssueStates clears stale tracked PR ready-promotion blockers after head advance", async () => {
