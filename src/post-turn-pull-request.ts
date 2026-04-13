@@ -1095,7 +1095,12 @@ export interface HandlePostTurnPullRequestTransitionsArgs {
     Partial<
       Pick<
         GitHubClient,
-        "createIssue" | "addIssueComment" | "getExternalReviewSurface" | "updateIssueComment" | "replyToReviewThread"
+        | "createIssue"
+        | "addIssueComment"
+        | "getExternalReviewSurface"
+        | "updateIssueComment"
+        | "replyToReviewThread"
+        | "resolveReviewThread"
       >
     >;
   context: PostTurnPullRequestContext;
@@ -1694,13 +1699,11 @@ export async function handlePostTurnPullRequestTransitionsPhase(
         configuredBotReviewThreads: args.configuredBotReviewThreads,
         mergeConflictDetected: args.mergeConflictDetected,
       });
-      const reconciledRecord = lifecycleResult.record;
-      const reconciledBlockedReason =
-        reconciledRecord.state === "blocked" ? reconciledRecord.blocked_reason : null;
-      if (reconciledRecord.state !== "blocked" || reconciledBlockedReason !== "stale_review_bot") {
-        postReady = reconciled;
-        record = reconciledRecord;
-        effectiveFailureContext = lifecycleResult.effectiveFailureContext;
+      postReady = reconciled;
+      record = lifecycleResult.record;
+      effectiveFailureContext = lifecycleResult.effectiveFailureContext;
+      const reconciledBlockedReason = record.state === "blocked" ? record.blocked_reason : null;
+      if (record.state !== "blocked" || reconciledBlockedReason !== "stale_review_bot") {
         record = await maybeCommentOnTrackedPrPersistentStatus({
           github,
           stateStore,
