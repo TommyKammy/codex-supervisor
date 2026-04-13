@@ -9,6 +9,7 @@ import {
   isEligibleForSelection,
   isVerificationBlockedMessage,
   shouldAutoRecoverStaleReviewBot,
+  shouldReconcileTrackedPrStaleReviewBot,
   shouldAutoRetryBlockedVerification,
   shouldAutoRetryHandoffMissing,
   shouldEnforceExecutionReady,
@@ -395,4 +396,31 @@ test("shouldAutoRecoverStaleReviewBot suppresses stale configured-bot recovery a
   }), createConfig({
     staleConfiguredBotReviewPolicy: "reply_only",
   })), true);
+});
+
+test("shouldReconcileTrackedPrStaleReviewBot keeps same-head stale configured-bot records eligible for fresh GitHub reprojection", () => {
+  const record = createRecord({
+    state: "blocked",
+    blocked_reason: "stale_review_bot",
+    pr_number: 44,
+    last_head_sha: "head-44",
+    last_failure_signature: "stalled-bot:thread-1",
+    last_stale_review_bot_reply_head_sha: "head-44",
+    last_stale_review_bot_reply_signature: "stalled-bot:thread-1",
+  });
+
+  assert.equal(
+    shouldReconcileTrackedPrStaleReviewBot(record, createConfig({ staleConfiguredBotReviewPolicy: "reply_and_resolve" })),
+    true,
+  );
+  assert.equal(
+    shouldReconcileTrackedPrStaleReviewBot(record, createConfig({ staleConfiguredBotReviewPolicy: "diagnose_only" })),
+    false,
+  );
+  assert.equal(
+    shouldReconcileTrackedPrStaleReviewBot(createRecord({ ...record, pr_number: null }), createConfig({
+      staleConfiguredBotReviewPolicy: "reply_and_resolve",
+    })),
+    false,
+  );
 });

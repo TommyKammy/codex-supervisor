@@ -75,6 +75,13 @@ function staleReviewBotRecoverySignature(record: Pick<IssueRunRecord, "last_fail
   return record.last_failure_signature ?? "stale_review_bot";
 }
 
+function hasStaleReviewBotRecoveryPolicy(config: SupervisorConfig): boolean {
+  return (
+    config.staleConfiguredBotReviewPolicy === "reply_only" ||
+    config.staleConfiguredBotReviewPolicy === "reply_and_resolve"
+  );
+}
+
 function canAutoRecoverCurrentStaleReviewBotHead(
   record: Pick<
     IssueRunRecord,
@@ -96,13 +103,15 @@ function canAutoRecoverCurrentStaleReviewBotHead(
 }
 
 export function shouldAutoRecoverStaleReviewBot(record: IssueRunRecord, config: SupervisorConfig): boolean {
+  return shouldReconcileTrackedPrStaleReviewBot(record, config) && canAutoRecoverCurrentStaleReviewBotHead(record);
+}
+
+export function shouldReconcileTrackedPrStaleReviewBot(record: IssueRunRecord, config: SupervisorConfig): boolean {
   return (
     record.state === "blocked" &&
     record.blocked_reason === "stale_review_bot" &&
     record.pr_number !== null &&
-    canAutoRecoverCurrentStaleReviewBotHead(record) &&
-    (config.staleConfiguredBotReviewPolicy === "reply_only" ||
-      config.staleConfiguredBotReviewPolicy === "reply_and_resolve")
+    hasStaleReviewBotRecoveryPolicy(config)
   );
 }
 

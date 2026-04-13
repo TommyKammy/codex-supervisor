@@ -14,7 +14,7 @@ import {
   isOpenPullRequest,
 } from "./supervisor/supervisor-lifecycle";
 import { inferFailureContext } from "./supervisor/supervisor-failure-context";
-import { shouldAutoRecoverStaleReviewBot } from "./supervisor/supervisor-execution-policy";
+import { shouldReconcileTrackedPrStaleReviewBot } from "./supervisor/supervisor-execution-policy";
 import {
   findHighRiskBlockingAmbiguity,
   findParentIssuesReadyToClose,
@@ -1026,7 +1026,7 @@ export async function reconcileRecoverableBlockedIssueStates(
         record.blocked_reason === null ||
         record.blocked_reason === "manual_review" ||
         record.blocked_reason === "verification" ||
-        shouldAutoRecoverStaleReviewBot(record, config)
+        shouldReconcileTrackedPrStaleReviewBot(record, config)
       )
     ) {
       const trackedPullRequest = await github.getPullRequestIfExists(record.pr_number);
