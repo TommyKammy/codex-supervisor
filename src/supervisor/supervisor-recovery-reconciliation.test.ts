@@ -2037,6 +2037,8 @@ test("reconcileRecoverableBlockedIssueStates resumes tracked PR stale configured
         blocked_reason: "stale_review_bot",
         pr_number: 191,
         last_head_sha: "head-191",
+        local_review_head_sha: "head-191",
+        local_review_summary_path: "/tmp/reviews/issue-366/head-191.md",
         last_error: "Configured bot review stayed stale on the current head.",
         last_failure_kind: null,
         last_failure_context: {
@@ -2049,6 +2051,21 @@ test("reconcileRecoverableBlockedIssueStates resumes tracked PR stale configured
           updated_at: "2026-03-13T00:20:00Z",
         },
         last_failure_signature: "stale-configured-bot-review",
+        latest_local_ci_result: {
+          outcome: "passed",
+          summary: "Local CI passed on the current head.",
+          ran_at: "2026-03-13T00:22:00Z",
+          head_sha: "head-191",
+          execution_mode: "shell",
+          failure_class: null,
+          remediation_target: null,
+        },
+        external_review_head_sha: "head-191",
+        external_review_misses_path: "/tmp/reviews/issue-366/head-191-misses.json",
+        review_follow_up_head_sha: "head-191",
+        last_host_local_pr_blocker_comment_head_sha: "head-191",
+        processed_review_thread_ids: ["thread-1", "thread-1@head-191"],
+        processed_review_thread_fingerprints: ["thread-1@head-191#comment-1"],
       }),
     ],
   });
@@ -2115,6 +2132,7 @@ test("reconcileRecoverableBlockedIssueStates resumes tracked PR stale configured
   assert.equal(state.issues["366"]?.blocked_reason, "stale_review_bot");
   assert.equal(state.issues["366"]?.pr_number, 191);
   assert.equal(state.issues["366"]?.last_head_sha, "head-191");
+  assert.equal(state.issues["366"]?.last_failure_signature, "stale-configured-bot-review");
   assert.equal(saveCalls, 1);
 });
 
