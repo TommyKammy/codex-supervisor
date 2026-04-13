@@ -17,6 +17,7 @@
 - Added focused regressions proving large GraphQL JSON payloads were being locally truncated before JSON parsing in both `reviewThreads` reconciliation and the sibling PR hydrator path.
 - Routed machine-readable GitHub JSON calls in `GitHubReviewSurfaceClient` and `GitHubPullRequestHydrator` through unbounded stdout capture while leaving the command runner default bounded capture unchanged.
 - Verified with focused GitHub tests, command-runner tests, and a full TypeScript build.
+- Committed as `4d7f95a` on `codex/issue-1485`, pushed the branch, and opened draft PR #1487.
 
 ## Active Failure Context
 - Reproduced pre-fix failure as `reviewthreads-json-truncated-64kb` with: `Failed to parse JSON from gh api graphql reviewThreads pr=443: Bad control character in string literal in JSON at position 32766`.
@@ -26,10 +27,10 @@
 - Hypothesis: tracked PR reconciliation was parsing bounded stdout from `gh` as if it were complete JSON; any GraphQL review payload above 64KB would be truncated locally and crash parse.
 - What changed: added large-payload regressions; introduced `runGhJsonCommand(..., { stdoutCaptureLimitBytes: null })` helpers in `src/github/github-review-surface.ts` and `src/github/github-pull-request-hydrator.ts`; moved structural JSON fetches in those files to the unbounded path.
 - Current blocker: none.
-- Next exact step: commit the fix and, if branch policy still expects early publication, open a draft PR from `codex/issue-1485`.
-- Verification gap: none for the requested local scope; CI has not run yet.
+- Next exact step: monitor draft PR #1487 and address CI or review feedback if it appears.
+- Verification gap: none for the requested local scope; GitHub CI has not reported yet in this turn.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/github/github-review-surface.ts`, `src/github/github-pull-request-hydrator.ts`, `src/github/github.test.ts`, `src/github/github-pull-request-hydrator.test.ts`.
 - Rollback concern: low; scope is limited to machine-readable GitHub JSON callers and preserves bounded capture for human-oriented command output.
-- Last focused command: `npm run build`
+- Last focused command: `gh pr create --repo TommyKammy/codex-supervisor --base main --head codex/issue-1485 --draft ...`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
