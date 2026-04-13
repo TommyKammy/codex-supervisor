@@ -506,6 +506,67 @@ Show recoverable stale configured-bot review blockers as runnable when auto-hand
   assert.match(explanation, /^selection_reason=ready execution_ready=yes depends_on=none execution_order=none predecessors=none retry_state=stale_review_bot_recovery:reply_and_resolve$/m);
 });
 
+test("explain stops advertising stale configured-bot recovery after the current head reply was already recorded", async () => {
+  const fixture = await createSupervisorFixture();
+  fixture.config.staleConfiguredBotReviewPolicy = "reply_only";
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "97": createRecord({
+        issue_number: 97,
+        state: "blocked",
+        branch: branchName(fixture.config, 97),
+        workspace: path.join(fixture.workspaceRoot, "issue-97"),
+        journal_path: null,
+        pr_number: 197,
+        blocked_reason: "stale_review_bot",
+        last_head_sha: "head-197",
+        last_error: "configured bot review stayed stale on the current head",
+        last_failure_signature: "stalled-bot:thread-1",
+        last_stale_review_bot_reply_head_sha: "head-197",
+        last_stale_review_bot_reply_signature: "stalled-bot:thread-1",
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const blockedIssue: GitHubIssue = {
+    number: 97,
+    title: "Already handled stale configured bot blocker",
+    body: `## Summary
+Keep already-handled stale configured-bot blockers out of the runnable queue.
+
+## Scope
+- stop advertising stale-review recovery after the current head reply already ran
+
+## Acceptance criteria
+- explain reports the issue as non-runnable after the current head/signature reply is already recorded
+
+## Verification
+- npm test -- src/supervisor/supervisor-diagnostics-explain.test.ts`,
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: "https://example.test/issues/97",
+    labels: [],
+    state: "OPEN",
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => blockedIssue,
+    listAllIssues: async () => [blockedIssue],
+    listCandidateIssues: async () => [blockedIssue],
+  };
+
+  const explanation = await supervisor.explain(97);
+
+  assert.match(explanation, /^state=blocked$/m);
+  assert.match(explanation, /^blocked_reason=stale_review_bot$/m);
+  assert.match(explanation, /^runnable=no$/m);
+  assert.match(explanation, /^reason_1=manual_block stale_review_bot$/m);
+  assert.doesNotMatch(explanation, /retry_state=stale_review_bot_recovery:/m);
+});
+
 test("explain reports tracked PR mismatches when GitHub is ready but local state is still blocked", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 171;

@@ -1,47 +1,33 @@
-# Issue #1472: Bug: blocked stale_review_bot tracked PRs are never revisited after enabling reply_and_resolve
+# Issue #1474: Bug: reply_only stale_review_bot incidents can stay permanently runnable after the first auto-reply
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1472
-- Branch: codex/issue-1472
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1474
+- Branch: codex/issue-1474
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 2 (implementation=1, repair=1)
-- Last head SHA: 1deceebd33cb7cf65586d7879466f4c9b76a3e31
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 3be9af5e5c8e3a5da236f1c61c23e7fffea72083
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ856c-Kd|PRRT_kwDORgvdZ856c-Kj
-- Repeated failure signature count: 1
-- Updated at: 2026-04-13T07:16:36.528Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-04-13T07:55:18.086Z
 
 ## Latest Codex Summary
-Addressed the two automated review threads on top of the original stale-review-bot recovery change. The main fix is in `src/run-once-cycle-prelude.ts`: degraded inventory continuation now still runs tracked blocked-PR reconciliation for `stale_review_bot` records when the configured policy makes them auto-recoverable, via the same `shouldAutoRecoverStaleReviewBot()` predicate used by reconciliation. `src/supervisor/supervisor.ts` now passes that policy-aware predicate into the prelude so the gate stays aligned with the existing recovery rules instead of broadening degraded retries globally.
-
-I also tightened the regression coverage the review asked for. `src/run-once-cycle-prelude.test.ts` now proves degraded continuation invokes blocked tracked-PR reconciliation for an auto-recoverable `stale_review_bot` record, and `src/supervisor/supervisor-recovery-reconciliation.test.ts` normalizes the inherited head-scoped review fields to the current head so the same-head resume test no longer passes through stale-head fixture baggage.
-
-Summary: Fixed the degraded-continuation gate for auto-recoverable `stale_review_bot` tracked PRs, tightened the same-head stale-review regression fixture, verified locally, and pushed commit `7a36bd2` to PR `#1473`.
-State hint: addressing_review
-Blocked reason: none
-Tests: `npx tsx --test src/post-turn-pull-request.test.ts src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-execution-policy.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npm run build`
-Next action: Refresh PR `#1473` review state and reply or resolve the remaining automated threads if the operator wants GitHub-side thread writes.
-Failure signature: PRRT_kwDORgvdZ856c-Kd|PRRT_kwDORgvdZ856c-Kj
+- None yet.
 
 ## Active Failure Context
-- Category: review
-- Summary: 2 unresolved automated review thread(s) remain.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1473#discussion_r3071387483
-- Details:
-  - src/recovery-reconciliation.ts:1030 summary=_⚠️ Potential issue_ | _🟠 Major_ 🧩 Analysis chain 🏁 Script executed: Repository: TommyKammy/codex-supervisor Length of output: 50384 --- 🏁 Script executed: Repository: Tommy... url=https://github.com/TommyKammy/codex-supervisor/pull/1473#discussion_r3071387483
-  - src/supervisor/supervisor-recovery-reconciliation.test.ts:2052 summary=_⚠️ Potential issue_ | _🟡 Minor_ **Tighten this regression to the intended same-head recovery path.** `createTrackedPrStaleReviewRecord()` still brings along head-scoped review... url=https://github.com/TommyKammy/codex-supervisor/pull/1473#discussion_r3071387489
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the stale configured-bot reply/resolve handler already works in `post-turn`, but supervisor selection/recovery treated `blocked_reason=stale_review_bot` as a permanent manual block, so already-blocked tracked PR incidents never re-entered that handler after the policy changed.
-- What changed this turn: fixed the degraded inventory-refresh prelude gate so it still calls `reconcileRecoverableBlockedIssueStates(..., { onlyTrackedPrStates: true })` for `stale_review_bot` tracked PR records when `shouldAutoRecoverStaleReviewBot(record, config)` is true; passed that predicate from `src/supervisor/supervisor.ts`; added a prelude regression test; normalized same-head stale-review fixture fields in the reconciliation test.
+- Hypothesis: stale configured-bot recovery is selected too loosely; the supervisor re-enters `blocked/stale_review_bot` tracked PRs even after `reply_only` already handled the current PR head and stale-review signature.
+- What changed: tightened `shouldAutoRecoverStaleReviewBot` to require an actionable current head/signature, and added focused tests for the suppressed same-head/same-signature recovery case plus explain output.
 - Current blocker: none.
-- Next exact step: let the supervisor/PR loop re-evaluate the remaining review-thread state on pushed commit `7a36bd2`, then decide whether to post GitHub thread replies.
-- Verification gap: full `npm test -- <file>` still pulls unrelated suite-wide failures in this repo, so focused verification used `npx tsx --test` with the exact requested files instead.
-- Files touched this turn: `.codex-supervisor/issue-journal.md`, `src/run-once-cycle-prelude.ts`, `src/run-once-cycle-prelude.test.ts`, `src/supervisor/supervisor.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`.
-- Rollback concern: low; the new recovery path is limited to tracked PR records already blocked as `stale_review_bot` and still defers actual reply/resolve safety checks to the existing post-turn stale-bot handler.
-- Last focused command: `npx tsx --test src/post-turn-pull-request.test.ts src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-execution-policy.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`
+- Next exact step: commit this focused recovery-gate change, then optionally open/update a draft PR.
+- Verification gap: full repo `npm test` still has unrelated pre-existing failures on this branch; focused issue verification passed on the requested stale-review-bot files.
+- Files touched: `src/supervisor/supervisor-execution-policy.ts`, `src/supervisor/supervisor-execution-policy.test.ts`, `src/supervisor/supervisor-diagnostics-explain.test.ts`.
+- Rollback concern: low; the gate only suppresses stale-review auto-recovery when persisted state already proves the current head/signature received the stale-bot auto-reply.
+- Last focused command: `node --test --import tsx src/post-turn-pull-request.test.ts src/supervisor/supervisor-execution-policy.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/run-once-cycle-prelude.test.ts`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
