@@ -819,6 +819,7 @@ async function maybeCommentOnTrackedPrPersistentStatus(args: {
   config: SupervisorConfig;
   failureContext: FailureContext | null;
   summarizeChecks: (checks: PullRequestCheck[]) => { hasPending: boolean; hasFailing: boolean };
+  skipAutoHandleStaleConfiguredBotReview?: boolean;
 }): Promise<IssueRunRecord> {
   const comment = derivePersistentTrackedPrStatusComment({
     config: args.config,
@@ -831,6 +832,7 @@ async function maybeCommentOnTrackedPrPersistentStatus(args: {
   });
 
   const canAutoHandleStaleConfiguredBotReview =
+    !args.skipAutoHandleStaleConfiguredBotReview &&
     args.record.state === "blocked" &&
     args.record.blocked_reason === "stale_review_bot" &&
     comment &&
@@ -1703,7 +1705,12 @@ export async function handlePostTurnPullRequestTransitionsPhase(
       record = lifecycleResult.record;
       effectiveFailureContext = lifecycleResult.effectiveFailureContext;
       const reconciledBlockedReason = record.state === "blocked" ? record.blocked_reason : null;
-      if (record.state !== "blocked" || reconciledBlockedReason !== "stale_review_bot") {
+      if (
+        record.state !== "blocked"
+        || reconciledBlockedReason !== "stale_review_bot"
+        || record.last_host_local_pr_blocker_comment_signature
+          !== (effectiveFailureContext?.signature ?? TRACKED_PR_STATUS_COMMENT_REASON_CODE_STALE_REVIEW_BOT)
+      ) {
         record = await maybeCommentOnTrackedPrPersistentStatus({
           github,
           stateStore,
@@ -1717,6 +1724,7 @@ export async function handlePostTurnPullRequestTransitionsPhase(
           config,
           failureContext: effectiveFailureContext,
           summarizeChecks: args.summarizeChecks,
+          skipAutoHandleStaleConfiguredBotReview: true,
         });
       }
     }
