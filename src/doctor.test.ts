@@ -1442,6 +1442,103 @@ test("diagnoseSupervisorHost preserves draft tracked PR verification blockers in
   );
 });
 
+test("diagnoseSupervisorHost marks old-head ready-promotion blockers as stale", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-doctor-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = path.join(root, "repo");
+  const workspaceRoot = path.join(root, "workspaces");
+  const workspace = path.join(workspaceRoot, "issue-175");
+  const stateFile = path.join(root, "state.json");
+  await fs.mkdir(repoPath, { recursive: true });
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  execFileSync("git", ["init", "-b", "main"], { cwd: repoPath });
+  await fs.writeFile(path.join(repoPath, "README.md"), "fixture\n", "utf8");
+  execFileSync("git", ["add", "README.md"], { cwd: repoPath });
+  execFileSync("git", ["commit", "-m", "fixture"], {
+    cwd: repoPath,
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Codex",
+      GIT_AUTHOR_EMAIL: "codex@example.com",
+      GIT_COMMITTER_NAME: "Codex",
+      GIT_COMMITTER_EMAIL: "codex@example.com",
+    },
+  });
+  execFileSync("git", ["-C", repoPath, "worktree", "add", "-b", "codex/reopen-issue-175", workspace], {
+    encoding: "utf8",
+  });
+
+  const config = createConfig({
+    repoPath,
+    workspaceRoot,
+    stateFile,
+    codexBinary: process.execPath,
+    localCiCommand: "npm run verify:paths",
+  });
+  const trackedState: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "175": createRecord({
+        issue_number: 175,
+        state: "blocked",
+        branch: "codex/reopen-issue-175",
+        workspace,
+        pr_number: 275,
+        blocked_reason: "verification",
+        last_head_sha: "head-old-275",
+        last_error: "Configured local CI command failed before marking PR #275 ready.",
+        last_failure_signature: "local-ci-gate-non_zero_exit",
+        latest_local_ci_result: {
+          outcome: "failed",
+          summary: "Configured local CI command failed before marking PR #275 ready.",
+          ran_at: "2026-03-13T00:10:00Z",
+          head_sha: "head-old-275",
+          execution_mode: "legacy_shell_string",
+          failure_class: "non_zero_exit",
+          remediation_target: "repo_owned_command",
+        },
+      }),
+    },
+  };
+  const draftPr = createPullRequest({
+    number: 275,
+    headRefName: "codex/reopen-issue-175",
+    headRefOid: "head-new-275",
+    isDraft: true,
+    currentHeadCiGreenAt: "2026-03-13T00:12:00Z",
+  });
+
+  const diagnostics = await diagnoseSupervisorHost({
+    config,
+    authStatus: async () => ({ ok: true, message: null }),
+    loadState: async () => trackedState,
+    github: {
+      getCandidateDiscoveryDiagnostics: async () => ({
+        fetchWindow: 100,
+        observedMatchingOpenIssues: 1,
+        truncated: false,
+      }),
+      getPullRequestIfExists: async () => draftPr,
+      getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getUnresolvedReviewThreads: async () => [],
+    },
+  });
+
+  assert.equal(diagnostics.checks.find((check) => check.name === "worktrees")?.status, "warn");
+  assert.match(
+    renderDoctorReport(diagnostics),
+    /doctor_detail name=worktrees detail=tracked_pr_ready_promotion_blocked issue=#175 pr=#275 github_state=draft_pr local_state=blocked local_blocked_reason=verification stale_local_blocker=yes/,
+  );
+  assert.match(
+    renderDoctorReport(diagnostics),
+    /doctor_detail name=worktrees detail=recovery_guidance=PR #275 is still draft, but the stored ready-for-review verification blocker is stale relative to the current head\. Run a one-shot supervisor cycle to refresh tracked PR state before assuming the gate still fails\./,
+  );
+  assert.doesNotMatch(renderDoctorReport(diagnostics), /The same blocker is still present/);
+});
+
 test("diagnoseSupervisorHost exposes host-local CI blocker details for tracked PR mismatches", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-doctor-"));
   t.after(async () => {

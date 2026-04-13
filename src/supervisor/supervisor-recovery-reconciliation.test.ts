@@ -2025,6 +2025,110 @@ test("reconcileRecoverableBlockedIssueStates suppresses duplicate tracked PR rec
   assert.equal(saveCalls, 0);
 });
 
+test("reconcileRecoverableBlockedIssueStates clears stale tracked PR ready-promotion blockers after head advance", async () => {
+  const config = createConfig();
+  const failureContext = {
+    category: "blocked" as const,
+    summary: "Ready-for-review promotion is blocked by local verification on the previous head.",
+    signature: "local-verification-blocked",
+    command: null,
+    details: [`tracked_pr=${TRACKED_PR_OLD_HEAD}`],
+    url: null,
+    updated_at: "2026-03-13T00:20:00Z",
+  };
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createTrackedPrStaleReviewRecord({
+        state: "blocked",
+        blocked_reason: "verification",
+        pr_number: TRACKED_PR_NUMBER,
+        last_head_sha: TRACKED_PR_OLD_HEAD,
+        last_error: failureContext.summary,
+        last_failure_kind: null,
+        last_failure_context: failureContext,
+        last_failure_signature: failureContext.signature,
+        repeated_failure_signature_count: 3,
+        repeated_blocker_count: 4,
+        repair_attempt_count: 2,
+        timeout_retry_count: 1,
+        blocked_verification_retry_count: 2,
+        latest_local_ci_result: {
+          outcome: "failed",
+          summary: "Configured local CI command failed on the previous head.",
+          ran_at: "2026-03-13T00:22:00Z",
+          head_sha: TRACKED_PR_OLD_HEAD,
+          execution_mode: "shell",
+          failure_class: "non_zero_exit",
+          remediation_target: "repo_owned_command",
+        },
+      }),
+    ],
+  });
+  const issue = createTrackedPrRecoveryIssue();
+  const pr = createTrackedPrRecoveryPullRequest({
+    headRefOid: TRACKED_PR_NEW_HEAD,
+    isDraft: true,
+    currentHeadCiGreenAt: "2026-03-13T00:24:00Z",
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => pr,
+      getIssue: async () => issue,
+      getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    stateStore,
+    state,
+    config,
+    [issue],
+    {
+      shouldAutoRetryHandoffMissing,
+      inferStateFromPullRequest: () => "draft_pr",
+      inferFailureContext: () => null,
+      blockedReasonForLifecycleState: () => null,
+      isOpenPullRequest,
+      syncReviewWaitWindow: () => ({}),
+      syncCopilotReviewRequestObservation: () => ({}),
+      syncCopilotReviewTimeoutState: noCopilotReviewTimeoutPatch,
+    },
+  );
+
+  const updated = state.issues["366"];
+  assert.equal(updated.state, "draft_pr");
+  assert.equal(updated.blocked_reason, null);
+  assert.equal(updated.last_head_sha, TRACKED_PR_NEW_HEAD);
+  assert.equal(updated.last_error, null);
+  assert.equal(updated.last_failure_context, null);
+  assert.equal(updated.last_failure_signature, null);
+  assert.equal(updated.repeated_failure_signature_count, 0);
+  assert.equal(updated.repeated_blocker_count, 0);
+  assert.equal(updated.repair_attempt_count, 0);
+  assert.equal(updated.timeout_retry_count, 0);
+  assert.equal(updated.blocked_verification_retry_count, 0);
+  assert.equal(updated.local_review_head_sha, null);
+  assert.equal(updated.latest_local_ci_result, null);
+  assert.equal(updated.last_host_local_pr_blocker_comment_head_sha, null);
+  assert.equal(saveCalls, 1);
+  assert.deepEqual(recoveryEvents.map((event) => event.reason), [
+    "tracked_pr_head_advanced: resumed issue #366 from blocked to draft_pr after tracked PR #191 advanced from head-old-191 to head-new-191",
+  ]);
+});
+
 test("reconcileRecoverableBlockedIssueStates resumes tracked PR stale configured-bot blockers after reply_and_resolve is enabled", async () => {
   const config = createConfig({
     staleConfiguredBotReviewPolicy: "reply_and_resolve",

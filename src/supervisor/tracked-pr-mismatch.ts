@@ -31,6 +31,13 @@ function isBlockedLikeState(state: RunState): boolean {
   return state === "blocked" || state === "failed";
 }
 
+function blockerMatchesCurrentHead(
+  record: Pick<IssueRunRecord, "last_head_sha">,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
+): boolean {
+  return typeof record.last_head_sha === "string" && record.last_head_sha === pr.headRefOid;
+}
+
 function localCiHeadStatus(record: IssueRunRecord, pr: GitHubPullRequest, result: LatestLocalCiResult): "current" | "stale" | "unknown" {
   const currentHeadSha = pr.headRefOid ?? record.last_head_sha ?? null;
   if (result.head_sha === null || currentHeadSha === null) {
@@ -230,6 +237,7 @@ export function buildTrackedPrMismatch(
 
   if (record.state === "blocked" && record.blocked_reason === "verification" && githubState === "draft_pr" && pr.isDraft) {
     const readyPromotionGate = readyPromotionGateSummary(config, record, pr, checks);
+    const blockerIsCurrentHead = blockerMatchesCurrentHead(record, pr);
     return {
       issueNumber: record.issue_number,
       prNumber: pr.number,
@@ -247,10 +255,12 @@ export function buildTrackedPrMismatch(
         `local_blocked_reason=${record.blocked_reason ?? "none"}`,
         `stale_local_blocker=${staleLocalBlocker ? "yes" : "no"}`,
       ].join(" "),
-      guidanceLine:
-        `recovery_guidance=PR #${pr.number} is still draft because ready-for-review promotion is blocked by local verification. ` +
-        `The same blocker is still present, so rerunning the supervisor alone will not help. ` +
-        `Failed gate: ${readyPromotionGate.failedGate}. Fix the gate in the tracked workspace first, then rerun it to promote the PR.`,
+      guidanceLine: blockerIsCurrentHead
+        ? `recovery_guidance=PR #${pr.number} is still draft because ready-for-review promotion is blocked by local verification. ` +
+          `The same blocker is still present, so rerunning the supervisor alone will not help. ` +
+          `Failed gate: ${readyPromotionGate.failedGate}. Fix the gate in the tracked workspace first, then rerun it to promote the PR.`
+        : `recovery_guidance=PR #${pr.number} is still draft, but the stored ready-for-review verification blocker is stale relative to the current head. ` +
+          "Run a one-shot supervisor cycle to refresh tracked PR state before assuming the gate still fails.",
       detailLines: readyPromotionGate.detailLines,
     };
   }

@@ -1053,14 +1053,20 @@ export async function reconcileRecoverableBlockedIssueStates(
         continue;
       }
 
+      const inferredFailureContext =
+        nextState === "blocked"
+        || (
+          nextState === "draft_pr"
+          && record.blocked_reason === "verification"
+          && trackedPullRequest.isDraft
+        )
+          ? inferFailureContextImpl(config, projection.recordForState, trackedPullRequest, checks, reviewThreads)
+          : null;
       const preserveDraftReadyPromotionBlocker =
         nextState === "draft_pr"
         && record.blocked_reason === "verification"
-        && trackedPullRequest.isDraft;
-      const inferredFailureContext =
-        nextState === "blocked" || preserveDraftReadyPromotionBlocker
-          ? inferFailureContextImpl(config, projection.recordForState, trackedPullRequest, checks, reviewThreads)
-          : null;
+        && trackedPullRequest.isDraft
+        && (record.last_head_sha === trackedPullRequest.headRefOid || inferredFailureContext !== null);
       const failureContext =
         inferredFailureContext
         ?? (preserveDraftReadyPromotionBlocker ? record.last_failure_context : null);
