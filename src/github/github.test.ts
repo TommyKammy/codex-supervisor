@@ -7,6 +7,8 @@ import { GitHubClient } from "./github";
 import { runCommand } from "../core/command";
 import { GitHubIssue, GitHubPullRequest, IssueRunRecord, SupervisorConfig } from "../core/types";
 
+const OUTPUT_TRUNCATION_MARKER = "\n...\n";
+
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
   return {
     repoPath: "/tmp/repo",
@@ -154,6 +156,17 @@ function createPullRequest(overrides: Partial<GitHubPullRequest> = {}): GitHubPu
     headRefOid: "head-354",
     ...overrides,
   };
+}
+
+function truncateLikeDefaultStdoutCapture(value: string, limit = 64 * 1024): string {
+  if (value.length <= limit) {
+    return value;
+  }
+
+  const availableLength = Math.max(limit - OUTPUT_TRUNCATION_MARKER.length, 0);
+  const headLength = Math.ceil(availableLength / 2);
+  const tailLength = Math.floor(availableLength / 2);
+  return `${value.slice(0, headLength)}${OUTPUT_TRUNCATION_MARKER}${tailLength > 0 ? value.slice(-tailLength) : ""}`;
 }
 
 test("GitHubClient fetches the newest unresolved review thread comments", async () => {
@@ -317,6 +330,158 @@ test("GitHubClient reuses cached unresolved review threads for same-head status 
   assert.equal(first.length, 1);
   assert.equal(second.length, 1);
   assert.equal(graphqlCalls, 1);
+});
+
+test("GitHubClient fetches unresolved review threads from JSON payloads larger than the default stdout capture limit", async () => {
+  const config = createConfig();
+  const largeBody = "Blocking issue: ".concat("x".repeat(70_000));
+  const payload = JSON.stringify({
+    data: {
+      repository: {
+        pullRequest: {
+          reviewThreads: {
+            nodes: [
+              {
+                id: "thread-large",
+                isResolved: false,
+                isOutdated: false,
+                path: "src/github/github-review-surface.ts",
+                line: 401,
+                comments: {
+                  nodes: [
+                    {
+                      id: "comment-large",
+                      body: largeBody,
+                      createdAt: "2026-04-14T01:02:03Z",
+                      url: "https://example.test/comments/large",
+                      author: {
+                        login: "copilot-pull-request-reviewer",
+                        __typename: "Bot",
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        },
+      },
+    },
+  });
+
+  const client = new GitHubClient(config, async (_command, args, options) => {
+    if (args[0] === "api" && args[1] === "graphql") {
+      return {
+        exitCode: 0,
+        stdout: options?.stdoutCaptureLimitBytes === null ? payload : truncateLikeDefaultStdoutCapture(payload),
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  const threads = await client.getUnresolvedReviewThreads(443);
+
+  assert.equal(threads.length, 1);
+  assert.equal(threads[0]?.id, "thread-large");
+  assert.equal(threads[0]?.comments.nodes[0]?.body, largeBody);
+});
+
+test("GitHubClient forwards unbounded stdout capture options through review-surface hydration", async () => {
+  const config = createConfig();
+  const largeBody = "Blocking issue: ".concat("x".repeat(70_000));
+  const prListPayload = JSON.stringify([
+    createPullRequest({
+      number: 443,
+      title: "Large review payload",
+      url: "https://example.test/pull/443",
+      headRefName: "codex/issue-443",
+      headRefOid: "head-443",
+    }),
+  ]);
+  const reviewSummaryPayload = JSON.stringify({
+    data: {
+      repository: {
+        pullRequest: {
+          reviewRequests: {
+            nodes: [
+              {
+                requestedReviewer: {
+                  login: "copilot-pull-request-reviewer",
+                },
+              },
+            ],
+          },
+          reviews: {
+            nodes: [
+              {
+                submittedAt: "2026-04-14T01:02:03Z",
+                state: "CHANGES_REQUESTED",
+                body: `Please address these blocking concerns.\n\n${largeBody}`,
+                commit: {
+                  oid: "head-443",
+                },
+                author: {
+                  login: "copilot-pull-request-reviewer",
+                },
+              },
+            ],
+          },
+          comments: {
+            nodes: [],
+          },
+          reviewThreads: {
+            nodes: [],
+          },
+          timelineItems: {
+            nodes: [
+              {
+                __typename: "ReviewRequestedEvent",
+                createdAt: "2026-04-14T01:00:00Z",
+                requestedReviewer: {
+                  login: "copilot-pull-request-reviewer",
+                },
+              },
+            ],
+          },
+          commits: {
+            nodes: [],
+          },
+        },
+      },
+    },
+  });
+
+  const client = new GitHubClient(config, async (_command, args, options) => {
+    if (args[0] === "pr" && args[1] === "list") {
+      return {
+        exitCode: 0,
+        stdout: prListPayload,
+        stderr: "",
+      };
+    }
+
+    if (args[0] === "api" && args[1] === "graphql") {
+      return {
+        exitCode: 0,
+        stdout:
+          options?.stdoutCaptureLimitBytes === null
+            ? reviewSummaryPayload
+            : truncateLikeDefaultStdoutCapture(reviewSummaryPayload),
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  const pullRequest = await client.findOpenPullRequest("codex/issue-443", { purpose: "status" });
+
+  assert.equal(pullRequest?.number, 443);
+  assert.equal(pullRequest?.configuredBotTopLevelReviewStrength, "blocking");
+  assert.equal(pullRequest?.configuredBotTopLevelReviewSubmittedAt, "2026-04-14T01:02:03Z");
+  assert.equal(pullRequest?.copilotReviewState, "arrived");
 });
 
 test("GitHubClient refreshes unresolved review threads when the review surface version changes", async () => {
