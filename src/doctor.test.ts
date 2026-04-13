@@ -1539,6 +1539,113 @@ test("diagnoseSupervisorHost marks old-head ready-promotion blockers as stale", 
   assert.doesNotMatch(renderDoctorReport(diagnostics), /The same blocker is still present/);
 });
 
+test("diagnoseSupervisorHost marks same-head ready-promotion blockers as stale when fresh blocker evidence is absent", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-doctor-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = path.join(root, "repo");
+  const workspaceRoot = path.join(root, "workspaces");
+  const workspace = path.join(workspaceRoot, "issue-176");
+  const stateFile = path.join(root, "state.json");
+  await fs.mkdir(repoPath, { recursive: true });
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  execFileSync("git", ["init", "-b", "main"], { cwd: repoPath });
+  await fs.writeFile(path.join(repoPath, "README.md"), "fixture\n", "utf8");
+  execFileSync("git", ["add", "README.md"], { cwd: repoPath });
+  execFileSync("git", ["commit", "-m", "fixture"], {
+    cwd: repoPath,
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Codex",
+      GIT_AUTHOR_EMAIL: "codex@example.com",
+      GIT_COMMITTER_NAME: "Codex",
+      GIT_COMMITTER_EMAIL: "codex@example.com",
+    },
+  });
+  execFileSync("git", ["-C", repoPath, "worktree", "add", "-b", "codex/reopen-issue-176", workspace], {
+    encoding: "utf8",
+  });
+
+  const config = createConfig({
+    repoPath,
+    workspaceRoot,
+    stateFile,
+    codexBinary: process.execPath,
+    localCiCommand: "npm run verify:paths",
+  });
+  const trackedState: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "176": createRecord({
+        issue_number: 176,
+        state: "blocked",
+        branch: "codex/reopen-issue-176",
+        workspace,
+        pr_number: 276,
+        blocked_reason: "verification",
+        last_head_sha: "head-draft-276",
+        last_error: "Tracked durable artifacts failed workstation-local path hygiene before marking PR #276 ready.",
+        last_failure_signature: "workstation-local-path-hygiene-failed",
+        last_tracked_pr_progress_snapshot: JSON.stringify({
+          headRefOid: "head-old-276",
+          reviewDecision: null,
+          mergeStateStatus: "CLEAN",
+          copilotReviewState: null,
+          copilotReviewRequestedAt: null,
+          copilotReviewArrivedAt: null,
+          configuredBotCurrentHeadObservedAt: null,
+          configuredBotCurrentHeadStatusState: null,
+          currentHeadCiGreenAt: "2026-03-13T00:08:00Z",
+          configuredBotRateLimitedAt: null,
+          configuredBotDraftSkipAt: null,
+          configuredBotTopLevelReviewStrength: null,
+          configuredBotTopLevelReviewSubmittedAt: null,
+          checks: ["build:pass:SUCCESS:CI"],
+          unresolvedReviewThreadIds: [],
+        }),
+        latest_local_ci_result: null,
+        last_host_local_pr_blocker_comment_signature: null,
+        last_host_local_pr_blocker_comment_head_sha: null,
+      }),
+    },
+  };
+  const draftPr = createPullRequest({
+    number: 276,
+    headRefName: "codex/reopen-issue-176",
+    headRefOid: "head-draft-276",
+    isDraft: true,
+  });
+
+  const diagnostics = await diagnoseSupervisorHost({
+    config,
+    authStatus: async () => ({ ok: true, message: null }),
+    loadState: async () => trackedState,
+    github: {
+      getCandidateDiscoveryDiagnostics: async () => ({
+        fetchWindow: 100,
+        observedMatchingOpenIssues: 1,
+        truncated: false,
+      }),
+      getPullRequestIfExists: async () => draftPr,
+      getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getUnresolvedReviewThreads: async () => [],
+    },
+  });
+
+  assert.equal(diagnostics.checks.find((check) => check.name === "worktrees")?.status, "warn");
+  assert.match(
+    renderDoctorReport(diagnostics),
+    /doctor_detail name=worktrees detail=tracked_pr_ready_promotion_blocked issue=#176 pr=#276 github_state=draft_pr local_state=blocked local_blocked_reason=verification stale_local_blocker=yes/,
+  );
+  assert.match(
+    renderDoctorReport(diagnostics),
+    /doctor_detail name=worktrees detail=recovery_guidance=PR #276 is still draft, but the stored ready-for-review verification blocker is stale relative to the current head\. Run a one-shot supervisor cycle to refresh tracked PR state before assuming the gate still fails\./,
+  );
+  assert.doesNotMatch(renderDoctorReport(diagnostics), /The same blocker is still present/);
+});
+
 test("diagnoseSupervisorHost exposes host-local CI blocker details for tracked PR mismatches", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-doctor-"));
   t.after(async () => {

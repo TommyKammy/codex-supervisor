@@ -71,6 +71,7 @@ import {
 } from "./interrupted-turn-marker";
 import { mergeConflictDetected } from "./supervisor/supervisor-status-rendering";
 import { projectTrackedPrLifecycle } from "./tracked-pr-lifecycle-projection";
+import { hasFreshTrackedPrReadyPromotionBlockerEvidence } from "./tracked-pr-ready-promotion-blocker";
 
 const OWNER_GUARDED_ACTIVE_STATES = new Set<RunState>([
   "planning",
@@ -1066,7 +1067,10 @@ export async function reconcileRecoverableBlockedIssueStates(
         nextState === "draft_pr"
         && record.blocked_reason === "verification"
         && trackedPullRequest.isDraft
-        && (record.last_head_sha === trackedPullRequest.headRefOid || inferredFailureContext !== null);
+        && (
+          inferredFailureContext !== null ||
+          hasFreshTrackedPrReadyPromotionBlockerEvidence(record, trackedPullRequest)
+        );
       const failureContext =
         inferredFailureContext
         ?? (preserveDraftReadyPromotionBlocker ? record.last_failure_context : null);
