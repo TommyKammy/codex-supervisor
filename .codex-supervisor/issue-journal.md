@@ -11,18 +11,18 @@
 - Blocked reason: none
 - Last failure signature: PRRT_kwDORgvdZ856mV3T
 - Repeated failure signature count: 1
-- Updated at: 2026-04-13T17:19:14.000Z
+- Updated at: 2026-04-13T17:20:27.000Z
 
 ## Latest Codex Summary
 No further code changes were needed. I verified the remaining CodeRabbit thread on PR `#1487` still pointed at stale journal text, then aligned the `Current Handoff` note so it no longer says to commit and push after `258a449` was already pushed.
 
-The underlying tracked-PR reconciliation fix remains the previously pushed code change in `258a449`. This turn only updates `.codex-supervisor/issue-journal.md` so the supervisor handoff matches the live PR state and points the next loop at CI/re-review instead of another nonexistent local commit.
+The underlying tracked-PR reconciliation fix remains the previously pushed code change in `258a449`. This turn only updates `.codex-supervisor/issue-journal.md` and pushes a journal-only follow-up so the supervisor handoff matches the live PR state and points the next loop at CI/re-review instead of another nonexistent local commit.
 
-Summary: Aligned the issue journal handoff with the already-pushed PR state so the remaining review thread is addressed without changing code behavior.
+Summary: Aligned the issue journal handoff with the already-pushed PR state and pushed a journal-only follow-up for the remaining review thread.
 State hint: addressing_review
 Blocked reason: none
 Tests: not rerun; journal-only review fix
-Next action: push the journal update to `codex/issue-1485`, then wait for PR #1487 CI/re-review and resolve the thread if GitHub does not auto-clear it.
+Next action: wait for PR #1487 CI/re-review and resolve the remaining thread if GitHub does not auto-clear it.
 Failure signature: PRRT_kwDORgvdZ856mV3T
 
 ## Active Failure Context
@@ -35,7 +35,7 @@ Failure signature: PRRT_kwDORgvdZ856mV3T
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: the remaining review thread was valid because the journal handoff still said to commit and push even though `258a449` was already on PR `#1487`.
-- What changed: updated the `Next exact step` note in `.codex-supervisor/issue-journal.md` to reflect the already-pushed state and direct the next loop to CI/re-review instead of another local commit.
+- What changed: updated the `Next exact step` note in `.codex-supervisor/issue-journal.md` to reflect the already-pushed state, then pushed a journal-only follow-up so the next loop starts at CI/re-review instead of another local commit.
 - Current blocker: none.
 - Next exact step: monitor CI for PR #1487 and address any failing checks or new review feedback.
 - Verification gap: none; this turn only updates supervisor-facing journal text.
