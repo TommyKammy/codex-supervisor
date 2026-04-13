@@ -155,6 +155,10 @@ export class GitHubPullRequestHydrator {
     return this.hydrateForStatus(pr);
   }
 
+  private async runGhJsonCommand(args: string[], options: CommandOptions = {}): Promise<CommandResult> {
+    return this.runGhCommand(args, { ...options, stdoutCaptureLimitBytes: null });
+  }
+
   private async fetchConfiguredBotReviewSummary(
     prNumber: number,
     currentHeadOid: string,
@@ -295,7 +299,7 @@ export class GitHubPullRequestHydrator {
       }
     `;
 
-    const result = await this.runGhCommand([
+    const result = await this.runGhJsonCommand([
       "api",
       "graphql",
       "-f",

@@ -38,11 +38,15 @@ export class GitHubReviewSurfaceClient {
     );
   }
 
+  private async runGhJsonCommand(args: string[], options: CommandOptions = {}): Promise<CommandResult> {
+    return this.runGhCommand(args, { ...options, stdoutCaptureLimitBytes: null });
+  }
+
   async findOpenPullRequest(
     branch: string,
     options: { purpose?: "status" | "action" } = {},
   ): Promise<GitHubPullRequest | null> {
-    const result = await this.runGhCommand([
+    const result = await this.runGhJsonCommand([
       "pr",
       "list",
       "--repo",
@@ -64,7 +68,7 @@ export class GitHubReviewSurfaceClient {
     branch: string,
     options: { purpose?: "status" | "action" } = {},
   ): Promise<GitHubPullRequest | null> {
-    const result = await this.runGhCommand([
+    const result = await this.runGhJsonCommand([
       "pr",
       "list",
       "--repo",
@@ -88,7 +92,7 @@ export class GitHubReviewSurfaceClient {
   }
 
   async getPullRequest(prNumber: number): Promise<GitHubPullRequest> {
-    const result = await this.runGhCommand([
+    const result = await this.runGhJsonCommand([
       "pr",
       "view",
       String(prNumber),
@@ -105,7 +109,7 @@ export class GitHubReviewSurfaceClient {
     prNumber: number,
     options: { purpose?: "status" | "action" } = {},
   ): Promise<GitHubPullRequest | null> {
-    const result = await this.runGhCommand([
+    const result = await this.runGhJsonCommand([
       "pr",
       "view",
       String(prNumber),
@@ -183,7 +187,7 @@ export class GitHubReviewSurfaceClient {
       }
     `;
 
-    const result = await this.runGhCommand([
+    const result = await this.runGhJsonCommand([
       "api",
       "graphql",
       "-f",
@@ -215,7 +219,7 @@ export class GitHubReviewSurfaceClient {
   }
 
   async getChecks(prNumber: number): Promise<PullRequestCheck[]> {
-    const result = await this.runGhCommand([
+    const result = await this.runGhJsonCommand([
       "pr",
       "checks",
       String(prNumber),
@@ -234,7 +238,7 @@ export class GitHubReviewSurfaceClient {
       }
     }
 
-    const fallback = await this.runGhCommand([
+    const fallback = await this.runGhJsonCommand([
       "pr",
       "view",
       String(prNumber),
@@ -378,7 +382,7 @@ export class GitHubReviewSurfaceClient {
       }
     `;
 
-    const result = await this.runGhCommand([
+    const result = await this.runGhJsonCommand([
       "api",
       "graphql",
       "-f",
@@ -461,7 +465,7 @@ export class GitHubReviewSurfaceClient {
       }
     `;
 
-    const result = await this.runGhCommand([
+    const result = await this.runGhJsonCommand([
       "api",
       "graphql",
       "-f",

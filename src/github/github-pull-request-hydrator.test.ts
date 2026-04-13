@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { GitHubPullRequestHydrator } from "./github-pull-request-hydrator";
 import { GitHubPullRequest, SupervisorConfig } from "../core/types";
 
+const OUTPUT_TRUNCATION_MARKER = "\n...\n";
+
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
   return {
     repoPath: "/tmp/repo",
@@ -80,6 +82,17 @@ function createPullRequest(overrides: Partial<GitHubPullRequest> = {}): GitHubPu
     mergedAt: null,
     ...overrides,
   };
+}
+
+function truncateLikeDefaultStdoutCapture(value: string, limit = 64 * 1024): string {
+  if (value.length <= limit) {
+    return value;
+  }
+
+  const availableLength = Math.max(limit - OUTPUT_TRUNCATION_MARKER.length, 0);
+  const headLength = Math.ceil(availableLength / 2);
+  const tailLength = Math.floor(availableLength / 2);
+  return `${value.slice(0, headLength)}${OUTPUT_TRUNCATION_MARKER}${tailLength > 0 ? value.slice(-tailLength) : ""}`;
 }
 
 test("GitHubPullRequestHydrator classifies nitpick-only configured-bot top-level changes requests conservatively", async () => {
@@ -1048,4 +1061,67 @@ test("GitHubPullRequestHydrator records the current-head CI-green timestamp from
   assert.match(lifecycleQuery, /isRequired\s*\(pullRequestNumber:\s*\$number\)/);
   assert.match(lifecycleQuery, /CheckRun[\s\S]*completedAt/);
   assert.equal(ciGreenAt, "2026-03-13T02:05:00Z");
+});
+
+test("GitHubPullRequestHydrator hydrates large GraphQL payloads without parsing truncated stdout", async () => {
+  const config = createConfig();
+  const largeBody = "Blocking concern: ".concat("y".repeat(70_000));
+  const payload = JSON.stringify({
+    data: {
+      repository: {
+        pullRequest: {
+          reviewRequests: {
+            nodes: [],
+          },
+          reviews: {
+            nodes: [
+              {
+                submittedAt: "2026-04-14T01:02:03Z",
+                state: "CHANGES_REQUESTED",
+                body: largeBody,
+                commit: {
+                  oid: "head-44",
+                },
+                author: {
+                  login: "copilot-pull-request-reviewer",
+                },
+              },
+            ],
+          },
+          comments: {
+            nodes: [],
+          },
+          reviewThreads: {
+            nodes: [],
+          },
+          timelineItems: {
+            nodes: [
+              {
+                __typename: "ReviewRequestedEvent",
+                createdAt: "2026-04-14T01:00:00Z",
+                requestedReviewer: {
+                  login: "copilot-pull-request-reviewer",
+                },
+              },
+            ],
+          },
+          commits: {
+            nodes: [],
+          },
+        },
+      },
+    },
+  });
+
+  const hydrator = new GitHubPullRequestHydrator(config, async (_args, options) => ({
+    exitCode: 0,
+    stdout: options?.stdoutCaptureLimitBytes === null ? payload : truncateLikeDefaultStdoutCapture(payload),
+    stderr: "",
+  }));
+
+  const pr = await hydrator.hydrate(createPullRequest());
+
+  assert.equal(pr?.copilotReviewState, "arrived");
+  assert.equal(pr?.configuredBotTopLevelReviewStrength, "blocking");
+  assert.equal(pr?.configuredBotTopLevelReviewSubmittedAt, "2026-04-14T01:02:03Z");
 });
