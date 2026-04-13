@@ -71,11 +71,36 @@ export function shouldAutoRetryHandoffMissing(record: IssueRunRecord, config: Su
   );
 }
 
+function staleReviewBotRecoverySignature(record: Pick<IssueRunRecord, "last_failure_signature">): string {
+  return record.last_failure_signature ?? "stale_review_bot";
+}
+
+function canAutoRecoverCurrentStaleReviewBotHead(
+  record: Pick<
+    IssueRunRecord,
+    | "last_head_sha"
+    | "last_failure_signature"
+    | "last_stale_review_bot_reply_head_sha"
+    | "last_stale_review_bot_reply_signature"
+  >,
+): boolean {
+  const currentHeadSha = record.last_head_sha ?? null;
+  if (!currentHeadSha) {
+    return true;
+  }
+
+  return !(
+    record.last_stale_review_bot_reply_head_sha === currentHeadSha &&
+    record.last_stale_review_bot_reply_signature === staleReviewBotRecoverySignature(record)
+  );
+}
+
 export function shouldAutoRecoverStaleReviewBot(record: IssueRunRecord, config: SupervisorConfig): boolean {
   return (
     record.state === "blocked" &&
     record.blocked_reason === "stale_review_bot" &&
     record.pr_number !== null &&
+    canAutoRecoverCurrentStaleReviewBotHead(record) &&
     (config.staleConfiguredBotReviewPolicy === "reply_only" ||
       config.staleConfiguredBotReviewPolicy === "reply_and_resolve")
   );

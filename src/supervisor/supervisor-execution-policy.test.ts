@@ -366,3 +366,33 @@ test("shouldAutoRecoverStaleReviewBot only reopens tracked PR incidents when the
     staleConfiguredBotReviewPolicy: "reply_and_resolve",
   })), false);
 });
+
+test("shouldAutoRecoverStaleReviewBot suppresses stale configured-bot recovery after the current head and signature were already handled", () => {
+  const record = createRecord({
+    state: "blocked",
+    blocked_reason: "stale_review_bot",
+    pr_number: 44,
+    last_head_sha: "head-44",
+    last_failure_signature: "stalled-bot:thread-1",
+    last_stale_review_bot_reply_head_sha: "head-44",
+    last_stale_review_bot_reply_signature: "stalled-bot:thread-1",
+  });
+
+  assert.equal(shouldAutoRecoverStaleReviewBot(record, createConfig({ staleConfiguredBotReviewPolicy: "reply_only" })), false);
+  assert.equal(
+    shouldAutoRecoverStaleReviewBot(record, createConfig({ staleConfiguredBotReviewPolicy: "reply_and_resolve" })),
+    false,
+  );
+  assert.equal(shouldAutoRecoverStaleReviewBot(createRecord({
+    ...record,
+    last_stale_review_bot_reply_signature: "stalled-bot:thread-2",
+  }), createConfig({
+    staleConfiguredBotReviewPolicy: "reply_only",
+  })), true);
+  assert.equal(shouldAutoRecoverStaleReviewBot(createRecord({
+    ...record,
+    last_stale_review_bot_reply_head_sha: "head-43",
+  }), createConfig({
+    staleConfiguredBotReviewPolicy: "reply_only",
+  })), true);
+});
