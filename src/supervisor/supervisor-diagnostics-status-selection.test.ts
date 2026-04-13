@@ -2734,6 +2734,81 @@ test("status preserves draft tracked PR lifecycle when ready-for-review promotio
   assert.doesNotMatch(status, /^tracked_pr_mismatch /m);
 });
 
+test("status marks old-head ready-promotion blockers as stale in recovery guidance", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 175;
+  const prNumber = 275;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        branch,
+        pr_number: prNumber,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        blocked_reason: "verification",
+        last_error: "Configured local CI command failed before marking PR #275 ready.",
+        last_head_sha: "head-old-275",
+        last_failure_signature: "local-ci-gate-non_zero_exit",
+        latest_local_ci_result: {
+          outcome: "failed",
+          summary: "Configured local CI command failed before marking PR #275 ready.",
+          ran_at: "2026-03-13T00:10:00Z",
+          head_sha: "head-old-275",
+          execution_mode: "legacy_shell_string",
+          failure_class: "non_zero_exit",
+          remediation_target: "repo_owned_command",
+        },
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Tracked stale draft PR ready gate",
+    body: executionReadyBody("Surface stale draft PR ready-promotion blockers without implying the gate still fails."),
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const draftPr = createPullRequest({
+    number: prNumber,
+    headRefName: branch,
+    headRefOid: "head-new-275",
+    isDraft: true,
+    currentHeadCiGreenAt: "2026-03-13T00:12:00Z",
+  });
+
+  const supervisor = new Supervisor({
+    ...fixture.config,
+    localCiCommand: "npm run verify:paths",
+  });
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [trackedIssue],
+    listAllIssues: async () => [trackedIssue],
+    getPullRequestIfExists: async () => draftPr,
+    getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const report = await supervisor.statusReport();
+  assert.match(
+    report.detailedStatusLines.join("\n"),
+    /^tracked_pr_ready_promotion_blocked issue=#175 pr=#275 github_state=draft_pr local_state=blocked local_blocked_reason=verification stale_local_blocker=yes$/m,
+  );
+  assert.match(
+    report.detailedStatusLines.join("\n"),
+    /^recovery_guidance=PR #275 is still draft, but the stored ready-for-review verification blocker is stale relative to the current head\. Run a one-shot supervisor cycle to refresh tracked PR state before assuming the gate still fails\.$/m,
+  );
+  assert.doesNotMatch(report.detailedStatusLines.join("\n"), /The same blocker is still present/);
+});
+
 test("status surfaces host-local CI blocker details for tracked PR mismatches", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 171;
