@@ -2522,7 +2522,7 @@ test("handlePostTurnPullRequestTransitionsPhase refreshes tracked PR state after
   assert.equal(result.record.blocked_reason, null);
 });
 
-test("handlePostTurnPullRequestTransitionsPhase returns the reconciled snapshot even when stale_review_bot remains blocked after reply_and_resolve", async () => {
+test("handlePostTurnPullRequestTransitionsPhase refreshes the sticky stale-review status comment when same-head reply_and_resolve remains blocked on a different signature", async () => {
   const config = createConfig({
     reviewBotLogins: ["copilot-pull-request-reviewer"],
     staleConfiguredBotReviewPolicy: "reply_and_resolve",
@@ -2584,6 +2584,8 @@ test("handlePostTurnPullRequestTransitionsPhase returns the reconciled snapshot 
         pr_number: pr.number,
         last_head_sha: pr.headRefOid,
         blocked_reason: "stale_review_bot",
+        last_host_local_pr_blocker_comment_head_sha: pr.headRefOid,
+        last_host_local_pr_blocker_comment_signature: "stalled-bot:thread-1",
       }),
     },
   };
@@ -2608,6 +2610,7 @@ test("handlePostTurnPullRequestTransitionsPhase returns the reconciled snapshot 
     url: "https://example.test/review/118/2",
   };
   const passingChecks = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }] satisfies PullRequestCheck[];
+  const updateCalls: Array<{ commentId: number; body: string }> = [];
   let loadSnapshotCalls = 0;
 
   const result = await handlePostTurnPullRequestTransitionsPhase({
@@ -2616,6 +2619,30 @@ test("handlePostTurnPullRequestTransitionsPhase returns the reconciled snapshot 
     github: createDefaultGithub({
       addIssueComment: async () => {
         throw new Error("unexpected addIssueComment call");
+      },
+      getExternalReviewSurface: async () => ({
+        reviews: [],
+        issueComments: [
+          {
+            id: "comment-118",
+            databaseId: 118,
+            body: [
+              "Tracked PR head `head-118` remains blocked on stale configured-bot review state.",
+              "",
+              "<!-- codex-supervisor:tracked-pr-status-comment issue=102 pr=118 kind=status -->",
+            ].join("\n"),
+            createdAt: "2026-03-13T02:08:00Z",
+            url: "https://example.test/comments/118",
+            viewerDidAuthor: true,
+            author: {
+              login: "codex-supervisor[bot]",
+              typeName: "Bot",
+            },
+          },
+        ],
+      }),
+      updateIssueComment: async (commentId: number, body: string) => {
+        updateCalls.push({ commentId, body });
       },
       replyToReviewThread: async () => undefined,
       resolveReviewThread: async () => undefined,
@@ -2673,6 +2700,12 @@ test("handlePostTurnPullRequestTransitionsPhase returns the reconciled snapshot 
   assert.equal(result.record.blocked_reason, "stale_review_bot");
   assert.equal(result.record.last_failure_signature, "stalled-bot:thread-2");
   assert.equal(result.record.last_failure_context?.url, "https://example.test/review/118/2");
+  assert.equal(result.record.last_host_local_pr_blocker_comment_signature, "stalled-bot:thread-2");
+  assert.equal(updateCalls.length, 1);
+  assert.equal(updateCalls[0]?.commentId, 118);
+  assert.match(updateCalls[0]?.body ?? "", /reason code: `stale_review_bot`/i);
+  assert.match(updateCalls[0]?.body ?? "", /src\/review-b\.ts line=84/i);
+  assert.match(updateCalls[0]?.body ?? "", /<!-- codex-supervisor:tracked-pr-status-comment issue=102 pr=118 kind=status -->/);
   assert.deepEqual(
     result.reviewThreads.map((thread) => thread.id),
     ["thread-2"],
