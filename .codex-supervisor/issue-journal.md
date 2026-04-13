@@ -1,36 +1,34 @@
-# Issue #1467: Document tmux as the supported macOS loop host and fail closed on direct launchd loop install
+# Issue #1472: Bug: blocked stale_review_bot tracked PRs are never revisited after enabling reply_and_resolve
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1467
-- Branch: codex/issue-1467
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1472
+- Branch: codex/issue-1472
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 96fcafd4268ff0fafc4c1eef7d0d8bf5c415b5eb
+- Last head SHA: 19f21f8eb46774e52e72fee7ff019bcc6419b492
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-04-12T22:50:15.098Z
+- Updated at: 2026-04-13T06:56:25.806Z
 
 ## Latest Codex Summary
-- Reproduced the unsupported macOS direct launchd loop path with a focused launcher-assets regression, then changed `scripts/install-launchd.sh` to fail closed with explicit tmux/WebUI guidance instead of installing a loop LaunchAgent.
-- Updated `README.md`, `docs/getting-started.md`, and `docs/getting-started.ja.md` so macOS loop hosting points to the supported tmux start/stop scripts, while Linux systemd and WebUI launchd guidance remain distinct. Added focused docs assertions and refreshed matching configuration wording required by the existing getting-started doc suite.
-- Verified with `npx tsx --test src/getting-started-docs.test.ts`, `npx tsx --test src/managed-restart-launcher-assets.test.ts`, and `npm run build`.
+- Added a stale-review-bot auto-recovery gate so tracked PR records already blocked as `stale_review_bot` become selectable and recoverable again when `staleConfiguredBotReviewPolicy` is `reply_only` or `reply_and_resolve`.
+- Extended supervisor-side coverage for selection eligibility, blocked-state reconciliation, and explain diagnostics to prove the issue reproduces and is fixed without broadening `diagnose_only`.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: The macOS loop host should be tmux only; the old direct launchd installer was the unsupported contract that needed to fail closed, while docs needed to state the supported tmux start/stop path explicitly.
-- What changed: Replaced the direct launchd loop installer body with a fail-closed message that points operators to `./scripts/start-loop-tmux.sh`, `./scripts/stop-loop-tmux.sh`, and `./scripts/install-launchd-web.sh`. Updated English and Japanese getting-started docs plus README macOS loop guidance. Added focused regression coverage for the installer behavior and the macOS tmux wording. Added minimal matching phrasing in `docs/configuration.md` so the existing getting-started docs suite remains green.
-- Current blocker: none
-- Next exact step: Commit the checkpoint and leave the branch ready for PR creation or the next supervisor pass.
-- Verification gap: No live manual tmux session launch on macOS host; verification is focused on script behavior, docs wording, and build integrity.
-- Files touched: .codex-supervisor/issue-journal.md; README.md; docs/configuration.md; docs/getting-started.md; docs/getting-started.ja.md; scripts/install-launchd.sh; src/getting-started-docs.test.ts; src/managed-restart-launcher-assets.test.ts; src/readme-docs.test.ts
-- Rollback concern: Low; the change narrows macOS loop installation behavior by failing closed and only adjusts operator docs/tests around the supported tmux path.
-- Last focused command: npm run build
+- Hypothesis: the stale configured-bot reply/resolve handler already works in `post-turn`, but supervisor selection/recovery treated `blocked_reason=stale_review_bot` as a permanent manual block, so already-blocked tracked PR incidents never re-entered that handler after the policy changed.
+- What changed: added `shouldAutoRecoverStaleReviewBot()` in supervisor execution policy, used it in selection eligibility and explain retry-state/manual-block reasoning, and allowed tracked-PR blocked-state reconciliation to revisit `stale_review_bot` records when the policy is `reply_only` or `reply_and_resolve`.
+- Current blocker: none.
+- Next exact step: commit the focused change set and proceed to PR/update flow if requested by the supervisor loop.
+- Verification gap: full `npm test -- <file>` still pulls unrelated suite-wide failures in this repo, so focused verification used `npx tsx --test` with the exact requested files instead.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/supervisor-execution-policy.ts`, `src/supervisor/supervisor-selection-issue-explain.ts`, `src/recovery-reconciliation.ts`, `src/supervisor/supervisor-execution-policy.test.ts`, `src/supervisor/supervisor-diagnostics-explain.test.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`.
+- Rollback concern: low; the new recovery path is limited to tracked PR records already blocked as `stale_review_bot` and still defers actual reply/resolve safety checks to the existing post-turn stale-bot handler.
+- Last focused command: `npx tsx --test src/post-turn-pull-request.test.ts src/supervisor/supervisor-execution-policy.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`
 ### Scratchpad
-- Focused reproducer that failed before the fix: `npx tsx --test src/managed-restart-launcher-assets.test.ts`
-- Focused verification after the fix: `npx tsx --test src/getting-started-docs.test.ts src/managed-restart-launcher-assets.test.ts src/readme-docs.test.ts`
+- Keep this section short. The supervisor may compact older notes automatically.

@@ -449,6 +449,63 @@ Show stale configured-bot review blockers distinctly in explain output.
   assert.match(explanation, /^reason_2=local_state blocked$/m);
 });
 
+test("explain marks tracked stale configured-bot blockers runnable after reply_and_resolve is enabled", async () => {
+  const fixture = await createSupervisorFixture();
+  fixture.config.staleConfiguredBotReviewPolicy = "reply_and_resolve";
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "97": createRecord({
+        issue_number: 97,
+        state: "blocked",
+        branch: branchName(fixture.config, 97),
+        workspace: path.join(fixture.workspaceRoot, "issue-97"),
+        journal_path: null,
+        pr_number: 197,
+        blocked_reason: "stale_review_bot",
+        last_error: "configured bot review stayed stale on the current head",
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const blockedIssue: GitHubIssue = {
+    number: 97,
+    title: "Recoverable stale configured bot blocker",
+    body: `## Summary
+Show recoverable stale configured-bot review blockers as runnable when auto-handling is enabled.
+
+## Scope
+- reflect auto-recoverable stale configured-bot blockers in explain output
+
+## Acceptance criteria
+- explain reports the issue as runnable once reply_and_resolve can handle the stale bot review
+
+## Verification
+- npm test -- src/supervisor/supervisor-diagnostics-explain.test.ts`,
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: "https://example.test/issues/97",
+    labels: [],
+    state: "OPEN",
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => blockedIssue,
+    listAllIssues: async () => [blockedIssue],
+    listCandidateIssues: async () => [blockedIssue],
+  };
+
+  const explanation = await supervisor.explain(97);
+
+  assert.match(explanation, /^state=blocked$/m);
+  assert.match(explanation, /^blocked_reason=stale_review_bot$/m);
+  assert.match(explanation, /^runnable=yes$/m);
+  assert.doesNotMatch(explanation, /^reason_1=manual_block stale_review_bot$/m);
+  assert.match(explanation, /^selection_reason=ready execution_ready=yes depends_on=none execution_order=none predecessors=none retry_state=stale_review_bot_recovery:reply_and_resolve$/m);
+});
+
 test("explain reports tracked PR mismatches when GitHub is ready but local state is still blocked", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 171;

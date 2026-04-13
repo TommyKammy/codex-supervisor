@@ -13,6 +13,7 @@ import {
   formatExecutionReadyMissingFields,
   hasAttemptBudgetRemaining,
   isEligibleForSelection,
+  shouldAutoRecoverStaleReviewBot,
   shouldAutoRetryBlockedVerification,
   shouldAutoRetryHandoffMissing,
   shouldEnforceExecutionReady,
@@ -141,7 +142,7 @@ export function buildNonRunnableLocalStateReasons(record: IssueRunRecord, config
     if (
       record.blocked_reason === "manual_review" ||
       record.blocked_reason === "manual_pr_closed" ||
-      record.blocked_reason === "stale_review_bot"
+      (record.blocked_reason === "stale_review_bot" && !shouldAutoRecoverStaleReviewBot(record, config))
     ) {
       reasons.push(`manual_block ${record.blocked_reason}`);
     } else if (record.blocked_reason === "verification" && !shouldAutoRetryBlockedVerification(record, config)) {
@@ -521,6 +522,10 @@ function formatRetryState(record: IssueRunRecord | undefined, config: Supervisor
 
   if (shouldAutoRetryHandoffMissing(record, config)) {
     return "handoff_missing_retry";
+  }
+
+  if (shouldAutoRecoverStaleReviewBot(record, config)) {
+    return `stale_review_bot_recovery:${config.staleConfiguredBotReviewPolicy}`;
   }
 
   return `resume:${record.state}`;
