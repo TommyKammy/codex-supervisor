@@ -1146,6 +1146,108 @@ async function loadOpenPullRequestSnapshot(
   return { pr, checks, reviewThreads };
 }
 
+async function applyTrackedPrLifecycleState(args: {
+  config: SupervisorConfig;
+  stateStore: Pick<StateStore, "touch" | "save">;
+  state: SupervisorStateFile;
+  syncJournal: IssueJournalSync;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+  repeatedLocalReviewSignatureCount: number;
+  derivePullRequestLifecycleSnapshot: HandlePostTurnPullRequestTransitionsArgs["derivePullRequestLifecycleSnapshot"];
+  applyFailureSignature: HandlePostTurnPullRequestTransitionsArgs["applyFailureSignature"];
+  blockedReasonFromReviewState: HandlePostTurnPullRequestTransitionsArgs["blockedReasonFromReviewState"];
+  summarizeChecks: HandlePostTurnPullRequestTransitionsArgs["summarizeChecks"];
+  manualReviewThreads: HandlePostTurnPullRequestTransitionsArgs["manualReviewThreads"];
+  configuredBotReviewThreads: HandlePostTurnPullRequestTransitionsArgs["configuredBotReviewThreads"];
+  mergeConflictDetected: HandlePostTurnPullRequestTransitionsArgs["mergeConflictDetected"];
+}): Promise<{ record: IssueRunRecord; effectiveFailureContext: FailureContext | null }> {
+  const refreshedLifecycle = args.derivePullRequestLifecycleSnapshot(
+    args.record,
+    args.pr,
+    args.checks,
+    args.reviewThreads,
+    { repeated_local_review_signature_count: args.repeatedLocalReviewSignatureCount },
+  );
+  const localReviewRepairSummary =
+    refreshedLifecycle.nextState === "local_review_fix"
+      ? localReviewRepairContinuationSummary(args.config, refreshedLifecycle.recordForState, args.pr)
+      : null;
+  const postReadyLocalReviewFailureContext =
+    refreshedLifecycle.nextState === "blocked" &&
+    localReviewRetryLoopStalled(
+      args.config,
+      refreshedLifecycle.recordForState,
+      args.pr,
+      args.checks,
+      args.reviewThreads,
+      args.manualReviewThreads,
+      args.configuredBotReviewThreads,
+      args.summarizeChecks,
+      args.mergeConflictDetected,
+    )
+      ? localReviewStallFailureContext(refreshedLifecycle.recordForState)
+      : refreshedLifecycle.nextState === "blocked" &&
+          localReviewHighSeverityNeedsBlock(args.config, refreshedLifecycle.recordForState, args.pr)
+        ? localReviewFailureContext(refreshedLifecycle.recordForState)
+        : refreshedLifecycle.nextState === "local_review_fix"
+          ? localReviewRepairContinuationFailureContext(args.config, refreshedLifecycle.recordForState, args.pr)
+          : null;
+  const effectiveFailureContext = refreshedLifecycle.failureContext ?? postReadyLocalReviewFailureContext;
+  const updatedRecord = args.stateStore.touch(args.record, {
+    pr_number: args.pr.number,
+    ...refreshedLifecycle.reviewWaitPatch,
+    ...refreshedLifecycle.copilotRequestObservationPatch,
+    merge_readiness_last_evaluated_at: refreshedLifecycle.mergeLatencyVisibilityPatch.merge_readiness_last_evaluated_at,
+    provider_success_head_sha: refreshedLifecycle.mergeLatencyVisibilityPatch.provider_success_head_sha,
+    provider_success_observed_at: refreshedLifecycle.mergeLatencyVisibilityPatch.provider_success_observed_at,
+    ...refreshedLifecycle.copilotTimeoutPatch,
+    state: refreshedLifecycle.nextState,
+    last_head_sha: args.pr.headRefOid,
+    repeated_local_review_signature_count: args.repeatedLocalReviewSignatureCount,
+    last_error:
+      refreshedLifecycle.nextState === "blocked" && effectiveFailureContext
+        ? truncate(effectiveFailureContext.summary, 1000)
+        : localReviewRepairSummary
+          ? truncate(localReviewRepairSummary, 1000)
+          : args.record.last_error,
+    last_failure_context: effectiveFailureContext,
+    ...args.applyFailureSignature(args.record, effectiveFailureContext),
+    blocked_reason:
+      refreshedLifecycle.nextState === "blocked"
+        ? args.blockedReasonFromReviewState(
+            refreshedLifecycle.recordForState,
+            args.pr,
+            args.checks,
+            args.reviewThreads,
+          ) ??
+          ((localReviewRetryLoopStalled(
+            args.config,
+            refreshedLifecycle.recordForState,
+            args.pr,
+            args.checks,
+            args.reviewThreads,
+            args.manualReviewThreads,
+            args.configuredBotReviewThreads,
+            args.summarizeChecks,
+            args.mergeConflictDetected,
+          ) ||
+            localReviewHighSeverityNeedsBlock(args.config, refreshedLifecycle.recordForState, args.pr))
+            ? "verification"
+            : null)
+        : null,
+  });
+  args.state.issues[String(updatedRecord.issue_number)] = updatedRecord;
+  await args.stateStore.save(args.state);
+  await args.syncJournal(updatedRecord);
+  return {
+    record: updatedRecord,
+    effectiveFailureContext,
+  };
+}
+
 export async function handlePostTurnPullRequestTransitionsPhase(
   args: HandlePostTurnPullRequestTransitionsArgs,
 ): Promise<PostTurnPullRequestResult> {
@@ -1507,7 +1609,7 @@ export async function handlePostTurnPullRequestTransitionsPhase(
     await github.markPullRequestReady(refreshed.pr.number);
   }
 
-  const postReady = await loadOpenPullRequestSnapshotImpl(pr.number);
+  let postReady = await loadOpenPullRequestSnapshotImpl(pr.number);
   const currentHeadLocalReviewTracked =
     record.last_head_sha === postReady.pr.headRefOid && record.local_review_head_sha === postReady.pr.headRefOid;
   const retryLoopCandidate =
@@ -1529,82 +1631,26 @@ export async function handlePostTurnPullRequestTransitionsPhase(
       : !ranLocalReviewThisCycle && currentHeadLocalReviewTracked
         ? 0
         : record.repeated_local_review_signature_count;
-  const refreshedLifecycle = args.derivePullRequestLifecycleSnapshot(
+  let lifecycleResult = await applyTrackedPrLifecycleState({
+    config,
+    stateStore,
+    state,
+    syncJournal,
     record,
-    postReady.pr,
-    postReady.checks,
-    postReady.reviewThreads,
-    { repeated_local_review_signature_count: repeatedLocalReviewSignatureCount },
-  );
-  const localReviewRepairSummary =
-    refreshedLifecycle.nextState === "local_review_fix"
-      ? localReviewRepairContinuationSummary(config, refreshedLifecycle.recordForState, postReady.pr)
-      : null;
-  const postReadyLocalReviewFailureContext =
-    refreshedLifecycle.nextState === "blocked" &&
-    localReviewRetryLoopStalled(
-      config,
-      refreshedLifecycle.recordForState,
-      postReady.pr,
-      postReady.checks,
-      postReady.reviewThreads,
-      args.manualReviewThreads,
-      args.configuredBotReviewThreads,
-      args.summarizeChecks,
-      args.mergeConflictDetected,
-        )
-      ? localReviewStallFailureContext(refreshedLifecycle.recordForState)
-      : refreshedLifecycle.nextState === "blocked" &&
-          localReviewHighSeverityNeedsBlock(config, refreshedLifecycle.recordForState, postReady.pr)
-        ? localReviewFailureContext(refreshedLifecycle.recordForState)
-        : refreshedLifecycle.nextState === "local_review_fix"
-          ? localReviewRepairContinuationFailureContext(config, refreshedLifecycle.recordForState, postReady.pr)
-          : null;
-  const effectiveFailureContext = refreshedLifecycle.failureContext ?? postReadyLocalReviewFailureContext;
-  record = stateStore.touch(record, {
-    pr_number: postReady.pr.number,
-    ...refreshedLifecycle.reviewWaitPatch,
-    ...refreshedLifecycle.copilotRequestObservationPatch,
-    ...refreshedLifecycle.mergeLatencyVisibilityPatch,
-    ...refreshedLifecycle.copilotTimeoutPatch,
-    state: refreshedLifecycle.nextState,
-    last_head_sha: postReady.pr.headRefOid,
-    repeated_local_review_signature_count: repeatedLocalReviewSignatureCount,
-    last_error:
-      refreshedLifecycle.nextState === "blocked" && effectiveFailureContext
-        ? truncate(effectiveFailureContext.summary, 1000)
-        : localReviewRepairSummary
-          ? truncate(localReviewRepairSummary, 1000)
-          : record.last_error,
-    last_failure_context: effectiveFailureContext,
-    ...args.applyFailureSignature(record, effectiveFailureContext),
-    blocked_reason:
-      refreshedLifecycle.nextState === "blocked"
-        ? args.blockedReasonFromReviewState(
-            refreshedLifecycle.recordForState,
-            postReady.pr,
-            postReady.checks,
-            postReady.reviewThreads,
-          ) ??
-          ((localReviewRetryLoopStalled(
-            config,
-            refreshedLifecycle.recordForState,
-            postReady.pr,
-            postReady.checks,
-            postReady.reviewThreads,
-            args.manualReviewThreads,
-            args.configuredBotReviewThreads,
-            args.summarizeChecks,
-            args.mergeConflictDetected,
-          ) ||
-            localReviewHighSeverityNeedsBlock(config, refreshedLifecycle.recordForState, postReady.pr))
-            ? "verification"
-            : null)
-        : null,
+    pr: postReady.pr,
+    checks: postReady.checks,
+    reviewThreads: postReady.reviewThreads,
+    repeatedLocalReviewSignatureCount,
+    derivePullRequestLifecycleSnapshot: args.derivePullRequestLifecycleSnapshot,
+    applyFailureSignature: args.applyFailureSignature,
+    blockedReasonFromReviewState: args.blockedReasonFromReviewState,
+    summarizeChecks: args.summarizeChecks,
+    manualReviewThreads: args.manualReviewThreads,
+    configuredBotReviewThreads: args.configuredBotReviewThreads,
+    mergeConflictDetected: args.mergeConflictDetected,
   });
-  state.issues[String(record.issue_number)] = record;
-  await stateStore.save(state);
-  await syncJournal(record);
+  record = lifecycleResult.record;
+  let effectiveFailureContext = lifecycleResult.effectiveFailureContext;
   record = await maybeCommentOnTrackedPrPersistentStatus({
     github,
     stateStore,
@@ -1619,6 +1665,59 @@ export async function handlePostTurnPullRequestTransitionsPhase(
     failureContext: effectiveFailureContext,
     summarizeChecks: args.summarizeChecks,
   });
+  const staleReviewBotReplySignature =
+    effectiveFailureContext?.signature ?? TRACKED_PR_STATUS_COMMENT_REASON_CODE_STALE_REVIEW_BOT;
+  const shouldRefreshAfterReplyAndResolve =
+    config.staleConfiguredBotReviewPolicy === "reply_and_resolve" &&
+    record.state === "blocked" &&
+    record.blocked_reason === "stale_review_bot" &&
+    record.last_stale_review_bot_reply_head_sha === postReady.pr.headRefOid &&
+    record.last_stale_review_bot_reply_signature === staleReviewBotReplySignature;
+  if (shouldRefreshAfterReplyAndResolve) {
+    const reconciled = await loadOpenPullRequestSnapshotImpl(postReady.pr.number);
+    if (reconciled.pr.headRefOid === postReady.pr.headRefOid) {
+      lifecycleResult = await applyTrackedPrLifecycleState({
+        config,
+        stateStore,
+        state,
+        syncJournal,
+        record,
+        pr: reconciled.pr,
+        checks: reconciled.checks,
+        reviewThreads: reconciled.reviewThreads,
+        repeatedLocalReviewSignatureCount: record.repeated_local_review_signature_count,
+        derivePullRequestLifecycleSnapshot: args.derivePullRequestLifecycleSnapshot,
+        applyFailureSignature: args.applyFailureSignature,
+        blockedReasonFromReviewState: args.blockedReasonFromReviewState,
+        summarizeChecks: args.summarizeChecks,
+        manualReviewThreads: args.manualReviewThreads,
+        configuredBotReviewThreads: args.configuredBotReviewThreads,
+        mergeConflictDetected: args.mergeConflictDetected,
+      });
+      const reconciledRecord = lifecycleResult.record;
+      const reconciledBlockedReason =
+        reconciledRecord.state === "blocked" ? reconciledRecord.blocked_reason : null;
+      if (reconciledRecord.state !== "blocked" || reconciledBlockedReason !== "stale_review_bot") {
+        postReady = reconciled;
+        record = reconciledRecord;
+        effectiveFailureContext = lifecycleResult.effectiveFailureContext;
+        record = await maybeCommentOnTrackedPrPersistentStatus({
+          github,
+          stateStore,
+          state,
+          record,
+          pr: postReady.pr,
+          checks: postReady.checks,
+          reviewThreads: postReady.reviewThreads,
+          manualReviewThreadCount: args.manualReviewThreads(config, postReady.reviewThreads).length,
+          syncJournal,
+          config,
+          failureContext: effectiveFailureContext,
+          summarizeChecks: args.summarizeChecks,
+        });
+      }
+    }
+  }
   if (
     record.state === "draft_pr"
     && reviewBotDiagnostics(
