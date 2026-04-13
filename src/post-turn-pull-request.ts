@@ -167,6 +167,16 @@ function buildTrackedPrHostLocalBlockerComment(args: {
   ].join("\n");
 }
 
+function observedTrackedPrHostLocalBlockerPatch(args: {
+  pr: Pick<GitHubPullRequest, "headRefOid">;
+  blockerSignature: string | null;
+}): Pick<IssueRunRecord, "last_observed_host_local_pr_blocker_signature" | "last_observed_host_local_pr_blocker_head_sha"> {
+  return {
+    last_observed_host_local_pr_blocker_head_sha: args.pr.headRefOid,
+    last_observed_host_local_pr_blocker_signature: args.blockerSignature,
+  };
+}
+
 function summarizeWorkstationLocalPathFirstFix(details: string[] | null | undefined): string | null {
   if (!details || details.length === 0) {
     return null;
@@ -1490,6 +1500,10 @@ export async function handlePostTurnPullRequestTransitionsPhase(
         last_failure_context: failureContext,
         ...args.applyFailureSignature(record, failureContext),
         blocked_reason: "verification",
+        ...observedTrackedPrHostLocalBlockerPatch({
+          pr: refreshed.pr,
+          blockerSignature: failureContext?.signature ?? null,
+        }),
       });
       state.issues[String(record.issue_number)] = record;
       await stateStore.save(state);
@@ -1537,6 +1551,10 @@ export async function handlePostTurnPullRequestTransitionsPhase(
         last_failure_context: failureContext,
         ...args.applyFailureSignature(record, failureContext),
         blocked_reason: "verification",
+        ...observedTrackedPrHostLocalBlockerPatch({
+          pr: refreshed.pr,
+          blockerSignature: failureContext?.signature ?? null,
+        }),
       });
       state.issues[String(record.issue_number)] = record;
       await stateStore.save(state);
@@ -1569,6 +1587,8 @@ export async function handlePostTurnPullRequestTransitionsPhase(
             head_sha: refreshed.pr.headRefOid,
           }
         : null,
+      last_observed_host_local_pr_blocker_signature: null,
+      last_observed_host_local_pr_blocker_head_sha: null,
     });
     state.issues[String(record.issue_number)] = record;
     await stateStore.save(state);
@@ -1588,6 +1608,10 @@ export async function handlePostTurnPullRequestTransitionsPhase(
         last_failure_context: failureContext,
         ...args.applyFailureSignature(record, failureContext),
         blocked_reason: "verification",
+        ...observedTrackedPrHostLocalBlockerPatch({
+          pr: refreshed.pr,
+          blockerSignature: failureContext.signature,
+        }),
       });
       state.issues[String(record.issue_number)] = record;
       await stateStore.save(state);

@@ -204,6 +204,14 @@ export class StateStore {
         hasOwn(patch, "last_blocker_signature") ? patch.last_blocker_signature ?? null : record.last_blocker_signature ?? null,
       last_failure_signature:
         hasOwn(patch, "last_failure_signature") ? patch.last_failure_signature ?? null : record.last_failure_signature ?? null,
+      last_observed_host_local_pr_blocker_signature:
+        hasOwn(patch, "last_observed_host_local_pr_blocker_signature")
+          ? patch.last_observed_host_local_pr_blocker_signature ?? null
+          : record.last_observed_host_local_pr_blocker_signature ?? null,
+      last_observed_host_local_pr_blocker_head_sha:
+        hasOwn(patch, "last_observed_host_local_pr_blocker_head_sha")
+          ? patch.last_observed_host_local_pr_blocker_head_sha ?? null
+          : record.last_observed_host_local_pr_blocker_head_sha ?? null,
       last_host_local_pr_blocker_comment_signature:
         hasOwn(patch, "last_host_local_pr_blocker_comment_signature")
           ? patch.last_host_local_pr_blocker_comment_signature ?? null

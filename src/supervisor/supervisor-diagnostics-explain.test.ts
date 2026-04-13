@@ -726,6 +726,98 @@ test("explain marks same-head ready-promotion blockers as stale when fresh block
   assert.doesNotMatch(explanation, /The same blocker is still present/);
 });
 
+test("explain keeps same-head host-local ready-promotion blockers current when the current head observation exists without a persisted blocker comment", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 177;
+  const prNumber = 277;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        branch,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: prNumber,
+        blocked_reason: "verification",
+        last_error: "Tracked durable artifacts failed workstation-local path hygiene before marking PR #277 ready.",
+        last_head_sha: "head-draft-277",
+        last_failure_signature: "workstation-local-path-hygiene-failed",
+        last_observed_host_local_pr_blocker_head_sha: "head-draft-277",
+        last_observed_host_local_pr_blocker_signature: "workstation-local-path-hygiene-failed",
+        last_tracked_pr_progress_snapshot: JSON.stringify({
+          headRefOid: "head-old-277",
+          reviewDecision: null,
+          mergeStateStatus: "CLEAN",
+          copilotReviewState: null,
+          copilotReviewRequestedAt: null,
+          copilotReviewArrivedAt: null,
+          configuredBotCurrentHeadObservedAt: null,
+          configuredBotCurrentHeadStatusState: null,
+          currentHeadCiGreenAt: "2026-03-13T00:08:00Z",
+          configuredBotRateLimitedAt: null,
+          configuredBotDraftSkipAt: null,
+          configuredBotTopLevelReviewStrength: null,
+          configuredBotTopLevelReviewSubmittedAt: null,
+          checks: ["build:pass:SUCCESS:CI"],
+          unresolvedReviewThreadIds: [],
+        }),
+        latest_local_ci_result: null,
+        last_host_local_pr_blocker_comment_signature: null,
+        last_host_local_pr_blocker_comment_head_sha: null,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Tracked current same-head draft PR ready gate",
+    body: executionReadyBody("Explain should surface current same-head ready-promotion blockers when comment publication is unavailable."),
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const draftPr = createPullRequest({
+    number: prNumber,
+    headRefName: branch,
+    headRefOid: "head-draft-277",
+    isDraft: true,
+  });
+
+  const supervisor = new Supervisor({
+    ...fixture.config,
+    localCiCommand: "npm run verify:paths",
+  });
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => trackedIssue,
+    listAllIssues: async () => [trackedIssue],
+    listCandidateIssues: async () => [trackedIssue],
+    resolvePullRequestForBranch: async () => draftPr,
+    getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const explanation = await supervisor.explain(issueNumber);
+
+  assert.match(
+    explanation,
+    /^tracked_pr_ready_promotion_blocked issue=#177 pr=#277 github_state=draft_pr local_state=blocked local_blocked_reason=verification stale_local_blocker=yes$/m,
+  );
+  assert.match(
+    explanation,
+    /^recovery_guidance=PR #277 is still draft because ready-for-review promotion is blocked by local verification\. The same blocker is still present, so rerunning the supervisor alone will not help\./m,
+  );
+  assert.doesNotMatch(
+    explanation,
+    /stored ready-for-review verification blocker is stale relative to the current head/,
+  );
+});
+
 test("explain reports bootstrap repos as not ready for expected CI and review signals", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 181;

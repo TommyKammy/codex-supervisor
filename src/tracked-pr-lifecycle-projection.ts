@@ -56,6 +56,9 @@ export function resetTrackedPrHeadScopedStateOnAdvance(
   const blockerCommentHeadStale =
     record.last_host_local_pr_blocker_comment_head_sha != null
     && record.last_host_local_pr_blocker_comment_head_sha !== nextHeadSha;
+  const observedHostLocalBlockerHeadStale =
+    record.last_observed_host_local_pr_blocker_head_sha != null
+    && record.last_observed_host_local_pr_blocker_head_sha !== nextHeadSha;
   const localCiHeadStale =
     record.latest_local_ci_result?.head_sha != null
     && record.latest_local_ci_result.head_sha !== nextHeadSha;
@@ -64,6 +67,7 @@ export function resetTrackedPrHeadScopedStateOnAdvance(
     || externalReviewHeadStale
     || reviewFollowUpHeadStale
     || blockerCommentHeadStale
+    || observedHostLocalBlockerHeadStale
     || localCiHeadStale;
 
   if ((record.last_head_sha === null || record.last_head_sha === nextHeadSha) && !headScopedStateDiverged) {
@@ -96,6 +100,8 @@ export function resetTrackedPrHeadScopedStateOnAdvance(
     external_review_missed_findings_count: 0,
     review_follow_up_head_sha: null,
     review_follow_up_remaining: 0,
+    last_observed_host_local_pr_blocker_signature: null,
+    last_observed_host_local_pr_blocker_head_sha: null,
     last_host_local_pr_blocker_comment_signature: null,
     last_host_local_pr_blocker_comment_head_sha: null,
     processed_review_thread_ids: [],
