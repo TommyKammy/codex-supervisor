@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import { GitHubIssue, SupervisorStateFile } from "./core/types";
 import { GitHubInventoryRefreshError } from "./github";
 import { RecoveryEvent, runOnceCyclePrelude } from "./run-once-cycle-prelude";
-import { createRecord } from "./supervisor/supervisor-test-helpers";
+import {
+  shouldAutoRecoverStaleReviewBot,
+  shouldReconcileTrackedPrStaleReviewBot,
+} from "./supervisor/supervisor-execution-policy";
+import { createConfig, createRecord } from "./supervisor/supervisor-test-helpers";
 
 test("runOnceCyclePrelude loads state and aggregates recovery setup events in order", async () => {
   const state: SupervisorStateFile = {
@@ -1520,7 +1524,8 @@ test("runOnceCyclePrelude rehydrates blocked tracked PRs during degraded invento
   assert.equal(result.state.issues["77"]?.last_failure_signature, null);
 });
 
-test("runOnceCyclePrelude rehydrates auto-recoverable stale review bot tracked PRs during degraded inventory refresh", async () => {
+test("runOnceCyclePrelude rehydrates same-head stale review bot tracked PRs during degraded inventory refresh even after auto-handle dedupe is recorded", async () => {
+  const config = createConfig({ staleConfiguredBotReviewPolicy: "reply_and_resolve" });
   const state: SupervisorStateFile = {
     activeIssueNumber: null,
     issues: {
@@ -1531,6 +1536,8 @@ test("runOnceCyclePrelude rehydrates auto-recoverable stale review bot tracked P
         blocked_reason: "stale_review_bot",
         last_head_sha: "head-170",
         last_failure_signature: "stale-configured-bot-review",
+        last_stale_review_bot_reply_head_sha: "head-170",
+        last_stale_review_bot_reply_signature: "stale-configured-bot-review",
       }),
     },
   };
@@ -1540,6 +1547,9 @@ test("runOnceCyclePrelude rehydrates auto-recoverable stale review bot tracked P
     options?: { onlyTrackedPrStates?: boolean };
   }> = [];
 
+  assert.equal(shouldAutoRecoverStaleReviewBot(state.issues["77"]!, config), false);
+  assert.equal(shouldReconcileTrackedPrStaleReviewBot(state.issues["77"]!, config), true);
+
   const result = await runOnceCyclePrelude({
     stateStore: {
       load: async () => state,
@@ -1547,7 +1557,7 @@ test("runOnceCyclePrelude rehydrates auto-recoverable stale review bot tracked P
     },
     carryoverRecoveryEvents: [],
     shouldReconcileTrackedBlockedRecordDuringDegradedContinuation: (record) =>
-      record.issue_number === 77,
+      shouldReconcileTrackedPrStaleReviewBot(record, config),
     reconcileStaleActiveIssueReservation: async () => [],
     handleAuthFailure: async () => null,
     listAllIssues: async () => {
