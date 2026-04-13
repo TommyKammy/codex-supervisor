@@ -93,6 +93,7 @@ import {
   incrementAttemptCounters,
   isVerificationBlockedMessage,
   shouldAutoRecoverStaleReviewBot,
+  shouldReconcileTrackedPrStaleReviewBot,
   shouldAutoRetryBlockedVerification,
   shouldAutoRetryHandoffMissing,
 } from "./supervisor-execution-policy";
@@ -1039,7 +1040,7 @@ export class Supervisor {
       carryoverRecoveryEvents,
       emitEvent: this.onEvent,
       shouldReconcileTrackedBlockedRecordDuringDegradedContinuation: (record) =>
-        shouldAutoRecoverStaleReviewBot(record, this.config),
+        shouldReconcileTrackedPrStaleReviewBot(record, this.config),
       setReconciliationPhase: (phase) =>
         phase === null
           ? clearCurrentReconciliationPhase(this.config)
