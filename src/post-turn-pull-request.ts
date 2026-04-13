@@ -1374,6 +1374,10 @@ export async function handlePostTurnPullRequestTransitionsPhase(
         last_failure_context: failureContext,
         ...args.applyFailureSignature(record, failureContext),
         blocked_reason: "verification",
+        ...observedTrackedPrHostLocalBlockerPatch({
+          pr: refreshed.pr,
+          blockerSignature: failureContext?.signature ?? null,
+        }),
       });
       state.issues[String(record.issue_number)] = record;
       await stateStore.save(state);
@@ -1425,6 +1429,10 @@ export async function handlePostTurnPullRequestTransitionsPhase(
           last_failure_context: failureContext,
           ...args.applyFailureSignature(record, failureContext),
           blocked_reason: "verification",
+          ...observedTrackedPrHostLocalBlockerPatch({
+            pr: refreshed.pr,
+            blockerSignature: failureContext.signature,
+          }),
         });
         state.issues[String(record.issue_number)] = record;
         await stateStore.save(state);
@@ -1450,6 +1458,10 @@ export async function handlePostTurnPullRequestTransitionsPhase(
           last_failure_context: failureContext,
           ...args.applyFailureSignature(record, failureContext),
           blocked_reason: "verification",
+          ...observedTrackedPrHostLocalBlockerPatch({
+            pr: refreshed.pr,
+            blockerSignature: failureContext.signature,
+          }),
         });
         state.issues[String(record.issue_number)] = record;
         await stateStore.save(state);

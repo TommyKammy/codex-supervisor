@@ -1316,6 +1316,104 @@ test("handlePostTurnPullRequestTransitionsPhase records workspace-preparation bl
   assert.equal(result.record.last_host_local_pr_blocker_comment_signature, null);
 });
 
+test("handlePostTurnPullRequestTransitionsPhase records workstation-local path blocker observations when tracked PR comment posting fails", async () => {
+  const config = createConfig({ localCiCommand: "npm run ci:local" });
+  const issue = createIssue({ title: "Best-effort tracked PR path-hygiene blocker comments" });
+  const draftPr = createPullRequest({ title: "Tracked PR path-hygiene blocker", isDraft: true });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: { "102": createRecord({ state: "draft_pr", pr_number: draftPr.number }) },
+  };
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: createNoopStateStore(),
+    github: {
+      getPullRequest: async () => {
+        throw new Error("unexpected getPullRequest call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      markPullRequestReady: async () => {
+        throw new Error("unexpected markPullRequestReady call");
+      },
+      addIssueComment: async () => {
+        throw new Error("GitHub comment transport unavailable");
+      },
+    },
+    context: {
+      state,
+      record: state.issues["102"]!,
+      issue,
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+      syncJournal: async () => undefined,
+      memoryArtifacts: TEST_MEMORY_ARTIFACTS,
+      pr: draftPr,
+      options: { dryRun: false },
+    },
+    derivePullRequestLifecycleSnapshot: (record) => ({
+      recordForState: record,
+      nextState: "draft_pr",
+      failureContext: null,
+      reviewWaitPatch: {},
+      copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    blockedReasonFromReviewState: () => null,
+    summarizeChecks: () => ({
+      hasPending: false,
+      hasFailing: false,
+    }),
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runLocalCiCommand: async () => {
+      throw new Error("unexpected local CI call");
+    },
+    runWorkstationLocalPathGate: async () => ({
+      ok: false,
+      failureContext: {
+        ...createFailureContext("Tracked durable artifacts failed workstation-local path hygiene before marking PR #116 ready."),
+        signature: "workstation-local-path-hygiene-failed",
+        details: [`docs/guide.md:1 matched /${"home"}/ via "${SAMPLE_UNIX_WORKSTATION_PATH}"`],
+      },
+    }),
+    loadOpenPullRequestSnapshot: async () => ({
+      pr: draftPr,
+      checks: [],
+      reviewThreads: [] satisfies ReviewThread[],
+    }),
+  });
+
+  assert.equal(result.record.state, "blocked");
+  assert.equal(result.record.blocked_reason, "verification");
+  assert.equal(result.record.last_failure_signature, "workstation-local-path-hygiene-failed");
+  assert.equal(result.record.last_host_local_pr_blocker_comment_head_sha, null);
+  assert.equal(result.record.last_host_local_pr_blocker_comment_signature, null);
+  assert.equal(result.record.last_observed_host_local_pr_blocker_head_sha, draftPr.headRefOid);
+  assert.equal(
+    result.record.last_observed_host_local_pr_blocker_signature,
+    "workstation-local-path-hygiene-failed",
+  );
+});
+
 test("handlePostTurnPullRequestTransitionsPhase updates the owned tracked PR host-local blocker comment after restart", async () => {
   const config = createConfig({
     workspacePreparationCommand: "npm ci",
@@ -4713,6 +4811,11 @@ test("handlePostTurnPullRequestTransitionsPhase blocks ready promotion until a l
   assert.match(result.record.last_failure_context?.details[0] ?? "", /local workspace HEAD/);
   assert.ok((result.record.last_failure_context?.details[0] ?? "").includes(localHead));
   assert.ok((result.record.last_failure_context?.details[0] ?? "").includes(remoteHead));
+  assert.equal(result.record.last_observed_host_local_pr_blocker_head_sha, remoteHead);
+  assert.equal(
+    result.record.last_observed_host_local_pr_blocker_signature,
+    "workstation-local-path-hygiene-failed",
+  );
 });
 
 test("handlePostTurnPullRequestTransitionsPhase keeps follow-up-eligible residuals advisory by default", async (t) => {
