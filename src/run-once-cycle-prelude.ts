@@ -39,6 +39,9 @@ interface RunOnceCyclePreludeArgs {
   emitEvent?: SupervisorEventSink;
   setReconciliationPhase?: (phase: string | null) => Promise<void>;
   setReconciliationProgress?: (progress: ReconciliationProgressUpdate | null) => Promise<void>;
+  shouldReconcileTrackedBlockedRecordDuringDegradedContinuation?: (
+    record: SupervisorStateFile["issues"][string],
+  ) => boolean;
   reconcileStaleActiveIssueReservation: (state: SupervisorStateFile) => Promise<RecoveryEvent[]>;
   reserveRunnableIssueSelection?: (state: SupervisorStateFile) => Promise<boolean>;
   handleAuthFailure: (state: SupervisorStateFile) => Promise<string | null>;
@@ -210,7 +213,12 @@ export async function runOnceCyclePrelude(
       const hasBlockedTrackedPrRecords = Object.values(state.issues).some((record) =>
         record.state === "blocked" &&
         record.pr_number !== null &&
-        (record.blocked_reason === null || record.blocked_reason === "manual_review" || record.blocked_reason === "verification"),
+        (
+          record.blocked_reason === null ||
+          record.blocked_reason === "manual_review" ||
+          record.blocked_reason === "verification" ||
+          args.shouldReconcileTrackedBlockedRecordDuringDegradedContinuation?.(record) === true
+        ),
       );
       if (allowDegradedContinuation && hasBlockedTrackedPrRecords) {
         await setReconciliationPhase("recoverable_blocked_issue_states");

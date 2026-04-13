@@ -2025,6 +2025,117 @@ test("reconcileRecoverableBlockedIssueStates suppresses duplicate tracked PR rec
   assert.equal(saveCalls, 0);
 });
 
+test("reconcileRecoverableBlockedIssueStates resumes tracked PR stale configured-bot blockers after reply_and_resolve is enabled", async () => {
+  const config = createConfig({
+    staleConfiguredBotReviewPolicy: "reply_and_resolve",
+    reviewBotLogins: ["copilot-pull-request-reviewer"],
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createTrackedPrStaleReviewRecord({
+        state: "blocked",
+        blocked_reason: "stale_review_bot",
+        pr_number: 191,
+        last_head_sha: "head-191",
+        local_review_head_sha: "head-191",
+        local_review_summary_path: "/tmp/reviews/issue-366/head-191.md",
+        last_error: "Configured bot review stayed stale on the current head.",
+        last_failure_kind: null,
+        last_failure_context: {
+          category: "blocked",
+          summary: "Configured bot review stayed stale on the current head.",
+          signature: "stale-configured-bot-review",
+          command: null,
+          details: ["tracked_pr=head-191"],
+          url: null,
+          updated_at: "2026-03-13T00:20:00Z",
+        },
+        last_failure_signature: "stale-configured-bot-review",
+        latest_local_ci_result: {
+          outcome: "passed",
+          summary: "Local CI passed on the current head.",
+          ran_at: "2026-03-13T00:22:00Z",
+          head_sha: "head-191",
+          execution_mode: "shell",
+          failure_class: null,
+          remediation_target: null,
+        },
+        external_review_head_sha: "head-191",
+        external_review_misses_path: "/tmp/reviews/issue-366/head-191-misses.json",
+        review_follow_up_head_sha: "head-191",
+        last_host_local_pr_blocker_comment_head_sha: "head-191",
+        processed_review_thread_ids: ["thread-1", "thread-1@head-191"],
+        processed_review_thread_fingerprints: ["thread-1@head-191#comment-1"],
+      }),
+    ],
+  });
+  const issue = createIssue({
+    title: "Recovery issue",
+    updatedAt: "2026-03-13T00:21:00Z",
+  });
+  const pr = createPullRequest({
+    number: 191,
+    title: "Recovery implementation",
+    url: "https://example.test/pr/191",
+    headRefName: "codex/reopen-issue-366",
+    headRefOid: "head-191",
+    isDraft: false,
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => pr,
+      getIssue: async () => issue,
+      getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getUnresolvedReviewThreads: async () => [createReviewThread()],
+    },
+    stateStore,
+    state,
+    config,
+    [issue],
+    {
+      shouldAutoRetryHandoffMissing,
+      inferStateFromPullRequest: () => "blocked",
+      inferFailureContext: () => ({
+        category: "blocked",
+        summary: "Configured bot review stayed stale on the current head.",
+        signature: "stale-configured-bot-review",
+        command: null,
+        details: ["tracked_pr=head-191"],
+        url: null,
+        updated_at: "2026-03-13T00:20:00Z",
+      }),
+      blockedReasonForLifecycleState: () => "stale_review_bot",
+      isOpenPullRequest,
+      syncReviewWaitWindow: () => ({}),
+      syncCopilotReviewRequestObservation: () => ({}),
+      syncCopilotReviewTimeoutState: noCopilotReviewTimeoutPatch,
+    },
+  );
+
+  assert.equal(recoveryEvents.length, 0);
+  assert.equal(state.issues["366"]?.state, "blocked");
+  assert.equal(state.issues["366"]?.blocked_reason, "stale_review_bot");
+  assert.equal(state.issues["366"]?.pr_number, 191);
+  assert.equal(state.issues["366"]?.last_head_sha, "head-191");
+  assert.equal(state.issues["366"]?.last_failure_signature, "stale-configured-bot-review");
+  assert.equal(saveCalls, 1);
+});
+
 test("reconcileRecoverableBlockedIssueStates clears stale head-scoped review state after a tracked PR repair push", async () => {
   const config = createConfig({
     localReviewEnabled: true,

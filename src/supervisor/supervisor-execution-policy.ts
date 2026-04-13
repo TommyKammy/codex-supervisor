@@ -71,6 +71,16 @@ export function shouldAutoRetryHandoffMissing(record: IssueRunRecord, config: Su
   );
 }
 
+export function shouldAutoRecoverStaleReviewBot(record: IssueRunRecord, config: SupervisorConfig): boolean {
+  return (
+    record.state === "blocked" &&
+    record.blocked_reason === "stale_review_bot" &&
+    record.pr_number !== null &&
+    (config.staleConfiguredBotReviewPolicy === "reply_only" ||
+      config.staleConfiguredBotReviewPolicy === "reply_and_resolve")
+  );
+}
+
 export function shouldEnforceExecutionReady(
   record: Pick<IssueRunRecord, "attempt_count" | "pr_number"> | undefined | null,
 ): boolean {
@@ -102,6 +112,7 @@ export function isEligibleForSelection(record: IssueRunRecord | undefined, confi
   return (
     shouldAutoRetryTimeout(record, config) ||
     shouldAutoRetryBlockedVerification(record, config) ||
-    shouldAutoRetryHandoffMissing(record, config)
+    shouldAutoRetryHandoffMissing(record, config) ||
+    shouldAutoRecoverStaleReviewBot(record, config)
   );
 }

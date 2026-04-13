@@ -1,36 +1,47 @@
-# Issue #1467: Document tmux as the supported macOS loop host and fail closed on direct launchd loop install
+# Issue #1472: Bug: blocked stale_review_bot tracked PRs are never revisited after enabling reply_and_resolve
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1467
-- Branch: codex/issue-1467
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1472
+- Branch: codex/issue-1472
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 96fcafd4268ff0fafc4c1eef7d0d8bf5c415b5eb
+- Current phase: addressing_review
+- Attempt count: 2 (implementation=1, repair=1)
+- Last head SHA: 1deceebd33cb7cf65586d7879466f4c9b76a3e31
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-04-12T22:50:15.098Z
+- Last failure signature: PRRT_kwDORgvdZ856c-Kd|PRRT_kwDORgvdZ856c-Kj
+- Repeated failure signature count: 1
+- Updated at: 2026-04-13T07:16:36.528Z
 
 ## Latest Codex Summary
-- Reproduced the unsupported macOS direct launchd loop path with a focused launcher-assets regression, then changed `scripts/install-launchd.sh` to fail closed with explicit tmux/WebUI guidance instead of installing a loop LaunchAgent.
-- Updated `README.md`, `docs/getting-started.md`, and `docs/getting-started.ja.md` so macOS loop hosting points to the supported tmux start/stop scripts, while Linux systemd and WebUI launchd guidance remain distinct. Added focused docs assertions and refreshed matching configuration wording required by the existing getting-started doc suite.
-- Verified with `npx tsx --test src/getting-started-docs.test.ts`, `npx tsx --test src/managed-restart-launcher-assets.test.ts`, and `npm run build`.
+Addressed the two automated review threads on top of the original stale-review-bot recovery change. The main fix is in `src/run-once-cycle-prelude.ts`: degraded inventory continuation now still runs tracked blocked-PR reconciliation for `stale_review_bot` records when the configured policy makes them auto-recoverable, via the same `shouldAutoRecoverStaleReviewBot()` predicate used by reconciliation. `src/supervisor/supervisor.ts` now passes that policy-aware predicate into the prelude so the gate stays aligned with the existing recovery rules instead of broadening degraded retries globally.
+
+I also tightened the regression coverage the review asked for. `src/run-once-cycle-prelude.test.ts` now proves degraded continuation invokes blocked tracked-PR reconciliation for an auto-recoverable `stale_review_bot` record, and `src/supervisor/supervisor-recovery-reconciliation.test.ts` normalizes the inherited head-scoped review fields to the current head so the same-head resume test no longer passes through stale-head fixture baggage.
+
+Summary: Fixed the degraded-continuation gate for auto-recoverable `stale_review_bot` tracked PRs, tightened the same-head stale-review regression fixture, verified locally, and pushed commit `7a36bd2` to PR `#1473`.
+State hint: addressing_review
+Blocked reason: none
+Tests: `npx tsx --test src/post-turn-pull-request.test.ts src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-execution-policy.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npm run build`
+Next action: Refresh PR `#1473` review state and reply or resolve the remaining automated threads if the operator wants GitHub-side thread writes.
+Failure signature: PRRT_kwDORgvdZ856c-Kd|PRRT_kwDORgvdZ856c-Kj
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: 2 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1473#discussion_r3071387483
+- Details:
+  - src/recovery-reconciliation.ts:1030 summary=_⚠️ Potential issue_ | _🟠 Major_ 🧩 Analysis chain 🏁 Script executed: Repository: TommyKammy/codex-supervisor Length of output: 50384 --- 🏁 Script executed: Repository: Tommy... url=https://github.com/TommyKammy/codex-supervisor/pull/1473#discussion_r3071387483
+  - src/supervisor/supervisor-recovery-reconciliation.test.ts:2052 summary=_⚠️ Potential issue_ | _🟡 Minor_ **Tighten this regression to the intended same-head recovery path.** `createTrackedPrStaleReviewRecord()` still brings along head-scoped review... url=https://github.com/TommyKammy/codex-supervisor/pull/1473#discussion_r3071387489
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: The macOS loop host should be tmux only; the old direct launchd installer was the unsupported contract that needed to fail closed, while docs needed to state the supported tmux start/stop path explicitly.
-- What changed: Replaced the direct launchd loop installer body with a fail-closed message that points operators to `./scripts/start-loop-tmux.sh`, `./scripts/stop-loop-tmux.sh`, and `./scripts/install-launchd-web.sh`. Updated English and Japanese getting-started docs plus README macOS loop guidance. Added focused regression coverage for the installer behavior and the macOS tmux wording. Added minimal matching phrasing in `docs/configuration.md` so the existing getting-started docs suite remains green.
-- Current blocker: none
-- Next exact step: Commit the checkpoint and leave the branch ready for PR creation or the next supervisor pass.
-- Verification gap: No live manual tmux session launch on macOS host; verification is focused on script behavior, docs wording, and build integrity.
-- Files touched: .codex-supervisor/issue-journal.md; README.md; docs/configuration.md; docs/getting-started.md; docs/getting-started.ja.md; scripts/install-launchd.sh; src/getting-started-docs.test.ts; src/managed-restart-launcher-assets.test.ts; src/readme-docs.test.ts
-- Rollback concern: Low; the change narrows macOS loop installation behavior by failing closed and only adjusts operator docs/tests around the supported tmux path.
-- Last focused command: npm run build
+- Hypothesis: the stale configured-bot reply/resolve handler already works in `post-turn`, but supervisor selection/recovery treated `blocked_reason=stale_review_bot` as a permanent manual block, so already-blocked tracked PR incidents never re-entered that handler after the policy changed.
+- What changed this turn: fixed the degraded inventory-refresh prelude gate so it still calls `reconcileRecoverableBlockedIssueStates(..., { onlyTrackedPrStates: true })` for `stale_review_bot` tracked PR records when `shouldAutoRecoverStaleReviewBot(record, config)` is true; passed that predicate from `src/supervisor/supervisor.ts`; added a prelude regression test; normalized same-head stale-review fixture fields in the reconciliation test.
+- Current blocker: none.
+- Next exact step: let the supervisor/PR loop re-evaluate the remaining review-thread state on pushed commit `7a36bd2`, then decide whether to post GitHub thread replies.
+- Verification gap: full `npm test -- <file>` still pulls unrelated suite-wide failures in this repo, so focused verification used `npx tsx --test` with the exact requested files instead.
+- Files touched this turn: `.codex-supervisor/issue-journal.md`, `src/run-once-cycle-prelude.ts`, `src/run-once-cycle-prelude.test.ts`, `src/supervisor/supervisor.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`.
+- Rollback concern: low; the new recovery path is limited to tracked PR records already blocked as `stale_review_bot` and still defers actual reply/resolve safety checks to the existing post-turn stale-bot handler.
+- Last focused command: `npx tsx --test src/post-turn-pull-request.test.ts src/run-once-cycle-prelude.test.ts src/supervisor/supervisor-execution-policy.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`
 ### Scratchpad
-- Focused reproducer that failed before the fix: `npx tsx --test src/managed-restart-launcher-assets.test.ts`
-- Focused verification after the fix: `npx tsx --test src/getting-started-docs.test.ts src/managed-restart-launcher-assets.test.ts src/readme-docs.test.ts`
+- Keep this section short. The supervisor may compact older notes automatically.

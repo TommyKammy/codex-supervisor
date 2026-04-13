@@ -1520,6 +1520,71 @@ test("runOnceCyclePrelude rehydrates blocked tracked PRs during degraded invento
   assert.equal(result.state.issues["77"]?.last_failure_signature, null);
 });
 
+test("runOnceCyclePrelude rehydrates auto-recoverable stale review bot tracked PRs during degraded inventory refresh", async () => {
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "77": createRecord({
+        issue_number: 77,
+        state: "blocked",
+        pr_number: 170,
+        blocked_reason: "stale_review_bot",
+        last_head_sha: "head-170",
+        last_failure_signature: "stale-configured-bot-review",
+      }),
+    },
+  };
+  const blockedCalls: Array<{
+    loadedState: SupervisorStateFile;
+    loadedIssues: GitHubIssue[];
+    options?: { onlyTrackedPrStates?: boolean };
+  }> = [];
+
+  const result = await runOnceCyclePrelude({
+    stateStore: {
+      load: async () => state,
+      save: async () => {},
+    },
+    carryoverRecoveryEvents: [],
+    shouldReconcileTrackedBlockedRecordDuringDegradedContinuation: (record) =>
+      record.issue_number === 77,
+    reconcileStaleActiveIssueReservation: async () => [],
+    handleAuthFailure: async () => null,
+    listAllIssues: async () => {
+      throw new Error("Failed to parse JSON from gh issue list: Unexpected token ] in JSON at position 1");
+    },
+    reserveRunnableIssueSelection: async () => {
+      throw new Error("unexpected reserveRunnableIssueSelection call");
+    },
+    reconcileTrackedMergedButOpenIssues: async () => [],
+    reconcileMergedIssueClosures: async () => {
+      throw new Error("unexpected reconcileMergedIssueClosures call");
+    },
+    reconcileStaleFailedIssueStates: async () => {
+      throw new Error("unexpected reconcileStaleFailedIssueStates call");
+    },
+    reconcileRecoverableBlockedIssueStates: async (loadedState, loadedIssues, options) => {
+      blockedCalls.push({ loadedState, loadedIssues, options });
+      return [];
+    },
+    reconcileParentEpicClosures: async () => {
+      throw new Error("unexpected reconcileParentEpicClosures call");
+    },
+    cleanupExpiredDoneWorkspaces: async () => {
+      throw new Error("unexpected cleanupExpiredDoneWorkspaces call");
+    },
+  });
+
+  assert.ok(!("kind" in result));
+  assert.deepEqual(blockedCalls, [
+    {
+      loadedState: state,
+      loadedIssues: [],
+      options: { onlyTrackedPrStates: true },
+    },
+  ]);
+});
+
 test("runOnceCyclePrelude does not reconcile parent epic closures from tracked issue snapshots when full inventory refresh is malformed", async () => {
   const parentIssue: GitHubIssue = {
     number: 1043,

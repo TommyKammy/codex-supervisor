@@ -8,6 +8,7 @@ import {
   incrementAttemptCounters,
   isEligibleForSelection,
   isVerificationBlockedMessage,
+  shouldAutoRecoverStaleReviewBot,
   shouldAutoRetryBlockedVerification,
   shouldAutoRetryHandoffMissing,
   shouldEnforceExecutionReady,
@@ -274,6 +275,39 @@ test("isEligibleForSelection retries only terminal states with an allowed retry 
     ),
     false,
   );
+  assert.equal(
+    isEligibleForSelection(
+      createRecord({
+        state: "blocked",
+        blocked_reason: "stale_review_bot",
+        pr_number: 44,
+      }),
+      config,
+    ),
+    false,
+  );
+  assert.equal(
+    isEligibleForSelection(
+      createRecord({
+        state: "blocked",
+        blocked_reason: "stale_review_bot",
+        pr_number: 44,
+      }),
+      createConfig({ staleConfiguredBotReviewPolicy: "reply_only" }),
+    ),
+    true,
+  );
+  assert.equal(
+    isEligibleForSelection(
+      createRecord({
+        state: "blocked",
+        blocked_reason: "stale_review_bot",
+        pr_number: 44,
+      }),
+      createConfig({ staleConfiguredBotReviewPolicy: "reply_and_resolve" }),
+    ),
+    true,
+  );
 });
 
 test("shouldAutoRetryHandoffMissing only retries recoverable blocked handoffs", () => {
@@ -313,4 +347,22 @@ test("shouldAutoRetryHandoffMissing only retries recoverable blocked handoffs", 
     ),
     false,
   );
+});
+
+test("shouldAutoRecoverStaleReviewBot only reopens tracked PR incidents when the policy enables automatic handling", () => {
+  const record = createRecord({
+    state: "blocked",
+    blocked_reason: "stale_review_bot",
+    pr_number: 44,
+  });
+
+  assert.equal(shouldAutoRecoverStaleReviewBot(record, createConfig()), false);
+  assert.equal(shouldAutoRecoverStaleReviewBot(record, createConfig({ staleConfiguredBotReviewPolicy: "reply_only" })), true);
+  assert.equal(
+    shouldAutoRecoverStaleReviewBot(record, createConfig({ staleConfiguredBotReviewPolicy: "reply_and_resolve" })),
+    true,
+  );
+  assert.equal(shouldAutoRecoverStaleReviewBot(createRecord({ ...record, pr_number: null }), createConfig({
+    staleConfiguredBotReviewPolicy: "reply_and_resolve",
+  })), false);
 });
