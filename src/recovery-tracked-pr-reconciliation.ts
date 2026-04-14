@@ -111,14 +111,24 @@ function orderTrackedMergedButOpenRecordsForResume(
 function prioritizeTrackedMergedButOpenRecords(
   records: IssueRunRecord[],
   lastProcessedIssueNumber: number | null,
-): IssueRunRecord[] {
+): {
+  records: IssueRunRecord[];
+  deferredHistoricalDoneRecords: boolean;
+} {
   const recoverableRecords = records.filter((record) => record.state !== "done");
   const historicalDoneRecords = records.filter((record) => record.state === "done");
 
-  return [
-    ...orderTrackedMergedButOpenRecordsForResume(recoverableRecords, lastProcessedIssueNumber),
-    ...orderTrackedMergedButOpenRecordsForResume(historicalDoneRecords, lastProcessedIssueNumber),
-  ];
+  if (recoverableRecords.length > 0) {
+    return {
+      records: orderTrackedMergedButOpenRecordsForResume(recoverableRecords, lastProcessedIssueNumber),
+      deferredHistoricalDoneRecords: historicalDoneRecords.length > 0,
+    };
+  }
+
+  return {
+    records: orderTrackedMergedButOpenRecordsForResume(historicalDoneRecords, lastProcessedIssueNumber),
+    deferredHistoricalDoneRecords: false,
+  };
 }
 
 export function buildTrackedPrResumeRecoveryEvent(
@@ -197,12 +207,16 @@ export async function reconcileTrackedMergedButOpenIssuesInModule(
     ? Object.values(state.issues)
     : [state.issues[String(options.onlyIssueNumber)]].filter((record): record is IssueRunRecord => record !== undefined);
   const prBearingRecords = selectedRecords.filter((record): record is IssueRunRecord => record.pr_number !== null);
-  const records = options.onlyIssueNumber === undefined || options.onlyIssueNumber === null
+  const prioritizedRecords = options.onlyIssueNumber === undefined || options.onlyIssueNumber === null
     ? prioritizeTrackedMergedButOpenRecords(
       prBearingRecords,
       trackedMergedButOpenLastProcessedIssueNumber(state),
     )
-    : prBearingRecords;
+    : {
+      records: prBearingRecords,
+      deferredHistoricalDoneRecords: false,
+    };
+  const { records, deferredHistoricalDoneRecords } = prioritizedRecords;
   let processedRecords = 0;
   let lastProcessedIssueNumber: number | null = null;
 
@@ -410,10 +424,16 @@ export async function reconcileTrackedMergedButOpenIssuesInModule(
   }
 
   if (options.onlyIssueNumber === undefined || options.onlyIssueNumber === null) {
-    const nextLastProcessedIssueNumber =
-      processedRecords === 0 || processedRecords >= records.length
-        ? null
-        : lastProcessedIssueNumber;
+    let nextLastProcessedIssueNumber: number | null;
+    if (processedRecords === 0) {
+      nextLastProcessedIssueNumber = null;
+    } else if (processedRecords >= records.length) {
+      nextLastProcessedIssueNumber = deferredHistoricalDoneRecords
+        ? trackedMergedButOpenLastProcessedIssueNumber(state)
+        : null;
+    } else {
+      nextLastProcessedIssueNumber = lastProcessedIssueNumber;
+    }
     if (setTrackedMergedButOpenLastProcessedIssueNumber(state, nextLastProcessedIssueNumber)) {
       saveNeeded = true;
     }
