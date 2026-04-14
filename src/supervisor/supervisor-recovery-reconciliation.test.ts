@@ -3782,6 +3782,93 @@ test("reconcileParentEpicClosures returns an explicit recovery event and persist
   assert.deepEqual(persistedState.issues["123"], state.issues["123"]);
 });
 
+test("reconcileParentEpicClosures persists recovery metadata for an untracked parent epic without making it active work", async () => {
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  const issues: GitHubIssue[] = [
+    {
+      number: 123,
+      title: "Parent issue",
+      body: "",
+      createdAt: "2026-03-13T00:00:00Z",
+      updatedAt: "2026-03-13T00:00:00Z",
+      url: "https://example.test/issues/123",
+      state: "OPEN",
+    },
+    {
+      number: 201,
+      title: "Child one",
+      body: "Part of #123",
+      createdAt: "2026-03-13T00:00:00Z",
+      updatedAt: "2026-03-13T00:00:00Z",
+      url: "https://example.test/issues/201",
+      state: "CLOSED",
+    },
+    {
+      number: 202,
+      title: "Child two",
+      body: "- Part of: #123",
+      createdAt: "2026-03-13T00:00:00Z",
+      updatedAt: "2026-03-13T00:00:00Z",
+      url: "https://example.test/issues/202",
+      state: "CLOSED",
+    },
+  ];
+
+  let savedState: SupervisorStateFile | null = null;
+  let touchCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      touchCalls += 1;
+      return { ...current, ...patch };
+    },
+    async save(nextState: SupervisorStateFile): Promise<void> {
+      savedState = structuredClone(nextState);
+    },
+  };
+
+  const recoveryEvents = await reconcileParentEpicClosures(
+    {
+      closeIssue: async () => {},
+      closePullRequest: async () => {
+        throw new Error("unexpected closePullRequest call");
+      },
+      getChecks: async () => [],
+      getIssue: async () => {
+        throw new Error("unexpected getIssue call");
+      },
+      getMergedPullRequestsClosingIssue: async () => [],
+      getPullRequestIfExists: async () => null,
+      getUnresolvedReviewThreads: async () => [],
+    },
+    stateStore,
+    state,
+    issues,
+  );
+
+  assert.equal(touchCalls, 1);
+  assert.equal(recoveryEvents.length, 1);
+  assert.equal(recoveryEvents[0]?.issueNumber, 123);
+  assert.equal(state.activeIssueNumber, null);
+  assert.equal(state.issues["123"]?.issue_number, 123);
+  assert.equal(state.issues["123"]?.state, "done");
+  assert.equal(state.issues["123"]?.pr_number, null);
+  assert.equal(state.issues["123"]?.blocked_reason, null);
+  assert.equal(state.issues["123"]?.codex_session_id, null);
+  assert.equal(
+    state.issues["123"]?.last_recovery_reason,
+    "parent_epic_auto_closed: auto-closed parent epic #123 because child issues #201, #202 are closed",
+  );
+  assert.ok(state.issues["123"]?.last_recovery_at);
+  if (savedState === null) {
+    throw new Error("expected state to be saved");
+  }
+  const persistedState: SupervisorStateFile = savedState;
+  assert.deepEqual(persistedState.issues["123"], state.issues["123"]);
+});
+
 test("reconcileTrackedMergedButOpenIssues fetches missing issue snapshots for non-merging merged records", async () => {
   const record = createRecord({
     issue_number: 366,

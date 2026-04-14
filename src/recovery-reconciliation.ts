@@ -238,6 +238,93 @@ export function buildRecoveryEvent(issueNumber: number, reason: string): Recover
   };
 }
 
+function createUntrackedRecoveredDoneRecord(issueNumber: number): IssueRunRecord {
+  const updatedAt = nowIso();
+  return {
+    issue_number: issueNumber,
+    state: "done",
+    branch: "",
+    pr_number: null,
+    workspace: "",
+    journal_path: null,
+    review_wait_started_at: null,
+    review_wait_head_sha: null,
+    provider_success_observed_at: null,
+    provider_success_head_sha: null,
+    merge_readiness_last_evaluated_at: null,
+    copilot_review_requested_observed_at: null,
+    copilot_review_requested_head_sha: null,
+    copilot_review_timed_out_at: null,
+    copilot_review_timeout_action: null,
+    copilot_review_timeout_reason: null,
+    codex_session_id: null,
+    local_review_head_sha: null,
+    local_review_blocker_summary: null,
+    local_review_summary_path: null,
+    local_review_run_at: null,
+    local_review_max_severity: null,
+    local_review_findings_count: 0,
+    local_review_root_cause_count: 0,
+    local_review_verified_max_severity: null,
+    local_review_verified_findings_count: 0,
+    local_review_recommendation: null,
+    local_review_degraded: false,
+    pre_merge_evaluation_outcome: null,
+    pre_merge_must_fix_count: 0,
+    pre_merge_manual_review_count: 0,
+    pre_merge_follow_up_count: 0,
+    last_local_review_signature: null,
+    repeated_local_review_signature_count: 0,
+    latest_local_ci_result: null,
+    external_review_head_sha: null,
+    external_review_misses_path: null,
+    external_review_matched_findings_count: 0,
+    external_review_near_match_findings_count: 0,
+    external_review_missed_findings_count: 0,
+    attempt_count: 0,
+    implementation_attempt_count: 0,
+    repair_attempt_count: 0,
+    timeout_retry_count: 0,
+    blocked_verification_retry_count: 0,
+    repeated_blocker_count: 0,
+    repeated_failure_signature_count: 0,
+    stale_stabilizing_no_pr_recovery_count: 0,
+    last_head_sha: null,
+    review_follow_up_head_sha: null,
+    review_follow_up_remaining: 0,
+    workspace_restore_source: null,
+    workspace_restore_ref: null,
+    last_codex_summary: null,
+    last_recovery_reason: null,
+    last_recovery_at: null,
+    issue_definition_fingerprint: null,
+    issue_definition_updated_at: null,
+    last_error: null,
+    last_failure_kind: null,
+    last_failure_context: null,
+    last_runtime_error: null,
+    last_runtime_failure_kind: null,
+    last_runtime_failure_context: null,
+    last_blocker_signature: null,
+    last_failure_signature: null,
+    last_tracked_pr_progress_snapshot: null,
+    last_tracked_pr_progress_summary: null,
+    last_tracked_pr_repeat_failure_decision: null,
+    last_observed_host_local_pr_blocker_signature: null,
+    last_observed_host_local_pr_blocker_head_sha: null,
+    last_host_local_pr_blocker_comment_signature: null,
+    last_host_local_pr_blocker_comment_head_sha: null,
+    last_stale_review_bot_reply_signature: null,
+    last_stale_review_bot_reply_head_sha: null,
+    stale_review_bot_reply_progress_keys: [],
+    stale_review_bot_resolve_progress_keys: [],
+    blocked_reason: null,
+    processed_review_thread_ids: [],
+    processed_review_thread_fingerprints: [],
+    updated_at: updatedAt,
+  };
+}
+
 function latestFiniteTimestamp(...values: Array<string | null | undefined>): number | null {
   let latest: number | null = null;
   for (const value of values) {
@@ -1263,6 +1350,13 @@ export async function reconcileParentEpicClosures(
         state.activeIssueNumber = null;
         changed = true;
       }
+    } else {
+      const created = stateStore.touch(
+        createUntrackedRecoveredDoneRecord(parentIssue.number),
+        applyRecoveryEvent(doneResetPatch(), recoveryEvent),
+      );
+      state.issues[String(parentIssue.number)] = created;
+      changed = true;
     }
   }
 

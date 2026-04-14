@@ -1,33 +1,61 @@
-# Issue #1508: Parent epic auto-closure should be surfaced as an explicit recovery event
+# Issue #1510: Persist parent epic auto-closure recovery metadata for untracked parent epics
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1508
-- Branch: codex/issue-1508
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1510
+- Branch: codex/issue-1510
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 941fafe431cfdbb1d366c55e73e3309775acce5f
+- Current phase: addressing_review
+- Attempt count: 2 (implementation=1, repair=1)
+- Last head SHA: 2b6619f6b9d303d9fa03aeeb481d97ca77f362a3
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-04-14T05:48:45.077Z
+- Last failure signature: PRRT_kwDORgvdZ856uaRt
+- Repeated failure signature count: 1
+- Updated at: 2026-04-14T06:32:33.292Z
 
 ## Latest Codex Summary
-- Added explicit `parent_epic_auto_closed` recovery events to parent epic closure reconciliation, threaded those events through prelude recovery aggregation, and covered the operator-facing status surface via `latest_recovery`.
+Persisted parent-epic auto-closure recovery metadata when the parent had no prior `state.issues` record. The fix synthesizes a terminal no-PR `done` record during `reconcileParentEpicClosures`, applies the same recovery metadata patch used for tracked parents, and leaves it non-runnable. I also tightened tests for the untracked-parent reconciliation path and for the read-only status surface to confirm the recovered parent epic remains out of selection.
+
+Verification passed with the focused suites and build:
+`npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/run-once-cycle-prelude.test.ts`
+and `npm run build`.
+
+Checkpoint commit: `2b6619f` (`Persist recovery metadata for untracked parent epics`)
+
+There are still untracked supervisor artifacts in the worktree:
+`.codex-supervisor/pre-merge/`, `.codex-supervisor/replay/`, `.codex-supervisor/turn-in-progress.json`
+
+Summary: Persisted `latest_recovery` metadata for untracked auto-closed parent epics via a synthetic terminal record; focused tests and build pass; checkpoint committed as `2b6619f`.
+State hint: draft_pr
+Blocked reason: none
+Tests: `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/run-once-cycle-prelude.test.ts`; `npm run build`
+Next action: Open or update a draft PR from `codex/issue-1510`, noting the committed fix and leaving the untracked supervisor artifacts out of the PR.
+Failure signature: PRRT_kwDORgvdZ856uaRt
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: 1 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1511#discussion_r3077509698
+- Details:
+  - .codex-supervisor/issue-journal.md:29 summary=_⚠️ Potential issue_ | _🟡 Minor_ **Update the next-step note to reflect current PR status.** Line 29 says to “Commit the checkpoint,” but this PR already has checkpoint commit ... url=https://github.com/TommyKammy/codex-supervisor/pull/1511#discussion_r3077509698
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: Parent epic auto-closure can reuse the existing recovery-event and `latest_recovery` plumbing if reconciliation returns a typed event and persists it on the parent issue record.
-- What changed: `reconcileParentEpicClosures(...)` now returns `parent_epic_auto_closed` recovery events with parent and child issue numbers, applies the recovery metadata to tracked parent records, and `runOnceCyclePrelude(...)` now carries/emits those events like other recoveries. Added focused coverage for reconciliation, prelude aggregation, and read-only status rendering.
-- Current blocker: None on the issue implementation. The literal `npm test -- ...` command still expands to the repository's full suite and surfaced unrelated baseline failures outside this issue.
-- Next exact step: Commit the checkpoint and, if desired, open/update the draft PR with the focused verification results plus the note that repo-wide `npm test -- ...` currently exercises unrelated failing tests.
-- Verification gap: Issue-targeted suites and `npm run build` pass. The literal `npm test -- src/...` command is not isolateable in this repo because the `test` script also runs `src/**/*.test.ts`, which surfaced unrelated failures in `supervisor-pr-readiness`, `supervisor-status-model-supervisor`, and `tracked-pr-lifecycle-projection`.
-- Files touched: src/recovery-reconciliation.ts; src/run-once-cycle-prelude.ts; src/supervisor/supervisor-recovery-reconciliation.test.ts; src/run-once-cycle-prelude.test.ts; src/supervisor/supervisor-diagnostics-status-selection.test.ts
-- Rollback concern: Low. The change is additive to recovery visibility and preserves existing closure eligibility/side effects.
-- Last focused command: npm run build
+- Hypothesis: Parent-epic auto-closure recovery metadata was only durable when `state.issues[parent]` already existed; read-only status derives `latest_recovery` solely from persisted records.
+- What changed: Added `createUntrackedRecoveredDoneRecord()` and used it in `reconcileParentEpicClosures()` to synthesize a terminal record for untracked auto-closed parent epics; tightened reconciliation and status-selection tests around that path.
+- Current blocker: none
+- Next exact step: Open or update the draft PR from `codex/issue-1510` and note checkpoint commit `2b6619f`.
+- Verification gap: none for the scoped issue acceptance checks.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/recovery-reconciliation.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`
+- Rollback concern: Low; the new persisted record is terminal (`state=done`, `pr_number=null`, `blocked_reason=null`) and should remain read-only in selection flows.
+- Last focused command: `npm run build`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
+- Reproduced failure signature before fix: `untracked-parent-epic-recovery-not-persisted`.
+- Addressed review signature: `PRRT_kwDORgvdZ856uaRt`.
+- Review-fix command: updated `.codex-supervisor/issue-journal.md` handoff note to match committed PR state.
+- Focused verification commands:
+- `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts`
+- `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts`
+- `npx tsx --test src/run-once-cycle-prelude.test.ts`
+- `npm run build`
