@@ -3590,6 +3590,7 @@ test("reconcileMergedIssueClosures revalidates suspicious closed done records wi
     state: "done",
     pr_number: 191,
     last_head_sha: "wrong-head-191",
+    last_recovery_reason: null,
     updated_at: "2026-03-13T00:25:00Z",
     last_recovery_at: "2026-03-13T00:25:00Z",
     last_failure_context: null,
