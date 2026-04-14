@@ -316,6 +316,8 @@ test("runOnceCyclePrelude bounds merged issue closure revalidation for historica
       branch: `codex/historical-done-${700 + index}`,
       pr_number: 1700 + index,
       last_head_sha: `head-${700 + index}`,
+      last_recovery_reason:
+        `merged_pr_convergence: merged PR #${1700 + index} satisfied issue #${700 + index}; marked issue #${700 + index} done`,
       updated_at: "2026-03-13T00:25:00Z",
       last_recovery_at: "2026-03-13T00:25:00Z",
       last_failure_context: null,
@@ -344,6 +346,8 @@ test("runOnceCyclePrelude bounds merged issue closure revalidation for historica
     branch: "codex/recently-changed-960",
     pr_number: 1960,
     last_head_sha: "head-960",
+    last_recovery_reason:
+      "merged_pr_convergence: merged PR #1960 satisfied issue #960; marked issue #960 done",
     updated_at: "2026-03-13T00:25:00Z",
     last_recovery_at: "2026-03-13T00:25:00Z",
     last_failure_context: null,

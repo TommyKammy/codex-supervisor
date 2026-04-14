@@ -5,19 +5,33 @@
 - Branch: codex/issue-1524
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: stabilizing
-- Attempt count: 3 (implementation=3, repair=0)
-- Last head SHA: 6154a5e6dac2c30fee62f3899fa5c7713440175b
+- Current phase: resolving_conflict
+- Attempt count: 4 (implementation=3, repair=1)
+- Last head SHA: fed7a48657e0ad13f65c53bfea9cf316edbf76c7
 - Blocked reason: none
-- Last failure signature: stale-stabilizing-no-pr-recovery-loop
-- Repeated failure signature count: 0
-- Updated at: 2026-04-14T11:04:57.377Z
+- Last failure signature: dirty:fed7a48657e0ad13f65c53bfea9cf316edbf76c7
+- Repeated failure signature count: 3
+- Updated at: 2026-04-14T11:10:21.067Z
 
 ## Latest Codex Summary
-- Tracked PR stale `stale_review_bot` reconciliation now ignores the auto-reply policy gate and always reprojects same-head tracked PR blockers from fresh GitHub facts; focused regressions and build passed locally, commit `13520d4` is pushed on `codex/issue-1524`, and draft PR #1525 is open.
+The tracked-PR reconciliation path now clears stale `stale_review_bot` blockers from fresh GitHub facts even when `staleConfiguredBotReviewPolicy=diagnose_only`, while the automatic reply/resolve path remains policy-gated in [src/supervisor/supervisor-execution-policy.ts](src/supervisor/supervisor-execution-policy.ts). I added focused regressions for reconciliation, `runOnce`, `explain`, and `doctor` in [src/supervisor/supervisor-recovery-reconciliation.test.ts](src/supervisor/supervisor-recovery-reconciliation.test.ts), [src/supervisor/supervisor-pr-review-blockers.test.ts](src/supervisor/supervisor-pr-review-blockers.test.ts), [src/supervisor/supervisor-diagnostics-explain.test.ts](src/supervisor/supervisor-diagnostics-explain.test.ts), and [src/doctor.test.ts](src/doctor.test.ts).
+
+I committed and pushed the checkpoint on `codex/issue-1524`, updated the issue journal, and opened draft PR `#1525`: https://github.com/TommyKammy/codex-supervisor/pull/1525. The only remaining local changes are untracked supervisor artifact directories under `.codex-supervisor/`, which I left out of git.
+
+Summary: Implemented and verified stale tracked-PR `stale_review_bot` auto-clear reconciliation, pushed branch, and opened draft PR #1525.
+State hint: draft_pr
+Blocked reason: none
+Tests: `npx tsx --test src/supervisor/supervisor-pr-review-blockers.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts src/doctor.test.ts src/supervisor/supervisor-execution-policy.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npm run build`
+Next action: Wait for review and CI on draft PR #1525, then address any findings.
+Failure signature: dirty:fed7a48657e0ad13f65c53bfea9cf316edbf76c7
 
 ## Active Failure Context
-- None recorded.
+- Category: conflict
+- Summary: PR #1525 has merge conflicts and needs a base-branch integration pass.
+- Command or source: git fetch origin && git merge origin/<default-branch>
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1525
+- Details:
+  - mergeStateStatus=DIRTY
 
 ## Codex Working Notes
 ### Current Handoff
@@ -28,6 +42,7 @@
 - Verification gap: none for the requested scope; targeted suites and `npm run build` passed locally.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/supervisor/supervisor-execution-policy.ts`, `src/supervisor/supervisor-execution-policy.test.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `src/supervisor/supervisor-pr-review-blockers.test.ts`, `src/supervisor/supervisor-diagnostics-explain.test.ts`, `src/doctor.test.ts`.
 - Rollback concern: low; the behavior change is intentionally limited to stale tracked-PR blocker reprojection, while automatic stale-bot reply handling still depends on the configured policy.
+- Last focused command:
 - Last focused commands: `npx tsx --test src/supervisor/supervisor-pr-review-blockers.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts src/doctor.test.ts src/supervisor/supervisor-execution-policy.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npm run build`; `git push -u origin codex/issue-1524`; `gh pr edit 1525 --body ...`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
