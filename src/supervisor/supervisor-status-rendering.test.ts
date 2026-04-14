@@ -444,7 +444,11 @@ test("renderStatusCodexModelPolicyLines reports inherited host defaults and over
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "status-codex-policy-"));
   const previousCodexHome = process.env.CODEX_HOME;
   t.after(async () => {
-    process.env.CODEX_HOME = previousCodexHome;
+    if (previousCodexHome === undefined) {
+      delete process.env.CODEX_HOME;
+    } else {
+      process.env.CODEX_HOME = previousCodexHome;
+    }
     await fs.rm(root, { recursive: true, force: true });
   });
 
@@ -470,6 +474,76 @@ test("renderStatusCodexModelPolicyLines reports inherited host defaults and over
   assert.deepEqual(lines, [
     "codex_execution_policy active=supervisor:inherit->gpt-5.4@inherited_host_default reasoning=high",
     "codex_route_overrides repair=alias:gpt-5.4-mini@bounded_repair_override local_review=alias:local-review-fast@local_review_override",
+  ]);
+});
+
+test("buildCodexModelPolicySnapshot keeps the default route independent from active repair overrides", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "status-codex-policy-default-route-"));
+  const previousCodexHome = process.env.CODEX_HOME;
+  t.after(async () => {
+    if (previousCodexHome === undefined) {
+      delete process.env.CODEX_HOME;
+    } else {
+      process.env.CODEX_HOME = previousCodexHome;
+    }
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  process.env.CODEX_HOME = root;
+  await fs.writeFile(path.join(root, "config.toml"), 'model = "gpt-5.4"\n', "utf8");
+
+  const snapshot = await buildCodexModelPolicySnapshot({
+    config: createConfig({
+      codexModelStrategy: "inherit",
+      boundedRepairModelStrategy: "alias",
+      boundedRepairModel: "gpt-5.4-mini",
+    }),
+    activeState: "addressing_review",
+    activeRecord: null,
+  });
+
+  assert.deepEqual(snapshot.defaultRoute, {
+    strategy: "inherit",
+    configuredModel: null,
+    effectiveModel: "gpt-5.4",
+    source: "inherited_host_default",
+  });
+  assert.equal(
+    renderStatusCodexModelPolicyLines(snapshot)[0],
+    "codex_execution_policy active=supervisor:alias:gpt-5.4-mini@bounded_repair_override reasoning=medium",
+  );
+});
+
+test("buildCodexModelPolicySnapshot uses the local-review route for active local review state", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "status-codex-policy-local-review-"));
+  const previousCodexHome = process.env.CODEX_HOME;
+  t.after(async () => {
+    if (previousCodexHome === undefined) {
+      delete process.env.CODEX_HOME;
+    } else {
+      process.env.CODEX_HOME = previousCodexHome;
+    }
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  process.env.CODEX_HOME = root;
+  await fs.writeFile(path.join(root, "config.toml"), 'model = "gpt-5.4"\n', "utf8");
+
+  const lines = renderStatusCodexModelPolicyLines(
+    await buildCodexModelPolicySnapshot({
+      config: createConfig({
+        codexModelStrategy: "inherit",
+        localReviewModelStrategy: "alias",
+        localReviewModel: "local-review-fast",
+      }),
+      activeState: "local_review",
+      activeRecord: null,
+    }),
+  );
+
+  assert.deepEqual(lines, [
+    "codex_execution_policy active=local_review_generic:alias:local-review-fast@local_review_override reasoning=low",
+    "codex_route_overrides repair=default_route(gpt-5.4) local_review=alias:local-review-fast@local_review_override",
   ]);
 });
 

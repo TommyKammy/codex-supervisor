@@ -674,13 +674,16 @@ export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
   };
   const workspacePreparationWarning = workspacePreparationContract.warning ?? localCiContract.warning ?? null;
   const configWarnings = workspacePreparationWarning === null ? [] : [renderDoctorWarningLine(buildWarning("config", workspacePreparationWarning)!, sanitizeDoctorValue)];
+  const codexModelPolicyLines = (diagnostics.codexModelPolicyLines ?? [])
+    .map((line) => sanitizeDoctorValue(line))
+    .filter((line) => line.trim().length > 0);
 
   return [
     `doctor overall=${diagnostics.overallStatus} checks=${diagnostics.checks.length}`,
     `doctor_posture trust_mode=${diagnostics.trustDiagnostics.trustMode} execution_safety_mode=${diagnostics.trustDiagnostics.executionSafetyMode}`,
     `doctor_cadence poll_interval_seconds=${diagnostics.cadenceDiagnostics.pollIntervalSeconds} merge_critical_recheck_seconds=${mergeCriticalRecheckSeconds} merge_critical_effective_seconds=${diagnostics.cadenceDiagnostics.mergeCriticalEffectiveSeconds} enabled=${diagnostics.cadenceDiagnostics.mergeCriticalRecheckEnabled}`,
     diagnostics.candidateDiscoverySummary,
-    ...(diagnostics.codexModelPolicyLines ?? []),
+    ...codexModelPolicyLines,
     `doctor_loop_runtime state=${loopRuntime.state} host_mode=${loopRuntime.hostMode} pid=${loopRuntime.pid === null ? "none" : String(loopRuntime.pid)} started_at=${loopRuntime.startedAt ?? "none"} detail=${sanitizeDoctorValue(loopRuntime.detail ?? "none")}`,
     ...(diagnostics.orphanPolicySummary ? [diagnostics.orphanPolicySummary] : []),
     `doctor_workspace_preparation configured=${workspacePreparationContract.configured} source=${workspacePreparationContract.source} command=${sanitizeDoctorValue(workspacePreparationContract.command ?? "none")} summary=${sanitizeDoctorValue(workspacePreparationContract.summary)}`,

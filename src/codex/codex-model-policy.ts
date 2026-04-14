@@ -42,6 +42,39 @@ function resolveCodexConfigDir(): string {
   return path.join(os.homedir(), ".codex");
 }
 
+function countTrailingBackslashes(value: string, endExclusive: number): number {
+  let count = 0;
+  for (let index = endExclusive - 1; index >= 0 && value[index] === "\\"; index -= 1) {
+    count += 1;
+  }
+  return count;
+}
+
+function parseTomlQuotedString(value: string): string | null {
+  const trimmed = value.trim();
+  const quote = trimmed[0];
+  if (quote !== `"` && quote !== "'") {
+    return null;
+  }
+
+  for (let index = 1; index < trimmed.length; index += 1) {
+    if (trimmed[index] !== quote) {
+      continue;
+    }
+    if (quote === `"` && countTrailingBackslashes(trimmed, index) % 2 === 1) {
+      continue;
+    }
+
+    const trailing = trimmed.slice(index + 1).trim();
+    if (trailing !== "" && !trailing.startsWith("#")) {
+      return null;
+    }
+    return trimmed.slice(1, index);
+  }
+
+  return null;
+}
+
 function parseTopLevelTomlString(contents: string, key: string): string | null {
   let inTopLevel = true;
   for (const rawLine of contents.split(/\r?\n/u)) {
@@ -56,9 +89,19 @@ function parseTopLevelTomlString(contents: string, key: string): string | null {
     if (!inTopLevel) {
       continue;
     }
-    const match = line.match(new RegExp(`^${key}\\s*=\\s*(['"])(.*?)\\1\\s*$`, "u"));
-    if (match) {
-      return match[2] ?? null;
+
+    const separatorIndex = line.indexOf("=");
+    if (separatorIndex === -1) {
+      continue;
+    }
+
+    if (line.slice(0, separatorIndex).trim() !== key) {
+      continue;
+    }
+
+    const parsed = parseTomlQuotedString(line.slice(separatorIndex + 1));
+    if (parsed !== null) {
+      return parsed;
     }
   }
 
@@ -148,11 +191,10 @@ export async function buildCodexModelPolicySnapshot(args: {
   > | null;
 }): Promise<CodexModelPolicySnapshot> {
   const hostDefault = await resolveHostCodexDefaultModel();
-  const defaultPolicy = resolveCodexExecutionPolicy(args.config, args.activeState, args.activeRecord, "supervisor");
   const defaultRoute: CodexModelRouteResolution = {
     strategy: args.config.codexModelStrategy,
     configuredModel: args.config.codexModel ?? null,
-    effectiveModel: defaultPolicy.model ?? hostDefault.model,
+    effectiveModel: args.config.codexModelStrategy === "inherit" ? hostDefault.model : (args.config.codexModel ?? null),
     source: defaultRouteSource(args.config, hostDefault),
   };
   const boundedRepairRoute = resolveRoute({
@@ -175,15 +217,21 @@ export async function buildCodexModelPolicySnapshot(args: {
       source: hostDefault.source,
     },
   });
-  const activeTarget: CodexExecutionTarget =
-    args.activeState === "repairing_ci" || args.activeState === "addressing_review"
-      ? "supervisor"
-      : "supervisor";
+  const activeTarget: CodexExecutionTarget = args.activeState === "local_review"
+    ? "local_review_generic"
+    : "supervisor";
   const activePolicy = resolveCodexExecutionPolicy(args.config, args.activeState, args.activeRecord, activeTarget);
   const activeRoute =
     args.activeState === "repairing_ci" || args.activeState === "addressing_review"
       ? {
         ...boundedRepairRoute,
+        state: args.activeState,
+        target: activeTarget,
+        reasoningEffort: activePolicy.reasoningEffort,
+      }
+      : args.activeState === "local_review"
+      ? {
+        ...localReviewRoute,
         state: args.activeState,
         target: activeTarget,
         reasoningEffort: activePolicy.reasoningEffort,

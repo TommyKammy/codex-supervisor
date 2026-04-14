@@ -125,7 +125,11 @@ test("status reports effective Codex routing for inherited defaults and explicit
   const codexHome = path.join(path.dirname(fixture.repoPath), "codex-home");
   const previousCodexHome = process.env.CODEX_HOME;
   t.after(async () => {
-    process.env.CODEX_HOME = previousCodexHome;
+    if (previousCodexHome === undefined) {
+      delete process.env.CODEX_HOME;
+    } else {
+      process.env.CODEX_HOME = previousCodexHome;
+    }
     await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
   });
 

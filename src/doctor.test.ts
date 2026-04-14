@@ -174,6 +174,44 @@ test("renderDoctorReport includes loop host diagnostics and macOS tmux drift war
   );
 });
 
+test("renderDoctorReport sanitizes multiline Codex policy lines", () => {
+  const report = renderDoctorReport({
+    overallStatus: "pass",
+    checks: [],
+    codexModelPolicyLines: [
+      "doctor_codex_model_policy default=inherit->gpt-5.4@inherited_host_default\nmutated=line",
+    ],
+    cadenceDiagnostics: {
+      pollIntervalSeconds: 120,
+      mergeCriticalRecheckSeconds: null,
+      mergeCriticalEffectiveSeconds: 120,
+      mergeCriticalRecheckEnabled: false,
+    },
+    candidateDiscoverySummary: "doctor_candidate_discovery fetch_window=100 strategy=paginated",
+    candidateDiscoveryWarning: null,
+    loopRuntime: {
+      state: "off",
+      hostMode: "unknown",
+      pid: null,
+      startedAt: null,
+      detail: null,
+    },
+    loopHostWarning: null,
+    trustDiagnostics: {
+      trustMode: "trusted_repo_and_authors",
+      executionSafetyMode: "unsandboxed_autonomous",
+      warning: null,
+      configWarning: null,
+    },
+  });
+
+  assert.match(
+    report,
+    /doctor_codex_model_policy default=inherit->gpt-5\.4@inherited_host_default\\nmutated=line/,
+  );
+  assert.doesNotMatch(report, /\nmutated=line/);
+});
+
 test("diagnoseSupervisorHost reports inherited host Codex defaults in doctor output", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-doctor-model-"));
   const codexHome = path.join(root, "codex-home");
@@ -182,12 +220,16 @@ test("diagnoseSupervisorHost reports inherited host Codex defaults in doctor out
   const stateFile = path.join(root, "state.json");
   const previousCodexHome = process.env.CODEX_HOME;
   t.after(async () => {
-    process.env.CODEX_HOME = previousCodexHome;
+    if (previousCodexHome === undefined) {
+      delete process.env.CODEX_HOME;
+    } else {
+      process.env.CODEX_HOME = previousCodexHome;
+    }
     await fs.rm(root, { recursive: true, force: true });
   });
 
   await fs.mkdir(codexHome, { recursive: true });
-  await fs.writeFile(path.join(codexHome, "config.toml"), 'model = "gpt-5.4"\n', "utf8");
+  await fs.writeFile(path.join(codexHome, "config.toml"), 'model = "gpt-5.4" # shared default\n', "utf8");
   await fs.mkdir(repoPath, { recursive: true });
   await fs.mkdir(workspaceRoot, { recursive: true });
   execFileSync("git", ["init", "-b", "main"], { cwd: repoPath });
