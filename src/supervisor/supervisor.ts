@@ -1080,8 +1080,15 @@ export class Supervisor {
           updateReconciliationProgress,
           options,
         ),
-      reconcileMergedIssueClosures: (state, issues) =>
-        reconcileMergedIssueClosures(this.github, this.stateStore, state, this.config, issues),
+      reconcileMergedIssueClosures: (state, issues, updateReconciliationProgress) =>
+        reconcileMergedIssueClosures(
+          this.github,
+          this.stateStore,
+          state,
+          this.config,
+          issues,
+          updateReconciliationProgress,
+        ),
       reconcileStaleFailedIssueStates: (state, issues, updateReconciliationProgress) =>
         reconcileStaleFailedIssueStates(this.github, this.stateStore, state, this.config, issues, {
           inferStateFromPullRequest,
