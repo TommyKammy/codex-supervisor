@@ -169,3 +169,81 @@ test("workspace cleanup docs distinguish tracked done cleanup from explicit orph
     "docs/configuration.md should define the explicit orphan prune eligibility contract",
   );
 });
+
+test("profile-based config docs keep README and getting-started aligned with model routing guidance", async () => {
+  const [readme, gettingStarted, configuration] = await Promise.all([
+    readDoc("README.md"),
+    readDoc(path.join("docs", "getting-started.md")),
+    readDoc(path.join("docs", "configuration.md")),
+  ]);
+
+  for (const [label, content] of [
+    ["README.md", readme],
+    ["docs/getting-started.md", gettingStarted],
+    ["docs/configuration.md", configuration],
+  ] as const) {
+    assert.match(
+      content,
+      /active config is whichever file you pass with `--config`/i,
+      `expected ${label} to define explicit --config profile selection`,
+    );
+    assert.match(
+      content,
+      /supervisor\.config\.(codex|coderabbit|copilot)\.json/i,
+      `expected ${label} to mention shipped profile filenames`,
+    );
+  }
+
+  assert.match(
+    readme,
+    /issue-lint[\s\S]{0,200}supervisor\.config\.(codex|coderabbit|copilot)\.json/i,
+    "expected README.md to show issue-lint against an explicit profile config",
+  );
+  assert.match(
+    readme,
+    /status[\s\S]{0,200}supervisor\.config\.(codex|coderabbit|copilot)\.json/i,
+    "expected README.md to show status against an explicit profile config",
+  );
+  assert.match(
+    readme,
+    /doctor[\s\S]{0,200}supervisor\.config\.(codex|coderabbit|copilot)\.json/i,
+    "expected README.md to show doctor against an explicit profile config",
+  );
+  assert.match(
+    gettingStarted,
+    /issue-lint[\s\S]{0,200}supervisor\.config\.(codex|coderabbit|copilot)\.json/i,
+    "expected docs/getting-started.md to show issue-lint against an explicit profile config",
+  );
+  assert.match(
+    gettingStarted,
+    /status[\s\S]{0,200}supervisor\.config\.(codex|coderabbit|copilot)\.json/i,
+    "expected docs/getting-started.md to show status against an explicit profile config",
+  );
+  assert.match(
+    gettingStarted,
+    /doctor[\s\S]{0,200}supervisor\.config\.(codex|coderabbit|copilot)\.json/i,
+    "expected docs/getting-started.md to show doctor against an explicit profile config",
+  );
+
+  for (const [label, content] of [
+    ["README.md", readme],
+    ["docs/getting-started.md", gettingStarted],
+    ["docs/configuration.md", configuration],
+  ] as const) {
+    assert.match(
+      content,
+      /codexModelStrategy:\s*"inherit"/i,
+      `expected ${label} to mention the recommended inherited model strategy`,
+    );
+    assert.match(
+      content,
+      /host Codex (?:CLI\/App )?default model|Codex CLI\/App default model|Codex default model/i,
+      `expected ${label} to explain that inherit follows the host default model`,
+    );
+    assert.match(
+      content,
+      /\bfixed\b[\s\S]{0,180}(?:ignore|override|pin)[\s\S]{0,180}(?:host|default model)/i,
+      `expected ${label} to explain when fixed routing is appropriate`,
+    );
+  }
+});
