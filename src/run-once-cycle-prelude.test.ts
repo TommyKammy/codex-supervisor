@@ -2,12 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { GitHubIssue, SupervisorStateFile } from "./core/types";
 import { GitHubInventoryRefreshError } from "./github";
+import { reconcileTrackedMergedButOpenIssues } from "./recovery-reconciliation";
 import { RecoveryEvent, runOnceCyclePrelude } from "./run-once-cycle-prelude";
 import {
   shouldAutoRecoverStaleReviewBot,
   shouldReconcileTrackedPrStaleReviewBot,
 } from "./supervisor/supervisor-execution-policy";
-import { createConfig, createRecord } from "./supervisor/supervisor-test-helpers";
+import { createConfig, createIssue, createPullRequest, createRecord } from "./supervisor/supervisor-test-helpers";
 
 test("runOnceCyclePrelude loads state and aggregates recovery setup events in order", async () => {
   const state: SupervisorStateFile = {
@@ -205,6 +206,120 @@ test("runOnceCyclePrelude persists the last-known-good inventory snapshot after 
   assert.deepEqual(savedStates[0]?.last_successful_inventory_snapshot?.issues, issues);
   assert.equal(result.state.last_successful_inventory_snapshot?.source, "gh issue list");
   assert.equal(result.state.last_successful_inventory_snapshot?.issue_count, 2);
+});
+
+test("runOnceCyclePrelude prioritizes recoverable tracked PR reconciliation ahead of historical done records", async () => {
+  const recoverableRecord = createRecord({
+    issue_number: 450,
+    state: "merging",
+    branch: "codex/reopen-issue-450",
+    pr_number: 901,
+    blocked_reason: null,
+  });
+  const historicalDoneRecords = Array.from({ length: 30 }, (_, index) =>
+    createRecord({
+      issue_number: 300 + index,
+      state: "done",
+      branch: `codex/historical-done-${300 + index}`,
+      pr_number: 800 + index,
+      blocked_reason: null,
+    }));
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: Object.fromEntries(
+      [...historicalDoneRecords, recoverableRecord].map((record) => [String(record.issue_number), record]),
+    ),
+  };
+  const closedIssue = createIssue({
+    number: 450,
+    title: "Recoverable merging issue",
+    updatedAt: "2026-03-13T00:23:00Z",
+    state: "CLOSED",
+  });
+  const issues: GitHubIssue[] = [closedIssue];
+  const mergedPr = createPullRequest({
+    number: 901,
+    title: "Recoverable tracked PR",
+    url: "https://example.test/pr/901",
+    state: "MERGED",
+    headRefName: "codex/reopen-issue-450",
+    headRefOid: "merged-head-901",
+    mergedAt: "2026-03-13T00:22:00Z",
+  });
+  const prLookups: number[] = [];
+  let saveCalls = 0;
+
+  const result = await runOnceCyclePrelude({
+    stateStore: {
+      load: async () => state,
+      save: async () => {
+        saveCalls += 1;
+      },
+    },
+    carryoverRecoveryEvents: [],
+    reconcileStaleActiveIssueReservation: async () => [],
+    handleAuthFailure: async () => null,
+    listAllIssues: async () => issues,
+    reconcileTrackedMergedButOpenIssues: async (loadedState, loadedIssues, updateReconciliationProgress, options) =>
+      reconcileTrackedMergedButOpenIssues(
+        {
+          getPullRequestIfExists: async (prNumber) => {
+            prLookups.push(prNumber);
+            if (prNumber === 901) {
+              return mergedPr;
+            }
+            return null;
+          },
+          getIssue: async (issueNumber) => {
+            assert.equal(issueNumber, 450);
+            return closedIssue;
+          },
+          closeIssue: async () => {
+            throw new Error("unexpected closeIssue call");
+          },
+          closePullRequest: async () => {
+            throw new Error("unexpected closePullRequest call");
+          },
+          getChecks: async () => [],
+          getMergedPullRequestsClosingIssue: async () => [],
+          getUnresolvedReviewThreads: async () => [],
+        },
+        {
+          touch(record, patch) {
+            return {
+              ...record,
+              ...patch,
+              updated_at: "2026-03-13T00:25:00Z",
+            };
+          },
+          save: async (nextState) => {
+            saveCalls += 1;
+            assert.equal(nextState, loadedState);
+          },
+        },
+        loadedState,
+        createConfig(),
+        loadedIssues,
+        updateReconciliationProgress,
+        options,
+      ),
+    reconcileMergedIssueClosures: async () => [],
+    reconcileStaleFailedIssueStates: async () => {},
+    reconcileRecoverableBlockedIssueStates: async () => [],
+    reconcileParentEpicClosures: async () => [],
+    cleanupExpiredDoneWorkspaces: async () => [],
+    reserveRunnableIssueSelection: async () => false,
+  });
+
+  assert.ok(!("kind" in result));
+  assert.equal(prLookups[0], 901);
+  assert.equal(prLookups.includes(901), true);
+  assert.equal(saveCalls, 2);
+  assert.equal(result.state.issues["450"]?.state, "done");
+  assert.equal(result.state.issues["450"]?.last_head_sha, "merged-head-901");
+  assert.deepEqual(result.recoveryEvents.map((event) => event.reason), [
+    "merged_pr_convergence: tracked PR #901 merged; marked issue #450 done",
+  ]);
 });
 
 test("runOnceCyclePrelude rehydrates tracked blocked PRs before reserving selection", async () => {

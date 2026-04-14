@@ -1,33 +1,34 @@
-# Issue #1514: Bug: doctor/status hydrate tracked PR diagnostics for every historical done record with pr_number
+# Issue #1515: Bug: run-once --dry-run burns tracked-PR reconciliation budget on terminal done records
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1514
-- Branch: codex/issue-1514
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1515
+- Branch: codex/issue-1515
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 19ac2f5ff0bd8bbea2be8182596f1cdb0a96bfef
+- Last head SHA: 7534702f0a1afe18257f5bba0caeacfbd4d3dc84
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-04-14T07:39:00.156Z
+- Updated at: 2026-04-14T07:55:57.498Z
 
 ## Latest Codex Summary
-- Reproduced the regression with focused counter-based tests, then narrowed default tracked-PR hydration in `doctor` and `status` to skip historical `done` records while preserving actionable blocked tracked-PR mismatch diagnostics.
+- Reproduced the budget-burn regression with focused tests, then changed tracked-PR reconciliation to prioritize non-`done` tracked PR records ahead of historical `done + pr_number` records in the default slice.
+- Added regression coverage in the reconciliation suite and a prelude-level test that wires the real reconciliation path through `runOnceCyclePrelude`.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: Default read-only tracked-PR diagnostics were hydrating every record with `pr_number`, including historical terminal `done` entries that can never produce actionable mismatch output.
-- What changed: Added regression tests for `doctor` and `status` that seed 160 historical `done + pr_number` records plus one blocked actionable record; introduced `shouldHydrateTrackedPrDiagnostics(...)` and used it in both read-only hydration loops to skip terminal `done` records before PR fetches.
+- Hypothesis: The default `reconcileTrackedMergedButOpenIssuesInModule(...)` candidate list was iterating tracked PR records in raw issue-number order, so large tails of historical `done + pr_number` records exhausted the default 25-record budget before recoverable tracked PR work was reached.
+- What changed: Added `prioritizeTrackedMergedButOpenRecords(...)` in `src/recovery-tracked-pr-reconciliation.ts` so the default pass processes non-`done` tracked PR records before historical `done` records while preserving round-robin resume ordering inside each tier. Added direct and prelude-level regressions for the `800 !== 901` failure mode.
 - Current blocker: none
-- Next exact step: Commit the reproducer-plus-fix checkpoint on `codex/issue-1514`.
-- Verification gap: none for the requested local scope; the targeted test files and `npm run build` pass.
-- Files touched: .codex-supervisor/issue-journal.md, src/doctor.ts, src/supervisor/supervisor-read-only-reporting.ts, src/supervisor/tracked-pr-mismatch.ts, src/doctor.test.ts, src/supervisor/supervisor-diagnostics-status-selection.test.ts
-- Rollback concern: Low; the new guard only skips tracked-PR hydration for terminal `done` records and leaves non-terminal tracked PR records on the existing path.
-- Last focused command: npx tsx --test src/doctor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts
+- Next exact step: Review diff and create a checkpoint commit on `codex/issue-1515`.
+- Verification gap: none for requested local checks; targeted tests and build passed.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/recovery-tracked-pr-reconciliation.ts`, `src/run-once-cycle-prelude.test.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`
+- Rollback concern: Low; change only affects default ordering for tracked-PR reconciliation when scanning multiple records and leaves `onlyIssueNumber` behavior intact.
+- Last focused command: `npm run build`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.

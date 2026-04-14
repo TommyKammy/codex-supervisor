@@ -108,6 +108,19 @@ function orderTrackedMergedButOpenRecordsForResume(
   return [...ordered.slice(nextIndex), ...ordered.slice(0, nextIndex)];
 }
 
+function prioritizeTrackedMergedButOpenRecords(
+  records: IssueRunRecord[],
+  lastProcessedIssueNumber: number | null,
+): IssueRunRecord[] {
+  const recoverableRecords = records.filter((record) => record.state !== "done");
+  const historicalDoneRecords = records.filter((record) => record.state === "done");
+
+  return [
+    ...orderTrackedMergedButOpenRecordsForResume(recoverableRecords, lastProcessedIssueNumber),
+    ...orderTrackedMergedButOpenRecordsForResume(historicalDoneRecords, lastProcessedIssueNumber),
+  ];
+}
+
 export function buildTrackedPrResumeRecoveryEvent(
   record: Pick<IssueRunRecord, "issue_number" | "state" | "last_head_sha" | "blocked_reason">,
   pr: Pick<GitHubPullRequest, "number" | "headRefOid" | "isDraft">,
@@ -185,7 +198,7 @@ export async function reconcileTrackedMergedButOpenIssuesInModule(
     : [state.issues[String(options.onlyIssueNumber)]].filter((record): record is IssueRunRecord => record !== undefined);
   const prBearingRecords = selectedRecords.filter((record): record is IssueRunRecord => record.pr_number !== null);
   const records = options.onlyIssueNumber === undefined || options.onlyIssueNumber === null
-    ? orderTrackedMergedButOpenRecordsForResume(
+    ? prioritizeTrackedMergedButOpenRecords(
       prBearingRecords,
       trackedMergedButOpenLastProcessedIssueNumber(state),
     )
