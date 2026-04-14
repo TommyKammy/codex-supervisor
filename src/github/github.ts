@@ -13,7 +13,11 @@ import {
 import { CommandOptions, runCommand } from "../core/command";
 import { GitHubInventoryClient, GitHubInventoryRefreshError, ListAllIssuesOptions } from "./github-inventory";
 import { GitHubMutationClient } from "./github-mutations";
-import { GitHubReviewSurfaceClient, PullRequestReviewSurfaceOptions } from "./github-review-surface";
+import {
+  GitHubReviewSurfaceClient,
+  IssueCommentSurfaceOptions,
+  PullRequestReviewSurfaceOptions,
+} from "./github-review-surface";
 import { GitHubTransport, isGitHubRateLimitFailure } from "./github-transport";
 
 export { isTransientGitHubCommandFailure } from "./github-transport";
@@ -203,5 +207,12 @@ export class GitHubClient {
     issueComments: IssueComment[];
   }> {
     return this.reviewSurface.getExternalReviewSurface(prNumber, options);
+  }
+
+  async getIssueComments(
+    issueNumber: number,
+    options: IssueCommentSurfaceOptions = {},
+  ): Promise<IssueComment[]> {
+    return this.reviewSurface.getIssueComments(issueNumber, options);
   }
 }

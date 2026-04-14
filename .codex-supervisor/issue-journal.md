@@ -1,46 +1,49 @@
-# Issue #1491: Same-head host-local blockers can be cleared as stale when blocker comment publication fails
+# Issue #1442: Comment on GitHub issues when execution-ready metadata is missing
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1491
-- Branch: codex/issue-1491
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1442
+- Branch: codex/issue-1442
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: addressing_review
 - Attempt count: 2 (implementation=1, repair=1)
-- Last head SHA: 1ebc994164cc74440b4cd9cef7efc9d12b4bacf3
+- Last head SHA: c4a690b5b9df9f0b928af9706176cc6bd9772573
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ856qw1j
+- Last failure signature: PRRT_kwDORgvdZ856sDWV|PRRT_kwDORgvdZ856sDWX|PRRT_kwDORgvdZ856sDWb|PRRT_kwDORgvdZ856sDWe
 - Repeated failure signature count: 1
-- Updated at: 2026-04-13T22:42:53.013Z
+- Updated at: 2026-04-14T01:40:55.000Z
 
 ## Latest Codex Summary
-Recorded current-head host-local blocker observations separately from blocker-comment persistence, then used that observation in same-head ready-promotion freshness checks. That keeps workspace-preparation and workstation-local-path blockers authoritative after comment publication fails, while preserving the stale-path behavior for older records that lack current-head evidence.
+Addressed the active review threads on top of `c4a690b` by tightening sticky-comment ownership matching, narrowing sequenced-child repair guidance to the canonical predecessor-dependency shape, making blocker-comment sync best-effort on restart paths, and paginating issue comment reads so older sticky comments remain discoverable.
 
-The change is in commit `1ebc994` (`Preserve observed same-head host-local blockers`). I added focused regressions for post-turn comment-failure handling plus reconciliation, `status`, `explain`, and `doctor`, and the requested verification passed locally. The only remaining uncommitted items are supervisor-owned transient artifacts under `.codex-supervisor/`.
+I intentionally did not broad-brush paginate every PR comment surface mentioned by CodeRabbit. The concrete regression here was issue-comment lookup for machine-managed sticky comments; widening the patch to unrelated review-thread and PR top-level comment surfaces would have exceeded the issue scope without evidence of a behavior break in those paths. Focused tests covering the new guidance, null-`databaseId` dedupe, best-effort warning path, issue-comment pagination, recovery clearing, and `npm run build` are green.
 
-Summary: Preserved same-head host-local ready-promotion blockers by persisting current-head blocker observations independent of sticky-comment publication, added focused regressions, and committed the fix as `1ebc994`.
-State hint: stabilizing
+Summary: Addressed review feedback for sticky comment dedupe, sequenced-child guidance, best-effort sync, and issue-comment pagination.
+State hint: addressing_review
 Blocked reason: none
-Tests: `node --test --import tsx src/post-turn-pull-request.test.ts --test-name-pattern "comment posting fails|host-local blocker"`; `node --test --import tsx src/supervisor/supervisor-recovery-reconciliation.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts src/doctor.test.ts`; `npm run build`
-Next action: Push commit `1ebc994` and open or update the branch PR if the supervisor requests publication
-Failure signature: PRRT_kwDORgvdZ856qw1j
+Tests: `npx tsx --test src/run-once-issue-selection.test.ts src/github/github.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`; `npm run build`
+Next action: Commit the review-fix checkpoint, then push/update PR #1495 for re-review.
+Failure signature: none
 
 ## Active Failure Context
 - Category: review
-- Summary: 1 unresolved automated review thread(s) remain.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1492#discussion_r3076208723
+- Summary: 4 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1495#discussion_r3076667581
 - Details:
-  - src/post-turn-pull-request.ts:1506 summary=_⚠️ Potential issue_ | _🟠 Major_ **Workstation path-hygiene blockers can still lose fresh evidence on comment failure.** Line 1503 applies observed-blocker persistence for work... url=https://github.com/TommyKammy/codex-supervisor/pull/1492#discussion_r3076208723
+  - src/github/github-review-surface.ts:588 summary=_⚠️ Potential issue_ | _🟠 Major_ 🧩 Analysis chain 🏁 Script executed: Repository: TommyKammy/codex-supervisor Length of output: 529 --- 🏁 Script executed: Repository: TommyKa... url=https://github.com/TommyKammy/codex-supervisor/pull/1495#discussion_r3076667581
+  - src/requirements-blocker-issue-comment.ts:33 summary=_⚠️ Potential issue_ | _🟠 Major_ **Don't require `databaseId` just to recognize the sticky comment.** `IssueComment.databaseId` is nullable in `src/core/types.ts`, and `fetchIs... url=https://github.com/TommyKammy/codex-supervisor/pull/1495#discussion_r3076667585
+  - src/requirements-blocker-issue-comment.ts:61 summary=_⚠️ Potential issue_ | _🟠 Major_ **Fix the sequenced-child `Depends on:` guidance.** This template currently tells sequenced children to keep `Depends on: none`, which is the w... url=https://github.com/TommyKammy/codex-supervisor/pull/1495#discussion_r3076667590
+  - src/run-once-issue-selection.ts:568 summary=_⚠️ Potential issue_ | _🟠 Major_ **Treat requirements-blocker comment sync as best-effort to avoid restart-path failures.** If this external call fails, the function throws aft... url=https://github.com/TommyKammy/codex-supervisor/pull/1495#discussion_r3076667593
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: The follow-up review correctly identified that three `workstation_local_path_hygiene` blocked-state writes still skipped `last_observed_host_local_pr_blocker_*`, so same-head path-hygiene blockers could still look stale when comment publication failed or normalization could not be published.
-- What changed: Added `observedTrackedPrHostLocalBlockerPatch(...)` to the initial path-hygiene failure branch and both normalization-persistence failure branches in `handlePostTurnPullRequestTransitionsPhase`, added a focused `comment posting fails` regression for path-hygiene blockers, and extended the unpublished-normalization regression to assert the current-head observation is persisted.
+- Hypothesis: The remaining automated review findings were a mix of one real dedupe bug (`databaseId` nullable), one real resilience gap (comment sync on restart path), one guidance wording gap for sequenced children, and one overly broad pagination suggestion whose concrete regression surface was older issue comments rather than every PR comment feed.
+- What changed: Removed the `databaseId` requirement from sticky-comment recognition in `src/requirements-blocker-issue-comment.ts`; updated sequenced-child repair text to prefer `Depends on: #<previous-issue-number>` when earlier sequence work truly blocks execution while still allowing `Depends on: none`; wrapped requirements-blocker comment sync in a best-effort warning helper in `src/run-once-issue-selection.ts`; paginated `fetchIssueComments` in `src/github/github-review-surface.ts`; added focused tests in `src/run-once-issue-selection.test.ts` and `src/github/github.test.ts`.
 - Current blocker: none
-- Next exact step: Commit the review-fix delta, then push `codex/issue-1491` and update PR #1492 if publication is requested.
-- Verification gap: none for the requested checks; the broader reconciliation suite still logs the same pre-existing execution-metrics chronology warnings in fixture scenarios, but the suite passes.
-- Files touched: .codex-supervisor/issue-journal.md; src/post-turn-pull-request.ts; src/post-turn-pull-request.test.ts
-- Rollback concern: The new observed-blocker fields are intentionally sticky across same-head reconciliation until a successful ready-promotion pass clears them; if another caller starts reusing those fields outside ready-promotion freshness checks, same-head stale classification could become too conservative.
-- Last focused command: npm run build
+- Next exact step: Commit the current diff and update PR #1495 so GitHub can re-evaluate the addressed review threads.
+- Verification gap: No broader full-suite rerun beyond the focused areas touched in this repair pass.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/requirements-blocker-issue-comment.ts`, `src/run-once-issue-selection.ts`, `src/github/github-review-surface.ts`, `src/run-once-issue-selection.test.ts`, `src/github/github.test.ts`.
+- Rollback concern: Low; the runtime changes are narrowly scoped to issue-comment lookup, blocker-comment ownership/guidance, and restart-path error handling.
+- Last focused command: `npx tsx --test src/run-once-issue-selection.test.ts src/github/github.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.

@@ -633,6 +633,83 @@ test("GitHubClient refreshes external review surface for action reads even on th
   assert.equal(graphqlCalls, 2);
 });
 
+test("GitHubClient paginates issue comments so older machine-managed comments stay visible", async () => {
+  const config = createConfig();
+  const queries: string[] = [];
+  let graphqlCalls = 0;
+  const client = new GitHubClient(config, async (_command, args) => {
+    if (args[0] === "api" && args[1] === "graphql") {
+      graphqlCalls += 1;
+      queries.push(args.find((arg) => arg.startsWith("query=")) ?? "");
+      const cursor = args.find((arg) => arg.startsWith("cursor=")) ?? null;
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          data: {
+            repository: {
+              issue: {
+                comments: cursor === null
+                  ? {
+                    nodes: [
+                      {
+                        id: "comment-1",
+                        databaseId: 1001,
+                        body: "oldest visible sticky comment",
+                        createdAt: "2026-03-13T02:20:00Z",
+                        url: "https://example.test/issues/44#issuecomment-1001",
+                        viewerDidAuthor: true,
+                        author: {
+                          login: "codex-supervisor",
+                          __typename: "Bot",
+                        },
+                      },
+                    ],
+                    pageInfo: {
+                      hasNextPage: true,
+                      endCursor: "cursor-1",
+                    },
+                  }
+                  : {
+                    nodes: [
+                      {
+                        id: "comment-2",
+                        databaseId: 1002,
+                        body: "newer operator comment",
+                        createdAt: "2026-03-13T02:21:00Z",
+                        url: "https://example.test/issues/44#issuecomment-1002",
+                        viewerDidAuthor: false,
+                        author: {
+                          login: "octocat",
+                          __typename: "User",
+                        },
+                      },
+                    ],
+                    pageInfo: {
+                      hasNextPage: false,
+                      endCursor: null,
+                    },
+                  },
+              },
+            },
+          },
+        }),
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  const comments = await client.getIssueComments(44, { purpose: "action" });
+
+  assert.equal(graphqlCalls, 2);
+  assert.equal(comments.length, 2);
+  assert.equal(comments[0]?.id, "comment-1");
+  assert.equal(comments[1]?.id, "comment-2");
+  assert.match(queries[0] ?? "", /comments\(first: 100\)/);
+  assert.match(queries[1] ?? "", /comments\(first: 100, after: \$cursor\)/);
+});
+
 test("GitHubClient updates an existing issue comment", async () => {
   const config = createConfig();
   let capturedArgs: string[] | null = null;

@@ -154,6 +154,40 @@ Parallelizable: No`,
   });
 });
 
+test("buildIssueLintDto uses canonical standalone execution-order repair guidance", async () => {
+  const issue = createIssue({
+    number: 607,
+    title: "Repair standalone scheduling metadata",
+    labels: [{ name: "codex" }],
+    body: `## Summary
+Keep standalone issue repair guidance canonical.
+
+## Scope
+- prove the repair guidance uses the section-based execution-order form
+
+## Acceptance criteria
+- standalone repair guidance matches docs/issue-metadata.md
+
+## Verification
+- npx tsx --test src/supervisor/supervisor-selection-issue-lint.test.ts
+
+Depends on: none
+Parallelizable: No`,
+  });
+
+  const dto = await buildIssueLintDto(
+    {
+      getIssue: async () => issue,
+    },
+    issue.number,
+  );
+
+  assert.deepEqual(dto.missingRequired, ["execution order"]);
+  assert.deepEqual(dto.repairGuidance, [
+    "Add a `## Execution order` section with `1 of 1` for standalone work, or `N of M` for a sequenced series.",
+  ]);
+});
+
 test("buildIssueLintDto keeps repair guidance ordering stable", async () => {
   const issue = createIssue({
     number: 603,
@@ -193,7 +227,7 @@ Parallelizable: Later`,
       "Add a `## Scope` section with bullet points describing the in-scope work.",
       "Add a `## Acceptance criteria` section listing the observable completion checks.",
       "Add a `## Verification` section with the exact command, test file, or manual check to run.",
-      "Replace invalid scheduling metadata with valid `Part of: #<number>`, `Depends on: none|#<number>`, `Execution order: N of M`, and `Parallelizable: Yes|No` lines.",
+      "Replace invalid scheduling metadata with valid `Part of: #<number>`, `Depends on: none|#<number>`, `Parallelizable: Yes|No`, and a `## Execution order` section.",
       "Rewrite the issue to pick one auth path, remove the unresolved choice, and state the approved outcome explicitly.",
     ],
   });
@@ -210,7 +244,7 @@ Parallelizable: Later`,
       "repair_guidance_1=Add a `## Scope` section with bullet points describing the in-scope work.",
       "repair_guidance_2=Add a `## Acceptance criteria` section listing the observable completion checks.",
       "repair_guidance_3=Add a `## Verification` section with the exact command, test file, or manual check to run.",
-      "repair_guidance_4=Replace invalid scheduling metadata with valid `Part of: #<number>`, `Depends on: none|#<number>`, `Execution order: N of M`, and `Parallelizable: Yes|No` lines.",
+      "repair_guidance_4=Replace invalid scheduling metadata with valid `Part of: #<number>`, `Depends on: none|#<number>`, `Parallelizable: Yes|No`, and a `## Execution order` section.",
       "repair_guidance_5=Rewrite the issue to pick one auth path, remove the unresolved choice, and state the approved outcome explicitly.",
     ].join("\n"),
   );
@@ -264,8 +298,8 @@ Parallelizable: Yes`,
     repairGuidance: [
       "Add `Depends on: none` if nothing blocks this issue, or list blocking issues as `Depends on: #123, #456`.",
       "Add `Parallelizable: No` unless this issue is explicitly safe to run alongside related work.",
-      "Add `Execution order: 1 of 1` if this issue stands alone, or `Execution order: N of M` for a sequenced series.",
-      "Replace invalid scheduling metadata with valid `Part of: #<number>`, `Depends on: none|#<number>`, `Execution order: N of M`, and `Parallelizable: Yes|No` lines.",
+      "Add a `## Execution order` section with `1 of 1` for standalone work, or `N of M` for a sequenced series.",
+      "Replace invalid scheduling metadata with valid `Part of: #<number>`, `Depends on: none|#<number>`, `Parallelizable: Yes|No`, and a `## Execution order` section.",
     ],
   });
 });

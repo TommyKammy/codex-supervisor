@@ -27,6 +27,7 @@ import {
   evaluateAutonomousExecutionTrust,
   isAutonomousExecutionTrustBlockedRecord,
 } from "./supervisor/supervisor-trust-gate";
+import { syncRequirementsBlockerIssueComment } from "./requirements-blocker-issue-comment";
 import { StateStore } from "./core/state-store";
 import {
   FailureContext,
@@ -59,7 +60,9 @@ export interface RestartRunOnce {
 type IssueSelectionResult = ReadyIssueContext | RestartRunOnce | string;
 
 type IssueSelectionCandidateGitHub = Pick<GitHubClient, "listCandidateIssues">;
-type IssueSelectionGitHub = IssueSelectionCandidateGitHub & Pick<GitHubClient, "getIssue">;
+type IssueSelectionGitHub = IssueSelectionCandidateGitHub
+  & Pick<GitHubClient, "getIssue">
+  & Partial<Pick<GitHubClient, "addIssueComment" | "getIssueComments" | "updateIssueComment">>;
 type IssueSelectionSaveStateStore = Pick<StateStore, "save">;
 type IssueSelectionStateStore = IssueSelectionSaveStateStore & Pick<StateStore, "touch">;
 
@@ -75,6 +78,20 @@ interface SyncIssueJournalArgs {
   record: IssueRunRecord;
   journalPath: string;
   maxChars: number;
+}
+
+async function syncRequirementsBlockerIssueCommentBestEffort(
+  github: IssueSelectionGitHub,
+  issue: GitHubIssue,
+): Promise<void> {
+  try {
+    await syncRequirementsBlockerIssueComment(github, issue);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(
+      `Failed to sync requirements blocker issue comment for issue #${issue.number}: ${truncate(message, 500) ?? "unknown error"}`,
+    );
+  }
 }
 
 interface ResolveRunnableIssueContextArgs {
@@ -562,6 +579,7 @@ export async function resolveRunnableIssueContext(
         state.issues[String(blockedRecord.issue_number)] = blockedRecord;
         state.activeIssueNumber = null;
         await stateStore.save(state);
+        await syncRequirementsBlockerIssueCommentBestEffort(github, issue);
         if (blockedRecord.journal_path) {
           await syncIssueJournalImpl({
             issue,
@@ -659,6 +677,7 @@ export async function resolveRunnableIssueContext(
       state.issues[String(blockedRecord.issue_number)] = blockedRecord;
       state.activeIssueNumber = null;
       await stateStore.save(state);
+      await syncRequirementsBlockerIssueCommentBestEffort(github, issue);
       if (blockedRecord.journal_path) {
         await syncIssueJournalImpl({
           issue,
