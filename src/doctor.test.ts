@@ -1569,6 +1569,110 @@ test("diagnoseSupervisorHost exposes tracked PR mismatches when GitHub is ready 
   );
 });
 
+test("diagnoseSupervisorHost skips tracked PR hydration for historical done records", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-doctor-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = path.join(root, "repo");
+  const workspaceRoot = path.join(root, "workspaces");
+  const workspace = path.join(workspaceRoot, "issue-171");
+  const stateFile = path.join(root, "state.json");
+  await fs.mkdir(repoPath, { recursive: true });
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  execFileSync("git", ["init", "-b", "main"], { cwd: repoPath });
+  await fs.writeFile(path.join(repoPath, "README.md"), "fixture\n", "utf8");
+  execFileSync("git", ["add", "README.md"], { cwd: repoPath });
+  execFileSync("git", ["commit", "-m", "fixture"], {
+    cwd: repoPath,
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Codex",
+      GIT_AUTHOR_EMAIL: "codex@example.com",
+      GIT_COMMITTER_NAME: "Codex",
+      GIT_COMMITTER_EMAIL: "codex@example.com",
+    },
+  });
+  execFileSync("git", ["-C", repoPath, "worktree", "add", "-b", "codex/reopen-issue-171", workspace], {
+    encoding: "utf8",
+  });
+
+  const config = createConfig({
+    repoPath,
+    workspaceRoot,
+    stateFile,
+    codexBinary: process.execPath,
+    localCiCommand: "npm run ci:local",
+  });
+
+  const historicalRecords = Object.fromEntries(
+    Array.from({ length: 160 }, (_, index) => {
+      const issueNumber = 3000 + index;
+      return [
+        String(issueNumber),
+        createRecord({
+          issue_number: issueNumber,
+          state: "done",
+          branch: "codex/reopen-issue-171",
+          workspace,
+          pr_number: 5000 + index,
+          blocked_reason: null,
+          last_head_sha: `done-head-${issueNumber}`,
+        }),
+      ];
+    }),
+  );
+
+  const trackedState: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      ...historicalRecords,
+      "171": createRecord({
+        issue_number: 171,
+        state: "blocked",
+        branch: "codex/reopen-issue-171",
+        workspace,
+        pr_number: 271,
+        blocked_reason: "manual_review",
+        last_head_sha: "head-ready-271",
+      }),
+    },
+  };
+
+  const readyPr = createPullRequest({
+    number: 271,
+    headRefName: "codex/reopen-issue-171",
+    headRefOid: "head-ready-271",
+  });
+  let getPullRequestIfExistsCalls = 0;
+
+  const diagnostics = await diagnoseSupervisorHost({
+    config,
+    authStatus: async () => ({ ok: true, message: null }),
+    loadState: async () => trackedState,
+    github: {
+      getCandidateDiscoveryDiagnostics: async () => ({
+        fetchWindow: 100,
+        observedMatchingOpenIssues: 1,
+        truncated: false,
+      }),
+      getPullRequestIfExists: async (prNumber) => {
+        getPullRequestIfExistsCalls += 1;
+        return prNumber === readyPr.number ? readyPr : null;
+      },
+      getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getUnresolvedReviewThreads: async () => [],
+    },
+  });
+
+  assert.equal(getPullRequestIfExistsCalls, 1);
+  assert.match(
+    renderDoctorReport(diagnostics),
+    /doctor_detail name=worktrees detail=tracked_pr_mismatch issue=#171 pr=#271 github_state=ready_to_merge github_blocked_reason=none local_state=blocked local_blocked_reason=manual_review stale_local_blocker=yes/,
+  );
+});
+
 test("diagnoseSupervisorHost preserves draft tracked PR verification blockers instead of suggesting a no-op rerun", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-doctor-"));
   t.after(async () => {

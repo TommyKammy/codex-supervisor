@@ -34,7 +34,7 @@ import {
   formatCandidateDiscoveryBehaviorLine,
   formatCandidateDiscoveryWarningDetail,
 } from "./supervisor/supervisor-selection-readiness-summary";
-import { buildTrackedPrMismatch } from "./supervisor/tracked-pr-mismatch";
+import { buildTrackedPrMismatch, shouldHydrateTrackedPrDiagnostics } from "./supervisor/tracked-pr-mismatch";
 import { buildTrustAndConfigWarnings, buildWarning, renderDoctorWarningLine } from "./warning-formatting";
 
 export type DoctorCheckStatus = "pass" | "warn" | "fail";
@@ -522,7 +522,7 @@ async function diagnoseWorktrees(
     let trackedPrMismatchCount = 0;
     if (github?.getPullRequestIfExists && github.getChecks && github.getUnresolvedReviewThreads) {
       for (const record of Object.values(state.issues)) {
-        if (record.pr_number === null) {
+        if (!shouldHydrateTrackedPrDiagnostics(record)) {
           continue;
         }
 
