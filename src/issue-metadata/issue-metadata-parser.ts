@@ -3,6 +3,7 @@ import type { IssueMetadata } from "./issue-metadata";
 import type { RiskyChangeClass } from "./issue-metadata-risky-policy";
 
 const PART_OF_LINE_PATTERN = /^\s*(?:-\s+)?Part of:?\s+#(\d+)\s*$/im;
+const CHILD_ISSUE_BULLET_PATTERN = /^\s*-\s+#(\d+)\s*$/;
 
 function escapeRegExp(input: string): string {
   return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -96,4 +97,40 @@ export function parseIssueMetadata(issue: GitHubIssue): IssueMetadata {
     parallelGroup: parallelGroupValue ? parallelGroupValue : null,
     touches: parseTouchesList(issue.body),
   };
+}
+
+export function parseCanonicalEpicChildIssueNumbers(body: string): number[] {
+  const lines = body.split(/\r?\n/);
+  const headerIndex = lines.findIndex((line) => /^\s*##\s*Child issues\s*$/i.test(line));
+  if (headerIndex === -1) {
+    return [];
+  }
+
+  const issueNumbers: number[] = [];
+  for (const rawLine of lines.slice(headerIndex + 1)) {
+    const line = rawLine.trim();
+    if (!line) {
+      if (issueNumbers.length > 0) {
+        break;
+      }
+      continue;
+    }
+
+    if (/^##\s+/i.test(line)) {
+      break;
+    }
+
+    const match = line.match(CHILD_ISSUE_BULLET_PATTERN);
+    if (!match) {
+      return [];
+    }
+
+    issueNumbers.push(Number(match[1]));
+  }
+
+  if (issueNumbers.length === 0) {
+    return [];
+  }
+
+  return Array.from(new Set(issueNumbers));
 }
