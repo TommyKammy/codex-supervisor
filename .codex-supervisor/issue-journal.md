@@ -1,47 +1,47 @@
-# Issue #1520: Bug: run-once prelude revalidates historical closed issues via merged_issue_closures on every cycle
+# Issue #1522: Bug: merged issue closure gate skips suspicious done records with stale provenance
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1520
-- Branch: codex/issue-1520
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1522
+- Branch: codex/issue-1522
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: addressing_review
-- Attempt count: 2 (implementation=1, repair=1)
-- Last head SHA: 717f492d1e7c713107e522573ab130135b57892f
+- Attempt count: 3 (implementation=1, repair=1)
+- Last head SHA: 9e34edb601fd6e0f0abd64cdec05f9206dbe4632
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ856w4vK|PRRT_kwDORgvdZ856w4vO
+- Last failure signature: PRRT_kwDORgvdZ856xSZQ
 - Repeated failure signature count: 1
-- Updated at: 2026-04-14T09:19:30.705Z
+- Updated at: 2026-04-14T09:52:06.449Z
 
 ## Latest Codex Summary
-Implemented a narrow fix in [src/recovery-reconciliation.ts](src/recovery-reconciliation.ts) so `reconcileMergedIssueClosures()` no longer scans historical closed terminal records every cycle. It now revalidates only when the closed issue is still active locally, not yet terminal locally, or GitHub’s `updatedAt` is newer than the local terminal timestamps. That preserves convergence for suspicious/recently changed closures without paying O(history) GraphQL cost on old `done` backlogs.
+Patched [src/recovery-reconciliation.ts](src/recovery-reconciliation.ts:654) so merged-closure reconciliation now writes a `merged_pr_convergence` recovery event even when the stored `pr_number` and `last_head_sha` already match the satisfying merged PR. That prevents suspicious closed `done` records from re-entering the expensive reconciliation path forever without ever converging locally.
 
-I added focused regressions in [src/supervisor/supervisor-recovery-reconciliation.test.ts](src/supervisor/supervisor-recovery-reconciliation.test.ts) and [src/run-once-cycle-prelude.test.ts](src/run-once-cycle-prelude.test.ts) that prove a `160`-record historical closed backlog no longer causes `160` merged-closure lookups, while recently changed and non-terminal closed records still revalidate. I also updated the issue journal and committed the checkpoint as `717f492` with message `Bound merged issue closure revalidation`.
+Added a focused regression in [src/supervisor/supervisor-recovery-reconciliation.test.ts](src/supervisor/supervisor-recovery-reconciliation.test.ts:3666) for the exact review case: correct merged PR metadata, stale recovery provenance, older GitHub `updatedAt`, and a required one-time backfill. Verified with `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts src/run-once-cycle-prelude.test.ts` and `npm run build`, then committed and pushed as `9e34edb` on `codex/issue-1522`. I did not post a GitHub reply or resolve the review thread.
 
-Summary: Bounded `merged_issue_closures` revalidation to active, non-terminal, or newly changed closed issues; added direct and prelude regression tests; build passed; committed as `717f492`.
-State hint: draft_pr
+Summary: Backfilled merged-closure convergence provenance for already-matching done records, added a regression test for the review case, and pushed commit `9e34edb` to PR #1523
+State hint: addressing_review
 Blocked reason: none
 Tests: `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts src/run-once-cycle-prelude.test.ts`; `npm run build`
-Next action: Open or update a draft PR for `codex/issue-1520` with commit `717f492` and let CI validate the bounded merged-closure behavior
-Failure signature: PRRT_kwDORgvdZ856w4vK|PRRT_kwDORgvdZ856w4vO
+Next action: Refresh PR #1523 review state and, if desired, reply to or resolve the remaining automated review thread based on commit `9e34edb`
+Failure signature: PRRT_kwDORgvdZ856xSZQ
 
 ## Active Failure Context
 - Category: review
-- Summary: 2 unresolved automated review thread(s) remain.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1521#discussion_r3078391599
+- Summary: 1 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1523#discussion_r3078535348
 - Details:
-  - .codex-supervisor/issue-journal.md:29 summary=_⚠️ Potential issue_ | _🟡 Minor_ **Minor wording polish on verification note.** Line 29 reads more cleanly as “locally focused tests” (or “local-focused tests”). url=https://github.com/TommyKammy/codex-supervisor/pull/1521#discussion_r3078391599
-  - src/recovery-reconciliation.ts:366 summary=_⚠️ Potential issue_ | _🟠 Major_ **Keep provenance-free `done` records eligible for merged-closure backfill.** Once a record reaches `done`, this gate treats it as converged ba... url=https://github.com/TommyKammy/codex-supervisor/pull/1521#discussion_r3078391603
+  - src/recovery-reconciliation.ts:369 summary=_⚠️ Potential issue_ | _🟠 Major_ **Persist repaired provenance even when the done patch is otherwise unchanged.** Line 367 correctly forces suspicious records into revalidation... url=https://github.com/TommyKammy/codex-supervisor/pull/1523#discussion_r3078535348
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: The review-thread regression was real because the new timestamp-only gate could treat a provenance-free `done` record as converged forever, preventing `merged_issue_closures` from backfilling merged PR provenance for suspicious closed issues.
-- What changed: Tightened `shouldRevalidateMergedIssueClosureRecord()` in `src/recovery-reconciliation.ts` so `done` records still revalidate when `pr_number` or `last_head_sha` is missing, even if GitHub has not updated since the local terminal timestamp. Extended the direct reconciliation and `runOnceCyclePrelude` backlog tests to prove provenance-free `done` records still trigger bounded merged-closure lookups. Updated the verification note wording to "locally focused tests".
-- Current blocker: none
-- Next exact step: Commit the review-thread fix on `codex/issue-1520`, push the branch, and update PR #1521 so the unresolved automated review threads can be re-evaluated on the new head.
-- Verification gap: No PR/CI verification yet on the review-fix head; locally focused tests and `npm run build` passed.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/recovery-reconciliation.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `src/run-once-cycle-prelude.test.ts`
-- Rollback concern: Low. The change only widens revalidation for suspicious closed `done` records that are missing merged-closure provenance; historical terminal records with intact provenance remain bounded by the timestamp gate.
-- Last focused command: `npm run build`
+- Hypothesis: the remaining review thread was valid because `reconcileMergedIssueClosures()` re-entered suspicious closed `done` records, but it only persisted a repair when `doneResetPatch()` changed structural fields; records whose stored PR/head already matched never backfilled `merged_pr_convergence` provenance and kept re-entering reconciliation forever.
+- What changed: Verified the CodeRabbit major finding is already fixed on `HEAD` via the `needsMergedConvergenceBackfill` write path, then tightened the stale-provenance regression fixture to set `last_recovery_reason: null` explicitly so future `createRecord()` default changes cannot accidentally make the test record trusted.
+- Current blocker: none.
+- Next exact step: commit and push the explicit test-fixture follow-up on `codex/issue-1522`, then refresh PR #1523 and decide whether to reply to or resolve the still-open CodeRabbit thread manually.
+- Verification gap: none for the issue-scoped checks; broader suite not run.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/recovery-reconciliation.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`.
+- Rollback concern: the new trust rule treats old closed `done` records without `merged_pr_convergence` recovery metadata as suspicious, so legacy state may re-enter reconciliation until repaired.
+- Last focused command:
+- Last focused commands: `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts src/run-once-cycle-prelude.test.ts`; `python3 .../fetch_comments.py TommyKammy/codex-supervisor 1523`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
