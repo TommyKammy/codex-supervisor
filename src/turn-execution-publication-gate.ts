@@ -19,7 +19,7 @@ import {
   runWorkstationLocalPathGate,
   type WorkstationLocalPathGateResult,
 } from "./workstation-local-path-gate";
-import { commitAndPushTrackedFiles, getWorkspaceStatus } from "./core/workspace";
+import { commitAndPushTrackedFiles, filterPresentTrackedFilePaths, getWorkspaceStatus } from "./core/workspace";
 
 function isOpenPullRequest(pr: GitHubPullRequest | null): pr is GitHubPullRequest {
   return pr !== null && pr.state === "OPEN" && !pr.mergedAt;
@@ -120,13 +120,14 @@ export async function applyCodexTurnPublicationGate(args: {
       };
     }
     const rewrittenJournalPaths = pathHygieneGate.rewrittenJournalPaths ?? [];
-    if (rewrittenJournalPaths.length > 0) {
+    const presentRewrittenJournalPaths = filterPresentTrackedFilePaths(args.workspacePath, rewrittenJournalPaths);
+    if (presentRewrittenJournalPaths.length > 0) {
       try {
         await commitAndPushTrackedFiles({
           workspacePath: args.workspacePath,
           branch: record.branch,
           remoteBranchExists: workspaceStatus.remoteBranchExists,
-          filePaths: rewrittenJournalPaths,
+          filePaths: presentRewrittenJournalPaths,
           commitMessage: SUPERVISOR_JOURNAL_NORMALIZATION_COMMIT_MESSAGE,
         });
       } catch (error) {
@@ -134,7 +135,7 @@ export async function applyCodexTurnPublicationGate(args: {
         const failureContext = buildWorkstationLocalPathFailureContext({
           gateLabel: "before publication",
           details: [
-            `journal normalization persistence failed for ${rewrittenJournalPaths.join(", ")}: ${message}`,
+            `journal normalization persistence failed for ${presentRewrittenJournalPaths.join(", ")}: ${message}`,
           ],
         });
         record = args.stateStore.touch(record, {

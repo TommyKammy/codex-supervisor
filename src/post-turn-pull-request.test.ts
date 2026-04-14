@@ -4658,6 +4658,148 @@ test("handlePostTurnPullRequestTransitionsPhase redacts supervisor-owned cross-i
   assert.match(git(workspacePath, "ls-remote", "--heads", "origin", "codex/issue-102"), /refs\/heads\/codex\/issue-102/);
 });
 
+test("handlePostTurnPullRequestTransitionsPhase tolerates sparse-omitted cross-issue journal rewrites during ready promotion", async (t) => {
+  const workspacePath = await createTrackedRepo();
+  t.after(async () => {
+    await fs.rm(workspacePath, { recursive: true, force: true });
+  });
+  git(workspacePath, "checkout", "-b", "codex/issue-102");
+
+  const currentJournalPath = path.join(workspacePath, ".codex-supervisor", "issues", "102", "issue-journal.md");
+  const otherJournalPath = path.join(workspacePath, ".codex-supervisor", "issues", "181", "issue-journal.md");
+  await fs.mkdir(path.dirname(currentJournalPath), { recursive: true });
+  await fs.mkdir(path.dirname(otherJournalPath), { recursive: true });
+  await fs.writeFile(currentJournalPath, "# Issue #102\n", "utf8");
+  await fs.writeFile(
+    otherJournalPath,
+    [
+      "# Issue #181: stale leak",
+      "",
+      "## Codex Working Notes",
+      "### Current Handoff",
+      `- What changed: copied ${SAMPLE_MACOS_WORKSTATION_PATH} from another workstation.`,
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  git(workspacePath, "add", ".codex-supervisor/issues/102/issue-journal.md", ".codex-supervisor/issues/181/issue-journal.md");
+  git(workspacePath, "commit", "-m", "seed sparse ready-gate journal leak");
+  git(workspacePath, "push", "-u", "origin", "codex/issue-102");
+
+  git(workspacePath, "sparse-checkout", "init", "--no-cone");
+  await fs.writeFile(
+    path.join(workspacePath, ".git", "info", "sparse-checkout"),
+    ["/README.md", "/.codex-supervisor/issues/102/"].join("\n").concat("\n"),
+    "utf8",
+  );
+  git(workspacePath, "read-tree", "-mu", "HEAD");
+  await assert.rejects(fs.access(otherJournalPath), { code: "ENOENT" });
+
+  const config = createConfig({
+    localCiCommand: "npm run ci:local",
+    issueJournalRelativePath: ".codex-supervisor/issues/{issueNumber}/issue-journal.md",
+  });
+  const issue = createIssue({ title: "Gate sparse ready promotion on cross-issue journal hygiene" });
+  const headSha = git(workspacePath, "rev-parse", "HEAD").trim();
+  const draftPr = createPullRequest({
+    title: "Gate sparse ready promotion",
+    isDraft: true,
+    headRefName: "codex/issue-102",
+    headRefOid: headSha,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "draft_pr",
+        pr_number: draftPr.number,
+        workspace: workspacePath,
+        journal_path: currentJournalPath,
+      }),
+    },
+  };
+
+  let readyCalls = 0;
+  let localCiCalls = 0;
+  let workspacePreparationCalls = 0;
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: createNoopStateStore(),
+    github: createDefaultGithub({
+      markPullRequestReady: async (prNumber: number) => {
+        assert.equal(prNumber, 116);
+        readyCalls += 1;
+      },
+    }),
+    context: createPostTurnContext({
+      issue,
+      pr: draftPr,
+      workspacePath,
+      state,
+      record: state.issues["102"]!,
+    }),
+    derivePullRequestLifecycleSnapshot: (record) => ({
+      recordForState: record,
+      nextState: "pr_open",
+      failureContext: null,
+      reviewWaitPatch: {},
+      copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    blockedReasonFromReviewState: () => null,
+    summarizeChecks: () => ({
+      hasPending: false,
+      hasFailing: false,
+    }),
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+      rewrittenJournalPaths: [".codex-supervisor/issues/181/issue-journal.md"],
+    }),
+    runWorkspacePreparationCommand: async () => {
+      workspacePreparationCalls += 1;
+    },
+    runLocalCiCommand: async () => {
+      localCiCalls += 1;
+    },
+    loadOpenPullRequestSnapshot: async () => ({
+      pr: {
+        ...draftPr,
+        isDraft: readyCalls === 0,
+        headRefOid: git(workspacePath, "rev-parse", "HEAD").trim(),
+      },
+      checks: [],
+      reviewThreads: [] satisfies ReviewThread[],
+    }),
+  });
+
+  assert.equal(result.record.state, "pr_open");
+  assert.equal(result.record.last_failure_signature, null);
+  assert.equal(result.record.blocked_reason, null);
+  assert.equal(result.record.last_head_sha, git(workspacePath, "rev-parse", "HEAD").trim());
+  assert.equal(readyCalls, 1);
+  assert.equal(localCiCalls, 1);
+  assert.equal(workspacePreparationCalls, 0);
+  assert.equal(git(workspacePath, "log", "-1", "--pretty=%s").trim(), "seed sparse ready-gate journal leak");
+  assert.equal(git(workspacePath, "status", "--short", "--untracked-files=no").trim(), "");
+});
+
 test("handlePostTurnPullRequestTransitionsPhase blocks ready promotion until a local normalization commit reaches the PR head", async (t) => {
   const workspacePath = await createTrackedRepo();
   t.after(async () => {

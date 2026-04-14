@@ -434,6 +434,12 @@ export async function commitAndPushTrackedFiles(args: {
   return true;
 }
 
+export function filterPresentTrackedFilePaths(workspacePath: string, filePaths: string[]): string[] {
+  return [...new Set(filePaths.map((filePath) => filePath.trim()).filter(Boolean))].filter((filePath) =>
+    fs.existsSync(path.join(workspacePath, filePath)),
+  );
+}
+
 export async function cleanupWorkspace(
   repoPath: string,
   workspacePath: string,
