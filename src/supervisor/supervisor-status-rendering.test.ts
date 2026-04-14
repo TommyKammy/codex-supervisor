@@ -9,6 +9,7 @@ import {
   buildVerificationPolicyStatusLine,
   formatDetailedStatus,
 } from "./supervisor-status-rendering";
+import { buildCodexModelPolicySnapshot, renderStatusCodexModelPolicyLines } from "../codex/codex-model-policy";
 import { GitHubIssue, GitHubPullRequest, IssueRunRecord, SupervisorConfig } from "../core/types";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
@@ -437,6 +438,39 @@ test("buildLocalReviewRoutingStatusLine labels inherited generic local-review ro
     }),
     "local_review_routing generic=inherit->gpt-5-codex(1) specialists=gpt-5-codex(1) verifier=gpt-5-codex",
   );
+});
+
+test("renderStatusCodexModelPolicyLines reports inherited host defaults and override routes compactly", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "status-codex-policy-"));
+  const previousCodexHome = process.env.CODEX_HOME;
+  t.after(async () => {
+    process.env.CODEX_HOME = previousCodexHome;
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  process.env.CODEX_HOME = root;
+  await fs.writeFile(path.join(root, "config.toml"), 'model = "gpt-5.4"\n', "utf8");
+
+  const lines = renderStatusCodexModelPolicyLines(
+    await buildCodexModelPolicySnapshot({
+      config: createConfig({
+        codexModelStrategy: "inherit",
+        boundedRepairModelStrategy: "alias",
+        boundedRepairModel: "gpt-5.4-mini",
+        localReviewModelStrategy: "alias",
+        localReviewModel: "local-review-fast",
+      }),
+      activeState: "reproducing",
+      activeRecord: createRecord({
+        repeated_failure_signature_count: 1,
+      }),
+    }),
+  );
+
+  assert.deepEqual(lines, [
+    "codex_execution_policy active=supervisor:inherit->gpt-5.4@inherited_host_default reasoning=high",
+    "codex_route_overrides repair=alias:gpt-5.4-mini@bounded_repair_override local_review=alias:local-review-fast@local_review_override",
+  ]);
 });
 
 test("formatDetailedStatus keeps idle output compact when there is no active issue", () => {

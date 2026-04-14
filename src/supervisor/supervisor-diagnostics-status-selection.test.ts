@@ -120,6 +120,75 @@ test("status surfaces the default trust posture and execution-safety warning", a
   );
 });
 
+test("status reports effective Codex routing for inherited defaults and explicit overrides", async (t) => {
+  const fixture = await createSupervisorFixture();
+  const codexHome = path.join(path.dirname(fixture.repoPath), "codex-home");
+  const previousCodexHome = process.env.CODEX_HOME;
+  t.after(async () => {
+    process.env.CODEX_HOME = previousCodexHome;
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  await fs.mkdir(codexHome, { recursive: true });
+  await fs.writeFile(path.join(codexHome, "config.toml"), 'model = "gpt-5.4"\n', "utf8");
+  process.env.CODEX_HOME = codexHome;
+
+  const issueNumber = 144;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "addressing_review",
+        branch,
+        pr_number: 244,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const supervisor = new Supervisor({
+    ...fixture.config,
+    codexModelStrategy: "inherit",
+    boundedRepairModelStrategy: "alias",
+    boundedRepairModel: "gpt-5.4-mini",
+    localReviewModelStrategy: "alias",
+    localReviewModel: "local-review-fast",
+  });
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [],
+    listAllIssues: async () => [],
+    resolvePullRequestForBranch: async () => createPullRequest({ number: 244, headRefName: branch }),
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+    getIssue: async () => ({
+      number: issueNumber,
+      title: "Surface effective Codex policy",
+      body: executionReadyBody("Surface effective Codex policy"),
+      createdAt: "2026-03-11T00:00:00Z",
+      updatedAt: "2026-03-11T00:00:00Z",
+      url: `https://example.test/issues/${issueNumber}`,
+      state: "OPEN",
+    } satisfies GitHubIssue),
+  };
+
+  const report = await supervisor.statusReport();
+  assert.match(
+    report.detailedStatusLines.join("\n"),
+    /codex_execution_policy active=supervisor:alias:gpt-5\.4-mini@bounded_repair_override reasoning=high/,
+  );
+  assert.match(
+    report.detailedStatusLines.join("\n"),
+    /codex_route_overrides repair=alias:gpt-5\.4-mini@bounded_repair_override local_review=alias:local-review-fast@local_review_override/,
+  );
+
+  const status = renderSupervisorStatusDto(report);
+  assert.match(status, /codex_execution_policy active=supervisor:alias:gpt-5\.4-mini@bounded_repair_override reasoning=high/);
+});
+
 test("status reports bootstrap repos as not ready for expected CI and review signals", async (t) => {
   const fixture = await createSupervisorFixture();
   t.after(async () => {

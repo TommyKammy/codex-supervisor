@@ -174,6 +174,50 @@ test("renderDoctorReport includes loop host diagnostics and macOS tmux drift war
   );
 });
 
+test("diagnoseSupervisorHost reports inherited host Codex defaults in doctor output", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-doctor-model-"));
+  const codexHome = path.join(root, "codex-home");
+  const repoPath = path.join(root, "repo");
+  const workspaceRoot = path.join(root, "workspaces");
+  const stateFile = path.join(root, "state.json");
+  const previousCodexHome = process.env.CODEX_HOME;
+  t.after(async () => {
+    process.env.CODEX_HOME = previousCodexHome;
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  await fs.mkdir(codexHome, { recursive: true });
+  await fs.writeFile(path.join(codexHome, "config.toml"), 'model = "gpt-5.4"\n', "utf8");
+  await fs.mkdir(repoPath, { recursive: true });
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  execFileSync("git", ["init", "-b", "main"], { cwd: repoPath });
+  process.env.CODEX_HOME = codexHome;
+
+  const diagnostics = await diagnoseSupervisorHost({
+    config: createConfig({
+      repoPath,
+      workspaceRoot,
+      stateFile,
+      codexBinary: process.execPath,
+      codexModelStrategy: "inherit",
+    }),
+    authStatus: async () => ({ ok: true, message: null }),
+    loadState: async () => ({ activeIssueNumber: null, issues: {} }),
+    github: {
+      getCandidateDiscoveryDiagnostics: async () => ({
+        fetchWindow: 100,
+        observedMatchingOpenIssues: 0,
+        truncated: false,
+      }),
+    },
+  });
+
+  const report = renderDoctorReport(diagnostics);
+  assert.match(report, /doctor_codex_model_policy default=inherit->gpt-5\.4@inherited_host_default/);
+  assert.match(report, /doctor_codex_route_overrides repair=default_route\(gpt-5\.4\) local_review=default_route\(gpt-5\.4\)/);
+  assert.match(report, new RegExp(`doctor_codex_host_default model=gpt-5\\.4 source=${codexHome.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}/config\\.toml`));
+});
+
 test("diagnoseSupervisorHost surfaces orphan prune candidates and representative eligibility reasons", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-doctor-"));
   t.after(async () => {

@@ -29,6 +29,7 @@ import {
   readSupervisorLoopRuntime,
   type SupervisorLoopRuntimeDto,
 } from "./supervisor/supervisor-loop-runtime-state";
+import { buildCodexModelPolicySnapshot, renderDoctorCodexModelPolicyLines } from "./codex/codex-model-policy";
 import {
   formatCandidateDiscoveryBehaviorLine,
   formatCandidateDiscoveryWarningDetail,
@@ -48,6 +49,7 @@ export interface DoctorCheck {
 export interface DoctorDiagnostics {
   overallStatus: DoctorCheckStatus;
   checks: DoctorCheck[];
+  codexModelPolicyLines?: string[];
   trustDiagnostics: TrustDiagnosticsSummary;
   cadenceDiagnostics: CadenceDiagnosticsSummary;
   candidateDiscoverySummary: string;
@@ -570,10 +572,18 @@ export async function diagnoseSupervisorHost(args: DiagnoseSupervisorHostArgs): 
   const candidateDiscoveryWarning = formatCandidateDiscoveryWarningDetail(
     await github.getCandidateDiscoveryDiagnostics().catch(() => null),
   );
+  const codexModelPolicyLines = renderDoctorCodexModelPolicyLines(
+    await buildCodexModelPolicySnapshot({
+      config: args.config,
+      activeState: "reproducing",
+      activeRecord: null,
+    }),
+  );
 
   return {
     overallStatus: overallStatusForChecks(checks),
     checks,
+    codexModelPolicyLines,
     trustDiagnostics: summarizeTrustDiagnostics(args.config),
     cadenceDiagnostics: summarizeCadenceDiagnostics(args.config),
     candidateDiscoverySummary: formatCandidateDiscoveryBehaviorLine(args.config, "doctor_candidate_discovery"),
@@ -670,6 +680,7 @@ export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
     `doctor_posture trust_mode=${diagnostics.trustDiagnostics.trustMode} execution_safety_mode=${diagnostics.trustDiagnostics.executionSafetyMode}`,
     `doctor_cadence poll_interval_seconds=${diagnostics.cadenceDiagnostics.pollIntervalSeconds} merge_critical_recheck_seconds=${mergeCriticalRecheckSeconds} merge_critical_effective_seconds=${diagnostics.cadenceDiagnostics.mergeCriticalEffectiveSeconds} enabled=${diagnostics.cadenceDiagnostics.mergeCriticalRecheckEnabled}`,
     diagnostics.candidateDiscoverySummary,
+    ...(diagnostics.codexModelPolicyLines ?? []),
     `doctor_loop_runtime state=${loopRuntime.state} host_mode=${loopRuntime.hostMode} pid=${loopRuntime.pid === null ? "none" : String(loopRuntime.pid)} started_at=${loopRuntime.startedAt ?? "none"} detail=${sanitizeDoctorValue(loopRuntime.detail ?? "none")}`,
     ...(diagnostics.orphanPolicySummary ? [diagnostics.orphanPolicySummary] : []),
     `doctor_workspace_preparation configured=${workspacePreparationContract.configured} source=${workspacePreparationContract.source} command=${sanitizeDoctorValue(workspacePreparationContract.command ?? "none")} summary=${sanitizeDoctorValue(workspacePreparationContract.summary)}`,

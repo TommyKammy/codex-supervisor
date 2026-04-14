@@ -19,6 +19,7 @@ import {
   buildVerificationPolicyStatusLine,
   loadStatusChangedFiles,
 } from "./supervisor-status-rendering";
+import { buildCodexModelPolicySnapshot, renderStatusCodexModelPolicyLines } from "../codex/codex-model-policy";
 import { maybeBuildIssueActivityContext, type SupervisorIssueActivityContextDto } from "./supervisor-operator-activity-context";
 import { loadPreMergeEvaluationDto } from "./supervisor-pre-merge-evaluation";
 
@@ -41,6 +42,7 @@ export interface ActiveIssueStatusSnapshot {
   reviewThreads: ReviewThread[];
   activityContext: SupervisorIssueActivityContextDto | null;
   handoffSummary: string | null;
+  codexModelPolicySummaryLines: string[];
   localReviewRoutingSummary: string | null;
   changeClassesSummary: string | null;
   verificationPolicySummary: string | null;
@@ -65,6 +67,7 @@ export async function loadActiveIssueStatusSnapshot(args: {
   let reviewThreads: ReviewThread[] = [];
   let changeClassesSummary: string | null = null;
   let localReviewRoutingSummary: string | null = null;
+  let codexModelPolicySummaryLines: string[] = [];
   let verificationPolicySummary: string | null = null;
   let durableGuardrailSummary: string | null = null;
   let externalReviewFollowUpSummary: string | null = null;
@@ -98,6 +101,13 @@ export async function loadActiveIssueStatusSnapshot(args: {
       config: args.config,
       activeRecord: args.activeRecord,
     });
+    codexModelPolicySummaryLines = renderStatusCodexModelPolicyLines(
+      await buildCodexModelPolicySnapshot({
+        config: args.config,
+        activeState: args.activeRecord.state,
+        activeRecord: args.activeRecord,
+      }),
+    );
     changeClassesSummary = buildChangeClassesStatusLine(changedFiles);
     verificationPolicySummary = buildVerificationPolicyStatusLine({ issue, changedFiles });
     durableGuardrailSummary = await buildDurableGuardrailStatusLine({
@@ -138,6 +148,7 @@ export async function loadActiveIssueStatusSnapshot(args: {
       preMergeEvaluation,
     }),
     handoffSummary,
+    codexModelPolicySummaryLines,
     localReviewRoutingSummary,
     changeClassesSummary,
     verificationPolicySummary,
