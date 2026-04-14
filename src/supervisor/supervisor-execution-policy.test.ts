@@ -415,7 +415,7 @@ test("shouldReconcileTrackedPrStaleReviewBot keeps same-head stale configured-bo
   );
   assert.equal(
     shouldReconcileTrackedPrStaleReviewBot(record, createConfig({ staleConfiguredBotReviewPolicy: "diagnose_only" })),
-    false,
+    true,
   );
   assert.equal(
     shouldReconcileTrackedPrStaleReviewBot(createRecord({ ...record, pr_number: null }), createConfig({

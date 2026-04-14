@@ -1,47 +1,42 @@
-# Issue #1522: Bug: merged issue closure gate skips suspicious done records with stale provenance
+# Issue #1524: Bug: tracked PR stale_review_bot blockers should auto-clear when GitHub threads are already resolved
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1522
-- Branch: codex/issue-1522
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1524
+- Branch: codex/issue-1524
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 3 (implementation=1, repair=1)
-- Last head SHA: 9e34edb601fd6e0f0abd64cdec05f9206dbe4632
+- Current phase: draft_pr
+- Attempt count: 5 (implementation=3, repair=2)
+- Last head SHA: b7f0e82e38f260e4de5e83506ae19d19e2f6d19d
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ856xSZQ
-- Repeated failure signature count: 1
-- Updated at: 2026-04-14T09:52:06.449Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-04-14T11:15:24Z
 
 ## Latest Codex Summary
-Patched [src/recovery-reconciliation.ts](src/recovery-reconciliation.ts:654) so merged-closure reconciliation now writes a `merged_pr_convergence` recovery event even when the stored `pr_number` and `last_head_sha` already match the satisfying merged PR. That prevents suspicious closed `done` records from re-entering the expensive reconciliation path forever without ever converging locally.
+Merged `origin/main` into `codex/issue-1524` as commit `b7f0e82` to pick up PR `#1523`'s merged-closure provenance backfill in [src/recovery-reconciliation.ts](src/recovery-reconciliation.ts), [src/run-once-cycle-prelude.test.ts](src/run-once-cycle-prelude.test.ts), and [src/supervisor/supervisor-recovery-reconciliation.test.ts](src/supervisor/supervisor-recovery-reconciliation.test.ts). The only textual conflict was the issue journal, which I resolved in favor of the `#1524` record.
 
-Added a focused regression in [src/supervisor/supervisor-recovery-reconciliation.test.ts](src/supervisor/supervisor-recovery-reconciliation.test.ts:3666) for the exact review case: correct merged PR metadata, stale recovery provenance, older GitHub `updatedAt`, and a required one-time backfill. Verified with `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts src/run-once-cycle-prelude.test.ts` and `npm run build`, then committed and pushed as `9e34edb` on `codex/issue-1522`. I did not post a GitHub reply or resolve the review thread.
+The stale tracked-PR `stale_review_bot` auto-clear behavior remains intact on top of the new base. Focused verification passed with `npx tsx --test src/supervisor/supervisor-pr-review-blockers.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts src/doctor.test.ts src/supervisor/supervisor-execution-policy.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/run-once-cycle-prelude.test.ts` and `npm run build`. Draft PR `#1525` is ready for a push to refresh GitHub mergeability.
 
-Summary: Backfilled merged-closure convergence provenance for already-matching done records, added a regression test for the review case, and pushed commit `9e34edb` to PR #1523
-State hint: addressing_review
+Summary: Integrated `origin/main`, resolved the journal-only conflict, and reverified the stale tracked-PR blocker fix plus the merged recovery-path changes.
+State hint: draft_pr
 Blocked reason: none
-Tests: `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts src/run-once-cycle-prelude.test.ts`; `npm run build`
-Next action: Refresh PR #1523 review state and, if desired, reply to or resolve the remaining automated review thread based on commit `9e34edb`
-Failure signature: PRRT_kwDORgvdZ856xSZQ
+Tests: `npx tsx --test src/supervisor/supervisor-pr-review-blockers.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts src/doctor.test.ts src/supervisor/supervisor-execution-policy.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/run-once-cycle-prelude.test.ts`; `npm run build`
+Next action: Push `codex/issue-1524` so PR #1525 can recompute mergeability on the integrated head, then address any new review or CI signals.
+Failure signature: none
 
 ## Active Failure Context
-- Category: review
-- Summary: 1 unresolved automated review thread(s) remain.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1523#discussion_r3078535348
-- Details:
-  - src/recovery-reconciliation.ts:369 summary=_⚠️ Potential issue_ | _🟠 Major_ **Persist repaired provenance even when the done patch is otherwise unchanged.** Line 367 correctly forces suspicious records into revalidation... url=https://github.com/TommyKammy/codex-supervisor/pull/1523#discussion_r3078535348
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: the remaining review thread was valid because `reconcileMergedIssueClosures()` re-entered suspicious closed `done` records, but it only persisted a repair when `doneResetPatch()` changed structural fields; records whose stored PR/head already matched never backfilled `merged_pr_convergence` provenance and kept re-entering reconciliation forever.
-- What changed: Verified the CodeRabbit major finding is already fixed on `HEAD` via the `needsMergedConvergenceBackfill` write path, then tightened the stale-provenance regression fixture to set `last_recovery_reason: null` explicitly so future `createRecord()` default changes cannot accidentally make the test record trusted.
+- Hypothesis: the only real merge conflict was the per-issue journal; `#1523`'s merged-closure provenance backfill composes cleanly with `#1524`'s stale tracked-PR blocker convergence logic.
+- What changed: stashed supervisor artifacts, merged `origin/main`, kept the `#1524` journal content, accepted upstream edits in `src/recovery-reconciliation.ts`, `src/run-once-cycle-prelude.test.ts`, and `src/supervisor/supervisor-recovery-reconciliation.test.ts`, then reran the combined focused verification set.
 - Current blocker: none.
-- Next exact step: commit and push the explicit test-fixture follow-up on `codex/issue-1522`, then refresh PR #1523 and decide whether to reply to or resolve the still-open CodeRabbit thread manually.
-- Verification gap: none for the issue-scoped checks; broader suite not run.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/recovery-reconciliation.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`.
-- Rollback concern: the new trust rule treats old closed `done` records without `merged_pr_convergence` recovery metadata as suspicious, so legacy state may re-enter reconciliation until repaired.
-- Last focused command:
-- Last focused commands: `npx tsx --test src/supervisor/supervisor-recovery-reconciliation.test.ts src/run-once-cycle-prelude.test.ts`; `python3 .../fetch_comments.py TommyKammy/codex-supervisor 1523`
+- Next exact step: push the integrated branch to update draft PR #1525, then confirm GitHub clears the old DIRTY merge state on the new head.
+- Verification gap: none for the issue-scoped and merge-scoped checks; GitHub-side mergeability still needs its normal post-push refresh.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/recovery-reconciliation.ts`, `src/run-once-cycle-prelude.test.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`.
+- Rollback concern: low; this turn only integrates already-merged base-branch recovery changes on top of the existing stale tracked-PR blocker fix.
+- Last focused commands: `git stash push --include-untracked -m 'issue-1524-pre-merge' -- .codex-supervisor/issue-journal.md .codex-supervisor/pre-merge .codex-supervisor/replay .codex-supervisor/turn-in-progress.json`; `git fetch origin`; `git merge origin/main`; `npx tsx --test src/supervisor/supervisor-pr-review-blockers.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts src/doctor.test.ts src/supervisor/supervisor-execution-policy.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/run-once-cycle-prelude.test.ts`; `npm run build`; `git commit -m "Merge origin/main into codex/issue-1524"`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.

@@ -75,6 +75,16 @@ function staleReviewBotRecoverySignature(record: Pick<IssueRunRecord, "last_fail
   return record.last_failure_signature ?? "stale_review_bot";
 }
 
+function isTrackedPrStaleReviewBot(
+  record: Pick<IssueRunRecord, "state" | "blocked_reason" | "pr_number">,
+): boolean {
+  return (
+    record.state === "blocked" &&
+    record.blocked_reason === "stale_review_bot" &&
+    record.pr_number !== null
+  );
+}
+
 function hasStaleReviewBotRecoveryPolicy(config: SupervisorConfig): boolean {
   return (
     config.staleConfiguredBotReviewPolicy === "reply_only" ||
@@ -103,16 +113,16 @@ function canAutoRecoverCurrentStaleReviewBotHead(
 }
 
 export function shouldAutoRecoverStaleReviewBot(record: IssueRunRecord, config: SupervisorConfig): boolean {
-  return shouldReconcileTrackedPrStaleReviewBot(record, config) && canAutoRecoverCurrentStaleReviewBotHead(record);
+  return (
+    isTrackedPrStaleReviewBot(record) &&
+    hasStaleReviewBotRecoveryPolicy(config) &&
+    canAutoRecoverCurrentStaleReviewBotHead(record)
+  );
 }
 
 export function shouldReconcileTrackedPrStaleReviewBot(record: IssueRunRecord, config: SupervisorConfig): boolean {
-  return (
-    record.state === "blocked" &&
-    record.blocked_reason === "stale_review_bot" &&
-    record.pr_number !== null &&
-    hasStaleReviewBotRecoveryPolicy(config)
-  );
+  void config;
+  return isTrackedPrStaleReviewBot(record);
 }
 
 export function shouldEnforceExecutionReady(
