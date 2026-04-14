@@ -245,13 +245,65 @@ test("diagnoseSetupReadiness fails closed when fixed model routing is missing an
   assert.equal(summary.ready, false);
   assert.equal(summary.overallStatus, "invalid");
   assert.ok(summary.modelRoutingPosture);
-  assert.match(summary.modelRoutingPosture.summary, /invalid until every fixed or alias strategy has an explicit model value/i);
+  assert.match(
+    summary.modelRoutingPosture.summary,
+    /invalid until every strategy is supported and every fixed or alias strategy has an explicit model value/i,
+  );
   const codexTarget = summary.modelRoutingPosture.targets.find((target) => target.key === "codex");
   assert.equal(codexTarget?.missingExplicitModel, true);
   assert.match(codexTarget?.summary ?? "", /codexModel is missing/i);
   assert.match(codexTarget?.guidance ?? "", /codexModelStrategy=fixed requires an explicit codexModel value/i);
-  assert.match(
-    summary.blockers.map((blocker) => blocker.message).join("\n"),
-    /codexModelStrategy=fixed requires an explicit codexModel value before execution can proceed/i,
+  const blocker = summary.blockers.find((entry) => entry.code === "missing_codex_model");
+  assert.ok(blocker);
+  assert.match(blocker.message, /codexModelStrategy=fixed requires an explicit codexModel value before execution can proceed/i);
+  assert.deepEqual(blocker.fieldKeys, ["codexModel"]);
+  assert.deepEqual(blocker.remediation.fieldKeys, ["codexModel"]);
+});
+
+test("diagnoseSetupReadiness surfaces unsupported raw model strategies as invalid instead of inherited", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = await createTrackedRepo(root);
+  const workspaceRoot = path.join(root, "workspaces");
+  const configPath = path.join(root, "supervisor.config.json");
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      ...buildConfigDocument({
+        repoPath,
+        workspaceRoot,
+        stateFile: path.join(root, "state.json"),
+        workspacePreparationCommand: undefined,
+      }),
+      codexModelStrategy: "fiixed",
+    }),
+    "utf8",
   );
+
+  const summary = await diagnoseSetupReadiness({
+    configPath,
+    authStatus: async () => ({ ok: true, message: null }),
+  });
+
+  assert.equal(summary.ready, false);
+  assert.equal(summary.overallStatus, "invalid");
+  assert.ok(summary.modelRoutingPosture);
+  assert.match(
+    summary.modelRoutingPosture.summary,
+    /invalid until every strategy is supported and every fixed or alias strategy has an explicit model value/i,
+  );
+  const codexTarget = summary.modelRoutingPosture.targets.find((target) => target.key === "codex");
+  assert.equal(codexTarget?.strategy, "fiixed");
+  assert.equal(codexTarget?.invalidStrategy, true);
+  assert.equal(codexTarget?.missingExplicitModel, false);
+  assert.match(codexTarget?.summary ?? "", /unsupported fiixed routing/i);
+  assert.match(codexTarget?.guidance ?? "", /codexModelStrategy=fiixed is unsupported/i);
+  const blocker = summary.blockers.find((entry) => entry.code === "invalid_codex_model_strategy");
+  assert.ok(blocker);
+  assert.deepEqual(blocker.fieldKeys, ["codexModelStrategy"]);
+  assert.deepEqual(blocker.remediation.fieldKeys, ["codexModelStrategy"]);
 });

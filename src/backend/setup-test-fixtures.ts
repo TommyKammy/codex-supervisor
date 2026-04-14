@@ -318,6 +318,7 @@ export function createSetupModelRoutingTarget(
     modelField: "codexModel",
     model: null,
     overrideConfigured: false,
+    invalidStrategy: false,
     requiresExplicitModel: false,
     missingExplicitModel: false,
     summary: "Default Codex turns inherit the host Codex default model.",

@@ -27,6 +27,14 @@ export type SetupReadinessFieldKey =
   | "workspacePreparationCommand"
   | "localCiCommand"
   | "reviewProvider";
+export type SetupReadinessConfigFieldKey =
+  | SetupReadinessFieldKey
+  | "codexModelStrategy"
+  | "codexModel"
+  | "boundedRepairModelStrategy"
+  | "boundedRepairModel"
+  | "localReviewModelStrategy"
+  | "localReviewModel";
 
 export type SetupReadinessFieldValueType =
   | "directory_path"
@@ -63,15 +71,17 @@ export type SetupReadinessRemediationKind =
 export interface SetupReadinessRemediation {
   kind: SetupReadinessRemediationKind;
   summary: string;
-  fieldKeys: SetupReadinessFieldKey[];
+  fieldKeys: SetupReadinessConfigFieldKey[];
 }
 
 export interface SetupReadinessBlocker {
   code: string;
   message: string;
-  fieldKeys: SetupReadinessFieldKey[];
+  fieldKeys: SetupReadinessConfigFieldKey[];
   remediation: SetupReadinessRemediation;
 }
+
+export type SetupReadinessModelRoutingStrategy = CodexModelStrategy | string;
 
 export interface SetupReadinessHostSummary {
   overallStatus: DoctorCheckStatus | "not_ready";
@@ -94,11 +104,12 @@ export interface SetupReadinessTrustPosture extends TrustDiagnosticsSummary {
 export interface SetupReadinessModelRoutingTarget {
   key: "codex" | "bounded_repair" | "local_review";
   label: string;
-  strategy: CodexModelStrategy;
+  strategy: SetupReadinessModelRoutingStrategy;
   modelField: "codexModel" | "boundedRepairModel" | "localReviewModel";
   strategyField: "codexModelStrategy" | "boundedRepairModelStrategy" | "localReviewModelStrategy";
   model: string | null;
   overrideConfigured: boolean;
+  invalidStrategy: boolean;
   requiresExplicitModel: boolean;
   missingExplicitModel: boolean;
   summary: string;
@@ -363,6 +374,10 @@ function normalizeModelValue(value: unknown): string | null {
   return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
 }
 
+function readRawConfiguredStrategy(value: unknown): string | null {
+  return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
+}
+
 function buildModelRoutingTarget(args: {
   key: "codex" | "bounded_repair" | "local_review";
   label: string;
@@ -373,11 +388,13 @@ function buildModelRoutingTarget(args: {
 }): SetupReadinessModelRoutingTarget {
   const { key, label, strategyField, modelField, rawConfig, config } = args;
   const parsedStrategy = config?.[strategyField];
-  const rawStrategy = normalizeModelStrategy(rawConfig[strategyField]);
-  const strategy = parsedStrategy ?? rawStrategy ?? "inherit";
-  const overrideConfigured = parsedStrategy !== undefined || rawStrategy !== undefined;
+  const rawConfiguredStrategy = readRawConfiguredStrategy(rawConfig[strategyField]);
+  const rawStrategy = normalizeModelStrategy(rawConfiguredStrategy);
+  const invalidStrategy = rawConfiguredStrategy !== null && rawStrategy === undefined;
+  const strategy = invalidStrategy ? rawConfiguredStrategy : (parsedStrategy ?? rawStrategy ?? "inherit");
+  const overrideConfigured = parsedStrategy !== undefined || rawConfiguredStrategy !== null;
   const model = normalizeModelValue(config?.[modelField] ?? rawConfig[modelField]);
-  const requiresExplicitModel = strategy === "fixed" || strategy === "alias";
+  const requiresExplicitModel = !invalidStrategy && (strategy === "fixed" || strategy === "alias");
   const missingExplicitModel = requiresExplicitModel && model === null;
 
   const routeSubject =
@@ -392,7 +409,9 @@ function buildModelRoutingTarget(args: {
       : "the default Codex route";
 
   let summary: string;
-  if (strategy === "inherit") {
+  if (invalidStrategy) {
+    summary = `${routeSubject} use unsupported ${strategy} routing from ${strategyField}.`;
+  } else if (strategy === "inherit") {
     summary =
       key === "codex"
         ? `${routeSubject} inherit ${fallbackRoute}.`
@@ -409,7 +428,9 @@ function buildModelRoutingTarget(args: {
   }
 
   const guidance =
-    strategy === "inherit"
+    invalidStrategy
+      ? `Fail-closed: ${strategyField}=${strategy} is unsupported. Use inherit, fixed, or alias.`
+      : strategy === "inherit"
       ? key === "codex"
         ? 'Recommended default: keep `codexModelStrategy: "inherit"` and set the Codex host default model instead of pinning it here.'
         : `Leave ${strategyField} unset or use \`"inherit"\` to keep following the default Codex route.`
@@ -425,6 +446,7 @@ function buildModelRoutingTarget(args: {
     strategyField,
     model,
     overrideConfigured,
+    invalidStrategy,
     requiresExplicitModel,
     missingExplicitModel,
     summary,
@@ -463,9 +485,9 @@ function buildModelRoutingPosture(args: {
       config: args.config,
     }),
   ];
-  const invalid = targets.some((target) => target.missingExplicitModel);
+  const invalid = targets.some((target) => target.invalidStrategy || target.missingExplicitModel);
   const summary = invalid
-    ? "Model routing is invalid until every fixed or alias strategy has an explicit model value."
+    ? "Model routing is invalid until every strategy is supported and every fixed or alias strategy has an explicit model value."
     : targets.every((target) => target.strategy === "inherit")
       ? "Model routing follows the host Codex default model unless you opt into a per-target override."
       : "Model routing mixes inherited defaults with explicit per-target overrides.";
@@ -563,6 +585,20 @@ function buildBlockers(args: {
   }
 
   for (const target of args.modelRoutingPosture.targets) {
+    if (target.invalidStrategy) {
+      blockers.push({
+        code: `invalid_${target.strategyField.replace(/[A-Z]/g, (char) => `_${char.toLowerCase()}`)}`,
+        message: target.guidance,
+        fieldKeys: [target.strategyField],
+        remediation: {
+          kind: "edit_config",
+          summary: target.guidance,
+          fieldKeys: [target.strategyField],
+        },
+      });
+      continue;
+    }
+
     if (!target.missingExplicitModel) {
       continue;
     }
@@ -570,11 +606,11 @@ function buildBlockers(args: {
     blockers.push({
       code: `missing_${target.modelField.replace(/[A-Z]/g, (char) => `_${char.toLowerCase()}`)}`,
       message: target.guidance,
-      fieldKeys: [],
+      fieldKeys: [target.modelField],
       remediation: {
         kind: "edit_config",
         summary: target.guidance,
-        fieldKeys: [],
+        fieldKeys: [target.modelField],
       },
     });
   }
