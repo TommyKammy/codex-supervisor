@@ -48,7 +48,7 @@ import {
   WorkspaceStatus,
 } from "./core/types";
 import { truncate } from "./core/utils";
-import { commitAndPushTrackedFiles, getWorkspaceStatus, pushBranch } from "./core/workspace";
+import { commitAndPushTrackedFiles, filterPresentTrackedFilePaths, getWorkspaceStatus, pushBranch } from "./core/workspace";
 import { AgentRunner, createCodexAgentRunner } from "./supervisor/agent-runner";
 import {
   executionMetricsRetentionRootPath,
@@ -490,13 +490,14 @@ export async function executeCodexTurnPhase(
           };
         }
         const rewrittenJournalPaths = pathHygieneGate.rewrittenJournalPaths ?? [];
-        if (rewrittenJournalPaths.length > 0) {
+        const presentRewrittenJournalPaths = filterPresentTrackedFilePaths(workspacePath, rewrittenJournalPaths);
+        if (presentRewrittenJournalPaths.length > 0) {
           try {
             await commitAndPushTrackedFiles({
               workspacePath,
               branch: record.branch,
               remoteBranchExists: workspaceStatus.remoteBranchExists,
-              filePaths: rewrittenJournalPaths,
+              filePaths: presentRewrittenJournalPaths,
               commitMessage: SUPERVISOR_JOURNAL_NORMALIZATION_COMMIT_MESSAGE,
             });
           } catch (error) {
@@ -504,7 +505,7 @@ export async function executeCodexTurnPhase(
             const failureContext = buildWorkstationLocalPathFailureContext({
               gateLabel: "before publication",
               details: [
-                `journal normalization persistence failed for ${rewrittenJournalPaths.join(", ")}: ${message}`,
+                `journal normalization persistence failed for ${presentRewrittenJournalPaths.join(", ")}: ${message}`,
               ],
             });
             record = stateStore.touch(record, {

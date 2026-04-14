@@ -46,7 +46,7 @@ import {
 import { buildTrackedPrMismatch } from "./supervisor/tracked-pr-mismatch";
 import { reviewBotDiagnostics } from "./supervisor/supervisor-status-review-bot";
 import { parseIssueMetadata } from "./issue-metadata";
-import { commitAndPushTrackedFiles, getWorkspaceStatus } from "./core/workspace";
+import { commitAndPushTrackedFiles, filterPresentTrackedFilePaths, getWorkspaceStatus } from "./core/workspace";
 import {
   derivePostTurnLocalReviewDecision,
   derivePostTurnLocalReviewFailurePatch,
@@ -1404,14 +1404,15 @@ export async function handlePostTurnPullRequestTransitionsPhase(
       };
     }
     const rewrittenJournalPaths = pathHygieneGate.rewrittenJournalPaths ?? [];
-    if (rewrittenJournalPaths.length > 0) {
+    const presentRewrittenJournalPaths = filterPresentTrackedFilePaths(workspacePath, rewrittenJournalPaths);
+    if (presentRewrittenJournalPaths.length > 0) {
       let persistedNormalizationCommit = false;
       try {
         persistedNormalizationCommit = await commitAndPushTrackedFiles({
           workspacePath,
           branch: refreshed.pr.headRefName,
           remoteBranchExists: true,
-          filePaths: rewrittenJournalPaths,
+          filePaths: presentRewrittenJournalPaths,
           commitMessage: SUPERVISOR_JOURNAL_NORMALIZATION_COMMIT_MESSAGE,
         });
       } catch (error) {
@@ -1419,7 +1420,7 @@ export async function handlePostTurnPullRequestTransitionsPhase(
         const failureContext = buildWorkstationLocalPathFailureContext({
           gateLabel: `before marking PR #${refreshed.pr.number} ready`,
           details: [
-            `journal normalization persistence failed for ${rewrittenJournalPaths.join(", ")}: ${message}`,
+            `journal normalization persistence failed for ${presentRewrittenJournalPaths.join(", ")}: ${message}`,
           ],
         });
         record = stateStore.touch(record, {
@@ -1448,7 +1449,7 @@ export async function handlePostTurnPullRequestTransitionsPhase(
         const failureContext = buildWorkstationLocalPathFailureContext({
           gateLabel: `before marking PR #${refreshed.pr.number} ready`,
           details: [
-            `journal normalization reported rewritten paths for ${rewrittenJournalPaths.join(", ")} but did not create a commit to publish.`,
+            `journal normalization reported rewritten paths for ${presentRewrittenJournalPaths.join(", ")} but did not create a commit to publish.`,
           ],
         });
         record = stateStore.touch(record, {
