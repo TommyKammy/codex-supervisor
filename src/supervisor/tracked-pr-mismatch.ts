@@ -28,6 +28,12 @@ export interface TrackedPrMismatch {
   detailLines: string[];
 }
 
+export function shouldHydrateTrackedPrDiagnostics(
+  record: IssueRunRecord,
+): record is IssueRunRecord & { pr_number: number } {
+  return record.pr_number !== null && record.state !== "done";
+}
+
 function isBlockedLikeState(state: RunState): boolean {
   return state === "blocked" || state === "failed";
 }
