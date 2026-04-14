@@ -3663,6 +3663,91 @@ test("reconcileMergedIssueClosures revalidates suspicious closed done records wi
   ]);
 });
 
+test("reconcileMergedIssueClosures backfills merged convergence provenance even when stored PR metadata already matches", async () => {
+  const convergedButUntrustedRecord = createRecord({
+    issue_number: 963,
+    state: "done",
+    pr_number: 191,
+    last_head_sha: "head-current-191",
+    last_recovery_reason: "manual_requeue: operator requeued issue #963 previously",
+    updated_at: "2026-03-13T00:25:00Z",
+    last_recovery_at: "2026-03-13T00:25:00Z",
+    last_failure_context: null,
+    blocked_reason: null,
+    last_error: null,
+    last_failure_kind: null,
+    last_failure_signature: null,
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [convergedButUntrustedRecord],
+  });
+  const issues = [
+    createIssue({
+      number: convergedButUntrustedRecord.issue_number,
+      state: "CLOSED",
+      updatedAt: "2026-03-13T00:20:00Z",
+    }),
+  ];
+  const mergedClosureLookups: number[] = [];
+  let saveCalls = 0;
+
+  const recoveryEvents = await reconcileMergedIssueClosures(
+    {
+      getMergedPullRequestsClosingIssue: async (issueNumber) => {
+        mergedClosureLookups.push(issueNumber);
+        return [
+          createPullRequest({
+            number: 191,
+            state: "MERGED",
+            headRefOid: "head-current-191",
+            mergedAt: "2026-03-13T00:19:00Z",
+          }),
+        ];
+      },
+      getPullRequestIfExists: async () => null,
+      closePullRequest: async () => {
+        throw new Error("unexpected closePullRequest call");
+      },
+      closeIssue: async () => {
+        throw new Error("unexpected closeIssue call");
+      },
+      getIssue: async () => {
+        throw new Error("unexpected getIssue call");
+      },
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    {
+      touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+        return {
+          ...current,
+          ...patch,
+          updated_at: "2026-03-13T00:35:00Z",
+        };
+      },
+      save: async () => {
+        saveCalls += 1;
+      },
+    },
+    state,
+    createConfig(),
+    issues,
+  );
+
+  assert.deepEqual(mergedClosureLookups, [963]);
+  assert.equal(state.issues["963"]?.pr_number, 191);
+  assert.equal(state.issues["963"]?.last_head_sha, "head-current-191");
+  assert.equal(
+    state.issues["963"]?.last_recovery_reason,
+    "merged_pr_convergence: merged PR #191 satisfied issue #963; marked issue #963 done",
+  );
+  assert.equal(state.issues["963"]?.updated_at, "2026-03-13T00:35:00Z");
+  assert.equal(saveCalls, 1);
+  assert.deepEqual(recoveryEvents.map((event) => event.reason), [
+    "merged_pr_convergence: merged PR #191 satisfied issue #963; marked issue #963 done",
+  ]);
+});
+
 test("reconcileStaleFailedIssueStates requeues failed no-PR issues when the issue definition changes materially", async () => {
   const config = createConfig();
   const originalIssue = createIssue({

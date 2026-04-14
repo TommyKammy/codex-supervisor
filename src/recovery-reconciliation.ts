@@ -655,7 +655,9 @@ export async function reconcileMergedIssueClosures(
       pr_number: satisfyingPullRequest.number,
       last_head_sha: satisfyingPullRequest.headRefOid,
     });
-    if (needsRecordUpdate(record, patch)) {
+    const needsMergedConvergenceBackfill =
+      !record.last_recovery_reason?.startsWith("merged_pr_convergence:");
+    if (needsRecordUpdate(record, patch) || needsMergedConvergenceBackfill) {
       const recoveryEvent = buildRecoveryEvent(
         record.issue_number,
         `merged_pr_convergence: merged PR #${satisfyingPullRequest.number} satisfied issue #${record.issue_number}; marked issue #${record.issue_number} done`,
