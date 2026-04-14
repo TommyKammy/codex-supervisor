@@ -37,7 +37,7 @@ Failure signature: PRRT_kwDORgvdZ856s4-L
 - Hypothesis: The remaining review gap was a posture-summary wording bug in setup readiness, not a config API problem. All-explicit per-target routing was still being summarized as "mixed" because the summary logic only distinguished "all inherit" from everything else.
 - What changed: `buildModelRoutingPosture` now counts inherited targets so it can distinguish all-inherit, all-explicit, and genuinely mixed routing. A focused regression test now covers the all-explicit case without pinning unrelated overall setup readiness state.
 - Current blocker: none
-- Next exact step: Commit this review-fix checkpoint on `codex/issue-1500`, then push the branch and resolve or reply to the remaining PR thread if requested.
+- Next exact step: Review PR `#1503` at commit `fb49342`, then resolve or reply to the remaining PR thread if requested.
 - Verification gap: None locally after `npx tsx --test src/setup-readiness.test.ts` and `npm run build`; the remaining work is GitHub thread state, not local correctness.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/setup-readiness.ts`, `src/setup-readiness.test.ts`
 - Rollback concern: Low; the code change only corrects the top-level setup-readiness posture copy for the already-supported all-explicit override case.
@@ -45,4 +45,5 @@ Failure signature: PRRT_kwDORgvdZ856s4-L
 ### Scratchpad
 - Addressed review threads: preserve unsupported raw strategy strings in setup posture, point missing-model blockers at the relevant `*Model` key, and corrected the journal risk characterization.
 - Addressed review thread: distinguish fully explicit model routing from genuinely mixed inherit-plus-override routing in setup readiness posture text.
+- Pushed review-fix commit `fb49342` (`Clarify explicit model routing posture`) to `origin/codex/issue-1500`.
 - Keep this section short. The supervisor may compact older notes automatically.
