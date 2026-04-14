@@ -344,6 +344,7 @@ function shouldRevalidateMergedIssueClosureRecord(
     | "state"
     | "pr_number"
     | "last_head_sha"
+    | "last_recovery_reason"
     | "last_failure_context"
     | "last_recovery_at"
     | "updated_at"
@@ -360,6 +361,10 @@ function shouldRevalidateMergedIssueClosureRecord(
   }
 
   if (record.pr_number === null || record.last_head_sha === null) {
+    return true;
+  }
+
+  if (!record.last_recovery_reason?.startsWith("merged_pr_convergence:")) {
     return true;
   }
 

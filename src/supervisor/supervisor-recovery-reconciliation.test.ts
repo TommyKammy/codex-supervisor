@@ -3468,6 +3468,8 @@ test("reconcileMergedIssueClosures skips historical terminal records but still r
       state: "done",
       pr_number: 1700 + index,
       last_head_sha: `head-${700 + index}`,
+      last_recovery_reason:
+        `merged_pr_convergence: merged PR #${1700 + index} satisfied issue #${700 + index}; marked issue #${700 + index} done`,
       updated_at: "2026-03-13T00:25:00Z",
       last_recovery_at: "2026-03-13T00:25:00Z",
       last_failure_context: null,
@@ -3494,6 +3496,8 @@ test("reconcileMergedIssueClosures skips historical terminal records but still r
     state: "done",
     pr_number: 1960,
     last_head_sha: "head-960",
+    last_recovery_reason:
+      "merged_pr_convergence: merged PR #1960 satisfied issue #960; marked issue #960 done",
     updated_at: "2026-03-13T00:25:00Z",
     last_recovery_at: "2026-03-13T00:25:00Z",
     last_failure_context: null,
@@ -3578,6 +3582,85 @@ test("reconcileMergedIssueClosures skips historical terminal records but still r
 
   assert.deepEqual(mergedClosureLookups, [959, 960, 961]);
   assert.deepEqual(recoveryEvents, []);
+});
+
+test("reconcileMergedIssueClosures revalidates suspicious closed done records with stale merged provenance even when issue updatedAt is older", async () => {
+  const staleProvenanceRecord = createRecord({
+    issue_number: 962,
+    state: "done",
+    pr_number: 191,
+    last_head_sha: "wrong-head-191",
+    updated_at: "2026-03-13T00:25:00Z",
+    last_recovery_at: "2026-03-13T00:25:00Z",
+    last_failure_context: null,
+    blocked_reason: null,
+    last_error: null,
+    last_failure_kind: null,
+    last_failure_signature: null,
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [staleProvenanceRecord],
+  });
+  const issues = [
+    createIssue({
+      number: staleProvenanceRecord.issue_number,
+      state: "CLOSED",
+      updatedAt: "2026-03-13T00:20:00Z",
+    }),
+  ];
+  const mergedClosureLookups: number[] = [];
+  let saveCalls = 0;
+
+  const recoveryEvents = await reconcileMergedIssueClosures(
+    {
+      getMergedPullRequestsClosingIssue: async (issueNumber) => {
+        mergedClosureLookups.push(issueNumber);
+        return [
+          createPullRequest({
+            number: 191,
+            state: "MERGED",
+            headRefOid: "head-new-191",
+            mergedAt: "2026-03-13T00:19:00Z",
+          }),
+        ];
+      },
+      getPullRequestIfExists: async () => null,
+      closePullRequest: async () => {
+        throw new Error("unexpected closePullRequest call");
+      },
+      closeIssue: async () => {
+        throw new Error("unexpected closeIssue call");
+      },
+      getIssue: async () => {
+        throw new Error("unexpected getIssue call");
+      },
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    {
+      touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+        return {
+          ...current,
+          ...patch,
+          updated_at: "2026-03-13T00:35:00Z",
+        };
+      },
+      save: async () => {
+        saveCalls += 1;
+      },
+    },
+    state,
+    createConfig(),
+    issues,
+  );
+
+  assert.deepEqual(mergedClosureLookups, [962]);
+  assert.equal(state.issues["962"]?.pr_number, 191);
+  assert.equal(state.issues["962"]?.last_head_sha, "head-new-191");
+  assert.equal(saveCalls, 1);
+  assert.deepEqual(recoveryEvents.map((event) => event.reason), [
+    "merged_pr_convergence: merged PR #191 satisfied issue #962; marked issue #962 done",
+  ]);
 });
 
 test("reconcileStaleFailedIssueStates requeues failed no-PR issues when the issue definition changes materially", async () => {
