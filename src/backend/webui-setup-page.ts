@@ -733,6 +733,21 @@ ${renderSetupNavigation()}
               <article class="panel diagnostic-card">
                 <div class="panel-shell">
                   <div class="panel-header">
+                    <h2>Model routing</h2>
+                    <p class="panel-subtitle">How default, bounded-repair, and generic local-review turns choose their Codex models.</p>
+                  </div>
+                  <div class="panel-body">
+                    <p id="setup-model-routing-summary" class="hint">Loading typed model routing posture…</p>
+                    <ul id="setup-model-routing-details" class="list list--plain checklist-grid">
+                      <li>Loading model routing details…</li>
+                    </ul>
+                  </div>
+                </div>
+              </article>
+
+              <article class="panel diagnostic-card">
+                <div class="panel-shell">
+                  <div class="panel-header">
                     <h2>Trust posture</h2>
                     <p class="panel-subtitle">Execution trust mode and safety assumptions.</p>
                   </div>

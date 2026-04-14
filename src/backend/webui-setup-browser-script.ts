@@ -50,6 +50,8 @@ export function renderSetupBrowserScript(): string {
         hostChecks: document.getElementById("setup-host-checks"),
         providerPosture: document.getElementById("setup-provider-posture"),
         providerDetails: document.getElementById("setup-provider-details"),
+        modelRoutingSummary: document.getElementById("setup-model-routing-summary"),
+        modelRoutingDetails: document.getElementById("setup-model-routing-details"),
         trustPosture: document.getElementById("setup-trust-posture"),
         trustDetails: document.getElementById("setup-trust-details"),
         localCiSummary: document.getElementById("setup-local-ci-summary"),
@@ -521,6 +523,23 @@ export function renderSetupBrowserScript(): string {
             }]
             : [],
           "No provider posture details reported.",
+        );
+        const modelRoutingPosture = report.modelRoutingPosture || { summary: "No model routing posture reported.", targets: [] };
+        setText(elements.modelRoutingSummary, modelRoutingPosture.summary || "No model routing posture reported.");
+        renderChecklist(
+          elements.modelRoutingDetails,
+          (Array.isArray(modelRoutingPosture.targets) ? modelRoutingPosture.targets : []).map(
+            (target) => ({
+              title: target.label + " [" + formatStatus(target.strategy) + "]",
+              tone: target.missingExplicitModel ? "blocker" : "",
+              meta: [
+                "Model value: " + (target.model ?? "Unset"),
+                "Configured override: " + (target.overrideConfigured ? "yes" : "no"),
+              ],
+              notes: [target.summary, target.guidance],
+            }),
+          ),
+          "No model routing details reported.",
         );
         setText(elements.trustPosture, report.trustPosture ? report.trustPosture.summary : "No trust posture reported.");
         renderChecklist(

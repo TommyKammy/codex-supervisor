@@ -1422,6 +1422,7 @@ test("getting started links to focused configuration and local review references
   const gettingStarted = await fs.readFile(path.join(rootDir, "docs", "getting-started.md"), "utf8");
   const localReview = await fs.readFile(path.join(rootDir, "docs", "local-review.md"), "utf8");
   const issueMetadata = await fs.readFile(path.join(rootDir, "docs", "issue-metadata.md"), "utf8");
+  const configuration = await fs.readFile(path.join(rootDir, "docs", "configuration.md"), "utf8");
 
   assert.match(gettingStarted, /\[Configuration reference\]\(\.\/configuration\.md\)/i);
   assert.match(gettingStarted, /\[Local review reference\]\(\.\/local-review\.md\)/i);
@@ -1442,6 +1443,18 @@ test("getting started links to focused configuration and local review references
   assert.match(localReview, /^## Artifacts, thresholds, and guardrails$/m);
   assert.match(localReview, /disabled by default/i);
   assert.match(localReview, /recommended once enabled/i);
+
+  assert.match(configuration, /^## Model Routing Quick Recipes$/m);
+  assert.match(configuration, /authoritative fields for Codex model selection/i);
+  assert.match(configuration, /"codexModelStrategy": "inherit"/);
+  assert.match(configuration, /"boundedRepairModelStrategy": "fixed"/);
+  assert.match(configuration, /"boundedRepairModel": "gpt-5\.4-mini"/);
+  assert.match(configuration, /"localReviewModelStrategy": "alias"/);
+  assert.match(configuration, /"localReviewModel": "local-review-fast"/);
+  assert.match(configuration, /fixed` and `alias`.*fail closed unless the matching model field is set explicitly/i);
+  assert.match(configuration, /requires `codexModel`/i);
+  assert.match(configuration, /requires `boundedRepairModel`/i);
+  assert.match(configuration, /requires `localReviewModel`/i);
 
   assert.match(issueMetadata, /^# Issue Metadata$/m);
   assert.match(issueMetadata, /^## Canonical fields$/m);
