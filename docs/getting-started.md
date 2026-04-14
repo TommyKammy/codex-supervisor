@@ -74,13 +74,13 @@ Create an active config from the base example:
 cp supervisor.config.example.json supervisor.config.json
 ```
 
-Then choose the review provider profile that matches your PR review flow:
+Then choose the review provider profile that matches your PR review flow. The active config is whichever file you pass with `--config`, so you can either edit a single `supervisor.config.json` file or keep several named profiles and choose between them at runtime:
 
 - [supervisor.config.copilot.json](../supervisor.config.copilot.json)
 - [supervisor.config.codex.json](../supervisor.config.codex.json)
 - [supervisor.config.coderabbit.json](../supervisor.config.coderabbit.json)
 
-Either copy one of those files over `supervisor.config.json` as a starting point or copy only its `reviewBotLogins` into your active config.
+Either copy one of those files over `supervisor.config.json` as a starting point, copy it to a separate profile such as `supervisor.config.local.json`, or copy only its `reviewBotLogins` into your active config.
 
 At minimum, set these fields before the first run:
 
@@ -91,6 +91,15 @@ At minimum, set these fields before the first run:
 - provider-specific review settings you expect the supervisor to watch
 
 The shipped CodeRabbit profile intentionally uses a non-loadable `repoSlug` placeholder so operators must replace it before the first run.
+
+Recommended model posture for a first operator profile:
+
+- keep `codexModelStrategy: "inherit"` so the supervisor follows the host Codex CLI/App default model
+- set the host Codex default model intentionally before you trust `loop`
+- leave the bounded repair and local-review model overrides unset unless you intentionally want a separate route
+- switch to `fixed` only when this profile must pin one model and ignore the host default model
+
+Use the configuration guide as the source of truth for model routing details and validation rules rather than copying a second policy into local notes.
 
 If you need the full field-by-field setup, model policy, durable memory, or provider guidance, use the [Configuration reference](./configuration.md).
 
@@ -186,7 +195,7 @@ Before `run-once`, do this quick check:
 Validate one issue before the loop:
 
 ```bash
-node dist/index.js issue-lint 123 --config /path/to/supervisor.config.json
+node dist/index.js issue-lint 123 --config /path/to/supervisor.config.codex.json
 ```
 
 What to do with the result:
@@ -224,10 +233,13 @@ Issue readiness is not the same as trust. A perfectly structured issue is still 
 Start with a single supervised pass so you can inspect the repo selection, worktree setup, and resulting state before you hand over the loop:
 
 ```bash
-node dist/index.js run-once --config /path/to/supervisor.config.json
-node dist/index.js status --config /path/to/supervisor.config.json
-node dist/index.js rollup-execution-metrics --config /path/to/supervisor.config.json
+node dist/index.js status --config /path/to/supervisor.config.codex.json
+node dist/index.js doctor --config /path/to/supervisor.config.codex.json
+node dist/index.js run-once --config /path/to/supervisor.config.codex.json
+node dist/index.js rollup-execution-metrics --config /path/to/supervisor.config.codex.json
 ```
+
+If you keep multiple profiles side by side, `status` and `doctor` are the fastest way to confirm that you are inspecting the same `supervisor.config.xxx.json` file you plan to use for `run-once` and `loop`.
 
 What to check after `run-once`:
 

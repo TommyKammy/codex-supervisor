@@ -75,25 +75,43 @@ Before the first run, keep the [Configuration guide](./docs/configuration.md) op
    cp supervisor.config.example.json supervisor.config.json
    ```
 
-3. Choose the review provider profile that matches your PR review flow, then either copy that file over `supervisor.config.json` as a starting point or copy its `reviewBotLogins` into the `supervisor.config.json` you created in step 2.
+3. Choose the review provider profile that matches your PR review flow. The active config is whichever file you pass with `--config`, so you can either keep a single `supervisor.config.json` file or operate directly against named profiles such as `supervisor.config.codex.json` or `supervisor.config.coderabbit.json`.
 
    - [supervisor.config.copilot.json](./supervisor.config.copilot.json)
    - [supervisor.config.codex.json](./supervisor.config.codex.json)
    - [supervisor.config.coderabbit.json](./supervisor.config.coderabbit.json)
 
-4. Edit `supervisor.config.json` and set `repoPath`, `repoSlug`, `workspaceRoot`, `codexBinary`, and any review-provider-specific values you want to keep before the first run. Use the [Configuration guide](./docs/configuration.md) as the source of truth while you edit. The shipped CodeRabbit profile intentionally uses a non-loadable `repoSlug` placeholder so you must replace it for your repo.
-
-5. Run a single pass first, then switch to the loop when the config looks right.
+   For example, if you want a Codex review profile as the active one:
 
    ```bash
-   node dist/index.js run-once --config /path/to/supervisor.config.json
-   node dist/index.js status --config /path/to/supervisor.config.json
+   cp supervisor.config.codex.json supervisor.config.local.json
    ```
 
-6. Start the durable loop only after the first pass looks sane.
+4. Edit whichever config file you will pass with `--config` and set `repoPath`, `repoSlug`, `workspaceRoot`, `codexBinary`, and any review-provider-specific values you want to keep before the first run. Use the [Configuration guide](./docs/configuration.md) as the source of truth while you edit. The shipped CodeRabbit profile intentionally uses a non-loadable `repoSlug` placeholder so you must replace it for your repo.
+
+   Recommended model posture:
+
+   - keep `codexModelStrategy: "inherit"` so the supervisor follows the host Codex CLI/App default model
+   - set the host Codex default model intentionally before you trust `loop`
+   - switch to `fixed` only when this supervisor profile must pin a specific model regardless of the host default model
+
+   Keep the detailed routing rules in the [Configuration guide](./docs/configuration.md) rather than maintaining a second model-policy story here.
+
+5. Validate the issue body and inspect the effective profile before you run the loop.
 
    ```bash
-   node dist/index.js loop --config /path/to/supervisor.config.json
+   node dist/index.js issue-lint 123 --config /path/to/supervisor.config.codex.json
+   node dist/index.js status --config /path/to/supervisor.config.codex.json
+   node dist/index.js doctor --config /path/to/supervisor.config.codex.json
+   ```
+
+   `status` and `doctor` are the fastest way to confirm you passed the intended profile file and that the host and config are healthy before `loop` starts trusting that config.
+
+6. Run a single supervised pass, then switch to the loop when the config looks right.
+
+   ```bash
+   node dist/index.js run-once --config /path/to/supervisor.config.codex.json
+   node dist/index.js loop --config /path/to/supervisor.config.codex.json
    ```
 
    On macOS, use `./scripts/start-loop-tmux.sh` to host the loop in a managed `tmux` session, and stop it with `./scripts/stop-loop-tmux.sh`. `./scripts/install-launchd.sh` is not a supported macOS loop path.
@@ -191,7 +209,7 @@ Parallelizable: No
 Before trusting a new issue as runnable work, lint it directly:
 
 ```bash
-node dist/index.js issue-lint 123 --config /path/to/supervisor.config.json
+node dist/index.js issue-lint 123 --config /path/to/supervisor.config.codex.json
 ```
 
 If `issue-lint` reports missing or malformed metadata, fix the issue body before running `run-once` or `loop`.
@@ -218,6 +236,21 @@ Choose the review provider profile that matches how PR feedback arrives in your 
 - CodeRabbit profile: [supervisor.config.coderabbit.json](./supervisor.config.coderabbit.json)
 
 Each profile is a starting point. Copy the review provider profile you want, then adjust the rest of `supervisor.config.json` for your repo before you run the supervisor.
+
+The active config is whichever file you pass with `--config`. If you keep several profiles side by side, verify the intended one with:
+
+```bash
+node dist/index.js status --config /path/to/supervisor.config.codex.json
+node dist/index.js doctor --config /path/to/supervisor.config.codex.json
+```
+
+Recommended model posture for those profiles:
+
+- keep `codexModelStrategy: "inherit"` so the supervisor follows the host Codex default model
+- set the host Codex default model intentionally
+- use `fixed` only when one profile must pin a model and ignore the host default model
+
+Use the [Configuration guide](./docs/configuration.md) for the full routing rules and validation details.
 
 ## Docs Map
 

@@ -264,6 +264,7 @@ Use this when you want `codex-supervisor` to follow the Codex CLI/App default mo
 ### Pin every Codex turn globally
 
 Use this when you want the supervisor to ignore the host default and always use one explicit model or alias.
+Choose `fixed` when one supervisor profile must pin a model and ignore the host default model.
 
 ```json
 {
