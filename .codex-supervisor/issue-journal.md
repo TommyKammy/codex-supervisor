@@ -37,10 +37,11 @@ Failure signature: PRRT_kwDORgvdZ856z87d
 - Hypothesis: the bounded backlog diagnostics were correct, but `doctor` still had one unguarded follow-up `loadState()` call after the main checks that could abort the whole command on filesystem read errors.
 - What changed: Guarded the backlog-only `loadState()` call in `diagnoseSupervisorHost`, degrade that failure into the canonical `state_file` doctor check with an explicit detail line, suppress the backlog diagnostic line when the follow-up read fails, and added a regression test for the second-read-throws path.
 - Current blocker: none
-- Next exact step: commit the doctor review fix on `codex/issue-1528`, push the branch, and let the PR resync against the remaining review thread.
+- Next exact step: let PR #1529 resync on commit `e227a8d`, then resolve or reply to the remaining automated review thread if the refreshed diff still needs operator action.
 - Verification gap: none for this review-fix scope; I reran focused doctor/status diagnostics coverage plus a clean build and did not rerun unrelated reconciliation suites this turn.
 - Files touched: `.codex-supervisor/issue-journal.md`, `src/doctor.ts`, `src/doctor.test.ts`
 - Rollback concern: low; the change only affects `doctor` resilience when the diagnostic-only backlog reload fails, and the new failure mode is an explicit `state_file` diagnostic instead of a thrown command.
-- Last focused command: `npx tsx --test src/doctor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts`
+- Last focused command: `npm run build`
 ### Scratchpad
+- Review fix committed and pushed as `e227a8d` (`Keep doctor resilient on backlog state reload failures`).
 - Keep this section short. The supervisor may compact older notes automatically.
