@@ -1404,7 +1404,7 @@ export async function handlePostTurnPullRequestTransitionsPhase(
       };
     }
     const rewrittenJournalPaths = pathHygieneGate.rewrittenJournalPaths ?? [];
-    const presentRewrittenJournalPaths = filterPresentTrackedFilePaths(workspacePath, rewrittenJournalPaths);
+    const presentRewrittenJournalPaths = await filterPresentTrackedFilePaths(workspacePath, rewrittenJournalPaths);
     if (presentRewrittenJournalPaths.length > 0) {
       let persistedNormalizationCommit = false;
       try {

@@ -213,7 +213,7 @@ test("applyCodexTurnPublicationGate redacts supervisor-owned cross-issue journal
   assert.equal(git(workspacePath, "status", "--short", "--untracked-files=no").trim(), "");
 });
 
-test("applyCodexTurnPublicationGate tolerates tracked cross-issue journals omitted by sparse checkout", async (t) => {
+test("applyCodexTurnPublicationGate tolerates sparse-present tracked cross-issue journals outside the sparse checkout", async (t) => {
   const workspacePath = await createTrackedRepo();
   t.after(async () => {
     await fs.rm(workspacePath, { recursive: true, force: true });
@@ -248,6 +248,20 @@ test("applyCodexTurnPublicationGate tolerates tracked cross-issue journals omitt
   );
   git(workspacePath, "read-tree", "-mu", "HEAD");
   await assert.rejects(fs.access(otherJournalPath), { code: "ENOENT" });
+  await fs.mkdir(path.dirname(otherJournalPath), { recursive: true });
+  await fs.writeFile(
+    otherJournalPath,
+    [
+      "# Issue #181: stale leak",
+      "",
+      "## Codex Working Notes",
+      "### Current Handoff",
+      `- What changed: rewrote ${SAMPLE_MACOS_WORKSTATION_PATH} after sparse checkout.`,
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  await fs.access(otherJournalPath);
 
   let createPullRequestCalls = 0;
   const issue = createIssue({ title: "Gate sparse cross-issue journal hygiene without blocking publication" });
@@ -310,7 +324,7 @@ test("applyCodexTurnPublicationGate tolerates tracked cross-issue journals omitt
   assert.equal(result.record.state, "stabilizing");
   assert.equal(result.record.last_failure_signature, null);
   assert.equal(git(workspacePath, "log", "-1", "--pretty=%s").trim(), "seed sparse cross-issue journal leak");
-  assert.equal(git(workspacePath, "status", "--short", "--untracked-files=no").trim(), "");
+  assert.equal(git(workspacePath, "status", "--short", "--untracked-files=no").trim(), "M .codex-supervisor/issues/181/issue-journal.md");
 });
 
 test("applyCodexTurnPublicationGate blocks draft PR creation when local CI fails", async () => {

@@ -490,7 +490,7 @@ export async function executeCodexTurnPhase(
           };
         }
         const rewrittenJournalPaths = pathHygieneGate.rewrittenJournalPaths ?? [];
-        const presentRewrittenJournalPaths = filterPresentTrackedFilePaths(workspacePath, rewrittenJournalPaths);
+        const presentRewrittenJournalPaths = await filterPresentTrackedFilePaths(workspacePath, rewrittenJournalPaths);
         if (presentRewrittenJournalPaths.length > 0) {
           try {
             await commitAndPushTrackedFiles({
