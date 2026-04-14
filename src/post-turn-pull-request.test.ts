@@ -4658,7 +4658,7 @@ test("handlePostTurnPullRequestTransitionsPhase redacts supervisor-owned cross-i
   assert.match(git(workspacePath, "ls-remote", "--heads", "origin", "codex/issue-102"), /refs\/heads\/codex\/issue-102/);
 });
 
-test("handlePostTurnPullRequestTransitionsPhase tolerates sparse-omitted cross-issue journal rewrites during ready promotion", async (t) => {
+test("handlePostTurnPullRequestTransitionsPhase tolerates sparse-present cross-issue journal rewrites during ready promotion", async (t) => {
   const workspacePath = await createTrackedRepo();
   t.after(async () => {
     await fs.rm(workspacePath, { recursive: true, force: true });
@@ -4694,6 +4694,20 @@ test("handlePostTurnPullRequestTransitionsPhase tolerates sparse-omitted cross-i
   );
   git(workspacePath, "read-tree", "-mu", "HEAD");
   await assert.rejects(fs.access(otherJournalPath), { code: "ENOENT" });
+  await fs.mkdir(path.dirname(otherJournalPath), { recursive: true });
+  await fs.writeFile(
+    otherJournalPath,
+    [
+      "# Issue #181: stale leak",
+      "",
+      "## Codex Working Notes",
+      "### Current Handoff",
+      `- What changed: rewrote ${SAMPLE_MACOS_WORKSTATION_PATH} after sparse checkout.`,
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  await fs.access(otherJournalPath);
 
   const config = createConfig({
     localCiCommand: "npm run ci:local",
@@ -4797,7 +4811,7 @@ test("handlePostTurnPullRequestTransitionsPhase tolerates sparse-omitted cross-i
   assert.equal(localCiCalls, 1);
   assert.equal(workspacePreparationCalls, 0);
   assert.equal(git(workspacePath, "log", "-1", "--pretty=%s").trim(), "seed sparse ready-gate journal leak");
-  assert.equal(git(workspacePath, "status", "--short", "--untracked-files=no").trim(), "");
+  assert.equal(git(workspacePath, "status", "--short", "--untracked-files=no").trim(), "M .codex-supervisor/issues/181/issue-journal.md");
 });
 
 test("handlePostTurnPullRequestTransitionsPhase blocks ready promotion until a local normalization commit reaches the PR head", async (t) => {

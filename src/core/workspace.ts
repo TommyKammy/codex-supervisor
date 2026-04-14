@@ -434,10 +434,25 @@ export async function commitAndPushTrackedFiles(args: {
   return true;
 }
 
-export function filterPresentTrackedFilePaths(workspacePath: string, filePaths: string[]): string[] {
-  return [...new Set(filePaths.map((filePath) => filePath.trim()).filter(Boolean))].filter((filePath) =>
-    fs.existsSync(path.join(workspacePath, filePath)),
+async function isIndexUpdatableTrackedFilePath(workspacePath: string, filePath: string): Promise<boolean> {
+  if (!fs.existsSync(path.join(workspacePath, filePath))) {
+    return false;
+  }
+
+  const result = await runCommand(
+    "git",
+    ["-C", workspacePath, "add", "--dry-run", "--", filePath],
+    { allowExitCodes: [0, 1] },
   );
+  return result.exitCode === 0;
+}
+
+export async function filterPresentTrackedFilePaths(workspacePath: string, filePaths: string[]): Promise<string[]> {
+  const uniquePaths = [...new Set(filePaths.map((filePath) => filePath.trim()).filter(Boolean))];
+  const presentPaths = await Promise.all(
+    uniquePaths.map(async (filePath) => (await isIndexUpdatableTrackedFilePath(workspacePath, filePath) ? filePath : null)),
+  );
+  return presentPaths.filter((filePath): filePath is string => filePath !== null);
 }
 
 export async function cleanupWorkspace(
