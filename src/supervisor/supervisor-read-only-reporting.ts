@@ -49,6 +49,7 @@ import {
   sanitizeStatusValue,
   summarizeChecks,
 } from "./supervisor-status-rendering";
+import { buildTrackedMergedButOpenBacklogDiagnosticLine } from "../reconciliation-backlog-diagnostics";
 
 const LONG_RECONCILIATION_WARNING_THRESHOLD_MS = 5 * 60 * 1000;
 const MAX_RENDERED_STATUS_STATE_LOAD_FINDINGS = 5;
@@ -191,6 +192,7 @@ export async function buildSupervisorStatusReport(args: {
       waitStep: reconciliationSnapshot.waitStep,
     };
   const trackedPrMismatchLines: string[] = [];
+  const trackedMergedBacklogLine = buildTrackedMergedButOpenBacklogDiagnosticLine(state);
 
   for (const record of Object.values(state.issues)) {
     if (!shouldHydrateTrackedPrDiagnostics(record)) {
@@ -243,6 +245,7 @@ export async function buildSupervisorStatusReport(args: {
         ...(inventoryRefreshStatusLine === null ? [] : [inventoryRefreshStatusLine]),
         ...inventoryRefreshDiagnosticLines,
         ...(inventorySnapshotStatusLine === null ? [] : [inventorySnapshotStatusLine]),
+        ...(trackedMergedBacklogLine === null ? [] : [trackedMergedBacklogLine]),
         ...githubRateLimitStatus.githubRateLimitLines,
       ];
 
@@ -299,6 +302,7 @@ export async function buildSupervisorStatusReport(args: {
         ...(inventoryRefreshStatusLine === null ? [] : [inventoryRefreshStatusLine]),
         ...inventoryRefreshDiagnosticLines,
         ...(inventorySnapshotStatusLine === null ? [] : [inventorySnapshotStatusLine]),
+        ...(trackedMergedBacklogLine === null ? [] : [trackedMergedBacklogLine]),
         ...githubRateLimitStatus.githubRateLimitLines,
       ];
 
@@ -338,6 +342,7 @@ export async function buildSupervisorStatusReport(args: {
         inventoryPostureLine,
         ...(inventoryRefreshStatusLine === null ? [] : [inventoryRefreshStatusLine]),
         ...inventoryRefreshDiagnosticLines,
+        ...(trackedMergedBacklogLine === null ? [] : [trackedMergedBacklogLine]),
         ...githubRateLimitStatus.githubRateLimitLines,
       ];
 
@@ -416,6 +421,7 @@ export async function buildSupervisorStatusReport(args: {
     ...(inventoryRefreshStatusLine === null ? [] : [inventoryRefreshStatusLine]),
     ...inventoryRefreshDiagnosticLines,
     ...(inventorySnapshotStatusLine === null ? [] : [inventorySnapshotStatusLine]),
+    ...(trackedMergedBacklogLine === null ? [] : [trackedMergedBacklogLine]),
     ...githubRateLimitStatus.githubRateLimitLines,
   ];
 

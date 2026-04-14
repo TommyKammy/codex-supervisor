@@ -36,6 +36,7 @@ import {
 } from "./supervisor/supervisor-selection-readiness-summary";
 import { buildTrackedPrMismatch, shouldHydrateTrackedPrDiagnostics } from "./supervisor/tracked-pr-mismatch";
 import { buildTrustAndConfigWarnings, buildWarning, renderDoctorWarningLine } from "./warning-formatting";
+import { buildTrackedMergedButOpenBacklogDiagnosticLine } from "./reconciliation-backlog-diagnostics";
 
 export type DoctorCheckStatus = "pass" | "warn" | "fail";
 
@@ -50,6 +51,7 @@ export interface DoctorDiagnostics {
   overallStatus: DoctorCheckStatus;
   checks: DoctorCheck[];
   codexModelPolicyLines?: string[];
+  reconciliationBacklogLine?: string | null;
   trustDiagnostics: TrustDiagnosticsSummary;
   cadenceDiagnostics: CadenceDiagnosticsSummary;
   candidateDiscoverySummary: string;
@@ -140,6 +142,54 @@ function overallStatusForChecks(checks: DoctorCheck[]): DoctorCheckStatus {
   }
 
   return "pass";
+}
+
+function withReconciliationBacklogStateReadFailure(
+  checks: DoctorCheck[],
+  config: SupervisorConfig,
+  error: unknown,
+): DoctorCheck[] {
+  const message = error instanceof Error ? error.message : String(error);
+  const summary = config.stateBackend === "json"
+    ? `Failed to read JSON state file for reconciliation backlog diagnostics: ${config.stateFile}`
+    : `Failed to read SQLite state file for reconciliation backlog diagnostics: ${config.stateFile}`;
+  const detail = `reconciliation_backlog_state_read_failed location=${config.stateFile} message=${message}`;
+  let replaced = false;
+
+  const nextChecks = checks.map((check) => {
+    if (check.name !== "state_file") {
+      return check;
+    }
+
+    replaced = true;
+    if (check.status === "fail") {
+      return {
+        ...check,
+        details: [...check.details, detail],
+      };
+    }
+
+    return {
+      ...check,
+      status: "fail" as DoctorCheckStatus,
+      summary,
+      details: [...check.details, detail],
+    };
+  });
+
+  if (replaced) {
+    return nextChecks;
+  }
+
+  return [
+    ...checks,
+    {
+      name: "state_file",
+      status: "fail",
+      summary,
+      details: [detail],
+    },
+  ];
 }
 
 async function commandOnPath(command: string): Promise<string | null> {
@@ -603,7 +653,7 @@ export async function diagnoseSupervisorHost(args: DiagnoseSupervisorHostArgs): 
     args.github ??
     new GitHubClient(args.config);
 
-  const checks = await Promise.all([
+  const checks: DoctorCheck[] = await Promise.all([
     diagnoseGitHubAuth(authStatus),
     diagnoseCodexCli(args.config),
     diagnoseStateFile(args.config),
@@ -620,11 +670,21 @@ export async function diagnoseSupervisorHost(args: DiagnoseSupervisorHostArgs): 
       activeRecord: null,
     }),
   );
+  let state: SupervisorStateFile | null = null;
+  let finalChecks = checks;
+  try {
+    state = await loadState();
+  } catch (error) {
+    finalChecks = withReconciliationBacklogStateReadFailure(checks, args.config, error);
+  }
 
   return {
-    overallStatus: overallStatusForChecks(checks),
-    checks,
+    overallStatus: overallStatusForChecks(finalChecks),
+    checks: finalChecks,
     codexModelPolicyLines,
+    reconciliationBacklogLine: state === null
+      ? null
+      : buildTrackedMergedButOpenBacklogDiagnosticLine(state, "doctor_reconciliation_backlog"),
     trustDiagnostics: summarizeTrustDiagnostics(args.config),
     cadenceDiagnostics: summarizeCadenceDiagnostics(args.config),
     candidateDiscoverySummary: formatCandidateDiscoveryBehaviorLine(args.config, "doctor_candidate_discovery"),
@@ -725,6 +785,7 @@ export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
     `doctor_cadence poll_interval_seconds=${diagnostics.cadenceDiagnostics.pollIntervalSeconds} merge_critical_recheck_seconds=${mergeCriticalRecheckSeconds} merge_critical_effective_seconds=${diagnostics.cadenceDiagnostics.mergeCriticalEffectiveSeconds} enabled=${diagnostics.cadenceDiagnostics.mergeCriticalRecheckEnabled}`,
     diagnostics.candidateDiscoverySummary,
     ...codexModelPolicyLines,
+    ...(diagnostics.reconciliationBacklogLine ? [diagnostics.reconciliationBacklogLine] : []),
     `doctor_loop_runtime state=${loopRuntime.state} host_mode=${loopRuntime.hostMode} pid=${loopRuntime.pid === null ? "none" : String(loopRuntime.pid)} started_at=${loopRuntime.startedAt ?? "none"} detail=${sanitizeDoctorValue(loopRuntime.detail ?? "none")}`,
     ...(diagnostics.orphanPolicySummary ? [diagnostics.orphanPolicySummary] : []),
     `doctor_workspace_preparation configured=${workspacePreparationContract.configured} source=${workspacePreparationContract.source} command=${sanitizeDoctorValue(workspacePreparationContract.command ?? "none")} summary=${sanitizeDoctorValue(workspacePreparationContract.summary)}`,
