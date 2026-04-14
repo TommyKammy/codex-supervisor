@@ -89,6 +89,51 @@ test("diagnoseSupervisorHost reports representative auth, state, and workspace f
   );
 });
 
+test("diagnoseSupervisorHost ignores recovery-only synthetic parent epic records in worktree diagnostics", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-doctor-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = path.join(root, "repo");
+  const workspaceRoot = path.join(root, "workspaces");
+  const stateFile = path.join(root, "state.json");
+  await fs.mkdir(repoPath, { recursive: true });
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  execFileSync("git", ["init", "-b", "main"], { cwd: repoPath });
+
+  const diagnostics = await diagnoseSupervisorHost({
+    config: createConfig({
+      repoPath,
+      workspaceRoot,
+      stateFile,
+      codexBinary: process.execPath,
+    }),
+    authStatus: async () => ({ ok: true, message: null }),
+    loadState: async () => ({
+      activeIssueNumber: null,
+      issues: {
+        "123": createRecord({
+          issue_number: 123,
+          state: "done",
+          branch: "",
+          pr_number: null,
+          workspace: "",
+          journal_path: null,
+          codex_session_id: null,
+          blocked_reason: null,
+          last_recovery_reason:
+            "parent_epic_auto_closed: auto-closed parent epic #123 because child issues #201, #202 are closed",
+          last_recovery_at: "2026-03-13T00:20:00Z",
+        }),
+      },
+    }),
+  });
+
+  assert.equal(diagnostics.checks.find((check) => check.name === "worktrees")?.status, "pass");
+  assert.match(renderDoctorReport(diagnostics), /doctor_check name=worktrees status=pass summary=Tracked worktrees look consistent\./);
+});
+
 test("renderDoctorReport only warns for the legacy shared issue journal path", () => {
   const baseDiagnostics = {
     overallStatus: "pass" as const,

@@ -431,6 +431,18 @@ function parseWorktreeList(stdout: string): Set<string> {
   return worktrees;
 }
 
+function isRecoveryOnlySyntheticRecord(record: IssueRunRecord): boolean {
+  return record.state === "done" &&
+    record.branch.trim() === "" &&
+    record.workspace.trim() === "" &&
+    record.journal_path === null &&
+    record.pr_number === null &&
+    record.codex_session_id === null &&
+    record.blocked_reason === null &&
+    record.last_recovery_reason !== null &&
+    record.last_recovery_at !== null;
+}
+
 async function diagnoseWorktrees(
   config: SupervisorConfig,
   loadState: () => Promise<SupervisorStateFile>,
@@ -453,6 +465,10 @@ async function diagnoseWorktrees(
     const problems: string[] = [];
 
     for (const record of Object.values(state.issues)) {
+      if (isRecoveryOnlySyntheticRecord(record)) {
+        continue;
+      }
+
       try {
         await fs.access(record.workspace, fs.constants.F_OK);
       } catch {
