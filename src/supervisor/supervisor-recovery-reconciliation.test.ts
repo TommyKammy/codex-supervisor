@@ -3476,6 +3476,19 @@ test("reconcileMergedIssueClosures skips historical terminal records but still r
       last_failure_kind: null,
       last_failure_signature: null,
     }));
+  const provenanceFreeDoneRecord = createRecord({
+    issue_number: 959,
+    state: "done",
+    pr_number: null,
+    last_head_sha: null,
+    updated_at: "2026-03-13T00:25:00Z",
+    last_recovery_at: "2026-03-13T00:25:00Z",
+    last_failure_context: null,
+    blocked_reason: null,
+    last_error: null,
+    last_failure_kind: null,
+    last_failure_signature: null,
+  });
   const recentlyChangedClosedRecord = createRecord({
     issue_number: 960,
     state: "done",
@@ -3502,7 +3515,12 @@ test("reconcileMergedIssueClosures skips historical terminal records but still r
     last_failure_signature: null,
   });
   const state: SupervisorStateFile = createSupervisorState({
-    issues: [...historicalDoneRecords, recentlyChangedClosedRecord, nonTerminalClosedRecord],
+    issues: [
+      ...historicalDoneRecords,
+      provenanceFreeDoneRecord,
+      recentlyChangedClosedRecord,
+      nonTerminalClosedRecord,
+    ],
   });
   const issues = [
     ...historicalDoneRecords.map((record) => createIssue({
@@ -3510,6 +3528,11 @@ test("reconcileMergedIssueClosures skips historical terminal records but still r
       state: "CLOSED",
       updatedAt: "2026-03-13T00:20:00Z",
     })),
+    createIssue({
+      number: provenanceFreeDoneRecord.issue_number,
+      state: "CLOSED",
+      updatedAt: "2026-03-13T00:20:00Z",
+    }),
     createIssue({
       number: recentlyChangedClosedRecord.issue_number,
       state: "CLOSED",
@@ -3553,7 +3576,7 @@ test("reconcileMergedIssueClosures skips historical terminal records but still r
     issues,
   );
 
-  assert.deepEqual(mergedClosureLookups, [960, 961]);
+  assert.deepEqual(mergedClosureLookups, [959, 960, 961]);
   assert.deepEqual(recoveryEvents, []);
 });
 

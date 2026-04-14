@@ -340,7 +340,13 @@ function latestFiniteTimestamp(...values: Array<string | null | undefined>): num
 function shouldRevalidateMergedIssueClosureRecord(
   record: Pick<
     IssueRunRecord,
-    "issue_number" | "state" | "last_failure_context" | "last_recovery_at" | "updated_at"
+    | "issue_number"
+    | "state"
+    | "pr_number"
+    | "last_head_sha"
+    | "last_failure_context"
+    | "last_recovery_at"
+    | "updated_at"
   >,
   issue: Pick<GitHubIssue, "updatedAt">,
   activeIssueNumber: number | null,
@@ -350,6 +356,10 @@ function shouldRevalidateMergedIssueClosureRecord(
   }
 
   if (record.state !== "done") {
+    return true;
+  }
+
+  if (record.pr_number === null || record.last_head_sha === null) {
     return true;
   }
 

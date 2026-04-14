@@ -324,6 +324,20 @@ test("runOnceCyclePrelude bounds merged issue closure revalidation for historica
       last_failure_kind: null,
       last_failure_signature: null,
     }));
+  const provenanceFreeDoneRecord = createRecord({
+    issue_number: 959,
+    state: "done",
+    branch: "codex/provenance-free-959",
+    pr_number: null,
+    last_head_sha: null,
+    updated_at: "2026-03-13T00:25:00Z",
+    last_recovery_at: "2026-03-13T00:25:00Z",
+    last_failure_context: null,
+    blocked_reason: null,
+    last_error: null,
+    last_failure_kind: null,
+    last_failure_signature: null,
+  });
   const recentlyChangedClosedRecord = createRecord({
     issue_number: 960,
     state: "done",
@@ -354,7 +368,12 @@ test("runOnceCyclePrelude bounds merged issue closure revalidation for historica
   const state: SupervisorStateFile = {
     activeIssueNumber: null,
     issues: Object.fromEntries(
-      [...historicalDoneRecords, recentlyChangedClosedRecord, nonTerminalClosedRecord]
+      [
+        ...historicalDoneRecords,
+        provenanceFreeDoneRecord,
+        recentlyChangedClosedRecord,
+        nonTerminalClosedRecord,
+      ]
         .map((record) => [String(record.issue_number), record]),
     ),
   };
@@ -364,6 +383,11 @@ test("runOnceCyclePrelude bounds merged issue closure revalidation for historica
       state: "CLOSED",
       updatedAt: "2026-03-13T00:20:00Z",
     })),
+    createIssue({
+      number: provenanceFreeDoneRecord.issue_number,
+      state: "CLOSED",
+      updatedAt: "2026-03-13T00:20:00Z",
+    }),
     createIssue({
       number: recentlyChangedClosedRecord.issue_number,
       state: "CLOSED",
@@ -431,7 +455,7 @@ test("runOnceCyclePrelude bounds merged issue closure revalidation for historica
   });
 
   assert.ok(!("kind" in result));
-  assert.deepEqual(mergedClosureLookups, [960, 961]);
+  assert.deepEqual(mergedClosureLookups, [959, 960, 961]);
 });
 
 test("runOnceCyclePrelude rehydrates tracked blocked PRs before reserving selection", async () => {
