@@ -4954,6 +4954,7 @@ test("reconcileTrackedMergedButOpenIssues stops after the per-cycle budget and d
   assert.equal(state.issues["367"]?.pr_number, 192);
   assert.deepEqual(recoveryEvents.map((event) => event.reason), [
     "merged_pr_convergence: tracked PR #191 merged; marked issue #366 done",
+    "tracked_pr_reconciliation_bounded: deferred 1 tracked PR backlog record(s) after issue #366; resume after this cursor next cycle",
   ]);
 });
 
@@ -5057,6 +5058,7 @@ test("reconcileTrackedMergedButOpenIssues resumes from persisted progress in the
 
   assert.deepEqual(firstCycleEvents.map((event) => event.reason), [
     "tracked_pr_head_advanced: resumed issue #366 from waiting_ci to ready_to_merge after tracked PR #191 advanced from abcdef1 to open-head-191",
+    "tracked_pr_reconciliation_bounded: deferred 1 tracked PR backlog record(s) after issue #366; resume after this cursor next cycle",
   ]);
   assert.deepEqual(prLookups, [191]);
   assert.equal(saveCalls, 1);
@@ -5104,6 +5106,7 @@ test("reconcileTrackedMergedButOpenIssues resumes from persisted progress in the
   assert.equal(state.issues["367"]?.last_head_sha, "merged-head-192");
   assert.deepEqual(secondCycleEvents.map((event) => event.reason), [
     "merged_pr_convergence: tracked PR #192 merged; marked issue #367 done",
+    "tracked_pr_reconciliation_bounded: deferred 1 tracked PR backlog record(s) after issue #367; resume after this cursor next cycle",
   ]);
 });
 
@@ -5215,6 +5218,7 @@ test("reconcileTrackedMergedButOpenIssues resumes from the next higher issue whe
   assert.equal(state.reconciliation_state?.tracked_merged_but_open_last_processed_issue_number, 367);
   assert.deepEqual(recoveryEvents.map((event) => event.reason), [
     "merged_pr_convergence: tracked PR #192 merged; marked issue #367 done",
+    "tracked_pr_reconciliation_bounded: deferred 1 tracked PR backlog record(s) after issue #367; resume after this cursor next cycle",
   ]);
 });
 

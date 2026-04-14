@@ -2169,6 +2169,74 @@ test("statusReport exposes typed reconciliation target and wait-step context whi
   );
 });
 
+test("status and doctor surface tracked merged-but-open backlog cursor diagnostics when historical backlog remains", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "320": createRecord({
+        issue_number: 320,
+        state: "done",
+        pr_number: 920,
+        blocked_reason: null,
+      }),
+      "321": createRecord({
+        issue_number: 321,
+        state: "done",
+        pr_number: 921,
+        blocked_reason: null,
+      }),
+      "400": createRecord({
+        issue_number: 400,
+        state: "waiting_ci",
+        pr_number: 990,
+        blocked_reason: null,
+      }),
+    },
+    reconciliation_state: {
+      tracked_merged_but_open_last_processed_issue_number: 321,
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listCandidateIssues: async () => [],
+    listAllIssues: async () => [],
+    getCandidateDiscoveryDiagnostics: async () => ({
+      fetchWindow: 100,
+      observedMatchingOpenIssues: 0,
+      truncated: false,
+    }),
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const report = await supervisor.statusReport();
+  assert.match(
+    report.detailedStatusLines.join("\n"),
+    /reconciliation_backlog phase=tracked_merged_but_open_issues resume_after_issue=#321 historical_done_records=2 recoverable_records=1 tracked_records=3/,
+  );
+
+  const status = await supervisor.status();
+  assert.match(
+    status,
+    /reconciliation_backlog phase=tracked_merged_but_open_issues resume_after_issue=#321 historical_done_records=2 recoverable_records=1 tracked_records=3/,
+  );
+
+  const doctor = await supervisor.doctor();
+  assert.match(
+    doctor,
+    /doctor_reconciliation_backlog phase=tracked_merged_but_open_issues resume_after_issue=#321 historical_done_records=2 recoverable_records=1 tracked_records=3/,
+  );
+});
+
 test("status emits a warning only after reconciliation exceeds the long-running threshold", async () => {
   const fixture = await createSupervisorFixture();
   const state: SupervisorStateFile = {

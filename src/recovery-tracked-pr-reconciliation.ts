@@ -424,6 +424,7 @@ export async function reconcileTrackedMergedButOpenIssuesInModule(
   }
 
   if (options.onlyIssueNumber === undefined || options.onlyIssueNumber === null) {
+    const deferredRecordCount = Math.max(records.length - processedRecords, 0);
     let nextLastProcessedIssueNumber: number | null;
     if (processedRecords === 0) {
       nextLastProcessedIssueNumber = null;
@@ -436,6 +437,12 @@ export async function reconcileTrackedMergedButOpenIssuesInModule(
     }
     if (setTrackedMergedButOpenLastProcessedIssueNumber(state, nextLastProcessedIssueNumber)) {
       saveNeeded = true;
+    }
+    if (deferredRecordCount > 0 && lastProcessedIssueNumber !== null) {
+      recoveryEvents.push(helpers.buildRecoveryEvent(
+        lastProcessedIssueNumber,
+        `tracked_pr_reconciliation_bounded: deferred ${deferredRecordCount} tracked PR backlog record(s) after issue #${lastProcessedIssueNumber}; resume after this cursor next cycle`,
+      ));
     }
   }
 

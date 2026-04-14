@@ -36,6 +36,7 @@ import {
 } from "./supervisor/supervisor-selection-readiness-summary";
 import { buildTrackedPrMismatch, shouldHydrateTrackedPrDiagnostics } from "./supervisor/tracked-pr-mismatch";
 import { buildTrustAndConfigWarnings, buildWarning, renderDoctorWarningLine } from "./warning-formatting";
+import { buildTrackedMergedButOpenBacklogDiagnosticLine } from "./reconciliation-backlog-diagnostics";
 
 export type DoctorCheckStatus = "pass" | "warn" | "fail";
 
@@ -50,6 +51,7 @@ export interface DoctorDiagnostics {
   overallStatus: DoctorCheckStatus;
   checks: DoctorCheck[];
   codexModelPolicyLines?: string[];
+  reconciliationBacklogLine?: string | null;
   trustDiagnostics: TrustDiagnosticsSummary;
   cadenceDiagnostics: CadenceDiagnosticsSummary;
   candidateDiscoverySummary: string;
@@ -620,11 +622,13 @@ export async function diagnoseSupervisorHost(args: DiagnoseSupervisorHostArgs): 
       activeRecord: null,
     }),
   );
+  const state = await loadState();
 
   return {
     overallStatus: overallStatusForChecks(checks),
     checks,
     codexModelPolicyLines,
+    reconciliationBacklogLine: buildTrackedMergedButOpenBacklogDiagnosticLine(state, "doctor_reconciliation_backlog"),
     trustDiagnostics: summarizeTrustDiagnostics(args.config),
     cadenceDiagnostics: summarizeCadenceDiagnostics(args.config),
     candidateDiscoverySummary: formatCandidateDiscoveryBehaviorLine(args.config, "doctor_candidate_discovery"),
@@ -725,6 +729,7 @@ export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
     `doctor_cadence poll_interval_seconds=${diagnostics.cadenceDiagnostics.pollIntervalSeconds} merge_critical_recheck_seconds=${mergeCriticalRecheckSeconds} merge_critical_effective_seconds=${diagnostics.cadenceDiagnostics.mergeCriticalEffectiveSeconds} enabled=${diagnostics.cadenceDiagnostics.mergeCriticalRecheckEnabled}`,
     diagnostics.candidateDiscoverySummary,
     ...codexModelPolicyLines,
+    ...(diagnostics.reconciliationBacklogLine ? [diagnostics.reconciliationBacklogLine] : []),
     `doctor_loop_runtime state=${loopRuntime.state} host_mode=${loopRuntime.hostMode} pid=${loopRuntime.pid === null ? "none" : String(loopRuntime.pid)} started_at=${loopRuntime.startedAt ?? "none"} detail=${sanitizeDoctorValue(loopRuntime.detail ?? "none")}`,
     ...(diagnostics.orphanPolicySummary ? [diagnostics.orphanPolicySummary] : []),
     `doctor_workspace_preparation configured=${workspacePreparationContract.configured} source=${workspacePreparationContract.source} command=${sanitizeDoctorValue(workspacePreparationContract.command ?? "none")} summary=${sanitizeDoctorValue(workspacePreparationContract.summary)}`,
