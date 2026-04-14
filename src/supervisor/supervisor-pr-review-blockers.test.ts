@@ -280,6 +280,126 @@ test("runOnce clears stale same-head stalled review-thread blockers after GitHub
   assert.equal(record.last_failure_context, null);
 });
 
+test("runOnce clears stale same-head stale_review_bot blockers after GitHub threads are manually resolved under diagnose_only", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 118;
+  const branch = branchName(fixture.config, issueNumber);
+  const runHeadSha = git(["rev-parse", "HEAD"], fixture.repoPath);
+  const config = createConfig({
+    ...fixture.config,
+    staleConfiguredBotReviewPolicy: "diagnose_only",
+    reviewBotLogins: ["copilot-pull-request-reviewer"],
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        branch,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: issueNumber,
+        last_head_sha: runHeadSha,
+        blocked_reason: "stale_review_bot",
+        last_failure_signature: "stalled-bot:thread-1",
+        repeated_failure_signature_count: 2,
+        last_failure_context: {
+          category: "manual",
+          summary:
+            "1 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
+          signature: "stalled-bot:thread-1",
+          command: null,
+          details: ["reviewer=copilot-pull-request-reviewer file=src/file.ts line=12 processed_on_current_head=yes"],
+          url: "https://example.test/pr/118#discussion_r1",
+          updated_at: "2026-03-13T06:25:00Z",
+        },
+        last_stale_review_bot_reply_head_sha: runHeadSha,
+        last_stale_review_bot_reply_signature: "stalled-bot:thread-1",
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Clear stale stale_review_bot blockers after manual GitHub thread resolution",
+    body: executionReadyBody("Clear stale stale_review_bot blockers after manual GitHub thread resolution."),
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const pr: GitHubPullRequest = {
+    number: issueNumber,
+    title: "Clear stale review bot blockers",
+    url: `https://example.test/pr/${issueNumber}`,
+    state: "OPEN",
+    createdAt: "2026-03-13T06:20:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: branch,
+    headRefOid: runHeadSha,
+    copilotReviewState: "arrived",
+    copilotReviewArrivedAt: "2026-03-13T06:20:00Z",
+    mergedAt: null,
+  };
+
+  const supervisor = new Supervisor(config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [issue],
+    listCandidateIssues: async () => [issue],
+    getIssue: async () => issue,
+    resolvePullRequestForBranch: async (branchName: string, prNumber: number | null) => {
+      assert.equal(branchName, branch);
+      assert.equal(prNumber, issueNumber);
+      return pr;
+    },
+    getChecks: async (prNumber: number) => {
+      assert.equal(prNumber, issueNumber);
+      return [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+    },
+    getUnresolvedReviewThreads: async (prNumber: number) => {
+      assert.equal(prNumber, issueNumber);
+      return [];
+    },
+    getPullRequest: async (prNumber: number) => {
+      assert.equal(prNumber, issueNumber);
+      return pr;
+    },
+    getPullRequestIfExists: async (prNumber: number) => {
+      assert.equal(prNumber, issueNumber);
+      return pr;
+    },
+    getMergedPullRequestsClosingIssue: async () => [],
+    enableAutoMerge: async (prNumber: number, headSha: string) => {
+      assert.equal(prNumber, issueNumber);
+      assert.equal(headSha, runHeadSha);
+    },
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: true });
+  assert.match(message, /state=ready_to_merge/);
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  const record = persisted.issues[String(issueNumber)];
+  assert.equal(record.state, "ready_to_merge");
+  assert.equal(record.blocked_reason, null);
+  assert.equal(record.last_failure_signature, null);
+  assert.equal(record.repeated_failure_signature_count, 0);
+  assert.equal(record.last_failure_context, null);
+});
+
 test("runOnce does not mark configured bot review threads as processed for a refreshed PR head it did not evaluate", async () => {
   const fixture = await createSupervisorFixture({
     codexScriptLines: [

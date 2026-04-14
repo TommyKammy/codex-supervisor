@@ -6,6 +6,7 @@ import { GitHubIssue, SupervisorStateFile } from "../core/types";
 import { Supervisor } from "./supervisor";
 import {
   branchName,
+  createConfig,
   createRecord,
   createPullRequest,
   createSupervisorFixture,
@@ -952,6 +953,109 @@ Explain should still render when tracked PR hydration fails.
   assert.match(explanation, /^blocked_reason=manual_review$/m);
   assert.doesNotMatch(explanation, /^tracked_pr_mismatch /m);
   assert.doesNotMatch(explanation, /^recovery_guidance=/m);
+});
+
+test("explain does not keep reporting stale_review_bot after a same-head tracked PR refresh clears it", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 173;
+  const branch = branchName(fixture.config, issueNumber);
+  const runHeadSha = git(["rev-parse", "HEAD"], fixture.repoPath);
+  const config = createConfig({
+    ...fixture.config,
+    staleConfiguredBotReviewPolicy: "diagnose_only",
+    reviewBotLogins: ["copilot-pull-request-reviewer"],
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        branch,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: 273,
+        blocked_reason: "stale_review_bot",
+        last_head_sha: runHeadSha,
+        last_error: "configured bot review stayed stale on the current head",
+        last_failure_signature: "stalled-bot:thread-1",
+        last_failure_context: {
+          category: "manual",
+          summary:
+            "1 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
+          signature: "stalled-bot:thread-1",
+          command: null,
+          details: ["reviewer=copilot-pull-request-reviewer file=src/file.ts line=12 processed_on_current_head=yes"],
+          url: "https://example.test/pr/273#discussion_r1",
+          updated_at: "2026-03-13T00:20:00Z",
+        },
+        last_stale_review_bot_reply_head_sha: runHeadSha,
+        last_stale_review_bot_reply_signature: "stalled-bot:thread-1",
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Explain clears stale stale_review_bot after tracked PR reconciliation",
+    body: `## Summary
+Explain should stop reporting stale stale_review_bot blockers after fresh tracked PR hydration clears them.
+
+## Scope
+- clear stale same-head configured-bot blockers using authoritative GitHub facts
+
+## Acceptance criteria
+- explain reports the refreshed ready-to-merge state after the stale blocker converges
+
+## Verification
+- npm test -- src/supervisor/supervisor-diagnostics-explain.test.ts`,
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const readyPr = createPullRequest({
+    number: 273,
+    headRefName: branch,
+    headRefOid: runHeadSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    reviewDecision: null,
+    copilotReviewState: "arrived",
+    copilotReviewArrivedAt: "2026-03-13T00:10:00Z",
+  });
+
+  const supervisor = new Supervisor(config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    getIssue: async () => trackedIssue,
+    listAllIssues: async () => [trackedIssue],
+    listCandidateIssues: async () => [trackedIssue],
+    resolvePullRequestForBranch: async () => readyPr,
+    getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => [],
+    getPullRequest: async () => readyPr,
+    getPullRequestIfExists: async () => readyPr,
+    getMergedPullRequestsClosingIssue: async () => [],
+    enableAutoMerge: async () => {},
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  await supervisor.runOnce({ dryRun: true });
+
+  const explanation = await supervisor.explain(issueNumber);
+
+  assert.match(explanation, /^state=ready_to_merge$/m);
+  assert.match(explanation, /^blocked_reason=none$/m);
+  assert.doesNotMatch(explanation, /^blocked_reason=stale_review_bot$/m);
+  assert.doesNotMatch(explanation, /^tracked_pr_mismatch /m);
 });
 
 test("explain reuses normalized change-risk policy for risky ambiguity blockers", async () => {
