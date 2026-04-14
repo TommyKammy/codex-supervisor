@@ -340,6 +340,91 @@ test("inferFailureContext reports stale current-head local review explicitly ins
   ]);
 });
 
+test("inferFailureContext keeps unresolved manual review ahead of pending current-head local review", () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+    trackedPrCurrentHeadLocalReviewRequired: false,
+    humanReviewBlocksMerge: true,
+  });
+  const pr = createPullRequest({ headRefOid: "head-new", isDraft: false });
+  const record = createRecord({
+    state: "blocked",
+    blocked_reason: "verification",
+    local_review_head_sha: null,
+  });
+  const manualThread = createReviewThread({
+    id: "manual-thread-1",
+    comments: {
+      nodes: [
+        {
+          id: "manual-comment-1",
+          body: "Please resolve this before merge.",
+          createdAt: "2026-03-11T00:00:00Z",
+          url: "https://example.test/pr/44#discussion_r2",
+          author: {
+            login: "teammate",
+            typeName: "User",
+          },
+        },
+      ],
+    },
+  });
+
+  const context = inferFailureContext(config, record, pr, [], [manualThread]);
+
+  assert.equal(context?.category, "manual");
+  assert.equal(context?.summary, "1 unresolved manual or unconfigured review thread(s) require human attention.");
+  assert.match(context?.signature ?? "", /^manual:manual-thread-1$/);
+});
+
+test("inferFailureContext keeps unresolved configured bot review ahead of pending current-head local review", () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+    trackedPrCurrentHeadLocalReviewRequired: false,
+    reviewBotLogins: ["copilot-pull-request-reviewer"],
+    humanReviewBlocksMerge: false,
+  });
+  const pr = createPullRequest({ headRefOid: "head-new", isDraft: false });
+  const record = createRecord({
+    state: "blocked",
+    blocked_reason: "verification",
+    local_review_head_sha: null,
+  });
+
+  const context = inferFailureContext(config, record, pr, [], [createReviewThread({ id: "bot-thread-1" })]);
+
+  assert.equal(context?.category, "review");
+  assert.equal(context?.summary, "1 unresolved automated review thread(s) remain.");
+  assert.equal(context?.signature, "bot-thread-1");
+});
+
+test("inferFailureContext keeps merge conflicts ahead of pending current-head local review", () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+    trackedPrCurrentHeadLocalReviewRequired: false,
+  });
+  const pr = createPullRequest({
+    headRefOid: "head-new",
+    isDraft: false,
+    mergeStateStatus: "DIRTY",
+    mergeable: "CONFLICTING",
+  });
+  const record = createRecord({
+    state: "blocked",
+    blocked_reason: "verification",
+    local_review_head_sha: null,
+  });
+
+  const context = inferFailureContext(config, record, pr, [], []);
+
+  assert.equal(context?.category, "conflict");
+  assert.equal(context?.summary, "PR #44 has merge conflicts and needs a base-branch integration pass.");
+  assert.equal(context?.signature, "dirty:head-new");
+});
+
 test("inferFailureContext returns merge conflict context when no earlier blocker applies", () => {
   const context = inferFailureContext(
     createConfig(),

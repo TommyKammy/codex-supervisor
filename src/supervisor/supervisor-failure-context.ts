@@ -95,14 +95,6 @@ export function inferFailureContext(
       return localReviewStallFailureContext(record);
     }
 
-    if (!pr.isDraft && shouldRunLocalReview(config, record, pr)) {
-      return buildCurrentHeadLocalReviewPendingFailureContext({ pr, record });
-    }
-
-    if (localReviewHighSeverityNeedsBlock(config, record, pr)) {
-      return localReviewFailureContext(record);
-    }
-
     const manualReviewContext =
       config.humanReviewBlocksMerge ? buildManualReviewFailureContext(manualReviewThreads(config, reviewThreads)) : null;
     if (manualReviewContext) {
@@ -124,16 +116,24 @@ export function inferFailureContext(
       return stalledBotReviewContext;
     }
 
-    if (localReviewDegradedNeedsBlock(config, record, pr)) {
+    if (localReviewHighSeverityNeedsBlock(config, record, pr)) {
       return localReviewFailureContext(record);
     }
 
-    if (localReviewBlocksMerge(config, record, pr)) {
+    if (!pr.isDraft && !mergeConflictDetected(pr) && shouldRunLocalReview(config, record, pr)) {
+      return buildCurrentHeadLocalReviewPendingFailureContext({ pr, record });
+    }
+
+    if (localReviewDegradedNeedsBlock(config, record, pr)) {
       return localReviewFailureContext(record);
     }
 
     if (mergeConflictDetected(pr)) {
       return buildConflictFailureContext(pr);
+    }
+
+    if (localReviewBlocksMerge(config, record, pr)) {
+      return localReviewFailureContext(record);
     }
   }
 
