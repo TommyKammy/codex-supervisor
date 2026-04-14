@@ -1,7 +1,7 @@
 import { GitHubIssue, IssueRunRecord, SupervisorStateFile } from "../core/types";
-import { parseIssueMetadata } from "./issue-metadata-parser";
+import { parseCanonicalEpicChildIssueNumbers, parseIssueMetadata } from "./issue-metadata-parser";
 
-export { parseIssueMetadata } from "./issue-metadata-parser";
+export { parseCanonicalEpicChildIssueNumbers, parseIssueMetadata } from "./issue-metadata-parser";
 export { validateIssueMetadataSyntax } from "./issue-metadata-validation";
 export {
   classifyChangedFile,
@@ -46,6 +46,38 @@ export interface BlockingIssue {
 export interface ParentIssueClosureCandidate {
   parentIssue: GitHubIssue;
   childIssues: GitHubIssue[];
+}
+
+function resolveParentClosureChildIssues(args: {
+  issueByNumber: Map<number, GitHubIssue>;
+  parentIssue: GitHubIssue;
+  explicitChildIssues: GitHubIssue[];
+}): GitHubIssue[] {
+  const { issueByNumber, parentIssue, explicitChildIssues } = args;
+  const fallbackChildIssueNumbers = parseCanonicalEpicChildIssueNumbers(parentIssue.body);
+  if (fallbackChildIssueNumbers.length === 0) {
+    return explicitChildIssues;
+  }
+
+  const fallbackIncludesAllExplicitChildren = explicitChildIssues.every((childIssue) =>
+    fallbackChildIssueNumbers.includes(childIssue.number),
+  );
+  const fallbackChildIssues = fallbackChildIssueNumbers
+    .map((childIssueNumber) => issueByNumber.get(childIssueNumber) ?? null);
+  const fallbackIsComplete = fallbackChildIssues.every((childIssue) => childIssue !== null);
+
+  if (
+    fallbackIsComplete &&
+    (explicitChildIssues.length === 0 || fallbackIncludesAllExplicitChildren)
+  ) {
+    return fallbackChildIssues.filter((childIssue): childIssue is GitHubIssue => childIssue !== null);
+  }
+
+  if (explicitChildIssues.length === 0) {
+    return [];
+  }
+
+  return explicitChildIssues;
 }
 
 export function isRecordDoneForSequencing(record: Pick<
@@ -141,7 +173,7 @@ export function findBlockingIssue(
 
 export function findParentIssuesReadyToClose(issues: GitHubIssue[]): ParentIssueClosureCandidate[] {
   const issueByNumber = new Map(issues.map((issue) => [issue.number, issue]));
-  const childIssuesByParent = new Map<number, GitHubIssue[]>();
+  const explicitChildIssuesByParent = new Map<number, GitHubIssue[]>();
 
   for (const issue of issues) {
     const metadata = parseIssueMetadata(issue);
@@ -149,21 +181,36 @@ export function findParentIssuesReadyToClose(issues: GitHubIssue[]): ParentIssue
       continue;
     }
 
-    const siblings = childIssuesByParent.get(metadata.parentIssueNumber) ?? [];
+    const siblings = explicitChildIssuesByParent.get(metadata.parentIssueNumber) ?? [];
     siblings.push(issue);
-    childIssuesByParent.set(metadata.parentIssueNumber, siblings);
+    explicitChildIssuesByParent.set(metadata.parentIssueNumber, siblings);
   }
 
-  return Array.from(childIssuesByParent.entries())
-    .map(([parentIssueNumber, childIssues]) => ({
-      parentIssue: issueByNumber.get(parentIssueNumber) ?? null,
-      childIssues,
-    }))
-    .filter(
-      (
-        candidate,
-      ): candidate is ParentIssueClosureCandidate => candidate.parentIssue !== null,
-    )
+  const candidateParentIssueNumbers = new Set<number>([
+    ...explicitChildIssuesByParent.keys(),
+    ...issues.map((issue) => issue.number),
+  ]);
+
+  return Array.from(candidateParentIssueNumbers)
+    .map((parentIssueNumber) => {
+      const parentIssue = issueByNumber.get(parentIssueNumber) ?? null;
+      if (!parentIssue) {
+        return null;
+      }
+
+      const explicitChildIssues = explicitChildIssuesByParent.get(parentIssueNumber) ?? [];
+      const childIssues = resolveParentClosureChildIssues({
+        issueByNumber,
+        parentIssue,
+        explicitChildIssues,
+      });
+
+      return {
+        parentIssue,
+        childIssues,
+      };
+    })
+    .filter((candidate): candidate is ParentIssueClosureCandidate => candidate !== null)
     .filter(
       ({ parentIssue, childIssues }) =>
         parentIssue.state === "OPEN" &&

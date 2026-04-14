@@ -63,6 +63,55 @@ test("findParentIssuesReadyToClose treats both parent metadata formats as the sa
   );
 });
 
+test("findParentIssuesReadyToClose falls back to a canonical epic-body child issue list", () => {
+  const readyToClose = findParentIssuesReadyToClose([
+    createIssue({
+      number: 1499,
+      state: "OPEN",
+      body: `## Summary
+Track the child issue rollout.
+
+## Child issues
+- #1500
+- #1501
+- #1502`,
+    }),
+    createIssue({ number: 1500, state: "CLOSED" }),
+    createIssue({ number: 1501, state: "CLOSED" }),
+    createIssue({ number: 1502, state: "CLOSED" }),
+  ]);
+
+  assert.deepEqual(
+    readyToClose.map((candidate) => ({
+      parentIssueNumber: candidate.parentIssue.number,
+      childIssueNumbers: candidate.childIssues.map((issue) => issue.number),
+    })),
+    [
+      {
+        parentIssueNumber: 1499,
+        childIssueNumbers: [1500, 1501, 1502],
+      },
+    ],
+  );
+});
+
+test("findParentIssuesReadyToClose ignores non-canonical epic-body prose when deriving child closures", () => {
+  const readyToClose = findParentIssuesReadyToClose([
+    createIssue({
+      number: 1499,
+      state: "OPEN",
+      body: `## Summary
+Track the child issue rollout.
+
+This epic mentions #1500 and #1501 in prose, but not in the canonical child-list section.`,
+    }),
+    createIssue({ number: 1500, state: "CLOSED" }),
+    createIssue({ number: 1501, state: "CLOSED" }),
+  ]);
+
+  assert.deepEqual(readyToClose, []);
+});
+
 test("findBlockingIssue keeps downstream execution order blocked until final evaluation resolves", () => {
   const predecessor = createIssue({
     number: 41,
