@@ -58,6 +58,7 @@ export interface BuildDetailedStatusSummaryLinesArgs {
   latestRecoveryRecord?: IssueRunRecord | null;
   activityContext?: SupervisorIssueActivityContextDto | null;
   handoffSummary?: string | null;
+  codexModelPolicySummaryLines?: string[];
   localReviewRoutingSummary?: string | null;
   changeClassesSummary?: string | null;
   verificationPolicySummary?: string | null;
@@ -83,6 +84,7 @@ export function buildDetailedStatusSummaryLines(args: BuildDetailedStatusSummary
     latestRecoveryRecord = null,
     activityContext = null,
     handoffSummary = null,
+    codexModelPolicySummaryLines = [],
     localReviewRoutingSummary = null,
     changeClassesSummary = null,
     verificationPolicySummary = null,
@@ -94,6 +96,10 @@ export function buildDetailedStatusSummaryLines(args: BuildDetailedStatusSummary
 
   if (handoffSummary) {
     lines.push(`handoff_summary=${truncate(sanitizeStatusValue(handoffSummary), 200)}`);
+  }
+
+  for (const codexModelPolicySummaryLine of codexModelPolicySummaryLines) {
+    lines.push(truncate(sanitizeStatusValue(codexModelPolicySummaryLine), 200) ?? "");
   }
 
   const preMergeEvaluationLine = formatPreMergeEvaluationStatusLine(activityContext?.preMergeEvaluation ?? null);

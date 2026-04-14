@@ -401,6 +401,7 @@ export async function buildSupervisorStatusReport(args: {
     latestRecoveryRecord: statusRecords.latestRecoveryRecord,
     activityContext: activeStatus.activityContext,
     handoffSummary: activeStatus.handoffSummary,
+    codexModelPolicySummaryLines: activeStatus.codexModelPolicySummaryLines,
     localReviewRoutingSummary: activeStatus.localReviewRoutingSummary,
     changeClassesSummary: activeStatus.changeClassesSummary,
     verificationPolicySummary: activeStatus.verificationPolicySummary,
