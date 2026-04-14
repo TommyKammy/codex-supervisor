@@ -22,8 +22,7 @@ function findOwnedRequirementsBlockerComment(
   const matchingComments = issueComments.filter(
     (comment) =>
       comment.body.includes(marker) &&
-      comment.viewerDidAuthor === true &&
-      typeof comment.databaseId === "number",
+      comment.viewerDidAuthor === true,
   );
   if (matchingComments.length === 0) {
     return null;
@@ -52,7 +51,7 @@ function buildCanonicalRepairSection(issue: GitHubIssue): string[] {
     return [
       "Canonical sequenced-child repair:",
       "- add `Part of: #<number>` only when this issue truly belongs to a parent epic or tracked sequence",
-      "- keep `Depends on: none` unless another issue truly blocks execution",
+      "- add `Depends on: #<previous-issue-number>` when earlier sequence work must land first; otherwise use `Depends on: none`",
       "- keep `Parallelizable: No` unless parallel execution is confirmed safe",
       "```md",
       "## Execution order",

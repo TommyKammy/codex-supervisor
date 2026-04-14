@@ -80,6 +80,20 @@ interface SyncIssueJournalArgs {
   maxChars: number;
 }
 
+async function syncRequirementsBlockerIssueCommentBestEffort(
+  github: IssueSelectionGitHub,
+  issue: GitHubIssue,
+): Promise<void> {
+  try {
+    await syncRequirementsBlockerIssueComment(github, issue);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(
+      `Failed to sync requirements blocker issue comment for issue #${issue.number}: ${truncate(message, 500) ?? "unknown error"}`,
+    );
+  }
+}
+
 interface ResolveRunnableIssueContextArgs {
   github: IssueSelectionGitHub;
   config: SupervisorConfig;
@@ -565,7 +579,7 @@ export async function resolveRunnableIssueContext(
         state.issues[String(blockedRecord.issue_number)] = blockedRecord;
         state.activeIssueNumber = null;
         await stateStore.save(state);
-        await syncRequirementsBlockerIssueComment(github, issue);
+        await syncRequirementsBlockerIssueCommentBestEffort(github, issue);
         if (blockedRecord.journal_path) {
           await syncIssueJournalImpl({
             issue,
@@ -663,7 +677,7 @@ export async function resolveRunnableIssueContext(
       state.issues[String(blockedRecord.issue_number)] = blockedRecord;
       state.activeIssueNumber = null;
       await stateStore.save(state);
-      await syncRequirementsBlockerIssueComment(github, issue);
+      await syncRequirementsBlockerIssueCommentBestEffort(github, issue);
       if (blockedRecord.journal_path) {
         await syncIssueJournalImpl({
           issue,

@@ -5,7 +5,10 @@ import {
   resolveRunnableIssueContext,
 } from "./run-once-issue-selection";
 import { GitHubIssue, IssueRunRecord, SupervisorConfig, SupervisorStateFile } from "./core/types";
-import { syncRequirementsBlockerIssueComment } from "./requirements-blocker-issue-comment";
+import {
+  buildRequirementsBlockerIssueComment,
+  syncRequirementsBlockerIssueComment,
+} from "./requirements-blocker-issue-comment";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
   return {
@@ -272,6 +275,43 @@ Add execution-ready gating.`,
   assert.doesNotMatch(addedComments[0]?.body ?? "", /Part of: none/i);
 });
 
+test("buildRequirementsBlockerIssueComment uses sequenced-child guidance without inventing a parent dependency", () => {
+  const issue: GitHubIssue = {
+    number: 193,
+    title: "Sequenced metadata blocker",
+    body: `## Summary
+Repair sequenced child metadata guidance.
+
+## Scope
+- verify the canonical blocker guidance
+
+## Acceptance criteria
+- sequenced repairs explain the predecessor dependency shape
+
+## Verification
+- npx tsx --test src/run-once-issue-selection.test.ts
+
+Depends on: none
+Parallelizable: No
+
+## Execution order
+2 of 3`,
+    createdAt: "2026-03-15T00:00:00Z",
+    updatedAt: "2026-03-15T00:00:00Z",
+    url: "https://example.test/issues/193",
+    labels: [{ name: "codex" }],
+    state: "OPEN",
+  };
+
+  const body = buildRequirementsBlockerIssueComment(issue);
+
+  assert.match(body, /Canonical sequenced-child repair:/);
+  assert.match(body, /Part of: #<number>/);
+  assert.match(body, /Depends on: #<previous-issue-number>.*Depends on: none/s);
+  assert.match(body, /## Execution order[\s\S]*2 of 3/);
+  assert.doesNotMatch(body, /parent epic.*Depends on:/i);
+});
+
 test("syncRequirementsBlockerIssueComment dedupes identical blocker comments and updates the sticky comment when the blocker changes", async () => {
   const firstIssue: GitHubIssue = {
     number: 192,
@@ -339,6 +379,123 @@ Parallelizable: No`,
   assert.equal(updatedComments[0]?.commentId, 501);
   assert.match(updatedComments[0]?.body ?? "", /metadata errors:/i);
   assert.match(updatedComments[0]?.body ?? "", /depends on must appear exactly once/i);
+});
+
+test("syncRequirementsBlockerIssueComment still dedupes authored sticky comments when databaseId is missing", async () => {
+  const issue: GitHubIssue = {
+    number: 194,
+    title: "Requirements blocker dedupe without database id",
+    body: `## Summary
+Add execution-ready gating.`,
+    createdAt: "2026-03-15T00:00:00Z",
+    updatedAt: "2026-03-15T00:00:00Z",
+    url: "https://example.test/issues/194",
+    labels: [{ name: "codex" }],
+    state: "OPEN",
+  };
+  const changedIssue: GitHubIssue = {
+    ...issue,
+    body: `${issue.body}
+
+## Scope
+- keep the sticky comment machine-managed`,
+    updatedAt: "2026-03-15T00:05:00Z",
+  };
+  const addedComments: Array<{ issueNumber: number; body: string }> = [];
+  const updatedComments: Array<{ commentId: number; body: string }> = [];
+  let commentBody = "";
+
+  const github = {
+    getIssueComments: async () =>
+      commentBody === ""
+        ? []
+        : [{
+          id: "comment-194",
+          databaseId: null,
+          body: commentBody,
+          createdAt: "2026-03-15T00:01:00Z",
+          url: "https://example.test/issues/194#issuecomment-null",
+          author: { login: "codex-supervisor", typeName: "Bot" },
+          viewerDidAuthor: true,
+        }],
+    addIssueComment: async (issueNumber: number, body: string) => {
+      addedComments.push({ issueNumber, body });
+      commentBody = body;
+    },
+    updateIssueComment: async (commentId: number, body: string) => {
+      updatedComments.push({ commentId, body });
+      commentBody = body;
+    },
+  };
+
+  await syncRequirementsBlockerIssueComment(github as never, issue);
+  await syncRequirementsBlockerIssueComment(github as never, issue);
+  await syncRequirementsBlockerIssueComment(github as never, changedIssue);
+
+  assert.equal(addedComments.length, 1);
+  assert.equal(updatedComments.length, 0);
+});
+
+test("resolveRunnableIssueContext treats requirements blocker comment sync as best effort", async () => {
+  const config = createConfig();
+  const issue: GitHubIssue = {
+    number: 195,
+    title: "Best-effort blocker comment sync",
+    body: `## Summary
+Add execution-ready gating.`,
+    createdAt: "2026-03-15T00:00:00Z",
+    updatedAt: "2026-03-15T00:00:00Z",
+    url: "https://example.test/issues/195",
+    labels: [{ name: "codex" }],
+    state: "OPEN",
+  };
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  const savedStates: SupervisorStateFile[] = [];
+  const warnings: string[] = [];
+  const originalWarn = console.warn;
+  console.warn = (message?: unknown, ...args: unknown[]) => {
+    warnings.push([message, ...args].map((value) => String(value)).join(" "));
+  };
+
+  try {
+    const result = await resolveRunnableIssueContext({
+      github: {
+        listCandidateIssues: async () => [issue],
+        getIssue: async () => issue,
+        addIssueComment: async () => {},
+        getIssueComments: async () => {
+          throw new Error("comment sync offline");
+        },
+      },
+      config,
+      stateStore: createTouchStateStore(savedStates),
+      state,
+      currentRecord: null,
+      acquireIssueLock: async () => ({
+        acquired: true,
+        release: async () => {},
+      }),
+      ensureRecordJournalContext: async (record) => ({
+        workspace: record.workspace,
+        journal_path: `/tmp/workspaces/issue-${record.issue_number}/.codex-supervisor/issue-journal.md`,
+      }),
+      syncIssueJournal: async () => {},
+    });
+
+    assert.deepEqual(result, { kind: "restart" });
+  } finally {
+    console.warn = originalWarn;
+  }
+
+  assert.equal(savedStates.length, 2);
+  assert.equal(state.issues["195"]?.state, "blocked");
+  assert.equal(state.issues["195"]?.blocked_reason, "requirements");
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0] ?? "", /Failed to sync requirements blocker issue comment for issue #195/i);
+  assert.match(warnings[0] ?? "", /comment sync offline/i);
 });
 
 test("resolveRunnableIssueContext keeps the acquired lock attached to a ready issue handoff", async () => {

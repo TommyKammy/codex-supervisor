@@ -581,83 +581,136 @@ export class GitHubReviewSurfaceClient {
 
   private async fetchIssueComments(issueNumber: number): Promise<IssueComment[]> {
     const { owner, repo } = this.repoOwnerAndName();
-    const query = `
-      query($owner: String!, $repo: String!, $number: Int!) {
-        repository(owner: $owner, name: $repo) {
-          issue(number: $number) {
-            comments(last: 100) {
-              nodes {
-                id
-                databaseId
-                body
-                createdAt
-                url
-                viewerDidAuthor
-                author {
-                  login
-                  __typename
+    const comments: IssueComment[] = [];
+    let cursor: string | null = null;
+
+    while (true) {
+      const query = cursor === null
+        ? `
+          query($owner: String!, $repo: String!, $number: Int!) {
+            repository(owner: $owner, name: $repo) {
+              issue(number: $number) {
+                comments(first: 100) {
+                  nodes {
+                    id
+                    databaseId
+                    body
+                    createdAt
+                    url
+                    viewerDidAuthor
+                    author {
+                      login
+                      __typename
+                    }
+                  }
+                  pageInfo {
+                    hasNextPage
+                    endCursor
+                  }
                 }
               }
             }
           }
-        }
-      }
-    `;
-
-    const result = await this.runGhJsonCommand([
-      "api",
-      "graphql",
-      "-f",
-      `query=${query}`,
-      "-F",
-      `owner=${owner}`,
-      "-F",
-      `repo=${repo}`,
-      "-F",
-      `number=${issueNumber}`,
-    ]);
-
-    const payload = parseJson<{
-      data?: {
-        repository?: {
-          issue?: {
-            comments?: {
-              nodes?: Array<{
-                id?: string | null;
-                databaseId?: number | null;
-                body?: string | null;
-                createdAt?: string | null;
-                url?: string | null;
-                viewerDidAuthor?: boolean | null;
-                author?: {
-                  login?: string | null;
-                  __typename?: string | null;
-                } | null;
-              }>;
-            };
-          } | null;
-        };
-      };
-    }>(result.stdout, `gh api graphql issue comments issue=${issueNumber}`);
-
-    return payload.data?.repository?.issue?.comments?.nodes?.flatMap((comment) =>
-      comment?.id
-        ? [{
-          id: comment.id,
-          databaseId: comment.databaseId ?? null,
-          body: comment.body ?? "",
-          createdAt: comment.createdAt ?? "",
-          url: comment.url ?? null,
-          viewerDidAuthor: comment.viewerDidAuthor ?? null,
-          author: comment.author
-            ? {
-              login: comment.author.login ?? null,
-              typeName: comment.author.__typename ?? null,
+        `
+        : `
+          query($owner: String!, $repo: String!, $number: Int!, $cursor: String!) {
+            repository(owner: $owner, name: $repo) {
+              issue(number: $number) {
+                comments(first: 100, after: $cursor) {
+                  nodes {
+                    id
+                    databaseId
+                    body
+                    createdAt
+                    url
+                    viewerDidAuthor
+                    author {
+                      login
+                      __typename
+                    }
+                  }
+                  pageInfo {
+                    hasNextPage
+                    endCursor
+                  }
+                }
+              }
             }
-            : null,
-        }]
-        : []
-    ) ?? [];
+          }
+        `;
+      const args = [
+        "api",
+        "graphql",
+        "-f",
+        `query=${query}`,
+        "-F",
+        `owner=${owner}`,
+        "-F",
+        `repo=${repo}`,
+        "-F",
+        `number=${issueNumber}`,
+      ];
+      if (cursor !== null) {
+        args.push("-F", `cursor=${cursor}`);
+      }
+
+      const result = await this.runGhJsonCommand(args);
+      const payload = parseJson<{
+        data?: {
+          repository?: {
+            issue?: {
+              comments?: {
+                nodes?: Array<{
+                  id?: string | null;
+                  databaseId?: number | null;
+                  body?: string | null;
+                  createdAt?: string | null;
+                  url?: string | null;
+                  viewerDidAuthor?: boolean | null;
+                  author?: {
+                    login?: string | null;
+                    __typename?: string | null;
+                  } | null;
+                }>;
+                pageInfo?: {
+                  hasNextPage?: boolean | null;
+                  endCursor?: string | null;
+                } | null;
+              };
+            } | null;
+          };
+        };
+      }>(result.stdout, `gh api graphql issue comments issue=${issueNumber}`);
+
+      const connection = payload.data?.repository?.issue?.comments;
+      comments.push(...(connection?.nodes?.flatMap((comment) =>
+        comment?.id
+          ? [{
+            id: comment.id,
+            databaseId: comment.databaseId ?? null,
+            body: comment.body ?? "",
+            createdAt: comment.createdAt ?? "",
+            url: comment.url ?? null,
+            viewerDidAuthor: comment.viewerDidAuthor ?? null,
+            author: comment.author
+              ? {
+                login: comment.author.login ?? null,
+                typeName: comment.author.__typename ?? null,
+              }
+              : null,
+          }]
+          : []
+      ) ?? []));
+
+      const pageInfo = connection?.pageInfo;
+      if (!pageInfo?.hasNextPage || !pageInfo.endCursor) {
+        break;
+      }
+
+      cursor = pageInfo.endCursor;
+    }
+
+    return comments;
   }
 
   private async hydratePullRequestForStatus(pr: GitHubPullRequest | null): Promise<GitHubPullRequest | null> {
