@@ -74,7 +74,7 @@ interface RunOnceCyclePreludeArgs {
   reconcileParentEpicClosures: (
     state: SupervisorStateFile,
     issues: GitHubIssue[],
-  ) => Promise<void>;
+  ) => Promise<RecoveryEvent[]>;
   cleanupExpiredDoneWorkspaces: (state: SupervisorStateFile) => Promise<RecoveryEvent[]>;
 }
 
@@ -312,7 +312,9 @@ export async function runOnceCyclePrelude(
     }
 
     await setReconciliationPhase("parent_epic_closures");
-    await args.reconcileParentEpicClosures(state, issues);
+    const parentEpicClosureEvents = await args.reconcileParentEpicClosures(state, issues) ?? [];
+    recoveryEvents.push(...parentEpicClosureEvents);
+    emitRecoveryEvents(parentEpicClosureEvents);
 
     await setReconciliationPhase("cleanup_expired_done_workspaces");
     const cleanupEvents = await args.cleanupExpiredDoneWorkspaces(state);

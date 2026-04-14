@@ -47,6 +47,11 @@ test("runOnceCyclePrelude loads state and aggregates recovery setup events in or
     reason: "blocked recovery",
     at: "2026-03-14T00:03:00Z",
   };
+  const parentEpicClosureEvent: RecoveryEvent = {
+    issueNumber: 45,
+    reason: "parent_epic_auto_closed: auto-closed parent epic #45 because child issues #46, #47 are closed",
+    at: "2026-03-14T00:03:30Z",
+  };
   const orphanCleanupEvent: RecoveryEvent = {
     issueNumber: 44,
     reason: "pruned orphaned worktree",
@@ -106,6 +111,7 @@ test("runOnceCyclePrelude loads state and aggregates recovery setup events in or
       calls.push("reconcileParentEpicClosures");
       assert.equal(loadedState, state);
       assert.equal(loadedIssues, issues);
+      return [parentEpicClosureEvent];
     },
     cleanupExpiredDoneWorkspaces: async (loadedState) => {
       calls.push("cleanupExpiredDoneWorkspaces");
@@ -134,6 +140,7 @@ test("runOnceCyclePrelude loads state and aggregates recovery setup events in or
     staleReservationEvent,
     mergedConvergenceEvent,
     blockedRecoveryEvent,
+    parentEpicClosureEvent,
     orphanCleanupEvent,
   ]);
 });
@@ -186,7 +193,7 @@ test("runOnceCyclePrelude persists the last-known-good inventory snapshot after 
     reconcileMergedIssueClosures: async () => [],
     reconcileStaleFailedIssueStates: async () => {},
     reconcileRecoverableBlockedIssueStates: async () => [],
-    reconcileParentEpicClosures: async () => {},
+    reconcileParentEpicClosures: async () => [],
     cleanupExpiredDoneWorkspaces: async () => [],
   });
 
@@ -263,6 +270,7 @@ test("runOnceCyclePrelude rehydrates tracked blocked PRs before reserving select
     },
     reconcileParentEpicClosures: async () => {
       calls.push("parent_epics");
+      return [];
     },
     cleanupExpiredDoneWorkspaces: async () => {
       calls.push("cleanup");
@@ -354,6 +362,7 @@ test("runOnceCyclePrelude reconciles stale done no-PR records before reserving a
     },
     reconcileParentEpicClosures: async () => {
       calls.push("parent_epics");
+      return [];
     },
     cleanupExpiredDoneWorkspaces: async () => {
       calls.push("cleanup");
@@ -442,6 +451,7 @@ test("runOnceCyclePrelude reconciles tracked PR-open issues before reserving a n
     },
     reconcileParentEpicClosures: async () => {
       calls.push("parent_epics");
+      return [];
     },
     cleanupExpiredDoneWorkspaces: async () => {
       calls.push("cleanup");
@@ -537,7 +547,7 @@ test("runOnceCyclePrelude publishes the active reconciliation phase and clears i
     reconcileMergedIssueClosures: async () => [],
     reconcileStaleFailedIssueStates: async () => {},
     reconcileRecoverableBlockedIssueStates: async () => [],
-    reconcileParentEpicClosures: async () => {},
+    reconcileParentEpicClosures: async () => [],
     cleanupExpiredDoneWorkspaces: async () => [],
   });
 
@@ -582,7 +592,7 @@ test("runOnceCyclePrelude publishes reconciliation target updates within a phase
     reconcileMergedIssueClosures: async () => [],
     reconcileStaleFailedIssueStates: async () => {},
     reconcileRecoverableBlockedIssueStates: async () => [],
-    reconcileParentEpicClosures: async () => {},
+    reconcileParentEpicClosures: async () => [],
     cleanupExpiredDoneWorkspaces: async () => [],
   });
 
@@ -670,7 +680,7 @@ test("runOnceCyclePrelude emits typed recovery events for transport adapters", a
     reconcileMergedIssueClosures: async () => [],
     reconcileStaleFailedIssueStates: async () => {},
     reconcileRecoverableBlockedIssueStates: async () => [],
-    reconcileParentEpicClosures: async () => {},
+    reconcileParentEpicClosures: async () => [],
     cleanupExpiredDoneWorkspaces: async () => [],
   });
 
@@ -1676,6 +1686,7 @@ test("runOnceCyclePrelude does not reconcile parent epic closures from tracked i
     },
     reconcileParentEpicClosures: async (_loadedState, loadedIssues) => {
       parentEpicClosureCalls.push(loadedIssues);
+      return [];
     },
     cleanupExpiredDoneWorkspaces: async () => {
       throw new Error("unexpected cleanupExpiredDoneWorkspaces call");
@@ -1746,6 +1757,7 @@ test("runOnceCyclePrelude does not attempt degraded parent epic closure from a p
     reconcileRecoverableBlockedIssueStates: async () => [],
     reconcileParentEpicClosures: async () => {
       parentEpicClosureCalls += 1;
+      return [];
     },
     cleanupExpiredDoneWorkspaces: async () => [],
   });
@@ -1843,6 +1855,7 @@ test("runOnceCyclePrelude does not fetch parent epics for degraded parent closur
     },
     reconcileParentEpicClosures: async (_loadedState, loadedIssues) => {
       parentEpicClosureCalls.push(loadedIssues);
+      return [];
     },
     cleanupExpiredDoneWorkspaces: async () => {
       throw new Error("unexpected cleanupExpiredDoneWorkspaces call");

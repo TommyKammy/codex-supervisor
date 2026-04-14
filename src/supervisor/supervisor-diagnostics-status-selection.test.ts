@@ -3292,6 +3292,59 @@ test("status does not surface tracked PR mismatch diagnostics after tracked PR r
   );
 });
 
+test("status surfaces parent epic auto-closure as the latest recovery on read-only status surfaces", async () => {
+  const fixture = await createSupervisorFixture();
+  const parentIssueNumber = 199;
+  const newerIssueNumber = 200;
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(parentIssueNumber)]: createRecord({
+        issue_number: parentIssueNumber,
+        state: "done",
+        branch: branchName(fixture.config, parentIssueNumber),
+        workspace: path.join(fixture.workspaceRoot, `issue-${parentIssueNumber}`),
+        journal_path: null,
+        last_recovery_reason:
+          "parent_epic_auto_closed: auto-closed parent epic #199 because child issues #201, #202 are closed",
+        last_recovery_at: "2026-03-13T00:20:00Z",
+      }),
+      [String(newerIssueNumber)]: createRecord({
+        issue_number: newerIssueNumber,
+        state: "done",
+        branch: branchName(fixture.config, newerIssueNumber),
+        workspace: path.join(fixture.workspaceRoot, `issue-${newerIssueNumber}`),
+        journal_path: null,
+        updated_at: "2026-03-13T00:25:00Z",
+        last_recovery_reason: null,
+        last_recovery_at: null,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [],
+    listAllIssues: async () => [],
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const report = await supervisor.statusReport();
+  assert.match(
+    report.detailedStatusLines.join("\n"),
+    /^latest_recovery issue=#199 at=2026-03-13T00:20:00Z reason=parent_epic_auto_closed detail=auto-closed parent epic #199 because child issues #201, #202 are closed$/m,
+  );
+
+  const status = await supervisor.status();
+  assert.match(
+    status,
+    /^latest_recovery issue=#199 at=2026-03-13T00:20:00Z reason=parent_epic_auto_closed detail=auto-closed parent epic #199 because child issues #201, #202 are closed$/m,
+  );
+});
+
 test("status does not surface tracked PR mismatch diagnostics after tracked PR recovery persists addressing_review state", async () => {
   const fixture = await createSupervisorFixture();
   fixture.config.reviewBotLogins = ["copilot-pull-request-reviewer"];

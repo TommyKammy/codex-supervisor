@@ -1227,27 +1227,33 @@ export async function reconcileParentEpicClosures(
   stateStore: StateStoreLike,
   state: SupervisorStateFile,
   issues: GitHubIssue[],
-): Promise<void> {
+): Promise<RecoveryEvent[]> {
   const parentIssuesReadyToClose = findParentIssuesReadyToClose(issues);
   if (parentIssuesReadyToClose.length === 0) {
-    return;
+    return [];
   }
 
   let changed = false;
+  const recoveryEvents: RecoveryEvent[] = [];
 
   for (const { parentIssue, childIssues } of parentIssuesReadyToClose) {
     const childIssueNumbers = childIssues
       .map((childIssue) => `#${childIssue.number}`)
       .sort((left, right) => Number(left.slice(1)) - Number(right.slice(1)));
+    const recoveryEvent = buildRecoveryEvent(
+      parentIssue.number,
+      `parent_epic_auto_closed: auto-closed parent epic #${parentIssue.number} because child issues ${childIssueNumbers.join(", ")} are closed`,
+    );
 
     await github.closeIssue(
       parentIssue.number,
       `Closed automatically because all child issues are closed: ${childIssueNumbers.join(", ")}.`,
     );
+    recoveryEvents.push(recoveryEvent);
 
     const existingRecord = state.issues[String(parentIssue.number)];
     if (existingRecord) {
-      const patch = doneResetPatch();
+      const patch = applyRecoveryEvent(doneResetPatch(), recoveryEvent);
       if (needsRecordUpdate(existingRecord, patch)) {
         const updated = stateStore.touch(existingRecord, patch);
         state.issues[String(parentIssue.number)] = updated;
@@ -1263,6 +1269,8 @@ export async function reconcileParentEpicClosures(
   if (changed) {
     await stateStore.save(state);
   }
+
+  return recoveryEvents;
 }
 
 export async function reconcileStaleActiveIssueReservation(args: {

@@ -3638,10 +3638,12 @@ test("reconcileParentEpicClosures clears a stale active issue pointer even when 
   let touchCalls = 0;
   let saveCalls = 0;
   let closeIssueCalls = 0;
+  let touchedRecord: IssueRunRecord | null = null;
   const stateStore = {
     touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
       touchCalls += 1;
-      return { ...current, ...patch };
+      touchedRecord = { ...current, ...patch };
+      return touchedRecord;
     },
     async save(): Promise<void> {
       saveCalls += 1;
@@ -3670,10 +3672,114 @@ test("reconcileParentEpicClosures clears a stale active issue pointer even when 
   );
 
   assert.equal(closeIssueCalls, 1);
-  assert.equal(touchCalls, 0);
+  assert.equal(touchCalls, 1);
   assert.equal(saveCalls, 1);
   assert.equal(state.activeIssueNumber, null);
-  assert.deepEqual(state.issues["123"], original);
+  assert.equal(
+    state.issues["123"]?.last_recovery_reason,
+    "parent_epic_auto_closed: auto-closed parent epic #123 because child issues #201, #202 are closed",
+  );
+  assert.ok(state.issues["123"]?.last_recovery_at);
+  assert.equal(state.issues["123"]?.state, "done");
+  assert.deepEqual(state.issues["123"], touchedRecord);
+});
+
+test("reconcileParentEpicClosures returns an explicit recovery event and persists it on the parent record", async () => {
+  const original = createRecord({
+    issue_number: 123,
+    state: "reproducing",
+    pr_number: null,
+    blocked_reason: null,
+    last_error: null,
+    last_failure_kind: null,
+    last_failure_context: null,
+    last_blocker_signature: null,
+    last_failure_signature: null,
+    last_recovery_reason: null,
+    last_recovery_at: null,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "123": original,
+    },
+  };
+  const issues: GitHubIssue[] = [
+    {
+      number: 123,
+      title: "Parent issue",
+      body: "",
+      createdAt: "2026-03-13T00:00:00Z",
+      updatedAt: "2026-03-13T00:00:00Z",
+      url: "https://example.test/issues/123",
+      state: "OPEN",
+    },
+    {
+      number: 201,
+      title: "Child one",
+      body: "Part of #123",
+      createdAt: "2026-03-13T00:00:00Z",
+      updatedAt: "2026-03-13T00:00:00Z",
+      url: "https://example.test/issues/201",
+      state: "CLOSED",
+    },
+    {
+      number: 202,
+      title: "Child two",
+      body: "- Part of: #123",
+      createdAt: "2026-03-13T00:00:00Z",
+      updatedAt: "2026-03-13T00:00:00Z",
+      url: "https://example.test/issues/202",
+      state: "CLOSED",
+    },
+  ];
+
+  let savedState: SupervisorStateFile | null = null;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return { ...current, ...patch };
+    },
+    async save(nextState: SupervisorStateFile): Promise<void> {
+      savedState = structuredClone(nextState);
+    },
+  };
+
+  const recoveryEvents = await reconcileParentEpicClosures(
+    {
+      closeIssue: async () => {},
+      closePullRequest: async () => {
+        throw new Error("unexpected closePullRequest call");
+      },
+      getChecks: async () => [],
+      getIssue: async () => {
+        throw new Error("unexpected getIssue call");
+      },
+      getMergedPullRequestsClosingIssue: async () => [],
+      getPullRequestIfExists: async () => null,
+      getUnresolvedReviewThreads: async () => [],
+    },
+    stateStore,
+    state,
+    issues,
+  );
+
+  assert.equal(recoveryEvents.length, 1);
+  assert.equal(recoveryEvents[0]?.issueNumber, 123);
+  assert.equal(
+    recoveryEvents[0]?.reason,
+    "parent_epic_auto_closed: auto-closed parent epic #123 because child issues #201, #202 are closed",
+  );
+  assert.equal(state.issues["123"]?.state, "done");
+  assert.equal(
+    state.issues["123"]?.last_recovery_reason,
+    "parent_epic_auto_closed: auto-closed parent epic #123 because child issues #201, #202 are closed",
+  );
+  assert.ok(state.issues["123"]?.last_recovery_at);
+  if (savedState === null) {
+    throw new Error("expected state to be saved");
+  }
+  const persistedState: SupervisorStateFile = savedState;
+  assert.deepEqual(persistedState.issues["123"], state.issues["123"]);
 });
 
 test("reconcileTrackedMergedButOpenIssues fetches missing issue snapshots for non-merging merged records", async () => {
