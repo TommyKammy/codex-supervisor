@@ -22,6 +22,11 @@ export interface PullRequestReviewSurfaceOptions {
   reviewSurfaceVersion?: string | null;
 }
 
+export interface IssueCommentSurfaceOptions {
+  purpose?: "status" | "action";
+  issueVersion?: string | null;
+}
+
 export class GitHubReviewSurfaceClient {
   private readonly pullRequestHydrator: GitHubPullRequestHydrator;
   private readonly pullRequestGraphqlSurfaceCache = new Map<string, Promise<unknown>>();
@@ -286,6 +291,20 @@ export class GitHubReviewSurfaceClient {
       prNumber,
       options,
       () => this.fetchExternalReviewSurface(prNumber),
+    );
+  }
+
+  async getIssueComments(
+    issueNumber: number,
+    options: IssueCommentSurfaceOptions = {},
+  ): Promise<IssueComment[]> {
+    if (options.purpose !== "status" || !options.issueVersion) {
+      return this.fetchIssueComments(issueNumber);
+    }
+
+    return this.getCachedPullRequestGraphqlSurface(
+      `issue-comments:${issueNumber}:${options.issueVersion}`,
+      () => this.fetchIssueComments(issueNumber),
     );
   }
 
@@ -558,6 +577,87 @@ export class GitHubReviewSurfaceClient {
             : [],
         ) ?? [],
     };
+  }
+
+  private async fetchIssueComments(issueNumber: number): Promise<IssueComment[]> {
+    const { owner, repo } = this.repoOwnerAndName();
+    const query = `
+      query($owner: String!, $repo: String!, $number: Int!) {
+        repository(owner: $owner, name: $repo) {
+          issue(number: $number) {
+            comments(last: 100) {
+              nodes {
+                id
+                databaseId
+                body
+                createdAt
+                url
+                viewerDidAuthor
+                author {
+                  login
+                  __typename
+                }
+              }
+            }
+          }
+        }
+      }
+    `;
+
+    const result = await this.runGhJsonCommand([
+      "api",
+      "graphql",
+      "-f",
+      `query=${query}`,
+      "-F",
+      `owner=${owner}`,
+      "-F",
+      `repo=${repo}`,
+      "-F",
+      `number=${issueNumber}`,
+    ]);
+
+    const payload = parseJson<{
+      data?: {
+        repository?: {
+          issue?: {
+            comments?: {
+              nodes?: Array<{
+                id?: string | null;
+                databaseId?: number | null;
+                body?: string | null;
+                createdAt?: string | null;
+                url?: string | null;
+                viewerDidAuthor?: boolean | null;
+                author?: {
+                  login?: string | null;
+                  __typename?: string | null;
+                } | null;
+              }>;
+            };
+          } | null;
+        };
+      };
+    }>(result.stdout, `gh api graphql issue comments issue=${issueNumber}`);
+
+    return payload.data?.repository?.issue?.comments?.nodes?.flatMap((comment) =>
+      comment?.id
+        ? [{
+          id: comment.id,
+          databaseId: comment.databaseId ?? null,
+          body: comment.body ?? "",
+          createdAt: comment.createdAt ?? "",
+          url: comment.url ?? null,
+          viewerDidAuthor: comment.viewerDidAuthor ?? null,
+          author: comment.author
+            ? {
+              login: comment.author.login ?? null,
+              typeName: comment.author.__typename ?? null,
+            }
+            : null,
+        }]
+        : []
+    ) ?? [];
   }
 
   private async hydratePullRequestForStatus(pr: GitHubPullRequest | null): Promise<GitHubPullRequest | null> {

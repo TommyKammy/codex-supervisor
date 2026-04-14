@@ -72,6 +72,7 @@ import {
 import { mergeConflictDetected } from "./supervisor/supervisor-status-rendering";
 import { projectTrackedPrLifecycle } from "./tracked-pr-lifecycle-projection";
 import { hasFreshTrackedPrReadyPromotionBlockerEvidence } from "./tracked-pr-ready-promotion-blocker";
+import { clearRequirementsBlockerIssueComment } from "./requirements-blocker-issue-comment";
 
 const OWNER_GUARDED_ACTIVE_STATES = new Set<RunState>([
   "planning",
@@ -97,7 +98,7 @@ type RecoveryGitHubLike = Pick<
   | "getMergedPullRequestsClosingIssue"
   | "getPullRequestIfExists"
   | "getUnresolvedReviewThreads"
->;
+> & Partial<Pick<import("./github").GitHubClient, "getIssueComments" | "updateIssueComment">>;
 
 async function fetchOriginDefaultBranch(
   config: Pick<SupervisorConfig, "repoPath" | "defaultBranch" | "codexExecTimeoutMinutes">,
@@ -843,7 +844,8 @@ export async function reconcileStaleDoneIssueStates(
 }
 
 export async function reconcileRecoverableBlockedIssueStates(
-  github: Pick<RecoveryGitHubLike, "getPullRequestIfExists" | "getIssue" | "getChecks" | "getUnresolvedReviewThreads">,
+  github: Pick<RecoveryGitHubLike, "getPullRequestIfExists" | "getIssue" | "getChecks" | "getUnresolvedReviewThreads">
+    & Partial<Pick<RecoveryGitHubLike, "getIssueComments" | "updateIssueComment">>,
   stateStore: StateStoreLike,
   state: SupervisorStateFile,
   config: SupervisorConfig,
@@ -1182,6 +1184,7 @@ export async function reconcileRecoverableBlockedIssueStates(
       });
       state.issues[String(record.issue_number)] = updated;
       changed = true;
+      await clearRequirementsBlockerIssueComment(github, record.issue_number, issue.updatedAt);
       recoveryEvents.push(recoveryEvent);
       continue;
     }

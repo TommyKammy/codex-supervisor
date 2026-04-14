@@ -5,6 +5,7 @@ import {
   resolveRunnableIssueContext,
 } from "./run-once-issue-selection";
 import { GitHubIssue, IssueRunRecord, SupervisorConfig, SupervisorStateFile } from "./core/types";
+import { syncRequirementsBlockerIssueComment } from "./requirements-blocker-issue-comment";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
   return {
@@ -207,6 +208,137 @@ Add execution-ready gating.`,
   assert.match(state.issues["91"]?.last_error ?? "", /missing required execution-ready metadata/i);
   assert.equal(journalSyncs.length, 1);
   assert.equal(journalSyncs[0]?.issue_number, 91);
+});
+
+test("resolveRunnableIssueContext creates one machine-managed requirements blocker comment for a standalone issue", async () => {
+  const config = createConfig();
+  const issue: GitHubIssue = {
+    number: 191,
+    title: "Standalone metadata blocker",
+    body: `## Summary
+Add execution-ready gating.`,
+    createdAt: "2026-03-15T00:00:00Z",
+    updatedAt: "2026-03-15T00:00:00Z",
+    url: "https://example.test/issues/191",
+    labels: [{ name: "codex" }],
+    state: "OPEN",
+  };
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  const savedStates: SupervisorStateFile[] = [];
+  const addedComments: Array<{ issueNumber: number; body: string }> = [];
+  const updatedComments: Array<{ commentId: number; body: string }> = [];
+
+  const result = await resolveRunnableIssueContext({
+    github: {
+      listCandidateIssues: async () => [issue],
+      getIssue: async () => issue,
+      getIssueComments: async () => [],
+      addIssueComment: async (issueNumber, body) => {
+        addedComments.push({ issueNumber, body });
+      },
+      updateIssueComment: async (commentId, body) => {
+        updatedComments.push({ commentId, body });
+      },
+    },
+    config,
+    stateStore: createTouchStateStore(savedStates),
+    state,
+    currentRecord: null,
+    acquireIssueLock: async () => ({
+      acquired: true,
+      release: async () => {},
+    }),
+    ensureRecordJournalContext: async (record) => ({
+      workspace: record.workspace,
+      journal_path: `/tmp/workspaces/issue-${record.issue_number}/.codex-supervisor/issue-journal.md`,
+    }),
+  });
+
+  assert.deepEqual(result, { kind: "restart" });
+  assert.equal(addedComments.length, 1);
+  assert.equal(updatedComments.length, 0);
+  assert.equal(addedComments[0]?.issueNumber, 191);
+  assert.match(
+    addedComments[0]?.body ?? "",
+    /missing required fields: `scope`, `acceptance criteria`, `verification`, `depends on`, `parallelizable`, `execution order`/i,
+  );
+  assert.match(addedComments[0]?.body ?? "", /omit `Part of:`/i);
+  assert.match(addedComments[0]?.body ?? "", /Depends on: none/);
+  assert.match(addedComments[0]?.body ?? "", /Parallelizable: No/);
+  assert.match(addedComments[0]?.body ?? "", /## Execution order[\s\S]*1 of 1/);
+  assert.doesNotMatch(addedComments[0]?.body ?? "", /Part of: none/i);
+});
+
+test("syncRequirementsBlockerIssueComment dedupes identical blocker comments and updates the sticky comment when the blocker changes", async () => {
+  const firstIssue: GitHubIssue = {
+    number: 192,
+    title: "Requirements blocker dedupe",
+    body: `## Summary
+Add execution-ready gating.`,
+    createdAt: "2026-03-15T00:00:00Z",
+    updatedAt: "2026-03-15T00:00:00Z",
+    url: "https://example.test/issues/192",
+    labels: [{ name: "codex" }],
+    state: "OPEN",
+  };
+  const changedIssue: GitHubIssue = {
+    ...firstIssue,
+    body: `## Summary
+Repair duplicated scheduling metadata.
+
+## Scope
+- keep diagnostics explicit
+
+## Acceptance criteria
+- duplicated metadata is blocked clearly
+
+## Verification
+- npm test -- src/run-once-issue-selection.test.ts
+
+Depends on: none
+Depends on: #190
+Parallelizable: No`,
+    updatedAt: "2026-03-15T00:05:00Z",
+  };
+  const addedComments: Array<{ issueNumber: number; body: string }> = [];
+  const updatedComments: Array<{ commentId: number; body: string }> = [];
+  let commentBody = "";
+
+  const github = {
+    getIssueComments: async () =>
+      commentBody === ""
+        ? []
+        : [{
+          id: "comment-192",
+          databaseId: 501,
+          body: commentBody,
+          createdAt: "2026-03-15T00:01:00Z",
+          url: "https://example.test/issues/192#issuecomment-501",
+          author: { login: "codex-supervisor", typeName: "Bot" },
+          viewerDidAuthor: true,
+        }],
+    addIssueComment: async (issueNumber: number, body: string) => {
+      addedComments.push({ issueNumber, body });
+      commentBody = body;
+    },
+    updateIssueComment: async (commentId: number, body: string) => {
+      updatedComments.push({ commentId, body });
+      commentBody = body;
+    },
+  };
+
+  await syncRequirementsBlockerIssueComment(github as never, firstIssue);
+  await syncRequirementsBlockerIssueComment(github as never, firstIssue);
+  await syncRequirementsBlockerIssueComment(github as never, changedIssue);
+
+  assert.equal(addedComments.length, 1);
+  assert.equal(updatedComments.length, 1);
+  assert.equal(updatedComments[0]?.commentId, 501);
+  assert.match(updatedComments[0]?.body ?? "", /metadata errors:/i);
+  assert.match(updatedComments[0]?.body ?? "", /depends on must appear exactly once/i);
 });
 
 test("resolveRunnableIssueContext keeps the acquired lock attached to a ready issue handoff", async () => {

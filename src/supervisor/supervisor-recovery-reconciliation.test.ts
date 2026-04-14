@@ -551,6 +551,97 @@ test("reconcileRecoverableBlockedIssueStates requeues requirements-blocked issue
   ]);
 });
 
+test("reconcileRecoverableBlockedIssueStates clears the machine-managed requirements blocker comment once metadata is execution-ready", async () => {
+  const config = createConfig();
+  const original = createRecord({
+    state: "blocked",
+    blocked_reason: "requirements",
+    last_error: "Missing required execution-ready metadata: scope, acceptance criteria, verification.",
+    last_failure_kind: null,
+    last_failure_context: {
+      category: "blocked",
+      summary: "Issue #366 is not execution-ready because it is missing: scope, acceptance criteria, verification.",
+      signature: "requirements:scope|acceptance criteria|verification",
+      command: null,
+      details: [
+        "missing_required=scope, acceptance criteria, verification",
+        "missing_recommended=depends on, execution order",
+      ],
+      url: "https://example.test/issues/366",
+      updated_at: "2026-03-11T01:50:41.997Z",
+    },
+    last_failure_signature: "requirements:scope|acceptance criteria|verification",
+    repeated_failure_signature_count: 2,
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [original],
+  });
+  const issues: GitHubIssue[] = [
+    createIssue({
+      number: 366,
+      title: "P3: Add regression coverage",
+      body: executionReadyBody("Add regression coverage."),
+      updatedAt: "2026-03-11T06:40:00Z",
+      labels: [{ name: "codex" }],
+    }),
+  ];
+
+  const updatedComments: Array<{ commentId: number; body: string }> = [];
+  let saveCalls = 0;
+  const stateStore = {
+    touch(record: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...record,
+        ...patch,
+        updated_at: "2026-03-11T06:33:08.821Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  await reconcileRecoverableBlockedIssueStates({
+    getPullRequestIfExists: async () => {
+      throw new Error("unexpected getPullRequestIfExists call");
+    },
+    getIssue: async () => {
+      throw new Error("unexpected getIssue call");
+    },
+    getChecks: async () => {
+      throw new Error("unexpected getChecks call");
+    },
+    getUnresolvedReviewThreads: async () => {
+      throw new Error("unexpected getUnresolvedReviewThreads call");
+    },
+    getIssueComments: async () => [{
+      id: "comment-366",
+      databaseId: 3661,
+      body:
+        "Issue execution is currently blocked on execution-ready metadata.\n\n" +
+        "<!-- codex-supervisor:requirements-blocker-comment issue=366 -->",
+      createdAt: "2026-03-11T02:00:00Z",
+      url: "https://example.test/issues/366#issuecomment-3661",
+      author: {
+        login: "codex-supervisor",
+        typeName: "Bot",
+      },
+      viewerDidAuthor: true,
+    }],
+    updateIssueComment: async (commentId: number, body: string) => {
+      updatedComments.push({ commentId, body });
+    },
+  }, stateStore, state, config, issues, {
+    shouldAutoRetryHandoffMissing,
+  });
+
+  assert.equal(saveCalls, 1);
+  assert.equal(updatedComments.length, 1);
+  assert.equal(updatedComments[0]?.commentId, 3661);
+  assert.match(updatedComments[0]?.body ?? "", /no longer current/i);
+  assert.match(updatedComments[0]?.body ?? "", /execution-ready/i);
+});
+
 test("reconcileRecoverableBlockedIssueStates resumes conflicted tracked PR handoff-missing issues into conflict repair", async () => {
   const config = createConfig();
   const state: SupervisorStateFile = createSupervisorState({

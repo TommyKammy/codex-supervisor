@@ -27,6 +27,7 @@ import {
   evaluateAutonomousExecutionTrust,
   isAutonomousExecutionTrustBlockedRecord,
 } from "./supervisor/supervisor-trust-gate";
+import { syncRequirementsBlockerIssueComment } from "./requirements-blocker-issue-comment";
 import { StateStore } from "./core/state-store";
 import {
   FailureContext,
@@ -59,7 +60,9 @@ export interface RestartRunOnce {
 type IssueSelectionResult = ReadyIssueContext | RestartRunOnce | string;
 
 type IssueSelectionCandidateGitHub = Pick<GitHubClient, "listCandidateIssues">;
-type IssueSelectionGitHub = IssueSelectionCandidateGitHub & Pick<GitHubClient, "getIssue">;
+type IssueSelectionGitHub = IssueSelectionCandidateGitHub
+  & Pick<GitHubClient, "getIssue">
+  & Partial<Pick<GitHubClient, "addIssueComment" | "getIssueComments" | "updateIssueComment">>;
 type IssueSelectionSaveStateStore = Pick<StateStore, "save">;
 type IssueSelectionStateStore = IssueSelectionSaveStateStore & Pick<StateStore, "touch">;
 
@@ -562,6 +565,7 @@ export async function resolveRunnableIssueContext(
         state.issues[String(blockedRecord.issue_number)] = blockedRecord;
         state.activeIssueNumber = null;
         await stateStore.save(state);
+        await syncRequirementsBlockerIssueComment(github, issue);
         if (blockedRecord.journal_path) {
           await syncIssueJournalImpl({
             issue,
@@ -659,6 +663,7 @@ export async function resolveRunnableIssueContext(
       state.issues[String(blockedRecord.issue_number)] = blockedRecord;
       state.activeIssueNumber = null;
       await stateStore.save(state);
+      await syncRequirementsBlockerIssueComment(github, issue);
       if (blockedRecord.journal_path) {
         await syncIssueJournalImpl({
           issue,

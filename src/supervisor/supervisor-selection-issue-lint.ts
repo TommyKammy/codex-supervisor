@@ -1,4 +1,5 @@
 import { GitHubClient } from "../github";
+import { GitHubIssue } from "../core/types";
 import {
   findHighRiskBlockingAmbiguity,
   hasAvailableIssueLabels,
@@ -28,6 +29,10 @@ export async function buildIssueLintDto(
   issueNumber: number,
 ): Promise<SupervisorIssueLintDto> {
   const issue = await github.getIssue(issueNumber);
+  return createIssueLintDto(issue);
+}
+
+export function createIssueLintDto(issue: GitHubIssue): SupervisorIssueLintDto {
   if (!hasAvailableIssueLabels(issue)) {
     return {
       issueNumber: issue.number,
@@ -102,7 +107,9 @@ function buildIssueLintRepairGuidance(
         guidance.push("Add `Parallelizable: No` unless this issue is explicitly safe to run alongside related work.");
         break;
       case "execution order":
-        guidance.push("Add `Execution order: 1 of 1` if this issue stands alone, or `Execution order: N of M` for a sequenced series.");
+        guidance.push(
+          "Add a `## Execution order` section with `1 of 1` for standalone work, or `N of M` for a sequenced series.",
+        );
         break;
       case "part of":
         guidance.push("Add `Part of: #<number>` when this sequenced codex issue belongs to a parent epic or tracking issue.");
@@ -114,7 +121,7 @@ function buildIssueLintRepairGuidance(
 
   if (metadataErrors.length > 0) {
     guidance.push(
-      "Replace invalid scheduling metadata with valid `Part of: #<number>`, `Depends on: none|#<number>`, `Execution order: N of M`, and `Parallelizable: Yes|No` lines.",
+      "Replace invalid scheduling metadata with valid `Part of: #<number>`, `Depends on: none|#<number>`, `Parallelizable: Yes|No`, and a `## Execution order` section.",
     );
   }
 
@@ -150,7 +157,9 @@ function buildIssueLintRepairGuidance(
         guidance.push("Add `Depends on: none` if nothing blocks this issue, or list blocking issues as `Depends on: #123, #456`.");
         break;
       case "execution order":
-        guidance.push("Add `Execution order: 1 of 1` if this issue stands alone, or `Execution order: N of M` for a sequenced series.");
+        guidance.push(
+          "Add a `## Execution order` section with `1 of 1` for standalone work, or `N of M` for a sequenced series.",
+        );
         break;
       case "scope boundary":
         guidance.push("Add one `## Scope` bullet that says what stays unchanged, excluded, or out of scope.");
