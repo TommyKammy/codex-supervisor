@@ -1322,9 +1322,13 @@ test("repo gitignore ignores workstation noise and live issue journals without h
   await fs.mkdir(path.join(tempDir, ".codex-supervisor", "issues", "1443"), { recursive: true });
   await fs.mkdir(path.join(tempDir, ".codex-supervisor", "issues", "1443abc"), { recursive: true });
   await fs.mkdir(path.join(tempDir, ".codex-supervisor", "issues", "fixtures"), { recursive: true });
+  await fs.mkdir(path.join(tempDir, ".codex-supervisor", "replay"), { recursive: true });
   await fs.writeFile(path.join(tempDir, ".codex-supervisor", "issues", "1443", "issue-journal.md"), "", "utf8");
   await fs.writeFile(path.join(tempDir, ".codex-supervisor", "issues", "1443abc", "issue-journal.md"), "", "utf8");
   await fs.writeFile(path.join(tempDir, ".codex-supervisor", "issues", "fixtures", "issue-journal.md"), "", "utf8");
+  await fs.writeFile(path.join(tempDir, ".codex-supervisor", "loop.out"), "", "utf8");
+  await fs.writeFile(path.join(tempDir, ".codex-supervisor", "current-reconciliation-phase.json"), "{}", "utf8");
+  await fs.writeFile(path.join(tempDir, ".codex-supervisor", "replay", "replay-corpus-mismatch-details.json"), "{}", "utf8");
   await fs.writeFile(path.join(tempDir, "supervisor.config.coderabbit.json"), "{}", "utf8");
 
   execFileSync("git", ["init"], {
@@ -1343,6 +1347,24 @@ test("repo gitignore ignores workstation noise and live issue journals without h
     encoding: "utf8",
   }).trim();
   assert.equal(ignoredJournalPath, ".codex-supervisor/issues/1443/issue-journal.md");
+
+  const ignoredLoopPath = execFileSync("git", ["check-ignore", ".codex-supervisor/loop.out"], {
+    cwd: tempDir,
+    encoding: "utf8",
+  }).trim();
+  assert.equal(ignoredLoopPath, ".codex-supervisor/loop.out");
+
+  const ignoredPhasePath = execFileSync("git", ["check-ignore", ".codex-supervisor/current-reconciliation-phase.json"], {
+    cwd: tempDir,
+    encoding: "utf8",
+  }).trim();
+  assert.equal(ignoredPhasePath, ".codex-supervisor/current-reconciliation-phase.json");
+
+  const ignoredReplayMismatchPath = execFileSync("git", ["check-ignore", ".codex-supervisor/replay/replay-corpus-mismatch-details.json"], {
+    cwd: tempDir,
+    encoding: "utf8",
+  }).trim();
+  assert.equal(ignoredReplayMismatchPath, ".codex-supervisor/replay/replay-corpus-mismatch-details.json");
 
   const nonNumericIssueLikeExitCode = (() => {
     try {

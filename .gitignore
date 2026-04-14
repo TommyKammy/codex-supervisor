@@ -5,4 +5,7 @@ dist/
 .codex-supervisor/issue-journal.md
 .codex-supervisor/issues/[0-9]*/issue-journal.md
 !.codex-supervisor/issues/*[!0-9]*/issue-journal.md
+.codex-supervisor/loop.out
+.codex-supervisor/current-reconciliation-phase.json
+.codex-supervisor/replay/replay-corpus-mismatch-details.json
 supervisor.config.json
