@@ -10,7 +10,7 @@ import {
   summarizeTrustDiagnostics,
   validateWorkspacePreparationCommandForWorktrees,
 } from "./core/config";
-import type { LocalCiContractSummary, TrustDiagnosticsSummary } from "./core/types";
+import type { CodexModelStrategy, LocalCiContractSummary, TrustDiagnosticsSummary } from "./core/types";
 import { diagnoseSupervisorHost, type DoctorCheck, type DoctorCheckStatus } from "./doctor";
 import { reviewProviderProfileFromConfig } from "./core/review-providers";
 
@@ -27,6 +27,14 @@ export type SetupReadinessFieldKey =
   | "workspacePreparationCommand"
   | "localCiCommand"
   | "reviewProvider";
+export type SetupReadinessConfigFieldKey =
+  | SetupReadinessFieldKey
+  | "codexModelStrategy"
+  | "codexModel"
+  | "boundedRepairModelStrategy"
+  | "boundedRepairModel"
+  | "localReviewModelStrategy"
+  | "localReviewModel";
 
 export type SetupReadinessFieldValueType =
   | "directory_path"
@@ -63,15 +71,17 @@ export type SetupReadinessRemediationKind =
 export interface SetupReadinessRemediation {
   kind: SetupReadinessRemediationKind;
   summary: string;
-  fieldKeys: SetupReadinessFieldKey[];
+  fieldKeys: SetupReadinessConfigFieldKey[];
 }
 
 export interface SetupReadinessBlocker {
   code: string;
   message: string;
-  fieldKeys: SetupReadinessFieldKey[];
+  fieldKeys: SetupReadinessConfigFieldKey[];
   remediation: SetupReadinessRemediation;
 }
+
+export type SetupReadinessModelRoutingStrategy = CodexModelStrategy | string;
 
 export interface SetupReadinessHostSummary {
   overallStatus: DoctorCheckStatus | "not_ready";
@@ -91,6 +101,27 @@ export interface SetupReadinessTrustPosture extends TrustDiagnosticsSummary {
   summary: string;
 }
 
+export interface SetupReadinessModelRoutingTarget {
+  key: "codex" | "bounded_repair" | "local_review";
+  label: string;
+  strategy: SetupReadinessModelRoutingStrategy;
+  modelField: "codexModel" | "boundedRepairModel" | "localReviewModel";
+  strategyField: "codexModelStrategy" | "boundedRepairModelStrategy" | "localReviewModelStrategy";
+  model: string | null;
+  overrideConfigured: boolean;
+  invalidStrategy: boolean;
+  requiresExplicitModel: boolean;
+  missingExplicitModel: boolean;
+  summary: string;
+  guidance: string;
+}
+
+export interface SetupReadinessModelRoutingPosture {
+  summary: string;
+  invalid: boolean;
+  targets: SetupReadinessModelRoutingTarget[];
+}
+
 export interface SetupReadinessReport {
   kind: "setup_readiness";
   ready: boolean;
@@ -101,6 +132,7 @@ export interface SetupReadinessReport {
   hostReadiness: SetupReadinessHostSummary;
   providerPosture: SetupReadinessProviderPosture;
   trustPosture: SetupReadinessTrustPosture;
+  modelRoutingPosture?: SetupReadinessModelRoutingPosture;
   localCiContract?: LocalCiContractSummary;
 }
 
@@ -334,6 +366,142 @@ function buildTrustPosture(config: ReturnType<typeof loadConfigSummary>["config"
   };
 }
 
+function normalizeModelStrategy(value: unknown): CodexModelStrategy | undefined {
+  return value === "inherit" || value === "fixed" || value === "alias" ? value : undefined;
+}
+
+function normalizeModelValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
+}
+
+function readRawConfiguredStrategy(value: unknown): string | null {
+  return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
+}
+
+function buildModelRoutingTarget(args: {
+  key: "codex" | "bounded_repair" | "local_review";
+  label: string;
+  strategyField: "codexModelStrategy" | "boundedRepairModelStrategy" | "localReviewModelStrategy";
+  modelField: "codexModel" | "boundedRepairModel" | "localReviewModel";
+  rawConfig: Record<string, unknown>;
+  config: ReturnType<typeof loadConfigSummary>["config"];
+}): SetupReadinessModelRoutingTarget {
+  const { key, label, strategyField, modelField, rawConfig, config } = args;
+  const parsedStrategy = config?.[strategyField];
+  const rawConfiguredStrategy = readRawConfiguredStrategy(rawConfig[strategyField]);
+  const rawStrategy = normalizeModelStrategy(rawConfiguredStrategy);
+  const invalidStrategy = rawConfiguredStrategy !== null && rawStrategy === undefined;
+  const strategy = invalidStrategy ? rawConfiguredStrategy : (parsedStrategy ?? rawStrategy ?? "inherit");
+  const overrideConfigured = parsedStrategy !== undefined || rawConfiguredStrategy !== null;
+  const model = normalizeModelValue(config?.[modelField] ?? rawConfig[modelField]);
+  const requiresExplicitModel = !invalidStrategy && (strategy === "fixed" || strategy === "alias");
+  const missingExplicitModel = requiresExplicitModel && model === null;
+
+  const routeSubject =
+    key === "codex"
+      ? "Default Codex turns"
+      : key === "bounded_repair"
+        ? "Bounded repair turns"
+        : "Generic local-review turns";
+  const fallbackRoute =
+    key === "codex"
+      ? "the host Codex default model"
+      : "the default Codex route";
+
+  let summary: string;
+  if (invalidStrategy) {
+    summary = `${routeSubject} use unsupported ${strategy} routing from ${strategyField}.`;
+  } else if (strategy === "inherit") {
+    summary =
+      key === "codex"
+        ? `${routeSubject} inherit ${fallbackRoute}.`
+        : overrideConfigured
+          ? `${routeSubject} explicitly inherit ${fallbackRoute}.`
+          : `${routeSubject} currently inherit ${fallbackRoute}.`;
+  } else if (model !== null) {
+    summary =
+      strategy === "fixed"
+        ? `${routeSubject} are pinned to ${model}.`
+        : `${routeSubject} resolve through alias ${model}.`;
+  } else {
+    summary = `${routeSubject} are set to ${strategy} routing, but ${modelField} is missing.`;
+  }
+
+  const guidance =
+    invalidStrategy
+      ? `Fail-closed: ${strategyField}=${strategy} is unsupported. Use inherit, fixed, or alias.`
+      : strategy === "inherit"
+      ? key === "codex"
+        ? 'Recommended default: keep `codexModelStrategy: "inherit"` and set the Codex host default model instead of pinning it here.'
+        : `Leave ${strategyField} unset or use \`"inherit"\` to keep following the default Codex route.`
+      : missingExplicitModel
+        ? `Fail-closed: ${strategyField}=${strategy} requires an explicit ${modelField} value before execution can proceed.`
+        : `${strategyField}=${strategy} is valid only because ${modelField} is set explicitly.`;
+
+  return {
+    key,
+    label,
+    strategy,
+    modelField,
+    strategyField,
+    model,
+    overrideConfigured,
+    invalidStrategy,
+    requiresExplicitModel,
+    missingExplicitModel,
+    summary,
+    guidance,
+  };
+}
+
+function buildModelRoutingPosture(args: {
+  rawConfig: RawConfigDocument;
+  config: ReturnType<typeof loadConfigSummary>["config"];
+}): SetupReadinessModelRoutingPosture {
+  const rawConfig = args.rawConfig ?? {};
+  const targets: SetupReadinessModelRoutingTarget[] = [
+    buildModelRoutingTarget({
+      key: "codex",
+      label: "Default Codex route",
+      strategyField: "codexModelStrategy",
+      modelField: "codexModel",
+      rawConfig,
+      config: args.config,
+    }),
+    buildModelRoutingTarget({
+      key: "bounded_repair",
+      label: "Bounded repair override",
+      strategyField: "boundedRepairModelStrategy",
+      modelField: "boundedRepairModel",
+      rawConfig,
+      config: args.config,
+    }),
+    buildModelRoutingTarget({
+      key: "local_review",
+      label: "Generic local-review override",
+      strategyField: "localReviewModelStrategy",
+      modelField: "localReviewModel",
+      rawConfig,
+      config: args.config,
+    }),
+  ];
+  const invalid = targets.some((target) => target.invalidStrategy || target.missingExplicitModel);
+  const inheritedCount = targets.filter((target) => target.strategy === "inherit").length;
+  const summary = invalid
+    ? "Model routing is invalid until every strategy is supported and every fixed or alias strategy has an explicit model value."
+    : inheritedCount === targets.length
+      ? "Model routing follows the host Codex default model unless you opt into a per-target override."
+      : inheritedCount === 0
+        ? "Model routing uses explicit per-target overrides for every route."
+      : "Model routing mixes inherited defaults with explicit per-target overrides.";
+
+  return {
+    summary,
+    invalid,
+    targets,
+  };
+}
+
 function buildHostReadiness(
   checks: DoctorCheck[] | null,
   overallStatus: DoctorCheckStatus | null,
@@ -357,6 +525,7 @@ function buildHostReadiness(
 function buildBlockers(args: {
   fields: SetupReadinessField[];
   hostReadiness: SetupReadinessHostSummary;
+  modelRoutingPosture: SetupReadinessModelRoutingPosture;
 }): SetupReadinessBlocker[] {
   const blockers: SetupReadinessBlocker[] = [];
 
@@ -418,10 +587,48 @@ function buildBlockers(args: {
     });
   }
 
+  for (const target of args.modelRoutingPosture.targets) {
+    if (target.invalidStrategy) {
+      blockers.push({
+        code: `invalid_${target.strategyField.replace(/[A-Z]/g, (char) => `_${char.toLowerCase()}`)}`,
+        message: target.guidance,
+        fieldKeys: [target.strategyField],
+        remediation: {
+          kind: "edit_config",
+          summary: target.guidance,
+          fieldKeys: [target.strategyField],
+        },
+      });
+      continue;
+    }
+
+    if (!target.missingExplicitModel) {
+      continue;
+    }
+
+    blockers.push({
+      code: `missing_${target.modelField.replace(/[A-Z]/g, (char) => `_${char.toLowerCase()}`)}`,
+      message: target.guidance,
+      fieldKeys: [target.modelField],
+      remediation: {
+        kind: "edit_config",
+        summary: target.guidance,
+        fieldKeys: [target.modelField],
+      },
+    });
+  }
+
   return blockers;
 }
 
-function overallStatusFromFields(fields: SetupReadinessField[]): SetupReadinessOverallStatus {
+function overallStatusFromFields(
+  fields: SetupReadinessField[],
+  modelRoutingPosture: SetupReadinessModelRoutingPosture,
+): SetupReadinessOverallStatus {
+  if (modelRoutingPosture.invalid) {
+    return "invalid";
+  }
+
   if (fields.some((field) => field.state === "invalid")) {
     return "invalid";
   }
@@ -457,6 +664,10 @@ export async function diagnoseSetupReadiness(
     workspacePreparationWarning,
     recommendedWorkspacePreparationCommand,
   });
+  const modelRoutingPosture = buildModelRoutingPosture({
+    rawConfig,
+    config: configSummary.config,
+  });
   const hostDiagnostics = configSummary.config
     ? await diagnoseSupervisorHost({
       config: configSummary.config,
@@ -464,18 +675,19 @@ export async function diagnoseSetupReadiness(
     })
     : null;
   const hostReadiness = buildHostReadiness(hostDiagnostics?.checks ?? null, hostDiagnostics?.overallStatus ?? null);
-  const blockers = buildBlockers({ fields, hostReadiness });
+  const blockers = buildBlockers({ fields, hostReadiness, modelRoutingPosture });
 
   return {
     kind: "setup_readiness",
     ready: blockers.length === 0,
-    overallStatus: overallStatusFromFields(fields),
+    overallStatus: overallStatusFromFields(fields, modelRoutingPosture),
     configPath,
     fields,
     blockers,
     hostReadiness,
     providerPosture: buildProviderPosture(configSummary.config),
     trustPosture: buildTrustPosture(configSummary.config),
+    modelRoutingPosture,
     localCiContract: summarizeLocalCiContract(localCiContractConfig),
   };
 }

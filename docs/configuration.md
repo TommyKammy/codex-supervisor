@@ -234,6 +234,83 @@ Typical examples:
 The repo owns the command contract. The supervisor should only execute the configured entrypoint and react to its exit code.
 If no local CI contract is configured, preserve backward compatibility by not inventing one.
 
+## Model Routing Quick Recipes
+
+These are the authoritative fields for Codex model selection:
+
+- `codexModelStrategy`
+- `codexModel`
+- `boundedRepairModelStrategy`
+- `boundedRepairModel`
+- `localReviewModelStrategy`
+- `localReviewModel`
+
+Recommended default:
+
+- use `codexModelStrategy: "inherit"`
+- leave `boundedRepairModelStrategy` and `localReviewModelStrategy` unset unless you intentionally want overrides
+- treat `fixed` and `alias` the same way for validation: both fail closed unless the matching model field is set explicitly
+
+### Inherit the host default model
+
+Use this when you want `codex-supervisor` to follow the Codex CLI/App default model without pinning anything in supervisor config.
+
+```json
+{
+  "codexModelStrategy": "inherit"
+}
+```
+
+### Pin every Codex turn globally
+
+Use this when you want the supervisor to ignore the host default and always use one explicit model or alias.
+
+```json
+{
+  "codexModelStrategy": "fixed",
+  "codexModel": "gpt-5.4"
+}
+```
+
+If you prefer an alias instead of a fixed model name:
+
+```json
+{
+  "codexModelStrategy": "alias",
+  "codexModel": "gpt-5"
+}
+```
+
+### Override bounded repair only
+
+Use this when implementation turns should inherit the main route, but `repairing_ci` and `addressing_review` should use a smaller or cheaper model.
+
+```json
+{
+  "codexModelStrategy": "inherit",
+  "boundedRepairModelStrategy": "fixed",
+  "boundedRepairModel": "gpt-5.4-mini"
+}
+```
+
+### Override generic local review only
+
+Use this when the main route should stay unchanged, but generic local-review turns should use a separate review model or alias.
+
+```json
+{
+  "codexModelStrategy": "inherit",
+  "localReviewModelStrategy": "alias",
+  "localReviewModel": "local-review-fast"
+}
+```
+
+Validation rule:
+
+- `codexModelStrategy: "fixed"` or `codexModelStrategy: "alias"` requires `codexModel`
+- `boundedRepairModelStrategy: "fixed"` or `boundedRepairModelStrategy: "alias"` requires `boundedRepairModel`
+- `localReviewModelStrategy: "fixed"` or `localReviewModelStrategy: "alias"` requires `localReviewModel`
+
 ## The Config Questions Most Beginners Ask
 
 ### What is the difference between `repoPath` and `repoSlug`?

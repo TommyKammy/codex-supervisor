@@ -1482,6 +1482,18 @@ test("setup shell loads typed setup readiness without mixing in dashboard status
   assert.match(harness.document.getElementById("setup-host-checks")?.textContent ?? "", /Github Auth \[Pass\].*GitHub auth ok\..*Detail: Authenticated as octocat\./u);
   assert.match(harness.document.getElementById("setup-provider-posture")?.textContent ?? "", /No review provider is configured\./u);
   assert.match(harness.document.getElementById("setup-provider-details")?.textContent ?? "", /Provider profile: None.*Signal source: none.*Configured reviewers: none.*Configured: no/u);
+  assert.match(
+    harness.document.getElementById("setup-model-routing-summary")?.textContent ?? "",
+    /Model routing follows the host Codex default model unless you opt into a per-target override\./u,
+  );
+  assert.match(
+    harness.document.getElementById("setup-model-routing-details")?.textContent ?? "",
+    /Default Codex route \[Inherit\].*Model value: Unset.*Configured override: no.*Default Codex turns inherit the host Codex default model\./u,
+  );
+  assert.match(
+    harness.document.getElementById("setup-model-routing-details")?.textContent ?? "",
+    /Bounded repair override \[Inherit\].*Leave boundedRepairModelStrategy unset or use `"inherit"` to keep following the default Codex route\./u,
+  );
   assert.match(harness.document.getElementById("setup-trust-details")?.textContent ?? "", /Trust mode: Trusted Repo And Authors.*Execution safety: Unsandboxed Autonomous.*Warning: Unsandboxed autonomous execution assumes trusted GitHub-authored inputs\./u);
   assert.match(harness.document.getElementById("setup-local-ci-summary")?.textContent ?? "", /No repo-owned local CI contract is configured\./u);
   assert.match(

@@ -212,3 +212,140 @@ test("diagnoseSetupReadiness suggests a repo-native workspace preparation comman
   assert.equal(field?.state, "missing");
   assert.match(field?.message ?? "", /recommended repo-native command: npm ci/i);
 });
+
+test("diagnoseSetupReadiness fails closed when fixed model routing is missing an explicit model value", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = await createTrackedRepo(root);
+  const workspaceRoot = path.join(root, "workspaces");
+  const configPath = path.join(root, "supervisor.config.json");
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      ...buildConfigDocument({
+        repoPath,
+        workspaceRoot,
+        stateFile: path.join(root, "state.json"),
+        workspacePreparationCommand: undefined,
+      }),
+      codexModelStrategy: "fixed",
+    }),
+    "utf8",
+  );
+
+  const summary = await diagnoseSetupReadiness({
+    configPath,
+    authStatus: async () => ({ ok: true, message: null }),
+  });
+
+  assert.equal(summary.ready, false);
+  assert.equal(summary.overallStatus, "invalid");
+  assert.ok(summary.modelRoutingPosture);
+  assert.match(
+    summary.modelRoutingPosture.summary,
+    /invalid until every strategy is supported and every fixed or alias strategy has an explicit model value/i,
+  );
+  const codexTarget = summary.modelRoutingPosture.targets.find((target) => target.key === "codex");
+  assert.equal(codexTarget?.missingExplicitModel, true);
+  assert.match(codexTarget?.summary ?? "", /codexModel is missing/i);
+  assert.match(codexTarget?.guidance ?? "", /codexModelStrategy=fixed requires an explicit codexModel value/i);
+  const blocker = summary.blockers.find((entry) => entry.code === "missing_codex_model");
+  assert.ok(blocker);
+  assert.match(blocker.message, /codexModelStrategy=fixed requires an explicit codexModel value before execution can proceed/i);
+  assert.deepEqual(blocker.fieldKeys, ["codexModel"]);
+  assert.deepEqual(blocker.remediation.fieldKeys, ["codexModel"]);
+});
+
+test("diagnoseSetupReadiness reports fully explicit model routing when every route is overridden", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = await createTrackedRepo(root);
+  const workspaceRoot = path.join(root, "workspaces");
+  const configPath = path.join(root, "supervisor.config.json");
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      ...buildConfigDocument({
+        repoPath,
+        workspaceRoot,
+        stateFile: path.join(root, "state.json"),
+        workspacePreparationCommand: undefined,
+      }),
+      codexModelStrategy: "fixed",
+      codexModel: "gpt-5",
+      boundedRepairModelStrategy: "alias",
+      boundedRepairModel: "gpt-5-mini",
+      localReviewModelStrategy: "fixed",
+      localReviewModel: "gpt-5.4",
+    }),
+    "utf8",
+  );
+
+  const summary = await diagnoseSetupReadiness({
+    configPath,
+    authStatus: async () => ({ ok: true, message: null }),
+  });
+
+  assert.ok(summary.modelRoutingPosture);
+  assert.equal(summary.modelRoutingPosture.invalid, false);
+  assert.equal(
+    summary.modelRoutingPosture.summary,
+    "Model routing uses explicit per-target overrides for every route.",
+  );
+});
+
+test("diagnoseSetupReadiness surfaces unsupported raw model strategies as invalid instead of inherited", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = await createTrackedRepo(root);
+  const workspaceRoot = path.join(root, "workspaces");
+  const configPath = path.join(root, "supervisor.config.json");
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      ...buildConfigDocument({
+        repoPath,
+        workspaceRoot,
+        stateFile: path.join(root, "state.json"),
+        workspacePreparationCommand: undefined,
+      }),
+      codexModelStrategy: "fiixed",
+    }),
+    "utf8",
+  );
+
+  const summary = await diagnoseSetupReadiness({
+    configPath,
+    authStatus: async () => ({ ok: true, message: null }),
+  });
+
+  assert.equal(summary.ready, false);
+  assert.equal(summary.overallStatus, "invalid");
+  assert.ok(summary.modelRoutingPosture);
+  assert.match(
+    summary.modelRoutingPosture.summary,
+    /invalid until every strategy is supported and every fixed or alias strategy has an explicit model value/i,
+  );
+  const codexTarget = summary.modelRoutingPosture.targets.find((target) => target.key === "codex");
+  assert.equal(codexTarget?.strategy, "fiixed");
+  assert.equal(codexTarget?.invalidStrategy, true);
+  assert.equal(codexTarget?.missingExplicitModel, false);
+  assert.match(codexTarget?.summary ?? "", /unsupported fiixed routing/i);
+  assert.match(codexTarget?.guidance ?? "", /codexModelStrategy=fiixed is unsupported/i);
+  const blocker = summary.blockers.find((entry) => entry.code === "invalid_codex_model_strategy");
+  assert.ok(blocker);
+  assert.deepEqual(blocker.fieldKeys, ["codexModelStrategy"]);
+  assert.deepEqual(blocker.remediation.fieldKeys, ["codexModelStrategy"]);
+});

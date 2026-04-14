@@ -11,6 +11,8 @@ import type {
   SetupReadinessField,
   SetupReadinessFieldKey,
   SetupReadinessHostSummary,
+  SetupReadinessModelRoutingPosture,
+  SetupReadinessModelRoutingTarget,
   SetupReadinessProviderPosture,
   SetupReadinessReport,
   SetupReadinessTrustPosture,
@@ -305,6 +307,55 @@ export function createSetupTrustPosture(
   };
 }
 
+export function createSetupModelRoutingTarget(
+  overrides: Partial<SetupReadinessModelRoutingTarget> = {},
+): SetupReadinessModelRoutingTarget {
+  return {
+    key: "codex",
+    label: "Default Codex route",
+    strategy: "inherit",
+    strategyField: "codexModelStrategy",
+    modelField: "codexModel",
+    model: null,
+    overrideConfigured: false,
+    invalidStrategy: false,
+    requiresExplicitModel: false,
+    missingExplicitModel: false,
+    summary: "Default Codex turns inherit the host Codex default model.",
+    guidance: 'Recommended default: keep `codexModelStrategy: "inherit"` and set the Codex host default model instead of pinning it here.',
+    ...overrides,
+  };
+}
+
+export function createSetupModelRoutingPosture(
+  overrides: Partial<SetupReadinessModelRoutingPosture> = {},
+): SetupReadinessModelRoutingPosture {
+  return {
+    summary: "Model routing follows the host Codex default model unless you opt into a per-target override.",
+    invalid: false,
+    targets: [
+      createSetupModelRoutingTarget(),
+      createSetupModelRoutingTarget({
+        key: "bounded_repair",
+        label: "Bounded repair override",
+        strategyField: "boundedRepairModelStrategy",
+        modelField: "boundedRepairModel",
+        summary: "Bounded repair turns currently inherit the default Codex route.",
+        guidance: 'Leave boundedRepairModelStrategy unset or use `"inherit"` to keep following the default Codex route.',
+      }),
+      createSetupModelRoutingTarget({
+        key: "local_review",
+        label: "Generic local-review override",
+        strategyField: "localReviewModelStrategy",
+        modelField: "localReviewModel",
+        summary: "Generic local-review turns currently inherit the default Codex route.",
+        guidance: 'Leave localReviewModelStrategy unset or use `"inherit"` to keep following the default Codex route.',
+      }),
+    ],
+    ...overrides,
+  };
+}
+
 export function createSetupReadinessReport(
   overrides: Partial<SetupReadinessReport> = {},
 ): SetupReadinessReport {
@@ -323,6 +374,7 @@ export function createSetupReadinessReport(
     hostReadiness: createSetupHostReadiness(),
     providerPosture: createSetupProviderPosture(),
     trustPosture: createSetupTrustPosture(),
+    modelRoutingPosture: createSetupModelRoutingPosture(),
     ...overrides,
   };
 }
