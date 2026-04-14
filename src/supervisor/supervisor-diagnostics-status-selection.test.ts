@@ -3333,6 +3333,8 @@ test("status surfaces parent epic auto-closure as the latest recovery on read-on
   };
 
   const report = await supervisor.statusReport();
+  assert.equal(report.selectionSummary, null);
+  assert.equal(report.activeIssue, null);
   assert.match(
     report.detailedStatusLines.join("\n"),
     /^latest_recovery issue=#199 at=2026-03-13T00:20:00Z reason=parent_epic_auto_closed detail=auto-closed parent epic #199 because child issues #201, #202 are closed$/m,
