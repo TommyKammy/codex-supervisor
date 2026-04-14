@@ -184,6 +184,55 @@ test("diagnoseSupervisorHost degrades malformed synthetic recovery records witho
   );
 });
 
+test("diagnoseSupervisorHost does not skip synthetic-like records missing recovery metadata", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-doctor-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = path.join(root, "repo");
+  const workspaceRoot = path.join(root, "workspaces");
+  const stateFile = path.join(root, "state.json");
+  await fs.mkdir(repoPath, { recursive: true });
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  execFileSync("git", ["init", "-b", "main"], { cwd: repoPath });
+
+  const diagnostics = await diagnoseSupervisorHost({
+    config: createConfig({
+      repoPath,
+      workspaceRoot,
+      stateFile,
+      codexBinary: process.execPath,
+    }),
+    authStatus: async () => ({ ok: true, message: null }),
+    loadState: async () => ({
+      activeIssueNumber: null,
+      issues: {
+        "123": {
+          ...createRecord({
+            issue_number: 123,
+            state: "done",
+            branch: "",
+            workspace: "",
+            pr_number: null,
+            journal_path: null,
+            codex_session_id: null,
+            blocked_reason: null,
+          }),
+          last_recovery_reason: undefined,
+          last_recovery_at: undefined,
+        } as unknown as SupervisorStateFile["issues"][string],
+      },
+    }),
+  });
+
+  assert.equal(diagnostics.checks.find((check) => check.name === "worktrees")?.status, "warn");
+  assert.match(
+    diagnostics.checks.find((check) => check.name === "worktrees")?.details[0] ?? "",
+    /Issue #123 is missing workspace \./,
+  );
+});
+
 test("renderDoctorReport only warns for the legacy shared issue journal path", () => {
   const baseDiagnostics = {
     overallStatus: "pass" as const,

@@ -436,6 +436,11 @@ function isRecoveryOnlySyntheticRecord(record: IssueRunRecord): boolean {
     return false;
   }
 
+  const hasRecoveryReason =
+    typeof record.last_recovery_reason === "string" && record.last_recovery_reason.trim().length > 0;
+  const hasRecoveryAt =
+    typeof record.last_recovery_at === "string" && record.last_recovery_at.trim().length > 0;
+
   return record.state === "done" &&
     record.branch.trim() === "" &&
     record.workspace.trim() === "" &&
@@ -443,8 +448,8 @@ function isRecoveryOnlySyntheticRecord(record: IssueRunRecord): boolean {
     record.pr_number === null &&
     record.codex_session_id === null &&
     record.blocked_reason === null &&
-    record.last_recovery_reason !== null &&
-    record.last_recovery_at !== null;
+    hasRecoveryReason &&
+    hasRecoveryAt;
 }
 
 function withInspectableWorkspaces(state: SupervisorStateFile): SupervisorStateFile {
