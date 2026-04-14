@@ -891,7 +891,6 @@ export function inferStateFromPullRequest(
 
   if (
     !pr.isDraft &&
-    config.trackedPrCurrentHeadLocalReviewRequired &&
     shouldRunLocalReview(config, record, pr) &&
     !checkSummary.hasPending &&
     unresolvedBotThreads.length === 0 &&
@@ -902,7 +901,7 @@ export function inferStateFromPullRequest(
   }
 
   if (
-    config.trackedPrCurrentHeadLocalReviewRequired &&
+    !pr.isDraft &&
     shouldRunLocalReview(config, record, pr) &&
     checkSummary.hasPending &&
     unresolvedBotThreads.length === 0 &&

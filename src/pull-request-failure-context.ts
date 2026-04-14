@@ -29,3 +29,33 @@ export function buildConflictFailureContext(pr: GitHubPullRequest): FailureConte
     updated_at: nowIso(),
   };
 }
+
+export function buildCurrentHeadLocalReviewPendingFailureContext(args: {
+  pr: Pick<GitHubPullRequest, "headRefOid">;
+  record: { local_review_head_sha: string | null };
+}): FailureContext {
+  const status = args.record.local_review_head_sha === null ? "missing" : "stale";
+  const summary =
+    status === "missing"
+      ? "Current PR head is still waiting for a local review run."
+      : "Current PR head is still waiting for a fresh local review run.";
+  const signature =
+    status === "missing"
+      ? `local-review-missing:${args.pr.headRefOid}`
+      : `local-review-stale:${args.record.local_review_head_sha}:${args.pr.headRefOid}`;
+
+  return {
+    category: "blocked",
+    summary,
+    signature,
+    command: null,
+    details: [
+      `reviewed_head_sha=${args.record.local_review_head_sha ?? "none"}`,
+      `pr_head_sha=${args.pr.headRefOid}`,
+      `status=${status}`,
+      "summary=awaiting_local_review",
+    ],
+    url: null,
+    updated_at: nowIso(),
+  };
+}

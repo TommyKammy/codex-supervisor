@@ -1,4 +1,9 @@
-import { buildChecksFailureContext, buildConflictFailureContext } from "../pull-request-failure-context";
+import {
+  buildChecksFailureContext,
+  buildConflictFailureContext,
+  buildCurrentHeadLocalReviewPendingFailureContext,
+} from "../pull-request-failure-context";
+import { shouldRunLocalReview } from "../local-review";
 import { buildCopilotReviewTimeoutFailureContext } from "../pull-request-state";
 import {
   configuredBotReviewFollowUpState,
@@ -88,6 +93,10 @@ export function inferFailureContext(
       )
     ) {
       return localReviewStallFailureContext(record);
+    }
+
+    if (!pr.isDraft && shouldRunLocalReview(config, record, pr)) {
+      return buildCurrentHeadLocalReviewPendingFailureContext({ pr, record });
     }
 
     if (localReviewHighSeverityNeedsBlock(config, record, pr)) {

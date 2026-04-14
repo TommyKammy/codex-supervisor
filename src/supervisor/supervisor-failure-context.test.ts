@@ -280,6 +280,66 @@ test("inferFailureContext returns degraded local review blocker context for curr
   assert.match(context?.signature ?? "", /:degraded$/);
 });
 
+test("inferFailureContext reports missing current-head local review explicitly instead of a synthetic clean review summary", () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+    trackedPrCurrentHeadLocalReviewRequired: false,
+  });
+  const pr = createPullRequest({ headRefOid: "head-new", isDraft: false });
+  const record = createRecord({
+    state: "blocked",
+    blocked_reason: "verification",
+    local_review_head_sha: null,
+    local_review_findings_count: 0,
+    local_review_root_cause_count: 0,
+    local_review_recommendation: null,
+    pre_merge_evaluation_outcome: null,
+  });
+
+  const context = inferFailureContext(config, record, pr, [], []);
+
+  assert.equal(context?.category, "blocked");
+  assert.equal(context?.summary, "Current PR head is still waiting for a local review run.");
+  assert.equal(context?.signature, "local-review-missing:head-new");
+  assert.deepEqual(context?.details, [
+    "reviewed_head_sha=none",
+    "pr_head_sha=head-new",
+    "status=missing",
+    "summary=awaiting_local_review",
+  ]);
+});
+
+test("inferFailureContext reports stale current-head local review explicitly instead of a synthetic clean review summary", () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+    trackedPrCurrentHeadLocalReviewRequired: false,
+  });
+  const pr = createPullRequest({ headRefOid: "head-new", isDraft: false });
+  const record = createRecord({
+    state: "blocked",
+    blocked_reason: "verification",
+    local_review_head_sha: "head-old",
+    local_review_findings_count: 0,
+    local_review_root_cause_count: 0,
+    local_review_recommendation: "ready",
+    pre_merge_evaluation_outcome: "mergeable",
+  });
+
+  const context = inferFailureContext(config, record, pr, [], []);
+
+  assert.equal(context?.category, "blocked");
+  assert.equal(context?.summary, "Current PR head is still waiting for a fresh local review run.");
+  assert.equal(context?.signature, "local-review-stale:head-old:head-new");
+  assert.deepEqual(context?.details, [
+    "reviewed_head_sha=head-old",
+    "pr_head_sha=head-new",
+    "status=stale",
+    "summary=awaiting_local_review",
+  ]);
+});
+
 test("inferFailureContext returns merge conflict context when no earlier blocker applies", () => {
   const context = inferFailureContext(
     createConfig(),

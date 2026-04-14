@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildChecksFailureContext, buildConflictFailureContext } from "./pull-request-failure-context";
+import {
+  buildChecksFailureContext,
+  buildConflictFailureContext,
+  buildCurrentHeadLocalReviewPendingFailureContext,
+} from "./pull-request-failure-context";
 import { GitHubPullRequest, PullRequestCheck } from "./core/types";
 
 function createPullRequest(overrides: Partial<GitHubPullRequest> = {}): GitHubPullRequest {
@@ -55,4 +59,42 @@ test("buildConflictFailureContext preserves merge-conflict reporting fields", ()
   assert.equal(context.command, "git fetch origin && git merge origin/<default-branch>");
   assert.deepEqual(context.details, ["mergeStateStatus=DIRTY"]);
   assert.equal(context.url, "https://example.test/pr/42");
+});
+
+test("buildCurrentHeadLocalReviewPendingFailureContext preserves missing-review reporting fields", () => {
+  const context = buildCurrentHeadLocalReviewPendingFailureContext({
+    pr: createPullRequest({ headRefOid: "head-new" }),
+    record: { local_review_head_sha: null },
+  });
+
+  assert.equal(context.category, "blocked");
+  assert.equal(context.summary, "Current PR head is still waiting for a local review run.");
+  assert.equal(context.signature, "local-review-missing:head-new");
+  assert.equal(context.command, null);
+  assert.deepEqual(context.details, [
+    "reviewed_head_sha=none",
+    "pr_head_sha=head-new",
+    "status=missing",
+    "summary=awaiting_local_review",
+  ]);
+  assert.equal(context.url, null);
+});
+
+test("buildCurrentHeadLocalReviewPendingFailureContext preserves stale-review reporting fields", () => {
+  const context = buildCurrentHeadLocalReviewPendingFailureContext({
+    pr: createPullRequest({ headRefOid: "head-new" }),
+    record: { local_review_head_sha: "head-old" },
+  });
+
+  assert.equal(context.category, "blocked");
+  assert.equal(context.summary, "Current PR head is still waiting for a fresh local review run.");
+  assert.equal(context.signature, "local-review-stale:head-old:head-new");
+  assert.equal(context.command, null);
+  assert.deepEqual(context.details, [
+    "reviewed_head_sha=head-old",
+    "pr_head_sha=head-new",
+    "status=stale",
+    "summary=awaiting_local_review",
+  ]);
+  assert.equal(context.url, null);
 });
