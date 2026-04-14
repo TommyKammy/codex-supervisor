@@ -471,7 +471,7 @@ test("inferStateFromPullRequest covers local review policy gating combinations",
       expected: "ready_to_merge",
     },
     {
-      name: "block_merge keeps gating until the current head has a resolved final evaluation",
+      name: "block_merge keeps stale current-head local review gating runnable once the rerun lane is clear",
       config: { localReviewEnabled: true, localReviewPolicy: "block_merge", copilotReviewWaitMinutes: 0 },
       record: {
         state: "pr_open",
@@ -481,7 +481,35 @@ test("inferStateFromPullRequest covers local review policy gating combinations",
         local_review_recommendation: "changes_requested",
       },
       pr: { isDraft: false, headRefOid: "newhead" },
-      expected: "blocked",
+      expected: "local_review",
+    },
+    {
+      name: "block_merge routes a ready non-draft PR into current-head local review when the recorded local review head is stale",
+      config: { localReviewEnabled: true, localReviewPolicy: "block_merge", copilotReviewWaitMinutes: 0 },
+      record: {
+        state: "pr_open",
+        last_head_sha: "newhead",
+        local_review_head_sha: "oldhead",
+        local_review_findings_count: 0,
+        local_review_recommendation: "ready",
+        pre_merge_evaluation_outcome: "mergeable",
+      },
+      pr: { isDraft: false, headRefOid: "newhead" },
+      expected: "local_review",
+    },
+    {
+      name: "block_merge routes a ready non-draft PR with no recorded current-head local review into current-head local review",
+      config: { localReviewEnabled: true, localReviewPolicy: "block_merge", copilotReviewWaitMinutes: 0 },
+      record: {
+        state: "pr_open",
+        last_head_sha: "newhead",
+        local_review_head_sha: null,
+        local_review_findings_count: 0,
+        local_review_recommendation: null,
+        pre_merge_evaluation_outcome: null,
+      },
+      pr: { isDraft: false, headRefOid: "newhead" },
+      expected: "local_review",
     },
     {
       name: "advisory never blocks merge for ready PRs with raw findings",
@@ -609,6 +637,28 @@ test("inferStateFromPullRequest waits for pending checks before rerunning tracke
     localReviewEnabled: true,
     localReviewPolicy: "advisory",
     trackedPrCurrentHeadLocalReviewRequired: true,
+    copilotReviewWaitMinutes: 0,
+  });
+  const record = createRecord({
+    state: "pr_open",
+    local_review_head_sha: "oldhead",
+    local_review_findings_count: 0,
+    local_review_recommendation: "ready",
+    pre_merge_evaluation_outcome: "mergeable",
+  });
+  const checks = [{ name: "build", state: "IN_PROGRESS", bucket: "pending", workflow: "CI" }] as const;
+
+  assert.equal(
+    inferStateFromPullRequest(config, record, createPullRequest({ isDraft: false, headRefOid: "newhead" }), [...checks], []),
+    "waiting_ci",
+  );
+});
+
+test("inferStateFromPullRequest waits for pending checks before rerunning block-merge current-head local review", () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+    trackedPrCurrentHeadLocalReviewRequired: false,
     copilotReviewWaitMinutes: 0,
   });
   const record = createRecord({

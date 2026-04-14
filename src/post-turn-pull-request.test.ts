@@ -6270,6 +6270,110 @@ test("handlePostTurnPullRequestTransitionsPhase reruns local review on a ready P
   assert.equal(result.record.pre_merge_evaluation_outcome, "mergeable");
 });
 
+test("handlePostTurnPullRequestTransitionsPhase reruns local review on a ready block-merge PR head update when the current head has no matching review", async () => {
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+    trackedPrCurrentHeadLocalReviewRequired: false,
+  });
+  const readyPr = createPullRequest({
+    title: "Re-review the current head before merge under block-merge policy",
+    isDraft: false,
+    headRefOid: "head-new",
+  });
+  let localReviewCalls = 0;
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    github: createDefaultGithub(),
+    context: {
+      state: {
+        activeIssueNumber: 102,
+        issues: {
+          "102": createRecord({
+            state: "blocked",
+            blocked_reason: "verification",
+            pr_number: readyPr.number,
+            local_review_head_sha: null,
+            local_review_findings_count: 0,
+            local_review_recommendation: null,
+            pre_merge_evaluation_outcome: null,
+            last_error: "Waiting for a current-head local review run.",
+          }),
+        },
+      },
+      record: createRecord({
+        state: "blocked",
+        blocked_reason: "verification",
+        pr_number: readyPr.number,
+        local_review_head_sha: null,
+        local_review_findings_count: 0,
+        local_review_recommendation: null,
+        pre_merge_evaluation_outcome: null,
+        last_error: "Waiting for a current-head local review run.",
+      }),
+      issue: createIssue({ title: "Require block-merge current-head local review before merge" }),
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+      syncJournal: async () => undefined,
+      memoryArtifacts: TEST_MEMORY_ARTIFACTS,
+      pr: readyPr,
+      options: { dryRun: false },
+    },
+    derivePullRequestLifecycleSnapshot: (record, pr, checks, reviewThreads) =>
+      deriveSupervisorPullRequestLifecycleSnapshot(config, record, pr, checks, reviewThreads),
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    blockedReasonFromReviewState: (record, pr, checks, reviewThreads) =>
+      resolveBlockedReasonFromReviewState(config, record, pr, checks, reviewThreads),
+    summarizeChecks,
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runLocalReviewImpl: async () => {
+      localReviewCalls += 1;
+      return {
+        ranAt: "2026-03-24T00:11:00Z",
+        summaryPath: "/tmp/reviews/owner-repo/issue-102/head-new.md",
+        findingsPath: "/tmp/reviews/owner-repo/issue-102/head-new.json",
+        summary: "Local review revalidated the current head.",
+        blockerSummary: null,
+        findingsCount: 0,
+        rootCauseCount: 0,
+        maxSeverity: "none",
+        verifiedFindingsCount: 0,
+        verifiedMaxSeverity: "none",
+        recommendation: "ready",
+        degraded: false,
+        finalEvaluation: {
+          outcome: "mergeable",
+          residualFindings: [],
+          mustFixCount: 0,
+          manualReviewCount: 0,
+          followUpCount: 0,
+        },
+        rawOutput: "raw output",
+      };
+    },
+    loadOpenPullRequestSnapshot: async () => ({
+      pr: readyPr,
+      checks: [] satisfies PullRequestCheck[],
+      reviewThreads: [] satisfies ReviewThread[],
+    }),
+  });
+
+  assert.equal(localReviewCalls, 1);
+  assert.equal(result.record.state, "ready_to_merge");
+  assert.equal(result.record.blocked_reason, null);
+  assert.equal(result.record.local_review_head_sha, "head-new");
+  assert.equal(result.record.pre_merge_evaluation_outcome, "mergeable");
+});
+
 test("handlePostTurnPullRequestTransitionsPhase reruns local review on a later cycle after pending checks clear for a stale ready PR head", async () => {
   const config = createConfig({
     localReviewEnabled: true,

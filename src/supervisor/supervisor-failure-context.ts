@@ -1,4 +1,9 @@
-import { buildChecksFailureContext, buildConflictFailureContext } from "../pull-request-failure-context";
+import {
+  buildChecksFailureContext,
+  buildConflictFailureContext,
+  buildCurrentHeadLocalReviewPendingFailureContext,
+} from "../pull-request-failure-context";
+import { shouldRunLocalReview } from "../local-review";
 import { buildCopilotReviewTimeoutFailureContext } from "../pull-request-state";
 import {
   configuredBotReviewFollowUpState,
@@ -90,10 +95,6 @@ export function inferFailureContext(
       return localReviewStallFailureContext(record);
     }
 
-    if (localReviewHighSeverityNeedsBlock(config, record, pr)) {
-      return localReviewFailureContext(record);
-    }
-
     const manualReviewContext =
       config.humanReviewBlocksMerge ? buildManualReviewFailureContext(manualReviewThreads(config, reviewThreads)) : null;
     if (manualReviewContext) {
@@ -115,16 +116,24 @@ export function inferFailureContext(
       return stalledBotReviewContext;
     }
 
-    if (localReviewDegradedNeedsBlock(config, record, pr)) {
+    if (localReviewHighSeverityNeedsBlock(config, record, pr)) {
       return localReviewFailureContext(record);
     }
 
-    if (localReviewBlocksMerge(config, record, pr)) {
+    if (!pr.isDraft && !mergeConflictDetected(pr) && shouldRunLocalReview(config, record, pr)) {
+      return buildCurrentHeadLocalReviewPendingFailureContext({ pr, record });
+    }
+
+    if (localReviewDegradedNeedsBlock(config, record, pr)) {
       return localReviewFailureContext(record);
     }
 
     if (mergeConflictDetected(pr)) {
       return buildConflictFailureContext(pr);
+    }
+
+    if (localReviewBlocksMerge(config, record, pr)) {
+      return localReviewFailureContext(record);
     }
   }
 
