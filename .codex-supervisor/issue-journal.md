@@ -1,50 +1,34 @@
-# Issue #1518: Tracked-PR reconciliation should not spend residual default budget on historical done records
+# Issue #1520: Bug: run-once prelude revalidates historical closed issues via merged_issue_closures on every cycle
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1518
-- Branch: codex/issue-1518
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1520
+- Branch: codex/issue-1520
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 2 (implementation=1, repair=1)
-- Last head SHA: ae78f5b942801b2a845cd2b9e35588ec2c185560
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: 97386e4ff2efd63260a4b66185c4471f357570f1
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ856wH2h
-- Repeated failure signature count: 1
-- Updated at: 2026-04-14T08:31:52.003Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-04-14T09:02:17.448Z
 
 ## Latest Codex Summary
-Adjusted the default tracked-PR reconciliation slice so mixed-state passes stop after the recoverable tracked PR records instead of spending the remaining default budget on historical `done` records. The behavior change is in [src/recovery-tracked-pr-reconciliation.ts](src/recovery-tracked-pr-reconciliation.ts), and I added a direct regression in [src/recovery-tracked-pr-reconciliation.test.ts](src/recovery-tracked-pr-reconciliation.test.ts) plus tightened the prelude coverage in [src/run-once-cycle-prelude.test.ts](src/run-once-cycle-prelude.test.ts). The issue journal was updated before closing the turn.
-
-Focused verification passed:
-- `npx tsx --test src/recovery-tracked-pr-reconciliation.test.ts src/run-once-cycle-prelude.test.ts`
-- `npm run build`
-
-Checkpoint commit: `ae78f5b` (`Prevent tracked PR reconciliation from spending budget on done history`)
-
-Summary: Default tracked-PR reconciliation now spends its first-cycle budget only on recoverable tracked PR records in mixed states; focused regressions and build passed.
-State hint: stabilizing
-Blocked reason: none
-Tests: `npx tsx --test src/recovery-tracked-pr-reconciliation.test.ts src/run-once-cycle-prelude.test.ts`; `npm run build`
-Next action: Open or update the branch PR so this checkpoint can move into review/CI.
-Failure signature: PRRT_kwDORgvdZ856wH2h
+- Added a freshness gate to `reconcileMergedIssueClosures()` so ordinary prelude cycles skip historical terminal closed records unless the issue is active, still non-terminal locally, or GitHub updated the closed issue after the local terminal record.
+- Added focused regression coverage at both the reconciliation layer and `runOnceCyclePrelude` layer to prove a 160-record historical closed backlog no longer triggers 160 merged-closure GraphQL lookups.
 
 ## Active Failure Context
-- Category: review
-- Summary: 1 unresolved automated review thread(s) remain.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1519#discussion_r3078122159
-- Details:
-  - src/recovery-tracked-pr-reconciliation.ts:122 summary=_⚠️ Potential issue_ | _🟠 Major_ **Preserve the historical `done` cursor when you defer that bucket.** After this change, `records.length` in Lines 413-418 can mean “the recove... url=https://github.com/TommyKammy/codex-supervisor/pull/1519#discussion_r3078122159
+- None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: The review finding was valid: after the mixed-state prioritization change, a pass that exhausted only the recoverable bucket could still clear `tracked_merged_but_open_last_processed_issue_number`, which discarded historical `done` resume progress.
-- What changed: Updated `prioritizeTrackedMergedButOpenRecords(...)` in `src/recovery-tracked-pr-reconciliation.ts` to return whether historical `done` records were deferred, and changed the end-of-pass cursor update to preserve the existing historical cursor when that deferred bucket remains. Added a direct regression in `src/recovery-tracked-pr-reconciliation.test.ts` that seeds a historical cursor and proves the mixed-state pass keeps it while still only looking up recoverable tracked PRs.
+- Hypothesis: `merged_issue_closures` was O(history) because it called `getMergedPullRequestsClosingIssue()` for every `CLOSED` issue record, even when the local record was already stably `done` and GitHub had not changed since the terminal write.
+- What changed: Added `shouldRevalidateMergedIssueClosureRecord()` in `src/recovery-reconciliation.ts` and used it to skip historical `done` records unless they are active, non-terminal, or the GitHub issue `updatedAt` is newer than the latest local terminal timestamp. Added bounded-lookup regressions in `src/supervisor/supervisor-recovery-reconciliation.test.ts` and `src/run-once-cycle-prelude.test.ts`.
 - Current blocker: none
-- Next exact step: Commit and push the review-fix checkpoint on `codex/issue-1518` so PR #1519 picks up the preserved historical-cursor behavior.
-- Verification gap: Focused regressions and TypeScript build passed; no broader full-suite run yet.
-- Files touched: .codex-supervisor/issue-journal.md; src/recovery-tracked-pr-reconciliation.ts; src/recovery-tracked-pr-reconciliation.test.ts
-- Rollback concern: Low; the behavior change is limited to mixed-state tracked-PR cursor handling and only preserves the existing historical `done` resume position when that bucket is intentionally deferred.
-- Last focused command: npm run build
+- Next exact step: Commit the bounded merged-closure fix on `codex/issue-1520` and prepare the branch for PR creation/update.
+- Verification gap: No PR/CI verification yet; local focused tests and `npm run build` passed.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/recovery-reconciliation.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `src/run-once-cycle-prelude.test.ts`
+- Rollback concern: Low. The gate only skips revalidation for stale terminal closed records; active, non-terminal, and newly changed closed issues still run the existing reconciliation path.
+- Last focused command: `npm run build`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.

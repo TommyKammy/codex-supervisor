@@ -337,6 +337,35 @@ function latestFiniteTimestamp(...values: Array<string | null | undefined>): num
   return latest;
 }
 
+function shouldRevalidateMergedIssueClosureRecord(
+  record: Pick<
+    IssueRunRecord,
+    "issue_number" | "state" | "last_failure_context" | "last_recovery_at" | "updated_at"
+  >,
+  issue: Pick<GitHubIssue, "updatedAt">,
+  activeIssueNumber: number | null,
+): boolean {
+  if (activeIssueNumber === record.issue_number) {
+    return true;
+  }
+
+  if (record.state !== "done") {
+    return true;
+  }
+
+  const issueUpdatedAtMs = Date.parse(issue.updatedAt);
+  const localTerminalObservedAtMs = latestFiniteTimestamp(
+    record.last_failure_context?.updated_at,
+    record.last_recovery_at,
+    record.updated_at,
+  );
+  if (!Number.isFinite(issueUpdatedAtMs) || localTerminalObservedAtMs === null) {
+    return true;
+  }
+
+  return issueUpdatedAtMs > localTerminalObservedAtMs;
+}
+
 function shouldReconsiderBlockedNoPrStaleManualStop(
   record: Pick<
     IssueRunRecord,
@@ -563,10 +592,17 @@ export async function reconcileMergedIssueClosures(
   let changed = false;
   const recoveryEvents: RecoveryEvent[] = [];
   const issueByNumber = new Map(issues.map((issue) => [issue.number, issue]));
-  const issueStateByNumber = new Map(issues.map((issue) => [issue.number, issue.state ?? null]));
 
   for (const record of Object.values(state.issues)) {
-    if (issueStateByNumber.get(record.issue_number) !== "CLOSED") {
+    const issue = issueByNumber.get(record.issue_number);
+    if (issue?.state !== "CLOSED") {
+      continue;
+    }
+
+    // Historical done records with no newer GitHub activity do not need a fresh
+    // merged-closure GraphQL scan every cycle. Revalidate only active, non-terminal,
+    // or recently changed closed issues.
+    if (!shouldRevalidateMergedIssueClosureRecord(record, issue, state.activeIssueNumber)) {
       continue;
     }
 
