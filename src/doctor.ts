@@ -432,6 +432,10 @@ function parseWorktreeList(stdout: string): Set<string> {
 }
 
 function isRecoveryOnlySyntheticRecord(record: IssueRunRecord): boolean {
+  if (typeof record.branch !== "string" || typeof record.workspace !== "string") {
+    return false;
+  }
+
   return record.state === "done" &&
     record.branch.trim() === "" &&
     record.workspace.trim() === "" &&
@@ -441,6 +445,17 @@ function isRecoveryOnlySyntheticRecord(record: IssueRunRecord): boolean {
     record.blocked_reason === null &&
     record.last_recovery_reason !== null &&
     record.last_recovery_at !== null;
+}
+
+function withInspectableWorkspaces(state: SupervisorStateFile): SupervisorStateFile {
+  return {
+    ...state,
+    issues: Object.fromEntries(
+      Object.entries(state.issues).filter(([, record]) =>
+        typeof record.workspace === "string" && record.workspace.trim() !== ""
+      ),
+    ),
+  };
 }
 
 async function diagnoseWorktrees(
@@ -469,6 +484,11 @@ async function diagnoseWorktrees(
         continue;
       }
 
+      if (typeof record.workspace !== "string" || record.workspace.trim() === "") {
+        problems.push(`Issue #${record.issue_number} is missing workspace ${String(record.workspace)}.`);
+        continue;
+      }
+
       try {
         await fs.access(record.workspace, fs.constants.F_OK);
       } catch {
@@ -489,7 +509,7 @@ async function diagnoseWorktrees(
       }
     }
 
-    const orphanCandidates = await inspectOrphanedWorkspacePruneCandidates(config, state);
+    const orphanCandidates = await inspectOrphanedWorkspacePruneCandidates(config, withInspectableWorkspaces(state));
     const orphanDetails = orphanCandidates.map((candidate) =>
       `orphan_prune_candidate issue_number=${candidate.issueNumber} eligibility=${candidate.eligibility} workspace=${candidate.workspacePath} branch=${candidate.branch ?? "none"} modified_at=${candidate.modifiedAt ?? "unknown"} reason=${candidate.reason}`
     );
