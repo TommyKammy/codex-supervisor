@@ -1,34 +1,35 @@
-# Issue #1515: Bug: run-once --dry-run burns tracked-PR reconciliation budget on terminal done records
+# Issue #1518: Tracked-PR reconciliation should not spend residual default budget on historical done records
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1515
-- Branch: codex/issue-1515
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1518
+- Branch: codex/issue-1518
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: reproducing
 - Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: 7534702f0a1afe18257f5bba0caeacfbd4d3dc84
+- Last head SHA: 536f41bb45d29ca0e95ff03daf75a9ff48cf8737
 - Blocked reason: none
 - Last failure signature: none
 - Repeated failure signature count: 0
-- Updated at: 2026-04-14T07:55:57.498Z
+- Updated at: 2026-04-14T08:17:00.443Z
 
 ## Latest Codex Summary
-- Reproduced the budget-burn regression with focused tests, then changed tracked-PR reconciliation to prioritize non-`done` tracked PR records ahead of historical `done + pr_number` records in the default slice.
-- Added regression coverage in the reconciliation suite and a prelude-level test that wires the real reconciliation path through `runOnceCyclePrelude`.
+- Added a focused tracked-PR reconciliation regression for mixed recoverable-plus-historical state and tightened the `runOnceCyclePrelude` regression to assert the first-cycle lookup set stops at the recoverable tracked PR records.
+- Changed default tracked-PR reconciliation selection so mixed-state passes process only recoverable tracked PR records; historical `done` records are now a fallback only when no recoverable tracked PR records remain.
+- Verified with `npx tsx --test src/recovery-tracked-pr-reconciliation.test.ts src/run-once-cycle-prelude.test.ts` and `npm run build`.
 
 ## Active Failure Context
 - None recorded.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: The default `reconcileTrackedMergedButOpenIssuesInModule(...)` candidate list was iterating tracked PR records in raw issue-number order, so large tails of historical `done + pr_number` records exhausted the default 25-record budget before recoverable tracked PR work was reached.
-- What changed: Added `prioritizeTrackedMergedButOpenRecords(...)` in `src/recovery-tracked-pr-reconciliation.ts` so the default pass processes non-`done` tracked PR records before historical `done` records while preserving round-robin resume ordering inside each tier. Added direct and prelude-level regressions for the `800 !== 901` failure mode.
+- Hypothesis: The default tracked-PR reconciliation pass still burned residual budget on historical `done + pr_number` records after checking the recoverable tracked PR subset because prioritization only reordered the array and did not cap the mixed-state pass to the recoverable bucket.
+- What changed: Added `src/recovery-tracked-pr-reconciliation.test.ts` to reproduce the mixed-state leak directly, tightened the prelude regression in `src/run-once-cycle-prelude.test.ts`, and updated `prioritizeTrackedMergedButOpenRecords(...)` in `src/recovery-tracked-pr-reconciliation.ts` so the default mixed-state pass only returns recoverable tracked PR records unless no recoverable records remain.
 - Current blocker: none
-- Next exact step: Review diff and create a checkpoint commit on `codex/issue-1515`.
-- Verification gap: none for requested local checks; targeted tests and build passed.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/recovery-tracked-pr-reconciliation.ts`, `src/run-once-cycle-prelude.test.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`
-- Rollback concern: Low; change only affects default ordering for tracked-PR reconciliation when scanning multiple records and leaves `onlyIssueNumber` behavior intact.
-- Last focused command: `npm run build`
+- Next exact step: Commit the focused regression + fix checkpoint on `codex/issue-1518` and proceed with normal PR/update flow if requested.
+- Verification gap: Focused regressions and TypeScript build passed; no broader full-suite run yet.
+- Files touched: .codex-supervisor/issue-journal.md; src/recovery-tracked-pr-reconciliation.ts; src/recovery-tracked-pr-reconciliation.test.ts; src/run-once-cycle-prelude.test.ts
+- Rollback concern: Low; the behavior change is limited to default mixed-state tracked-PR record selection and preserves historical `done` processing once no recoverable tracked PR records remain.
+- Last focused command: npm run build
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.

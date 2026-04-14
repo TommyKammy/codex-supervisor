@@ -115,10 +115,11 @@ function prioritizeTrackedMergedButOpenRecords(
   const recoverableRecords = records.filter((record) => record.state !== "done");
   const historicalDoneRecords = records.filter((record) => record.state === "done");
 
-  return [
-    ...orderTrackedMergedButOpenRecordsForResume(recoverableRecords, lastProcessedIssueNumber),
-    ...orderTrackedMergedButOpenRecordsForResume(historicalDoneRecords, lastProcessedIssueNumber),
-  ];
+  if (recoverableRecords.length > 0) {
+    return orderTrackedMergedButOpenRecordsForResume(recoverableRecords, lastProcessedIssueNumber);
+  }
+
+  return orderTrackedMergedButOpenRecordsForResume(historicalDoneRecords, lastProcessedIssueNumber);
 }
 
 export function buildTrackedPrResumeRecoveryEvent(

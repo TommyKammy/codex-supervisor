@@ -209,13 +209,22 @@ test("runOnceCyclePrelude persists the last-known-good inventory snapshot after 
 });
 
 test("runOnceCyclePrelude prioritizes recoverable tracked PR reconciliation ahead of historical done records", async () => {
-  const recoverableRecord = createRecord({
-    issue_number: 450,
-    state: "merging",
-    branch: "codex/reopen-issue-450",
-    pr_number: 901,
-    blocked_reason: null,
-  });
+  const recoverableRecords = [
+    createRecord({
+      issue_number: 450,
+      state: "merging",
+      branch: "codex/reopen-issue-450",
+      pr_number: 901,
+      blocked_reason: null,
+    }),
+    createRecord({
+      issue_number: 451,
+      state: "waiting_ci",
+      branch: "codex/reopen-issue-451",
+      pr_number: 902,
+      blocked_reason: null,
+    }),
+  ];
   const historicalDoneRecords = Array.from({ length: 30 }, (_, index) =>
     createRecord({
       issue_number: 300 + index,
@@ -227,25 +236,10 @@ test("runOnceCyclePrelude prioritizes recoverable tracked PR reconciliation ahea
   const state: SupervisorStateFile = {
     activeIssueNumber: null,
     issues: Object.fromEntries(
-      [...historicalDoneRecords, recoverableRecord].map((record) => [String(record.issue_number), record]),
+      [...historicalDoneRecords, ...recoverableRecords].map((record) => [String(record.issue_number), record]),
     ),
   };
-  const closedIssue = createIssue({
-    number: 450,
-    title: "Recoverable merging issue",
-    updatedAt: "2026-03-13T00:23:00Z",
-    state: "CLOSED",
-  });
-  const issues: GitHubIssue[] = [closedIssue];
-  const mergedPr = createPullRequest({
-    number: 901,
-    title: "Recoverable tracked PR",
-    url: "https://example.test/pr/901",
-    state: "MERGED",
-    headRefName: "codex/reopen-issue-450",
-    headRefOid: "merged-head-901",
-    mergedAt: "2026-03-13T00:22:00Z",
-  });
+  const issues: GitHubIssue[] = [];
   const prLookups: number[] = [];
   let saveCalls = 0;
 
@@ -265,14 +259,10 @@ test("runOnceCyclePrelude prioritizes recoverable tracked PR reconciliation ahea
         {
           getPullRequestIfExists: async (prNumber) => {
             prLookups.push(prNumber);
-            if (prNumber === 901) {
-              return mergedPr;
-            }
             return null;
           },
-          getIssue: async (issueNumber) => {
-            assert.equal(issueNumber, 450);
-            return closedIssue;
+          getIssue: async () => {
+            throw new Error("unexpected getIssue call");
           },
           closeIssue: async () => {
             throw new Error("unexpected closeIssue call");
@@ -292,9 +282,8 @@ test("runOnceCyclePrelude prioritizes recoverable tracked PR reconciliation ahea
               updated_at: "2026-03-13T00:25:00Z",
             };
           },
-          save: async (nextState) => {
+          save: async () => {
             saveCalls += 1;
-            assert.equal(nextState, loadedState);
           },
         },
         loadedState,
@@ -312,14 +301,11 @@ test("runOnceCyclePrelude prioritizes recoverable tracked PR reconciliation ahea
   });
 
   assert.ok(!("kind" in result));
-  assert.equal(prLookups[0], 901);
-  assert.equal(prLookups.includes(901), true);
-  assert.equal(saveCalls, 2);
-  assert.equal(result.state.issues["450"]?.state, "done");
-  assert.equal(result.state.issues["450"]?.last_head_sha, "merged-head-901");
-  assert.deepEqual(result.recoveryEvents.map((event) => event.reason), [
-    "merged_pr_convergence: tracked PR #901 merged; marked issue #450 done",
-  ]);
+  assert.deepEqual(prLookups, [901, 902]);
+  assert.deepEqual(result.recoveryEvents, []);
+  assert.equal(saveCalls, 1);
+  assert.equal(result.state.issues["450"]?.state, "merging");
+  assert.equal(result.state.issues["451"]?.state, "waiting_ci");
 });
 
 test("runOnceCyclePrelude rehydrates tracked blocked PRs before reserving selection", async () => {
