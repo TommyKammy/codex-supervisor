@@ -308,6 +308,156 @@ test("runOnceCyclePrelude prioritizes recoverable tracked PR reconciliation ahea
   assert.equal(result.state.issues["451"]?.state, "waiting_ci");
 });
 
+test("runOnceCyclePrelude bounds merged issue closure revalidation for historical closed backlogs", async () => {
+  const historicalDoneRecords = Array.from({ length: 160 }, (_, index) =>
+    createRecord({
+      issue_number: 700 + index,
+      state: "done",
+      branch: `codex/historical-done-${700 + index}`,
+      pr_number: 1700 + index,
+      last_head_sha: `head-${700 + index}`,
+      updated_at: "2026-03-13T00:25:00Z",
+      last_recovery_at: "2026-03-13T00:25:00Z",
+      last_failure_context: null,
+      blocked_reason: null,
+      last_error: null,
+      last_failure_kind: null,
+      last_failure_signature: null,
+    }));
+  const provenanceFreeDoneRecord = createRecord({
+    issue_number: 959,
+    state: "done",
+    branch: "codex/provenance-free-959",
+    pr_number: null,
+    last_head_sha: null,
+    updated_at: "2026-03-13T00:25:00Z",
+    last_recovery_at: "2026-03-13T00:25:00Z",
+    last_failure_context: null,
+    blocked_reason: null,
+    last_error: null,
+    last_failure_kind: null,
+    last_failure_signature: null,
+  });
+  const recentlyChangedClosedRecord = createRecord({
+    issue_number: 960,
+    state: "done",
+    branch: "codex/recently-changed-960",
+    pr_number: 1960,
+    last_head_sha: "head-960",
+    updated_at: "2026-03-13T00:25:00Z",
+    last_recovery_at: "2026-03-13T00:25:00Z",
+    last_failure_context: null,
+    blocked_reason: null,
+    last_error: null,
+    last_failure_kind: null,
+    last_failure_signature: null,
+  });
+  const nonTerminalClosedRecord = createRecord({
+    issue_number: 961,
+    state: "waiting_ci",
+    branch: "codex/non-terminal-961",
+    pr_number: 1961,
+    last_head_sha: "head-961",
+    updated_at: "2026-03-13T00:25:00Z",
+    blocked_reason: null,
+    last_error: null,
+    last_failure_kind: null,
+    last_failure_context: null,
+    last_failure_signature: null,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: Object.fromEntries(
+      [
+        ...historicalDoneRecords,
+        provenanceFreeDoneRecord,
+        recentlyChangedClosedRecord,
+        nonTerminalClosedRecord,
+      ]
+        .map((record) => [String(record.issue_number), record]),
+    ),
+  };
+  const issues: GitHubIssue[] = [
+    ...historicalDoneRecords.map((record) => createIssue({
+      number: record.issue_number,
+      state: "CLOSED",
+      updatedAt: "2026-03-13T00:20:00Z",
+    })),
+    createIssue({
+      number: provenanceFreeDoneRecord.issue_number,
+      state: "CLOSED",
+      updatedAt: "2026-03-13T00:20:00Z",
+    }),
+    createIssue({
+      number: recentlyChangedClosedRecord.issue_number,
+      state: "CLOSED",
+      updatedAt: "2026-03-13T00:30:00Z",
+    }),
+    createIssue({
+      number: nonTerminalClosedRecord.issue_number,
+      state: "CLOSED",
+      updatedAt: "2026-03-13T00:20:00Z",
+    }),
+  ];
+  const mergedClosureLookups: number[] = [];
+
+  const result = await runOnceCyclePrelude({
+    stateStore: {
+      load: async () => state,
+      save: async () => {},
+    },
+    carryoverRecoveryEvents: [],
+    reconcileStaleActiveIssueReservation: async () => [],
+    handleAuthFailure: async () => null,
+    listAllIssues: async () => issues,
+    reconcileTrackedMergedButOpenIssues: async () => [],
+    reconcileMergedIssueClosures: async (loadedState, loadedIssues) => {
+      const { reconcileMergedIssueClosures } = await import("./recovery-reconciliation");
+      return reconcileMergedIssueClosures(
+        {
+          getMergedPullRequestsClosingIssue: async (issueNumber) => {
+            mergedClosureLookups.push(issueNumber);
+            return [];
+          },
+          getPullRequestIfExists: async () => null,
+          closePullRequest: async () => {
+            throw new Error("unexpected closePullRequest call");
+          },
+          closeIssue: async () => {
+            throw new Error("unexpected closeIssue call");
+          },
+          getIssue: async () => {
+            throw new Error("unexpected getIssue call");
+          },
+          getChecks: async () => [],
+          getUnresolvedReviewThreads: async () => [],
+        },
+        {
+          touch(record, patch) {
+            return {
+              ...record,
+              ...patch,
+              updated_at: "2026-03-13T00:35:00Z",
+            };
+          },
+          save: async () => {},
+        },
+        loadedState,
+        createConfig(),
+        loadedIssues,
+      );
+    },
+    reconcileStaleFailedIssueStates: async () => {},
+    reconcileRecoverableBlockedIssueStates: async () => [],
+    reconcileParentEpicClosures: async () => [],
+    cleanupExpiredDoneWorkspaces: async () => [],
+    reserveRunnableIssueSelection: async () => false,
+  });
+
+  assert.ok(!("kind" in result));
+  assert.deepEqual(mergedClosureLookups, [959, 960, 961]);
+});
+
 test("runOnceCyclePrelude rehydrates tracked blocked PRs before reserving selection", async () => {
   const state: SupervisorStateFile = {
     activeIssueNumber: null,

@@ -3461,6 +3461,125 @@ test("reconcileMergedIssueClosures clears a stale active issue pointer even when
   assert.deepEqual(state.issues["366"], original);
 });
 
+test("reconcileMergedIssueClosures skips historical terminal records but still revalidates changed or non-terminal closed issues", async () => {
+  const historicalDoneRecords = Array.from({ length: 160 }, (_, index) =>
+    createRecord({
+      issue_number: 700 + index,
+      state: "done",
+      pr_number: 1700 + index,
+      last_head_sha: `head-${700 + index}`,
+      updated_at: "2026-03-13T00:25:00Z",
+      last_recovery_at: "2026-03-13T00:25:00Z",
+      last_failure_context: null,
+      blocked_reason: null,
+      last_error: null,
+      last_failure_kind: null,
+      last_failure_signature: null,
+    }));
+  const provenanceFreeDoneRecord = createRecord({
+    issue_number: 959,
+    state: "done",
+    pr_number: null,
+    last_head_sha: null,
+    updated_at: "2026-03-13T00:25:00Z",
+    last_recovery_at: "2026-03-13T00:25:00Z",
+    last_failure_context: null,
+    blocked_reason: null,
+    last_error: null,
+    last_failure_kind: null,
+    last_failure_signature: null,
+  });
+  const recentlyChangedClosedRecord = createRecord({
+    issue_number: 960,
+    state: "done",
+    pr_number: 1960,
+    last_head_sha: "head-960",
+    updated_at: "2026-03-13T00:25:00Z",
+    last_recovery_at: "2026-03-13T00:25:00Z",
+    last_failure_context: null,
+    blocked_reason: null,
+    last_error: null,
+    last_failure_kind: null,
+    last_failure_signature: null,
+  });
+  const nonTerminalClosedRecord = createRecord({
+    issue_number: 961,
+    state: "waiting_ci",
+    pr_number: 1961,
+    last_head_sha: "head-961",
+    updated_at: "2026-03-13T00:25:00Z",
+    blocked_reason: null,
+    last_error: null,
+    last_failure_kind: null,
+    last_failure_context: null,
+    last_failure_signature: null,
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      ...historicalDoneRecords,
+      provenanceFreeDoneRecord,
+      recentlyChangedClosedRecord,
+      nonTerminalClosedRecord,
+    ],
+  });
+  const issues = [
+    ...historicalDoneRecords.map((record) => createIssue({
+      number: record.issue_number,
+      state: "CLOSED",
+      updatedAt: "2026-03-13T00:20:00Z",
+    })),
+    createIssue({
+      number: provenanceFreeDoneRecord.issue_number,
+      state: "CLOSED",
+      updatedAt: "2026-03-13T00:20:00Z",
+    }),
+    createIssue({
+      number: recentlyChangedClosedRecord.issue_number,
+      state: "CLOSED",
+      updatedAt: "2026-03-13T00:30:00Z",
+    }),
+    createIssue({
+      number: nonTerminalClosedRecord.issue_number,
+      state: "CLOSED",
+      updatedAt: "2026-03-13T00:20:00Z",
+    }),
+  ];
+  const mergedClosureLookups: number[] = [];
+
+  const recoveryEvents = await reconcileMergedIssueClosures(
+    {
+      getMergedPullRequestsClosingIssue: async (issueNumber) => {
+        mergedClosureLookups.push(issueNumber);
+        return [];
+      },
+      getPullRequestIfExists: async () => null,
+      closePullRequest: async () => {
+        throw new Error("unexpected closePullRequest call");
+      },
+      closeIssue: async () => {
+        throw new Error("unexpected closeIssue call");
+      },
+      getIssue: async () => {
+        throw new Error("unexpected getIssue call");
+      },
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    {
+      touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+        return { ...current, ...patch };
+      },
+      save: async () => {},
+    },
+    state,
+    createConfig(),
+    issues,
+  );
+
+  assert.deepEqual(mergedClosureLookups, [959, 960, 961]);
+  assert.deepEqual(recoveryEvents, []);
+});
+
 test("reconcileStaleFailedIssueStates requeues failed no-PR issues when the issue definition changes materially", async () => {
   const config = createConfig();
   const originalIssue = createIssue({
