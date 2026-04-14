@@ -486,10 +486,13 @@ function buildModelRoutingPosture(args: {
     }),
   ];
   const invalid = targets.some((target) => target.invalidStrategy || target.missingExplicitModel);
+  const inheritedCount = targets.filter((target) => target.strategy === "inherit").length;
   const summary = invalid
     ? "Model routing is invalid until every strategy is supported and every fixed or alias strategy has an explicit model value."
-    : targets.every((target) => target.strategy === "inherit")
+    : inheritedCount === targets.length
       ? "Model routing follows the host Codex default model unless you opt into a per-target override."
+      : inheritedCount === 0
+        ? "Model routing uses explicit per-target overrides for every route."
       : "Model routing mixes inherited defaults with explicit per-target overrides.";
 
   return {

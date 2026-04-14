@@ -260,6 +260,48 @@ test("diagnoseSetupReadiness fails closed when fixed model routing is missing an
   assert.deepEqual(blocker.remediation.fieldKeys, ["codexModel"]);
 });
 
+test("diagnoseSetupReadiness reports fully explicit model routing when every route is overridden", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = await createTrackedRepo(root);
+  const workspaceRoot = path.join(root, "workspaces");
+  const configPath = path.join(root, "supervisor.config.json");
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      ...buildConfigDocument({
+        repoPath,
+        workspaceRoot,
+        stateFile: path.join(root, "state.json"),
+        workspacePreparationCommand: undefined,
+      }),
+      codexModelStrategy: "fixed",
+      codexModel: "gpt-5",
+      boundedRepairModelStrategy: "alias",
+      boundedRepairModel: "gpt-5-mini",
+      localReviewModelStrategy: "fixed",
+      localReviewModel: "gpt-5.4",
+    }),
+    "utf8",
+  );
+
+  const summary = await diagnoseSetupReadiness({
+    configPath,
+    authStatus: async () => ({ ok: true, message: null }),
+  });
+
+  assert.ok(summary.modelRoutingPosture);
+  assert.equal(summary.modelRoutingPosture.invalid, false);
+  assert.equal(
+    summary.modelRoutingPosture.summary,
+    "Model routing uses explicit per-target overrides for every route.",
+  );
+});
+
 test("diagnoseSetupReadiness surfaces unsupported raw model strategies as invalid instead of inherited", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
   t.after(async () => {

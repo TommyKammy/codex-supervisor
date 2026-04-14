@@ -6,44 +6,43 @@
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
 - Current phase: addressing_review
-- Attempt count: 2 (implementation=1, repair=1)
-- Last head SHA: e052eda414aa8a9ac93a9c03176ad85267f7115c
+- Attempt count: 3 (implementation=1, repair=1)
+- Last head SHA: f5656b5f4358c034ad5d56ec587f40cdfe462592
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ856sy5v|PRRT_kwDORgvdZ856sy5y|PRRT_kwDORgvdZ856sy50
+- Last failure signature: PRRT_kwDORgvdZ856s4-L
 - Repeated failure signature count: 1
-- Updated at: 2026-04-14T03:14:12.949Z
+- Updated at: 2026-04-14T03:28:52.792Z
 
 ## Latest Codex Summary
-Added a read-only model-routing posture to first-run setup so operators can see the effective default, bounded-repair, and generic local-review routing without inspecting implementation code. The setup readiness path now fails closed when any `fixed` or `alias` strategy is missing its required model value, and the setup shell renders that posture directly. I also added focused docs recipes in [docs/configuration.md](docs/configuration.md) for inherited defaults, global fixed routing, bounded-repair overrides, and local-review overrides while keeping the existing authoritative config API unchanged.
+Updated `codex/issue-1500` and pushed commit `f5656b5` to PR `#1503`. The setup-readiness model-routing posture now preserves unsupported raw strategy strings as invalid instead of collapsing them to `inherit`, emits fail-closed blockers for those invalid strategies, and attaches missing-model blockers to the offending `*Model` config key so the setup UI no longer shows `Related fields: none` for that case. I also updated the issue journal wording to reflect the real rollback risk of fail-closed blocking rather than describing it as read-only reporting.
 
-Focused coverage was added in [src/setup-readiness.test.ts](src/setup-readiness.test.ts), [src/backend/webui-dashboard.test.ts](src/backend/webui-dashboard.test.ts), [src/backend/supervisor-http-server.test.ts](src/backend/supervisor-http-server.test.ts), and [src/config.test.ts](src/config.test.ts). I updated the issue journal and created checkpoint commit `e052eda` (`Improve Codex model routing setup posture`).
+Focused coverage was added in [src/setup-readiness.test.ts](src/setup-readiness.test.ts), and the DTO fixture/test shapes were updated in [src/backend/setup-test-fixtures.ts](src/backend/setup-test-fixtures.ts) and [src/backend/supervisor-http-server.test.ts](src/backend/supervisor-http-server.test.ts). The journal was updated in [.codex-supervisor/issue-journal.md](.codex-supervisor/issue-journal.md).
 
-Summary: Added fail-closed setup model-routing posture reporting, surfaced it in the setup shell, documented copy-paste routing recipes, and committed the checkpoint as `e052eda`.
-State hint: stabilizing
+Summary: Preserved unsupported raw model strategy values as invalid in setup readiness, wired missing-model blockers to the correct config field, corrected the journal risk note, and pushed commit `f5656b5` to `codex/issue-1500`.
+State hint: addressing_review
 Blocked reason: none
-Tests: `npx tsx --test src/setup-readiness.test.ts src/backend/webui-dashboard.test.ts src/backend/supervisor-http-server.test.ts src/config.test.ts src/core/config-local-review-model-routing.test.ts`; `npm run build`
-Next action: Push `codex/issue-1500` and open a draft PR for the committed checkpoint.
-Failure signature: PRRT_kwDORgvdZ856sy5v|PRRT_kwDORgvdZ856sy5y|PRRT_kwDORgvdZ856sy50
+Tests: `npx tsx --test src/setup-readiness.test.ts`; `npm run build`
+Next action: Review PR `#1503` on GitHub against commit `f5656b5`, then reply to or resolve the remaining automated review threads if the updated diff is acceptable.
+Failure signature: PRRT_kwDORgvdZ856s4-L
 
 ## Active Failure Context
 - Category: review
-- Summary: 3 unresolved automated review thread(s) remain.
-- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1503#discussion_r3076937856
+- Summary: 1 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1503#discussion_r3076971459
 - Details:
-  - .codex-supervisor/issue-journal.md:30 summary=_⚠️ Potential issue_ | _🟡 Minor_ **Misleading risk characterization: fail-closed blocking is not "read-only".** The rollback concern is described as "Low" with justification th... url=https://github.com/TommyKammy/codex-supervisor/pull/1503#discussion_r3076937856
-  - src/setup-readiness.ts:377 summary=_⚠️ Potential issue_ | _🟠 Major_ **Do not silently collapse unknown model strategies to `inherit`.** Line 377 treats any unrecognized raw value as if the route were inherited, ... url=https://github.com/TommyKammy/codex-supervisor/pull/1503#discussion_r3076937859
-  - src/setup-readiness.ts:577 summary=_⚠️ Potential issue_ | _🟡 Minor_ **Populate the blocker with the offending model field.** These blockers currently set `fieldKeys: []`, which means the setup shell renders them... url=https://github.com/TommyKammy/codex-supervisor/pull/1503#discussion_r3076937862
+  - src/setup-readiness.ts:493 summary=_⚠️ Potential issue_ | _🟡 Minor_ **Differentiate “all overrides” from a true mixed posture.** The final branch handles every non-all-`inherit` case, so a config with three expl... url=https://github.com/TommyKammy/codex-supervisor/pull/1503#discussion_r3076971459
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: The remaining review gaps were in setup-readiness reporting, not the authoritative config API itself. Raw strategy typos still rendered like inherited routing, and missing-model blockers were not tied back to the concrete `*Model` config key in the UI.
-- What changed: Setup readiness now preserves unsupported raw model strategy strings as invalid posture instead of collapsing them to `inherit`, and `buildBlockers` now fails closed both when a strategy is unsupported and when `target.missingExplicitModel` is true. Missing-model blockers now point at the offending `*Model` config field. Focused tests were added to cover both the unsupported-strategy path and the blocker field-key wiring.
+- Hypothesis: The remaining review gap was a posture-summary wording bug in setup readiness, not a config API problem. All-explicit per-target routing was still being summarized as "mixed" because the summary logic only distinguished "all inherit" from everything else.
+- What changed: `buildModelRoutingPosture` now counts inherited targets so it can distinguish all-inherit, all-explicit, and genuinely mixed routing. A focused regression test now covers the all-explicit case without pinning unrelated overall setup readiness state.
 - Current blocker: none
-- Next exact step: Commit the review-fix checkpoint on `codex/issue-1500`, then push the branch and reply to the unresolved PR threads if requested.
-- Verification gap: None locally after focused verification; PR threads remain unresolved on GitHub until the branch is pushed and the comments are answered or resolved.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/setup-readiness.ts`, `src/setup-readiness.test.ts`, `src/backend/setup-test-fixtures.ts`, `src/backend/supervisor-http-server.test.ts`
-- Rollback concern: Moderate; setup now correctly fails closed for invalid model-routing configs that were previously under-reported, so existing deployments with mistyped or incomplete `fixed`/`alias` routing can now be blocked during setup until the config is corrected.
-- Last focused command: `npx tsx --test src/setup-readiness.test.ts`
+- Next exact step: Commit this review-fix checkpoint on `codex/issue-1500`, then push the branch and resolve or reply to the remaining PR thread if requested.
+- Verification gap: None locally after `npx tsx --test src/setup-readiness.test.ts` and `npm run build`; the remaining work is GitHub thread state, not local correctness.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/setup-readiness.ts`, `src/setup-readiness.test.ts`
+- Rollback concern: Low; the code change only corrects the top-level setup-readiness posture copy for the already-supported all-explicit override case.
+- Last focused command: `npm run build`
 ### Scratchpad
 - Addressed review threads: preserve unsupported raw strategy strings in setup posture, point missing-model blockers at the relevant `*Model` key, and corrected the journal risk characterization.
+- Addressed review thread: distinguish fully explicit model routing from genuinely mixed inherit-plus-override routing in setup readiness posture text.
 - Keep this section short. The supervisor may compact older notes automatically.
