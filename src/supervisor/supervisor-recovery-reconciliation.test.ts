@@ -3856,6 +3856,212 @@ test("reconcileMergedIssueClosures backfills merged convergence provenance even 
   ]);
 });
 
+test("reconcileMergedIssueClosures bounds historical backlog processing and resumes from the persisted cursor on the next cycle", async () => {
+  const firstCycleHistoricalRecord = createRecord({
+    issue_number: 959,
+    state: "done",
+    pr_number: 1959,
+    last_head_sha: "stale-head-959",
+    last_recovery_reason:
+      "merged_pr_convergence: merged PR #1959 satisfied issue #959; marked issue #959 done",
+    updated_at: "2026-03-13T00:25:00Z",
+    last_recovery_at: "2026-03-13T00:25:00Z",
+    last_failure_context: null,
+    blocked_reason: null,
+    last_error: null,
+    last_failure_kind: null,
+    last_failure_signature: null,
+  });
+  const firstCycleRecentlyChangedRecord = createRecord({
+    issue_number: 960,
+    state: "done",
+    pr_number: 1960,
+    last_head_sha: "stale-head-960",
+    last_recovery_reason:
+      "merged_pr_convergence: merged PR #1960 satisfied issue #960; marked issue #960 done",
+    updated_at: "2026-03-13T00:25:00Z",
+    last_recovery_at: "2026-03-13T00:25:00Z",
+    last_failure_context: null,
+    blocked_reason: null,
+    last_error: null,
+    last_failure_kind: null,
+    last_failure_signature: null,
+  });
+  const secondCycleNonTerminalRecord = createRecord({
+    issue_number: 961,
+    state: "waiting_ci",
+    pr_number: 1961,
+    last_head_sha: "head-961",
+    updated_at: "2026-03-13T00:25:00Z",
+    last_recovery_at: "2026-03-13T00:25:00Z",
+    last_failure_context: null,
+    blocked_reason: null,
+    last_error: null,
+    last_failure_kind: null,
+    last_failure_signature: null,
+  });
+  const secondCycleSuspiciousDoneRecord = createRecord({
+    issue_number: 962,
+    state: "done",
+    pr_number: 1962,
+    last_head_sha: "wrong-head-962",
+    last_recovery_reason: null,
+    updated_at: "2026-03-13T00:25:00Z",
+    last_recovery_at: "2026-03-13T00:25:00Z",
+    last_failure_context: null,
+    blocked_reason: null,
+    last_error: null,
+    last_failure_kind: null,
+    last_failure_signature: null,
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      firstCycleHistoricalRecord,
+      firstCycleRecentlyChangedRecord,
+      secondCycleNonTerminalRecord,
+      secondCycleSuspiciousDoneRecord,
+    ],
+  });
+  const issues = [
+    createIssue({
+      number: firstCycleHistoricalRecord.issue_number,
+      state: "CLOSED",
+      updatedAt: "2026-03-13T00:30:00Z",
+    }),
+    createIssue({
+      number: firstCycleRecentlyChangedRecord.issue_number,
+      state: "CLOSED",
+      updatedAt: "2026-03-13T00:30:00Z",
+    }),
+    createIssue({
+      number: secondCycleNonTerminalRecord.issue_number,
+      state: "CLOSED",
+      updatedAt: "2026-03-13T00:20:00Z",
+    }),
+    createIssue({
+      number: secondCycleSuspiciousDoneRecord.issue_number,
+      state: "CLOSED",
+      updatedAt: "2026-03-13T00:20:00Z",
+    }),
+  ];
+  const mergedClosureLookups: number[] = [];
+  let saveCalls = 0;
+
+  const github = {
+    getMergedPullRequestsClosingIssue: async (issueNumber: number) => {
+      mergedClosureLookups.push(issueNumber);
+      if (issueNumber === 959) {
+        return [
+          createPullRequest({
+            number: 1959,
+            state: "MERGED",
+            headRefOid: "head-959",
+            mergedAt: "2026-03-13T00:29:00Z",
+          }),
+        ];
+      }
+      if (issueNumber === 960) {
+        return [
+          createPullRequest({
+            number: 1960,
+            state: "MERGED",
+            headRefOid: "head-960",
+            mergedAt: "2026-03-13T00:29:00Z",
+          }),
+        ];
+      }
+      if (issueNumber === 961) {
+        return [
+          createPullRequest({
+            number: 1961,
+            state: "MERGED",
+            headRefOid: "head-961",
+            mergedAt: "2026-03-13T00:19:00Z",
+          }),
+        ];
+      }
+      if (issueNumber === 962) {
+        return [
+          createPullRequest({
+            number: 1962,
+            state: "MERGED",
+            headRefOid: "head-962",
+            mergedAt: "2026-03-13T00:19:00Z",
+          }),
+        ];
+      }
+      return [];
+    },
+    getPullRequestIfExists: async () => null,
+    closePullRequest: async () => {
+      throw new Error("unexpected closePullRequest call");
+    },
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    getIssue: async () => {
+      throw new Error("unexpected getIssue call");
+    },
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:35:00Z",
+      };
+    },
+    save: async () => {
+      saveCalls += 1;
+    },
+  };
+
+  const firstCycleEvents = await reconcileMergedIssueClosures(
+    github,
+    stateStore,
+    state,
+    createConfig(),
+    issues,
+    null,
+    { maxRecords: 2 },
+  );
+
+  assert.deepEqual(mergedClosureLookups, [959, 960]);
+  assert.equal(state.reconciliation_state?.merged_issue_closures_last_processed_issue_number, 960);
+  assert.equal(state.issues["959"]?.last_head_sha, "head-959");
+  assert.equal(state.issues["960"]?.last_head_sha, "head-960");
+  assert.equal(state.issues["961"]?.state, "waiting_ci");
+  assert.equal(state.issues["962"]?.last_head_sha, "wrong-head-962");
+  assert.deepEqual(firstCycleEvents.map((event) => event.reason), [
+    "merged_pr_convergence: merged PR #1959 satisfied issue #959; marked issue #959 done",
+    "merged_pr_convergence: merged PR #1960 satisfied issue #960; marked issue #960 done",
+  ]);
+
+  const secondCycleEvents = await reconcileMergedIssueClosures(
+    github,
+    stateStore,
+    state,
+    createConfig(),
+    issues,
+    null,
+    { maxRecords: 2 },
+  );
+
+  assert.deepEqual(mergedClosureLookups, [959, 960, 961, 962]);
+  assert.equal(state.reconciliation_state?.merged_issue_closures_last_processed_issue_number, null);
+  assert.equal(state.issues["961"]?.state, "done");
+  assert.equal(state.issues["961"]?.pr_number, 1961);
+  assert.equal(state.issues["961"]?.last_head_sha, "head-961");
+  assert.equal(state.issues["962"]?.last_head_sha, "head-962");
+  assert.equal(saveCalls, 2);
+  assert.deepEqual(secondCycleEvents.map((event) => event.reason), [
+    "merged_pr_convergence: merged PR #1961 satisfied issue #961; marked issue #961 done",
+    "merged_pr_convergence: merged PR #1962 satisfied issue #962; marked issue #962 done",
+  ]);
+});
+
 test("reconcileStaleFailedIssueStates requeues failed no-PR issues when the issue definition changes materially", async () => {
   const config = createConfig();
   const originalIssue = createIssue({

@@ -56,6 +56,7 @@ interface RunOnceCyclePreludeArgs {
   reconcileMergedIssueClosures: (
     state: SupervisorStateFile,
     issues: GitHubIssue[],
+    updateReconciliationProgress: (patch: ReconciliationProgressPatch) => Promise<void>,
   ) => Promise<RecoveryEvent[]>;
   reconcileStaleFailedIssueStates: (
     state: SupervisorStateFile,
@@ -273,7 +274,7 @@ export async function runOnceCyclePrelude(
     emitRecoveryEvents(trackedMergedEvents);
 
     await setReconciliationPhase("merged_issue_closures");
-    const mergedIssueClosureEvents = await args.reconcileMergedIssueClosures(state, issues);
+    const mergedIssueClosureEvents = await args.reconcileMergedIssueClosures(state, issues, updateReconciliationProgress);
     recoveryEvents.push(...mergedIssueClosureEvents);
     emitRecoveryEvents(mergedIssueClosureEvents);
 

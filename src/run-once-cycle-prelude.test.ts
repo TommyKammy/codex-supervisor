@@ -844,7 +844,13 @@ test("runOnceCyclePrelude publishes reconciliation target updates within a phase
       });
       return [];
     },
-    reconcileMergedIssueClosures: async () => [],
+    reconcileMergedIssueClosures: async (_loadedState, _loadedIssues, updateReconciliationProgress) => {
+      await updateReconciliationProgress({
+        targetIssueNumber: 88,
+        targetPrNumber: 188,
+      });
+      return [];
+    },
     reconcileStaleFailedIssueStates: async () => {},
     reconcileRecoverableBlockedIssueStates: async () => [],
     reconcileParentEpicClosures: async () => [],
@@ -874,6 +880,12 @@ test("runOnceCyclePrelude publishes reconciliation target updates within a phase
       phase: "merged_issue_closures",
       targetIssueNumber: null,
       targetPrNumber: null,
+      waitStep: null,
+    },
+    {
+      phase: "merged_issue_closures",
+      targetIssueNumber: 88,
+      targetPrNumber: 188,
       waitStep: null,
     },
     {

@@ -396,6 +396,7 @@ export interface SupervisorStateFile {
   issues: Record<string, IssueRunRecord>;
   reconciliation_state?: {
     tracked_merged_but_open_last_processed_issue_number?: number | null;
+    merged_issue_closures_last_processed_issue_number?: number | null;
   };
   inventory_refresh_failure?: InventoryRefreshFailure;
   last_successful_inventory_snapshot?: LastSuccessfulInventorySnapshot;

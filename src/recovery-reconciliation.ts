@@ -230,6 +230,67 @@ function orderTrackedMergedButOpenRecordsForResume(
   ];
 }
 
+function mergedIssueClosuresLastProcessedIssueNumber(state: SupervisorStateFile): number | null {
+  return state.reconciliation_state?.merged_issue_closures_last_processed_issue_number ?? null;
+}
+
+function setMergedIssueClosuresLastProcessedIssueNumber(
+  state: SupervisorStateFile,
+  issueNumber: number | null,
+): boolean {
+  const currentIssueNumber = mergedIssueClosuresLastProcessedIssueNumber(state);
+  if (currentIssueNumber === issueNumber) {
+    return false;
+  }
+
+  state.reconciliation_state = {
+    ...(state.reconciliation_state ?? {}),
+    merged_issue_closures_last_processed_issue_number: issueNumber,
+  };
+  return true;
+}
+
+function orderMergedIssueClosureRecordsForResume(
+  records: IssueRunRecord[],
+  lastProcessedIssueNumber: number | null,
+): IssueRunRecord[] {
+  const ordered = [...records].sort((left, right) => left.issue_number - right.issue_number);
+  if (lastProcessedIssueNumber === null) {
+    return ordered;
+  }
+
+  const nextIndex = ordered.findIndex((record) => record.issue_number > lastProcessedIssueNumber);
+  if (nextIndex === -1) {
+    return ordered;
+  }
+
+  return [
+    ...ordered.slice(nextIndex),
+    ...ordered.slice(0, nextIndex),
+  ];
+}
+
+function prioritizeMergedIssueClosureRecords(
+  records: IssueRunRecord[],
+  lastProcessedIssueNumber: number | null,
+  activeIssueNumber: number | null,
+): IssueRunRecord[] {
+  const activeRecord = activeIssueNumber === null
+    ? null
+    : records.find((record) => record.issue_number === activeIssueNumber) ?? null;
+  const remainingRecords = activeRecord === null
+    ? records
+    : records.filter((record) => record.issue_number !== activeRecord.issue_number);
+  const orderedRemainingRecords = orderMergedIssueClosureRecordsForResume(
+    remainingRecords,
+    activeRecord === null ? lastProcessedIssueNumber : activeRecord.issue_number,
+  );
+
+  return activeRecord === null
+    ? orderedRemainingRecords
+    : [activeRecord, ...orderedRemainingRecords];
+}
+
 export function buildRecoveryEvent(issueNumber: number, reason: string): RecoveryEvent {
   return {
     issueNumber,
@@ -603,24 +664,52 @@ export async function reconcileMergedIssueClosures(
   state: SupervisorStateFile,
   config: SupervisorConfig,
   issues: GitHubIssue[],
+  updateReconciliationProgress: ((patch: {
+    targetIssueNumber?: number | null;
+    targetPrNumber?: number | null;
+    waitStep?: string | null;
+  }) => Promise<void>) | null = null,
+  options: {
+    maxRecords?: number | null;
+  } = {},
 ): Promise<RecoveryEvent[]> {
-  let changed = false;
+  const defaultMaxRecordsPerCycle = 25;
+  const maxRecordsPerCycle =
+    typeof options.maxRecords === "number" && Number.isFinite(options.maxRecords) && options.maxRecords >= 1
+      ? Math.floor(options.maxRecords)
+      : defaultMaxRecordsPerCycle;
+  let saveNeeded = false;
   const recoveryEvents: RecoveryEvent[] = [];
   const issueByNumber = new Map(issues.map((issue) => [issue.number, issue]));
-
-  for (const record of Object.values(state.issues)) {
+  const revalidationEligibleRecords = Object.values(state.issues).filter((record) => {
     const issue = issueByNumber.get(record.issue_number);
-    if (issue?.state !== "CLOSED") {
+    return issue?.state === "CLOSED" && shouldRevalidateMergedIssueClosureRecord(record, issue, state.activeIssueNumber);
+  });
+  const orderedRecords = prioritizeMergedIssueClosureRecords(
+    revalidationEligibleRecords,
+    mergedIssueClosuresLastProcessedIssueNumber(state),
+    state.activeIssueNumber,
+  );
+  let processedRecords = 0;
+  let lastProcessedIssueNumber: number | null = null;
+
+  for (const record of orderedRecords) {
+    if (processedRecords >= maxRecordsPerCycle) {
+      break;
+    }
+    processedRecords += 1;
+    lastProcessedIssueNumber = record.issue_number;
+
+    await updateReconciliationProgress?.({
+      targetIssueNumber: record.issue_number,
+      targetPrNumber: record.pr_number,
+      waitStep: null,
+    });
+
+    const issue = issueByNumber.get(record.issue_number);
+    if (!issue) {
       continue;
     }
-
-    // Historical done records with no newer GitHub activity do not need a fresh
-    // merged-closure GraphQL scan every cycle. Revalidate only active, non-terminal,
-    // or recently changed closed issues.
-    if (!shouldRevalidateMergedIssueClosureRecord(record, issue, state.activeIssueNumber)) {
-      continue;
-    }
-
     const satisfyingPullRequests = await github.getMergedPullRequestsClosingIssue(record.issue_number);
     const satisfyingPullRequest = satisfyingPullRequests[0] ?? null;
 
@@ -629,11 +718,11 @@ export async function reconcileMergedIssueClosures(
       if (needsRecordUpdate(record, patch)) {
         const updated = stateStore.touch(record, patch);
         state.issues[String(record.issue_number)] = updated;
-        changed = true;
+        saveNeeded = true;
       }
       if (state.activeIssueNumber === record.issue_number) {
         state.activeIssueNumber = null;
-        changed = true;
+        saveNeeded = true;
       }
       continue;
     }
@@ -664,7 +753,7 @@ export async function reconcileMergedIssueClosures(
       );
       const updated = stateStore.touch(record, applyRecoveryEvent(patch, recoveryEvent));
       state.issues[String(record.issue_number)] = updated;
-      changed = true;
+      saveNeeded = true;
       recoveryEvents.push(recoveryEvent);
       await syncExecutionMetricsRunSummarySafely({
         previousRecord: record,
@@ -692,11 +781,19 @@ export async function reconcileMergedIssueClosures(
     }
     if (state.activeIssueNumber === record.issue_number) {
       state.activeIssueNumber = null;
-      changed = true;
+      saveNeeded = true;
     }
   }
 
-  if (changed) {
+  const nextLastProcessedIssueNumber =
+    processedRecords === 0 || processedRecords >= orderedRecords.length
+      ? null
+      : lastProcessedIssueNumber;
+  if (setMergedIssueClosuresLastProcessedIssueNumber(state, nextLastProcessedIssueNumber)) {
+    saveNeeded = true;
+  }
+
+  if (saveNeeded) {
     await stateStore.save(state);
   }
 
