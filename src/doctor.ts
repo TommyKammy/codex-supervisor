@@ -144,6 +144,54 @@ function overallStatusForChecks(checks: DoctorCheck[]): DoctorCheckStatus {
   return "pass";
 }
 
+function withReconciliationBacklogStateReadFailure(
+  checks: DoctorCheck[],
+  config: SupervisorConfig,
+  error: unknown,
+): DoctorCheck[] {
+  const message = error instanceof Error ? error.message : String(error);
+  const summary = config.stateBackend === "json"
+    ? `Failed to read JSON state file for reconciliation backlog diagnostics: ${config.stateFile}`
+    : `Failed to read SQLite state file for reconciliation backlog diagnostics: ${config.stateFile}`;
+  const detail = `reconciliation_backlog_state_read_failed location=${config.stateFile} message=${message}`;
+  let replaced = false;
+
+  const nextChecks = checks.map((check) => {
+    if (check.name !== "state_file") {
+      return check;
+    }
+
+    replaced = true;
+    if (check.status === "fail") {
+      return {
+        ...check,
+        details: [...check.details, detail],
+      };
+    }
+
+    return {
+      ...check,
+      status: "fail" as DoctorCheckStatus,
+      summary,
+      details: [...check.details, detail],
+    };
+  });
+
+  if (replaced) {
+    return nextChecks;
+  }
+
+  return [
+    ...checks,
+    {
+      name: "state_file",
+      status: "fail",
+      summary,
+      details: [detail],
+    },
+  ];
+}
+
 async function commandOnPath(command: string): Promise<string | null> {
   const result = await runCommand("which", [command], { allowExitCodes: [0, 1] });
   return result.exitCode === 0 ? result.stdout.trim().split(/\r?\n/, 1)[0] ?? null : null;
@@ -605,7 +653,7 @@ export async function diagnoseSupervisorHost(args: DiagnoseSupervisorHostArgs): 
     args.github ??
     new GitHubClient(args.config);
 
-  const checks = await Promise.all([
+  const checks: DoctorCheck[] = await Promise.all([
     diagnoseGitHubAuth(authStatus),
     diagnoseCodexCli(args.config),
     diagnoseStateFile(args.config),
@@ -622,13 +670,21 @@ export async function diagnoseSupervisorHost(args: DiagnoseSupervisorHostArgs): 
       activeRecord: null,
     }),
   );
-  const state = await loadState();
+  let state: SupervisorStateFile | null = null;
+  let finalChecks = checks;
+  try {
+    state = await loadState();
+  } catch (error) {
+    finalChecks = withReconciliationBacklogStateReadFailure(checks, args.config, error);
+  }
 
   return {
-    overallStatus: overallStatusForChecks(checks),
-    checks,
+    overallStatus: overallStatusForChecks(finalChecks),
+    checks: finalChecks,
     codexModelPolicyLines,
-    reconciliationBacklogLine: buildTrackedMergedButOpenBacklogDiagnosticLine(state, "doctor_reconciliation_backlog"),
+    reconciliationBacklogLine: state === null
+      ? null
+      : buildTrackedMergedButOpenBacklogDiagnosticLine(state, "doctor_reconciliation_backlog"),
     trustDiagnostics: summarizeTrustDiagnostics(args.config),
     cadenceDiagnostics: summarizeCadenceDiagnostics(args.config),
     candidateDiscoverySummary: formatCandidateDiscoveryBehaviorLine(args.config, "doctor_candidate_discovery"),

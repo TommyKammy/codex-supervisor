@@ -184,6 +184,62 @@ test("diagnoseSupervisorHost degrades malformed synthetic recovery records witho
   );
 });
 
+test("diagnoseSupervisorHost records reconciliation backlog reload failures without throwing", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-doctor-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = path.join(root, "repo");
+  const workspaceRoot = path.join(root, "workspaces");
+  const stateFile = path.join(root, "state.json");
+  await fs.mkdir(repoPath, { recursive: true });
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  await fs.writeFile(stateFile, `${JSON.stringify({
+    activeIssueNumber: null,
+    issues: {},
+  }, null, 2)}\n`, "utf8");
+  execFileSync("git", ["init", "-b", "main"], { cwd: repoPath });
+
+  let loadStateCalls = 0;
+  const diagnostics = await diagnoseSupervisorHost({
+    config: createConfig({
+      repoPath,
+      workspaceRoot,
+      stateFile,
+      codexBinary: process.execPath,
+    }),
+    authStatus: async () => ({ ok: true, message: null }),
+    loadState: async () => {
+      loadStateCalls += 1;
+      if (loadStateCalls === 1) {
+        return {
+          activeIssueNumber: null,
+          issues: {},
+        };
+      }
+
+      throw new Error("EACCES: permission denied");
+    },
+  });
+
+  assert.equal(loadStateCalls, 2);
+  assert.equal(diagnostics.overallStatus, "fail");
+  assert.equal(diagnostics.reconciliationBacklogLine, null);
+  assert.equal(diagnostics.checks.find((check) => check.name === "github_auth")?.status, "pass");
+  assert.equal(diagnostics.checks.find((check) => check.name === "codex_cli")?.status, "pass");
+  assert.equal(diagnostics.checks.find((check) => check.name === "state_file")?.status, "fail");
+  assert.equal(diagnostics.checks.find((check) => check.name === "worktrees")?.status, "pass");
+  assert.match(
+    diagnostics.checks.find((check) => check.name === "state_file")?.summary ?? "",
+    /Failed to read JSON state file for reconciliation backlog diagnostics:/,
+  );
+  assert.match(
+    renderDoctorReport(diagnostics),
+    /doctor_detail name=state_file detail=reconciliation_backlog_state_read_failed location=.*state\.json message=EACCES: permission denied/,
+  );
+});
+
 test("diagnoseSupervisorHost does not skip synthetic-like records missing recovery metadata", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-doctor-"));
   t.after(async () => {

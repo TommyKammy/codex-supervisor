@@ -5,29 +5,42 @@
 - Branch: codex/issue-1528
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: reproducing
-- Attempt count: 1 (implementation=1, repair=0)
-- Last head SHA: c6699985f008033c5ac92f965a84c68729193330
+- Current phase: addressing_review
+- Attempt count: 2 (implementation=1, repair=1)
+- Last head SHA: 1fee534698200459364f83a7ced37678f99e1858
 - Blocked reason: none
-- Last failure signature: none
-- Repeated failure signature count: 0
-- Updated at: 2026-04-14T12:21:28.003Z
+- Last failure signature: PRRT_kwDORgvdZ856z87d
+- Repeated failure signature count: 1
+- Updated at: 2026-04-14T12:36:09.008Z
 
 ## Latest Codex Summary
-- Added bounded-backlog observability for `tracked_merged_but_open_issues`: recovery events now say when a pass deferred remaining tracked PR backlog, and status/doctor now surface the persisted resume cursor and backlog counts.
+Added bounded observability for `tracked_merged_but_open_issues`. The reconciliation path now emits an explicit recovery event when it stops at the per-cycle budget with backlog remaining, and read-only `status`/`doctor` now show the persisted resume cursor plus tracked backlog counts so operators can tell the loop is draining work rather than stuck. I also added a shared backlog-diagnostics helper and updated the focused reconciliation/diagnostics tests accordingly.
+
+Checkpoint commit: `1fee534` (`Bound tracked PR reconciliation backlog diagnostics`)
+
+Summary: Added bounded tracked-PR backlog diagnostics to recovery/status/doctor and committed the change as `1fee534`
+State hint: stabilizing
+Blocked reason: none
+Tests: `npx tsx --test src/recovery-tracked-pr-reconciliation.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/run-once-cycle-prelude.test.ts`; `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts`; `npm run build`
+Next action: Open or update the PR with commit `1fee534`, then proceed with normal review/CI checks
+Failure signature: PRRT_kwDORgvdZ856z87d
 
 ## Active Failure Context
-- None recorded.
+- Category: review
+- Summary: 1 unresolved automated review thread(s) remain.
+- Reference: https://github.com/TommyKammy/codex-supervisor/pull/1529#discussion_r3079464712
+- Details:
+  - src/doctor.ts:631 summary=_⚠️ Potential issue_ | _🟠 Major_ **Guard backlog-state loading so doctor doesn’t fail hard on state-read errors.** Line 625 introduces an unguarded `loadState()` call. url=https://github.com/TommyKammy/codex-supervisor/pull/1529#discussion_r3079464712
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: `tracked_merged_but_open_issues` was already cursor-backed and capped, but operators still lacked a clear signal that a pass intentionally stopped early and would resume from persisted state next cycle.
-- What changed: Added a bounded-backlog recovery event in tracked PR reconciliation; added shared tracked-backlog diagnostics used by read-only status and doctor; expanded focused tests and updated supervisor reconciliation expectations for the new event.
+- Hypothesis: the bounded backlog diagnostics were correct, but `doctor` still had one unguarded follow-up `loadState()` call after the main checks that could abort the whole command on filesystem read errors.
+- What changed: Guarded the backlog-only `loadState()` call in `diagnoseSupervisorHost`, degrade that failure into the canonical `state_file` doctor check with an explicit detail line, suppress the backlog diagnostic line when the follow-up read fails, and added a regression test for the second-read-throws path.
 - Current blocker: none
-- Next exact step: stage the code+journal changes, commit the checkpoint on `codex/issue-1528`, and leave the branch ready for PR/update work.
-- Verification gap: none for the targeted issue scope; broader unrelated suites were not rerun beyond the focused reconciliation and diagnostics coverage.
-- Files touched: `.codex-supervisor/issue-journal.md`, `src/recovery-tracked-pr-reconciliation.ts`, `src/reconciliation-backlog-diagnostics.ts`, `src/supervisor/supervisor-read-only-reporting.ts`, `src/doctor.ts`, `src/recovery-tracked-pr-reconciliation.test.ts`, `src/supervisor/supervisor-recovery-reconciliation.test.ts`, `src/supervisor/supervisor-diagnostics-status-selection.test.ts`
-- Rollback concern: low; the new runtime behavior is additive observability plus one extra recovery event on bounded passes, but any automation that assumed an exact single-event list for tracked PR bounded passes would need the updated expectations already included here.
-- Last focused command: `npx tsx --test src/recovery-tracked-pr-reconciliation.test.ts src/supervisor/supervisor-recovery-reconciliation.test.ts src/run-once-cycle-prelude.test.ts`
+- Next exact step: commit the doctor review fix on `codex/issue-1528`, push the branch, and let the PR resync against the remaining review thread.
+- Verification gap: none for this review-fix scope; I reran focused doctor/status diagnostics coverage plus a clean build and did not rerun unrelated reconciliation suites this turn.
+- Files touched: `.codex-supervisor/issue-journal.md`, `src/doctor.ts`, `src/doctor.test.ts`
+- Rollback concern: low; the change only affects `doctor` resilience when the diagnostic-only backlog reload fails, and the new failure mode is an explicit `state_file` diagnostic instead of a thrown command.
+- Last focused command: `npx tsx --test src/doctor.test.ts src/supervisor/supervisor-diagnostics-status-selection.test.ts`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.
