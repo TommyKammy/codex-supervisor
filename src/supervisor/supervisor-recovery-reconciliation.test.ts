@@ -4617,6 +4617,96 @@ test("reconcileTrackedMergedButOpenIssues resumes from the next higher issue whe
   ]);
 });
 
+test("reconcileTrackedMergedButOpenIssues prioritizes recoverable tracked PR records ahead of historical done records", async () => {
+  const recoverableRecord = createRecord({
+    issue_number: 450,
+    state: "merging",
+    branch: "codex/reopen-issue-450",
+    pr_number: 901,
+    blocked_reason: null,
+  });
+  const historicalDoneRecords = Array.from({ length: 30 }, (_, index) =>
+    createRecord({
+      issue_number: 300 + index,
+      state: "done",
+      branch: `codex/historical-done-${300 + index}`,
+      pr_number: 800 + index,
+      blocked_reason: null,
+    }));
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [...historicalDoneRecords, recoverableRecord],
+  });
+  const closedIssue = createIssue({
+    number: 450,
+    title: "Recoverable merging issue",
+    updatedAt: "2026-03-13T00:23:00Z",
+    state: "CLOSED",
+  });
+  const mergedPr = createPullRequest({
+    number: 901,
+    title: "Recoverable tracked PR",
+    url: "https://example.test/pr/901",
+    state: "MERGED",
+    headRefName: "codex/reopen-issue-450",
+    headRefOid: "merged-head-901",
+    mergedAt: "2026-03-13T00:22:00Z",
+  });
+
+  const prLookups: number[] = [];
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const recoveryEvents = await reconcileTrackedMergedButOpenIssues(
+    {
+      getPullRequestIfExists: async (prNumber) => {
+        prLookups.push(prNumber);
+        if (prNumber === 901) {
+          return mergedPr;
+        }
+        return null;
+      },
+      getIssue: async (issueNumber) => {
+        assert.equal(issueNumber, 450);
+        return closedIssue;
+      },
+      closeIssue: async () => {
+        throw new Error("unexpected closeIssue call");
+      },
+      closePullRequest: async () => {
+        throw new Error("unexpected closePullRequest call");
+      },
+      getChecks: async () => [],
+      getMergedPullRequestsClosingIssue: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    stateStore,
+    state,
+    createConfig(),
+    [closedIssue],
+    null,
+  );
+
+  assert.equal(prLookups[0], 901);
+  assert.equal(prLookups.includes(901), true);
+  assert.equal(saveCalls, 1);
+  assert.equal(state.issues["450"]?.state, "done");
+  assert.equal(state.issues["450"]?.last_head_sha, "merged-head-901");
+  assert.deepEqual(recoveryEvents.map((event) => event.reason), [
+    "merged_pr_convergence: tracked PR #901 merged; marked issue #450 done",
+  ]);
+});
+
 test("reconcileTrackedMergedButOpenIssues keeps merged convergence done when audit persistence fails", async () => {
   const artifactRootFile = path.join(
     await fs.mkdtemp(path.join(os.tmpdir(), "reconcile-audit-failure-")),
