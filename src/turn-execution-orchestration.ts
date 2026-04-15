@@ -356,7 +356,8 @@ export function nextReviewFollowUpPatch(args: {
         typeof thread.path === "string" &&
         thread.path.trim().length > 0 &&
         typeof thread.line === "number" &&
-        Number.isFinite(thread.line) &&
+        Number.isInteger(thread.line) &&
+        thread.line > 0 &&
         latestComment !== null &&
         latestComment.body.trim().length >= 32 &&
         latestComment.body.trim().split(/\s+/).length >= 6
