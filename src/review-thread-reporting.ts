@@ -144,7 +144,7 @@ export function staleConfiguredBotReviewThreads(
   pr: Pick<GitHubPullRequest, "headRefOid">,
   reviewThreads: ReviewThread[],
 ): ReviewThread[] {
-  const configuredThreads = configuredBotReviewThreads(config, reviewThreads);
+  const configuredThreads = actionableConfiguredBotReviewThreads(config, reviewThreads);
   if (configuredThreads.length === 0) {
     return [];
   }
@@ -158,6 +158,15 @@ export function staleConfiguredBotReviewThreads(
   }
 
   return configuredThreads;
+}
+
+export function nonActionableConfiguredBotReviewThreads(
+  config: SupervisorConfig,
+  reviewThreads: ReviewThread[],
+): ReviewThread[] {
+  return configuredBotReviewThreads(config, reviewThreads).filter(
+    (thread) => !latestReviewCommentAuthorIsAllowedBot(config, thread),
+  );
 }
 
 export function buildReviewFailureContext(reviewThreads: ReviewThread[]): FailureContext | null {
@@ -231,6 +240,31 @@ export function buildStalledBotReviewFailureContext(
         ? `${reviewThreads.length} configured bot review thread(s) remain unresolved after exhausting the one allowed same-head follow-up repair turn and now require manual attention.`
         : `${reviewThreads.length} configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.`,
     signature: reviewThreads.map((thread) => `stalled-bot:${thread.id}`).join("|"),
+    command: null,
+    details,
+    url: reviewThreads[0]?.comments.nodes[0]?.url ?? null,
+    updated_at: nowIso(),
+  };
+}
+
+export function buildNonActionableConfiguredBotReviewFailureContext(
+  reviewThreads: ReviewThread[],
+): FailureContext | null {
+  if (reviewThreads.length === 0) {
+    return null;
+  }
+
+  const details = reviewThreads.slice(0, 5).map((thread) => {
+    const latestComment = latestReviewComment(thread);
+    const author = latestComment?.author?.login ?? "unknown";
+    return `reviewer=${author} file=${thread.path ?? "unknown"} line=${thread.line ?? "?"} processed_on_current_head=no latest_comment_actionable=no`;
+  });
+
+  return {
+    category: "manual",
+    summary:
+      `${reviewThreads.length} configured bot review thread(s) remain unresolved, but the latest comment is no longer actionable by an allowed review bot on the current head, so manual attention is required.`,
+    signature: reviewThreads.map((thread) => `non-actionable-bot:${thread.id}`).join("|"),
     command: null,
     details,
     url: reviewThreads[0]?.comments.nodes[0]?.url ?? null,

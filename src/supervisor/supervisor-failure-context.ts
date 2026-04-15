@@ -9,11 +9,14 @@ import {
   configuredBotReviewFollowUpState,
   configuredBotReviewThreads,
   buildManualReviewFailureContext,
+  buildNonActionableConfiguredBotReviewFailureContext,
   buildRequestedChangesFailureContext,
   buildReviewFailureContext,
   buildStalledBotReviewFailureContext,
   manualReviewThreads,
+  nonActionableConfiguredBotReviewThreads,
   pendingBotReviewThreads,
+  staleConfiguredBotReviewThreads,
 } from "../review-thread-reporting";
 import {
   localReviewBlocksMerge,
@@ -63,10 +66,16 @@ export function inferFailureContext(
         return reviewContext;
       }
 
+      const nonActionableConfiguredBotContext = buildNonActionableConfiguredBotReviewFailureContext(
+        nonActionableConfiguredBotReviewThreads(config, reviewThreads),
+      );
+      if (nonActionableConfiguredBotContext) {
+        return nonActionableConfiguredBotContext;
+      }
+
       const stalledBotReviewContext = buildStalledBotReviewFailureContext(
-        configuredBotReviewThreads(config, reviewThreads),
-        configuredBotReviewFollowUpState(config, record, pr, configuredBotReviewThreads(config, reviewThreads)) ===
-          "exhausted"
+        staleConfiguredBotReviewThreads(config, record, pr, reviewThreads),
+        configuredBotReviewFollowUpState(config, record, pr, configuredBotReviewThreads(config, reviewThreads)) === "exhausted"
           ? "exhausted_follow_up"
           : "no_progress",
       );
@@ -106,8 +115,15 @@ export function inferFailureContext(
       return reviewContext;
     }
 
+    const nonActionableConfiguredBotContext = buildNonActionableConfiguredBotReviewFailureContext(
+      nonActionableConfiguredBotReviewThreads(config, reviewThreads),
+    );
+    if (nonActionableConfiguredBotContext) {
+      return nonActionableConfiguredBotContext;
+    }
+
     const stalledBotReviewContext = buildStalledBotReviewFailureContext(
-      configuredBotReviewThreads(config, reviewThreads),
+      staleConfiguredBotReviewThreads(config, record, pr, reviewThreads),
       configuredBotReviewFollowUpState(config, record, pr, configuredBotReviewThreads(config, reviewThreads)) === "exhausted"
         ? "exhausted_follow_up"
         : "no_progress",
