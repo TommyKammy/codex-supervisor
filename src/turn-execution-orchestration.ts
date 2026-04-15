@@ -17,6 +17,7 @@ import {
   processedReviewThreadKey,
 } from "./review-handling";
 import {
+  actionableConfiguredBotReviewThreads,
   configuredBotReviewThreads,
   latestReviewCommentAuthorIsAllowedBot,
 } from "./review-thread-reporting";
@@ -57,6 +58,7 @@ function shouldLoadExternalReviewContext(args: {
 }
 
 export function selectReviewThreadsForTurn(args: {
+  config: Pick<SupervisorConfig, "reviewBotLogins" | "configuredReviewProviders">;
   preRunState: IssueRunRecord["state"];
   record: Pick<
     IssueRunRecord,
@@ -74,16 +76,23 @@ export function selectReviewThreadsForTurn(args: {
   }
 
   const currentPr = args.pr;
-  const pendingThreads = args.reviewThreads.filter((thread) => !hasProcessedReviewThread(args.record, currentPr, thread));
+  const actionableFollowUpThreads = actionableConfiguredBotReviewThreads(
+    args.config as SupervisorConfig,
+    args.reviewThreads,
+  ).filter((thread) => !thread.isResolved && !thread.isOutdated);
+  const pendingThreads = actionableFollowUpThreads.filter(
+    (thread) => !hasProcessedReviewThread(args.record, currentPr, thread),
+  );
   if (pendingThreads.length > 0) {
     return pendingThreads;
   }
 
   return (
     args.record.review_follow_up_head_sha === currentPr.headRefOid &&
-    (args.record.review_follow_up_remaining ?? 0) > 0
+    (args.record.review_follow_up_remaining ?? 0) > 0 &&
+    actionableFollowUpThreads.length > 0
   )
-    ? args.reviewThreads
+    ? actionableFollowUpThreads
     : pendingThreads;
 }
 
@@ -123,6 +132,7 @@ export async function prepareCodexTurnPrompt(args: {
   reviewThreadsToProcess: ReviewThread[];
 }> {
   const reviewThreadsToProcess = selectReviewThreadsForTurn({
+    config: args.config,
     preRunState: args.record.state,
     record: args.record,
     pr: args.pr,
@@ -328,12 +338,18 @@ export function nextReviewFollowUpPatch(args: {
     configuredBotReviewThreads(args.config as SupervisorConfig, reviewThreads).filter(
       (thread) => !thread.isResolved && !thread.isOutdated,
     );
+  const unresolvedActionableConfiguredBotThreads = (reviewThreads: ReviewThread[]) =>
+    actionableConfiguredBotReviewThreads(args.config as SupervisorConfig, reviewThreads).filter(
+      (thread) => !thread.isResolved && !thread.isOutdated,
+    );
 
   const preRunConfiguredThreads = unresolvedConfiguredBotThreads(args.preRunReviewThreads);
   const postRunConfiguredThreads = unresolvedConfiguredBotThreads(args.postRunReviewThreads);
   if (postRunConfiguredThreads.length === 0) {
     return defaultPatch;
   }
+
+  const postRunActionableConfiguredThreads = unresolvedActionableConfiguredBotThreads(args.postRunReviewThreads);
 
   if (
     args.record.review_follow_up_head_sha === args.evaluatedReviewHeadSha &&
@@ -351,9 +367,9 @@ export function nextReviewFollowUpPatch(args: {
     postRunConfiguredThreads.length < preRunConfiguredThreads.length ||
     [...preRunIds].some((threadId) => !postRunIds.has(threadId));
   const hasNarrowActionableThreadSet =
-    postRunConfiguredThreads.length > 0 &&
-    postRunConfiguredThreads.length <= MAX_NARROW_ACTIONABLE_REVIEW_THREADS &&
-    postRunConfiguredThreads.every((thread) => {
+    postRunActionableConfiguredThreads.length > 0 &&
+    postRunActionableConfiguredThreads.length <= MAX_NARROW_ACTIONABLE_REVIEW_THREADS &&
+    postRunActionableConfiguredThreads.every((thread) => {
       const latestComment = thread.comments.nodes[thread.comments.nodes.length - 1] ?? null;
       return (
         latestReviewCommentAuthorIsAllowedBot(args.config as SupervisorConfig, thread) &&
@@ -368,7 +384,7 @@ export function nextReviewFollowUpPatch(args: {
       );
     });
 
-  return madeProgress || hasNarrowActionableThreadSet
+  return (madeProgress && postRunActionableConfiguredThreads.length > 0) || hasNarrowActionableThreadSet
     ? {
         review_follow_up_head_sha: args.evaluatedReviewHeadSha,
         review_follow_up_remaining: 1,

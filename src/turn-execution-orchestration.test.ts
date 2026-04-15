@@ -70,6 +70,9 @@ test("nextProcessedReviewThreadPatch refreshes reprocessed same-head ids to the 
 
 test("selectReviewThreadsForTurn re-includes same-head configured-bot threads when the follow-up allowance is active", () => {
   const selected = selectReviewThreadsForTurn({
+    config: createConfig({
+      reviewBotLogins: ["copilot-pull-request-reviewer"],
+    }),
     preRunState: "addressing_review",
     record: {
       processed_review_thread_ids: ["thread-1@head-a"],
@@ -84,6 +87,54 @@ test("selectReviewThreadsForTurn re-includes same-head configured-bot threads wh
 
   assert.equal(selected.length, 1);
   assert.equal(selected[0]?.id, "thread-1");
+});
+
+test("selectReviewThreadsForTurn does not reopen same-head follow-up when stale bookkeeping remains for non-actionable configured-bot threads", () => {
+  const selected = selectReviewThreadsForTurn({
+    config: createConfig({
+      reviewBotLogins: ["copilot-pull-request-reviewer"],
+    }),
+    preRunState: "addressing_review",
+    record: {
+      processed_review_thread_ids: ["thread-1@head-a"],
+      processed_review_thread_fingerprints: ["thread-1@head-a#comment-1"],
+      last_head_sha: "head-a",
+      review_follow_up_head_sha: "head-a",
+      review_follow_up_remaining: 1,
+    },
+    pr: createPullRequest({ headRefOid: "head-a" }),
+    reviewThreads: [
+      createReviewThread({
+        id: "thread-1",
+        comments: {
+          nodes: [
+            {
+              id: "comment-1",
+              body: "Please address this.",
+              createdAt: "2026-03-11T00:00:00Z",
+              url: "https://example.test/pr/44#discussion_r1",
+              author: {
+                login: "copilot-pull-request-reviewer",
+                typeName: "Bot",
+              },
+            },
+            {
+              id: "comment-2",
+              body: "The latest reply is from a human, so stale follow-up bookkeeping must not reopen this same-head repair turn.",
+              createdAt: "2026-03-11T00:05:00Z",
+              url: "https://example.test/pr/44#discussion_r2",
+              author: {
+                login: "human-reviewer",
+                typeName: "User",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+  });
+
+  assert.deepEqual(selected, []);
 });
 
 test("nextReviewFollowUpPatch grants one same-head follow-up after partial configured-bot progress", () => {
@@ -106,6 +157,77 @@ test("nextReviewFollowUpPatch grants one same-head follow-up after partial confi
   assert.deepEqual(patch, {
     review_follow_up_head_sha: "head-a",
     review_follow_up_remaining: 1,
+  });
+});
+
+test("nextReviewFollowUpPatch clears same-head follow-up after progress when remaining configured-bot threads are no longer actionable", () => {
+  const patch = nextReviewFollowUpPatch({
+    config: createConfig({ reviewBotLogins: ["copilot-pull-request-reviewer"] }),
+    preRunState: "addressing_review",
+    record: {
+      review_follow_up_head_sha: null,
+      review_follow_up_remaining: 0,
+    },
+    currentPr: { headRefOid: "head-a" },
+    evaluatedReviewHeadSha: "head-a",
+    preRunReviewThreads: [
+      createReviewThread({ id: "thread-1" }),
+      createReviewThread({
+        id: "thread-2",
+        path: "src/a.ts",
+        line: 10,
+        comments: {
+          nodes: [
+            {
+              id: "comment-2",
+              body: "Guard the nullable payload before accessing nested properties here.",
+              createdAt: "2026-03-11T00:00:00Z",
+              url: "https://example.test/pr/44#discussion_r2",
+              author: {
+                login: "copilot-pull-request-reviewer",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+    postRunReviewThreads: [
+      createReviewThread({
+        id: "thread-2",
+        path: "src/a.ts",
+        line: 10,
+        comments: {
+          nodes: [
+            {
+              id: "comment-2",
+              body: "Guard the nullable payload before accessing nested properties here.",
+              createdAt: "2026-03-11T00:00:00Z",
+              url: "https://example.test/pr/44#discussion_r2",
+              author: {
+                login: "copilot-pull-request-reviewer",
+                typeName: "Bot",
+              },
+            },
+            {
+              id: "comment-3",
+              body: "The latest guidance here is now a Codex reply, so progress should not arm another same-head retry.",
+              createdAt: "2026-03-11T00:05:00Z",
+              url: "https://example.test/pr/44#discussion_r3",
+              author: {
+                login: "chatgpt-codex-connector",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+  });
+
+  assert.deepEqual(patch, {
+    review_follow_up_head_sha: null,
+    review_follow_up_remaining: 0,
   });
 });
 
