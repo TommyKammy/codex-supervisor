@@ -117,3 +117,52 @@ test("staleConfiguredBotReviewThreads requires current-head processing evidence 
   assert.deepEqual(staleConfiguredBotReviewThreads(config, record, pr, [processedThread]), [processedThread]);
   assert.deepEqual(staleConfiguredBotReviewThreads(config, record, pr, [unprocessedThread]), []);
 });
+
+test("staleConfiguredBotReviewThreads excludes same-head configured-bot threads whose latest comment is no longer actionable", () => {
+  const config = createConfig({
+    reviewBotLogins: ["copilot-pull-request-reviewer"],
+  });
+  const pr: Pick<GitHubPullRequest, "headRefOid"> = { headRefOid: "head123" };
+  const record: Pick<
+    IssueRunRecord,
+    | "processed_review_thread_ids"
+    | "processed_review_thread_fingerprints"
+    | "last_head_sha"
+    | "review_follow_up_head_sha"
+    | "review_follow_up_remaining"
+  > = {
+    processed_review_thread_ids: ["thread-1@head123"],
+    processed_review_thread_fingerprints: ["thread-1@head123#comment-1"],
+    last_head_sha: "head123",
+    review_follow_up_head_sha: null,
+    review_follow_up_remaining: 0,
+  };
+  const nonActionableSameHeadThread = createReviewThread({
+    comments: {
+      nodes: [
+        {
+          id: "comment-1",
+          body: "Please address this.",
+          createdAt: "2026-03-11T00:00:00Z",
+          url: "https://example.test/pr/44#discussion_r1",
+          author: {
+            login: "copilot-pull-request-reviewer",
+            typeName: "Bot",
+          },
+        },
+        {
+          id: "comment-2",
+          body: "Handled manually elsewhere.",
+          createdAt: "2026-03-11T00:10:00Z",
+          url: "https://example.test/pr/44#discussion_r2",
+          author: {
+            login: "octocat",
+            typeName: "User",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(staleConfiguredBotReviewThreads(config, record, pr, [nonActionableSameHeadThread]), []);
+});

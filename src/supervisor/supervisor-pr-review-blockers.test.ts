@@ -164,6 +164,166 @@ test("runOnce reprocesses a configured bot review thread once after a new PR hea
   );
 });
 
+test("runOnce keeps same-head configured-bot blockers on manual review when the latest thread comment is no longer actionable", async () => {
+  const fixture = await createSupervisorFixture({
+    codexScriptLines: [
+      "#!/bin/sh",
+      "set -eu",
+      "echo unexpected codex execution >&2",
+      "exit 42",
+      "",
+    ],
+  });
+  const issueNumber = 117;
+  const branch = branchName(fixture.config, issueNumber);
+  const runHeadSha = git(["rev-parse", "HEAD"], fixture.repoPath);
+  const config = createConfig({
+    ...fixture.config,
+    reviewBotLogins: ["copilot-pull-request-reviewer"],
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "pr_open",
+        branch,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: issueNumber,
+        last_head_sha: runHeadSha,
+        processed_review_thread_ids: [`thread-1@${runHeadSha}`],
+        processed_review_thread_fingerprints: [`thread-1@${runHeadSha}#comment-1`],
+        blocked_reason: "manual_review",
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Keep non-actionable same-head configured bot blockers off the stale bucket",
+    body: executionReadyBody("Keep non-actionable same-head configured bot blockers off the stale bucket."),
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const pr: GitHubPullRequest = {
+    number: issueNumber,
+    title: "Keep non-actionable same-head configured bot blockers manual",
+    url: `https://example.test/pr/${issueNumber}`,
+    state: "OPEN",
+    createdAt: "2026-03-13T06:20:00Z",
+    isDraft: false,
+    reviewDecision: "CHANGES_REQUESTED",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: branch,
+    headRefOid: runHeadSha,
+    mergedAt: null,
+  };
+  const reviewThreads = [
+    createReviewThread({
+      comments: {
+        nodes: [
+          {
+            id: "comment-1",
+            body: "Please address this.",
+            createdAt: "2026-03-13T06:20:00Z",
+            url: `https://example.test/pr/${issueNumber}#discussion_r1`,
+            author: {
+              login: "copilot-pull-request-reviewer",
+              typeName: "Bot",
+            },
+          },
+          {
+            id: "comment-2",
+            body: "Handled manually elsewhere.",
+            createdAt: "2026-03-13T06:30:00Z",
+            url: `https://example.test/pr/${issueNumber}#discussion_r2`,
+            author: {
+              login: "octocat",
+              typeName: "User",
+            },
+          },
+        ],
+      },
+    }),
+  ];
+
+  const supervisor = new Supervisor(config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [issue],
+    listCandidateIssues: async () => [issue],
+    getIssue: async () => issue,
+    resolvePullRequestForBranch: async (branchName: string, prNumber: number | null) => {
+      assert.equal(branchName, branch);
+      assert.equal(prNumber, issueNumber);
+      return pr;
+    },
+    getChecks: async (prNumber: number) => {
+      assert.equal(prNumber, issueNumber);
+      return [];
+    },
+    getUnresolvedReviewThreads: async (prNumber: number) => {
+      assert.equal(prNumber, issueNumber);
+      return reviewThreads;
+    },
+    getPullRequest: async (prNumber: number) => {
+      assert.equal(prNumber, issueNumber);
+      return pr;
+    },
+    getPullRequestIfExists: async () => null,
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: false });
+  assert.match(message, /state=blocked/);
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  const record = persisted.issues[String(issueNumber)];
+  assert.equal(record.state, "blocked");
+  assert.equal(record.last_head_sha, runHeadSha);
+  assert.equal(record.blocked_reason, "manual_review");
+  assert.deepEqual(record.processed_review_thread_ids, [`thread-1@${runHeadSha}`]);
+  assert.deepEqual(record.processed_review_thread_fingerprints, [`thread-1@${runHeadSha}#comment-1`]);
+  assert.equal(record.last_failure_context?.category, "manual");
+  assert.equal(
+    record.last_failure_context?.summary,
+    "1 configured bot review thread(s) remain unresolved, but the latest comment is no longer actionable by an allowed review bot on the current head, so manual attention is required.",
+  );
+  assert.deepEqual(record.last_failure_context?.details, [
+    "reviewer=octocat file=src/file.ts line=12 processed_on_current_head=no latest_comment_actionable=no",
+  ]);
+
+  const status = formatDetailedStatus({
+    config,
+    activeRecord: record,
+    latestRecord: record,
+    trackedIssueCount: 1,
+    pr,
+    checks: [],
+    reviewThreads,
+  });
+  assert.match(
+    status,
+    /failure_context category=manual summary=1 configured bot review thread\(s\) remain unresolved, but the latest comment is no longer actionable by an allowed review bot on the current head, so manual attention is required\./,
+  );
+  assert.match(
+    status,
+    /failure_details=reviewer=octocat file=src\/file\.ts line=12 processed_on_current_head=no latest_comment_actionable=no/,
+  );
+});
+
 test("runOnce clears stale same-head stalled review-thread blockers after GitHub reports the threads resolved", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 116;
