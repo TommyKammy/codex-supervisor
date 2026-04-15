@@ -236,7 +236,12 @@ export function buildActiveDetailedStatusLines(
       lines.push(`pending_checks=${pendingChecks}`);
     }
     const unresolvedConfiguredBotThreads = unresolvedReviewThreads(configuredBotReviewThreads(config, reviewThreads));
-    const reviewFollowUpState = configuredBotReviewFollowUpState(activeRecord, pr, unresolvedConfiguredBotThreads);
+    const reviewFollowUpState = configuredBotReviewFollowUpState(
+      config,
+      activeRecord,
+      pr,
+      unresolvedConfiguredBotThreads,
+    );
     lines.push(
       `review_threads bot_pending=${pendingBotReviewThreads(config, activeRecord, pr, reviewThreads).length} bot_unresolved=${unresolvedConfiguredBotThreads.length} manual=${manualReviewThreads(config, reviewThreads).length}`,
     );

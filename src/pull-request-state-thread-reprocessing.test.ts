@@ -116,6 +116,91 @@ test("inferStateFromPullRequest allows one reprocessing pass for a configured bo
   assert.equal(inferStateFromPullRequest(config, record, pr, [], [updatedThread]), "addressing_review");
 });
 
+test("inferStateFromPullRequest keeps a configured bot thread blocked when its latest same-head reply is from a human or Codex", () => {
+  const config = createConfig({
+    reviewBotLogins: ["copilot-pull-request-reviewer"],
+  });
+  const record = createRecord({
+    state: "pr_open",
+    last_head_sha: "head-a",
+    processed_review_thread_ids: ["thread-1@head-a"],
+    processed_review_thread_fingerprints: ["thread-1@head-a#comment-1"],
+  });
+  const pr = createPullRequest({
+    reviewDecision: "CHANGES_REQUESTED",
+    headRefOid: "head-a",
+  });
+  const updatedThread = createReviewThread({
+    comments: {
+      nodes: [
+        {
+          id: "comment-1",
+          body: "Please address this.",
+          createdAt: "2026-03-11T00:00:00Z",
+          url: "https://example.test/pr/44#discussion_r1",
+          author: {
+            login: "copilot-pull-request-reviewer",
+            typeName: "Bot",
+          },
+        },
+        {
+          id: "comment-2",
+          body: "The latest conversation here is a human clarification, so this should not reopen the automatic same-head retry path by itself.",
+          createdAt: "2026-03-11T00:05:00Z",
+          url: "https://example.test/pr/44#discussion_r2",
+          author: {
+            login: "human-reviewer",
+            typeName: "User",
+          },
+        },
+      ],
+    },
+  });
+  const codexUpdatedThread = createReviewThread({
+    id: "thread-2",
+    comments: {
+      nodes: [
+        {
+          id: "comment-3",
+          body: "Please address this too.",
+          createdAt: "2026-03-11T00:10:00Z",
+          url: "https://example.test/pr/44#discussion_r3",
+          author: {
+            login: "copilot-pull-request-reviewer",
+            typeName: "Bot",
+          },
+        },
+        {
+          id: "comment-4",
+          body: "Codex already replied in-thread with implementation context, so this same-head thread should stay blocked until a configured bot posts fresh guidance.",
+          createdAt: "2026-03-11T00:15:00Z",
+          url: "https://example.test/pr/44#discussion_r4",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.equal(inferStateFromPullRequest(config, record, pr, [], [updatedThread]), "blocked");
+  assert.equal(
+    inferStateFromPullRequest(
+      config,
+      {
+        ...record,
+        processed_review_thread_ids: ["thread-2@head-a"],
+        processed_review_thread_fingerprints: ["thread-2@head-a#comment-3"],
+      },
+      pr,
+      [],
+      [codexUpdatedThread],
+    ),
+    "blocked",
+  );
+});
+
 test("inferStateFromPullRequest blocks a same-head configured bot thread again after its updated comment has already been reprocessed once", () => {
   const config = createConfig({
     reviewBotLogins: ["copilot-pull-request-reviewer"],
