@@ -785,7 +785,7 @@ export function inferStateFromPullRequest(
   const manualThreads = manualReviewThreads(config, reviewThreads);
   const unresolvedBotThreads = effectiveConfiguredBotReviewThreads(config, pr, checks, reviewThreads);
   const pendingBotThreads = pendingBotReviewThreads(config, record, pr, unresolvedBotThreads);
-  const botFollowUpState = configuredBotReviewFollowUpState(record, pr, unresolvedBotThreads);
+  const botFollowUpState = configuredBotReviewFollowUpState(config, record, pr, unresolvedBotThreads);
   const checkSummary = summarizeChecks(checks);
 
   if (pr.mergedAt || pr.state === "MERGED") {

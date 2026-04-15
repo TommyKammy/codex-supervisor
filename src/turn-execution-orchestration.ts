@@ -16,7 +16,10 @@ import {
   processedReviewThreadFingerprintKey,
   processedReviewThreadKey,
 } from "./review-handling";
-import { configuredBotReviewThreads } from "./review-thread-reporting";
+import {
+  configuredBotReviewThreads,
+  latestReviewCommentAuthorIsAllowedBot,
+} from "./review-thread-reporting";
 import { IssueJournalSync, MemoryArtifacts } from "./run-once-issue-preparation";
 import { StateStore } from "./core/state-store";
 import {
@@ -353,6 +356,7 @@ export function nextReviewFollowUpPatch(args: {
     postRunConfiguredThreads.every((thread) => {
       const latestComment = thread.comments.nodes[thread.comments.nodes.length - 1] ?? null;
       return (
+        latestReviewCommentAuthorIsAllowedBot(args.config as SupervisorConfig, thread) &&
         typeof thread.path === "string" &&
         thread.path.trim().length > 0 &&
         typeof thread.line === "number" &&

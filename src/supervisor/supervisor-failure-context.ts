@@ -65,7 +65,7 @@ export function inferFailureContext(
 
       const stalledBotReviewContext = buildStalledBotReviewFailureContext(
         configuredBotReviewThreads(config, reviewThreads),
-        configuredBotReviewFollowUpState(record, pr, configuredBotReviewThreads(config, reviewThreads)) ===
+        configuredBotReviewFollowUpState(config, record, pr, configuredBotReviewThreads(config, reviewThreads)) ===
           "exhausted"
           ? "exhausted_follow_up"
           : "no_progress",
@@ -108,7 +108,7 @@ export function inferFailureContext(
 
     const stalledBotReviewContext = buildStalledBotReviewFailureContext(
       configuredBotReviewThreads(config, reviewThreads),
-      configuredBotReviewFollowUpState(record, pr, configuredBotReviewThreads(config, reviewThreads)) === "exhausted"
+      configuredBotReviewFollowUpState(config, record, pr, configuredBotReviewThreads(config, reviewThreads)) === "exhausted"
         ? "exhausted_follow_up"
         : "no_progress",
     );

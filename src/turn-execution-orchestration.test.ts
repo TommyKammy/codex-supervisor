@@ -227,6 +227,87 @@ test("nextReviewFollowUpPatch grants one same-head follow-up for a narrow action
   });
 });
 
+test("nextReviewFollowUpPatch does not grant a same-head follow-up when the latest unresolved guidance comes from a human or Codex reply", () => {
+  const threadWithHumanLatestReply = createReviewThread({
+    id: "thread-1",
+    path: "src/a.ts",
+    line: 10,
+    comments: {
+      nodes: [
+        {
+          id: "comment-1",
+          body: "Guard the nullable payload before accessing nested properties here.",
+          createdAt: "2026-03-11T00:00:00Z",
+          url: "https://example.test/pr/44#discussion_r1",
+          author: {
+            login: "copilot-pull-request-reviewer",
+            typeName: "Bot",
+          },
+        },
+        {
+          id: "comment-2",
+          body: "I think the null guard is already handled by the caller; can you instead explain what remains broken here?",
+          createdAt: "2026-03-11T00:05:00Z",
+          url: "https://example.test/pr/44#discussion_r2",
+          author: {
+            login: "human-reviewer",
+            typeName: "User",
+          },
+        },
+      ],
+    },
+  });
+  const threadWithCodexLatestReply = createReviewThread({
+    id: "thread-2",
+    path: "src/b.ts",
+    line: 20,
+    comments: {
+      nodes: [
+        {
+          id: "comment-3",
+          body: "Add a regression check so this branch stays covered on retries.",
+          createdAt: "2026-03-11T00:10:00Z",
+          url: "https://example.test/pr/44#discussion_r3",
+          author: {
+            login: "copilot-pull-request-reviewer",
+            typeName: "Bot",
+          },
+        },
+        {
+          id: "comment-4",
+          body: "I added the requested test and noted the remaining tradeoff in the thread so the next turn should not reopen this automatically.",
+          createdAt: "2026-03-11T00:15:00Z",
+          url: "https://example.test/pr/44#discussion_r4",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  const patch = nextReviewFollowUpPatch({
+    config: createConfig({
+      reviewBotLogins: ["copilot-pull-request-reviewer"],
+    }),
+    preRunState: "addressing_review",
+    record: {
+      review_follow_up_head_sha: null,
+      review_follow_up_remaining: 0,
+    },
+    currentPr: { headRefOid: "head-a" },
+    evaluatedReviewHeadSha: "head-a",
+    preRunReviewThreads: [threadWithHumanLatestReply, threadWithCodexLatestReply],
+    postRunReviewThreads: [threadWithHumanLatestReply, threadWithCodexLatestReply],
+  });
+
+  assert.deepEqual(patch, {
+    review_follow_up_head_sha: null,
+    review_follow_up_remaining: 0,
+  });
+});
+
 test("nextReviewFollowUpPatch does not treat non-concrete line numbers as actionable same-head review feedback", () => {
   const patch = nextReviewFollowUpPatch({
     config: createConfig({ reviewBotLogins: ["copilot-pull-request-reviewer"] }),

@@ -15,6 +15,17 @@ export function latestReviewComment(thread: ReviewThread) {
   return thread.comments.nodes[thread.comments.nodes.length - 1] ?? null;
 }
 
+export function latestReviewCommentAuthorIsAllowedBot(config: SupervisorConfig, thread: ReviewThread): boolean {
+  const latestComment = latestReviewComment(thread);
+  const latestLogin = latestComment?.author?.login?.toLowerCase();
+  if (!latestLogin) {
+    return false;
+  }
+
+  const configuredLogins = new Set(configuredReviewBotLogins(config).map((login) => login.toLowerCase()));
+  return configuredLogins.has(latestLogin);
+}
+
 function normalizeReviewCommentWhitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
@@ -54,6 +65,15 @@ export function configuredBotReviewThreads(
   return reviewThreads.filter((thread) => isAllowedReviewBotThread(config, thread));
 }
 
+export function actionableConfiguredBotReviewThreads(
+  config: SupervisorConfig,
+  reviewThreads: ReviewThread[],
+): ReviewThread[] {
+  return configuredBotReviewThreads(config, reviewThreads).filter((thread) =>
+    latestReviewCommentAuthorIsAllowedBot(config, thread),
+  );
+}
+
 export function pendingBotReviewThreads(
   config: SupervisorConfig,
   record: Pick<
@@ -67,17 +87,20 @@ export function pendingBotReviewThreads(
   pr: Pick<GitHubPullRequest, "headRefOid">,
   reviewThreads: ReviewThread[],
 ): ReviewThread[] {
-  return configuredBotReviewThreads(config, reviewThreads).filter(
+  return actionableConfiguredBotReviewThreads(config, reviewThreads).filter(
     (thread) => !hasProcessedReviewThread(record, pr, thread),
   );
 }
 
 export function configuredBotReviewFollowUpState(
+  config: SupervisorConfig,
   record: Pick<IssueRunRecord, "review_follow_up_head_sha" | "review_follow_up_remaining">,
   pr: Pick<GitHubPullRequest, "headRefOid">,
   reviewThreads: ReviewThread[],
 ): "inactive" | "eligible" | "exhausted" {
-  const unresolvedThreadCount = reviewThreads.filter((thread) => !thread.isResolved && !thread.isOutdated).length;
+  const unresolvedThreadCount = actionableConfiguredBotReviewThreads(config, reviewThreads).filter(
+    (thread) => !thread.isResolved && !thread.isOutdated,
+  ).length;
   if (unresolvedThreadCount === 0 || record.review_follow_up_head_sha !== pr.headRefOid) {
     return "inactive";
   }
@@ -103,8 +126,8 @@ export function actionableBotReviewThreads(
     return pendingThreads;
   }
 
-  return configuredBotReviewFollowUpState(record, pr, configuredBotReviewThreads(config, reviewThreads)) === "eligible"
-    ? configuredBotReviewThreads(config, reviewThreads)
+  return configuredBotReviewFollowUpState(config, record, pr, reviewThreads) === "eligible"
+    ? actionableConfiguredBotReviewThreads(config, reviewThreads)
     : [];
 }
 
@@ -130,7 +153,7 @@ export function staleConfiguredBotReviewThreads(
     return [];
   }
 
-  if (configuredBotReviewFollowUpState(record, pr, configuredThreads) === "eligible") {
+  if (configuredBotReviewFollowUpState(config, record, pr, configuredThreads) === "eligible") {
     return [];
   }
 
