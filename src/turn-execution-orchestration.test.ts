@@ -129,6 +129,104 @@ test("nextReviewFollowUpPatch does not grant a follow-up when no configured-bot 
   });
 });
 
+test("nextReviewFollowUpPatch grants one same-head follow-up for a narrow actionable bot thread set even when thread counts do not shrink", () => {
+  const patch = nextReviewFollowUpPatch({
+    config: createConfig({ reviewBotLogins: ["copilot-pull-request-reviewer"] }),
+    preRunState: "addressing_review",
+    record: {
+      review_follow_up_head_sha: null,
+      review_follow_up_remaining: 0,
+    },
+    currentPr: { headRefOid: "head-a" },
+    evaluatedReviewHeadSha: "head-a",
+    preRunReviewThreads: [
+      createReviewThread({
+        id: "thread-1",
+        path: "src/a.ts",
+        line: 10,
+        comments: {
+          nodes: [
+            {
+              id: "comment-1",
+              body: "Guard the nullable payload before accessing nested properties here.",
+              createdAt: "2026-03-11T00:00:00Z",
+              url: "https://example.test/pr/44#discussion_r1",
+              author: {
+                login: "copilot-pull-request-reviewer",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+      createReviewThread({
+        id: "thread-2",
+        path: "src/b.ts",
+        line: 20,
+        comments: {
+          nodes: [
+            {
+              id: "comment-2",
+              body: "Add a regression check so this branch stays covered on retries.",
+              createdAt: "2026-03-11T00:05:00Z",
+              url: "https://example.test/pr/44#discussion_r2",
+              author: {
+                login: "copilot-pull-request-reviewer",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+    postRunReviewThreads: [
+      createReviewThread({
+        id: "thread-1",
+        path: "src/a.ts",
+        line: 10,
+        comments: {
+          nodes: [
+            {
+              id: "comment-1",
+              body: "Guard the nullable payload before accessing nested properties here.",
+              createdAt: "2026-03-11T00:00:00Z",
+              url: "https://example.test/pr/44#discussion_r1",
+              author: {
+                login: "copilot-pull-request-reviewer",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+      createReviewThread({
+        id: "thread-2",
+        path: "src/b.ts",
+        line: 20,
+        comments: {
+          nodes: [
+            {
+              id: "comment-2",
+              body: "Add a regression check so this branch stays covered on retries.",
+              createdAt: "2026-03-11T00:05:00Z",
+              url: "https://example.test/pr/44#discussion_r2",
+              author: {
+                login: "copilot-pull-request-reviewer",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+  });
+
+  assert.deepEqual(patch, {
+    review_follow_up_head_sha: "head-a",
+    review_follow_up_remaining: 1,
+  });
+});
+
 test("nextReviewFollowUpPatch ignores already-resolved configured-bot threads when evaluating same-head progress", () => {
   const patch = nextReviewFollowUpPatch({
     config: createConfig({ reviewBotLogins: ["copilot-pull-request-reviewer"] }),

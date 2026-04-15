@@ -312,6 +312,7 @@ export function nextReviewFollowUpPatch(args: {
   postRunReviewThreads: ReviewThread[];
 }): Pick<IssueRunRecord, "review_follow_up_head_sha" | "review_follow_up_remaining"> {
   const defaultPatch = { review_follow_up_head_sha: null, review_follow_up_remaining: 0 };
+  const MAX_NARROW_ACTIONABLE_REVIEW_THREADS = 3;
   if (
     args.preRunState !== "addressing_review" ||
     !args.currentPr ||
@@ -346,8 +347,23 @@ export function nextReviewFollowUpPatch(args: {
   const madeProgress =
     postRunConfiguredThreads.length < preRunConfiguredThreads.length ||
     [...preRunIds].some((threadId) => !postRunIds.has(threadId));
+  const hasNarrowActionableThreadSet =
+    postRunConfiguredThreads.length > 0 &&
+    postRunConfiguredThreads.length <= MAX_NARROW_ACTIONABLE_REVIEW_THREADS &&
+    postRunConfiguredThreads.every((thread) => {
+      const latestComment = thread.comments.nodes[thread.comments.nodes.length - 1] ?? null;
+      return (
+        typeof thread.path === "string" &&
+        thread.path.trim().length > 0 &&
+        typeof thread.line === "number" &&
+        Number.isFinite(thread.line) &&
+        latestComment !== null &&
+        latestComment.body.trim().length >= 32 &&
+        latestComment.body.trim().split(/\s+/).length >= 6
+      );
+    });
 
-  return madeProgress
+  return madeProgress || hasNarrowActionableThreadSet
     ? {
         review_follow_up_head_sha: args.evaluatedReviewHeadSha,
         review_follow_up_remaining: 1,
