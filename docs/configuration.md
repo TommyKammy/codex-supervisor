@@ -22,6 +22,8 @@ Most operators start from one of these files:
 - [supervisor.config.codex.json](../supervisor.config.codex.json)
 - [supervisor.config.coderabbit.json](../supervisor.config.coderabbit.json)
 
+The shipped starter configs intentionally surface a short list of high-leverage optional fields in addition to the required baseline. In practice, operators most often need to discover model-routing overrides (`boundedRepairModel*`, `localReviewModel*`), current-head local-review freshness (`trackedPrCurrentHeadLocalReviewRequired`), and repo-owned host contracts (`workspacePreparationCommand`, `localCiCommand`) without reading the full schema first.
+
 The simplest workflow is:
 
 1. copy a starter file to `supervisor.config.json`
