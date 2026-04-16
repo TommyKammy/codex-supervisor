@@ -10,6 +10,8 @@
   "codexModel": "",
   "boundedRepairModelStrategy": "",
   "boundedRepairModel": "",
+  "localReviewModelStrategy": "",
+  "localReviewModel": "",
   "codexReasoningEffortByState": {
     "planning": "low",
     "reproducing": "medium",
@@ -67,6 +69,8 @@
   "issueJournalRelativePath": ".codex-supervisor/issues/{issueNumber}/issue-journal.md",
   "issueJournalMaxChars": 6000,
   "issueLabel": "codex",
+  "workspacePreparationCommand": "",
+  "localCiCommand": "",
   "skipTitlePrefixes": [
     "Epic:"
   ],

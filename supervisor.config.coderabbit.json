@@ -9,6 +9,10 @@
   "codexBinary": "codex",
   "codexModelStrategy": "inherit",
   "codexModel": "",
+  "boundedRepairModelStrategy": "",
+  "boundedRepairModel": "",
+  "localReviewModelStrategy": "",
+  "localReviewModel": "",
   "codexReasoningEffortByState": {
     "planning": "low",
     "reproducing": "medium",
@@ -55,7 +59,9 @@
     }
   },
   "localReviewPolicy": "block_merge",
+  "trackedPrCurrentHeadLocalReviewRequired": false,
   "localReviewFollowUpRepairEnabled": false,
+  "localReviewManualReviewRepairEnabled": false,
   "localReviewFollowUpIssueCreationEnabled": false,
   "localReviewHighSeverityAction": "blocked",
   "reviewBotLogins": [
@@ -66,6 +72,8 @@
   "issueJournalRelativePath": ".codex-supervisor/issues/{issueNumber}/issue-journal.md",
   "issueJournalMaxChars": 6000,
   "issueLabel": "codex",
+  "workspacePreparationCommand": "",
+  "localCiCommand": "",
   "skipTitlePrefixes": [
     "Epic:"
   ],

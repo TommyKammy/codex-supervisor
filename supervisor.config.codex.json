@@ -11,6 +11,8 @@
   "codexModel": "",
   "boundedRepairModelStrategy": "",
   "boundedRepairModel": "",
+  "localReviewModelStrategy": "",
+  "localReviewModel": "",
   "codexReasoningEffortByState": {
     "planning": "low",
     "reproducing": "medium",
@@ -57,6 +59,7 @@
     }
   },
   "localReviewPolicy": "block_merge",
+  "trackedPrCurrentHeadLocalReviewRequired": false,
   "localReviewFollowUpRepairEnabled": false,
   "localReviewFollowUpIssueCreationEnabled": false,
   "localReviewHighSeverityAction": "blocked",
@@ -67,6 +70,8 @@
   "issueJournalRelativePath": ".codex-supervisor/issues/{issueNumber}/issue-journal.md",
   "issueJournalMaxChars": 6000,
   "issueLabel": "codex",
+  "workspacePreparationCommand": "",
+  "localCiCommand": "",
   "skipTitlePrefixes": ["Epic:"],
   "branchPrefix": "codex/issue-",
   "pollIntervalSeconds": 120,
