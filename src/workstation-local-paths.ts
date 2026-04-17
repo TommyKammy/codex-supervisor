@@ -264,6 +264,19 @@ export async function findForbiddenWorkstationLocalPaths(
       continue;
     }
 
+    const absolutePath = path.join(workspacePath, filePath);
+    let rawContents: Buffer;
+    try {
+      rawContents = await fs.readFile(absolutePath);
+    } catch (error) {
+      const maybeErr = error as NodeJS.ErrnoException;
+      if (maybeErr.code === "ENOENT") {
+        continue;
+      }
+
+      throw error;
+    }
+
     const forbiddenArtifact = classifyForbiddenSupervisorArtifactPath(filePath);
     if (forbiddenArtifact) {
       findings.push({
@@ -277,18 +290,6 @@ export async function findForbiddenWorkstationLocalPaths(
       continue;
     }
 
-    const absolutePath = path.join(workspacePath, filePath);
-    let rawContents: Buffer;
-    try {
-      rawContents = await fs.readFile(absolutePath);
-    } catch (error) {
-      const maybeErr = error as NodeJS.ErrnoException;
-      if (maybeErr.code === "ENOENT") {
-        continue;
-      }
-
-      throw error;
-    }
     if (isBinary(rawContents)) {
       continue;
     }

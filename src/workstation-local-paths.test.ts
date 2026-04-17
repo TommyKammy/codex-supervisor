@@ -209,18 +209,22 @@ test("findForbiddenWorkstationLocalPaths skips tracked files omitted by sparse c
 
   const currentJournalPath = path.join(repoPath, ".codex-supervisor", "issues", "102", "issue-journal.md");
   const otherJournalPath = path.join(repoPath, ".codex-supervisor", "issues", "181", "issue-journal.md");
+  const hiddenArtifactPath = path.join(repoPath, ".codex-supervisor", "pre-merge", "assessment-snapshot.json");
   const visibleDocPath = path.join(repoPath, "docs", "guide.md");
   await fs.mkdir(path.dirname(currentJournalPath), { recursive: true });
   await fs.mkdir(path.dirname(otherJournalPath), { recursive: true });
+  await fs.mkdir(path.dirname(hiddenArtifactPath), { recursive: true });
   await fs.mkdir(path.dirname(visibleDocPath), { recursive: true });
   await fs.writeFile(currentJournalPath, "# Issue #102\n", "utf8");
   await fs.writeFile(otherJournalPath, `- What changed: ${buildMacHomePath("alice", "Dev", "private-repo")}\n`, "utf8");
+  await fs.writeFile(hiddenArtifactPath, JSON.stringify({ kind: "pre-merge", ok: false }, null, 2).concat("\n"), "utf8");
   await fs.writeFile(visibleDocPath, `Visible leak: ${buildUnixHomePath("alice", "dev", "private-repo")}\n`, "utf8");
   git(
     repoPath,
     "add",
     ".codex-supervisor/issues/102/issue-journal.md",
     ".codex-supervisor/issues/181/issue-journal.md",
+    ".codex-supervisor/pre-merge/assessment-snapshot.json",
     "docs/guide.md",
   );
   git(repoPath, "commit", "-m", "seed sparse checkout fixture");
@@ -234,6 +238,7 @@ test("findForbiddenWorkstationLocalPaths skips tracked files omitted by sparse c
   git(repoPath, "read-tree", "-mu", "HEAD");
 
   await assert.rejects(fs.access(otherJournalPath), { code: "ENOENT" });
+  await assert.rejects(fs.access(hiddenArtifactPath), { code: "ENOENT" });
 
   const findings = await findForbiddenWorkstationLocalPaths(repoPath);
 
