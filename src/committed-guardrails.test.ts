@@ -436,6 +436,10 @@ test("repo shared-memory examples encode authoritative-over-derived state guidan
     decisions,
     /One logical multi-record mutation should commit atomically; never leave partial durable state behind for later sessions to treat as truth\./,
   );
+  assert.match(
+    decisions,
+    /On rejected, forbidden, restore-failure, or other failed mutation paths, prove the durable state stayed clean: no orphan records, no partial writes, and no half-restored state should survive the attempt\./,
+  );
 
   assert.match(
     constitution,
@@ -445,6 +449,10 @@ test("repo shared-memory examples encode authoritative-over-derived state guidan
     constitution,
     /Do not hold a database transaction open across network hops, queued jobs, adapter dispatch, or other remote waits; cross the boundary only after commit or rollback\./,
   );
+  assert.match(
+    constitution,
+    /Do not treat a thrown error, rejected mutation, or failed restore as sufficient by itself; verify the failed path leaves no orphan or partial durable state behind\./,
+  );
 
   assert.match(
     workflow,
@@ -453,5 +461,9 @@ test("repo shared-memory examples encode authoritative-over-derived state guidan
   assert.match(
     workflow,
     /Before shipping aggregation, backup\/restore\/export, or multi-write persistence changes, verify the read path is snapshot-consistent and the write path is atomic across every affected record\./,
+  );
+  assert.match(
+    workflow,
+    /Before shipping rejected, forbidden, approval-failure, or restore-failure paths, verify the system proves both outcomes: the path failed and no durable orphan, partial write, or half-restored state remained afterward\./,
   );
 });

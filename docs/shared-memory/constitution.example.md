@@ -16,6 +16,7 @@ This repository is operated with AI-assisted implementation loops. Durable proje
 - Do not let transport, refresh, or UI follow-up failures rewrite the outcome of a successful mutation.
 - When authoritative records and derived status surfaces disagree, repair the derived surface to match the authoritative record instead of teaching the system to trust the projection.
 - Do not hold a database transaction open across network hops, queued jobs, adapter dispatch, or other remote waits; cross the boundary only after commit or rollback.
+- Do not treat a thrown error, rejected mutation, or failed restore as sufficient by itself; verify the failed path leaves no orphan or partial durable state behind.
 
 ## AI workflow rules
 
