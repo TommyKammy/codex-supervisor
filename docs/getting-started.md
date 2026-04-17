@@ -362,6 +362,12 @@ Minimum expectations for that contract:
 - any non-zero exit code means the configured local verification failed and the supervisor should treat that failure as the repo-declared result of the contract
 - stdout and stderr are informative logs from the repo command, not a second machine-readable protocol the supervisor needs to interpret
 
+When that repo-owned command includes Ruff or similar static-analysis checks for `tests/` or `scripts/`, keep intentional fixture exceptions explicit and narrow:
+
+- prefer fixing the finding outright when possible
+- when a fixture truly needs an exception, use an inline suppression with the exact rule code and a short rationale, for example `# noqa: S106 - dummy fixture credential` or `# noqa: S104 - test fixture requires wildcard bind`
+- avoid broad file-level ignores or silent drift for intentional fixture patterns
+
 Backward compatibility stays simple: if no local CI contract is configured, `codex-supervisor` keeps the existing behavior. It does not invent a fallback verification command, and it continues to rely on the issue's `## Verification` guidance plus normal operator/repo workflow instead of pretending a canonical local CI entrypoint exists when the repo has not declared one.
 
 Steady-state posture to read after setup:

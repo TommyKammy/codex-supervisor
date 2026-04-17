@@ -171,6 +171,50 @@ test("runLocalCiGate preserves stdout and stderr details from command failures",
   ]);
 });
 
+test("runLocalCiGate adds Ruff/static-analysis remediation hints for changed tests and scripts", async () => {
+  const failure = Object.assign(
+    new Error(`Command failed: sh -lc +1 args
+exitCode=1
+tests/python/test_api.py:14:9: F821 Undefined name 'fixture_value'
+tests/python/test_api.py:27:5: S106 Possible hardcoded password assigned to argument: "password"
+scripts/check_fixture.py:8:1: S104 Possible binding to all interfaces
+scripts/check_fixture.py:12:5: RUF059 Unused unpacked variable 'unused_fixture'
+scripts/check_fixture.py:18:1: F402 Import 'fixture_value' from line 1 shadowed by loop variable`),
+    {
+      stderr: `tests/python/test_api.py:14:9: F821 Undefined name 'fixture_value'
+tests/python/test_api.py:27:5: S106 Possible hardcoded password assigned to argument: "password"
+scripts/check_fixture.py:8:1: S104 Possible binding to all interfaces
+scripts/check_fixture.py:12:5: RUF059 Unused unpacked variable 'unused_fixture'
+scripts/check_fixture.py:18:1: F402 Import 'fixture_value' from line 1 shadowed by loop variable`,
+    },
+  );
+
+  const result = await runLocalCiGate({
+    config: { localCiCommand: "npm run ci:local" },
+    workspacePath: "/tmp/workspaces/issue-102",
+    gateLabel: "before marking PR #116 ready",
+    runLocalCiCommand: async () => {
+      throw failure;
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.failureContext?.signature, "local-ci-gate-non_zero_exit");
+  assert.match(
+    result.failureContext?.details.join("\n") ?? "",
+    /ruff\/static-analysis hint: changed tests\/scripts triggered F402, F821, RUF059, S104, S106 in scripts\/check_fixture\.py, tests\/python\/test_api\.py\./u,
+  );
+  assert.match(
+    result.failureContext?.details.join("\n") ?? "",
+    /prefer the narrowest inline suppression with the exact rule code and a short rationale comment instead of broad file-level ignores/u,
+  );
+  assert.match(result.failureContext?.details.join("\n") ?? "", /# noqa: F821 - provided by fixture/u);
+  assert.match(result.failureContext?.details.join("\n") ?? "", /# noqa: F402 - fixture rebinding is intentional/u);
+  assert.match(result.failureContext?.details.join("\n") ?? "", /# noqa: RUF059 - fixture unpacking is intentional/u);
+  assert.match(result.failureContext?.details.join("\n") ?? "", /# noqa: S104 - test fixture requires wildcard bind/u);
+  assert.match(result.failureContext?.details.join("\n") ?? "", /# noqa: S106 - dummy fixture credential/u);
+});
+
 test("runLocalCiGate preserves timeout summaries at the tail of bounded stderr details", async () => {
   const failure = Object.assign(
     new Error(`Command timed out: sh -lc +1 args\nexitCode=1\nprefix\n${"x".repeat(2_000)}\nCommand timed out after 5000ms: sh -lc +1 args`),
