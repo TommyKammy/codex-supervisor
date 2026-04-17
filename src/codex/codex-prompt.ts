@@ -458,6 +458,8 @@ function buildCodexStartPrompt(input: BuildCodexStartPromptInput): string {
     "- When one logical change writes multiple records, persist it atomically so partial commits cannot become the durable truth for later sessions or follow-up reads.",
     "- Do not hold database transactions open across network hops, queued jobs, adapter dispatch, or other remote waits; stage the boundary, commit or roll back, then continue in a new transaction if needed.",
     "- Treat backup/restore/export flows and readiness or detail rollups as high-risk mixed-state surfaces: verify they read from one committed snapshot and represent all-or-nothing write boundaries faithfully.",
+    "- On rejected, forbidden, failed, or restore-failure paths, verify that no orphan record, partial durable write, or half-restored state survives the attempt.",
+    "- Do not stop at proving that an exception was raised or an error was returned; also prove the durable state remained clean after the failed path.",
   ];
 
   return [

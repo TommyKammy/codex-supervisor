@@ -18,6 +18,7 @@
 - When selecting among competing records, authoritative lifecycle state, durable identifiers, terminal markers, and authoritative timestamps beat display order, badge text, convenience booleans, or whichever row refreshed last.
 - Multi-read responses such as readiness rollups, detail views, exports, backups, and restore previews should come from one committed snapshot or fail explicitly instead of mixing records from different snapshots.
 - One logical multi-record mutation should commit atomically; never leave partial durable state behind for later sessions to treat as truth.
+- On rejected, forbidden, restore-failure, or other failed mutation paths, prove the durable state stayed clean: no orphan records, no partial writes, and no half-restored state should survive the attempt.
 
 ## Operator surface model
 

@@ -247,6 +247,14 @@ test("buildRolePrompt teaches reviewers snapshot-consistency and transaction-bou
     prompt,
     /Flag transactions that stay open across network hops, queued work, adapter dispatch, or other remote waits; require the boundary to commit\/roll back before crossing it\./,
   );
+  assert.match(
+    prompt,
+    /On shared-memory failure paths, check that rejected mutations, forbidden writes, failed approval writes, and restore failures leave no orphan records, partial durable writes, or half-restored state behind\./,
+  );
+  assert.match(
+    prompt,
+    /Do not treat a raised exception or returned error as sufficient proof when durable state might already have been mutated\./,
+  );
 });
 
 test("buildRolePrompt teaches reviewer to flag unrelated cleanup but allow required support changes", () => {

@@ -12,6 +12,7 @@
 8. Address CI failures and review feedback until mergeable.
 9. Before shipping a stateful change, check that current/latest/active/terminal selection still comes from the authoritative record rather than a summary DTO, timeline projection, or operator-facing status field.
 10. Before shipping aggregation, backup/restore/export, or multi-write persistence changes, verify the read path is snapshot-consistent and the write path is atomic across every affected record.
+11. Before shipping rejected, forbidden, approval-failure, or restore-failure paths, verify the system proves both outcomes: the path failed and no durable orphan, partial write, or half-restored state remained afterward.
 
 ## Durable memory
 

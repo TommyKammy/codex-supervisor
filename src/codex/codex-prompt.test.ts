@@ -211,6 +211,14 @@ test("buildCodexPrompt includes fail-closed shared-memory heuristics for review-
     prompt,
     /Treat backup\/restore\/export flows and readiness or detail rollups as high-risk mixed-state surfaces: verify they read from one committed snapshot and represent all-or-nothing write boundaries faithfully/,
   );
+  assert.match(
+    prompt,
+    /On rejected, forbidden, failed, or restore-failure paths, verify that no orphan record, partial durable write, or half-restored state survives the attempt/,
+  );
+  assert.match(
+    prompt,
+    /Do not stop at proving that an exception was raised or an error was returned; also prove the durable state remained clean after the failed path/,
+  );
 });
 
 test("buildCodexPrompt renders on-demand memory files even without always-read files", () => {
