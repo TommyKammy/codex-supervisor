@@ -8,7 +8,7 @@ import {
   parseGitStatusPorcelainV1Paths,
   parseGitWorktreePaths,
 } from "./core/git-workspace-helpers";
-import { trackedIssueJournalPath } from "./core/journal";
+import { resolveTrackedIssueHostPaths } from "./core/journal";
 import { type IssueRunRecord, type SupervisorConfig } from "./core/types";
 import { nowIso } from "./core/utils";
 
@@ -117,17 +117,15 @@ export async function classifyFailedNoPrBranchRecovery(args: {
   ) => boolean;
 }): Promise<{ state: FailedNoPrBranchRecoveryState; headSha: string | null; preservedTrackedFiles?: string[] }> {
   const { config, record } = args;
-  if (!args.isSafeCleanupTarget(config, record.workspace, record.branch) || !fs.existsSync(path.join(record.workspace, ".git"))) {
+  const resolvedPaths = resolveTrackedIssueHostPaths(config, record);
+  if (
+    !args.isSafeCleanupTarget(config, resolvedPaths.workspace, record.branch) ||
+    !fs.existsSync(path.join(resolvedPaths.workspace, ".git"))
+  ) {
     return { state: "manual_review_required", headSha: null };
   }
 
-  const journalPath = trackedIssueJournalPath(
-    record.workspace,
-    record.journal_path,
-    config.issueJournalRelativePath,
-    record.issue_number,
-  );
-  const journalRelativePath = path.relative(record.workspace, journalPath).replace(/\\/g, "/");
+  const journalRelativePath = path.relative(resolvedPaths.workspace, resolvedPaths.journal_path).replace(/\\/g, "/");
   const gitProbeTimeoutMs = config.codexExecTimeoutMinutes * 60_000;
 
   try {
@@ -136,13 +134,13 @@ export async function classifyFailedNoPrBranchRecovery(args: {
       ["-C", config.repoPath, "worktree", "list", "--porcelain"],
       { timeoutMs: gitProbeTimeoutMs },
     );
-    if (!parseGitWorktreePaths(worktreeListResult.stdout).has(normalizeGitPath(record.workspace))) {
+    if (!parseGitWorktreePaths(worktreeListResult.stdout).has(normalizeGitPath(resolvedPaths.workspace))) {
       return { state: "manual_review_required", headSha: null };
     }
 
     const branchResult = await runCommand(
       "git",
-      ["-C", record.workspace, "symbolic-ref", "--quiet", "--short", "HEAD"],
+      ["-C", resolvedPaths.workspace, "symbolic-ref", "--quiet", "--short", "HEAD"],
       {
         allowExitCodes: [0, 1],
         timeoutMs: gitProbeTimeoutMs,
@@ -154,18 +152,18 @@ export async function classifyFailedNoPrBranchRecovery(args: {
 
     await args.ensureOriginDefaultBranchFetched();
     const [headResult, baseAheadResult, baseDiffResult, workspaceStatusResult] = await Promise.all([
-      runCommand("git", ["-C", record.workspace, "rev-parse", "HEAD"], {
+      runCommand("git", ["-C", resolvedPaths.workspace, "rev-parse", "HEAD"], {
         timeoutMs: gitProbeTimeoutMs,
       }),
       runCommand(
         "git",
-        ["-C", record.workspace, "rev-list", "--left-right", "--count", `origin/${config.defaultBranch}...HEAD`],
+        ["-C", resolvedPaths.workspace, "rev-list", "--left-right", "--count", `origin/${config.defaultBranch}...HEAD`],
         { timeoutMs: gitProbeTimeoutMs },
       ),
-      runCommand("git", ["-C", record.workspace, "diff", "--name-only", `origin/${config.defaultBranch}...HEAD`], {
+      runCommand("git", ["-C", resolvedPaths.workspace, "diff", "--name-only", `origin/${config.defaultBranch}...HEAD`], {
         timeoutMs: gitProbeTimeoutMs,
       }),
-      runCommand("git", ["-C", record.workspace, "status", "--porcelain=v1", "-z", "--untracked-files=all"], {
+      runCommand("git", ["-C", resolvedPaths.workspace, "status", "--porcelain=v1", "-z", "--untracked-files=all"], {
         timeoutMs: gitProbeTimeoutMs,
       }),
     ]);

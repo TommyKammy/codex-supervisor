@@ -12,7 +12,7 @@ import {
   parseIssueMetadata,
   validateIssueMetadataSyntax,
 } from "./issue-metadata";
-import { issueJournalPath, syncIssueJournal } from "./core/journal";
+import { issueJournalPath, resolveTrackedIssueHostPaths, syncIssueJournal } from "./core/journal";
 import { acquireFileLock, LockHandle } from "./core/lock";
 import {
   applyFailureSignature,
@@ -339,10 +339,11 @@ async function defaultEnsureRecordJournalContext(
   config: SupervisorConfig,
   record: IssueRunRecord,
 ): Promise<IssueJournalContext> {
-  if (record.journal_path) {
+  const resolvedPaths = resolveTrackedIssueHostPaths(config, record);
+  if (record.journal_path || resolvedPaths.usingCanonicalWorkspace) {
     return {
-      workspace: record.workspace,
-      journal_path: record.journal_path,
+      workspace: resolvedPaths.workspace,
+      journal_path: resolvedPaths.journal_path,
     };
   }
 

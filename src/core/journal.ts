@@ -1,6 +1,7 @@
+import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { GitHubIssue, IssueRunRecord } from "./types";
+import { GitHubIssue, IssueRunRecord, SupervisorConfig } from "./types";
 import { ensureDir, truncate, writeFileAtomic } from "./utils";
 
 const NOTES_MARKER = "## Codex Working Notes";
@@ -558,6 +559,48 @@ export function issueJournalPath(workspacePath: string, relativePathTemplate: st
       ? relativePathTemplate
       : resolveIssueJournalRelativePath(relativePathTemplate, issueNumber);
   return path.resolve(workspacePath, relativePath);
+}
+
+function hasLocalTrackedWorkspace(workspacePath: string): boolean {
+  return fsSync.existsSync(path.join(workspacePath, ".git"));
+}
+
+export function resolveTrackedIssueHostPaths(
+  config: Pick<SupervisorConfig, "workspaceRoot" | "issueJournalRelativePath">,
+  record: Pick<IssueRunRecord, "issue_number" | "workspace" | "journal_path">,
+): {
+  workspace: string;
+  journal_path: string;
+  usingCanonicalWorkspace: boolean;
+} {
+  const canonicalWorkspacePath = path.join(config.workspaceRoot, `issue-${record.issue_number}`);
+  const usingCanonicalWorkspace = hasLocalTrackedWorkspace(canonicalWorkspacePath);
+  const workspacePath = usingCanonicalWorkspace ? canonicalWorkspacePath : record.workspace;
+  const journalRelativePath = trackedIssueJournalRelativePath(
+    record.workspace,
+    record.journal_path,
+    config.issueJournalRelativePath,
+    record.issue_number,
+  );
+  const resolvedJournalPath = path.resolve(workspacePath, journalRelativePath);
+  const relativeToWorkspace = path.relative(workspacePath, resolvedJournalPath);
+  const escapesWorkspace =
+    relativeToWorkspace === ".." ||
+    relativeToWorkspace.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relativeToWorkspace);
+
+  return {
+    workspace: workspacePath,
+    journal_path: escapesWorkspace
+      ? trackedIssueJournalPath(
+        workspacePath,
+        null,
+        config.issueJournalRelativePath,
+        record.issue_number,
+      )
+      : resolvedJournalPath,
+    usingCanonicalWorkspace,
+  };
 }
 
 export async function readIssueJournal(journalPath: string): Promise<string | null> {
