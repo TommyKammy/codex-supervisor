@@ -1037,6 +1037,7 @@ export class Supervisor {
           ? clearCurrentReconciliationPhase(this.config)
           : writeCurrentReconciliationPhase(this.config, phase),
       reconcileStaleActiveIssueReservation: (state) => reconcileStaleActiveIssueReservation({
+        config: this.config,
         stateStore: this.stateStore,
         state,
         issueLockPath: (issueNumber) => this.lockPath("issues", `issue-${issueNumber}`),

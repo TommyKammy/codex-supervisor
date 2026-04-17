@@ -3393,6 +3393,83 @@ test("reconcileStaleActiveIssueReservation does not block interrupted turns when
   await assert.rejects(fs.access(path.join(workspacePath, ".codex-supervisor", "turn-in-progress.json")));
 });
 
+test("reconcileStaleActiveIssueReservation uses the canonical local journal when persisted journal_path points to another host", async () => {
+  const lockRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-locks-"));
+  const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-interrupted-journal-host-migrate-"));
+  const workspaceRoot = path.join(rootPath, "workspaces");
+  const workspacePath = path.join(workspaceRoot, "issue-366");
+  const journalPath = path.join(workspacePath, ".codex-supervisor", "issues", "366", "issue-journal.md");
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  await fs.writeFile(path.join(workspacePath, ".git"), "gitdir: /tmp/fake\n", "utf8");
+  await fs.writeFile(journalPath, "# issue journal\n", "utf8");
+  await fs.writeFile(
+    path.join(workspacePath, ".codex-supervisor", "turn-in-progress.json"),
+    `${JSON.stringify({
+      issueNumber: 366,
+      state: "addressing_review",
+      startedAt: "2026-03-26T00:05:00.000Z",
+      journalFingerprint: null,
+    }, null, 2)}\n`,
+    "utf8",
+  );
+  const afterStart = new Date("2026-03-26T00:06:00.000Z");
+  await fs.utimes(journalPath, afterStart, afterStart);
+
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 366,
+    issues: {
+      "366": createRecord({
+        issue_number: 366,
+        state: "addressing_review",
+        workspace: workspacePath,
+        journal_path: "/tmp/other-host/issue-366/.codex-supervisor/issues/366/issue-journal.md",
+        codex_session_id: "session-366",
+        updated_at: "2026-03-26T00:00:00.000Z",
+      }),
+    },
+  };
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(record: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...record,
+        ...patch,
+        updated_at: "2026-03-26T00:10:00.000Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const recoveryEvents = await reconcileStaleActiveIssueReservation({
+    config: createConfig({
+      workspaceRoot,
+      issueJournalRelativePath: ".codex-supervisor/issues/{issueNumber}/issue-journal.md",
+    }),
+    stateStore,
+    state,
+    issueLockPath: (issueNumber) => path.join(lockRoot, "locks", "issues", String(issueNumber)),
+    sessionLockPath: (sessionId) => path.join(lockRoot, "locks", "sessions", String(sessionId)),
+  });
+
+  assert.equal(state.activeIssueNumber, null);
+  assert.equal(state.issues["366"]?.state, "addressing_review");
+  assert.equal(state.issues["366"]?.blocked_reason, null);
+  assert.equal(state.issues["366"]?.codex_session_id, null);
+  assert.match(
+    state.issues["366"]?.last_recovery_reason ?? "",
+    /durable_progress_evidence=journal_mtime_advanced/,
+  );
+  assert.equal(saveCalls, 1);
+  assert.equal(recoveryEvents.length, 1);
+  assert.match(
+    formatRecoveryLog(recoveryEvents) ?? "",
+    /recovery issue=#366 reason=stale_state_cleanup: cleared stale active reservation after issue lock and session lock were missing; durable_progress_evidence=journal_mtime_advanced/,
+  );
+});
+
 test("reconcileStaleActiveIssueReservation blocks interrupted turns when the canonical journal mtime only matches start time", async () => {
   const lockRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-locks-"));
   const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-interrupted-journal-"));
@@ -6053,6 +6130,130 @@ test("reconcileStaleFailedIssueStates requeues failed no-PR issues when the work
   const issue = createIssue({
     number: 366,
     title: "Recover failed no-PR branch",
+    updatedAt: "2026-03-13T00:21:00Z",
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  await reconcileStaleFailedIssueStates(
+    {
+      getPullRequestIfExists: async () => {
+        throw new Error("unexpected getPullRequestIfExists call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      closeIssue: async () => {
+        throw new Error("unexpected closeIssue call");
+      },
+      closePullRequest: async () => {
+        throw new Error("unexpected closePullRequest call");
+      },
+      getIssue: async () => {
+        throw new Error("unexpected getIssue call");
+      },
+      getMergedPullRequestsClosingIssue: async () => [],
+    },
+    stateStore,
+    state,
+    config,
+    [issue],
+    {
+      inferStateFromPullRequest: () => "draft_pr",
+      inferFailureContext: () => null,
+      blockedReasonForLifecycleState: () => null,
+      isOpenPullRequest: () => true,
+      syncReviewWaitWindow: () => ({}),
+      syncCopilotReviewRequestObservation: () => ({}),
+      syncCopilotReviewTimeoutState: noCopilotReviewTimeoutPatch,
+    },
+  );
+
+  const updated = state.issues["366"];
+  assert.equal(updated.state, "queued");
+  assert.equal(updated.pr_number, null);
+  assert.equal(updated.codex_session_id, null);
+  assert.equal(updated.blocked_reason, null);
+  assert.equal(updated.last_failure_kind, null);
+  assert.match(updated.last_error ?? "", /recoverable failed no-PR recovery/i);
+  assert.equal(updated.last_failure_signature, "stale-stabilizing-no-pr-recovery-loop");
+  assert.equal(updated.repeated_failure_signature_count, 0);
+  assert.equal(updated.stale_stabilizing_no_pr_recovery_count, 1);
+  assert.equal(
+    updated.last_recovery_reason,
+    `failed_no_pr_branch_recovery: requeued issue #366 from failed to queued after finding a recoverable no-PR branch ahead of origin/main at ${headSha}`,
+  );
+  assert.ok(updated.last_recovery_at);
+  assert.equal(saveCalls, 1);
+});
+
+test("reconcileStaleFailedIssueStates requeues failed no-PR issues when journal_path points to another host but the canonical local workspace is recoverable", async () => {
+  const { repoPath, workspaceRoot, baseHead } = await createRepositoryWithOrigin();
+  const workspacePath = await createIssueWorktree({
+    repoPath,
+    workspaceRoot,
+    issueNumber: 366,
+    branch: "codex/reopen-issue-366",
+  });
+  const journalPath = path.join(workspacePath, ".codex-supervisor", "issues", "366", "issue-journal.md");
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  await fs.writeFile(journalPath, "# local journal\n");
+  await fs.writeFile(path.join(workspacePath, "feature.txt"), "recoverable checkpoint\n");
+  await runCommand("git", ["-C", workspacePath, "add", "feature.txt"]);
+  await runCommand("git", ["-C", workspacePath, "commit", "-m", "recoverable checkpoint"]);
+  const headSha = (await runCommand("git", ["-C", workspacePath, "rev-parse", "HEAD"])).stdout.trim();
+
+  const config = createConfig({
+    repoPath,
+    workspaceRoot,
+    issueJournalRelativePath: ".codex-supervisor/issues/{issueNumber}/issue-journal.md",
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
+        issue_number: 366,
+        state: "failed",
+        branch: "codex/reopen-issue-366",
+        workspace: workspacePath,
+        journal_path: "/tmp/other-host/issue-366/.codex-supervisor/issues/366/issue-journal.md",
+        pr_number: null,
+        implementation_attempt_count: config.maxImplementationAttemptsPerIssue,
+        last_head_sha: baseHead,
+        last_error: "Selected model is at capacity. Please try a different model.",
+        last_failure_kind: "codex_exit",
+        last_failure_context: {
+          category: "codex",
+          summary: "Selected model is at capacity. Please try a different model.",
+          signature: "provider-capacity",
+          command: null,
+          details: ["provider=codex"],
+          url: null,
+          updated_at: "2026-03-13T00:20:00Z",
+        },
+        last_failure_signature: "provider-capacity",
+        repeated_failure_signature_count: 1,
+        codex_session_id: "session-366",
+      }),
+    ],
+  });
+  const issue = createIssue({
+    number: 366,
+    title: "Recover failed no-PR branch after host migration",
     updatedAt: "2026-03-13T00:21:00Z",
   });
 

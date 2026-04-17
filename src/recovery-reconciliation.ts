@@ -70,6 +70,7 @@ import {
   readInterruptedTurnMarker,
   sameIssueJournalFingerprint,
 } from "./interrupted-turn-marker";
+import { resolveTrackedIssueHostPaths } from "./core/journal";
 import { mergeConflictDetected } from "./supervisor/supervisor-status-rendering";
 import { projectTrackedPrLifecycle } from "./tracked-pr-lifecycle-projection";
 import { hasFreshTrackedPrReadyPromotionBlockerEvidence } from "./tracked-pr-ready-promotion-blocker";
@@ -137,14 +138,24 @@ type DurableTurnUpdateEvidence =
   | "progress_unverifiable";
 
 async function detectDurableTurnUpdateSince(
-  record: Pick<IssueRunRecord, "journal_path" | "updated_at">,
+  config: Pick<SupervisorConfig, "issueJournalRelativePath" | "workspaceRoot"> | null,
+  record: Pick<IssueRunRecord, "issue_number" | "workspace" | "journal_path" | "updated_at">,
   marker: {
     startedAt: string;
     journalFingerprint: import("./interrupted-turn-marker").InterruptedTurnMarker["journalFingerprint"];
   },
 ): Promise<{ hasDurableUpdate: boolean; evidence: DurableTurnUpdateEvidence }> {
-  if (record.journal_path && marker.journalFingerprint) {
-    const currentJournalFingerprint = await captureIssueJournalFingerprint(record.journal_path);
+  const journalPath = config
+    ? (() => {
+      const resolvedPaths = resolveTrackedIssueHostPaths(config, record);
+      return record.journal_path || resolvedPaths.usingCanonicalWorkspace
+        ? resolvedPaths.journal_path
+        : null;
+    })()
+    : record.journal_path;
+
+  if (journalPath && marker.journalFingerprint) {
+    const currentJournalFingerprint = await captureIssueJournalFingerprint(journalPath);
     if (!currentJournalFingerprint.exists) {
       return { hasDurableUpdate: false, evidence: "journal_missing" };
     }
@@ -155,9 +166,9 @@ async function detectDurableTurnUpdateSince(
   }
 
   const startedAtMs = Date.parse(marker.startedAt);
-  if (record.journal_path && Number.isFinite(startedAtMs)) {
+  if (journalPath && Number.isFinite(startedAtMs)) {
     try {
-      const journalStats = await fs.promises.stat(record.journal_path);
+      const journalStats = await fs.promises.stat(journalPath);
       if (journalStats.mtimeMs > startedAtMs) {
         return { hasDurableUpdate: true, evidence: "journal_mtime_advanced" };
       }
@@ -1539,6 +1550,7 @@ export async function reconcileParentEpicClosures(
 }
 
 export async function reconcileStaleActiveIssueReservation(args: {
+  config?: Pick<SupervisorConfig, "issueJournalRelativePath" | "workspaceRoot">;
   stateStore: StateStoreLike;
   state: SupervisorStateFile;
   issueLockPath: (issueNumber: number) => string;
@@ -1589,7 +1601,7 @@ export async function reconcileStaleActiveIssueReservation(args: {
   const interruptedTurnMarker = await readInterruptedTurnMarker(record.workspace);
   const interruptedTurnUpdate =
     interruptedTurnMarker && interruptedTurnMarker.issueNumber === record.issue_number
-      ? await detectDurableTurnUpdateSince(record, interruptedTurnMarker)
+      ? await detectDurableTurnUpdateSince(args.config ?? null, record, interruptedTurnMarker)
       : null;
   if (
     interruptedTurnMarker &&
