@@ -109,6 +109,10 @@ test("getting-started defines the repo-owned local CI contract for pre-PR verifi
   assert.match(content, /codex-supervisor only runs the configured entrypoint/i);
   assert.match(content, /exit code 0/i);
   assert.match(content, /any non-zero exit code/i);
+  assert.match(content, /Ruff or similar static-analysis checks for `tests\/` or `scripts\/`/i);
+  assert.match(content, /inline suppression with the exact rule code and a short rationale/i);
+  assert.match(content, /# noqa: S106 - dummy fixture credential/i);
+  assert.match(content, /# noqa: S104 - test fixture requires wildcard bind/i);
   assert.match(content, /if no local CI contract is configured/i);
   assert.match(content, /does not infer or reconstruct workflow logic from GitHub Actions YAML/i);
   assert.match(content, /when configured local CI fails, PR publication stays blocked/i);

@@ -45,6 +45,38 @@ type ErrorWithOutput = Error & {
   stderr?: string;
 };
 
+interface RuffFinding {
+  filePath: string;
+  code: string;
+}
+
+const TARGETED_STATIC_ANALYSIS_FILE_PATTERN =
+  /(?:^|\/)(?:test|tests|__tests__|scripts)\/.+|(?:^|\/)[^/]+\.(?:test|spec)\.py$/i;
+const MAX_STATIC_ANALYSIS_HINT_PATHS = 8;
+
+const RUFF_REMEDIATION_HINTS = new Map<string, string>([
+  [
+    "F821",
+    "F821 hint: define or import the symbol explicitly when possible. If a test framework injects it intentionally, use the narrowest inline suppression such as `# noqa: F821 - provided by fixture` on the affected line.",
+  ],
+  [
+    "F402",
+    "F402 hint: avoid fixture-local rebinding that shadows imports when you can. If the rebinding is deliberate for a test fixture, suppress only that line with an exact code and rationale such as `# noqa: F402 - fixture rebinding is intentional`.",
+  ],
+  [
+    "RUF059",
+    "RUF059 hint: prefer explicit fixture variables or `_` placeholders for intentionally unused unpacked values. If the unpacking is intentional for coverage, use an inline suppression such as `# noqa: RUF059 - fixture unpacking is intentional`.",
+  ],
+  [
+    "S104",
+    "S104 hint: bind test servers to `127.0.0.1` or `localhost` when possible. If an integration fixture must bind all interfaces, suppress only that line with an exact code and rationale such as `# noqa: S104 - test fixture requires wildcard bind`.",
+  ],
+  [
+    "S106",
+    "S106 hint: prefer fixture/env injection over hardcoded credentials. If a dummy test credential is intentional, suppress only that line with an exact code and rationale such as `# noqa: S106 - dummy fixture credential`.",
+  ],
+]);
+
 function stripWrappingQuotes(value: string): string {
   if (
     (value.startsWith('"') && value.endsWith('"')) ||
@@ -270,6 +302,79 @@ function renderFailureOutput(label: "stdout" | "stderr", output: string | undefi
   return `${label}:\n${truncatePreservingStartAndEnd(trimmed, 1500) ?? trimmed}`;
 }
 
+function collectCommandErrorLines(error: unknown): string[] {
+  if (!(error instanceof Error)) {
+    return [String(error)];
+  }
+
+  const outputError = error as ErrorWithOutput;
+  return [error.message, outputError.stdout, outputError.stderr]
+    .filter((value): value is string => typeof value === "string")
+    .flatMap((value) => value.split(/\r?\n/u));
+}
+
+function normalizeStaticAnalysisPath(filePath: string): string {
+  return filePath.trim().replaceAll("\\", "/").replace(/^\.\/+/, "");
+}
+
+function collectTargetedRuffFindings(error: unknown): RuffFinding[] {
+  const findings = new Map<string, RuffFinding>();
+  const linePattern = /^(.+?):\d+(?::\d+)?:\s*([A-Z]+[0-9]{3})\b/u;
+
+  for (const line of collectCommandErrorLines(error)) {
+    const match = line.trim().match(linePattern);
+    if (!match) {
+      continue;
+    }
+
+    const rawPath = match[1];
+    const code = match[2];
+    if (!rawPath || !code) {
+      continue;
+    }
+
+    const filePath = normalizeStaticAnalysisPath(rawPath);
+    if (!TARGETED_STATIC_ANALYSIS_FILE_PATTERN.test(filePath)) {
+      continue;
+    }
+
+    if (!RUFF_REMEDIATION_HINTS.has(code)) {
+      continue;
+    }
+
+    findings.set(`${filePath}:${code}`, { filePath, code });
+  }
+
+  return [...findings.values()].sort((left, right) => {
+    if (left.filePath === right.filePath) {
+      return left.code.localeCompare(right.code);
+    }
+    return left.filePath.localeCompare(right.filePath);
+  });
+}
+
+function buildTargetedStaticAnalysisGuidance(error: unknown): string[] {
+  const findings = collectTargetedRuffFindings(error);
+  if (findings.length === 0) {
+    return [];
+  }
+
+  const codes = [...new Set(findings.map((finding) => finding.code))].sort();
+  const paths = [...new Set(findings.map((finding) => finding.filePath))];
+  const shownPaths = paths.slice(0, MAX_STATIC_ANALYSIS_HINT_PATHS);
+  const remainingPathCount = paths.length - shownPaths.length;
+  const pathSummary =
+    remainingPathCount > 0 ? `${shownPaths.join(", ")} (+${remainingPathCount} more)` : shownPaths.join(", ");
+
+  return [
+    `ruff/static-analysis hint: changed tests/scripts triggered ${codes.join(", ")} in ${pathSummary}.`,
+    "ruff/static-analysis policy: for intentional test fixtures, prefer the narrowest inline suppression with the exact rule code and a short rationale comment instead of broad file-level ignores.",
+    ...codes
+      .map((code) => RUFF_REMEDIATION_HINTS.get(code))
+      .filter((hint): hint is string => typeof hint === "string"),
+  ];
+}
+
 function buildFailureDetails(error: unknown, executionMode: LocalCiExecutionMode | null): string[] {
   const message =
     truncatePreservingStartAndEnd(error instanceof Error ? error.message : String(error), 1500) ?? "unknown error";
@@ -278,6 +383,7 @@ function buildFailureDetails(error: unknown, executionMode: LocalCiExecutionMode
   return [
     executionMode ? `execution mode: ${renderExecutionMode(executionMode)}` : null,
     message,
+    ...buildTargetedStaticAnalysisGuidance(error),
     renderFailureOutput("stdout", outputError?.stdout),
     renderFailureOutput("stderr", outputError?.stderr),
   ].filter((detail): detail is string => detail !== null);
