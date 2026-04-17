@@ -1825,6 +1825,132 @@ test("reconcileRecoverableBlockedIssueStates suppresses same-head tracked PR rec
   assert.deepEqual(recoveryEvents, []);
 });
 
+test("reconcileRecoverableBlockedIssueStates preserves same-head suppression when older progress snapshots lack review-thread fingerprints", async () => {
+  const config = createConfig();
+  const previousProgressSnapshot = JSON.stringify({
+    headRefOid: "head-191",
+    reviewDecision: "CHANGES_REQUESTED",
+    mergeStateStatus: "BLOCKED",
+    copilotReviewState: null,
+    copilotReviewRequestedAt: null,
+    copilotReviewArrivedAt: null,
+    configuredBotCurrentHeadObservedAt: null,
+    configuredBotCurrentHeadStatusState: null,
+    currentHeadCiGreenAt: "2026-03-13T00:18:00Z",
+    configuredBotRateLimitedAt: null,
+    configuredBotDraftSkipAt: null,
+    configuredBotTopLevelReviewStrength: null,
+    configuredBotTopLevelReviewSubmittedAt: null,
+    checks: ["build:pass:SUCCESS:CI"],
+    unresolvedReviewThreadIds: ["PRRT_thread_1"],
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
+        state: "blocked",
+        blocked_reason: "manual_review",
+        pr_number: 191,
+        last_head_sha: "head-191",
+        last_error:
+          "1 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
+        last_failure_kind: null,
+        last_failure_context: {
+          category: "manual",
+          summary:
+            "1 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
+          signature: "PRRT_thread_1",
+          command: null,
+          details: ["reviewer=coderabbit path=src/file.ts line=12 processed_on_current_head=yes"],
+          url: "https://example.test/pr/191#discussion_r1",
+          updated_at: "2026-03-13T00:20:00Z",
+        },
+        last_failure_signature: "PRRT_thread_1",
+        repeated_failure_signature_count: 3,
+        last_tracked_pr_progress_snapshot: previousProgressSnapshot,
+        last_tracked_pr_progress_summary: "no_meaningful_tracked_pr_progress",
+        last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+      }),
+    ],
+  });
+  const issue = createIssue({
+    title: "Recovery issue",
+    updatedAt: "2026-03-13T00:21:00Z",
+  });
+  const pr = createPullRequest({
+    number: 191,
+    title: "Recovery implementation",
+    url: "https://example.test/pr/191",
+    headRefName: "codex/reopen-issue-366",
+    headRefOid: "head-191",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => pr,
+      getIssue: async () => issue,
+      getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getUnresolvedReviewThreads: async () => [
+        createReviewThread({
+          id: "PRRT_thread_1",
+          comments: {
+            nodes: [
+              {
+                id: "comment-1",
+                body: "Please address this thread.",
+                createdAt: "2026-03-13T00:19:00Z",
+                url: "https://example.test/pr/191#discussion_r1",
+                author: { login: "coderabbit", typeName: "Bot" },
+              },
+            ],
+          },
+        }),
+      ],
+    },
+    stateStore,
+    state,
+    config,
+    [issue],
+    {
+      shouldAutoRetryHandoffMissing,
+      inferStateFromPullRequest: () => "local_review",
+      inferFailureContext,
+      blockedReasonForLifecycleState,
+      isOpenPullRequest,
+      syncReviewWaitWindow,
+      syncCopilotReviewRequestObservation,
+      syncCopilotReviewTimeoutState,
+    },
+  );
+
+  const updated = state.issues["366"];
+  assert.equal(updated.state, "blocked");
+  assert.equal(updated.blocked_reason, "manual_review");
+  assert.equal(
+    updated.last_tracked_pr_progress_summary,
+    "suppressed_same_head_same_review_thread_blocker",
+  );
+  assert.equal(updated.last_tracked_pr_repeat_failure_decision, "stop_no_progress");
+  assert.equal(updated.last_recovery_reason, null);
+  assert.equal(saveCalls, 1);
+  assert.deepEqual(recoveryEvents, []);
+});
+
 test("reconcileRecoverableBlockedIssueStates allows same-head tracked PR recovery when the unresolved blocker guidance changes within the same thread", async () => {
   const config = createConfig();
   const previousProgressSnapshot = JSON.stringify({

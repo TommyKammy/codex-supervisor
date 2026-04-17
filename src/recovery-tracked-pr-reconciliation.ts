@@ -168,16 +168,25 @@ export function suppressSameHeadNoProgressReviewThreadRecovery(
     previousThreadIds.every((threadId, index) => threadId === currentThreadIds[index]);
   const sameBlockingThread =
     typeof failureSignature === "string" && failureSignature.length > 0 && currentThreadIds.includes(failureSignature);
-  const sameThreadGuidance =
+  const hasComparableThreadGuidanceBaseline =
     previousThreadFingerprints !== null &&
     previousThreadFingerprints.length > 0 &&
-    previousThreadFingerprints.length === currentThreadFingerprints.length &&
+    previousThreadFingerprints.length === currentThreadFingerprints.length;
+  const sameThreadGuidance =
+    hasComparableThreadGuidanceBaseline &&
     previousThreadFingerprints.every((fingerprint, index) => fingerprint === currentThreadFingerprints[index]);
 
   if (!sameThreadIds || !sameBlockingThread) {
     return {
       shouldSuppress: false,
       progressSummary: null,
+    };
+  }
+
+  if (!hasComparableThreadGuidanceBaseline) {
+    return {
+      shouldSuppress: true,
+      progressSummary: "suppressed_same_head_same_review_thread_blocker",
     };
   }
 
