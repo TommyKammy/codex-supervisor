@@ -548,29 +548,35 @@ async function diagnoseWorktrees(
         continue;
       }
 
-      const hostDiagnostics = await inspectTrackedIssueHostDiagnostics(config, record);
-      const workspacePath = hostDiagnostics.resolvedPaths.workspace;
-      if (hostDiagnostics.guidance !== null) {
-        infoDetails.push(
-          [
-            "issue_host_paths",
-            `issue=#${record.issue_number}`,
-            `workspace=${hostDiagnostics.workspaceStatus}`,
-            `journal_path=${hostDiagnostics.journalPathStatus}`,
-            `guidance=${hostDiagnostics.guidance}`,
-          ].join(" "),
-        );
-        if (hostDiagnostics.journalStatus !== "current") {
+      let workspacePath = resolveTrackedIssueHostPaths(config, record).workspace;
+      try {
+        const hostDiagnostics = await inspectTrackedIssueHostDiagnostics(config, record);
+        workspacePath = hostDiagnostics.resolvedPaths.workspace;
+        if (hostDiagnostics.guidance !== null) {
           infoDetails.push(
             [
-              "issue_journal_state",
+              "issue_host_paths",
               `issue=#${record.issue_number}`,
-              `status=${hostDiagnostics.journalStatus}`,
+              `workspace=${hostDiagnostics.workspaceStatus}`,
+              `journal_path=${hostDiagnostics.journalPathStatus}`,
               `guidance=${hostDiagnostics.guidance}`,
-              `detail=${hostDiagnostics.journalStatus === "rehydrated" ? "prior_local_only_handoff_unavailable" : "resolved_local_journal_missing"}`,
             ].join(" "),
           );
+          if (hostDiagnostics.journalStatus !== "current") {
+            infoDetails.push(
+              [
+                "issue_journal_state",
+                `issue=#${record.issue_number}`,
+                `status=${hostDiagnostics.journalStatus}`,
+                `guidance=${hostDiagnostics.guidance}`,
+                `detail=${hostDiagnostics.journalStatus === "rehydrated" ? "prior_local_only_handoff_unavailable" : "resolved_local_journal_missing"}`,
+              ].join(" "),
+            );
+          }
         }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        problems.push(`Issue #${record.issue_number} host diagnostics could not be inspected: ${message}.`);
       }
 
       try {
