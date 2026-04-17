@@ -219,6 +219,18 @@ test("buildCodexPrompt includes fail-closed shared-memory heuristics for review-
     prompt,
     /Do not stop at proving that an exception was raised or an error was returned; also prove the durable state remained clean after the failed path/,
   );
+  assert.match(
+    prompt,
+    /Do not widen advisory context, recommendation lineage, evidence anchors, or reconciliation subject linkage beyond the directly linked authoritative record unless the broader linkage is explicit, authoritative, and intended/,
+  );
+  assert.match(
+    prompt,
+    /When assembling assistant, advisory, or detail surfaces, start from the anchored record and pull in only directly linked context; do not pull sibling, indirect, or same-parent lineage into the surface by inference alone/,
+  );
+  assert.match(
+    prompt,
+    /If a recommendation, evidence snippet, or reconciliation note is attached to one record, do not silently generalize it to a broader subject, neighbor record, or lineage-relative surface without an explicit authoritative link that says it applies there/,
+  );
 });
 
 test("buildCodexPrompt renders on-demand memory files even without always-read files", () => {

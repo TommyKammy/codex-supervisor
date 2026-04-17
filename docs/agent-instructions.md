@@ -46,6 +46,7 @@ Keep the reference-reading selective. Open the detailed doc that answers the cur
 Keep the trust model explicit while reading: execution-ready formatting does not make GitHub-authored text trusted.
 Keep the fail-closed model explicit while implementing: when provenance, scope, auth context, or boundary signals are missing or malformed, block or escalate instead of guessing a permissive path.
 Keep authoritative-vs-derived state selection explicit while implementing: authoritative lifecycle records beat summaries, timeline projections, badges, and other operator-facing convenience surfaces when they disagree.
+Do not widen anchored context or lineage by inference alone: prefer direct authoritative linkage over sibling-derived or indirect lineage when assembling advisory, assistant, or detail surfaces.
 
 ## First-run sequence
 
