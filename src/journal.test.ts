@@ -146,6 +146,27 @@ test("syncIssueJournal writes workspace metadata as workspace-relative paths", a
   assert.doesNotMatch(content, new RegExp(tempDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });
 
+test("syncIssueJournal records when a missing local-only journal is rehydrated from supervisor state", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "journal-rehydrated-"));
+  const journalPath = issueJournalPath(tempDir, DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH, issue.number);
+
+  await syncIssueJournal({
+    issue,
+    record: createRecord({
+      workspace: tempDir,
+      journal_path: journalPath,
+      state: "addressing_review",
+      last_codex_summary: "Summary: resume the tracked PR follow-up after recreating the local journal.",
+      last_error: "Previous host-local handoff text is unavailable on this machine.",
+    }),
+    journalPath,
+  });
+
+  const content = await fs.readFile(journalPath, "utf8");
+  assert.match(content, /rehydrated on this host because the prior local-only handoff journal was unavailable/i);
+  assert.match(content, /recreating the local journal/i);
+});
+
 test("resolveIssueJournalRelativePath scopes the default journal path by issue number", () => {
   assert.equal(
     resolveIssueJournalRelativePath(DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH, 177),
@@ -267,6 +288,30 @@ test("resolveTrackedIssueHostPaths falls back to the canonical journal path when
     createRecord({
       workspace: "/tmp/other-host/worktrees/issue-177",
       journal_path: "/tmp/other-host/.codex-supervisor/issues/177/issue-journal.md",
+    }),
+  );
+
+  assert.equal(resolved.workspace, canonicalWorkspace);
+  assert.equal(
+    resolved.journal_path,
+    path.join(canonicalWorkspace, ".codex-supervisor", "issues", "177", "issue-journal.md"),
+  );
+});
+
+test("resolveTrackedIssueHostPaths falls back to the canonical journal path when persisted hints point at another issue journal", async () => {
+  const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "journal-host-paths-cross-issue-"));
+  const canonicalWorkspace = path.join(workspaceRoot, "issue-177");
+  await fs.mkdir(canonicalWorkspace, { recursive: true });
+  await fs.writeFile(path.join(canonicalWorkspace, ".git"), "gitdir: /tmp/fake\n");
+
+  const resolved = resolveTrackedIssueHostPaths(
+    {
+      workspaceRoot,
+      issueJournalRelativePath: DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH,
+    },
+    createRecord({
+      workspace: canonicalWorkspace,
+      journal_path: path.join(canonicalWorkspace, ".codex-supervisor", "issues", "1264", "issue-journal.md"),
     }),
   );
 
