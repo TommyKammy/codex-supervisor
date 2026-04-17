@@ -582,10 +582,23 @@ export function resolveTrackedIssueHostPaths(
     config.issueJournalRelativePath,
     record.issue_number,
   );
+  const resolvedJournalPath = path.resolve(workspacePath, journalRelativePath);
+  const relativeToWorkspace = path.relative(workspacePath, resolvedJournalPath);
+  const escapesWorkspace =
+    relativeToWorkspace === ".." ||
+    relativeToWorkspace.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relativeToWorkspace);
 
   return {
     workspace: workspacePath,
-    journal_path: path.resolve(workspacePath, journalRelativePath),
+    journal_path: escapesWorkspace
+      ? trackedIssueJournalPath(
+        workspacePath,
+        null,
+        config.issueJournalRelativePath,
+        record.issue_number,
+      )
+      : resolvedJournalPath,
     usingCanonicalWorkspace,
   };
 }

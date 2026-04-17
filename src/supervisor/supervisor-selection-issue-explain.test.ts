@@ -586,6 +586,68 @@ test("buildIssueExplainDto surfaces preserved partial work for no-PR manual-revi
   assert.match(renderIssueExplainDto(dto), /^partial_work=preserved tracked_files=feature\.txt\|src\/workflow\.ts$/m);
 });
 
+test("buildIssueExplainDto reads the canonical host journal when a tracked record has a null journal path", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 608;
+  const canonicalWorkspace = path.join(fixture.workspaceRoot, `issue-${issueNumber}`);
+  const journalPath = path.join(canonicalWorkspace, ".codex-supervisor", "issue-journal.md");
+
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  await fs.writeFile(path.join(canonicalWorkspace, ".git"), "gitdir: /tmp/fake\n", "utf8");
+  await fs.writeFile(
+    journalPath,
+    `# Issue #${issueNumber}: Canonical host journal
+
+## Codex Working Notes
+### Current Handoff
+- Current blocker: Waiting on review feedback.
+- Next exact step: Re-run explain after wiring the canonical journal path.
+`,
+    "utf8",
+  );
+
+  const issue = createIssue({
+    number: issueNumber,
+    title: "Explain canonical host journal",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "addressing_review",
+        branch: branchName(fixture.config, issueNumber),
+        workspace: "/tmp/other-host/issue-608",
+        journal_path: null,
+        blocked_reason: null,
+        last_error: null,
+      }),
+    },
+  };
+  const config = createConfig({
+    workspaceRoot: fixture.workspaceRoot,
+    stateFile: fixture.stateFile,
+    repoPath: fixture.repoPath,
+  });
+
+  const dto = await buildIssueExplainDto(
+    {
+      getIssue: async () => issue,
+      listAllIssues: async () => [issue],
+      listCandidateIssues: async () => [issue],
+    },
+    config,
+    state,
+    issueNumber,
+  );
+
+  assert.ok(dto.activityContext);
+  assert.equal(
+    dto.activityContext.handoffSummary,
+    "blocker: Waiting on review feedback. | next: Re-run explain after wiring the canonical journal path.",
+  );
+});
+
 test("buildIssueExplainSummary surfaces repeated stale cleanup risk for no-PR recovery loops", async () => {
   const config = createConfig({
     sameFailureSignatureRepeatLimit: 3,

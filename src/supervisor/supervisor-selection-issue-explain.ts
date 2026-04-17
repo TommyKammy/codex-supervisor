@@ -245,12 +245,11 @@ export async function buildIssueExplainDto(
       pr = null;
     }
   }
+  const resolvedPaths = record ? resolveTrackedIssueHostPaths(config, record) : null;
   let handoffSummary: string | null = null;
-  if (record?.journal_path) {
+  if (record && resolvedPaths && (record.journal_path !== null || resolvedPaths.usingCanonicalWorkspace)) {
     try {
-      handoffSummary = summarizeIssueJournalHandoff(
-        await readIssueJournal(resolveTrackedIssueHostPaths(config, record).journal_path),
-      );
+      handoffSummary = summarizeIssueJournalHandoff(await readIssueJournal(resolvedPaths.journal_path));
     } catch {
       handoffSummary = null;
     }

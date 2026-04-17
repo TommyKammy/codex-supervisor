@@ -253,6 +253,30 @@ test("resolveTrackedIssueHostPaths derives the canonical journal path for null j
   );
 });
 
+test("resolveTrackedIssueHostPaths falls back to the canonical journal path when persisted hints would escape the local workspace", async () => {
+  const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "journal-host-paths-escape-"));
+  const canonicalWorkspace = path.join(workspaceRoot, "issue-177");
+  await fs.mkdir(canonicalWorkspace, { recursive: true });
+  await fs.writeFile(path.join(canonicalWorkspace, ".git"), "gitdir: /tmp/fake\n");
+
+  const resolved = resolveTrackedIssueHostPaths(
+    {
+      workspaceRoot,
+      issueJournalRelativePath: DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH,
+    },
+    createRecord({
+      workspace: "/tmp/other-host/worktrees/issue-177",
+      journal_path: "/tmp/other-host/.codex-supervisor/issues/177/issue-journal.md",
+    }),
+  );
+
+  assert.equal(resolved.workspace, canonicalWorkspace);
+  assert.equal(
+    resolved.journal_path,
+    path.join(canonicalWorkspace, ".codex-supervisor", "issues", "177", "issue-journal.md"),
+  );
+});
+
 test("syncIssueJournal normalizes absolute local paths before writing durable content", async () => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "journal-path-normalization-"));
   const journalPath = path.join(tempDir, ".codex-supervisor", "issue-journal.md");
