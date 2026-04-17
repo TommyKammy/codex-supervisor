@@ -332,3 +332,25 @@ test("runtime gate distinguishes auto-normalized journals from expected-local du
   assert.doesNotMatch(redactedJournal, new RegExp(SAMPLE_FORBIDDEN_PATH.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.match(redactedJournal, /<redacted-local-path>/);
 });
+
+test("runtime gate treats nested WORKLOG.md files as publishable tracked content", async (t) => {
+  const repoPath = await createTrackedRepo();
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+
+  await fs.mkdir(path.join(repoPath, "docs"), { recursive: true });
+  await fs.writeFile(path.join(repoPath, "docs", "WORKLOG.md"), `Operator note: ${SAMPLE_FORBIDDEN_PATH}\n`, "utf8");
+  git(repoPath, "add", "docs/WORKLOG.md");
+
+  const gateResult = await runWorkstationLocalPathGate({
+    workspacePath: repoPath,
+    gateLabel: "before publication",
+  });
+
+  assert.equal(gateResult.ok, false);
+  const summary = gateResult.failureContext?.summary ?? "";
+  assert.match(summary, /Edit tracked publishable content to remove workstation-local paths\./);
+  assert.match(summary, /docs\/WORKLOG\.md \(1 match, Linux user home directory\)/);
+  assert.doesNotMatch(summary, /Review repo policy or exclusions for expected-local durable artifacts\./);
+});

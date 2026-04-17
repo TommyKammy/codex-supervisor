@@ -109,11 +109,13 @@ type WorkstationLocalArtifactCategory =
   | "publishable_tracked_content";
 
 function categorizeWorkstationLocalArtifact(filePath: string): WorkstationLocalArtifactCategory {
-  if (isSupervisorOwnedDurableJournalPath(filePath)) {
+  const repoRelativePath = normalizeRepoRelativePath(filePath);
+
+  if (isSupervisorOwnedDurableJournalPath(repoRelativePath)) {
     return "supervisor_owned_journal";
   }
 
-  if (path.posix.basename(normalizeRepoRelativePath(filePath)) === "WORKLOG.md") {
+  if (repoRelativePath === "WORKLOG.md") {
     return "expected_local_durable_artifact";
   }
 
