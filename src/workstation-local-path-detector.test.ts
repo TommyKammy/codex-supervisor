@@ -264,6 +264,7 @@ test("runtime gate surfaces the highest-signal offending file first in the failu
   assert.equal(gateResult.ok, false);
   const summary = gateResult.failureContext?.summary ?? "";
   assert.match(summary, /workstation-local path hygiene before marking PR #116 ready/);
+  assert.match(summary, /Edit tracked publishable content to remove workstation-local paths\./);
   assert.match(summary, /src\/config\.ts \(3 matches, Linux user home directory\)/);
   assert.ok(
     summary.indexOf("src/config.ts") < summary.indexOf("docs/guide.md"),
@@ -277,4 +278,57 @@ test("runtime gate surfaces the highest-signal offending file first in the failu
     gateResult.failureContext?.details.join("\n") ?? "",
     /- docs\/guide\.md:1 matched \/home\/<user>\/ \(Linux user home directory\) via "\/home\/alice\/dev\/private-repo"/i,
   );
+});
+
+test("runtime gate distinguishes auto-normalized journals from expected-local durable artifact policy blockers", async (t) => {
+  const repoPath = await createTrackedRepo();
+  const currentJournalPath = path.join(repoPath, ".codex-supervisor", "issues", "102", "issue-journal.md");
+  const otherJournalPath = path.join(repoPath, ".codex-supervisor", "issues", "181", "issue-journal.md");
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+
+  await fs.mkdir(path.dirname(currentJournalPath), { recursive: true });
+  await fs.mkdir(path.dirname(otherJournalPath), { recursive: true });
+  await fs.writeFile(currentJournalPath, "# Issue #102\n", "utf8");
+  await fs.writeFile(
+    otherJournalPath,
+    [
+      "# Issue #181: stale leak",
+      "",
+      "## Codex Working Notes",
+      "### Current Handoff",
+      `- What changed: copied ${SAMPLE_FORBIDDEN_PATH} from another workstation.`,
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  await fs.writeFile(path.join(repoPath, "WORKLOG.md"), `Operator note: ${SAMPLE_FORBIDDEN_PATH}\n`, "utf8");
+  git(
+    repoPath,
+    "add",
+    ".codex-supervisor/issues/102/issue-journal.md",
+    ".codex-supervisor/issues/181/issue-journal.md",
+    "WORKLOG.md",
+  );
+
+  const gateResult = await runWorkstationLocalPathGate({
+    workspacePath: repoPath,
+    gateLabel: "before publication",
+  });
+
+  assert.equal(gateResult.ok, false);
+  assert.deepEqual(gateResult.rewrittenJournalPaths, [".codex-supervisor/issues/181/issue-journal.md"]);
+  const summary = gateResult.failureContext?.summary ?? "";
+  assert.match(summary, /Supervisor-owned issue journal(?:s were| was) auto-normalized before rechecking remaining blockers\./);
+  assert.match(summary, /Review repo policy or exclusions for expected-local durable artifacts\./);
+  assert.match(summary, /WORKLOG\.md \(1 match, Linux user home directory\)/);
+  assert.doesNotMatch(summary, /\.codex-supervisor\/issues\/181\/issue-journal\.md/);
+  assert.deepEqual(
+    gateResult.failureContext?.details,
+    [`- WORKLOG.md:1 matched /home/<user>/ (Linux user home directory) via ${JSON.stringify(SAMPLE_FORBIDDEN_PATH)}`],
+  );
+  const redactedJournal = await fs.readFile(otherJournalPath, "utf8");
+  assert.doesNotMatch(redactedJournal, new RegExp(SAMPLE_FORBIDDEN_PATH.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(redactedJournal, /<redacted-local-path>/);
 });

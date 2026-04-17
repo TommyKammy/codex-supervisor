@@ -6,7 +6,11 @@ import {
   normalizeCommittedIssueJournal,
   readIssueJournal,
 } from "./core/journal";
-import { findForbiddenWorkstationLocalPaths, formatWorkstationLocalPathMatch } from "./workstation-local-paths";
+import {
+  findForbiddenWorkstationLocalPaths,
+  formatWorkstationLocalPathMatch,
+  type WorkstationLocalPathMatch,
+} from "./workstation-local-paths";
 
 export const WORKSTATION_LOCAL_PATH_HYGIENE_FAILURE_SIGNATURE = "workstation-local-path-hygiene-failed";
 
@@ -99,6 +103,72 @@ function summarizeWorkstationLocalPathMatches(
   return visibleFiles.length > 0 ? `First fix: ${visibleFiles.join("; ")}${tail}.` : "";
 }
 
+type WorkstationLocalArtifactCategory =
+  | "supervisor_owned_journal"
+  | "expected_local_durable_artifact"
+  | "publishable_tracked_content";
+
+function categorizeWorkstationLocalArtifact(filePath: string): WorkstationLocalArtifactCategory {
+  if (isSupervisorOwnedDurableJournalPath(filePath)) {
+    return "supervisor_owned_journal";
+  }
+
+  if (path.posix.basename(normalizeRepoRelativePath(filePath)) === "WORKLOG.md") {
+    return "expected_local_durable_artifact";
+  }
+
+  return "publishable_tracked_content";
+}
+
+function summarizeCategoryMatches(
+  findings: WorkstationLocalPathMatch[],
+  category: WorkstationLocalArtifactCategory,
+): string {
+  return summarizeWorkstationLocalPathMatches(
+    findings.filter((finding) => categorizeWorkstationLocalArtifact(finding.filePath) === category),
+  );
+}
+
+function summarizeWorkstationLocalPathRemediation(args: {
+  gateLabel: string;
+  findings: WorkstationLocalPathMatch[];
+  normalizationErrors: string[];
+  rewrittenJournalPaths: string[];
+}): string | undefined {
+  const parts: string[] = [];
+
+  if (args.rewrittenJournalPaths.length > 0) {
+    parts.push(
+      `Supervisor-owned issue journal${args.rewrittenJournalPaths.length === 1 ? " was" : "s were"} auto-normalized before rechecking remaining blockers.`,
+    );
+  }
+
+  if (args.normalizationErrors.length > 0) {
+    const journalSummary = summarizeCategoryMatches(args.findings, "supervisor_owned_journal");
+    parts.push(
+      journalSummary
+        ? `Supervisor-owned issue journal auto-normalization still needs attention. ${journalSummary}`
+        : "Supervisor-owned issue journal auto-normalization still needs attention.",
+    );
+  }
+
+  const expectedLocalSummary = summarizeCategoryMatches(args.findings, "expected_local_durable_artifact");
+  if (expectedLocalSummary) {
+    parts.push(`Review repo policy or exclusions for expected-local durable artifacts. ${expectedLocalSummary}`);
+  }
+
+  const publishableSummary = summarizeCategoryMatches(args.findings, "publishable_tracked_content");
+  if (publishableSummary) {
+    parts.push(`Edit tracked publishable content to remove workstation-local paths. ${publishableSummary}`);
+  }
+
+  if (parts.length === 0) {
+    return undefined;
+  }
+
+  return `Tracked durable artifacts failed workstation-local path hygiene ${args.gateLabel}. ${parts.join(" ")}`;
+}
+
 async function redactSupervisorOwnedJournalLeaks(
   workspacePath: string,
   findings: Awaited<ReturnType<typeof findForbiddenWorkstationLocalPaths>>,
@@ -156,9 +226,16 @@ export async function runWorkstationLocalPathGate(args: {
     failureContext: buildWorkstationLocalPathFailureContext({
       gateLabel: args.gateLabel,
       details: [...normalizationErrors, ...findings.map(formatWorkstationLocalPathMatch)],
-      summary: remediationSummary
-        ? `Tracked durable artifacts failed workstation-local path hygiene ${args.gateLabel}. ${remediationSummary}`
-        : undefined,
+      summary:
+        summarizeWorkstationLocalPathRemediation({
+          gateLabel: args.gateLabel,
+          findings,
+          normalizationErrors,
+          rewrittenJournalPaths,
+        })
+        ?? (remediationSummary
+          ? `Tracked durable artifacts failed workstation-local path hygiene ${args.gateLabel}. ${remediationSummary}`
+          : undefined),
     }),
     rewrittenJournalPaths,
   };
