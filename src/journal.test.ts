@@ -167,6 +167,21 @@ test("syncIssueJournal records when a missing local-only journal is rehydrated f
   assert.match(content, /recreating the local journal/i);
 });
 
+test("syncIssueJournal does not mark a fresh journal as rehydrated from default attempt counters alone", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "journal-fresh-"));
+  const journalPath = issueJournalPath(tempDir, DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH, issue.number);
+
+  await syncIssueJournal({
+    issue,
+    record: createRecord({ workspace: tempDir, journal_path: journalPath }),
+    journalPath,
+  });
+
+  const content = await fs.readFile(journalPath, "utf8");
+  assert.doesNotMatch(content, /rehydrated on this host/i);
+  assert.doesNotMatch(content, /Prior host-local handoff text could not be recovered/i);
+});
+
 test("resolveIssueJournalRelativePath scopes the default journal path by issue number", () => {
   assert.equal(
     resolveIssueJournalRelativePath(DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH, 177),

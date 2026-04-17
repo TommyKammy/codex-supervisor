@@ -1196,6 +1196,119 @@ test("executeCodexTurnPhase rehydrates a missing local journal before resuming a
   });
 });
 
+test("executeCodexTurnPhase does not rehydrate a missing local journal when the resume lock is unavailable", async () => {
+  await withTempWorkspace("codex-turn-missing-journal-locked-", async (workspacePath) => {
+    const journalPath = path.join(workspacePath, ".codex-supervisor", "issues", "102", "issue-journal.md");
+    const state: SupervisorStateFile = {
+      activeIssueNumber: 102,
+      issues: {
+        "102": createRecord({
+          state: "stabilizing",
+          codex_session_id: "session-existing",
+          workspace: workspacePath,
+          journal_path: journalPath,
+          pr_number: 116,
+        }),
+      },
+    };
+
+    let syncJournalCalls = 0;
+    let journalReadCalls = 0;
+
+    const result = await executeCodexTurnPhase({
+      config: createConfig({
+        issueJournalRelativePath: ".codex-supervisor/issues/{issueNumber}/issue-journal.md",
+      }),
+      stateStore: {
+        touch: (record, patch) => ({ ...record, ...patch, updated_at: "2026-03-26T01:00:01.000Z" }),
+        save: async () => undefined,
+      },
+      github: {
+        resolvePullRequestForBranch: async () => createPullRequest({ number: 116, headRefOid: "head-116" }),
+        createPullRequest: async () => {
+          throw new Error("unexpected createPullRequest call");
+        },
+        getChecks: async () => [],
+        getUnresolvedReviewThreads: async () => [],
+        getExternalReviewSurface: async () => {
+          throw new Error("unexpected getExternalReviewSurface call");
+        },
+      },
+      context: {
+        state,
+        record: state.issues["102"]!,
+        issue: createIssue({ number: 102, title: "Skip missing journal rehydration when the resume lock is unavailable" }),
+        previousCodexSummary: null,
+        previousError: null,
+        workspacePath,
+        journalPath,
+        syncJournal: async () => {
+          syncJournalCalls += 1;
+        },
+        memoryArtifacts: {
+          alwaysReadFiles: [],
+          onDemandFiles: [],
+          contextIndexPath: "/tmp/context-index.md",
+          agentsPath: "/tmp/AGENTS.generated.md",
+        },
+        workspaceStatus: createWorkspaceStatus({ branch: "codex/issue-102", headSha: "head-116" }),
+        pr: createPullRequest({ number: 116, headRefOid: "head-116" }),
+        checks: [],
+        reviewThreads: [],
+        options: { dryRun: false },
+      },
+      acquireSessionLock: async () => ({
+        sessionId: "session-existing",
+        acquired: false,
+        reason: "session already locked elsewhere",
+        release: async () => undefined,
+      }),
+      classifyFailure: () => "command_error",
+      buildCodexFailureContext: (category, summary, details) => ({
+        category,
+        summary,
+        signature: `${category}:${summary}`,
+        command: null,
+        details,
+        url: null,
+        updated_at: "2026-03-26T01:00:01.000Z",
+      }),
+      applyFailureSignature: () => ({
+        last_failure_signature: null,
+        repeated_failure_signature_count: 0,
+      }),
+      normalizeBlockerSignature: () => null,
+      isVerificationBlockedMessage: () => false,
+      derivePullRequestLifecycleSnapshot: () => {
+        throw new Error("unexpected derivePullRequestLifecycleSnapshot call");
+      },
+      inferStateWithoutPullRequest: () => "stabilizing",
+      blockedReasonFromReviewState: () => null,
+      recoverUnexpectedCodexTurnFailure: async ({ error }) => {
+        throw error instanceof Error ? error : new Error(String(error));
+      },
+      getWorkspaceStatus: async () => createWorkspaceStatus({ branch: "codex/issue-102", headSha: "head-116" }),
+      pushBranch: async () => {
+        throw new Error("unexpected pushBranch call");
+      },
+      readIssueJournal: async () => {
+        journalReadCalls += 1;
+        return null;
+      },
+      agentRunner: createSuccessfulAgentRunner(async () => {
+        throw new Error("unexpected agentRunner.runTurn call");
+      }),
+    });
+
+    assert.deepEqual(result, {
+      kind: "returned",
+      message: "Skipped issue #102: session already locked elsewhere.",
+    });
+    assert.equal(syncJournalCalls, 0);
+    assert.equal(journalReadCalls, 0);
+  });
+});
+
 test("executeCodexTurnPhase writes a durable interrupted-turn marker before runTurn and clears it after success", async () => {
   await withTempWorkspace("codex-turn-marker-", async (workspacePath) => {
     const markerPath = interruptedTurnMarkerPath(workspacePath);

@@ -657,9 +657,9 @@ function shouldAnnotateJournalRehydration(
   >,
 ): boolean {
   return (
-    record.attempt_count > 0 ||
-    record.implementation_attempt_count > 0 ||
-    record.repair_attempt_count > 0 ||
+    record.attempt_count > 1 ||
+    record.implementation_attempt_count > 1 ||
+    record.repair_attempt_count > 1 ||
     record.pr_number !== null ||
     record.codex_session_id !== null ||
     record.last_codex_summary !== null ||

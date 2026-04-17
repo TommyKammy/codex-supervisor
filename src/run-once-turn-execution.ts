@@ -278,12 +278,6 @@ export async function executeCodexTurnPhase(
       };
     }
 
-    let journalContent = await readIssueJournalImpl(journalPath);
-    if (journalContent === null) {
-      await syncJournal(record);
-      journalContent = await readIssueJournalImpl(journalPath);
-    }
-    const effectiveJournalContent = journalContent ?? "";
     const preRunState = record.state;
     const shouldResumeTurn = shouldResumeAgentTurn({
       record,
@@ -300,6 +294,13 @@ export async function executeCodexTurnPhase(
         message: `Skipped issue #${record.issue_number}: ${sessionLock.reason}.`,
       };
     }
+
+    let journalContent = await readIssueJournalImpl(journalPath);
+    if (journalContent === null) {
+      await syncJournal(record);
+      journalContent = await readIssueJournalImpl(journalPath);
+    }
+    const effectiveJournalContent = journalContent ?? "";
 
     try {
       const preparedTurn = await prepareCodexTurnPrompt({
