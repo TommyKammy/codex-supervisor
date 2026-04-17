@@ -10,6 +10,7 @@
 6. Commit only after the focused checks pass.
 7. Open or update the PR.
 8. Address CI failures and review feedback until mergeable.
+9. Before shipping a stateful change, check that current/latest/active/terminal selection still comes from the authoritative record rather than a summary DTO, timeline projection, or operator-facing status field.
 
 ## Durable memory
 
@@ -25,3 +26,4 @@ Before commit, check that:
 4. New diagnostics and docs match the same parser and runtime contract as the implementation.
 5. Missing or malformed provenance, scope, auth, or trust-boundary signals still block or reject the path instead of falling open.
 6. Placeholder credentials, raw forwarded headers, and ambiguous tenant or resource linkage are rejected until a trusted source or explicit binding is present.
+7. Derived status surfaces, timeline rows, and convenience flags still agree with the authoritative lifecycle record after the change.

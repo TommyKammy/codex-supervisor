@@ -446,6 +446,15 @@ function buildCodexStartPrompt(input: BuildCodexStartPromptInput): string {
     "- Anchor checks and tests to the real enforcement boundary. If the behavior depends on a later authorization, provenance, or scope-validation step, prove the system still blocks there instead of only testing an earlier setup step.",
     "- When a check depends on a missing prerequisite signal, block, reject, or surface an explicit follow-up instead of silently succeeding, degrading to allow, or substituting guessed context.",
   ];
+  const authoritativeStateHeuristics = [
+    "Authoritative state heuristics for shared memory:",
+    "- Prefer authoritative records and lifecycle facts over derived, convenience, or operator-facing projections when they disagree. Repair the projection; do not redefine truth around the summary.",
+    "- Resolve `current`, `latest`, `active`, `terminal`, `open`, or `done` from the authoritative lifecycle source instead of whichever summary field or timeline entry was updated last.",
+    "- When selecting among multiple records, define the winner from authoritative fields first: explicit lifecycle state, authoritative timestamps, durable identifiers, and real terminal markers beat display ordering, badge text, or convenience booleans.",
+    "- Do not let timeline summaries, detail DTOs, badges, counters, or post-mutation refresh failures overwrite the outcome recorded by the authoritative mutation or lifecycle record.",
+    "- Treat operator-facing status text, human-readable summaries, and detail projections as derived surfaces that must be recalculated from authoritative state, not used as independent evidence for state transitions.",
+    "- When a derived surface drifts from the authoritative record, fix the derivation and add or tighten the narrowest regression test at the authoritative selection boundary.",
+  ];
 
   return [
     `You are operating inside a dedicated worktree for ${input.repoSlug}.`,
@@ -473,6 +482,8 @@ function buildCodexStartPrompt(input: BuildCodexStartPromptInput): string {
       : []),
     "",
     ...failClosedReviewHeuristics,
+    "",
+    ...authoritativeStateHeuristics,
     "",
     ...githubIssueBodySection,
     "",
