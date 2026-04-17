@@ -47,6 +47,8 @@ test("getting-started stays focused on operator setup and flow", async () => {
   assert.match(content, /npm run verify:paths/);
   assert.match(content, /lightweight pre-PR path-hygiene check/i);
   assert.match(content, /independent from `build` and `test`/i);
+  assert.match(content, /Current fail-closed implementation rule:/i);
+  assert.match(content, /provenance, scope, auth context, or trust-boundary signals are missing, malformed, or only partially trusted/i);
 
   assert.doesNotMatch(content, /^## Full picture$/m);
   assert.doesNotMatch(content, /^## What codex-supervisor does$/m);

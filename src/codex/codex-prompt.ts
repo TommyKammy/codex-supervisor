@@ -437,6 +437,15 @@ function buildCodexStartPrompt(input: BuildCodexStartPromptInput): string {
       deterministicChangeClasses: input.changeClasses,
     }),
   );
+  const failClosedReviewHeuristics = [
+    "Committed fail-closed review heuristics:",
+    "- When provenance, scope, auth context, or boundary signals are missing, malformed, or only partially trusted, fail closed: reject the path, keep the guard in place, or escalate for a real prerequisite instead of inferring success.",
+    "- Do not treat placeholder credentials, sample secrets, unsigned tokens, or TODO values as valid auth. Missing or obviously fake secrets must stay blocked until a trusted credential source is wired in.",
+    "- Do not trust forwarded headers or client-supplied identity fields unless a trusted proxy or boundary has already authenticated and normalized them. Treat raw `X-Forwarded-*`, `Forwarded`, host, proto, tenant, or user-id hints as untrusted input.",
+    "- Do not infer tenant, repository, account, issue, or environment linkage from naming conventions, path shape, comments, or nearby metadata alone. Require explicit binding to the authoritative scope record or reject the action.",
+    "- Anchor checks and tests to the real enforcement boundary. If the behavior depends on a later authorization, provenance, or scope-validation step, prove the system still blocks there instead of only testing an earlier setup step.",
+    "- When a check depends on a missing prerequisite signal, block, reject, or surface an explicit follow-up instead of silently succeeding, degrading to allow, or substituting guessed context.",
+  ];
 
   return [
     `You are operating inside a dedicated worktree for ${input.repoSlug}.`,
@@ -462,6 +471,8 @@ function buildCodexStartPrompt(input: BuildCodexStartPromptInput): string {
           `- Guidance: ${verificationPolicy.guidance}`,
         ]
       : []),
+    "",
+    ...failClosedReviewHeuristics,
     "",
     ...githubIssueBodySection,
     "",

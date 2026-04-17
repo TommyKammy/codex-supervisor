@@ -41,6 +41,8 @@ test("agent bootstrap doc exists as a hub that delegates detailed rules", async 
   assert.match(content, /\[Issue metadata reference\]\(\.\/issue-metadata\.md\)/);
   assert.match(content, /\[Local review reference\]\(\.\/local-review\.md\)/);
   assert.match(content, /bootstrap hub/i);
+  assert.match(content, /fail-closed model explicit while implementing/i);
+  assert.match(content, /provenance, scope, auth context, or boundary signals are missing or malformed/i);
 
   assert.doesNotMatch(content, /^## Full configuration reference$/m);
   assert.doesNotMatch(content, /^## Complete issue metadata specification$/m);

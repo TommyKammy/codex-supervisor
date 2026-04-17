@@ -19,5 +19,7 @@ This repository is operated with AI-assisted implementation loops. Durable proje
 
 - Treat repo memory files as the durable cross-thread memory source.
 - Read the shared memory files before large changes.
+- When provenance, scope, auth context, or boundary signals are missing, malformed, or only partially trusted, fail closed instead of inferring success.
+- Treat placeholder credentials, untrusted forwarded headers, and ambiguous linkage as blockers until a trusted source or explicit binding exists.
 - Follow issue dependency metadata literally.
 - Keep iterating on failing verification unless truly blocked by permissions, secrets, or missing requirements.
