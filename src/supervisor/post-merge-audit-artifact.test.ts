@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
+import {
+  TRUSTED_GENERATED_DURABLE_ARTIFACT_PROVENANCE_VALUE,
+} from "../durable-artifact-provenance";
 import { writeJsonAtomic } from "../core/utils";
 import { type LocalReviewArtifact } from "../local-review/types";
 import { createConfig, createFailureContext, createIssue, createPullRequest, createRecord } from "../turn-execution-test-helpers";
@@ -177,6 +180,7 @@ test("syncPostMergeAuditArtifact persists a typed completed-work artifact", asyn
   );
 
   const artifact = JSON.parse(await fs.readFile(artifactPath!, "utf8")) as PostMergeAuditArtifact;
+  assert.equal(artifact.codexSupervisorProvenance, TRUSTED_GENERATED_DURABLE_ARTIFACT_PROVENANCE_VALUE);
   assert.equal(artifact.schemaVersion, 1);
   assert.equal(artifact.issue.title, "Persist a completed-work audit artifact");
   assert.equal(artifact.pullRequest.number, 116);

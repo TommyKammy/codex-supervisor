@@ -3,6 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import assert from "node:assert/strict";
 import test from "node:test";
+import {
+  TRUSTED_GENERATED_DURABLE_ARTIFACT_MARKDOWN_MARKER,
+  TRUSTED_GENERATED_DURABLE_ARTIFACT_PROVENANCE_VALUE,
+} from "../durable-artifact-provenance";
 import { loadLocalReviewArtifact } from "./external-review-local-artifact-io";
 import { writeExternalReviewMissArtifact } from "./external-review-miss-persistence";
 import { collectExternalReviewSignals } from "./external-review-signal-collection";
@@ -137,6 +141,7 @@ test("writeExternalReviewMissArtifact persists missed external findings for the 
 
   const artifactPath = context?.artifactPath ?? "";
   const artifact = JSON.parse(await fs.readFile(artifactPath, "utf8")) as {
+    codexSupervisorProvenance: string;
     headSha: string;
     reusableMissPatterns: Array<{ file: string; summary: string }>;
     counts: { missedByLocalReview: number };
@@ -149,6 +154,7 @@ test("writeExternalReviewMissArtifact persists missed external findings for the 
     }>;
   };
   assert.equal(artifact.headSha, "deadbeefcafebabe");
+  assert.equal(artifact.codexSupervisorProvenance, TRUSTED_GENERATED_DURABLE_ARTIFACT_PROVENANCE_VALUE);
   assert.equal(artifact.counts.missedByLocalReview, 1);
   assert.equal(artifact.reusableMissPatterns.length, 1);
   assert.equal(artifact.reusableMissPatterns[0]?.file, "src/auth.ts");
@@ -327,6 +333,7 @@ test("writeExternalReviewMissArtifact emits a follow-up action digest beside the
   const digest = await fs.readFile(digestPath, "utf8");
 
   assert.equal(path.basename(context?.artifactPath ?? ""), "external-review-misses-head-deadbeefcafe.json");
+  assert.match(digest, new RegExp(TRUSTED_GENERATED_DURABLE_ARTIFACT_MARKDOWN_MARKER.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.match(digest, /# External Review Miss Follow-up Digest/);
   assert.match(digest, /- Miss artifact: .*external-review-misses-head-deadbeefcafe\.json/);
   assert.match(digest, /- Local review summary: .*head-deadbeefcafe\.md/);

@@ -1,4 +1,5 @@
 import { nowIso } from "../core/utils";
+import { withTrustedGeneratedDurableArtifactProvenance } from "../durable-artifact-provenance";
 import { hasMatchingPromotionIdentity, isNullablePromotionEvidenceString } from "../persisted-artifact-promotion";
 import { type ExternalReviewMissFinding } from "./external-review-classifier";
 import {
@@ -199,7 +200,7 @@ export function buildExternalReviewMissArtifact(args: {
     .map((finding) => toRegressionTestCandidate(finding))
     .filter((candidate): candidate is ExternalReviewRegressionCandidate => candidate !== null);
 
-  return {
+  return withTrustedGeneratedDurableArtifactProvenance({
     issueNumber: args.issueNumber,
     prNumber: args.prNumber,
     branch: args.branch,
@@ -216,7 +217,7 @@ export function buildExternalReviewMissArtifact(args: {
       nearMatch: findings.filter((finding) => finding.classification === "near_match").length,
       missedByLocalReview: findings.filter((finding) => finding.classification === "missed_by_local_review").length,
     },
-  };
+  });
 }
 
 export function createExternalReviewMissContext(args: {

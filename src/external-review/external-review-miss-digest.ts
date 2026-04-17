@@ -1,4 +1,5 @@
 import path from "node:path";
+import { prependTrustedGeneratedDurableArtifactMarkdownMarker } from "../durable-artifact-provenance";
 import {
   type ExternalReviewArtifactFinding,
   type ExternalReviewMissArtifact,
@@ -164,7 +165,7 @@ export function buildExternalReviewMissFollowUpDigest(args: {
 
   if (typedMissedFindings.length === 0) {
     lines.push("", "No missed external-review findings were identified in this analysis.");
-    return `${lines.join("\n")}\n`;
+    return `${prependTrustedGeneratedDurableArtifactMarkdownMarker(lines.join("\n"))}\n`;
   }
 
   for (const target of PREVENTION_TARGET_ORDER) {
@@ -187,5 +188,5 @@ export function buildExternalReviewMissFollowUpDigest(args: {
     lines.pop();
   }
 
-  return `${lines.join("\n")}\n`;
+  return `${prependTrustedGeneratedDurableArtifactMarkdownMarker(lines.join("\n"))}\n`;
 }

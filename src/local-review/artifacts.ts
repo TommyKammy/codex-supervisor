@@ -2,6 +2,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { type LocalReviewRoleSelection } from "../review-role-detector";
 import { type SupervisorConfig } from "../core/types";
+import {
+  prependTrustedGeneratedDurableArtifactMarkdownMarker,
+  withTrustedGeneratedDurableArtifactProvenance,
+} from "../durable-artifact-provenance";
 import { createPostMergeAuditResult, renderPostMergeAuditContractSummary } from "./post-merge-audit";
 import {
   type FinalizedLocalReview,
@@ -121,119 +125,121 @@ export async function writeLocalReviewArtifacts(args: {
 
   await fs.writeFile(
     summaryPath,
-    [
-      `# Local Review for Issue #${args.issueNumber}`,
-      "",
-      `- PR: ${args.prUrl}`,
-      `- Branch: ${args.branch}`,
-      `- Head SHA: ${args.headSha}`,
-      `- Ran at: ${args.ranAt}`,
-      `- Roles: ${args.roles.join(", ")}`,
-      `- Confidence threshold: ${args.config.localReviewConfidenceThreshold.toFixed(2)}`,
-      `- Actionable findings: ${args.finalized.findingsCount}`,
-      `- Root causes: ${args.finalized.rootCauseCount}`,
-      `- Max severity: ${args.finalized.maxSeverity}`,
-      `- Verified findings: ${args.finalized.verifiedFindingsCount}`,
-      `- Verified max severity: ${args.finalized.verifiedMaxSeverity}`,
-      `- Recommendation: ${args.finalized.recommendation}`,
-      `- Degraded: ${args.finalized.degraded ? "yes" : "no"}`,
-      `- Final evaluation outcome: ${args.finalized.finalEvaluation.outcome}`,
-      "",
-      "## Pre-merge final evaluation",
-      `- Outcome: ${args.finalized.finalEvaluation.outcome}`,
-      `- Must-fix residuals: ${args.finalized.finalEvaluation.mustFixCount}`,
-      `- Manual-review residuals: ${args.finalized.finalEvaluation.manualReviewCount}`,
-      `- Follow-up-eligible residuals: ${args.finalized.finalEvaluation.followUpCount}`,
-      "",
-      "## Post-merge audit contract",
-      renderPostMergeAuditContractSummary(
-        createPostMergeAuditResult({
-          recurringPatterns: [],
-          promotionCandidates: [],
-        }),
-      ),
-      "",
-      "## Auto-detected roles",
-      ...summarizeAutoDetectedRoles(args.finalized.artifact.autoDetectedRoles),
-      "",
-      "## Role summaries",
-      summarizeRoles(args.roleResults),
-      "",
-      "## Reviewer thresholds",
-      ...args.finalized.artifact.roleReports.map((report) =>
-        `- ${report.role}: type=${report.reviewerType} confidence>=${report.confidenceThreshold.toFixed(2)} severity>=${report.minimumSeverity} actionable=${report.actionableFindingsCount}`,
-      ),
-      "",
-      "## Model routing",
-      ...summarizeModelRouting(args.finalized),
-      "",
-      "## Durable guardrails",
-      ...summarizeGuardrailProvenance(args.finalized.artifact.guardrailProvenance),
-      "",
-      "## Actionable findings",
-      ...(args.finalized.actionableFindings.length > 0
-        ? args.finalized.actionableFindings.map((finding, index) =>
-            [
-              `### ${index + 1}. ${finding.title}`,
-              `- Role: ${finding.role}`,
-              `- Severity: ${finding.severity}`,
-              `- Confidence: ${finding.confidence.toFixed(2)}`,
-              `- File: ${finding.file ?? "none"}`,
-              `- Lines: ${renderLines(finding)}`,
-              `- Category: ${finding.category ?? "none"}`,
-              `- Body: ${finding.body}`,
-              ...(finding.evidence ? [`- Evidence: ${finding.evidence}`] : []),
-              "",
-            ].join("\n"),
-          )
-        : ["- No actionable findings above the confidence threshold.", ""]),
-      "## Root-cause summaries",
-      ...(args.finalized.rootCauseSummaries.length > 0
-        ? args.finalized.rootCauseSummaries.map((rootCause, index) =>
-            [
-              `### Root cause ${index + 1}`,
-              `- Severity: ${rootCause.severity}`,
-              `- Findings: ${rootCause.findingsCount}`,
-              `- Roles: ${rootCause.roles.join(", ")}`,
-              `- File: ${rootCause.file ?? "multiple"}`,
-              `- Lines: ${rootCause.file ? renderLines(rootCause) : "multiple"}`,
-              `- Category: ${rootCause.category ?? "none"}`,
-              `- Summary: ${rootCause.summary}`,
-              "",
-            ].join("\n"),
-          )
-        : ["- No compressed root causes.", ""]),
-      "## High-Severity Verification",
-      `- Required: ${args.finalized.artifact.verification.required ? "yes" : "no"}`,
-      `- Summary: ${args.finalized.artifact.verification.summary}`,
-      `- Recommendation: ${args.finalized.artifact.verification.recommendation}`,
-      `- Degraded: ${args.finalized.artifact.verification.degraded ? "yes" : "no"}`,
-      `- Verified findings: ${args.finalized.verifiedFindingsCount}`,
-      `- Verified max severity: ${args.finalized.verifiedMaxSeverity}`,
-      ...(args.finalized.artifact.verification.findings.length > 0
-        ? [
-            "",
-            ...args.finalized.artifact.verification.findings.map((finding, index) =>
+    prependTrustedGeneratedDurableArtifactMarkdownMarker(
+      [
+        `# Local Review for Issue #${args.issueNumber}`,
+        "",
+        `- PR: ${args.prUrl}`,
+        `- Branch: ${args.branch}`,
+        `- Head SHA: ${args.headSha}`,
+        `- Ran at: ${args.ranAt}`,
+        `- Roles: ${args.roles.join(", ")}`,
+        `- Confidence threshold: ${args.config.localReviewConfidenceThreshold.toFixed(2)}`,
+        `- Actionable findings: ${args.finalized.findingsCount}`,
+        `- Root causes: ${args.finalized.rootCauseCount}`,
+        `- Max severity: ${args.finalized.maxSeverity}`,
+        `- Verified findings: ${args.finalized.verifiedFindingsCount}`,
+        `- Verified max severity: ${args.finalized.verifiedMaxSeverity}`,
+        `- Recommendation: ${args.finalized.recommendation}`,
+        `- Degraded: ${args.finalized.degraded ? "yes" : "no"}`,
+        `- Final evaluation outcome: ${args.finalized.finalEvaluation.outcome}`,
+        "",
+        "## Pre-merge final evaluation",
+        `- Outcome: ${args.finalized.finalEvaluation.outcome}`,
+        `- Must-fix residuals: ${args.finalized.finalEvaluation.mustFixCount}`,
+        `- Manual-review residuals: ${args.finalized.finalEvaluation.manualReviewCount}`,
+        `- Follow-up-eligible residuals: ${args.finalized.finalEvaluation.followUpCount}`,
+        "",
+        "## Post-merge audit contract",
+        renderPostMergeAuditContractSummary(
+          createPostMergeAuditResult({
+            recurringPatterns: [],
+            promotionCandidates: [],
+          }),
+        ),
+        "",
+        "## Auto-detected roles",
+        ...summarizeAutoDetectedRoles(args.finalized.artifact.autoDetectedRoles),
+        "",
+        "## Role summaries",
+        summarizeRoles(args.roleResults),
+        "",
+        "## Reviewer thresholds",
+        ...args.finalized.artifact.roleReports.map((report) =>
+          `- ${report.role}: type=${report.reviewerType} confidence>=${report.confidenceThreshold.toFixed(2)} severity>=${report.minimumSeverity} actionable=${report.actionableFindingsCount}`,
+        ),
+        "",
+        "## Model routing",
+        ...summarizeModelRouting(args.finalized),
+        "",
+        "## Durable guardrails",
+        ...summarizeGuardrailProvenance(args.finalized.artifact.guardrailProvenance),
+        "",
+        "## Actionable findings",
+        ...(args.finalized.actionableFindings.length > 0
+          ? args.finalized.actionableFindings.map((finding, index) =>
               [
-                `### Verification ${index + 1}`,
-                `- Finding key: ${finding.findingKey}`,
-                `- Verdict: ${finding.verdict}`,
-                `- Rationale: ${finding.rationale}`,
+                `### ${index + 1}. ${finding.title}`,
+                `- Role: ${finding.role}`,
+                `- Severity: ${finding.severity}`,
+                `- Confidence: ${finding.confidence.toFixed(2)}`,
+                `- File: ${finding.file ?? "none"}`,
+                `- Lines: ${renderLines(finding)}`,
+                `- Category: ${finding.category ?? "none"}`,
+                `- Body: ${finding.body}`,
+                ...(finding.evidence ? [`- Evidence: ${finding.evidence}`] : []),
                 "",
               ].join("\n"),
-            ),
-          ]
-        : [""]),
-      "## Raw role outputs",
-      rawOutput,
-      "",
-    ].join("\n"),
+            )
+          : ["- No actionable findings above the confidence threshold.", ""]),
+        "## Root-cause summaries",
+        ...(args.finalized.rootCauseSummaries.length > 0
+          ? args.finalized.rootCauseSummaries.map((rootCause, index) =>
+              [
+                `### Root cause ${index + 1}`,
+                `- Severity: ${rootCause.severity}`,
+                `- Findings: ${rootCause.findingsCount}`,
+                `- Roles: ${rootCause.roles.join(", ")}`,
+                `- File: ${rootCause.file ?? "multiple"}`,
+                `- Lines: ${rootCause.file ? renderLines(rootCause) : "multiple"}`,
+                `- Category: ${rootCause.category ?? "none"}`,
+                `- Summary: ${rootCause.summary}`,
+                "",
+              ].join("\n"),
+            )
+          : ["- No compressed root causes.", ""]),
+        "## High-Severity Verification",
+        `- Required: ${args.finalized.artifact.verification.required ? "yes" : "no"}`,
+        `- Summary: ${args.finalized.artifact.verification.summary}`,
+        `- Recommendation: ${args.finalized.artifact.verification.recommendation}`,
+        `- Degraded: ${args.finalized.artifact.verification.degraded ? "yes" : "no"}`,
+        `- Verified findings: ${args.finalized.verifiedFindingsCount}`,
+        `- Verified max severity: ${args.finalized.verifiedMaxSeverity}`,
+        ...(args.finalized.artifact.verification.findings.length > 0
+          ? [
+              "",
+              ...args.finalized.artifact.verification.findings.map((finding, index) =>
+                [
+                  `### Verification ${index + 1}`,
+                  `- Finding key: ${finding.findingKey}`,
+                  `- Verdict: ${finding.verdict}`,
+                  `- Rationale: ${finding.rationale}`,
+                  "",
+                ].join("\n"),
+              ),
+            ]
+          : [""]),
+        "## Raw role outputs",
+        rawOutput,
+        "",
+      ].join("\n"),
+    ),
     "utf8",
   );
 
   await fs.writeFile(
     findingsPath,
-    `${JSON.stringify(args.finalized.artifact, null, 2)}\n`,
+    `${JSON.stringify(withTrustedGeneratedDurableArtifactProvenance(args.finalized.artifact), null, 2)}\n`,
     "utf8",
   );
 

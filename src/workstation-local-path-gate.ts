@@ -1,4 +1,5 @@
 import path from "node:path";
+import fs from "node:fs/promises";
 import { FailureContext } from "./core/types";
 import { nowIso } from "./core/utils";
 import {
@@ -6,6 +7,7 @@ import {
   normalizeCommittedIssueJournal,
   readIssueJournal,
 } from "./core/journal";
+import { hasTrustedGeneratedDurableArtifactProvenance } from "./durable-artifact-provenance";
 import {
   findForbiddenWorkstationLocalPaths,
   formatWorkstationLocalPathMatch,
@@ -106,9 +108,13 @@ function summarizeWorkstationLocalPathMatches(
 type WorkstationLocalArtifactCategory =
   | "supervisor_owned_journal"
   | "expected_local_durable_artifact"
+  | "trusted_generated_durable_artifact"
   | "publishable_tracked_content";
 
-function categorizeWorkstationLocalArtifact(filePath: string): WorkstationLocalArtifactCategory {
+async function categorizeWorkstationLocalArtifact(
+  workspacePath: string,
+  filePath: string,
+): Promise<WorkstationLocalArtifactCategory> {
   const repoRelativePath = normalizeRepoRelativePath(filePath);
 
   if (isSupervisorOwnedDurableJournalPath(repoRelativePath)) {
@@ -119,24 +125,43 @@ function categorizeWorkstationLocalArtifact(filePath: string): WorkstationLocalA
     return "expected_local_durable_artifact";
   }
 
+  try {
+    const contents = await fs.readFile(path.join(workspacePath, repoRelativePath), "utf8");
+    if (hasTrustedGeneratedDurableArtifactProvenance(contents)) {
+      return "trusted_generated_durable_artifact";
+    }
+  } catch {
+    // Fail closed into generic publishable content when the trusted signal cannot be read.
+  }
+
   return "publishable_tracked_content";
 }
 
-function summarizeCategoryMatches(
+async function summarizeCategoryMatches(
+  workspacePath: string,
   findings: WorkstationLocalPathMatch[],
   category: WorkstationLocalArtifactCategory,
-): string {
+): Promise<string> {
+  const categorizedFindings = await Promise.all(
+    findings.map(async (finding) => ({
+      finding,
+      category: await categorizeWorkstationLocalArtifact(workspacePath, finding.filePath),
+    })),
+  );
   return summarizeWorkstationLocalPathMatches(
-    findings.filter((finding) => categorizeWorkstationLocalArtifact(finding.filePath) === category),
+    categorizedFindings
+      .filter((entry) => entry.category === category)
+      .map((entry) => entry.finding),
   );
 }
 
-function summarizeWorkstationLocalPathRemediation(args: {
+async function summarizeWorkstationLocalPathRemediation(args: {
+  workspacePath: string;
   gateLabel: string;
   findings: WorkstationLocalPathMatch[];
   normalizationErrors: string[];
   rewrittenJournalPaths: string[];
-}): string | undefined {
+}): Promise<string | undefined> {
   const parts: string[] = [];
 
   if (args.rewrittenJournalPaths.length > 0) {
@@ -146,7 +171,7 @@ function summarizeWorkstationLocalPathRemediation(args: {
   }
 
   if (args.normalizationErrors.length > 0) {
-    const journalSummary = summarizeCategoryMatches(args.findings, "supervisor_owned_journal");
+    const journalSummary = await summarizeCategoryMatches(args.workspacePath, args.findings, "supervisor_owned_journal");
     parts.push(
       journalSummary
         ? `Supervisor-owned issue journal auto-normalization still needs attention. ${journalSummary}`
@@ -154,12 +179,25 @@ function summarizeWorkstationLocalPathRemediation(args: {
     );
   }
 
-  const expectedLocalSummary = summarizeCategoryMatches(args.findings, "expected_local_durable_artifact");
+  const expectedLocalSummary = await summarizeCategoryMatches(
+    args.workspacePath,
+    args.findings,
+    "expected_local_durable_artifact",
+  );
   if (expectedLocalSummary) {
     parts.push(`Review repo policy or exclusions for expected-local durable artifacts. ${expectedLocalSummary}`);
   }
 
-  const publishableSummary = summarizeCategoryMatches(args.findings, "publishable_tracked_content");
+  const trustedGeneratedSummary = await summarizeCategoryMatches(
+    args.workspacePath,
+    args.findings,
+    "trusted_generated_durable_artifact",
+  );
+  if (trustedGeneratedSummary) {
+    parts.push(`Review trusted generated durable artifacts before supervisor-managed path rewriting. ${trustedGeneratedSummary}`);
+  }
+
+  const publishableSummary = await summarizeCategoryMatches(args.workspacePath, args.findings, "publishable_tracked_content");
   if (publishableSummary) {
     parts.push(`Edit tracked publishable content to remove workstation-local paths. ${publishableSummary}`);
   }
@@ -229,7 +267,8 @@ export async function runWorkstationLocalPathGate(args: {
       gateLabel: args.gateLabel,
       details: [...normalizationErrors, ...findings.map(formatWorkstationLocalPathMatch)],
       summary:
-        summarizeWorkstationLocalPathRemediation({
+        await summarizeWorkstationLocalPathRemediation({
+          workspacePath: args.workspacePath,
           gateLabel: args.gateLabel,
           findings,
           normalizationErrors,
