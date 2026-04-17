@@ -7,6 +7,8 @@ import test from "node:test";
 import { runWorkstationLocalPathGate } from "./workstation-local-path-gate";
 
 const SAMPLE_FORBIDDEN_PATH = ["", "home", "alice", "dev", "private-repo"].join("/");
+const TRUSTED_GENERATED_DURABLE_ARTIFACT_MARKDOWN_MARKER =
+  "<!-- codex-supervisor-provenance: trusted-generated-durable-artifact/v1 -->";
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync("git", ["-C", cwd, ...args], {
@@ -377,4 +379,41 @@ test("runtime gate treats nested WORKLOG.md files as publishable tracked content
   assert.match(summary, /Edit tracked publishable content to remove workstation-local paths\./);
   assert.match(summary, /docs\/WORKLOG\.md \(1 match, Linux user home directory\)/);
   assert.doesNotMatch(summary, /Review repo policy or exclusions for expected-local durable artifacts\./);
+});
+
+test("runtime gate classifies explicitly marked generated artifacts separately from untrusted publishable content", async (t) => {
+  const repoPath = await createTrackedRepo();
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+
+  await fs.mkdir(path.join(repoPath, "docs"), { recursive: true });
+  await fs.writeFile(
+    path.join(repoPath, "docs", "generated-summary.md"),
+    [TRUSTED_GENERATED_DURABLE_ARTIFACT_MARKDOWN_MARKER, "", `Generated note: ${SAMPLE_FORBIDDEN_PATH}`, ""].join("\n"),
+    "utf8",
+  );
+  await fs.writeFile(
+    path.join(repoPath, "docs", "manual-handoff.md"),
+    [
+      "<!-- codex-supervisor-provenance: trusted-generated-durable-artifact -->",
+      "",
+      `Manual note: ${SAMPLE_FORBIDDEN_PATH}`,
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  git(repoPath, "add", "docs/generated-summary.md", "docs/manual-handoff.md");
+
+  const gateResult = await runWorkstationLocalPathGate({
+    workspacePath: repoPath,
+    gateLabel: "before publication",
+  });
+
+  assert.equal(gateResult.ok, false);
+  const summary = gateResult.failureContext?.summary ?? "";
+  assert.match(summary, /Review trusted generated durable artifacts before supervisor-managed path rewriting\./);
+  assert.match(summary, /docs\/generated-summary\.md \(1 match, Linux user home directory\)/);
+  assert.match(summary, /Edit tracked publishable content to remove workstation-local paths\./);
+  assert.match(summary, /docs\/manual-handoff\.md \(1 match, Linux user home directory\)/);
 });

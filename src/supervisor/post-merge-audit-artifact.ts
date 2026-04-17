@@ -1,6 +1,7 @@
 import path from "node:path";
 import { type GitHubIssue, type GitHubPullRequest, type IssueRunRecord, type SupervisorConfig } from "../core/types";
 import { readJsonIfExists, writeJsonAtomic } from "../core/utils";
+import { withTrustedGeneratedDurableArtifactProvenance } from "../durable-artifact-provenance";
 import { executionMetricsRunSummaryPath } from "./execution-metrics-run-summary";
 import {
   validateExecutionMetricsRunSummary,
@@ -11,6 +12,7 @@ import { type LocalReviewArtifact } from "../local-review/types";
 export const POST_MERGE_AUDIT_ARTIFACT_SCHEMA_VERSION = 1;
 
 export interface PostMergeAuditArtifact {
+  codexSupervisorProvenance?: "trusted-generated-durable-artifact/v1";
   schemaVersion: typeof POST_MERGE_AUDIT_ARTIFACT_SCHEMA_VERSION;
   issueNumber: number;
   branch: string;
@@ -235,7 +237,7 @@ export async function syncPostMergeAuditArtifact(args: {
     localReviewRecord.local_review_summary_path,
   );
 
-  const artifact: PostMergeAuditArtifact = {
+  const artifact: PostMergeAuditArtifact = withTrustedGeneratedDurableArtifactProvenance({
     schemaVersion: POST_MERGE_AUDIT_ARTIFACT_SCHEMA_VERSION,
     issueNumber: args.issue.number,
     branch: args.nextRecord.branch,
@@ -315,7 +317,7 @@ export async function syncPostMergeAuditArtifact(args: {
       },
       staleStabilizingNoPrRecoveryCount: args.previousRecord.stale_stabilizing_no_pr_recovery_count ?? 0,
     },
-  };
+  });
 
   const artifactPath = postMergeAuditArtifactPath({
     config: args.config,

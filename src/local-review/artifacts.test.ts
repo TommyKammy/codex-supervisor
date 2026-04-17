@@ -3,6 +3,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import {
+  TRUSTED_GENERATED_DURABLE_ARTIFACT_JSON_KEY,
+  TRUSTED_GENERATED_DURABLE_ARTIFACT_MARKDOWN_MARKER,
+  TRUSTED_GENERATED_DURABLE_ARTIFACT_PROVENANCE_VALUE,
+} from "../durable-artifact-provenance";
 import { writeLocalReviewArtifacts } from "./artifacts";
 import { finalizeLocalReview } from "./finalize";
 import { createConfig } from "./test-helpers";
@@ -62,7 +67,9 @@ test("writeLocalReviewArtifacts renders durable guardrail provenance compactly",
     verifierReport: null,
   });
   const summary = await fs.readFile(artifacts.summaryPath, "utf8");
+  const findings = JSON.parse(await fs.readFile(artifacts.findingsPath, "utf8")) as Record<string, unknown>;
 
+  assert.match(summary, new RegExp(TRUSTED_GENERATED_DURABLE_ARTIFACT_MARKDOWN_MARKER.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.match(summary, /## Durable guardrails/);
   assert.match(summary, /## Pre-merge final evaluation/);
   assert.match(summary, /- Outcome: mergeable/);
@@ -74,6 +81,7 @@ test("writeLocalReviewArtifacts renders durable guardrail provenance compactly",
   assert.match(summary, /- Verifier committed: 1 from docs\/shared-memory\/verifier-guardrails\.json/);
   assert.match(summary, /- External review committed: 1 from docs\/shared-memory\/external-review-guardrails\.json/);
   assert.match(summary, /- External review runtime: 2 from owner-repo\/issue-38\/external-review-misses-head-111122223333\.json/);
+  assert.equal(findings[TRUSTED_GENERATED_DURABLE_ARTIFACT_JSON_KEY], TRUSTED_GENERATED_DURABLE_ARTIFACT_PROVENANCE_VALUE);
 });
 
 test("writeLocalReviewArtifacts records deterministic model routing for generic, specialist, and verifier paths", async () => {

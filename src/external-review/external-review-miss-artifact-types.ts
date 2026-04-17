@@ -76,6 +76,7 @@ export interface DurableExternalReviewGuardrails {
 }
 
 export interface ExternalReviewMissArtifact {
+  codexSupervisorProvenance?: "trusted-generated-durable-artifact/v1";
   issueNumber: number;
   prNumber: number;
   branch: string;
