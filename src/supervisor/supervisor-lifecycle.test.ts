@@ -148,6 +148,28 @@ function createPullRequest(overrides: Partial<GitHubPullRequest> = {}): GitHubPu
   };
 }
 
+function createReviewThread(overrides: Partial<ReviewThread> = {}): ReviewThread {
+  return {
+    id: "thread-1",
+    isResolved: false,
+    isOutdated: false,
+    path: "src/file.ts",
+    line: 12,
+    comments: {
+      nodes: [
+        {
+          id: "comment-1",
+          body: "Please address this.",
+          createdAt: "2026-03-13T06:20:00Z",
+          url: "https://example.test/pr/42#discussion_r1",
+          author: { login: "copilot-pull-request-reviewer", typeName: "Bot" },
+        },
+      ],
+    },
+    ...overrides,
+  };
+}
+
 function withStubbedDateNow<T>(nowIso: string, run: () => T): T {
   const originalDateNow = Date.now;
   Date.now = () => Date.parse(nowIso);
@@ -248,11 +270,12 @@ test("summarizeTrackedPrProgress treats merge state changes as tracked PR progre
       currentHeadCiGreenAt: null,
       configuredBotRateLimitedAt: null,
       configuredBotDraftSkipAt: null,
-      configuredBotTopLevelReviewStrength: null,
-      configuredBotTopLevelReviewSubmittedAt: null,
-      checks: ["build:pass:SUCCESS:CI"],
-      unresolvedReviewThreadIds: [],
-    }),
+    configuredBotTopLevelReviewStrength: null,
+    configuredBotTopLevelReviewSubmittedAt: null,
+    checks: ["build:pass:SUCCESS:CI"],
+    unresolvedReviewThreadIds: [],
+    unresolvedReviewThreadFingerprints: [],
+  }),
   });
   const pr = createPullRequest({
     mergeStateStatus: "CLEAN",
@@ -309,6 +332,7 @@ test("determineTrackedPrRepeatFailureDisposition stays retryable over the repeat
       configuredBotTopLevelReviewSubmittedAt: null,
       checks: ["build:fail:FAILURE:CI"],
       unresolvedReviewThreadIds: [],
+      unresolvedReviewThreadFingerprints: [],
     }),
   });
   const pr = createPullRequest({
@@ -347,6 +371,7 @@ test("determineTrackedPrRepeatFailureDisposition stops over the repeat limit whe
     configuredBotTopLevelReviewSubmittedAt: null,
     checks: ["build:pass:SUCCESS:CI"],
     unresolvedReviewThreadIds: [],
+    unresolvedReviewThreadFingerprints: [],
   });
   const record = createRecord({
     last_failure_signature: "build (ubuntu-latest):fail",
@@ -371,6 +396,66 @@ test("determineTrackedPrRepeatFailureDisposition stops over the repeat limit whe
   assert.equal(result.decision, "stop_no_progress");
   assert.equal(result.progressSummary, "no_meaningful_tracked_pr_progress");
   assert.equal(result.progressSnapshot, snapshot);
+});
+
+test("summarizeTrackedPrProgress treats updated same-thread guidance as tracked PR progress", () => {
+  const record = createRecord({
+    last_tracked_pr_progress_snapshot: JSON.stringify({
+      headRefOid: "head123",
+      reviewDecision: "CHANGES_REQUESTED",
+      mergeStateStatus: "CLEAN",
+      copilotReviewState: null,
+      copilotReviewRequestedAt: null,
+      copilotReviewArrivedAt: null,
+      configuredBotCurrentHeadObservedAt: null,
+      configuredBotCurrentHeadStatusState: null,
+      currentHeadCiGreenAt: null,
+      configuredBotRateLimitedAt: null,
+      configuredBotDraftSkipAt: null,
+      configuredBotTopLevelReviewStrength: null,
+      configuredBotTopLevelReviewSubmittedAt: null,
+      checks: ["build:pass:SUCCESS:CI"],
+      unresolvedReviewThreadIds: ["thread-1"],
+      unresolvedReviewThreadFingerprints: ["thread-1#comment-1"],
+    }),
+  });
+  const pr = createPullRequest({
+    headRefOid: "head123",
+    reviewDecision: "CHANGES_REQUESTED",
+    mergeStateStatus: "CLEAN",
+  });
+  const reviewThreads: ReviewThread[] = [
+    createReviewThread({
+      id: "thread-1",
+      comments: {
+        nodes: [
+          {
+            id: "comment-1",
+            body: "Please address this.",
+            createdAt: "2026-03-13T06:20:00Z",
+            url: "https://example.test/pr/42#discussion_r1",
+            author: { login: "copilot-pull-request-reviewer", typeName: "Bot" },
+          },
+          {
+            id: "comment-2",
+            body: "Please also handle this update.",
+            createdAt: "2026-03-13T06:25:00Z",
+            url: "https://example.test/pr/42#discussion_r2",
+            author: { login: "copilot-pull-request-reviewer", typeName: "Bot" },
+          },
+        ],
+      },
+    }),
+  ];
+
+  const result = summarizeTrackedPrProgress(
+    record,
+    pr,
+    [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads,
+  );
+
+  assert.match(result.summary ?? "", /same_review_thread_guidance_changed/);
 });
 
 test("derivePullRequestLifecycleSnapshot re-arms CodeRabbit waiting after ready-for-review when draft skip was the latest prior signal", () => {

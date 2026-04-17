@@ -365,6 +365,60 @@ Parallelizable: No
   );
 });
 
+test("buildIssueExplainDto reports same-thread tracked PR blocker guidance changes distinctly", async () => {
+  const issue = createIssue({
+    number: 612,
+    title: "Changed same-thread tracked PR blocker",
+    body: `## Summary
+Allow same-head recovery when a review bot updates guidance inside the same unresolved thread.
+
+## Scope
+- surface materially changed same-thread review guidance distinctly in explain output
+
+## Acceptance criteria
+- explain shows the refreshed same-thread blocker signal
+
+## Verification
+- npx tsx --test src/supervisor/supervisor-selection-issue-explain.test.ts
+
+Depends on: none
+Parallelizable: No
+
+## Execution order
+1 of 1`,
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
+        issue_number: 612,
+        state: "local_review",
+        blocked_reason: null,
+        last_failure_signature: "PRRT_thread_1",
+        repeated_failure_signature_count: 3,
+        last_tracked_pr_progress_summary: "same_review_thread_guidance_changed",
+        last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+      }),
+    ],
+  });
+
+  const dto = await buildIssueExplainDto(
+    {
+      getIssue: async () => issue,
+      listAllIssues: async () => [issue],
+      listCandidateIssues: async () => [issue],
+    },
+    createConfig(),
+    state,
+    612,
+  );
+
+  const rendered = renderIssueExplainDto(dto);
+  assert.match(
+    rendered,
+    /^tracked_pr_repeat_failure decision=stop_no_progress signal=same_review_thread_guidance_changed$/m,
+  );
+});
+
 test("buildIssueExplainDto degrades when PR resolution fails", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 606;

@@ -19,6 +19,7 @@ import {
   localReviewHighSeverityNeedsBlock,
   localReviewRetryLoopStalled,
 } from "../review-handling";
+import { latestReviewThreadCommentFingerprint } from "../review-handling";
 import { inferFailureContext } from "./supervisor-failure-context";
 import { mergeConflictDetected, summarizeChecks } from "./supervisor-status-rendering";
 import { configuredBotReviewThreads, manualReviewThreads } from "../review-thread-reporting";
@@ -117,6 +118,7 @@ interface TrackedPrProgressSnapshot {
   configuredBotTopLevelReviewSubmittedAt: string | null;
   checks: string[];
   unresolvedReviewThreadIds: string[];
+  unresolvedReviewThreadFingerprints?: string[];
 }
 
 export interface TrackedPrRepeatFailureDisposition {
@@ -151,6 +153,10 @@ function buildTrackedPrProgressSnapshot(
     unresolvedReviewThreadIds: reviewThreads
       .filter((thread) => !thread.isResolved)
       .map((thread) => thread.id)
+      .sort(),
+    unresolvedReviewThreadFingerprints: reviewThreads
+      .filter((thread) => !thread.isResolved)
+      .map((thread) => `${thread.id}#${latestReviewThreadCommentFingerprint(thread) ?? "no-comment"}`)
       .sort(),
   };
 }
@@ -200,6 +206,20 @@ function listChangedSignals(previous: TrackedPrProgressSnapshot | null, current:
     (previous?.configuredBotTopLevelReviewStrength ?? null) !== current.configuredBotTopLevelReviewStrength ||
     (previous?.configuredBotTopLevelReviewSubmittedAt ?? null) !== current.configuredBotTopLevelReviewSubmittedAt ||
     (previous?.unresolvedReviewThreadIds.join("|") ?? null) !== current.unresolvedReviewThreadIds.join("|");
+  const previousThreadFingerprints = previous?.unresolvedReviewThreadFingerprints?.join("|") ?? null;
+  const currentThreadFingerprints = current.unresolvedReviewThreadFingerprints?.join("|") ?? null;
+  const sameThreadIds =
+    previous !== null &&
+    previous.unresolvedReviewThreadIds.join("|") === current.unresolvedReviewThreadIds.join("|");
+  const sameThreadGuidanceChanged =
+    previous !== null &&
+    sameThreadIds &&
+    previousThreadFingerprints !== null &&
+    currentThreadFingerprints !== null &&
+    previousThreadFingerprints !== currentThreadFingerprints;
+  if (sameThreadGuidanceChanged) {
+    signals.push("same_review_thread_guidance_changed");
+  }
   if (previous !== null && reviewSignalChanged) {
     signals.push("review_state_changed");
   }

@@ -24,6 +24,7 @@ import {
 } from "./pull-request-state-sync";
 import { blockedReasonForLifecycleState, isOpenPullRequest } from "./supervisor/supervisor-lifecycle";
 import { inferFailureContext } from "./supervisor/supervisor-failure-context";
+import { latestReviewThreadCommentFingerprint } from "./review-handling";
 
 type RecoveryGitHubLike = Pick<
   import("./github").GitHubClient,
@@ -79,6 +80,13 @@ function unresolvedReviewThreadIds(reviewThreads: ReviewThread[]): string[] {
     .sort();
 }
 
+function unresolvedReviewThreadFingerprints(reviewThreads: ReviewThread[]): string[] {
+  return reviewThreads
+    .filter((thread) => !thread.isResolved)
+    .map((thread) => `${thread.id}#${latestReviewThreadCommentFingerprint(thread) ?? "no-comment"}`)
+    .sort();
+}
+
 function parseTrackedPrProgressSnapshotThreadIds(
   snapshot: string | null | undefined,
 ): string[] | null {
@@ -91,6 +99,25 @@ function parseTrackedPrProgressSnapshotThreadIds(
     return Array.isArray(parsed?.unresolvedReviewThreadIds)
       ? parsed.unresolvedReviewThreadIds
         .filter((threadId: unknown): threadId is string => typeof threadId === "string")
+        .sort()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseTrackedPrProgressSnapshotThreadFingerprints(
+  snapshot: string | null | undefined,
+): string[] | null {
+  if (!snapshot) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(snapshot);
+    return Array.isArray(parsed?.unresolvedReviewThreadFingerprints)
+      ? parsed.unresolvedReviewThreadFingerprints
+        .filter((fingerprint: unknown): fingerprint is string => typeof fingerprint === "string")
         .sort()
       : null;
   } catch {
@@ -129,6 +156,10 @@ export function suppressSameHeadNoProgressReviewThreadRecovery(
 
   const previousThreadIds = parseTrackedPrProgressSnapshotThreadIds(record.last_tracked_pr_progress_snapshot);
   const currentThreadIds = unresolvedReviewThreadIds(reviewThreads);
+  const previousThreadFingerprints = parseTrackedPrProgressSnapshotThreadFingerprints(
+    record.last_tracked_pr_progress_snapshot,
+  );
+  const currentThreadFingerprints = unresolvedReviewThreadFingerprints(reviewThreads);
   const failureSignature = record.last_failure_signature;
   const sameThreadIds =
     previousThreadIds !== null &&
@@ -137,11 +168,23 @@ export function suppressSameHeadNoProgressReviewThreadRecovery(
     previousThreadIds.every((threadId, index) => threadId === currentThreadIds[index]);
   const sameBlockingThread =
     typeof failureSignature === "string" && failureSignature.length > 0 && currentThreadIds.includes(failureSignature);
+  const sameThreadGuidance =
+    previousThreadFingerprints !== null &&
+    previousThreadFingerprints.length > 0 &&
+    previousThreadFingerprints.length === currentThreadFingerprints.length &&
+    previousThreadFingerprints.every((fingerprint, index) => fingerprint === currentThreadFingerprints[index]);
 
   if (!sameThreadIds || !sameBlockingThread) {
     return {
       shouldSuppress: false,
       progressSummary: null,
+    };
+  }
+
+  if (!sameThreadGuidance) {
+    return {
+      shouldSuppress: false,
+      progressSummary: "same_review_thread_guidance_changed",
     };
   }
 
