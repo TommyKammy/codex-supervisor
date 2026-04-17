@@ -256,3 +256,29 @@ test("findForbiddenWorkstationLocalPaths skips tracked files omitted by sparse c
     ],
   );
 });
+
+test("findForbiddenWorkstationLocalPaths flags tracked supervisor-generated artifacts by path", async (t) => {
+  const repoPath = await createTrackedRepo();
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+
+  const artifactPath = path.join(repoPath, ".codex-supervisor", "pre-merge", "assessment-snapshot.json");
+  await fs.mkdir(path.dirname(artifactPath), { recursive: true });
+  await fs.writeFile(artifactPath, JSON.stringify({ kind: "pre-merge", ok: false }, null, 2).concat("\n"), "utf8");
+  git(repoPath, "add", ".codex-supervisor/pre-merge/assessment-snapshot.json");
+
+  const findings = await findForbiddenWorkstationLocalPaths(repoPath);
+
+  assert.deepEqual(findings, [
+    {
+      filePath: ".codex-supervisor/pre-merge/assessment-snapshot.json",
+      line: null,
+      remediation:
+        "remove the tracked file or rewrite the fixture outside live supervisor paths (for example: git rm --cached .codex-supervisor/pre-merge/assessment-snapshot.json)",
+      match: ".codex-supervisor/pre-merge/assessment-snapshot.json",
+      prefix: ".codex-supervisor/pre-merge/",
+      reason: "is a supervisor-generated pre-merge artifact that must stay machine-local",
+    },
+  ]);
+});
