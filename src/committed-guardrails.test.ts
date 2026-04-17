@@ -476,7 +476,7 @@ test("atlaspm example markdown keeps its embedded config aligned with the checke
   const atlaspmMarkdownPath = path.join(process.cwd(), "docs", "examples", "atlaspm.md");
   const atlaspmJsonPath = path.join(process.cwd(), "docs", "examples", "atlaspm.supervisor.config.example.json");
   const atlaspmMarkdown = await fs.readFile(atlaspmMarkdownPath, "utf8");
-  const jsonBlockMatch = atlaspmMarkdown.match(/## Example config\n\n```json\n([\s\S]*?)\n```/u);
+  const jsonBlockMatch = atlaspmMarkdown.match(/## Example config\r?\n\r?\n```json\r?\n([\s\S]*?)\r?\n```/u);
 
   assert.ok(jsonBlockMatch, `${path.relative(process.cwd(), atlaspmMarkdownPath)} should include an Example config JSON block`);
 
