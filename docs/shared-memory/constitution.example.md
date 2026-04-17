@@ -15,6 +15,7 @@ This repository is operated with AI-assisted implementation loops. Durable proje
 - Keep operator-facing query surfaces resilient to partial or missing data. Prefer graceful degradation over hard failure in status, explain, doctor, and setup flows.
 - Do not let transport, refresh, or UI follow-up failures rewrite the outcome of a successful mutation.
 - When authoritative records and derived status surfaces disagree, repair the derived surface to match the authoritative record instead of teaching the system to trust the projection.
+- Do not hold a database transaction open across network hops, queued jobs, adapter dispatch, or other remote waits; cross the boundary only after commit or rollback.
 
 ## AI workflow rules
 

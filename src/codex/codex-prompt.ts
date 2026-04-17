@@ -454,6 +454,10 @@ function buildCodexStartPrompt(input: BuildCodexStartPromptInput): string {
     "- Do not let timeline summaries, detail DTOs, badges, counters, or post-mutation refresh failures overwrite the outcome recorded by the authoritative mutation or lifecycle record.",
     "- Treat operator-facing status text, human-readable summaries, and detail projections as derived surfaces that must be recalculated from authoritative state, not used as independent evidence for state transitions.",
     "- When a derived surface drifts from the authoritative record, fix the derivation and add or tighten the narrowest regression test at the authoritative selection boundary.",
+    "- When a response, export, backup, restore, readiness check, or detail aggregation reads multiple records, make the read set snapshot-consistent or explicitly detect and reject mixed-snapshot results instead of stitching together whichever rows arrived from different points in time.",
+    "- When one logical change writes multiple records, persist it atomically so partial commits cannot become the durable truth for later sessions or follow-up reads.",
+    "- Do not hold database transactions open across network hops, queued jobs, adapter dispatch, or other remote waits; stage the boundary, commit or roll back, then continue in a new transaction if needed.",
+    "- Treat backup/restore/export flows and readiness or detail rollups as high-risk mixed-state surfaces: verify they read from one committed snapshot and represent all-or-nothing write boundaries faithfully.",
   ];
 
   return [

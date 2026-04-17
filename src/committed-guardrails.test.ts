@@ -428,14 +428,30 @@ test("repo shared-memory examples encode authoritative-over-derived state guidan
     decisions,
     /Do not let refresh failures, timeline rows, badges, counters, or detail projections overwrite the authoritative outcome of a successful mutation or lifecycle transition\./,
   );
+  assert.match(
+    decisions,
+    /Multi-read responses such as readiness rollups, detail views, exports, backups, and restore previews should come from one committed snapshot or fail explicitly instead of mixing records from different snapshots\./,
+  );
+  assert.match(
+    decisions,
+    /One logical multi-record mutation should commit atomically; never leave partial durable state behind for later sessions to treat as truth\./,
+  );
 
   assert.match(
     constitution,
     /When authoritative records and derived status surfaces disagree, repair the derived surface to match the authoritative record instead of teaching the system to trust the projection\./,
   );
+  assert.match(
+    constitution,
+    /Do not hold a database transaction open across network hops, queued jobs, adapter dispatch, or other remote waits; cross the boundary only after commit or rollback\./,
+  );
 
   assert.match(
     workflow,
     /Before shipping a stateful change, check that current\/latest\/active\/terminal selection still comes from the authoritative record rather than a summary DTO, timeline projection, or operator-facing status field\./,
+  );
+  assert.match(
+    workflow,
+    /Before shipping aggregation, backup\/restore\/export, or multi-write persistence changes, verify the read path is snapshot-consistent and the write path is atomic across every affected record\./,
   );
 });

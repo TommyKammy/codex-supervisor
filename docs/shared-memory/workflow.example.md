@@ -11,6 +11,7 @@
 7. Open or update the PR.
 8. Address CI failures and review feedback until mergeable.
 9. Before shipping a stateful change, check that current/latest/active/terminal selection still comes from the authoritative record rather than a summary DTO, timeline projection, or operator-facing status field.
+10. Before shipping aggregation, backup/restore/export, or multi-write persistence changes, verify the read path is snapshot-consistent and the write path is atomic across every affected record.
 
 ## Durable memory
 

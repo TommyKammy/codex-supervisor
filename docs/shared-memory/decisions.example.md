@@ -16,6 +16,8 @@
 - Authoritative lifecycle records beat derived summaries, convenience projections, and operator-facing DTOs when they disagree.
 - Resolve `current`, `latest`, `active`, `terminal`, `open`, and `done` classifications from authoritative lifecycle fields first, then derive summaries from that result.
 - When selecting among competing records, authoritative lifecycle state, durable identifiers, terminal markers, and authoritative timestamps beat display order, badge text, convenience booleans, or whichever row refreshed last.
+- Multi-read responses such as readiness rollups, detail views, exports, backups, and restore previews should come from one committed snapshot or fail explicitly instead of mixing records from different snapshots.
+- One logical multi-record mutation should commit atomically; never leave partial durable state behind for later sessions to treat as truth.
 
 ## Operator surface model
 
