@@ -23,3 +23,5 @@ Before commit, check that:
 2. Operator-facing UI and API changes handle partial, null, or missing data without hard failure.
 3. Successful commands remain reported as successful even if follow-up refresh or transport updates fail.
 4. New diagnostics and docs match the same parser and runtime contract as the implementation.
+5. Missing or malformed provenance, scope, auth, or trust-boundary signals still block or reject the path instead of falling open.
+6. Placeholder credentials, raw forwarded headers, and ambiguous tenant or resource linkage are rejected until a trusted source or explicit binding is present.

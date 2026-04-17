@@ -11,6 +11,8 @@
 - GitHub is the source of truth for issue, PR, review, and CI state.
 - Supervisor state exists to continue loops across sessions, not to replace GitHub facts.
 - Issue metadata such as `Depends on` and `Execution order` is authoritative for sequencing.
+- Shared-memory heuristics should prefer fail-closed outcomes when provenance, scope, auth context, or trust-boundary signals are missing or malformed.
+- Auth or scope checks that rely on placeholder credentials, forwarded headers, or ambiguous linkage should block until the authoritative source is present.
 
 ## Operator surface model
 
