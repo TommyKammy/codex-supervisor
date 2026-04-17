@@ -5,6 +5,17 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { executeLocalCiCommand, runLocalCiGate, runWorkspacePreparationGate } from "./local-ci";
+import { REPO_OWNED_SUBPROCESS_TIMEOUT_MS, resolveExecutablePath } from "./subprocess-test-helpers";
+
+const gitExecutable = resolveExecutablePath("git");
+
+function git(cwd: string, ...args: string[]): string {
+  return execFileSync(gitExecutable, args, {
+    cwd,
+    encoding: "utf8",
+    timeout: REPO_OWNED_SUBPROCESS_TIMEOUT_MS,
+  });
+}
 
 test("runLocalCiGate reports an unset local CI contract as a non-blocking issue-body remediation", async () => {
   const result = await runLocalCiGate({
@@ -274,7 +285,7 @@ test("runWorkspacePreparationGate explains when a repo-relative helper is missin
   const workspacePath = path.join(root, "workspaces", "issue-102");
   await fs.mkdir(path.join(repoPath, "scripts"), { recursive: true });
   await fs.mkdir(workspacePath, { recursive: true });
-  execFileSync("git", ["init", "-b", "main"], { cwd: repoPath });
+  git(repoPath, "init", "-b", "main");
   await fs.writeFile(path.join(repoPath, "package.json"), JSON.stringify({
     private: true,
     scripts: {
@@ -282,9 +293,10 @@ test("runWorkspacePreparationGate explains when a repo-relative helper is missin
     },
   }), "utf8");
   await fs.writeFile(path.join(repoPath, "package-lock.json"), "{}\n", "utf8");
-  execFileSync("git", ["add", "package.json", "package-lock.json"], { cwd: repoPath });
-  execFileSync("git", ["commit", "-m", "seed"], {
+  git(repoPath, "add", "package.json", "package-lock.json");
+  execFileSync(gitExecutable, ["commit", "-m", "seed"], {
     cwd: repoPath,
+    encoding: "utf8",
     env: {
       ...process.env,
       GIT_AUTHOR_NAME: "Codex",
@@ -292,6 +304,7 @@ test("runWorkspacePreparationGate explains when a repo-relative helper is missin
       GIT_COMMITTER_NAME: "Codex",
       GIT_COMMITTER_EMAIL: "codex@example.com",
     },
+    timeout: REPO_OWNED_SUBPROCESS_TIMEOUT_MS,
   });
   await fs.writeFile(path.join(repoPath, "scripts", "prepare-workspace.sh"), "#!/bin/sh\nexit 0\n", "utf8");
 
