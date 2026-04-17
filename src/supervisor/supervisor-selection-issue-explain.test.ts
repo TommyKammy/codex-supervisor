@@ -528,6 +528,88 @@ test("buildIssueExplainDto degrades when PR resolution fails", async () => {
   });
 });
 
+test("buildIssueExplainSummary surfaces host-migration path repair and journal rehydration from the canonical local journal", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 606;
+  const workspacePath = path.join(fixture.workspaceRoot, `issue-${issueNumber}`);
+  const journalPath = path.join(workspacePath, ".codex-supervisor", "issues", String(issueNumber), "issue-journal.md");
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  await fs.writeFile(path.join(workspacePath, ".git"), "gitdir: /tmp/fake\n", "utf8");
+  await fs.writeFile(
+    journalPath,
+    `# Issue #606: Host migration explain
+
+## Supervisor Snapshot
+- Updated at: 2026-04-17T00:20:00Z
+
+## Latest Codex Summary
+- None yet.
+
+## Active Failure Context
+- None recorded.
+
+## Codex Working Notes
+### Current Handoff
+- Current blocker:
+- Next exact step: Continue from the canonical local worktree.
+
+### Scratchpad
+- Journal rehydration note: this journal was rehydrated on this host because the prior local-only handoff journal was unavailable.
+`,
+    "utf8",
+  );
+
+  const config = createConfig({
+    workspaceRoot: fixture.workspaceRoot,
+    stateFile: fixture.stateFile,
+    repoPath: fixture.repoPath,
+    issueJournalRelativePath: ".codex-supervisor/issues/{issueNumber}/issue-journal.md",
+  });
+  const issue = createIssue({
+    number: issueNumber,
+    title: "Explain host migration diagnostics",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        blocked_reason: "unknown",
+        branch: branchName(config, issueNumber),
+        workspace: `/tmp/other-host/issue-${issueNumber}`,
+        journal_path: `/tmp/other-host/issue-${issueNumber}/.codex-supervisor/issues/${issueNumber}/issue-journal.md`,
+      }),
+    },
+  };
+
+  const lines = await buildIssueExplainSummary(
+    {
+      getIssue: async () => issue,
+      listAllIssues: async () => [issue],
+      listCandidateIssues: async () => [issue],
+      resolvePullRequestForBranch: async () => null,
+    },
+    config,
+    state,
+    issueNumber,
+  );
+
+  const explanation = lines.join("\n");
+  assert.match(
+    explanation,
+    /^issue_host_paths issue=#606 workspace=auto_repaired journal_path=auto_repaired guidance=no_manual_action_required$/m,
+  );
+  assert.match(
+    explanation,
+    /^issue_journal_state issue=#606 status=rehydrated guidance=no_manual_action_required detail=prior_local_only_handoff_unavailable$/m,
+  );
+  assert.match(
+    explanation,
+    /^reason_2=local_state blocked$/m,
+  );
+});
+
 test("buildIssueExplainDto surfaces preserved partial work for no-PR manual-review recovery", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 607;

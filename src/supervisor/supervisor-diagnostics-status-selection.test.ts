@@ -248,6 +248,98 @@ test("status reports bootstrap repos as not ready for expected CI and review sig
   );
 });
 
+test("status surfaces host-migration path repair and journal rehydration from the canonical local journal", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const issueNumber = 145;
+  const branch = branchName(fixture.config, issueNumber);
+  const workspacePath = path.join(fixture.workspaceRoot, `issue-${issueNumber}`);
+  const journalPath = path.join(workspacePath, ".codex-supervisor", "issues", String(issueNumber), "issue-journal.md");
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  await fs.writeFile(path.join(workspacePath, ".git"), "gitdir: /tmp/fake\n", "utf8");
+  await fs.writeFile(
+    journalPath,
+    `# Issue #145: Host migration
+
+## Supervisor Snapshot
+- Updated at: 2026-04-17T00:10:00Z
+
+## Latest Codex Summary
+- None yet.
+
+## Active Failure Context
+- None recorded.
+
+## Codex Working Notes
+### Current Handoff
+- Current blocker: No blocker.
+- Next exact step: Resume focused verification from the local worktree.
+
+### Scratchpad
+- Journal rehydration note: this journal was rehydrated on this host because the prior local-only handoff journal was unavailable.
+`,
+    "utf8",
+  );
+
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "reproducing",
+        branch,
+        workspace: `/tmp/other-host/issue-${issueNumber}`,
+        journal_path: `/tmp/other-host/issue-${issueNumber}/.codex-supervisor/issues/${issueNumber}/issue-journal.md`,
+        blocked_reason: null,
+        last_error: null,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const supervisor = new Supervisor({
+    ...fixture.config,
+    issueJournalRelativePath: ".codex-supervisor/issues/{issueNumber}/issue-journal.md",
+  });
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => ({
+      number: issueNumber,
+      title: "Host migration diagnostics",
+      body: executionReadyBody("Surface host migration diagnostics in status."),
+      createdAt: "2026-04-17T00:00:00Z",
+      updatedAt: "2026-04-17T00:00:00Z",
+      url: `https://example.test/issues/${issueNumber}`,
+      labels: [],
+      state: "OPEN",
+    } satisfies GitHubIssue),
+    listCandidateIssues: async () => [],
+    listAllIssues: async () => [],
+    resolvePullRequestForBranch: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+    getPullRequestIfExists: async () => null,
+  };
+
+  const status = await supervisor.status();
+
+  assert.match(
+    status,
+    /^handoff_summary=next: Resume focused verification from the local worktree\.$/m,
+  );
+  assert.match(
+    status,
+    /^issue_host_paths issue=#145 workspace=auto_repaired journal_path=auto_repaired guidance=no_manual_action_required$/m,
+  );
+  assert.match(
+    status,
+    /^issue_journal_state issue=#145 status=rehydrated guidance=no_manual_action_required detail=prior_local_only_handoff_unavailable$/m,
+  );
+  assert.doesNotMatch(status, /status_warning=/);
+});
+
 test("status does not warn for issue-scoped or custom issue journal paths", async (t) => {
   const fixture = await createSupervisorFixture();
   t.after(async () => {
