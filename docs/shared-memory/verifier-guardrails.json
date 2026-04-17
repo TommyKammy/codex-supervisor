@@ -2,6 +2,22 @@
   "version": 1,
   "rules": [
     {
+      "id": "ui-tests-should-assert-usability-state-not-mere-presence",
+      "title": "Assert UI usability state, not just element presence",
+      "file": "src/backend/webui-dashboard.test.ts",
+      "line": 2061,
+      "summary": "When a fake DOM or harness does not faithfully enforce hidden or disabled behavior, verifier coverage should assert that the control is visible and enabled before treating click plumbing as sufficient evidence.",
+      "rationale": "Presence-only assertions can pass while the control is still unusable to real users; tests should prove usability at the behavioral boundary."
+    },
+    {
+      "id": "workflow-tests-should-validate-executable-steps-not-grep-yaml",
+      "title": "Validate executable workflow steps, not raw YAML matches",
+      "file": "src/ci-workflow.test.ts",
+      "line": 226,
+      "summary": "Workflow verification should parse the job step structure and assert exact same-step `if`, `run`, `uses`, and `with` fields rather than grepping raw YAML for loose substrings or adjacent lines.",
+      "rationale": "Raw regex or substring checks can falsely combine fields from different steps and treat non-executable YAML text as proof that a guarded command or artifact upload is actually wired into the workflow."
+    },
+    {
       "id": "committed-guardrails-malformed-input",
       "title": "Differentiate missing and malformed committed guardrails",
       "file": "src/committed-guardrails.ts",
@@ -48,14 +64,6 @@
       "line": 114,
       "summary": "When loader output is intentionally extensible, assert on the rule or property under test instead of snapshotting the full returned array or document unless exact full output is the behavior being verified.",
       "rationale": "Full-array or full-document snapshots make maintainability guardrails brittle as new rules are added later; exact-output assertions are still appropriate when the exact structure itself is the contract."
-    },
-    {
-      "id": "ui-tests-should-assert-usability-state-not-mere-presence",
-      "title": "Assert UI usability state, not just element presence",
-      "file": "src/backend/webui-dashboard.test.ts",
-      "line": 2061,
-      "summary": "When a fake DOM or harness does not faithfully enforce hidden or disabled behavior, verifier coverage should assert that the control is visible and enabled before treating click plumbing as sufficient evidence.",
-      "rationale": "Presence-only assertions can pass while the control is still unusable to real users; tests should prove usability at the behavioral boundary."
     }
   ]
 }

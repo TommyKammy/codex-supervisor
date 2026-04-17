@@ -2,6 +2,72 @@
   "version": 1,
   "patterns": [
     {
+      "fingerprint": "src/core/state-store.ts|new-persisted-nullable-fields-must-be-normalized-during-hydration",
+      "reviewerLogin": "coderabbitai",
+      "file": "src/core/state-store.ts",
+      "line": null,
+      "summary": "Flag newly added persisted nullable fields that are written by current code but not normalized from older state files during load or hydration.",
+      "rationale": "Durable state remains stable only when schema additions converge old and new records to one canonical in-memory shape instead of leaking undefined drift.",
+      "sourceArtifactPath": "promoted-from-pr-1159",
+      "sourceHeadSha": "pr-1159",
+      "lastSeenAt": "2026-03-30T00:00:00Z"
+    },
+    {
+      "fingerprint": "src/github/github-review-signals.ts|provider-specific-review-signals-must-stay-provider-scoped",
+      "reviewerLogin": "coderabbitai",
+      "file": "src/github/github-review-signals.ts",
+      "line": null,
+      "summary": "Flag review-bot lifecycle or status inference that accepts success or arrival signals from a different provider than the gate being evaluated.",
+      "rationale": "Multi-provider review systems stay safe only when each merge gate is driven by that provider's own signals; cross-provider success can unlock merge prematurely.",
+      "sourceArtifactPath": "promoted-from-pr-1149",
+      "sourceHeadSha": "pr-1149",
+      "lastSeenAt": "2026-03-30T00:00:00Z"
+    },
+    {
+      "fingerprint": "src/github/github.ts|per-request-diagnostic-capture-must-not-use-process-global-env-mutation",
+      "reviewerLogin": "coderabbitai",
+      "file": "src/github/github.ts",
+      "line": null,
+      "summary": "Flag request-scoped or refresh-scoped diagnostic capture that is passed through mutable process-global environment variables across async execution.",
+      "rationale": "Concurrent operations can leak or overwrite each other's capture targets when request-local state is routed through process-global mutation.",
+      "sourceArtifactPath": "promoted-from-pr-1162",
+      "sourceHeadSha": "pr-1162",
+      "lastSeenAt": "2026-03-30T00:00:00Z"
+    },
+    {
+      "fingerprint": "src/pull-request-state.ts|bot-thread-exceptions-must-not-bypass-human-review-gates",
+      "reviewerLogin": "coderabbitai",
+      "file": "src/pull-request-state.ts",
+      "line": null,
+      "summary": "Flag exceptions that relax configured-bot thread blocking when they also suppress human review requirements such as human CHANGES_REQUESTED or REVIEW_REQUIRED.",
+      "rationale": "Bot-specific merge exceptions are only safe when they narrow bot blocking; they must never override human review decisions.",
+      "sourceArtifactPath": "promoted-from-pr-1149",
+      "sourceHeadSha": "pr-1149",
+      "lastSeenAt": "2026-03-30T00:00:00Z"
+    },
+    {
+      "fingerprint": "src/setup-readiness.ts|invalid-optional-fields-must-still-fail-readiness",
+      "reviewerLogin": "coderabbitai",
+      "file": "src/setup-readiness.ts",
+      "line": null,
+      "summary": "Flag readiness or setup-status logic that ignores optional fields in the invalid state instead of treating them as configuration failures.",
+      "rationale": "Optional fields may be missing, but once present they must be valid; otherwise readiness can report configured state for a broken config document.",
+      "sourceArtifactPath": "promoted-from-pr-1201",
+      "sourceHeadSha": "pr-1201",
+      "lastSeenAt": "2026-03-30T00:00:00Z"
+    },
+    {
+      "fingerprint": "src/supervisor/supervisor-selection-issue-explain.ts|diagnostics-only-hydration-should-fail-soft-on-auxiliary-fetch-errors",
+      "reviewerLogin": "coderabbitai",
+      "file": "src/supervisor/supervisor-selection-issue-explain.ts",
+      "line": null,
+      "summary": "Flag diagnostics-only enrichments that throw through the primary explain or status response when optional auxiliary GitHub hydration fails.",
+      "rationale": "Operator diagnostics are most useful when core output survives partial enrichment failure and clearly marks missing auxiliary data instead of aborting entirely.",
+      "sourceArtifactPath": "promoted-from-pr-1161",
+      "sourceHeadSha": "pr-1161",
+      "lastSeenAt": "2026-03-30T00:00:00Z"
+    },
+    {
       "fingerprint": ".codex-supervisor/issue-journal.md|committed-journal-snapshot-handoff-sections-must-stay-internally-consistent",
       "reviewerLogin": "coderabbitai",
       "file": ".codex-supervisor/issue-journal.md",
@@ -99,72 +165,6 @@
       "sourceArtifactPath": "promoted-from-issue-204",
       "sourceHeadSha": "issue-204",
       "lastSeenAt": "2026-03-14T00:00:00Z"
-    },
-    {
-      "fingerprint": "src/github/github-review-signals.ts|provider-specific-review-signals-must-stay-provider-scoped",
-      "reviewerLogin": "coderabbitai",
-      "file": "src/github/github-review-signals.ts",
-      "line": null,
-      "summary": "Flag review-bot lifecycle or status inference that accepts success or arrival signals from a different provider than the gate being evaluated.",
-      "rationale": "Multi-provider review systems stay safe only when each merge gate is driven by that provider's own signals; cross-provider success can unlock merge prematurely.",
-      "sourceArtifactPath": "promoted-from-pr-1149",
-      "sourceHeadSha": "pr-1149",
-      "lastSeenAt": "2026-03-30T00:00:00Z"
-    },
-    {
-      "fingerprint": "src/pull-request-state.ts|bot-thread-exceptions-must-not-bypass-human-review-gates",
-      "reviewerLogin": "coderabbitai",
-      "file": "src/pull-request-state.ts",
-      "line": null,
-      "summary": "Flag exceptions that relax configured-bot thread blocking when they also suppress human review requirements such as human CHANGES_REQUESTED or REVIEW_REQUIRED.",
-      "rationale": "Bot-specific merge exceptions are only safe when they narrow bot blocking; they must never override human review decisions.",
-      "sourceArtifactPath": "promoted-from-pr-1149",
-      "sourceHeadSha": "pr-1149",
-      "lastSeenAt": "2026-03-30T00:00:00Z"
-    },
-    {
-      "fingerprint": "src/core/state-store.ts|new-persisted-nullable-fields-must-be-normalized-during-hydration",
-      "reviewerLogin": "coderabbitai",
-      "file": "src/core/state-store.ts",
-      "line": null,
-      "summary": "Flag newly added persisted nullable fields that are written by current code but not normalized from older state files during load or hydration.",
-      "rationale": "Durable state remains stable only when schema additions converge old and new records to one canonical in-memory shape instead of leaking undefined drift.",
-      "sourceArtifactPath": "promoted-from-pr-1159",
-      "sourceHeadSha": "pr-1159",
-      "lastSeenAt": "2026-03-30T00:00:00Z"
-    },
-    {
-      "fingerprint": "src/github/github.ts|per-request-diagnostic-capture-must-not-use-process-global-env-mutation",
-      "reviewerLogin": "coderabbitai",
-      "file": "src/github/github.ts",
-      "line": null,
-      "summary": "Flag request-scoped or refresh-scoped diagnostic capture that is passed through mutable process-global environment variables across async execution.",
-      "rationale": "Concurrent operations can leak or overwrite each other's capture targets when request-local state is routed through process-global mutation.",
-      "sourceArtifactPath": "promoted-from-pr-1162",
-      "sourceHeadSha": "pr-1162",
-      "lastSeenAt": "2026-03-30T00:00:00Z"
-    },
-    {
-      "fingerprint": "src/supervisor/supervisor-selection-issue-explain.ts|diagnostics-only-hydration-should-fail-soft-on-auxiliary-fetch-errors",
-      "reviewerLogin": "coderabbitai",
-      "file": "src/supervisor/supervisor-selection-issue-explain.ts",
-      "line": null,
-      "summary": "Flag diagnostics-only enrichments that throw through the primary explain or status response when optional auxiliary GitHub hydration fails.",
-      "rationale": "Operator diagnostics are most useful when core output survives partial enrichment failure and clearly marks missing auxiliary data instead of aborting entirely.",
-      "sourceArtifactPath": "promoted-from-pr-1161",
-      "sourceHeadSha": "pr-1161",
-      "lastSeenAt": "2026-03-30T00:00:00Z"
-    },
-    {
-      "fingerprint": "src/setup-readiness.ts|invalid-optional-fields-must-still-fail-readiness",
-      "reviewerLogin": "coderabbitai",
-      "file": "src/setup-readiness.ts",
-      "line": null,
-      "summary": "Flag readiness or setup-status logic that ignores optional fields in the invalid state instead of treating them as configuration failures.",
-      "rationale": "Optional fields may be missing, but once present they must be valid; otherwise readiness can report configured state for a broken config document.",
-      "sourceArtifactPath": "promoted-from-pr-1201",
-      "sourceHeadSha": "pr-1201",
-      "lastSeenAt": "2026-03-30T00:00:00Z"
     }
   ]
 }
