@@ -38,12 +38,33 @@ This is one concrete way to use `codex-supervisor` against a local checkout of `
     "docs/workflow.md",
     "docs/decisions.md"
   ],
+  "gsdEnabled": false,
+  "gsdAutoInstall": false,
+  "gsdInstallScope": "global",
+  "gsdCodexConfigDir": "",
+  "gsdPlanningFiles": [
+    "PROJECT.md",
+    "REQUIREMENTS.md",
+    "ROADMAP.md",
+    "STATE.md"
+  ],
   "localReviewEnabled": true,
   "localReviewAutoDetect": true,
   "localReviewRoles": [],
   "localReviewArtifactDir": "/Users/yourname/Dev/codex-supervisor/.local/reviews",
   "localReviewConfidenceThreshold": 0.7,
+  "localReviewReviewerThresholds": {
+    "generic": {
+      "confidenceThreshold": 0.8,
+      "minimumSeverity": "medium"
+    },
+    "specialist": {
+      "confidenceThreshold": 0.7,
+      "minimumSeverity": "low"
+    }
+  },
   "localReviewPolicy": "block_merge",
+  "trackedPrCurrentHeadLocalReviewRequired": false,
   "localReviewFollowUpRepairEnabled": false,
   "localReviewManualReviewRepairEnabled": false,
   "localReviewFollowUpIssueCreationEnabled": false,

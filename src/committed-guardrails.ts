@@ -29,8 +29,8 @@ export const EXTERNAL_REVIEW_GUARDRAILS_PATH = path.join("docs", "shared-memory"
 export const VERIFIER_GUARDRAILS_SCHEMA_VERSION = 1;
 export const EXTERNAL_REVIEW_GUARDRAILS_SCHEMA_VERSION = 1;
 const GUARDRAILS_MAX_BYTES = 256 * 1024;
-const VERIFIER_GUARDRAIL_KEYS = ["id", "title", "file", "line", "summary", "rationale"] as const;
-const DURABLE_MISS_PATTERN_KEYS = [
+export const VERIFIER_GUARDRAIL_KEYS = ["id", "title", "file", "line", "summary", "rationale"] as const;
+export const DURABLE_MISS_PATTERN_KEYS = [
   "fingerprint",
   "reviewerLogin",
   "file",
