@@ -15,7 +15,7 @@ function usage(): string {
   return [
     "Usage: tsx scripts/check-workstation-local-paths.ts [--workspace <path>] [--exclude-path <repo-relative-path>]",
     "",
-    "Scans tracked durable text artifacts for workstation-local absolute paths that point to operator-specific home directories.",
+    "Scans tracked durable text artifacts for workstation-local absolute paths and tracked supervisor-generated local artifacts.",
     "Approved committed fixtures/examples must be exempted intentionally by repo-relative path via --exclude-path",
     `or by extending DEFAULT_EXCLUDED_PATHS in ${path.posix.join("src", "workstation-local-paths.ts")}.`,
   ].join("\n");
@@ -64,7 +64,7 @@ async function main(): Promise<void> {
   const findings = await findForbiddenWorkstationLocalPaths(workspacePath, excludedPaths);
 
   if (findings.length === 0) {
-    console.log(`No forbidden workstation-local absolute paths found in tracked durable artifacts under ${workspacePath}.`);
+    console.log(`No forbidden workstation-local artifacts found in tracked durable artifacts under ${workspacePath}.`);
     return;
   }
 
@@ -73,10 +73,10 @@ async function main(): Promise<void> {
 
   throw new Error(
     [
-      "Forbidden workstation-local absolute path references found:",
+      "Forbidden workstation-local artifacts found:",
       renderedFindings,
       "",
-      "If a tracked fixture/example is intentionally committed with one of these paths, exempt it explicitly with --exclude-path",
+      "If a tracked fixture/example is intentionally committed, exempt it explicitly with --exclude-path",
       `or extend DEFAULT_EXCLUDED_PATHS in ${path.posix.join("src", "workstation-local-paths.ts")}.`,
       "",
       "Active excluded paths:",

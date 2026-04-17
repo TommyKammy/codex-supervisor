@@ -209,18 +209,22 @@ test("findForbiddenWorkstationLocalPaths skips tracked files omitted by sparse c
 
   const currentJournalPath = path.join(repoPath, ".codex-supervisor", "issues", "102", "issue-journal.md");
   const otherJournalPath = path.join(repoPath, ".codex-supervisor", "issues", "181", "issue-journal.md");
+  const hiddenArtifactPath = path.join(repoPath, ".codex-supervisor", "pre-merge", "assessment-snapshot.json");
   const visibleDocPath = path.join(repoPath, "docs", "guide.md");
   await fs.mkdir(path.dirname(currentJournalPath), { recursive: true });
   await fs.mkdir(path.dirname(otherJournalPath), { recursive: true });
+  await fs.mkdir(path.dirname(hiddenArtifactPath), { recursive: true });
   await fs.mkdir(path.dirname(visibleDocPath), { recursive: true });
   await fs.writeFile(currentJournalPath, "# Issue #102\n", "utf8");
   await fs.writeFile(otherJournalPath, `- What changed: ${buildMacHomePath("alice", "Dev", "private-repo")}\n`, "utf8");
+  await fs.writeFile(hiddenArtifactPath, JSON.stringify({ kind: "pre-merge", ok: false }, null, 2).concat("\n"), "utf8");
   await fs.writeFile(visibleDocPath, `Visible leak: ${buildUnixHomePath("alice", "dev", "private-repo")}\n`, "utf8");
   git(
     repoPath,
     "add",
     ".codex-supervisor/issues/102/issue-journal.md",
     ".codex-supervisor/issues/181/issue-journal.md",
+    ".codex-supervisor/pre-merge/assessment-snapshot.json",
     "docs/guide.md",
   );
   git(repoPath, "commit", "-m", "seed sparse checkout fixture");
@@ -234,6 +238,7 @@ test("findForbiddenWorkstationLocalPaths skips tracked files omitted by sparse c
   git(repoPath, "read-tree", "-mu", "HEAD");
 
   await assert.rejects(fs.access(otherJournalPath), { code: "ENOENT" });
+  await assert.rejects(fs.access(hiddenArtifactPath), { code: "ENOENT" });
 
   const findings = await findForbiddenWorkstationLocalPaths(repoPath);
 
@@ -255,4 +260,30 @@ test("findForbiddenWorkstationLocalPaths skips tracked files omitted by sparse c
       },
     ],
   );
+});
+
+test("findForbiddenWorkstationLocalPaths flags tracked supervisor-generated artifacts by path", async (t) => {
+  const repoPath = await createTrackedRepo();
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+
+  const artifactPath = path.join(repoPath, ".codex-supervisor", "pre-merge", "assessment-snapshot.json");
+  await fs.mkdir(path.dirname(artifactPath), { recursive: true });
+  await fs.writeFile(artifactPath, JSON.stringify({ kind: "pre-merge", ok: false }, null, 2).concat("\n"), "utf8");
+  git(repoPath, "add", ".codex-supervisor/pre-merge/assessment-snapshot.json");
+
+  const findings = await findForbiddenWorkstationLocalPaths(repoPath);
+
+  assert.deepEqual(findings, [
+    {
+      filePath: ".codex-supervisor/pre-merge/assessment-snapshot.json",
+      line: null,
+      remediation:
+        "remove the tracked file or rewrite the fixture outside live supervisor paths (for example: git rm --cached .codex-supervisor/pre-merge/assessment-snapshot.json)",
+      match: ".codex-supervisor/pre-merge/assessment-snapshot.json",
+      prefix: ".codex-supervisor/pre-merge/",
+      reason: "is a supervisor-generated pre-merge artifact that must stay machine-local",
+    },
+  ]);
 });

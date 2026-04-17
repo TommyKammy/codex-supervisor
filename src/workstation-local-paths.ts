@@ -47,14 +47,19 @@ const CANDIDATE_PATTERNS: ReadonlyArray<{
 
 export interface WorkstationLocalPathMatch {
   filePath: string;
-  line: number;
+  line: number | null;
+  remediation: string;
   match: string;
   prefix: string;
   reason: string;
 }
 
 export function formatWorkstationLocalPathMatch(finding: WorkstationLocalPathMatch): string {
-  return `- ${finding.filePath}:${finding.line} matched ${finding.prefix} (${finding.reason}) via ${JSON.stringify(finding.match)}`;
+  if (finding.line === null) {
+    return `- ${finding.filePath} ${finding.reason}. Remediation: ${finding.remediation}`;
+  }
+
+  return `- ${finding.filePath}:${finding.line} matched ${finding.prefix} (${finding.reason}) via ${JSON.stringify(finding.match)}. Remediation: ${finding.remediation}`;
 }
 
 function escapeForRegex(value: string): string {
@@ -181,6 +186,7 @@ function collectMatches(filePath: string, contents: string): WorkstationLocalPat
           matches.push({
             filePath,
             line: lineIndex + 1,
+            remediation: "rewrite the path repo-relatively or redact the operator-local absolute path",
             match: candidate,
             prefix: classification.label,
             reason: classification.reason,
@@ -191,6 +197,58 @@ function collectMatches(filePath: string, contents: string): WorkstationLocalPat
   }
 
   return matches;
+}
+
+function classifyForbiddenSupervisorArtifactPath(filePath: string): { prefix: string; reason: string; remediation: string } | null {
+  if (filePath === ".codex-supervisor/turn-in-progress.json") {
+    return {
+      prefix: ".codex-supervisor/turn-in-progress.json",
+      reason: "is a supervisor-generated interrupted-turn marker that must stay machine-local",
+      remediation: `remove the tracked file or rewrite the fixture outside live supervisor paths (for example: git rm --cached ${filePath})`,
+    };
+  }
+
+  if (filePath === ".codex-supervisor/replay" || filePath.startsWith(".codex-supervisor/replay/")) {
+    return {
+      prefix: ".codex-supervisor/replay/",
+      reason: "is a supervisor-generated replay artifact that must stay machine-local",
+      remediation: `remove the tracked file or rewrite the fixture outside live supervisor paths (for example: git rm --cached ${filePath})`,
+    };
+  }
+
+  if (filePath === ".codex-supervisor/pre-merge" || filePath.startsWith(".codex-supervisor/pre-merge/")) {
+    return {
+      prefix: ".codex-supervisor/pre-merge/",
+      reason: "is a supervisor-generated pre-merge artifact that must stay machine-local",
+      remediation: `remove the tracked file or rewrite the fixture outside live supervisor paths (for example: git rm --cached ${filePath})`,
+    };
+  }
+
+  if (filePath === ".codex-supervisor/execution-metrics" || filePath.startsWith(".codex-supervisor/execution-metrics/")) {
+    return {
+      prefix: ".codex-supervisor/execution-metrics/",
+      reason: "is a supervisor-generated execution-metrics artifact that must stay machine-local",
+      remediation: `remove the tracked file or rewrite the fixture outside live supervisor paths (for example: git rm --cached ${filePath})`,
+    };
+  }
+
+  if (filePath === ".codex-supervisor/loop.out") {
+    return {
+      prefix: ".codex-supervisor/loop.out",
+      reason: "is a supervisor runtime log that must stay machine-local",
+      remediation: `remove the tracked file or rewrite the fixture outside live supervisor paths (for example: git rm --cached ${filePath})`,
+    };
+  }
+
+  if (filePath === ".codex-supervisor/current-reconciliation-phase.json") {
+    return {
+      prefix: ".codex-supervisor/current-reconciliation-phase.json",
+      reason: "is a supervisor runtime state artifact that must stay machine-local",
+      remediation: `remove the tracked file or rewrite the fixture outside live supervisor paths (for example: git rm --cached ${filePath})`,
+    };
+  }
+
+  return null;
 }
 
 export async function findForbiddenWorkstationLocalPaths(
@@ -218,6 +276,20 @@ export async function findForbiddenWorkstationLocalPaths(
 
       throw error;
     }
+
+    const forbiddenArtifact = classifyForbiddenSupervisorArtifactPath(filePath);
+    if (forbiddenArtifact) {
+      findings.push({
+        filePath,
+        line: null,
+        remediation: forbiddenArtifact.remediation,
+        match: filePath,
+        prefix: forbiddenArtifact.prefix,
+        reason: forbiddenArtifact.reason,
+      });
+      continue;
+    }
+
     if (isBinary(rawContents)) {
       continue;
     }

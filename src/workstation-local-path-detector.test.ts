@@ -59,7 +59,7 @@ function extractRenderedFindingLines(stderr: string): string[] {
   let collecting = false;
 
   for (const line of lines) {
-    if (line.includes("Forbidden workstation-local absolute path references found:")) {
+    if (line.includes("Forbidden workstation-local artifacts found:")) {
       collecting = true;
       continue;
     }
@@ -102,7 +102,7 @@ test("workstation-local path detector flags tracked durable artifacts and allows
 
   const failingResult = runDetector(repoPath, "--workspace", repoPath);
   assert.notEqual(failingResult.status, 0, "expected forbidden tracked path to fail");
-  assert.match(failingResult.stderr, /Forbidden workstation-local absolute path references found:/);
+  assert.match(failingResult.stderr, /Forbidden workstation-local artifacts found:/);
   assert.match(failingResult.stderr, /docs\/guide\.md:1/);
   assert.match(failingResult.stderr, new RegExp(SAMPLE_FORBIDDEN_PATH.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 
@@ -143,6 +143,26 @@ test("workstation-local path detector honors repo-owned default exclusions for c
   );
 });
 
+test("workstation-local path detector blocks tracked supervisor-generated artifacts even without leaked home paths", async (t) => {
+  const repoPath = await createTrackedRepo();
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+
+  await fs.mkdir(path.join(repoPath, ".codex-supervisor", "pre-merge"), { recursive: true });
+  await fs.writeFile(
+    path.join(repoPath, ".codex-supervisor", "pre-merge", "assessment-snapshot.json"),
+    JSON.stringify({ kind: "pre-merge", status: "blocked" }, null, 2).concat("\n"),
+    "utf8",
+  );
+  git(repoPath, "add", ".codex-supervisor/pre-merge/assessment-snapshot.json");
+
+  const result = runDetector(repoPath, "--workspace", repoPath);
+  assert.notEqual(result.status, 0, "expected tracked supervisor-generated artifact to fail");
+  assert.match(result.stderr, /\.codex-supervisor\/pre-merge\/assessment-snapshot\.json/);
+  assert.match(result.stderr, /remove/i);
+});
+
 test("npm run verify:paths exposes the focused workstation-local path detector", async (t) => {
   const repoPath = await createTrackedRepo();
   t.after(async () => {
@@ -160,7 +180,7 @@ test("npm run verify:paths exposes the focused workstation-local path detector",
 
   const failingResult = runVerifyPaths(repoPath);
   assert.notEqual(failingResult.status, 0, "expected forbidden tracked path to fail via package script");
-  assert.match(failingResult.stderr, /Forbidden workstation-local absolute path references found:/);
+  assert.match(failingResult.stderr, /Forbidden workstation-local artifacts found:/);
   assert.match(failingResult.stderr, /README\.md:1/);
 });
 
@@ -177,7 +197,9 @@ test("runtime gate reuses the CLI finding rendering for workstation-local path v
   const detectorResult = runDetector(repoPath, "--workspace", repoPath);
   assert.notEqual(detectorResult.status, 0, "expected forbidden tracked path to fail");
   const renderedFindings = extractRenderedFindingLines(detectorResult.stderr);
-  assert.deepEqual(renderedFindings, [`- docs/guide.md:1 matched /home/<user>/ (Linux user home directory) via ${JSON.stringify(SAMPLE_FORBIDDEN_PATH)}`]);
+  assert.deepEqual(renderedFindings, [
+    `- docs/guide.md:1 matched /home/<user>/ (Linux user home directory) via ${JSON.stringify(SAMPLE_FORBIDDEN_PATH)}. Remediation: rewrite the path repo-relatively or redact the operator-local absolute path`,
+  ]);
 
   const gateResult = await runWorkstationLocalPathGate({
     workspacePath: repoPath,
@@ -326,7 +348,9 @@ test("runtime gate distinguishes auto-normalized journals from expected-local du
   assert.doesNotMatch(summary, /\.codex-supervisor\/issues\/181\/issue-journal\.md/);
   assert.deepEqual(
     gateResult.failureContext?.details,
-    [`- WORKLOG.md:1 matched /home/<user>/ (Linux user home directory) via ${JSON.stringify(SAMPLE_FORBIDDEN_PATH)}`],
+    [
+      `- WORKLOG.md:1 matched /home/<user>/ (Linux user home directory) via ${JSON.stringify(SAMPLE_FORBIDDEN_PATH)}. Remediation: rewrite the path repo-relatively or redact the operator-local absolute path`,
+    ],
   );
   const redactedJournal = await fs.readFile(otherJournalPath, "utf8");
   assert.doesNotMatch(redactedJournal, new RegExp(SAMPLE_FORBIDDEN_PATH.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
