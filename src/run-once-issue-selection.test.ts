@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import {
   formatNoRunnableIssueFoundMessage,
   resolveRunnableIssueContext,
@@ -211,6 +214,66 @@ Add execution-ready gating.`,
   assert.match(state.issues["91"]?.last_error ?? "", /missing required execution-ready metadata/i);
   assert.equal(journalSyncs.length, 1);
   assert.equal(journalSyncs[0]?.issue_number, 91);
+});
+
+test("resolveRunnableIssueContext normalizes cross-host workspace and journal hints onto the local canonical workspace", async () => {
+  const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "run-once-selection-host-paths-"));
+  const config = createConfig({
+    workspaceRoot,
+    issueJournalRelativePath: ".codex-supervisor/issues/{issueNumber}/issue-journal.md",
+  });
+  const issueNumber = 91;
+  const canonicalWorkspace = path.join(workspaceRoot, `issue-${issueNumber}`);
+  await fs.mkdir(canonicalWorkspace, { recursive: true });
+  await fs.writeFile(path.join(canonicalWorkspace, ".git"), "gitdir: /tmp/fake\n");
+
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Underspecified issue",
+    body: "## Summary\nMissing the rest.",
+    createdAt: "2026-03-15T00:00:00Z",
+    updatedAt: "2026-03-15T00:00:00Z",
+    url: "https://example.test/issues/91",
+    labels: [],
+    state: "OPEN",
+  };
+  const staleWorkspace = "/tmp/other-host/issue-91";
+  const staleJournalPath = `${staleWorkspace}/.codex-supervisor/issue-journal.md`;
+  const currentRecord = createRecord(issueNumber, {
+    workspace: staleWorkspace,
+    journal_path: staleJournalPath,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: currentRecord,
+    },
+  };
+  const savedStates: SupervisorStateFile[] = [];
+
+  const result = await resolveRunnableIssueContext({
+    github: {
+      listCandidateIssues: async () => [issue],
+      getIssue: async () => issue,
+    },
+    config,
+    stateStore: createTouchStateStore(savedStates),
+    state,
+    currentRecord,
+    acquireIssueLock: async () => ({
+      acquired: true,
+      release: async () => {},
+    }),
+    syncIssueJournal: async () => {},
+  });
+
+  assert.deepEqual(result, { kind: "restart" });
+  assert.equal(savedStates.length, 1);
+  assert.equal(state.issues[String(issueNumber)]?.workspace, canonicalWorkspace);
+  assert.equal(
+    state.issues[String(issueNumber)]?.journal_path,
+    path.join(canonicalWorkspace, ".codex-supervisor", "issues", "91", "issue-journal.md"),
+  );
 });
 
 test("resolveRunnableIssueContext creates one machine-managed requirements blocker comment for a standalone issue", async () => {

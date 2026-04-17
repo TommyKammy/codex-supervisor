@@ -13,6 +13,7 @@ import {
   ReviewThread,
   SupervisorStateFile,
 } from "../core/types";
+import { ensureWorkspace } from "../core/workspace";
 import {
   branchName,
   createConfig,
@@ -167,6 +168,66 @@ test("handleAuthFailure blocks the active issue and preserves failure tracking f
   assert.equal(updated.last_failure_signature, "gh-auth-unavailable");
   assert.equal(updated.repeated_failure_signature_count, 1);
   assert.equal(updated.blocked_reason, "unknown");
+});
+
+test("runOnce reanchors cross-host tracked workspace and journal hints onto the local canonical workspace before blocking", async () => {
+  const fixture = await createSupervisorFixture();
+  await fs.mkdir(fixture.workspaceRoot, { recursive: true });
+  const realWorkspaceRoot = await fs.realpath(fixture.workspaceRoot);
+  fixture.config.workspaceRoot = realWorkspaceRoot;
+  fixture.config.issueJournalRelativePath = ".codex-supervisor/issues/{issueNumber}/issue-journal.md";
+  const issueNumber = 91;
+  const canonicalWorkspace = path.join(realWorkspaceRoot, `issue-${issueNumber}`);
+  await ensureWorkspace(fixture.config, issueNumber, branchName(fixture.config, issueNumber));
+
+  const state: SupervisorStateFile = createSupervisorState({
+    activeIssueNumber: issueNumber,
+    issues: [
+      createTrackedSupervisorRecord(fixture.config, realWorkspaceRoot, issueNumber, {
+        state: "queued",
+        workspace: "/tmp/other-host/issue-91",
+        journal_path: "/tmp/other-host/issue-91/.codex-supervisor/issue-journal.md",
+      }),
+    ],
+  });
+  await writeSupervisorState(fixture.stateFile, state);
+
+  const issue = createTrackedIssue(issueNumber, {
+    title: "Cross-host path normalization",
+    body: "## Summary\nMissing the rest.",
+    labels: [{ name: "codex" }],
+  });
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [issue],
+    listCandidateIssues: async () => [issue],
+    getIssue: async () => issue,
+    resolvePullRequestForBranch: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+    getPullRequestIfExists: async () => null,
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: false });
+  assert.match(message, /issue #91/);
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  const record = persisted.issues[String(issueNumber)];
+  assert.equal(record.state, "blocked");
+  assert.equal(record.workspace, canonicalWorkspace);
+  assert.equal(
+    record.journal_path,
+    path.join(canonicalWorkspace, ".codex-supervisor", "issues", "91", "issue-journal.md"),
+  );
 });
 
 test("runOnce dry-run selects an issue and hydrates workspace and PR context before tracked draft PR progression", async () => {

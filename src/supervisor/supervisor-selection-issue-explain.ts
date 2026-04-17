@@ -33,7 +33,7 @@ import {
 } from "./supervisor-status-rendering";
 import { formatLatestRecoveryStatusLine } from "./supervisor-detailed-status-assembly";
 import { externalSignalReadinessDiagnostics } from "./supervisor-status-review-bot";
-import { readIssueJournal, summarizeIssueJournalHandoff } from "../core/journal";
+import { readIssueJournal, resolveTrackedIssueHostPaths, summarizeIssueJournalHandoff } from "../core/journal";
 import { formatInventoryRefreshDiagnosticLines, formatInventoryRefreshStatusLine } from "../inventory-refresh-state";
 import { buildTrackedPrMismatch } from "./tracked-pr-mismatch";
 import {
@@ -248,7 +248,9 @@ export async function buildIssueExplainDto(
   let handoffSummary: string | null = null;
   if (record?.journal_path) {
     try {
-      handoffSummary = summarizeIssueJournalHandoff(await readIssueJournal(record.journal_path));
+      handoffSummary = summarizeIssueJournalHandoff(
+        await readIssueJournal(resolveTrackedIssueHostPaths(config, record).journal_path),
+      );
     } catch {
       handoffSummary = null;
     }

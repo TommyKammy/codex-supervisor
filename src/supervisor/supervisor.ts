@@ -2,7 +2,7 @@ import path from "node:path";
 import { runCommand } from "../core/command";
 import { loadConfig } from "../core/config";
 import { GitHubClient } from "../github";
-import { issueJournalPath, trackedIssueJournalPath } from "../core/journal";
+import { issueJournalPath, resolveTrackedIssueHostPaths, trackedIssueJournalPath } from "../core/journal";
 import { acquireFileLock, LockHandle } from "../core/lock";
 import {
   cleanupExpiredDoneWorkspaces,
@@ -231,16 +231,12 @@ async function ensureRecordJournalContext(
   config: SupervisorConfig,
   record: IssueRunRecord,
 ): Promise<Pick<IssueRunRecord, "issue_number" | "workspace" | "journal_path">> {
-  if (record.journal_path) {
+  const resolvedPaths = resolveTrackedIssueHostPaths(config, record);
+  if (record.journal_path || resolvedPaths.usingCanonicalWorkspace) {
     return {
       issue_number: record.issue_number,
-      workspace: record.workspace,
-      journal_path: trackedIssueJournalPath(
-        record.workspace,
-        record.journal_path,
-        config.issueJournalRelativePath,
-        record.issue_number,
-      ),
+      workspace: resolvedPaths.workspace,
+      journal_path: resolvedPaths.journal_path,
     };
   }
 
@@ -340,13 +336,8 @@ export class Supervisor {
   private async classifyStaleStabilizingNoPrBranchState(
     record: Pick<IssueRunRecord, "issue_number" | "workspace" | "journal_path">,
   ): Promise<"recoverable" | "already_satisfied_on_main"> {
-    const journalPath = trackedIssueJournalPath(
-      record.workspace,
-      record.journal_path,
-      this.config.issueJournalRelativePath,
-      record.issue_number,
-    );
-    const journalRelativePath = path.relative(record.workspace, journalPath).replace(/\\/g, "/");
+    const resolvedPaths = resolveTrackedIssueHostPaths(this.config, record);
+    const journalRelativePath = path.relative(resolvedPaths.workspace, resolvedPaths.journal_path).replace(/\\/g, "/");
     const gitProbeTimeoutMs = this.config.codexExecTimeoutMinutes * 60_000;
 
     try {
@@ -354,10 +345,10 @@ export class Supervisor {
         timeoutMs: gitProbeTimeoutMs,
       });
       const [baseDiffResult, workspaceStatusResult] = await Promise.all([
-        runCommand("git", ["-C", record.workspace, "diff", "--name-only", `origin/${this.config.defaultBranch}...HEAD`], {
+        runCommand("git", ["-C", resolvedPaths.workspace, "diff", "--name-only", `origin/${this.config.defaultBranch}...HEAD`], {
           timeoutMs: gitProbeTimeoutMs,
         }),
-        runCommand("git", ["-C", record.workspace, "status", "--porcelain=v1", "-z", "--untracked-files=all"], {
+        runCommand("git", ["-C", resolvedPaths.workspace, "status", "--porcelain=v1", "-z", "--untracked-files=all"], {
           timeoutMs: gitProbeTimeoutMs,
         }),
       ]);
