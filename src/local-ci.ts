@@ -52,6 +52,7 @@ interface RuffFinding {
 
 const TARGETED_STATIC_ANALYSIS_FILE_PATTERN =
   /(?:^|\/)(?:test|tests|__tests__|scripts)\/.+|(?:^|\/)[^/]+\.(?:test|spec)\.py$/i;
+const MAX_STATIC_ANALYSIS_HINT_PATHS = 8;
 
 const RUFF_REMEDIATION_HINTS = new Map<string, string>([
   [
@@ -360,9 +361,13 @@ function buildTargetedStaticAnalysisGuidance(error: unknown): string[] {
 
   const codes = [...new Set(findings.map((finding) => finding.code))].sort();
   const paths = [...new Set(findings.map((finding) => finding.filePath))];
+  const shownPaths = paths.slice(0, MAX_STATIC_ANALYSIS_HINT_PATHS);
+  const remainingPathCount = paths.length - shownPaths.length;
+  const pathSummary =
+    remainingPathCount > 0 ? `${shownPaths.join(", ")} (+${remainingPathCount} more)` : shownPaths.join(", ");
 
   return [
-    `ruff/static-analysis hint: changed tests/scripts triggered ${codes.join(", ")} in ${paths.join(", ")}.`,
+    `ruff/static-analysis hint: changed tests/scripts triggered ${codes.join(", ")} in ${pathSummary}.`,
     "ruff/static-analysis policy: for intentional test fixtures, prefer the narrowest inline suppression with the exact rule code and a short rationale comment instead of broad file-level ignores.",
     ...codes
       .map((code) => RUFF_REMEDIATION_HINTS.get(code))

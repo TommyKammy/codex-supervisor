@@ -240,6 +240,30 @@ test("runLocalCiGate preserves timeout summaries at the tail of bounded stderr d
   assert.match(result.failureContext?.details[2] ?? "", /\n\.\.\.\n/);
 });
 
+test("runLocalCiGate bounds ruff/static-analysis hint paths when many findings match", async () => {
+  const lines = Array.from({ length: 10 }, (_, index) => {
+    const fixtureNumber = index + 1;
+    return `tests/python/test_fixture_${fixtureNumber}.py:14:9: F821 Undefined name 'fixture_value_${fixtureNumber}'`;
+  }).join("\n");
+
+  const failure = Object.assign(new Error(lines), { stderr: lines });
+
+  const result = await runLocalCiGate({
+    config: { localCiCommand: "npm run ci:local" },
+    workspacePath: "/tmp/workspaces/issue-102",
+    gateLabel: "before marking PR #116 ready",
+    runLocalCiCommand: async () => {
+      throw failure;
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.match(
+    result.failureContext?.details.join("\n") ?? "",
+    /ruff\/static-analysis hint: changed tests\/scripts triggered F821 in tests\/python\/test_fixture_1\.py, tests\/python\/test_fixture_10\.py, tests\/python\/test_fixture_2\.py, tests\/python\/test_fixture_3\.py, tests\/python\/test_fixture_4\.py, tests\/python\/test_fixture_5\.py, tests\/python\/test_fixture_6\.py, tests\/python\/test_fixture_7\.py \(\+2 more\)\./u,
+  );
+});
+
 test("runWorkspacePreparationGate explains when a repo-relative helper is missing from the issue worktree", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-workspace-prep-"));
   t.after(async () => {
