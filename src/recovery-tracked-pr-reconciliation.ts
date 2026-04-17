@@ -72,6 +72,85 @@ function matchesTrackedBranch(
   return pr.headRefName === record.branch;
 }
 
+function unresolvedReviewThreadIds(reviewThreads: ReviewThread[]): string[] {
+  return reviewThreads
+    .filter((thread) => !thread.isResolved)
+    .map((thread) => thread.id)
+    .sort();
+}
+
+function parseTrackedPrProgressSnapshotThreadIds(
+  snapshot: string | null | undefined,
+): string[] | null {
+  if (!snapshot) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(snapshot);
+    return Array.isArray(parsed?.unresolvedReviewThreadIds)
+      ? parsed.unresolvedReviewThreadIds
+        .filter((threadId: unknown): threadId is string => typeof threadId === "string")
+        .sort()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export function suppressSameHeadNoProgressReviewThreadRecovery(
+  record: Pick<
+    IssueRunRecord,
+    | "last_head_sha"
+    | "last_failure_signature"
+    | "last_tracked_pr_progress_snapshot"
+    | "last_tracked_pr_repeat_failure_decision"
+    | "state"
+  >,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
+  reviewThreads: ReviewThread[],
+  nextState: IssueRunRecord["state"],
+): {
+  shouldSuppress: boolean;
+  progressSummary: string | null;
+} {
+  if (
+    record.state !== "blocked" ||
+    record.last_tracked_pr_repeat_failure_decision !== "stop_no_progress" ||
+    record.last_head_sha === null ||
+    record.last_head_sha !== pr.headRefOid ||
+    nextState === "blocked"
+  ) {
+    return {
+      shouldSuppress: false,
+      progressSummary: null,
+    };
+  }
+
+  const previousThreadIds = parseTrackedPrProgressSnapshotThreadIds(record.last_tracked_pr_progress_snapshot);
+  const currentThreadIds = unresolvedReviewThreadIds(reviewThreads);
+  const failureSignature = record.last_failure_signature;
+  const sameThreadIds =
+    previousThreadIds !== null &&
+    previousThreadIds.length > 0 &&
+    previousThreadIds.length === currentThreadIds.length &&
+    previousThreadIds.every((threadId, index) => threadId === currentThreadIds[index]);
+  const sameBlockingThread =
+    typeof failureSignature === "string" && failureSignature.length > 0 && currentThreadIds.includes(failureSignature);
+
+  if (!sameThreadIds || !sameBlockingThread) {
+    return {
+      shouldSuppress: false,
+      progressSummary: null,
+    };
+  }
+
+  return {
+    shouldSuppress: true,
+    progressSummary: "suppressed_same_head_same_review_thread_blocker",
+  };
+}
+
 function trackedMergedButOpenLastProcessedIssueNumber(state: SupervisorStateFile): number | null {
   return state.reconciliation_state?.tracked_merged_but_open_last_processed_issue_number ?? null;
 }
