@@ -64,6 +64,8 @@ export interface BuildDetailedStatusSummaryLinesArgs {
   verificationPolicySummary?: string | null;
   durableGuardrailSummary?: string | null;
   externalReviewFollowUpSummary?: string | null;
+  hostPathSummary?: string | null;
+  journalStateSummary?: string | null;
   executionMetricsSummaryLines?: string[];
 }
 
@@ -90,12 +92,22 @@ export function buildDetailedStatusSummaryLines(args: BuildDetailedStatusSummary
     verificationPolicySummary = null,
     durableGuardrailSummary = null,
     externalReviewFollowUpSummary = null,
+    hostPathSummary = null,
+    journalStateSummary = null,
     executionMetricsSummaryLines = [],
   } = args;
   const lines: string[] = [];
 
   if (handoffSummary) {
     lines.push(`handoff_summary=${truncate(sanitizeStatusValue(handoffSummary), 200)}`);
+  }
+
+  if (hostPathSummary) {
+    lines.push(truncate(sanitizeStatusValue(hostPathSummary), 200) ?? "");
+  }
+
+  if (journalStateSummary) {
+    lines.push(truncate(sanitizeStatusValue(journalStateSummary), 200) ?? "");
   }
 
   for (const codexModelPolicySummaryLine of codexModelPolicySummaryLines) {

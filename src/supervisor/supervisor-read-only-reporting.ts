@@ -412,6 +412,8 @@ export async function buildSupervisorStatusReport(args: {
     verificationPolicySummary: activeStatus.verificationPolicySummary,
     durableGuardrailSummary: activeStatus.durableGuardrailSummary,
     externalReviewFollowUpSummary: activeStatus.externalReviewFollowUpSummary,
+    hostPathSummary: activeStatus.hostPathSummary,
+    journalStateSummary: activeStatus.journalStateSummary,
     executionMetricsSummaryLines: activeStatus.executionMetricsSummaryLines,
   });
   const githubRateLimitStatus = await loadGitHubRateLimitStatus(github);

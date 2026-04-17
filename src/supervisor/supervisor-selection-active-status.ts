@@ -1,4 +1,4 @@
-import { readIssueJournal, summarizeIssueJournalHandoff } from "../core/journal";
+import { inspectTrackedIssueHostDiagnostics, summarizeIssueJournalHandoff } from "../core/journal";
 import {
   GitHubIssue,
   GitHubPullRequest,
@@ -48,6 +48,8 @@ export interface ActiveIssueStatusSnapshot {
   verificationPolicySummary: string | null;
   durableGuardrailSummary: string | null;
   externalReviewFollowUpSummary: string | null;
+  hostPathSummary: string | null;
+  journalStateSummary: string | null;
   executionMetricsSummaryLines: string[];
   warningMessage: string | null;
 }
@@ -71,16 +73,37 @@ export async function loadActiveIssueStatusSnapshot(args: {
   let verificationPolicySummary: string | null = null;
   let durableGuardrailSummary: string | null = null;
   let externalReviewFollowUpSummary: string | null = null;
+  let hostPathSummary: string | null = null;
+  let journalStateSummary: string | null = null;
   let executionMetricsSummaryLines: string[] = [];
   let warningMessage: string | null = null;
   let preMergeEvaluation = null;
 
-  if (args.activeRecord.journal_path) {
-    try {
-      handoffSummary = summarizeIssueJournalHandoff(await readIssueJournal(args.activeRecord.journal_path));
-    } catch (error) {
-      warningMessage = error instanceof Error ? error.message : String(error);
+  try {
+    const hostDiagnostics = await inspectTrackedIssueHostDiagnostics(args.config, args.activeRecord);
+    if (hostDiagnostics.guidance !== null) {
+      hostPathSummary = [
+        "issue_host_paths",
+        `issue=#${args.activeRecord.issue_number}`,
+        `workspace=${hostDiagnostics.workspaceStatus}`,
+        `journal_path=${hostDiagnostics.journalPathStatus}`,
+        `guidance=${hostDiagnostics.guidance}`,
+      ].join(" ");
+      if (hostDiagnostics.journalStatus !== "current") {
+        journalStateSummary = [
+          "issue_journal_state",
+          `issue=#${args.activeRecord.issue_number}`,
+          `status=${hostDiagnostics.journalStatus}`,
+          `guidance=${hostDiagnostics.guidance}`,
+          `detail=${hostDiagnostics.journalStatus === "rehydrated" ? "prior_local_only_handoff_unavailable" : "resolved_local_journal_missing"}`,
+        ].join(" ");
+      }
     }
+    if (hostDiagnostics.journalContent !== null) {
+      handoffSummary = summarizeIssueJournalHandoff(hostDiagnostics.journalContent);
+    }
+  } catch (error) {
+    warningMessage = error instanceof Error ? error.message : String(error);
   }
 
   try {
@@ -154,6 +177,8 @@ export async function loadActiveIssueStatusSnapshot(args: {
     verificationPolicySummary,
     durableGuardrailSummary,
     externalReviewFollowUpSummary,
+    hostPathSummary,
+    journalStateSummary,
     executionMetricsSummaryLines,
     warningMessage,
   };

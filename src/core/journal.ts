@@ -12,6 +12,8 @@ const DURABLE_PATH_TOKEN_PATTERN =
 const LEADING_PATH_PUNCTUATION = "([{";
 const TRAILING_PATH_PUNCTUATION = ")]},;:!?";
 const REDACTED_LOCAL_PATH = "<redacted-local-path>";
+const REHYDRATED_JOURNAL_NOTE =
+  "Journal rehydration note: this journal was rehydrated on this host because the prior local-only handoff journal was unavailable.";
 const NON_PORTABLE_LOCAL_PATH_PREFIXES = [
   "/home/",
   "/Users/",
@@ -606,6 +608,69 @@ export function resolveTrackedIssueHostPaths(
   };
 }
 
+export interface TrackedIssueHostDiagnostics {
+  resolvedPaths: {
+    workspace: string;
+    journal_path: string;
+    usingCanonicalWorkspace: boolean;
+  };
+  journalReadPath: string;
+  workspaceStatus: "current" | "auto_repaired" | "missing";
+  journalPathStatus: "current" | "auto_repaired" | "missing";
+  journalStatus: "current" | "rehydrated" | "missing";
+  guidance: "no_manual_action_required" | "manual_action_required" | null;
+  journalContent: string | null;
+}
+
+export function isRehydratedIssueJournalContent(content: string | null | undefined): boolean {
+  return typeof content === "string" && content.includes(REHYDRATED_JOURNAL_NOTE);
+}
+
+export async function inspectTrackedIssueHostDiagnostics(
+  config: Pick<SupervisorConfig, "workspaceRoot" | "issueJournalRelativePath">,
+  record: Pick<IssueRunRecord, "issue_number" | "workspace" | "journal_path">,
+): Promise<TrackedIssueHostDiagnostics> {
+  const resolvedPaths = resolveTrackedIssueHostPaths(config, record);
+  const persistedWorkspace = path.resolve(record.workspace);
+  const workspaceStatus =
+    resolvedPaths.usingCanonicalWorkspace && persistedWorkspace !== resolvedPaths.workspace
+      ? "auto_repaired"
+      : "current";
+  const journalPathStatus =
+    record.journal_path !== null && path.resolve(record.journal_path) !== resolvedPaths.journal_path
+      ? "auto_repaired"
+      : "current";
+  const journalReadPath =
+    resolvedPaths.usingCanonicalWorkspace || record.journal_path === null
+      ? resolvedPaths.journal_path
+      : record.journal_path;
+  const journalContent = await readIssueJournal(journalReadPath);
+  const journalStatus =
+    journalContent === null
+      ? "missing"
+      : isRehydratedIssueJournalContent(journalContent)
+        ? "rehydrated"
+        : "current";
+  const guidance =
+    !resolvedPaths.usingCanonicalWorkspace
+      ? null
+      : journalStatus === "missing"
+        ? "manual_action_required"
+        : workspaceStatus === "auto_repaired" || journalPathStatus === "auto_repaired" || journalStatus === "rehydrated"
+          ? "no_manual_action_required"
+          : null;
+
+  return {
+    resolvedPaths,
+    journalReadPath,
+    workspaceStatus,
+    journalPathStatus,
+    journalStatus,
+    guidance,
+    journalContent,
+  };
+}
+
 export async function readIssueJournal(journalPath: string): Promise<string | null> {
   try {
     return await fs.readFile(journalPath, "utf8");
@@ -676,7 +741,7 @@ function buildRehydratedJournalNotes(): string {
     ...HANDOFF_FIELDS.map((field) => `- ${field}:`),
     "",
     "### Scratchpad",
-    "- Journal rehydration note: this journal was rehydrated on this host because the prior local-only handoff journal was unavailable.",
+    `- ${REHYDRATED_JOURNAL_NOTE}`,
     "- Prior host-local handoff text could not be recovered from durable state when recreating the local journal.",
     "- Keep this section short. The supervisor may compact older notes automatically.",
     "",

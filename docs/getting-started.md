@@ -261,6 +261,12 @@ Beginner troubleshooting shortcut:
 - `doctor` answers “is the host or state unhealthy?”
 - `explain <issue-number>` answers “why is this specific issue blocked, skipped, or not selected?”
 
+Host-migration note for worktree-local journals:
+
+- If a tracked issue was moved to a new host and the persisted `workspace` or `journal_path` still points at the old absolute path, `status`, `doctor`, and `explain` can emit `issue_host_paths ... guidance=no_manual_action_required` to show that the supervisor repaired the stale path to the canonical local worktree.
+- If the old host-local journal could not be recovered and the supervisor recreated the issue-scoped local journal, the same surfaces can emit `issue_journal_state ... status=rehydrated guidance=no_manual_action_required detail=prior_local_only_handoff_unavailable`. Treat that as an informational repair, not a blocking failure.
+- If those diagnostics instead say `guidance=manual_action_required`, the canonical local journal is still missing and the operator should inspect the current worktree before resuming autonomous execution.
+
 Execution metrics are retained independently of issue worktree cleanup. Terminal run summaries live under `<dirname(stateFile)>/execution-metrics/run-summaries/`, and `node dist/index.js rollup-execution-metrics --config /path/to/supervisor.config.json` writes `<dirname(stateFile)>/execution-metrics/daily-rollups.json` from those retained summaries.
 
 ### Setup/readiness contract for first-run UX

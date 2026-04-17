@@ -33,7 +33,7 @@ import {
 } from "./supervisor-status-rendering";
 import { formatLatestRecoveryStatusLine } from "./supervisor-detailed-status-assembly";
 import { externalSignalReadinessDiagnostics } from "./supervisor-status-review-bot";
-import { readIssueJournal, resolveTrackedIssueHostPaths, summarizeIssueJournalHandoff } from "../core/journal";
+import { inspectTrackedIssueHostDiagnostics, summarizeIssueJournalHandoff } from "../core/journal";
 import { formatInventoryRefreshDiagnosticLines, formatInventoryRefreshStatusLine } from "../inventory-refresh-state";
 import { buildTrackedPrMismatch } from "./tracked-pr-mismatch";
 import {
@@ -71,6 +71,8 @@ export interface SupervisorExplainDto {
   inventoryRefreshDiagnostics?: string[];
   changeRiskLines: string[];
   externalReviewFollowUpSummary: string | null;
+  hostPathSummary?: string | null;
+  journalStateSummary?: string | null;
   latestRecoverySummary: string | null;
   staleRecoveryWarningSummary: string | null;
   activityContext: SupervisorIssueActivityContextDto | null;
@@ -245,11 +247,33 @@ export async function buildIssueExplainDto(
       pr = null;
     }
   }
-  const resolvedPaths = record ? resolveTrackedIssueHostPaths(config, record) : null;
   let handoffSummary: string | null = null;
-  if (record && resolvedPaths && (record.journal_path !== null || resolvedPaths.usingCanonicalWorkspace)) {
+  let hostPathSummary: string | null = null;
+  let journalStateSummary: string | null = null;
+  if (record) {
     try {
-      handoffSummary = summarizeIssueJournalHandoff(await readIssueJournal(resolvedPaths.journal_path));
+      const hostDiagnostics = await inspectTrackedIssueHostDiagnostics(config, record);
+      if (hostDiagnostics.journalContent !== null) {
+        handoffSummary = summarizeIssueJournalHandoff(hostDiagnostics.journalContent);
+      }
+      if (hostDiagnostics.guidance !== null) {
+        hostPathSummary = [
+          "issue_host_paths",
+          `issue=#${record.issue_number}`,
+          `workspace=${hostDiagnostics.workspaceStatus}`,
+          `journal_path=${hostDiagnostics.journalPathStatus}`,
+          `guidance=${hostDiagnostics.guidance}`,
+        ].join(" ");
+        if (hostDiagnostics.journalStatus !== "current") {
+          journalStateSummary = [
+            "issue_journal_state",
+            `issue=#${record.issue_number}`,
+            `status=${hostDiagnostics.journalStatus}`,
+            `guidance=${hostDiagnostics.guidance}`,
+            `detail=${hostDiagnostics.journalStatus === "rehydrated" ? "prior_local_only_handoff_unavailable" : "resolved_local_journal_missing"}`,
+          ].join(" ");
+        }
+      }
     } catch {
       handoffSummary = null;
     }
@@ -355,6 +379,8 @@ export async function buildIssueExplainDto(
     inventoryRefreshDiagnostics,
     changeRiskLines,
     externalReviewFollowUpSummary,
+    hostPathSummary,
+    journalStateSummary,
     latestRecoverySummary,
     staleRecoveryWarningSummary,
     activityContext: record
@@ -404,6 +430,8 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
     ...(dto.inventoryRefreshDiagnostics ?? []),
     ...dto.changeRiskLines,
     ...(dto.externalReviewFollowUpSummary ? [dto.externalReviewFollowUpSummary] : []),
+    ...(dto.hostPathSummary ? [dto.hostPathSummary] : []),
+    ...(dto.journalStateSummary ? [dto.journalStateSummary] : []),
     ...(preMergeEvaluationLine ? [preMergeEvaluationLine] : []),
     ...(localCiStatusLine ? [localCiStatusLine] : []),
     ...(dto.trackedPrRetryabilitySummary ? [dto.trackedPrRetryabilitySummary] : []),

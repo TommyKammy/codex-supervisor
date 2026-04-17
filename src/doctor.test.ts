@@ -134,6 +134,76 @@ test("diagnoseSupervisorHost ignores recovery-only synthetic parent epic records
   assert.match(renderDoctorReport(diagnostics), /doctor_check name=worktrees status=pass summary=Tracked worktrees look consistent\./);
 });
 
+test("diagnoseSupervisorHost surfaces host-migration path repair and journal rehydration without downgrading worktree health", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-doctor-host-migration-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = path.join(root, "repo");
+  const workspaceRoot = path.join(root, "workspaces");
+  const stateFile = path.join(root, "state.json");
+  const issueNumber = 177;
+  const workspacePath = path.join(workspaceRoot, `issue-${issueNumber}`);
+  const journalPath = path.join(workspacePath, ".codex-supervisor", "issues", String(issueNumber), "issue-journal.md");
+  await fs.mkdir(repoPath, { recursive: true });
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  execFileSync("git", ["init", "-b", "main"], { cwd: repoPath });
+  execFileSync("git", ["config", "user.name", "Codex"], { cwd: repoPath });
+  execFileSync("git", ["config", "user.email", "codex@example.test"], { cwd: repoPath });
+  await fs.writeFile(path.join(repoPath, "README.md"), "seed\n", "utf8");
+  execFileSync("git", ["add", "README.md"], { cwd: repoPath });
+  execFileSync("git", ["commit", "-m", "seed"], { cwd: repoPath });
+  execFileSync("git", ["worktree", "add", "-b", "codex/reopen-issue-177", workspacePath, "HEAD"], { cwd: repoPath });
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  await fs.writeFile(
+    journalPath,
+    `# Issue #177: Host migration
+
+## Codex Working Notes
+### Current Handoff
+- Current blocker: None.
+- Next exact step:
+
+### Scratchpad
+- Journal rehydration note: this journal was rehydrated on this host because the prior local-only handoff journal was unavailable.
+`,
+    "utf8",
+  );
+  const diagnostics = await diagnoseSupervisorHost({
+    config: createConfig({
+      repoPath,
+      workspaceRoot,
+      stateFile,
+      codexBinary: process.execPath,
+      issueJournalRelativePath: ".codex-supervisor/issues/{issueNumber}/issue-journal.md",
+    }),
+    authStatus: async () => ({ ok: true, message: null }),
+    loadState: async () => ({
+      activeIssueNumber: null,
+      issues: {
+        [String(issueNumber)]: createRecord({
+          issue_number: issueNumber,
+          workspace: `/tmp/other-host/issue-${issueNumber}`,
+          journal_path: `/tmp/other-host/issue-${issueNumber}/.codex-supervisor/issues/${issueNumber}/issue-journal.md`,
+        }),
+      },
+    }),
+  });
+
+  assert.equal(diagnostics.checks.find((check) => check.name === "worktrees")?.status, "pass");
+  const report = renderDoctorReport(diagnostics);
+  assert.match(
+    report,
+    /^doctor_detail name=worktrees detail=issue_host_paths issue=#177 workspace=auto_repaired journal_path=auto_repaired guidance=no_manual_action_required$/m,
+  );
+  assert.match(
+    report,
+    /^doctor_detail name=worktrees detail=issue_journal_state issue=#177 status=rehydrated guidance=no_manual_action_required detail=prior_local_only_handoff_unavailable$/m,
+  );
+  assert.doesNotMatch(report, /missing workspace/);
+});
+
 test("diagnoseSupervisorHost degrades malformed synthetic recovery records without throwing", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-doctor-"));
   t.after(async () => {

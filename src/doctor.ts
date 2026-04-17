@@ -23,6 +23,8 @@ import {
   type TrustDiagnosticsSummary,
   type WorkspacePreparationContractSummary,
 } from "./core/types";
+import { normalizeGitPath, parseGitWorktreePaths } from "./core/git-workspace-helpers";
+import { inspectTrackedIssueHostDiagnostics, resolveTrackedIssueHostPaths } from "./core/journal";
 import { inspectOrphanedWorkspacePruneCandidates } from "./recovery-reconciliation";
 import {
   buildMacOsLoopHostWarning,
@@ -471,16 +473,6 @@ export async function loadStateReadonlyForDoctor(config: SupervisorConfig): Prom
   }
 }
 
-function parseWorktreeList(stdout: string): Set<string> {
-  const worktrees = new Set<string>();
-  for (const line of stdout.split(/\r?\n/)) {
-    if (line.startsWith("worktree ")) {
-      worktrees.add(line.slice("worktree ".length).trim());
-    }
-  }
-  return worktrees;
-}
-
 function isRecoveryOnlySyntheticRecord(record: IssueRunRecord): boolean {
   if (typeof record.branch !== "string" || typeof record.workspace !== "string") {
     return false;
@@ -502,13 +494,24 @@ function isRecoveryOnlySyntheticRecord(record: IssueRunRecord): boolean {
     hasRecoveryAt;
 }
 
-function withInspectableWorkspaces(state: SupervisorStateFile): SupervisorStateFile {
+function withInspectableWorkspaces(
+  config: Pick<SupervisorConfig, "workspaceRoot" | "issueJournalRelativePath">,
+  state: SupervisorStateFile,
+): SupervisorStateFile {
   return {
     ...state,
     issues: Object.fromEntries(
-      Object.entries(state.issues).filter(([, record]) =>
-        typeof record.workspace === "string" && record.workspace.trim() !== ""
-      ),
+      Object.entries(state.issues)
+        .filter(([, record]) =>
+          typeof record.workspace === "string" && record.workspace.trim() !== ""
+        )
+        .map(([issueNumber, record]) => [
+          issueNumber,
+          {
+            ...record,
+            workspace: resolveTrackedIssueHostPaths(config, record).workspace,
+          },
+        ]),
     ),
   };
 }
@@ -530,9 +533,10 @@ async function diagnoseWorktrees(
     }
 
     const worktreeList = await runCommand("git", ["-C", config.repoPath, "worktree", "list", "--porcelain"]);
-    const knownWorktrees = parseWorktreeList(worktreeList.stdout);
+    const knownWorktrees = parseGitWorktreePaths(worktreeList.stdout);
     const state = await loadState();
     const problems: string[] = [];
+    const infoDetails: string[] = [];
 
     for (const record of Object.values(state.issues)) {
       if (isRecoveryOnlySyntheticRecord(record)) {
@@ -544,27 +548,52 @@ async function diagnoseWorktrees(
         continue;
       }
 
+      const hostDiagnostics = await inspectTrackedIssueHostDiagnostics(config, record);
+      const workspacePath = hostDiagnostics.resolvedPaths.workspace;
+      if (hostDiagnostics.guidance !== null) {
+        infoDetails.push(
+          [
+            "issue_host_paths",
+            `issue=#${record.issue_number}`,
+            `workspace=${hostDiagnostics.workspaceStatus}`,
+            `journal_path=${hostDiagnostics.journalPathStatus}`,
+            `guidance=${hostDiagnostics.guidance}`,
+          ].join(" "),
+        );
+        if (hostDiagnostics.journalStatus !== "current") {
+          infoDetails.push(
+            [
+              "issue_journal_state",
+              `issue=#${record.issue_number}`,
+              `status=${hostDiagnostics.journalStatus}`,
+              `guidance=${hostDiagnostics.guidance}`,
+              `detail=${hostDiagnostics.journalStatus === "rehydrated" ? "prior_local_only_handoff_unavailable" : "resolved_local_journal_missing"}`,
+            ].join(" "),
+          );
+        }
+      }
+
       try {
-        await fs.access(record.workspace, fs.constants.F_OK);
+        await fs.access(workspacePath, fs.constants.F_OK);
       } catch {
-        problems.push(`Issue #${record.issue_number} is missing workspace ${record.workspace}.`);
+        problems.push(`Issue #${record.issue_number} is missing workspace ${workspacePath}.`);
         continue;
       }
 
-      const gitDir = path.join(record.workspace, ".git");
+      const gitDir = path.join(workspacePath, ".git");
       try {
         await fs.access(gitDir, fs.constants.F_OK);
       } catch {
-        problems.push(`Issue #${record.issue_number} workspace is not a git worktree: ${record.workspace}.`);
+        problems.push(`Issue #${record.issue_number} workspace is not a git worktree: ${workspacePath}.`);
         continue;
       }
 
-      if (!knownWorktrees.has(record.workspace)) {
-        problems.push(`Issue #${record.issue_number} workspace is not registered in git worktree list: ${record.workspace}.`);
+      if (!knownWorktrees.has(normalizeGitPath(workspacePath))) {
+        problems.push(`Issue #${record.issue_number} workspace is not registered in git worktree list: ${workspacePath}.`);
       }
     }
 
-    const orphanCandidates = await inspectOrphanedWorkspacePruneCandidates(config, withInspectableWorkspaces(state));
+    const orphanCandidates = await inspectOrphanedWorkspacePruneCandidates(config, withInspectableWorkspaces(config, state));
     const orphanDetails = orphanCandidates.map((candidate) =>
       `orphan_prune_candidate issue_number=${candidate.issueNumber} eligibility=${candidate.eligibility} workspace=${candidate.workspacePath} branch=${candidate.branch ?? "none"} modified_at=${candidate.modifiedAt ?? "unknown"} reason=${candidate.reason}`
     );
@@ -602,7 +631,7 @@ async function diagnoseWorktrees(
         name: "worktrees",
         status: "pass",
         summary: "Tracked worktrees look consistent.",
-        details: [],
+        details: infoDetails,
       };
     }
 
@@ -629,7 +658,7 @@ async function diagnoseWorktrees(
       ]
         .filter((value): value is string => value !== null)
         .join(" "),
-      details: [...problems, ...orphanDetails, ...trackedPrMismatchDetails],
+      details: [...problems, ...infoDetails, ...orphanDetails, ...trackedPrMismatchDetails],
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
