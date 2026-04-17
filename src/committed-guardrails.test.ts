@@ -410,3 +410,32 @@ test("repo shared-memory guardrails include committed journal hygiene guidance",
     "Future operators and Codex turns depend on one coherent committed journal state; contradictory snapshot, summary, failure, and handoff sections cause the next action to start from false premises.",
   );
 });
+
+test("repo shared-memory examples encode authoritative-over-derived state guidance", async () => {
+  const decisions = await fs.readFile(path.join(process.cwd(), "docs", "shared-memory", "decisions.example.md"), "utf8");
+  const constitution = await fs.readFile(path.join(process.cwd(), "docs", "shared-memory", "constitution.example.md"), "utf8");
+  const workflow = await fs.readFile(path.join(process.cwd(), "docs", "shared-memory", "workflow.example.md"), "utf8");
+
+  assert.match(
+    decisions,
+    /Authoritative lifecycle records beat derived summaries, convenience projections, and operator-facing DTOs when they disagree\./,
+  );
+  assert.match(
+    decisions,
+    /Resolve `current`, `latest`, `active`, `terminal`, `open`, and `done` classifications from authoritative lifecycle fields first, then derive summaries from that result\./,
+  );
+  assert.match(
+    decisions,
+    /Do not let refresh failures, timeline rows, badges, counters, or detail projections overwrite the authoritative outcome of a successful mutation or lifecycle transition\./,
+  );
+
+  assert.match(
+    constitution,
+    /When authoritative records and derived status surfaces disagree, repair the derived surface to match the authoritative record instead of teaching the system to trust the projection\./,
+  );
+
+  assert.match(
+    workflow,
+    /Before shipping a stateful change, check that current\/latest\/active\/terminal selection still comes from the authoritative record rather than a summary DTO, timeline projection, or operator-facing status field\./,
+  );
+});

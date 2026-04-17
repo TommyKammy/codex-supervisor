@@ -43,6 +43,7 @@ test("agent bootstrap doc exists as a hub that delegates detailed rules", async 
   assert.match(content, /bootstrap hub/i);
   assert.match(content, /fail-closed model explicit while implementing/i);
   assert.match(content, /provenance, scope, auth context, or boundary signals are missing or malformed/i);
+  assert.match(content, /authoritative lifecycle records beat summaries, timeline projections, badges, and other operator-facing convenience surfaces when they disagree/i);
 
   assert.doesNotMatch(content, /^## Full configuration reference$/m);
   assert.doesNotMatch(content, /^## Complete issue metadata specification$/m);
@@ -94,6 +95,7 @@ test("japanese agent bootstrap doc mirrors the english hub structure and delegat
   assert.match(japaneseContent, /\[Issue metadata reference\]\(\.\/issue-metadata\.md\)/);
   assert.match(japaneseContent, /\[Local review reference\]\(\.\/local-review\.md\)/);
   assert.match(japaneseContent, /bootstrap hub/i);
+  assert.match(japaneseContent, /authoritative と derived の state 選択/i);
 
   assert.doesNotMatch(japaneseContent, /^## 完全な設定リファレンス$/m);
   assert.doesNotMatch(japaneseContent, /^## issue metadata の完全仕様$/m);

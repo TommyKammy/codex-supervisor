@@ -190,6 +190,11 @@ test("buildCodexPrompt includes fail-closed shared-memory heuristics for review-
   assert.match(prompt, /Do not trust forwarded headers or client-supplied identity fields unless a trusted proxy or boundary has already authenticated and normalized them/);
   assert.match(prompt, /Do not infer tenant, repository, account, issue, or environment linkage from naming conventions, path shape, comments, or nearby metadata alone/);
   assert.match(prompt, /When a check depends on a missing prerequisite signal, block, reject, or surface an explicit follow-up instead of silently succeeding/);
+  assert.match(prompt, /Authoritative state heuristics for shared memory:/);
+  assert.match(prompt, /Prefer authoritative records and lifecycle facts over derived, convenience, or operator-facing projections when they disagree/);
+  assert.match(prompt, /Resolve `current`, `latest`, `active`, `terminal`, `open`, or `done` from the authoritative lifecycle source instead of whichever summary field or timeline entry was updated last/);
+  assert.match(prompt, /Do not let timeline summaries, detail DTOs, badges, counters, or post-mutation refresh failures overwrite the outcome recorded by the authoritative mutation or lifecycle record/);
+  assert.match(prompt, /When selecting among multiple records, define the winner from authoritative fields first/);
 });
 
 test("buildCodexPrompt renders on-demand memory files even without always-read files", () => {

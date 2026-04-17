@@ -14,6 +14,7 @@ This repository is operated with AI-assisted implementation loops. Durable proje
 - Do not commit workstation-local absolute paths in durable repo artifacts. Use repo-relative paths for in-repo files and redact private local paths.
 - Keep operator-facing query surfaces resilient to partial or missing data. Prefer graceful degradation over hard failure in status, explain, doctor, and setup flows.
 - Do not let transport, refresh, or UI follow-up failures rewrite the outcome of a successful mutation.
+- When authoritative records and derived status surfaces disagree, repair the derived surface to match the authoritative record instead of teaching the system to trust the projection.
 
 ## AI workflow rules
 
