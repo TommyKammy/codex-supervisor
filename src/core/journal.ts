@@ -75,6 +75,7 @@ function buildNotesTemplate(): string {
 }
 
 const NOTES_TEMPLATE = buildNotesTemplate();
+const ISSUE_SCOPED_JOURNAL_PATH_PATTERN = /^\.codex-supervisor\/issues\/(\d+)\/issue-journal\.md$/;
 
 function extractJournalIssueNumber(content: string | null | undefined): number | null {
   if (!content) {
@@ -532,7 +533,9 @@ export function trackedIssueJournalRelativePath(
   }
 
   const relativeJournalPath = workspaceRelativeJournalPath(workspacePath, journalPath);
+  const scopedMatch = relativeJournalPath.match(ISSUE_SCOPED_JOURNAL_PATH_PATTERN);
   return relativeJournalPath === LEGACY_SHARED_ISSUE_JOURNAL_RELATIVE_PATH
+    || (scopedMatch !== null && Number.parseInt(scopedMatch[1], 10) !== issueNumber)
     ? canonicalRelativePath
     : relativeJournalPath;
 }
@@ -630,9 +633,54 @@ export async function syncIssueJournal(args: {
     existing && (existingIssueNumber === null || existingIssueNumber === issue.number)
       ? normalizeDurableIssueJournalContent(preserveCodexNotes(existing), record.workspace)
       : null;
+  const rehydrationNotes =
+    existing === null && shouldAnnotateJournalRehydration(record)
+      ? buildRehydratedJournalNotes()
+      : null;
   const snapshot = buildSupervisorSnapshot({ issue, record, journalPath });
-  const nextContent = `${snapshot}\n${notes ? compactCodexNotes(notes, maxChars) : NOTES_TEMPLATE}`;
+  const nextContent = `${snapshot}\n${notes ? compactCodexNotes(notes, maxChars) : rehydrationNotes ?? NOTES_TEMPLATE}`;
   await writeFileAtomic(journalPath, nextContent);
+}
+
+function shouldAnnotateJournalRehydration(
+  record: Pick<
+    IssueRunRecord,
+    | "attempt_count"
+    | "implementation_attempt_count"
+    | "repair_attempt_count"
+    | "pr_number"
+    | "codex_session_id"
+    | "last_codex_summary"
+    | "last_error"
+    | "last_failure_context"
+    | "last_recovery_reason"
+  >,
+): boolean {
+  return (
+    record.attempt_count > 1 ||
+    record.implementation_attempt_count > 1 ||
+    record.repair_attempt_count > 1 ||
+    record.pr_number !== null ||
+    record.codex_session_id !== null ||
+    record.last_codex_summary !== null ||
+    record.last_error !== null ||
+    record.last_failure_context !== null ||
+    record.last_recovery_reason !== null
+  );
+}
+
+function buildRehydratedJournalNotes(): string {
+  return [
+    NOTES_MARKER,
+    "### Current Handoff",
+    ...HANDOFF_FIELDS.map((field) => `- ${field}:`),
+    "",
+    "### Scratchpad",
+    "- Journal rehydration note: this journal was rehydrated on this host because the prior local-only handoff journal was unavailable.",
+    "- Prior host-local handoff text could not be recovered from durable state when recreating the local journal.",
+    "- Keep this section short. The supervisor may compact older notes automatically.",
+    "",
+  ].join("\n");
 }
 
 export async function normalizeCommittedIssueJournal(args: {

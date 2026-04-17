@@ -291,7 +291,7 @@ test("executeCodexTurnPhase refreshes review bookkeeping after supervisor-owned 
   });
 
   const result = await executeCodexTurnPhase({
-    config: createConfig(),
+    config: createConfig({ reviewBotLogins: ["copilot-pull-request-reviewer"] }),
     stateStore: {
       touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
       save: async () => undefined,
@@ -1033,6 +1033,280 @@ test("executeCodexTurnPhase routes start and resume turns through the shared age
   assert.equal(requests[0]?.kind, "start");
   assert.equal(requests[1]?.kind, "resume");
   assert.equal(requests[1]?.sessionId, "session-existing");
+});
+
+test("executeCodexTurnPhase rehydrates a missing local journal before resuming a tracked turn", async () => {
+  await withTempWorkspace("codex-turn-missing-journal-", async (workspacePath) => {
+    const journalPath = path.join(workspacePath, ".codex-supervisor", "issues", "102", "issue-journal.md");
+    const state: SupervisorStateFile = {
+      activeIssueNumber: 102,
+      issues: {
+        "102": createRecord({
+          state: "stabilizing",
+          codex_session_id: "session-existing",
+          workspace: workspacePath,
+          journal_path: journalPath,
+          pr_number: 116,
+        }),
+      },
+    };
+
+    let syncJournalCalls = 0;
+    let journalExistedDuringRun = false;
+
+    const result = await executeCodexTurnPhase({
+      config: createConfig({
+        issueJournalRelativePath: ".codex-supervisor/issues/{issueNumber}/issue-journal.md",
+      }),
+      stateStore: {
+        touch: (record, patch) => ({ ...record, ...patch, updated_at: "2026-03-26T01:00:01.000Z" }),
+        save: async () => undefined,
+      },
+      github: {
+        resolvePullRequestForBranch: async () => createPullRequest({ number: 116, headRefOid: "head-116" }),
+        createPullRequest: async () => {
+          throw new Error("unexpected createPullRequest call");
+        },
+        getChecks: async () => [],
+        getUnresolvedReviewThreads: async () => [],
+        getExternalReviewSurface: async () => {
+          throw new Error("unexpected getExternalReviewSurface call");
+        },
+      },
+      context: {
+        state,
+        record: state.issues["102"]!,
+        issue: createIssue({ number: 102, title: "Rehydrate missing journal before resume" }),
+        previousCodexSummary: null,
+        previousError: null,
+        workspacePath,
+        journalPath,
+        syncJournal: async () => {
+          syncJournalCalls += 1;
+          await fs.mkdir(path.dirname(journalPath), { recursive: true });
+          await fs.writeFile(
+            journalPath,
+            [
+              "# Issue #102: Rehydrate missing journal before resume",
+              "",
+              "## Codex Working Notes",
+              "### Current Handoff",
+              "- Hypothesis: restore the missing journal before the resume turn runs.",
+              "- What changed: journal was rehydrated on this host because the local-only copy was missing.",
+              "- Current blocker:",
+              "- Next exact step: resume the tracked PR follow-up safely.",
+              "- Verification gap:",
+              "- Files touched:",
+              "- Rollback concern:",
+              "- Last focused command:",
+              "",
+              "### Scratchpad",
+              "- Keep this section short. The supervisor may compact older notes automatically.",
+              "",
+            ].join("\n"),
+            "utf8",
+          );
+        },
+        memoryArtifacts: {
+          alwaysReadFiles: [],
+          onDemandFiles: [],
+          contextIndexPath: "/tmp/context-index.md",
+          agentsPath: "/tmp/AGENTS.generated.md",
+        },
+        workspaceStatus: createWorkspaceStatus({ branch: "codex/issue-102", headSha: "head-116" }),
+        pr: createPullRequest({ number: 116, headRefOid: "head-116" }),
+        checks: [],
+        reviewThreads: [],
+        options: { dryRun: false },
+      },
+      acquireSessionLock: async () => null,
+      classifyFailure: () => "command_error",
+      buildCodexFailureContext: (category, summary, details) => ({
+        category,
+        summary,
+        signature: `${category}:${summary}`,
+        command: null,
+        details,
+        url: null,
+        updated_at: "2026-03-26T01:00:01.000Z",
+      }),
+      applyFailureSignature: () => ({
+        last_failure_signature: null,
+        repeated_failure_signature_count: 0,
+      }),
+      normalizeBlockerSignature: () => null,
+      isVerificationBlockedMessage: () => false,
+      derivePullRequestLifecycleSnapshot: (record) => ({
+        recordForState: record,
+        nextState: "stabilizing",
+        failureContext: null,
+        reviewWaitPatch: {},
+        copilotRequestObservationPatch: {},
+        mergeLatencyVisibilityPatch: {
+          provider_success_observed_at: null,
+          provider_success_head_sha: null,
+          merge_readiness_last_evaluated_at: null,
+        },
+        copilotTimeoutPatch: {
+          copilot_review_timed_out_at: null,
+          copilot_review_timeout_action: null,
+          copilot_review_timeout_reason: null,
+        },
+      }),
+      inferStateWithoutPullRequest: () => "stabilizing",
+      blockedReasonFromReviewState: () => null,
+      recoverUnexpectedCodexTurnFailure: async ({ error }) => {
+        throw error instanceof Error ? error : new Error(String(error));
+      },
+      getWorkspaceStatus: async () => createWorkspaceStatus({ branch: "codex/issue-102", headSha: "head-116" }),
+      pushBranch: async () => {
+        throw new Error("unexpected pushBranch call");
+      },
+      agentRunner: createSuccessfulAgentRunner(async (request) => {
+        assert.equal(request.kind, "resume");
+        await fs.access(journalPath);
+        journalExistedDuringRun = true;
+        await fs.appendFile(journalPath, "- What changed: resume turn completed after journal rehydration.\n", "utf8");
+        return {
+          exitCode: 0,
+          sessionId: "session-existing",
+          supervisorMessage: "Paused on the resumed head after rehydrating the missing journal.",
+          stderr: "",
+          stdout: "",
+          structuredResult: {
+            summary: "Paused on the resumed head after rehydrating the missing journal.",
+            stateHint: "blocked",
+            blockedReason: "manual_review",
+            failureSignature: null,
+            nextAction: "continue from the recreated journal",
+            tests: "not run",
+          },
+          failureKind: null,
+          failureContext: null,
+        };
+      }),
+    });
+
+    assert.equal(result.kind, "returned");
+    assert.match(result.message, /Codex reported blocked/);
+    assert.ok(syncJournalCalls >= 1);
+    assert.equal(journalExistedDuringRun, true);
+    const journalContent = await fs.readFile(journalPath, "utf8");
+    assert.match(journalContent, /local-only copy was missing/);
+  });
+});
+
+test("executeCodexTurnPhase does not rehydrate a missing local journal when the resume lock is unavailable", async () => {
+  await withTempWorkspace("codex-turn-missing-journal-locked-", async (workspacePath) => {
+    const journalPath = path.join(workspacePath, ".codex-supervisor", "issues", "102", "issue-journal.md");
+    const state: SupervisorStateFile = {
+      activeIssueNumber: 102,
+      issues: {
+        "102": createRecord({
+          state: "stabilizing",
+          codex_session_id: "session-existing",
+          workspace: workspacePath,
+          journal_path: journalPath,
+          pr_number: 116,
+        }),
+      },
+    };
+
+    let syncJournalCalls = 0;
+    let journalReadCalls = 0;
+
+    const result = await executeCodexTurnPhase({
+      config: createConfig({
+        issueJournalRelativePath: ".codex-supervisor/issues/{issueNumber}/issue-journal.md",
+      }),
+      stateStore: {
+        touch: (record, patch) => ({ ...record, ...patch, updated_at: "2026-03-26T01:00:01.000Z" }),
+        save: async () => undefined,
+      },
+      github: {
+        resolvePullRequestForBranch: async () => createPullRequest({ number: 116, headRefOid: "head-116" }),
+        createPullRequest: async () => {
+          throw new Error("unexpected createPullRequest call");
+        },
+        getChecks: async () => [],
+        getUnresolvedReviewThreads: async () => [],
+        getExternalReviewSurface: async () => {
+          throw new Error("unexpected getExternalReviewSurface call");
+        },
+      },
+      context: {
+        state,
+        record: state.issues["102"]!,
+        issue: createIssue({ number: 102, title: "Skip missing journal rehydration when the resume lock is unavailable" }),
+        previousCodexSummary: null,
+        previousError: null,
+        workspacePath,
+        journalPath,
+        syncJournal: async () => {
+          syncJournalCalls += 1;
+        },
+        memoryArtifacts: {
+          alwaysReadFiles: [],
+          onDemandFiles: [],
+          contextIndexPath: "/tmp/context-index.md",
+          agentsPath: "/tmp/AGENTS.generated.md",
+        },
+        workspaceStatus: createWorkspaceStatus({ branch: "codex/issue-102", headSha: "head-116" }),
+        pr: createPullRequest({ number: 116, headRefOid: "head-116" }),
+        checks: [],
+        reviewThreads: [],
+        options: { dryRun: false },
+      },
+      acquireSessionLock: async () => ({
+        sessionId: "session-existing",
+        acquired: false,
+        reason: "session already locked elsewhere",
+        release: async () => undefined,
+      }),
+      classifyFailure: () => "command_error",
+      buildCodexFailureContext: (category, summary, details) => ({
+        category,
+        summary,
+        signature: `${category}:${summary}`,
+        command: null,
+        details,
+        url: null,
+        updated_at: "2026-03-26T01:00:01.000Z",
+      }),
+      applyFailureSignature: () => ({
+        last_failure_signature: null,
+        repeated_failure_signature_count: 0,
+      }),
+      normalizeBlockerSignature: () => null,
+      isVerificationBlockedMessage: () => false,
+      derivePullRequestLifecycleSnapshot: () => {
+        throw new Error("unexpected derivePullRequestLifecycleSnapshot call");
+      },
+      inferStateWithoutPullRequest: () => "stabilizing",
+      blockedReasonFromReviewState: () => null,
+      recoverUnexpectedCodexTurnFailure: async ({ error }) => {
+        throw error instanceof Error ? error : new Error(String(error));
+      },
+      getWorkspaceStatus: async () => createWorkspaceStatus({ branch: "codex/issue-102", headSha: "head-116" }),
+      pushBranch: async () => {
+        throw new Error("unexpected pushBranch call");
+      },
+      readIssueJournal: async () => {
+        journalReadCalls += 1;
+        return null;
+      },
+      agentRunner: createSuccessfulAgentRunner(async () => {
+        throw new Error("unexpected agentRunner.runTurn call");
+      }),
+    });
+
+    assert.deepEqual(result, {
+      kind: "returned",
+      message: "Skipped issue #102: session already locked elsewhere.",
+    });
+    assert.equal(syncJournalCalls, 0);
+    assert.equal(journalReadCalls, 0);
+  });
 });
 
 test("executeCodexTurnPhase writes a durable interrupted-turn marker before runTurn and clears it after success", async () => {

@@ -278,7 +278,6 @@ export async function executeCodexTurnPhase(
       };
     }
 
-    const journalContent = (await readIssueJournalImpl(journalPath)) ?? "";
     const preRunState = record.state;
     const shouldResumeTurn = shouldResumeAgentTurn({
       record,
@@ -296,6 +295,13 @@ export async function executeCodexTurnPhase(
       };
     }
 
+    let journalContent = await readIssueJournalImpl(journalPath);
+    if (journalContent === null) {
+      await syncJournal(record);
+      journalContent = await readIssueJournalImpl(journalPath);
+    }
+    const effectiveJournalContent = journalContent ?? "";
+
     try {
       const preparedTurn = await prepareCodexTurnPrompt({
         config,
@@ -307,7 +313,7 @@ export async function executeCodexTurnPhase(
         previousError,
         workspacePath,
         journalPath,
-        journalContent,
+        journalContent: effectiveJournalContent,
         syncJournal,
         memoryArtifacts,
         pr,
@@ -357,7 +363,7 @@ export async function executeCodexTurnPhase(
       if (
         turnResult.exitCode === 0 &&
         (!effectiveJournalAfterRun ||
-          effectiveJournalAfterRun === journalContent ||
+          effectiveJournalAfterRun === effectiveJournalContent ||
           !hasMeaningfulJournalHandoff(effectiveJournalAfterRun))
       ) {
         record = await persistMissingCodexJournalHandoffImpl({
