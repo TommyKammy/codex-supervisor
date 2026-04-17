@@ -195,6 +195,22 @@ test("buildCodexPrompt includes fail-closed shared-memory heuristics for review-
   assert.match(prompt, /Resolve `current`, `latest`, `active`, `terminal`, `open`, or `done` from the authoritative lifecycle source instead of whichever summary field or timeline entry was updated last/);
   assert.match(prompt, /Do not let timeline summaries, detail DTOs, badges, counters, or post-mutation refresh failures overwrite the outcome recorded by the authoritative mutation or lifecycle record/);
   assert.match(prompt, /When selecting among multiple records, define the winner from authoritative fields first/);
+  assert.match(
+    prompt,
+    /When a response, export, backup, restore, readiness check, or detail aggregation reads multiple records, make the read set snapshot-consistent or explicitly detect and reject mixed-snapshot results instead of stitching together whichever rows arrived from different points in time/,
+  );
+  assert.match(
+    prompt,
+    /When one logical change writes multiple records, persist it atomically so partial commits cannot become the durable truth for later sessions or follow-up reads/,
+  );
+  assert.match(
+    prompt,
+    /Do not hold database transactions open across network hops, queued jobs, adapter dispatch, or other remote waits; stage the boundary, commit or roll back, then continue in a new transaction if needed/,
+  );
+  assert.match(
+    prompt,
+    /Treat backup\/restore\/export flows and readiness or detail rollups as high-risk mixed-state surfaces: verify they read from one committed snapshot and represent all-or-nothing write boundaries faithfully/,
+  );
 });
 
 test("buildCodexPrompt renders on-demand memory files even without always-read files", () => {

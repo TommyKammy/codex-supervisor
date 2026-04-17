@@ -210,6 +210,45 @@ test("buildRolePrompt teaches reviewer to anchor findings to the actual behavior
   );
 });
 
+test("buildRolePrompt teaches reviewers snapshot-consistency and transaction-boundary heuristics on shared-memory changes", () => {
+  const prompt = buildRolePrompt({
+    repoSlug: "owner/repo",
+    issue: createIssue({
+      number: 205,
+      title: "Review snapshot-consistent shared-memory changes",
+      url: "https://example.test/issues/205",
+      createdAt: "2026-03-14T00:00:00Z",
+      updatedAt: "2026-03-14T00:00:00Z",
+    }),
+    branch: "codex/issue-205",
+    workspacePath: "/tmp/workspaces/issue-205",
+    defaultBranch: "main",
+    pr: createPullRequest({
+      number: 205,
+      url: "https://example.test/pr/205",
+      headRefOid: "head205",
+    }),
+    role: "reviewer",
+    alwaysReadFiles: ["/tmp/workspaces/issue-205/.codex-supervisor/issue-journal.md"],
+    onDemandFiles: ["/tmp/workspaces/issue-205/docs/architecture.md"],
+    confidenceThreshold: 0.7,
+    priorMissPatterns: [],
+  });
+
+  assert.match(
+    prompt,
+    /On shared-memory, persistence, or aggregation changes, check that multi-read responses use one committed snapshot or explicitly reject mixed-snapshot assembly\./,
+  );
+  assert.match(
+    prompt,
+    /Check that logical multi-record writes commit atomically so backup\/restore\/export and readiness or detail rollups cannot persist partial state as durable truth\./,
+  );
+  assert.match(
+    prompt,
+    /Flag transactions that stay open across network hops, queued work, adapter dispatch, or other remote waits; require the boundary to commit\/roll back before crossing it\./,
+  );
+});
+
 test("buildRolePrompt teaches reviewer to flag unrelated cleanup but allow required support changes", () => {
   const prompt = buildRolePrompt({
     repoSlug: "owner/repo",

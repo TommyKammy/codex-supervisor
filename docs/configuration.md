@@ -358,6 +358,11 @@ These are not "tuning" choices. They are part of the safety model.
 
 GitHub-authored issue bodies, review comments, and similar GitHub text are execution inputs. The current runtime uses `--dangerously-bypass-approvals-and-sandbox`, so the practical safety boundary is whether the repo and its GitHub authors are trusted.
 
+Operator prerequisite:
+
+- only use autonomous execution when this is a trusted repo with a trusted author set
+- if the repo or author trust is unclear, do not rely on bypassed sandbox or approval protections
+
 ### PR hydration authority
 
 Fresh GitHub PR facts are authoritative for review and merge decisions. Cached hydration can appear in diagnostics, but it is not the source of truth for readiness or merge safety.
@@ -365,8 +370,10 @@ Fresh GitHub PR facts are authoritative for review and merge decisions. Cached h
 ### JSON state recovery
 
 - missing JSON state is a normal empty bootstrap case
-- corrupted JSON state is not a normal bootstrap case
-- corrupted state should be treated as a recovery event until an operator inspects or resets it
+- corrupted JSON state is not a normal empty-state bootstrap case
+- corrupted state should be treated as a recovery event until an operator inspects, acknowledges, or resets it
+- if you need a concise rule: inspect, acknowledge, or reset before resuming normal automation
+- use `status` or `doctor` to inspect the condition before treating the recovered marker as safe progress
 
 ### Workspace restore order
 
@@ -377,6 +384,7 @@ When `ensureWorkspace()` restores an issue workspace, the intended order is:
 3. fresh bootstrap from `origin/<defaultBranch>`
 
 Fresh bootstrap is the fallback, not the default answer to every missing local branch.
+The restore flow prefers the local issue branch first, then the remote issue branch, and only then falls back to bootstrap from `origin/<defaultBranch>` or `origin/main`.
 
 ## Field Groups Reference
 
@@ -491,6 +499,9 @@ Important distinction:
 
 - `maxDoneWorkspaces` and `cleanupDoneWorkspacesAfterHours` apply to tracked done workspaces
 - `cleanupOrphanedWorkspacesAfterHours` is an age gate for explicit orphan pruning, not a background cleanup toggle
+- orphaned worktrees and orphaned workspaces are preserved until an explicit `prune-orphaned-workspaces` run evaluates them
+- preserve locked, recent, and `unsafe_target` orphaned workspaces instead of pruning them eagerly
+- use `prune-orphaned-workspaces` when you want explicit cleanup of eligible orphaned workspaces
 
 ### Repo-owned local CI contract
 

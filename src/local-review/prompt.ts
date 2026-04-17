@@ -235,6 +235,9 @@ function roleGoal(role: string): string[] {
         "- Anchor findings and promoted guardrails to the decisive behavioral boundary or invariant, not an earlier or merely adjacent implementation location.",
         "- Flag tests or promoted guardrails that hard-code exact source line numbers when a stable behavior, identifier, or nearby intent anchor would verify the same thing.",
         "- Do not object to exact line assertions when source location itself is the intended contract.",
+        "- On shared-memory, persistence, or aggregation changes, check that multi-read responses use one committed snapshot or explicitly reject mixed-snapshot assembly.",
+        "- Check that logical multi-record writes commit atomically so backup/restore/export and readiness or detail rollups cannot persist partial state as durable truth.",
+        "- Flag transactions that stay open across network hops, queued work, adapter dispatch, or other remote waits; require the boundary to commit/roll back before crossing it.",
         "- Ignore style nits unless they could hide a bug or maintenance trap.",
       ];
     case "docs_researcher":
@@ -397,6 +400,9 @@ export function buildVerifierPrompt(args: {
     "- Treat exact source lines as optional hints unless the finding is explicitly about a user-visible or contractual source location.",
     "- When a test or guardrail could anchor to stable behavior, identifiers, or nearby intent instead of a hard-coded line number, prefer that more stable reading.",
     "- Prefer the real transition or invariant boundary under review over a nearby setup step or incidental code location when deciding whether a finding still holds.",
+    "- Re-check shared-memory aggregations against snapshot consistency: mixed-snapshot reads should stay blocked or be called out as a real defect.",
+    "- Re-check that logical multi-record writes remain atomic and that backup/restore/export or readiness/detail rollups cannot publish partial durable state.",
+    "- Confirm that any transaction-scoped fix still commits or rolls back before network hops, queued work, adapter dispatch, or other remote waits.",
     "",
     "Constraints:",
     "- Do not edit files, do not commit, and do not push.",
