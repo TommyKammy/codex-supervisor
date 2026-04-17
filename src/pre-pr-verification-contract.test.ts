@@ -10,6 +10,6 @@ test("package.json exposes the repo-owned pre-PR verification contract with path
 
   assert.equal(
     packageJson.scripts?.["verify:pre-pr"],
-    "npm run verify:paths && npm run build && npm test",
+    "npm run verify:paths && npm run verify:subprocess-safety && npm run build && npm test",
   );
 });

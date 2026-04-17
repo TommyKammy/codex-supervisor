@@ -309,6 +309,22 @@ test("repo-committed verifier guardrails include targeted-assertion guidance for
   });
 });
 
+test("repo-committed verifier guardrails include repo-owned subprocess safety guidance", async () => {
+  const changedFiles = ["src/subprocess-safety.test.ts"];
+  const rules = await loadRelevantVerifierGuardrails({
+    workspacePath: process.cwd(),
+    changedFiles,
+    limit: 10,
+  });
+
+  assertContainsRelevantRule(rules, {
+    id: "repo-owned-subprocess-safety-contract",
+    file: "src/subprocess-safety.test.ts",
+    summary:
+      "When repo-owned tests or verifier scripts invoke external executables, assert they use resolved executable paths, bounded timeouts, and direct argv invocation instead of shell trampolines.",
+  });
+});
+
 test("repo-committed verifier guardrails cover malformed guardrails and repair-context failure boundaries", async () => {
   const changedFiles = ["src/committed-guardrails.ts", "src/supervisor.ts"];
   const rules = await loadRelevantVerifierGuardrails({

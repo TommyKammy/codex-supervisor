@@ -64,6 +64,14 @@
       "line": 114,
       "summary": "When loader output is intentionally extensible, assert on the rule or property under test instead of snapshotting the full returned array or document unless exact full output is the behavior being verified.",
       "rationale": "Full-array or full-document snapshots make maintainability guardrails brittle as new rules are added later; exact-output assertions are still appropriate when the exact structure itself is the contract."
+    },
+    {
+      "id": "repo-owned-subprocess-safety-contract",
+      "title": "Keep repo-owned test and verifier subprocess calls bounded and explicit",
+      "file": "src/subprocess-safety.test.ts",
+      "line": 5,
+      "summary": "When repo-owned tests or verifier scripts invoke external executables, assert they use resolved executable paths, bounded timeouts, and direct argv invocation instead of shell trampolines.",
+      "rationale": "Verifier and local-CI guardrails should fail fast and deterministically; hanging subprocess calls or PATH-dependent shell wrappers can silently turn local verification into an environment-sensitive false signal."
     }
   ]
 }

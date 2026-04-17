@@ -4,15 +4,15 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { REPO_OWNED_SUBPROCESS_TIMEOUT_MS, resolveExecutablePath } from "./subprocess-test-helpers";
 
-function npmCommand(): string {
-  return process.platform === "win32" ? "npm.cmd" : "npm";
-}
+const npmExecutable = resolveExecutablePath("npm");
 
 function runBuild(repoRoot: string): void {
-  const result = spawnSync(npmCommand(), ["run", "build"], {
+  const result = spawnSync(npmExecutable, ["run", "build"], {
     cwd: repoRoot,
     encoding: "utf8",
+    timeout: REPO_OWNED_SUBPROCESS_TIMEOUT_MS,
   });
 
   assert.equal(
@@ -26,6 +26,7 @@ function resolveModule(modulePath: string, repoRoot: string): string {
   const result = spawnSync(process.execPath, ["-p", `require.resolve(${JSON.stringify(modulePath)})`], {
     cwd: repoRoot,
     encoding: "utf8",
+    timeout: REPO_OWNED_SUBPROCESS_TIMEOUT_MS,
   });
 
   assert.equal(
@@ -45,6 +46,7 @@ function runDistCli(repoRoot: string, args: string[]): { status: number | null; 
       ...process.env,
       NODE_NO_WARNINGS: "1",
     },
+    timeout: REPO_OWNED_SUBPROCESS_TIMEOUT_MS,
   });
 
   return {
@@ -102,6 +104,7 @@ test("npm run build writes dist freshness metadata that keeps the compiled entry
     {
       cwd: repoRoot,
       encoding: "utf8",
+      timeout: REPO_OWNED_SUBPROCESS_TIMEOUT_MS,
     },
   );
   assert.equal(
