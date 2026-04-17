@@ -1,6 +1,6 @@
 {
   "name": "codex-supervisor",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "description": "Minimal GitHub issue/PR/CI supervisor using codex exec and gh.",
   "scripts": {
