@@ -12,7 +12,7 @@ import {
   buildNonRunnableLocalStateReasons,
   renderIssueExplainDto,
 } from "./supervisor-selection-issue-explain";
-import { branchName, createConfig, createRecord, createSupervisorFixture } from "./supervisor-test-helpers";
+import { branchName, createConfig, createRecord, createSupervisorFixture, createSupervisorState } from "./supervisor-test-helpers";
 
 function createIssue(overrides: Partial<GitHubIssue> = {}): GitHubIssue {
   return {
@@ -308,6 +308,60 @@ test("buildIssueExplainDto exposes typed operator activity context", async () =>
   assert.match(
     rendered,
     /^recovery_loop_summary latest_reason=tracked_pr_head_advanced phase_change=blocked->addressing_review apparent_no_progress=yes$/m,
+  );
+});
+
+test("buildIssueExplainDto reports same-blocker tracked PR recovery suppression distinctly", async () => {
+  const issue = createIssue({
+    number: 611,
+    title: "Suppressed tracked PR recovery",
+    body: `## Summary
+Keep the same unresolved tracked PR review blocker stably blocked.
+
+## Scope
+- keep same-head tracked PR recovery suppressed when the unchanged review-thread blocker is still present
+
+## Acceptance criteria
+- explain shows the same-blocker tracked PR suppression signal
+
+## Verification
+- npx tsx --test src/supervisor/supervisor-selection-issue-explain.test.ts
+
+Depends on: none
+Parallelizable: No
+
+## Execution order
+1 of 1`,
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
+        issue_number: 611,
+        state: "blocked",
+        blocked_reason: "manual_review",
+        last_failure_signature: "PRRT_thread_1",
+        repeated_failure_signature_count: 3,
+        last_tracked_pr_progress_summary: "suppressed_same_head_same_review_thread_blocker",
+        last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+      }),
+    ],
+  });
+
+  const dto = await buildIssueExplainDto(
+    {
+      getIssue: async () => issue,
+      listAllIssues: async () => [issue],
+      listCandidateIssues: async () => [issue],
+    },
+    createConfig(),
+    state,
+    611,
+  );
+
+  const rendered = renderIssueExplainDto(dto);
+  assert.match(
+    rendered,
+    /^tracked_pr_repeat_failure decision=stop_no_progress signal=suppressed_same_head_same_review_thread_blocker$/m,
   );
 });
 

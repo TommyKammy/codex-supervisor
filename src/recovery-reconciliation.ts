@@ -54,6 +54,7 @@ import {
   buildTrackedPrResumeRecoveryEvent,
   reconcileStaleFailedTrackedPrRecord,
   reconcileTrackedMergedButOpenIssuesInModule,
+  suppressSameHeadNoProgressReviewThreadRecovery,
 } from "./recovery-tracked-pr-reconciliation";
 export {
   inspectOrphanedWorkspacePruneCandidates,
@@ -1290,6 +1291,23 @@ export async function reconcileRecoverableBlockedIssueStates(
       });
       const nextState = projection.nextState;
       if (projection.shouldSuppressRecovery) {
+        continue;
+      }
+      const recoverySuppression = suppressSameHeadNoProgressReviewThreadRecovery(
+        record,
+        trackedPullRequest,
+        reviewThreads,
+        nextState,
+      );
+      if (recoverySuppression.shouldSuppress) {
+        const suppressionPatch: Partial<IssueRunRecord> = {
+          last_tracked_pr_progress_summary: recoverySuppression.progressSummary,
+        };
+        if (needsRecordUpdate(record, suppressionPatch)) {
+          const updated = stateStore.touch(record, suppressionPatch);
+          state.issues[String(record.issue_number)] = updated;
+          changed = true;
+        }
         continue;
       }
 
