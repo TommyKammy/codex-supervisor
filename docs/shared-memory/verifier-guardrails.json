@@ -18,6 +18,30 @@
       "rationale": "Raw regex or substring checks can falsely combine fields from different steps and treat non-executable YAML text as proof that a guarded command or artifact upload is actually wired into the workflow."
     },
     {
+      "id": "workflow-runtime-contracts-must-reference-live-scripts-and-artifacts",
+      "title": "Keep workflow commands and artifact paths aligned with runtime contracts",
+      "file": "src/ci-workflow.test.ts",
+      "line": 324,
+      "summary": "When CI workflows invoke `npm run` steps or upload repo-owned artifacts, verify those step names still exist in `package.json` and the uploaded artifact paths still match the runtime helper that writes them.",
+      "rationale": "A workflow can stay syntactically valid while silently drifting away from the script and artifact contracts the repo actually owns, leaving deployment diagnostics green until the specific path is exercised."
+    },
+    {
+      "id": "sample-config-docs-must-match-checked-in-examples",
+      "title": "Keep embedded sample configs aligned with checked-in example files",
+      "file": "src/committed-guardrails.test.ts",
+      "line": 475,
+      "summary": "When a docs page embeds a sample config that also ships as a checked-in example JSON file, verify both files describe the same contract instead of letting each drift independently.",
+      "rationale": "Operators often copy the docs snippet instead of the raw example file; if both stay locally valid but disagree cross-file, setup guidance becomes a silent source of stale configuration."
+    },
+    {
+      "id": "guardrail-schemas-must-match-loader-contract",
+      "title": "Keep committed guardrail schemas aligned with the loader contract",
+      "file": "src/committed-guardrails.test.ts",
+      "line": 496,
+      "summary": "Verify repo-owned JSON schema files for committed guardrails expose the same version constants, required keys, and additional-properties rules enforced by the runtime loader.",
+      "rationale": "Schema files and loader code can each look locally valid while disagreeing about the actual contract, which hides breakage until an operator trusts the wrong source of truth."
+    },
+    {
       "id": "committed-guardrails-malformed-input",
       "title": "Differentiate missing and malformed committed guardrails",
       "file": "src/committed-guardrails.ts",

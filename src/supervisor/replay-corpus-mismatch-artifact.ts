@@ -12,8 +12,14 @@ import {
   formatReplayCorpusOutcomeMismatch,
 } from "./replay-corpus-mismatch-formatting";
 
+export const REPLAY_CORPUS_MISMATCH_DETAILS_ARTIFACT_RELATIVE_PATH = path.posix.join(
+  ".codex-supervisor",
+  "replay",
+  "replay-corpus-mismatch-details.json",
+);
+
 function replayCorpusMismatchDetailsArtifactPath(config: SupervisorConfig): string {
-  return path.join(config.repoPath, ".codex-supervisor", "replay", "replay-corpus-mismatch-details.json");
+  return path.join(config.repoPath, REPLAY_CORPUS_MISMATCH_DETAILS_ARTIFACT_RELATIVE_PATH);
 }
 
 function relativeReplayPath(config: SupervisorConfig, targetPath: string): string {

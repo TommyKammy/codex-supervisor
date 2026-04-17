@@ -325,6 +325,34 @@ test("repo-committed verifier guardrails include repo-owned subprocess safety gu
   });
 });
 
+test("repo-committed verifier guardrails cover cross-file sample-config, schema, and workflow contract drift", async () => {
+  const changedFiles = ["src/ci-workflow.test.ts", "src/committed-guardrails.test.ts"];
+  const rules = await loadRelevantVerifierGuardrails({
+    workspacePath: process.cwd(),
+    changedFiles,
+    limit: 10,
+  });
+
+  assertContainsRelevantRule(rules, {
+    id: "workflow-runtime-contracts-must-reference-live-scripts-and-artifacts",
+    file: "src/ci-workflow.test.ts",
+    summary:
+      "When CI workflows invoke `npm run` steps or upload repo-owned artifacts, verify those step names still exist in `package.json` and the uploaded artifact paths still match the runtime helper that writes them.",
+  });
+  assertContainsRelevantRule(rules, {
+    id: "sample-config-docs-must-match-checked-in-examples",
+    file: "src/committed-guardrails.test.ts",
+    summary:
+      "When a docs page embeds a sample config that also ships as a checked-in example JSON file, verify both files describe the same contract instead of letting each drift independently.",
+  });
+  assertContainsRelevantRule(rules, {
+    id: "guardrail-schemas-must-match-loader-contract",
+    file: "src/committed-guardrails.test.ts",
+    summary:
+      "Verify repo-owned JSON schema files for committed guardrails expose the same version constants, required keys, and additional-properties rules enforced by the runtime loader.",
+  });
+});
+
 test("repo-committed verifier guardrails cover malformed guardrails and repair-context failure boundaries", async () => {
   const changedFiles = ["src/committed-guardrails.ts", "src/supervisor.ts"];
   const rules = await loadRelevantVerifierGuardrails({

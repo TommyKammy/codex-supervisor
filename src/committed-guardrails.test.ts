@@ -4,8 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
+  DURABLE_MISS_PATTERN_KEYS,
+  EXTERNAL_REVIEW_GUARDRAILS_SCHEMA_VERSION,
   formatCommittedGuardrails,
   validateCommittedGuardrails,
+  VERIFIER_GUARDRAIL_KEYS,
+  VERIFIER_GUARDRAILS_SCHEMA_VERSION,
 } from "./committed-guardrails";
 
 test("validateCommittedGuardrails rejects duplicate committed verifier ids and durable fingerprints", async () => {
@@ -465,5 +469,86 @@ test("repo shared-memory examples encode authoritative-over-derived state guidan
   assert.match(
     workflow,
     /Before shipping rejected, forbidden, approval-failure, or restore-failure paths, verify the system proves both outcomes: the path failed and no durable orphan, partial write, or half-restored state remained afterward\./,
+  );
+});
+
+test("atlaspm example markdown keeps its embedded config aligned with the checked-in example json", async () => {
+  const atlaspmMarkdownPath = path.join(process.cwd(), "docs", "examples", "atlaspm.md");
+  const atlaspmJsonPath = path.join(process.cwd(), "docs", "examples", "atlaspm.supervisor.config.example.json");
+  const atlaspmMarkdown = await fs.readFile(atlaspmMarkdownPath, "utf8");
+  const jsonBlockMatch = atlaspmMarkdown.match(/## Example config\r?\n\r?\n```json\r?\n([\s\S]*?)\r?\n```/u);
+
+  assert.ok(jsonBlockMatch, `${path.relative(process.cwd(), atlaspmMarkdownPath)} should include an Example config JSON block`);
+
+  const embeddedConfig = JSON.parse(jsonBlockMatch[1]) as Record<string, unknown>;
+  const checkedInConfig = JSON.parse(await fs.readFile(atlaspmJsonPath, "utf8")) as Record<string, unknown>;
+
+  assert.deepEqual(
+    embeddedConfig,
+    checkedInConfig,
+    [
+      `${path.relative(process.cwd(), atlaspmMarkdownPath)} and ${path.relative(process.cwd(), atlaspmJsonPath)} must describe the same example config contract.`,
+      "Update the markdown JSON block or the checked-in example so operators do not copy a stale sample that is locally valid but cross-file inconsistent.",
+    ].join(" "),
+  );
+});
+
+test("committed guardrail schemas stay aligned with the loader contract", async () => {
+  const rootDir = process.cwd();
+  const verifierSchemaPath = path.join(rootDir, "docs", "shared-memory", "verifier-guardrails.schema.json");
+  const externalReviewSchemaPath = path.join(rootDir, "docs", "shared-memory", "external-review-guardrails.schema.json");
+  const verifierSchema = JSON.parse(await fs.readFile(verifierSchemaPath, "utf8")) as {
+    properties?: {
+      version?: { const?: unknown };
+      rules?: { items?: { required?: unknown; properties?: Record<string, unknown>; additionalProperties?: unknown } };
+    };
+  };
+  const externalReviewSchema = JSON.parse(await fs.readFile(externalReviewSchemaPath, "utf8")) as {
+    properties?: {
+      version?: { const?: unknown };
+      patterns?: { items?: { required?: unknown; properties?: Record<string, unknown>; additionalProperties?: unknown } };
+    };
+  };
+
+  assert.equal(
+    verifierSchema.properties?.version?.const,
+    VERIFIER_GUARDRAILS_SCHEMA_VERSION,
+    `${path.relative(rootDir, verifierSchemaPath)} version const must match src/committed-guardrails.ts`,
+  );
+  assert.deepEqual(
+    verifierSchema.properties?.rules?.items?.required,
+    [...VERIFIER_GUARDRAIL_KEYS],
+    `${path.relative(rootDir, verifierSchemaPath)} required rule keys must match src/committed-guardrails.ts`,
+  );
+  assert.deepEqual(
+    Object.keys(verifierSchema.properties?.rules?.items?.properties ?? {}),
+    [...VERIFIER_GUARDRAIL_KEYS],
+    `${path.relative(rootDir, verifierSchemaPath)} rule property keys must match src/committed-guardrails.ts`,
+  );
+  assert.equal(
+    verifierSchema.properties?.rules?.items?.additionalProperties,
+    false,
+    `${path.relative(rootDir, verifierSchemaPath)} should reject unexpected rule keys for the same contract enforced by src/committed-guardrails.ts`,
+  );
+
+  assert.equal(
+    externalReviewSchema.properties?.version?.const,
+    EXTERNAL_REVIEW_GUARDRAILS_SCHEMA_VERSION,
+    `${path.relative(rootDir, externalReviewSchemaPath)} version const must match src/committed-guardrails.ts`,
+  );
+  assert.deepEqual(
+    externalReviewSchema.properties?.patterns?.items?.required,
+    [...DURABLE_MISS_PATTERN_KEYS],
+    `${path.relative(rootDir, externalReviewSchemaPath)} required pattern keys must match src/committed-guardrails.ts`,
+  );
+  assert.deepEqual(
+    Object.keys(externalReviewSchema.properties?.patterns?.items?.properties ?? {}),
+    [...DURABLE_MISS_PATTERN_KEYS],
+    `${path.relative(rootDir, externalReviewSchemaPath)} pattern property keys must match src/committed-guardrails.ts`,
+  );
+  assert.equal(
+    externalReviewSchema.properties?.patterns?.items?.additionalProperties,
+    false,
+    `${path.relative(rootDir, externalReviewSchemaPath)} should reject unexpected pattern keys for the same contract enforced by src/committed-guardrails.ts`,
   );
 });

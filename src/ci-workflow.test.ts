@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
+import { REPLAY_CORPUS_MISMATCH_DETAILS_ARTIFACT_RELATIVE_PATH } from "./supervisor/replay-corpus-mismatch-artifact";
 
 const workflowPath = path.resolve(__dirname, "..", ".github/workflows/ci.yml");
 
@@ -317,5 +318,37 @@ test("CI workflow runs the workstation-local path hygiene gate on Ubuntu pull re
       if: "matrix.os == 'ubuntu-latest'",
       run: "npm run verify:paths",
     }),
+  );
+});
+
+test("CI workflow npm run steps reference package scripts and keep replay artifact paths aligned", async () => {
+  const workflow = parseWorkflow(await fs.readFile(workflowPath, "utf8"));
+  const packageJson = JSON.parse(await fs.readFile(path.resolve(__dirname, "..", "package.json"), "utf8")) as {
+    scripts?: Record<string, string>;
+  };
+  const workflowScriptNames = workflow.buildSteps
+    .map((step) => step.run)
+    .filter((run): run is string => typeof run === "string" && run.startsWith("npm run "))
+    .map((run) => run.slice("npm run ".length));
+  const missingScripts = workflowScriptNames.filter((name) => !packageJson.scripts?.[name]);
+
+  assert.deepEqual(
+    missingScripts,
+    [],
+    [
+      `${path.relative(process.cwd(), workflowPath)} must only invoke npm scripts that exist in package.json.`,
+      `Missing script definitions: ${missingScripts.join(", ") || "none"}.`,
+    ].join(" "),
+  );
+
+  const artifactStep = findBuildStep(workflow.buildSteps, {
+    if: "${{ failure() && matrix.os == 'ubuntu-latest' && steps.replay_corpus.outcome == 'failure' }}",
+    uses: "actions/upload-artifact@v4",
+  });
+
+  assert.equal(
+    artifactStep?.with.path,
+    REPLAY_CORPUS_MISMATCH_DETAILS_ARTIFACT_RELATIVE_PATH,
+    `${path.relative(process.cwd(), workflowPath)} artifact upload path must stay aligned with src/supervisor/replay-corpus-mismatch-artifact.ts`,
   );
 });
