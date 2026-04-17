@@ -1399,6 +1399,9 @@ export async function reconcileRecoverableBlockedIssueStates(
         copilotReviewRequestObservationPatch: projection.copilotReviewRequestObservationPatch,
         copilotReviewTimeoutPatch: projection.copilotReviewTimeoutPatch,
       });
+      if (recoverySuppression.progressSummary !== null) {
+        patch.last_tracked_pr_progress_summary = recoverySuppression.progressSummary;
+      }
       const recoveryEvent = buildTrackedPrResumeRecoveryEvent(
         record,
         trackedPullRequest,
