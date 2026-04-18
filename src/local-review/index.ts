@@ -142,6 +142,7 @@ export async function runLocalReview(args: {
   });
   const artifacts = await writeLocalReviewArtifacts({
     config: args.config,
+    workspacePath: args.workspacePath,
     issueNumber: args.issue.number,
     branch: args.branch,
     prUrl: args.pr.url,
