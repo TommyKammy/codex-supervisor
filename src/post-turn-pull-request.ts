@@ -94,7 +94,7 @@ type HostLocalTrackedPrBlockerGateType =
   | "local_ci"
   | "workstation_local_path_hygiene";
 
-const SUPERVISOR_JOURNAL_NORMALIZATION_COMMIT_MESSAGE = "Normalize supervisor-owned issue journals for path hygiene";
+const TRUSTED_DURABLE_ARTIFACT_NORMALIZATION_COMMIT_MESSAGE = "Normalize trusted durable artifacts for path hygiene";
 const TRACKED_PR_STATUS_COMMENT_MARKER_PREFIX = "codex-supervisor:tracked-pr-status-comment";
 const TRACKED_PR_STATUS_COMMENT_REASON_CODE_DRAFT_REVIEW_PROVIDER_SUPPRESSED = "draft_review_provider_suppressed";
 const TRACKED_PR_STATUS_COMMENT_REASON_CODE_MANUAL_REVIEW = "manual_review";
@@ -1403,24 +1403,27 @@ export async function handlePostTurnPullRequestTransitionsPhase(
         reviewThreads: refreshed.reviewThreads,
       };
     }
-    const rewrittenJournalPaths = pathHygieneGate.rewrittenJournalPaths ?? [];
-    const presentRewrittenJournalPaths = await filterPresentTrackedFilePaths(workspacePath, rewrittenJournalPaths);
-    if (presentRewrittenJournalPaths.length > 0) {
+    const rewrittenTrackedPaths = [
+      ...(pathHygieneGate.rewrittenJournalPaths ?? []),
+      ...(pathHygieneGate.rewrittenTrustedGeneratedArtifactPaths ?? []),
+    ];
+    const presentRewrittenTrackedPaths = await filterPresentTrackedFilePaths(workspacePath, rewrittenTrackedPaths);
+    if (presentRewrittenTrackedPaths.length > 0) {
       let persistedNormalizationCommit = false;
       try {
         persistedNormalizationCommit = await commitAndPushTrackedFiles({
           workspacePath,
           branch: refreshed.pr.headRefName,
           remoteBranchExists: true,
-          filePaths: presentRewrittenJournalPaths,
-          commitMessage: SUPERVISOR_JOURNAL_NORMALIZATION_COMMIT_MESSAGE,
+          filePaths: presentRewrittenTrackedPaths,
+          commitMessage: TRUSTED_DURABLE_ARTIFACT_NORMALIZATION_COMMIT_MESSAGE,
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const failureContext = buildWorkstationLocalPathFailureContext({
           gateLabel: `before marking PR #${refreshed.pr.number} ready`,
           details: [
-            `journal normalization persistence failed for ${presentRewrittenJournalPaths.join(", ")}: ${message}`,
+            `durable artifact normalization persistence failed for ${presentRewrittenTrackedPaths.join(", ")}: ${message}`,
           ],
         });
         record = stateStore.touch(record, {
@@ -1449,7 +1452,7 @@ export async function handlePostTurnPullRequestTransitionsPhase(
         const failureContext = buildWorkstationLocalPathFailureContext({
           gateLabel: `before marking PR #${refreshed.pr.number} ready`,
           details: [
-            `journal normalization reported rewritten paths for ${presentRewrittenJournalPaths.join(", ")} but did not create a commit to publish.`,
+            `durable artifact normalization reported rewritten paths for ${presentRewrittenTrackedPaths.join(", ")} but did not create a commit to publish.`,
           ],
         });
         record = stateStore.touch(record, {

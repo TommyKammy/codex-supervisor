@@ -46,7 +46,7 @@ export type CodexTurnPublicationGateResult =
   | CodexTurnPublicationGateBlockedResult
   | CodexTurnPublicationGateReadyResult;
 
-const SUPERVISOR_JOURNAL_NORMALIZATION_COMMIT_MESSAGE = "Normalize supervisor-owned issue journals for path hygiene";
+const TRUSTED_DURABLE_ARTIFACT_NORMALIZATION_COMMIT_MESSAGE = "Normalize trusted durable artifacts for path hygiene";
 
 export async function applyCodexTurnPublicationGate(args: {
   config: Pick<
@@ -119,23 +119,26 @@ export async function applyCodexTurnPublicationGate(args: {
         reviewThreads: [],
       };
     }
-    const rewrittenJournalPaths = pathHygieneGate.rewrittenJournalPaths ?? [];
-    const presentRewrittenJournalPaths = await filterPresentTrackedFilePaths(args.workspacePath, rewrittenJournalPaths);
-    if (presentRewrittenJournalPaths.length > 0) {
+    const rewrittenTrackedPaths = [
+      ...(pathHygieneGate.rewrittenJournalPaths ?? []),
+      ...(pathHygieneGate.rewrittenTrustedGeneratedArtifactPaths ?? []),
+    ];
+    const presentRewrittenTrackedPaths = await filterPresentTrackedFilePaths(args.workspacePath, rewrittenTrackedPaths);
+    if (presentRewrittenTrackedPaths.length > 0) {
       try {
         await commitAndPushTrackedFiles({
           workspacePath: args.workspacePath,
           branch: record.branch,
           remoteBranchExists: workspaceStatus.remoteBranchExists,
-          filePaths: presentRewrittenJournalPaths,
-          commitMessage: SUPERVISOR_JOURNAL_NORMALIZATION_COMMIT_MESSAGE,
+          filePaths: presentRewrittenTrackedPaths,
+          commitMessage: TRUSTED_DURABLE_ARTIFACT_NORMALIZATION_COMMIT_MESSAGE,
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const failureContext = buildWorkstationLocalPathFailureContext({
           gateLabel: "before publication",
           details: [
-            `journal normalization persistence failed for ${presentRewrittenJournalPaths.join(", ")}: ${message}`,
+            `durable artifact normalization persistence failed for ${presentRewrittenTrackedPaths.join(", ")}: ${message}`,
           ],
         });
         record = args.stateStore.touch(record, {

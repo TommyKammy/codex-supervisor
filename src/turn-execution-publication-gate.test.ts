@@ -9,6 +9,8 @@ import { SupervisorStateFile } from "./core/types";
 import { createConfig, createIssue, createPullRequest, createRecord } from "./turn-execution-test-helpers";
 
 const SAMPLE_MACOS_WORKSTATION_PATH = `/${"Users"}/alice/Dev/private-repo`;
+const TRUSTED_GENERATED_DURABLE_ARTIFACT_MARKDOWN_MARKER =
+  "<!-- codex-supervisor-provenance: trusted-generated-durable-artifact/v1 -->";
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync("git", ["-C", cwd, ...args], {
@@ -208,8 +210,108 @@ test("applyCodexTurnPublicationGate redacts supervisor-owned cross-issue journal
   const redactedJournal = await fs.readFile(otherJournalPath, "utf8");
   assert.doesNotMatch(redactedJournal, new RegExp(SAMPLE_MACOS_WORKSTATION_PATH.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.match(redactedJournal, /<redacted-local-path>/);
-  assert.match(git(workspacePath, "log", "-1", "--pretty=%s"), /Normalize supervisor-owned issue journals for path hygiene/);
+  assert.match(git(workspacePath, "log", "-1", "--pretty=%s"), /Normalize trusted durable artifacts for path hygiene/);
   assert.match(git(workspacePath, "ls-remote", "--heads", "origin", "codex/issue-102"), /refs\/heads\/codex\/issue-102/);
+  assert.equal(git(workspacePath, "status", "--short", "--untracked-files=no").trim(), "");
+});
+
+test("applyCodexTurnPublicationGate persists trusted generated artifact normalization before PR creation", async (t) => {
+  const workspacePath = await createTrackedRepo();
+  t.after(async () => {
+    await fs.rm(workspacePath, { recursive: true, force: true });
+  });
+  git(workspacePath, "checkout", "-b", "codex/issue-102");
+
+  const currentJournalPath = path.join(workspacePath, ".codex-supervisor", "issues", "102", "issue-journal.md");
+  const repoOwnedAbsolutePath = path.join(workspacePath, "docs", "guide.md");
+  const trustedArtifactPath = path.join(workspacePath, "docs", "generated-summary.md");
+  await fs.mkdir(path.dirname(currentJournalPath), { recursive: true });
+  await fs.mkdir(path.dirname(repoOwnedAbsolutePath), { recursive: true });
+  await fs.writeFile(currentJournalPath, "# Issue #102\n", "utf8");
+  await fs.writeFile(repoOwnedAbsolutePath, "# Guide\n", "utf8");
+  await fs.writeFile(
+    trustedArtifactPath,
+    [
+      TRUSTED_GENERATED_DURABLE_ARTIFACT_MARKDOWN_MARKER,
+      "",
+      `Repo note: ${repoOwnedAbsolutePath}`,
+      `Host note: ${SAMPLE_MACOS_WORKSTATION_PATH}`,
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  git(workspacePath, "add", ".codex-supervisor/issues/102/issue-journal.md", "docs/guide.md", "docs/generated-summary.md");
+  git(workspacePath, "commit", "-m", "seed trusted generated artifact leak");
+
+  let createPullRequestCalls = 0;
+  const issue = createIssue({ title: "Normalize trusted generated artifacts before publication" });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "stabilizing",
+        pr_number: null,
+        implementation_attempt_count: 1,
+        workspace: workspacePath,
+        journal_path: currentJournalPath,
+      }),
+    },
+  };
+
+  const result = await applyCodexTurnPublicationGate({
+    config: createConfig({
+      localCiCommand: "npm run ci:local",
+      issueJournalRelativePath: ".codex-supervisor/issues/{issueNumber}/issue-journal.md",
+    }),
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    state,
+    record: state.issues["102"]!,
+    issue,
+    workspacePath,
+    workspaceStatus: {
+      branch: "codex/issue-102",
+      headSha: git(workspacePath, "rev-parse", "HEAD").trim(),
+      hasUncommittedChanges: false,
+      baseAhead: 1,
+      baseBehind: 0,
+      remoteBranchExists: false,
+      remoteAhead: 0,
+      remoteBehind: 0,
+    },
+    github: {
+      resolvePullRequestForBranch: async () => null,
+      createPullRequest: async () => {
+        createPullRequestCalls += 1;
+        return createPullRequest({ number: 200, isDraft: true, headRefOid: "head-102" });
+      },
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    syncJournal: async () => undefined,
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    runLocalCiCommand: async () => undefined,
+    syncExecutionMetricsRunSummary: async () => undefined,
+  });
+
+  assert.equal(result.kind, "ready");
+  assert.equal(createPullRequestCalls, 1);
+  assert.equal(result.record.last_head_sha, git(workspacePath, "rev-parse", "HEAD").trim());
+  const normalizedArtifact = await fs.readFile(trustedArtifactPath, "utf8");
+  assert.match(normalizedArtifact, /Repo note: docs\/guide\.md/);
+  assert.match(normalizedArtifact, /Host note: <redacted-local-path>/);
+  assert.doesNotMatch(normalizedArtifact, new RegExp(repoOwnedAbsolutePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.doesNotMatch(
+    normalizedArtifact,
+    new RegExp(SAMPLE_MACOS_WORKSTATION_PATH.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+  );
+  assert.match(git(workspacePath, "log", "-1", "--pretty=%s"), /Normalize trusted durable artifacts for path hygiene/);
+  assert.match(git(workspacePath, "ls-remote", "--heads", "origin", "codex\/issue-102"), /refs\/heads\/codex\/issue-102/);
   assert.equal(git(workspacePath, "status", "--short", "--untracked-files=no").trim(), "");
 });
 

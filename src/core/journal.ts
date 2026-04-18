@@ -336,6 +336,13 @@ export function normalizeDurableIssueJournalContent(
   return normalizeDurableJournalText(content, workspacePath);
 }
 
+export function normalizeDurableTrackedArtifactContent(
+  content: string | null | undefined,
+  workspacePath: string,
+): string {
+  return normalizeDurableJournalText(content, workspacePath);
+}
+
 function truncateSummaryBody(summary: string, maxLength: number): string {
   if (summary.length === 0 || maxLength <= 0) {
     return "";
