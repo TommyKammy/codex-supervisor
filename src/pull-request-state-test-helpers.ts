@@ -34,6 +34,7 @@ export function createConfig(overrides: Partial<SupervisorConfig> = {}): Supervi
     },
     localReviewPolicy: "block_ready",
     localReviewHighSeverityAction: "retry",
+    publishablePathAllowlistMarkers: [],
     reviewBotLogins: [],
     humanReviewBlocksMerge: true,
     issueJournalRelativePath: ".codex-supervisor/issue-journal.md",

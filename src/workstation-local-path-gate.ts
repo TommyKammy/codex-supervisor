@@ -318,8 +318,10 @@ async function redactTrustedGeneratedArtifactLeaks(
 export async function runWorkstationLocalPathGate(args: {
   workspacePath: string;
   gateLabel: string;
+  publishablePathAllowlistMarkers?: readonly string[];
 }): Promise<WorkstationLocalPathGateResult> {
-  let findings = await findForbiddenWorkstationLocalPaths(args.workspacePath);
+  const detectorOptions = { publishablePathAllowlistMarkers: args.publishablePathAllowlistMarkers ?? [] };
+  let findings = await findForbiddenWorkstationLocalPaths(args.workspacePath, undefined, detectorOptions);
   let journalNormalizationErrors: string[] = [];
   let rewrittenJournalPaths: string[] = [];
   let trustedGeneratedArtifactNormalizationErrors: string[] = [];
@@ -328,7 +330,7 @@ export async function runWorkstationLocalPathGate(args: {
     const redactionResult = await redactSupervisorOwnedJournalLeaks(args.workspacePath, findings);
     journalNormalizationErrors = redactionResult.normalizationErrors;
     rewrittenJournalPaths = redactionResult.rewrittenJournalPaths;
-    findings = await findForbiddenWorkstationLocalPaths(args.workspacePath);
+    findings = await findForbiddenWorkstationLocalPaths(args.workspacePath, undefined, detectorOptions);
   }
   if (findings.length > 0) {
     const redactionResult = await redactTrustedGeneratedArtifactLeaks(args.workspacePath, findings);
@@ -338,7 +340,7 @@ export async function runWorkstationLocalPathGate(args: {
       rewrittenTrustedGeneratedArtifactPaths.length > 0
       || trustedGeneratedArtifactNormalizationErrors.length > 0
     ) {
-      findings = await findForbiddenWorkstationLocalPaths(args.workspacePath);
+      findings = await findForbiddenWorkstationLocalPaths(args.workspacePath, undefined, detectorOptions);
     }
   }
   if (

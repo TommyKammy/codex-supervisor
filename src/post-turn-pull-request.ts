@@ -1140,7 +1140,11 @@ export interface HandlePostTurnPullRequestTransitionsArgs {
   runLocalReviewImpl?: typeof runLocalReview;
   runWorkspacePreparationCommand?: LocalCiCommandRunner;
   runLocalCiCommand?: LocalCiCommandRunner;
-  runWorkstationLocalPathGate?: (args: { workspacePath: string; gateLabel: string }) => Promise<WorkstationLocalPathGateResult>;
+  runWorkstationLocalPathGate?: (args: {
+    workspacePath: string;
+    gateLabel: string;
+    publishablePathAllowlistMarkers?: readonly string[];
+  }) => Promise<WorkstationLocalPathGateResult>;
   emitEvent?: SupervisorEventSink;
   loadOpenPullRequestSnapshot?: (prNumber: number) => Promise<{
     pr: GitHubPullRequest;
@@ -1360,6 +1364,7 @@ export async function handlePostTurnPullRequestTransitionsPhase(
     const pathHygieneGate = await runWorkstationLocalPathGateImpl({
       workspacePath,
       gateLabel: `before marking PR #${refreshed.pr.number} ready`,
+      publishablePathAllowlistMarkers: config.publishablePathAllowlistMarkers,
     });
     if (!pathHygieneGate.ok) {
       const failureContext = pathHygieneGate.failureContext;

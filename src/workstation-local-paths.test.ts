@@ -201,6 +201,57 @@ test("findForbiddenWorkstationLocalPaths classifies mixed-prefix path lists with
   );
 });
 
+test("findForbiddenWorkstationLocalPaths honors configured same-line publishable allowlist markers only when opted in", async (t) => {
+  const repoPath = await createTrackedRepo();
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+
+  await fs.mkdir(path.join(repoPath, "tests"), { recursive: true });
+  await fs.writeFile(
+    path.join(repoPath, "tests", "fixtures.py"),
+    [
+      `ALLOWED = "${buildMacHomePath("alice", "Dev", "fixture")}"  # publishable-path-hygiene: allowlist`,
+      "# publishable-path-hygiene: allowlist",
+      `STILL_BLOCKED = "${buildMacHomePath("alice", "Dev", "real-leak")}"`,
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  git(repoPath, "add", "tests/fixtures.py");
+
+  const withoutOptIn = await findForbiddenWorkstationLocalPaths(repoPath);
+  assert.deepEqual(
+    withoutOptIn.map((finding) => ({ filePath: finding.filePath, line: finding.line, match: finding.match })),
+    [
+      {
+        filePath: "tests/fixtures.py",
+        line: 1,
+        match: buildMacHomePath("alice", "Dev", "fixture"),
+      },
+      {
+        filePath: "tests/fixtures.py",
+        line: 3,
+        match: buildMacHomePath("alice", "Dev", "real-leak"),
+      },
+    ],
+  );
+
+  const withOptIn = await findForbiddenWorkstationLocalPaths(repoPath, undefined, {
+    publishablePathAllowlistMarkers: ["publishable-path-hygiene: allowlist"],
+  });
+  assert.deepEqual(
+    withOptIn.map((finding) => ({ filePath: finding.filePath, line: finding.line, match: finding.match })),
+    [
+      {
+        filePath: "tests/fixtures.py",
+        line: 3,
+        match: buildMacHomePath("alice", "Dev", "real-leak"),
+      },
+    ],
+  );
+});
+
 test("findForbiddenWorkstationLocalPaths skips tracked files omitted by sparse checkout", async (t) => {
   const repoPath = await createTrackedRepo();
   t.after(async () => {

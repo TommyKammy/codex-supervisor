@@ -121,6 +121,69 @@ test("applyCodexTurnPublicationGate blocks draft PR creation when path hygiene f
   assert.equal(runLocalCiCalls, 0);
 });
 
+test("applyCodexTurnPublicationGate forwards publishable allowlist markers to the path hygiene gate", async () => {
+  const issue = createIssue({ title: "Honor publishable allowlist markers before PR creation" });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "stabilizing",
+        pr_number: null,
+        implementation_attempt_count: 1,
+      }),
+    },
+  };
+  const observedCalls: Array<readonly string[] | undefined> = [];
+
+  const result = await applyCodexTurnPublicationGate({
+    config: createConfig({
+      localCiCommand: "npm run ci:local",
+      publishablePathAllowlistMarkers: ["publishable-path-hygiene: allowlist"],
+    }),
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    state,
+    record: state.issues["102"]!,
+    issue,
+    workspacePath: "/tmp/workspaces/issue-102",
+    workspaceStatus: {
+      branch: "codex/issue-102",
+      headSha: "head-102",
+      hasUncommittedChanges: false,
+      baseAhead: 1,
+      baseBehind: 0,
+      remoteBranchExists: true,
+      remoteAhead: 0,
+      remoteBehind: 0,
+    },
+    github: {
+      resolvePullRequestForBranch: async () => null,
+      createPullRequest: async () => createPullRequest({ number: 200, isDraft: true, headRefOid: "head-102" }),
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    syncJournal: async () => undefined,
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    runWorkstationLocalPathGate: async (args) => {
+      observedCalls.push(args.publishablePathAllowlistMarkers);
+      return {
+        ok: true,
+        failureContext: null,
+      };
+    },
+    runLocalCiCommand: async () => undefined,
+    syncExecutionMetricsRunSummary: async () => undefined,
+  });
+
+  assert.equal(result.kind, "ready");
+  assert.deepEqual(observedCalls, [["publishable-path-hygiene: allowlist"]]);
+});
+
 test("applyCodexTurnPublicationGate redacts supervisor-owned cross-issue journals before publication", async (t) => {
   const workspacePath = await createTrackedRepo();
   t.after(async () => {
