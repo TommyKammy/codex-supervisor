@@ -13,6 +13,7 @@ import { finalizeLocalReview } from "./finalize";
 import { createConfig } from "./test-helpers";
 
 test("writeLocalReviewArtifacts renders durable guardrail provenance compactly", async () => {
+  const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), "local-review-workspace-"));
   const config = createConfig({
     localReviewArtifactDir: await fs.mkdtemp(path.join(os.tmpdir(), "local-review-artifacts-")),
   });
@@ -56,6 +57,7 @@ test("writeLocalReviewArtifacts renders durable guardrail provenance compactly",
 
   const artifacts = await writeLocalReviewArtifacts({
     config,
+    workspacePath,
     issueNumber: 38,
     branch: "codex/issue-38",
     prUrl: "https://example.test/pr/12",
@@ -85,6 +87,7 @@ test("writeLocalReviewArtifacts renders durable guardrail provenance compactly",
 });
 
 test("writeLocalReviewArtifacts records deterministic model routing for generic, specialist, and verifier paths", async () => {
+  const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), "local-review-workspace-"));
   const config = createConfig({
     localReviewArtifactDir: await fs.mkdtemp(path.join(os.tmpdir(), "local-review-artifacts-")),
     codexModelStrategy: "fixed",
@@ -162,6 +165,7 @@ test("writeLocalReviewArtifacts records deterministic model routing for generic,
 
   const artifacts = await writeLocalReviewArtifacts({
     config,
+    workspacePath,
     issueNumber: 39,
     branch: "codex/issue-39",
     prUrl: "https://example.test/pr/13",
@@ -222,4 +226,57 @@ test("writeLocalReviewArtifacts records deterministic model routing for generic,
     model: "gpt-5-codex",
     reasoningEffort: "low",
   });
+});
+
+test("writeLocalReviewArtifacts rewrites repo-local absolute paths and redacts host-local report references", async () => {
+  const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), "local-review-workspace-"));
+  const repoFilePath = path.join(workspacePath, "src", "auth.ts");
+  await fs.mkdir(path.dirname(repoFilePath), { recursive: true });
+  await fs.writeFile(repoFilePath, "export const auth = true;\n", "utf8");
+
+  const config = createConfig({
+    localReviewArtifactDir: await fs.mkdtemp(path.join(os.tmpdir(), "local-review-artifacts-")),
+  });
+  const leakedHostPath = `/${"Users"}/alice/Documents/AegisOps-phase5-6-review-files/blocker.md`;
+  const roleResults = [
+    {
+      role: "reviewer",
+      summary: "Flagged one location-sensitive issue.",
+      recommendation: "changes_requested" as const,
+      degraded: false,
+      exitCode: 0,
+      rawOutput: `Absolute repo path: ${repoFilePath}\nHost-local note: ${leakedHostPath}`,
+      findings: [],
+    },
+  ];
+  const finalized = finalizeLocalReview({
+    config,
+    issueNumber: 40,
+    prNumber: 14,
+    branch: "codex/issue-40",
+    headSha: "abcd1234efgh5678",
+    roleResults,
+    verifierReport: null,
+    ranAt: "2026-03-14T00:00:00Z",
+  });
+
+  const artifacts = await writeLocalReviewArtifacts({
+    config,
+    workspacePath,
+    issueNumber: 40,
+    branch: "codex/issue-40",
+    prUrl: "https://example.test/pr/14",
+    headSha: "abcd1234efgh5678",
+    roles: ["reviewer"],
+    ranAt: "2026-03-14T00:00:00Z",
+    finalized,
+    roleResults,
+    verifierReport: null,
+  });
+  const summary = await fs.readFile(artifacts.summaryPath, "utf8");
+
+  assert.match(summary, /Absolute repo path: src\/auth\.ts/);
+  assert.match(summary, /Host-local note: <redacted-local-path>/);
+  assert.doesNotMatch(summary, new RegExp(repoFilePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.doesNotMatch(summary, new RegExp(leakedHostPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });

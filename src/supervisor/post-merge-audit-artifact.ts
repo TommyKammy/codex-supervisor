@@ -2,6 +2,7 @@ import path from "node:path";
 import { type GitHubIssue, type GitHubPullRequest, type IssueRunRecord, type SupervisorConfig } from "../core/types";
 import { readJsonIfExists, writeJsonAtomic } from "../core/utils";
 import { withTrustedGeneratedDurableArtifactProvenance } from "../durable-artifact-provenance";
+import { normalizeDurableTrackedArtifactContent } from "../core/journal";
 import { executionMetricsRunSummaryPath } from "./execution-metrics-run-summary";
 import {
   validateExecutionMetricsRunSummary,
@@ -324,7 +325,14 @@ export async function syncPostMergeAuditArtifact(args: {
     issueNumber: args.issue.number,
     headSha: args.pullRequest.headRefOid,
   });
-  return writePostMergeAuditArtifactSafely(args.issue.number, artifactPath, artifact);
+  const normalizedArtifact = JSON.parse(
+    normalizeDurableTrackedArtifactContent(
+      `${JSON.stringify(artifact, null, 2)}\n`,
+      args.nextRecord.workspace,
+      [args.config.localReviewArtifactDir],
+    ),
+  ) as PostMergeAuditArtifact;
+  return writePostMergeAuditArtifactSafely(args.issue.number, artifactPath, normalizedArtifact);
 }
 
 export async function syncPostMergeAuditArtifactSafely(

@@ -297,6 +297,21 @@ function normalizeWorkspaceAbsolutePath(candidate: string, workspacePath: string
   return relativePath.length === 0 ? "." : relativePath;
 }
 
+function normalizeAgainstSafeRoots(candidate: string, safeRoots: Iterable<string>): string | null {
+  for (const safeRoot of safeRoots) {
+    if (!safeRoot) {
+      continue;
+    }
+
+    const normalized = normalizeWorkspaceAbsolutePath(candidate, safeRoot);
+    if (normalized !== null) {
+      return normalized;
+    }
+  }
+
+  return null;
+}
+
 function isNonPortableLocalAbsolutePath(candidate: string): boolean {
   const normalizedCandidate = candidate.replace(/\\/g, "/");
   return (
@@ -305,10 +320,16 @@ function isNonPortableLocalAbsolutePath(candidate: string): boolean {
   );
 }
 
-function normalizeDurableJournalText(text: string | null | undefined, workspacePath: string): string {
+function normalizeDurableJournalText(
+  text: string | null | undefined,
+  workspacePath: string,
+  additionalSafeRoots: Iterable<string> = [],
+): string {
   if (!text) {
     return text ?? "";
   }
+
+  const safeRoots = [workspacePath, ...additionalSafeRoots];
 
   return text.replace(DURABLE_PATH_TOKEN_PATTERN, (token) => {
     const { leading, core, trailing } = stripTokenPunctuation(token);
@@ -316,7 +337,7 @@ function normalizeDurableJournalText(text: string | null | undefined, workspaceP
       return token;
     }
 
-    const workspaceRelativePath = normalizeWorkspaceAbsolutePath(core, workspacePath);
+    const workspaceRelativePath = normalizeAgainstSafeRoots(core, safeRoots);
     if (workspaceRelativePath) {
       return `${leading}${workspaceRelativePath}${trailing}`;
     }
@@ -339,8 +360,9 @@ export function normalizeDurableIssueJournalContent(
 export function normalizeDurableTrackedArtifactContent(
   content: string | null | undefined,
   workspacePath: string,
+  additionalSafeRoots: Iterable<string> = [],
 ): string {
-  return normalizeDurableJournalText(content, workspacePath);
+  return normalizeDurableJournalText(content, workspacePath, additionalSafeRoots);
 }
 
 function truncateSummaryBody(summary: string, maxLength: number): string {

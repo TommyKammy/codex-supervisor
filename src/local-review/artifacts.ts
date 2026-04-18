@@ -6,6 +6,7 @@ import {
   prependTrustedGeneratedDurableArtifactMarkdownMarker,
   withTrustedGeneratedDurableArtifactProvenance,
 } from "../durable-artifact-provenance";
+import { normalizeDurableTrackedArtifactContent } from "../core/journal";
 import { createPostMergeAuditResult, renderPostMergeAuditContractSummary } from "./post-merge-audit";
 import {
   type FinalizedLocalReview,
@@ -103,6 +104,7 @@ export function renderLines(finding: Pick<LocalReviewFinding, "start" | "end">):
 
 export async function writeLocalReviewArtifacts(args: {
   config: SupervisorConfig;
+  workspacePath: string;
   issueNumber: number;
   branch: string;
   prUrl: string;
@@ -123,10 +125,8 @@ export async function writeLocalReviewArtifacts(args: {
     .join("\n\n");
   await fs.mkdir(dirPath, { recursive: true });
 
-  await fs.writeFile(
-    summaryPath,
-    prependTrustedGeneratedDurableArtifactMarkdownMarker(
-      [
+  const summaryDocument = prependTrustedGeneratedDurableArtifactMarkdownMarker(
+    [
         `# Local Review for Issue #${args.issueNumber}`,
         "",
         `- PR: ${args.prUrl}`,
@@ -233,13 +233,17 @@ export async function writeLocalReviewArtifacts(args: {
         rawOutput,
         "",
       ].join("\n"),
-    ),
+  );
+  await fs.writeFile(
+    summaryPath,
+    normalizeDurableTrackedArtifactContent(summaryDocument, args.workspacePath, [args.config.localReviewArtifactDir]),
     "utf8",
   );
 
+  const findingsDocument = `${JSON.stringify(withTrustedGeneratedDurableArtifactProvenance(args.finalized.artifact), null, 2)}\n`;
   await fs.writeFile(
     findingsPath,
-    `${JSON.stringify(withTrustedGeneratedDurableArtifactProvenance(args.finalized.artifact), null, 2)}\n`,
+    normalizeDurableTrackedArtifactContent(findingsDocument, args.workspacePath, [args.config.localReviewArtifactDir]),
     "utf8",
   );
 

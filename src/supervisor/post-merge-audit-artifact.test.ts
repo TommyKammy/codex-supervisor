@@ -185,10 +185,14 @@ test("syncPostMergeAuditArtifact persists a typed completed-work artifact", asyn
   assert.equal(artifact.issue.title, "Persist a completed-work audit artifact");
   assert.equal(artifact.pullRequest.number, 116);
   assert.equal(artifact.executionMetrics?.terminalState, "done");
-  assert.equal(artifact.artifacts.localReviewSummaryPath, localReviewSummaryPath);
+  assert.equal(artifact.artifacts.localReviewSummaryPath, "owner-repo/issue-102/head-deadbeef.md");
+  assert.equal(artifact.artifacts.localReviewFindingsPath, "owner-repo/issue-102/head-deadbeef.json");
+  assert.equal(artifact.artifacts.externalReviewMissesPath, "<redacted-local-path>");
   assert.equal(artifact.localReview?.artifact?.summary, localReviewArtifact.summary);
   assert.equal(artifact.failureTaxonomy.latestFailure?.failureKind, "command_error");
   assert.equal(artifact.failureTaxonomy.latestRecovery?.reason, nextRecord.last_recovery_reason);
+  assert.doesNotMatch(JSON.stringify(artifact), new RegExp(workspacePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.doesNotMatch(JSON.stringify(artifact), /\/tmp\/reviews\/external-review-misses-head-merged-head-116\.json/);
 });
 
 test("syncPostMergeAuditArtifact ignores stale execution metrics summaries", async () => {

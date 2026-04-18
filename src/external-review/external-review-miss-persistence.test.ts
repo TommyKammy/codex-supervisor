@@ -335,8 +335,8 @@ test("writeExternalReviewMissArtifact emits a follow-up action digest beside the
   assert.equal(path.basename(context?.artifactPath ?? ""), "external-review-misses-head-deadbeefcafe.json");
   assert.match(digest, new RegExp(TRUSTED_GENERATED_DURABLE_ARTIFACT_MARKDOWN_MARKER.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.match(digest, /# External Review Miss Follow-up Digest/);
-  assert.match(digest, /- Miss artifact: .*external-review-misses-head-deadbeefcafe\.json/);
-  assert.match(digest, /- Local review summary: .*head-deadbeefcafe\.md/);
+  assert.match(digest, /- Miss artifact: external-review-misses-head-deadbeefcafe\.json/);
+  assert.match(digest, /- Local review summary: head-deadbeefcafe\.md/);
   assert.match(digest, /- Miss analysis head SHA: deadbeefcafebabe/);
   assert.match(digest, /- Active PR head SHA: deadbeefcafebabe/);
   assert.match(digest, /- Head status: current-head \(digest matches the active PR head\)/);
@@ -349,6 +349,7 @@ test("writeExternalReviewMissArtifact emits a follow-up action digest beside the
   assert.match(digest, /Recommended next action: Add or extend a regression test for `src\/auth\.ts:42` that proves this miss cannot recur\./);
   assert.match(digest, /Recommended next action: Update the local review prompt or rubric so it explicitly checks for this risk before code changes land\./);
   assert.match(digest, /Recommended next action: Update the issue template or execution checklist so this expectation is explicit before implementation starts\./);
+  assert.doesNotMatch(digest, new RegExp(tempDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });
 
 test("writeExternalReviewMissArtifact derives reviewer-grade findings from actionable top-level reviews only", async () => {
@@ -609,9 +610,9 @@ test("writeExternalReviewMissArtifact derives deterministic regression-test cand
         sourceId: "thread-strong",
         sourceThreadId: "thread-strong",
         sourceUrl: "https://example.test/thread-strong#comment-1",
-        sourceArtifactPath: context?.artifactPath ?? "",
-        localReviewSummaryPath,
-        localReviewFindingsPath,
+        sourceArtifactPath: "external-review-misses-head-deadbeefcafe.json",
+        localReviewSummaryPath: "head-deadbeef.md",
+        localReviewFindingsPath: "head-deadbeef.json",
         matchedLocalReference: null,
         matchReason: "no same-file local-review match",
       },
@@ -635,9 +636,9 @@ test("writeExternalReviewMissArtifact derives deterministic regression-test cand
         sourceId: "thread-strong",
         sourceThreadId: "thread-strong",
         sourceUrl: "https://example.test/thread-strong#comment-1",
-        sourceArtifactPath: context?.artifactPath ?? "",
-        localReviewSummaryPath,
-        localReviewFindingsPath,
+        sourceArtifactPath: "external-review-misses-head-deadbeefcafe.json",
+        localReviewSummaryPath: "head-deadbeef.md",
+        localReviewFindingsPath: "head-deadbeef.json",
         matchedLocalReference: null,
         matchReason: "no same-file local-review match",
       },
