@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { writeJsonAtomic } from "../core/utils";
+import { TRUSTED_GENERATED_DURABLE_ARTIFACT_PROVENANCE_VALUE } from "../durable-artifact-provenance";
 import type { ExternalReviewMissArtifact } from "../external-review/external-review-miss-artifact-types";
 import { createConfig } from "../turn-execution-test-helpers";
 import type { LocalReviewArtifact } from "../local-review/types";
@@ -80,6 +81,7 @@ function createLocalReviewArtifact(overrides: Partial<LocalReviewArtifact> = {})
 function createPostMergeArtifact(overrides: Partial<PostMergeAuditArtifact> = {}): PostMergeAuditArtifact {
   const localReviewArtifact = createLocalReviewArtifact();
   return {
+    codexSupervisorProvenance: TRUSTED_GENERATED_DURABLE_ARTIFACT_PROVENANCE_VALUE,
     schemaVersion: 1,
     issueNumber: 102,
     branch: "codex/issue-102",
@@ -335,6 +337,31 @@ test("summarizePostMergeAuditPatterns aggregates recurring review, failure, and 
   assert.deepEqual(summary.promotionCandidates[0]?.supportingFindingKeys, [
     "src/supervisor.ts|210|214|retry path|stale context",
   ]);
+});
+
+test("summarizePostMergeAuditPatterns skips persisted artifacts missing trusted provenance", async () => {
+  const { reviewDir } = await createArtifactTestPaths("post-merge-audit-summary-provenance");
+  const config = createConfig({
+    localReviewArtifactDir: reviewDir,
+    repoSlug: "owner/repo",
+  });
+  const artifactDir = postMergeAuditArtifactDir(config);
+  const artifact = createPostMergeArtifact();
+
+  await fs.mkdir(artifactDir, { recursive: true });
+  const { codexSupervisorProvenance, ...artifactWithoutProvenance } = artifact;
+  void codexSupervisorProvenance;
+  await writeJsonAtomic(path.join(artifactDir, "issue-102-head-merged-head.json"), artifactWithoutProvenance);
+
+  const summary = await summarizePostMergeAuditPatterns(config);
+
+  assert.equal(summary.artifactsAnalyzed, 0);
+  assert.equal(summary.artifactsSkipped, 1);
+  assert.deepEqual(summary.reviewPatterns, []);
+  assert.deepEqual(summary.failurePatterns, []);
+  assert.deepEqual(summary.recoveryPatterns, []);
+  assert.deepEqual(summary.followUpCandidates, []);
+  assert.deepEqual(summary.promotionCandidates, []);
 });
 
 test("validatePostMergeAuditPatternSummary rejects unsupported schema versions and missing required fields", () => {

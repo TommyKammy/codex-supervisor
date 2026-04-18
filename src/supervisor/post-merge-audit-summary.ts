@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { nowIso } from "../core/utils";
 import type { SupervisorConfig } from "../core/types";
+import { TRUSTED_GENERATED_DURABLE_ARTIFACT_PROVENANCE_VALUE } from "../durable-artifact-provenance";
 import type { ExternalReviewMissArtifact, ExternalReviewRegressionCandidate } from "../external-review/external-review-miss-artifact-types";
 import type { ActionableSeverity, LocalReviewRootCauseSummary } from "../local-review/types";
 import { hasMatchingPromotionIdentity } from "../persisted-artifact-promotion";
@@ -572,6 +573,7 @@ function isPostMergeAuditArtifact(value: unknown): value is PostMergeAuditArtifa
 
   const candidate = value as Partial<PostMergeAuditArtifact>;
   return (
+    candidate.codexSupervisorProvenance === TRUSTED_GENERATED_DURABLE_ARTIFACT_PROVENANCE_VALUE &&
     candidate.schemaVersion === 1 &&
     typeof candidate.issueNumber === "number" &&
     typeof candidate.capturedAt === "string" &&
