@@ -436,7 +436,7 @@ test("executeCodexTurnPhase refreshes review bookkeeping after supervisor-owned 
     state.issues["102"]?.processed_review_thread_fingerprints,
     [`thread-1@${normalizedHead}#comment-1`],
   );
-  assert.match(git(workspacePath, "log", "-1", "--pretty=%s"), /Normalize supervisor-owned issue journals for path hygiene/);
+  assert.match(git(workspacePath, "log", "-1", "--pretty=%s"), /Normalize trusted durable artifacts for path hygiene/);
   assert.doesNotMatch(
     await fs.readFile(otherJournalPath, "utf8"),
     new RegExp(SAMPLE_MACOS_WORKSTATION_PATH.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),

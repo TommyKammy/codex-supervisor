@@ -412,8 +412,51 @@ test("runtime gate classifies explicitly marked generated artifacts separately f
 
   assert.equal(gateResult.ok, false);
   const summary = gateResult.failureContext?.summary ?? "";
-  assert.match(summary, /Review trusted generated durable artifacts before supervisor-managed path rewriting\./);
-  assert.match(summary, /docs\/generated-summary\.md \(1 match, Linux user home directory\)/);
+  assert.match(summary, /Trusted generated durable artifact was auto-normalized before rechecking remaining blockers\./);
   assert.match(summary, /Edit tracked publishable content to remove workstation-local paths\./);
   assert.match(summary, /docs\/manual-handoff\.md \(1 match, Linux user home directory\)/);
+  assert.deepEqual(gateResult.rewrittenTrustedGeneratedArtifactPaths, ["docs/generated-summary.md"]);
+  const normalizedArtifact = await fs.readFile(path.join(repoPath, "docs", "generated-summary.md"), "utf8");
+  assert.match(normalizedArtifact, /<redacted-local-path>/);
+  assert.doesNotMatch(normalizedArtifact, new RegExp(SAMPLE_FORBIDDEN_PATH.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+});
+
+test("runtime gate auto-normalizes trusted generated durable artifacts by relativizing in-repo paths and redacting host-only paths", async (t) => {
+  const repoPath = await createTrackedRepo();
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+
+  const repoOwnedAbsolutePath = path.join(repoPath, "docs", "guide.md");
+  const trustedArtifactPath = path.join(repoPath, "docs", "generated-summary.md");
+  await fs.mkdir(path.dirname(repoOwnedAbsolutePath), { recursive: true });
+  await fs.writeFile(repoOwnedAbsolutePath, "# Guide\n", "utf8");
+  await fs.writeFile(
+    trustedArtifactPath,
+    [
+      TRUSTED_GENERATED_DURABLE_ARTIFACT_MARKDOWN_MARKER,
+      "",
+      `Repo note: ${repoOwnedAbsolutePath}`,
+      `Host note: ${SAMPLE_FORBIDDEN_PATH}`,
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  git(repoPath, "add", "docs/guide.md", "docs/generated-summary.md");
+
+  const gateResult = await runWorkstationLocalPathGate({
+    workspacePath: repoPath,
+    gateLabel: "before publication",
+  });
+
+  assert.equal(gateResult.ok, true);
+  assert.equal(gateResult.failureContext, null);
+  assert.deepEqual(gateResult.rewrittenTrustedGeneratedArtifactPaths, ["docs/generated-summary.md"]);
+
+  const normalizedArtifact = await fs.readFile(trustedArtifactPath, "utf8");
+  assert.match(normalizedArtifact, /Repo note: docs\/guide\.md/);
+  assert.match(normalizedArtifact, /Host note: <redacted-local-path>/);
+  assert.doesNotMatch(normalizedArtifact, new RegExp(repoOwnedAbsolutePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.doesNotMatch(normalizedArtifact, new RegExp(SAMPLE_FORBIDDEN_PATH.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(normalizedArtifact, /trusted-generated-durable-artifact\/v1/);
 });

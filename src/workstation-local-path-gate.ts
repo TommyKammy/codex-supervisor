@@ -5,6 +5,7 @@ import { nowIso } from "./core/utils";
 import {
   LEGACY_SHARED_ISSUE_JOURNAL_RELATIVE_PATH,
   normalizeCommittedIssueJournal,
+  normalizeDurableTrackedArtifactContent,
   readIssueJournal,
 } from "./core/journal";
 import { hasTrustedGeneratedDurableArtifactProvenance } from "./durable-artifact-provenance";
@@ -20,6 +21,7 @@ export interface WorkstationLocalPathGateResult {
   ok: boolean;
   failureContext: FailureContext | null;
   rewrittenJournalPaths?: string[];
+  rewrittenTrustedGeneratedArtifactPaths?: string[];
 }
 
 function normalizeRepoRelativePath(filePath: string): string {
@@ -37,6 +39,11 @@ function isSupervisorOwnedDurableJournalPath(filePath: string): boolean {
 function formatJournalNormalizationFailureDetail(journalPath: string, error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return `journal normalization failed for ${journalPath}: ${message}`;
+}
+
+function formatTrustedGeneratedArtifactNormalizationFailureDetail(filePath: string, error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return `trusted durable artifact normalization failed for ${filePath}: ${message}`;
 }
 
 export function buildWorkstationLocalPathFailureContext(args: {
@@ -159,8 +166,10 @@ async function summarizeWorkstationLocalPathRemediation(args: {
   workspacePath: string;
   gateLabel: string;
   findings: WorkstationLocalPathMatch[];
-  normalizationErrors: string[];
+  journalNormalizationErrors: string[];
+  trustedGeneratedArtifactNormalizationErrors: string[];
   rewrittenJournalPaths: string[];
+  rewrittenTrustedGeneratedArtifactPaths: string[];
 }): Promise<string | undefined> {
   const parts: string[] = [];
 
@@ -170,12 +179,31 @@ async function summarizeWorkstationLocalPathRemediation(args: {
     );
   }
 
-  if (args.normalizationErrors.length > 0) {
+  if (args.journalNormalizationErrors.length > 0) {
     const journalSummary = await summarizeCategoryMatches(args.workspacePath, args.findings, "supervisor_owned_journal");
     parts.push(
       journalSummary
         ? `Supervisor-owned issue journal auto-normalization still needs attention. ${journalSummary}`
         : "Supervisor-owned issue journal auto-normalization still needs attention.",
+    );
+  }
+
+  if (args.rewrittenTrustedGeneratedArtifactPaths.length > 0) {
+    parts.push(
+      `Trusted generated durable artifact${args.rewrittenTrustedGeneratedArtifactPaths.length === 1 ? " was" : "s were"} auto-normalized before rechecking remaining blockers.`,
+    );
+  }
+
+  if (args.trustedGeneratedArtifactNormalizationErrors.length > 0) {
+    const trustedGeneratedSummary = await summarizeCategoryMatches(
+      args.workspacePath,
+      args.findings,
+      "trusted_generated_durable_artifact",
+    );
+    parts.push(
+      trustedGeneratedSummary
+        ? `Trusted generated durable artifact auto-normalization still needs attention. ${trustedGeneratedSummary}`
+        : "Trusted generated durable artifact auto-normalization still needs attention.",
     );
   }
 
@@ -243,21 +271,87 @@ async function redactSupervisorOwnedJournalLeaks(
   return { rewrittenJournalPaths, normalizationErrors };
 }
 
+async function redactTrustedGeneratedArtifactLeaks(
+  workspacePath: string,
+  findings: Awaited<ReturnType<typeof findForbiddenWorkstationLocalPaths>>,
+): Promise<{ rewrittenTrustedGeneratedArtifactPaths: string[]; normalizationErrors: string[] }> {
+  const artifactPaths = [
+    ...new Set(
+      await Promise.all(
+        findings.map(async (finding) => (
+          await categorizeWorkstationLocalArtifact(workspacePath, finding.filePath)) === "trusted_generated_durable_artifact"
+          ? finding.filePath
+          : null),
+      ),
+    ),
+  ].filter((value): value is string => value !== null);
+
+  const settledResults = await Promise.allSettled(
+    artifactPaths.map(async (artifactPath) => {
+      const absoluteArtifactPath = path.join(workspacePath, artifactPath);
+      const existing = await fs.readFile(absoluteArtifactPath, "utf8");
+      const normalized = normalizeDurableTrackedArtifactContent(existing, workspacePath);
+      if (normalized !== existing) {
+        await fs.writeFile(absoluteArtifactPath, normalized, "utf8");
+      }
+      return { artifactPath, rewritten: normalized !== existing };
+    }),
+  );
+
+  const rewrittenTrustedGeneratedArtifactPaths: string[] = [];
+  const normalizationErrors: string[] = [];
+  for (const [index, result] of settledResults.entries()) {
+    if (result.status === "fulfilled") {
+      if (result.value.rewritten) {
+        rewrittenTrustedGeneratedArtifactPaths.push(result.value.artifactPath);
+      }
+      continue;
+    }
+
+    const artifactPath = artifactPaths[index] ?? "<unknown-artifact>";
+    normalizationErrors.push(formatTrustedGeneratedArtifactNormalizationFailureDetail(artifactPath, result.reason));
+  }
+
+  return { rewrittenTrustedGeneratedArtifactPaths, normalizationErrors };
+}
+
 export async function runWorkstationLocalPathGate(args: {
   workspacePath: string;
   gateLabel: string;
 }): Promise<WorkstationLocalPathGateResult> {
   let findings = await findForbiddenWorkstationLocalPaths(args.workspacePath);
-  let normalizationErrors: string[] = [];
+  let journalNormalizationErrors: string[] = [];
   let rewrittenJournalPaths: string[] = [];
+  let trustedGeneratedArtifactNormalizationErrors: string[] = [];
+  let rewrittenTrustedGeneratedArtifactPaths: string[] = [];
   if (findings.some((finding) => isSupervisorOwnedDurableJournalPath(finding.filePath))) {
     const redactionResult = await redactSupervisorOwnedJournalLeaks(args.workspacePath, findings);
-    normalizationErrors = redactionResult.normalizationErrors;
+    journalNormalizationErrors = redactionResult.normalizationErrors;
     rewrittenJournalPaths = redactionResult.rewrittenJournalPaths;
     findings = await findForbiddenWorkstationLocalPaths(args.workspacePath);
   }
-  if (findings.length === 0 && normalizationErrors.length === 0) {
-    return { ok: true, failureContext: null, rewrittenJournalPaths };
+  if (findings.length > 0) {
+    const redactionResult = await redactTrustedGeneratedArtifactLeaks(args.workspacePath, findings);
+    trustedGeneratedArtifactNormalizationErrors = redactionResult.normalizationErrors;
+    rewrittenTrustedGeneratedArtifactPaths = redactionResult.rewrittenTrustedGeneratedArtifactPaths;
+    if (
+      rewrittenTrustedGeneratedArtifactPaths.length > 0
+      || trustedGeneratedArtifactNormalizationErrors.length > 0
+    ) {
+      findings = await findForbiddenWorkstationLocalPaths(args.workspacePath);
+    }
+  }
+  if (
+    findings.length === 0
+    && journalNormalizationErrors.length === 0
+    && trustedGeneratedArtifactNormalizationErrors.length === 0
+  ) {
+    return {
+      ok: true,
+      failureContext: null,
+      rewrittenJournalPaths,
+      rewrittenTrustedGeneratedArtifactPaths,
+    };
   }
 
   const remediationSummary = summarizeWorkstationLocalPathMatches(findings);
@@ -265,19 +359,26 @@ export async function runWorkstationLocalPathGate(args: {
     ok: false,
     failureContext: buildWorkstationLocalPathFailureContext({
       gateLabel: args.gateLabel,
-      details: [...normalizationErrors, ...findings.map(formatWorkstationLocalPathMatch)],
+      details: [
+        ...journalNormalizationErrors,
+        ...trustedGeneratedArtifactNormalizationErrors,
+        ...findings.map(formatWorkstationLocalPathMatch),
+      ],
       summary:
         await summarizeWorkstationLocalPathRemediation({
           workspacePath: args.workspacePath,
           gateLabel: args.gateLabel,
           findings,
-          normalizationErrors,
+          journalNormalizationErrors,
+          trustedGeneratedArtifactNormalizationErrors,
           rewrittenJournalPaths,
+          rewrittenTrustedGeneratedArtifactPaths,
         })
         ?? (remediationSummary
           ? `Tracked durable artifacts failed workstation-local path hygiene ${args.gateLabel}. ${remediationSummary}`
           : undefined),
     }),
     rewrittenJournalPaths,
+    rewrittenTrustedGeneratedArtifactPaths,
   };
 }

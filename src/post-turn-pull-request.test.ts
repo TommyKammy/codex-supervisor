@@ -4654,7 +4654,7 @@ test("handlePostTurnPullRequestTransitionsPhase redacts supervisor-owned cross-i
   const redactedJournal = await fs.readFile(otherJournalPath, "utf8");
   assert.doesNotMatch(redactedJournal, new RegExp(SAMPLE_MACOS_WORKSTATION_PATH.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.match(redactedJournal, /<redacted-local-path>/);
-  assert.match(git(workspacePath, "log", "-1", "--pretty=%s"), /Normalize supervisor-owned issue journals for path hygiene/);
+  assert.match(git(workspacePath, "log", "-1", "--pretty=%s"), /Normalize trusted durable artifacts for path hygiene/);
   assert.match(git(workspacePath, "ls-remote", "--heads", "origin", "codex/issue-102"), /refs\/heads\/codex\/issue-102/);
 });
 
