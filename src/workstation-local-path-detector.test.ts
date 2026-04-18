@@ -212,6 +212,57 @@ test("runtime gate reuses the CLI finding rendering for workstation-local path v
   assert.deepEqual(gateResult.failureContext?.details, renderedFindings);
 });
 
+test("verify:paths and runtime gate honor configured same-line publishable allowlist markers", async (t) => {
+  const repoPath = await createTrackedRepo();
+  const configDir = await fs.mkdtemp(path.join(os.tmpdir(), "workstation-local-path-config-"));
+  const configPath = path.join(configDir, "supervisor.config.json");
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+    await fs.rm(configDir, { recursive: true, force: true });
+  });
+
+  await fs.mkdir(path.join(repoPath, "tests"), { recursive: true });
+  await fs.writeFile(
+    path.join(repoPath, "tests", "fixtures.py"),
+    [
+      `ALLOWED = "${["", "Users", "alice", "Dev", "fixture"].join("/")}"  # publishable-path-hygiene: allowlist`,
+      `BLOCKED = "${["", "Users", "alice", "Dev", "real-leak"].join("/")}"`,
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  git(repoPath, "add", "tests/fixtures.py");
+
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "./workspaces",
+      stateFile: "./state.json",
+      codexBinary: "codex",
+      branchPrefix: "codex/issue-",
+      publishablePathAllowlistMarkers: ["publishable-path-hygiene: allowlist"],
+    }),
+    "utf8",
+  );
+
+  const detectorResult = runDetector(repoPath, "--workspace", repoPath, "--config", configPath);
+  assert.notEqual(detectorResult.status, 0, "expected non-allowlisted line to keep failing");
+  assert.doesNotMatch(detectorResult.stderr, /tests\/fixtures\.py:1/);
+  assert.match(detectorResult.stderr, /tests\/fixtures\.py:2/);
+
+  const gateResult = await runWorkstationLocalPathGate({
+    workspacePath: repoPath,
+    gateLabel: "before publication",
+    publishablePathAllowlistMarkers: ["publishable-path-hygiene: allowlist"],
+  });
+  assert.equal(gateResult.ok, false);
+  assert.equal(gateResult.failureContext?.details.some((detail) => detail.includes("tests/fixtures.py:1")), false);
+  assert.equal(gateResult.failureContext?.details.some((detail) => detail.includes("tests/fixtures.py:2")), true);
+});
+
 test("runtime gate fails closed when supervisor-owned journal normalization throws", async (t) => {
   if (process.platform === "win32") {
     t.skip("directory permission semantics differ on Windows");

@@ -161,19 +161,31 @@ function splitCompoundCandidate(candidate: string): string[] {
   return parts.filter((part) => part.length > 0);
 }
 
-function collectMatches(filePath: string, contents: string): WorkstationLocalPathMatch[] {
+function lineContainsConfiguredAllowlistMarker(line: string, markers: readonly string[]): boolean {
+  return markers.some((marker) => marker.length > 0 && line.includes(marker));
+}
+
+function collectMatches(
+  filePath: string,
+  contents: string,
+  publishablePathAllowlistMarkers: readonly string[] = [],
+): WorkstationLocalPathMatch[] {
   const matches: WorkstationLocalPathMatch[] = [];
   const seen = new Set<string>();
   const lines = contents.split(/\r?\n/);
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
     const line = lines[lineIndex];
+    const allowlistedLine = lineContainsConfiguredAllowlistMarker(line, publishablePathAllowlistMarkers);
     for (const pattern of CANDIDATE_PATTERNS) {
       pattern.regex.lastIndex = 0;
       for (const match of line.matchAll(pattern.regex)) {
         for (const candidate of splitCompoundCandidate(match[0])) {
           const classification = pattern.classify(candidate);
           if (!classification?.blocked) {
+            continue;
+          }
+          if (allowlistedLine) {
             continue;
           }
 
@@ -254,9 +266,13 @@ function classifyForbiddenSupervisorArtifactPath(filePath: string): { prefix: st
 export async function findForbiddenWorkstationLocalPaths(
   workspacePath: string,
   excludedPaths: Iterable<string> = DEFAULT_EXCLUDED_PATHS,
+  options?: {
+    publishablePathAllowlistMarkers?: readonly string[];
+  },
 ): Promise<WorkstationLocalPathMatch[]> {
   const trackedFiles = gitTrackedFiles(workspacePath);
   const normalizedExcludedPaths = new Set([...excludedPaths].map((entry) => normalizeRepoRelativePath(entry)));
+  const publishablePathAllowlistMarkers = options?.publishablePathAllowlistMarkers ?? [];
   const findings: WorkstationLocalPathMatch[] = [];
 
   for (const filePath of trackedFiles) {
@@ -294,7 +310,7 @@ export async function findForbiddenWorkstationLocalPaths(
       continue;
     }
 
-    findings.push(...collectMatches(filePath, rawContents.toString("utf8")));
+    findings.push(...collectMatches(filePath, rawContents.toString("utf8"), publishablePathAllowlistMarkers));
   }
 
   return findings;

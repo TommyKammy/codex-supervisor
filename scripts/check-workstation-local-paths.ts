@@ -1,4 +1,5 @@
 import path from "node:path";
+import { loadConfigSummary } from "../src/core/config";
 import {
   DEFAULT_EXCLUDED_PATHS,
   findForbiddenWorkstationLocalPaths,
@@ -9,14 +10,16 @@ import {
 interface Args {
   workspacePath: string;
   excludedPaths: Set<string>;
+  configPath?: string;
 }
 
 function usage(): string {
   return [
-    "Usage: tsx scripts/check-workstation-local-paths.ts [--workspace <path>] [--exclude-path <repo-relative-path>]",
+    "Usage: tsx scripts/check-workstation-local-paths.ts [--workspace <path>] [--config <path>] [--exclude-path <repo-relative-path>]",
     "",
     "Scans tracked durable text artifacts for workstation-local absolute paths and tracked supervisor-generated local artifacts.",
     "Approved committed fixtures/examples must be exempted intentionally by repo-relative path via --exclude-path",
+    "or by operator-configured line markers from publishablePathAllowlistMarkers in supervisor config.",
     `or by extending DEFAULT_EXCLUDED_PATHS in ${path.posix.join("src", "workstation-local-paths.ts")}.`,
   ].join("\n");
 }
@@ -24,6 +27,7 @@ function usage(): string {
 function parseArgs(argv: string[]): Args {
   const excludedPaths = new Set<string>(DEFAULT_EXCLUDED_PATHS);
   let workspacePath = process.cwd();
+  let configPath: string | undefined;
 
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
@@ -45,6 +49,15 @@ function parseArgs(argv: string[]): Args {
       continue;
     }
 
+    if (token === "--config") {
+      index += 1;
+      if (index >= argv.length) {
+        throw new Error(`Missing value for --config\n\n${usage()}`);
+      }
+      configPath = path.resolve(argv[index]);
+      continue;
+    }
+
     if (token === "--help" || token === "-h") {
       console.log(usage());
       process.exit(0);
@@ -56,12 +69,17 @@ function parseArgs(argv: string[]): Args {
   return {
     workspacePath,
     excludedPaths,
+    configPath,
   };
 }
 
 async function main(): Promise<void> {
-  const { workspacePath, excludedPaths } = parseArgs(process.argv.slice(2));
-  const findings = await findForbiddenWorkstationLocalPaths(workspacePath, excludedPaths);
+  const { workspacePath, excludedPaths, configPath } = parseArgs(process.argv.slice(2));
+  const configSummary = loadConfigSummary(configPath);
+  const publishablePathAllowlistMarkers = configSummary.config?.publishablePathAllowlistMarkers ?? [];
+  const findings = await findForbiddenWorkstationLocalPaths(workspacePath, excludedPaths, {
+    publishablePathAllowlistMarkers,
+  });
 
   if (findings.length === 0) {
     console.log(`No forbidden workstation-local artifacts found in tracked durable artifacts under ${workspacePath}.`);

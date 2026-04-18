@@ -1714,6 +1714,116 @@ test("handlePostTurnPullRequestTransitionsPhase blocks draft-to-ready promotion 
   assert.match(result.record.last_failure_context?.details[0] ?? "", /docs\/guide\.md:1/);
 });
 
+test("handlePostTurnPullRequestTransitionsPhase forwards publishable allowlist markers to the path hygiene gate", async () => {
+  const { workspacePath, headSha } = await createTrackedIssueBranchRepo();
+  const currentJournalPath = path.join(workspacePath, ".codex-supervisor", "issues", "102", "issue-journal.md");
+  await fs.mkdir(path.dirname(currentJournalPath), { recursive: true });
+  await fs.writeFile(currentJournalPath, "# Issue #102\n", "utf8");
+  const config = createConfig({
+    localCiCommand: "npm run ci:local",
+    publishablePathAllowlistMarkers: ["publishable-path-hygiene: allowlist"],
+  });
+  const issue = createIssue({ title: "Forward publishable allowlist markers during ready promotion" });
+  const draftPr = createPullRequest({ title: "Forward allowlist markers", isDraft: true, headRefOid: headSha });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "draft_pr",
+        pr_number: draftPr.number,
+        workspace: workspacePath,
+        journal_path: currentJournalPath,
+        last_head_sha: headSha,
+      }),
+    },
+  };
+
+  let readyCalls = 0;
+  const observedCalls: Array<readonly string[] | undefined> = [];
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    github: {
+      getPullRequest: async () => {
+        throw new Error("unexpected getPullRequest call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      markPullRequestReady: async () => {
+        readyCalls += 1;
+      },
+    },
+    context: {
+      state,
+      record: state.issues["102"]!,
+      issue,
+      workspacePath,
+      syncJournal: async () => undefined,
+      memoryArtifacts: {
+        alwaysReadFiles: [],
+        onDemandFiles: [],
+        contextIndexPath: "/tmp/context-index.md",
+        agentsPath: "/tmp/AGENTS.generated.md",
+      },
+      pr: draftPr,
+      options: { dryRun: false },
+    },
+    derivePullRequestLifecycleSnapshot: (record) => ({
+      recordForState: record,
+      nextState: "draft_pr",
+      failureContext: null,
+      reviewWaitPatch: {},
+      copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    blockedReasonFromReviewState: () => null,
+    summarizeChecks: () => ({
+      hasPending: false,
+      hasFailing: false,
+    }),
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runLocalCiCommand: async () => undefined,
+    runWorkstationLocalPathGate: async (args) => {
+      observedCalls.push(args.publishablePathAllowlistMarkers);
+      return {
+        ok: true,
+        failureContext: null,
+      };
+    },
+    loadOpenPullRequestSnapshot: async () => ({
+      pr: draftPr,
+      checks: [],
+      reviewThreads: [] satisfies ReviewThread[],
+    }),
+  });
+
+  assert.equal(readyCalls, 1);
+  assert.deepEqual(observedCalls, [["publishable-path-hygiene: allowlist"]]);
+  assert.equal(result.record.blocked_reason, null);
+});
+
 test("handlePostTurnPullRequestTransitionsPhase comments once when workstation-local path hygiene blocks tracked ready promotion", async (t) => {
   const { workspacePath, headSha } = await createTrackedIssueBranchRepo();
   t.after(async () => {

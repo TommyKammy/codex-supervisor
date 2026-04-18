@@ -51,7 +51,12 @@ const TRUSTED_DURABLE_ARTIFACT_NORMALIZATION_COMMIT_MESSAGE = "Normalize trusted
 export async function applyCodexTurnPublicationGate(args: {
   config: Pick<
     SupervisorConfig,
-    "repoPath" | "defaultBranch" | "draftPrAfterAttempt" | "workspacePreparationCommand" | "localCiCommand"
+    | "repoPath"
+    | "defaultBranch"
+    | "draftPrAfterAttempt"
+    | "workspacePreparationCommand"
+    | "localCiCommand"
+    | "publishablePathAllowlistMarkers"
   >;
   stateStore: Pick<StateStore, "touch" | "save">;
   state: SupervisorStateFile;
@@ -73,6 +78,7 @@ export async function applyCodexTurnPublicationGate(args: {
   runWorkstationLocalPathGate?: (args: {
     workspacePath: string;
     gateLabel: string;
+    publishablePathAllowlistMarkers?: readonly string[];
   }) => Promise<WorkstationLocalPathGateResult>;
   syncExecutionMetricsRunSummary: (record: IssueRunRecord) => Promise<void>;
 }): Promise<CodexTurnPublicationGateResult> {
@@ -91,6 +97,7 @@ export async function applyCodexTurnPublicationGate(args: {
     const pathHygieneGate = await runWorkstationLocalPathGateImpl({
       workspacePath: args.workspacePath,
       gateLabel: "before publication",
+      publishablePathAllowlistMarkers: args.config.publishablePathAllowlistMarkers,
     });
     if (!pathHygieneGate.ok) {
       const failureContext = pathHygieneGate.failureContext;

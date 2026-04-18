@@ -383,6 +383,11 @@ export function parseSupervisorConfigDocument(raw: Record<string, unknown>, reso
       VALID_LOCAL_REVIEW_HIGH_SEVERITY_ACTIONS.has(raw.localReviewHighSeverityAction as LocalReviewHighSeverityAction)
         ? (raw.localReviewHighSeverityAction as LocalReviewHighSeverityAction)
         : "blocked",
+    publishablePathAllowlistMarkers: Array.isArray(raw.publishablePathAllowlistMarkers)
+      ? raw.publishablePathAllowlistMarkers.filter(
+          (value): value is string => typeof value === "string" && value.trim().length > 0,
+        )
+      : [],
     staleConfiguredBotReviewPolicy: parseStaleConfiguredBotReviewPolicy(raw.staleConfiguredBotReviewPolicy),
     reviewBotLogins: Array.isArray(raw.reviewBotLogins)
       ? raw.reviewBotLogins
