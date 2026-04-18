@@ -129,7 +129,11 @@ interface PrepareIssueExecutionContextArgs {
   }) => Promise<string>;
   now?: () => string;
   runLocalCiCommand?: LocalCiCommandRunner;
-  runWorkstationLocalPathGate?: (args: { workspacePath: string; gateLabel: string }) => Promise<WorkstationLocalPathGateResult>;
+  runWorkstationLocalPathGate?: (args: {
+    workspacePath: string;
+    gateLabel: string;
+    publishablePathAllowlistMarkers?: readonly string[];
+  }) => Promise<WorkstationLocalPathGateResult>;
 }
 
 export function isRestartRunOnce(
@@ -286,6 +290,7 @@ async function hydratePullRequestContext(
     const pathHygieneGate = await runWorkstationLocalPathGateImpl({
       workspacePath: args.workspacePath,
       gateLabel: "before publication",
+      publishablePathAllowlistMarkers: args.config.publishablePathAllowlistMarkers,
     });
     if (pathHygieneGate.ok) {
       return null;

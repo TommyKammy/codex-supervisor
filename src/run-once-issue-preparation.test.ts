@@ -1020,3 +1020,73 @@ test("prepareIssueExecutionContext blocks publication when tracked durable artif
   assert.ok(details.some((entry) => /docs\/guide\.md:1/.test(entry)));
   assert.ok(details.some((entry) => /\/home\/alice\/dev\/private-repo/.test(entry)));
 });
+
+test("prepareIssueExecutionContext forwards publishable allowlist markers to the publication path gate", async () => {
+  const record = createRecord({
+    implementation_attempt_count: 2,
+    state: "stabilizing",
+  });
+  const state = createState(record);
+  const issue = createIssue();
+  const workspaceStatus = createWorkspaceStatus({
+    baseAhead: 1,
+    remoteBranchExists: true,
+    remoteAhead: 1,
+  });
+  const observedAllowlistMarkers: Array<readonly string[] | undefined> = [];
+
+  const result = await prepareIssueExecutionContext({
+    github: {
+      resolvePullRequestForBranch: async () => null,
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+      createPullRequest: async () => {
+        throw new Error("unexpected createPullRequest call");
+      },
+    },
+    config: createConfig({
+      draftPrAfterAttempt: 1,
+      publishablePathAllowlistMarkers: ["publishable-path-hygiene: allowlist"],
+    }),
+    stateStore: {
+      touch(currentRecord, patch) {
+        return { ...currentRecord, ...patch };
+      },
+      async save() {},
+    },
+    state,
+    record,
+    issue,
+    options: { dryRun: false },
+    ensureWorkspace: async () => "/tmp/workspaces/issue-240",
+    syncIssueJournal: async () => {},
+    syncMemoryArtifacts: async () => ({
+      contextIndexPath: "/tmp/context-index.md",
+      agentsPath: "/tmp/AGENTS.generated.md",
+      alwaysReadFiles: [],
+      onDemandFiles: [],
+    }),
+    getWorkspaceStatus: async () => workspaceStatus,
+    pushBranch: async () => {
+      throw new Error("unexpected pushBranch call");
+    },
+    runWorkstationLocalPathGate: async (gateArgs) => {
+      observedAllowlistMarkers.push(gateArgs.publishablePathAllowlistMarkers);
+      return {
+        ok: false,
+        failureContext: {
+          category: "blocked",
+          summary: "Tracked durable artifacts failed workstation-local path hygiene before publication.",
+          signature: "workstation-local-path-hygiene-failed",
+          command: null,
+          details: ["allowlist forwarding regression"],
+          url: null,
+          updated_at: "2026-04-19T00:00:00.000Z",
+        },
+      };
+    },
+  });
+
+  assert.equal(typeof result, "string");
+  assert.deepEqual(observedAllowlistMarkers, [["publishable-path-hygiene: allowlist"]]);
+});

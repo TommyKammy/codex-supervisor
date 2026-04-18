@@ -260,15 +260,15 @@ test("requeueIssueForOperator requeues a blocked issue with no tracked PR", asyn
   assert.equal(state.issues["366"]?.state, "queued");
   assert.equal(state.issues["366"]?.blocked_reason, null);
   assert.equal(state.issues["366"]?.codex_session_id, null);
-  assert.equal(state.issues["366"]?.last_error, "verification failed");
-  assert.equal(state.issues["366"]?.last_failure_kind, "command_error");
-  assert.deepEqual(state.issues["366"]?.last_failure_context, original.last_failure_context);
-  assert.equal(state.issues["366"]?.last_blocker_signature, "review:verify-failed");
-  assert.equal(state.issues["366"]?.last_failure_signature, "verify-failed");
-  assert.equal(state.issues["366"]?.timeout_retry_count, 2);
-  assert.equal(state.issues["366"]?.blocked_verification_retry_count, 1);
-  assert.equal(state.issues["366"]?.repeated_blocker_count, 3);
-  assert.equal(state.issues["366"]?.repeated_failure_signature_count, 4);
+  assert.equal(state.issues["366"]?.last_error, null);
+  assert.equal(state.issues["366"]?.last_failure_kind, null);
+  assert.equal(state.issues["366"]?.last_failure_context, null);
+  assert.equal(state.issues["366"]?.last_blocker_signature, null);
+  assert.equal(state.issues["366"]?.last_failure_signature, null);
+  assert.equal(state.issues["366"]?.timeout_retry_count, 0);
+  assert.equal(state.issues["366"]?.blocked_verification_retry_count, 0);
+  assert.equal(state.issues["366"]?.repeated_blocker_count, 0);
+  assert.equal(state.issues["366"]?.repeated_failure_signature_count, 0);
   assert.equal(state.issues["366"]?.review_wait_started_at, null);
   assert.equal(state.issues["366"]?.review_wait_head_sha, null);
   assert.equal(state.issues["366"]?.copilot_review_requested_observed_at, null);
@@ -278,6 +278,58 @@ test("requeueIssueForOperator requeues a blocked issue with no tracked PR", asyn
   assert.equal(state.issues["366"]?.copilot_review_timeout_reason, null);
   assert.equal(state.issues["366"]?.local_review_blocker_summary, null);
   assert.equal(saveCalls, 1);
+});
+
+test("requeueIssueForOperator preserves non-verification diagnostics on operator requeue", async () => {
+  const original = createRecord({
+    issue_number: 367,
+    state: "failed",
+    blocked_reason: "manual_review",
+    last_error: "manual review required",
+    last_failure_kind: "command_error",
+    last_failure_context: {
+      category: "review",
+      summary: "Manual review required",
+      signature: "manual-review",
+      command: null,
+      details: ["operator_action=inspect findings"],
+      url: null,
+      updated_at: "2026-03-11T06:00:00.000Z",
+    },
+    last_blocker_signature: "manual-review",
+    last_failure_signature: "manual-review",
+    timeout_retry_count: 2,
+    blocked_verification_retry_count: 1,
+    repeated_blocker_count: 3,
+    repeated_failure_signature_count: 4,
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [original],
+  });
+
+  const stateStore = {
+    touch(record: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...record,
+        ...patch,
+        updated_at: "2026-03-11T06:33:08.821Z",
+      };
+    },
+    async save(): Promise<void> {},
+  };
+
+  await requeueIssueForOperator(stateStore, state, 367);
+
+  assert.equal(state.issues["367"]?.state, "queued");
+  assert.equal(state.issues["367"]?.last_error, "manual review required");
+  assert.equal(state.issues["367"]?.last_failure_kind, "command_error");
+  assert.deepEqual(state.issues["367"]?.last_failure_context, original.last_failure_context);
+  assert.equal(state.issues["367"]?.last_blocker_signature, "manual-review");
+  assert.equal(state.issues["367"]?.last_failure_signature, "manual-review");
+  assert.equal(state.issues["367"]?.timeout_retry_count, 2);
+  assert.equal(state.issues["367"]?.blocked_verification_retry_count, 1);
+  assert.equal(state.issues["367"]?.repeated_blocker_count, 3);
+  assert.equal(state.issues["367"]?.repeated_failure_signature_count, 4);
 });
 
 test("requeueIssueForOperator rejects active tracked-PR work", async () => {
@@ -3606,7 +3658,7 @@ test("reconcileStaleActiveIssueReservation reports interrupted-turn progress as 
   await assert.rejects(fs.access(path.join(workspacePath, ".codex-supervisor", "turn-in-progress.json")));
 });
 
-test("reconcileStaleActiveIssueReservation requeues a stale stabilizing issue without a tracked PR", async () => {
+test("reconcileStaleActiveIssueReservation clears only the stale reservation for a stabilizing issue without a tracked PR", async () => {
   const config = createConfig();
   const lockRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-locks-"));
   const state: SupervisorStateFile = {
@@ -3645,15 +3697,53 @@ test("reconcileStaleActiveIssueReservation requeues a stale stabilizing issue wi
   });
 
   assert.equal(state.activeIssueNumber, null);
-  assert.equal(state.issues["366"]?.state, "queued");
+  assert.equal(state.issues["366"]?.state, "stabilizing");
   assert.equal(state.issues["366"]?.pr_number, null);
   assert.equal(state.issues["366"]?.codex_session_id, null);
   assert.equal(saveCalls, 1);
   assert.equal(recoveryEvents.length, 1);
   assert.match(
     formatRecoveryLog(recoveryEvents) ?? "",
-    /recovery issue=#366 reason=stale_state_cleanup: requeued stabilizing issue #366 after issue lock and session lock were missing/,
+    /recovery issue=#366 reason=stale_state_cleanup: cleared stale active reservation after issue lock and session lock were missing/,
   );
+});
+
+test("reconcileStaleActiveIssueReservation clears a stale reservation pointer for terminal records without mutating the record", async () => {
+  const lockRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-locks-"));
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 366,
+    issues: {
+      "366": createRecord({
+        issue_number: 366,
+        state: "done",
+        codex_session_id: null,
+        last_error: null,
+      }),
+    },
+  };
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(record: IssueRunRecord): IssueRunRecord {
+      return record;
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const recoveryEvents = await reconcileStaleActiveIssueReservation({
+    stateStore,
+    state,
+    issueLockPath: (issueNumber) => path.join(lockRoot, "locks", "issues", String(issueNumber)),
+    sessionLockPath: (sessionId) => path.join(lockRoot, "locks", "sessions", String(sessionId)),
+  });
+
+  assert.equal(state.activeIssueNumber, null);
+  assert.equal(state.issues["366"]?.state, "done");
+  assert.equal(state.issues["366"]?.last_error, null);
+  assert.equal(saveCalls, 1);
+  assert.deepEqual(recoveryEvents, []);
 });
 
 test("reconcileStaleActiveIssueReservation does not clear reservations for ambiguous owner locks", async () => {
@@ -3809,7 +3899,7 @@ test("reconcileStaleActiveIssueReservation clears stale no-PR failure tracking a
   );
 });
 
-test("reconcileStaleActiveIssueReservation blocks a repeated stale stabilizing no-PR loop at the repeat limit", async () => {
+test("reconcileStaleActiveIssueReservation leaves repeated stale stabilizing no-PR records unchanged while clearing the stale reservation", async () => {
   const config = createConfig();
   const lockRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-locks-"));
   const state: SupervisorStateFile = {
@@ -3851,35 +3941,32 @@ test("reconcileStaleActiveIssueReservation blocks a repeated stale stabilizing n
   });
 
   assert.equal(state.activeIssueNumber, null);
-  assert.equal(state.issues["366"]?.state, "blocked");
+  assert.equal(state.issues["366"]?.state, "stabilizing");
   assert.equal(state.issues["366"]?.pr_number, null);
   assert.equal(state.issues["366"]?.codex_session_id, null);
-  assert.equal(state.issues["366"]?.blocked_reason, "manual_review");
+  assert.equal(state.issues["366"]?.blocked_reason, null);
   assert.equal(
     state.issues["366"]?.last_failure_signature,
     "stale-stabilizing-no-pr-recovery-loop",
   );
   assert.equal(
     state.issues["366"]?.repeated_failure_signature_count,
-    0,
+    config.sameFailureSignatureRepeatLimit - 1,
   );
   assert.equal(
     state.issues["366"]?.stale_stabilizing_no_pr_recovery_count,
-    config.sameFailureSignatureRepeatLimit,
+    config.sameFailureSignatureRepeatLimit - 1,
   );
-  assert.match(
-    state.issues["366"]?.last_error ?? "",
-    /manual intervention is required/i,
-  );
+  assert.equal(state.issues["366"]?.last_error, createRecord().last_error);
   assert.equal(saveCalls, 1);
   assert.equal(recoveryEvents.length, 1);
   assert.match(
     formatRecoveryLog(recoveryEvents) ?? "",
-    /recovery issue=#366 reason=stale_state_manual_stop: blocked issue #366 after repeated stale stabilizing recovery without a tracked PR/,
+    /recovery issue=#366 reason=stale_state_cleanup: cleared stale active reservation after issue lock and session lock were missing/,
   );
 });
 
-test("reconcileStaleActiveIssueReservation blocks already-satisfied-on-main stale stabilizing no-PR recovery for manual review", async () => {
+test("reconcileStaleActiveIssueReservation leaves already-satisfied-on-main stale stabilizing records unchanged while clearing the stale reservation", async () => {
   const config = createConfig();
   const lockRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-locks-"));
   const state: SupervisorStateFile = {
@@ -3925,31 +4012,21 @@ test("reconcileStaleActiveIssueReservation blocks already-satisfied-on-main stal
   });
 
   assert.equal(state.activeIssueNumber, null);
-  assert.equal(state.issues["366"]?.state, "blocked");
+  assert.equal(state.issues["366"]?.state, "stabilizing");
   assert.equal(state.issues["366"]?.pr_number, null);
   assert.equal(state.issues["366"]?.codex_session_id, null);
-  assert.equal(state.issues["366"]?.blocked_reason, "manual_review");
-  assert.match(
-    state.issues["366"]?.last_error ?? "",
-    /stale stabilizing recovery without authoritative completion evidence/,
-  );
-  assert.equal(state.issues["366"]?.last_failure_kind, null);
-  assert.equal(state.issues["366"]?.last_failure_context?.category, "blocked");
-  assert.deepEqual(state.issues["366"]?.last_failure_context?.details ?? [], [
-    "state=stabilizing",
-    "tracked_pr=none",
-    "github_issue_state=OPEN",
-    "completion_evidence=missing",
-    "operator_action=confirm whether the issue should be requeued or whether completion landed outside the tracked PR flow",
-  ]);
-  assert.equal(state.issues["366"]?.last_failure_signature, null);
-  assert.equal(state.issues["366"]?.repeated_failure_signature_count, 0);
-  assert.equal(state.issues["366"]?.stale_stabilizing_no_pr_recovery_count, 0);
+  assert.equal(state.issues["366"]?.blocked_reason, null);
+  assert.equal(state.issues["366"]?.last_error, createRecord().last_error);
+  assert.equal(state.issues["366"]?.last_failure_kind, createRecord().last_failure_kind);
+  assert.equal(state.issues["366"]?.last_failure_context?.signature, createRecord().last_failure_context?.signature);
+  assert.equal(state.issues["366"]?.last_failure_signature, "stale-stabilizing-no-pr-recovery-loop");
+  assert.equal(state.issues["366"]?.repeated_failure_signature_count, 1);
+  assert.equal(state.issues["366"]?.stale_stabilizing_no_pr_recovery_count, 1);
   assert.equal(saveCalls, 1);
   assert.equal(recoveryEvents.length, 1);
   assert.match(
     formatRecoveryLog(recoveryEvents) ?? "",
-    /recovery issue=#366 reason=stale_stabilizing_no_pr_manual_review: blocked issue #366 after stale stabilizing recovery found an open issue with no authoritative completion signal/,
+    /recovery issue=#366 reason=stale_state_cleanup: cleared stale active reservation after issue lock and session lock were missing/,
   );
 });
 

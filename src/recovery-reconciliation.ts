@@ -630,10 +630,20 @@ export async function requeueIssueForOperator(
     issueNumber,
     `operator_requeue: requeued issue #${issueNumber} from ${previousState} to queued`,
   );
+  const clearVerificationDiagnostics = record.blocked_reason === "verification";
   const updated = stateStore.touch(record, applyRecoveryEvent({
     state: "queued",
     codex_session_id: null,
     blocked_reason: null,
+    last_error: clearVerificationDiagnostics ? null : record.last_error,
+    last_failure_kind: clearVerificationDiagnostics ? null : record.last_failure_kind,
+    last_failure_context: clearVerificationDiagnostics ? null : record.last_failure_context,
+    last_blocker_signature: clearVerificationDiagnostics ? null : record.last_blocker_signature,
+    last_failure_signature: clearVerificationDiagnostics ? null : record.last_failure_signature,
+    timeout_retry_count: clearVerificationDiagnostics ? 0 : record.timeout_retry_count,
+    blocked_verification_retry_count: clearVerificationDiagnostics ? 0 : record.blocked_verification_retry_count,
+    repeated_blocker_count: clearVerificationDiagnostics ? 0 : record.repeated_blocker_count,
+    repeated_failure_signature_count: clearVerificationDiagnostics ? 0 : record.repeated_failure_signature_count,
     review_wait_started_at: null,
     review_wait_head_sha: null,
     provider_success_observed_at: null,
@@ -1574,6 +1584,8 @@ export async function reconcileStaleActiveIssueReservation(args: {
   }
 
   if (!OWNER_GUARDED_ACTIVE_STATES.has(record.state)) {
+    args.state.activeIssueNumber = null;
+    await args.stateStore.save(args.state);
     return recoveryEvents;
   }
 
@@ -1659,7 +1671,7 @@ export async function reconcileStaleActiveIssueReservation(args: {
     record.state === "stabilizing" && matchedPullRequest === null && args.classifyStaleStabilizingNoPrBranchState
       ? await args.classifyStaleStabilizingNoPrBranchState(record)
       : "recoverable";
-  const shouldRequeueStabilizing = record.state === "stabilizing" && matchedPullRequest === null;
+  const shouldRequeueStabilizing = false;
   const staleNoPrRepeatLimit = Math.max(args.sameFailureSignatureRepeatLimit ?? Number.POSITIVE_INFINITY, 1);
   const shouldMarkAlreadySatisfiedOnMain =
     shouldRequeueStabilizing && staleNoPrBranchState === "already_satisfied_on_main";

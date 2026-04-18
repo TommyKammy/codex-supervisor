@@ -718,6 +718,7 @@ test("executeCodexTurnPhase blocks branch publication when workstation-local pat
   };
   let pushBranchCalls = 0;
   let syncJournalCalls = 0;
+  const observedAllowlistMarkers: Array<readonly string[] | undefined> = [];
   const context = createCodexTurnContext({
     state,
     record: state.issues["102"]!,
@@ -735,7 +736,10 @@ test("executeCodexTurnPhase blocks branch publication when workstation-local pat
   });
 
   const result = await executeCodexTurnPhase({
-    config: createConfig({ localCiCommand: "npm run ci:local" }),
+    config: createConfig({
+      localCiCommand: "npm run ci:local",
+      publishablePathAllowlistMarkers: ["publishable-path-hygiene: allowlist"],
+    }),
     stateStore: {
       touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
       save: async () => undefined,
@@ -813,18 +817,21 @@ test("executeCodexTurnPhase blocks branch publication when workstation-local pat
             ].join("\n");
       };
     })(),
-    runWorkstationLocalPathGate: async () => ({
-      ok: false,
-      failureContext: {
-        category: "blocked",
-        summary: "Tracked durable artifacts failed workstation-local path hygiene before publication.",
-        signature: "workstation-local-path-hygiene-failed",
-        command: "npm run verify:paths",
-        details: [`docs/guide.md:1 matched /${"home"}/ via "${SAMPLE_UNIX_WORKSTATION_PATH}"`],
-        url: null,
-        updated_at: "2026-03-13T06:20:00Z",
-      },
-    }),
+    runWorkstationLocalPathGate: async (gateArgs) => {
+      observedAllowlistMarkers.push(gateArgs.publishablePathAllowlistMarkers);
+      return {
+        ok: false,
+        failureContext: {
+          category: "blocked",
+          summary: "Tracked durable artifacts failed workstation-local path hygiene before publication.",
+          signature: "workstation-local-path-hygiene-failed",
+          command: "npm run verify:paths",
+          details: [`docs/guide.md:1 matched /${"home"}/ via "${SAMPLE_UNIX_WORKSTATION_PATH}"`],
+          url: null,
+          updated_at: "2026-03-13T06:20:00Z",
+        },
+      };
+    },
     agentRunner: createSuccessfulAgentRunner(async () => ({
       exitCode: 0,
       sessionId: "session-102",
@@ -855,6 +862,7 @@ test("executeCodexTurnPhase blocks branch publication when workstation-local pat
     kind: "returned",
     message: "Workstation-local path hygiene blocked publication for issue #102.",
   });
+  assert.deepEqual(observedAllowlistMarkers, [["publishable-path-hygiene: allowlist"]]);
   assert.equal(pushBranchCalls, 0);
   assert.equal(syncJournalCalls, 1);
   assert.equal(state.issues["102"]?.state, "blocked");

@@ -241,7 +241,11 @@ interface ExecuteCodexTurnPhaseArgs {
   readIssueJournal?: typeof readIssueJournal;
   agentRunner?: AgentRunner;
   runLocalCiCommand?: LocalCiCommandRunner;
-  runWorkstationLocalPathGate?: (args: { workspacePath: string; gateLabel: string }) => Promise<WorkstationLocalPathGateResult>;
+  runWorkstationLocalPathGate?: (args: {
+    workspacePath: string;
+    gateLabel: string;
+    publishablePathAllowlistMarkers?: readonly string[];
+  }) => Promise<WorkstationLocalPathGateResult>;
 }
 
 export async function executeCodexTurnPhase(
@@ -464,6 +468,7 @@ export async function executeCodexTurnPhase(
         const pathHygieneGate = await runWorkstationLocalPathGateImpl({
           workspacePath,
           gateLabel: "before publication",
+          publishablePathAllowlistMarkers: config.publishablePathAllowlistMarkers,
         });
         if (!pathHygieneGate.ok) {
           const failureContext = pathHygieneGate.failureContext;
