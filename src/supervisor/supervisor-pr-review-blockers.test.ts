@@ -764,13 +764,15 @@ test("runOnce still reevaluates an active tracked PR into addressing_review when
   ];
 
   const supervisor = new Supervisor(config);
+  let listCandidateIssuesCalls = 0;
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
     authStatus: async () => ({ ok: true, message: null }),
     listAllIssues: async () => {
       throw new Error("Failed to parse JSON from gh issue list: Bad control character in string literal");
     },
     listCandidateIssues: async () => {
-      throw new Error("unexpected listCandidateIssues call");
+      listCandidateIssuesCalls += 1;
+      return [issue];
     },
     getIssue: async (issueNumberToFetch: number) => {
       assert.equal(issueNumberToFetch, issueNumber);
@@ -808,6 +810,7 @@ test("runOnce still reevaluates an active tracked PR into addressing_review when
 
   const message = await supervisor.runOnce({ dryRun: true });
   assert.match(message, /state=addressing_review/);
+  assert.ok(listCandidateIssuesCalls >= 1);
 
   const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
   const record = persisted.issues[String(issueNumber)];
@@ -901,6 +904,7 @@ test("runOnce still reevaluates an active tracked PR into addressing_review when
   ];
 
   const supervisor = new Supervisor(config);
+  let listCandidateIssuesCalls = 0;
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
     authStatus: async () => ({ ok: true, message: null }),
     listAllIssues: async () => {
@@ -909,7 +913,8 @@ test("runOnce still reevaluates an active tracked PR into addressing_review when
       );
     },
     listCandidateIssues: async () => {
-      throw new Error("unexpected listCandidateIssues call");
+      listCandidateIssuesCalls += 1;
+      return [issue];
     },
     getIssue: async (issueNumberToFetch: number) => {
       assert.equal(issueNumberToFetch, issueNumber);
@@ -948,6 +953,7 @@ test("runOnce still reevaluates an active tracked PR into addressing_review when
   const message = await supervisor.runOnce({ dryRun: true });
   assert.match(message, /state=addressing_review/);
   assert.match(message, /kind=rate_limited/);
+  assert.ok(listCandidateIssuesCalls >= 1);
 
   const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
   const record = persisted.issues[String(issueNumber)];
@@ -985,6 +991,7 @@ test("runOnce does not bypass dependency ordering for a constrained active issue
         journal_path: null,
         pr_number: 1040,
         last_head_sha: runHeadSha,
+        last_error: null,
       }),
       [String(dependencyNumber)]: createRecord({
         issue_number: dependencyNumber,
@@ -1083,8 +1090,9 @@ Depends on: #${dependencyNumber}
 
   const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
   const record = persisted.issues[String(issueNumber)];
-  assert.equal(record.state, "queued");
-  assert.match(record.last_error ?? "", /Waiting for depends on #118 before continuing issue #119/);
+  assert.equal(persisted.activeIssueNumber, dependencyNumber);
+  assert.equal(record.state, "waiting_ci");
+  assert.equal(record.last_error, null);
   assert.equal(persisted.inventory_refresh_failure?.source, "gh issue list");
 });
 
