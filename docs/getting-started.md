@@ -37,6 +37,8 @@ For a lightweight pre-PR path-hygiene check that stays independent from `build` 
 npm run verify:paths
 ```
 
+That check stays fail closed for ordinary publishable tracked content. At runtime, the publication gates can auto-normalize supervisor-owned issue journals and other trusted generated durable artifacts before rechecking blockers, but they still block when ordinary docs or other publishable files keep workstation-local absolute paths.
+
 If you want to run the WebUI browser smoke suite locally or in CI, see the browser requirements in the [Operator dashboard guide](./operator-dashboard.md#browser-smoke-suite).
 
 Current execution-safety rule: GitHub-authored issue bodies, review comments, and similar GitHub text are part of the supervisor trust boundary because they become execution inputs for Codex. The current runtime uses `--dangerously-bypass-approvals-and-sandbox`, so autonomous execution is safe enough to enable only in a trusted repo with trusted authors. If that trust is not present, autonomous execution is not safe for the current posture.

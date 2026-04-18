@@ -18,6 +18,7 @@ Core behavior:
 - `localReviewFollowUpIssueCreationEnabled` is a separate opt-in: leave it `false` to keep follow-up issue creation advisory unless an operator explicitly enables auto-creation
 - verifier-confirmed high-severity findings can trigger `local_review_fix`
 - findings are written as Markdown and JSON artifacts
+- generated Markdown and JSON artifacts are marked as trusted durable artifacts so downstream promotion and path-hygiene checks can distinguish them from ordinary publishable content
 - the same memory budget policy still applies: read the compact context index and issue journal first, then open durable memory only on demand
 
 Policy guidance:
@@ -141,6 +142,7 @@ The swarm:
 
 - runs separate review turns per role
 - writes a Markdown summary and structured JSON artifact
+- marks those artifacts with trusted durable artifact provenance before later promotion paths consume them
 - keeps older `head-<sha>` artifacts for history
 - records `reviewed_head_sha` and `pr_head_sha` so `status` can tell you whether the latest actionable artifact still matches the PR head
 - runs a verifier pass for actionable high-severity findings before stronger high-severity gates react
@@ -171,9 +173,12 @@ Each committed guardrail document must include top-level `"version": 1`. The loa
 
 Treat persisted-artifact promotion as provenance-sensitive. Before any persisted miss artifact, local-review artifact, or post-merge audit artifact is promoted into operator-facing summaries, follow-up candidates, or durable guardrails, the loader should validate it fail-closed:
 
+- require trusted durable artifact provenance on generated local-review summaries, findings JSON, post-merge audit artifacts, and other supervisor-generated durable artifacts before promoting them
 - reject malformed nullable evidence fields such as `sourceUrl` or `sourceThreadId`
 - cross-check embedded `issueNumber`, `prNumber`, `branch`, and `headSha` against the authoritative surrounding context when those values are available
 - skip the artifact instead of partially promoting stale or mismatched data
+
+The same durable-artifact path-hygiene rules apply here. Generated local-review summaries and findings JSON are normalized to repo-relative paths for in-repo references and redact host-local absolute paths when no safe repo-relative rewrite exists. Path-hygiene auto-normalization is reserved for trusted generated durable artifacts and supervisor-owned journals; ordinary publishable tracked content still blocks publication until an operator fixes it.
 
 When you add or update an entry, use the deterministic repo workflow:
 
