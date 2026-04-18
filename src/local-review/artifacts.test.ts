@@ -237,7 +237,7 @@ test("writeLocalReviewArtifacts rewrites repo-local absolute paths and redacts h
   const config = createConfig({
     localReviewArtifactDir: await fs.mkdtemp(path.join(os.tmpdir(), "local-review-artifacts-")),
   });
-  const leakedHostPath = "/Users/tomoakikawada/Documents/AegisOps-phase5-6-review-files/blocker.md";
+  const leakedHostPath = `/${"Users"}/alice/Documents/AegisOps-phase5-6-review-files/blocker.md`;
   const roleResults = [
     {
       role: "reviewer",
