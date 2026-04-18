@@ -6,6 +6,9 @@ import path from "node:path";
 import test from "node:test";
 import { classifyWorkstationLocalPathCandidate, findForbiddenWorkstationLocalPaths } from "./workstation-local-paths";
 
+const TRUSTED_GENERATED_DURABLE_ARTIFACT_MARKDOWN_MARKER =
+  "<!-- codex-supervisor-provenance: trusted-generated-durable-artifact/v1 -->";
+
 function buildUnixHomePath(owner: string, ...segments: string[]): string {
   return ["/", "home", "/", owner, ...segments.flatMap((segment) => ["/", segment])].join("");
 }
@@ -247,6 +250,91 @@ test("findForbiddenWorkstationLocalPaths honors configured same-line publishable
         filePath: "tests/fixtures.py",
         line: 3,
         match: buildMacHomePath("alice", "Dev", "real-leak"),
+      },
+    ],
+  );
+});
+
+test("findForbiddenWorkstationLocalPaths limits same-line publishable allowlist markers to ordinary tracked content", async (t) => {
+  const repoPath = await createTrackedRepo();
+  const currentJournalPath = path.join(repoPath, ".codex-supervisor", "issues", "102", "issue-journal.md");
+  const otherJournalPath = path.join(repoPath, ".codex-supervisor", "issues", "181", "issue-journal.md");
+  const trustedArtifactPath = path.join(repoPath, "docs", "generated-summary.md");
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+
+  await fs.mkdir(path.dirname(currentJournalPath), { recursive: true });
+  await fs.mkdir(path.dirname(otherJournalPath), { recursive: true });
+  await fs.mkdir(path.dirname(trustedArtifactPath), { recursive: true });
+  await fs.mkdir(path.join(repoPath, "tests"), { recursive: true });
+  await fs.writeFile(currentJournalPath, "# Issue #102\n", "utf8");
+  await fs.writeFile(
+    otherJournalPath,
+    [
+      "# Issue #181",
+      "",
+      "## Codex Working Notes",
+      "### Current Handoff",
+      `- What changed: copied ${buildMacHomePath("alice", "Dev", "fixture")} # publishable-path-hygiene: allowlist`,
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  await fs.writeFile(
+    path.join(repoPath, "WORKLOG.md"),
+    `Operator note: ${buildUnixHomePath("alice", "dev", "fixture")} # publishable-path-hygiene: allowlist\n`,
+    "utf8",
+  );
+  await fs.writeFile(
+    trustedArtifactPath,
+    [
+      TRUSTED_GENERATED_DURABLE_ARTIFACT_MARKDOWN_MARKER,
+      "",
+      `Generated note: ${buildUnixHomePath("alice", "dev", "fixture")} # publishable-path-hygiene: allowlist`,
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  await fs.writeFile(
+    path.join(repoPath, "tests", "fixtures.py"),
+    [
+      `ALLOWED = "${buildMacHomePath("alice", "Dev", "fixture")}"  # publishable-path-hygiene: allowlist`,
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  git(
+    repoPath,
+    "add",
+    ".codex-supervisor/issues/102/issue-journal.md",
+    ".codex-supervisor/issues/181/issue-journal.md",
+    "WORKLOG.md",
+    "docs/generated-summary.md",
+    "tests/fixtures.py",
+  );
+
+  const findings = await findForbiddenWorkstationLocalPaths(repoPath, undefined, {
+    publishablePathAllowlistMarkers: ["publishable-path-hygiene: allowlist"],
+  });
+
+  assert.deepEqual(
+    findings.map((finding) => ({ filePath: finding.filePath, line: finding.line, match: finding.match })),
+    [
+      {
+        filePath: ".codex-supervisor/issues/181/issue-journal.md",
+        line: 5,
+        match: buildMacHomePath("alice", "Dev", "fixture"),
+      },
+      {
+        filePath: "WORKLOG.md",
+        line: 1,
+        match: buildUnixHomePath("alice", "dev", "fixture"),
+      },
+      {
+        filePath: "docs/generated-summary.md",
+        line: 3,
+        match: buildUnixHomePath("alice", "dev", "fixture"),
       },
     ],
   );

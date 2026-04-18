@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { hasTrustedGeneratedDurableArtifactProvenance } from "./durable-artifact-provenance";
 
 export const DEFAULT_EXCLUDED_PATHS = [
   "docs/examples/atlaspm.supervisor.config.example.json",
@@ -53,6 +54,12 @@ export interface WorkstationLocalPathMatch {
   prefix: string;
   reason: string;
 }
+
+export type WorkstationLocalArtifactCategory =
+  | "supervisor_owned_journal"
+  | "expected_local_durable_artifact"
+  | "trusted_generated_durable_artifact"
+  | "publishable_tracked_content";
 
 export function formatWorkstationLocalPathMatch(finding: WorkstationLocalPathMatch): string {
   if (finding.line === null) {
@@ -263,6 +270,37 @@ function classifyForbiddenSupervisorArtifactPath(filePath: string): { prefix: st
   return null;
 }
 
+function isSupervisorOwnedDurableJournalPath(filePath: string): boolean {
+  return (
+    filePath === ".codex-supervisor/issue-journal.md"
+    || /^\.codex-supervisor\/issues\/\d+\/issue-journal\.md$/.test(filePath)
+  );
+}
+
+export function classifyWorkstationLocalArtifact(args: {
+  filePath: string;
+  contents?: string;
+}): WorkstationLocalArtifactCategory {
+  const repoRelativePath = normalizeRepoRelativePath(args.filePath);
+
+  if (isSupervisorOwnedDurableJournalPath(repoRelativePath)) {
+    return "supervisor_owned_journal";
+  }
+
+  if (repoRelativePath === "WORKLOG.md") {
+    return "expected_local_durable_artifact";
+  }
+
+  if (
+    typeof args.contents === "string"
+    && hasTrustedGeneratedDurableArtifactProvenance(args.contents)
+  ) {
+    return "trusted_generated_durable_artifact";
+  }
+
+  return "publishable_tracked_content";
+}
+
 export async function findForbiddenWorkstationLocalPaths(
   workspacePath: string,
   excludedPaths: Iterable<string> = DEFAULT_EXCLUDED_PATHS,
@@ -310,7 +348,15 @@ export async function findForbiddenWorkstationLocalPaths(
       continue;
     }
 
-    findings.push(...collectMatches(filePath, rawContents.toString("utf8"), publishablePathAllowlistMarkers));
+    const textContents = rawContents.toString("utf8");
+    const artifactCategory = classifyWorkstationLocalArtifact({ filePath, contents: textContents });
+    findings.push(
+      ...collectMatches(
+        filePath,
+        textContents,
+        artifactCategory === "publishable_tracked_content" ? publishablePathAllowlistMarkers : [],
+      ),
+    );
   }
 
   return findings;

@@ -8,10 +8,11 @@ import {
   normalizeDurableTrackedArtifactContent,
   readIssueJournal,
 } from "./core/journal";
-import { hasTrustedGeneratedDurableArtifactProvenance } from "./durable-artifact-provenance";
 import {
+  classifyWorkstationLocalArtifact,
   findForbiddenWorkstationLocalPaths,
   formatWorkstationLocalPathMatch,
+  type WorkstationLocalArtifactCategory,
   type WorkstationLocalPathMatch,
 } from "./workstation-local-paths";
 
@@ -112,36 +113,19 @@ function summarizeWorkstationLocalPathMatches(
   return visibleFiles.length > 0 ? `First fix: ${visibleFiles.join("; ")}${tail}.` : "";
 }
 
-type WorkstationLocalArtifactCategory =
-  | "supervisor_owned_journal"
-  | "expected_local_durable_artifact"
-  | "trusted_generated_durable_artifact"
-  | "publishable_tracked_content";
-
 async function categorizeWorkstationLocalArtifact(
   workspacePath: string,
   filePath: string,
 ): Promise<WorkstationLocalArtifactCategory> {
   const repoRelativePath = normalizeRepoRelativePath(filePath);
 
-  if (isSupervisorOwnedDurableJournalPath(repoRelativePath)) {
-    return "supervisor_owned_journal";
-  }
-
-  if (repoRelativePath === "WORKLOG.md") {
-    return "expected_local_durable_artifact";
-  }
-
   try {
     const contents = await fs.readFile(path.join(workspacePath, repoRelativePath), "utf8");
-    if (hasTrustedGeneratedDurableArtifactProvenance(contents)) {
-      return "trusted_generated_durable_artifact";
-    }
+    return classifyWorkstationLocalArtifact({ filePath: repoRelativePath, contents });
   } catch {
     // Fail closed into generic publishable content when the trusted signal cannot be read.
+    return classifyWorkstationLocalArtifact({ filePath: repoRelativePath });
   }
-
-  return "publishable_tracked_content";
 }
 
 async function summarizeCategoryMatches(
