@@ -263,6 +263,95 @@ test("verify:paths and runtime gate honor configured same-line publishable allow
   assert.equal(gateResult.failureContext?.details.some((detail) => detail.includes("tests/fixtures.py:2")), true);
 });
 
+test("verify:paths and runtime gate do not let same-line publishable allowlist markers suppress special-case tracked artifacts", async (t) => {
+  const repoPath = await createTrackedRepo();
+  const configDir = await fs.mkdtemp(path.join(os.tmpdir(), "workstation-local-path-config-"));
+  const configPath = path.join(configDir, "supervisor.config.json");
+  const currentJournalPath = path.join(repoPath, ".codex-supervisor", "issues", "102", "issue-journal.md");
+  const otherJournalPath = path.join(repoPath, ".codex-supervisor", "issues", "181", "issue-journal.md");
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+    await fs.rm(configDir, { recursive: true, force: true });
+  });
+
+  await fs.mkdir(path.dirname(currentJournalPath), { recursive: true });
+  await fs.mkdir(path.dirname(otherJournalPath), { recursive: true });
+  await fs.mkdir(path.join(repoPath, "docs"), { recursive: true });
+  await fs.writeFile(currentJournalPath, "# Issue #102\n", "utf8");
+  await fs.writeFile(
+    otherJournalPath,
+    [
+      "# Issue #181",
+      "",
+      "## Codex Working Notes",
+      "### Current Handoff",
+      `- What changed: copied ${SAMPLE_FORBIDDEN_PATH} # publishable-path-hygiene: allowlist`,
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  await fs.writeFile(
+    path.join(repoPath, "WORKLOG.md"),
+    `Operator note: ${SAMPLE_FORBIDDEN_PATH} # publishable-path-hygiene: allowlist\n`,
+    "utf8",
+  );
+  await fs.writeFile(
+    path.join(repoPath, "docs", "generated-summary.md"),
+    [
+      TRUSTED_GENERATED_DURABLE_ARTIFACT_MARKDOWN_MARKER,
+      "",
+      `Generated note: ${SAMPLE_FORBIDDEN_PATH} # publishable-path-hygiene: allowlist`,
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "./workspaces",
+      stateFile: "./state.json",
+      codexBinary: "codex",
+      branchPrefix: "codex/issue-",
+      publishablePathAllowlistMarkers: ["publishable-path-hygiene: allowlist"],
+    }),
+    "utf8",
+  );
+  git(
+    repoPath,
+    "add",
+    ".codex-supervisor/issues/102/issue-journal.md",
+    ".codex-supervisor/issues/181/issue-journal.md",
+    "WORKLOG.md",
+    "docs/generated-summary.md",
+  );
+
+  const detectorResult = runDetector(repoPath, "--workspace", repoPath, "--config", configPath);
+  assert.notEqual(detectorResult.status, 0, "expected special-case artifacts to keep failing");
+  assert.match(detectorResult.stderr, /\.codex-supervisor\/issues\/181\/issue-journal\.md:5/);
+  assert.match(detectorResult.stderr, /WORKLOG\.md:1/);
+  assert.match(detectorResult.stderr, /docs\/generated-summary\.md:3/);
+
+  const gateResult = await runWorkstationLocalPathGate({
+    workspacePath: repoPath,
+    gateLabel: "before publication",
+    publishablePathAllowlistMarkers: ["publishable-path-hygiene: allowlist"],
+  });
+
+  assert.equal(gateResult.ok, false);
+  assert.deepEqual(gateResult.rewrittenJournalPaths, [".codex-supervisor/issues/181/issue-journal.md"]);
+  assert.deepEqual(gateResult.rewrittenTrustedGeneratedArtifactPaths, ["docs/generated-summary.md"]);
+  const summary = gateResult.failureContext?.summary ?? "";
+  assert.match(summary, /Supervisor-owned issue journal(?:s were| was) auto-normalized before rechecking remaining blockers\./);
+  assert.match(summary, /Trusted generated durable artifact(?:s were| was) auto-normalized before rechecking remaining blockers\./);
+  assert.match(summary, /Review repo policy or exclusions for expected-local durable artifacts\./);
+  assert.match(summary, /WORKLOG\.md \(1 match, Linux user home directory\)/);
+  assert.doesNotMatch(summary, /\.codex-supervisor\/issues\/181\/issue-journal\.md/);
+  assert.doesNotMatch(summary, /docs\/generated-summary\.md/);
+});
+
 test("runtime gate fails closed when supervisor-owned journal normalization throws", async (t) => {
   if (process.platform === "win32") {
     t.skip("directory permission semantics differ on Windows");
