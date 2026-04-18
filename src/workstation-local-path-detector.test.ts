@@ -27,7 +27,11 @@ async function createTrackedRepo(): Promise<string> {
   return repoPath;
 }
 
-function runDetector(repoPath: string, ...args: string[]): SpawnSyncReturns<string> {
+function runDetectorWithEnv(
+  repoPath: string,
+  envOverrides: NodeJS.ProcessEnv,
+  ...args: string[]
+): SpawnSyncReturns<string> {
   const npxCommand = process.platform === "win32" ? "npx.cmd" : "npx";
   return spawnSync(
     npxCommand,
@@ -37,22 +41,36 @@ function runDetector(repoPath: string, ...args: string[]): SpawnSyncReturns<stri
       encoding: "utf8",
       env: {
         ...process.env,
+        ...envOverrides,
         FORCE_COLOR: "0",
       },
     },
   );
 }
 
-function runVerifyPaths(repoPath: string, ...args: string[]): SpawnSyncReturns<string> {
+function runDetector(repoPath: string, ...args: string[]): SpawnSyncReturns<string> {
+  return runDetectorWithEnv(repoPath, {}, ...args);
+}
+
+function runVerifyPathsWithEnv(
+  repoPath: string,
+  envOverrides: NodeJS.ProcessEnv,
+  ...args: string[]
+): SpawnSyncReturns<string> {
   const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
   return spawnSync(npmCommand, ["run", "verify:paths", "--", "--workspace", repoPath, ...args], {
     cwd: process.cwd(),
     encoding: "utf8",
     env: {
       ...process.env,
+      ...envOverrides,
       FORCE_COLOR: "0",
     },
   });
+}
+
+function runVerifyPaths(repoPath: string, ...args: string[]): SpawnSyncReturns<string> {
+  return runVerifyPathsWithEnv(repoPath, {}, ...args);
 }
 
 function extractRenderedFindingLines(stderr: string): string[] {
@@ -261,6 +279,48 @@ test("verify:paths and runtime gate honor configured same-line publishable allow
   assert.equal(gateResult.ok, false);
   assert.equal(gateResult.failureContext?.details.some((detail) => detail.includes("tests/fixtures.py:1")), false);
   assert.equal(gateResult.failureContext?.details.some((detail) => detail.includes("tests/fixtures.py:2")), true);
+});
+
+test("verify:paths honors CODEX_SUPERVISOR_CONFIG when --config is omitted", async (t) => {
+  const repoPath = await createTrackedRepo();
+  const configDir = await fs.mkdtemp(path.join(os.tmpdir(), "workstation-local-path-config-"));
+  const configPath = path.join(configDir, "supervisor.config.coderabbit.json");
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+    await fs.rm(configDir, { recursive: true, force: true });
+  });
+
+  await fs.mkdir(path.join(repoPath, "tests"), { recursive: true });
+  await fs.writeFile(
+    path.join(repoPath, "tests", "fixtures.py"),
+    [
+      `ALLOWED = "${["", "Users", "alice", "Dev", "fixture"].join("/")}"  # publishable-path-hygiene: allowlist`,
+      `BLOCKED = "${["", "Users", "alice", "Dev", "real-leak"].join("/")}"`,
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  git(repoPath, "add", "tests/fixtures.py");
+
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "./workspaces",
+      stateFile: "./state.json",
+      codexBinary: "codex",
+      branchPrefix: "codex/issue-",
+      publishablePathAllowlistMarkers: ["publishable-path-hygiene: allowlist"],
+    }),
+    "utf8",
+  );
+
+  const verifyPathsResult = runVerifyPathsWithEnv(repoPath, { CODEX_SUPERVISOR_CONFIG: configPath });
+  assert.notEqual(verifyPathsResult.status, 0, "expected non-allowlisted line to keep failing");
+  assert.doesNotMatch(verifyPathsResult.stderr, /tests\/fixtures\.py:1/);
+  assert.match(verifyPathsResult.stderr, /tests\/fixtures\.py:2/);
 });
 
 test("verify:paths and runtime gate do not let same-line publishable allowlist markers suppress special-case tracked artifacts", async (t) => {

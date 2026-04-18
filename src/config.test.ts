@@ -9,6 +9,7 @@ import {
   loadConfig,
   loadConfigSummary,
   loadConfigSummaryFromDocument,
+  resolveConfigPath,
   summarizeCadenceDiagnostics,
 } from "./core/config";
 import { SupervisorConfig } from "./core/types";
@@ -109,6 +110,26 @@ test("loadConfigSummaryFromDocument resolves config-relative paths for in-memory
   assert.equal(summary.config?.codexBinary, path.join(path.dirname(configPath), "bin", "codex"));
   assert.deepEqual(summary.missingRequiredFields, []);
   assert.deepEqual(summary.invalidFields, []);
+});
+
+test("resolveConfigPath honors CODEX_SUPERVISOR_CONFIG by default while keeping explicit config precedence", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
+  const originalEnv = process.env.CODEX_SUPERVISOR_CONFIG;
+  t.after(async () => {
+    if (originalEnv === undefined) {
+      delete process.env.CODEX_SUPERVISOR_CONFIG;
+    } else {
+      process.env.CODEX_SUPERVISOR_CONFIG = originalEnv;
+    }
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  const envConfigPath = path.join(tempDir, "supervisor.config.coderabbit.json");
+  const explicitConfigPath = path.join(tempDir, "supervisor.config.explicit.json");
+  process.env.CODEX_SUPERVISOR_CONFIG = envConfigPath;
+
+  assert.equal(resolveConfigPath(), envConfigPath);
+  assert.equal(resolveConfigPath(explicitConfigPath), explicitConfigPath);
 });
 
 test("loadConfigSummary surfaces the default trust diagnostics posture", async (t) => {

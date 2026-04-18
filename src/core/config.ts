@@ -83,9 +83,16 @@ function buildConfigLoadSummaryFromDocument(raw: Record<string, unknown>, resolv
 }
 
 export function resolveConfigPath(configPath?: string): string {
-  return configPath
-    ? path.resolve(configPath)
-    : path.resolve(process.cwd(), DEFAULT_CONFIG_FILE);
+  if (configPath) {
+    return path.resolve(configPath);
+  }
+
+  const envConfigPath = process.env.CODEX_SUPERVISOR_CONFIG?.trim();
+  if (envConfigPath) {
+    return path.resolve(envConfigPath);
+  }
+
+  return path.resolve(process.cwd(), DEFAULT_CONFIG_FILE);
 }
 
 export function loadConfigSummary(configPath?: string): ConfigLoadSummary {
