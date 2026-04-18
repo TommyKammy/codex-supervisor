@@ -132,6 +132,82 @@ test("buildNonRunnableLocalStateReasons keeps retry-budget ordering stable", () 
   ]);
 });
 
+test("buildIssueExplainSummary reports retryable timeout failures as timeout_retry pending", async () => {
+  const config = createConfig({
+    timeoutRetryLimit: 2,
+  });
+  const issue = createIssue({
+    number: 604,
+    title: "Retry timeout before manual review",
+    body: `## Summary
+Keep retryable timeout failures on the timeout retry path.
+
+## Scope
+- preserve retryable timeout diagnostics on failed no-PR records
+
+## Acceptance criteria
+- explain output reports timeout retry pending
+
+## Verification
+- npx tsx --test src/supervisor/supervisor-selection-issue-explain.test.ts
+
+Depends on: none
+Execution order: 1 of 1
+Parallelizable: No`,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issue.number)]: createRecord({
+        issue_number: issue.number,
+        state: "failed",
+        blocked_reason: null,
+        last_error: "Command timed out after 1800000ms: codex exec resume thread-604",
+        last_failure_kind: "timeout",
+        last_failure_context: {
+          category: "codex",
+          summary: "Command timed out after 1800000ms: codex exec resume thread-604",
+          signature: "timeout-resume-thread-604",
+          command: null,
+          details: ["provider=codex"],
+          url: null,
+          updated_at: "2026-03-19T00:00:00Z",
+        },
+        timeout_retry_count: 1,
+        last_runtime_failure_kind: "timeout",
+        last_runtime_failure_context: {
+          category: "codex",
+          summary: "Supervisor failed while recovering a Codex turn for issue #604.",
+          signature: "runtime-timeout-thread-604",
+          command: null,
+          details: ["workspace_dirty=yes"],
+          url: null,
+          updated_at: "2026-03-19T00:01:00Z",
+        },
+      }),
+    },
+  };
+
+  const lines = await buildIssueExplainSummary(
+    {
+      getIssue: async () => issue,
+      listAllIssues: async () => [issue],
+      listCandidateIssues: async () => [issue],
+    },
+    config,
+    state,
+    issue.number,
+  );
+
+  assert.ok(lines.includes("state=failed"));
+  assert.ok(lines.includes("blocked_reason=none"));
+  assert.ok(lines.includes("runnable=yes"));
+  assert.ok(lines.some((line) => line.startsWith("selection_reason=ready ")));
+  assert.ok(lines.some((line) => line.includes("retry_state=timeout_retry:1/2")));
+  assert.ok(lines.includes("runtime_failure_kind=timeout"));
+  assert.ok(lines.includes("runtime_failure_summary=Supervisor failed while recovering a Codex turn for issue #604."));
+});
+
 test("buildIssueExplainDto exposes typed operator activity context", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 605;

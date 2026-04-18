@@ -3,7 +3,7 @@ import { type GitHubIssue, type IssueRunRecord, type SupervisorConfig, type Supe
 import { nowIso, truncate } from "./core/utils";
 import { isSafeCleanupTarget } from "./core/workspace";
 import { type RecoveryEvent } from "./run-once-cycle-prelude";
-import { applyFailureSignature } from "./supervisor/supervisor-failure-helpers";
+import { applyFailureSignature, shouldAutoRetryTimeout } from "./supervisor/supervisor-failure-helpers";
 import {
   buildFailedNoPrBranchFailureContext,
   classifyFailedNoPrBranchRecovery,
@@ -82,6 +82,9 @@ export async function reconcileStaleFailedNoPrRecord(args: {
     ensureOriginDefaultBranchFetched,
     isSafeCleanupTarget,
   });
+  if (branchRecovery.state === "dirty_workspace" && shouldAutoRetryTimeout(record, config)) {
+    return false;
+  }
   if (branchRecovery.state !== "recoverable") {
     const branchRecoveryReason = branchRecovery.state === "already_satisfied_on_main"
       ? `failed_no_pr_manual_review: blocked issue #${record.issue_number} after failed no-PR recovery found an open issue with no authoritative completion signal`
@@ -92,7 +95,7 @@ export async function reconcileStaleFailedNoPrRecord(args: {
     );
     const manualReviewFailureContext = buildFailedNoPrBranchFailureContext({
       record,
-      branchRecoveryState: branchRecovery.state,
+      branchRecoveryState: branchRecovery.state === "dirty_workspace" ? "manual_review_required" : branchRecovery.state,
       headSha: branchRecovery.headSha,
       defaultBranch: config.defaultBranch,
       preservedTrackedFiles: branchRecovery.preservedTrackedFiles,
