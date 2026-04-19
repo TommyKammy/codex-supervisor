@@ -43,6 +43,42 @@ export interface TrackedPrLifecycleProjection {
   shouldSuppressRecovery: boolean;
 }
 
+function processedReviewThreadIdsStaleForHead(
+  processedThreadIds: readonly string[],
+  nextHeadSha: string,
+): boolean {
+  return processedThreadIds.some((key) => key.includes("@") && !key.endsWith(`@${nextHeadSha}`));
+}
+
+function filterProcessedReviewThreadIdsForHead(
+  processedThreadIds: readonly string[],
+  nextHeadSha: string,
+): string[] {
+  return processedThreadIds.filter((key) => !key.includes("@") || key.endsWith(`@${nextHeadSha}`));
+}
+
+function processedReviewThreadFingerprintsStaleForHead(
+  processedThreadFingerprints: readonly string[],
+  nextHeadSha: string,
+): boolean {
+  return processedThreadFingerprints.some((key) => {
+    const fingerprintSeparator = key.indexOf("#");
+    const threadKey = fingerprintSeparator >= 0 ? key.slice(0, fingerprintSeparator) : key;
+    return threadKey.includes("@") && !threadKey.endsWith(`@${nextHeadSha}`);
+  });
+}
+
+function filterProcessedReviewThreadFingerprintsForHead(
+  processedThreadFingerprints: readonly string[],
+  nextHeadSha: string,
+): string[] {
+  return processedThreadFingerprints.filter((key) => {
+    const fingerprintSeparator = key.indexOf("#");
+    const threadKey = fingerprintSeparator >= 0 ? key.slice(0, fingerprintSeparator) : key;
+    return !threadKey.includes("@") || threadKey.endsWith(`@${nextHeadSha}`);
+  });
+}
+
 export function resetTrackedPrHeadScopedStateOnAdvance(
   record: IssueRunRecord,
   nextHeadSha: string,
@@ -62,16 +98,73 @@ export function resetTrackedPrHeadScopedStateOnAdvance(
   const localCiHeadStale =
     record.latest_local_ci_result?.head_sha != null
     && record.latest_local_ci_result.head_sha !== nextHeadSha;
+  const processedThreadIdsHeadStale = processedReviewThreadIdsStaleForHead(
+    record.processed_review_thread_ids ?? [],
+    nextHeadSha,
+  );
+  const processedThreadFingerprintsHeadStale = processedReviewThreadFingerprintsStaleForHead(
+    record.processed_review_thread_fingerprints ?? [],
+    nextHeadSha,
+  );
+  const currentHeadProcessedThreadIds = filterProcessedReviewThreadIdsForHead(
+    record.processed_review_thread_ids ?? [],
+    nextHeadSha,
+  );
+  const currentHeadProcessedThreadFingerprints = filterProcessedReviewThreadFingerprintsForHead(
+    record.processed_review_thread_fingerprints ?? [],
+    nextHeadSha,
+  );
   const headScopedStateDiverged =
     localReviewHeadStale
     || externalReviewHeadStale
     || reviewFollowUpHeadStale
     || blockerCommentHeadStale
     || observedHostLocalBlockerHeadStale
-    || localCiHeadStale;
+    || localCiHeadStale
+    || processedThreadIdsHeadStale
+    || processedThreadFingerprintsHeadStale;
+  const sameTrackedHead = record.last_head_sha === nextHeadSha;
 
-  if ((record.last_head_sha === null || record.last_head_sha === nextHeadSha) && !headScopedStateDiverged) {
+  if (sameTrackedHead && !headScopedStateDiverged) {
     return {};
+  }
+
+  if (
+    sameTrackedHead
+    && !localReviewHeadStale
+    && !externalReviewHeadStale
+    && !reviewFollowUpHeadStale
+    && (
+      (!processedThreadIdsHeadStale && !processedThreadFingerprintsHeadStale) ||
+      currentHeadProcessedThreadIds.length > 0 ||
+      currentHeadProcessedThreadFingerprints.length > 0
+    )
+  ) {
+    return {
+      ...(processedThreadIdsHeadStale
+        ? {
+            processed_review_thread_ids: currentHeadProcessedThreadIds,
+          }
+        : {}),
+      ...(processedThreadFingerprintsHeadStale
+        ? {
+            processed_review_thread_fingerprints: currentHeadProcessedThreadFingerprints,
+          }
+        : {}),
+      ...(localCiHeadStale ? { latest_local_ci_result: null } : {}),
+      ...(observedHostLocalBlockerHeadStale
+        ? {
+            last_observed_host_local_pr_blocker_signature: null,
+            last_observed_host_local_pr_blocker_head_sha: null,
+          }
+        : {}),
+      ...(blockerCommentHeadStale
+        ? {
+            last_host_local_pr_blocker_comment_signature: null,
+            last_host_local_pr_blocker_comment_head_sha: null,
+          }
+        : {}),
+    };
   }
 
   return {

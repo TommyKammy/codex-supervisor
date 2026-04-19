@@ -229,7 +229,242 @@ test("projectTrackedPrLifecycle preserves processed bot-thread state when option
   });
 
   assert.equal(projection.nextState, "blocked");
-  assert.equal(projection.nextBlockedReason, "manual_review");
+  assert.equal(projection.nextBlockedReason, "stale_review_bot");
   assert.deepEqual(projection.recordForState.processed_review_thread_ids, ["thread-1@head-191"]);
   assert.deepEqual(projection.recordForState.processed_review_thread_fingerprints, ["thread-1@head-191#comment-1"]);
+});
+
+test("resetTrackedPrHeadScopedStateOnAdvance preserves current-head review bookkeeping when only unrelated head-scoped fields are stale", () => {
+  const record = createRecord({
+    last_head_sha: "head-191",
+    review_follow_up_head_sha: "head-191",
+    review_follow_up_remaining: 0,
+    processed_review_thread_ids: ["thread-1@head-191"],
+    processed_review_thread_fingerprints: ["thread-1@head-191#comment-1"],
+    last_host_local_pr_blocker_comment_head_sha: "head-190",
+    latest_local_ci_result: {
+      outcome: "passed",
+      summary: "stale local CI result",
+      head_sha: "head-190",
+      ran_at: "2026-03-16T10:00:00Z",
+      execution_mode: "shell",
+      failure_class: null,
+      remediation_target: null,
+    },
+  });
+
+  assert.deepEqual(resetTrackedPrHeadScopedStateOnAdvance(record, "head-191"), {
+    latest_local_ci_result: null,
+    last_host_local_pr_blocker_comment_signature: null,
+    last_host_local_pr_blocker_comment_head_sha: null,
+  });
+});
+
+test("resetTrackedPrHeadScopedStateOnAdvance does not preserve review bookkeeping when the tracked head anchor is unknown", () => {
+  const record = createRecord({
+    last_head_sha: null,
+    review_follow_up_head_sha: "head-191",
+    review_follow_up_remaining: 0,
+    processed_review_thread_ids: ["thread-1@head-191"],
+    processed_review_thread_fingerprints: ["thread-1@head-191#comment-1"],
+    last_host_local_pr_blocker_comment_head_sha: "head-190",
+    latest_local_ci_result: {
+      outcome: "passed",
+      summary: "stale local CI result",
+      head_sha: "head-190",
+      ran_at: "2026-03-16T10:00:00Z",
+      execution_mode: "shell",
+      failure_class: null,
+      remediation_target: null,
+    },
+  });
+
+  assert.deepEqual(resetTrackedPrHeadScopedStateOnAdvance(record, "head-191"), {
+    local_review_head_sha: null,
+    local_review_blocker_summary: null,
+    local_review_summary_path: null,
+    local_review_run_at: null,
+    local_review_max_severity: null,
+    local_review_findings_count: 0,
+    local_review_root_cause_count: 0,
+    local_review_verified_max_severity: null,
+    local_review_verified_findings_count: 0,
+    local_review_recommendation: null,
+    local_review_degraded: false,
+    pre_merge_evaluation_outcome: null,
+    pre_merge_must_fix_count: 0,
+    pre_merge_manual_review_count: 0,
+    pre_merge_follow_up_count: 0,
+    last_local_review_signature: null,
+    repeated_local_review_signature_count: 0,
+    latest_local_ci_result: null,
+    external_review_head_sha: null,
+    external_review_misses_path: null,
+    external_review_matched_findings_count: 0,
+    external_review_near_match_findings_count: 0,
+    external_review_missed_findings_count: 0,
+    review_follow_up_head_sha: null,
+    review_follow_up_remaining: 0,
+    last_observed_host_local_pr_blocker_signature: null,
+    last_observed_host_local_pr_blocker_head_sha: null,
+    last_host_local_pr_blocker_comment_signature: null,
+    last_host_local_pr_blocker_comment_head_sha: null,
+    processed_review_thread_ids: [],
+    processed_review_thread_fingerprints: [],
+  });
+});
+
+test("resetTrackedPrHeadScopedStateOnAdvance clears review bookkeeping when processed thread markers belong to an older head", () => {
+  const record = createRecord({
+    last_head_sha: "head-191",
+    review_follow_up_head_sha: "head-191",
+    review_follow_up_remaining: 0,
+    processed_review_thread_ids: ["thread-1@head-190"],
+    processed_review_thread_fingerprints: ["thread-1@head-190#comment-1"],
+    last_host_local_pr_blocker_comment_head_sha: "head-190",
+    latest_local_ci_result: {
+      outcome: "passed",
+      summary: "stale local CI result",
+      head_sha: "head-190",
+      ran_at: "2026-03-16T10:00:00Z",
+      execution_mode: "shell",
+      failure_class: null,
+      remediation_target: null,
+    },
+  });
+
+  assert.deepEqual(resetTrackedPrHeadScopedStateOnAdvance(record, "head-191"), {
+    local_review_head_sha: null,
+    local_review_blocker_summary: null,
+    local_review_summary_path: null,
+    local_review_run_at: null,
+    local_review_max_severity: null,
+    local_review_findings_count: 0,
+    local_review_root_cause_count: 0,
+    local_review_verified_max_severity: null,
+    local_review_verified_findings_count: 0,
+    local_review_recommendation: null,
+    local_review_degraded: false,
+    pre_merge_evaluation_outcome: null,
+    pre_merge_must_fix_count: 0,
+    pre_merge_manual_review_count: 0,
+    pre_merge_follow_up_count: 0,
+    last_local_review_signature: null,
+    repeated_local_review_signature_count: 0,
+    latest_local_ci_result: null,
+    external_review_head_sha: null,
+    external_review_misses_path: null,
+    external_review_matched_findings_count: 0,
+    external_review_near_match_findings_count: 0,
+    external_review_missed_findings_count: 0,
+    review_follow_up_head_sha: null,
+    review_follow_up_remaining: 0,
+    last_observed_host_local_pr_blocker_signature: null,
+    last_observed_host_local_pr_blocker_head_sha: null,
+    last_host_local_pr_blocker_comment_signature: null,
+    last_host_local_pr_blocker_comment_head_sha: null,
+    processed_review_thread_ids: [],
+    processed_review_thread_fingerprints: [],
+  });
+});
+
+test("resetTrackedPrHeadScopedStateOnAdvance prunes older processed thread markers while preserving current-head bookkeeping", () => {
+  const record = createRecord({
+    last_head_sha: "head-191",
+    review_follow_up_head_sha: "head-191",
+    review_follow_up_remaining: 0,
+    processed_review_thread_ids: ["thread-1@head-190", "thread-1@head-191"],
+    processed_review_thread_fingerprints: ["thread-1@head-190#comment-1", "thread-1@head-191#comment-1"],
+    last_host_local_pr_blocker_comment_signature: "local-ci:blocker",
+    last_host_local_pr_blocker_comment_head_sha: "head-190",
+    latest_local_ci_result: {
+      outcome: "passed",
+      summary: "Local CI passed on an older head.",
+      ran_at: "2026-03-12T00:05:00Z",
+      head_sha: "head-190",
+      execution_mode: "shell",
+      failure_class: null,
+      remediation_target: null,
+    },
+  });
+
+  assert.deepEqual(resetTrackedPrHeadScopedStateOnAdvance(record, "head-191"), {
+    latest_local_ci_result: null,
+    last_host_local_pr_blocker_comment_signature: null,
+    last_host_local_pr_blocker_comment_head_sha: null,
+    processed_review_thread_ids: ["thread-1@head-191"],
+    processed_review_thread_fingerprints: ["thread-1@head-191#comment-1"],
+  });
+});
+
+test("projectTrackedPrLifecycle keeps stale configured-bot classification when current-head review bookkeeping survives unrelated stale fields", () => {
+  const config = createConfig({
+    reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+    staleConfiguredBotReviewPolicy: "reply_and_resolve",
+    humanReviewBlocksMerge: true,
+  });
+  const record = createRecord({
+    state: "blocked",
+    blocked_reason: "stale_review_bot",
+    pr_number: 191,
+    last_head_sha: "head-191",
+    review_follow_up_head_sha: "head-191",
+    review_follow_up_remaining: 0,
+    processed_review_thread_ids: ["thread-1@head-191"],
+    processed_review_thread_fingerprints: ["thread-1@head-191#comment-1"],
+    last_host_local_pr_blocker_comment_head_sha: "head-190",
+    latest_local_ci_result: {
+      outcome: "passed",
+      summary: "stale local CI result",
+      head_sha: "head-190",
+      ran_at: "2026-03-16T10:00:00Z",
+      execution_mode: "shell",
+      failure_class: null,
+      remediation_target: null,
+    },
+  });
+  const pr = createPullRequest({
+    number: 191,
+    headRefOid: "head-191",
+    reviewDecision: "CHANGES_REQUESTED",
+    configuredBotCurrentHeadObservedAt: "2026-03-16T10:04:00Z",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+  });
+  const reviewThreads = [
+    createReviewThread({
+      id: "thread-1",
+      isResolved: false,
+      comments: {
+        nodes: [
+          {
+            id: "comment-1",
+            body: "This configured-bot finding is stale on the current head.",
+            createdAt: "2026-03-16T10:05:00Z",
+            url: "https://example.test/pr/191#discussion_r1",
+            author: {
+              login: "coderabbitai[bot]",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  ];
+
+  const projection = projectTrackedPrLifecycle({
+    config,
+    record,
+    pr,
+    checks: passingChecks(),
+    reviewThreads,
+  });
+
+  assert.equal(projection.nextState, "blocked");
+  assert.equal(projection.nextBlockedReason, "stale_review_bot");
+  assert.equal(projection.recordForState.review_follow_up_head_sha, "head-191");
+  assert.equal(projection.recordForState.review_follow_up_remaining, 0);
+  assert.deepEqual(projection.recordForState.processed_review_thread_ids, ["thread-1@head-191"]);
+  assert.deepEqual(projection.recordForState.processed_review_thread_fingerprints, ["thread-1@head-191#comment-1"]);
+  assert.equal(projection.recordForState.last_host_local_pr_blocker_comment_head_sha, null);
+  assert.equal(projection.recordForState.latest_local_ci_result, null);
 });
