@@ -1089,6 +1089,161 @@ test("runOnce blocks tracked PR review work instead of failing after repeated id
   assert.match(record.last_failure_context?.summary ?? "", /1 unresolved automated review thread\(s\) remain\./);
 });
 
+test("runOnce refreshes the sticky tracked PR status comment when repeated review failures block the current head", async () => {
+  const fixture = await createSupervisorFixture();
+  fixture.config.sameFailureSignatureRepeatLimit = 3;
+  fixture.config.reviewBotLogins = ["copilot-pull-request-reviewer"];
+  const issueNumber = 91;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createTrackedSupervisorRecord(fixture.config, fixture.workspaceRoot, issueNumber, {
+        state: "addressing_review",
+        pr_number: 191,
+        journal_path: null,
+        last_head_sha: "head-191",
+        last_failure_signature: "thread-1",
+        repeated_failure_signature_count: 3,
+        last_failure_context: {
+          category: "review",
+          summary: "1 unresolved automated review thread(s) remain.",
+          signature: "thread-1",
+          command: null,
+          details: ["src/file.ts:12 summary=thread still unresolved"],
+          url: "https://example.test/pr/191#discussion_r1",
+          updated_at: "2026-03-13T00:20:00Z",
+        },
+        last_host_local_pr_blocker_comment_head_sha: "head-191",
+        last_host_local_pr_blocker_comment_signature: "cleared:stabilizing",
+        last_tracked_pr_progress_snapshot: JSON.stringify({
+          headRefOid: "head-191",
+          reviewDecision: "CHANGES_REQUESTED",
+          mergeStateStatus: "CLEAN",
+          copilotReviewState: null,
+          copilotReviewRequestedAt: null,
+          copilotReviewArrivedAt: null,
+          configuredBotCurrentHeadObservedAt: null,
+          configuredBotCurrentHeadStatusState: null,
+          currentHeadCiGreenAt: null,
+          configuredBotRateLimitedAt: null,
+          configuredBotDraftSkipAt: null,
+          configuredBotTopLevelReviewStrength: null,
+          configuredBotTopLevelReviewSubmittedAt: null,
+          checks: [],
+          unresolvedReviewThreadIds: ["thread-1"],
+        }),
+        last_tracked_pr_progress_summary: null,
+        last_tracked_pr_repeat_failure_decision: null,
+      }),
+    ],
+  });
+  await writeSupervisorState(fixture.stateFile, state);
+
+  const issue = createTrackedIssue(issueNumber, {
+    title: "Refresh sticky tracked PR status comment after repeat-stop manual review",
+    body: executionReadyBody("Tracked PR repeat-stop manual review should refresh the sticky status comment."),
+    createdAt: "2026-03-13T00:30:00Z",
+    updatedAt: "2026-03-13T00:30:00Z",
+  });
+  const pr = createTrackedPullRequest(fixture.config, issueNumber, {
+    number: 191,
+    title: "Review repair implementation",
+    isDraft: false,
+    reviewDecision: "CHANGES_REQUESTED",
+    headRefOid: "head-191",
+    mergeStateStatus: "CLEAN",
+  });
+  const reviewThreads = [createReviewThread()];
+  const updateCalls: Array<{ commentId: number; body: string }> = [];
+  let addCalls = 0;
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [issue],
+    listCandidateIssues: async () => [issue],
+    getIssue: async () => issue,
+    resolvePullRequestForBranch: async (branchName: string, prNumber: number | null) => {
+      assert.equal(branchName, branch);
+      assert.equal(prNumber, pr.number);
+      return pr;
+    },
+    getChecks: async (prNumber: number) => {
+      assert.equal(prNumber, pr.number);
+      return [];
+    },
+    getUnresolvedReviewThreads: async (prNumber: number) => {
+      assert.equal(prNumber, pr.number);
+      return reviewThreads;
+    },
+    getPullRequestIfExists: async (prNumber: number) => {
+      assert.equal(prNumber, pr.number);
+      return pr;
+    },
+    getPullRequest: async (prNumber: number) => {
+      assert.equal(prNumber, pr.number);
+      return pr;
+    },
+    getExternalReviewSurface: async (prNumber: number) => {
+      assert.equal(prNumber, pr.number);
+      return {
+        reviews: [],
+        issueComments: [
+          {
+            id: "comment-42",
+            databaseId: 42,
+            body: [
+              "Tracked PR head `head-191` is now clear for the current supervisor state `stabilizing`.",
+              "",
+              "<!-- codex-supervisor:tracked-pr-status-comment issue=91 pr=191 kind=status -->",
+            ].join("\n"),
+            createdAt: "2026-03-16T01:00:00Z",
+            url: "https://example.test/comments/42",
+            viewerDidAuthor: true,
+            author: {
+              login: "codex-supervisor[bot]",
+              typeName: "Bot",
+            },
+          },
+        ],
+      };
+    },
+    updateIssueComment: async (commentId: number, body: string) => {
+      updateCalls.push({ commentId, body });
+    },
+    addIssueComment: async () => {
+      addCalls += 1;
+    },
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: false });
+  assert.match(message, /blocked after repeated identical review-related failure signatures/);
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  const record = persisted.issues[String(issueNumber)];
+  assert.equal(persisted.activeIssueNumber, null);
+  assert.equal(record.state, "blocked");
+  assert.equal(record.blocked_reason, "manual_review");
+  assert.equal(addCalls, 0);
+  assert.equal(updateCalls.length, 1);
+  assert.equal(updateCalls[0]?.commentId, 42);
+  assert.match(updateCalls[0]?.body ?? "", /reason code: `manual_review`/);
+  assert.match(updateCalls[0]?.body ?? "", /head `head-191`/);
+  assert.match(
+    updateCalls[0]?.body ?? "",
+    /<!-- codex-supervisor:tracked-pr-status-comment issue=91 pr=191 kind=status -->/,
+  );
+  assert.equal(record.last_host_local_pr_blocker_comment_head_sha, pr.headRefOid);
+  assert.equal(record.last_host_local_pr_blocker_comment_signature, "thread-1");
+});
+
 test("runOnce keeps tracked PR repair work retryable when the same failure repeats after PR head progress", async () => {
   const fixture = await createSupervisorFixture();
   fixture.config.sameFailureSignatureRepeatLimit = 3;

@@ -955,6 +955,29 @@ async function maybeCommentOnTrackedPrPersistentStatus(args: {
   return updatedRecord;
 }
 
+export async function syncTrackedPrPersistentStatusComment(args: {
+  github: Partial<
+    Pick<
+      GitHubClient,
+      "addIssueComment" | "getExternalReviewSurface" | "updateIssueComment" | "replyToReviewThread" | "resolveReviewThread"
+    >
+  >;
+  stateStore: Pick<StateStore, "touch" | "save">;
+  state: SupervisorStateFile;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+  syncJournal: IssueJournalSync;
+  config: SupervisorConfig;
+  failureContext: FailureContext | null;
+  summarizeChecks: (checks: PullRequestCheck[]) => { hasPending: boolean; hasFailing: boolean };
+  manualReviewThreadCount: number;
+  skipAutoHandleStaleConfiguredBotReview?: boolean;
+}): Promise<IssueRunRecord> {
+  return maybeCommentOnTrackedPrPersistentStatus(args);
+}
+
 function escapeRegExp(input: string): string {
   return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
