@@ -50,6 +50,13 @@ function processedReviewThreadIdsStaleForHead(
   return processedThreadIds.some((key) => key.includes("@") && !key.endsWith(`@${nextHeadSha}`));
 }
 
+function filterProcessedReviewThreadIdsForHead(
+  processedThreadIds: readonly string[],
+  nextHeadSha: string,
+): string[] {
+  return processedThreadIds.filter((key) => !key.includes("@") || key.endsWith(`@${nextHeadSha}`));
+}
+
 function processedReviewThreadFingerprintsStaleForHead(
   processedThreadFingerprints: readonly string[],
   nextHeadSha: string,
@@ -58,6 +65,17 @@ function processedReviewThreadFingerprintsStaleForHead(
     const fingerprintSeparator = key.indexOf("#");
     const threadKey = fingerprintSeparator >= 0 ? key.slice(0, fingerprintSeparator) : key;
     return threadKey.includes("@") && !threadKey.endsWith(`@${nextHeadSha}`);
+  });
+}
+
+function filterProcessedReviewThreadFingerprintsForHead(
+  processedThreadFingerprints: readonly string[],
+  nextHeadSha: string,
+): string[] {
+  return processedThreadFingerprints.filter((key) => {
+    const fingerprintSeparator = key.indexOf("#");
+    const threadKey = fingerprintSeparator >= 0 ? key.slice(0, fingerprintSeparator) : key;
+    return !threadKey.includes("@") || threadKey.endsWith(`@${nextHeadSha}`);
   });
 }
 
@@ -88,6 +106,14 @@ export function resetTrackedPrHeadScopedStateOnAdvance(
     record.processed_review_thread_fingerprints ?? [],
     nextHeadSha,
   );
+  const currentHeadProcessedThreadIds = filterProcessedReviewThreadIdsForHead(
+    record.processed_review_thread_ids ?? [],
+    nextHeadSha,
+  );
+  const currentHeadProcessedThreadFingerprints = filterProcessedReviewThreadFingerprintsForHead(
+    record.processed_review_thread_fingerprints ?? [],
+    nextHeadSha,
+  );
   const headScopedStateDiverged =
     localReviewHeadStale
     || externalReviewHeadStale
@@ -108,10 +134,23 @@ export function resetTrackedPrHeadScopedStateOnAdvance(
     && !localReviewHeadStale
     && !externalReviewHeadStale
     && !reviewFollowUpHeadStale
-    && !processedThreadIdsHeadStale
-    && !processedThreadFingerprintsHeadStale
+    && (
+      (!processedThreadIdsHeadStale && !processedThreadFingerprintsHeadStale) ||
+      currentHeadProcessedThreadIds.length > 0 ||
+      currentHeadProcessedThreadFingerprints.length > 0
+    )
   ) {
     return {
+      ...(processedThreadIdsHeadStale
+        ? {
+            processed_review_thread_ids: currentHeadProcessedThreadIds,
+          }
+        : {}),
+      ...(processedThreadFingerprintsHeadStale
+        ? {
+            processed_review_thread_fingerprints: currentHeadProcessedThreadFingerprints,
+          }
+        : {}),
       ...(localCiHeadStale ? { latest_local_ci_result: null } : {}),
       ...(observedHostLocalBlockerHeadStale
         ? {

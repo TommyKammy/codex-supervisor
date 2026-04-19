@@ -368,6 +368,35 @@ test("resetTrackedPrHeadScopedStateOnAdvance clears review bookkeeping when proc
   });
 });
 
+test("resetTrackedPrHeadScopedStateOnAdvance prunes older processed thread markers while preserving current-head bookkeeping", () => {
+  const record = createRecord({
+    last_head_sha: "head-191",
+    review_follow_up_head_sha: "head-191",
+    review_follow_up_remaining: 0,
+    processed_review_thread_ids: ["thread-1@head-190", "thread-1@head-191"],
+    processed_review_thread_fingerprints: ["thread-1@head-190#comment-1", "thread-1@head-191#comment-1"],
+    last_host_local_pr_blocker_comment_signature: "local-ci:blocker",
+    last_host_local_pr_blocker_comment_head_sha: "head-190",
+    latest_local_ci_result: {
+      outcome: "passed",
+      summary: "Local CI passed on an older head.",
+      ran_at: "2026-03-12T00:05:00Z",
+      head_sha: "head-190",
+      execution_mode: "shell",
+      failure_class: null,
+      remediation_target: null,
+    },
+  });
+
+  assert.deepEqual(resetTrackedPrHeadScopedStateOnAdvance(record, "head-191"), {
+    latest_local_ci_result: null,
+    last_host_local_pr_blocker_comment_signature: null,
+    last_host_local_pr_blocker_comment_head_sha: null,
+    processed_review_thread_ids: ["thread-1@head-191"],
+    processed_review_thread_fingerprints: ["thread-1@head-191#comment-1"],
+  });
+});
+
 test("projectTrackedPrLifecycle keeps stale configured-bot classification when current-head review bookkeeping survives unrelated stale fields", () => {
   const config = createConfig({
     reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
