@@ -6834,6 +6834,136 @@ test("reconcileStaleFailedIssueStates blocks failed no-PR issues for manual revi
   assert.equal(saveCalls, 1);
 });
 
+test("reconcileStaleFailedIssueStates keeps retryable timeout failed no-PR issues failed when the workspace is structurally valid but dirty", async () => {
+  const { repoPath, workspaceRoot, baseHead } = await createRepositoryWithOrigin();
+  const workspacePath = await createIssueWorktree({
+    repoPath,
+    workspaceRoot,
+    issueNumber: 366,
+    branch: "codex/reopen-issue-366",
+  });
+  const journalPath = path.join(workspacePath, ".codex-supervisor", "issue-journal.md");
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  await fs.writeFile(journalPath, "# local journal\n");
+  await fs.writeFile(path.join(workspacePath, "feature.txt"), "recoverable checkpoint\n");
+  await runCommand("git", ["-C", workspacePath, "add", "feature.txt"]);
+  await runCommand("git", ["-C", workspacePath, "commit", "-m", "recoverable checkpoint"]);
+  await fs.writeFile(path.join(workspacePath, "feature.txt"), "recoverable checkpoint\nextra dirty edit\n");
+
+  const config = createConfig({
+    repoPath,
+    workspaceRoot,
+    timeoutRetryLimit: 2,
+  });
+  const originalFailureContext = {
+    category: "codex" as const,
+    summary: "Command timed out after 1800000ms: codex exec resume thread-366",
+    signature: "timeout-resume-thread-366",
+    command: null,
+    details: ["provider=codex", "phase=recovering"],
+    url: null,
+    updated_at: "2026-03-13T00:20:00Z",
+  };
+  const originalRuntimeFailureContext = {
+    category: "codex" as const,
+    summary: "Supervisor failed while recovering a Codex turn for issue #366.",
+    signature: "recovering-timeout-thread-366",
+    command: null,
+    details: [
+      "previous_state=reproducing",
+      "workspace_dirty=yes",
+      "workspace_head=deadbee",
+      "pr_number=none",
+      "pr_head=none",
+      "codex_session_id=thread-366",
+    ],
+    url: null,
+    updated_at: "2026-03-13T00:20:05Z",
+  };
+  const original = createRecord({
+    issue_number: 366,
+    state: "failed",
+    branch: "codex/reopen-issue-366",
+    workspace: workspacePath,
+    journal_path: journalPath,
+    pr_number: null,
+    last_head_sha: baseHead,
+    last_error: originalFailureContext.summary,
+    last_failure_kind: "timeout",
+    last_failure_context: originalFailureContext,
+    last_failure_signature: originalFailureContext.signature,
+    repeated_failure_signature_count: 1,
+    timeout_retry_count: 1,
+    last_runtime_error: originalRuntimeFailureContext.summary,
+    last_runtime_failure_kind: "timeout",
+    last_runtime_failure_context: originalRuntimeFailureContext,
+    codex_session_id: "session-366",
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [original],
+  });
+  const issue = createIssue({
+    number: 366,
+    title: "Keep retryable timeout no-PR failure pending",
+    updatedAt: "2026-03-13T00:21:00Z",
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  await reconcileStaleFailedIssueStates(
+    {
+      getPullRequestIfExists: async () => {
+        throw new Error("unexpected getPullRequestIfExists call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      closeIssue: async () => {
+        throw new Error("unexpected closeIssue call");
+      },
+      closePullRequest: async () => {
+        throw new Error("unexpected closePullRequest call");
+      },
+      getIssue: async () => {
+        throw new Error("unexpected getIssue call");
+      },
+      getMergedPullRequestsClosingIssue: async () => [],
+    },
+    stateStore,
+    state,
+    config,
+    [issue],
+    {
+      inferStateFromPullRequest: () => "draft_pr",
+      inferFailureContext: () => null,
+      blockedReasonForLifecycleState: () => null,
+      isOpenPullRequest: () => true,
+      syncReviewWaitWindow: () => ({}),
+      syncCopilotReviewRequestObservation: () => ({}),
+      syncCopilotReviewTimeoutState: noCopilotReviewTimeoutPatch,
+    },
+  );
+
+  const updated = state.issues["366"];
+  assert.deepEqual(updated, original);
+  assert.equal(saveCalls, 0);
+});
+
 test("reconcileStaleFailedIssueStates snapshots the original runtime failure when no-PR manual review replaces failure context", async () => {
   const { repoPath, workspaceRoot, baseHead } = await createRepositoryWithOrigin();
   const workspacePath = await createIssueWorktree({

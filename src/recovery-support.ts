@@ -12,7 +12,11 @@ import { resolveTrackedIssueHostPaths } from "./core/journal";
 import { type IssueRunRecord, type SupervisorConfig } from "./core/types";
 import { nowIso } from "./core/utils";
 
-type FailedNoPrBranchRecoveryState = "recoverable" | "already_satisfied_on_main" | "manual_review_required";
+type FailedNoPrBranchRecoveryState =
+  | "recoverable"
+  | "dirty_workspace"
+  | "already_satisfied_on_main"
+  | "manual_review_required";
 
 const FAILED_NO_PR_ALREADY_SATISFIED_SIGNATURE = "failed-no-pr-already-satisfied-on-main";
 const FAILED_NO_PR_MANUAL_REVIEW_SIGNATURE = "failed-no-pr-manual-review-required";
@@ -191,7 +195,7 @@ export async function classifyFailedNoPrBranchRecovery(args: {
     }
 
     return {
-      state: "manual_review_required",
+      state: "dirty_workspace",
       headSha: headResult.stdout.trim() || null,
       preservedTrackedFiles: [
         ...new Set([
