@@ -637,21 +637,23 @@ export class Supervisor {
               "manual_review",
           });
           state.issues[String(record.issue_number)] = record;
-          record = await syncTrackedPrPersistentStatusComment({
-            github: this.github,
-            stateStore: this.stateStore,
-            state,
-            record,
-            pr,
-            checks,
-            reviewThreads,
-            syncJournal,
-            config: this.config,
-            failureContext: effectiveFailureContext,
-            summarizeChecks,
-            manualReviewThreadCount: manualReviewThreads(this.config, reviewThreads).length,
-            skipAutoHandleStaleConfiguredBotReview: true,
-          });
+          if (!options.dryRun) {
+            record = await syncTrackedPrPersistentStatusComment({
+              github: this.github,
+              stateStore: this.stateStore,
+              state,
+              record,
+              pr,
+              checks,
+              reviewThreads,
+              syncJournal,
+              config: this.config,
+              failureContext: effectiveFailureContext,
+              summarizeChecks,
+              manualReviewThreadCount: manualReviewThreads(this.config, reviewThreads).length,
+              skipAutoHandleStaleConfiguredBotReview: true,
+            });
+          }
           state.issues[String(record.issue_number)] = record;
           state.activeIssueNumber = null;
           await this.stateStore.save(state);

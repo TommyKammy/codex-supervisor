@@ -1038,6 +1038,10 @@ test("runOnce blocks tracked PR review work instead of failing after repeated id
   const reviewThreads = [createReviewThread()];
 
   let getPullRequestCalls = 0;
+  let addIssueCommentCalls = 0;
+  let updateIssueCommentCalls = 0;
+  let replyToReviewThreadCalls = 0;
+  let resolveReviewThreadCalls = 0;
   const supervisor = new Supervisor(fixture.config);
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
     authStatus: async () => ({ ok: true, message: null }),
@@ -1062,6 +1066,29 @@ test("runOnce blocks tracked PR review work instead of failing after repeated id
       assert.equal(prNumber, pr.number);
       return pr;
     },
+    getPullRequest: async (prNumber: number) => {
+      assert.equal(prNumber, pr.number);
+      return pr;
+    },
+    getExternalReviewSurface: async (prNumber: number) => {
+      assert.equal(prNumber, pr.number);
+      return {
+        reviews: [],
+        issueComments: [],
+      };
+    },
+    addIssueComment: async () => {
+      addIssueCommentCalls += 1;
+    },
+    updateIssueComment: async () => {
+      updateIssueCommentCalls += 1;
+    },
+    replyToReviewThread: async () => {
+      replyToReviewThreadCalls += 1;
+    },
+    resolveReviewThread: async () => {
+      resolveReviewThreadCalls += 1;
+    },
     getMergedPullRequestsClosingIssue: async () => [],
     closeIssue: async () => {
       throw new Error("unexpected closeIssue call");
@@ -1078,6 +1105,10 @@ test("runOnce blocks tracked PR review work instead of failing after repeated id
   const record = persisted.issues[String(issueNumber)];
   assert.equal(persisted.activeIssueNumber, null);
   assert.equal(getPullRequestCalls, 1);
+  assert.equal(addIssueCommentCalls, 0);
+  assert.equal(updateIssueCommentCalls, 0);
+  assert.equal(replyToReviewThreadCalls, 0);
+  assert.equal(resolveReviewThreadCalls, 0);
   assert.equal(record.state, "blocked");
   assert.equal(record.blocked_reason, "manual_review");
   assert.equal(record.last_failure_kind, null);
