@@ -69,9 +69,28 @@ export function resetTrackedPrHeadScopedStateOnAdvance(
     || blockerCommentHeadStale
     || observedHostLocalBlockerHeadStale
     || localCiHeadStale;
+  const sameTrackedHead = record.last_head_sha === null || record.last_head_sha === nextHeadSha;
 
-  if ((record.last_head_sha === null || record.last_head_sha === nextHeadSha) && !headScopedStateDiverged) {
+  if (sameTrackedHead && !headScopedStateDiverged) {
     return {};
+  }
+
+  if (sameTrackedHead && !localReviewHeadStale && !externalReviewHeadStale && !reviewFollowUpHeadStale) {
+    return {
+      ...(localCiHeadStale ? { latest_local_ci_result: null } : {}),
+      ...(observedHostLocalBlockerHeadStale
+        ? {
+            last_observed_host_local_pr_blocker_signature: null,
+            last_observed_host_local_pr_blocker_head_sha: null,
+          }
+        : {}),
+      ...(blockerCommentHeadStale
+        ? {
+            last_host_local_pr_blocker_comment_signature: null,
+            last_host_local_pr_blocker_comment_head_sha: null,
+          }
+        : {}),
+    };
   }
 
   return {

@@ -378,6 +378,68 @@ test("buildTrackedPrStaleFailureConvergencePatch clears stale head-scoped state 
   assert.equal(patch.repeated_failure_signature_count, 0);
 });
 
+test("buildTrackedPrStaleFailureConvergencePatch preserves current-head review bookkeeping when only unrelated head-scoped fields are stale", () => {
+  const failureContext = {
+    category: "manual" as const,
+    summary: "Configured bot thread is stale on the current head.",
+    signature: "stalled-bot:thread-1",
+    command: null,
+    details: ["processed_on_current_head=yes"],
+    url: "https://example.test/pr/191#discussion_r1",
+    updated_at: "2026-03-13T00:25:00Z",
+  };
+  const record = createRecord({
+    issue_number: 366,
+    state: "failed",
+    blocked_reason: "stale_review_bot",
+    pr_number: 191,
+    last_head_sha: "head-191",
+    review_follow_up_head_sha: "head-191",
+    review_follow_up_remaining: 0,
+    processed_review_thread_ids: ["thread-1@head-191"],
+    processed_review_thread_fingerprints: ["thread-1@head-191#comment-1"],
+    last_host_local_pr_blocker_comment_signature: "local-ci:blocker",
+    last_host_local_pr_blocker_comment_head_sha: "head-190",
+    latest_local_ci_result: {
+      outcome: "passed",
+      summary: "Local CI passed on an older head.",
+      ran_at: "2026-03-12T00:05:00Z",
+      head_sha: "head-190",
+      execution_mode: "shell",
+      failure_class: null,
+      remediation_target: null,
+    },
+    last_failure_signature: failureContext.signature,
+    repeated_failure_signature_count: 1,
+  });
+  const pr = createPullRequest({
+    number: 191,
+    headRefName: "codex/issue-366",
+    headRefOid: "head-191",
+  });
+
+  const patch = buildTrackedPrStaleFailureConvergencePatch({
+    record,
+    pr,
+    nextState: "blocked",
+    failureContext,
+    blockedReason: "stale_review_bot",
+  });
+
+  assert.equal(patch.state, "blocked");
+  assert.equal(patch.last_head_sha, "head-191");
+  assert.equal(patch.blocked_reason, "stale_review_bot");
+  assert.equal("review_follow_up_head_sha" in patch, false);
+  assert.equal("review_follow_up_remaining" in patch, false);
+  assert.equal("processed_review_thread_ids" in patch, false);
+  assert.equal("processed_review_thread_fingerprints" in patch, false);
+  assert.equal(patch.last_host_local_pr_blocker_comment_signature, null);
+  assert.equal(patch.last_host_local_pr_blocker_comment_head_sha, null);
+  assert.equal(patch.latest_local_ci_result, null);
+  assert.equal(patch.last_failure_signature, failureContext.signature);
+  assert.equal(patch.repeated_failure_signature_count, 1);
+});
+
 function git(cwd: string, args: string[]): string {
   return execFileSync("git", args, {
     cwd,

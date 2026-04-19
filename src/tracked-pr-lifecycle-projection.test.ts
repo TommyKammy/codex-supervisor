@@ -229,7 +229,105 @@ test("projectTrackedPrLifecycle preserves processed bot-thread state when option
   });
 
   assert.equal(projection.nextState, "blocked");
-  assert.equal(projection.nextBlockedReason, "manual_review");
+  assert.equal(projection.nextBlockedReason, "stale_review_bot");
   assert.deepEqual(projection.recordForState.processed_review_thread_ids, ["thread-1@head-191"]);
   assert.deepEqual(projection.recordForState.processed_review_thread_fingerprints, ["thread-1@head-191#comment-1"]);
+});
+
+test("resetTrackedPrHeadScopedStateOnAdvance preserves current-head review bookkeeping when only unrelated head-scoped fields are stale", () => {
+  const record = createRecord({
+    last_head_sha: "head-191",
+    review_follow_up_head_sha: "head-191",
+    review_follow_up_remaining: 0,
+    processed_review_thread_ids: ["thread-1@head-191"],
+    processed_review_thread_fingerprints: ["thread-1@head-191#comment-1"],
+    last_host_local_pr_blocker_comment_head_sha: "head-190",
+    latest_local_ci_result: {
+      outcome: "passed",
+      summary: "stale local CI result",
+      head_sha: "head-190",
+      ran_at: "2026-03-16T10:00:00Z",
+      execution_mode: "shell",
+      failure_class: null,
+      remediation_target: null,
+    },
+  });
+
+  assert.deepEqual(resetTrackedPrHeadScopedStateOnAdvance(record, "head-191"), {
+    latest_local_ci_result: null,
+    last_host_local_pr_blocker_comment_signature: null,
+    last_host_local_pr_blocker_comment_head_sha: null,
+  });
+});
+
+test("projectTrackedPrLifecycle keeps stale configured-bot classification when current-head review bookkeeping survives unrelated stale fields", () => {
+  const config = createConfig({
+    reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+    staleConfiguredBotReviewPolicy: "reply_and_resolve",
+    humanReviewBlocksMerge: true,
+  });
+  const record = createRecord({
+    state: "blocked",
+    blocked_reason: "stale_review_bot",
+    pr_number: 191,
+    last_head_sha: "head-191",
+    review_follow_up_head_sha: "head-191",
+    review_follow_up_remaining: 0,
+    processed_review_thread_ids: ["thread-1@head-191"],
+    processed_review_thread_fingerprints: ["thread-1@head-191#comment-1"],
+    last_host_local_pr_blocker_comment_head_sha: "head-190",
+    latest_local_ci_result: {
+      outcome: "passed",
+      summary: "stale local CI result",
+      head_sha: "head-190",
+      ran_at: "2026-03-16T10:00:00Z",
+      execution_mode: "shell",
+      failure_class: null,
+      remediation_target: null,
+    },
+  });
+  const pr = createPullRequest({
+    number: 191,
+    headRefOid: "head-191",
+    reviewDecision: "CHANGES_REQUESTED",
+    configuredBotCurrentHeadObservedAt: "2026-03-16T10:04:00Z",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+  });
+  const reviewThreads = [
+    createReviewThread({
+      id: "thread-1",
+      isResolved: false,
+      comments: {
+        nodes: [
+          {
+            id: "comment-1",
+            body: "This configured-bot finding is stale on the current head.",
+            createdAt: "2026-03-16T10:05:00Z",
+            url: "https://example.test/pr/191#discussion_r1",
+            author: {
+              login: "coderabbitai[bot]",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  ];
+
+  const projection = projectTrackedPrLifecycle({
+    config,
+    record,
+    pr,
+    checks: passingChecks(),
+    reviewThreads,
+  });
+
+  assert.equal(projection.nextState, "blocked");
+  assert.equal(projection.nextBlockedReason, "stale_review_bot");
+  assert.equal(projection.recordForState.review_follow_up_head_sha, "head-191");
+  assert.equal(projection.recordForState.review_follow_up_remaining, 0);
+  assert.deepEqual(projection.recordForState.processed_review_thread_ids, ["thread-1@head-191"]);
+  assert.deepEqual(projection.recordForState.processed_review_thread_fingerprints, ["thread-1@head-191#comment-1"]);
+  assert.equal(projection.recordForState.last_host_local_pr_blocker_comment_head_sha, null);
+  assert.equal(projection.recordForState.latest_local_ci_result, null);
 });
