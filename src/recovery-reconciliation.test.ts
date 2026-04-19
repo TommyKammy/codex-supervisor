@@ -440,6 +440,53 @@ test("buildTrackedPrStaleFailureConvergencePatch preserves current-head review b
   assert.equal(patch.repeated_failure_signature_count, 1);
 });
 
+test("buildTrackedPrStaleFailureConvergencePatch clears review bookkeeping when the tracked head anchor is unknown", () => {
+  const record = createRecord({
+    issue_number: 366,
+    state: "failed",
+    pr_number: 191,
+    last_head_sha: null,
+    review_follow_up_head_sha: "head-191",
+    review_follow_up_remaining: 0,
+    processed_review_thread_ids: ["thread-1@head-191"],
+    processed_review_thread_fingerprints: ["thread-1@head-191#comment-1"],
+    last_host_local_pr_blocker_comment_head_sha: "head-190",
+    latest_local_ci_result: {
+      outcome: "passed",
+      summary: "Local CI passed on a stale blocker head.",
+      ran_at: "2026-03-12T00:05:00Z",
+      head_sha: "head-190",
+      execution_mode: "shell",
+      failure_class: null,
+      remediation_target: null,
+    },
+    last_failure_signature: "review:stale-bot",
+    repeated_failure_signature_count: 3,
+  });
+  const pr = createPullRequest({
+    number: 191,
+    headRefName: "codex/issue-366",
+    headRefOid: "head-191",
+  });
+
+  const patch = buildTrackedPrStaleFailureConvergencePatch({
+    record,
+    pr,
+    nextState: "addressing_review",
+    failureContext: null,
+    blockedReason: null,
+  });
+
+  assert.equal(patch.last_head_sha, "head-191");
+  assert.equal(patch.latest_local_ci_result, null);
+  assert.equal(patch.review_follow_up_head_sha, null);
+  assert.equal(patch.review_follow_up_remaining, 0);
+  assert.deepEqual(patch.processed_review_thread_ids, []);
+  assert.deepEqual(patch.processed_review_thread_fingerprints, []);
+  assert.equal(patch.last_failure_signature, null);
+  assert.equal(patch.repeated_failure_signature_count, 0);
+});
+
 function git(cwd: string, args: string[]): string {
   return execFileSync("git", args, {
     cwd,

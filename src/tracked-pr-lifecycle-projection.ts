@@ -69,7 +69,7 @@ export function resetTrackedPrHeadScopedStateOnAdvance(
     || blockerCommentHeadStale
     || observedHostLocalBlockerHeadStale
     || localCiHeadStale;
-  const sameTrackedHead = record.last_head_sha === null || record.last_head_sha === nextHeadSha;
+  const sameTrackedHead = record.last_head_sha === nextHeadSha;
 
   if (sameTrackedHead && !headScopedStateDiverged) {
     return {};

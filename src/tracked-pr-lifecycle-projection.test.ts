@@ -260,6 +260,60 @@ test("resetTrackedPrHeadScopedStateOnAdvance preserves current-head review bookk
   });
 });
 
+test("resetTrackedPrHeadScopedStateOnAdvance does not preserve review bookkeeping when the tracked head anchor is unknown", () => {
+  const record = createRecord({
+    last_head_sha: null,
+    review_follow_up_head_sha: "head-191",
+    review_follow_up_remaining: 0,
+    processed_review_thread_ids: ["thread-1@head-191"],
+    processed_review_thread_fingerprints: ["thread-1@head-191#comment-1"],
+    last_host_local_pr_blocker_comment_head_sha: "head-190",
+    latest_local_ci_result: {
+      outcome: "passed",
+      summary: "stale local CI result",
+      head_sha: "head-190",
+      ran_at: "2026-03-16T10:00:00Z",
+      execution_mode: "shell",
+      failure_class: null,
+      remediation_target: null,
+    },
+  });
+
+  assert.deepEqual(resetTrackedPrHeadScopedStateOnAdvance(record, "head-191"), {
+    local_review_head_sha: null,
+    local_review_blocker_summary: null,
+    local_review_summary_path: null,
+    local_review_run_at: null,
+    local_review_max_severity: null,
+    local_review_findings_count: 0,
+    local_review_root_cause_count: 0,
+    local_review_verified_max_severity: null,
+    local_review_verified_findings_count: 0,
+    local_review_recommendation: null,
+    local_review_degraded: false,
+    pre_merge_evaluation_outcome: null,
+    pre_merge_must_fix_count: 0,
+    pre_merge_manual_review_count: 0,
+    pre_merge_follow_up_count: 0,
+    last_local_review_signature: null,
+    repeated_local_review_signature_count: 0,
+    latest_local_ci_result: null,
+    external_review_head_sha: null,
+    external_review_misses_path: null,
+    external_review_matched_findings_count: 0,
+    external_review_near_match_findings_count: 0,
+    external_review_missed_findings_count: 0,
+    review_follow_up_head_sha: null,
+    review_follow_up_remaining: 0,
+    last_observed_host_local_pr_blocker_signature: null,
+    last_observed_host_local_pr_blocker_head_sha: null,
+    last_host_local_pr_blocker_comment_signature: null,
+    last_host_local_pr_blocker_comment_head_sha: null,
+    processed_review_thread_ids: [],
+    processed_review_thread_fingerprints: [],
+  });
+});
+
 test("projectTrackedPrLifecycle keeps stale configured-bot classification when current-head review bookkeeping survives unrelated stale fields", () => {
   const config = createConfig({
     reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
