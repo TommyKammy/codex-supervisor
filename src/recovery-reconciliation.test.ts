@@ -437,7 +437,7 @@ test("buildTrackedPrStaleFailureConvergencePatch preserves current-head review b
   assert.equal(patch.last_host_local_pr_blocker_comment_head_sha, null);
   assert.equal(patch.latest_local_ci_result, null);
   assert.equal(patch.last_failure_signature, failureContext.signature);
-  assert.equal(patch.repeated_failure_signature_count, 1);
+  assert.equal(patch.repeated_failure_signature_count, 2);
 });
 
 test("buildTrackedPrStaleFailureConvergencePatch clears review bookkeeping when the tracked head anchor is unknown", () => {
@@ -546,7 +546,7 @@ test("buildTrackedPrStaleFailureConvergencePatch clears processed review bookkee
   assert.equal(patch.last_host_local_pr_blocker_comment_head_sha, null);
   assert.equal(patch.latest_local_ci_result, null);
   assert.equal(patch.last_failure_signature, failureContext.signature);
-  assert.equal(patch.repeated_failure_signature_count, 1);
+  assert.equal(patch.repeated_failure_signature_count, 2);
 });
 
 test("buildTrackedPrStaleFailureConvergencePatch prunes stale processed review markers while preserving current-head bookkeeping", () => {
@@ -608,7 +608,7 @@ test("buildTrackedPrStaleFailureConvergencePatch prunes stale processed review m
   assert.equal(patch.last_host_local_pr_blocker_comment_head_sha, null);
   assert.equal(patch.latest_local_ci_result, null);
   assert.equal(patch.last_failure_signature, failureContext.signature);
-  assert.equal(patch.repeated_failure_signature_count, 1);
+  assert.equal(patch.repeated_failure_signature_count, 2);
 });
 
 function git(cwd: string, args: string[]): string {

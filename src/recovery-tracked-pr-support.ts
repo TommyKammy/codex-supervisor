@@ -24,7 +24,9 @@ export function buildTrackedPrStaleFailureConvergencePatch(args: {
     copilotReviewTimeoutPatch = {},
   } = args;
   const headAdvanceResetPatch = resetTrackedPrHeadScopedStateOnAdvance(record, pr.headRefOid);
-  const headAdvanced = Object.keys(headAdvanceResetPatch).length > 0;
+  // Same-head cleanup can still emit a non-empty patch; only reset repeat-failure
+  // bookkeeping when the tracked PR head actually changed.
+  const headAdvanced = record.last_head_sha !== pr.headRefOid;
   const failureSignatureBaseRecord = headAdvanced
     ? {
       ...record,
