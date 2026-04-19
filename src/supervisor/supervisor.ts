@@ -61,6 +61,7 @@ import {
   handlePostTurnPullRequestTransitionsPhase,
   PostTurnPullRequestContext,
   PostTurnPullRequestResult,
+  syncTrackedPrPersistentStatusComment,
 } from "../post-turn-pull-request";
 import { buildChecksFailureContext, buildConflictFailureContext } from "../pull-request-failure-context";
 import {
@@ -634,6 +635,22 @@ export class Supervisor {
             blocked_reason:
               blockedReasonForLifecycleState(this.config, lifecycle.recordForState, pr, checks, reviewThreads) ??
               "manual_review",
+          });
+          state.issues[String(record.issue_number)] = record;
+          record = await syncTrackedPrPersistentStatusComment({
+            github: this.github,
+            stateStore: this.stateStore,
+            state,
+            record,
+            pr,
+            checks,
+            reviewThreads,
+            syncJournal,
+            config: this.config,
+            failureContext: effectiveFailureContext,
+            summarizeChecks,
+            manualReviewThreadCount: manualReviewThreads(this.config, reviewThreads).length,
+            skipAutoHandleStaleConfiguredBotReview: true,
           });
           state.issues[String(record.issue_number)] = record;
           state.activeIssueNumber = null;
