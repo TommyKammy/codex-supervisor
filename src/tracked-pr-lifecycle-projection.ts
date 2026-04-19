@@ -43,6 +43,24 @@ export interface TrackedPrLifecycleProjection {
   shouldSuppressRecovery: boolean;
 }
 
+function processedReviewThreadIdsStaleForHead(
+  processedThreadIds: readonly string[],
+  nextHeadSha: string,
+): boolean {
+  return processedThreadIds.some((key) => key.includes("@") && !key.endsWith(`@${nextHeadSha}`));
+}
+
+function processedReviewThreadFingerprintsStaleForHead(
+  processedThreadFingerprints: readonly string[],
+  nextHeadSha: string,
+): boolean {
+  return processedThreadFingerprints.some((key) => {
+    const fingerprintSeparator = key.indexOf("#");
+    const threadKey = fingerprintSeparator >= 0 ? key.slice(0, fingerprintSeparator) : key;
+    return threadKey.includes("@") && !threadKey.endsWith(`@${nextHeadSha}`);
+  });
+}
+
 export function resetTrackedPrHeadScopedStateOnAdvance(
   record: IssueRunRecord,
   nextHeadSha: string,
@@ -62,20 +80,37 @@ export function resetTrackedPrHeadScopedStateOnAdvance(
   const localCiHeadStale =
     record.latest_local_ci_result?.head_sha != null
     && record.latest_local_ci_result.head_sha !== nextHeadSha;
+  const processedThreadIdsHeadStale = processedReviewThreadIdsStaleForHead(
+    record.processed_review_thread_ids ?? [],
+    nextHeadSha,
+  );
+  const processedThreadFingerprintsHeadStale = processedReviewThreadFingerprintsStaleForHead(
+    record.processed_review_thread_fingerprints ?? [],
+    nextHeadSha,
+  );
   const headScopedStateDiverged =
     localReviewHeadStale
     || externalReviewHeadStale
     || reviewFollowUpHeadStale
     || blockerCommentHeadStale
     || observedHostLocalBlockerHeadStale
-    || localCiHeadStale;
+    || localCiHeadStale
+    || processedThreadIdsHeadStale
+    || processedThreadFingerprintsHeadStale;
   const sameTrackedHead = record.last_head_sha === nextHeadSha;
 
   if (sameTrackedHead && !headScopedStateDiverged) {
     return {};
   }
 
-  if (sameTrackedHead && !localReviewHeadStale && !externalReviewHeadStale && !reviewFollowUpHeadStale) {
+  if (
+    sameTrackedHead
+    && !localReviewHeadStale
+    && !externalReviewHeadStale
+    && !reviewFollowUpHeadStale
+    && !processedThreadIdsHeadStale
+    && !processedThreadFingerprintsHeadStale
+  ) {
     return {
       ...(localCiHeadStale ? { latest_local_ci_result: null } : {}),
       ...(observedHostLocalBlockerHeadStale
