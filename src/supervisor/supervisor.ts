@@ -650,6 +650,7 @@ export class Supervisor {
             failureContext: effectiveFailureContext,
             summarizeChecks,
             manualReviewThreadCount: manualReviewThreads(this.config, reviewThreads).length,
+            skipAutoHandleStaleConfiguredBotReview: true,
           });
           state.issues[String(record.issue_number)] = record;
           state.activeIssueNumber = null;
