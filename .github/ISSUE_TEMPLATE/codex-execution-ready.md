@@ -14,6 +14,7 @@ Standalone issue:
 - use Depends on: none
 - use Parallelizable: No unless you are sure
 - use Execution order: 1 of 1
+- avoid raw workstation-local absolute path literals in issue text, tests, fixtures, or examples when placeholders or fragment-based strings would verify the same behavior
 
 Sequenced child issue:
 - fill Part of with the parent epic number
