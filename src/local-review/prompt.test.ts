@@ -314,7 +314,7 @@ test("buildRolePrompt teaches reviewers to flag raw workstation-local path liter
 
   assert.match(
     prompt,
-    /Flag raw workstation-local absolute path literals like `\/Users\/\.\.\.`, `\/home\/\.\.\.`, or `C:\\+Users\\+\.\.\.` in tests, fixtures, docs, prompts, or committed examples as a path-hygiene regression when a fragment-based or placeholder-based fixture would verify the same behavior\./,
+    /Flag raw workstation-local absolute path literals rooted in a user home directory or Windows user-profile directory in tests, fixtures, docs, prompts, or committed examples as a path-hygiene regression when a fragment-based or placeholder-based fixture would verify the same behavior\./,
   );
 });
 
@@ -340,7 +340,7 @@ test("buildVerifierPrompt teaches verifiers to keep workstation-local path-liter
       {
         role: "reviewer",
         title: "Fixture uses a raw workstation-local path literal",
-        body: "The test embeds a raw /Users/... path even though a placeholder would verify the same behavior.",
+        body: "The test embeds a raw user-home absolute path literal even though a placeholder would verify the same behavior.",
         file: "src/example.test.ts",
         start: 12,
         end: 12,
@@ -356,7 +356,7 @@ test("buildVerifierPrompt teaches verifiers to keep workstation-local path-liter
 
   assert.match(
     prompt,
-    /Treat raw workstation-local absolute path literals like `\/Users\/\.\.\.`, `\/home\/\.\.\.`, or `C:\\+Users\\+\.\.\.` in tests, fixtures, docs, prompts, or committed examples as a real path-hygiene finding when a fragment-based or placeholder-based fixture would verify the same behavior\./,
+    /Treat raw workstation-local absolute path literals rooted in a user home directory or Windows user-profile directory in tests, fixtures, docs, prompts, or committed examples as a real path-hygiene finding when a fragment-based or placeholder-based fixture would verify the same behavior\./,
   );
 });
 

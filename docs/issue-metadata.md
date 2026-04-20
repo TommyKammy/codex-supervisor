@@ -31,7 +31,7 @@ Safe default for a first standalone issue:
 
 Only add `Part of: #...` when the issue is a sequenced child under an epic or tracking issue.
 
-Path hygiene reminder: do not embed raw workstation-local absolute path literals like `/Users/...`, `/home/...`, or `C:\Users\...` directly in issue text, tests, fixtures, or examples when placeholders or fragment-based strings would verify the same behavior.
+Path hygiene reminder: do not embed raw workstation-local absolute path literals rooted in a user home directory or Windows user-profile directory directly in issue text, tests, fixtures, or examples when placeholders or fragment-based strings would verify the same behavior.
 
 ## Copy-paste examples
 
