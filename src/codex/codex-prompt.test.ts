@@ -233,6 +233,27 @@ test("buildCodexPrompt includes fail-closed shared-memory heuristics for review-
   );
 });
 
+test("buildCodexPrompt teaches implementation turns to avoid raw workstation-local path literals in fixtures and durable artifacts", () => {
+  const prompt = buildCodexPrompt({
+    repoSlug: "owner/repo",
+    issue,
+    branch: "codex/issue-46",
+    workspacePath: "/tmp/workspaces/issue-46",
+    state: "implementing" satisfies RunState,
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+    alwaysReadFiles: [],
+    onDemandMemoryFiles: [],
+    journalPath: "/tmp/workspaces/issue-46/.codex-supervisor/issue-journal.md",
+  });
+
+  assert.match(
+    prompt,
+    /Avoid raw workstation-local absolute path literals rooted in a user home directory or Windows user-profile directory in tests, fixtures, prompts, or durable artifacts when fragment assembly or placeholders would verify the same behavior\./,
+  );
+});
+
 test("buildCodexPrompt renders on-demand memory files even without always-read files", () => {
   const prompt = buildCodexPrompt({
     repoSlug: "owner/repo",

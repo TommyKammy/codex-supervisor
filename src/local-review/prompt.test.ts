@@ -287,6 +287,79 @@ test("buildRolePrompt teaches reviewer to flag unrelated cleanup but allow requi
   assert.match(prompt, /Do not treat minimal supporting changes as scope drift when they are necessary to make the issue fix correct, testable, or buildable\./);
 });
 
+test("buildRolePrompt teaches reviewers to flag raw workstation-local path literals as a path-hygiene regression", () => {
+  const prompt = buildRolePrompt({
+    repoSlug: "owner/repo",
+    issue: createIssue({
+      number: 206,
+      title: "Flag workstation-local path literals in review",
+      url: "https://example.test/issues/206",
+      createdAt: "2026-03-14T00:00:00Z",
+      updatedAt: "2026-03-14T00:00:00Z",
+    }),
+    branch: "codex/issue-206",
+    workspacePath: "/tmp/workspaces/issue-206",
+    defaultBranch: "main",
+    pr: createPullRequest({
+      number: 206,
+      url: "https://example.test/pr/206",
+      headRefOid: "head206",
+    }),
+    role: "reviewer",
+    alwaysReadFiles: [],
+    onDemandFiles: [],
+    confidenceThreshold: 0.7,
+    priorMissPatterns: [],
+  });
+
+  assert.match(
+    prompt,
+    /Flag raw workstation-local absolute path literals rooted in a user home directory or Windows user-profile directory in tests, fixtures, docs, prompts, or committed examples as a path-hygiene regression when a fragment-based or placeholder-based fixture would verify the same behavior\./,
+  );
+});
+
+test("buildVerifierPrompt teaches verifiers to keep workstation-local path-literal findings actionable", () => {
+  const prompt = buildVerifierPrompt({
+    repoSlug: "owner/repo",
+    issue: createIssue({
+      number: 207,
+      title: "Verify workstation-local path-literal regressions",
+      url: "https://example.test/issues/207",
+      createdAt: "2026-03-14T00:00:00Z",
+      updatedAt: "2026-03-14T00:00:00Z",
+    }),
+    branch: "codex/issue-207",
+    workspacePath: "/tmp/workspaces/issue-207",
+    defaultBranch: "main",
+    pr: createPullRequest({
+      number: 207,
+      url: "https://example.test/pr/207",
+      headRefOid: "head207",
+    }),
+    findings: [
+      {
+        role: "reviewer",
+        title: "Fixture uses a raw workstation-local path literal",
+        body: "The test embeds a raw user-home absolute path literal even though a placeholder would verify the same behavior.",
+        file: "src/example.test.ts",
+        start: 12,
+        end: 12,
+        severity: "medium",
+        confidence: 0.95,
+        category: "path_hygiene",
+        evidence: null,
+      },
+    ],
+    priorMissPatterns: [],
+    verifierGuardrails: [],
+  });
+
+  assert.match(
+    prompt,
+    /Treat raw workstation-local absolute path literals rooted in a user home directory or Windows user-profile directory in tests, fixtures, docs, prompts, or committed examples as a real path-hygiene finding when a fragment-based or placeholder-based fixture would verify the same behavior\./,
+  );
+});
+
 test("buildVerifierPrompt includes bounded relevant prior external misses", () => {
   const prompt = buildVerifierPrompt({
     repoSlug: "owner/repo",

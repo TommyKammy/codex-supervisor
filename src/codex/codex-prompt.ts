@@ -490,6 +490,9 @@ function buildCodexStartPrompt(input: BuildCodexStartPromptInput): string {
         ]
       : []),
     "",
+    "Path-literal hygiene:",
+    "- Avoid raw workstation-local absolute path literals rooted in a user home directory or Windows user-profile directory in tests, fixtures, prompts, or durable artifacts when fragment assembly or placeholders would verify the same behavior.",
+    "",
     ...failClosedReviewHeuristics,
     "",
     ...authoritativeStateHeuristics,
