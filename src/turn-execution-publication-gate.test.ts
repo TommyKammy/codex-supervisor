@@ -297,6 +297,99 @@ test("applyCodexTurnPublicationGate blocks tracked supervisor issue journals bef
   assert.equal(git(workspacePath, "status", "--short", "--untracked-files=no").trim(), "");
 });
 
+test("applyCodexTurnPublicationGate blocks tracked supervisor journals for custom templated journal layouts", async (t) => {
+  const workspacePath = await createTrackedRepo();
+  t.after(async () => {
+    await fs.rm(workspacePath, { recursive: true, force: true });
+  });
+  git(workspacePath, "checkout", "-b", "codex/issue-102");
+
+  const currentJournalPath = path.join(workspacePath, ".codex-supervisor", "custom", "issue-102.md");
+  const otherJournalPath = path.join(workspacePath, ".codex-supervisor", "custom", "issue-181.md");
+  await fs.mkdir(path.dirname(currentJournalPath), { recursive: true });
+  await fs.writeFile(currentJournalPath, "# Issue #102\n", "utf8");
+  await fs.writeFile(otherJournalPath, "# Issue #181\n", "utf8");
+  git(workspacePath, "add", ".codex-supervisor/custom/issue-102.md", ".codex-supervisor/custom/issue-181.md");
+  git(workspacePath, "commit", "-m", "seed custom journal leak");
+
+  let createPullRequestCalls = 0;
+  let runWorkspacePreparationCalls = 0;
+  let runLocalCiCalls = 0;
+  const issue = createIssue({ title: "Gate custom journal layouts before publication" });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "stabilizing",
+        pr_number: null,
+        implementation_attempt_count: 1,
+        workspace: workspacePath,
+        journal_path: currentJournalPath,
+      }),
+    },
+  };
+
+  const result = await applyCodexTurnPublicationGate({
+    config: createConfig({
+      localCiCommand: "npm run ci:local",
+      issueJournalRelativePath: ".codex-supervisor/custom/issue-{issueNumber}.md",
+    }),
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    state,
+    record: state.issues["102"]!,
+    issue,
+    workspacePath,
+    workspaceStatus: {
+      branch: "codex/issue-102",
+      headSha: git(workspacePath, "rev-parse", "HEAD").trim(),
+      hasUncommittedChanges: false,
+      baseAhead: 1,
+      baseBehind: 0,
+      remoteBranchExists: false,
+      remoteAhead: 0,
+      remoteBehind: 0,
+    },
+    github: {
+      resolvePullRequestForBranch: async () => null,
+      createPullRequest: async () => {
+        createPullRequestCalls += 1;
+        throw new Error("unexpected createPullRequest call");
+      },
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    syncJournal: async () => undefined,
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    runWorkstationLocalPathGate: async () => {
+      throw new Error("unexpected path hygiene call");
+    },
+    runWorkspacePreparationCommand: async () => {
+      runWorkspacePreparationCalls += 1;
+    },
+    runLocalCiCommand: async () => {
+      runLocalCiCalls += 1;
+    },
+    syncExecutionMetricsRunSummary: async () => undefined,
+  });
+
+  assert.equal(result.kind, "blocked");
+  assert.match(result.message, /\.codex-supervisor\/custom\/issue-102\.md/);
+  assert.match(result.message, /\.codex-supervisor\/custom\/issue-181\.md/);
+  assert.equal(result.record.state, "blocked");
+  assert.equal(result.record.last_failure_signature, "supervisor-local-durable-artifacts-tracked-before-publication");
+  assert.equal(createPullRequestCalls, 0);
+  assert.equal(runWorkspacePreparationCalls, 0);
+  assert.equal(runLocalCiCalls, 0);
+  assert.equal(git(workspacePath, "log", "-1", "--pretty=%s").trim(), "seed custom journal leak");
+  assert.equal(git(workspacePath, "status", "--short", "--untracked-files=no").trim(), "");
+});
+
 test("applyCodexTurnPublicationGate persists trusted generated artifact normalization before PR creation", async (t) => {
   const workspacePath = await createTrackedRepo();
   t.after(async () => {

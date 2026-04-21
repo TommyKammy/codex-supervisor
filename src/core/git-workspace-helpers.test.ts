@@ -46,6 +46,23 @@ test("isIgnoredSupervisorArtifactPath matches supervisor-owned artifacts and pre
   assert.equal(isIgnoredSupervisorArtifactPath("src/user-change.ts", ".codex-supervisor/issues/1359/issue-journal.md"), false);
 });
 
+test("isIgnoredSupervisorArtifactPath matches configured templated issue journal paths", () => {
+  assert.equal(
+    isIgnoredSupervisorArtifactPath(
+      ".codex-supervisor/custom/issue-2468.md",
+      ".codex-supervisor/custom/issue-{issueNumber}.md",
+    ),
+    true,
+  );
+  assert.equal(
+    isIgnoredSupervisorArtifactPath(
+      ".codex-supervisor/custom/issue-not-a-number.md",
+      ".codex-supervisor/custom/issue-{issueNumber}.md",
+    ),
+    false,
+  );
+});
+
 test("parseGitWorktreePaths returns only normalized worktree entries", () => {
   const worktreeEntries = parseGitWorktreePaths([
     "worktree .",
