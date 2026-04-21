@@ -166,3 +166,60 @@ test("staleConfiguredBotReviewThreads excludes same-head configured-bot threads 
 
   assert.deepEqual(staleConfiguredBotReviewThreads(config, record, pr, [nonActionableSameHeadThread]), []);
 });
+
+test("staleConfiguredBotReviewThreads treats non-actionable same-head configured-bot threads as stale when the current head has an explicit no-actionable configured-bot signal", () => {
+  const config = createConfig({
+    reviewBotLogins: ["copilot-pull-request-reviewer"],
+  });
+  const pr: Pick<
+    GitHubPullRequest,
+    "headRefOid" | "configuredBotCurrentHeadObservedAt" | "configuredBotCurrentHeadStatusState" | "configuredBotTopLevelReviewStrength"
+  > = {
+    headRefOid: "head123",
+    configuredBotCurrentHeadObservedAt: "2026-03-11T00:15:00Z",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
+  };
+  const record: Pick<
+    IssueRunRecord,
+    | "processed_review_thread_ids"
+    | "processed_review_thread_fingerprints"
+    | "last_head_sha"
+    | "review_follow_up_head_sha"
+    | "review_follow_up_remaining"
+  > = {
+    processed_review_thread_ids: ["thread-1@head123"],
+    processed_review_thread_fingerprints: ["thread-1@head123#comment-1"],
+    last_head_sha: "head123",
+    review_follow_up_head_sha: null,
+    review_follow_up_remaining: 0,
+  };
+  const nonActionableSameHeadThread = createReviewThread({
+    comments: {
+      nodes: [
+        {
+          id: "comment-1",
+          body: "Please address this.",
+          createdAt: "2026-03-11T00:00:00Z",
+          url: "https://example.test/pr/44#discussion_r1",
+          author: {
+            login: "copilot-pull-request-reviewer",
+            typeName: "Bot",
+          },
+        },
+        {
+          id: "comment-2",
+          body: "Handled manually elsewhere.",
+          createdAt: "2026-03-11T00:10:00Z",
+          url: "https://example.test/pr/44#discussion_r2",
+          author: {
+            login: "octocat",
+            typeName: "User",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(staleConfiguredBotReviewThreads(config, record, pr, [nonActionableSameHeadThread]), [nonActionableSameHeadThread]);
+});
