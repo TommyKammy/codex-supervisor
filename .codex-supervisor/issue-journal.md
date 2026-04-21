@@ -1,42 +1,33 @@
-# Issue #1611: Surface loop-off as an active tracked-work blocker in status and explain
+# Issue #1612: Classify no-actionable current-head configured-bot reviews as stale review blockers
 
 ## Supervisor Snapshot
-- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1611
-- Branch: codex/issue-1611
+- Issue URL: https://github.com/TommyKammy/codex-supervisor/issues/1612
+- Branch: codex/issue-1612
 - Workspace: .
 - Journal: .codex-supervisor/issue-journal.md
-- Current phase: addressing_review
-- Attempt count: 2 (implementation=1, repair=1)
-- Last head SHA: 925c09f21f3692404f1b7bf983e76920ee1ca195
+- Current phase: reproducing
+- Attempt count: 1 (implementation=1, repair=0)
+- Last head SHA: d3d579515c2c6c696e9fae33a4cef7446edeb66a
 - Blocked reason: none
-- Last failure signature: PRRT_kwDORgvdZ858goN9
-- Repeated failure signature count: 1
-- Updated at: 2026-04-21T13:30:51.838Z
+- Last failure signature: none
+- Repeated failure signature count: 0
+- Updated at: 2026-04-21T13:43:55.881Z
 
 ## Latest Codex Summary
-Added a shared loop-off tracked-work blocker across read-only surfaces. Status now emits a structured `loop_runtime_blocker` line plus a `status_warning` when non-done tracked work exists and the loop is off; explain now carries the same blocker; and the WebUI overview/action/attention summaries now treat that state as blocked instead of idle. I also updated the focused tests and made checkpoint commit `925c09f` (`Surface loop-off tracked-work blockers`).
-
-Verification used `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts` and `npm run build`. I also updated `.codex-supervisor/issue-journal.md`. The only remaining untracked files are supervisor runtime artifacts under `.codex-supervisor/`, not code changes.
-
-Summary: surfaced explicit loop-off blockers for active tracked work in status, explain, and WebUI summaries; added focused regression coverage; committed as `925c09f`
-State hint: implementing
-Blocked reason: none
-Tests: `npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts src/backend/webui-dashboard-browser-logic.test.ts src/backend/webui-dashboard.test.ts`; `npm run build`
-Next action: open or update the draft PR for `codex/issue-1611` with commit `925c09f`
-Failure signature: PRRT_kwDORgvdZ858goN9
+- Reclassified same-head configured-bot threads with an explicit current-head no-actionable signal into the `stale_review_bot` path, then tightened regression coverage across selector, policy, tracked-PR persistence, and explain surfaces.
 
 ## Active Failure Context
-- None recorded.
+- Resolved: stale same-head configured-bot blockers with a current-head informational success signal were staying on the generic non-actionable `manual_review` path.
 
 ## Codex Working Notes
 ### Current Handoff
-- Hypothesis: The remaining review miss was limited to explain-report aggregation: the shared loop-off blocker helper was correct, but `buildSupervisorExplainReport()` still passed only the explained record instead of the full tracked set.
-- What changed: Reused `buildTrackedIssueDtos(state)` inside `buildSupervisorExplainReport()` so explain now derives the loop-off blocker from all tracked records, matching status/WebUI behavior. Added a regression test covering an untracked explained issue while two tracked issues are stalled with the loop off. Committed the review fix as `206660b` (`Fix explain loop-off blocker aggregation`), pushed `codex/issue-1611`, and resolved the CodeRabbit thread on PR #1617.
+- Hypothesis: When the configured bot reports an explicit current-head success/no-actionable signal, lingering bot-owned same-head unresolved threads should route through stale-review recovery instead of the generic non-actionable manual-review bucket.
+- What changed: `staleConfiguredBotReviewThreads` now considers configured-bot threads stale when the current head has an explicit no-actionable signal (`configuredBotCurrentHeadObservedAt` + `configuredBotCurrentHeadStatusState=SUCCESS` + no top-level actionable strength), and failure-context selection now prefers the stale-review context before the generic non-actionable manual-review context.
 - Current blocker: none
-- Next exact step: Monitor PR #1617 for any new review or CI regressions; otherwise this branch is ready for normal review/merge flow.
-- Verification gap: none for the review fix; the targeted suite and full build both passed locally.
-- Files touched: .codex-supervisor/issue-journal.md; src/supervisor/supervisor-loop-runtime-state.ts; src/supervisor/supervisor-read-only-reporting.ts; src/supervisor/supervisor-selection-issue-explain.ts; src/supervisor/supervisor-diagnostics-status-selection.test.ts; src/supervisor/supervisor-diagnostics-explain.test.ts; src/backend/webui-dashboard-browser-logic.ts; src/backend/webui-dashboard-browser-logic.test.ts; src/backend/webui-dashboard-browser-script.ts; src/backend/webui-dashboard-browser-issue-details.ts; src/backend/webui-dashboard.test.ts
-- Rollback concern: Low. The main behavior change is additional loop-off blocker derivation on read-only surfaces when non-done tracked work exists; tests cover status, explain, and WebUI summaries.
-- Last focused command: gh api graphql -f query='mutation($threadId:ID!){ resolveReviewThread(input:{threadId:$threadId}) { thread { isResolved } } }' -f threadId='PRRT_kwDORgvdZ858goN9'
+- Next exact step: open or update the PR for `codex/issue-1612` if the supervisor wants an early draft PR checkpoint.
+- Verification gap: none for the requested local bundle; targeted regressions and `npm run build` both passed.
+- Files touched: `.codex-supervisor/issue-journal.md`; `src/review-thread-reporting.ts`; `src/supervisor/supervisor-failure-context.ts`; `src/review-thread-reporting.test.ts`; `src/pull-request-state-policy.test.ts`; `src/supervisor/supervisor-pr-review-blockers.test.ts`; `src/supervisor/supervisor-diagnostics-explain.test.ts`
+- Rollback concern: The new stale path intentionally stays fail-closed unless the PR has an explicit current-head success observation with no actionable top-level configured-bot signal; if that inference is too broad, revert the `staleConfiguredBotReviewThreads` expansion.
+- Last focused command: `npx tsx --test src/github/github-review-signals.test.ts src/pull-request-state-policy.test.ts src/post-turn-pull-request.test.ts src/supervisor/supervisor-diagnostics-explain.test.ts`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.

@@ -66,13 +66,6 @@ export function inferFailureContext(
         return reviewContext;
       }
 
-      const nonActionableConfiguredBotContext = buildNonActionableConfiguredBotReviewFailureContext(
-        nonActionableConfiguredBotReviewThreads(config, reviewThreads),
-      );
-      if (nonActionableConfiguredBotContext) {
-        return nonActionableConfiguredBotContext;
-      }
-
       const stalledBotReviewContext = buildStalledBotReviewFailureContext(
         staleConfiguredBotReviewThreads(config, record, pr, reviewThreads),
         configuredBotReviewFollowUpState(config, record, pr, configuredBotReviewThreads(config, reviewThreads)) === "exhausted"
@@ -81,6 +74,13 @@ export function inferFailureContext(
       );
       if (stalledBotReviewContext) {
         return stalledBotReviewContext;
+      }
+
+      const nonActionableConfiguredBotContext = buildNonActionableConfiguredBotReviewFailureContext(
+        nonActionableConfiguredBotReviewThreads(config, reviewThreads),
+      );
+      if (nonActionableConfiguredBotContext) {
+        return nonActionableConfiguredBotContext;
       }
 
       if (config.humanReviewBlocksMerge) {
@@ -115,13 +115,6 @@ export function inferFailureContext(
       return reviewContext;
     }
 
-    const nonActionableConfiguredBotContext = buildNonActionableConfiguredBotReviewFailureContext(
-      nonActionableConfiguredBotReviewThreads(config, reviewThreads),
-    );
-    if (nonActionableConfiguredBotContext) {
-      return nonActionableConfiguredBotContext;
-    }
-
     const stalledBotReviewContext = buildStalledBotReviewFailureContext(
       staleConfiguredBotReviewThreads(config, record, pr, reviewThreads),
       configuredBotReviewFollowUpState(config, record, pr, configuredBotReviewThreads(config, reviewThreads)) === "exhausted"
@@ -130,6 +123,13 @@ export function inferFailureContext(
     );
     if (stalledBotReviewContext) {
       return stalledBotReviewContext;
+    }
+
+    const nonActionableConfiguredBotContext = buildNonActionableConfiguredBotReviewFailureContext(
+      nonActionableConfiguredBotReviewThreads(config, reviewThreads),
+    );
+    if (nonActionableConfiguredBotContext) {
+      return nonActionableConfiguredBotContext;
     }
 
     if (localReviewHighSeverityNeedsBlock(config, record, pr)) {

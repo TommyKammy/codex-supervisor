@@ -74,6 +74,19 @@ export function actionableConfiguredBotReviewThreads(
   );
 }
 
+function hasExplicitCurrentHeadNoActionableConfiguredBotSignal(
+  pr: Pick<
+    GitHubPullRequest,
+    "configuredBotCurrentHeadObservedAt" | "configuredBotCurrentHeadStatusState" | "configuredBotTopLevelReviewStrength"
+  >,
+): boolean {
+  return Boolean(
+    pr.configuredBotCurrentHeadObservedAt &&
+      pr.configuredBotCurrentHeadStatusState === "SUCCESS" &&
+      pr.configuredBotTopLevelReviewStrength === null,
+  );
+}
+
 export function pendingBotReviewThreads(
   config: SupervisorConfig,
   record: Pick<
@@ -138,13 +151,18 @@ export function staleConfiguredBotReviewThreads(
     | "processed_review_thread_ids"
     | "processed_review_thread_fingerprints"
     | "last_head_sha"
-    | "review_follow_up_head_sha"
-    | "review_follow_up_remaining"
+      | "review_follow_up_head_sha"
+      | "review_follow_up_remaining"
   >,
-  pr: Pick<GitHubPullRequest, "headRefOid">,
+  pr: Pick<
+    GitHubPullRequest,
+    "headRefOid" | "configuredBotCurrentHeadObservedAt" | "configuredBotCurrentHeadStatusState" | "configuredBotTopLevelReviewStrength"
+  >,
   reviewThreads: ReviewThread[],
 ): ReviewThread[] {
-  const configuredThreads = actionableConfiguredBotReviewThreads(config, reviewThreads);
+  const configuredThreads = hasExplicitCurrentHeadNoActionableConfiguredBotSignal(pr)
+    ? configuredBotReviewThreads(config, reviewThreads)
+    : actionableConfiguredBotReviewThreads(config, reviewThreads);
   if (configuredThreads.length === 0) {
     return [];
   }

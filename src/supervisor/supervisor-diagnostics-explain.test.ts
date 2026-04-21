@@ -696,6 +696,76 @@ Explain should keep non-actionable same-head configured-bot blockers on manual r
   assert.doesNotMatch(explanation, /^failure_details=.*processed_on_current_head=yes/m);
 });
 
+test("explain surfaces same-head no-actionable configured-bot blockers as stale review blockers", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 95;
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        branch: branchName(fixture.config, issueNumber),
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        blocked_reason: "stale_review_bot",
+        last_error:
+          "1 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
+        last_failure_context: {
+          category: "manual",
+          summary:
+            "1 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
+          signature: "stalled-bot:thread-1",
+          command: null,
+          details: [
+            "reviewer=octocat file=src/file.ts line=12 processed_on_current_head=yes",
+          ],
+          url: "https://example.test/pr/195#discussion_r2",
+          updated_at: "2026-03-13T00:20:00Z",
+        },
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Explain same-head no-actionable configured bot blockers as stale",
+    body: `## Summary
+Explain should surface same-head no-actionable configured-bot blockers as stale review blockers.
+
+## Scope
+- distinguish explicit no-actionable current-head bot signals from generic manual review
+
+## Acceptance criteria
+- explain reports stale_review_bot and processed_on_current_head=yes for the blocker details
+
+## Verification
+- npm test -- src/supervisor/supervisor-diagnostics-explain.test.ts`,
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => trackedIssue,
+    listAllIssues: async () => [trackedIssue],
+    listCandidateIssues: async () => [trackedIssue],
+  };
+
+  const explanation = await supervisor.explain(issueNumber);
+
+  assert.match(explanation, /^blocked_reason=stale_review_bot$/m);
+  assert.match(
+    explanation,
+    /^failure_summary=1 configured bot review thread\(s\) remain unresolved after processing on the current head without measurable progress and now require manual attention\.$/m,
+  );
+  assert.doesNotMatch(explanation, /^blocked_reason=manual_review$/m);
+});
+
 test("explain marks tracked stale configured-bot blockers runnable after reply_and_resolve is enabled", async () => {
   const fixture = await createSupervisorFixture();
   fixture.config.staleConfiguredBotReviewPolicy = "reply_and_resolve";
