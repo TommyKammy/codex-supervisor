@@ -155,6 +155,73 @@ test("explain reports candidate filtering for a non-candidate issue", async () =
   assert.match(explanation, /^reason_1=candidate filtered_by_candidate_list$/m);
 });
 
+test("explain resolves tracked PR numbers to the owning issue context", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 155;
+  const prNumber = 655;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        branch,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: prNumber,
+        blocked_reason: "manual_review",
+        last_error: "waiting on review feedback",
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const owningIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Owning issue for tracked PR explain",
+    body: executionReadyBody("Explain should resolve tracked PR numbers to the owning issue context."),
+    createdAt: "2026-03-13T00:05:00Z",
+    updatedAt: "2026-03-13T00:05:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async (requestedIssueNumber: number) => {
+      assert.equal(requestedIssueNumber, issueNumber);
+      return owningIssue;
+    },
+    listAllIssues: async () => [owningIssue],
+    listCandidateIssues: async () => [owningIssue],
+    getPullRequestIfExists: async (requestedPrNumber: number) => {
+      assert.equal(requestedPrNumber, prNumber);
+      return createPullRequest({
+        number: prNumber,
+        headRefName: branch,
+        headRefOid: "head-655",
+        isDraft: true,
+      });
+    },
+  };
+
+  const explanation = await supervisor.explain(prNumber);
+
+  assert.match(
+    explanation,
+    new RegExp(
+      `^lookup_target=tracked_pr query=#${prNumber} owner_issue=#${issueNumber} branch=${branch} tracked_state=blocked tracked_blocked_reason=manual_review pr_state=draft$`,
+      "m",
+    ),
+  );
+  assert.match(explanation, new RegExp(`^issue=#${issueNumber}$`, "m"));
+  assert.match(explanation, /^state=blocked$/m);
+  assert.match(explanation, /^blocked_reason=manual_review$/m);
+  assert.doesNotMatch(explanation, /candidate filtered_by_candidate_list/);
+});
+
 test("explain surfaces degraded full inventory refresh without requiring a fresh full issue list", async () => {
   const fixture = await createSupervisorFixture();
   const state: SupervisorStateFile = {

@@ -12,7 +12,14 @@ import {
   buildNonRunnableLocalStateReasons,
   renderIssueExplainDto,
 } from "./supervisor-selection-issue-explain";
-import { branchName, createConfig, createRecord, createSupervisorFixture, createSupervisorState } from "./supervisor-test-helpers";
+import {
+  branchName,
+  createConfig,
+  createPullRequest,
+  createRecord,
+  createSupervisorFixture,
+  createSupervisorState,
+} from "./supervisor-test-helpers";
 
 function createIssue(overrides: Partial<GitHubIssue> = {}): GitHubIssue {
   return {
@@ -206,6 +213,75 @@ Parallelizable: No`,
   assert.ok(lines.some((line) => line.includes("retry_state=timeout_retry:1/2")));
   assert.ok(lines.includes("runtime_failure_kind=timeout"));
   assert.ok(lines.includes("runtime_failure_summary=Supervisor failed while recovering a Codex turn for issue #604."));
+});
+
+test("buildIssueExplainSummary resolves tracked PR numbers to the owning issue context", async () => {
+  const config = createConfig();
+  const issueNumber = 611;
+  const prNumber = 655;
+  const branch = branchName(config, issueNumber);
+  const issue = createIssue({
+    number: issueNumber,
+    title: "Explain tracked PR ownership",
+    body: `## Summary
+Resolve tracked PR explain lookups through the owning issue.
+
+## Scope
+- detect tracked PR numbers before treating them like runnable issues
+
+## Acceptance criteria
+- explain reports the owning issue context for tracked PR numbers
+
+## Verification
+- npx tsx --test src/supervisor/supervisor-selection-issue-explain.test.ts
+
+Depends on: none
+Execution order: 1 of 1
+Parallelizable: No`,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "addressing_review",
+        blocked_reason: null,
+        last_error: null,
+        branch,
+        pr_number: prNumber,
+      }),
+    },
+  };
+
+  const lines = await buildIssueExplainSummary(
+    {
+      getIssue: async (requestedIssueNumber) => {
+        assert.equal(requestedIssueNumber, issueNumber);
+        return issue;
+      },
+      listAllIssues: async () => [issue],
+      listCandidateIssues: async () => [issue],
+      getPullRequestIfExists: async (requestedPrNumber) => {
+        assert.equal(requestedPrNumber, prNumber);
+        return createPullRequest({
+          number: prNumber,
+          headRefName: branch,
+          isDraft: true,
+        });
+      },
+    },
+    config,
+    state,
+    prNumber,
+  );
+
+  assert.ok(
+    lines.includes(
+      `lookup_target=tracked_pr query=#${prNumber} owner_issue=#${issueNumber} branch=${branch} tracked_state=addressing_review tracked_blocked_reason=none pr_state=draft`,
+    ),
+  );
+  assert.ok(lines.includes(`issue=#${issueNumber}`));
+  assert.ok(lines.includes("state=addressing_review"));
 });
 
 test("buildIssueExplainDto exposes typed operator activity context", async () => {
