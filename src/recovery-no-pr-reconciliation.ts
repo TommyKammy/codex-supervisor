@@ -37,13 +37,25 @@ function preserveOriginalRuntimeFailureContext(record: IssueRunRecord): Partial<
   };
 }
 
-function transientNoPrRuntimeEvidenceLabel(record: Pick<
-  IssueRunRecord,
-  "last_runtime_failure_kind" | "last_runtime_failure_context" | "last_failure_kind" | "last_failure_context"
->): string | null {
+function transientNoPrRuntimeEvidenceLabel(
+  record: Pick<
+    IssueRunRecord,
+    "state"
+    | "last_runtime_failure_kind"
+    | "last_runtime_failure_context"
+    | "last_failure_kind"
+    | "last_failure_context"
+    | "timeout_retry_count"
+  >,
+  config: Pick<SupervisorConfig, "timeoutRetryLimit">,
+): string | null {
   const runtimeFailureKind = record.last_runtime_failure_kind ?? record.last_failure_kind;
   const runtimeFailureContext = record.last_runtime_failure_context ?? record.last_failure_context;
-  if (runtimeFailureKind === "timeout") {
+  const timeoutRetryAllowed =
+    record.state === "failed"
+    && record.last_failure_kind === "timeout"
+    && record.timeout_retry_count < config.timeoutRetryLimit;
+  if (runtimeFailureKind === "timeout" && timeoutRetryAllowed) {
     return "timeout";
   }
   if (runtimeFailureContext?.signature === "provider-capacity") {
@@ -101,7 +113,7 @@ export async function reconcileStaleFailedNoPrRecord(args: {
     return false;
   }
   const previousNoPrRecoveryCount = record.stale_stabilizing_no_pr_recovery_count ?? 0;
-  const transientRuntimeEvidence = transientNoPrRuntimeEvidenceLabel(record);
+  const transientRuntimeEvidence = transientNoPrRuntimeEvidenceLabel(record, config);
   const shouldAutoRequeueAlreadySatisfiedOnMain =
     branchRecovery.state === "already_satisfied_on_main"
     && transientRuntimeEvidence !== null
