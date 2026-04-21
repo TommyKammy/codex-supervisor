@@ -611,6 +611,13 @@ test("dashboard moves tracked history into a dedicated panel with non-done defau
               blockedReason: "requirements:verification",
             },
             {
+              issueNumber: 59,
+              state: "blocked",
+              branch: "codex/issue-59",
+              prNumber: 159,
+              blockedReason: "manual_review",
+            },
+            {
               issueNumber: 12,
               state: "done",
               branch: "codex/issue-12",
@@ -634,21 +641,26 @@ test("dashboard moves tracked history into a dedicated panel with non-done defau
   assert.ok(trackedHistorySummary);
   assert.ok(trackedHistoryToggle);
 
-  assert.match(statusLines.textContent, /tracked issues=2/u);
+  assert.match(statusLines.textContent, /tracked issues=3/u);
   assert.doesNotMatch(statusLines.textContent, /tracked issue #58/u);
-  assert.match(trackedHistorySummary.textContent, /showing 1 of 2 tracked issues/u);
+  assert.match(trackedHistorySummary.textContent, /showing 2 of 3 tracked issues/u);
   assert.match(trackedHistoryLines.textContent, /#58/u);
   assert.match(trackedHistoryLines.textContent, /queued/u);
   assert.match(trackedHistoryLines.textContent, /pr #58/u);
   assert.match(trackedHistoryLines.textContent, /requirements:verification/u);
+  assert.match(trackedHistoryLines.textContent, /#59/u);
+  assert.match(trackedHistoryLines.textContent, /blocked/u);
+  assert.match(trackedHistoryLines.textContent, /pr #159/u);
+  assert.match(trackedHistoryLines.textContent, /manual_review/u);
   assert.doesNotMatch(trackedHistoryLines.textContent, /codex\/issue-58/u);
+  assert.doesNotMatch(trackedHistoryLines.textContent, /codex\/issue-59/u);
   assert.doesNotMatch(trackedHistoryLines.textContent, /#12/u);
   assert.match(trackedHistoryToggle.textContent, /Show done issues/u);
 
   await trackedHistoryToggle.dispatch("click");
   await harness.flush();
 
-  assert.match(trackedHistorySummary.textContent, /showing 2 of 2 tracked issues/u);
+  assert.match(trackedHistorySummary.textContent, /showing 3 of 3 tracked issues/u);
   assert.match(trackedHistoryLines.textContent, /#12/u);
   assert.match(trackedHistoryLines.textContent, /done/u);
   assert.match(trackedHistoryLines.textContent, /pr #12/u);

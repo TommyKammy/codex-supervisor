@@ -101,7 +101,10 @@ export function describeLoopOffTrackedWorkBlocker(status: DashboardStatusLike | 
     return null;
   }
 
-  const activeTrackedIssues = collectTrackedIssues(status);
+  const activeTrackedIssues = collectTrackedIssues(status).filter((issue) => {
+    const normalized = issue.state?.toLowerCase();
+    return Boolean(normalized) && normalized !== "done" && normalized !== "blocked" && normalized !== "failed";
+  });
   if (activeTrackedIssues.length === 0) {
     return null;
   }
@@ -336,10 +339,7 @@ export function collectTrackedIssues(
   if (options.includeDone) {
     return trackedIssues;
   }
-  return trackedIssues.filter((issue) => {
-    const normalized = issue.state?.toLowerCase();
-    return normalized !== "done" && normalized !== "blocked" && normalized !== "failed";
-  });
+  return trackedIssues.filter((issue) => issue.state?.toLowerCase() !== "done");
 }
 
 export function formatTrackedIssues(
