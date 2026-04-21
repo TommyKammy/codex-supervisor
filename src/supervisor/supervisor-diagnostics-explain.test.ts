@@ -1458,3 +1458,71 @@ test("explain does not report local_state failed after tracked PR recovery resum
   assert.doesNotMatch(explanation, /^reason_\d+=local_state failed$/m);
   assert.doesNotMatch(explanation, /^reason_\d+=blocked_failure /m);
 });
+
+test("explain surfaces failed no-PR transient auto-requeue recovery reasons", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 104;
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Failed no-PR transient auto-requeue recovery",
+    body: executionReadyBody("Explain should show why a transient already-satisfied failed no-PR issue was auto-requeued."),
+    createdAt: "2026-03-18T00:00:00Z",
+    updatedAt: "2026-03-18T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "queued",
+        branch: branchName(fixture.config, issueNumber),
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: null,
+        blocked_reason: null,
+        last_error: null,
+        last_failure_kind: null,
+        last_failure_context: null,
+        last_failure_signature: null,
+        repeated_failure_signature_count: 0,
+        stale_stabilizing_no_pr_recovery_count: 1,
+        last_runtime_error: "Selected model is at capacity. Please try a different model.",
+        last_runtime_failure_kind: "codex_exit",
+        last_runtime_failure_context: {
+          category: "codex",
+          summary: "Selected model is at capacity. Please try a different model.",
+          signature: "provider-capacity",
+          command: null,
+          details: ["provider=codex"],
+          url: null,
+          updated_at: "2026-03-18T00:10:00Z",
+        },
+        last_recovery_reason:
+          "failed_no_pr_transient_retry: requeued issue #104 from failed to queued after failed no-PR recovery found no meaningful branch diff and matched transient runtime evidence provider-capacity",
+        last_recovery_at: "2026-03-19T00:20:00Z",
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => issue,
+    listAllIssues: async () => [issue],
+    listCandidateIssues: async () => [issue],
+  };
+
+  const explanation = await supervisor.explain(issueNumber);
+
+  assert.match(explanation, /^state=queued$/m);
+  assert.match(explanation, /^runnable=yes$/m);
+  assert.match(
+    explanation,
+    /^latest_recovery issue=#104 at=2026-03-19T00:20:00Z reason=failed_no_pr_transient_retry detail=requeued issue #104 from failed to queued after failed no-PR recovery found no meaningful branch diff and matched transient runtime evidence provider-capacity$/m,
+  );
+  assert.match(explanation, /^runtime_failure_kind=codex_exit$/m);
+  assert.match(explanation, /^runtime_failure_summary=Selected model is at capacity\. Please try a different model\.$/m);
+});

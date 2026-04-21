@@ -7081,7 +7081,7 @@ test("reconcileStaleFailedIssueStates snapshots the original runtime failure whe
   assert.equal(saveCalls, 1);
 });
 
-test("reconcileStaleFailedIssueStates blocks failed no-PR issues for manual review when only supervisor-local artifacts are dirty on an open issue", async () => {
+test("reconcileStaleFailedIssueStates requeues failed no-PR issues once when only supervisor-local artifacts are dirty on an open issue", async () => {
   const { repoPath, workspaceRoot, baseHead } = await createRepositoryWithOrigin();
   const workspacePath = await createIssueWorktree({
     repoPath,
@@ -7185,31 +7185,26 @@ test("reconcileStaleFailedIssueStates blocks failed no-PR issues for manual revi
   );
 
   const updated = state.issues["366"];
-  assert.equal(updated.state, "blocked");
+  assert.equal(updated.state, "queued");
   assert.equal(updated.pr_number, null);
   assert.equal(updated.codex_session_id, null);
-  assert.equal(updated.blocked_reason, "manual_review");
+  assert.equal(updated.blocked_reason, null);
+  assert.equal(updated.last_error, null);
   assert.equal(updated.last_failure_kind, null);
-  assert.equal(updated.last_failure_context?.signature, "failed-no-pr-already-satisfied-on-main");
-  assert.match(updated.last_error ?? "", /confirm whether the implementation already landed elsewhere/i);
-  assert.deepEqual(updated.last_failure_context?.details ?? [], [
-    "state=failed",
-    "tracked_pr=none",
-    "branch_state=already_satisfied_on_main",
-    "default_branch=origin/main",
-    `head_sha=${updated.last_head_sha ?? "unknown"}`,
-    "operator_action=confirm whether the implementation already landed elsewhere or requeue manually if more work is still required",
-  ]);
-  assert.equal(updated.stale_stabilizing_no_pr_recovery_count, 0);
+  assert.equal(updated.last_failure_context, null);
+  assert.equal(updated.last_runtime_error, "Selected model is at capacity. Please try a different model.");
+  assert.equal(updated.last_runtime_failure_kind, "codex_exit");
+  assert.equal(updated.last_runtime_failure_context?.signature, "provider-capacity");
+  assert.equal(updated.stale_stabilizing_no_pr_recovery_count, 1);
   assert.equal(
     updated.last_recovery_reason,
-    "failed_no_pr_manual_review: blocked issue #366 after failed no-PR recovery found an open issue with no authoritative completion signal",
+    "failed_no_pr_transient_retry: requeued issue #366 from failed to queued after failed no-PR recovery found no meaningful branch diff and matched transient runtime evidence provider-capacity",
   );
   assert.ok(updated.last_recovery_at);
   assert.equal(saveCalls, 1);
 });
 
-test("reconcileStaleFailedIssueStates blocks failed no-PR issues for manual review when only supervisor-local artifact commits remain on an open issue", async () => {
+test("reconcileStaleFailedIssueStates requeues failed no-PR issues once when only supervisor-local artifact commits remain on an open issue", async () => {
   const { repoPath, workspaceRoot, baseHead } = await createRepositoryWithOrigin();
   const workspacePath = await createIssueWorktree({
     repoPath,
@@ -7317,32 +7312,27 @@ test("reconcileStaleFailedIssueStates blocks failed no-PR issues for manual revi
   );
 
   const updated = state.issues["366"];
-  assert.equal(updated.state, "blocked");
+  assert.equal(updated.state, "queued");
   assert.equal(updated.pr_number, null);
   assert.equal(updated.codex_session_id, null);
-  assert.equal(updated.blocked_reason, "manual_review");
+  assert.equal(updated.blocked_reason, null);
+  assert.equal(updated.last_error, null);
   assert.equal(updated.last_failure_kind, null);
-  assert.equal(updated.last_failure_context?.signature, "failed-no-pr-already-satisfied-on-main");
-  assert.match(updated.last_error ?? "", /confirm whether the implementation already landed elsewhere/i);
+  assert.equal(updated.last_failure_context, null);
   assert.equal(updated.last_head_sha, headSha);
-  assert.deepEqual(updated.last_failure_context?.details ?? [], [
-    "state=failed",
-    "tracked_pr=none",
-    "branch_state=already_satisfied_on_main",
-    "default_branch=origin/main",
-    `head_sha=${headSha}`,
-    "operator_action=confirm whether the implementation already landed elsewhere or requeue manually if more work is still required",
-  ]);
-  assert.equal(updated.stale_stabilizing_no_pr_recovery_count, 0);
+  assert.equal(updated.last_runtime_error, "Selected model is at capacity. Please try a different model.");
+  assert.equal(updated.last_runtime_failure_kind, "codex_exit");
+  assert.equal(updated.last_runtime_failure_context?.signature, "provider-capacity");
+  assert.equal(updated.stale_stabilizing_no_pr_recovery_count, 1);
   assert.equal(
     updated.last_recovery_reason,
-    "failed_no_pr_manual_review: blocked issue #366 after failed no-PR recovery found an open issue with no authoritative completion signal",
+    "failed_no_pr_transient_retry: requeued issue #366 from failed to queued after failed no-PR recovery found no meaningful branch diff and matched transient runtime evidence provider-capacity",
   );
   assert.ok(updated.last_recovery_at);
   assert.equal(saveCalls, 1);
 });
 
-test("reconcileStaleFailedIssueStates blocks failed no-PR issues for manual review when an open no-PR issue has no meaningful branch diff", async () => {
+test("reconcileStaleFailedIssueStates requeues failed no-PR issues once when an open no-PR issue has no meaningful branch diff", async () => {
   const { repoPath, workspaceRoot, baseHead } = await createRepositoryWithOrigin();
   const workspacePath = await createIssueWorktree({
     repoPath,
@@ -7443,22 +7433,264 @@ test("reconcileStaleFailedIssueStates blocks failed no-PR issues for manual revi
   );
 
   const updated = state.issues["366"];
-  assert.equal(updated.state, "blocked");
+  assert.equal(updated.state, "queued");
   assert.equal(updated.pr_number, null);
   assert.equal(updated.codex_session_id, null);
-  assert.equal(updated.blocked_reason, "manual_review");
+  assert.equal(updated.blocked_reason, null);
+  assert.equal(updated.last_error, null);
   assert.equal(updated.last_failure_kind, null);
+  assert.equal(updated.last_failure_context, null);
+  assert.equal(updated.last_runtime_error, "Selected model is at capacity. Please try a different model.");
+  assert.equal(updated.last_runtime_failure_kind, "codex_exit");
+  assert.equal(updated.last_runtime_failure_context?.signature, "provider-capacity");
+  assert.equal(updated.stale_stabilizing_no_pr_recovery_count, 1);
+  assert.equal(
+    updated.last_recovery_reason,
+    "failed_no_pr_transient_retry: requeued issue #366 from failed to queued after failed no-PR recovery found no meaningful branch diff and matched transient runtime evidence provider-capacity",
+  );
+  assert.ok(updated.last_recovery_at);
+  assert.equal(saveCalls, 1);
+});
+
+test("reconcileStaleFailedIssueStates requeues failed no-PR issues once when no meaningful branch diff matches allowlisted transient runtime evidence", async () => {
+  const { repoPath, workspaceRoot, baseHead } = await createRepositoryWithOrigin();
+  const workspacePath = await createIssueWorktree({
+    repoPath,
+    workspaceRoot,
+    issueNumber: 366,
+    branch: "codex/reopen-issue-366",
+  });
+  const journalPath = path.join(workspacePath, ".codex-supervisor", "issue-journal.md");
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  await fs.writeFile(journalPath, "# local journal\n");
+
+  const config = createConfig({
+    repoPath,
+    workspaceRoot,
+  });
+  const originalRuntimeFailureContext = {
+    category: "codex" as const,
+    summary: "Selected model is at capacity. Please try a different model.",
+    signature: "provider-capacity",
+    command: null,
+    details: ["provider=codex"],
+    url: null,
+    updated_at: "2026-03-13T00:20:00Z",
+  };
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
+        issue_number: 366,
+        state: "failed",
+        branch: "codex/reopen-issue-366",
+        workspace: workspacePath,
+        journal_path: journalPath,
+        pr_number: null,
+        last_head_sha: baseHead,
+        last_error: originalRuntimeFailureContext.summary,
+        last_failure_kind: "codex_exit",
+        last_failure_context: originalRuntimeFailureContext,
+        last_failure_signature: "provider-capacity",
+        repeated_failure_signature_count: 1,
+        last_runtime_error: originalRuntimeFailureContext.summary,
+        last_runtime_failure_kind: "codex_exit",
+        last_runtime_failure_context: originalRuntimeFailureContext,
+        codex_session_id: "session-366",
+      }),
+    ],
+  });
+  const issue = createIssue({
+    number: 366,
+    title: "Retry already-satisfied transient failed no-PR issue once",
+    updatedAt: "2026-03-13T00:21:00Z",
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  await reconcileStaleFailedIssueStates(
+    {
+      getPullRequestIfExists: async () => {
+        throw new Error("unexpected getPullRequestIfExists call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      closeIssue: async () => {
+        throw new Error("unexpected closeIssue call");
+      },
+      closePullRequest: async () => {
+        throw new Error("unexpected closePullRequest call");
+      },
+      getIssue: async () => {
+        throw new Error("unexpected getIssue call");
+      },
+      getMergedPullRequestsClosingIssue: async () => [],
+    },
+    stateStore,
+    state,
+    config,
+    [issue],
+    {
+      inferStateFromPullRequest: () => "draft_pr",
+      inferFailureContext: () => null,
+      blockedReasonForLifecycleState: () => null,
+      isOpenPullRequest: () => true,
+      syncReviewWaitWindow: () => ({}),
+      syncCopilotReviewRequestObservation: () => ({}),
+      syncCopilotReviewTimeoutState: noCopilotReviewTimeoutPatch,
+    },
+  );
+
+  const updated = state.issues["366"];
+  assert.equal(updated.state, "queued");
+  assert.equal(updated.pr_number, null);
+  assert.equal(updated.codex_session_id, null);
+  assert.equal(updated.blocked_reason, null);
+  assert.equal(updated.last_error, null);
+  assert.equal(updated.last_failure_kind, null);
+  assert.equal(updated.last_failure_context, null);
+  assert.equal(updated.last_failure_signature, null);
+  assert.equal(updated.repeated_failure_signature_count, 0);
+  assert.equal(updated.last_runtime_error, originalRuntimeFailureContext.summary);
+  assert.equal(updated.last_runtime_failure_kind, "codex_exit");
+  assert.deepEqual(updated.last_runtime_failure_context, originalRuntimeFailureContext);
+  assert.equal(updated.stale_stabilizing_no_pr_recovery_count, 1);
+  assert.equal(
+    updated.last_recovery_reason,
+    "failed_no_pr_transient_retry: requeued issue #366 from failed to queued after failed no-PR recovery found no meaningful branch diff and matched transient runtime evidence provider-capacity",
+  );
+  assert.ok(updated.last_recovery_at);
+  assert.equal(saveCalls, 1);
+});
+
+test("reconcileStaleFailedIssueStates sends second already-satisfied transient failed no-PR recurrences to manual review", async () => {
+  const { repoPath, workspaceRoot, baseHead } = await createRepositoryWithOrigin();
+  const workspacePath = await createIssueWorktree({
+    repoPath,
+    workspaceRoot,
+    issueNumber: 366,
+    branch: "codex/reopen-issue-366",
+  });
+  const journalPath = path.join(workspacePath, ".codex-supervisor", "issue-journal.md");
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  await fs.writeFile(journalPath, "# local journal\n");
+
+  const config = createConfig({
+    repoPath,
+    workspaceRoot,
+  });
+  const originalRuntimeFailureContext = {
+    category: "codex" as const,
+    summary: "Selected model is at capacity. Please try a different model.",
+    signature: "provider-capacity",
+    command: null,
+    details: ["provider=codex"],
+    url: null,
+    updated_at: "2026-03-13T00:20:00Z",
+  };
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
+        issue_number: 366,
+        state: "failed",
+        branch: "codex/reopen-issue-366",
+        workspace: workspacePath,
+        journal_path: journalPath,
+        pr_number: null,
+        last_head_sha: baseHead,
+        last_error: originalRuntimeFailureContext.summary,
+        last_failure_kind: "codex_exit",
+        last_failure_context: originalRuntimeFailureContext,
+        last_failure_signature: "provider-capacity",
+        repeated_failure_signature_count: 1,
+        stale_stabilizing_no_pr_recovery_count: 1,
+        last_runtime_error: originalRuntimeFailureContext.summary,
+        last_runtime_failure_kind: "codex_exit",
+        last_runtime_failure_context: originalRuntimeFailureContext,
+        codex_session_id: "session-366",
+      }),
+    ],
+  });
+  const issue = createIssue({
+    number: 366,
+    title: "Stop already-satisfied transient failed no-PR issue after one retry",
+    updatedAt: "2026-03-13T00:21:00Z",
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  await reconcileStaleFailedIssueStates(
+    {
+      getPullRequestIfExists: async () => {
+        throw new Error("unexpected getPullRequestIfExists call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      closeIssue: async () => {
+        throw new Error("unexpected closeIssue call");
+      },
+      closePullRequest: async () => {
+        throw new Error("unexpected closePullRequest call");
+      },
+      getIssue: async () => {
+        throw new Error("unexpected getIssue call");
+      },
+      getMergedPullRequestsClosingIssue: async () => [],
+    },
+    stateStore,
+    state,
+    config,
+    [issue],
+    {
+      inferStateFromPullRequest: () => "draft_pr",
+      inferFailureContext: () => null,
+      blockedReasonForLifecycleState: () => null,
+      isOpenPullRequest: () => true,
+      syncReviewWaitWindow: () => ({}),
+      syncCopilotReviewRequestObservation: () => ({}),
+      syncCopilotReviewTimeoutState: noCopilotReviewTimeoutPatch,
+    },
+  );
+
+  const updated = state.issues["366"];
+  assert.equal(updated.state, "blocked");
+  assert.equal(updated.blocked_reason, "manual_review");
   assert.equal(updated.last_failure_context?.signature, "failed-no-pr-already-satisfied-on-main");
-  assert.match(updated.last_error ?? "", /confirm whether the implementation already landed elsewhere/i);
-  assert.deepEqual(updated.last_failure_context?.details ?? [], [
-    "state=failed",
-    "tracked_pr=none",
-    "branch_state=already_satisfied_on_main",
-    "default_branch=origin/main",
-    `head_sha=${updated.last_head_sha ?? "unknown"}`,
-    "operator_action=confirm whether the implementation already landed elsewhere or requeue manually if more work is still required",
-  ]);
-  assert.equal(updated.stale_stabilizing_no_pr_recovery_count, 0);
+  assert.equal(updated.last_runtime_error, originalRuntimeFailureContext.summary);
+  assert.equal(updated.last_runtime_failure_kind, "codex_exit");
+  assert.deepEqual(updated.last_runtime_failure_context, originalRuntimeFailureContext);
+  assert.equal(updated.stale_stabilizing_no_pr_recovery_count, 1);
   assert.equal(
     updated.last_recovery_reason,
     "failed_no_pr_manual_review: blocked issue #366 after failed no-PR recovery found an open issue with no authoritative completion signal",
