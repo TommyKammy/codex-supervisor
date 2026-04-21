@@ -18,6 +18,7 @@ import {
   formatRetryContextSummary,
   formatTrackedIssues,
   parseSelectedIssueNumber,
+  type DashboardStatusLike,
 } from "./webui-dashboard-browser-logic";
 import {
   DASHBOARD_PANEL_IDS,
@@ -107,6 +108,70 @@ test("buildAttentionItems includes reconciliation warnings without duplicating s
       hasSuccessfulRefresh: true,
     }),
     ["same warning"],
+  );
+});
+
+test("dashboard summaries treat loop-off tracked work as an active blocker", () => {
+  const status: DashboardStatusLike = {
+    trackedIssues: [
+      {
+        issueNumber: 58,
+        state: "queued",
+        branch: "codex/issue-58",
+        prNumber: 58,
+        blockedReason: null,
+      },
+    ],
+    loopRuntime: {
+      state: "off",
+      hostMode: "unknown",
+      pid: null,
+      startedAt: null,
+      detail: null,
+    },
+    blockedIssues: [],
+    runnableIssues: [],
+  };
+
+  assert.deepEqual(
+    buildOverviewSummary({
+      status,
+      doctor: { overallStatus: "pass", checks: [] },
+      connectionPhase: "open",
+      refreshPhase: "idle",
+      hasSuccessfulRefresh: true,
+    }),
+    {
+      headline: "Tracked work is waiting for the loop",
+      detail: "Tracked work is active for #58, but the supervisor loop is off. Restart the loop to resume background execution.",
+      tone: "warn",
+    },
+  );
+
+  assert.deepEqual(
+    buildPrimaryActionSummary({
+      status,
+      doctor: { overallStatus: "pass", checks: [] },
+      connectionPhase: "open",
+      refreshPhase: "idle",
+      hasSuccessfulRefresh: true,
+    }),
+    {
+      title: "Restart the supervisor loop",
+      detail:
+        "Tracked work is active for #58, but the supervisor loop is off. Background execution will not advance until the loop restarts.",
+    },
+  );
+
+  assert.deepEqual(
+    buildAttentionItems({
+      status,
+      doctor: { overallStatus: "pass", checks: [] },
+      connectionPhase: "open",
+      refreshPhase: "idle",
+      hasSuccessfulRefresh: true,
+    }),
+    ["Tracked work is active for #58, but the supervisor loop is off. Restart the loop to resume background execution."],
   );
 });
 

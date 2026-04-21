@@ -36,6 +36,7 @@ export interface DashboardIssueExplainLike {
   runnable?: boolean | null;
   selectionReason?: string | null;
   reasons?: string[] | null;
+  loopRuntimeBlockerSummary?: string | null;
   externalReviewFollowUpSummary?: string | null;
   latestRecoverySummary?: string | null;
   failureSummary?: string | null;
@@ -138,6 +139,7 @@ export function buildIssueExplainSections(
         ["runnable", explain.runnable ? "yes" : "no"],
         ["selection_reason", explain.selectionReason || "none"],
         ["reasons", (explain.reasons || []).join(" | ") || "none"],
+        ["loop_runtime_blocker", explain.loopRuntimeBlockerSummary || "none"],
       ]),
     },
     {

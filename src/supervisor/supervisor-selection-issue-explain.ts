@@ -83,6 +83,7 @@ export interface SupervisorExplainDto {
   trackedPrMismatchSummary: string | null;
   externalSignalReadinessSummary?: string | null;
   recoveryGuidance: string | null;
+  loopRuntimeBlockerSummary?: string | null;
   selectionReason: string | null;
   reasons: string[];
   lastError: string | null;
@@ -518,6 +519,7 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
     ...(dto.trackedPrMismatchSummary ? [dto.trackedPrMismatchSummary] : []),
     ...(dto.externalSignalReadinessSummary ? [dto.externalSignalReadinessSummary] : []),
     ...(dto.recoveryGuidance ? [dto.recoveryGuidance] : []),
+    ...(dto.loopRuntimeBlockerSummary ? [dto.loopRuntimeBlockerSummary] : []),
     ...(retrySummaryLine ? [retrySummaryLine] : []),
     ...(recoveryLoopSummaryLine ? [recoveryLoopSummaryLine] : []),
     ...(dto.latestRecoverySummary ? [dto.latestRecoverySummary] : []),
