@@ -165,9 +165,9 @@ test("applyCodexTurnPublicationGate forwards publishable allowlist markers to th
       getUnresolvedReviewThreads: async () => [],
     },
     syncJournal: async () => undefined,
-    applyFailureSignature: () => ({
-      last_failure_signature: null,
-      repeated_failure_signature_count: 0,
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
     }),
     runWorkstationLocalPathGate: async (args) => {
       observedCalls.push(args.publishablePathAllowlistMarkers);
@@ -184,7 +184,7 @@ test("applyCodexTurnPublicationGate forwards publishable allowlist markers to th
   assert.deepEqual(observedCalls, [["publishable-path-hygiene: allowlist"]]);
 });
 
-test("applyCodexTurnPublicationGate redacts supervisor-owned cross-issue journals before publication", async (t) => {
+test("applyCodexTurnPublicationGate blocks tracked supervisor issue journals before publication", async (t) => {
   const workspacePath = await createTrackedRepo();
   t.after(async () => {
     await fs.rm(workspacePath, { recursive: true, force: true });
@@ -212,6 +212,8 @@ test("applyCodexTurnPublicationGate redacts supervisor-owned cross-issue journal
   git(workspacePath, "commit", "-m", "seed cross-issue journal leak");
 
   let createPullRequestCalls = 0;
+  let runWorkspacePreparationCalls = 0;
+  let runLocalCiCalls = 0;
   const issue = createIssue({ title: "Gate draft PR creation on cross-issue journal hygiene" });
   const state: SupervisorStateFile = {
     activeIssueNumber: 102,
@@ -253,28 +255,45 @@ test("applyCodexTurnPublicationGate redacts supervisor-owned cross-issue journal
       resolvePullRequestForBranch: async () => null,
       createPullRequest: async () => {
         createPullRequestCalls += 1;
-        return createPullRequest({ number: 200, isDraft: true, headRefOid: "head-102" });
+        throw new Error("unexpected createPullRequest call");
       },
       getChecks: async () => [],
       getUnresolvedReviewThreads: async () => [],
     },
     syncJournal: async () => undefined,
-    applyFailureSignature: () => ({
-      last_failure_signature: null,
-      repeated_failure_signature_count: 0,
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
     }),
-    runLocalCiCommand: async () => undefined,
+    runWorkstationLocalPathGate: async () => {
+      throw new Error("unexpected path hygiene call");
+    },
+    runWorkspacePreparationCommand: async () => {
+      runWorkspacePreparationCalls += 1;
+    },
+    runLocalCiCommand: async () => {
+      runLocalCiCalls += 1;
+    },
     syncExecutionMetricsRunSummary: async () => undefined,
   });
 
-  assert.equal(result.kind, "ready");
-  assert.equal(createPullRequestCalls, 1);
-  assert.equal(result.record.last_head_sha, git(workspacePath, "rev-parse", "HEAD").trim());
-  const redactedJournal = await fs.readFile(otherJournalPath, "utf8");
-  assert.doesNotMatch(redactedJournal, new RegExp(SAMPLE_MACOS_WORKSTATION_PATH.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-  assert.match(redactedJournal, /<redacted-local-path>/);
-  assert.match(git(workspacePath, "log", "-1", "--pretty=%s"), /Normalize trusted durable artifacts for path hygiene/);
-  assert.match(git(workspacePath, "ls-remote", "--heads", "origin", "codex/issue-102"), /refs\/heads\/codex\/issue-102/);
+  assert.equal(result.kind, "blocked");
+  assert.match(
+    result.message,
+    /Tracked supervisor-local durable artifacts blocked pull request creation for issue #102\./,
+  );
+  assert.match(result.message, /\.codex-supervisor\/issues\/102\/issue-journal\.md/);
+  assert.match(result.message, /\.codex-supervisor\/issues\/181\/issue-journal\.md/);
+  assert.match(result.message, /Remove or unstage these tracked paths before publishing checkpoint commits:/);
+  assert.equal(result.record.state, "blocked");
+  assert.equal(result.record.blocked_reason, "verification");
+  assert.equal(result.record.last_failure_signature, "supervisor-local-durable-artifacts-tracked-before-publication");
+  assert.equal(createPullRequestCalls, 0);
+  assert.equal(runWorkspacePreparationCalls, 0);
+  assert.equal(runLocalCiCalls, 0);
+  assert.equal(result.record.last_head_sha, "head-116");
+  assert.equal(git(workspacePath, "log", "-1", "--pretty=%s").trim(), "seed cross-issue journal leak");
+  assert.equal(git(workspacePath, "ls-remote", "--heads", "origin", "codex/issue-102").trim(), "");
   assert.equal(git(workspacePath, "status", "--short", "--untracked-files=no").trim(), "");
 });
 
@@ -303,7 +322,7 @@ test("applyCodexTurnPublicationGate persists trusted generated artifact normaliz
     ].join("\n"),
     "utf8",
   );
-  git(workspacePath, "add", ".codex-supervisor/issues/102/issue-journal.md", "docs/guide.md", "docs/generated-summary.md");
+  git(workspacePath, "add", "docs/guide.md", "docs/generated-summary.md");
   git(workspacePath, "commit", "-m", "seed trusted generated artifact leak");
 
   let createPullRequestCalls = 0;
@@ -354,9 +373,9 @@ test("applyCodexTurnPublicationGate persists trusted generated artifact normaliz
       getUnresolvedReviewThreads: async () => [],
     },
     syncJournal: async () => undefined,
-    applyFailureSignature: () => ({
-      last_failure_signature: null,
-      repeated_failure_signature_count: 0,
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
     }),
     runLocalCiCommand: async () => undefined,
     syncExecutionMetricsRunSummary: async () => undefined,
@@ -378,7 +397,7 @@ test("applyCodexTurnPublicationGate persists trusted generated artifact normaliz
   assert.equal(git(workspacePath, "status", "--short", "--untracked-files=no").trim(), "");
 });
 
-test("applyCodexTurnPublicationGate tolerates sparse-present tracked cross-issue journals outside the sparse checkout", async (t) => {
+test("applyCodexTurnPublicationGate blocks sparse-present tracked cross-issue journals outside the sparse checkout", async (t) => {
   const workspacePath = await createTrackedRepo();
   t.after(async () => {
     await fs.rm(workspacePath, { recursive: true, force: true });
@@ -429,6 +448,8 @@ test("applyCodexTurnPublicationGate tolerates sparse-present tracked cross-issue
   await fs.access(otherJournalPath);
 
   let createPullRequestCalls = 0;
+  let runWorkspacePreparationCalls = 0;
+  let runLocalCiCalls = 0;
   const issue = createIssue({ title: "Gate sparse cross-issue journal hygiene without blocking publication" });
   const state: SupervisorStateFile = {
     activeIssueNumber: 102,
@@ -470,26 +491,124 @@ test("applyCodexTurnPublicationGate tolerates sparse-present tracked cross-issue
       resolvePullRequestForBranch: async () => null,
       createPullRequest: async () => {
         createPullRequestCalls += 1;
-        return createPullRequest({ number: 200, isDraft: true, headRefOid: "head-102" });
+        throw new Error("unexpected createPullRequest call");
       },
       getChecks: async () => [],
       getUnresolvedReviewThreads: async () => [],
     },
     syncJournal: async () => undefined,
-    applyFailureSignature: () => ({
-      last_failure_signature: null,
-      repeated_failure_signature_count: 0,
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
     }),
-    runLocalCiCommand: async () => undefined,
+    runWorkstationLocalPathGate: async () => {
+      throw new Error("unexpected path hygiene call");
+    },
+    runWorkspacePreparationCommand: async () => {
+      runWorkspacePreparationCalls += 1;
+    },
+    runLocalCiCommand: async () => {
+      runLocalCiCalls += 1;
+    },
     syncExecutionMetricsRunSummary: async () => undefined,
   });
 
-  assert.equal(result.kind, "ready");
-  assert.equal(createPullRequestCalls, 1);
-  assert.equal(result.record.state, "stabilizing");
-  assert.equal(result.record.last_failure_signature, null);
+  assert.equal(result.kind, "blocked");
+  assert.match(result.message, /\.codex-supervisor\/issues\/181\/issue-journal\.md/);
+  assert.equal(result.record.state, "blocked");
+  assert.equal(result.record.last_failure_signature, "supervisor-local-durable-artifacts-tracked-before-publication");
+  assert.equal(createPullRequestCalls, 0);
+  assert.equal(runWorkspacePreparationCalls, 0);
+  assert.equal(runLocalCiCalls, 0);
   assert.equal(git(workspacePath, "log", "-1", "--pretty=%s").trim(), "seed sparse cross-issue journal leak");
   assert.equal(git(workspacePath, "status", "--short", "--untracked-files=no").trim(), "M .codex-supervisor/issues/181/issue-journal.md");
+});
+
+test("applyCodexTurnPublicationGate blocks tracked supervisor replay artifacts before workspace preparation and local CI", async (t) => {
+  const workspacePath = await createTrackedRepo();
+  t.after(async () => {
+    await fs.rm(workspacePath, { recursive: true, force: true });
+  });
+  git(workspacePath, "checkout", "-b", "codex/issue-102");
+
+  const replayArtifactPath = path.join(workspacePath, ".codex-supervisor", "replay", "decision-cycle-snapshot.json");
+  await fs.mkdir(path.dirname(replayArtifactPath), { recursive: true });
+  await fs.writeFile(replayArtifactPath, "{\n  \"kind\": \"replay\"\n}\n", "utf8");
+  git(workspacePath, "add", ".codex-supervisor/replay/decision-cycle-snapshot.json");
+  git(workspacePath, "commit", "-m", "seed replay artifact leak");
+
+  let createPullRequestCalls = 0;
+  let runWorkspacePreparationCalls = 0;
+  let runLocalCiCalls = 0;
+  const issue = createIssue({ title: "Gate draft PR creation on supervisor replay artifact" });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "stabilizing",
+        pr_number: null,
+        implementation_attempt_count: 1,
+        workspace: workspacePath,
+      }),
+    },
+  };
+
+  const result = await applyCodexTurnPublicationGate({
+    config: createConfig({
+      localCiCommand: "npm run ci:local",
+      workspacePreparationCommand: "npm ci",
+    }),
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    state,
+    record: state.issues["102"]!,
+    issue,
+    workspacePath,
+    workspaceStatus: {
+      branch: "codex/issue-102",
+      headSha: git(workspacePath, "rev-parse", "HEAD").trim(),
+      hasUncommittedChanges: false,
+      baseAhead: 1,
+      baseBehind: 0,
+      remoteBranchExists: false,
+      remoteAhead: 0,
+      remoteBehind: 0,
+    },
+    github: {
+      resolvePullRequestForBranch: async () => null,
+      createPullRequest: async () => {
+        createPullRequestCalls += 1;
+        throw new Error("unexpected createPullRequest call");
+      },
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    syncJournal: async () => undefined,
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    runWorkstationLocalPathGate: async () => {
+      throw new Error("unexpected path hygiene call");
+    },
+    runWorkspacePreparationCommand: async () => {
+      runWorkspacePreparationCalls += 1;
+    },
+    runLocalCiCommand: async () => {
+      runLocalCiCalls += 1;
+    },
+    syncExecutionMetricsRunSummary: async () => undefined,
+  });
+
+  assert.equal(result.kind, "blocked");
+  assert.match(result.message, /\.codex-supervisor\/replay\/decision-cycle-snapshot\.json/);
+  assert.equal(result.record.last_failure_signature, "supervisor-local-durable-artifacts-tracked-before-publication");
+  assert.equal(createPullRequestCalls, 0);
+  assert.equal(runWorkspacePreparationCalls, 0);
+  assert.equal(runLocalCiCalls, 0);
+  assert.equal(git(workspacePath, "log", "-1", "--pretty=%s").trim(), "seed replay artifact leak");
 });
 
 test("applyCodexTurnPublicationGate blocks draft PR creation when local CI fails", async () => {
