@@ -336,7 +336,10 @@ export function collectTrackedIssues(
   if (options.includeDone) {
     return trackedIssues;
   }
-  return trackedIssues.filter((issue) => issue.state?.toLowerCase() !== "done");
+  return trackedIssues.filter((issue) => {
+    const normalized = issue.state?.toLowerCase();
+    return normalized !== "done" && normalized !== "blocked" && normalized !== "failed";
+  });
 }
 
 export function formatTrackedIssues(

@@ -447,6 +447,38 @@ test("dashboard treats loop-off tracked work as an active blocker instead of idl
   assert.equal(harness.remainingFetches.length, 0);
 });
 
+test("dashboard does not tell the operator to restart the loop for blocked-only tracked work", async () => {
+  const harness = createDashboardHarness([
+    ...dashboardServer.page({
+      status: createStatus({
+        trackedIssues: [
+          {
+            issueNumber: 58,
+            state: "blocked",
+            branch: "codex/issue-58",
+            prNumber: 58,
+            blockedReason: "manual_review",
+          },
+        ],
+        loopRuntime: {
+          state: "off",
+          hostMode: "unknown",
+          pid: null,
+          startedAt: null,
+          detail: null,
+        },
+        warning: null,
+      }),
+    }),
+  ]);
+  await harness.flush();
+
+  const attentionList = harness.document.getElementById("attention-list");
+  assert.ok(attentionList);
+  assert.doesNotMatch(joinChildText(attentionList), /Restart the loop to resume background execution/u);
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
 test("dashboard keeps Summary focused on current state and only shows tracked issue count", async () => {
   const harness = createDashboardHarness([
     {

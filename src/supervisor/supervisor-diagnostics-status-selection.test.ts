@@ -1161,6 +1161,58 @@ test("status surfaces loop-off as a blocker when tracked work is still active", 
   );
 });
 
+test("status does not emit the loop-off restart blocker for blocked-only tracked work", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const issueNumber = 188;
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        blocked_reason: "manual_review",
+        branch: branchName(fixture.config, issueNumber),
+        pr_number: 288,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Blocked tracked issue should not advertise loop restart",
+    body: executionReadyBody("Blocked-only tracked work should not be treated as loop-advanceable."),
+    createdAt: "2026-03-25T00:00:00Z",
+    updatedAt: "2026-03-25T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [trackedIssue],
+    listAllIssues: async () => [trackedIssue],
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const report = await supervisor.statusReport();
+  assert.equal(report.warning?.message ?? null, null);
+  assert.doesNotMatch(report.detailedStatusLines.join("\n"), /^loop_runtime_blocker /m);
+
+  const status = await supervisor.status();
+  assert.doesNotMatch(status, /^loop_runtime_blocker /m);
+  assert.doesNotMatch(status, /^status_warning=Tracked work is active for issue #188, but the supervisor loop is off\./m);
+});
+
 test("acquireSupervisorLock fails closed on ambiguous-owner run locks", async (t) => {
   const fixture = await createSupervisorFixture();
   t.after(async () => {

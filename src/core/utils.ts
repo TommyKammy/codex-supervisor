@@ -95,6 +95,14 @@ export function isTerminalState(state: string): boolean {
   return state === "done" || state === "blocked" || state === "failed";
 }
 
+export function isLoopAdvanceableState(state: string | null | undefined): boolean {
+  if (!state) {
+    return false;
+  }
+
+  return !isTerminalState(state);
+}
+
 export function resolveMaybeRelative(baseDir: string, inputPath: string): string {
   return path.isAbsolute(inputPath) ? inputPath : path.resolve(baseDir, inputPath);
 }

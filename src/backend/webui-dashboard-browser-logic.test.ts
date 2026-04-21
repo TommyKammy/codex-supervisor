@@ -10,6 +10,7 @@ import {
   collectIssueShortcuts,
   describeCommandSelectionChange,
   describeConnectionHealth,
+  describeLoopOffTrackedWorkBlocker,
   describeTimelineCommandResult,
   describeFreshnessState,
   describeTimelineEvent,
@@ -172,6 +173,61 @@ test("dashboard summaries treat loop-off tracked work as an active blocker", () 
       hasSuccessfulRefresh: true,
     }),
     ["Tracked work is active for #58, but the supervisor loop is off. Restart the loop to resume background execution."],
+  );
+});
+
+test("dashboard summaries ignore blocked-only tracked work when the loop is off", () => {
+  const status: DashboardStatusLike = {
+    trackedIssues: [
+      {
+        issueNumber: 58,
+        state: "blocked",
+        branch: "codex/issue-58",
+        prNumber: 58,
+        blockedReason: "manual_review",
+      },
+    ],
+    loopRuntime: {
+      state: "off",
+      hostMode: "unknown",
+      pid: null,
+      startedAt: null,
+      detail: null,
+    },
+    blockedIssues: [],
+    runnableIssues: [],
+  };
+
+  assert.equal(describeLoopOffTrackedWorkBlocker(status), null);
+  assert.doesNotMatch(
+    buildOverviewSummary({
+      status,
+      doctor: { overallStatus: "pass", checks: [] },
+      connectionPhase: "open",
+      refreshPhase: "idle",
+      hasSuccessfulRefresh: true,
+    }).detail,
+    /Restart the loop to resume background execution/u,
+  );
+  assert.doesNotMatch(
+    buildPrimaryActionSummary({
+      status,
+      doctor: { overallStatus: "pass", checks: [] },
+      connectionPhase: "open",
+      refreshPhase: "idle",
+      hasSuccessfulRefresh: true,
+    }).detail,
+    /Background execution will not advance until the loop restarts/u,
+  );
+  assert.deepEqual(
+    buildAttentionItems({
+      status,
+      doctor: { overallStatus: "pass", checks: [] },
+      connectionPhase: "open",
+      refreshPhase: "idle",
+      hasSuccessfulRefresh: true,
+    }),
+    ["No immediate attention items are reported."],
   );
 });
 

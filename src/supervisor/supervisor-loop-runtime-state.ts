@@ -1,6 +1,7 @@
 import path from "node:path";
 import { acquireFileLock, inspectFileLock, type ExistingLockState, type LockHandle } from "../core/lock";
 import type { RunState } from "../core/types";
+import { isLoopAdvanceableState } from "../core/utils";
 
 export type SupervisorLoopHostMode = "tmux" | "direct" | "unknown";
 
@@ -78,7 +79,7 @@ export function buildLoopOffTrackedWorkBlocker(args: {
     return null;
   }
 
-  const activeTrackedIssues = args.trackedIssues.filter((issue) => issue.state !== "done");
+  const activeTrackedIssues = args.trackedIssues.filter((issue) => isLoopAdvanceableState(issue.state));
   if (activeTrackedIssues.length === 0) {
     return null;
   }
