@@ -3658,3 +3658,47 @@ test("status does not surface tracked PR mismatch diagnostics after tracked PR r
     /^latest_recovery issue=#173 at=2026-03-13T00:20:00Z reason=tracked_pr_lifecycle_recovered detail=resumed issue #173 from failed to addressing_review using fresh tracked PR #273 facts at head head-273$/m,
   );
 });
+
+test("status surfaces failed no-PR transient auto-requeue recovery on read-only status surfaces", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 204;
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "queued",
+        branch: branchName(fixture.config, issueNumber),
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: null,
+        blocked_reason: null,
+        last_recovery_reason:
+          "failed_no_pr_transient_retry: requeued issue #204 from failed to queued after failed no-PR recovery found no meaningful branch diff and matched transient runtime evidence provider-capacity",
+        last_recovery_at: "2026-03-13T00:20:00Z",
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [],
+    listAllIssues: async () => [],
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const report = await supervisor.statusReport();
+  assert.match(
+    report.detailedStatusLines.join("\n"),
+    /^latest_recovery issue=#204 at=2026-03-13T00:20:00Z reason=failed_no_pr_transient_retry detail=requeued issue #204 from failed to queued after failed no-PR recovery found no meaningful branch diff and matched transient runtime evidence provider-capacity$/m,
+  );
+
+  const status = await supervisor.status();
+  assert.match(
+    status,
+    /^latest_recovery issue=#204 at=2026-03-13T00:20:00Z reason=failed_no_pr_transient_retry detail=requeued issue #204 from failed to queued after failed no-PR recovery found no meaningful branch diff and matched transient runtime evidence provider-capacity$/m,
+  );
+});
