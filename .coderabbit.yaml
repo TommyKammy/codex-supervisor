@@ -1,0 +1,6 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+
+reviews:
+  path_filters:
+    - "!.codex-supervisor/issues/**/issue-journal.md"
+    - "!.codex-supervisor/issue-journal.md"
