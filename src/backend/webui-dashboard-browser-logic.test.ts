@@ -10,6 +10,7 @@ import {
   collectIssueShortcuts,
   describeCommandSelectionChange,
   describeConnectionHealth,
+  describeLoopOffTrackedWorkBlocker,
   describeTimelineCommandResult,
   describeFreshnessState,
   describeTimelineEvent,
@@ -175,6 +176,61 @@ test("dashboard summaries treat loop-off tracked work as an active blocker", () 
   );
 });
 
+test("dashboard summaries ignore blocked-only tracked work when the loop is off", () => {
+  const status: DashboardStatusLike = {
+    trackedIssues: [
+      {
+        issueNumber: 58,
+        state: "blocked",
+        branch: "codex/issue-58",
+        prNumber: 58,
+        blockedReason: "manual_review",
+      },
+    ],
+    loopRuntime: {
+      state: "off",
+      hostMode: "unknown",
+      pid: null,
+      startedAt: null,
+      detail: null,
+    },
+    blockedIssues: [],
+    runnableIssues: [],
+  };
+
+  assert.equal(describeLoopOffTrackedWorkBlocker(status), null);
+  assert.doesNotMatch(
+    buildOverviewSummary({
+      status,
+      doctor: { overallStatus: "pass", checks: [] },
+      connectionPhase: "open",
+      refreshPhase: "idle",
+      hasSuccessfulRefresh: true,
+    }).detail,
+    /Restart the loop to resume background execution/u,
+  );
+  assert.doesNotMatch(
+    buildPrimaryActionSummary({
+      status,
+      doctor: { overallStatus: "pass", checks: [] },
+      connectionPhase: "open",
+      refreshPhase: "idle",
+      hasSuccessfulRefresh: true,
+    }).detail,
+    /Background execution will not advance until the loop restarts/u,
+  );
+  assert.deepEqual(
+    buildAttentionItems({
+      status,
+      doctor: { overallStatus: "pass", checks: [] },
+      connectionPhase: "open",
+      refreshPhase: "idle",
+      hasSuccessfulRefresh: true,
+    }),
+    ["No immediate attention items are reported."],
+  );
+});
+
 test("formatTrackedIssues defaults to non-done history and can reveal done issues when requested", () => {
   assert.deepEqual(
     formatTrackedIssues({
@@ -187,6 +243,13 @@ test("formatTrackedIssues defaults to non-done history and can reveal done issue
           blockedReason: "requirements:verification",
         },
         {
+          issueNumber: 43,
+          state: "blocked",
+          branch: "codex/issue-43",
+          prNumber: 543,
+          blockedReason: "manual_review",
+        },
+        {
           issueNumber: 42,
           state: "done",
           branch: "codex/issue-42",
@@ -195,7 +258,10 @@ test("formatTrackedIssues defaults to non-done history and can reveal done issue
         },
       ],
     }),
-    ["tracked issue #41 [queued] branch=codex/issue-41 pr=none blocked_reason=requirements:verification"],
+    [
+      "tracked issue #41 [queued] branch=codex/issue-41 pr=none blocked_reason=requirements:verification",
+      "tracked issue #43 [blocked] branch=codex/issue-43 pr=#543 blocked_reason=manual_review",
+    ],
   );
 
   assert.deepEqual(
@@ -210,6 +276,13 @@ test("formatTrackedIssues defaults to non-done history and can reveal done issue
             blockedReason: "requirements:verification",
           },
           {
+            issueNumber: 43,
+            state: "blocked",
+            branch: "codex/issue-43",
+            prNumber: 543,
+            blockedReason: "manual_review",
+          },
+          {
             issueNumber: 42,
             state: "done",
             branch: "codex/issue-42",
@@ -222,7 +295,38 @@ test("formatTrackedIssues defaults to non-done history and can reveal done issue
     ),
     [
       "tracked issue #41 [queued] branch=codex/issue-41 pr=none blocked_reason=requirements:verification",
+      "tracked issue #43 [blocked] branch=codex/issue-43 pr=#543 blocked_reason=manual_review",
       "tracked issue #42 [done] branch=codex/issue-42 pr=#512 blocked_reason=none",
+    ],
+  );
+});
+
+test("collectIssueShortcuts keeps tracked blocked issues visible when no typed blocked issue exists", () => {
+  assert.deepEqual(
+    collectIssueShortcuts({
+      trackedIssues: [
+        {
+          issueNumber: 93,
+          state: "blocked",
+          branch: "codex/issue-93",
+          prNumber: 193,
+          blockedReason: "manual_review",
+        },
+        {
+          issueNumber: 12,
+          state: "done",
+          branch: "codex/issue-12",
+          prNumber: 12,
+          blockedReason: null,
+        },
+      ],
+    }),
+    [
+      {
+        issueNumber: 93,
+        label: "tracked blocked",
+        detail: "codex/issue-93 pr=#193",
+      },
     ],
   );
 });

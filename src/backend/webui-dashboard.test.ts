@@ -447,6 +447,38 @@ test("dashboard treats loop-off tracked work as an active blocker instead of idl
   assert.equal(harness.remainingFetches.length, 0);
 });
 
+test("dashboard does not tell the operator to restart the loop for blocked-only tracked work", async () => {
+  const harness = createDashboardHarness([
+    ...dashboardServer.page({
+      status: createStatus({
+        trackedIssues: [
+          {
+            issueNumber: 58,
+            state: "blocked",
+            branch: "codex/issue-58",
+            prNumber: 58,
+            blockedReason: "manual_review",
+          },
+        ],
+        loopRuntime: {
+          state: "off",
+          hostMode: "unknown",
+          pid: null,
+          startedAt: null,
+          detail: null,
+        },
+        warning: null,
+      }),
+    }),
+  ]);
+  await harness.flush();
+
+  const attentionList = harness.document.getElementById("attention-list");
+  assert.ok(attentionList);
+  assert.doesNotMatch(joinChildText(attentionList), /Restart the loop to resume background execution/u);
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
 test("dashboard keeps Summary focused on current state and only shows tracked issue count", async () => {
   const harness = createDashboardHarness([
     {
@@ -579,6 +611,13 @@ test("dashboard moves tracked history into a dedicated panel with non-done defau
               blockedReason: "requirements:verification",
             },
             {
+              issueNumber: 59,
+              state: "blocked",
+              branch: "codex/issue-59",
+              prNumber: 159,
+              blockedReason: "manual_review",
+            },
+            {
               issueNumber: 12,
               state: "done",
               branch: "codex/issue-12",
@@ -602,21 +641,26 @@ test("dashboard moves tracked history into a dedicated panel with non-done defau
   assert.ok(trackedHistorySummary);
   assert.ok(trackedHistoryToggle);
 
-  assert.match(statusLines.textContent, /tracked issues=2/u);
+  assert.match(statusLines.textContent, /tracked issues=3/u);
   assert.doesNotMatch(statusLines.textContent, /tracked issue #58/u);
-  assert.match(trackedHistorySummary.textContent, /showing 1 of 2 tracked issues/u);
+  assert.match(trackedHistorySummary.textContent, /showing 2 of 3 tracked issues/u);
   assert.match(trackedHistoryLines.textContent, /#58/u);
   assert.match(trackedHistoryLines.textContent, /queued/u);
   assert.match(trackedHistoryLines.textContent, /pr #58/u);
   assert.match(trackedHistoryLines.textContent, /requirements:verification/u);
+  assert.match(trackedHistoryLines.textContent, /#59/u);
+  assert.match(trackedHistoryLines.textContent, /blocked/u);
+  assert.match(trackedHistoryLines.textContent, /pr #159/u);
+  assert.match(trackedHistoryLines.textContent, /manual_review/u);
   assert.doesNotMatch(trackedHistoryLines.textContent, /codex\/issue-58/u);
+  assert.doesNotMatch(trackedHistoryLines.textContent, /codex\/issue-59/u);
   assert.doesNotMatch(trackedHistoryLines.textContent, /#12/u);
   assert.match(trackedHistoryToggle.textContent, /Show done issues/u);
 
   await trackedHistoryToggle.dispatch("click");
   await harness.flush();
 
-  assert.match(trackedHistorySummary.textContent, /showing 2 of 2 tracked issues/u);
+  assert.match(trackedHistorySummary.textContent, /showing 3 of 3 tracked issues/u);
   assert.match(trackedHistoryLines.textContent, /#12/u);
   assert.match(trackedHistoryLines.textContent, /done/u);
   assert.match(trackedHistoryLines.textContent, /pr #12/u);

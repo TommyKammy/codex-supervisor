@@ -101,7 +101,10 @@ export function describeLoopOffTrackedWorkBlocker(status: DashboardStatusLike | 
     return null;
   }
 
-  const activeTrackedIssues = collectTrackedIssues(status);
+  const activeTrackedIssues = collectTrackedIssues(status).filter((issue) => {
+    const normalized = issue.state?.toLowerCase();
+    return Boolean(normalized) && normalized !== "done" && normalized !== "blocked" && normalized !== "failed";
+  });
   if (activeTrackedIssues.length === 0) {
     return null;
   }

@@ -321,14 +321,59 @@ test("explain loop-off blocker summarizes all tracked work even when the explain
   const report = await supervisor.explainReport(explainedIssueNumber);
   assert.equal(
     report.loopRuntimeBlockerSummary,
-    "loop_runtime_blocker state=off active_tracked_issues=2 first_issue=#150 first_state=blocked first_pr=none action=restart_loop",
+    "loop_runtime_blocker state=off active_tracked_issues=1 first_issue=#189 first_state=queued first_pr=#289 action=restart_loop",
   );
 
   const explanation = await supervisor.explain(explainedIssueNumber);
   assert.match(
     explanation,
-    /^loop_runtime_blocker state=off active_tracked_issues=2 first_issue=#150 first_state=blocked first_pr=none action=restart_loop$/m,
+    /^loop_runtime_blocker state=off active_tracked_issues=1 first_issue=#189 first_state=queued first_pr=#289 action=restart_loop$/m,
   );
+});
+
+test("explain omits the loop-off blocker when tracked work is blocked-only", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 191;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        blocked_reason: "manual_review",
+        branch,
+        pr_number: 291,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Explain blocked-only tracked issue without loop restart hint",
+    body: executionReadyBody("Blocked-only tracked work should not emit the shared loop-off restart blocker."),
+    createdAt: "2026-03-25T00:00:00Z",
+    updatedAt: "2026-03-25T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => trackedIssue,
+    listAllIssues: async () => [trackedIssue],
+    listCandidateIssues: async () => [trackedIssue],
+  };
+
+  const report = await supervisor.explainReport(issueNumber);
+  assert.equal(report.loopRuntimeBlockerSummary, null);
+
+  const explanation = await supervisor.explain(issueNumber);
+  assert.doesNotMatch(explanation, /^loop_runtime_blocker /m);
 });
 
 test("explain surfaces degraded full inventory refresh without requiring a fresh full issue list", async () => {
