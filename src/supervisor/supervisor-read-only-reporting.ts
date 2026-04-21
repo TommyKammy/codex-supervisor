@@ -519,17 +519,11 @@ export async function buildSupervisorExplainReport(args: {
 }): Promise<SupervisorExplainDto> {
   const state = await args.stateStore.load();
   const dto = await buildIssueExplainDto(args.github, args.config, state, args.issueNumber);
-  const record = state.issues[String(dto.issueNumber)];
+  const trackedIssues = buildTrackedIssueDtos(state);
   const loopRuntime = await readSupervisorLoopRuntime(args.config.stateFile);
   const loopOffTrackedWorkBlocker = buildLoopOffTrackedWorkBlocker({
     loopRuntime,
-    trackedIssues: record === undefined
-      ? []
-      : [{
-        issueNumber: record.issue_number,
-        state: record.state,
-        prNumber: record.pr_number,
-      }],
+    trackedIssues,
   });
   return {
     ...dto,
