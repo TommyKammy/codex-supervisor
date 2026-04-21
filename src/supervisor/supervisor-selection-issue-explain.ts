@@ -58,12 +58,15 @@ import {
 import { formatPreMergeEvaluationStatusLine, loadPreMergeEvaluationDto } from "./supervisor-pre-merge-evaluation";
 import { summarizePreservedPartialWork } from "./supervisor-preserved-partial-work";
 
-export type ExplainIssueGitHub = Pick<GitHubClient, "getIssue" | "listAllIssues" | "listCandidateIssues"> &
+export type ExplainIssueGitHub =
+  Pick<GitHubClient, "getIssue" | "listAllIssues" | "listCandidateIssues"> &
+  Partial<Pick<GitHubClient, "getPullRequestIfExists">> &
   Partial<ActiveStatusGitHub>;
 
 export interface SupervisorExplainDto {
   issueNumber: number;
   title: string;
+  lookupTargetSummary?: string | null;
   state: RunState | "untracked";
   blockedReason: BlockedReason | "none";
   runnable: boolean;
@@ -135,6 +138,78 @@ async function buildExplainExternalReviewFollowUpSummary(args: {
     activeRecord: args.record,
     currentHeadSha: pr?.headRefOid ?? args.record.last_head_sha,
   });
+}
+
+function formatTrackedPrState(pr: GitHubPullRequest | null): string {
+  if (pr === null) {
+    return "missing";
+  }
+
+  if (pr.mergedAt) {
+    return "merged";
+  }
+
+  if (pr.state !== "OPEN") {
+    return pr.state.toLowerCase();
+  }
+
+  return pr.isDraft ? "draft" : "open";
+}
+
+async function resolveExplainLookupTarget(args: {
+  github: ExplainIssueGitHub;
+  state: SupervisorStateFile;
+  requestedNumber: number;
+}): Promise<{
+  issue: GitHubIssue;
+  record: IssueRunRecord | undefined;
+  lookupTargetSummary: string | null;
+}> {
+  const trackedPrOwners = Object.values(args.state.issues).filter((candidate) => candidate.pr_number === args.requestedNumber);
+  if (trackedPrOwners.length !== 1) {
+    const issue = await args.github.getIssue(args.requestedNumber);
+    return {
+      issue,
+      record: args.state.issues[String(issue.number)],
+      lookupTargetSummary: null,
+    };
+  }
+
+  const record = trackedPrOwners[0];
+  const issue = await args.github.getIssue(record.issue_number);
+  let trackedPr: GitHubPullRequest | null = null;
+  let prLookup = "unavailable";
+
+  if (args.github.getPullRequestIfExists) {
+    try {
+      trackedPr = await args.github.getPullRequestIfExists(args.requestedNumber, { purpose: "status" });
+      if (trackedPr === null) {
+        prLookup = "not_found";
+      } else if (trackedPr.headRefName !== record.branch) {
+        trackedPr = null;
+        prLookup = "branch_mismatch";
+      } else {
+        prLookup = "ok";
+      }
+    } catch {
+      prLookup = "degraded";
+    }
+  }
+
+  return {
+    issue,
+    record,
+    lookupTargetSummary: [
+      "lookup_target=tracked_pr",
+      `query=#${args.requestedNumber}`,
+      `owner_issue=#${issue.number}`,
+      `branch=${record.branch}`,
+      `tracked_state=${record.state}`,
+      `tracked_blocked_reason=${record.blocked_reason ?? "none"}`,
+      `pr_state=${formatTrackedPrState(trackedPr)}`,
+      ...(prLookup === "ok" ? [] : [`pr_lookup=${prLookup}`]),
+    ].join(" "),
+  };
 }
 
 export function buildNonRunnableLocalStateReasons(record: IssueRunRecord, config: SupervisorConfig): string[] {
@@ -212,13 +287,16 @@ export async function buildIssueExplainDto(
   issueNumber: number,
 ): Promise<SupervisorExplainDto> {
   const inventoryRefreshDegraded = state.inventory_refresh_failure !== undefined;
-  const [issue, loadedIssues, candidateIssues] = await Promise.all([
-    github.getIssue(issueNumber),
+  const [{ issue, record, lookupTargetSummary }, loadedIssues, candidateIssues] = await Promise.all([
+    resolveExplainLookupTarget({
+      github,
+      state,
+      requestedNumber: issueNumber,
+    }),
     inventoryRefreshDegraded ? Promise.resolve(null) : github.listAllIssues(),
     github.listCandidateIssues(),
   ]);
   const issues = loadedIssues ?? [issue];
-  const record = state.issues[String(issue.number)];
   const labelsAvailable = hasAvailableIssueLabels(issue);
   const readiness = labelsAvailable ? lintExecutionReadyIssueBody(issue) : null;
   const clarificationBlock = findHighRiskBlockingAmbiguity(issue);
@@ -372,6 +450,7 @@ export async function buildIssueExplainDto(
   return {
     issueNumber: issue.number,
     title: issue.title,
+    lookupTargetSummary,
     state: record?.state ?? "untracked",
     blockedReason: record?.blocked_reason ?? "none",
     runnable,
@@ -423,6 +502,7 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
   const lines = [
     `issue=#${dto.issueNumber}`,
     `title=${dto.title}`,
+    ...(dto.lookupTargetSummary ? [dto.lookupTargetSummary] : []),
     `state=${dto.state}`,
     `blocked_reason=${dto.blockedReason}`,
     `runnable=${dto.runnable ? "yes" : "no"}`,
