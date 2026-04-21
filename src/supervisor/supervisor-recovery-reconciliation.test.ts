@@ -7578,6 +7578,272 @@ test("reconcileStaleFailedIssueStates requeues failed no-PR issues once when no 
   assert.equal(saveCalls, 1);
 });
 
+test("reconcileStaleFailedIssueStates requeues failed no-PR issues once when no meaningful branch diff matches allowlisted timeout runtime evidence", async () => {
+  const { repoPath, workspaceRoot, baseHead } = await createRepositoryWithOrigin();
+  const workspacePath = await createIssueWorktree({
+    repoPath,
+    workspaceRoot,
+    issueNumber: 366,
+    branch: "codex/reopen-issue-366",
+  });
+  const journalPath = path.join(workspacePath, ".codex-supervisor", "issue-journal.md");
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  await fs.writeFile(journalPath, "# local journal\n");
+
+  const config = createConfig({
+    repoPath,
+    workspaceRoot,
+    timeoutRetryLimit: 2,
+  });
+  const originalRuntimeFailureContext = {
+    category: "codex" as const,
+    summary: "Supervisor failed while recovering a Codex turn for issue #366.",
+    signature: "recovering-timeout-thread-366",
+    command: null,
+    details: [
+      "previous_state=reproducing",
+      "workspace_dirty=no",
+      "workspace_head=deadbee",
+      "pr_number=none",
+      "pr_head=none",
+      "codex_session_id=thread-366",
+    ],
+    url: null,
+    updated_at: "2026-03-13T00:20:05Z",
+  };
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
+        issue_number: 366,
+        state: "failed",
+        branch: "codex/reopen-issue-366",
+        workspace: workspacePath,
+        journal_path: journalPath,
+        pr_number: null,
+        last_head_sha: baseHead,
+        last_error: "Command timed out after 1800000ms: codex exec resume thread-366",
+        last_failure_kind: "timeout",
+        last_failure_context: {
+          category: "codex",
+          summary: "Command timed out after 1800000ms: codex exec resume thread-366",
+          signature: "timeout-resume-thread-366",
+          command: null,
+          details: ["provider=codex", "phase=recovering"],
+          url: null,
+          updated_at: "2026-03-13T00:20:00Z",
+        },
+        last_failure_signature: "timeout-resume-thread-366",
+        repeated_failure_signature_count: 1,
+        last_runtime_error: originalRuntimeFailureContext.summary,
+        last_runtime_failure_kind: "timeout",
+        last_runtime_failure_context: originalRuntimeFailureContext,
+        codex_session_id: "session-366",
+      }),
+    ],
+  });
+  const issue = createIssue({
+    number: 366,
+    title: "Retry already-satisfied timeout failed no-PR issue once",
+    updatedAt: "2026-03-13T00:21:00Z",
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  await reconcileStaleFailedIssueStates(
+    {
+      getPullRequestIfExists: async () => {
+        throw new Error("unexpected getPullRequestIfExists call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      closeIssue: async () => {
+        throw new Error("unexpected closeIssue call");
+      },
+      closePullRequest: async () => {
+        throw new Error("unexpected closePullRequest call");
+      },
+      getIssue: async () => {
+        throw new Error("unexpected getIssue call");
+      },
+      getMergedPullRequestsClosingIssue: async () => [],
+    },
+    stateStore,
+    state,
+    config,
+    [issue],
+    {
+      inferStateFromPullRequest: () => "draft_pr",
+      inferFailureContext: () => null,
+      blockedReasonForLifecycleState: () => null,
+      isOpenPullRequest: () => true,
+      syncReviewWaitWindow: () => ({}),
+      syncCopilotReviewRequestObservation: () => ({}),
+      syncCopilotReviewTimeoutState: noCopilotReviewTimeoutPatch,
+    },
+  );
+
+  const updated = state.issues["366"];
+  assert.equal(updated.state, "queued");
+  assert.equal(updated.pr_number, null);
+  assert.equal(updated.codex_session_id, null);
+  assert.equal(updated.blocked_reason, null);
+  assert.equal(updated.last_error, null);
+  assert.equal(updated.last_failure_kind, null);
+  assert.equal(updated.last_failure_context, null);
+  assert.equal(updated.last_failure_signature, null);
+  assert.equal(updated.repeated_failure_signature_count, 0);
+  assert.equal(updated.last_runtime_error, originalRuntimeFailureContext.summary);
+  assert.equal(updated.last_runtime_failure_kind, "timeout");
+  assert.deepEqual(updated.last_runtime_failure_context, originalRuntimeFailureContext);
+  assert.equal(updated.stale_stabilizing_no_pr_recovery_count, 1);
+  assert.equal(
+    updated.last_recovery_reason,
+    "failed_no_pr_transient_retry: requeued issue #366 from failed to queued after failed no-PR recovery found no meaningful branch diff and matched transient runtime evidence timeout",
+  );
+  assert.ok(updated.last_recovery_at);
+  assert.equal(saveCalls, 1);
+});
+
+test("reconcileStaleFailedIssueStates blocks already-satisfied failed no-PR issues for manual review when runtime evidence is not allowlisted", async () => {
+  const { repoPath, workspaceRoot, baseHead } = await createRepositoryWithOrigin();
+  const workspacePath = await createIssueWorktree({
+    repoPath,
+    workspaceRoot,
+    issueNumber: 366,
+    branch: "codex/reopen-issue-366",
+  });
+  const journalPath = path.join(workspacePath, ".codex-supervisor", "issue-journal.md");
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  await fs.writeFile(journalPath, "# local journal\n");
+
+  const config = createConfig({
+    repoPath,
+    workspaceRoot,
+  });
+  const originalRuntimeFailureContext = {
+    category: "codex" as const,
+    summary: "Codex exited with a non-transient repository check failure.",
+    signature: "not-allowed",
+    command: null,
+    details: ["provider=codex", "classification=repository-check"],
+    url: null,
+    updated_at: "2026-03-13T00:20:05Z",
+  };
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
+        issue_number: 366,
+        state: "failed",
+        branch: "codex/reopen-issue-366",
+        workspace: workspacePath,
+        journal_path: journalPath,
+        pr_number: null,
+        last_head_sha: baseHead,
+        last_error: originalRuntimeFailureContext.summary,
+        last_failure_kind: "codex_exit",
+        last_failure_context: originalRuntimeFailureContext,
+        last_failure_signature: "not-allowed",
+        repeated_failure_signature_count: 1,
+        last_runtime_error: originalRuntimeFailureContext.summary,
+        last_runtime_failure_kind: "codex_exit",
+        last_runtime_failure_context: originalRuntimeFailureContext,
+        codex_session_id: "session-366",
+      }),
+    ],
+  });
+  const issue = createIssue({
+    number: 366,
+    title: "Fail closed when already-satisfied failed no-PR runtime evidence is not allowlisted",
+    updatedAt: "2026-03-13T00:21:00Z",
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  await reconcileStaleFailedIssueStates(
+    {
+      getPullRequestIfExists: async () => {
+        throw new Error("unexpected getPullRequestIfExists call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      closeIssue: async () => {
+        throw new Error("unexpected closeIssue call");
+      },
+      closePullRequest: async () => {
+        throw new Error("unexpected closePullRequest call");
+      },
+      getIssue: async () => {
+        throw new Error("unexpected getIssue call");
+      },
+      getMergedPullRequestsClosingIssue: async () => [],
+    },
+    stateStore,
+    state,
+    config,
+    [issue],
+    {
+      inferStateFromPullRequest: () => "draft_pr",
+      inferFailureContext: () => null,
+      blockedReasonForLifecycleState: () => null,
+      isOpenPullRequest: () => true,
+      syncReviewWaitWindow: () => ({}),
+      syncCopilotReviewRequestObservation: () => ({}),
+      syncCopilotReviewTimeoutState: noCopilotReviewTimeoutPatch,
+    },
+  );
+
+  const updated = state.issues["366"];
+  assert.equal(updated.state, "blocked");
+  assert.equal(updated.pr_number, null);
+  assert.equal(updated.codex_session_id, null);
+  assert.equal(updated.blocked_reason, "manual_review");
+  assert.equal(updated.last_failure_kind, null);
+  assert.equal(updated.last_failure_context?.signature, "failed-no-pr-already-satisfied-on-main");
+  assert.match(updated.last_error ?? "", /no longer differs from origin\/main/i);
+  assert.equal(updated.last_runtime_error, originalRuntimeFailureContext.summary);
+  assert.equal(updated.last_runtime_failure_kind, "codex_exit");
+  assert.deepEqual(updated.last_runtime_failure_context, originalRuntimeFailureContext);
+  assert.equal(updated.stale_stabilizing_no_pr_recovery_count, 0);
+  assert.equal(
+    updated.last_recovery_reason,
+    "failed_no_pr_manual_review: blocked issue #366 after failed no-PR recovery found an open issue with no authoritative completion signal",
+  );
+  assert.ok(updated.last_recovery_at);
+  assert.equal(saveCalls, 1);
+});
+
 test("reconcileStaleFailedIssueStates sends second already-satisfied transient failed no-PR recurrences to manual review", async () => {
   const { repoPath, workspaceRoot, baseHead } = await createRepositoryWithOrigin();
   const workspacePath = await createIssueWorktree({
