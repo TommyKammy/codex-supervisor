@@ -402,6 +402,51 @@ test("dashboard renders the loop-off presentation only when typed runtime status
   assert.equal(harness.remainingFetches.length, 0);
 });
 
+test("dashboard treats loop-off tracked work as an active blocker instead of idle state", async () => {
+  const harness = createDashboardHarness([
+    ...dashboardServer.page({
+      status: createStatus({
+        trackedIssues: [
+          {
+            issueNumber: 58,
+            state: "queued",
+            branch: "codex/issue-58",
+            prNumber: 58,
+            blockedReason: null,
+          },
+        ],
+        loopRuntime: {
+          state: "off",
+          hostMode: "unknown",
+          pid: null,
+          startedAt: null,
+          detail: null,
+        },
+        warning: {
+          message:
+            "Tracked work is active for issue #58, but the supervisor loop is off. Restart the loop to resume background execution.",
+        },
+      }),
+    }),
+  ]);
+  await harness.flush();
+
+  const overviewHeadline = harness.document.getElementById("overview-headline");
+  const primaryActionTitle = harness.document.getElementById("primary-action-title");
+  const overviewWarning = harness.document.getElementById("overview-warning");
+  const attentionList = harness.document.getElementById("attention-list");
+  assert.ok(overviewHeadline);
+  assert.ok(primaryActionTitle);
+  assert.ok(overviewWarning);
+  assert.ok(attentionList);
+
+  assert.match(overviewHeadline.textContent ?? "", /Tracked work is waiting for the loop/u);
+  assert.match(primaryActionTitle.textContent ?? "", /Restart the supervisor loop/u);
+  assert.match(overviewWarning.textContent ?? "", /loop is off/u);
+  assert.match(joinChildText(attentionList), /Tracked work is active for #58, but the supervisor loop is off\./u);
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
 test("dashboard keeps Summary focused on current state and only shows tracked issue count", async () => {
   const harness = createDashboardHarness([
     {

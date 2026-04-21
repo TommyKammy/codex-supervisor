@@ -96,6 +96,22 @@ export interface DashboardStatusLike {
   warning?: { message?: string | null } | null;
 }
 
+export function describeLoopOffTrackedWorkBlocker(status: DashboardStatusLike | null | undefined): string | null {
+  if (status?.loopRuntime?.state !== "off") {
+    return null;
+  }
+
+  const activeTrackedIssues = collectTrackedIssues(status);
+  if (activeTrackedIssues.length === 0) {
+    return null;
+  }
+
+  const firstTrackedIssue = [...activeTrackedIssues].sort((left, right) => left.issueNumber - right.issueNumber)[0];
+  return activeTrackedIssues.length === 1
+    ? "Tracked work is active for " + formatIssueRef(firstTrackedIssue.issueNumber) + ", but the supervisor loop is off."
+    : "Tracked work is active for " + activeTrackedIssues.length + " issues, but the supervisor loop is off.";
+}
+
 export interface DashboardDoctorCheckLike {
   name?: string | null;
   status?: string | null;
@@ -493,6 +509,7 @@ export function buildOverviewSummary(args: {
   const blockedIssues = Array.isArray(args.status?.blockedIssues) ? args.status.blockedIssues : [];
   const inventoryStatus = args.status?.inventoryStatus ?? null;
   const doctorStatus = typeof args.doctor?.overallStatus === "string" ? args.doctor.overallStatus.toLowerCase() : "";
+  const loopOffTrackedWorkBlocker = describeLoopOffTrackedWorkBlocker(args.status);
 
   if (!args.hasSuccessfulRefresh) {
     return {
@@ -515,6 +532,14 @@ export function buildOverviewSummary(args: {
       headline: "Environment checks need attention",
       detail: "A required dependency is failing, so supervisor actions may not be safe yet.",
       tone: "fail",
+    };
+  }
+
+  if (loopOffTrackedWorkBlocker) {
+    return {
+      headline: "Tracked work is waiting for the loop",
+      detail: loopOffTrackedWorkBlocker + " Restart the loop to resume background execution.",
+      tone: "warn",
     };
   }
 
@@ -623,6 +648,7 @@ export function buildPrimaryActionSummary(args: {
   const blockedCount = Array.isArray(args.status?.blockedIssues) ? args.status.blockedIssues.length : 0;
   const runnableCount = Array.isArray(args.status?.runnableIssues) ? args.status.runnableIssues.length : 0;
   const doctorStatus = typeof args.doctor?.overallStatus === "string" ? args.doctor.overallStatus.toLowerCase() : "";
+  const loopOffTrackedWorkBlocker = describeLoopOffTrackedWorkBlocker(args.status);
 
   if (!args.hasSuccessfulRefresh) {
     return {
@@ -642,6 +668,13 @@ export function buildPrimaryActionSummary(args: {
     return {
       title: "Resolve environment checks",
       detail: "A required dependency is failing, so the supervisor should not advance until checks recover.",
+    };
+  }
+
+  if (loopOffTrackedWorkBlocker) {
+    return {
+      title: "Restart the supervisor loop",
+      detail: loopOffTrackedWorkBlocker + " Background execution will not advance until the loop restarts.",
     };
   }
 
@@ -686,6 +719,7 @@ export function buildAttentionItems(args: {
   const doctorChecks = Array.isArray(args.doctor?.checks) ? args.doctor.checks : [];
   const statusWarning = args.status?.warning?.message ?? null;
   const reconciliationWarning = args.status?.reconciliationWarning ?? null;
+  const loopOffTrackedWorkBlocker = describeLoopOffTrackedWorkBlocker(args.status);
   const failingChecks = doctorChecks.filter((check) => {
     const value = typeof check.status === "string" ? check.status.toLowerCase() : "";
     return value === "fail" || value === "warn";
@@ -711,6 +745,10 @@ export function buildAttentionItems(args: {
     if (inventoryStatus.recoveryGuidance) {
       items.push("Recovery: " + inventoryStatus.recoveryGuidance);
     }
+  }
+
+  if (loopOffTrackedWorkBlocker) {
+    items.push(loopOffTrackedWorkBlocker + " Restart the loop to resume background execution.");
   }
 
   if (blockedIssues.length > 0) {

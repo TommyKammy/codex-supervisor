@@ -337,7 +337,10 @@ test("status surfaces host-migration path repair and journal rehydration from th
     status,
     /^issue_journal_state issue=#145 status=rehydrated guidance=no_manual_action_required detail=prior_local_only_handoff_unavailable$/m,
   );
-  assert.doesNotMatch(status, /status_warning=/);
+  assert.match(
+    status,
+    /^status_warning=Tracked work is active for issue #145, but the supervisor loop is off\. Restart the loop to resume background execution\.$/m,
+  );
 });
 
 test("status does not warn for issue-scoped or custom issue journal paths", async (t) => {
@@ -1096,6 +1099,66 @@ test("statusReport exposes typed loop runtime state from the host runtime marker
 
   const status = await supervisor.status();
   assert.match(status, /^loop_runtime state=running host_mode=unknown pid=\d+ started_at=\d{4}-\d{2}-\d{2}T.* detail=supervisor-loop-runtime$/m);
+});
+
+test("status surfaces loop-off as a blocker when tracked work is still active", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 188;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "addressing_review",
+        branch,
+        pr_number: 288,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Loop-off blocker should be explicit",
+    body: executionReadyBody("Surface loop-off as a tracked-work blocker in status."),
+    createdAt: "2026-03-25T00:00:00Z",
+    updatedAt: "2026-03-25T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [trackedIssue],
+    listAllIssues: async () => [trackedIssue],
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const report = await supervisor.statusReport();
+  assert.match(
+    report.detailedStatusLines.join("\n"),
+    /^loop_runtime_blocker state=off active_tracked_issues=1 first_issue=#188 first_state=addressing_review first_pr=#288 action=restart_loop$/m,
+  );
+  assert.equal(
+    report.warning?.message,
+    "Tracked work is active for issue #188, but the supervisor loop is off. Restart the loop to resume background execution.",
+  );
+
+  const status = await supervisor.status();
+  assert.match(
+    status,
+    /^loop_runtime_blocker state=off active_tracked_issues=1 first_issue=#188 first_state=addressing_review first_pr=#288 action=restart_loop$/m,
+  );
+  assert.match(
+    status,
+    /^status_warning=Tracked work is active for issue #188, but the supervisor loop is off\. Restart the loop to resume background execution\.$/m,
+  );
 });
 
 test("acquireSupervisorLock fails closed on ambiguous-owner run locks", async (t) => {

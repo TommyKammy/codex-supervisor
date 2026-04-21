@@ -32,7 +32,11 @@ import {
   type SupervisorStatusDto,
 } from "./supervisor-status-report";
 import { buildTrackedPrMismatch, shouldHydrateTrackedPrDiagnostics } from "./tracked-pr-mismatch";
-import { buildMacOsLoopHostWarning, readSupervisorLoopRuntime } from "./supervisor-loop-runtime-state";
+import {
+  buildLoopOffTrackedWorkBlocker,
+  buildMacOsLoopHostWarning,
+  readSupervisorLoopRuntime,
+} from "./supervisor-loop-runtime-state";
 import { loadActiveIssueStatusSnapshot } from "./supervisor-selection-active-status";
 import {
   buildCandidateDiscoverySummary,
@@ -167,6 +171,10 @@ export async function buildSupervisorStatusReport(args: {
   const gsdSummary = await describeGsdIntegration(config);
   const statusRecords = summarizeSupervisorStatusRecords(state);
   const trackedIssues = buildTrackedIssueDtos(state);
+  const loopOffTrackedWorkBlocker = buildLoopOffTrackedWorkBlocker({
+    loopRuntime,
+    trackedIssues,
+  });
   const inventoryStatus = buildInventoryOperatorStatus({
     state,
     activeRecord: statusRecords.activeRecord,
@@ -241,6 +249,7 @@ export async function buildSupervisorStatusReport(args: {
       const githubRateLimitStatus = await loadGitHubRateLimitStatus(github);
       const inactiveDetailedStatusLines = [
         ...detailedStatusLines,
+        ...(loopOffTrackedWorkBlocker ? [loopOffTrackedWorkBlocker.summaryLine] : []),
         inventoryPostureLine,
         ...(inventoryRefreshStatusLine === null ? [] : [inventoryRefreshStatusLine]),
         ...inventoryRefreshDiagnosticLines,
@@ -270,12 +279,17 @@ export async function buildSupervisorStatusReport(args: {
         reconciliationWarning,
         readinessLines: readinessSummary?.readinessLines ?? [],
         whyLines,
-        warning: loopHostWarning || inventoryRefreshWarning || githubRateLimitStatus.githubRateLimitWarning
+        warning: loopOffTrackedWorkBlocker || loopHostWarning || inventoryRefreshWarning || githubRateLimitStatus.githubRateLimitWarning
           ? {
-            kind: loopHostWarning ? "status" : "readiness",
+            kind: loopHostWarning || loopOffTrackedWorkBlocker ? "status" : "readiness",
             message: truncate(
               sanitizeStatusValue(
-                [loopHostWarning, inventoryRefreshWarning, githubRateLimitStatus.githubRateLimitWarning]
+                [
+                  loopOffTrackedWorkBlocker?.warningMessage,
+                  loopHostWarning,
+                  inventoryRefreshWarning,
+                  githubRateLimitStatus.githubRateLimitWarning,
+                ]
                   .filter(Boolean)
                   .join(" | "),
               ),
@@ -298,6 +312,7 @@ export async function buildSupervisorStatusReport(args: {
       const githubRateLimitStatus = await loadGitHubRateLimitStatus(github);
       const inactiveDetailedStatusLines = [
         ...detailedStatusLines,
+        ...(loopOffTrackedWorkBlocker ? [loopOffTrackedWorkBlocker.summaryLine] : []),
         inventoryPostureLine,
         ...(inventoryRefreshStatusLine === null ? [] : [inventoryRefreshStatusLine]),
         ...inventoryRefreshDiagnosticLines,
@@ -328,9 +343,13 @@ export async function buildSupervisorStatusReport(args: {
         readinessLines: readinessSummary.readinessLines,
         whyLines,
         warning: loopHostWarning
+          || loopOffTrackedWorkBlocker
           ? {
             kind: "status",
-            message: truncate(sanitizeStatusValue(loopHostWarning), 200) ?? "",
+            message: truncate(
+              sanitizeStatusValue([loopOffTrackedWorkBlocker?.warningMessage, loopHostWarning].filter(Boolean).join(" | ")),
+              200,
+            ) ?? "",
           }
           : null,
       };
@@ -339,6 +358,7 @@ export async function buildSupervisorStatusReport(args: {
       const githubRateLimitStatus = await loadGitHubRateLimitStatus(github);
       const inactiveDetailedStatusLines = [
         ...detailedStatusLines,
+        ...(loopOffTrackedWorkBlocker ? [loopOffTrackedWorkBlocker.summaryLine] : []),
         inventoryPostureLine,
         ...(inventoryRefreshStatusLine === null ? [] : [inventoryRefreshStatusLine]),
         ...inventoryRefreshDiagnosticLines,
@@ -368,10 +388,15 @@ export async function buildSupervisorStatusReport(args: {
         readinessLines: [],
         whyLines: [],
         warning: {
-          kind: loopHostWarning ? "status" : "readiness",
+          kind: loopHostWarning || loopOffTrackedWorkBlocker ? "status" : "readiness",
           message: truncate(
             sanitizeStatusValue(
-              [loopHostWarning, message, githubRateLimitStatus.githubRateLimitWarning].filter(Boolean).join(" | "),
+              [
+                loopOffTrackedWorkBlocker?.warningMessage,
+                loopHostWarning,
+                message,
+                githubRateLimitStatus.githubRateLimitWarning,
+              ].filter(Boolean).join(" | "),
             ),
             200,
           ) ?? "",
@@ -419,6 +444,7 @@ export async function buildSupervisorStatusReport(args: {
   const githubRateLimitStatus = await loadGitHubRateLimitStatus(github);
   const detailedStatusLinesWithInventory = [
     ...detailedStatusLines,
+    ...(loopOffTrackedWorkBlocker ? [loopOffTrackedWorkBlocker.summaryLine] : []),
     inventoryPostureLine,
     ...(inventoryRefreshStatusLine === null ? [] : [inventoryRefreshStatusLine]),
     ...inventoryRefreshDiagnosticLines,
@@ -460,11 +486,13 @@ export async function buildSupervisorStatusReport(args: {
     whyLines: [],
     warning: activeStatus.warningMessage || inventoryRefreshWarning
       || loopHostWarning
+      || loopOffTrackedWorkBlocker
       ? {
         kind: "status",
         message: truncate(
           sanitizeStatusValue(
             [
+              loopOffTrackedWorkBlocker?.warningMessage,
               loopHostWarning,
               activeStatus.warningMessage,
               inventoryRefreshWarning,
@@ -490,7 +518,23 @@ export async function buildSupervisorExplainReport(args: {
   issueNumber: number;
 }): Promise<SupervisorExplainDto> {
   const state = await args.stateStore.load();
-  return buildIssueExplainDto(args.github, args.config, state, args.issueNumber);
+  const dto = await buildIssueExplainDto(args.github, args.config, state, args.issueNumber);
+  const record = state.issues[String(dto.issueNumber)];
+  const loopRuntime = await readSupervisorLoopRuntime(args.config.stateFile);
+  const loopOffTrackedWorkBlocker = buildLoopOffTrackedWorkBlocker({
+    loopRuntime,
+    trackedIssues: record === undefined
+      ? []
+      : [{
+        issueNumber: record.issue_number,
+        state: record.state,
+        prNumber: record.pr_number,
+      }],
+  });
+  return {
+    ...dto,
+    loopRuntimeBlockerSummary: loopOffTrackedWorkBlocker?.summaryLine ?? null,
+  };
 }
 
 export async function buildSupervisorDoctorReport(args: {
