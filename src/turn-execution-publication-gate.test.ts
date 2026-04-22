@@ -227,6 +227,8 @@ test("applyCodexTurnPublicationGate blocks tracked supervisor issue journals bef
       }),
     },
   };
+  const initialLastHeadSha = state.issues["102"]!.last_head_sha;
+  const workspaceHeadSha = git(workspacePath, "rev-parse", "HEAD").trim();
 
   const result = await applyCodexTurnPublicationGate({
     config: createConfig({
@@ -243,7 +245,7 @@ test("applyCodexTurnPublicationGate blocks tracked supervisor issue journals bef
     workspacePath,
     workspaceStatus: {
       branch: "codex/issue-102",
-      headSha: git(workspacePath, "rev-parse", "HEAD").trim(),
+      headSha: workspaceHeadSha,
       hasUncommittedChanges: false,
       baseAhead: 1,
       baseBehind: 0,
@@ -291,7 +293,8 @@ test("applyCodexTurnPublicationGate blocks tracked supervisor issue journals bef
   assert.equal(createPullRequestCalls, 0);
   assert.equal(runWorkspacePreparationCalls, 0);
   assert.equal(runLocalCiCalls, 0);
-  assert.equal(result.record.last_head_sha, "head-116");
+  assert.equal(result.record.last_head_sha, initialLastHeadSha);
+  assert.notEqual(result.record.last_head_sha, workspaceHeadSha);
   assert.equal(git(workspacePath, "log", "-1", "--pretty=%s").trim(), "seed cross-issue journal leak");
   assert.equal(git(workspacePath, "ls-remote", "--heads", "origin", "codex/issue-102").trim(), "");
   assert.equal(git(workspacePath, "status", "--short", "--untracked-files=no").trim(), "");
