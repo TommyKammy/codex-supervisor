@@ -8,11 +8,30 @@ export type GitStatusPorcelainV1Entry = {
 
 const ISSUE_JOURNAL_RELATIVE_PATH_REGEX = /^\.codex-supervisor\/issues\/\d+\/issue-journal\.md$/u;
 
+function matchesConfiguredIssueJournalPath(relativePath: string, journalRelativePath?: string): boolean {
+  if (!journalRelativePath) {
+    return false;
+  }
+
+  if (relativePath === journalRelativePath) {
+    return true;
+  }
+
+  if (!journalRelativePath.includes("{issueNumber}")) {
+    return false;
+  }
+
+  const escapedTemplate = journalRelativePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const patternSource = escapedTemplate.replaceAll("\\{issueNumber\\}", "\\d+");
+  const templatePattern = new RegExp(`^${patternSource}$`, "u");
+  return templatePattern.test(relativePath);
+}
+
 export function isIgnoredSupervisorArtifactPath(
   relativePath: string,
   journalRelativePath?: string,
 ): boolean {
-  return relativePath === journalRelativePath
+  return matchesConfiguredIssueJournalPath(relativePath, journalRelativePath)
     || relativePath === ".codex-supervisor/issue-journal.md"
     || ISSUE_JOURNAL_RELATIVE_PATH_REGEX.test(relativePath)
     || relativePath === ".codex-supervisor/turn-in-progress.json"

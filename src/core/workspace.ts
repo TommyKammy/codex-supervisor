@@ -455,6 +455,22 @@ export async function filterPresentTrackedFilePaths(workspacePath: string, fileP
   return presentPaths.filter((filePath): filePath is string => filePath !== null);
 }
 
+export async function listTrackedSupervisorArtifactPaths(
+  workspacePath: string,
+  journalRelativePath?: string,
+): Promise<string[]> {
+  if (!fs.existsSync(path.join(workspacePath, ".git"))) {
+    return [];
+  }
+  const trackedPathsResult = await runCommand("git", ["-C", workspacePath, "ls-files", "-z", "--", ".codex-supervisor"]);
+  return trackedPathsResult.stdout
+    .split("\0")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+    .filter((entry) => isIgnoredSupervisorArtifactPath(entry, journalRelativePath))
+    .sort((left, right) => left.localeCompare(right));
+}
+
 export async function cleanupWorkspace(
   repoPath: string,
   workspacePath: string,

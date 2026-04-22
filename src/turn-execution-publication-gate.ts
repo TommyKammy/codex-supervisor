@@ -19,7 +19,12 @@ import {
   runWorkstationLocalPathGate,
   type WorkstationLocalPathGateResult,
 } from "./workstation-local-path-gate";
-import { commitAndPushTrackedFiles, filterPresentTrackedFilePaths, getWorkspaceStatus } from "./core/workspace";
+import {
+  commitAndPushTrackedFiles,
+  filterPresentTrackedFilePaths,
+  getWorkspaceStatus,
+  listTrackedSupervisorArtifactPaths,
+} from "./core/workspace";
 
 function isOpenPullRequest(pr: GitHubPullRequest | null): pr is GitHubPullRequest {
   return pr !== null && pr.state === "OPEN" && !pr.mergedAt;
@@ -47,6 +52,28 @@ export type CodexTurnPublicationGateResult =
   | CodexTurnPublicationGateReadyResult;
 
 const TRUSTED_DURABLE_ARTIFACT_NORMALIZATION_COMMIT_MESSAGE = "Normalize trusted durable artifacts for path hygiene";
+const SUPERVISOR_LOCAL_DURABLE_ARTIFACT_SIGNATURE = "supervisor-local-durable-artifacts-tracked-before-publication";
+
+function buildSupervisorLocalArtifactFailureContext(
+  trackedPaths: string[],
+  issueNumber: number,
+): FailureContext {
+  const listedPaths = trackedPaths.join(", ");
+  return {
+    category: "blocked",
+    summary:
+      `Tracked supervisor-local durable artifacts blocked pull request creation for issue #${issueNumber}. `
+      + `Remove or unstage these tracked paths before publishing checkpoint commits: ${listedPaths}.`,
+    signature: SUPERVISOR_LOCAL_DURABLE_ARTIFACT_SIGNATURE,
+    command: "git ls-files -- .codex-supervisor",
+    details: [
+      "Supervisor-local durable artifacts must not be committed into issue-branch publication checkpoints.",
+      ...trackedPaths.map((trackedPath) => `tracked supervisor-local artifact: ${trackedPath}`),
+    ],
+    url: null,
+    updated_at: new Date().toISOString(),
+  };
+}
 
 export async function applyCodexTurnPublicationGate(args: {
   config: Pick<
@@ -54,6 +81,7 @@ export async function applyCodexTurnPublicationGate(args: {
     | "repoPath"
     | "defaultBranch"
     | "draftPrAfterAttempt"
+    | "issueJournalRelativePath"
     | "workspacePreparationCommand"
     | "localCiCommand"
     | "publishablePathAllowlistMarkers"
@@ -94,6 +122,38 @@ export async function applyCodexTurnPublicationGate(args: {
     !workspaceStatus.hasUncommittedChanges &&
     record.implementation_attempt_count >= args.config.draftPrAfterAttempt
   ) {
+    const trackedSupervisorArtifactPaths = await listTrackedSupervisorArtifactPaths(
+      args.workspacePath,
+      args.config.issueJournalRelativePath,
+    );
+    if (trackedSupervisorArtifactPaths.length > 0) {
+      const failureContext = buildSupervisorLocalArtifactFailureContext(
+        trackedSupervisorArtifactPaths,
+        record.issue_number,
+      );
+      record = args.stateStore.touch(record, {
+        state: "blocked",
+        last_error: truncate(failureContext.summary, 1000),
+        last_failure_kind: null,
+        last_failure_context: failureContext,
+        ...args.applyFailureSignature(record, failureContext),
+        blocked_reason: "verification",
+        ...issueDefinitionFreshnessPatch(args.issue),
+      });
+      args.state.issues[String(record.issue_number)] = record;
+      await args.stateStore.save(args.state);
+      await args.syncExecutionMetricsRunSummary(record);
+      await args.syncJournal(record);
+      return {
+        kind: "blocked",
+        message: failureContext.summary,
+        record,
+        pr: null,
+        checks: [],
+        reviewThreads: [],
+      };
+    }
+
     const pathHygieneGate = await runWorkstationLocalPathGateImpl({
       workspacePath: args.workspacePath,
       gateLabel: "before publication",
