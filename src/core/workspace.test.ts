@@ -359,6 +359,92 @@ test("ensureWorkspace hides tracked live issue journals while preserving intenti
   assert.doesNotMatch(workspaceStatus, /\.codex-supervisor\/issues\/811\/issue-journal\.md/u);
 });
 
+test("ensureWorkspace installs worktree-local excludes for supervisor artifacts in fresh linked worktrees", async () => {
+  const config = await createRepositoryFixture();
+  const issueNumber = 812;
+  const branch = `${config.branchPrefix}${issueNumber}`;
+
+  const ensured = await ensureWorkspace(config, issueNumber, branch);
+  const gitDir = await gitOutput(ensured.workspacePath, "rev-parse", "--absolute-git-dir");
+  const excludePath = await gitOutput(
+    ensured.workspacePath,
+    "rev-parse",
+    "--path-format=absolute",
+    "--git-path",
+    "info/exclude",
+  );
+
+  await fs.mkdir(path.join(ensured.workspacePath, ".codex-supervisor", "execution-metrics"), { recursive: true });
+  await fs.mkdir(path.join(ensured.workspacePath, ".codex-supervisor", "pre-merge"), { recursive: true });
+  await fs.mkdir(path.join(ensured.workspacePath, ".codex-supervisor", "replay"), { recursive: true });
+  await fs.mkdir(path.join(ensured.workspacePath, ".codex-supervisor", "issues", String(issueNumber)), { recursive: true });
+  await fs.writeFile(path.join(ensured.workspacePath, ".codex-supervisor", "turn-in-progress.json"), "{}\n", "utf8");
+  await fs.writeFile(
+    path.join(ensured.workspacePath, ".codex-supervisor", "execution-metrics", "run-summary.json"),
+    "{}\n",
+    "utf8",
+  );
+  await fs.writeFile(
+    path.join(ensured.workspacePath, ".codex-supervisor", "pre-merge", "assessment-snapshot.json"),
+    "{}\n",
+    "utf8",
+  );
+  await fs.writeFile(
+    path.join(ensured.workspacePath, ".codex-supervisor", "replay", "decision-cycle-snapshot.json"),
+    "{}\n",
+    "utf8",
+  );
+  await fs.writeFile(
+    path.join(ensured.workspacePath, ".codex-supervisor", "issues", String(issueNumber), "issue-journal.md"),
+    "# local journal\n",
+    "utf8",
+  );
+
+  await git(ensured.workspacePath, "add", "-A");
+
+  const excludeFile = await fs.readFile(excludePath, "utf8");
+  const stagedPaths = await gitOutput(ensured.workspacePath, "diff", "--cached", "--name-only");
+
+  assert.match(gitDir, /\/worktrees\/issue-812$/u);
+  assert.match(excludePath, /\/\.git\/info\/exclude$/u);
+  assert.notEqual(excludePath, path.join(gitDir, "info", "exclude"));
+  assert.match(excludeFile, /^\.codex-supervisor\/issues\/812\/issue-journal\.md$/mu);
+  assert.match(excludeFile, /^\.codex-supervisor\/execution-metrics\/\*$/mu);
+  assert.match(excludeFile, /^\.codex-supervisor\/pre-merge\/\*$/mu);
+  assert.match(excludeFile, /^\.codex-supervisor\/replay\/\*$/mu);
+  assert.match(excludeFile, /^\.codex-supervisor\/turn-in-progress\.json$/mu);
+  assert.equal(stagedPaths, "");
+});
+
+test("ensureWorkspace reuses worktree-local excludes idempotently without clobbering operator entries", async () => {
+  const config = await createRepositoryFixture();
+  const issueNumber = 813;
+  const branch = `${config.branchPrefix}${issueNumber}`;
+
+  const ensured = await ensureWorkspace(config, issueNumber, branch);
+  const excludePath = await gitOutput(
+    ensured.workspacePath,
+    "rev-parse",
+    "--path-format=absolute",
+    "--git-path",
+    "info/exclude",
+  );
+  await fs.appendFile(excludePath, "\n# operator-managed\ncustom-local.log\n", "utf8");
+
+  const reused = await ensureWorkspace(config, issueNumber, branch);
+  const excludeFile = await fs.readFile(excludePath, "utf8");
+  const excludeLines = excludeFile.split(/\r?\n/u).filter(Boolean);
+
+  assert.equal(reused.restore.source, "existing_workspace");
+  assert.equal(excludeLines.filter((line) => line === ".codex-supervisor/issues/813/issue-journal.md").length, 1);
+  assert.equal(excludeLines.filter((line) => line === ".codex-supervisor/execution-metrics/*").length, 1);
+  assert.equal(excludeLines.filter((line) => line === ".codex-supervisor/pre-merge/*").length, 1);
+  assert.equal(excludeLines.filter((line) => line === ".codex-supervisor/replay/*").length, 1);
+  assert.equal(excludeLines.filter((line) => line === ".codex-supervisor/turn-in-progress.json").length, 1);
+  assert.match(excludeFile, /^# operator-managed$/mu);
+  assert.match(excludeFile, /^custom-local\.log$/mu);
+});
+
 test("ensureWorkspace ignores similarly suffixed remote-tracking refs when bootstrapping", async () => {
   const config = await createRepositoryFixture();
   const issueNumber = 727;
@@ -444,7 +530,7 @@ test("ensureWorkspace rejects reusing an existing workspace on the wrong branch"
 
   await assert.rejects(
     () => ensureWorkspace(config, issueNumber, branch),
-    /not a registered worktree/i,
+    /unexpected-branch|not a registered worktree/i,
   );
 });
 
@@ -459,7 +545,7 @@ test("ensureWorkspace rejects reusing an existing workspace on a detached HEAD",
 
   await assert.rejects(
     () => ensureWorkspace(config, issueNumber, branch),
-    /not a registered worktree/i,
+    /detached HEAD|not a registered worktree/i,
   );
 });
 
@@ -644,10 +730,10 @@ test("issue-scoped journals do not manufacture merge conflicts between unrelated
   );
   assert.equal(
     await gitOutput(workspaceB.workspacePath, "ls-files", ".codex-supervisor/issues/801/issue-journal.md"),
-    ".codex-supervisor/issues/801/issue-journal.md",
+    "",
   );
   assert.equal(
     await gitOutput(workspaceB.workspacePath, "ls-files", ".codex-supervisor/issues/802/issue-journal.md"),
-    ".codex-supervisor/issues/802/issue-journal.md",
+    "",
   );
 });

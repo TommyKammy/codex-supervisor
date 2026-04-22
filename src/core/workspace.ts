@@ -1,7 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { runCommand } from "./command";
-import { isIgnoredSupervisorArtifactPath, parseGitStatusPorcelainV1Paths } from "./git-workspace-helpers";
+import { issueJournalPath } from "./journal";
+import {
+  isIgnoredSupervisorArtifactPath,
+  normalizeGitPath,
+  parseGitStatusPorcelainV1Paths,
+} from "./git-workspace-helpers";
 import { EnsuredWorkspace, SupervisorConfig, WorkspaceRestoreMetadata, WorkspaceStatus } from "./types";
 import { ensureDir, isValidGitRefName } from "./utils";
 
@@ -197,6 +202,61 @@ async function protectTrackedLiveIssueJournals(workspacePath: string): Promise<v
   await runCommand("git", ["-C", workspacePath, "update-index", "--skip-worktree", "--", ...trackedPaths]);
 }
 
+function toGitRelativePath(workspacePath: string, absolutePath: string): string {
+  const relativePath = path.relative(workspacePath, absolutePath);
+  return relativePath.split(path.sep).join("/");
+}
+
+async function worktreeLocalExcludePath(workspacePath: string): Promise<string> {
+  const excludePath = (await runCommand(
+    "git",
+    ["-C", workspacePath, "rev-parse", "--path-format=absolute", "--git-path", "info/exclude"],
+  )).stdout.trim();
+  if (!excludePath) {
+    throw new Error(`Could not resolve git exclude path for workspace: ${workspacePath}`);
+  }
+
+  return excludePath;
+}
+
+async function installWorktreeLocalExcludes(
+  config: Pick<SupervisorConfig, "issueJournalRelativePath">,
+  workspacePath: string,
+  issueNumber: number,
+): Promise<void> {
+  const excludePath = await worktreeLocalExcludePath(workspacePath);
+  await ensureDir(path.dirname(excludePath));
+
+  const journalPath = issueJournalPath(workspacePath, config.issueJournalRelativePath, issueNumber);
+  const managedEntries = [
+    toGitRelativePath(workspacePath, journalPath),
+    ".codex-supervisor/execution-metrics/*",
+    ".codex-supervisor/pre-merge/*",
+    ".codex-supervisor/replay/*",
+    ".codex-supervisor/turn-in-progress.json",
+  ];
+  const existingContent = fs.existsSync(excludePath) ? fs.readFileSync(excludePath, "utf8") : "";
+  const existingLines = existingContent.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean);
+  const existingEntries = new Set(existingLines);
+  const missingEntries = managedEntries.filter((entry) => !existingEntries.has(entry));
+
+  if (missingEntries.length === 0) {
+    return;
+  }
+
+  const appendedBlock = `${existingContent.length > 0 && !existingContent.endsWith("\n") ? "\n" : ""}${missingEntries.join("\n")}\n`;
+  fs.appendFileSync(excludePath, appendedBlock, "utf8");
+}
+
+async function finalizeWorkspaceSetup(
+  config: Pick<SupervisorConfig, "issueJournalRelativePath">,
+  workspacePath: string,
+  issueNumber: number,
+): Promise<void> {
+  await installWorktreeLocalExcludes(config, workspacePath, issueNumber);
+  await protectTrackedLiveIssueJournals(workspacePath);
+}
+
 export function formatWorkspaceRestoreStatusLine(restore: WorkspaceRestoreMetadata): string {
   return `workspace_restore source=${restore.source} ref=${restore.ref}`;
 }
@@ -225,7 +285,7 @@ function parseGitWorktreeList(stdout: string): GitWorktreeEntry[] {
         entries.push(current);
       }
       current = {
-        worktreePath: path.resolve(line.slice("worktree ".length).trim()),
+        worktreePath: normalizeGitPath(line.slice("worktree ".length).trim()),
         branchRef: null,
       };
       continue;
@@ -248,7 +308,7 @@ async function assertReusableExistingWorkspace(
   workspacePath: string,
   branch: string,
 ): Promise<void> {
-  const resolvedWorkspacePath = path.resolve(workspacePath);
+  const resolvedWorkspacePath = normalizeGitPath(workspacePath);
   const worktreeList = await runCommand("git", ["-C", config.repoPath, "worktree", "list", "--porcelain"]);
   const worktreeEntry = parseGitWorktreeList(worktreeList.stdout).find(
     (entry) => entry.worktreePath === resolvedWorkspacePath,
@@ -292,7 +352,7 @@ export async function ensureWorkspace(
 
   if (fs.existsSync(path.join(workspacePath, ".git"))) {
     await assertReusableExistingWorkspace(config, workspacePath, branch);
-    await protectTrackedLiveIssueJournals(workspacePath);
+    await finalizeWorkspaceSetup(config, workspacePath, issueNumber);
     return buildEnsuredWorkspace(workspacePath, {
       source: "existing_workspace",
       ref: branch,
@@ -305,7 +365,7 @@ export async function ensureWorkspace(
 
   if (await branchExists(config.repoPath, branch)) {
     await runCommand("git", ["-C", config.repoPath, "worktree", "add", workspacePath, branch]);
-    await protectTrackedLiveIssueJournals(workspacePath);
+    await finalizeWorkspaceSetup(config, workspacePath, issueNumber);
     return buildEnsuredWorkspace(workspacePath, {
       source: "local_branch",
       ref: branch,
@@ -314,7 +374,7 @@ export async function ensureWorkspace(
 
   if (remoteBranchExists) {
     await runCommand("git", ["-C", config.repoPath, "worktree", "add", "-b", branch, workspacePath, `origin/${branch}`]);
-    await protectTrackedLiveIssueJournals(workspacePath);
+    await finalizeWorkspaceSetup(config, workspacePath, issueNumber);
     return buildEnsuredWorkspace(workspacePath, {
       source: "remote_branch",
       ref: `origin/${branch}`,
@@ -332,7 +392,7 @@ export async function ensureWorkspace(
     workspacePath,
     bootstrapBaseRef,
   ]);
-  await protectTrackedLiveIssueJournals(workspacePath);
+  await finalizeWorkspaceSetup(config, workspacePath, issueNumber);
 
   return buildEnsuredWorkspace(workspacePath, {
     source: "bootstrap_default_branch",
