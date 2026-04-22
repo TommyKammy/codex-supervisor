@@ -61,6 +61,20 @@ test("isIgnoredSupervisorArtifactPath matches configured templated issue journal
     ),
     false,
   );
+  assert.equal(
+    isIgnoredSupervisorArtifactPath(
+      ".codex-supervisor/2468/issue-2468.md",
+      ".codex-supervisor/{issueNumber}/issue-{issueNumber}.md",
+    ),
+    true,
+  );
+  assert.equal(
+    isIgnoredSupervisorArtifactPath(
+      ".codex-supervisor/2468/issue-not-a-number.md",
+      ".codex-supervisor/{issueNumber}/issue-{issueNumber}.md",
+    ),
+    false,
+  );
 });
 
 test("parseGitWorktreePaths returns only normalized worktree entries", () => {

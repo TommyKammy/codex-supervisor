@@ -22,7 +22,8 @@ function matchesConfiguredIssueJournalPath(relativePath: string, journalRelative
   }
 
   const escapedTemplate = journalRelativePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const templatePattern = new RegExp(`^${escapedTemplate.replace("\\{issueNumber\\}", "\\d+")}$`, "u");
+  const patternSource = escapedTemplate.replaceAll("\\{issueNumber\\}", "\\d+");
+  const templatePattern = new RegExp(`^${patternSource}$`, "u");
   return templatePattern.test(relativePath);
 }
 
