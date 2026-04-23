@@ -12,12 +12,12 @@ import {
   persistHintedCodexTurnState,
   persistMissingCodexJournalHandoff,
 } from "./turn-execution-failure-helpers";
+import {} from "./review-handling";
+import { PullRequestLifecycleSnapshot } from "./post-turn-pull-request";
 import {
-} from "./review-handling";
-import {
-  PullRequestLifecycleSnapshot,
-} from "./post-turn-pull-request";
-import { IssueJournalSync, MemoryArtifacts } from "./run-once-issue-preparation";
+  IssueJournalSync,
+  MemoryArtifacts,
+} from "./run-once-issue-preparation";
 import { type LocalCiCommandRunner } from "./local-ci";
 import {
   buildWorkstationLocalPathFailureContext,
@@ -48,7 +48,13 @@ import {
   WorkspaceStatus,
 } from "./core/types";
 import { truncate } from "./core/utils";
-import { commitAndPushTrackedFiles, filterPresentTrackedFilePaths, getWorkspaceStatus, pushBranch } from "./core/workspace";
+import {
+  commitAndPushTrackedFiles,
+  filterPresentTrackedFilePaths,
+  getWorkspaceStatus,
+  listChangedTrackedFilesBetween,
+  pushBranch,
+} from "./core/workspace";
 import { AgentRunner, createCodexAgentRunner } from "./supervisor/agent-runner";
 import {
   executionMetricsRetentionRootPath,
@@ -96,7 +102,8 @@ export interface CodexTurnResult {
   reviewThreads: ReviewThread[];
 }
 
-const TRUSTED_DURABLE_ARTIFACT_NORMALIZATION_COMMIT_MESSAGE = "Normalize trusted durable artifacts for path hygiene";
+const TRUSTED_DURABLE_ARTIFACT_NORMALIZATION_COMMIT_MESSAGE =
+  "Normalize trusted durable artifacts for path hygiene";
 
 export interface CodexTurnShortCircuit {
   kind: "returned";
@@ -111,8 +118,14 @@ interface RecoverUnexpectedCodexTurnFailureArgs {
   issue: GitHubIssue;
   journalSync: (record: IssueRunRecord) => Promise<void>;
   error: unknown;
-  workspaceStatus: Pick<WorkspaceStatus, "hasUncommittedChanges" | "headSha"> | null;
-  pr: Pick<GitHubPullRequest, "number" | "headRefOid" | "createdAt" | "mergedAt"> | null;
+  workspaceStatus: Pick<
+    WorkspaceStatus,
+    "hasUncommittedChanges" | "headSha"
+  > | null;
+  pr: Pick<
+    GitHubPullRequest,
+    "number" | "headRefOid" | "createdAt" | "mergedAt"
+  > | null;
 }
 
 interface ExecuteCodexTurnPhaseArgs {
@@ -120,12 +133,18 @@ interface ExecuteCodexTurnPhaseArgs {
   stateStore: Pick<StateStore, "touch" | "save">;
   github: Pick<
     GitHubClient,
-    "resolvePullRequestForBranch" | "createPullRequest" | "getChecks" | "getUnresolvedReviewThreads" | "getExternalReviewSurface"
+    | "resolvePullRequestForBranch"
+    | "createPullRequest"
+    | "getChecks"
+    | "getUnresolvedReviewThreads"
+    | "getExternalReviewSurface"
   >;
   context: CodexTurnContext;
   sessionLock?: LockHandle | null;
   acquireSessionLock: (sessionId: string) => Promise<LockHandle | null>;
-  classifyFailure: (message: string | null | undefined) => "timeout" | "command_error";
+  classifyFailure: (
+    message: string | null | undefined,
+  ) => "timeout" | "command_error";
   buildCodexFailureContext: (
     category: FailureContext["category"],
     summary: string,
@@ -134,8 +153,13 @@ interface ExecuteCodexTurnPhaseArgs {
   applyFailureSignature: (
     record: IssueRunRecord,
     failureContext: FailureContext | null,
-  ) => Pick<IssueRunRecord, "last_failure_signature" | "repeated_failure_signature_count">;
-  normalizeBlockerSignature: (message: string | null | undefined) => string | null;
+  ) => Pick<
+    IssueRunRecord,
+    "last_failure_signature" | "repeated_failure_signature_count"
+  >;
+  normalizeBlockerSignature: (
+    message: string | null | undefined,
+  ) => string | null;
   isVerificationBlockedMessage: (message: string | null | undefined) => boolean;
   derivePullRequestLifecycleSnapshot: (
     record: IssueRunRecord,
@@ -144,7 +168,10 @@ interface ExecuteCodexTurnPhaseArgs {
     reviewThreads: ReviewThread[],
     recordPatch?: Partial<IssueRunRecord>,
   ) => PullRequestLifecycleSnapshot;
-  inferStateWithoutPullRequest: (record: IssueRunRecord, workspaceStatus: WorkspaceStatus) => RunState;
+  inferStateWithoutPullRequest: (
+    record: IssueRunRecord,
+    workspaceStatus: WorkspaceStatus,
+  ) => RunState;
   blockedReasonFromReviewState: (
     record: IssueRunRecord,
     pr: GitHubPullRequest,
@@ -162,7 +189,9 @@ interface ExecuteCodexTurnPhaseArgs {
     syncJournal: (record: IssueRunRecord) => Promise<void>;
     issueNumber: number;
     error: unknown;
-    classifyFailure: (message: string | null | undefined) => "timeout" | "command_error";
+    classifyFailure: (
+      message: string | null | undefined,
+    ) => "timeout" | "command_error";
     buildCodexFailureContext: (
       category: FailureContext["category"],
       summary: string,
@@ -171,7 +200,10 @@ interface ExecuteCodexTurnPhaseArgs {
     applyFailureSignature: (
       record: IssueRunRecord,
       failureContext: FailureContext | null,
-    ) => Pick<IssueRunRecord, "last_failure_signature" | "repeated_failure_signature_count">;
+    ) => Pick<
+      IssueRunRecord,
+      "last_failure_signature" | "repeated_failure_signature_count"
+    >;
     retentionRootPath?: string;
   }) => Promise<IssueRunRecord>;
   persistCodexTurnExitFailure?: (args: {
@@ -181,8 +213,13 @@ interface ExecuteCodexTurnPhaseArgs {
     issue: Pick<GitHubIssue, "createdAt">;
     syncJournal: (record: IssueRunRecord) => Promise<void>;
     issueNumber: number;
-    codexResult: Pick<import("./core/types").CodexTurnResult, "lastMessage" | "stderr" | "stdout">;
-    classifyFailure: (message: string | null | undefined) => "timeout" | "command_error";
+    codexResult: Pick<
+      import("./core/types").CodexTurnResult,
+      "lastMessage" | "stderr" | "stdout"
+    >;
+    classifyFailure: (
+      message: string | null | undefined,
+    ) => "timeout" | "command_error";
     buildCodexFailureContext: (
       category: FailureContext["category"],
       summary: string,
@@ -191,7 +228,10 @@ interface ExecuteCodexTurnPhaseArgs {
     applyFailureSignature: (
       record: IssueRunRecord,
       failureContext: FailureContext | null,
-    ) => Pick<IssueRunRecord, "last_failure_signature" | "repeated_failure_signature_count">;
+    ) => Pick<
+      IssueRunRecord,
+      "last_failure_signature" | "repeated_failure_signature_count"
+    >;
     retentionRootPath?: string;
   }) => Promise<IssueRunRecord>;
   persistMissingCodexJournalHandoff?: (args: {
@@ -209,7 +249,10 @@ interface ExecuteCodexTurnPhaseArgs {
     applyFailureSignature: (
       record: IssueRunRecord,
       failureContext: FailureContext | null,
-    ) => Pick<IssueRunRecord, "last_failure_signature" | "repeated_failure_signature_count">;
+    ) => Pick<
+      IssueRunRecord,
+      "last_failure_signature" | "repeated_failure_signature_count"
+    >;
     retentionRootPath?: string;
   }) => Promise<IssueRunRecord>;
   persistHintedCodexTurnState?: (args: {
@@ -231,12 +274,20 @@ interface ExecuteCodexTurnPhaseArgs {
     applyFailureSignature: (
       record: IssueRunRecord,
       failureContext: FailureContext | null,
-    ) => Pick<IssueRunRecord, "last_failure_signature" | "repeated_failure_signature_count">;
-    normalizeBlockerSignature: (message: string | null | undefined) => string | null;
-    isVerificationBlockedMessage: (message: string | null | undefined) => boolean;
+    ) => Pick<
+      IssueRunRecord,
+      "last_failure_signature" | "repeated_failure_signature_count"
+    >;
+    normalizeBlockerSignature: (
+      message: string | null | undefined,
+    ) => string | null;
+    isVerificationBlockedMessage: (
+      message: string | null | undefined,
+    ) => boolean;
     retentionRootPath?: string;
   }) => Promise<IssueRunRecord>;
   getWorkspaceStatus?: typeof getWorkspaceStatus;
+  listChangedTrackedFilesBetween?: typeof listChangedTrackedFilesBetween;
   pushBranch?: typeof pushBranch;
   readIssueJournal?: typeof readIssueJournal;
   agentRunner?: AgentRunner;
@@ -252,16 +303,20 @@ export async function executeCodexTurnPhase(
   args: ExecuteCodexTurnPhaseArgs,
 ): Promise<CodexTurnResult | CodexTurnShortCircuit> {
   const getWorkspaceStatusImpl = args.getWorkspaceStatus ?? getWorkspaceStatus;
+  const listChangedTrackedFilesBetweenImpl =
+    args.listChangedTrackedFilesBetween ?? listChangedTrackedFilesBetween;
   const pushBranchImpl = args.pushBranch ?? pushBranch;
   const readIssueJournalImpl = args.readIssueJournal ?? readIssueJournal;
   const persistCodexTurnExecutionFailureImpl =
     args.persistCodexTurnExecutionFailure ?? persistCodexTurnExecutionFailure;
-  const persistCodexTurnExitFailureImpl = args.persistCodexTurnExitFailure ?? persistCodexTurnExitFailure;
+  const persistCodexTurnExitFailureImpl =
+    args.persistCodexTurnExitFailure ?? persistCodexTurnExitFailure;
   const persistMissingCodexJournalHandoffImpl =
     args.persistMissingCodexJournalHandoff ?? persistMissingCodexJournalHandoff;
   const persistHintedCodexTurnStateImpl =
     args.persistHintedCodexTurnState ?? persistHintedCodexTurnState;
-  const runWorkstationLocalPathGateImpl = args.runWorkstationLocalPathGate ?? runWorkstationLocalPathGate;
+  const runWorkstationLocalPathGateImpl =
+    args.runWorkstationLocalPathGate ?? runWorkstationLocalPathGate;
   const agentRunner =
     args.agentRunner ??
     createCodexAgentRunner({
@@ -270,9 +325,19 @@ export async function executeCodexTurnPhase(
       buildFailureContextImpl: args.buildCodexFailureContext,
     });
   const { config, stateStore, github } = args;
-  const { state, issue, previousCodexSummary, previousError, workspacePath, journalPath, syncJournal, memoryArtifacts, options } = args.context;
+  const {
+    state,
+    issue,
+    workspacePath,
+    journalPath,
+    syncJournal,
+    memoryArtifacts,
+    options,
+  } = args.context;
   let { record, workspaceStatus, pr, checks, reviewThreads } = args.context;
   let turnMarkerWritten = false;
+  const turnStartHeadSha = workspaceStatus.headSha;
+  let usedSameTurnPathRepairRetry = false;
 
   try {
     if (options.dryRun) {
@@ -299,232 +364,324 @@ export async function executeCodexTurnPhase(
       };
     }
 
-    let journalContent = await readIssueJournalImpl(journalPath);
-    if (journalContent === null) {
-      await syncJournal(record);
-      journalContent = await readIssueJournalImpl(journalPath);
-    }
-    const effectiveJournalContent = journalContent ?? "";
-
     try {
-      const preparedTurn = await prepareCodexTurnPrompt({
-        config,
-        stateStore,
-        state,
-        record,
-        issue,
-        previousCodexSummary,
-        previousError,
-        workspacePath,
-        journalPath,
-        journalContent: effectiveJournalContent,
-        syncJournal,
-        memoryArtifacts,
-        pr,
-        checks,
-        reviewThreads,
-        github,
-        agentRunnerCapabilities: agentRunner.capabilities,
-      });
-      record = preparedTurn.record;
-      const { turnContext, reviewThreadsToProcess } = preparedTurn;
-      const preRunJournalFingerprint = await captureIssueJournalFingerprint(journalPath);
-      await writeInterruptedTurnMarker({
-        workspacePath,
-        issueNumber: record.issue_number,
-        state: record.state,
-        journalFingerprint: preRunJournalFingerprint,
-      });
-      turnMarkerWritten = true;
-      const turnResult = await agentRunner.runTurn(turnContext);
-      const structuredResult = agentRunner.capabilities.supportsStructuredResult ? turnResult.structuredResult : null;
-      const hintedState = structuredResult?.stateHint ?? null;
-      const hintedBlockedReason = structuredResult?.blockedReason ?? null;
-      const hintedFailureSignature = structuredResult?.failureSignature ?? null;
-      const preTurnFailureContext = record.last_failure_context;
-      const preTurnFailureSignature = record.last_failure_signature;
-      const preTurnStaleNoPrRecoveryCount = getStaleStabilizingNoPrRecoveryCount(record);
-      const preTurnLastError = record.last_error;
-      const journalAfterRun = await readIssueJournalImpl(journalPath);
-      const normalizedJournalAfterRun =
-        journalAfterRun === null
-          ? null
-          : await normalizeCommittedIssueJournal({
-              journalPath,
-              workspacePath,
-            });
-      const effectiveJournalAfterRun = normalizedJournalAfterRun ?? journalAfterRun;
-      record = stateStore.touch(record, {
-        codex_session_id: turnResult.sessionId,
-        last_codex_summary: truncate(turnResult.supervisorMessage),
-        last_failure_kind: turnResult.failureKind,
-        last_error:
-          turnResult.exitCode === 0
-            ? null
-            : truncate([turnResult.stderr.trim(), turnResult.stdout.trim()].filter(Boolean).join("\n")),
-      });
-
-      if (
-        turnResult.exitCode === 0 &&
-        (!effectiveJournalAfterRun ||
-          effectiveJournalAfterRun === effectiveJournalContent ||
-          !hasMeaningfulJournalHandoff(effectiveJournalAfterRun))
-      ) {
-        record = await persistMissingCodexJournalHandoffImpl({
-          stateStore,
-          state,
-          record,
-          issue,
-          syncJournal,
-          issueNumber: record.issue_number,
-          buildCodexFailureContext: args.buildCodexFailureContext,
-          applyFailureSignature: args.applyFailureSignature,
-          retentionRootPath: executionMetricsRetentionRootPath(args.config.stateFile),
-        });
-        return {
-          kind: "returned",
-          message: `Codex turn for issue #${record.issue_number} was rejected because no journal handoff was written.`,
-        };
-      }
-
-      if (turnResult.failureKind === "timeout" || turnResult.failureKind === "command_error") {
-        const message =
-          turnResult.stderr.trim() ||
-          turnResult.stdout.trim() ||
-          turnResult.supervisorMessage.trim() ||
-          "Unknown failure";
-        record = await persistCodexTurnExecutionFailureImpl({
-          stateStore,
-          state,
-          record,
-          issue,
-          syncJournal,
-          issueNumber: record.issue_number,
-          error: new Error(message),
-          classifyFailure: args.classifyFailure,
-          buildCodexFailureContext: args.buildCodexFailureContext,
-          applyFailureSignature: args.applyFailureSignature,
-          retentionRootPath: executionMetricsRetentionRootPath(args.config.stateFile),
-        });
-        return {
-          kind: "returned",
-          message: `Codex turn failed for issue #${record.issue_number}.`,
-        };
-      }
-
-      if (turnResult.exitCode !== 0) {
-        record = await persistCodexTurnExitFailureImpl({
-          stateStore,
-          state,
-          record,
-          issue,
-          syncJournal,
-          issueNumber: record.issue_number,
-          codexResult: {
-            lastMessage: turnResult.supervisorMessage,
-            stderr: turnResult.stderr,
-            stdout: turnResult.stdout,
-          },
-          classifyFailure: args.classifyFailure,
-          buildCodexFailureContext: args.buildCodexFailureContext,
-          applyFailureSignature: args.applyFailureSignature,
-          retentionRootPath: executionMetricsRetentionRootPath(args.config.stateFile),
-        });
-        return {
-          kind: "returned",
-          message: `Codex turn failed for issue #${record.issue_number}.`,
-        };
-      }
-
-      if (hintedState === "blocked" || hintedState === "failed") {
-        record = await persistHintedCodexTurnStateImpl({
-          stateStore,
-          state,
-          record,
-          issue,
-          syncJournal,
-          issueNumber: record.issue_number,
-          lastMessage: turnResult.supervisorMessage,
-          hintedState,
-          hintedBlockedReason,
-          hintedFailureSignature,
-          buildCodexFailureContext: args.buildCodexFailureContext,
-          applyFailureSignature: args.applyFailureSignature,
-          normalizeBlockerSignature: args.normalizeBlockerSignature,
-          isVerificationBlockedMessage: args.isVerificationBlockedMessage,
-          retentionRootPath: executionMetricsRetentionRootPath(args.config.stateFile),
-        });
-        return {
-          kind: "returned",
-          message: `Codex reported ${hintedState} for issue #${record.issue_number}.`,
-        };
-      }
-
-      workspaceStatus = await getWorkspaceStatusImpl(workspacePath, record.branch, config.defaultBranch);
-      record = stateStore.touch(record, { last_head_sha: workspaceStatus.headSha });
-      let evaluatedReviewHeadSha = workspaceStatus.headSha;
-
-      if ((workspaceStatus.remoteAhead > 0 || !workspaceStatus.remoteBranchExists) && !workspaceStatus.hasUncommittedChanges) {
-        const pathHygieneGate = await runWorkstationLocalPathGateImpl({
-          workspacePath,
-          gateLabel: "before publication",
-          publishablePathAllowlistMarkers: config.publishablePathAllowlistMarkers,
-        });
-        if (!pathHygieneGate.ok) {
-          const failureContext = pathHygieneGate.failureContext;
-          record = stateStore.touch(record, {
-            state: "blocked",
-            last_error: truncate(
-              failureContext?.summary ?? "Tracked durable artifacts failed workstation-local path hygiene before publication.",
-              1000,
-            ),
-            last_failure_kind: null,
-            last_failure_context: failureContext,
-            ...args.applyFailureSignature(record, failureContext),
-            blocked_reason: "verification",
-            ...issueDefinitionFreshnessPatch(issue),
-          });
-          state.issues[String(record.issue_number)] = record;
-          await stateStore.save(state);
-          await syncExecutionMetricsRunSummarySafely({
-            previousRecord: args.context.record,
-            nextRecord: record,
-            issue,
-            pullRequest: pr,
-            retentionRootPath: executionMetricsRetentionRootPath(args.config.stateFile),
-            warningContext: "persisting",
-          });
+      while (true) {
+        let journalContent = await readIssueJournalImpl(journalPath);
+        if (journalContent === null) {
           await syncJournal(record);
+          journalContent = await readIssueJournalImpl(journalPath);
+        }
+        const effectiveJournalContent = journalContent ?? "";
+        const previousCodexSummary = record.last_codex_summary;
+        const previousError = record.last_error;
+
+        const preparedTurn = await prepareCodexTurnPrompt({
+          config,
+          stateStore,
+          state,
+          record,
+          issue,
+          previousCodexSummary,
+          previousError,
+          workspacePath,
+          journalPath,
+          journalContent: effectiveJournalContent,
+          syncJournal,
+          memoryArtifacts,
+          pr,
+          checks,
+          reviewThreads,
+          github,
+          agentRunnerCapabilities: agentRunner.capabilities,
+        });
+        record = preparedTurn.record;
+        const { turnContext, reviewThreadsToProcess } = preparedTurn;
+        const preRunJournalFingerprint =
+          await captureIssueJournalFingerprint(journalPath);
+        await writeInterruptedTurnMarker({
+          workspacePath,
+          issueNumber: record.issue_number,
+          state: record.state,
+          journalFingerprint: preRunJournalFingerprint,
+        });
+        turnMarkerWritten = true;
+        const turnResult = await agentRunner.runTurn(turnContext);
+        const structuredResult = agentRunner.capabilities
+          .supportsStructuredResult
+          ? turnResult.structuredResult
+          : null;
+        const hintedState = structuredResult?.stateHint ?? null;
+        const hintedBlockedReason = structuredResult?.blockedReason ?? null;
+        const hintedFailureSignature =
+          structuredResult?.failureSignature ?? null;
+        const preTurnFailureContext = record.last_failure_context;
+        const preTurnFailureSignature = record.last_failure_signature;
+        const preTurnStaleNoPrRecoveryCount =
+          getStaleStabilizingNoPrRecoveryCount(record);
+        const preTurnLastError = record.last_error;
+        const journalAfterRun = await readIssueJournalImpl(journalPath);
+        const normalizedJournalAfterRun =
+          journalAfterRun === null
+            ? null
+            : await normalizeCommittedIssueJournal({
+                journalPath,
+                workspacePath,
+              });
+        const effectiveJournalAfterRun =
+          normalizedJournalAfterRun ?? journalAfterRun;
+        record = stateStore.touch(record, {
+          codex_session_id: turnResult.sessionId,
+          last_codex_summary: truncate(turnResult.supervisorMessage),
+          last_failure_kind: turnResult.failureKind,
+          last_error:
+            turnResult.exitCode === 0
+              ? null
+              : truncate(
+                  [turnResult.stderr.trim(), turnResult.stdout.trim()]
+                    .filter(Boolean)
+                    .join("\n"),
+                ),
+        });
+
+        if (
+          turnResult.exitCode === 0 &&
+          (!effectiveJournalAfterRun ||
+            effectiveJournalAfterRun === effectiveJournalContent ||
+            !hasMeaningfulJournalHandoff(effectiveJournalAfterRun))
+        ) {
+          record = await persistMissingCodexJournalHandoffImpl({
+            stateStore,
+            state,
+            record,
+            issue,
+            syncJournal,
+            issueNumber: record.issue_number,
+            buildCodexFailureContext: args.buildCodexFailureContext,
+            applyFailureSignature: args.applyFailureSignature,
+            retentionRootPath: executionMetricsRetentionRootPath(
+              args.config.stateFile,
+            ),
+          });
           return {
             kind: "returned",
-            message: `Workstation-local path hygiene blocked publication for issue #${record.issue_number}.`,
+            message: `Codex turn for issue #${record.issue_number} was rejected because no journal handoff was written.`,
           };
         }
-        const rewrittenTrackedPaths = [
-          ...(pathHygieneGate.rewrittenJournalPaths ?? []),
-          ...(pathHygieneGate.rewrittenTrustedGeneratedArtifactPaths ?? []),
-        ];
-        const presentRewrittenTrackedPaths = await filterPresentTrackedFilePaths(workspacePath, rewrittenTrackedPaths);
-        if (presentRewrittenTrackedPaths.length > 0) {
-          try {
-            await commitAndPushTrackedFiles({
-              workspacePath,
-              branch: record.branch,
-              remoteBranchExists: workspaceStatus.remoteBranchExists,
-              filePaths: presentRewrittenTrackedPaths,
-              commitMessage: TRUSTED_DURABLE_ARTIFACT_NORMALIZATION_COMMIT_MESSAGE,
-            });
-          } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            const failureContext = buildWorkstationLocalPathFailureContext({
-              gateLabel: "before publication",
-              details: [
-                `durable artifact normalization persistence failed for ${presentRewrittenTrackedPaths.join(", ")}: ${message}`,
-              ],
-            });
+
+        if (
+          turnResult.failureKind === "timeout" ||
+          turnResult.failureKind === "command_error"
+        ) {
+          const message =
+            turnResult.stderr.trim() ||
+            turnResult.stdout.trim() ||
+            turnResult.supervisorMessage.trim() ||
+            "Unknown failure";
+          record = await persistCodexTurnExecutionFailureImpl({
+            stateStore,
+            state,
+            record,
+            issue,
+            syncJournal,
+            issueNumber: record.issue_number,
+            error: new Error(message),
+            classifyFailure: args.classifyFailure,
+            buildCodexFailureContext: args.buildCodexFailureContext,
+            applyFailureSignature: args.applyFailureSignature,
+            retentionRootPath: executionMetricsRetentionRootPath(
+              args.config.stateFile,
+            ),
+          });
+          return {
+            kind: "returned",
+            message: `Codex turn failed for issue #${record.issue_number}.`,
+          };
+        }
+
+        if (turnResult.exitCode !== 0) {
+          record = await persistCodexTurnExitFailureImpl({
+            stateStore,
+            state,
+            record,
+            issue,
+            syncJournal,
+            issueNumber: record.issue_number,
+            codexResult: {
+              lastMessage: turnResult.supervisorMessage,
+              stderr: turnResult.stderr,
+              stdout: turnResult.stdout,
+            },
+            classifyFailure: args.classifyFailure,
+            buildCodexFailureContext: args.buildCodexFailureContext,
+            applyFailureSignature: args.applyFailureSignature,
+            retentionRootPath: executionMetricsRetentionRootPath(
+              args.config.stateFile,
+            ),
+          });
+          return {
+            kind: "returned",
+            message: `Codex turn failed for issue #${record.issue_number}.`,
+          };
+        }
+
+        if (hintedState === "blocked" || hintedState === "failed") {
+          record = await persistHintedCodexTurnStateImpl({
+            stateStore,
+            state,
+            record,
+            issue,
+            syncJournal,
+            issueNumber: record.issue_number,
+            lastMessage: turnResult.supervisorMessage,
+            hintedState,
+            hintedBlockedReason,
+            hintedFailureSignature,
+            buildCodexFailureContext: args.buildCodexFailureContext,
+            applyFailureSignature: args.applyFailureSignature,
+            normalizeBlockerSignature: args.normalizeBlockerSignature,
+            isVerificationBlockedMessage: args.isVerificationBlockedMessage,
+            retentionRootPath: executionMetricsRetentionRootPath(
+              args.config.stateFile,
+            ),
+          });
+          return {
+            kind: "returned",
+            message: `Codex reported ${hintedState} for issue #${record.issue_number}.`,
+          };
+        }
+
+        workspaceStatus = await getWorkspaceStatusImpl(
+          workspacePath,
+          record.branch,
+          config.defaultBranch,
+        );
+        record = stateStore.touch(record, {
+          last_head_sha: workspaceStatus.headSha,
+        });
+        let evaluatedReviewHeadSha = workspaceStatus.headSha;
+        const changedFilesInCurrentTurn =
+          workspaceStatus.headSha === turnStartHeadSha
+            ? []
+            : await listChangedTrackedFilesBetweenImpl(
+                workspacePath,
+                turnStartHeadSha,
+                workspaceStatus.headSha,
+              );
+
+        if (
+          (workspaceStatus.remoteAhead > 0 ||
+            !workspaceStatus.remoteBranchExists) &&
+          !workspaceStatus.hasUncommittedChanges
+        ) {
+          const pathHygieneGate = await runWorkstationLocalPathGateImpl({
+            workspacePath,
+            gateLabel: "before publication",
+            publishablePathAllowlistMarkers:
+              config.publishablePathAllowlistMarkers,
+          });
+          if (!pathHygieneGate.ok) {
+            const failureContext = pathHygieneGate.failureContext;
+            const actionablePublishableFilePaths =
+              pathHygieneGate.actionablePublishableFilePaths ?? [];
+            const sameTurnRepairEligible =
+              !usedSameTurnPathRepairRetry &&
+              failureContext !== null &&
+              actionablePublishableFilePaths.length > 0 &&
+              actionablePublishableFilePaths.every((filePath) =>
+                changedFilesInCurrentTurn.includes(filePath),
+              );
+            if (sameTurnRepairEligible) {
+              const rewrittenTrackedPaths = [
+                ...(pathHygieneGate.rewrittenJournalPaths ?? []),
+                ...(pathHygieneGate.rewrittenTrustedGeneratedArtifactPaths ??
+                  []),
+              ];
+              const presentRewrittenTrackedPaths =
+                await filterPresentTrackedFilePaths(
+                  workspacePath,
+                  rewrittenTrackedPaths,
+                );
+              if (presentRewrittenTrackedPaths.length > 0) {
+                try {
+                  await commitAndPushTrackedFiles({
+                    workspacePath,
+                    branch: record.branch,
+                    remoteBranchExists: workspaceStatus.remoteBranchExists,
+                    filePaths: presentRewrittenTrackedPaths,
+                    commitMessage:
+                      TRUSTED_DURABLE_ARTIFACT_NORMALIZATION_COMMIT_MESSAGE,
+                  });
+                } catch (error) {
+                  const message =
+                    error instanceof Error ? error.message : String(error);
+                  const retryPersistenceFailureContext =
+                    buildWorkstationLocalPathFailureContext({
+                      gateLabel: "before publication",
+                      details: [
+                        `durable artifact normalization persistence failed for ${presentRewrittenTrackedPaths.join(", ")}: ${message}`,
+                      ],
+                    });
+                  record = stateStore.touch(record, {
+                    state: "blocked",
+                    last_error: truncate(
+                      retryPersistenceFailureContext.summary,
+                      1000,
+                    ),
+                    last_failure_kind: null,
+                    last_failure_context: retryPersistenceFailureContext,
+                    ...args.applyFailureSignature(
+                      record,
+                      retryPersistenceFailureContext,
+                    ),
+                    blocked_reason: "verification",
+                    ...issueDefinitionFreshnessPatch(issue),
+                  });
+                  state.issues[String(record.issue_number)] = record;
+                  await stateStore.save(state);
+                  await syncExecutionMetricsRunSummarySafely({
+                    previousRecord: args.context.record,
+                    nextRecord: record,
+                    issue,
+                    pullRequest: pr,
+                    retentionRootPath: executionMetricsRetentionRootPath(
+                      args.config.stateFile,
+                    ),
+                    warningContext: "persisting",
+                  });
+                  await syncJournal(record);
+                  return {
+                    kind: "returned",
+                    message: `Workstation-local path hygiene blocked publication for issue #${record.issue_number}.`,
+                  };
+                }
+                workspaceStatus = await getWorkspaceStatusImpl(
+                  workspacePath,
+                  record.branch,
+                  config.defaultBranch,
+                );
+                record = stateStore.touch(record, {
+                  last_head_sha: workspaceStatus.headSha,
+                });
+              }
+              usedSameTurnPathRepairRetry = true;
+              record = stateStore.touch(record, {
+                last_error: truncate(failureContext.summary, 1000),
+                last_failure_kind: null,
+                last_failure_context: failureContext,
+                ...args.applyFailureSignature(record, failureContext),
+              });
+              state.issues[String(record.issue_number)] = record;
+              await stateStore.save(state);
+              await syncJournal(record);
+              continue;
+            }
             record = stateStore.touch(record, {
               state: "blocked",
-              last_error: truncate(failureContext.summary, 1000),
+              last_error: truncate(
+                failureContext?.summary ??
+                  "Tracked durable artifacts failed workstation-local path hygiene before publication.",
+                1000,
+              ),
               last_failure_kind: null,
               last_failure_context: failureContext,
               ...args.applyFailureSignature(record, failureContext),
@@ -538,7 +695,9 @@ export async function executeCodexTurnPhase(
               nextRecord: record,
               issue,
               pullRequest: pr,
-              retentionRootPath: executionMetricsRetentionRootPath(args.config.stateFile),
+              retentionRootPath: executionMetricsRetentionRootPath(
+                args.config.stateFile,
+              ),
               warningContext: "persisting",
             });
             await syncJournal(record);
@@ -547,143 +706,322 @@ export async function executeCodexTurnPhase(
               message: `Workstation-local path hygiene blocked publication for issue #${record.issue_number}.`,
             };
           }
-          workspaceStatus = await getWorkspaceStatusImpl(workspacePath, record.branch, config.defaultBranch);
-          evaluatedReviewHeadSha = workspaceStatus.headSha;
-          record = stateStore.touch(record, { last_head_sha: evaluatedReviewHeadSha });
+          const rewrittenTrackedPaths = [
+            ...(pathHygieneGate.rewrittenJournalPaths ?? []),
+            ...(pathHygieneGate.rewrittenTrustedGeneratedArtifactPaths ?? []),
+          ];
+          const presentRewrittenTrackedPaths =
+            await filterPresentTrackedFilePaths(
+              workspacePath,
+              rewrittenTrackedPaths,
+            );
+          if (presentRewrittenTrackedPaths.length > 0) {
+            try {
+              await commitAndPushTrackedFiles({
+                workspacePath,
+                branch: record.branch,
+                remoteBranchExists: workspaceStatus.remoteBranchExists,
+                filePaths: presentRewrittenTrackedPaths,
+                commitMessage:
+                  TRUSTED_DURABLE_ARTIFACT_NORMALIZATION_COMMIT_MESSAGE,
+              });
+            } catch (error) {
+              const message =
+                error instanceof Error ? error.message : String(error);
+              const failureContext = buildWorkstationLocalPathFailureContext({
+                gateLabel: "before publication",
+                details: [
+                  `durable artifact normalization persistence failed for ${presentRewrittenTrackedPaths.join(", ")}: ${message}`,
+                ],
+              });
+              record = stateStore.touch(record, {
+                state: "blocked",
+                last_error: truncate(failureContext.summary, 1000),
+                last_failure_kind: null,
+                last_failure_context: failureContext,
+                ...args.applyFailureSignature(record, failureContext),
+                blocked_reason: "verification",
+                ...issueDefinitionFreshnessPatch(issue),
+              });
+              state.issues[String(record.issue_number)] = record;
+              await stateStore.save(state);
+              await syncExecutionMetricsRunSummarySafely({
+                previousRecord: args.context.record,
+                nextRecord: record,
+                issue,
+                pullRequest: pr,
+                retentionRootPath: executionMetricsRetentionRootPath(
+                  args.config.stateFile,
+                ),
+                warningContext: "persisting",
+              });
+              await syncJournal(record);
+              return {
+                kind: "returned",
+                message: `Workstation-local path hygiene blocked publication for issue #${record.issue_number}.`,
+              };
+            }
+            workspaceStatus = await getWorkspaceStatusImpl(
+              workspacePath,
+              record.branch,
+              config.defaultBranch,
+            );
+            evaluatedReviewHeadSha = workspaceStatus.headSha;
+            record = stateStore.touch(record, {
+              last_head_sha: evaluatedReviewHeadSha,
+            });
+          }
+          if (
+            workspaceStatus.remoteAhead > 0 ||
+            !workspaceStatus.remoteBranchExists
+          ) {
+            await pushBranchImpl(
+              workspacePath,
+              record.branch,
+              workspaceStatus.remoteBranchExists,
+            );
+            workspaceStatus = await getWorkspaceStatusImpl(
+              workspacePath,
+              record.branch,
+              config.defaultBranch,
+            );
+            evaluatedReviewHeadSha = workspaceStatus.headSha;
+            record = stateStore.touch(record, {
+              last_head_sha: evaluatedReviewHeadSha,
+            });
+          }
         }
-        if (workspaceStatus.remoteAhead > 0 || !workspaceStatus.remoteBranchExists) {
-          await pushBranchImpl(workspacePath, record.branch, workspaceStatus.remoteBranchExists);
-          workspaceStatus = await getWorkspaceStatusImpl(workspacePath, record.branch, config.defaultBranch);
-          evaluatedReviewHeadSha = workspaceStatus.headSha;
-          record = stateStore.touch(record, { last_head_sha: evaluatedReviewHeadSha });
-        }
-      }
 
-      const publicationGate = await applyCodexTurnPublicationGate({
-        config,
-        stateStore,
-        state,
-        record,
-        issue,
-        workspacePath,
-        workspaceStatus,
-        github,
-        syncJournal,
-        applyFailureSignature: args.applyFailureSignature,
-        runLocalCiCommand: args.runLocalCiCommand,
-        runWorkstationLocalPathGate: args.runWorkstationLocalPathGate,
-        syncExecutionMetricsRunSummary: async (blockedRecord) => {
-          await syncExecutionMetricsRunSummarySafely({
-            previousRecord: args.context.record,
-            nextRecord: blockedRecord,
-            issue,
-            retentionRootPath: executionMetricsRetentionRootPath(args.config.stateFile),
-            warningContext: "persisting",
+        const publicationGate = await applyCodexTurnPublicationGate({
+          config,
+          stateStore,
+          state,
+          record,
+          issue,
+          workspacePath,
+          workspaceStatus,
+          github,
+          syncJournal,
+          applyFailureSignature: args.applyFailureSignature,
+          runLocalCiCommand: args.runLocalCiCommand,
+          runWorkstationLocalPathGate: args.runWorkstationLocalPathGate,
+          allowSameTurnPathRepairRetry: !usedSameTurnPathRepairRetry,
+          changedFilesInCurrentTurn,
+          syncExecutionMetricsRunSummary: async (blockedRecord) => {
+            await syncExecutionMetricsRunSummarySafely({
+              previousRecord: args.context.record,
+              nextRecord: blockedRecord,
+              issue,
+              retentionRootPath: executionMetricsRetentionRootPath(
+                args.config.stateFile,
+              ),
+              warningContext: "persisting",
+            });
+          },
+        });
+        record = publicationGate.record;
+        if (publicationGate.kind === "same_turn_repair") {
+          const presentRewrittenTrackedPaths = await filterPresentTrackedFilePaths(
+            workspacePath,
+            publicationGate.rewrittenTrackedPaths,
+          );
+          if (presentRewrittenTrackedPaths.length > 0) {
+            try {
+              await commitAndPushTrackedFiles({
+                workspacePath,
+                branch: record.branch,
+                remoteBranchExists: workspaceStatus.remoteBranchExists,
+                filePaths: presentRewrittenTrackedPaths,
+                commitMessage:
+                  TRUSTED_DURABLE_ARTIFACT_NORMALIZATION_COMMIT_MESSAGE,
+              });
+            } catch (error) {
+              const message =
+                error instanceof Error ? error.message : String(error);
+              const retryPersistenceFailureContext =
+                buildWorkstationLocalPathFailureContext({
+                  gateLabel: "before publication",
+                  details: [
+                    `durable artifact normalization persistence failed for ${presentRewrittenTrackedPaths.join(", ")}: ${message}`,
+                  ],
+                });
+              record = stateStore.touch(record, {
+                state: "blocked",
+                last_error: truncate(
+                  retryPersistenceFailureContext.summary,
+                  1000,
+                ),
+                last_failure_kind: null,
+                last_failure_context: retryPersistenceFailureContext,
+                ...args.applyFailureSignature(
+                  record,
+                  retryPersistenceFailureContext,
+                ),
+                blocked_reason: "verification",
+                ...issueDefinitionFreshnessPatch(issue),
+              });
+              state.issues[String(record.issue_number)] = record;
+              await stateStore.save(state);
+              await syncExecutionMetricsRunSummarySafely({
+                previousRecord: args.context.record,
+                nextRecord: record,
+                issue,
+                pullRequest: pr,
+                retentionRootPath: executionMetricsRetentionRootPath(
+                  args.config.stateFile,
+                ),
+                warningContext: "persisting",
+              });
+              await syncJournal(record);
+              return {
+                kind: "returned",
+                message: `Workstation-local path hygiene blocked publication for issue #${record.issue_number}.`,
+              };
+            }
+            workspaceStatus = await getWorkspaceStatusImpl(
+              workspacePath,
+              record.branch,
+              config.defaultBranch,
+            );
+            record = stateStore.touch(record, {
+              last_head_sha: workspaceStatus.headSha,
+            });
+          }
+          usedSameTurnPathRepairRetry = true;
+          record = stateStore.touch(record, {
+            last_error: truncate(publicationGate.failureContext.summary, 1000),
+            last_failure_kind: null,
+            last_failure_context: publicationGate.failureContext,
+            ...args.applyFailureSignature(
+              record,
+              publicationGate.failureContext,
+            ),
           });
-        },
-      });
-      record = publicationGate.record;
-      pr = publicationGate.pr;
-      checks = publicationGate.checks;
-      reviewThreads = publicationGate.reviewThreads;
-      if (publicationGate.kind === "blocked") {
-        return {
-          kind: "returned",
-          message: publicationGate.message,
-        };
-      }
+          state.issues[String(record.issue_number)] = record;
+          await stateStore.save(state);
+          await syncJournal(record);
+          continue;
+        }
+        pr = publicationGate.pr;
+        checks = publicationGate.checks;
+        reviewThreads = publicationGate.reviewThreads;
+        if (publicationGate.kind === "blocked") {
+          return {
+            kind: "returned",
+            message: publicationGate.message,
+          };
+        }
 
-      const processedReviewThreadPatch = nextProcessedReviewThreadPatch({
-        preRunState,
-        record,
-        currentPr: pr,
-        evaluatedReviewHeadSha,
-        reviewThreadsToProcess,
-      });
-      const reviewFollowUpPatch = nextReviewFollowUpPatch({
-        config,
-        preRunState,
-        record,
-        currentPr: pr,
-        evaluatedReviewHeadSha,
-        preRunReviewThreads: args.context.reviewThreads,
-        postRunReviewThreads: reviewThreads,
-      });
-      const postRunSnapshot = pr
-        ? args.derivePullRequestLifecycleSnapshot(
+        const processedReviewThreadPatch = nextProcessedReviewThreadPatch({
+          preRunState,
+          record,
+          currentPr: pr,
+          evaluatedReviewHeadSha,
+          reviewThreadsToProcess,
+        });
+        const reviewFollowUpPatch = nextReviewFollowUpPatch({
+          config,
+          preRunState,
+          record,
+          currentPr: pr,
+          evaluatedReviewHeadSha,
+          preRunReviewThreads: args.context.reviewThreads,
+          postRunReviewThreads: reviewThreads,
+        });
+        const postRunSnapshot = pr
+          ? args.derivePullRequestLifecycleSnapshot(
+              record,
+              pr,
+              checks,
+              reviewThreads,
+              {
+                ...processedReviewThreadPatch,
+                ...reviewFollowUpPatch,
+              },
+            )
+          : null;
+        const postRunState = postRunSnapshot
+          ? postRunSnapshot.nextState
+          : (hintedState ??
+            args.inferStateWithoutPullRequest(record, workspaceStatus));
+        const preserveStaleNoPrRecoveryTracking =
+          pr === null &&
+          postRunSnapshot === null &&
+          shouldPreserveStaleStabilizingNoPrRecoveryTracking(
             record,
-            pr,
-            checks,
-            reviewThreads,
-            {
-              ...processedReviewThreadPatch,
-              ...reviewFollowUpPatch,
-            },
-          )
-        : null;
-      const postRunState = postRunSnapshot
-        ? postRunSnapshot.nextState
-        : hintedState ?? args.inferStateWithoutPullRequest(record, workspaceStatus);
-      const preserveStaleNoPrRecoveryTracking =
-        pr === null && postRunSnapshot === null && shouldPreserveStaleStabilizingNoPrRecoveryTracking(record, postRunState);
-      record = stateStore.touch(record, {
-        pr_number: pr?.number ?? null,
-        ...(postRunSnapshot?.reviewWaitPatch ?? {}),
-        ...(postRunSnapshot?.copilotRequestObservationPatch ?? {}),
-        ...(postRunSnapshot?.copilotTimeoutPatch ?? {}),
-        ...processedReviewThreadPatch,
-        ...reviewFollowUpPatch,
-        blocked_verification_retry_count: pr ? 0 : record.blocked_verification_retry_count,
-        repeated_blocker_count: 0,
-        last_blocker_signature: null,
-        stale_stabilizing_no_pr_recovery_count: preserveStaleNoPrRecoveryTracking
-          ? preTurnStaleNoPrRecoveryCount
-          : 0,
-        last_error:
-          preserveStaleNoPrRecoveryTracking
+            postRunState,
+          );
+        record = stateStore.touch(record, {
+          pr_number: pr?.number ?? null,
+          ...(postRunSnapshot?.reviewWaitPatch ?? {}),
+          ...(postRunSnapshot?.copilotRequestObservationPatch ?? {}),
+          ...(postRunSnapshot?.copilotTimeoutPatch ?? {}),
+          ...processedReviewThreadPatch,
+          ...reviewFollowUpPatch,
+          blocked_verification_retry_count: pr
+            ? 0
+            : record.blocked_verification_retry_count,
+          repeated_blocker_count: 0,
+          last_blocker_signature: null,
+          stale_stabilizing_no_pr_recovery_count:
+            preserveStaleNoPrRecoveryTracking
+              ? preTurnStaleNoPrRecoveryCount
+              : 0,
+          last_error: preserveStaleNoPrRecoveryTracking
             ? preTurnLastError
             : postRunState === "blocked" && postRunSnapshot?.failureContext
-            ? truncate(postRunSnapshot.failureContext.summary, 1000)
-            : record.last_error,
-        last_failure_context:
-          preserveStaleNoPrRecoveryTracking ? preTurnFailureContext : postRunSnapshot?.failureContext ?? null,
-        ...(
-          preserveStaleNoPrRecoveryTracking
+              ? truncate(postRunSnapshot.failureContext.summary, 1000)
+              : record.last_error,
+          last_failure_context: preserveStaleNoPrRecoveryTracking
+            ? preTurnFailureContext
+            : (postRunSnapshot?.failureContext ?? null),
+          ...(preserveStaleNoPrRecoveryTracking
             ? {
                 last_failure_signature: preTurnFailureSignature,
                 repeated_failure_signature_count: 0,
               }
-            : args.applyFailureSignature(record, postRunSnapshot?.failureContext ?? null)
-        ),
-        blocked_reason:
-          pr && postRunState === "blocked"
-            ? args.blockedReasonFromReviewState(postRunSnapshot?.recordForState ?? record, pr, checks, reviewThreads)
-            : null,
-        state: postRunState,
-        ...((pr === null && (postRunState === "blocked" || postRunState === "failed"))
-          ? issueDefinitionFreshnessPatch(issue)
-          : {}),
-      });
-      state.issues[String(record.issue_number)] = record;
-      await stateStore.save(state);
-      await syncExecutionMetricsRunSummarySafely({
-        previousRecord: args.context.record,
-        nextRecord: record,
-        issue,
-        pullRequest: pr,
-        retentionRootPath: executionMetricsRetentionRootPath(args.config.stateFile),
-        warningContext: "persisting",
-      });
-      await syncJournal(record);
+            : args.applyFailureSignature(
+                record,
+                postRunSnapshot?.failureContext ?? null,
+              )),
+          blocked_reason:
+            pr && postRunState === "blocked"
+              ? args.blockedReasonFromReviewState(
+                  postRunSnapshot?.recordForState ?? record,
+                  pr,
+                  checks,
+                  reviewThreads,
+                )
+              : null,
+          state: postRunState,
+          ...(pr === null &&
+          (postRunState === "blocked" || postRunState === "failed")
+            ? issueDefinitionFreshnessPatch(issue)
+            : {}),
+        });
+        state.issues[String(record.issue_number)] = record;
+        await stateStore.save(state);
+        await syncExecutionMetricsRunSummarySafely({
+          previousRecord: args.context.record,
+          nextRecord: record,
+          issue,
+          pullRequest: pr,
+          retentionRootPath: executionMetricsRetentionRootPath(
+            args.config.stateFile,
+          ),
+          warningContext: "persisting",
+        });
+        await syncJournal(record);
 
-      return {
-        kind: "completed",
-        record,
-        workspaceStatus,
-        pr,
-        checks,
-        reviewThreads,
-      };
+        return {
+          kind: "completed",
+          record,
+          workspaceStatus,
+          pr,
+          checks,
+          reviewThreads,
+        };
+      }
     } finally {
       await sessionLock?.release();
     }

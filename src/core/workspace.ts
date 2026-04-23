@@ -7,11 +7,18 @@ import {
   normalizeGitPath,
   parseGitStatusPorcelainV1Paths,
 } from "./git-workspace-helpers";
-import { EnsuredWorkspace, SupervisorConfig, WorkspaceRestoreMetadata, WorkspaceStatus } from "./types";
+import {
+  EnsuredWorkspace,
+  SupervisorConfig,
+  WorkspaceRestoreMetadata,
+  WorkspaceStatus,
+} from "./types";
 import { ensureDir, isValidGitRefName } from "./utils";
 
-const LIVE_ISSUE_JOURNAL_PATH_GLOB = ".codex-supervisor/issues/[0-9]*/issue-journal.md";
-const LIVE_ISSUE_JOURNAL_PATH_REGEX = /^\.codex-supervisor\/issues\/\d+\/issue-journal\.md$/u;
+const LIVE_ISSUE_JOURNAL_PATH_GLOB =
+  ".codex-supervisor/issues/[0-9]*/issue-journal.md";
+const LIVE_ISSUE_JOURNAL_PATH_REGEX =
+  /^\.codex-supervisor\/issues\/\d+\/issue-journal\.md$/u;
 
 function assertIssueNumber(issueNumber: number): void {
   if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
@@ -19,7 +26,10 @@ function assertIssueNumber(issueNumber: number): void {
   }
 }
 
-export function branchNameForIssue(config: SupervisorConfig, issueNumber: number): string {
+export function branchNameForIssue(
+  config: SupervisorConfig,
+  issueNumber: number,
+): string {
   assertIssueNumber(issueNumber);
   const branch = `${config.branchPrefix}${issueNumber}`;
   if (!isValidGitRefName(branch)) {
@@ -29,12 +39,18 @@ export function branchNameForIssue(config: SupervisorConfig, issueNumber: number
   return branch;
 }
 
-export function workspacePathForIssue(config: SupervisorConfig, issueNumber: number): string {
+export function workspacePathForIssue(
+  config: SupervisorConfig,
+  issueNumber: number,
+): string {
   assertIssueNumber(issueNumber);
   return path.join(config.workspaceRoot, `issue-${issueNumber}`);
 }
 
-async function branchExists(repoPath: string, branch: string): Promise<boolean> {
+async function branchExists(
+  repoPath: string,
+  branch: string,
+): Promise<boolean> {
   const result = await runCommand(
     "git",
     ["-C", repoPath, "show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
@@ -43,10 +59,20 @@ async function branchExists(repoPath: string, branch: string): Promise<boolean> 
   return result.exitCode === 0;
 }
 
-async function remoteTrackingRefExists(gitPath: string, branch: string): Promise<boolean> {
+async function remoteTrackingRefExists(
+  gitPath: string,
+  branch: string,
+): Promise<boolean> {
   const result = await runCommand(
     "git",
-    ["-C", gitPath, "show-ref", "--verify", "--quiet", `refs/remotes/origin/${branch}`],
+    [
+      "-C",
+      gitPath,
+      "show-ref",
+      "--verify",
+      "--quiet",
+      `refs/remotes/origin/${branch}`,
+    ],
     { allowExitCodes: [0, 1] },
   );
   return result.exitCode === 0;
@@ -61,7 +87,10 @@ async function gitRefExists(gitPath: string, ref: string): Promise<boolean> {
   return result.exitCode === 0;
 }
 
-async function listDefaultBranchCandidateRefs(repoPath: string, defaultBranch: string): Promise<string[]> {
+async function listDefaultBranchCandidateRefs(
+  repoPath: string,
+  defaultBranch: string,
+): Promise<string[]> {
   const candidates = new Set<string>();
   const localRef = `refs/heads/${defaultBranch}`;
   if (await gitRefExists(repoPath, localRef)) {
@@ -69,7 +98,10 @@ async function listDefaultBranchCandidateRefs(repoPath: string, defaultBranch: s
   }
 
   const remotes = await runCommand("git", ["-C", repoPath, "remote"]);
-  for (const remote of remotes.stdout.split("\n").map((line) => line.trim()).filter(Boolean)) {
+  for (const remote of remotes.stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)) {
     const remoteRef = `refs/remotes/${remote}/${defaultBranch}`;
     if (await gitRefExists(repoPath, remoteRef)) {
       candidates.add(`${remote}/${defaultBranch}`);
@@ -79,7 +111,11 @@ async function listDefaultBranchCandidateRefs(repoPath: string, defaultBranch: s
   return [...candidates];
 }
 
-async function isAncestorRef(repoPath: string, ancestor: string, descendant: string): Promise<boolean> {
+async function isAncestorRef(
+  repoPath: string,
+  ancestor: string,
+  descendant: string,
+): Promise<boolean> {
   const result = await runCommand(
     "git",
     ["-C", repoPath, "merge-base", "--is-ancestor", ancestor, descendant],
@@ -93,7 +129,10 @@ async function revParse(repoPath: string, ref: string): Promise<string> {
   return result.stdout.trim();
 }
 
-function preferredBootstrapBaseRef(defaultBranch: string, refs: string[]): string {
+function preferredBootstrapBaseRef(
+  defaultBranch: string,
+  refs: string[],
+): string {
   const preferredOrder = [`origin/${defaultBranch}`, defaultBranch];
   for (const preferredRef of preferredOrder) {
     if (refs.includes(preferredRef)) {
@@ -104,14 +143,25 @@ function preferredBootstrapBaseRef(defaultBranch: string, refs: string[]): strin
   return [...refs].sort()[0] ?? `origin/${defaultBranch}`;
 }
 
-async function resolveBootstrapBaseRef(repoPath: string, defaultBranch: string): Promise<string> {
-  const candidateRefs = await listDefaultBranchCandidateRefs(repoPath, defaultBranch);
+async function resolveBootstrapBaseRef(
+  repoPath: string,
+  defaultBranch: string,
+): Promise<string> {
+  const candidateRefs = await listDefaultBranchCandidateRefs(
+    repoPath,
+    defaultBranch,
+  );
   if (candidateRefs.length === 0) {
-    throw new Error(`No available default-branch refs found for ${defaultBranch}`);
+    throw new Error(
+      `No available default-branch refs found for ${defaultBranch}`,
+    );
   }
 
-  const remoteCandidateRefs = candidateRefs.filter((ref) => ref !== defaultBranch);
-  const refsToCompare = remoteCandidateRefs.length > 0 ? remoteCandidateRefs : candidateRefs;
+  const remoteCandidateRefs = candidateRefs.filter(
+    (ref) => ref !== defaultBranch,
+  );
+  const refsToCompare =
+    remoteCandidateRefs.length > 0 ? remoteCandidateRefs : candidateRefs;
   const candidateShas = new Map<string, string>();
   for (const ref of refsToCompare) {
     candidateShas.set(ref, await revParse(repoPath, ref));
@@ -150,7 +200,10 @@ async function resolveBootstrapBaseRef(repoPath: string, defaultBranch: string):
   return preferredBootstrapBaseRef(defaultBranch, maximalRefs);
 }
 
-async function originBranchExists(gitPath: string, branch: string): Promise<boolean> {
+async function originBranchExists(
+  gitPath: string,
+  branch: string,
+): Promise<boolean> {
   const result = await runCommand(
     "git",
     ["-C", gitPath, "ls-remote", "--exit-code", "--heads", "origin", branch],
@@ -159,18 +212,25 @@ async function originBranchExists(gitPath: string, branch: string): Promise<bool
   return result.exitCode === 0;
 }
 
-async function fetchIssueRemoteTrackingRef(repoPath: string, branch: string): Promise<boolean> {
+async function fetchIssueRemoteTrackingRef(
+  repoPath: string,
+  branch: string,
+): Promise<boolean> {
   const remoteRef = `refs/remotes/origin/${branch}`;
   if (!(await originBranchExists(repoPath, branch))) {
-    await runCommand(
-      "git",
-      ["-C", repoPath, "update-ref", "-d", remoteRef],
-      { allowExitCodes: [0, 1] },
-    );
+    await runCommand("git", ["-C", repoPath, "update-ref", "-d", remoteRef], {
+      allowExitCodes: [0, 1],
+    });
     return false;
   }
 
-  await runCommand("git", ["-C", repoPath, "fetch", "origin", `+refs/heads/${branch}:${remoteRef}`]);
+  await runCommand("git", [
+    "-C",
+    repoPath,
+    "fetch",
+    "origin",
+    `+refs/heads/${branch}:${remoteRef}`,
+  ]);
   return true;
 }
 
@@ -184,11 +244,17 @@ function buildEnsuredWorkspace(
   };
 }
 
-async function protectTrackedLiveIssueJournals(workspacePath: string): Promise<void> {
-  const trackedPathsResult = await runCommand(
-    "git",
-    ["-C", workspacePath, "ls-files", "-z", "--", LIVE_ISSUE_JOURNAL_PATH_GLOB],
-  );
+async function protectTrackedLiveIssueJournals(
+  workspacePath: string,
+): Promise<void> {
+  const trackedPathsResult = await runCommand("git", [
+    "-C",
+    workspacePath,
+    "ls-files",
+    "-z",
+    "--",
+    LIVE_ISSUE_JOURNAL_PATH_GLOB,
+  ]);
   const trackedPaths = trackedPathsResult.stdout
     .split("\0")
     .map((entry) => entry.trim())
@@ -199,69 +265,77 @@ async function protectTrackedLiveIssueJournals(workspacePath: string): Promise<v
     return;
   }
 
-  await runCommand("git", ["-C", workspacePath, "update-index", "--skip-worktree", "--", ...trackedPaths]);
+  await runCommand("git", [
+    "-C",
+    workspacePath,
+    "update-index",
+    "--skip-worktree",
+    "--",
+    ...trackedPaths,
+  ]);
 }
 
-function toGitRelativePath(workspacePath: string, absolutePath: string): string {
+function toGitRelativePath(
+  workspacePath: string,
+  absolutePath: string,
+): string {
   const relativePath = path.relative(workspacePath, absolutePath);
   return relativePath.split(path.sep).join("/");
 }
 
-async function worktreeLocalExcludePath(workspacePath: string): Promise<string> {
-  const excludePath = (await runCommand(
-    "git",
-    ["-C", workspacePath, "rev-parse", "--path-format=absolute", "--git-path", "info/exclude"],
-  )).stdout.trim();
+async function worktreeLocalExcludePath(
+  workspacePath: string,
+): Promise<string> {
+  const excludePath = (
+    await runCommand("git", [
+      "-C",
+      workspacePath,
+      "rev-parse",
+      "--path-format=absolute",
+      "--git-path",
+      "info/exclude",
+    ])
+  ).stdout.trim();
   if (!excludePath) {
-    throw new Error(`Could not resolve git exclude path for workspace: ${workspacePath}`);
+    throw new Error(
+      `Could not resolve git exclude path for workspace: ${workspacePath}`,
+    );
   }
 
   return excludePath;
 }
 
-function wildcardConfiguredIssueJournalPath(journalRelativePath: string): string {
-  return journalRelativePath.includes("{issueNumber}")
-    ? journalRelativePath.replaceAll("{issueNumber}", "*")
-    : journalRelativePath;
-}
-
-function managedSupervisorArtifactExcludeEntries(
+async function installWorktreeLocalExcludes(
   config: Pick<SupervisorConfig, "issueJournalRelativePath">,
   workspacePath: string,
-  issueNumber?: number,
-): string[] {
-  const journalEntries = new Set<string>();
-  if (issueNumber === undefined) {
-    journalEntries.add(wildcardConfiguredIssueJournalPath(config.issueJournalRelativePath));
-    journalEntries.add(".codex-supervisor/issue-journal.md");
-    journalEntries.add(".codex-supervisor/issues/*/issue-journal.md");
-  } else {
-    const journalPath = issueJournalPath(workspacePath, config.issueJournalRelativePath, issueNumber);
-    journalEntries.add(toGitRelativePath(workspacePath, journalPath));
-  }
+  issueNumber: number,
+): Promise<void> {
+  const excludePath = await worktreeLocalExcludePath(workspacePath);
+  await ensureDir(path.dirname(excludePath));
 
-  return [
-    ...journalEntries,
+  const journalPath = issueJournalPath(
+    workspacePath,
+    config.issueJournalRelativePath,
+    issueNumber,
+  );
+  const managedEntries = [
+    toGitRelativePath(workspacePath, journalPath),
     ".codex-supervisor/execution-metrics/*",
     ".codex-supervisor/pre-merge/*",
     ".codex-supervisor/replay/*",
     ".codex-supervisor/turn-in-progress.json",
   ];
-}
-
-async function installGitLocalExcludes(
-  config: Pick<SupervisorConfig, "issueJournalRelativePath">,
-  workspacePath: string,
-  issueNumber?: number,
-): Promise<void> {
-  const excludePath = await worktreeLocalExcludePath(workspacePath);
-  await ensureDir(path.dirname(excludePath));
-
-  const managedEntries = managedSupervisorArtifactExcludeEntries(config, workspacePath, issueNumber);
-  const existingContent = fs.existsSync(excludePath) ? fs.readFileSync(excludePath, "utf8") : "";
-  const existingLines = existingContent.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean);
+  const existingContent = fs.existsSync(excludePath)
+    ? fs.readFileSync(excludePath, "utf8")
+    : "";
+  const existingLines = existingContent
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean);
   const existingEntries = new Set(existingLines);
-  const missingEntries = managedEntries.filter((entry) => !existingEntries.has(entry));
+  const missingEntries = managedEntries.filter(
+    (entry) => !existingEntries.has(entry),
+  );
 
   if (missingEntries.length === 0) {
     return;
@@ -271,31 +345,18 @@ async function installGitLocalExcludes(
   fs.appendFileSync(excludePath, appendedBlock, "utf8");
 }
 
-async function installWorktreeLocalExcludes(
+async function finalizeWorkspaceSetup(
   config: Pick<SupervisorConfig, "issueJournalRelativePath">,
   workspacePath: string,
   issueNumber: number,
 ): Promise<void> {
-  await installGitLocalExcludes(config, workspacePath, issueNumber);
-}
-
-async function installRepoLocalExcludes(
-  config: Pick<SupervisorConfig, "repoPath" | "issueJournalRelativePath">,
-): Promise<void> {
-  await installGitLocalExcludes(config, config.repoPath);
-}
-
-async function finalizeWorkspaceSetup(
-  config: Pick<SupervisorConfig, "issueJournalRelativePath" | "repoPath">,
-  workspacePath: string,
-  issueNumber: number,
-): Promise<void> {
-  await installRepoLocalExcludes(config);
   await installWorktreeLocalExcludes(config, workspacePath, issueNumber);
   await protectTrackedLiveIssueJournals(workspacePath);
 }
 
-export function formatWorkspaceRestoreStatusLine(restore: WorkspaceRestoreMetadata): string {
+export function formatWorkspaceRestoreStatusLine(
+  restore: WorkspaceRestoreMetadata,
+): string {
   return `workspace_restore source=${restore.source} ref=${restore.ref}`;
 }
 
@@ -347,13 +408,21 @@ async function assertReusableExistingWorkspace(
   branch: string,
 ): Promise<void> {
   const resolvedWorkspacePath = normalizeGitPath(workspacePath);
-  const worktreeList = await runCommand("git", ["-C", config.repoPath, "worktree", "list", "--porcelain"]);
+  const worktreeList = await runCommand("git", [
+    "-C",
+    config.repoPath,
+    "worktree",
+    "list",
+    "--porcelain",
+  ]);
   const worktreeEntry = parseGitWorktreeList(worktreeList.stdout).find(
     (entry) => entry.worktreePath === resolvedWorkspacePath,
   );
 
   if (!worktreeEntry) {
-    throw new Error(`Existing workspace is not a registered worktree for repository ${config.repoPath}: ${workspacePath}`);
+    throw new Error(
+      `Existing workspace is not a registered worktree for repository ${config.repoPath}: ${workspacePath}`,
+    );
   }
 
   const headBranch = await runCommand(
@@ -362,12 +431,16 @@ async function assertReusableExistingWorkspace(
     { allowExitCodes: [0, 1] },
   );
   if (headBranch.exitCode !== 0) {
-    throw new Error(`Existing workspace is on a detached HEAD; expected branch ${branch}: ${workspacePath}`);
+    throw new Error(
+      `Existing workspace is on a detached HEAD; expected branch ${branch}: ${workspacePath}`,
+    );
   }
 
   const actualBranch = headBranch.stdout.trim();
   if (actualBranch !== branch) {
-    throw new Error(`Existing workspace is on branch ${actualBranch}; expected branch ${branch}: ${workspacePath}`);
+    throw new Error(
+      `Existing workspace is on branch ${actualBranch}; expected branch ${branch}: ${workspacePath}`,
+    );
   }
 
   if (worktreeEntry.branchRef !== `refs/heads/${branch}`) {
@@ -385,8 +458,17 @@ export async function ensureWorkspace(
   assertIssueNumber(issueNumber);
   const workspacePath = workspacePathForIssue(config, issueNumber);
   await ensureDir(config.workspaceRoot);
-  await runCommand("git", ["-C", config.repoPath, "fetch", "origin", config.defaultBranch]);
-  const remoteBranchExists = await fetchIssueRemoteTrackingRef(config.repoPath, branch);
+  await runCommand("git", [
+    "-C",
+    config.repoPath,
+    "fetch",
+    "origin",
+    config.defaultBranch,
+  ]);
+  const remoteBranchExists = await fetchIssueRemoteTrackingRef(
+    config.repoPath,
+    branch,
+  );
 
   if (fs.existsSync(path.join(workspacePath, ".git"))) {
     await assertReusableExistingWorkspace(config, workspacePath, branch);
@@ -397,12 +479,24 @@ export async function ensureWorkspace(
     });
   }
 
-  if (fs.existsSync(workspacePath) && !fs.existsSync(path.join(workspacePath, ".git"))) {
-    throw new Error(`Workspace path exists but is not a git worktree: ${workspacePath}`);
+  if (
+    fs.existsSync(workspacePath) &&
+    !fs.existsSync(path.join(workspacePath, ".git"))
+  ) {
+    throw new Error(
+      `Workspace path exists but is not a git worktree: ${workspacePath}`,
+    );
   }
 
   if (await branchExists(config.repoPath, branch)) {
-    await runCommand("git", ["-C", config.repoPath, "worktree", "add", workspacePath, branch]);
+    await runCommand("git", [
+      "-C",
+      config.repoPath,
+      "worktree",
+      "add",
+      workspacePath,
+      branch,
+    ]);
     await finalizeWorkspaceSetup(config, workspacePath, issueNumber);
     return buildEnsuredWorkspace(workspacePath, {
       source: "local_branch",
@@ -411,7 +505,16 @@ export async function ensureWorkspace(
   }
 
   if (remoteBranchExists) {
-    await runCommand("git", ["-C", config.repoPath, "worktree", "add", "-b", branch, workspacePath, `origin/${branch}`]);
+    await runCommand("git", [
+      "-C",
+      config.repoPath,
+      "worktree",
+      "add",
+      "-b",
+      branch,
+      workspacePath,
+      `origin/${branch}`,
+    ]);
     await finalizeWorkspaceSetup(config, workspacePath, issueNumber);
     return buildEnsuredWorkspace(workspacePath, {
       source: "remote_branch",
@@ -419,7 +522,10 @@ export async function ensureWorkspace(
     });
   }
 
-  const bootstrapBaseRef = await resolveBootstrapBaseRef(config.repoPath, config.defaultBranch);
+  const bootstrapBaseRef = await resolveBootstrapBaseRef(
+    config.repoPath,
+    config.defaultBranch,
+  );
   await runCommand("git", [
     "-C",
     config.repoPath,
@@ -445,26 +551,69 @@ export async function getWorkspaceStatus(
 ): Promise<WorkspaceStatus> {
   const defaultBranchRef = `refs/remotes/origin/${defaultBranch}`;
   const remoteBranchRef = `refs/remotes/origin/${branch}`;
-  const [headResult, branchResult, statusResult, baseResult, remoteExistsResult] = await Promise.all([
+  const [
+    headResult,
+    branchResult,
+    statusResult,
+    baseResult,
+    remoteExistsResult,
+  ] = await Promise.all([
     runCommand("git", ["-C", workspacePath, "rev-parse", "HEAD"]),
-    runCommand("git", ["-C", workspacePath, "rev-parse", "--abbrev-ref", "HEAD"]),
-    runCommand("git", ["-C", workspacePath, "status", "--porcelain=v1", "-z", "--untracked-files=all"]),
-    runCommand("git", ["-C", workspacePath, "rev-list", "--left-right", "--count", `${defaultBranchRef}...HEAD`]),
+    runCommand("git", [
+      "-C",
+      workspacePath,
+      "rev-parse",
+      "--abbrev-ref",
+      "HEAD",
+    ]),
+    runCommand("git", [
+      "-C",
+      workspacePath,
+      "status",
+      "--porcelain=v1",
+      "-z",
+      "--untracked-files=all",
+    ]),
+    runCommand("git", [
+      "-C",
+      workspacePath,
+      "rev-list",
+      "--left-right",
+      "--count",
+      `${defaultBranchRef}...HEAD`,
+    ]),
     runCommand(
       "git",
-      ["-C", workspacePath, "ls-remote", "--exit-code", "--heads", "origin", branch],
+      [
+        "-C",
+        workspacePath,
+        "ls-remote",
+        "--exit-code",
+        "--heads",
+        "origin",
+        branch,
+      ],
       { allowExitCodes: [0, 2] },
     ),
   ]);
 
-  const [baseBehind, baseAhead] = baseResult.stdout.trim().split(/\s+/).map((value) => Number(value));
+  const [baseBehind, baseAhead] = baseResult.stdout
+    .trim()
+    .split(/\s+/)
+    .map((value) => Number(value));
   const remoteBranchExists = remoteExistsResult.exitCode === 0;
 
   let remoteBehind = 0;
   let remoteAhead = 0;
   if (remoteBranchExists) {
     if (!(await remoteTrackingRefExists(workspacePath, branch))) {
-      await runCommand("git", ["-C", workspacePath, "fetch", "origin", `${branch}:${remoteBranchRef}`]);
+      await runCommand("git", [
+        "-C",
+        workspacePath,
+        "fetch",
+        "origin",
+        `${branch}:${remoteBranchRef}`,
+      ]);
     }
 
     const remoteResult = await runCommand("git", [
@@ -481,8 +630,13 @@ export async function getWorkspaceStatus(
       .map((value) => Number(value));
   }
 
-  const hasMeaningfulUncommittedChanges = parseGitStatusPorcelainV1Paths(statusResult.stdout)
-    .some((paths) => paths.some((relativePath) => !isIgnoredSupervisorArtifactPath(relativePath)));
+  const hasMeaningfulUncommittedChanges = parseGitStatusPorcelainV1Paths(
+    statusResult.stdout,
+  ).some((paths) =>
+    paths.some(
+      (relativePath) => !isIgnoredSupervisorArtifactPath(relativePath),
+    ),
+  );
 
   return {
     branch: branchResult.stdout.trim(),
@@ -496,13 +650,24 @@ export async function getWorkspaceStatus(
   };
 }
 
-export async function pushBranch(workspacePath: string, branch: string, remoteBranchExists: boolean): Promise<void> {
+export async function pushBranch(
+  workspacePath: string,
+  branch: string,
+  remoteBranchExists: boolean,
+): Promise<void> {
   if (remoteBranchExists) {
     await runCommand("git", ["-C", workspacePath, "push", "origin", branch]);
     return;
   }
 
-  await runCommand("git", ["-C", workspacePath, "push", "-u", "origin", branch]);
+  await runCommand("git", [
+    "-C",
+    workspacePath,
+    "push",
+    "-u",
+    "origin",
+    branch,
+  ]);
 }
 
 export async function commitAndPushTrackedFiles(args: {
@@ -512,27 +677,57 @@ export async function commitAndPushTrackedFiles(args: {
   filePaths: string[];
   commitMessage: string;
 }): Promise<boolean> {
-  const filePaths = [...new Set(args.filePaths.map((filePath) => filePath.trim()).filter(Boolean))];
+  const filePaths = [
+    ...new Set(
+      args.filePaths.map((filePath) => filePath.trim()).filter(Boolean),
+    ),
+  ];
   if (filePaths.length === 0) {
     return false;
   }
 
-  await runCommand("git", ["-C", args.workspacePath, "add", "--", ...filePaths]);
+  await runCommand("git", [
+    "-C",
+    args.workspacePath,
+    "add",
+    "--",
+    ...filePaths,
+  ]);
   const stagedDiff = await runCommand(
     "git",
-    ["-C", args.workspacePath, "diff", "--cached", "--quiet", "--exit-code", "--", ...filePaths],
+    [
+      "-C",
+      args.workspacePath,
+      "diff",
+      "--cached",
+      "--quiet",
+      "--exit-code",
+      "--",
+      ...filePaths,
+    ],
     { allowExitCodes: [0, 1] },
   );
   if (stagedDiff.exitCode === 0) {
     return false;
   }
 
-  await runCommand("git", ["-C", args.workspacePath, "commit", "-m", args.commitMessage, "--", ...filePaths]);
+  await runCommand("git", [
+    "-C",
+    args.workspacePath,
+    "commit",
+    "-m",
+    args.commitMessage,
+    "--",
+    ...filePaths,
+  ]);
   await pushBranch(args.workspacePath, args.branch, args.remoteBranchExists);
   return true;
 }
 
-async function isIndexUpdatableTrackedFilePath(workspacePath: string, filePath: string): Promise<boolean> {
+async function isIndexUpdatableTrackedFilePath(
+  workspacePath: string,
+  filePath: string,
+): Promise<boolean> {
   if (!fs.existsSync(path.join(workspacePath, filePath))) {
     return false;
   }
@@ -545,12 +740,46 @@ async function isIndexUpdatableTrackedFilePath(workspacePath: string, filePath: 
   return result.exitCode === 0;
 }
 
-export async function filterPresentTrackedFilePaths(workspacePath: string, filePaths: string[]): Promise<string[]> {
-  const uniquePaths = [...new Set(filePaths.map((filePath) => filePath.trim()).filter(Boolean))];
+export async function filterPresentTrackedFilePaths(
+  workspacePath: string,
+  filePaths: string[],
+): Promise<string[]> {
+  const uniquePaths = [
+    ...new Set(filePaths.map((filePath) => filePath.trim()).filter(Boolean)),
+  ];
   const presentPaths = await Promise.all(
-    uniquePaths.map(async (filePath) => (await isIndexUpdatableTrackedFilePath(workspacePath, filePath) ? filePath : null)),
+    uniquePaths.map(async (filePath) =>
+      (await isIndexUpdatableTrackedFilePath(workspacePath, filePath))
+        ? filePath
+        : null,
+    ),
   );
-  return presentPaths.filter((filePath): filePath is string => filePath !== null);
+  return presentPaths.filter(
+    (filePath): filePath is string => filePath !== null,
+  );
+}
+
+export async function listChangedTrackedFilesBetween(
+  workspacePath: string,
+  fromRef: string,
+  toRef = "HEAD",
+): Promise<string[]> {
+  const result = await runCommand("git", [
+    "-C",
+    workspacePath,
+    "diff",
+    "--name-only",
+    "--diff-filter=ACMR",
+    "-z",
+    fromRef,
+    toRef,
+    "--",
+  ]);
+  return result.stdout
+    .split("\0")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+    .map((entry) => normalizeGitPath(entry));
 }
 
 export async function listTrackedSupervisorArtifactPaths(
@@ -560,12 +789,21 @@ export async function listTrackedSupervisorArtifactPaths(
   if (!fs.existsSync(path.join(workspacePath, ".git"))) {
     return [];
   }
-  const trackedPathsResult = await runCommand("git", ["-C", workspacePath, "ls-files", "-z", "--", ".codex-supervisor"]);
+  const trackedPathsResult = await runCommand("git", [
+    "-C",
+    workspacePath,
+    "ls-files",
+    "-z",
+    "--",
+    ".codex-supervisor",
+  ]);
   return trackedPathsResult.stdout
     .split("\0")
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0)
-    .filter((entry) => isIgnoredSupervisorArtifactPath(entry, journalRelativePath))
+    .filter((entry) =>
+      isIgnoredSupervisorArtifactPath(entry, journalRelativePath),
+    )
     .sort((left, right) => left.localeCompare(right));
 }
 
@@ -582,12 +820,12 @@ export async function cleanupWorkspace(
     );
   }
 
-  await runCommand("git", ["-C", repoPath, "worktree", "prune"], { allowExitCodes: [0] });
-  await runCommand(
-    "git",
-    ["-C", repoPath, "branch", "-D", branch],
-    { allowExitCodes: [0, 1] },
-  );
+  await runCommand("git", ["-C", repoPath, "worktree", "prune"], {
+    allowExitCodes: [0],
+  });
+  await runCommand("git", ["-C", repoPath, "branch", "-D", branch], {
+    allowExitCodes: [0, 1],
+  });
 }
 
 export function isSafeCleanupTarget(
