@@ -320,6 +320,8 @@ async function installWorktreeLocalExcludes(
   );
   const managedEntries = [
     toGitRelativePath(workspacePath, journalPath),
+    ".codex-supervisor/issues/*/issue-journal.md",
+    ".codex-supervisor/issue-journal.md",
     ".codex-supervisor/execution-metrics/*",
     ".codex-supervisor/pre-merge/*",
     ".codex-supervisor/replay/*",
@@ -805,6 +807,94 @@ export async function listTrackedSupervisorArtifactPaths(
       isIgnoredSupervisorArtifactPath(entry, journalRelativePath),
     )
     .sort((left, right) => left.localeCompare(right));
+}
+
+export function currentIssueJournalRelativePath(
+  workspacePath: string,
+  journalRelativePath: string,
+  issueNumber: number,
+): string {
+  return toGitRelativePath(
+    workspacePath,
+    issueJournalPath(workspacePath, journalRelativePath, issueNumber),
+  );
+}
+
+export function isCurrentIssueJournalOnlyTrackedSupervisorArtifact(args: {
+  workspacePath: string;
+  journalRelativePath: string;
+  issueNumber: number;
+  trackedPaths: readonly string[];
+}): boolean {
+  return (
+    args.trackedPaths.length === 1 &&
+    args.trackedPaths[0] ===
+      currentIssueJournalRelativePath(
+        args.workspacePath,
+        args.journalRelativePath,
+        args.issueNumber,
+      )
+  );
+}
+
+export async function untrackCurrentIssueJournalBeforePublication(args: {
+  workspacePath: string;
+  branch: string;
+  remoteBranchExists: boolean;
+  journalRelativePath: string;
+  issueNumber: number;
+}): Promise<string> {
+  const currentJournalPath = currentIssueJournalRelativePath(
+    args.workspacePath,
+    args.journalRelativePath,
+    args.issueNumber,
+  );
+  const trackedPaths = await listTrackedSupervisorArtifactPaths(
+    args.workspacePath,
+    args.journalRelativePath,
+  );
+  if (
+    !isCurrentIssueJournalOnlyTrackedSupervisorArtifact({
+      workspacePath: args.workspacePath,
+      journalRelativePath: args.journalRelativePath,
+      issueNumber: args.issueNumber,
+      trackedPaths,
+    })
+  ) {
+    throw new Error(
+      `Refusing current-issue journal self-heal because tracked supervisor-local artifacts are not exactly ${currentJournalPath}: ${trackedPaths.join(", ") || "none"}`,
+    );
+  }
+
+  await installWorktreeLocalExcludes(
+    { issueJournalRelativePath: args.journalRelativePath },
+    args.workspacePath,
+    args.issueNumber,
+  );
+  await runCommand("git", [
+    "-C",
+    args.workspacePath,
+    "rm",
+    "--cached",
+    "-q",
+    "--",
+    currentJournalPath,
+  ]);
+  await runCommand("git", [
+    "-C",
+    args.workspacePath,
+    "commit",
+    "-m",
+    "Untrack supervisor issue journal",
+  ]);
+  await pushBranch(args.workspacePath, args.branch, args.remoteBranchExists);
+  await installWorktreeLocalExcludes(
+    { issueJournalRelativePath: args.journalRelativePath },
+    args.workspacePath,
+    args.issueNumber,
+  );
+
+  return currentJournalPath;
 }
 
 export async function cleanupWorkspace(

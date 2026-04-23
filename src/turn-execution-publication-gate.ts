@@ -27,7 +27,9 @@ import {
   commitAndPushTrackedFiles,
   filterPresentTrackedFilePaths,
   getWorkspaceStatus,
+  isCurrentIssueJournalOnlyTrackedSupervisorArtifact,
   listTrackedSupervisorArtifactPaths,
+  untrackCurrentIssueJournalBeforePublication,
 } from "./core/workspace";
 
 function isOpenPullRequest(
@@ -75,6 +77,7 @@ const SUPERVISOR_LOCAL_DURABLE_ARTIFACT_SIGNATURE =
 function buildSupervisorLocalArtifactFailureContext(
   trackedPaths: string[],
   issueNumber: number,
+  extraDetails: string[] = [],
 ): FailureContext {
   const listedPaths = trackedPaths.join(", ");
   return {
@@ -86,6 +89,7 @@ function buildSupervisorLocalArtifactFailureContext(
     command: "git ls-files -- .codex-supervisor",
     details: [
       "Supervisor-local durable artifacts must not be committed into issue-branch publication checkpoints.",
+      ...extraDetails,
       ...trackedPaths.map(
         (trackedPath) => `tracked supervisor-local artifact: ${trackedPath}`,
       ),
@@ -164,31 +168,129 @@ export async function applyCodexTurnPublicationGate(args: {
         args.config.issueJournalRelativePath,
       );
     if (trackedSupervisorArtifactPaths.length > 0) {
-      const failureContext = buildSupervisorLocalArtifactFailureContext(
-        trackedSupervisorArtifactPaths,
-        record.issue_number,
-      );
-      record = args.stateStore.touch(record, {
-        state: "blocked",
-        last_error: truncate(failureContext.summary, 1000),
-        last_failure_kind: null,
-        last_failure_context: failureContext,
-        ...args.applyFailureSignature(record, failureContext),
-        blocked_reason: "verification",
-        ...issueDefinitionFreshnessPatch(args.issue),
-      });
-      args.state.issues[String(record.issue_number)] = record;
-      await args.stateStore.save(args.state);
-      await args.syncExecutionMetricsRunSummary(record);
-      await args.syncJournal(record);
-      return {
-        kind: "blocked",
-        message: failureContext.summary,
-        record,
-        pr: null,
-        checks: [],
-        reviewThreads: [],
-      };
+      if (
+        isCurrentIssueJournalOnlyTrackedSupervisorArtifact({
+          workspacePath: args.workspacePath,
+          journalRelativePath: args.config.issueJournalRelativePath,
+          issueNumber: record.issue_number,
+          trackedPaths: trackedSupervisorArtifactPaths,
+        })
+      ) {
+        let cleanedPath: string | null = null;
+        try {
+          cleanedPath = await untrackCurrentIssueJournalBeforePublication({
+            workspacePath: args.workspacePath,
+            branch: record.branch,
+            remoteBranchExists: workspaceStatus.remoteBranchExists,
+            journalRelativePath: args.config.issueJournalRelativePath,
+            issueNumber: record.issue_number,
+          });
+          workspaceStatus = await getWorkspaceStatus(
+            args.workspacePath,
+            record.branch,
+            args.config.defaultBranch,
+          );
+          record = args.stateStore.touch(record, {
+            last_head_sha: workspaceStatus.headSha,
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          const failureContext = buildSupervisorLocalArtifactFailureContext(
+            trackedSupervisorArtifactPaths,
+            record.issue_number,
+            [
+              `current-issue journal self-heal attempted and failed: ${message}`,
+            ],
+          );
+          record = args.stateStore.touch(record, {
+            state: "blocked",
+            last_error: truncate(failureContext.summary, 1000),
+            last_failure_kind: null,
+            last_failure_context: failureContext,
+            ...args.applyFailureSignature(record, failureContext),
+            blocked_reason: "verification",
+            ...issueDefinitionFreshnessPatch(args.issue),
+          });
+          args.state.issues[String(record.issue_number)] = record;
+          await args.stateStore.save(args.state);
+          await args.syncExecutionMetricsRunSummary(record);
+          await args.syncJournal(record);
+          return {
+            kind: "blocked",
+            message: failureContext.summary,
+            record,
+            pr: null,
+            checks: [],
+            reviewThreads: [],
+          };
+        }
+
+        const remainingTrackedSupervisorArtifactPaths =
+          await listTrackedSupervisorArtifactPaths(
+            args.workspacePath,
+            args.config.issueJournalRelativePath,
+          );
+        if (remainingTrackedSupervisorArtifactPaths.length === 0) {
+          args.state.issues[String(record.issue_number)] = record;
+          await args.stateStore.save(args.state);
+          await args.syncJournal(record);
+        } else {
+          const failureContext = buildSupervisorLocalArtifactFailureContext(
+            remainingTrackedSupervisorArtifactPaths,
+            record.issue_number,
+            [
+              `current-issue journal self-heal removed ${cleanedPath ?? "unknown"} but supervisor-local artifacts still remain tracked`,
+            ],
+          );
+          record = args.stateStore.touch(record, {
+            state: "blocked",
+            last_error: truncate(failureContext.summary, 1000),
+            last_failure_kind: null,
+            last_failure_context: failureContext,
+            ...args.applyFailureSignature(record, failureContext),
+            blocked_reason: "verification",
+            ...issueDefinitionFreshnessPatch(args.issue),
+          });
+          args.state.issues[String(record.issue_number)] = record;
+          await args.stateStore.save(args.state);
+          await args.syncExecutionMetricsRunSummary(record);
+          await args.syncJournal(record);
+          return {
+            kind: "blocked",
+            message: failureContext.summary,
+            record,
+            pr: null,
+            checks: [],
+            reviewThreads: [],
+          };
+        }
+      } else {
+        const failureContext = buildSupervisorLocalArtifactFailureContext(
+          trackedSupervisorArtifactPaths,
+          record.issue_number,
+        );
+        record = args.stateStore.touch(record, {
+          state: "blocked",
+          last_error: truncate(failureContext.summary, 1000),
+          last_failure_kind: null,
+          last_failure_context: failureContext,
+          ...args.applyFailureSignature(record, failureContext),
+          blocked_reason: "verification",
+          ...issueDefinitionFreshnessPatch(args.issue),
+        });
+        args.state.issues[String(record.issue_number)] = record;
+        await args.stateStore.save(args.state);
+        await args.syncExecutionMetricsRunSummary(record);
+        await args.syncJournal(record);
+        return {
+          kind: "blocked",
+          message: failureContext.summary,
+          record,
+          pr: null,
+          checks: [],
+          reviewThreads: [],
+        };
+      }
     }
 
     const pathHygieneGate = await runWorkstationLocalPathGateImpl({
