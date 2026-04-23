@@ -252,6 +252,14 @@ test("buildCodexPrompt teaches implementation turns to avoid raw workstation-loc
     prompt,
     /Avoid raw workstation-local absolute path literals rooted in a user home directory or Windows user-profile directory in tests, fixtures, prompts, or durable artifacts when fragment assembly or placeholders would verify the same behavior\./,
   );
+  assert.match(
+    prompt,
+    /For publishable Markdown, validation plans, and docs-oriented task output, prefer repo-relative supervisor commands, documented env vars, and explicit placeholders over host absolute paths\./,
+  );
+  assert.match(
+    prompt,
+    /Prefer command forms such as `node dist\/index\.js .*`, `CODEX_SUPERVISOR_CONFIG`, `<supervisor-config-path>`, and `<codex-supervisor-root>` when the same guidance does not require a host-specific absolute path\./,
+  );
 });
 
 test("buildCodexPrompt renders on-demand memory files even without always-read files", () => {

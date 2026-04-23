@@ -177,6 +177,14 @@ test("buildRolePrompt teaches reviewer to avoid drift-prone line coupling unless
     prompt,
     /Do not object to exact line assertions when source location itself is the intended contract\./,
   );
+  assert.match(
+    prompt,
+    /For docs-heavy diffs, validation plans, and command examples, prefer repo-relative supervisor commands, documented env vars, and explicit placeholders over host absolute paths unless a real host path is the behavior under review\./,
+  );
+  assert.match(
+    prompt,
+    /Examples to prefer include `node dist\/index\.js .*`, `CODEX_SUPERVISOR_CONFIG`, `<supervisor-config-path>`, and `<codex-supervisor-root>`\./,
+  );
 });
 
 test("buildRolePrompt teaches reviewer to anchor findings to the actual behavioral boundary", () => {
