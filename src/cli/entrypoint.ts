@@ -13,6 +13,7 @@ import {
   handleReplayCorpusCommand,
   handleReplayCorpusPromoteCommand,
 } from "./replay-corpus-command";
+import { renderCliHelp } from "./help";
 import { isSupervisorRuntimeCommand, runSupervisorCommand } from "./supervisor-runtime";
 import { assertRuntimeFreshness } from "../build-freshness";
 
@@ -53,6 +54,10 @@ export interface CliMainDependencies {
   exit?: (code: number) => void;
 }
 
+function isExactHelpRequest(argv: string[]): boolean {
+  return argv.length === 1 && (argv[0] === "--help" || argv[0] === "help");
+}
+
 export async function runCli(
   argv: string[],
   dependencies: CliEntrypointDependencies = {},
@@ -72,8 +77,18 @@ export async function runCli(
   const supervisorCommandRunner = dependencies.runSupervisorCommand ?? runSupervisorCommand;
   const writeStdout = dependencies.writeStdout ?? ((line: string) => console.log(line));
 
+  if (isExactHelpRequest(argv)) {
+    writeStdout(renderCliHelp());
+    return;
+  }
+
   await runtimeFreshnessGuard();
   const options = parseCliArgs(argv);
+  if (options.command === "help") {
+    writeStdout(renderCliHelp());
+    return;
+  }
+
   if (options.command === "replay") {
     writeStdout(await replayCommandHandler(options));
     return;
