@@ -318,6 +318,35 @@ test("dashboard derives the selected issue from typed status fields without pars
   assert.equal(harness.remainingFetches.length, 0);
 });
 
+test("dashboard does not render missing doctor decision or tier metadata as healthy", async () => {
+  const harness = createDashboardHarness([
+    ...dashboardServer.page({
+      doctor: jsonResponse({
+        overallStatus: "fail",
+        checks: [{ name: "github_auth", status: "fail", summary: "GitHub auth failed." }],
+      }),
+    }),
+  ]);
+  await harness.flush();
+
+  const doctorOverall = harness.document.getElementById("doctor-overall");
+  const doctorDecision = harness.document.getElementById("doctor-decision");
+  const doctorTiers = harness.document.getElementById("doctor-tiers");
+  const doctorChecks = harness.document.getElementById("doctor-checks");
+  assert.ok(doctorOverall);
+  assert.ok(doctorDecision);
+  assert.ok(doctorTiers);
+  assert.ok(doctorChecks);
+
+  assert.equal(doctorOverall.className, "metric fail");
+  assert.equal(doctorDecision.textContent, "unknown: Decision summary is unavailable.");
+  assert.equal(doctorDecision.className, "status-line");
+  assert.equal(doctorTiers.children.length, 0);
+  assert.match(doctorChecks.textContent, /github_auth GitHub auth failed\./u);
+  assert.match(doctorChecks.textContent, /fail/u);
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
 test("dashboard does not claim loop mode is off while typed runtime status reports the loop is running", async () => {
   const harness = createDashboardHarness([
     ...dashboardServer.page({
