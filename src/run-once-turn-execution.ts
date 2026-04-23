@@ -328,8 +328,6 @@ export async function executeCodexTurnPhase(
   const {
     state,
     issue,
-    previousCodexSummary,
-    previousError,
     workspacePath,
     journalPath,
     syncJournal,
@@ -374,6 +372,8 @@ export async function executeCodexTurnPhase(
           journalContent = await readIssueJournalImpl(journalPath);
         }
         const effectiveJournalContent = journalContent ?? "";
+        const previousCodexSummary = record.last_codex_summary;
+        const previousError = record.last_error;
 
         const preparedTurn = await prepareCodexTurnPrompt({
           config,
@@ -591,6 +591,78 @@ export async function executeCodexTurnPhase(
                 changedFilesInCurrentTurn.includes(filePath),
               );
             if (sameTurnRepairEligible) {
+              const rewrittenTrackedPaths = [
+                ...(pathHygieneGate.rewrittenJournalPaths ?? []),
+                ...(pathHygieneGate.rewrittenTrustedGeneratedArtifactPaths ??
+                  []),
+              ];
+              const presentRewrittenTrackedPaths =
+                await filterPresentTrackedFilePaths(
+                  workspacePath,
+                  rewrittenTrackedPaths,
+                );
+              if (presentRewrittenTrackedPaths.length > 0) {
+                try {
+                  await commitAndPushTrackedFiles({
+                    workspacePath,
+                    branch: record.branch,
+                    remoteBranchExists: workspaceStatus.remoteBranchExists,
+                    filePaths: presentRewrittenTrackedPaths,
+                    commitMessage:
+                      TRUSTED_DURABLE_ARTIFACT_NORMALIZATION_COMMIT_MESSAGE,
+                  });
+                } catch (error) {
+                  const message =
+                    error instanceof Error ? error.message : String(error);
+                  const retryPersistenceFailureContext =
+                    buildWorkstationLocalPathFailureContext({
+                      gateLabel: "before publication",
+                      details: [
+                        `durable artifact normalization persistence failed for ${presentRewrittenTrackedPaths.join(", ")}: ${message}`,
+                      ],
+                    });
+                  record = stateStore.touch(record, {
+                    state: "blocked",
+                    last_error: truncate(
+                      retryPersistenceFailureContext.summary,
+                      1000,
+                    ),
+                    last_failure_kind: null,
+                    last_failure_context: retryPersistenceFailureContext,
+                    ...args.applyFailureSignature(
+                      record,
+                      retryPersistenceFailureContext,
+                    ),
+                    blocked_reason: "verification",
+                    ...issueDefinitionFreshnessPatch(issue),
+                  });
+                  state.issues[String(record.issue_number)] = record;
+                  await stateStore.save(state);
+                  await syncExecutionMetricsRunSummarySafely({
+                    previousRecord: args.context.record,
+                    nextRecord: record,
+                    issue,
+                    pullRequest: pr,
+                    retentionRootPath: executionMetricsRetentionRootPath(
+                      args.config.stateFile,
+                    ),
+                    warningContext: "persisting",
+                  });
+                  await syncJournal(record);
+                  return {
+                    kind: "returned",
+                    message: `Workstation-local path hygiene blocked publication for issue #${record.issue_number}.`,
+                  };
+                }
+                workspaceStatus = await getWorkspaceStatusImpl(
+                  workspacePath,
+                  record.branch,
+                  config.defaultBranch,
+                );
+                record = stateStore.touch(record, {
+                  last_head_sha: workspaceStatus.headSha,
+                });
+              }
               usedSameTurnPathRepairRetry = true;
               record = stateStore.touch(record, {
                 last_error: truncate(failureContext.summary, 1000),
@@ -749,6 +821,72 @@ export async function executeCodexTurnPhase(
         });
         record = publicationGate.record;
         if (publicationGate.kind === "same_turn_repair") {
+          const presentRewrittenTrackedPaths = await filterPresentTrackedFilePaths(
+            workspacePath,
+            publicationGate.rewrittenTrackedPaths,
+          );
+          if (presentRewrittenTrackedPaths.length > 0) {
+            try {
+              await commitAndPushTrackedFiles({
+                workspacePath,
+                branch: record.branch,
+                remoteBranchExists: workspaceStatus.remoteBranchExists,
+                filePaths: presentRewrittenTrackedPaths,
+                commitMessage:
+                  TRUSTED_DURABLE_ARTIFACT_NORMALIZATION_COMMIT_MESSAGE,
+              });
+            } catch (error) {
+              const message =
+                error instanceof Error ? error.message : String(error);
+              const retryPersistenceFailureContext =
+                buildWorkstationLocalPathFailureContext({
+                  gateLabel: "before publication",
+                  details: [
+                    `durable artifact normalization persistence failed for ${presentRewrittenTrackedPaths.join(", ")}: ${message}`,
+                  ],
+                });
+              record = stateStore.touch(record, {
+                state: "blocked",
+                last_error: truncate(
+                  retryPersistenceFailureContext.summary,
+                  1000,
+                ),
+                last_failure_kind: null,
+                last_failure_context: retryPersistenceFailureContext,
+                ...args.applyFailureSignature(
+                  record,
+                  retryPersistenceFailureContext,
+                ),
+                blocked_reason: "verification",
+                ...issueDefinitionFreshnessPatch(issue),
+              });
+              state.issues[String(record.issue_number)] = record;
+              await stateStore.save(state);
+              await syncExecutionMetricsRunSummarySafely({
+                previousRecord: args.context.record,
+                nextRecord: record,
+                issue,
+                pullRequest: pr,
+                retentionRootPath: executionMetricsRetentionRootPath(
+                  args.config.stateFile,
+                ),
+                warningContext: "persisting",
+              });
+              await syncJournal(record);
+              return {
+                kind: "returned",
+                message: `Workstation-local path hygiene blocked publication for issue #${record.issue_number}.`,
+              };
+            }
+            workspaceStatus = await getWorkspaceStatusImpl(
+              workspacePath,
+              record.branch,
+              config.defaultBranch,
+            );
+            record = stateStore.touch(record, {
+              last_head_sha: workspaceStatus.headSha,
+            });
+          }
           usedSameTurnPathRepairRetry = true;
           record = stateStore.touch(record, {
             last_error: truncate(publicationGate.failureContext.summary, 1000),

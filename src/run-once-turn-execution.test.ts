@@ -1004,6 +1004,7 @@ test("executeCodexTurnPhase retries once in the same turn when changed publishab
   let pushBranchCalls = 0;
   let syncJournalCalls = 0;
   let pathGateCalls = 0;
+  const requests: AgentTurnRequest[] = [];
   const context = createCodexTurnContext({
     state,
     record: state.issues["102"]!,
@@ -1152,11 +1153,16 @@ test("executeCodexTurnPhase retries once in the same turn when changed publishab
           };
     },
     agentRunner: createSuccessfulAgentRunner(async (request) => {
+      requests.push(request);
       agentRunCount += 1;
       if (agentRunCount === 2) {
         assert.equal(request.kind, "resume");
         assert.match(
           request.failureContext?.summary ?? "",
+          /Tracked durable artifacts failed workstation-local path hygiene before publication/,
+        );
+        assert.match(
+          request.previousError ?? "",
           /Tracked durable artifacts failed workstation-local path hygiene before publication/,
         );
       }
@@ -1198,9 +1204,309 @@ test("executeCodexTurnPhase retries once in the same turn when changed publishab
   assert.equal(pathGateCalls, 2);
   assert.equal(pushBranchCalls, 1);
   assert.equal(syncJournalCalls, 2);
+  assert.match(requests[1]?.previousSummary ?? "", /implementation complete/);
   assert.equal(state.issues["102"]?.state, "draft_pr");
   assert.equal(state.issues["102"]?.blocked_reason, null);
   assert.equal(state.issues["102"]?.last_failure_context, null);
+});
+
+test("executeCodexTurnPhase persists rewritten tracked paths before continuing a same-turn repair retry", async (t) => {
+  const workspacePath = await createTrackedRepo();
+  t.after(async () => {
+    await fs.rm(workspacePath, { recursive: true, force: true });
+  });
+  git(workspacePath, "checkout", "-b", "codex/issue-102");
+
+  const journalPath = path.join(
+    workspacePath,
+    ".codex-supervisor",
+    "issue-journal.md",
+  );
+  const publishableGuidePath = path.join(workspacePath, "docs", "guide.md");
+  const trustedArtifactPath = path.join(
+    workspacePath,
+    "docs",
+    "generated-summary.md",
+  );
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  await fs.mkdir(path.dirname(publishableGuidePath), { recursive: true });
+  await fs.writeFile(
+    journalPath,
+    [
+      "# Issue #102",
+      "",
+      "## Codex Working Notes",
+      "### Current Handoff",
+      "- Hypothesis: persist supervisor-owned rewrites before retrying the publishable path fix.",
+    ].join("\n"),
+    "utf8",
+  );
+  await fs.writeFile(
+    publishableGuidePath,
+    `Guide path: ${SAMPLE_MACOS_WORKSTATION_PATH}\n`,
+    "utf8",
+  );
+  await fs.writeFile(
+    trustedArtifactPath,
+    `Trusted artifact path: ${SAMPLE_MACOS_WORKSTATION_PATH}\n`,
+    "utf8",
+  );
+  git(workspacePath, "add", "docs/guide.md", "docs/generated-summary.md");
+  git(workspacePath, "commit", "-m", "seed same-turn repair fixture");
+
+  const initialHeadSha = git(workspacePath, "rev-parse", "HEAD").trim();
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "stabilizing",
+        pr_number: null,
+        implementation_attempt_count: 1,
+        workspace: workspacePath,
+        journal_path: journalPath,
+        branch: "codex/issue-102",
+        last_head_sha: initialHeadSha,
+      }),
+    },
+  };
+  const issue = createIssue({
+    title: "Persist rewritten tracked paths before same-turn retry",
+  });
+  const requests: AgentTurnRequest[] = [];
+  let pathGateCalls = 0;
+
+  const result = await executeCodexTurnPhase({
+    config: createConfig(),
+    stateStore: {
+      touch: (record, patch) => ({
+        ...record,
+        ...patch,
+        updated_at: record.updated_at,
+      }),
+      save: async () => undefined,
+    },
+    github: {
+      resolvePullRequestForBranch: async () => null,
+      createPullRequest: async () =>
+        createPullRequest({
+          number: 200,
+          isDraft: true,
+          headRefOid: git(workspacePath, "rev-parse", "HEAD").trim(),
+        }),
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+      getExternalReviewSurface: async () => {
+        throw new Error("unexpected getExternalReviewSurface call");
+      },
+    },
+    context: {
+      state,
+      record: state.issues["102"]!,
+      issue,
+      previousCodexSummary: null,
+      previousError: null,
+      workspacePath,
+      journalPath,
+      syncJournal: async () => undefined,
+      memoryArtifacts: {
+        alwaysReadFiles: [],
+        onDemandFiles: [],
+        contextIndexPath: "/tmp/context-index.md",
+        agentsPath: "/tmp/AGENTS.generated.md",
+      },
+      workspaceStatus: {
+        branch: "codex/issue-102",
+        headSha: initialHeadSha,
+        hasUncommittedChanges: false,
+        baseAhead: 1,
+        baseBehind: 0,
+        remoteBranchExists: false,
+        remoteAhead: 0,
+        remoteBehind: 0,
+      },
+      pr: null,
+      checks: [],
+      reviewThreads: [],
+      options: { dryRun: false },
+    },
+    acquireSessionLock: async () => null,
+    classifyFailure: () => "command_error",
+    buildCodexFailureContext: (category, summary, details) => ({
+      category,
+      summary,
+      signature: `${category}:${summary}`,
+      command: null,
+      details,
+      url: null,
+      updated_at: "2026-03-27T09:00:00.000Z",
+    }),
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    normalizeBlockerSignature: () => null,
+    isVerificationBlockedMessage: () => false,
+    derivePullRequestLifecycleSnapshot: (record) => ({
+      recordForState: record,
+      nextState: "draft_pr",
+      failureContext: null,
+      reviewWaitPatch: {},
+      copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    inferStateWithoutPullRequest: () => "draft_pr",
+    blockedReasonFromReviewState: () => null,
+    recoverUnexpectedCodexTurnFailure: async () => {
+      throw new Error("unexpected recoverUnexpectedCodexTurnFailure call");
+    },
+    getWorkspaceStatus: (() => {
+      let statusCalls = 0;
+      return async () => {
+        statusCalls += 1;
+        return createWorkspaceStatus({
+          branch: "codex/issue-102",
+          headSha:
+            statusCalls === 1
+              ? "head-after-turn-1"
+              : git(workspacePath, "rev-parse", "HEAD").trim(),
+          baseAhead: statusCalls === 1 ? 1 : 2,
+          remoteBranchExists: statusCalls !== 1,
+        });
+      };
+    })(),
+    listChangedTrackedFilesBetween: async () => ["docs/guide.md"],
+    readIssueJournal: (() => {
+      let readCount = 0;
+      return async () => {
+        readCount += 1;
+        return readCount === 1
+          ? [
+              "## Codex Working Notes",
+              "### Current Handoff",
+              "- Hypothesis: persist supervisor-owned rewrites before retrying the publishable path fix.",
+            ].join("\n")
+          : readCount === 2
+            ? [
+                "## Codex Working Notes",
+                "### Current Handoff",
+                "- Hypothesis: persist supervisor-owned rewrites before retrying the publishable path fix.",
+                "- What changed: completed the first implementation pass.",
+              ].join("\n")
+            : readCount === 3
+              ? [
+                  "## Codex Working Notes",
+                  "### Current Handoff",
+                  "- Hypothesis: persist supervisor-owned rewrites before retrying the publishable path fix.",
+                  "- What changed: completed the first implementation pass.",
+                ].join("\n")
+              : [
+                  "## Codex Working Notes",
+                  "### Current Handoff",
+                  "- Hypothesis: persist supervisor-owned rewrites before retrying the publishable path fix.",
+                  "- What changed: repaired the publishable path finding after the normalization commit.",
+                ].join("\n");
+      };
+    })(),
+    runWorkstationLocalPathGate: async () => {
+      pathGateCalls += 1;
+      if (pathGateCalls === 1) {
+        await fs.writeFile(
+          trustedArtifactPath,
+          "Trusted artifact path: <workstation-local>\n",
+          "utf8",
+        );
+        return {
+          ok: false,
+          failureContext: {
+            category: "blocked",
+            summary:
+              "Tracked durable artifacts failed workstation-local path hygiene before publication. Edit tracked publishable content to remove workstation-local paths. First fix: docs/guide.md (1 match, macos_home).",
+            signature: "workstation-local-path-hygiene-failed",
+            command: "npm run verify:paths",
+            details: [
+              `docs/guide.md:1 matched /${"Users"}/ via "${SAMPLE_MACOS_WORKSTATION_PATH}"`,
+            ],
+            url: null,
+            updated_at: "2026-03-27T09:00:00.000Z",
+          },
+          actionablePublishableFilePaths: ["docs/guide.md"],
+          rewrittenTrustedGeneratedArtifactPaths: ["docs/generated-summary.md"],
+        };
+      }
+
+      return {
+        ok: true,
+        failureContext: null,
+        actionablePublishableFilePaths: [],
+      };
+    },
+    agentRunner: createSuccessfulAgentRunner(async (request) => {
+      requests.push(request);
+      if (requests.length === 2) {
+        assert.equal(request.kind, "resume");
+        assert.match(
+          request.previousError ?? "",
+          /Tracked durable artifacts failed workstation-local path hygiene before publication/,
+        );
+      }
+      return {
+        exitCode: 0,
+        sessionId: "session-102",
+        supervisorMessage: [
+          `Summary: ${requests.length === 1 ? "implementation complete" : "publishable path repaired"}`,
+          "State hint: draft_pr",
+          "Blocked reason: none",
+          "Tests: not run",
+          "Failure signature: none",
+          "Next action: continue",
+        ].join("\n"),
+        stderr: "",
+        stdout: "",
+        structuredResult: {
+          summary:
+            requests.length === 1
+              ? "implementation complete"
+              : "publishable path repaired",
+          stateHint: "draft_pr",
+          blockedReason: null,
+          failureSignature: null,
+          nextAction: "continue",
+          tests: "not run",
+        },
+        failureKind: null,
+        failureContext: null,
+      };
+    }),
+  });
+
+  assert.equal(result.kind, "completed");
+  assert.equal(pathGateCalls, 2);
+  assert.equal(requests.length, 2);
+  assert.equal(
+    git(workspacePath, "log", "-1", "--pretty=%s").trim(),
+    "Normalize trusted durable artifacts for path hygiene",
+  );
+  assert.equal(
+    git(workspacePath, "status", "--short", "--untracked-files=no").trim(),
+    "",
+  );
+  assert.equal(
+    git(workspacePath, "rev-parse", "HEAD").trim(),
+    git(workspacePath, "rev-parse", "origin/codex/issue-102").trim(),
+  );
+  assert.equal(
+    await fs.readFile(trustedArtifactPath, "utf8"),
+    "Trusted artifact path: <workstation-local>\n",
+  );
 });
 
 test("executeCodexTurnPhase routes start and resume turns through the shared agent runner contract", async () => {

@@ -51,6 +51,7 @@ export interface CodexTurnPublicationGateSameTurnRepairResult {
   record: IssueRunRecord;
   failureContext: FailureContext;
   actionablePublishableFilePaths: string[];
+  rewrittenTrackedPaths: string[];
 }
 
 export interface CodexTurnPublicationGateReadyResult {
@@ -200,6 +201,10 @@ export async function applyCodexTurnPublicationGate(args: {
       const failureContext = pathHygieneGate.failureContext;
       const actionablePublishableFilePaths =
         pathHygieneGate.actionablePublishableFilePaths ?? [];
+      const rewrittenTrackedPaths = [
+        ...(pathHygieneGate.rewrittenJournalPaths ?? []),
+        ...(pathHygieneGate.rewrittenTrustedGeneratedArtifactPaths ?? []),
+      ];
       const changedFilesInCurrentTurn = new Set(
         args.changedFilesInCurrentTurn ?? [],
       );
@@ -217,6 +222,7 @@ export async function applyCodexTurnPublicationGate(args: {
           record,
           failureContext,
           actionablePublishableFilePaths,
+          rewrittenTrackedPaths,
         };
       }
       record = args.stateStore.touch(record, {

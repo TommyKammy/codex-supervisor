@@ -229,6 +229,91 @@ test("applyCodexTurnPublicationGate keeps the existing verification block once s
   );
 });
 
+test("applyCodexTurnPublicationGate preserves rewritten tracked paths when requesting a same-turn repair retry", async () => {
+  const issue = createIssue({
+    title: "Preserve rewritten tracked paths across same-turn publication repair",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "stabilizing",
+        pr_number: null,
+        implementation_attempt_count: 1,
+      }),
+    },
+  };
+
+  const result = await applyCodexTurnPublicationGate({
+    config: createConfig({ localCiCommand: "npm run ci:local" }),
+    stateStore: {
+      touch: (record, patch) => ({
+        ...record,
+        ...patch,
+        updated_at: record.updated_at,
+      }),
+      save: async () => undefined,
+    },
+    state,
+    record: state.issues["102"]!,
+    issue,
+    workspacePath: "/tmp/workspaces/issue-102",
+    workspaceStatus: {
+      branch: "codex/issue-102",
+      headSha: "head-102",
+      hasUncommittedChanges: false,
+      baseAhead: 1,
+      baseBehind: 0,
+      remoteBranchExists: true,
+      remoteAhead: 0,
+      remoteBehind: 0,
+    },
+    github: {
+      resolvePullRequestForBranch: async () => null,
+      createPullRequest: async () => {
+        throw new Error("unexpected createPullRequest call");
+      },
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    syncJournal: async () => undefined,
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    runWorkstationLocalPathGate: async () => ({
+      ok: false,
+      failureContext: {
+        category: "blocked",
+        summary:
+          "Tracked durable artifacts failed workstation-local path hygiene before publication.",
+        signature: "workstation-local-path-hygiene-failed",
+        command: "npm run verify:paths",
+        details: [
+          'docs/guide.md:1 matched <workstation-local> via "<workstation-local>/private-repo"',
+        ],
+        url: null,
+        updated_at: "2026-03-27T00:00:00Z",
+      },
+      actionablePublishableFilePaths: ["docs/guide.md"],
+      rewrittenJournalPaths: [".codex-supervisor/issue-journal.md"],
+      rewrittenTrustedGeneratedArtifactPaths: ["docs/generated-summary.md"],
+    }),
+    allowSameTurnPathRepairRetry: true,
+    changedFilesInCurrentTurn: ["docs/guide.md"],
+    runLocalCiCommand: async () => {
+      throw new Error("unexpected runLocalCiCommand call");
+    },
+    syncExecutionMetricsRunSummary: async () => undefined,
+  });
+
+  assert.equal(result.kind, "same_turn_repair");
+  assert.deepEqual(result.rewrittenTrackedPaths, [
+    ".codex-supervisor/issue-journal.md",
+    "docs/generated-summary.md",
+  ]);
+});
+
 test("applyCodexTurnPublicationGate forwards publishable allowlist markers to the path hygiene gate", async () => {
   const issue = createIssue({
     title: "Honor publishable allowlist markers before PR creation",
