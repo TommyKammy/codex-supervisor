@@ -554,7 +554,8 @@ export interface CliOptions {
     | "web"
     | "replay"
     | "replay-corpus"
-    | "replay-corpus-promote";
+    | "replay-corpus-promote"
+    | "help";
   configPath?: string;
   dryRun: boolean;
   why: boolean;

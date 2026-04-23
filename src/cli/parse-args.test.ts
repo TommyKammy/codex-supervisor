@@ -2,6 +2,32 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { parseArgs } from "./parse-args";
 
+test("parseArgs accepts --help as the help command", () => {
+  assert.deepEqual(parseArgs(["--help"]), {
+    command: "help",
+    configPath: undefined,
+    dryRun: false,
+    why: false,
+    issueNumber: undefined,
+    snapshotPath: undefined,
+    caseId: undefined,
+    corpusPath: undefined,
+  });
+});
+
+test("parseArgs accepts help as a command", () => {
+  assert.deepEqual(parseArgs(["help"]), {
+    command: "help",
+    configPath: undefined,
+    dryRun: false,
+    why: false,
+    issueNumber: undefined,
+    snapshotPath: undefined,
+    caseId: undefined,
+    corpusPath: undefined,
+  });
+});
+
 test("parseArgs accepts doctor as a command", () => {
   assert.deepEqual(parseArgs(["doctor"]), {
     command: "doctor",
@@ -207,6 +233,13 @@ test("parseArgs requires an issue number for requeue", () => {
   assert.throws(
     () => parseArgs(["requeue"]),
     /The requeue command requires one issue number\./,
+  );
+});
+
+test("parseArgs still rejects command-scoped --help as an unknown argument", () => {
+  assert.throws(
+    () => parseArgs(["issue-lint", "--help"]),
+    /Unknown argument: --help/,
   );
 });
 

@@ -3,6 +3,52 @@ import test from "node:test";
 import type { CliIo } from "./replay-corpus-command";
 import { isDirectExecution, runCli, runCliMain } from "./entrypoint";
 
+test("runCli prints help without checking runtime freshness or constructing services", async () => {
+  const stdout: string[] = [];
+  let checkedFreshness = false;
+  let createdSupervisorService = false;
+
+  await runCli(["--help"], {
+    assertRuntimeFreshness: async () => {
+      checkedFreshness = true;
+      throw new Error("unexpected freshness check");
+    },
+    createSupervisorService: () => {
+      createdSupervisorService = true;
+      throw new Error("unexpected createSupervisorService");
+    },
+    writeStdout: (line) => {
+      stdout.push(line);
+    },
+  });
+
+  assert.equal(checkedFreshness, false);
+  assert.equal(createdSupervisorService, false);
+  assert.match(stdout.join("\n"), /Usage:/);
+  assert.match(stdout.join("\n"), /node dist\/index\.js help/);
+  assert.match(stdout.join("\n"), /First run:/);
+  assert.match(stdout.join("\n"), /Inspect commands:/);
+  assert.match(stdout.join("\n"), /issue-lint <issue-number>/);
+  assert.match(stdout.join("\n"), /Maintenance commands:/);
+  assert.match(stdout.join("\n"), /Web-oriented commands:/);
+});
+
+test("runCli prints help for the help command", async () => {
+  const stdout: string[] = [];
+
+  await runCli(["help"], {
+    assertRuntimeFreshness: async () => {
+      throw new Error("unexpected freshness check");
+    },
+    writeStdout: (line) => {
+      stdout.push(line);
+    },
+  });
+
+  assert.match(stdout.join("\n"), /Usage:/);
+  assert.match(stdout.join("\n"), /Run commands:/);
+});
+
 test("runCli routes replay commands through the replay handler and stdout boundary", async () => {
   const stdout: string[] = [];
   let replayedSnapshotPath: string | undefined;

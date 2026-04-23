@@ -42,12 +42,14 @@ export function parseArgs(argv: string[]): CliOptions {
       token === "web" ||
       token === "replay" ||
       token === "replay-corpus" ||
-      token === "replay-corpus-promote"
+      token === "replay-corpus-promote" ||
+      token === "help" ||
+      (token === "--help" && !commandSeen)
     ) {
       if (commandSeen) {
         throw new Error(`Unexpected second command: ${token}`);
       }
-      command = token;
+      command = token === "--help" ? "help" : token;
       commandSeen = true;
       continue;
     }
