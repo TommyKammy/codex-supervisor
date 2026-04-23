@@ -416,6 +416,48 @@ test("ensureWorkspace installs worktree-local excludes for supervisor artifacts 
   assert.equal(stagedPaths, "");
 });
 
+test("ensureWorkspace installs repo-local excludes for supervisor artifacts in the root checkout", async () => {
+  const config = await createRepositoryFixture();
+  const issueNumber = 814;
+  const branch = `${config.branchPrefix}${issueNumber}`;
+
+  await ensureWorkspace(config, issueNumber, branch);
+  const excludePath = await gitOutput(
+    config.repoPath,
+    "rev-parse",
+    "--path-format=absolute",
+    "--git-path",
+    "info/exclude",
+  );
+
+  await fs.mkdir(path.join(config.repoPath, ".codex-supervisor", "execution-metrics"), { recursive: true });
+  await fs.mkdir(path.join(config.repoPath, ".codex-supervisor", "issues", "9001"), { recursive: true });
+  await fs.writeFile(path.join(config.repoPath, ".codex-supervisor", "issue-journal.md"), "# local journal\n", "utf8");
+  await fs.writeFile(
+    path.join(config.repoPath, ".codex-supervisor", "issues", "9001", "issue-journal.md"),
+    "# issue journal\n",
+    "utf8",
+  );
+  await fs.writeFile(
+    path.join(config.repoPath, ".codex-supervisor", "execution-metrics", "run-summary.json"),
+    "{}\n",
+    "utf8",
+  );
+
+  await git(config.repoPath, "add", "-A");
+
+  const excludeFile = await fs.readFile(excludePath, "utf8");
+  const stagedPaths = await gitOutput(config.repoPath, "diff", "--cached", "--name-only");
+
+  assert.match(excludeFile, /^\.codex-supervisor\/issues\/\*\/issue-journal\.md$/mu);
+  assert.match(excludeFile, /^\.codex-supervisor\/issue-journal\.md$/mu);
+  assert.match(excludeFile, /^\.codex-supervisor\/execution-metrics\/\*$/mu);
+  assert.match(excludeFile, /^\.codex-supervisor\/pre-merge\/\*$/mu);
+  assert.match(excludeFile, /^\.codex-supervisor\/replay\/\*$/mu);
+  assert.match(excludeFile, /^\.codex-supervisor\/turn-in-progress\.json$/mu);
+  assert.equal(stagedPaths, "");
+});
+
 test("ensureWorkspace reuses worktree-local excludes idempotently without clobbering operator entries", async () => {
   const config = await createRepositoryFixture();
   const issueNumber = 813;

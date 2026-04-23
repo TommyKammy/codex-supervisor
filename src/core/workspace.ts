@@ -219,22 +219,45 @@ async function worktreeLocalExcludePath(workspacePath: string): Promise<string> 
   return excludePath;
 }
 
-async function installWorktreeLocalExcludes(
+function wildcardConfiguredIssueJournalPath(journalRelativePath: string): string {
+  return journalRelativePath.includes("{issueNumber}")
+    ? journalRelativePath.replaceAll("{issueNumber}", "*")
+    : journalRelativePath;
+}
+
+function managedSupervisorArtifactExcludeEntries(
   config: Pick<SupervisorConfig, "issueJournalRelativePath">,
   workspacePath: string,
-  issueNumber: number,
-): Promise<void> {
-  const excludePath = await worktreeLocalExcludePath(workspacePath);
-  await ensureDir(path.dirname(excludePath));
+  issueNumber?: number,
+): string[] {
+  const journalEntries = new Set<string>();
+  if (issueNumber === undefined) {
+    journalEntries.add(wildcardConfiguredIssueJournalPath(config.issueJournalRelativePath));
+    journalEntries.add(".codex-supervisor/issue-journal.md");
+    journalEntries.add(".codex-supervisor/issues/*/issue-journal.md");
+  } else {
+    const journalPath = issueJournalPath(workspacePath, config.issueJournalRelativePath, issueNumber);
+    journalEntries.add(toGitRelativePath(workspacePath, journalPath));
+  }
 
-  const journalPath = issueJournalPath(workspacePath, config.issueJournalRelativePath, issueNumber);
-  const managedEntries = [
-    toGitRelativePath(workspacePath, journalPath),
+  return [
+    ...journalEntries,
     ".codex-supervisor/execution-metrics/*",
     ".codex-supervisor/pre-merge/*",
     ".codex-supervisor/replay/*",
     ".codex-supervisor/turn-in-progress.json",
   ];
+}
+
+async function installGitLocalExcludes(
+  config: Pick<SupervisorConfig, "issueJournalRelativePath">,
+  workspacePath: string,
+  issueNumber?: number,
+): Promise<void> {
+  const excludePath = await worktreeLocalExcludePath(workspacePath);
+  await ensureDir(path.dirname(excludePath));
+
+  const managedEntries = managedSupervisorArtifactExcludeEntries(config, workspacePath, issueNumber);
   const existingContent = fs.existsSync(excludePath) ? fs.readFileSync(excludePath, "utf8") : "";
   const existingLines = existingContent.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean);
   const existingEntries = new Set(existingLines);
@@ -248,11 +271,26 @@ async function installWorktreeLocalExcludes(
   fs.appendFileSync(excludePath, appendedBlock, "utf8");
 }
 
-async function finalizeWorkspaceSetup(
+async function installWorktreeLocalExcludes(
   config: Pick<SupervisorConfig, "issueJournalRelativePath">,
   workspacePath: string,
   issueNumber: number,
 ): Promise<void> {
+  await installGitLocalExcludes(config, workspacePath, issueNumber);
+}
+
+async function installRepoLocalExcludes(
+  config: Pick<SupervisorConfig, "repoPath" | "issueJournalRelativePath">,
+): Promise<void> {
+  await installGitLocalExcludes(config, config.repoPath);
+}
+
+async function finalizeWorkspaceSetup(
+  config: Pick<SupervisorConfig, "issueJournalRelativePath" | "repoPath">,
+  workspacePath: string,
+  issueNumber: number,
+): Promise<void> {
+  await installRepoLocalExcludes(config);
   await installWorktreeLocalExcludes(config, workspacePath, issueNumber);
   await protectTrackedLiveIssueJournals(workspacePath);
 }
