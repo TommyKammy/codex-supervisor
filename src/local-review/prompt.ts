@@ -241,6 +241,8 @@ function roleGoal(role: string): string[] {
         "- Do not treat a raised exception or returned error as sufficient proof when durable state might already have been mutated.",
         "- Flag transactions that stay open across network hops, queued work, adapter dispatch, or other remote waits; require the boundary to commit/roll back before crossing it.",
         "- Flag raw workstation-local absolute path literals rooted in a user home directory or Windows user-profile directory in tests, fixtures, docs, prompts, or committed examples as a path-hygiene regression when a fragment-based or placeholder-based fixture would verify the same behavior.",
+        "- For docs-heavy diffs, validation plans, and command examples, prefer repo-relative supervisor commands, documented env vars, and explicit placeholders over host absolute paths unless a real host path is the behavior under review.",
+        "- Examples to prefer include `node dist/index.js ...`, `CODEX_SUPERVISOR_CONFIG`, `<supervisor-config-path>`, and `<codex-supervisor-root>`.",
         "- Ignore style nits unless they could hide a bug or maintenance trap.",
       ];
     case "docs_researcher":
