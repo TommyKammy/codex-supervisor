@@ -144,6 +144,7 @@ test("dashboard page frames a summary-first shell and a collapsible details area
   );
   assert.match(html, /id="loop-state-summary"/u);
   assert.match(html, /id="selected-issue-summary-metrics"[\s\S]*id="selected-issue-summary-notes"/u);
+  assert.match(html, /id="doctor-decision"[\s\S]*id="doctor-tiers"[\s\S]*id="doctor-checks"/u);
   assert.match(
     html,
     /<details id="details-disclosure" class="details-disclosure">[\s\S]*<div class="details-body">[\s\S]*<h2 id="overview-heading">Advanced queue context<\/h2>[\s\S]*<div id="overview-grid" class="overview-grid" aria-label="overview" data-panel-grid="overview">/u,

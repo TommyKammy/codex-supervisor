@@ -697,6 +697,35 @@ test("buildOverviewSummary and related beginner-first helpers produce concise En
       "github_auth: Authentication needs refresh.",
     ],
   );
+
+  assert.deepEqual(
+    buildAttentionItems({
+      status: {
+        blockedIssues: [],
+        runnableIssues: [],
+      },
+      doctor: {
+        overallStatus: "fail",
+        decisionSummary: {
+          action: "stop",
+          summary: "2 active risk(s) require operator attention before continuing.",
+        },
+        diagnosticTiers: {
+          active_risk: [
+            { source: "github_auth", detail: "GitHub CLI authentication is unavailable." },
+            { source: "github_auth", detail: "Run gh auth status." },
+          ],
+          maintenance: [],
+          informational: [],
+        },
+        checks: [{ name: "github_auth", status: "fail", summary: "GitHub CLI authentication is unavailable." }],
+      },
+      connectionPhase: "open",
+      refreshPhase: "idle",
+      hasSuccessfulRefresh: true,
+    }),
+    ["Doctor decision: 2 active risk(s) require operator attention before continuing."],
+  );
 });
 
 test("describeFreshnessState distinguishes fresh, refreshing, stale, and first-load states", () => {

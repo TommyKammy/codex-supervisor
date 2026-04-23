@@ -131,6 +131,11 @@ export const DASHBOARD_PANEL_REGISTRY = [
     headerMetaMarkup: '<span id="doctor-overall" class="metric">…</span>',
     bodyClassName: "stack",
     bodyMarkup: `              <div class="row">
+                <div class="row-label">Decision</div>
+                <div id="doctor-decision" class="status-line panel-empty-state">Loading /api/doctor…</div>
+                <div id="doctor-tiers" class="chip-row"></div>
+              </div>
+              <div class="row">
                 <div class="row-label">Checks</div>
                 <ul id="doctor-checks" class="list">
                   <li class="panel-empty-state">Loading /api/doctor…</li>
