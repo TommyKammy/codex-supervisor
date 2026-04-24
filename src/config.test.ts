@@ -289,6 +289,7 @@ test("loadConfig keeps local review disabled by default while using the opiniona
 
   const config = loadConfig(configPath);
 
+  assert.equal(config.localReviewPosture, "off");
   assert.equal(config.localReviewEnabled, false);
   assert.equal(config.localReviewAutoDetect, true);
   assert.deepEqual(config.localReviewRoles, []);
@@ -299,6 +300,140 @@ test("loadConfig keeps local review disabled by default while using the opiniona
   assert.equal(config.localReviewFollowUpIssueCreationEnabled, false);
   assert.equal(config.localReviewHighSeverityAction, "blocked");
   assert.equal(config.staleConfiguredBotReviewPolicy, "diagnose_only");
+});
+
+test("loadConfig maps named local review posture presets onto existing low-level fields", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  const baseDocument = {
+    repoPath: ".",
+    repoSlug: "owner/repo",
+    defaultBranch: "main",
+    workspaceRoot: "./workspaces",
+    stateFile: "./state.json",
+    codexBinary: "codex",
+    branchPrefix: "codex/issue-",
+  };
+  const cases = [
+    {
+      preset: "off",
+      expected: {
+        localReviewEnabled: false,
+        localReviewPolicy: "block_merge",
+        localReviewFollowUpRepairEnabled: false,
+        localReviewManualReviewRepairEnabled: false,
+        localReviewFollowUpIssueCreationEnabled: false,
+        localReviewHighSeverityAction: "blocked",
+      },
+    },
+    {
+      preset: "advisory",
+      expected: {
+        localReviewEnabled: true,
+        localReviewPolicy: "advisory",
+        localReviewFollowUpRepairEnabled: false,
+        localReviewManualReviewRepairEnabled: false,
+        localReviewFollowUpIssueCreationEnabled: false,
+        localReviewHighSeverityAction: "blocked",
+      },
+    },
+    {
+      preset: "block_merge",
+      expected: {
+        localReviewEnabled: true,
+        localReviewPolicy: "block_merge",
+        localReviewFollowUpRepairEnabled: false,
+        localReviewManualReviewRepairEnabled: false,
+        localReviewFollowUpIssueCreationEnabled: false,
+        localReviewHighSeverityAction: "blocked",
+      },
+    },
+    {
+      preset: "repair_high_severity",
+      expected: {
+        localReviewEnabled: true,
+        localReviewPolicy: "block_merge",
+        localReviewFollowUpRepairEnabled: false,
+        localReviewManualReviewRepairEnabled: false,
+        localReviewFollowUpIssueCreationEnabled: false,
+        localReviewHighSeverityAction: "retry",
+      },
+    },
+    {
+      preset: "follow_up_issue_creation",
+      expected: {
+        localReviewEnabled: true,
+        localReviewPolicy: "block_merge",
+        localReviewFollowUpRepairEnabled: false,
+        localReviewManualReviewRepairEnabled: false,
+        localReviewFollowUpIssueCreationEnabled: true,
+        localReviewHighSeverityAction: "blocked",
+      },
+    },
+  ] as const;
+
+  for (const { preset, expected } of cases) {
+    const configPath = path.join(tempDir, `${preset}.json`);
+    await fs.writeFile(
+      configPath,
+      JSON.stringify({
+        ...baseDocument,
+        localReviewPosture: preset,
+        localReviewEnabled: preset === "off" ? true : false,
+        localReviewPolicy: "block_ready",
+        localReviewFollowUpRepairEnabled: true,
+        localReviewManualReviewRepairEnabled: true,
+        localReviewFollowUpIssueCreationEnabled: false,
+        localReviewHighSeverityAction: "retry",
+      }),
+      "utf8",
+    );
+
+    const config = loadConfig(configPath);
+    assert.equal(config.localReviewPosture, preset);
+    assert.deepEqual(
+      {
+        localReviewEnabled: config.localReviewEnabled,
+        localReviewPolicy: config.localReviewPolicy,
+        localReviewFollowUpRepairEnabled: config.localReviewFollowUpRepairEnabled,
+        localReviewManualReviewRepairEnabled: config.localReviewManualReviewRepairEnabled,
+        localReviewFollowUpIssueCreationEnabled: config.localReviewFollowUpIssueCreationEnabled,
+        localReviewHighSeverityAction: config.localReviewHighSeverityAction,
+      },
+      expected,
+    );
+  }
+});
+
+test("loadConfig rejects unsupported local review posture presets", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const configPath = path.join(tempDir, "supervisor.config.json");
+
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "./workspaces",
+      stateFile: "./state.json",
+      codexBinary: "codex",
+      branchPrefix: "codex/issue-",
+      localReviewPosture: "auto_repair_everything",
+    }),
+    "utf8",
+  );
+
+  const summary = loadConfigSummary(configPath);
+  assert.equal(summary.status, "invalid_config");
+  assert.deepEqual(summary.invalidFields, ["localReviewPosture"]);
+  assert.match(summary.error ?? "", /Invalid config field: localReviewPosture/);
 });
 
 test("loadConfig accepts explicit local review same-PR follow-up repair opt-in", async (t) => {
@@ -1628,7 +1763,7 @@ test("getting started links to focused configuration and local review references
   assert.match(gettingStarted, /review provider profile/i);
   assert.match(gettingStarted, /provider-specific review settings/i);
   assert.match(gettingStarted, /disabled by default/i);
-  assert.match(gettingStarted, /recommended once enabled/i);
+  assert.match(gettingStarted, /recommended once-enabled/i);
   assert.doesNotMatch(gettingStarted, /review-bot profile/i);
   assert.doesNotMatch(gettingStarted, /^### Option 1: Auto-detect roles$/m);
   assert.doesNotMatch(gettingStarted, /^### Option 2: Explicit roles$/m);
@@ -1640,7 +1775,7 @@ test("getting started links to focused configuration and local review references
   assert.match(localReview, /^## Choosing reviewer roles$/m);
   assert.match(localReview, /^## Artifacts, thresholds, and guardrails$/m);
   assert.match(localReview, /disabled by default/i);
-  assert.match(localReview, /recommended once enabled/i);
+  assert.match(localReview, /recommended once-enabled/i);
 
   assert.match(configuration, /^## Model Routing Quick Recipes$/m);
   assert.match(configuration, /authoritative fields for Codex model selection/i);

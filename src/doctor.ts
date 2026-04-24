@@ -6,6 +6,7 @@ import { runCommand } from "./core/command";
 import {
   summarizeCadenceDiagnostics,
   summarizeLocalCiContract,
+  summarizeLocalReviewPosture,
   summarizeTrustDiagnostics,
   summarizeWorkspacePreparationContract,
   type ConfigLoadSummary,
@@ -17,6 +18,7 @@ import {
   type CadenceDiagnosticsSummary,
   type IssueRunRecord,
   type LocalCiContractSummary,
+  type LocalReviewPostureSummary,
   type StateLoadFinding,
   type SupervisorConfig,
   type SupervisorStateFile,
@@ -79,6 +81,7 @@ export interface DoctorDiagnostics {
   orphanPolicySummary?: string;
   workspacePreparationContract?: WorkspacePreparationContractSummary;
   localCiContract?: LocalCiContractSummary;
+  localReviewPosture?: LocalReviewPostureSummary;
 }
 
 export interface BootstrapRepoSummary {
@@ -857,6 +860,7 @@ export async function diagnoseSupervisorHost(args: DiagnoseSupervisorHostArgs): 
     orphanPolicySummary: formatOrphanPolicySummary(args.config),
     workspacePreparationContract: summarizeWorkspacePreparationContract(args.config),
     localCiContract: summarizeLocalCiContract(args.config),
+    localReviewPosture: summarizeLocalReviewPosture(args.config),
   };
 }
 
@@ -923,6 +927,15 @@ export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
   const localCiContract =
     diagnostics.localCiContract
     ?? summarizeLocalCiContract({ localCiCommand: undefined, workspacePreparationCommand: undefined, repoPath: undefined });
+  const localReviewPosture =
+    diagnostics.localReviewPosture
+    ?? summarizeLocalReviewPosture({
+      localReviewPosture: "off",
+      localReviewEnabled: false,
+      localReviewPolicy: "block_merge",
+      localReviewFollowUpIssueCreationEnabled: false,
+      localReviewHighSeverityAction: "blocked",
+    });
   const mergeCriticalRecheckSeconds =
     diagnostics.cadenceDiagnostics.mergeCriticalRecheckSeconds === null
       ? "disabled"
@@ -974,6 +987,7 @@ export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
     ...(diagnostics.orphanPolicySummary ? [diagnostics.orphanPolicySummary] : []),
     `doctor_workspace_preparation configured=${workspacePreparationContract.configured} source=${workspacePreparationContract.source} command=${sanitizeDoctorValue(workspacePreparationContract.command ?? "none")} summary=${sanitizeDoctorValue(workspacePreparationContract.summary)}`,
     `doctor_local_ci configured=${localCiContract.configured} source=${localCiContract.source} command=${sanitizeDoctorValue(localCiContract.command ?? "none")} summary=${sanitizeDoctorValue(localCiContract.summary)}`,
+    `doctor_local_review_posture preset=${localReviewPosture.preset} enabled=${localReviewPosture.enabled} policy=${localReviewPosture.policy} auto_repair=${localReviewPosture.autoRepair} follow_up_issue_creation=${localReviewPosture.followUpIssueCreation} summary=${sanitizeDoctorValue(localReviewPosture.summary)}`,
     ...trustWarnings.map((warning) => renderDoctorWarningLine(warning, sanitizeDoctorValue)),
     ...configWarnings,
     ...(loopHostWarning === null ? [] : [renderDoctorWarningLine(loopHostWarning, sanitizeDoctorValue)]),

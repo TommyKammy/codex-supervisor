@@ -1678,6 +1678,44 @@ test("renderDoctorReport surfaces absent local CI posture when no repo-owned con
   );
 });
 
+test("renderDoctorReport surfaces the selected local review posture preset", () => {
+  const report = renderDoctorReport({
+    overallStatus: "pass",
+    trustDiagnostics: {
+      trustMode: "trusted_repo_and_authors",
+      executionSafetyMode: "unsandboxed_autonomous",
+      warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
+      configWarning: null,
+    },
+    checks: [],
+    cadenceDiagnostics: {
+      pollIntervalSeconds: 120,
+      mergeCriticalRecheckSeconds: null,
+      mergeCriticalEffectiveSeconds: 120,
+      mergeCriticalRecheckEnabled: false,
+    },
+    candidateDiscoverySummary: "doctor_candidate_discovery fetch_window=100 strategy=paginated",
+    candidateDiscoveryWarning: null,
+    localReviewPosture: {
+      preset: "repair_high_severity",
+      enabled: true,
+      policy: "block_merge",
+      autoRepair: "high_severity_only",
+      followUpIssueCreation: false,
+      summary: "Local review posture repairs verifier-confirmed high-severity findings only.",
+      guarantees: [
+        "auto-repair is limited to verifier-confirmed high-severity findings",
+        "follow-up issue creation stays disabled",
+      ],
+    },
+  } as Awaited<ReturnType<typeof diagnoseSupervisorHost>>);
+
+  assert.match(
+    report,
+    /doctor_local_review_posture preset=repair_high_severity enabled=true policy=block_merge auto_repair=high_severity_only follow_up_issue_creation=false summary=Local review posture repairs verifier-confirmed high-severity findings only\./,
+  );
+});
+
 test("renderDoctorReport omits execution-safety warnings when trust posture does not require one", () => {
   const report = renderDoctorReport({
     overallStatus: "pass",

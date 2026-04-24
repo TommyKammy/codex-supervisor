@@ -25,6 +25,7 @@ import {
   PREFERRED_ISSUE_JOURNAL_RELATIVE_PATH,
   summarizeCadenceDiagnostics,
   summarizeLocalCiContract,
+  summarizeLocalReviewPosture,
   summarizeTrustDiagnostics,
   summarizeWorkspacePreparationContract,
 } from "./config-diagnostics";
@@ -44,6 +45,7 @@ export {
   PREFERRED_ISSUE_JOURNAL_RELATIVE_PATH,
   summarizeCadenceDiagnostics,
   summarizeLocalCiContract,
+  summarizeLocalReviewPosture,
   summarizeTrustDiagnostics,
   summarizeWorkspacePreparationContract,
   validateWorkspacePreparationCommandForWorktrees,

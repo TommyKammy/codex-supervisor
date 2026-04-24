@@ -5,6 +5,7 @@ import {
   LocalCiCommandConfig,
   LocalReviewHighSeverityAction,
   LocalReviewPolicy,
+  LocalReviewPosturePreset,
   LocalReviewReviewerThresholdConfig,
   LocalReviewReviewerType,
   ReasoningEffort,
@@ -25,6 +26,13 @@ const VALID_TRUST_MODES = new Set<TrustMode>(["trusted_repo_and_authors", "untru
 const VALID_EXECUTION_SAFETY_MODES = new Set<ExecutionSafetyMode>(["unsandboxed_autonomous", "operator_gated"]);
 const VALID_LOCAL_REVIEW_POLICIES = new Set<LocalReviewPolicy>(["advisory", "block_ready", "block_merge"]);
 const VALID_LOCAL_REVIEW_HIGH_SEVERITY_ACTIONS = new Set<LocalReviewHighSeverityAction>(["retry", "blocked"]);
+const VALID_LOCAL_REVIEW_POSTURE_PRESETS = new Set<LocalReviewPosturePreset>([
+  "off",
+  "advisory",
+  "block_merge",
+  "repair_high_severity",
+  "follow_up_issue_creation",
+]);
 const VALID_STALE_CONFIGURED_BOT_REVIEW_POLICIES = new Set<StaleConfiguredBotReviewPolicy>([
   "diagnose_only",
   "reply_only",
@@ -247,8 +255,116 @@ function parseReasoningPolicy(value: unknown): Partial<Record<RunState, Reasonin
   return Object.fromEntries(entries) as Partial<Record<RunState, ReasoningEffort>>;
 }
 
+function parseLocalReviewPosturePreset(value: unknown): LocalReviewPosturePreset | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value === "string" && VALID_LOCAL_REVIEW_POSTURE_PRESETS.has(value as LocalReviewPosturePreset)) {
+    return value as LocalReviewPosturePreset;
+  }
+
+  throw new Error(
+    `Invalid config field: localReviewPosture (unsupported value: ${String(value)}; supported values: off, advisory, block_merge, repair_high_severity, follow_up_issue_creation)`,
+  );
+}
+
+function inferLocalReviewPosture(args: {
+  localReviewEnabled: boolean;
+  localReviewPolicy: LocalReviewPolicy;
+  localReviewFollowUpIssueCreationEnabled: boolean;
+  localReviewHighSeverityAction: LocalReviewHighSeverityAction;
+}): LocalReviewPosturePreset {
+  if (!args.localReviewEnabled) {
+    return "off";
+  }
+
+  if (args.localReviewFollowUpIssueCreationEnabled) {
+    return "follow_up_issue_creation";
+  }
+
+  if (args.localReviewHighSeverityAction === "retry") {
+    return "repair_high_severity";
+  }
+
+  if (args.localReviewPolicy === "advisory") {
+    return "advisory";
+  }
+
+  return "block_merge";
+}
+
+function localReviewEnabledForPosture(
+  posture: LocalReviewPosturePreset | undefined,
+  rawValue: unknown,
+): boolean {
+  if (posture !== undefined) {
+    return posture !== "off";
+  }
+
+  return typeof rawValue === "boolean" ? rawValue : false;
+}
+
+function localReviewPolicyForPosture(
+  posture: LocalReviewPosturePreset | undefined,
+  rawValue: unknown,
+): LocalReviewPolicy {
+  if (posture === "advisory") {
+    return "advisory";
+  }
+
+  if (posture !== undefined) {
+    return "block_merge";
+  }
+
+  return typeof rawValue === "string" && VALID_LOCAL_REVIEW_POLICIES.has(rawValue as LocalReviewPolicy)
+    ? (rawValue as LocalReviewPolicy)
+    : "block_merge";
+}
+
+function localReviewHighSeverityActionForPosture(
+  posture: LocalReviewPosturePreset | undefined,
+  rawValue: unknown,
+): LocalReviewHighSeverityAction {
+  if (posture !== undefined) {
+    return posture === "repair_high_severity" ? "retry" : "blocked";
+  }
+
+  return typeof rawValue === "string" &&
+    VALID_LOCAL_REVIEW_HIGH_SEVERITY_ACTIONS.has(rawValue as LocalReviewHighSeverityAction)
+    ? (rawValue as LocalReviewHighSeverityAction)
+    : "blocked";
+}
+
 export function parseSupervisorConfigDocument(raw: Record<string, unknown>, resolvedPath: string): SupervisorConfig {
   const configDir = path.dirname(resolvedPath);
+  const explicitLocalReviewPosture = parseLocalReviewPosturePreset(raw.localReviewPosture);
+  const localReviewEnabled = localReviewEnabledForPosture(explicitLocalReviewPosture, raw.localReviewEnabled);
+  const localReviewPolicy = localReviewPolicyForPosture(explicitLocalReviewPosture, raw.localReviewPolicy);
+  const localReviewFollowUpRepairEnabled =
+    explicitLocalReviewPosture !== undefined
+      ? false
+      : typeof raw.localReviewFollowUpRepairEnabled === "boolean" ? raw.localReviewFollowUpRepairEnabled : false;
+  const localReviewManualReviewRepairEnabled =
+    explicitLocalReviewPosture !== undefined
+      ? false
+      : typeof raw.localReviewManualReviewRepairEnabled === "boolean" ? raw.localReviewManualReviewRepairEnabled : false;
+  const localReviewFollowUpIssueCreationEnabled =
+    explicitLocalReviewPosture !== undefined
+      ? explicitLocalReviewPosture === "follow_up_issue_creation"
+      : typeof raw.localReviewFollowUpIssueCreationEnabled === "boolean"
+        ? raw.localReviewFollowUpIssueCreationEnabled
+        : false;
+  const localReviewHighSeverityAction = localReviewHighSeverityActionForPosture(
+    explicitLocalReviewPosture,
+    raw.localReviewHighSeverityAction,
+  );
+  const localReviewPosture = explicitLocalReviewPosture ?? inferLocalReviewPosture({
+    localReviewEnabled,
+    localReviewPolicy,
+    localReviewFollowUpIssueCreationEnabled,
+    localReviewHighSeverityAction,
+  });
   const defaultLocalReviewConfidenceThreshold =
     typeof raw.localReviewConfidenceThreshold === "number" &&
     Number.isFinite(raw.localReviewConfidenceThreshold) &&
@@ -334,10 +450,8 @@ export function parseSupervisorConfigDocument(raw: Record<string, unknown>, reso
     gsdPlanningFiles: Array.isArray(raw.gsdPlanningFiles)
       ? raw.gsdPlanningFiles.filter((value): value is string => typeof value === "string" && value.trim() !== "")
       : ["PROJECT.md", "REQUIREMENTS.md", "ROADMAP.md", "STATE.md"],
-    localReviewEnabled:
-      typeof raw.localReviewEnabled === "boolean"
-        ? raw.localReviewEnabled
-        : false,
+    localReviewEnabled,
+    localReviewPosture,
     localReviewAutoDetect:
       typeof raw.localReviewAutoDetect === "boolean"
         ? raw.localReviewAutoDetect
@@ -360,29 +474,15 @@ export function parseSupervisorConfigDocument(raw: Record<string, unknown>, reso
         minimumSeverity: "low",
       },
     }),
-    localReviewPolicy:
-      typeof raw.localReviewPolicy === "string" && VALID_LOCAL_REVIEW_POLICIES.has(raw.localReviewPolicy as LocalReviewPolicy)
-        ? (raw.localReviewPolicy as LocalReviewPolicy)
-        : "block_merge",
+    localReviewPolicy,
     trackedPrCurrentHeadLocalReviewRequired:
       typeof raw.trackedPrCurrentHeadLocalReviewRequired === "boolean"
         ? raw.trackedPrCurrentHeadLocalReviewRequired
         : false,
-    localReviewFollowUpRepairEnabled:
-      typeof raw.localReviewFollowUpRepairEnabled === "boolean" ? raw.localReviewFollowUpRepairEnabled : false,
-    localReviewManualReviewRepairEnabled:
-      typeof raw.localReviewManualReviewRepairEnabled === "boolean"
-        ? raw.localReviewManualReviewRepairEnabled
-        : false,
-    localReviewFollowUpIssueCreationEnabled:
-      typeof raw.localReviewFollowUpIssueCreationEnabled === "boolean"
-        ? raw.localReviewFollowUpIssueCreationEnabled
-        : false,
-    localReviewHighSeverityAction:
-      typeof raw.localReviewHighSeverityAction === "string" &&
-      VALID_LOCAL_REVIEW_HIGH_SEVERITY_ACTIONS.has(raw.localReviewHighSeverityAction as LocalReviewHighSeverityAction)
-        ? (raw.localReviewHighSeverityAction as LocalReviewHighSeverityAction)
-        : "blocked",
+    localReviewFollowUpRepairEnabled,
+    localReviewManualReviewRepairEnabled,
+    localReviewFollowUpIssueCreationEnabled,
+    localReviewHighSeverityAction,
     publishablePathAllowlistMarkers: Array.isArray(raw.publishablePathAllowlistMarkers)
       ? raw.publishablePathAllowlistMarkers.filter(
           (value): value is string => typeof value === "string" && value.trim().length > 0,

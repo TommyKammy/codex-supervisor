@@ -3,7 +3,9 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import {
   CadenceDiagnosticsSummary,
+  LocalReviewPostureSummary,
   LocalCiContractSummary,
+  LocalReviewPosturePreset,
   SupervisorConfig,
   TrustDiagnosticsSummary,
   WorkspacePreparationContractSummary,
@@ -66,6 +68,75 @@ export function summarizeCadenceDiagnostics(
     mergeCriticalEffectiveSeconds: mergeCriticalRecheckSeconds ?? config.pollIntervalSeconds,
     mergeCriticalRecheckEnabled: mergeCriticalRecheckSeconds !== null,
   };
+}
+
+export function summarizeLocalReviewPosture(
+  config: Pick<
+    SupervisorConfig,
+    | "localReviewPosture"
+    | "localReviewEnabled"
+    | "localReviewPolicy"
+    | "localReviewFollowUpIssueCreationEnabled"
+    | "localReviewHighSeverityAction"
+  >,
+): LocalReviewPostureSummary {
+  const preset = config.localReviewPosture ?? inferLocalReviewPosturePreset(config);
+  const autoRepair = config.localReviewEnabled && config.localReviewHighSeverityAction === "retry"
+    ? "high_severity_only"
+    : "off";
+  const followUpIssueCreation =
+    config.localReviewEnabled && config.localReviewFollowUpIssueCreationEnabled === true;
+  const summary =
+    preset === "off"
+      ? "Local review posture is off; local review remains disabled."
+      : preset === "advisory"
+        ? "Local review posture is advisory; findings are recorded without blocking ready or merge transitions."
+        : preset === "repair_high_severity"
+          ? "Local review posture repairs verifier-confirmed high-severity findings only."
+          : preset === "follow_up_issue_creation"
+            ? "Local review posture can create follow-up issues from eligible local-review findings."
+            : "Local review posture blocks merge without enabling local-review auto-repair or follow-up issue creation.";
+
+  return {
+    preset,
+    enabled: config.localReviewEnabled,
+    policy: config.localReviewPolicy,
+    autoRepair,
+    followUpIssueCreation,
+    summary,
+    guarantees: [
+      autoRepair === "off"
+        ? "auto-repair stays disabled"
+        : "auto-repair is limited to verifier-confirmed high-severity findings",
+      followUpIssueCreation
+        ? "follow-up issue creation is explicitly enabled"
+        : "follow-up issue creation stays disabled",
+    ],
+  };
+}
+
+function inferLocalReviewPosturePreset(
+  config: Pick<
+    SupervisorConfig,
+    | "localReviewEnabled"
+    | "localReviewPolicy"
+    | "localReviewFollowUpIssueCreationEnabled"
+    | "localReviewHighSeverityAction"
+  >,
+): LocalReviewPosturePreset {
+  if (!config.localReviewEnabled) {
+    return "off";
+  }
+  if (config.localReviewFollowUpIssueCreationEnabled === true) {
+    return "follow_up_issue_creation";
+  }
+  if (config.localReviewHighSeverityAction === "retry") {
+    return "repair_high_severity";
+  }
+  if (config.localReviewPolicy === "advisory") {
+    return "advisory";
+  }
+  return "block_merge";
 }
 
 export function summarizeLocalCiContract(

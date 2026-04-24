@@ -27,6 +27,7 @@ export function createConfig(overrides: Partial<SupervisorConfig> = {}): Supervi
     gsdInstallScope: "global",
     gsdPlanningFiles: [],
     localReviewEnabled: false,
+    localReviewPosture: "off",
     localReviewAutoDetect: true,
     localReviewRoles: [],
     localReviewArtifactDir: "/tmp/reviews",

@@ -45,6 +45,7 @@
     "ROADMAP.md",
     "STATE.md"
   ],
+  "localReviewPosture": "off",
   "localReviewEnabled": false,
   "localReviewAutoDetect": true,
   "localReviewRoles": [],
