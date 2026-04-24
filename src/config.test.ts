@@ -1498,7 +1498,7 @@ test("README stays a lightweight landing page with provider profile guidance and
   assert.match(readme, /\[Architecture\]\(\.\/docs\/architecture\.md\)/i);
   assert.match(readme, /\[Issue metadata\]\(\.\/docs\/issue-metadata\.md\)/i);
   assert.match(readme, /\[GSD to GitHub issues\]\(\.\/docs\/examples\/gsd-to-github-issues\.md\)/i);
-  assert.match(readme, /\[Validation checklist\]\(\.\/docs\/validation-checklist\.md\)/i);
+  assert.match(readme, /\[Release readiness checklist\]\(\.\/docs\/validation-checklist\.md\)/i);
   assert.match(readme, /Copilot profile/i);
   assert.match(readme, /Codex Connector profile/i);
   assert.match(readme, /CodeRabbit profile/i);
