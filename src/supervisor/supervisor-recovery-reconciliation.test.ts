@@ -516,9 +516,12 @@ test("reconcileRecoverableBlockedIssueStates leaves closed issues blocked", asyn
   assert.equal(saveCalls, 0);
 });
 
-test("reconcileRecoverableBlockedIssueStates requeues requirements-blocked issues once metadata is execution-ready even with a rehydrated journal", async () => {
+test("reconcileRecoverableBlockedIssueStates requeues requirements-blocked issues once metadata is execution-ready even with a rehydrated journal", async (t) => {
   const config = createConfig();
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "requirements-rehydrated-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
   const workspacePath = path.join(tempDir, "workspaces", "issue-366");
   const journalPath = path.join(workspacePath, ".codex-supervisor", "issues", "366", "issue-journal.md");
   await fs.mkdir(path.dirname(journalPath), { recursive: true });
