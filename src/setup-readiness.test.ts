@@ -31,6 +31,7 @@ function buildConfigDocument(args: {
   workspaceRoot: string;
   stateFile: string;
   workspacePreparationCommand: unknown;
+  includeTrustPosture?: boolean;
 }): Record<string, unknown> {
   return {
     repoPath: args.repoPath,
@@ -42,6 +43,12 @@ function buildConfigDocument(args: {
     branchPrefix: "codex/issue-",
     reviewBotLogins: ["chatgpt-codex-connector"],
     workspacePreparationCommand: args.workspacePreparationCommand,
+    ...(args.includeTrustPosture === false
+      ? {}
+      : {
+        trustMode: "trusted_repo_and_authors",
+        executionSafetyMode: "unsandboxed_autonomous",
+      }),
   };
 }
 
@@ -211,6 +218,59 @@ test("diagnoseSetupReadiness suggests a repo-native workspace preparation comman
   const field = summary.fields.find((entry) => entry.key === "workspacePreparationCommand");
   assert.equal(field?.state, "missing");
   assert.match(field?.message ?? "", /recommended repo-native command: npm ci/i);
+});
+
+test("diagnoseSetupReadiness requires explicit trust posture decisions", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = await createTrackedRepo(root);
+  const workspaceRoot = path.join(root, "workspaces");
+  const configPath = path.join(root, "supervisor.config.json");
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  await fs.writeFile(
+    configPath,
+    JSON.stringify(
+      buildConfigDocument({
+        repoPath,
+        workspaceRoot,
+        stateFile: path.join(root, "state.json"),
+        workspacePreparationCommand: undefined,
+        includeTrustPosture: false,
+      }),
+    ),
+    "utf8",
+  );
+
+  const summary = await diagnoseSetupReadiness({
+    configPath,
+    authStatus: async () => ({ ok: true, message: null }),
+  });
+
+  assert.equal(summary.ready, false);
+  assert.equal(summary.overallStatus, "missing");
+  assert.equal(summary.trustPosture.configured, false);
+  assert.match(summary.trustPosture.summary, /needs an explicit first-run setup decision/i);
+  assert.deepEqual(
+    summary.fields
+      .filter((field) => field.key === "trustMode" || field.key === "executionSafetyMode")
+      .map((field) => [field.key, field.state, field.value, field.required, field.metadata.valueType]),
+    [
+      ["trustMode", "missing", null, true, "trust_mode"],
+      ["executionSafetyMode", "missing", null, true, "execution_safety_mode"],
+    ],
+  );
+  assert.deepEqual(
+    summary.blockers
+      .filter((blocker) => blocker.code === "missing_trust_mode" || blocker.code === "missing_execution_safety_mode")
+      .map((blocker) => [blocker.code, blocker.fieldKeys]),
+    [
+      ["missing_trust_mode", ["trustMode"]],
+      ["missing_execution_safety_mode", ["executionSafetyMode"]],
+    ],
+  );
 });
 
 test("diagnoseSetupReadiness fails closed when fixed model routing is missing an explicit model value", async (t) => {

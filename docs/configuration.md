@@ -422,6 +422,8 @@ Diagnostics that matter here:
 - `codexReasoningEffortByState`
 - `codexReasoningEscalateOnRepeatedFailure`
 
+Choose `trustMode` and `executionSafetyMode` explicitly during first-run setup. `trusted_repo_and_authors` plus `unsandboxed_autonomous` is the trusted solo-lane posture: it is appropriate only when the operator trusts the repository and the GitHub authors who can write issue bodies, PR comments, and review text that become execution inputs. For untrusted or mixed-author repositories, use `untrusted_or_mixed` or keep execution behind `operator_gated`; the supervisor keeps the existing fail-closed execution guard instead of silently treating those inputs as safe.
+
 ### Durable memory and planning
 
 - `sharedMemoryFiles`

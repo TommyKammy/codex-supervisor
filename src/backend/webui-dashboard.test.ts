@@ -1613,7 +1613,10 @@ test("setup shell loads typed setup readiness without mixing in dashboard status
     harness.document.getElementById("setup-model-routing-details")?.textContent ?? "",
     /Bounded repair override \[Inherit\].*Leave boundedRepairModelStrategy unset or use `"inherit"` to keep following the default Codex route\./u,
   );
-  assert.match(harness.document.getElementById("setup-trust-details")?.textContent ?? "", /Trust mode: Trusted Repo And Authors.*Execution safety: Unsandboxed Autonomous.*Warning: Unsandboxed autonomous execution assumes trusted GitHub-authored inputs\./u);
+  assert.match(
+    harness.document.getElementById("setup-trust-details")?.textContent ?? "",
+    /Trust mode: Trusted Repo And Authors.*Execution safety: Unsandboxed Autonomous.*Explicit setup decision: configured.*Warning: Unsandboxed autonomous execution assumes trusted GitHub-authored inputs; confirm this explicit setup trust posture before starting autonomous execution\./u,
+  );
   assert.match(harness.document.getElementById("setup-local-ci-summary")?.textContent ?? "", /No repo-owned local CI contract is configured\./u);
   assert.match(
     harness.document.getElementById("setup-local-ci-details")?.textContent ?? "",
@@ -2028,6 +2031,32 @@ test("setup shell saves through the narrow setup config API and revalidates read
               valueType: "review_provider",
             },
           },
+          {
+            key: "trustMode",
+            label: "Trust mode",
+            state: "missing",
+            value: null,
+            message: "Trust mode needs an explicit first-run setup decision.",
+            required: true,
+            metadata: {
+              source: "config",
+              editable: true,
+              valueType: "trust_mode",
+            },
+          },
+          {
+            key: "executionSafetyMode",
+            label: "Execution safety mode",
+            state: "missing",
+            value: null,
+            message: "Execution safety mode needs an explicit first-run setup decision.",
+            required: true,
+            metadata: {
+              source: "config",
+              editable: true,
+              valueType: "execution_safety_mode",
+            },
+          },
         ],
         blockers: [
           {
@@ -2050,6 +2079,26 @@ test("setup shell saves through the narrow setup config API and revalidates read
               fieldKeys: ["reviewProvider"],
             },
           },
+          {
+            code: "missing_trust_mode",
+            message: "Trust mode needs an explicit first-run setup decision.",
+            fieldKeys: ["trustMode"],
+            remediation: {
+              kind: "edit_config",
+              summary: "Trust mode needs an explicit first-run setup decision.",
+              fieldKeys: ["trustMode"],
+            },
+          },
+          {
+            code: "missing_execution_safety_mode",
+            message: "Execution safety mode needs an explicit first-run setup decision.",
+            fieldKeys: ["executionSafetyMode"],
+            remediation: {
+              kind: "edit_config",
+              summary: "Execution safety mode needs an explicit first-run setup decision.",
+              fieldKeys: ["executionSafetyMode"],
+            },
+          },
         ],
         hostReadiness: {
           overallStatus: "pass",
@@ -2066,8 +2115,10 @@ test("setup shell saves through the narrow setup config API and revalidates read
         trustPosture: {
           trustMode: "trusted_repo_and_authors",
           executionSafetyMode: "unsandboxed_autonomous",
-          warning: null,
-          summary: "Trusted inputs with unsandboxed autonomous execution.",
+          configured: false,
+          warning:
+            "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs; confirm this explicit setup trust posture before starting autonomous execution.",
+          summary: "Trust posture needs an explicit first-run setup decision.",
         },
         localCiContract: {
           configured: false,
@@ -2083,6 +2134,8 @@ test("setup shell saves through the narrow setup config API and revalidates read
       body: JSON.stringify({
         changes: {
           repoPath: "/tmp/repo",
+          trustMode: "untrusted_or_mixed",
+          executionSafetyMode: "operator_gated",
           reviewProvider: "codex",
         },
       }),
@@ -2097,6 +2150,8 @@ test("setup shell saves through the narrow setup config API and revalidates read
 
   const repoPathInput = harness.document.getElementById("setup-input-repoPath");
   const reviewProviderInput = harness.document.getElementById("setup-input-reviewProvider");
+  const trustModeInput = harness.document.getElementById("setup-input-trustMode");
+  const executionSafetyModeInput = harness.document.getElementById("setup-input-executionSafetyMode");
   const setupForm = harness.document.getElementById("setup-form");
   const saveButton = harness.document.getElementById("setup-save-button");
   const saveStatus = harness.document.getElementById("setup-save-status");
@@ -2104,6 +2159,8 @@ test("setup shell saves through the narrow setup config API and revalidates read
   const restartDetails = harness.document.getElementById("setup-restart-details");
   assert.ok(repoPathInput);
   assert.ok(reviewProviderInput);
+  assert.ok(trustModeInput);
+  assert.ok(executionSafetyModeInput);
   assert.ok(setupForm);
   assert.ok(saveButton);
   assert.ok(saveStatus);
@@ -2111,6 +2168,8 @@ test("setup shell saves through the narrow setup config API and revalidates read
   assert.ok(restartDetails);
 
   repoPathInput.value = "/tmp/repo";
+  trustModeInput.value = "untrusted_or_mixed";
+  executionSafetyModeInput.value = "operator_gated";
   reviewProviderInput.value = "codex";
   const submitPromise = setupForm.dispatch("submit", {
     preventDefault() {},
@@ -2125,12 +2184,14 @@ test("setup shell saves through the narrow setup config API and revalidates read
     managedRestart: unavailableManagedRestart,
     configPath: "/tmp/supervisor.config.json",
     backupPath: null,
-    updatedFields: ["repoPath", "reviewProvider"],
+    updatedFields: ["repoPath", "trustMode", "executionSafetyMode", "reviewProvider"],
     restartRequired: true,
     restartScope: "supervisor",
-    restartTriggeredByFields: ["repoPath", "reviewProvider"],
+    restartTriggeredByFields: ["repoPath", "trustMode", "executionSafetyMode", "reviewProvider"],
     document: {
       repoPath: "/tmp/repo",
+      trustMode: "untrusted_or_mixed",
+      executionSafetyMode: "operator_gated",
       reviewBotLogins: ["chatgpt-codex-connector"],
     },
     readiness: {
@@ -2151,10 +2212,11 @@ test("setup shell saves through the narrow setup config API and revalidates read
         summary: "Codex Connector is configured.",
       },
       trustPosture: {
-        trustMode: "trusted_repo_and_authors",
-        executionSafetyMode: "unsandboxed_autonomous",
+        trustMode: "untrusted_or_mixed",
+        executionSafetyMode: "operator_gated",
+        configured: true,
         warning: null,
-        summary: "Trusted inputs with unsandboxed autonomous execution.",
+        summary: "Trust posture avoids the default unsandboxed trusted-input assumption.",
       },
       localCiContract: {
         configured: true,
@@ -2202,6 +2264,32 @@ test("setup shell saves through the narrow setup config API and revalidates read
           valueType: "review_provider",
         },
       },
+      {
+        key: "trustMode",
+        label: "Trust mode",
+        state: "configured",
+        value: "untrusted_or_mixed",
+        message: "Trust mode is explicitly configured.",
+        required: true,
+        metadata: {
+          source: "config",
+          editable: true,
+          valueType: "trust_mode",
+        },
+      },
+      {
+        key: "executionSafetyMode",
+        label: "Execution safety mode",
+        state: "configured",
+        value: "operator_gated",
+        message: "Execution safety mode is explicitly configured.",
+        required: true,
+        metadata: {
+          source: "config",
+          editable: true,
+          valueType: "execution_safety_mode",
+        },
+      },
     ],
     blockers: [],
     hostReadiness: {
@@ -2217,10 +2305,11 @@ test("setup shell saves through the narrow setup config API and revalidates read
       summary: "Codex Connector is configured.",
     },
     trustPosture: {
-      trustMode: "trusted_repo_and_authors",
-      executionSafetyMode: "unsandboxed_autonomous",
+      trustMode: "untrusted_or_mixed",
+      executionSafetyMode: "operator_gated",
+      configured: true,
       warning: null,
-      summary: "Trusted inputs with unsandboxed autonomous execution.",
+      summary: "Trust posture avoids the default unsandboxed trusted-input assumption.",
     },
     localCiContract: {
       configured: true,
@@ -2243,6 +2332,8 @@ test("setup shell saves through the narrow setup config API and revalidates read
         body: JSON.stringify({
           changes: {
             repoPath: "/tmp/repo",
+            trustMode: "untrusted_or_mixed",
+            executionSafetyMode: "operator_gated",
             reviewProvider: "codex",
           },
         }),
@@ -2251,11 +2342,15 @@ test("setup shell saves through the narrow setup config API and revalidates read
     ],
   );
   assert.equal(saveButton.disabled, false);
-  assert.match(saveStatus.textContent, /Saved 2 setup fields\./u);
+  assert.match(saveStatus.textContent, /Saved 4 setup fields\./u);
   assert.match(restartStatus.textContent ?? "", /Restart required/u);
   assert.match(
     restartDetails.textContent ?? "",
-    /Saved changes to repoPath, reviewProvider require a supervisor restart before they take effect\..*Restart now is unavailable for this unmanaged WebUI session\..*Restart the supervisor manually and then refresh this page\./u,
+    /Saved changes to repoPath, trustMode, executionSafetyMode, reviewProvider require a supervisor restart before they take effect\..*Restart now is unavailable for this unmanaged WebUI session\..*Restart the supervisor manually and then refresh this page\./u,
+  );
+  assert.match(
+    harness.document.getElementById("setup-trust-posture")?.textContent ?? "",
+    /Trust posture avoids the default unsandboxed trusted-input assumption\./u,
   );
   assert.match(harness.document.getElementById("setup-overall-status")?.textContent ?? "", /configured/u);
   assert.match(harness.document.getElementById("setup-blocker-summary")?.textContent ?? "", /No blocking setup conditions remain\./u);

@@ -40,7 +40,7 @@ export function summarizeTrustDiagnostics(
     executionSafetyMode,
     warning:
       trustMode === "trusted_repo_and_authors" && executionSafetyMode === "unsandboxed_autonomous"
-        ? "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs."
+        ? "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs; confirm this explicit setup trust posture before starting autonomous execution."
         : null,
     configWarning:
       issueJournalRelativePath === LEGACY_SHARED_ISSUE_JOURNAL_RELATIVE_PATH

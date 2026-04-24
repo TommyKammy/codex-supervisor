@@ -71,6 +71,8 @@ export function renderSetupBrowserScript(): string {
         "codexBinary",
         "branchPrefix",
         "localCiCommand",
+        "trustMode",
+        "executionSafetyMode",
         "reviewProvider",
       ];
       const reviewProviderOptions = [
@@ -78,6 +80,14 @@ export function renderSetupBrowserScript(): string {
         { value: "copilot", label: "GitHub Copilot" },
         { value: "codex", label: "Codex Connector" },
         { value: "coderabbit", label: "CodeRabbit" },
+      ];
+      const trustModeOptions = [
+        { value: "untrusted_or_mixed", label: "Untrusted or mixed authors" },
+        { value: "trusted_repo_and_authors", label: "Trusted repo and authors" },
+      ];
+      const executionSafetyModeOptions = [
+        { value: "operator_gated", label: "Operator gated" },
+        { value: "unsandboxed_autonomous", label: "Unsandboxed autonomous" },
       ];
       let currentReport = null;
       let latestSaveResult = null;
@@ -195,6 +205,10 @@ export function renderSetupBrowserScript(): string {
         return reviewProviderOptions.some((option) => option.value === profile) ? profile : "none";
       }
 
+      function normalizeSelectValue(options, value, fallback) {
+        return options.some((option) => option.value === value) ? value : fallback;
+      }
+
       function createFieldInput(field, report) {
         if (field.key === "reviewProvider") {
           const select = document.createElement("select");
@@ -208,6 +222,22 @@ export function renderSetupBrowserScript(): string {
             select.appendChild(optionElement);
           }
           select.value = normalizeReviewProviderValue(report);
+          return select;
+        }
+
+        if (field.key === "trustMode" || field.key === "executionSafetyMode") {
+          const options = field.key === "trustMode" ? trustModeOptions : executionSafetyModeOptions;
+          const select = document.createElement("select");
+          select.id = "setup-input-" + field.key;
+          select.className = "field-editor__input";
+          select.disabled = saveInFlight;
+          for (const option of options) {
+            const optionElement = document.createElement("option");
+            optionElement.value = option.value;
+            optionElement.textContent = option.label;
+            select.appendChild(optionElement);
+          }
+          select.value = normalizeSelectValue(options, field.value, options[0].value);
           return select;
         }
 
@@ -557,9 +587,12 @@ export function renderSetupBrowserScript(): string {
           report.trustPosture
             ? [{
               title: "Trust mode: " + formatStatus(report.trustPosture.trustMode),
-              tone: "",
+              tone: report.trustPosture.configured === false ? "blocker" : "",
               meta: ["Execution safety: " + formatStatus(report.trustPosture.executionSafetyMode)],
-              notes: [report.trustPosture.warning ? "Warning: " + report.trustPosture.warning : "Warning: none"],
+              notes: [
+                "Explicit setup decision: " + (report.trustPosture.configured === false ? "needed" : "configured"),
+                report.trustPosture.warning ? "Warning: " + report.trustPosture.warning : "Warning: none",
+              ],
             }]
             : [],
           "No trust posture details reported.",
@@ -606,6 +639,12 @@ export function renderSetupBrowserScript(): string {
               changes.localCiCommand = rawValue;
             } else if (field.value !== null) {
               changes.localCiCommand = null;
+            }
+            continue;
+          }
+          if (field.key === "trustMode" || field.key === "executionSafetyMode") {
+            if (rawValue !== "") {
+              changes[field.key] = rawValue;
             }
             continue;
           }

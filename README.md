@@ -264,4 +264,4 @@ Use the [Configuration guide](./docs/configuration.md) for the full routing rule
 - [Issue metadata](./docs/issue-metadata.md): canonical issue-body fields, sequencing rules, and execution-ready examples
 - [GSD to GitHub issues](./docs/examples/gsd-to-github-issues.md): how to hand planning output into execution-ready issues
 - [Atlas example](./docs/examples/atlaspm.md): a concrete config and workflow example
-- [Release readiness checklist](./docs/validation-checklist.md): advisory minimum, recommended, and sufficient release-readiness checks
+- [Validation checklist](./docs/validation-checklist.md): advisory minimum, recommended, and sufficient release-readiness checks

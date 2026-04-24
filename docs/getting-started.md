@@ -289,6 +289,8 @@ type SetupReadinessFieldKey =
   | "codexBinary"
   | "branchPrefix"
   | "localCiCommand"
+  | "trustMode"
+  | "executionSafetyMode"
   | "reviewProvider";
 type SetupReadinessFieldValueType =
   | "directory_path"
@@ -297,6 +299,8 @@ type SetupReadinessFieldValueType =
   | "file_path"
   | "executable_path"
   | "text"
+  | "trust_mode"
+  | "execution_safety_mode"
   | "review_provider";
 type SetupReadinessRemediationKind =
   | "edit_config"
@@ -347,6 +351,7 @@ Minimum rules for that contract:
 - `blockers` lists only the conditions that still prevent a safe first run
 - each blocker carries typed remediation guidance so the browser does not have to reverse-engineer next actions from free-form text
 - the setup flow and WebUI should surface whether the repo-owned local CI contract is configured so operators know whether PR publication depends on a canonical repo-owned pre-PR command or on issue-level verification guidance
+- the setup flow and WebUI should surface `trustMode` and `executionSafetyMode` as explicit first-run decisions; inferred runtime defaults remain compatibility behavior, not a completed setup decision
 - `ready` becomes `true` only when no first-run blockers remain
 - ongoing diagnostics such as GitHub auth details, corrupted state-file findings, orphaned worktree candidates, and other repair-oriented host checks stay in `doctor`
 
