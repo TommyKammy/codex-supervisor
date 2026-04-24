@@ -155,6 +155,7 @@ async function loadGitHubRateLimitStatus(github: GitHubClient) {
 
 export async function buildSupervisorStatusReport(args: {
   config: SupervisorConfig;
+  configPath?: string;
   github: GitHubClient;
   stateStore: StateStore;
   options: Pick<CliOptions, "why">;
@@ -166,7 +167,7 @@ export async function buildSupervisorStatusReport(args: {
   const cadenceDiagnostics = summarizeCadenceDiagnostics(config);
   const candidateDiscoverySummary = formatCandidateDiscoveryBehaviorLine(config);
   const localCiContract = summarizeLocalCiContract(config);
-  const loopRuntime = await readSupervisorLoopRuntime(config.stateFile);
+  const loopRuntime = await readSupervisorLoopRuntime(config.stateFile, { configPath: args.configPath });
   const loopHostWarning = buildMacOsLoopHostWarning(loopRuntime);
   const gsdSummary = await describeGsdIntegration(config);
   const statusRecords = summarizeSupervisorStatusRecords(state);
@@ -533,10 +534,12 @@ export async function buildSupervisorExplainReport(args: {
 
 export async function buildSupervisorDoctorReport(args: {
   config: SupervisorConfig;
+  configPath?: string;
   github: Pick<GitHubClient, "authStatus">;
 }): Promise<DoctorDiagnostics> {
   return diagnoseSupervisorHost({
     config: args.config,
+    configPath: args.configPath,
     authStatus: () => args.github.authStatus(),
     loadState: () => loadStateReadonlyForDoctor(args.config),
   });

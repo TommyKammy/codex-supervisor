@@ -521,7 +521,7 @@ test("buildDetailedStatusSummaryLines shapes optional summaries and artifact pat
     }),
     [
       "handoff_summary=blocked\\nneeds reproduction",
-      "pre_merge_evaluation status=blocked outcome=fix_blocked head=current must_fix=1 manual_review=0 follow_up=0 reason=must_fix_residuals=1 ran_at=2026-03-24T00:11:00Z summary_path=owner-repo/issue-58/local-review-summary.md artifact_path=owner-repo/issue-58/local-review-summary.json",
+      "pre_merge_evaluation status=blocked outcome=fix_blocked repair=none head=current must_fix=1 manual_review=0 follow_up=0 reason=must_fix_residuals=1 ran_at=2026-03-24T00:11:00Z summary_path=owner-repo/issue-58/local-review-summary.md artifact_path=owner-repo/issue-58/local-review-summary.json",
       "local_review_routing generic=inherit->gpt-5-codex(1) specialists=gpt-5-codex(1) verifier=gpt-5-codex",
       "change_classes=backend, docs, tests",
       "durable_guardrails verifier=committed:.codex/verifier-guardrails.json#1 external_review=none",

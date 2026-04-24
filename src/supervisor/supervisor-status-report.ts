@@ -92,6 +92,23 @@ export function renderLoopRuntimeLine(loopRuntime: SupervisorLoopRuntimeDto): st
   ].join(" ");
 }
 
+function renderDuplicateLoopDiagnosticLine(loopRuntime: SupervisorLoopRuntimeDto): string | null {
+  const diagnostic = loopRuntime.duplicateLoopDiagnostic;
+  if (!diagnostic) {
+    return null;
+  }
+
+  return [
+    "loop_runtime_diagnostic",
+    `kind=${diagnostic.kind}`,
+    `status=${diagnostic.status}`,
+    `matching_processes=${diagnostic.matchingProcessCount}`,
+    `pids=${diagnostic.matchingPids.join(",")}`,
+    `config_path=${sanitizeStatusValue(diagnostic.configPath)}`,
+    `state_file=${sanitizeStatusValue(diagnostic.stateFile)}`,
+  ].join(" ");
+}
+
 export function renderSupervisorStatusDto(dto: SupervisorStatusDto): string {
   const localCiContract = dto.localCiContract ?? {
     configured: false,
@@ -125,10 +142,12 @@ export function renderSupervisorStatusDto(dto: SupervisorStatusDto): string {
       ].filter((line) => !dto.detailedStatusLines.includes(line));
   const trustWarnings = buildTrustAndConfigWarnings(trustDiagnostics);
   const statusWarning = dto.warning === null ? null : buildWarning(dto.warning.kind, dto.warning.message);
+  const duplicateLoopDiagnosticLine = renderDuplicateLoopDiagnosticLine(dto.loopRuntime);
   const lines = [
     ...dto.detailedStatusLines,
     ...githubRateLimitLines,
     renderLoopRuntimeLine(dto.loopRuntime),
+    ...(duplicateLoopDiagnosticLine ? [duplicateLoopDiagnosticLine] : []),
     `trust_mode=${trustDiagnostics.trustMode}`,
     `execution_safety_mode=${trustDiagnostics.executionSafetyMode}`,
     ...trustWarnings.map((warning) => renderStatusWarningLine(warning, sanitizeStatusValue)),

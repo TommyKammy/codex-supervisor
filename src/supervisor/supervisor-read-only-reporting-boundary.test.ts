@@ -33,7 +33,7 @@ test("Supervisor read-only reporting methods remain thin delegators", async () =
 
   assert.match(
     extractMethodBody(source, 'async statusReport(options: Pick<CliOptions, "why"> = { why: false }): Promise<SupervisorStatusDto>'),
-    /^return buildSupervisorStatusReport\(\{\s*config: this\.config,\s*github: this\.github,\s*stateStore: this\.stateStore,\s*options,\s*\}\);$/s,
+    /^return buildSupervisorStatusReport\(\{\s*config: this\.config,\s*configPath: this\.configPath,\s*github: this\.github,\s*stateStore: this\.stateStore,\s*options,\s*\}\);$/s,
   );
   assert.match(
     extractMethodBody(source, "async explainReport(issueNumber: number): Promise<SupervisorExplainDto>"),
@@ -41,7 +41,7 @@ test("Supervisor read-only reporting methods remain thin delegators", async () =
   );
   assert.match(
     extractMethodBody(source, "async doctorReport()"),
-    /^return buildSupervisorDoctorReport\(\{\s*config: this\.config,\s*github: this\.github,\s*\}\);$/s,
+    /^return buildSupervisorDoctorReport\(\{\s*config: this\.config,\s*configPath: this\.configPath,\s*github: this\.github,\s*\}\);$/s,
   );
   assert.match(
     extractMethodBody(source, "async setupReadinessReport()"),

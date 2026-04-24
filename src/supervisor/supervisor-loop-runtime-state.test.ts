@@ -41,3 +41,62 @@ test("legacy live loop locks without launcher metadata stay unknown and avoid ma
   });
   assert.equal(buildMacOsLoopHostWarning(runtime, "darwin"), null);
 });
+
+test("readSupervisorLoopRuntime detects duplicate loop processes for the same resolved config and state target", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-loop-runtime-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const configPath = path.join(root, "supervisor.config.json");
+  const stateFile = path.join(root, "state.json");
+  const otherConfigPath = path.join(root, "other.supervisor.config.json");
+  await fs.writeFile(
+    configPath,
+    `${JSON.stringify({
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "workspaces",
+      stateFile: "state.json",
+      codexBinary: process.execPath,
+      branchPrefix: "codex/issue-",
+    }, null, 2)}\n`,
+    "utf8",
+  );
+  await fs.writeFile(
+    otherConfigPath,
+    `${JSON.stringify({
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "other-workspaces",
+      stateFile: "other-state.json",
+      codexBinary: process.execPath,
+      branchPrefix: "codex/issue-",
+    }, null, 2)}\n`,
+    "utf8",
+  );
+
+  const runtime = await readSupervisorLoopRuntime(stateFile, {
+    configPath,
+    listProcesses: async () => [
+      { pid: 101, command: `node ./dist/index.js loop --config ${configPath}` },
+      { pid: 102, command: `node ./dist/index.js loop --config=${configPath}` },
+      { pid: 103, command: `node ./dist/index.js loop --config ${otherConfigPath}` },
+      { pid: 104, command: `node ./dist/index.js status --config ${configPath}` },
+      { pid: 105, command: "node ./dist/index.js loop" },
+      { pid: 106, command: `grep loop --config ${configPath}` },
+    ],
+  });
+
+  assert.deepEqual(runtime.duplicateLoopDiagnostic, {
+    kind: "duplicate_loop_processes",
+    status: "duplicate",
+    matchingProcessCount: 2,
+    matchingPids: [101, 102],
+    configPath,
+    stateFile,
+  });
+  assert.equal(runtime.state, "off");
+});
