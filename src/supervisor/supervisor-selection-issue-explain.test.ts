@@ -407,8 +407,11 @@ test("buildIssueExplainDto exposes typed operator activity context", async () =>
       headSha: "head-new-605",
       headStatus: "current",
       context: "warning",
+      command: null,
+      stderrSummary: null,
       failureClass: "non_zero_exit",
       remediationTarget: "repo_owned_command",
+      verifierDriftHint: null,
     },
     latestRecovery: {
       issueNumber,

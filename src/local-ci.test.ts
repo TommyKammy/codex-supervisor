@@ -32,8 +32,11 @@ test("runLocalCiGate reports an unset local CI contract as a non-blocking issue-
     ran_at: result.latestResult?.ran_at ?? "",
     head_sha: null,
     execution_mode: null,
+    command: null,
+    stderr_summary: null,
     failure_class: "unset_contract",
     remediation_target: "issue_body",
+    verifier_drift_hint: null,
   });
 });
 
@@ -84,6 +87,32 @@ test("runLocalCiGate classifies non-zero exits as repo-owned-command remediation
   );
   assert.equal(result.latestResult?.failure_class, "non_zero_exit");
   assert.equal(result.latestResult?.remediation_target, "repo_owned_command");
+  assert.equal(result.latestResult?.command, "npm run ci:local");
+  assert.equal(result.latestResult?.stderr_summary, "tests failed");
+});
+
+test("runLocalCiGate surfaces likely repo-owned verifier drift as a distinct hint", async () => {
+  const failure = Object.assign(new Error("Command failed: sh -lc +1 args\nexitCode=1"), {
+    stderr: "docs/configuration.md contract drift: changed doc contract no longer matches repo-owned verifier expectation",
+  });
+
+  const result = await runLocalCiGate({
+    config: { localCiCommand: "npm run verify:pre-pr" },
+    workspacePath: "/tmp/workspaces/issue-102",
+    gateLabel: "before opening a pull request",
+    runLocalCiCommand: async () => {
+      throw failure;
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.latestResult?.command, "npm run verify:pre-pr");
+  assert.equal(
+    result.latestResult?.stderr_summary,
+    "docs/configuration.md contract drift: changed doc contract no longer matches repo-owned verifier expectation",
+  );
+  assert.match(result.latestResult?.verifier_drift_hint ?? "", /^repo_owned_verifier_drift:/);
+  assert.match(result.failureContext?.details.join("\n") ?? "", /repo_owned_verifier_drift:/);
 });
 
 test("runLocalCiGate keeps nested missing binaries inside the configured command as non-zero exits", async () => {
