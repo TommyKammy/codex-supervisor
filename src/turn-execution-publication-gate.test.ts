@@ -394,6 +394,209 @@ test("applyCodexTurnPublicationGate forwards publishable allowlist markers to th
   assert.deepEqual(observedCalls, [["publishable-path-hygiene: allowlist"]]);
 });
 
+test("applyCodexTurnPublicationGate blocks configured tracked top-level entry drift before workspace preparation", async (t) => {
+  const workspacePath = await createTrackedRepo();
+  t.after(async () => {
+    await fs.rm(workspacePath, { recursive: true, force: true });
+  });
+  git(workspacePath, "checkout", "-b", "codex/issue-102");
+  await fs.writeFile(
+    path.join(workspacePath, ".coderabbit.yaml"),
+    "reviews:\n  profile: aegiops-style\n",
+    "utf8",
+  );
+  git(workspacePath, "add", ".coderabbit.yaml");
+  git(workspacePath, "commit", "-m", "seed inherited review config drift");
+
+  const issue = createIssue({
+    title: "Gate draft PR creation on tracked top-level skeleton drift",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "stabilizing",
+        pr_number: null,
+        implementation_attempt_count: 1,
+        workspace: workspacePath,
+      }),
+    },
+  };
+  const config = {
+    ...createConfig({ localCiCommand: "npm run ci:local" }),
+    approvedTrackedTopLevelEntries: ["README.md"],
+  };
+  let createPullRequestCalls = 0;
+  let runWorkspacePreparationCalls = 0;
+  let runLocalCiCalls = 0;
+
+  const result = await applyCodexTurnPublicationGate({
+    config,
+    stateStore: {
+      touch: (record, patch) => ({
+        ...record,
+        ...patch,
+        updated_at: record.updated_at,
+      }),
+      save: async () => undefined,
+    },
+    state,
+    record: state.issues["102"]!,
+    issue,
+    workspacePath,
+    workspaceStatus: {
+      branch: "codex/issue-102",
+      headSha: git(workspacePath, "rev-parse", "HEAD").trim(),
+      hasUncommittedChanges: false,
+      baseAhead: 1,
+      baseBehind: 0,
+      remoteBranchExists: false,
+      remoteAhead: 0,
+      remoteBehind: 0,
+    },
+    github: {
+      resolvePullRequestForBranch: async () => null,
+      createPullRequest: async () => {
+        createPullRequestCalls += 1;
+        throw new Error("unexpected createPullRequest call");
+      },
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    syncJournal: async () => undefined,
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
+    runWorkspacePreparationCommand: async () => {
+      runWorkspacePreparationCalls += 1;
+    },
+    runLocalCiCommand: async () => {
+      runLocalCiCalls += 1;
+    },
+    syncExecutionMetricsRunSummary: async () => undefined,
+  });
+
+  assert.equal(result.kind, "blocked");
+  assert.equal(result.record.state, "blocked");
+  assert.equal(result.record.blocked_reason, "verification");
+  assert.equal(
+    result.record.last_failure_signature,
+    "tracked-top-level-entry-drift-before-publication",
+  );
+  assert.match(
+    result.record.last_failure_context?.summary ?? "",
+    /Tracked top-level entries drifted from the configured repository skeleton baseline/,
+  );
+  assert.match(
+    result.record.last_failure_context?.details.join("\n") ?? "",
+    /unexpected tracked top-level entry: \.coderabbit\.yaml/,
+  );
+  assert.equal(createPullRequestCalls, 0);
+  assert.equal(runWorkspacePreparationCalls, 0);
+  assert.equal(runLocalCiCalls, 0);
+});
+
+test("applyCodexTurnPublicationGate ignores tracked top-level drift when the skeleton guard is not configured", async (t) => {
+  const workspacePath = await createTrackedRepo();
+  t.after(async () => {
+    await fs.rm(workspacePath, { recursive: true, force: true });
+  });
+  git(workspacePath, "checkout", "-b", "codex/issue-102");
+  await fs.writeFile(
+    path.join(workspacePath, ".coderabbit.yaml"),
+    "reviews:\n  profile: aegiops-style\n",
+    "utf8",
+  );
+  git(workspacePath, "add", ".coderabbit.yaml");
+  git(workspacePath, "commit", "-m", "seed inherited review config drift");
+
+  const issue = createIssue({
+    title: "Keep top-level skeleton guard opt-in",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "stabilizing",
+        pr_number: null,
+        implementation_attempt_count: 1,
+        workspace: workspacePath,
+      }),
+    },
+  };
+  let createPullRequestCalls = 0;
+  let runWorkspacePreparationCalls = 0;
+  let runLocalCiCalls = 0;
+
+  const result = await applyCodexTurnPublicationGate({
+    config: createConfig({
+      workspacePreparationCommand: "npm run prepare",
+      localCiCommand: "npm run ci:local",
+    }),
+    stateStore: {
+      touch: (record, patch) => ({
+        ...record,
+        ...patch,
+        updated_at: record.updated_at,
+      }),
+      save: async () => undefined,
+    },
+    state,
+    record: state.issues["102"]!,
+    issue,
+    workspacePath,
+    workspaceStatus: {
+      branch: "codex/issue-102",
+      headSha: git(workspacePath, "rev-parse", "HEAD").trim(),
+      hasUncommittedChanges: false,
+      baseAhead: 1,
+      baseBehind: 0,
+      remoteBranchExists: false,
+      remoteAhead: 0,
+      remoteBehind: 0,
+    },
+    github: {
+      resolvePullRequestForBranch: async () => null,
+      createPullRequest: async () => {
+        createPullRequestCalls += 1;
+        return createPullRequest({
+          number: 200,
+          isDraft: true,
+          headRefOid: git(workspacePath, "rev-parse", "HEAD").trim(),
+        });
+      },
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    syncJournal: async () => undefined,
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
+    runWorkspacePreparationCommand: async () => {
+      runWorkspacePreparationCalls += 1;
+    },
+    runLocalCiCommand: async () => {
+      runLocalCiCalls += 1;
+    },
+    syncExecutionMetricsRunSummary: async () => undefined,
+  });
+
+  assert.equal(result.kind, "ready");
+  assert.equal(createPullRequestCalls, 1);
+  assert.equal(runWorkspacePreparationCalls, 1);
+  assert.equal(runLocalCiCalls, 1);
+});
+
 test("applyCodexTurnPublicationGate self-heals a tracked current issue journal before draft PR creation", async (t) => {
   const workspacePath = await createTrackedRepo();
   t.after(async () => {

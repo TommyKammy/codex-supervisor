@@ -195,6 +195,7 @@ export interface SupervisorConfig {
   localReviewFollowUpIssueCreationEnabled?: boolean;
   localReviewHighSeverityAction: LocalReviewHighSeverityAction;
   publishablePathAllowlistMarkers?: string[];
+  approvedTrackedTopLevelEntries?: string[];
   staleConfiguredBotReviewPolicy?: StaleConfiguredBotReviewPolicy;
   reviewBotLogins: string[];
   configuredReviewProviders?: ConfiguredReviewProvider[];

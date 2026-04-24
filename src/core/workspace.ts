@@ -784,6 +784,29 @@ export async function listChangedTrackedFilesBetween(
     .map((entry) => normalizeGitPath(entry));
 }
 
+export async function listTrackedTopLevelEntries(
+  workspacePath: string,
+): Promise<string[]> {
+  const result = await runCommand("git", [
+    "-C",
+    workspacePath,
+    "ls-files",
+    "-z",
+  ]);
+  const entries = new Set<string>();
+  for (const trackedPath of result.stdout
+    .split("\0")
+    .map((entry) => entry.trim().replaceAll("\\", "/"))
+    .filter(Boolean)) {
+    const [topLevelEntry] = trackedPath.split("/");
+    if (topLevelEntry) {
+      entries.add(topLevelEntry);
+    }
+  }
+
+  return [...entries].sort((left, right) => left.localeCompare(right));
+}
+
 export async function listTrackedSupervisorArtifactPaths(
   workspacePath: string,
   journalRelativePath?: string,

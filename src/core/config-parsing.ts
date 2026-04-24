@@ -83,6 +83,29 @@ function normalizeStringArray(value: unknown, fieldName: string): string[] {
   });
 }
 
+function parseApprovedTrackedTopLevelEntries(value: unknown): string[] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!Array.isArray(value)) {
+    throw new Error("Invalid config field: approvedTrackedTopLevelEntries (must be an array of top-level entry names)");
+  }
+
+  return value.map((entry, index) => {
+    if (typeof entry !== "string" || entry.trim() === "") {
+      throw new Error(`Invalid config field: approvedTrackedTopLevelEntries[${index}] (must be a non-empty string)`);
+    }
+
+    const normalized = entry.trim();
+    if (normalized === "." || normalized === ".." || normalized.includes("/") || normalized.includes("\\")) {
+      throw new Error(`Invalid config field: approvedTrackedTopLevelEntries[${index}] (must be a top-level entry name)`);
+    }
+
+    return normalized;
+  });
+}
+
 function parseStaleConfiguredBotReviewPolicy(value: unknown): StaleConfiguredBotReviewPolicy {
   if (typeof value === "undefined") {
     return "diagnose_only";
@@ -488,6 +511,7 @@ export function parseSupervisorConfigDocument(raw: Record<string, unknown>, reso
           (value): value is string => typeof value === "string" && value.trim().length > 0,
         )
       : [],
+    approvedTrackedTopLevelEntries: parseApprovedTrackedTopLevelEntries(raw.approvedTrackedTopLevelEntries),
     staleConfiguredBotReviewPolicy: parseStaleConfiguredBotReviewPolicy(raw.staleConfiguredBotReviewPolicy),
     reviewBotLogins: Array.isArray(raw.reviewBotLogins)
       ? raw.reviewBotLogins
