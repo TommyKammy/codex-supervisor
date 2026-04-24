@@ -432,6 +432,14 @@ test("renderSupervisorStatusDto sanitizes loop runtime host and timestamp tokens
       pid: 4242,
       startedAt: "2026-03-27T00:15:00.000Z\nlegacy",
       detail: "supervisor-loop-runtime",
+      duplicateLoopDiagnostic: {
+        kind: "duplicate_loop_processes",
+        status: "duplicate",
+        matchingProcessCount: 2,
+        matchingPids: [4242, 4243],
+        configPath: "/tmp/supervisor.config.json",
+        stateFile: "/tmp/state.json",
+      },
     },
     activeIssue: null,
     selectionSummary: null,
@@ -449,6 +457,10 @@ test("renderSupervisorStatusDto sanitizes loop runtime host and timestamp tokens
   assert.match(
     status,
     /^loop_runtime state=running host_mode=direct\\nlegacy pid=4242 started_at=2026-03-27T00:15:00.000Z\\nlegacy detail=supervisor-loop-runtime$/m,
+  );
+  assert.match(
+    status,
+    /^loop_runtime_diagnostic kind=duplicate_loop_processes status=duplicate matching_processes=2 pids=4242,4243 config_path=\/tmp\/supervisor.config.json state_file=\/tmp\/state.json$/m,
   );
 });
 

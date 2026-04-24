@@ -951,6 +951,7 @@ export class Supervisor {
   async statusReport(options: Pick<CliOptions, "why"> = { why: false }): Promise<SupervisorStatusDto> {
     return buildSupervisorStatusReport({
       config: this.config,
+      configPath: this.configPath,
       github: this.github,
       stateStore: this.stateStore,
       options,
@@ -1004,6 +1005,7 @@ export class Supervisor {
   async doctorReport() {
     return buildSupervisorDoctorReport({
       config: this.config,
+      configPath: this.configPath,
       github: this.github,
     });
   }

@@ -522,6 +522,14 @@ test("renderDoctorReport includes loop host diagnostics and macOS tmux drift war
       pid: 4242,
       startedAt: "2026-03-25T00:00:00.000Z",
       detail: "supervisor-loop-runtime",
+      duplicateLoopDiagnostic: {
+        kind: "duplicate_loop_processes",
+        status: "duplicate",
+        matchingProcessCount: 2,
+        matchingPids: [4242, 4243],
+        configPath: "/tmp/supervisor.config.json",
+        stateFile: "/tmp/state.json",
+      },
     },
     loopHostWarning:
       "macOS loop runtime is active outside tmux. Restart it with ./scripts/start-loop-tmux.sh and stop unsupported direct hosts before relying on steady-state automation.",
@@ -530,6 +538,10 @@ test("renderDoctorReport includes loop host diagnostics and macOS tmux drift war
   assert.match(
     report,
     /doctor_loop_runtime state=running host_mode=direct pid=4242 started_at=2026-03-25T00:00:00.000Z detail=supervisor-loop-runtime/,
+  );
+  assert.match(
+    report,
+    /doctor_loop_runtime_diagnostic kind=duplicate_loop_processes status=duplicate matching_processes=2 pids=4242,4243 config_path=\/tmp\/supervisor.config.json state_file=\/tmp\/state.json/,
   );
   assert.match(
     report,

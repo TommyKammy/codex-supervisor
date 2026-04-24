@@ -100,6 +100,7 @@ export interface BootstrapReadinessSummary {
 
 interface DiagnoseSupervisorHostArgs {
   config: SupervisorConfig;
+  configPath?: string;
   authStatus?: () => Promise<{ ok: boolean; message: string | null }>;
   loadState?: () => Promise<SupervisorStateFile>;
   github?: {
@@ -136,6 +137,23 @@ function withDoctorLoadFindings(state: SupervisorStateFile, findings: StateLoadF
 
 function sanitizeDoctorValue(value: string): string {
   return value.replace(/\r?\n/g, "\\n");
+}
+
+function renderDoctorDuplicateLoopDiagnosticLine(loopRuntime: SupervisorLoopRuntimeDto): string | null {
+  const diagnostic = loopRuntime.duplicateLoopDiagnostic;
+  if (!diagnostic) {
+    return null;
+  }
+
+  return [
+    "doctor_loop_runtime_diagnostic",
+    `kind=${diagnostic.kind}`,
+    `status=${diagnostic.status}`,
+    `matching_processes=${diagnostic.matchingProcessCount}`,
+    `pids=${diagnostic.matchingPids.join(",")}`,
+    `config_path=${sanitizeDoctorValue(diagnostic.configPath)}`,
+    `state_file=${sanitizeDoctorValue(diagnostic.stateFile)}`,
+  ].join(" ");
 }
 
 function formatOrphanPolicySummary(config: SupervisorConfig): string {
@@ -790,7 +808,7 @@ export async function diagnoseSupervisorHost(args: DiagnoseSupervisorHostArgs): 
     diagnoseStateFile(args.config),
     diagnoseWorktrees(args.config, loadState, github),
   ]);
-  const loopRuntime = await readSupervisorLoopRuntime(args.config.stateFile);
+  const loopRuntime = await readSupervisorLoopRuntime(args.config.stateFile, { configPath: args.configPath });
   const candidateDiscoveryWarning = formatCandidateDiscoveryWarningDetail(
     await github.getCandidateDiscoveryDiagnostics().catch(() => null),
   );
@@ -910,6 +928,7 @@ export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
     startedAt: null,
     detail: null,
   };
+  const duplicateLoopDiagnosticLine = renderDoctorDuplicateLoopDiagnosticLine(loopRuntime);
   const workspacePreparationWarning = workspacePreparationContract.warning ?? localCiContract.warning ?? null;
   const configWarnings = workspacePreparationWarning === null ? [] : [renderDoctorWarningLine(buildWarning("config", workspacePreparationWarning)!, sanitizeDoctorValue)];
   const codexModelPolicyLines = (diagnostics.codexModelPolicyLines ?? [])
@@ -931,6 +950,7 @@ export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
     ...codexModelPolicyLines,
     ...(diagnostics.reconciliationBacklogLine ? [diagnostics.reconciliationBacklogLine] : []),
     `doctor_loop_runtime state=${loopRuntime.state} host_mode=${loopRuntime.hostMode} pid=${loopRuntime.pid === null ? "none" : String(loopRuntime.pid)} started_at=${loopRuntime.startedAt ?? "none"} detail=${sanitizeDoctorValue(loopRuntime.detail ?? "none")}`,
+    ...(duplicateLoopDiagnosticLine ? [duplicateLoopDiagnosticLine] : []),
     ...(diagnostics.orphanPolicySummary ? [diagnostics.orphanPolicySummary] : []),
     `doctor_workspace_preparation configured=${workspacePreparationContract.configured} source=${workspacePreparationContract.source} command=${sanitizeDoctorValue(workspacePreparationContract.command ?? "none")} summary=${sanitizeDoctorValue(workspacePreparationContract.summary)}`,
     `doctor_local_ci configured=${localCiContract.configured} source=${localCiContract.source} command=${sanitizeDoctorValue(localCiContract.command ?? "none")} summary=${sanitizeDoctorValue(localCiContract.summary)}`,
