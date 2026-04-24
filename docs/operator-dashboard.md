@@ -4,6 +4,8 @@ Use this guide when you want the local WebUI for `codex-supervisor`.
 
 The dashboard is an operator surface over the same `SupervisorService` boundary that the CLI uses. It is not a separate backend, and it is not allowed to read the state file, worktrees, `gh`, or `codex` directly from the browser.
 
+The WebUI does not own the background loop and does not create a loop run mode. Status and doctor panels show the observable loop runtime marker for the configured supervisor service; launcher-backed WebUI restart support applies only to the WebUI process.
+
 ## Start the WebUI
 
 Run the local server against the same supervisor config you use for `run-once`, `loop`, and `status`:

@@ -122,12 +122,16 @@ Before the first run, keep the [Configuration guide](./docs/configuration.md) op
    node dist/index.js web --config /path/to/supervisor.config.json
    ```
 
+   The WebUI is an operator surface over the same supervisor service. It does not own the background loop or create a loop run mode; use `status` or `doctor` to inspect the observable loop runtime marker.
+
 ## WebUI
 
 The local WebUI gives you two operator-facing routes on the same supervisor service:
 
 - `/setup` for first-run setup, typed readiness, and guided config edits
 - `/dashboard` for steady-state issue, queue, and diagnostics monitoring
+
+It observes and mutates through the supervisor service boundary, but it is not the loop owner. A launcher-managed WebUI restart only relaunches the WebUI process; the background loop remains owned by the supported tmux or systemd loop host.
 
 Start it with:
 
