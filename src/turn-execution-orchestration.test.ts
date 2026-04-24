@@ -251,7 +251,7 @@ test("nextReviewFollowUpPatch does not grant a follow-up when no configured-bot 
   });
 });
 
-test("nextReviewFollowUpPatch grants one same-head follow-up for a narrow actionable bot thread set even when thread counts do not shrink", () => {
+test("nextReviewFollowUpPatch does not grant a same-head follow-up for unchanged narrow actionable bot guidance", () => {
   const patch = nextReviewFollowUpPatch({
     config: createConfig({ reviewBotLogins: ["copilot-pull-request-reviewer"] }),
     preRunState: "addressing_review",
@@ -341,6 +341,75 @@ test("nextReviewFollowUpPatch grants one same-head follow-up for a narrow action
         },
       }),
     ],
+  });
+
+  assert.deepEqual(patch, {
+    review_follow_up_head_sha: null,
+    review_follow_up_remaining: 0,
+  });
+});
+
+test("nextReviewFollowUpPatch grants one same-head follow-up for fresh narrow actionable bot guidance", () => {
+  const preRunThread = createReviewThread({
+    id: "thread-1",
+    path: "src/a.ts",
+    line: 10,
+    comments: {
+      nodes: [
+        {
+          id: "comment-1",
+          body: "Guard the nullable payload before accessing nested properties here.",
+          createdAt: "2026-03-11T00:00:00Z",
+          url: "https://example.test/pr/44#discussion_r1",
+          author: {
+            login: "copilot-pull-request-reviewer",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const postRunThread = createReviewThread({
+    id: "thread-1",
+    path: "src/a.ts",
+    line: 10,
+    comments: {
+      nodes: [
+        {
+          id: "comment-1",
+          body: "Guard the nullable payload before accessing nested properties here.",
+          createdAt: "2026-03-11T00:00:00Z",
+          url: "https://example.test/pr/44#discussion_r1",
+          author: {
+            login: "copilot-pull-request-reviewer",
+            typeName: "Bot",
+          },
+        },
+        {
+          id: "comment-2",
+          body: "The nullable payload still needs an explicit guard before this access path can be considered safe.",
+          createdAt: "2026-03-11T00:10:00Z",
+          url: "https://example.test/pr/44#discussion_r2",
+          author: {
+            login: "copilot-pull-request-reviewer",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  const patch = nextReviewFollowUpPatch({
+    config: createConfig({ reviewBotLogins: ["copilot-pull-request-reviewer"] }),
+    preRunState: "addressing_review",
+    record: {
+      review_follow_up_head_sha: null,
+      review_follow_up_remaining: 0,
+    },
+    currentPr: { headRefOid: "head-a" },
+    evaluatedReviewHeadSha: "head-a",
+    preRunReviewThreads: [preRunThread],
+    postRunReviewThreads: [postRunThread],
   });
 
   assert.deepEqual(patch, {
