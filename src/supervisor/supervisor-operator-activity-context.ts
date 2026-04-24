@@ -82,8 +82,11 @@ export interface SupervisorLocalCiStatusDto {
   headSha: string | null;
   headStatus: "current" | "stale" | "unknown";
   context: "blocking" | "warning" | "notice";
+  command: string | null;
+  stderrSummary: string | null;
   failureClass: LatestLocalCiResult["failure_class"];
   remediationTarget: LatestLocalCiResult["remediation_target"];
+  verifierDriftHint: string | null;
 }
 
 function isLocalCiBlockingFailureSignature(signature: string | null): boolean {
@@ -185,6 +188,11 @@ export function formatLocalCiStatusLine(
     `head_sha=${localCiStatus.headSha ?? "none"}`,
     `ran_at=${localCiStatus.ranAt}`,
     `summary=${localCiStatus.summary.replace(/\r?\n/g, "\\n")}`,
+    ...(localCiStatus.command ? [`command=${localCiStatus.command}`] : []),
+    ...(localCiStatus.stderrSummary ? [`stderr_summary=${localCiStatus.stderrSummary.replace(/\r?\n/g, "\\n")}`] : []),
+    ...(localCiStatus.verifierDriftHint
+      ? [`hint=${localCiStatus.verifierDriftHint.replace(/\r?\n/g, "\\n")}`]
+      : []),
   ].join(" ");
 }
 
@@ -240,8 +248,11 @@ function buildLocalCiStatusDto(
     headSha: result.head_sha,
     headStatus,
     context,
+    command: result.command ?? null,
+    stderrSummary: result.stderr_summary ?? null,
     failureClass: result.failure_class,
     remediationTarget: result.remediation_target,
+    verifierDriftHint: result.verifier_drift_hint ?? null,
   };
 }
 

@@ -82,8 +82,22 @@ function buildTrackedPrHostLocalCiDetailLines(
       `remediation_target=${result.remediation_target ?? "none"}`,
       `head=${localCiHeadStatus(record, pr, result)}`,
       `summary=${result.summary.replace(/\r?\n/g, "\\n")}`,
+      ...(result.command ? [`command=${result.command}`] : []),
+      ...(result.stderr_summary ? [`stderr_summary=${result.stderr_summary.replace(/\r?\n/g, "\\n")}`] : []),
     ].join(" "),
   ];
+
+  if (result.verifier_drift_hint) {
+    detailLines.push(
+      [
+        "tracked_pr_host_local_ci_hint",
+        `issue=#${record.issue_number}`,
+        `pr=#${pr.number}`,
+        "kind=repo_owned_verifier_drift",
+        `summary=${result.verifier_drift_hint.replace(/\r?\n/g, "\\n")}`,
+      ].join(" "),
+    );
+  }
 
   if (result.failure_class === "workspace_toolchain_missing" && !config.workspacePreparationCommand) {
     const warning =

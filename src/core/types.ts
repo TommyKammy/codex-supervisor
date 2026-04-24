@@ -133,8 +133,11 @@ export interface LatestLocalCiResult {
   ran_at: string;
   head_sha: string | null;
   execution_mode: LocalCiExecutionMode | null;
+  command?: string | null;
+  stderr_summary?: string | null;
   failure_class: LocalCiFailureClass | null;
   remediation_target: LocalCiRemediationTarget | null;
+  verifier_drift_hint?: string | null;
 }
 
 export interface SupervisorConfig {

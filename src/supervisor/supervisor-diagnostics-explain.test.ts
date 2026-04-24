@@ -1104,11 +1104,11 @@ test("explain keeps same-head host-local ready-promotion blockers current when t
         journal_path: null,
         pr_number: prNumber,
         blocked_reason: "verification",
-        last_error: "Tracked durable artifacts failed workstation-local path hygiene before marking PR #277 ready.",
+        last_error: "Configured local CI command failed before marking PR #277 ready.",
         last_head_sha: "head-draft-277",
-        last_failure_signature: "workstation-local-path-hygiene-failed",
+        last_failure_signature: "local-ci-gate-non_zero_exit",
         last_observed_host_local_pr_blocker_head_sha: "head-draft-277",
-        last_observed_host_local_pr_blocker_signature: "workstation-local-path-hygiene-failed",
+        last_observed_host_local_pr_blocker_signature: "local-ci-gate-non_zero_exit",
         last_tracked_pr_progress_snapshot: JSON.stringify({
           headRefOid: "head-old-277",
           reviewDecision: null,
@@ -1126,7 +1126,19 @@ test("explain keeps same-head host-local ready-promotion blockers current when t
           checks: ["build:pass:SUCCESS:CI"],
           unresolvedReviewThreadIds: [],
         }),
-        latest_local_ci_result: null,
+        latest_local_ci_result: {
+          outcome: "failed",
+          summary: "Configured local CI command failed before marking PR #277 ready.",
+          ran_at: "2026-03-13T00:10:00Z",
+          head_sha: "head-draft-277",
+          execution_mode: "legacy_shell_string",
+          command: "npm run verify:paths",
+          stderr_summary: "docs/configuration.md contract drift: changed doc contract no longer matches repo-owned verifier expectation",
+          failure_class: "non_zero_exit",
+          remediation_target: "repo_owned_command",
+          verifier_drift_hint:
+            "repo_owned_verifier_drift: the repo-owned verifier appears to disagree with a changed docs or contract expectation; repair the verifier expectation or the repo content before rerunning local CI.",
+        },
         last_host_local_pr_blocker_comment_signature: null,
         last_host_local_pr_blocker_comment_head_sha: null,
       }),
@@ -1173,6 +1185,10 @@ test("explain keeps same-head host-local ready-promotion blockers current when t
   assert.match(
     explanation,
     /^recovery_guidance=PR #277 is still draft because ready-for-review promotion is blocked by local verification\. The same blocker is still present, so rerunning the supervisor alone will not help\./m,
+  );
+  assert.match(
+    explanation,
+    /^local_ci_result outcome=failed context=blocking failure_class=non_zero_exit remediation_target=repo_owned_command head=current head_sha=head-draft-277 ran_at=2026-03-13T00:10:00Z summary=Configured local CI command failed before marking PR #277 ready\. command=npm run verify:paths stderr_summary=docs\/configuration\.md contract drift: changed doc contract no longer matches repo-owned verifier expectation hint=repo_owned_verifier_drift: the repo-owned verifier appears to disagree with a changed docs or contract expectation; repair the verifier expectation or the repo content before rerunning local CI\.$/m,
   );
   assert.doesNotMatch(
     explanation,

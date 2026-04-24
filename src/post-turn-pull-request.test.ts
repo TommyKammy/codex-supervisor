@@ -461,8 +461,11 @@ test("handlePostTurnPullRequestTransitionsPhase refreshes PR state after marking
     ran_at: result.record.latest_local_ci_result?.ran_at ?? "",
     head_sha: headSha,
     execution_mode: "legacy_shell_string",
+    command: "npm run ci:local",
+    stderr_summary: null,
     failure_class: null,
     remediation_target: null,
+    verifier_drift_hint: null,
   });
   assert.equal(readyCalls, 1);
   assert.equal(localCiCalls, 1);
@@ -886,8 +889,11 @@ test("handlePostTurnPullRequestTransitionsPhase reports workspace toolchain fail
     ran_at: result.record.latest_local_ci_result?.ran_at ?? "",
     head_sha: draftPr.headRefOid,
     execution_mode: "legacy_shell_string",
+    command: "npm run ci:local",
+    stderr_summary: "tsc is not installed in this workspace",
     failure_class: "workspace_toolchain_missing",
     remediation_target: "workspace_environment",
+    verifier_drift_hint: null,
   });
   assert.match(
     result.record.last_error ?? "",

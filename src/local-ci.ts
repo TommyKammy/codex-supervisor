@@ -302,6 +302,27 @@ function renderFailureOutput(label: "stdout" | "stderr", output: string | undefi
   return `${label}:\n${truncatePreservingStartAndEnd(trimmed, 1500) ?? trimmed}`;
 }
 
+function summarizeCommandStderr(error: unknown): string | null {
+  if (!(error instanceof Error)) {
+    return null;
+  }
+
+  const outputError = error as ErrorWithOutput;
+  if (typeof outputError.stderr !== "string") {
+    return null;
+  }
+
+  const firstLine = outputError.stderr
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .find((line) => line !== "");
+  if (!firstLine) {
+    return null;
+  }
+
+  return truncatePreservingStartAndEnd(firstLine, 300) ?? firstLine;
+}
+
 function collectCommandErrorLines(error: unknown): string[] {
   if (!(error instanceof Error)) {
     return [String(error)];
@@ -373,6 +394,21 @@ function buildTargetedStaticAnalysisGuidance(error: unknown): string[] {
       .map((code) => RUFF_REMEDIATION_HINTS.get(code))
       .filter((hint): hint is string => typeof hint === "string"),
   ];
+}
+
+function buildRepoOwnedVerifierDriftHint(error: unknown): string | null {
+  const output = collectCommandErrorLines(error).join("\n");
+  if (!/\b(?:doc|docs|documentation|contract)\b/i.test(output)) {
+    return null;
+  }
+  if (!/\b(?:verifier|verify|expectation|expected)\b/i.test(output)) {
+    return null;
+  }
+  if (!/\b(?:drift|mismatch|no longer matches?|changed)\b/i.test(output)) {
+    return null;
+  }
+
+  return "repo_owned_verifier_drift: the repo-owned verifier appears to disagree with a changed docs or contract expectation; repair the verifier expectation or the repo content before rerunning local CI.";
 }
 
 function buildFailureDetails(error: unknown, executionMode: LocalCiExecutionMode | null): string[] {
@@ -568,8 +604,11 @@ export async function runLocalCiGate(args: {
         ran_at: ranAt,
         head_sha: null,
         execution_mode: null,
+        command: null,
+        stderr_summary: null,
         failure_class: "unset_contract",
         remediation_target: remediationTargetForFailureClass("unset_contract"),
+        verifier_drift_hint: null,
       },
     };
   }
@@ -585,13 +624,17 @@ export async function runLocalCiGate(args: {
         ran_at: ranAt,
         head_sha: null,
         execution_mode: command.executionMode,
+        command: command.displayCommand,
+        stderr_summary: null,
         failure_class: null,
         remediation_target: null,
+        verifier_drift_hint: null,
       },
     };
   } catch (error) {
     const failureClass = classifyLocalCiFailure(error, command.displayCommand);
     const summary = buildSummary({ failureClass, gateLabel: args.gateLabel, passed: false });
+    const verifierDriftHint = failureClass === "non_zero_exit" ? buildRepoOwnedVerifierDriftHint(error) : null;
     return {
       ok: false,
       failureContext: {
@@ -599,7 +642,10 @@ export async function runLocalCiGate(args: {
         summary,
         signature: localCiFailureSignature(failureClass),
         command: command.displayCommand,
-        details: buildFailureDetails(error, command.executionMode),
+        details: [
+          ...buildFailureDetails(error, command.executionMode),
+          ...(verifierDriftHint ? [verifierDriftHint] : []),
+        ],
         url: null,
         updated_at: ranAt,
       },
@@ -609,8 +655,11 @@ export async function runLocalCiGate(args: {
         ran_at: ranAt,
         head_sha: null,
         execution_mode: command.executionMode,
+        command: command.displayCommand,
+        stderr_summary: summarizeCommandStderr(error),
         failure_class: failureClass,
         remediation_target: remediationTargetForFailureClass(failureClass),
+        verifier_drift_hint: verifierDriftHint,
       },
     };
   }
