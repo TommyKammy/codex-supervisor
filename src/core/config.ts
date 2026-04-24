@@ -3,6 +3,11 @@ import path from "node:path";
 import { SupervisorConfig, type TrustDiagnosticsSummary } from "./types";
 import { parseJson } from "./utils";
 import { DEFAULT_CONFIG_FILE } from "./config-constants";
+import {
+  CONFIG_FIELD_POSTURE_METADATA,
+  CONFIG_FIELD_POSTURE_TIERS,
+  getConfigFieldPostureMetadata,
+} from "./config-field-posture";
 import { parseSupervisorConfigDocument, normalizeLocalCiCommand, displayLocalCiCommand } from "./config-parsing";
 import {
   buildMissingWorkspacePreparationContractWarning,
@@ -26,10 +31,13 @@ import {
 
 export {
   buildMissingWorkspacePreparationContractWarning,
+  CONFIG_FIELD_POSTURE_METADATA,
+  CONFIG_FIELD_POSTURE_TIERS,
   DEFAULT_CANDIDATE_DISCOVERY_FETCH_WINDOW,
   displayLocalCiCommand,
   extractRepoRelativeWorkspacePreparationHelper,
   findRepoOwnedWorkspacePreparationCandidate,
+  getConfigFieldPostureMetadata,
   LEGACY_SHARED_ISSUE_JOURNAL_RELATIVE_PATH,
   MISSING_WORKSPACE_PREPARATION_CONTRACT_WARNING,
   normalizeLocalCiCommand,
@@ -40,6 +48,8 @@ export {
   summarizeWorkspacePreparationContract,
   validateWorkspacePreparationCommandForWorktrees,
 };
+
+export type { ConfigFieldPostureMetadata, ConfigFieldPostureTier } from "./config-field-posture";
 
 export type ConfigLoadStatus = "ready" | "missing_config" | "invalid_config";
 
