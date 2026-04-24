@@ -4,6 +4,7 @@ import {
   buildLocalCiContractChecklistItems,
   buildLocalCiContractStatusLines,
   canAdoptRecommendedLocalCiCommand,
+  canDismissRecommendedLocalCiCommand,
 } from "./webui-local-ci-browser-helpers";
 
 test("local CI browser helpers summarize a repo-owned candidate contract consistently", () => {
@@ -35,6 +36,38 @@ test("local CI browser helpers summarize a repo-owned candidate contract consist
   }]);
   assert.equal(canAdoptRecommendedLocalCiCommand(contract, true), true);
   assert.equal(canAdoptRecommendedLocalCiCommand(contract, false), false);
+  assert.equal(canDismissRecommendedLocalCiCommand(contract), true);
+});
+
+test("local CI browser helpers summarize an explicitly dismissed candidate", () => {
+  const contract = {
+    configured: false,
+    command: null,
+    recommendedCommand: "npm run verify:pre-pr",
+    source: "dismissed_repo_script_candidate",
+    summary:
+      "Repo-owned local CI candidate was intentionally dismissed; localCiCommand remains unset and non-blocking. Dismissed candidate: npm run verify:pre-pr.",
+  };
+
+  assert.deepEqual(buildLocalCiContractStatusLines(contract), [
+    "local ci configured=no source=dismissed repo script candidate command=none recommended command=npm run verify:pre-pr warning=none",
+    "Repo-owned local CI candidate was intentionally dismissed; localCiCommand remains unset and non-blocking. Dismissed candidate: npm run verify:pre-pr.",
+  ]);
+  assert.deepEqual(buildLocalCiContractChecklistItems(contract), [{
+    title: "Configured: no",
+    tone: "",
+    meta: [
+      "Command: none",
+      "Source: dismissed repo script candidate",
+      "Recommended command: npm run verify:pre-pr",
+    ],
+    notes: [
+      "This repo-owned local CI candidate was intentionally dismissed, so localCiCommand remains unset and non-blocking.",
+      "codex-supervisor will not run the dismissed candidate unless you opt in later by configuring localCiCommand.",
+    ],
+  }]);
+  assert.equal(canAdoptRecommendedLocalCiCommand(contract, true), false);
+  assert.equal(canDismissRecommendedLocalCiCommand(contract), false);
 });
 
 test("local CI browser helpers preserve configured and fallback contract guidance", () => {

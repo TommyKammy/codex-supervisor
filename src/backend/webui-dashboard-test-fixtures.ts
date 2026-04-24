@@ -365,7 +365,7 @@ export function createDashboardStatusFixture(args: {
     configured: boolean;
     command: string | null;
     recommendedCommand?: string | null;
-    source: "config" | "repo_script_candidate";
+    source: "config" | "repo_script_candidate" | "dismissed_repo_script_candidate";
     summary: string;
   } | null;
   loopRuntime?: {

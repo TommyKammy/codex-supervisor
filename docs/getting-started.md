@@ -376,9 +376,10 @@ Steady-state posture to read after setup:
 
 - `No repo-owned local CI contract is configured.` That means no canonical repo-owned pre-PR command is active, so PR publication does not depend on `localCiCommand` yet.
 - `Repo-owned local CI candidate exists but localCiCommand is unset.` That means the repo already exposes a likely script candidate, but the supervisor has not opted into it yet. This warning is advisory only. Setup readiness stays unchanged until you configure `localCiCommand`, and codex-supervisor will not run the candidate just because it exists.
+- `Repo-owned local CI candidate was intentionally dismissed; localCiCommand remains unset and non-blocking.` That means an operator acknowledged the recommendation and chose not to make it the publication gate for this profile. The dismissed candidate is still reported for visibility, but it should not keep appearing as an unresolved setup ambiguity.
 - `Repo-owned local CI contract is configured.` That means the configured command is the active fail-closed gate before PR publication or ready-for-review promotion.
 
-Operator impact: when configured local CI fails, PR publication stays blocked and ready-for-review promotion stays blocked until the repo-owned command passes again. Setup/readiness and WebUI guidance should make that visible so operators can tell the difference between a missing contract and a failing configured contract.
+Operator impact: candidate detection is advisory, dismissal is an explicit non-blocking acknowledgement, and adoption is the point where local CI becomes a fail-closed gate. When configured local CI fails, PR publication stays blocked and ready-for-review promotion stays blocked until the repo-owned command passes again. Setup/readiness and WebUI guidance should make that visible so operators can tell the difference between a missing contract, a dismissed candidate, and a failing configured contract.
 
 Explicit non-goal: `codex-supervisor` does not infer or reconstruct workflow logic from GitHub Actions YAML, other workflow YAML, or changed-file heuristics as a substitute for this contract. If a repo wants a canonical pre-PR local verification command, the repo must expose that command directly.
 

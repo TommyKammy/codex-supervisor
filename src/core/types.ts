@@ -82,7 +82,7 @@ export interface LocalCiContractSummary {
   configured: boolean;
   command: string | null;
   recommendedCommand: string | null;
-  source: "config" | "repo_script_candidate";
+  source: "config" | "repo_script_candidate" | "dismissed_repo_script_candidate";
   summary: string;
   warning?: string | null;
 }
@@ -185,6 +185,7 @@ export interface SupervisorConfig {
   issueSearch?: string;
   workspacePreparationCommand?: LocalCiCommandConfig;
   localCiCommand?: LocalCiCommandConfig;
+  localCiCandidateDismissed?: boolean;
   candidateDiscoveryFetchWindow?: number;
   skipTitlePrefixes: string[];
   branchPrefix: string;

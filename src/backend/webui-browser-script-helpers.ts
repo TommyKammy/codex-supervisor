@@ -88,6 +88,7 @@ export function buildBrowserLocalCiChecklistEntries(
   localCiContract: BrowserLocalCiContractLike | null | undefined,
 ): BrowserChecklistEntry[] {
   const normalized = normalizeBrowserLocalCiContract(localCiContract);
+  const dismissed = normalized.source === "dismissed_repo_script_candidate";
   return [{
     title: "Configured: " + (normalized.configured ? "yes" : "no"),
     tone: "",
@@ -106,6 +107,11 @@ export function buildBrowserLocalCiChecklistEntries(
         "This repo-owned command is the canonical local verification step before PR publication or update.",
         "When configured local CI fails, PR publication or ready-for-review promotion stays blocked until the repo-owned command passes again.",
       ]
+      : dismissed
+        ? [
+          "This repo-owned local CI candidate was intentionally dismissed, so localCiCommand remains unset and non-blocking.",
+          "codex-supervisor will not run the dismissed candidate unless you opt in later by configuring localCiCommand.",
+        ]
       : normalized.recommendedCommand
         ? [
           "This repo already defines a repo-owned local CI entrypoint, but codex-supervisor will not run it until localCiCommand is configured.",
@@ -123,7 +129,16 @@ export function canAdoptBrowserLocalCiRecommendedCommand(
   hasInput: boolean,
 ): boolean {
   const normalized = normalizeBrowserLocalCiContract(localCiContract);
-  return Boolean(normalized.recommendedCommand) && hasInput;
+  return Boolean(normalized.recommendedCommand) && normalized.source !== "dismissed_repo_script_candidate" && hasInput;
+}
+
+export function canDismissBrowserLocalCiRecommendedCommand(
+  localCiContract: BrowserLocalCiContractLike | null | undefined,
+): boolean {
+  const normalized = normalizeBrowserLocalCiContract(localCiContract);
+  return Boolean(normalized.recommendedCommand) &&
+    !normalized.configured &&
+    normalized.source !== "dismissed_repo_script_candidate";
 }
 
 export function readStoredMutationAuthToken(host: BrowserHostLike, storageKey: string): string | null {

@@ -2,6 +2,7 @@ import {
   buildBrowserLocalCiChecklistEntries,
   buildBrowserLocalCiStatusLines,
   canAdoptBrowserLocalCiRecommendedCommand,
+  canDismissBrowserLocalCiRecommendedCommand,
   formatBrowserToken,
   normalizeBrowserLocalCiContract,
   type BrowserChecklistEntry,
@@ -33,6 +34,12 @@ export function canAdoptRecommendedLocalCiCommand(
   hasLocalCiInput: boolean,
 ): boolean {
   return canAdoptBrowserLocalCiRecommendedCommand(contract, hasLocalCiInput);
+}
+
+export function canDismissRecommendedLocalCiCommand(
+  contract: BrowserLocalCiContractLike | null | undefined,
+): boolean {
+  return canDismissBrowserLocalCiRecommendedCommand(contract);
 }
 
 export function buildLocalCiContractChecklistItems(

@@ -69,7 +69,7 @@ export function summarizeCadenceDiagnostics(
 }
 
 export function summarizeLocalCiContract(
-  config: Pick<SupervisorConfig, "localCiCommand" | "workspacePreparationCommand"> & { repoPath?: string },
+  config: Pick<SupervisorConfig, "localCiCommand" | "workspacePreparationCommand" | "localCiCandidateDismissed"> & { repoPath?: string },
 ): LocalCiContractSummary {
   const command = displayLocalCiCommand(config.localCiCommand);
   const recommendedCommand = findRepoOwnedLocalCiCandidate(config.repoPath);
@@ -83,6 +83,18 @@ export function summarizeLocalCiContract(
       source: "config",
       summary: "Repo-owned local CI contract is configured.",
       warning,
+    };
+  }
+
+  if (recommendedCommand !== null && config.localCiCandidateDismissed === true) {
+    return {
+      configured: false,
+      command: null,
+      recommendedCommand,
+      source: "dismissed_repo_script_candidate",
+      summary:
+        `Repo-owned local CI candidate was intentionally dismissed; localCiCommand remains unset and non-blocking. Dismissed candidate: ${recommendedCommand}.`,
+      warning: null,
     };
   }
 
