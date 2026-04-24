@@ -41,6 +41,7 @@
     "ROADMAP.md",
     "STATE.md"
   ],
+  "localReviewPosture": "block_merge",
   "localReviewEnabled": true,
   "localReviewAutoDetect": true,
   "localReviewRoles": [],

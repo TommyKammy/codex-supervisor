@@ -4,12 +4,13 @@ This guide holds the detailed local-review swarm reference so the landing docs c
 
 ## What local review is for
 
-`codex-supervisor` can run a local review swarm on pull requests before merge. It is disabled by default in shipped starter configs and in default config loading behavior. Once an operator intentionally enables it, the recommended once enabled posture uses `localReviewAutoDetect: true`, `localReviewRoles: []`, `localReviewPolicy: "block_merge"`, `trackedPrCurrentHeadLocalReviewRequired: false`, `localReviewFollowUpRepairEnabled: false`, `localReviewManualReviewRepairEnabled: false`, `localReviewFollowUpIssueCreationEnabled: false`, and `localReviewHighSeverityAction: "blocked"`.
+`codex-supervisor` can run a local review swarm on pull requests before merge. It is disabled by default in shipped starter configs and in default config loading behavior through `localReviewPosture: "off"`. Once an operator intentionally enables it, the recommended once enabled posture is `localReviewPosture: "block_merge"`, which maps to `localReviewAutoDetect: true`, `localReviewRoles: []`, `localReviewPolicy: "block_merge"`, `trackedPrCurrentHeadLocalReviewRequired: false`, `localReviewFollowUpRepairEnabled: false`, `localReviewManualReviewRepairEnabled: false`, `localReviewFollowUpIssueCreationEnabled: false`, and `localReviewHighSeverityAction: "blocked"`.
 
 The recommended starting policy is `block_merge`, because it preserves the usual ready-for-review flow while still making the swarm a practical merge gate on the current PR head.
 
 Core behavior:
 
+- `localReviewPosture` is the named local-review stance operators should use first
 - each role runs in a separate Codex turn
 - `localReviewPolicy` controls whether the swarm is advisory or blocking
 - `trackedPrCurrentHeadLocalReviewRequired` adds an opt-in freshness gate for tracked codex PRs without changing the underlying policy once the current head has been reviewed
@@ -23,9 +24,12 @@ Core behavior:
 
 Policy guidance:
 
-- `block_merge` is the recommended default: gate merge on ready PRs and re-run on ready PR head updates
+- `off` disables local review and keeps the default conservative posture
+- `advisory` enables local review without blocking ready or merge transitions
+- `block_merge` is the recommended enabled default: gate merge on ready PRs and re-run on ready PR head updates
+- `repair_high_severity` keeps the merge gate and opts into same-PR repair only for verifier-confirmed high-severity findings
+- `follow_up_issue_creation` keeps the merge gate and explicitly opts into automatic follow-up issue creation
 - `block_ready` is stricter earlier in the flow: gate the draft-to-ready transition
-- `advisory` is non-blocking and fits setups that want saved findings without automation gates
 - `trackedPrCurrentHeadLocalReviewRequired: false` keeps the enabled baseline opinionated without adding a separate freshness gate
 - `trackedPrCurrentHeadLocalReviewRequired: true` is the stricter opt-in mode: tracked codex PRs wait for a fresh local review on every head update before ready-for-review or merge can continue
 - `localReviewFollowUpRepairEnabled: false` keeps same-PR repair disabled; set it to `true` only when you explicitly want follow-up-eligible residuals repaired on the current PR instead of being left advisory
@@ -47,6 +51,7 @@ Example:
 
 ```json
 {
+  "localReviewPosture": "block_merge",
   "localReviewEnabled": true,
   "localReviewAutoDetect": true,
   "localReviewRoles": [],

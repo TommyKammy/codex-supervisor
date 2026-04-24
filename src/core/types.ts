@@ -30,6 +30,12 @@ export type TrustMode = "trusted_repo_and_authors" | "untrusted_or_mixed";
 export type ExecutionSafetyMode = "unsandboxed_autonomous" | "operator_gated";
 export type LocalReviewPolicy = "advisory" | "block_ready" | "block_merge";
 export type LocalReviewHighSeverityAction = "retry" | "blocked";
+export type LocalReviewPosturePreset =
+  | "off"
+  | "advisory"
+  | "block_merge"
+  | "repair_high_severity"
+  | "follow_up_issue_creation";
 export type StaleConfiguredBotReviewPolicy = "diagnose_only" | "reply_only" | "reply_and_resolve";
 export type CopilotReviewState = "not_requested" | "requested" | "arrived";
 export type PullRequestHydrationProvenance = "fresh" | "cached";
@@ -94,6 +100,16 @@ export interface WorkspacePreparationContractSummary {
   source: "config";
   summary: string;
   warning?: string | null;
+}
+
+export interface LocalReviewPostureSummary {
+  preset: LocalReviewPosturePreset;
+  enabled: boolean;
+  policy: LocalReviewPolicy;
+  autoRepair: "off" | "high_severity_only";
+  followUpIssueCreation: boolean;
+  summary: string;
+  guarantees: string[];
 }
 
 export interface StructuredLocalCiCommandConfig {
@@ -166,6 +182,7 @@ export interface SupervisorConfig {
   gsdCodexConfigDir?: string;
   gsdPlanningFiles: string[];
   localReviewEnabled: boolean;
+  localReviewPosture?: LocalReviewPosturePreset;
   localReviewAutoDetect: boolean;
   localReviewRoles: string[];
   localReviewArtifactDir: string;

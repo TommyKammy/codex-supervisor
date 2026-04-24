@@ -32,6 +32,7 @@ function buildConfigDocument(args: {
   stateFile: string;
   workspacePreparationCommand: unknown;
   includeTrustPosture?: boolean;
+  localReviewPosture?: string;
 }): Record<string, unknown> {
   return {
     repoPath: args.repoPath,
@@ -43,6 +44,7 @@ function buildConfigDocument(args: {
     branchPrefix: "codex/issue-",
     reviewBotLogins: ["chatgpt-codex-connector"],
     workspacePreparationCommand: args.workspacePreparationCommand,
+    ...(args.localReviewPosture ? { localReviewPosture: args.localReviewPosture } : {}),
     ...(args.includeTrustPosture === false
       ? {}
       : {
@@ -271,6 +273,43 @@ test("diagnoseSetupReadiness requires explicit trust posture decisions", async (
       ["missing_execution_safety_mode", ["executionSafetyMode"]],
     ],
   );
+});
+
+test("diagnoseSetupReadiness reports the selected local review posture preset", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = await createTrackedRepo(root);
+  const workspaceRoot = path.join(root, "workspaces");
+  const configPath = path.join(root, "supervisor.config.json");
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  await fs.writeFile(
+    configPath,
+    JSON.stringify(
+      buildConfigDocument({
+        repoPath,
+        workspaceRoot,
+        stateFile: path.join(root, "state.json"),
+        workspacePreparationCommand: undefined,
+        localReviewPosture: "follow_up_issue_creation",
+      }),
+    ),
+    "utf8",
+  );
+
+  const summary = await diagnoseSetupReadiness({
+    configPath,
+    authStatus: async () => ({ ok: true, message: null }),
+  });
+
+  assert.equal(summary.localReviewPosture?.preset, "follow_up_issue_creation");
+  assert.equal(summary.localReviewPosture?.enabled, true);
+  assert.equal(summary.localReviewPosture?.policy, "block_merge");
+  assert.equal(summary.localReviewPosture?.autoRepair, "off");
+  assert.equal(summary.localReviewPosture?.followUpIssueCreation, true);
+  assert.match(summary.localReviewPosture?.summary ?? "", /create follow-up issues/i);
 });
 
 test("diagnoseSetupReadiness validates trust posture fields as exact raw strings", async (t) => {

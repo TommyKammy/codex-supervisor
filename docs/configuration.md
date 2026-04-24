@@ -467,6 +467,7 @@ Default note:
 - `configuredBotCurrentHeadSignalTimeoutMinutes`
 - `configuredBotCurrentHeadSignalTimeoutAction`
 - `localReviewEnabled`
+- `localReviewPosture`
 - `localReviewAutoDetect`
 - `localReviewRoles`
 - `localReviewPolicy`
@@ -482,10 +483,17 @@ Default note:
 
 Default local-review posture:
 
+- `localReviewPosture: "off"` is the high-level default and keeps local review disabled unless a config explicitly selects another named posture
 - shipped starter profiles and default config loading keep `localReviewEnabled: false`
 - `localReviewFollowUpRepairEnabled: false` is the safe default, so same-PR repair of `follow_up_eligible` residual local-review work stays off until you opt in
 - `localReviewManualReviewRepairEnabled: false` is the safe default, so same-PR repair of current-head `manual_review_blocked` local-review residuals stays off until you opt in
 - `localReviewFollowUpIssueCreationEnabled: false` is the safe default, so follow-up issue creation stays advisory until you opt in
+- named postures map to the existing low-level fields:
+  - `off`: disables local review
+  - `advisory`: enables local review with `localReviewPolicy: "advisory"` and no blocking gate
+  - `block_merge`: enables local review as a merge gate without auto-repair or follow-up issue creation
+  - `repair_high_severity`: enables the merge gate and sets `localReviewHighSeverityAction: "retry"` for verifier-confirmed high-severity findings only
+  - `follow_up_issue_creation`: enables the merge gate and sets `localReviewFollowUpIssueCreationEnabled: true`
 - once you intentionally enable local review, the recommended baseline is `localReviewAutoDetect: true`, `localReviewRoles: []`, `localReviewPolicy: "block_merge"`, `trackedPrCurrentHeadLocalReviewRequired: false`, `localReviewFollowUpRepairEnabled: false`, `localReviewManualReviewRepairEnabled: false`, `localReviewFollowUpIssueCreationEnabled: false`, and `localReviewHighSeverityAction: "blocked"`
 - `localReviewFollowUpRepairEnabled` and `localReviewFollowUpIssueCreationEnabled` are mutually exclusive
 - `localReviewManualReviewRepairEnabled` is separate from `localReviewFollowUpRepairEnabled`: the follow-up flag only covers `follow_up_eligible` residuals, while the manual-review flag covers current-head `manual_review_blocked` residuals only when GitHub is not still reporting an aggregate review block
@@ -552,10 +560,11 @@ This is why the CodeRabbit profile feels more complex than the Copilot or Codex 
 
 The shipped docs and configs intentionally recommend:
 
+- `localReviewPosture: "off"` by default
 - `localReviewEnabled: false` by default
 - `localReviewHighSeverityAction: "blocked"` as the safer enabled baseline
 
-That posture is deliberate. If you switch to `"retry"`, you are choosing a more autonomous correction loop.
+That posture is deliberate. Choose `localReviewPosture: "repair_high_severity"` only when you explicitly want the supervisor to retry verifier-confirmed high-severity findings. Choose `localReviewPosture: "follow_up_issue_creation"` only when automatic follow-up issue creation is intended.
 
 ## Model and Reasoning Guidance
 

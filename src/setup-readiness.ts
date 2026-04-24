@@ -7,10 +7,11 @@ import {
   normalizeLocalCiCommand,
   resolveConfigPath,
   summarizeLocalCiContract,
+  summarizeLocalReviewPosture,
   summarizeTrustDiagnostics,
   validateWorkspacePreparationCommandForWorktrees,
 } from "./core/config";
-import type { CodexModelStrategy, LocalCiContractSummary, TrustDiagnosticsSummary } from "./core/types";
+import type { CodexModelStrategy, LocalCiContractSummary, LocalReviewPostureSummary, TrustDiagnosticsSummary } from "./core/types";
 import { diagnoseSupervisorHost, type DoctorCheck, type DoctorCheckStatus } from "./doctor";
 import { reviewProviderProfileFromConfig } from "./core/review-providers";
 import type { ExecutionSafetyMode, TrustMode } from "./core/types";
@@ -140,6 +141,7 @@ export interface SetupReadinessReport {
   trustPosture: SetupReadinessTrustPosture;
   modelRoutingPosture?: SetupReadinessModelRoutingPosture;
   localCiContract?: LocalCiContractSummary;
+  localReviewPosture?: LocalReviewPostureSummary;
 }
 
 interface DiagnoseSetupReadinessArgs {
@@ -765,5 +767,6 @@ export async function diagnoseSetupReadiness(
     trustPosture: buildTrustPostureFromRaw(rawConfig, configSummary.config),
     modelRoutingPosture,
     localCiContract: summarizeLocalCiContract(localCiContractConfig),
+    localReviewPosture: configSummary.config ? summarizeLocalReviewPosture(configSummary.config) : undefined,
   };
 }

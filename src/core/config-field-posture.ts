@@ -53,6 +53,7 @@ const CONFIG_FIELD_POSTURE_METADATA_ENTRIES = [
   recommended("codexModelStrategy", "Default Codex model routing posture."),
   recommended("workspacePreparationCommand", "Repo-owned workspace setup contract."),
   recommended("localCiCommand", "Repo-owned local CI contract."),
+  recommended("localReviewPosture", "Named local review automation posture."),
   recommended("localReviewEnabled", "Local review gate enablement."),
   recommended("localReviewAutoDetect", "Local review role auto-detection posture."),
   recommended("localReviewPolicy", "Local review merge-gating posture."),
