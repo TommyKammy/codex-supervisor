@@ -463,3 +463,4 @@ Stop treating the issue as execution-ready. Tighten the issue body, split the wo
 - [Operator dashboard](./operator-dashboard.md) for the local WebUI, panel meanings, safe command surface, and smoke-test harness
 - [Local review reference](./local-review.md) for review roles, artifacts, thresholds, and merge policy
 - [Issue metadata reference](./issue-metadata.md) for execution-ready issue structure and scheduling inputs
+- [Release readiness checklist](./validation-checklist.md) for advisory minimum, recommended, and sufficient readiness checks before broader use

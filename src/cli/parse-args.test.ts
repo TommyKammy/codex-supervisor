@@ -67,6 +67,19 @@ test("parseArgs accepts issue-lint with an issue number", () => {
   });
 });
 
+test("parseArgs accepts readiness-checklist without an issue number", () => {
+  assert.deepEqual(parseArgs(["readiness-checklist"]), {
+    command: "readiness-checklist",
+    configPath: undefined,
+    dryRun: false,
+    why: false,
+    issueNumber: undefined,
+    snapshotPath: undefined,
+    caseId: undefined,
+    corpusPath: undefined,
+  });
+});
+
 test("parseArgs accepts requeue with an issue number", () => {
   assert.deepEqual(parseArgs(["requeue", "123"]), {
     command: "requeue",

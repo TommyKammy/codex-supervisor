@@ -551,6 +551,7 @@ export interface CliOptions {
     | "reset-corrupt-json-state"
     | "explain"
     | "issue-lint"
+    | "readiness-checklist"
     | "doctor"
     | "web"
     | "replay"

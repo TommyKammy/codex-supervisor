@@ -1,60 +1,71 @@
-# Validation Checklist
+# Release Readiness Checklist
 
-`codex-supervisor` を一般化や public repo 化に進める前に、まず managed repo 上の loop が安定して end-to-end で回ることを確認するための checklist です。
+Use this advisory checklist before treating `codex-supervisor` as ready for broader use on a repo. It is a release-readiness artifact for operators and maintainers, not an automatic hard gate. A separate explicit gate must be configured before readiness can block publication, merge, or loop operation.
 
-## 観測項目
+Print the same maintained checklist from the built CLI with:
 
-- [ ] `Issue選定`: runnable な open issue から 1 件だけ選ばれ、専用 worktree と branch が作られる
-- [ ] `初回実装`: `codex exec` が変更を作り、commit / push / PR 作成まで自動で進む
-- [ ] `Provider待機`: PR 作成後に `waiting_ci` へ遷移し、review provider の signal を待てる
-- [ ] `Review検出`: unresolved review thread や review-driven blocker を検出して `addressing_review` に入る
-- [ ] `Review反映`: review 対応の commit / push が自動で行われる
-- [ ] `CI再待機`: review や CI 修正後に再度 `waiting_ci` に戻る
-- [ ] `自動マージ`: required checks / required review / branch protection 充足後に merge へ進み、PR が merge される
-- [ ] `Issue完了`: merge 後に state が `done` になり、active issue が解放される
-- [ ] `次Issue遷移`: 次の runnable issue を自動で拾って新しい worktree / branch / PR に進む
-- [ ] `Trust gate`: untrusted repo / author 条件では autonomous execution を止める
-- [ ] `State recovery`: corrupted JSON state を empty bootstrap と誤認せず fail-closed で止まる
-- [ ] `Workspace recovery`: local branch、remote branch、fresh bootstrap の順で restore precedence が守られる
-- [ ] `Orphan cleanup`: orphaned workspace が explicit prune なしに雑に消えない
-- [ ] `継続稼働`: `blocked` / `failed` / timeout / review wait が発生しても supervisor プロセス自体は落ちない
-- [ ] `安全性`: `main` 直接 push が一度も発生しない
-- [ ] `可観測性`: state file、stdout/stderr、status/doctor、GitHub 上の PR 履歴で挙動を追跡できる
-- [ ] `WebUI`: local operator dashboard が status/doctor/explain/issue-lint と safe command surface を正しく表示する
+```bash
+node dist/index.js readiness-checklist
+```
 
-## 一般化に進んでよい基準
+## Readiness levels
 
-### 最低基準
+### Minimum
 
-1. 1 issue を end-to-end で完走する
-2. 1 つ以上の review provider signal を伴うケースを通す
-3. merge 後に次 issue を自動で拾うところまで確認する
+Minimum readiness means one trusted repo can complete a controlled first run without surprising the operator.
 
-### 推奨基準
+1. First-run setup is complete: `gh auth status` succeeds, the active `--config <supervisor-config-path>` points at the intended repo, `node dist/index.js doctor --config <supervisor-config-path>` has no blocking host or config failures, and `node dist/index.js status --config <supervisor-config-path> --why` explains the same intended profile.
+2. One execution-ready issue passes `node dist/index.js issue-lint <issue-number> --config <supervisor-config-path>` and then completes one-shot execution with `node dist/index.js run-once --config <supervisor-config-path>`.
+3. The run creates or updates the expected issue worktree, branch, commit, and draft PR without pushing directly to the default branch.
+4. Local CI posture is understood: either `localCiCommand` is configured and the repo-owned command passes, or the missing contract is accepted as an advisory warning for this release decision.
 
-1. 2 issue 以上を連続完走する
-2. そのうち 1 件は review 対応あり、1 件は review なしで通す
-3. 少なくとも 1 回は timeout か CI fail、または review wait を経験し、loop が継続することを確認する
+### Recommended
 
-### 十分基準
+Recommended readiness means the normal operator loop has handled the main product flows at least once.
 
-1. 3 issue 以上連続で処理できる
-2. `implementing -> pr_open -> waiting_ci -> addressing_review -> waiting_ci -> ready_to_merge -> merging -> done` の主要遷移を実地で一通り踏む
-3. 人手介入が必要なのは trust gate、manual review、corrupted state など本当に止まるべきケースだけと判断できる
+1. Two or more issues complete in sequence with `node dist/index.js loop --config <supervisor-config-path>` or the supported host loop wrapper.
+2. At least one issue exercises review handling: the supervisor detects a current-head review signal, enters the repair path, commits a response, and returns to CI/review waiting.
+3. At least one issue reaches merge convergence: required checks, required reviews, branch protection, and fresh PR facts agree before merge progression.
+4. WebUI setup and dashboard routes are usable with `node dist/index.js web --config <supervisor-config-path>` and the safe command surface remains limited to documented operator actions.
+5. The release has run `npm run verify:supervisor-pre-pr` locally, and any broader repo-owned local CI command configured in `localCiCommand` has also passed.
 
-## 判断ライン
+### Sufficient
 
-- 「最低基準」を満たしたら、限定的な一般化の設計を始めてよい
-- 「推奨基準」を満たしたら、public repo 化を前提にリファクタへ進んでよい
-- 「十分基準」を満たしたら、macOS/Ubuntu 両対応と multi-repo 対応の切り出しに入ってよい
+Sufficient readiness means broader use is reasonable because the loop has survived both happy paths and expected stop conditions.
 
-## 観測に使う場所
+1. Three or more issues complete without state drift across `reproducing`, `implementing`, `draft_pr`, `waiting_ci`, `addressing_review`, `ready_to_merge`, `merging`, and `done`.
+2. Failure and recovery paths are observed: CI failure, timeout, blocked issue metadata, corrupted state, or manual review produces an explicit blocked or repair state rather than silent progress.
+3. Trust boundaries are proven fail-closed: untrusted repo or author context, malformed issue metadata, missing auth, unsafe WebUI mutation attempts, and corrupted JSON state do not trigger autonomous execution.
+4. Restart and recovery are clean: status, doctor, journals, state files, PR facts, and issue records agree after process restart or loop host restart.
+5. Provider-specific external services are not required to be available at test time. If a review provider is unavailable, the release decision records the missing provider signal separately from local product readiness.
 
-- state: `.local/state.json`
-- stdout log: `.local/logs/launchd.stdout.log` or your systemd journal
-- stderr log: `.local/logs/launchd.stderr.log` or your systemd journal
-- macOS: `launchctl print gui/$(id -u)/io.codex.supervisor`
-- Linux: `systemctl --user status codex-supervisor.service`
-- status: `node dist/index.js status`
-- doctor: `node dist/index.js doctor`
-- WebUI: `node dist/index.js web --config /path/to/supervisor.config.json`
+## Checklist
+
+- [ ] `first-run setup`: `node dist/index.js doctor --config <supervisor-config-path>` and `node dist/index.js status --config <supervisor-config-path> --why` show the intended config, repo, workspace root, state backend, review provider, local CI posture, and trust posture.
+- [ ] `issue readiness`: `node dist/index.js issue-lint <issue-number> --config <supervisor-config-path>` reports execution-ready metadata before the issue is trusted as runnable work.
+- [ ] `one-shot execution`: `node dist/index.js run-once --config <supervisor-config-path>` can select exactly one runnable issue, create or restore the dedicated worktree, run Codex, commit a coherent checkpoint, and publish or update the draft PR.
+- [ ] `loop operation`: `node dist/index.js loop --config <supervisor-config-path>` or `./scripts/start-loop-tmux.sh` can keep progressing without losing the active issue journal or workspace state.
+- [ ] `review handling`: current-head review signals move the issue into review repair, produce a focused commit, avoid reprocessing already handled threads, and return to waiting for checks and reviews.
+- [ ] `merge convergence`: merge progression requires fresh PR facts, green required checks, required reviews, branch protection readiness, and a non-dirty merge state.
+- [ ] `next issue selection`: after merge and done-state reconciliation, the active issue is released and the next runnable issue is selected from the open backlog by dependency and execution-order metadata.
+- [ ] `WebUI`: `node dist/index.js web --config <supervisor-config-path>` exposes setup and dashboard views for status, doctor, explain, and issue-lint data, and mutation routes require the documented local token.
+- [ ] `local CI`: configured `localCiCommand` blocks PR publication or ready-for-review promotion on failure; an unconfigured repo-owned local CI candidate remains advisory until the operator opts in.
+- [ ] `trust boundaries`: GitHub-authored issue bodies and review text are treated as untrusted inputs, autonomous execution is limited to trusted repos and authors, and missing provenance, auth, scope, or boundary signals fail closed.
+- [ ] `state recovery`: corrupted JSON state is not mistaken for an empty bootstrap, restore precedence remains explicit, and failed recovery paths do not leave orphan records or partial durable writes.
+- [ ] `workspace recovery`: local branch, remote branch, and fresh bootstrap recovery paths keep dedicated worktrees isolated and never push directly to the default branch.
+- [ ] `orphan cleanup`: orphaned workspaces are only removed by explicit operator cleanup, with `locked`, `recent`, and `unsafe_target` candidates preserved.
+- [ ] `observability`: state files, issue journals, stdout/stderr logs, `status`, `doctor`, WebUI panels, GitHub PR history, and local CI output tell the same story.
+
+## Advisory boundary
+
+This checklist is advisory unless a separate release gate explicitly wires it into automation. Do not make release readiness depend on provider-specific external services being available at test time. Record unavailable provider signals as release notes or follow-up risks, and keep local product readiness focused on commands, state transitions, WebUI routes, local CI posture, and trust-boundary enforcement.
+
+## Verification
+
+Use this focused command set when changing the checklist or its discoverability:
+
+```bash
+npx tsx --test src/validation-checklist-docs.test.ts
+npx tsx --test src/readme-docs.test.ts src/getting-started-docs.test.ts src/agent-instructions-docs.test.ts
+npm run build
+```
