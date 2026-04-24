@@ -1,13 +1,7 @@
 import {
   CandidateDiscoveryDiagnostics,
-  GitHubIssue,
-  GitHubPullRequest,
   GitHubRateLimitTelemetry,
-  IssueComment,
   IssueRunRecord,
-  PullRequestCheck,
-  PullRequestReview,
-  ReviewThread,
   SupervisorConfig,
 } from "../core/types";
 import { CommandOptions, runCommand } from "../core/command";
@@ -19,12 +13,26 @@ import {
   PullRequestReviewSurfaceOptions,
 } from "./github-review-surface";
 import { GitHubTransport, isGitHubRateLimitFailure } from "./github-transport";
+import type { GitHubIssue, GitHubPullRequest, IssueComment, PullRequestCheck, PullRequestReview, ReviewThread } from "./types";
 
 export { isTransientGitHubCommandFailure } from "./github-transport";
 export { isGitHubRateLimitFailure } from "./github-transport";
 export { inferCopilotReviewLifecycle } from "./github-review-signals";
 export type { GitHubCommandRunner } from "./github-transport";
 export { GitHubInventoryRefreshError } from "./github-inventory";
+export type {
+  CopilotReviewState,
+  ExternalReviewActor,
+  GitHubIssue,
+  GitHubLabel,
+  GitHubPullRequest,
+  IssueComment,
+  PullRequestCheck,
+  PullRequestHydrationProvenance,
+  PullRequestReview,
+  ReviewThread,
+  ReviewThreadComment,
+} from "./types";
 
 export class GitHubClient {
   private readonly inventory: GitHubInventoryClient;

@@ -1,12 +1,8 @@
 import {
-  GitHubPullRequest,
-  IssueComment,
-  PullRequestCheck,
-  PullRequestReview,
-  ReviewThread,
   SupervisorConfig,
 } from "../core/types";
 import { CommandOptions, CommandResult } from "../core/command";
+import type { GitHubPullRequest, IssueComment, PullRequestCheck, PullRequestReview, ReviewThread } from "./types";
 import {
   normalizeRollupChecks,
   PullRequestStatusCheckRollupResponse,

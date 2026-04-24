@@ -3,7 +3,7 @@ import {
   ConfiguredBotReviewSummary,
   CopilotReviewLifecycleFacts,
 } from "./github-review-signals";
-import { GitHubPullRequest, PullRequestCheck } from "../core/types";
+import type { GitHubPullRequest, PullRequestCheck } from "./types";
 
 export interface PullRequestStatusCheckRollupResponse {
   statusCheckRollup?: Array<{

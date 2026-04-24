@@ -1,6 +1,7 @@
-import { GitHubIssue, GitHubPullRequest, IssueRunRecord, SupervisorConfig } from "../core/types";
+import { IssueRunRecord, SupervisorConfig } from "../core/types";
 import { CommandResult } from "../core/command";
 import { parseJson, truncate } from "../core/utils";
+import type { GitHubIssue, GitHubPullRequest } from "./types";
 
 const POST_CREATE_PR_LOOKUP_RETRY_LIMIT = 2;
 const POST_CREATE_PR_LOOKUP_BASE_DELAY_MS = 200;
