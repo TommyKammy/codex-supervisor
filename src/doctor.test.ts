@@ -566,6 +566,43 @@ test("renderDoctorReport includes loop host diagnostics and macOS tmux drift war
   );
 });
 
+test("renderDoctorReport sanitizes loop runtime run mode values", () => {
+  const report = renderDoctorReport({
+    overallStatus: "pass",
+    checks: [],
+    cadenceDiagnostics: {
+      pollIntervalSeconds: 120,
+      mergeCriticalRecheckSeconds: null,
+      mergeCriticalEffectiveSeconds: 120,
+      mergeCriticalRecheckEnabled: false,
+    },
+    candidateDiscoverySummary: "doctor_candidate_discovery fetch_window=100 strategy=paginated",
+    candidateDiscoveryWarning: null,
+    trustDiagnostics: {
+      trustMode: "untrusted_or_mixed",
+      executionSafetyMode: "operator_gated",
+      warning: null,
+      configWarning: null,
+    },
+    loopRuntime: {
+      state: "running",
+      hostMode: "unknown",
+      runMode: "unknown\nmutated=line" as never,
+      markerPath: "/tmp/locks/supervisor/loop-runtime.lock",
+      configPath: "/tmp/supervisor.config.json",
+      stateFile: "/tmp/state.json",
+      pid: 4242,
+      startedAt: "2026-03-25T00:00:00.000Z",
+      ownershipConfidence: "live_lock",
+      detail: "supervisor-loop-runtime",
+    },
+    loopHostWarning: null,
+  });
+
+  assert.match(report, /doctor_loop_runtime .* run_mode=unknown\\nmutated=line /);
+  assert.doesNotMatch(report, /\nmutated=line/);
+});
+
 test("renderDoctorReport sanitizes multiline Codex policy lines", () => {
   const report = renderDoctorReport({
     overallStatus: "pass",
