@@ -158,6 +158,51 @@ export function renderSetupBrowserScript(): string {
         }
       }
 
+      function fieldChecklistEntry(field) {
+        const posture = field.posture && field.posture.tier ? formatToken(field.posture.tier) : null;
+        const meta = [
+          "Current value: " + (field.value ?? "Unset"),
+          "Required: " + (field.required ? "yes" : "no") + " | Source: " + formatToken(field.metadata && field.metadata.source ? field.metadata.source : "unknown") + " | Type: " + formatToken(field.metadata && field.metadata.valueType ? field.metadata.valueType : "unknown"),
+        ];
+        if (posture) {
+          meta.push("Posture tier: " + posture);
+        }
+        return {
+          title: field.label + " [" + formatStatus(field.state) + "]",
+          tone: field.state === "invalid" ? "blocker" : "",
+          meta,
+          notes: [
+            field.posture && field.posture.summary ? "Posture: " + field.posture.summary : null,
+            field.message,
+          ].filter(Boolean),
+        };
+      }
+
+      function postureGroupChecklistEntries(report) {
+        const groups = Array.isArray(report.configPostureGroups) ? report.configPostureGroups : [];
+        if (groups.length === 0) {
+          return (report.fields || []).map(fieldChecklistEntry);
+        }
+
+        const entries = [];
+        for (const group of groups) {
+          const fields = Array.isArray(group.fields) ? group.fields : [];
+          entries.push({
+            title: group.label || formatStatus(group.tier),
+            tone: group.tier === "dangerous_explicit_opt_in" ? "danger" : "",
+            meta: [
+              "Posture tier: " + formatToken(group.tier),
+              "Fields: " + fields.length,
+            ],
+            notes: [group.summary || ""].filter(Boolean),
+          });
+          for (const field of fields) {
+            entries.push(fieldChecklistEntry(field));
+          }
+        }
+        return entries;
+      }
+
       async function readJson(path, init) {
         const response = await fetch(path, init || { headers: { Accept: "application/json" } });
         if (!response.ok) {
@@ -529,16 +574,7 @@ export function renderSetupBrowserScript(): string {
         setText(elements.fieldSummary, summarizeFields(report.fields));
         renderChecklist(
           elements.fields,
-          (report.fields || []).map(
-            (field) => ({
-              title: field.label + " [" + formatStatus(field.state) + "]",
-              meta: [
-                "Current value: " + (field.value ?? "Unset"),
-                "Required: " + (field.required ? "yes" : "no") + " | Source: " + formatToken(field.metadata && field.metadata.source ? field.metadata.source : "unknown") + " | Type: " + formatToken(field.metadata && field.metadata.valueType ? field.metadata.valueType : "unknown"),
-              ],
-              notes: [field.message],
-            }),
-          ),
+          postureGroupChecklistEntries(report),
           "No setup fields reported.",
         );
         setText(elements.hostSummary, summarizeHostReadiness(report));

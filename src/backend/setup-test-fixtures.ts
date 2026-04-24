@@ -8,6 +8,8 @@ import type {
 import type { SetupConfigUpdateResult } from "../setup-config-write";
 import type {
   SetupReadinessBlocker,
+  SetupReadinessConfigPostureField,
+  SetupReadinessConfigPostureGroup,
   SetupReadinessField,
   SetupReadinessFieldKey,
   SetupReadinessHostSummary,
@@ -381,6 +383,108 @@ export function createSetupModelRoutingPosture(
     ],
     ...overrides,
   };
+}
+
+export function createSetupConfigPostureField(
+  overrides: Partial<SetupReadinessConfigPostureField> = {},
+): SetupReadinessConfigPostureField {
+  return {
+    key: "repoPath",
+    label: "Repository path",
+    state: "configured",
+    value: "/tmp/repo",
+    message: "Repository path is configured.",
+    required: true,
+    metadata: {
+      source: "config",
+      editable: true,
+      valueType: "directory_path",
+    },
+    posture: {
+      field: "repoPath",
+      tier: "required",
+      summary: "Managed repository path.",
+      requirementScope: "parser_required",
+    },
+    ...overrides,
+  };
+}
+
+export function createSetupConfigPostureGroups(
+  overrides: Partial<Record<SetupReadinessConfigPostureGroup["tier"], SetupReadinessConfigPostureField[]>> = {},
+): SetupReadinessConfigPostureGroup[] {
+  return [
+    {
+      tier: "required",
+      label: "Required setup decisions",
+      summary: "Missing or invalid required setup decisions are first-run blockers.",
+      fields: overrides.required ?? [
+        createSetupConfigPostureField(),
+        createSetupConfigPostureField({
+          key: "reviewBotLogins",
+          label: "Review provider",
+          state: "missing",
+          value: null,
+          message: "Configure at least one review provider before first-run setup is complete.",
+          required: true,
+          metadata: { source: "config", editable: true, valueType: "review_provider" },
+          posture: {
+            field: "reviewBotLogins",
+            tier: "required",
+            summary: "Review provider identity source.",
+            requirementScope: "first_run_setup",
+          },
+        }),
+      ],
+    },
+    {
+      tier: "recommended",
+      label: "Recommended setup contracts",
+      summary: "Recommended fields improve repeatability without blocking first-run setup.",
+      fields: overrides.recommended ?? [
+        createSetupConfigPostureField({
+          key: "workspacePreparationCommand",
+          label: "Workspace preparation command",
+          state: "missing",
+          value: null,
+          message: "Workspace preparation command is optional until you opt in to the repo-owned contract.",
+          required: false,
+          metadata: { source: "config", editable: true, valueType: "text" },
+          posture: {
+            field: "workspacePreparationCommand",
+            tier: "recommended",
+            summary: "Repo-owned workspace setup contract.",
+          },
+        }),
+        createSetupConfigPostureField({
+          key: "localCiCommand",
+          label: "Local CI command",
+          state: "missing",
+          value: null,
+          message: "Local CI command is optional until you opt in to the repo-owned contract.",
+          required: false,
+          metadata: { source: "config", editable: true, valueType: "text" },
+          posture: {
+            field: "localCiCommand",
+            tier: "recommended",
+            summary: "Repo-owned local CI contract.",
+          },
+        }),
+      ],
+    },
+    {
+      tier: "advanced",
+      label: "Advanced settings",
+      summary: "Advanced settings stay separate from first-run work until explicitly reviewed.",
+      fields: overrides.advanced ?? [],
+    },
+    {
+      tier: "dangerous_explicit_opt_in",
+      label: "Dangerous explicit opt-in settings",
+      summary: "Dangerous explicit opt-in settings are never presented as routine defaults or required next steps.",
+      fields: overrides.dangerous_explicit_opt_in ?? [],
+    },
+  ];
 }
 
 export function createSetupReadinessReport(
