@@ -92,6 +92,21 @@ test("describeLoopRuntime summarizes running, off, and unknown states with host 
     chipTone: "warn",
   });
 
+  assert.deepEqual(describeLoopRuntime({
+    state: "off",
+    hostMode: "unknown",
+    duplicateLoopDiagnostic: {
+      kind: "unrelated_runtime_diagnostic",
+      status: "informational",
+      matchingProcessCount: 2,
+    },
+  }), {
+    modeBadge: "Mode: web only (loop off)",
+    summary: "Loop mode is off on this host",
+    chipLabel: "loop off",
+    chipTone: "ok",
+  });
+
   assert.deepEqual(describeLoopRuntime(null), {
     modeBadge: "Mode: local WebUI",
     summary: "Loop status is unavailable on this host",

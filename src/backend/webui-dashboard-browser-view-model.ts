@@ -153,7 +153,11 @@ export function describeLoopRuntime(loopRuntime: DashboardLoopRuntimeLike | null
   const ownershipConfidence =
     typeof loopRuntime?.ownershipConfidence === "string" ? loopRuntime.ownershipConfidence : "none";
   const duplicateDiagnostic = loopRuntime?.duplicateLoopDiagnostic ?? null;
-  if (ownershipConfidence === "duplicate_suspected" || duplicateDiagnostic) {
+  const hasDuplicateSignal =
+    ownershipConfidence === "duplicate_suspected" ||
+    duplicateDiagnostic?.kind === "duplicate_loop_processes" ||
+    duplicateDiagnostic?.status === "duplicate";
+  if (hasDuplicateSignal) {
     const matchingProcessCount =
       typeof duplicateDiagnostic?.matchingProcessCount === "number" ? duplicateDiagnostic.matchingProcessCount : null;
     return {
