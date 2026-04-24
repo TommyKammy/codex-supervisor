@@ -1830,6 +1830,165 @@ test("setup shell lets operators adopt the recommended local CI command and save
   );
 });
 
+test("setup shell lets operators dismiss the recommended local CI command", async () => {
+  const setupConfigResponse = createDeferred<MockResponseLike>();
+  const setupReadinessRefreshResponse = createDeferred<MockResponseLike>();
+  const harness = createSetupHarness([
+    {
+      path: "/api/setup-readiness",
+      response: jsonResponse(withManagedRestart(createSetupReadinessReport({
+        ready: true,
+        overallStatus: "configured",
+        fields: [
+          createSetupField("localCiCommand"),
+        ],
+        blockers: [],
+        hostReadiness: { overallStatus: "pass", checks: [] },
+        providerPosture: createSetupProviderPosture({
+          profile: "codex",
+          provider: "codex",
+          reviewers: ["chatgpt-codex-connector"],
+          signalSource: "review_bot_logins",
+          configured: true,
+          summary: "Codex Connector is configured.",
+        }),
+        trustPosture: createSetupTrustPosture({ warning: null }),
+        localCiContract: {
+          configured: false,
+          command: null,
+          recommendedCommand: "npm run verify:pre-pr",
+          source: "repo_script_candidate",
+          summary:
+            "Repo-owned local CI candidate exists but localCiCommand is unset. Recommended command: npm run verify:pre-pr.",
+        },
+      }), unavailableManagedRestart)),
+    },
+    {
+      path: "/api/setup-config",
+      method: "POST",
+      body: JSON.stringify({
+        changes: {
+          localCiCandidateDismissed: true,
+        },
+      }),
+      response: setupConfigResponse.promise,
+    },
+    {
+      path: "/api/setup-readiness",
+      response: setupReadinessRefreshResponse.promise,
+    },
+  ]);
+  await harness.flush();
+
+  const dismissButton = harness.document.getElementById("setup-local-ci-dismiss-recommended");
+  const adoptButton = harness.document.getElementById("setup-local-ci-adopt-recommended");
+  const saveStatus = harness.document.getElementById("setup-save-status");
+  assert.ok(dismissButton);
+  assert.ok(adoptButton);
+  assert.ok(saveStatus);
+  assert.equal(dismissButton.hidden, false);
+  assert.equal(dismissButton.disabled, false);
+  assert.equal(adoptButton.hidden, false);
+
+  const dismissPromise = dismissButton.dispatch("click");
+  await harness.flush();
+  assert.match(saveStatus.textContent ?? "", /Dismissing recommended local CI command/u);
+
+  setupConfigResponse.resolve(jsonResponse(withManagedRestart(createSetupConfigUpdateResult({
+    backupPath: null,
+    updatedFields: ["localCiCandidateDismissed"],
+    restartTriggeredByFields: ["localCiCandidateDismissed"],
+    document: {
+      localCiCandidateDismissed: true,
+    },
+    readiness: createSetupReadinessReport({
+      ready: true,
+      overallStatus: "configured",
+      fields: [
+        createSetupField("localCiCommand"),
+      ],
+      blockers: [],
+      hostReadiness: { overallStatus: "pass", checks: [] },
+      providerPosture: createSetupProviderPosture({
+        profile: "codex",
+        provider: "codex",
+        reviewers: ["chatgpt-codex-connector"],
+        signalSource: "review_bot_logins",
+        configured: true,
+        summary: "Codex Connector is configured.",
+      }),
+      trustPosture: createSetupTrustPosture({ warning: null }),
+      localCiContract: {
+        configured: false,
+        command: null,
+        recommendedCommand: "npm run verify:pre-pr",
+        source: "dismissed_repo_script_candidate",
+        summary:
+          "Repo-owned local CI candidate was intentionally dismissed; localCiCommand remains unset and non-blocking. Dismissed candidate: npm run verify:pre-pr.",
+      },
+    }),
+  }), unavailableManagedRestart)));
+  await harness.flush();
+
+  setupReadinessRefreshResponse.resolve(jsonResponse(withManagedRestart(createSetupReadinessReport({
+    ready: true,
+    overallStatus: "configured",
+    fields: [
+      createSetupField("localCiCommand"),
+    ],
+    blockers: [],
+    hostReadiness: { overallStatus: "pass", checks: [] },
+    providerPosture: createSetupProviderPosture({
+      profile: "codex",
+      provider: "codex",
+      reviewers: ["chatgpt-codex-connector"],
+      signalSource: "review_bot_logins",
+      configured: true,
+      summary: "Codex Connector is configured.",
+    }),
+    trustPosture: createSetupTrustPosture({ warning: null }),
+    localCiContract: {
+      configured: false,
+      command: null,
+      recommendedCommand: "npm run verify:pre-pr",
+      source: "dismissed_repo_script_candidate",
+      summary:
+        "Repo-owned local CI candidate was intentionally dismissed; localCiCommand remains unset and non-blocking. Dismissed candidate: npm run verify:pre-pr.",
+    },
+  }), unavailableManagedRestart)));
+
+  await dismissPromise;
+  await harness.flush();
+
+  assert.deepEqual(
+    harness.fetchCalls.map((call) => ({ path: call.path, method: call.method, body: call.body })),
+    [
+      { path: "/api/setup-readiness", method: "GET", body: null },
+      {
+        path: "/api/setup-config",
+        method: "POST",
+        body: JSON.stringify({
+          changes: {
+            localCiCandidateDismissed: true,
+          },
+        }),
+      },
+      { path: "/api/setup-readiness", method: "GET", body: null },
+    ],
+  );
+  assert.match(saveStatus.textContent ?? "", /Dismissed the recommended local CI command/u);
+  assert.match(
+    harness.document.getElementById("setup-local-ci-summary")?.textContent ?? "",
+    /Repo-owned local CI candidate was intentionally dismissed; localCiCommand remains unset and non-blocking\./u,
+  );
+  assert.match(
+    harness.document.getElementById("setup-local-ci-details")?.textContent ?? "",
+    /Configured: no.*Source: dismissed repo script candidate.*codex-supervisor will not run the dismissed candidate unless you opt in later by configuring localCiCommand\./u,
+  );
+  assert.equal(harness.document.getElementById("setup-local-ci-dismiss-recommended")?.hidden, true);
+  assert.equal(harness.document.getElementById("setup-local-ci-adopt-recommended")?.hidden, true);
+});
+
 test("setup shell saves through the narrow setup config API and revalidates readiness after the write", async () => {
   const setupConfigResponse = createDeferred<MockResponseLike>();
   const setupReadinessRefreshResponse = createDeferred<MockResponseLike>();

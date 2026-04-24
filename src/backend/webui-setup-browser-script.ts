@@ -3,6 +3,7 @@ import {
   buildBrowserLocalCiChecklistEntries,
   buildMutationHeaders,
   canAdoptBrowserLocalCiRecommendedCommand,
+  canDismissBrowserLocalCiRecommendedCommand,
   formatBrowserToken,
   normalizeBrowserLocalCiContract,
   postMutationJsonWithAuth,
@@ -19,6 +20,7 @@ export function renderSetupBrowserScript(): string {
         normalizeBrowserLocalCiContract,
         buildBrowserLocalCiChecklistEntries,
         canAdoptBrowserLocalCiRecommendedCommand,
+        canDismissBrowserLocalCiRecommendedCommand,
         readStoredMutationAuthToken,
         writeStoredMutationAuthToken,
         promptForMutationAuthToken,
@@ -58,6 +60,7 @@ export function renderSetupBrowserScript(): string {
         localCiActions: document.getElementById("setup-local-ci-actions"),
         localCiDetails: document.getElementById("setup-local-ci-details"),
         localCiAdoptRecommended: document.getElementById("setup-local-ci-adopt-recommended"),
+        localCiDismissRecommended: document.getElementById("setup-local-ci-dismiss-recommended"),
       };
       const editableFieldOrder = [
         "repoPath",
@@ -288,6 +291,13 @@ export function renderSetupBrowserScript(): string {
               normalizedLocalCiContract,
               Boolean(document.getElementById("setup-input-localCiCommand")),
             );
+        }
+        if (elements.localCiDismissRecommended) {
+          const normalizedLocalCiContract = normalizeBrowserLocalCiContract(currentReport && currentReport.localCiContract);
+          elements.localCiDismissRecommended.disabled =
+            disabled ||
+            elements.localCiDismissRecommended.hidden ||
+            !canDismissBrowserLocalCiRecommendedCommand(normalizedLocalCiContract);
         }
         syncRestartButton();
         for (const field of editableFields(currentReport || {})) {
@@ -564,6 +574,11 @@ export function renderSetupBrowserScript(): string {
           elements.localCiAdoptRecommended.hidden = !canAdoptRecommended;
           elements.localCiAdoptRecommended.disabled = saveInFlight || !canAdoptRecommended;
         }
+        if (elements.localCiDismissRecommended) {
+          const canDismissRecommended = canDismissBrowserLocalCiRecommendedCommand(localCiContract);
+          elements.localCiDismissRecommended.hidden = !canDismissRecommended;
+          elements.localCiDismissRecommended.disabled = saveInFlight || !canDismissRecommended;
+        }
         renderChecklist(
           elements.localCiDetails,
           buildBrowserLocalCiChecklistEntries(localCiContract),
@@ -693,12 +708,36 @@ export function renderSetupBrowserScript(): string {
         setSaveStatus("Recommended local CI command copied into the setup field. Save to opt in.");
       }
 
+      async function handleDismissRecommendedLocalCiClick() {
+        if (!currentReport || !canDismissBrowserLocalCiRecommendedCommand(currentReport.localCiContract)) {
+          return;
+        }
+
+        setFormDisabled(true);
+        setSaveStatus("Dismissing recommended local CI command...");
+        try {
+          const result = await writeJson("/api/setup-config", { changes: { localCiCandidateDismissed: true } });
+          setSaveStatus("Revalidating setup readiness...");
+          await refreshSetupReadiness();
+          renderRestartOutcome(result);
+          setSaveStatus("Dismissed the recommended local CI command. localCiCommand remains unset.");
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          setSaveStatus("Local CI dismissal failed: " + message);
+        } finally {
+          setFormDisabled(false);
+        }
+      }
+
       async function bootstrap() {
         if (elements.form) {
           elements.form.addEventListener("submit", handleSetupSubmit);
         }
         if (elements.localCiAdoptRecommended) {
           elements.localCiAdoptRecommended.addEventListener("click", handleAdoptRecommendedLocalCiClick);
+        }
+        if (elements.localCiDismissRecommended) {
+          elements.localCiDismissRecommended.addEventListener("click", handleDismissRecommendedLocalCiClick);
         }
         if (elements.restartButton) {
           elements.restartButton.addEventListener("click", handleManagedRestartClick);

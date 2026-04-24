@@ -1421,6 +1421,41 @@ test("renderDoctorReport surfaces advisory local CI posture when a repo-owned ca
   );
 });
 
+test("renderDoctorReport surfaces explicitly dismissed local CI candidate posture", () => {
+  const report = renderDoctorReport({
+    overallStatus: "pass",
+    trustDiagnostics: {
+      trustMode: "trusted_repo_and_authors",
+      executionSafetyMode: "unsandboxed_autonomous",
+      warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
+      configWarning: null,
+    },
+    checks: [],
+    cadenceDiagnostics: {
+      pollIntervalSeconds: 120,
+      mergeCriticalRecheckSeconds: null,
+      mergeCriticalEffectiveSeconds: 120,
+      mergeCriticalRecheckEnabled: false,
+    },
+    candidateDiscoverySummary: "doctor_candidate_discovery fetch_window=100 strategy=paginated",
+    candidateDiscoveryWarning: null,
+    localCiContract: {
+      configured: false,
+      command: null,
+      recommendedCommand: "npm run verify:supervisor-pre-pr",
+      source: "dismissed_repo_script_candidate",
+      summary:
+        "Repo-owned local CI candidate was intentionally dismissed; localCiCommand remains unset and non-blocking. Dismissed candidate: npm run verify:supervisor-pre-pr.",
+      warning: null,
+    },
+  } as Awaited<ReturnType<typeof diagnoseSupervisorHost>>);
+
+  assert.match(
+    report,
+    /doctor_local_ci configured=false source=dismissed_repo_script_candidate command=none summary=Repo-owned local CI candidate was intentionally dismissed; localCiCommand remains unset and non-blocking\. Dismissed candidate: npm run verify:supervisor-pre-pr\./,
+  );
+});
+
 test("renderDoctorReport warns when localCiCommand is configured without workspacePreparationCommand", () => {
   const report = renderDoctorReport({
     overallStatus: "pass",

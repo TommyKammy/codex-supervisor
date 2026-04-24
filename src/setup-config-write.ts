@@ -22,6 +22,7 @@ export interface SetupConfigChanges {
   branchPrefix?: string;
   workspacePreparationCommand?: string | null;
   localCiCommand?: string | null;
+  localCiCandidateDismissed?: boolean;
   reviewProvider?: SetupConfigPreviewSelectableReviewProviderProfile;
 }
 
@@ -34,15 +35,17 @@ export interface SetupConfigUpdateResult {
   kind: "setup_config_update";
   configPath: string;
   backupPath: string | null;
-  updatedFields: SetupReadinessFieldKey[];
+  updatedFields: SetupConfigWritableFieldKey[];
   restartRequired: boolean;
   restartScope: "supervisor" | null;
-  restartTriggeredByFields: SetupReadinessFieldKey[];
+  restartTriggeredByFields: SetupConfigWritableFieldKey[];
   document: Record<string, unknown>;
   readiness: SetupReadinessReport;
 }
 
-const CONFIGURABLE_FIELDS: SetupReadinessFieldKey[] = [
+type SetupConfigWritableFieldKey = SetupReadinessFieldKey | "localCiCandidateDismissed";
+
+const CONFIGURABLE_FIELDS: SetupConfigWritableFieldKey[] = [
   "repoPath",
   "repoSlug",
   "defaultBranch",
@@ -52,10 +55,11 @@ const CONFIGURABLE_FIELDS: SetupReadinessFieldKey[] = [
   "branchPrefix",
   "workspacePreparationCommand",
   "localCiCommand",
+  "localCiCandidateDismissed",
   "reviewProvider",
 ];
 
-const RESTART_REQUIRED_FIELDS = new Set<SetupReadinessFieldKey>(CONFIGURABLE_FIELDS);
+const RESTART_REQUIRED_FIELDS = new Set<SetupConfigWritableFieldKey>(CONFIGURABLE_FIELDS);
 
 const REVIEW_PROVIDER_LOGIN_MAP: Record<SetupConfigPreviewSelectableReviewProviderProfile, string[]> = {
   none: [],
@@ -98,6 +102,14 @@ function assertReviewProvider(value: unknown): SetupConfigPreviewSelectableRevie
   throw new Error("reviewProvider must be one of none, copilot, codex, or coderabbit.");
 }
 
+function assertBoolean(value: unknown, fieldName: string): boolean {
+  if (typeof value !== "boolean") {
+    throw new Error(`${fieldName} must be a boolean.`);
+  }
+
+  return value;
+}
+
 function normalizeLocalCiCommand(value: unknown): string | null {
   if (value === null) {
     return null;
@@ -132,7 +144,7 @@ function normalizeSetupChanges(changes: unknown): SetupConfigChanges {
   }
 
   const raw = changes as Record<string, unknown>;
-  const unknownFields = Object.keys(raw).filter((key) => !CONFIGURABLE_FIELDS.includes(key as SetupReadinessFieldKey));
+  const unknownFields = Object.keys(raw).filter((key) => !CONFIGURABLE_FIELDS.includes(key as SetupConfigWritableFieldKey));
   if (unknownFields.length > 0) {
     throw new Error(`Unsupported setup config field: ${unknownFields[0]}`);
   }
@@ -164,6 +176,9 @@ function normalizeSetupChanges(changes: unknown): SetupConfigChanges {
   }
   if ("localCiCommand" in raw) {
     normalized.localCiCommand = normalizeLocalCiCommand(raw.localCiCommand);
+  }
+  if ("localCiCandidateDismissed" in raw) {
+    normalized.localCiCandidateDismissed = assertBoolean(raw.localCiCandidateDismissed, "localCiCandidateDismissed");
   }
   if ("reviewProvider" in raw) {
     normalized.reviewProvider = assertReviewProvider(raw.reviewProvider);
@@ -239,6 +254,15 @@ function applySetupChanges(document: Record<string, unknown>, changes: SetupConf
       delete nextDocument.localCiCommand;
     } else {
       nextDocument.localCiCommand = changes.localCiCommand;
+      delete nextDocument.localCiCandidateDismissed;
+    }
+  }
+  if ("localCiCandidateDismissed" in changes) {
+    if (changes.localCiCandidateDismissed) {
+      nextDocument.localCiCandidateDismissed = true;
+      delete nextDocument.localCiCommand;
+    } else {
+      delete nextDocument.localCiCandidateDismissed;
     }
   }
   if (changes.reviewProvider !== undefined) {
@@ -259,7 +283,7 @@ function displayStringValue(value: unknown): string | null {
 function currentSemanticFieldValue(args: {
   configSummary: ReturnType<typeof loadConfigSummary>;
   existingDocument: Record<string, unknown>;
-  field: SetupReadinessFieldKey;
+  field: SetupConfigWritableFieldKey;
 }): string | null {
   const { configSummary, existingDocument, field } = args;
   const resolvedConfig = configSummary.config;
@@ -294,6 +318,13 @@ function currentSemanticFieldValue(args: {
     return displayStringValue(existingDocument.workspacePreparationCommand);
   }
 
+  if (field === "localCiCandidateDismissed") {
+    const value = resolvedConfig !== null
+      ? resolvedConfig.localCiCandidateDismissed
+      : existingDocument.localCiCandidateDismissed;
+    return value === true ? "true" : "false";
+  }
+
   if (resolvedConfig !== null) {
     return displayStringValue(resolvedConfig[field]);
   }
@@ -301,7 +332,7 @@ function currentSemanticFieldValue(args: {
   return displayStringValue(existingDocument[field]);
 }
 
-function nextSemanticFieldValue(field: SetupReadinessFieldKey, changes: SetupConfigChanges): string | null {
+function nextSemanticFieldValue(field: SetupConfigWritableFieldKey, changes: SetupConfigChanges): string | null {
   switch (field) {
     case "repoPath":
       return changes.repoPath ?? null;
@@ -321,6 +352,8 @@ function nextSemanticFieldValue(field: SetupReadinessFieldKey, changes: SetupCon
       return changes.workspacePreparationCommand ?? null;
     case "localCiCommand":
       return changes.localCiCommand ?? null;
+    case "localCiCandidateDismissed":
+      return changes.localCiCandidateDismissed === true ? "true" : "false";
     case "reviewProvider":
       return changes.reviewProvider ?? null;
   }
@@ -330,7 +363,7 @@ function determineRestartTriggeredFields(args: {
   configSummary: ReturnType<typeof loadConfigSummary>;
   existingDocument: Record<string, unknown>;
   changes: SetupConfigChanges;
-}): SetupReadinessFieldKey[] {
+}): SetupConfigWritableFieldKey[] {
   const { configSummary, existingDocument, changes } = args;
   const updatedFields = CONFIGURABLE_FIELDS.filter((field) => field in changes);
   return updatedFields.filter((field) => {

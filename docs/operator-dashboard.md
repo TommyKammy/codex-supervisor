@@ -92,6 +92,7 @@ Read the local CI posture the same way:
 
 - `No repo-owned local CI contract is configured.` No canonical repo-owned local gate is active, so local CI is not blocking PR publication yet.
 - `Repo-owned local CI candidate exists but localCiCommand is unset.` The repo already defines a likely entrypoint, but codex-supervisor will not run it until `localCiCommand` is configured. This warning is advisory only.
+- `Repo-owned local CI candidate was intentionally dismissed; localCiCommand remains unset and non-blocking.` An operator acknowledged the detected candidate and intentionally left local CI unset for this profile.
 - `Repo-owned local CI contract is configured.` The configured command is now the active fail-closed gate. When configured local CI fails, PR publication stays blocked and ready-for-review promotion stays blocked until the repo-owned command passes again.
 
 If local CI is configured, remember that the config can now use either:
@@ -165,6 +166,7 @@ Use that same split when local CI is involved:
 
 - If `Issue details` is red because `issue-lint` reports missing sections or malformed metadata, fix the GitHub issue body first.
 - If `Issue details` is clean but `Doctor` or setup/readiness shows `Repo-owned local CI candidate exists but localCiCommand is unset.`, decide whether to adopt the repo script by updating supervisor config; this is not an issue-authoring failure.
+- If setup/readiness shows `Repo-owned local CI candidate was intentionally dismissed`, leave it alone unless you now want to adopt the repo command as the fail-closed local CI gate.
 - If `Issue details` is clean and the configured local CI gate fails, repair the repo or host until the configured command passes again.
 
 ## Browser smoke suite

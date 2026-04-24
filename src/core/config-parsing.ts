@@ -415,6 +415,7 @@ export function parseSupervisorConfigDocument(raw: Record<string, unknown>, reso
     issueSearch: typeof raw.issueSearch === "string" ? raw.issueSearch : undefined,
     workspacePreparationCommand: normalizeLocalCiCommand(raw.workspacePreparationCommand),
     localCiCommand: normalizeLocalCiCommand(raw.localCiCommand),
+    localCiCandidateDismissed: raw.localCiCandidateDismissed === true,
     candidateDiscoveryFetchWindow:
       typeof raw.candidateDiscoveryFetchWindow === "number" &&
       Number.isFinite(raw.candidateDiscoveryFetchWindow) &&

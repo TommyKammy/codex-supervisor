@@ -1896,6 +1896,64 @@ test("updateSetupConfig clears localCiCommand back to the unset state", async (t
   });
 });
 
+test("updateSetupConfig records an explicit local CI candidate dismissal", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-dismiss-local-ci-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const configPath = path.join(tempDir, "supervisor.config.json");
+  const repoPath = path.join(tempDir, "repo");
+  await fs.mkdir(repoPath, { recursive: true });
+  await fs.writeFile(
+    path.join(repoPath, "package.json"),
+    JSON.stringify({
+      scripts: {
+        "verify:pre-pr": "npm test",
+      },
+    }),
+    "utf8",
+  );
+  await fs.writeFile(
+    configPath,
+    JSON.stringify(
+      {
+        repoPath,
+        repoSlug: "owner/repo",
+        defaultBranch: "main",
+        workspaceRoot: path.join(tempDir, "worktrees"),
+        stateFile: path.join(tempDir, "state.json"),
+        codexBinary: process.execPath,
+        branchPrefix: "codex/issue-",
+        reviewBotLogins: ["chatgpt-codex-connector"],
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+
+  const result = await updateSetupConfig({
+    configPath,
+    changes: {
+      localCiCandidateDismissed: true,
+    },
+  });
+
+  const updatedDocument = JSON.parse(await fs.readFile(configPath, "utf8")) as Record<string, unknown>;
+  assert.equal(updatedDocument.localCiCandidateDismissed, true);
+  assert.deepEqual(result.updatedFields, ["localCiCandidateDismissed"]);
+  assert.deepEqual(result.restartTriggeredByFields, ["localCiCandidateDismissed"]);
+  assert.deepEqual(result.readiness.localCiContract, {
+    configured: false,
+    command: null,
+    recommendedCommand: "npm run verify:pre-pr",
+    source: "dismissed_repo_script_candidate",
+    summary:
+      "Repo-owned local CI candidate was intentionally dismissed; localCiCommand remains unset and non-blocking. Dismissed candidate: npm run verify:pre-pr.",
+    warning: null,
+  });
+});
+
 test("updateSetupConfig rejects invalid setup field values before touching the config file", async (t) => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-update-invalid-"));
   t.after(async () => {

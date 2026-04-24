@@ -654,6 +654,7 @@ export async function diagnoseSetupReadiness(
   const localCiContractConfig = configSummary.config ?? {
     localCiCommand: tryNormalizeLocalCiCommand(rawConfigDocument.localCiCommand),
     workspacePreparationCommand: tryNormalizeLocalCiCommand(rawConfigDocument.workspacePreparationCommand),
+    localCiCandidateDismissed: rawConfigDocument.localCiCandidateDismissed === true,
     repoPath: fallbackRepoPath,
   };
   const workspacePreparationWarning = validateWorkspacePreparationCommandForWorktrees(localCiContractConfig);

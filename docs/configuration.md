@@ -519,11 +519,14 @@ Operational notes:
 - the repo is the source of truth for the command contents, and the supervisor should only run the configured entrypoint and observe its exit status
 - `No repo-owned local CI contract is configured.` means no canonical repo-owned local gate is active
 - `Repo-owned local CI candidate exists but localCiCommand is unset.` means setup or readiness found a repo script candidate, but codex-supervisor will not run it until localCiCommand is configured. This warning is advisory only.
+- `Repo-owned local CI candidate was intentionally dismissed; localCiCommand remains unset and non-blocking.` means an operator acknowledged the detected candidate without adopting it, so setup and doctor should stop treating the candidate as unresolved first-run noise.
 - `Repo-owned local CI contract is configured.` means the configured command is active and fail-closed, so when configured local CI fails, PR publication stays blocked until the command passes again
 
 Operator rule:
 
 - keep the command defined in the managed repo
+- adopt the candidate by saving it as `localCiCommand` only when that repo-owned command is intended to become the fail-closed publication gate
+- dismiss a candidate only as an explicit acknowledgement that the repo script should stay non-blocking for this supervisor profile
 - let the supervisor execute it
 - do not ask the supervisor to infer CI behavior from workflow YAML
 
