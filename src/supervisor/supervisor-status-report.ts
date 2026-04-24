@@ -90,6 +90,7 @@ export function renderLoopRuntimeLine(loopRuntime: SupervisorLoopRuntimeDto): st
     "loop_runtime",
     `state=${loopRuntime.state}`,
     `host_mode=${sanitizeStatusValue(loopRuntime.hostMode)}`,
+    `run_mode=${sanitizeStatusValue(loopRuntime.runMode ?? "unknown")}`,
     `marker_path=${sanitizeStatusValue(markerPath)}`,
     `config_path=${sanitizeStatusValue(configPath ?? "none")}`,
     `state_file=${sanitizeStatusValue(stateFile)}`,

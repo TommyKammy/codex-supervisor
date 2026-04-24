@@ -523,6 +523,7 @@ test("renderDoctorReport includes loop host diagnostics and macOS tmux drift war
     loopRuntime: {
       state: "running",
       hostMode: "direct",
+      runMode: "unknown",
       markerPath: "/tmp/locks/supervisor/loop-runtime.lock",
       configPath: "/tmp/supervisor.config.json",
       stateFile: "/tmp/state.json",
@@ -549,7 +550,7 @@ test("renderDoctorReport includes loop host diagnostics and macOS tmux drift war
 
   assert.match(
     report,
-    /doctor_loop_runtime state=running host_mode=direct marker_path=\/tmp\/locks\/supervisor\/loop-runtime\.lock config_path=\/tmp\/supervisor\.config\.json state_file=\/tmp\/state\.json pid=4242 started_at=2026-03-25T00:00:00.000Z ownership_confidence=duplicate_suspected detail=supervisor-loop-runtime/,
+    /doctor_loop_runtime state=running host_mode=direct run_mode=unknown marker_path=\/tmp\/locks\/supervisor\/loop-runtime\.lock config_path=\/tmp\/supervisor\.config\.json state_file=\/tmp\/state\.json pid=4242 started_at=2026-03-25T00:00:00.000Z ownership_confidence=duplicate_suspected detail=supervisor-loop-runtime/,
   );
   assert.match(
     report,

@@ -35,6 +35,7 @@ test("legacy live loop locks without launcher metadata stay unknown and avoid ma
   assert.deepEqual(runtime, {
     state: "running",
     hostMode: "unknown",
+    runMode: "unknown",
     markerPath: lockPath,
     configPath: null,
     stateFile,
@@ -44,6 +45,41 @@ test("legacy live loop locks without launcher metadata stay unknown and avoid ma
     detail: "supervisor-loop-runtime",
   });
   assert.equal(buildMacOsLoopHostWarning(runtime, "darwin"), null);
+});
+
+test("readSupervisorLoopRuntime names tmux and manual run modes without broadening restart authority", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-loop-runtime-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const stateFile = path.join(root, "state.json");
+  const lockPath = supervisorLoopRuntimeLockPath(stateFile);
+  await fs.mkdir(path.dirname(lockPath), { recursive: true });
+
+  const manualRuntime = await readSupervisorLoopRuntime(stateFile);
+  assert.equal(manualRuntime.state, "off");
+  assert.equal(manualRuntime.hostMode, "unknown");
+  assert.equal(manualRuntime.runMode, "one_shot_manual");
+  assert.equal(manualRuntime.recoveryGuidance, undefined);
+
+  await fs.writeFile(
+    lockPath,
+    `${JSON.stringify({
+      pid: process.pid,
+      label: "supervisor-loop-runtime",
+      acquired_at: "2026-03-25T00:00:00.000Z",
+      host: "fixture-host",
+      owner: "fixture-owner",
+      launcher: "tmux",
+    }, null, 2)}\n`,
+    "utf8",
+  );
+
+  const tmuxRuntime = await readSupervisorLoopRuntime(stateFile);
+  assert.equal(tmuxRuntime.state, "running");
+  assert.equal(tmuxRuntime.hostMode, "tmux");
+  assert.equal(tmuxRuntime.runMode, "macos_tmux_loop");
 });
 
 test("readSupervisorLoopRuntime detects duplicate loop processes for the same resolved config and state target", async (t) => {
@@ -105,6 +141,7 @@ test("readSupervisorLoopRuntime detects duplicate loop processes for the same re
       `Safe recovery: for config ${configPath}, stop the tmux-managed loop with ./scripts/stop-loop-tmux.sh, inspect the listed direct loop PIDs before stopping any process, then restart with ./scripts/start-loop-tmux.sh using the same config.`,
   });
   assert.equal(runtime.state, "off");
+  assert.equal(runtime.runMode, "unknown");
   assert.equal(runtime.markerPath, supervisorLoopRuntimeLockPath(stateFile));
   assert.equal(runtime.configPath, configPath);
   assert.equal(runtime.stateFile, stateFile);
