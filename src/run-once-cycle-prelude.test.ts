@@ -723,8 +723,8 @@ test("runOnceCyclePrelude reconciles stale done no-PR records before reserving a
       };
       return [];
     },
-    reconcileRecoverableBlockedIssueStates: async () => {
-      calls.push("recoverable_blocked");
+    reconcileRecoverableBlockedIssueStates: async (_loadedState, _loadedIssues, options) => {
+      calls.push(`recoverable_blocked:${options?.onlyTrackedPrStates === true ? "tracked" : "all"}`);
       return [];
     },
     reconcileParentEpicClosures: async () => {
@@ -744,8 +744,8 @@ test("runOnceCyclePrelude reconciles stale done no-PR records before reserving a
     "merged_closures",
     "stale_failed",
     "stale_done",
-    "recoverable_blocked",
-    "recoverable_blocked",
+    "recoverable_blocked:tracked",
+    "recoverable_blocked:all",
     "reserve:blocked",
     "parent_epics",
     "cleanup",
