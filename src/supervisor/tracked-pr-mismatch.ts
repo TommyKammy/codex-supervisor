@@ -14,6 +14,12 @@ import {
 } from "../core/config";
 import { projectTrackedPrLifecycle } from "../tracked-pr-lifecycle-projection";
 import { hasFreshTrackedPrReadyPromotionBlockerEvidence } from "../tracked-pr-ready-promotion-blocker";
+import {
+  classifyReadyPromotionRecoverability,
+  classifyTrackedPrMismatchRecoverability,
+  recoverabilityStatusToken,
+  type StaleDiagnosticRecoverability,
+} from "./stale-diagnostic-recoverability";
 
 export interface TrackedPrMismatch {
   issueNumber: number;
@@ -23,6 +29,7 @@ export interface TrackedPrMismatch {
   localState: RunState;
   localBlockedReason: BlockedReason | null;
   staleLocalBlocker: boolean;
+  recoverability: StaleDiagnosticRecoverability;
   summaryLine: string;
   guidanceLine: string;
   detailLines: string[];
@@ -252,6 +259,10 @@ export function buildTrackedPrMismatch(
   if (record.state === "blocked" && record.blocked_reason === "verification" && githubState === "draft_pr" && pr.isDraft) {
     const readyPromotionGate = readyPromotionGateSummary(config, record, pr, checks);
     const blockerHasFreshCurrentHeadEvidence = hasFreshTrackedPrReadyPromotionBlockerEvidence(record, pr);
+    const recoverability = classifyReadyPromotionRecoverability({
+      staleLocalBlocker,
+      blockerHasFreshCurrentHeadEvidence,
+    });
     return {
       issueNumber: record.issue_number,
       prNumber: pr.number,
@@ -260,10 +271,12 @@ export function buildTrackedPrMismatch(
       localState: record.state,
       localBlockedReason: record.blocked_reason,
       staleLocalBlocker,
+      recoverability,
       summaryLine: [
         "tracked_pr_ready_promotion_blocked",
         `issue=#${record.issue_number}`,
         `pr=#${pr.number}`,
+        recoverabilityStatusToken(recoverability),
         `github_state=${githubState}`,
         `local_state=${record.state}`,
         `local_blocked_reason=${record.blocked_reason ?? "none"}`,
@@ -279,6 +292,13 @@ export function buildTrackedPrMismatch(
     };
   }
 
+  const recoverability = classifyTrackedPrMismatchRecoverability({
+    githubState,
+    githubBlockedReason,
+    localBlockedReason: record.blocked_reason,
+    staleLocalBlocker,
+  });
+
   return {
     issueNumber: record.issue_number,
     prNumber: pr.number,
@@ -287,10 +307,12 @@ export function buildTrackedPrMismatch(
     localState: record.state,
     localBlockedReason: record.blocked_reason,
     staleLocalBlocker,
+    recoverability,
     summaryLine: [
       "tracked_pr_mismatch",
       `issue=#${record.issue_number}`,
       `pr=#${pr.number}`,
+      recoverabilityStatusToken(recoverability),
       `github_state=${githubState}`,
       `github_blocked_reason=${githubBlockedReason ?? "none"}`,
       `local_state=${record.state}`,

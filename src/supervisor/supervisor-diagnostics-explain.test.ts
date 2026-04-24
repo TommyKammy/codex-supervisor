@@ -627,6 +627,7 @@ test("explain reports stale configured-bot blockers distinctly from generic manu
         branch: branchName(fixture.config, 98),
         workspace: path.join(fixture.workspaceRoot, "issue-98"),
         journal_path: null,
+        pr_number: 198,
         blocked_reason: "stale_review_bot",
         last_error: "configured bot review stayed stale on the current head",
       }),
@@ -667,6 +668,7 @@ Show stale configured-bot review blockers distinctly in explain output.
   assert.match(explanation, /^state=blocked$/m);
   assert.match(explanation, /^blocked_reason=stale_review_bot$/m);
   assert.match(explanation, /^runnable=no$/m);
+  assert.match(explanation, /^stale_diagnostic kind=stale_review_bot recoverability=provider_outage_suspected$/m);
   assert.match(explanation, /^reason_1=manual_block stale_review_bot$/m);
   assert.match(explanation, /^reason_2=local_state blocked$/m);
 });
@@ -864,6 +866,7 @@ Show recoverable stale configured-bot review blockers as runnable when auto-hand
   assert.match(explanation, /^state=blocked$/m);
   assert.match(explanation, /^blocked_reason=stale_review_bot$/m);
   assert.match(explanation, /^runnable=yes$/m);
+  assert.match(explanation, /^stale_diagnostic kind=stale_review_bot recoverability=stale_but_recoverable$/m);
   assert.doesNotMatch(explanation, /^reason_1=manual_block stale_review_bot$/m);
   assert.match(explanation, /^selection_reason=ready execution_ready=yes depends_on=none execution_order=none predecessors=none retry_state=stale_review_bot_recovery:reply_and_resolve$/m);
 });
@@ -925,6 +928,7 @@ Keep already-handled stale configured-bot blockers out of the runnable queue.
   assert.match(explanation, /^state=blocked$/m);
   assert.match(explanation, /^blocked_reason=stale_review_bot$/m);
   assert.match(explanation, /^runnable=no$/m);
+  assert.match(explanation, /^stale_diagnostic kind=stale_review_bot recoverability=stale_already_handled$/m);
   assert.match(explanation, /^reason_1=manual_block stale_review_bot$/m);
   assert.doesNotMatch(explanation, /retry_state=stale_review_bot_recovery:/m);
 });
@@ -993,7 +997,7 @@ Expose stale tracked PR mismatch diagnostics.
   assert.match(explanation, /^blocked_reason=manual_review$/m);
   assert.match(
     explanation,
-    /^tracked_pr_mismatch issue=#171 pr=#271 github_state=ready_to_merge github_blocked_reason=none local_state=blocked local_blocked_reason=manual_review stale_local_blocker=yes$/m,
+    /^tracked_pr_mismatch issue=#171 pr=#271 recoverability=stale_but_recoverable github_state=ready_to_merge github_blocked_reason=none local_state=blocked local_blocked_reason=manual_review stale_local_blocker=yes$/m,
   );
   assert.match(
     explanation,
@@ -1079,7 +1083,7 @@ test("explain marks same-head ready-promotion blockers as stale when fresh block
 
   assert.match(
     explanation,
-    /^tracked_pr_ready_promotion_blocked issue=#176 pr=#276 github_state=draft_pr local_state=blocked local_blocked_reason=verification stale_local_blocker=yes$/m,
+    /^tracked_pr_ready_promotion_blocked issue=#176 pr=#276 recoverability=stale_but_recoverable github_state=draft_pr local_state=blocked local_blocked_reason=verification stale_local_blocker=yes$/m,
   );
   assert.match(
     explanation,
@@ -1180,7 +1184,7 @@ test("explain keeps same-head host-local ready-promotion blockers current when t
 
   assert.match(
     explanation,
-    /^tracked_pr_ready_promotion_blocked issue=#177 pr=#277 github_state=draft_pr local_state=blocked local_blocked_reason=verification stale_local_blocker=yes$/m,
+    /^tracked_pr_ready_promotion_blocked issue=#177 pr=#277 recoverability=manual_attention_required github_state=draft_pr local_state=blocked local_blocked_reason=verification stale_local_blocker=yes$/m,
   );
   assert.match(
     explanation,
