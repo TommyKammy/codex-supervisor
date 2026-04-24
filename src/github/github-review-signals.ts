@@ -6,7 +6,7 @@ import {
   isRateLimitReviewText,
 } from "../external-review/external-review-signal-heuristics";
 import { normalizeReviewBotLogins } from "../core/review-providers";
-import { CopilotReviewState } from "../core/types";
+import type { CopilotReviewState } from "./types";
 
 export interface CopilotReviewLifecycleFacts {
   reviewRequests: string[];

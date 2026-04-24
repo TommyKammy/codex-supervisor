@@ -5,8 +5,9 @@ import {
   PullRequestCopilotReviewLifecycleResponse,
 } from "./github-hydration";
 import { ConfiguredBotReviewSummary } from "./github-review-signals";
-import { CopilotReviewState, GitHubPullRequest, SupervisorConfig } from "../core/types";
+import { SupervisorConfig } from "../core/types";
 import { parseJson, truncate } from "../core/utils";
+import type { CopilotReviewState, GitHubPullRequest } from "./types";
 
 const COPILOT_REVIEW_TRANSITION_CACHE_TTL_MS = 30_000;
 const COPILOT_REVIEW_CACHE_MAX_ENTRIES = 128;

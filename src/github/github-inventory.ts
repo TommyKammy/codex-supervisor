@@ -2,12 +2,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {
   CandidateDiscoveryDiagnostics,
-  GitHubIssue,
   InventoryRefreshDiagnosticEntry,
   GitHubRateLimitBudget,
   GitHubRateLimitTelemetry,
   SupervisorConfig,
 } from "../core/types";
+import type { GitHubIssue } from "./types";
 import { DEFAULT_CANDIDATE_DISCOVERY_FETCH_WINDOW } from "../core/config";
 import { CommandResult } from "../core/command";
 import { isGitHubRateLimitFailure } from "./github-transport";
