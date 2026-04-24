@@ -38,6 +38,7 @@ export function parseArgs(argv: string[]): CliOptions {
       token === "reset-corrupt-json-state" ||
       token === "explain" ||
       token === "issue-lint" ||
+      token === "readiness-checklist" ||
       token === "doctor" ||
       token === "web" ||
       token === "replay" ||

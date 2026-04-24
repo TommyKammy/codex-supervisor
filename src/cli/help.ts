@@ -25,6 +25,7 @@ Inspect commands:
   doctor                            Check local configuration and repository prerequisites.
   explain <issue-number>            Explain supervisor readiness for one issue.
   issue-lint <issue-number>         Validate an execution-ready issue body.
+  readiness-checklist               Print the release-readiness checklist.
 
 Repair commands:
   requeue <issue-number>            Requeue a blocked or failed issue.

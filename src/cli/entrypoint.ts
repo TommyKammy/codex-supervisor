@@ -1,3 +1,5 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import {
   createSupervisorLoopController,
   createSupervisorService,
@@ -18,6 +20,11 @@ import { isSupervisorRuntimeCommand, runSupervisorCommand } from "./supervisor-r
 import { assertRuntimeFreshness } from "../build-freshness";
 
 type SupervisorRuntimeOptions = Pick<CliOptions, "command" | "dryRun" | "why" | "issueNumber">;
+
+async function readReadinessChecklist(): Promise<string> {
+  const checklistPath = path.resolve(__dirname, "..", "..", "docs", "validation-checklist.md");
+  return fs.readFile(checklistPath, "utf8");
+}
 
 export interface CliEntrypointDependencies {
   assertRuntimeFreshness?: () => Promise<void>;
@@ -86,6 +93,11 @@ export async function runCli(
   const options = parseCliArgs(argv);
   if (options.command === "help") {
     writeStdout(renderCliHelp());
+    return;
+  }
+
+  if (options.command === "readiness-checklist") {
+    writeStdout(await readReadinessChecklist());
     return;
   }
 
