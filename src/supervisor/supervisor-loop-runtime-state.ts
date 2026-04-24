@@ -7,6 +7,12 @@ import type { RunState } from "../core/types";
 import { isLoopAdvanceableState } from "../core/utils";
 
 export type SupervisorLoopHostMode = "tmux" | "direct" | "unknown";
+export type SupervisorLoopOwnershipConfidence =
+  | "none"
+  | "live_lock"
+  | "stale_lock"
+  | "ambiguous_owner"
+  | "duplicate_suspected";
 
 export interface SupervisorDuplicateLoopDiagnostic {
   kind: "duplicate_loop_processes";
@@ -20,8 +26,12 @@ export interface SupervisorDuplicateLoopDiagnostic {
 export interface SupervisorLoopRuntimeDto {
   state: "running" | "off" | "unknown";
   hostMode: SupervisorLoopHostMode;
+  markerPath: string;
+  configPath: string | null;
+  stateFile: string;
   pid: number | null;
   startedAt: string | null;
+  ownershipConfidence: SupervisorLoopOwnershipConfidence;
   detail: string | null;
   duplicateLoopDiagnostic?: SupervisorDuplicateLoopDiagnostic;
 }
@@ -292,6 +302,7 @@ function withDuplicateLoopDiagnostic(
     ? runtime
     : {
       ...runtime,
+      ownershipConfidence: "duplicate_suspected",
       duplicateLoopDiagnostic: diagnostic,
     };
 }
@@ -300,14 +311,21 @@ export async function readSupervisorLoopRuntime(
   stateFile: string,
   options: ReadSupervisorLoopRuntimeOptions = {},
 ): Promise<SupervisorLoopRuntimeDto> {
-  const runtimeLock = await inspectSupervisorLoopRuntimeLock(stateFile);
-  const duplicateLoopDiagnostic = await detectDuplicateLoopProcesses(stateFile, options);
+  const resolvedStateFile = path.resolve(stateFile);
+  const markerPath = supervisorLoopRuntimeLockPath(resolvedStateFile);
+  const configPath = options.configPath ? path.resolve(options.configPath) : null;
+  const runtimeLock = await inspectSupervisorLoopRuntimeLock(resolvedStateFile);
+  const duplicateLoopDiagnostic = await detectDuplicateLoopProcesses(resolvedStateFile, options);
   if (runtimeLock.status === "live") {
     return withDuplicateLoopDiagnostic({
       state: "running",
       hostMode: inferLoopHostMode(runtimeLock),
+      markerPath,
+      configPath,
+      stateFile: resolvedStateFile,
       pid: runtimeLock.payload?.pid ?? null,
       startedAt: runtimeLock.payload?.acquired_at ?? null,
+      ownershipConfidence: "live_lock",
       detail: runtimeLock.payload?.label ?? LOOP_RUNTIME_LOCK_LABEL,
     }, duplicateLoopDiagnostic);
   }
@@ -316,8 +334,26 @@ export async function readSupervisorLoopRuntime(
     return withDuplicateLoopDiagnostic({
       state: "unknown",
       hostMode: inferLoopHostMode(runtimeLock),
+      markerPath,
+      configPath,
+      stateFile: resolvedStateFile,
       pid: runtimeLock.payload?.pid ?? null,
       startedAt: runtimeLock.payload?.acquired_at ?? null,
+      ownershipConfidence: "ambiguous_owner",
+      detail: runtimeLock.payload?.label ?? LOOP_RUNTIME_LOCK_LABEL,
+    }, duplicateLoopDiagnostic);
+  }
+
+  if (runtimeLock.status === "stale") {
+    return withDuplicateLoopDiagnostic({
+      state: "off",
+      hostMode: inferLoopHostMode(runtimeLock),
+      markerPath,
+      configPath,
+      stateFile: resolvedStateFile,
+      pid: runtimeLock.payload?.pid ?? null,
+      startedAt: runtimeLock.payload?.acquired_at ?? null,
+      ownershipConfidence: "stale_lock",
       detail: runtimeLock.payload?.label ?? LOOP_RUNTIME_LOCK_LABEL,
     }, duplicateLoopDiagnostic);
   }
@@ -325,8 +361,12 @@ export async function readSupervisorLoopRuntime(
   return withDuplicateLoopDiagnostic({
     state: "off",
     hostMode: "unknown",
+    markerPath,
+    configPath,
+    stateFile: resolvedStateFile,
     pid: null,
     startedAt: null,
+    ownershipConfidence: "none",
     detail: null,
   }, duplicateLoopDiagnostic);
 }

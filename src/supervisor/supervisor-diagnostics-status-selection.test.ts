@@ -401,8 +401,12 @@ test("renderSupervisorStatusDto appends canonical github rate-limit lines from d
     loopRuntime: {
       state: "off",
       hostMode: "unknown",
+      markerPath: "/tmp/locks/supervisor/loop-runtime.lock",
+      configPath: "/tmp/supervisor.config.json",
+      stateFile: "/tmp/state.json",
       pid: null,
       startedAt: null,
+      ownershipConfidence: "none",
       detail: null,
     },
     activeIssue: null,
@@ -429,8 +433,12 @@ test("renderSupervisorStatusDto sanitizes loop runtime host and timestamp tokens
     loopRuntime: {
       state: "running",
       hostMode: "direct\nlegacy" as unknown as "direct",
+      markerPath: "/tmp/locks/supervisor/loop-runtime.lock\nlegacy",
+      configPath: "/tmp/supervisor.config.json\nlegacy",
+      stateFile: "/tmp/state.json\nlegacy",
       pid: 4242,
       startedAt: "2026-03-27T00:15:00.000Z\nlegacy",
+      ownershipConfidence: "duplicate_suspected",
       detail: "supervisor-loop-runtime",
       duplicateLoopDiagnostic: {
         kind: "duplicate_loop_processes",
@@ -456,7 +464,7 @@ test("renderSupervisorStatusDto sanitizes loop runtime host and timestamp tokens
 
   assert.match(
     status,
-    /^loop_runtime state=running host_mode=direct\\nlegacy pid=4242 started_at=2026-03-27T00:15:00.000Z\\nlegacy detail=supervisor-loop-runtime$/m,
+    /^loop_runtime state=running host_mode=direct\\nlegacy marker_path=\/tmp\/locks\/supervisor\/loop-runtime\.lock\\nlegacy config_path=\/tmp\/supervisor\.config\.json\\nlegacy state_file=\/tmp\/state\.json\\nlegacy pid=4242 started_at=2026-03-27T00:15:00.000Z\\nlegacy ownership_confidence=duplicate_suspected detail=supervisor-loop-runtime$/m,
   );
   assert.match(
     status,
@@ -1107,14 +1115,18 @@ test("statusReport exposes typed loop runtime state from the host runtime marker
   assert.deepEqual(report.loopRuntime, {
     state: "running",
     hostMode: "unknown",
+    markerPath: report.loopRuntime?.markerPath ?? "",
+    configPath: null,
+    stateFile: fixture.config.stateFile,
     pid: process.pid,
     startedAt: report.loopRuntime?.startedAt ?? null,
+    ownershipConfidence: "live_lock",
     detail: "supervisor-loop-runtime",
   });
   assert.match(report.loopRuntime?.startedAt ?? "", /^\d{4}-\d{2}-\d{2}T/u);
 
   const status = await supervisor.status();
-  assert.match(status, /^loop_runtime state=running host_mode=unknown pid=\d+ started_at=\d{4}-\d{2}-\d{2}T.* detail=supervisor-loop-runtime$/m);
+  assert.match(status, /^loop_runtime state=running host_mode=unknown marker_path=.*loop-runtime\.lock config_path=none state_file=.*state\.json pid=\d+ started_at=\d{4}-\d{2}-\d{2}T.* ownership_confidence=live_lock detail=supervisor-loop-runtime$/m);
 });
 
 test("status surfaces loop-off as a blocker when tracked work is still active", async () => {

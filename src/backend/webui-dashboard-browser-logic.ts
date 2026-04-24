@@ -41,9 +41,21 @@ export interface DashboardCandidateDiscoveryLike {
 export interface DashboardLoopRuntimeLike {
   state?: "running" | "off" | "unknown" | null;
   hostMode?: "tmux" | "direct" | "unknown" | null;
+  markerPath?: string | null;
+  configPath?: string | null;
+  stateFile?: string | null;
   pid?: number | null;
   startedAt?: string | null;
+  ownershipConfidence?: "none" | "live_lock" | "stale_lock" | "ambiguous_owner" | "duplicate_suspected" | null;
   detail?: string | null;
+  duplicateLoopDiagnostic?: {
+    kind?: string | null;
+    status?: string | null;
+    matchingProcessCount?: number | null;
+    matchingPids?: number[] | null;
+    configPath?: string | null;
+    stateFile?: string | null;
+  } | null;
 }
 
 export interface DashboardInventoryStatusLike {

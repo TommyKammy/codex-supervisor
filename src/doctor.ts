@@ -924,10 +924,19 @@ export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
   const loopRuntime = diagnostics.loopRuntime ?? {
     state: "off" as const,
     hostMode: "unknown" as const,
+    markerPath: "none",
+    configPath: null,
+    stateFile: "none",
     pid: null,
     startedAt: null,
+    ownershipConfidence: "none" as const,
     detail: null,
   };
+  const loopRuntimeMarkerPath = ("markerPath" in loopRuntime ? loopRuntime.markerPath : null) ?? "none";
+  const loopRuntimeConfigPath = ("configPath" in loopRuntime ? loopRuntime.configPath : null) ?? null;
+  const loopRuntimeStateFile = ("stateFile" in loopRuntime ? loopRuntime.stateFile : null) ?? "none";
+  const loopRuntimeOwnershipConfidence =
+    ("ownershipConfidence" in loopRuntime ? loopRuntime.ownershipConfidence : null) ?? "none";
   const duplicateLoopDiagnosticLine = renderDoctorDuplicateLoopDiagnosticLine(loopRuntime);
   const workspacePreparationWarning = workspacePreparationContract.warning ?? localCiContract.warning ?? null;
   const configWarnings = workspacePreparationWarning === null ? [] : [renderDoctorWarningLine(buildWarning("config", workspacePreparationWarning)!, sanitizeDoctorValue)];
@@ -949,7 +958,7 @@ export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
     diagnostics.candidateDiscoverySummary,
     ...codexModelPolicyLines,
     ...(diagnostics.reconciliationBacklogLine ? [diagnostics.reconciliationBacklogLine] : []),
-    `doctor_loop_runtime state=${loopRuntime.state} host_mode=${loopRuntime.hostMode} pid=${loopRuntime.pid === null ? "none" : String(loopRuntime.pid)} started_at=${loopRuntime.startedAt ?? "none"} detail=${sanitizeDoctorValue(loopRuntime.detail ?? "none")}`,
+    `doctor_loop_runtime state=${loopRuntime.state} host_mode=${loopRuntime.hostMode} marker_path=${sanitizeDoctorValue(loopRuntimeMarkerPath)} config_path=${sanitizeDoctorValue(loopRuntimeConfigPath ?? "none")} state_file=${sanitizeDoctorValue(loopRuntimeStateFile)} pid=${loopRuntime.pid === null ? "none" : String(loopRuntime.pid)} started_at=${loopRuntime.startedAt ?? "none"} ownership_confidence=${loopRuntimeOwnershipConfidence} detail=${sanitizeDoctorValue(loopRuntime.detail ?? "none")}`,
     ...(duplicateLoopDiagnosticLine ? [duplicateLoopDiagnosticLine] : []),
     ...(diagnostics.orphanPolicySummary ? [diagnostics.orphanPolicySummary] : []),
     `doctor_workspace_preparation configured=${workspacePreparationContract.configured} source=${workspacePreparationContract.source} command=${sanitizeDoctorValue(workspacePreparationContract.command ?? "none")} summary=${sanitizeDoctorValue(workspacePreparationContract.summary)}`,

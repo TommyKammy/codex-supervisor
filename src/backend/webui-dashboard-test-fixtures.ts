@@ -371,9 +371,21 @@ export function createDashboardStatusFixture(args: {
   loopRuntime?: {
     state: "running" | "off" | "unknown";
     hostMode?: "tmux" | "direct" | "unknown";
+    markerPath?: string | null;
+    configPath?: string | null;
+    stateFile?: string | null;
     pid: number | null;
     startedAt: string | null;
+    ownershipConfidence?: "none" | "live_lock" | "stale_lock" | "ambiguous_owner" | "duplicate_suspected" | null;
     detail: string | null;
+    duplicateLoopDiagnostic?: {
+      kind: string;
+      status: string;
+      matchingProcessCount: number;
+      matchingPids: number[];
+      configPath: string;
+      stateFile: string;
+    };
   } | null;
   trackedIssues?: Array<{
     issueNumber: number;
@@ -418,8 +430,12 @@ export function createDashboardStatusFixture(args: {
       args.loopRuntime ?? {
         state: "off",
         hostMode: "unknown",
+        markerPath: "none",
+        configPath: null,
+        stateFile: "none",
         pid: null,
         startedAt: null,
+        ownershipConfidence: "none",
         detail: null,
       },
     reconciliationPhase: null,

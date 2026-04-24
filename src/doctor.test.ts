@@ -467,8 +467,12 @@ test("renderDoctorReport only warns for the legacy shared issue journal path", (
     loopRuntime: {
       state: "off" as const,
       hostMode: "unknown" as const,
+      markerPath: "none",
+      configPath: null,
+      stateFile: "none",
       pid: null,
       startedAt: null,
+      ownershipConfidence: "none" as const,
       detail: null,
     },
     loopHostWarning: null,
@@ -519,8 +523,12 @@ test("renderDoctorReport includes loop host diagnostics and macOS tmux drift war
     loopRuntime: {
       state: "running",
       hostMode: "direct",
+      markerPath: "/tmp/locks/supervisor/loop-runtime.lock",
+      configPath: "/tmp/supervisor.config.json",
+      stateFile: "/tmp/state.json",
       pid: 4242,
       startedAt: "2026-03-25T00:00:00.000Z",
+      ownershipConfidence: "duplicate_suspected",
       detail: "supervisor-loop-runtime",
       duplicateLoopDiagnostic: {
         kind: "duplicate_loop_processes",
@@ -537,7 +545,7 @@ test("renderDoctorReport includes loop host diagnostics and macOS tmux drift war
 
   assert.match(
     report,
-    /doctor_loop_runtime state=running host_mode=direct pid=4242 started_at=2026-03-25T00:00:00.000Z detail=supervisor-loop-runtime/,
+    /doctor_loop_runtime state=running host_mode=direct marker_path=\/tmp\/locks\/supervisor\/loop-runtime\.lock config_path=\/tmp\/supervisor\.config\.json state_file=\/tmp\/state\.json pid=4242 started_at=2026-03-25T00:00:00.000Z ownership_confidence=duplicate_suspected detail=supervisor-loop-runtime/,
   );
   assert.match(
     report,
@@ -567,8 +575,12 @@ test("renderDoctorReport sanitizes multiline Codex policy lines", () => {
     loopRuntime: {
       state: "off",
       hostMode: "unknown",
+      markerPath: "none",
+      configPath: null,
+      stateFile: "none",
       pid: null,
       startedAt: null,
+      ownershipConfidence: "none",
       detail: null,
     },
     loopHostWarning: null,

@@ -150,6 +150,37 @@ export function formatRefreshTime(timestamp: string | null): string {
 export function describeLoopRuntime(loopRuntime: DashboardLoopRuntimeLike | null | undefined): DashboardLoopRuntimeSummary {
   const runtimeState = typeof loopRuntime?.state === "string" ? loopRuntime.state : "unknown";
   const hostMode = typeof loopRuntime?.hostMode === "string" ? loopRuntime.hostMode : "unknown";
+  const ownershipConfidence =
+    typeof loopRuntime?.ownershipConfidence === "string" ? loopRuntime.ownershipConfidence : "none";
+  const duplicateDiagnostic = loopRuntime?.duplicateLoopDiagnostic ?? null;
+  if (ownershipConfidence === "duplicate_suspected" || duplicateDiagnostic) {
+    const matchingProcessCount =
+      typeof duplicateDiagnostic?.matchingProcessCount === "number" ? duplicateDiagnostic.matchingProcessCount : null;
+    return {
+      modeBadge: "Mode: web + loop ambiguous",
+      summary: matchingProcessCount === null
+        ? "Loop runtime ownership is ambiguous"
+        : "Loop runtime ownership is ambiguous: " + String(matchingProcessCount) + " matching loop processes",
+      chipLabel: "loop ownership ambiguous",
+      chipTone: "warn",
+    };
+  }
+  if (ownershipConfidence === "stale_lock") {
+    return {
+      modeBadge: "Mode: web only (stale loop marker)",
+      summary: "Loop mode is off, but a stale runtime marker was found",
+      chipLabel: "stale loop marker",
+      chipTone: "warn",
+    };
+  }
+  if (ownershipConfidence === "ambiguous_owner") {
+    return {
+      modeBadge: "Mode: local WebUI",
+      summary: "Loop runtime marker ownership is ambiguous",
+      chipLabel: "loop marker ambiguous",
+      chipTone: "warn",
+    };
+  }
   if (runtimeState === "running") {
     if (hostMode === "tmux") {
       return {

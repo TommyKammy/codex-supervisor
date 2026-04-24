@@ -206,8 +206,12 @@ test("createSupervisorService preserves typed operator observability fields on s
     loopRuntime: {
       state: "off",
       hostMode: "unknown",
+      markerPath: "none",
+      configPath: null,
+      stateFile: "none",
       pid: null,
       startedAt: null,
+      ownershipConfidence: "none",
       detail: null,
     },
     localCiContract: {

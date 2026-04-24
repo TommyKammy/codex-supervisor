@@ -35,8 +35,12 @@ test("legacy live loop locks without launcher metadata stay unknown and avoid ma
   assert.deepEqual(runtime, {
     state: "running",
     hostMode: "unknown",
+    markerPath: lockPath,
+    configPath: null,
+    stateFile,
     pid: process.pid,
     startedAt: "2026-03-25T00:00:00.000Z",
+    ownershipConfidence: "live_lock",
     detail: "supervisor-loop-runtime",
   });
   assert.equal(buildMacOsLoopHostWarning(runtime, "darwin"), null);
@@ -99,4 +103,8 @@ test("readSupervisorLoopRuntime detects duplicate loop processes for the same re
     stateFile,
   });
   assert.equal(runtime.state, "off");
+  assert.equal(runtime.markerPath, supervisorLoopRuntimeLockPath(stateFile));
+  assert.equal(runtime.configPath, configPath);
+  assert.equal(runtime.stateFile, stateFile);
+  assert.equal(runtime.ownershipConfidence, "duplicate_suspected");
 });
