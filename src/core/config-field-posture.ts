@@ -30,6 +30,8 @@ function dangerousExplicitOptIn(field: string, summary: string): ConfigFieldPost
 }
 
 const CONFIG_FIELD_POSTURE_METADATA_ENTRIES = [
+  // "required" is the first-run setup posture, not a mirror of parser-required strings.
+  // Some setup-required decisions keep runtime parser defaults for compatibility.
   required("repoPath", "Managed repository path."),
   required("repoSlug", "GitHub owner/repo slug."),
   required("defaultBranch", "Managed repository default branch."),
