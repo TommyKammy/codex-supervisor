@@ -49,7 +49,12 @@ export {
   validateWorkspacePreparationCommandForWorktrees,
 };
 
-export type { ConfigFieldPostureMetadata, ConfigFieldPostureTier } from "./config-field-posture";
+export type {
+  ConfigFieldName,
+  ConfigFieldPostureMetadata,
+  ConfigFieldPostureTier,
+  ConfigFieldRequirementScope,
+} from "./config-field-posture";
 
 export type ConfigLoadStatus = "ready" | "missing_config" | "invalid_config";
 

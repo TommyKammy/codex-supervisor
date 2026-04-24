@@ -66,6 +66,21 @@ test("config field posture metadata classifies setup and automation-expanding fi
 
   assert.deepEqual(
     [
+      "repoPath",
+      "trustMode",
+      "executionSafetyMode",
+      "reviewBotLogins",
+    ].map((field) => [field, getConfigFieldPostureMetadata(field)?.requirementScope]),
+    [
+      ["repoPath", "parser_required"],
+      ["trustMode", "first_run_setup"],
+      ["executionSafetyMode", "first_run_setup"],
+      ["reviewBotLogins", "first_run_setup"],
+    ],
+  );
+
+  assert.deepEqual(
+    [
       "codexModelStrategy",
       "workspacePreparationCommand",
       "localCiCommand",

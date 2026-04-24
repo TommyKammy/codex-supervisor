@@ -9,15 +9,21 @@ export const CONFIG_FIELD_POSTURE_TIERS = [
 
 export type ConfigFieldPostureTier = (typeof CONFIG_FIELD_POSTURE_TIERS)[number];
 export type ConfigFieldName = keyof SupervisorConfig;
+export type ConfigFieldRequirementScope = "parser_required" | "first_run_setup";
 
 export interface ConfigFieldPostureMetadata {
   field: ConfigFieldName;
   tier: ConfigFieldPostureTier;
   summary: string;
+  requirementScope?: ConfigFieldRequirementScope;
 }
 
-function required(field: ConfigFieldName, summary: string): ConfigFieldPostureMetadata {
-  return { field, tier: "required", summary };
+function required(
+  field: ConfigFieldName,
+  summary: string,
+  requirementScope: ConfigFieldRequirementScope = "parser_required",
+): ConfigFieldPostureMetadata {
+  return { field, tier: "required", summary, requirementScope };
 }
 
 function recommended(field: ConfigFieldName, summary: string): ConfigFieldPostureMetadata {
@@ -33,8 +39,6 @@ function dangerousExplicitOptIn(field: ConfigFieldName, summary: string): Config
 }
 
 const CONFIG_FIELD_POSTURE_METADATA_ENTRIES = [
-  // "required" is the first-run setup posture, not a mirror of parser-required strings.
-  // Some setup-required decisions keep runtime parser defaults for compatibility.
   required("repoPath", "Managed repository path."),
   required("repoSlug", "GitHub owner/repo slug."),
   required("defaultBranch", "Managed repository default branch."),
@@ -42,9 +46,9 @@ const CONFIG_FIELD_POSTURE_METADATA_ENTRIES = [
   required("stateFile", "Durable supervisor state file."),
   required("codexBinary", "Codex CLI executable."),
   required("branchPrefix", "Managed issue branch prefix."),
-  required("trustMode", "Explicit first-run trust posture decision."),
-  required("executionSafetyMode", "Explicit first-run execution safety decision."),
-  required("reviewBotLogins", "Review provider identity source."),
+  required("trustMode", "Explicit first-run trust posture decision.", "first_run_setup"),
+  required("executionSafetyMode", "Explicit first-run execution safety decision.", "first_run_setup"),
+  required("reviewBotLogins", "Review provider identity source.", "first_run_setup"),
 
   recommended("codexModelStrategy", "Default Codex model routing posture."),
   recommended("workspacePreparationCommand", "Repo-owned workspace setup contract."),
