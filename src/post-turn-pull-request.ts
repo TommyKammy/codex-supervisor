@@ -30,7 +30,7 @@ import {
   SupervisorStateFile,
 } from "./core/types";
 import { nowIso, truncate } from "./core/utils";
-import { runLocalCiGate, runWorkspacePreparationGate, type LocalCiCommandRunner } from "./local-ci";
+import { type LocalCiCommandRunner } from "./local-ci";
 import {
   buildWorkstationLocalPathFailureContext,
   runWorkstationLocalPathGate,
@@ -48,6 +48,7 @@ import {
   derivePostTurnLocalReviewDecision,
   derivePostTurnLocalReviewFailurePatch,
 } from "./post-turn-pull-request-policy";
+import { runTrackedPrReadyLocalCiPublicationGate } from "./tracked-pr-local-ci-publication-gate";
 import * as trackedPrStatusComments from "./tracked-pr-status-comment";
 
 export { syncTrackedPrPersistentStatusComment } from "./tracked-pr-status-comment";
@@ -641,96 +642,21 @@ export async function handlePostTurnPullRequestTransitionsPhase(
       };
     }
 
-    const workspacePreparationGate = await runWorkspacePreparationGate({
+    const localCiPublicationGate = await runTrackedPrReadyLocalCiPublicationGate({
       config,
+      stateStore,
+      state,
+      record,
+      pr: refreshed.pr,
       workspacePath,
-      gateLabel: `before marking PR #${refreshed.pr.number} ready`,
+      github,
+      syncJournal,
+      applyFailureSignature: args.applyFailureSignature,
       runWorkspacePreparationCommand: args.runWorkspacePreparationCommand,
-    });
-    if (!workspacePreparationGate.ok) {
-      const failureContext = workspacePreparationGate.failureContext;
-      record = stateStore.touch(record, {
-        state: "blocked",
-        last_error: truncate(failureContext?.summary, 1000),
-        last_failure_kind: null,
-        last_failure_context: failureContext,
-        ...args.applyFailureSignature(record, failureContext),
-        blocked_reason: "verification",
-        ...trackedPrStatusComments.observedTrackedPrHostLocalBlockerPatch({
-          pr: refreshed.pr,
-          blockerSignature: failureContext?.signature ?? null,
-        }),
-      });
-      state.issues[String(record.issue_number)] = record;
-      await stateStore.save(state);
-      await syncJournal(record);
-      record = await trackedPrStatusComments.maybeCommentOnTrackedPrHostLocalBlocker({
-        github,
-        stateStore,
-        state,
-        record,
-        pr: refreshed.pr,
-        syncJournal,
-        gateType: "workspace_preparation",
-        blockerSignature: failureContext?.signature ?? null,
-        failureClass: trackedPrStatusComments.workspacePreparationFailureClass(failureContext?.signature),
-        remediationTarget: trackedPrStatusComments.workspacePreparationRemediationTarget(
-          trackedPrStatusComments.workspacePreparationFailureClass(failureContext?.signature),
-        ),
-        summary: failureContext?.summary ?? null,
-        details: failureContext?.details,
-      });
-      return {
-        record,
-        pr: refreshed.pr,
-        checks: refreshed.checks,
-        reviewThreads: refreshed.reviewThreads,
-      };
-    }
-
-    const localCiGate = await runLocalCiGate({
-      config,
-      workspacePath,
-      gateLabel: `before marking PR #${refreshed.pr.number} ready`,
       runLocalCiCommand: args.runLocalCiCommand,
     });
-    if (!localCiGate.ok) {
-      const failureContext = localCiGate.failureContext;
-      record = stateStore.touch(record, {
-        state: "blocked",
-        latest_local_ci_result: localCiGate.latestResult
-          ? {
-              ...localCiGate.latestResult,
-              head_sha: refreshed.pr.headRefOid,
-            }
-          : null,
-        last_error: truncate(failureContext?.summary, 1000),
-        last_failure_kind: null,
-        last_failure_context: failureContext,
-        ...args.applyFailureSignature(record, failureContext),
-        blocked_reason: "verification",
-        ...trackedPrStatusComments.observedTrackedPrHostLocalBlockerPatch({
-          pr: refreshed.pr,
-          blockerSignature: failureContext?.signature ?? null,
-        }),
-      });
-      state.issues[String(record.issue_number)] = record;
-      await stateStore.save(state);
-      await syncJournal(record);
-      record = await trackedPrStatusComments.maybeCommentOnTrackedPrHostLocalBlocker({
-        github,
-        stateStore,
-        state,
-        record,
-        pr: refreshed.pr,
-        syncJournal,
-        gateType: "local_ci",
-        blockerSignature: failureContext?.signature ?? null,
-        failureClass: localCiGate.latestResult?.failure_class ?? null,
-        remediationTarget: localCiGate.latestResult?.remediation_target ?? null,
-        summary: failureContext?.summary ?? localCiGate.latestResult?.summary ?? null,
-        details: failureContext?.details,
-      });
+    record = localCiPublicationGate.record;
+    if (!localCiPublicationGate.ok) {
       return {
         record,
         pr: refreshed.pr,
@@ -738,19 +664,6 @@ export async function handlePostTurnPullRequestTransitionsPhase(
         reviewThreads: refreshed.reviewThreads,
       };
     }
-    record = stateStore.touch(record, {
-      latest_local_ci_result: localCiGate.latestResult
-        ? {
-            ...localCiGate.latestResult,
-            head_sha: refreshed.pr.headRefOid,
-          }
-        : null,
-      last_observed_host_local_pr_blocker_signature: null,
-      last_observed_host_local_pr_blocker_head_sha: null,
-    });
-    state.issues[String(record.issue_number)] = record;
-    await stateStore.save(state);
-    await syncJournal(record);
     const localWorkspaceStatus = await getWorkspaceStatus(workspacePath, record.branch, config.defaultBranch);
     if (localWorkspaceStatus.headSha !== refreshed.pr.headRefOid) {
       const failureContext = buildWorkstationLocalPathFailureContext({

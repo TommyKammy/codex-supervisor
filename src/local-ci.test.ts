@@ -5,7 +5,14 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { executeLocalCiCommand, runLocalCiGate, runWorkspacePreparationGate } from "./local-ci";
+import { runTrackedPrReadyLocalCiPublicationGate } from "./tracked-pr-local-ci-publication-gate";
 import { REPO_OWNED_SUBPROCESS_TIMEOUT_MS, resolveExecutablePath } from "./subprocess-test-helpers";
+import {
+  createConfig,
+  createPullRequest,
+  createRecord,
+} from "./turn-execution-test-helpers";
+import { SupervisorStateFile } from "./core/types";
 
 const gitExecutable = resolveExecutablePath("git");
 
@@ -16,6 +23,80 @@ function git(cwd: string, ...args: string[]): string {
     timeout: REPO_OWNED_SUBPROCESS_TIMEOUT_MS,
   });
 }
+
+test("runTrackedPrReadyLocalCiPublicationGate blocks ready promotion on local CI failure", async () => {
+  const pr = createPullRequest({
+    number: 116,
+    isDraft: true,
+    headRefOid: "head-116",
+  });
+  const record = createRecord({
+    state: "draft_pr",
+    pr_number: pr.number,
+    last_observed_host_local_pr_blocker_signature: "stale-blocker",
+    last_observed_host_local_pr_blocker_head_sha: "old-head",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: record.issue_number,
+    issues: { [String(record.issue_number)]: record },
+  };
+  let saveCalls = 0;
+  let syncJournalCalls = 0;
+  const comments: string[] = [];
+
+  const result = await runTrackedPrReadyLocalCiPublicationGate({
+    config: createConfig({ localCiCommand: "npm run ci:local" }),
+    stateStore: {
+      touch: (currentRecord, patch) => ({
+        ...currentRecord,
+        ...patch,
+        updated_at: currentRecord.updated_at,
+      }),
+      save: async () => {
+        saveCalls += 1;
+      },
+    },
+    state,
+    record,
+    pr,
+    workspacePath: "/tmp/workspaces/issue-102",
+    github: {
+      addIssueComment: async (_issueNumber, body) => {
+        comments.push(body);
+      },
+    },
+    syncJournal: async () => {
+      syncJournalCalls += 1;
+    },
+    applyFailureSignature: (_currentRecord, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    runLocalCiCommand: async () => {
+      throw Object.assign(new Error("Command failed: sh -lc +1 args\nexitCode=1"), {
+        stderr: "tests failed",
+      });
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.record.state, "blocked");
+  assert.equal(result.record.blocked_reason, "verification");
+  assert.equal(result.record.last_failure_signature, "local-ci-gate-non_zero_exit");
+  assert.equal(result.record.latest_local_ci_result?.head_sha, "head-116");
+  assert.equal(result.record.latest_local_ci_result?.failure_class, "non_zero_exit");
+  assert.equal(result.record.last_observed_host_local_pr_blocker_signature, "local-ci-gate-non_zero_exit");
+  assert.equal(result.record.last_observed_host_local_pr_blocker_head_sha, "head-116");
+  assert.equal(result.record.last_host_local_pr_blocker_comment_signature, "local-ci-gate-non_zero_exit");
+  assert.equal(result.record.last_host_local_pr_blocker_comment_head_sha, "head-116");
+  assert.match(
+    comments[0] ?? "",
+    /ready_promotion_blocked_local_ci/,
+  );
+  assert.equal(saveCalls, 2);
+  assert.equal(syncJournalCalls, 2);
+  assert.equal(state.issues[String(record.issue_number)], result.record);
+});
 
 test("runLocalCiGate reports an unset local CI contract as a non-blocking issue-body remediation", async () => {
   const result = await runLocalCiGate({
