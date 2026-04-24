@@ -27,8 +27,12 @@ function createStatusDto(overrides: Partial<SupervisorStatusDto> = {}): Supervis
     loopRuntime: {
       state: "off",
       hostMode: "unknown",
+      markerPath: "none",
+      configPath: null,
+      stateFile: "none",
       pid: null,
       startedAt: null,
+      ownershipConfidence: "none",
       detail: null,
     },
     activeIssue: null,

@@ -73,6 +73,40 @@ test("describeLoopRuntime summarizes running, off, and unknown states with host 
     chipTone: "ok",
   });
 
+  assert.deepEqual(describeLoopRuntime({
+    state: "off",
+    hostMode: "unknown",
+    ownershipConfidence: "duplicate_suspected",
+    duplicateLoopDiagnostic: {
+      kind: "duplicate_loop_processes",
+      status: "duplicate",
+      matchingProcessCount: 2,
+      matchingPids: [4242, 4243],
+      configPath: "/tmp/supervisor.config.json",
+      stateFile: "/tmp/state.json",
+    },
+  }), {
+    modeBadge: "Mode: web + loop ambiguous",
+    summary: "Loop runtime ownership is ambiguous: 2 matching loop processes",
+    chipLabel: "loop ownership ambiguous",
+    chipTone: "warn",
+  });
+
+  assert.deepEqual(describeLoopRuntime({
+    state: "off",
+    hostMode: "unknown",
+    duplicateLoopDiagnostic: {
+      kind: "unrelated_runtime_diagnostic",
+      status: "informational",
+      matchingProcessCount: 2,
+    },
+  }), {
+    modeBadge: "Mode: web only (loop off)",
+    summary: "Loop mode is off on this host",
+    chipLabel: "loop off",
+    chipTone: "ok",
+  });
+
   assert.deepEqual(describeLoopRuntime(null), {
     modeBadge: "Mode: local WebUI",
     summary: "Loop status is unavailable on this host",

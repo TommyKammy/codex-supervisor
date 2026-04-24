@@ -82,12 +82,20 @@ export function renderGitHubRateLimitLine(resource: "rest" | "graphql", budget: 
 }
 
 export function renderLoopRuntimeLine(loopRuntime: SupervisorLoopRuntimeDto): string {
+  const markerPath = "markerPath" in loopRuntime ? loopRuntime.markerPath : "none";
+  const configPath = "configPath" in loopRuntime ? loopRuntime.configPath : null;
+  const stateFile = "stateFile" in loopRuntime ? loopRuntime.stateFile : "none";
+  const ownershipConfidence = "ownershipConfidence" in loopRuntime ? loopRuntime.ownershipConfidence : "none";
   return [
     "loop_runtime",
     `state=${loopRuntime.state}`,
     `host_mode=${sanitizeStatusValue(loopRuntime.hostMode)}`,
+    `marker_path=${sanitizeStatusValue(markerPath)}`,
+    `config_path=${sanitizeStatusValue(configPath ?? "none")}`,
+    `state_file=${sanitizeStatusValue(stateFile)}`,
     `pid=${loopRuntime.pid === null ? "none" : String(loopRuntime.pid)}`,
     `started_at=${sanitizeStatusValue(loopRuntime.startedAt ?? "none")}`,
+    `ownership_confidence=${ownershipConfidence}`,
     `detail=${sanitizeStatusValue(loopRuntime.detail ?? "none")}`,
   ].join(" ");
 }

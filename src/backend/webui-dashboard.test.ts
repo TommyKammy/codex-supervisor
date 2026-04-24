@@ -432,6 +432,42 @@ test("dashboard renders the loop-off presentation only when typed runtime status
   assert.equal(harness.remainingFetches.length, 0);
 });
 
+test("dashboard renders duplicate loop ownership as ambiguous instead of loop off", async () => {
+  const harness = createDashboardHarness([
+    ...dashboardServer.page({
+      status: createStatus({
+        loopRuntime: {
+          state: "off",
+          hostMode: "unknown",
+          pid: null,
+          startedAt: null,
+          detail: null,
+          ownershipConfidence: "duplicate_suspected",
+          duplicateLoopDiagnostic: {
+            kind: "duplicate_loop_processes",
+            status: "duplicate",
+            matchingProcessCount: 2,
+            matchingPids: [4242, 4243],
+            configPath: "/tmp/supervisor.config.json",
+            stateFile: "/tmp/state.json",
+          },
+        },
+      }),
+    }),
+  ]);
+  await harness.flush();
+
+  const loopModeBadge = harness.document.getElementById("loop-mode-badge");
+  const loopStateSummary = harness.document.getElementById("loop-state-summary");
+  assert.ok(loopModeBadge);
+  assert.ok(loopStateSummary);
+
+  assert.match(loopModeBadge.textContent, /loop ambiguous/u);
+  assert.doesNotMatch(loopModeBadge.textContent, /loop off/u);
+  assert.match(loopStateSummary.textContent, /Loop runtime ownership is ambiguous: 2 matching loop processes/u);
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
 test("dashboard treats loop-off tracked work as an active blocker instead of idle state", async () => {
   const harness = createDashboardHarness([
     ...dashboardServer.page({
