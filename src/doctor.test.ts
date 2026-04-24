@@ -1451,9 +1451,10 @@ test("renderDoctorReport starts with decision summary and tiers active risks, ma
 
   const lines = report.split("\n");
   assert.match(lines[0], /^doctor_decision action=stop summary=/);
-  assert.equal(lines[1], "doctor_tier tier=active_risk count=2");
-  assert.equal(lines[4], "doctor_tier tier=maintenance count=2");
-  assert.equal(lines[7], "doctor_tier tier=informational count=1");
+  assert.match(lines[1], /^doctor_operator_action action=fix_config source=doctor_check priority=80 summary=/);
+  assert.equal(lines[2], "doctor_tier tier=active_risk count=2");
+  assert.equal(lines[5], "doctor_tier tier=maintenance count=2");
+  assert.equal(lines[8], "doctor_tier tier=informational count=1");
   assert.match(report, /^doctor_tier_item tier=active_risk source=github_auth detail=GitHub CLI authentication is unavailable\.$/m);
   assert.match(report, /^doctor_tier_item tier=maintenance source=worktrees detail=orphaned prune candidates=1 eligible=1 locked=0 recent=0 unsafe_target=0$/m);
   assert.match(report, /^doctor_tier_item tier=informational source=worktrees detail=issue_host_paths issue=#177 workspace=auto_repaired journal_path=auto_repaired guidance=no_manual_action_required$/m);
@@ -1617,6 +1618,10 @@ test("renderDoctorReport surfaces advisory local CI posture when a repo-owned ca
     report,
     /doctor_local_ci configured=false source=repo_script_candidate command=none summary=Repo-owned local CI candidate exists but localCiCommand is unset\. Recommended command: npm run verify:supervisor-pre-pr\./,
   );
+  assert.match(
+    report,
+    /^doctor_operator_action action=adopt_local_ci source=doctor_local_ci priority=55 summary=Repo-owned local CI candidate exists; adopt it in config or explicitly dismiss it before relying on local verification posture\.$/m,
+  );
 });
 
 test("renderDoctorReport surfaces explicitly dismissed local CI candidate posture", () => {
@@ -1651,6 +1656,10 @@ test("renderDoctorReport surfaces explicitly dismissed local CI candidate postur
   assert.match(
     report,
     /doctor_local_ci configured=false source=dismissed_repo_script_candidate command=none summary=Repo-owned local CI candidate was intentionally dismissed; localCiCommand remains unset and non-blocking\. Dismissed candidate: npm run verify:supervisor-pre-pr\./,
+  );
+  assert.match(
+    report,
+    /^doctor_operator_action action=safe_to_ignore source=doctor_local_ci priority=10 summary=Repo-owned local CI candidate was intentionally dismissed; no local CI adoption action is required\.$/m,
   );
 });
 

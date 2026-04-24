@@ -22,6 +22,7 @@ import {
   formatLastSuccessfulInventorySnapshotStatusLine,
 } from "../inventory-refresh-state";
 import { buildTrustAndConfigWarnings, buildWarning, renderStatusWarningLine } from "../warning-formatting";
+import { renderOperatorActionLine, selectStatusOperatorAction } from "../operator-actions";
 
 export interface SupervisorStatusWarningDto {
   kind: "readiness" | "status";
@@ -162,8 +163,13 @@ export function renderSupervisorStatusDto(dto: SupervisorStatusDto): string {
   const statusWarning = dto.warning === null ? null : buildWarning(dto.warning.kind, dto.warning.message);
   const duplicateLoopDiagnosticLine = renderDuplicateLoopDiagnosticLine(dto.loopRuntime);
   const loopRuntimeRecoveryLine = renderLoopRuntimeRecoveryLine(dto.loopRuntime);
+  const operatorActionLine = renderOperatorActionLine(
+    "operator_action",
+    selectStatusOperatorAction({ detailedStatusLines: dto.detailedStatusLines }),
+  );
   const lines = [
     ...dto.detailedStatusLines,
+    operatorActionLine,
     ...githubRateLimitLines,
     renderLoopRuntimeLine(dto.loopRuntime),
     ...(duplicateLoopDiagnosticLine ? [duplicateLoopDiagnosticLine] : []),
