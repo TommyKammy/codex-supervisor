@@ -295,6 +295,13 @@ export async function runOnceCyclePrelude(
     recoveryEvents.push(...recoverableBlockedEvents);
     emitRecoveryEvents(recoverableBlockedEvents);
 
+    if (hasNonTrackedRecoverableBlockedStates(state)) {
+      await setReconciliationPhase("recoverable_blocked_issue_states");
+      const remainingRecoverableBlockedEvents = await args.reconcileRecoverableBlockedIssueStates(state, issues);
+      recoveryEvents.push(...remainingRecoverableBlockedEvents);
+      emitRecoveryEvents(remainingRecoverableBlockedEvents);
+    }
+
     if (
       state.activeIssueNumber === null &&
       await args.reserveRunnableIssueSelection?.(state) === true
@@ -303,13 +310,6 @@ export async function runOnceCyclePrelude(
         state,
         recoveryEvents,
       };
-    }
-
-    if (hasNonTrackedRecoverableBlockedStates(state)) {
-      await setReconciliationPhase("recoverable_blocked_issue_states");
-      const remainingRecoverableBlockedEvents = await args.reconcileRecoverableBlockedIssueStates(state, issues);
-      recoveryEvents.push(...remainingRecoverableBlockedEvents);
-      emitRecoveryEvents(remainingRecoverableBlockedEvents);
     }
 
     await setReconciliationPhase("parent_epic_closures");

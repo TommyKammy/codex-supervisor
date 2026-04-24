@@ -514,8 +514,8 @@ test("runOnceCyclePrelude rehydrates tracked blocked PRs before reserving select
     reconcileStaleFailedIssueStates: async () => {
       calls.push("stale_failed");
     },
-    reconcileRecoverableBlockedIssueStates: async (loadedState) => {
-      calls.push("recoverable_blocked");
+    reconcileRecoverableBlockedIssueStates: async (loadedState, _loadedIssues, options) => {
+      calls.push(`recoverable_blocked:${options?.onlyTrackedPrStates === true ? "tracked" : "all"}`);
       loadedState.issues["77"] = {
         ...loadedState.issues["77"]!,
         state: "ready_to_merge",
@@ -539,11 +539,123 @@ test("runOnceCyclePrelude rehydrates tracked blocked PRs before reserving select
     "tracked_merged",
     "merged_closures",
     "stale_failed",
-    "recoverable_blocked",
+    "recoverable_blocked:tracked",
     "reserve:ready_to_merge",
     "parent_epics",
     "cleanup",
   ]);
+});
+
+test("runOnceCyclePrelude requeues rehydrated requirements-blocked no-PR records before reservation", async () => {
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "77": createRecord({
+        issue_number: 77,
+        state: "blocked",
+        pr_number: null,
+        blocked_reason: "requirements",
+        workspace: "/tmp/workspaces/issue-77",
+        journal_path: "/tmp/workspaces/issue-77/.codex-supervisor/issues/77/issue-journal.md",
+        last_error: "Missing required execution-ready metadata: scope, acceptance criteria, verification.",
+        last_failure_context: {
+          category: "blocked",
+          summary: "Issue #77 is not execution-ready because it is missing: scope, acceptance criteria, verification.",
+          signature: "requirements:scope|acceptance criteria|verification",
+          command: null,
+          details: ["journal_state=rehydrated", "detail=prior_local_only_handoff_unavailable"],
+          url: "https://example.test/issues/77",
+          updated_at: "2026-03-26T00:00:00Z",
+        },
+        last_failure_signature: "requirements:scope|acceptance criteria|verification",
+        repeated_failure_signature_count: 2,
+      }),
+    },
+  };
+  const issues: GitHubIssue[] = [
+    {
+      number: 77,
+      title: "Requirements recovery after journal rehydration",
+      body: "",
+      createdAt: "2026-03-26T00:00:00Z",
+      updatedAt: "2026-03-26T00:05:00Z",
+      url: "https://example.test/issues/77",
+      state: "OPEN",
+    },
+  ];
+  const calls: string[] = [];
+  const recoveryEvent: RecoveryEvent = {
+    issueNumber: 77,
+    reason: "requirements_recovered: requeued issue #77 after execution-ready metadata was added",
+    at: "2026-03-26T00:06:00Z",
+  };
+
+  const result = await runOnceCyclePrelude({
+    stateStore: {
+      load: async () => state,
+      save: async () => {
+        calls.push("save");
+      },
+    },
+    carryoverRecoveryEvents: [],
+    reconcileStaleActiveIssueReservation: async () => [],
+    handleAuthFailure: async () => null,
+    listAllIssues: async () => issues,
+    reserveRunnableIssueSelection: async (loadedState) => {
+      calls.push(`reserve:${loadedState.issues["77"]?.state}:${loadedState.issues["77"]?.blocked_reason ?? "none"}`);
+      assert.equal(loadedState.issues["77"]?.last_error, null);
+      assert.equal(loadedState.issues["77"]?.last_failure_context, null);
+      assert.equal(loadedState.issues["77"]?.last_failure_signature, null);
+      return true;
+    },
+    reconcileTrackedMergedButOpenIssues: async () => {
+      calls.push("tracked_merged");
+      return [];
+    },
+    reconcileMergedIssueClosures: async () => {
+      calls.push("merged_closures");
+      return [];
+    },
+    reconcileStaleFailedIssueStates: async () => {
+      calls.push("stale_failed");
+    },
+    reconcileRecoverableBlockedIssueStates: async (loadedState, _loadedIssues, options) => {
+      calls.push(`recoverable_blocked:${options?.onlyTrackedPrStates === true ? "tracked" : "all"}`);
+      if (options?.onlyTrackedPrStates === true) {
+        return [];
+      }
+      loadedState.issues["77"] = {
+        ...loadedState.issues["77"]!,
+        state: "queued",
+        blocked_reason: null,
+        last_error: null,
+        last_failure_context: null,
+        last_failure_signature: null,
+        repeated_failure_signature_count: 0,
+        last_recovery_reason: recoveryEvent.reason,
+        last_recovery_at: recoveryEvent.at,
+      };
+      return [recoveryEvent];
+    },
+    reconcileParentEpicClosures: async () => {
+      throw new Error("unexpected reconcileParentEpicClosures call");
+    },
+    cleanupExpiredDoneWorkspaces: async () => {
+      throw new Error("unexpected cleanupExpiredDoneWorkspaces call");
+    },
+  });
+
+  assert.ok(!("kind" in result));
+  assert.deepEqual(calls, [
+    "save",
+    "tracked_merged",
+    "merged_closures",
+    "stale_failed",
+    "recoverable_blocked:tracked",
+    "recoverable_blocked:all",
+    "reserve:queued:none",
+  ]);
+  assert.deepEqual(result.recoveryEvents.map((event) => event.reason), [recoveryEvent.reason]);
 });
 
 test("runOnceCyclePrelude reconciles stale done no-PR records before reserving a new issue", async () => {
@@ -633,8 +745,8 @@ test("runOnceCyclePrelude reconciles stale done no-PR records before reserving a
     "stale_failed",
     "stale_done",
     "recoverable_blocked",
-    "reserve:blocked",
     "recoverable_blocked",
+    "reserve:blocked",
     "parent_epics",
     "cleanup",
   ]);
