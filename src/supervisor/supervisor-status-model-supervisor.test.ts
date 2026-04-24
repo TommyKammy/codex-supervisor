@@ -454,6 +454,51 @@ test("buildDetailedStatusModel explains when CodeRabbit is re-waiting after a dr
   }
 });
 
+test("buildDetailedStatusModel reports stale provider signal diagnostics with recent observation context", () => {
+  const lines = buildDetailedStatusModel({
+    config: createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector"],
+    }),
+    activeRecord: createRecord({
+      pr_number: 44,
+      state: "waiting_ci",
+      blocked_reason: null,
+      last_error: null,
+      external_review_head_sha: "head-old",
+    }),
+    latestRecord: null,
+    trackedIssueCount: 1,
+    pr: createPullRequest({
+      headRefOid: "head-new",
+      copilotReviewState: "not_requested",
+      copilotReviewRequestedAt: null,
+      copilotReviewArrivedAt: null,
+    }),
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [],
+    manualReviewThreads,
+    configuredBotReviewThreads,
+    pendingBotReviewThreads: (innerConfig, innerRecord, innerPr, innerReviewThreads) =>
+      configuredBotReviewThreads(innerConfig, innerReviewThreads).filter(
+        (thread) =>
+          !innerRecord.processed_review_thread_ids.includes(thread.id) &&
+          innerRecord.last_head_sha === innerPr.headRefOid,
+      ),
+    summarizeChecks: (checks) => ({
+      allPassing: checks.every((check) => check.bucket === "pass"),
+      hasPending: checks.some((check) => check.bucket === "pending" || check.bucket === "cancel"),
+      hasFailing: checks.some((check) => check.bucket === "fail"),
+    }),
+    mergeConflictDetected: (pr) => pr.mergeStateStatus === "DIRTY",
+  });
+
+  assert.ok(
+    lines.includes(
+      "review_bot_diagnostics status=stale_provider_signal observed_review=stale_external_review_record expected_reviewers=chatgpt-codex-connector next_check=wait_for_current_head_signal recent_observation=external_review_record:head-old->head-new",
+    ),
+  );
+});
+
 test("buildDetailedStatusSummaryLines shapes optional summaries and artifact paths", () => {
   const config = createConfig({
     localReviewArtifactDir: "/tmp/reviews",

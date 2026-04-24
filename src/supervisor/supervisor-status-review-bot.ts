@@ -9,6 +9,7 @@ import {
 } from "../core/review-providers";
 import { GitHubPullRequest, IssueRunRecord, ReviewThread, SupervisorConfig } from "../core/types";
 import { localReviewDegradedNeedsBlock } from "../review-handling";
+import { classifyStaleReviewBotRecoverability, recoverabilityStatusToken } from "./stale-diagnostic-recoverability";
 
 type ReviewThreadClassifier = (config: SupervisorConfig, reviewThreads: ReviewThread[]) => ReviewThread[];
 const DEFAULT_CONFIGURED_BOT_SETTLED_WAIT_MS = 5_000;
@@ -88,6 +89,7 @@ export interface ReviewBotDiagnostics {
   status: string;
   observedReview: string;
   nextCheck: string;
+  recentObservation?: string;
 }
 
 export interface ExternalSignalReadinessDiagnostics {
@@ -389,6 +391,28 @@ export function summarizeObservedReviewSignal(
   return { observedReview: "none", hasSignal: false };
 }
 
+function staleProviderSignalObservation(activeRecord: IssueRunRecord, pr: GitHubPullRequest): string | null {
+  if (activeRecord.external_review_head_sha && activeRecord.external_review_head_sha !== pr.headRefOid) {
+    return `external_review_record:${activeRecord.external_review_head_sha}->${pr.headRefOid}`;
+  }
+
+  return null;
+}
+
+function providerOutageObservation(config: SupervisorConfig, pr: GitHubPullRequest): string | null {
+  const currentHeadSignalWait = configuredBotCurrentHeadSignalWaitWindow(config, pr);
+  if (currentHeadSignalWait.status === "expired" && currentHeadSignalWait.observedAt) {
+    return `${currentHeadSignalWait.recentObservation}:${currentHeadSignalWait.observedAt}`;
+  }
+
+  const initialGraceWait = configuredBotInitialGraceWaitWindow(config, pr);
+  if (initialGraceWait.status === "expired" && initialGraceWait.observedAt) {
+    return `${initialGraceWait.recentObservation}:${initialGraceWait.observedAt}`;
+  }
+
+  return null;
+}
+
 export function reviewBotDiagnostics(
   config: SupervisorConfig,
   activeRecord: IssueRunRecord,
@@ -412,6 +436,22 @@ export function reviewBotDiagnostics(
     };
   }
 
+  const unresolvedConfiguredThreads = configuredBotReviewThreads(config, reviewThreads).filter(
+    (thread) => !thread.isResolved && !thread.isOutdated,
+  );
+  const topLevelReviewEffect = configuredBotTopLevelReviewEffect(config, pr, reviewThreads, configuredBotReviewThreads);
+  if (unresolvedConfiguredThreads.length > 0 || topLevelReviewEffect === "blocking") {
+    return {
+      status: "actionable_provider_review",
+      observedReview: unresolvedConfiguredThreads.length > 0 ? "review_thread" : "top_level_review",
+      nextCheck: "address_review",
+      recentObservation:
+        unresolvedConfiguredThreads.length > 0
+          ? `unresolved_threads:${unresolvedConfiguredThreads.length}`
+          : `top_level_review:${pr.configuredBotTopLevelReviewSubmittedAt ?? "unknown"}`,
+    };
+  }
+
   const observed = summarizeObservedReviewSignal(config, activeRecord, pr, reviewThreads, configuredBotReviewThreads);
   if (observed.hasSignal) {
     return {
@@ -421,11 +461,36 @@ export function reviewBotDiagnostics(
     };
   }
 
+  const staleProviderObservation = staleProviderSignalObservation(activeRecord, pr);
+  if (staleProviderObservation) {
+    return {
+      status: "stale_provider_signal",
+      observedReview: "stale_external_review_record",
+      nextCheck: "wait_for_current_head_signal",
+      recentObservation: staleProviderObservation,
+    };
+  }
+
   if (observed.observedReview === "copilot_requested") {
     return {
       status: "waiting_for_provider_review",
       observedReview: observed.observedReview,
       nextCheck: "provider_delivery",
+    };
+  }
+
+  const providerOutageRecentObservation = providerOutageObservation(config, pr);
+  if (providerOutageRecentObservation) {
+    const staleReviewBotRecoverability = classifyStaleReviewBotRecoverability(activeRecord, config);
+    const recoverability =
+      staleReviewBotRecoverability === "provider_outage_suspected"
+        ? recoverabilityStatusToken(staleReviewBotRecoverability)
+        : recoverabilityStatusToken("provider_outage_suspected");
+    return {
+      status: "provider_outage_suspected",
+      observedReview: "none",
+      nextCheck: "wait_or_provider_setup_or_manual_review",
+      recentObservation: `${providerOutageRecentObservation} ${recoverability}`,
     };
   }
 

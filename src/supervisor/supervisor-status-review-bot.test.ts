@@ -200,9 +200,10 @@ test("reviewBotDiagnostics tracks observed review signal precedence", () => {
   assert.deepEqual(
     reviewBotDiagnostics(config, createRecord(), pr, [createThread()], configuredBotReviewThreads),
     {
-      status: "review_signal_observed",
+      status: "actionable_provider_review",
       observedReview: "review_thread",
-      nextCheck: "none",
+      nextCheck: "address_review",
+      recentObservation: "unresolved_threads:1",
     },
   );
 
@@ -241,6 +242,63 @@ test("reviewBotDiagnostics tracks observed review signal precedence", () => {
     observedReview: "none",
     nextCheck: "provider_setup_or_delivery",
   });
+});
+
+test("reviewBotDiagnostics separates stale provider signal from missing provider signal", () => {
+  const config = createConfig({ reviewBotLogins: ["chatgpt-codex-connector"] });
+  const pr = createPr({ headRefOid: "head-new" });
+
+  assert.deepEqual(
+    reviewBotDiagnostics(
+      config,
+      createRecord({ external_review_head_sha: "head-old" }),
+      pr,
+      [],
+      configuredBotReviewThreads,
+    ),
+    {
+      status: "stale_provider_signal",
+      observedReview: "stale_external_review_record",
+      nextCheck: "wait_for_current_head_signal",
+      recentObservation: "external_review_record:head-old->head-new",
+    },
+  );
+});
+
+test("reviewBotDiagnostics flags suspected provider outage after current-head signal wait expires", () => {
+  const originalNow = Date.now;
+  Date.now = () => Date.parse("2026-03-16T00:20:01.000Z");
+
+  try {
+    assert.deepEqual(
+      reviewBotDiagnostics(
+        createConfig({
+          reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+          configuredBotRequireCurrentHeadSignal: true,
+          configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+        }),
+        createRecord({
+          state: "blocked",
+          blocked_reason: "stale_review_bot",
+          last_failure_signature: "stale-configured-bot-review",
+        }),
+        createPr({
+          currentHeadCiGreenAt: "2026-03-16T00:10:00.000Z",
+          configuredBotCurrentHeadObservedAt: null,
+        }),
+        [],
+        configuredBotReviewThreads,
+      ),
+      {
+        status: "provider_outage_suspected",
+        observedReview: "none",
+        nextCheck: "wait_or_provider_setup_or_manual_review",
+        recentObservation: "required_checks_green:2026-03-16T00:10:00.000Z recoverability=provider_outage_suspected",
+      },
+    );
+  } finally {
+    Date.now = originalNow;
+  }
 });
 
 test("reviewBotDiagnostics does not expect configured provider review while a draft PR is waiting for ready-for-review", () => {
