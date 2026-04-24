@@ -301,6 +301,40 @@ test("reviewBotDiagnostics flags suspected provider outage after current-head si
   }
 });
 
+test("reviewBotDiagnostics honors draft-skip rewait grace before suspecting provider outage", () => {
+  const originalNow = Date.now;
+  Date.now = () => Date.parse("2026-03-16T00:10:45.000Z");
+
+  try {
+    assert.deepEqual(
+      reviewBotDiagnostics(
+        createConfig({
+          reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+          configuredBotInitialGraceWaitSeconds: 90,
+        }),
+        createRecord({
+          review_wait_started_at: "2026-03-16T00:10:30.000Z",
+          review_wait_head_sha: "head-sha",
+        }),
+        createPr({
+          currentHeadCiGreenAt: "2026-03-16T00:00:00.000Z",
+          configuredBotCurrentHeadObservedAt: null,
+          configuredBotDraftSkipAt: "2026-03-15T23:59:00.000Z",
+        }),
+        [],
+        configuredBotReviewThreads,
+      ),
+      {
+        status: "missing_provider_signal",
+        observedReview: "none",
+        nextCheck: "provider_setup_or_delivery",
+      },
+    );
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
 test("reviewBotDiagnostics does not expect configured provider review while a draft PR is waiting for ready-for-review", () => {
   assert.deepEqual(
     reviewBotDiagnostics(

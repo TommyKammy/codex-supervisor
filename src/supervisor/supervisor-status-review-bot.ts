@@ -399,13 +399,17 @@ function staleProviderSignalObservation(activeRecord: IssueRunRecord, pr: GitHub
   return null;
 }
 
-function providerOutageObservation(config: SupervisorConfig, pr: GitHubPullRequest): string | null {
+function providerOutageObservation(
+  config: SupervisorConfig,
+  pr: GitHubPullRequest,
+  activeRecord: Pick<IssueRunRecord, "review_wait_started_at" | "review_wait_head_sha">,
+): string | null {
   const currentHeadSignalWait = configuredBotCurrentHeadSignalWaitWindow(config, pr);
   if (currentHeadSignalWait.status === "expired" && currentHeadSignalWait.observedAt) {
     return `${currentHeadSignalWait.recentObservation}:${currentHeadSignalWait.observedAt}`;
   }
 
-  const initialGraceWait = configuredBotInitialGraceWaitWindow(config, pr);
+  const initialGraceWait = configuredBotInitialGraceWaitWindow(config, pr, activeRecord);
   if (initialGraceWait.status === "expired" && initialGraceWait.observedAt) {
     return `${initialGraceWait.recentObservation}:${initialGraceWait.observedAt}`;
   }
@@ -436,9 +440,7 @@ export function reviewBotDiagnostics(
     };
   }
 
-  const unresolvedConfiguredThreads = configuredBotReviewThreads(config, reviewThreads).filter(
-    (thread) => !thread.isResolved && !thread.isOutdated,
-  );
+  const unresolvedConfiguredThreads = unresolvedReviewThreads(configuredBotReviewThreads(config, reviewThreads));
   const topLevelReviewEffect = configuredBotTopLevelReviewEffect(config, pr, reviewThreads, configuredBotReviewThreads);
   if (unresolvedConfiguredThreads.length > 0 || topLevelReviewEffect === "blocking") {
     return {
@@ -479,7 +481,7 @@ export function reviewBotDiagnostics(
     };
   }
 
-  const providerOutageRecentObservation = providerOutageObservation(config, pr);
+  const providerOutageRecentObservation = providerOutageObservation(config, pr, activeRecord);
   if (providerOutageRecentObservation) {
     const staleReviewBotRecoverability = classifyStaleReviewBotRecoverability(activeRecord, config);
     const recoverability =
@@ -515,9 +517,7 @@ export function externalSignalReadinessDiagnostics(
   const hasFailingChecks = checks.some((check) => check.bucket === "fail");
   const hasPendingChecks = checks.some((check) => check.bucket === "pending" || check.bucket === "cancel");
   const hasPassingChecks = checks.some((check) => check.bucket === "pass" || check.bucket === "skipping");
-  const unresolvedConfiguredThreads = configuredBotReviewThreads(config, reviewThreads).filter(
-    (thread) => !thread.isResolved && !thread.isOutdated,
-  );
+  const unresolvedConfiguredThreads = unresolvedReviewThreads(configuredBotReviewThreads(config, reviewThreads));
   const observed = summarizeObservedReviewSignal(config, activeRecord, pr, reviewThreads, configuredBotReviewThreads);
   const topLevelReviewEffect = configuredBotTopLevelReviewEffect(config, pr, reviewThreads, configuredBotReviewThreads);
   const hasExternalProviderActivity = hasAuthoritativeExternalProviderActivity(
