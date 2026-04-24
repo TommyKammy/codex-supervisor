@@ -1,3 +1,5 @@
+import type { SupervisorConfig } from "./types";
+
 export const CONFIG_FIELD_POSTURE_TIERS = [
   "required",
   "recommended",
@@ -6,26 +8,27 @@ export const CONFIG_FIELD_POSTURE_TIERS = [
 ] as const;
 
 export type ConfigFieldPostureTier = (typeof CONFIG_FIELD_POSTURE_TIERS)[number];
+export type ConfigFieldName = keyof SupervisorConfig;
 
 export interface ConfigFieldPostureMetadata {
-  field: string;
+  field: ConfigFieldName;
   tier: ConfigFieldPostureTier;
   summary: string;
 }
 
-function required(field: string, summary: string): ConfigFieldPostureMetadata {
+function required(field: ConfigFieldName, summary: string): ConfigFieldPostureMetadata {
   return { field, tier: "required", summary };
 }
 
-function recommended(field: string, summary: string): ConfigFieldPostureMetadata {
+function recommended(field: ConfigFieldName, summary: string): ConfigFieldPostureMetadata {
   return { field, tier: "recommended", summary };
 }
 
-function advanced(field: string, summary: string): ConfigFieldPostureMetadata {
+function advanced(field: ConfigFieldName, summary: string): ConfigFieldPostureMetadata {
   return { field, tier: "advanced", summary };
 }
 
-function dangerousExplicitOptIn(field: string, summary: string): ConfigFieldPostureMetadata {
+function dangerousExplicitOptIn(field: ConfigFieldName, summary: string): ConfigFieldPostureMetadata {
   return { field, tier: "dangerous_explicit_opt_in", summary };
 }
 
@@ -110,13 +113,18 @@ const CONFIG_FIELD_POSTURE_METADATA_ENTRIES = [
   dangerousExplicitOptIn("staleConfiguredBotReviewPolicy", "Configured-bot stale-thread reply or resolve behavior."),
 ] as const;
 
-export const CONFIG_FIELD_POSTURE_METADATA: Readonly<Record<string, ConfigFieldPostureMetadata>> =
-  Object.freeze(
-    Object.fromEntries(
-      CONFIG_FIELD_POSTURE_METADATA_ENTRIES.map((entry) => [entry.field, Object.freeze({ ...entry })]),
-    ),
-  );
+const CONFIG_FIELD_POSTURE_METADATA_BY_FIELD: Partial<
+  Record<ConfigFieldName, Readonly<ConfigFieldPostureMetadata>>
+> = {};
 
-export function getConfigFieldPostureMetadata(field: string): ConfigFieldPostureMetadata | undefined {
-  return CONFIG_FIELD_POSTURE_METADATA[field];
+for (const entry of CONFIG_FIELD_POSTURE_METADATA_ENTRIES) {
+  CONFIG_FIELD_POSTURE_METADATA_BY_FIELD[entry.field] = Object.freeze({ ...entry });
+}
+
+export const CONFIG_FIELD_POSTURE_METADATA: Readonly<
+  Partial<Record<ConfigFieldName, Readonly<ConfigFieldPostureMetadata>>>
+> = Object.freeze(CONFIG_FIELD_POSTURE_METADATA_BY_FIELD);
+
+export function getConfigFieldPostureMetadata(field: string): Readonly<ConfigFieldPostureMetadata> | undefined {
+  return CONFIG_FIELD_POSTURE_METADATA[field as ConfigFieldName];
 }
