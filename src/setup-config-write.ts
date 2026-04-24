@@ -329,10 +329,16 @@ function currentSemanticFieldValue(args: {
   }
 
   if (field === "localCiCandidateDismissed") {
-    const value = resolvedConfig !== null
-      ? resolvedConfig.localCiCandidateDismissed
-      : existingDocument.localCiCandidateDismissed;
-    return value === true ? "true" : "false";
+    const currentLocalCiCommand =
+      resolvedConfig !== null
+        ? displayLocalCiCommand(resolvedConfig.localCiCommand)
+        : displayStringValue(existingDocument.localCiCommand);
+    const dismissedValue =
+      resolvedConfig !== null
+        ? resolvedConfig.localCiCandidateDismissed
+        : existingDocument.localCiCandidateDismissed;
+    const effectiveDismissed = currentLocalCiCommand === null && dismissedValue === true;
+    return effectiveDismissed ? "true" : "false";
   }
 
   if (resolvedConfig !== null) {
