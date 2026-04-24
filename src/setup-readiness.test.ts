@@ -345,6 +345,45 @@ test("diagnoseSetupReadiness groups config fields by setup posture tier", async 
   );
 });
 
+test("diagnoseSetupReadiness reuses review provider validation for reviewBotLogins posture", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = await createTrackedRepo(root);
+  const workspaceRoot = path.join(root, "workspaces");
+  const configPath = path.join(root, "supervisor.config.json");
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      ...buildConfigDocument({
+        repoPath,
+        workspaceRoot,
+        stateFile: path.join(root, "state.json"),
+        workspacePreparationCommand: undefined,
+      }),
+      reviewBotLogins: [123],
+    }),
+    "utf8",
+  );
+
+  const summary = await diagnoseSetupReadiness({
+    configPath,
+    authStatus: async () => ({ ok: true, message: null }),
+  });
+
+  const reviewProvider = summary.fields.find((field) => field.key === "reviewProvider");
+  assert.equal(reviewProvider?.state, "missing");
+
+  const requiredGroup = summary.configPostureGroups?.find((group) => group.tier === "required");
+  const reviewBotLogins = requiredGroup?.fields.find((field) => field.key === "reviewBotLogins");
+  assert.equal(reviewBotLogins?.state, "missing");
+  assert.equal(reviewBotLogins?.value, null);
+  assert.match(reviewBotLogins?.message ?? "", /configure at least one review provider/i);
+});
+
 test("diagnoseSetupReadiness reports the selected local review posture preset", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
   t.after(async () => {
@@ -545,6 +584,7 @@ test("diagnoseSetupReadiness surfaces unsupported raw model strategies as invali
         workspacePreparationCommand: undefined,
       }),
       codexModelStrategy: "fiixed",
+      boundedRepairModelStrategy: "fiixed",
     }),
     "utf8",
   );
@@ -567,6 +607,20 @@ test("diagnoseSetupReadiness surfaces unsupported raw model strategies as invali
   assert.equal(codexTarget?.missingExplicitModel, false);
   assert.match(codexTarget?.summary ?? "", /unsupported fiixed routing/i);
   assert.match(codexTarget?.guidance ?? "", /codexModelStrategy=fiixed is unsupported/i);
+  const boundedRepairTarget = summary.modelRoutingPosture.targets.find((target) => target.key === "bounded_repair");
+  assert.equal(boundedRepairTarget?.strategy, "fiixed");
+  assert.equal(boundedRepairTarget?.invalidStrategy, true);
+  assert.match(boundedRepairTarget?.guidance ?? "", /boundedRepairModelStrategy=fiixed is unsupported/i);
+  const recommendedGroup = summary.configPostureGroups?.find((group) => group.tier === "recommended");
+  const codexStrategy = recommendedGroup?.fields.find((field) => field.key === "codexModelStrategy");
+  assert.equal(codexStrategy?.state, "invalid");
+  assert.equal(codexStrategy?.value, "fiixed");
+  assert.match(codexStrategy?.message ?? "", /codexModelStrategy=fiixed is unsupported/i);
+  const advancedGroup = summary.configPostureGroups?.find((group) => group.tier === "advanced");
+  const boundedRepairStrategy = advancedGroup?.fields.find((field) => field.key === "boundedRepairModelStrategy");
+  assert.equal(boundedRepairStrategy?.state, "invalid");
+  assert.equal(boundedRepairStrategy?.value, "fiixed");
+  assert.match(boundedRepairStrategy?.message ?? "", /boundedRepairModelStrategy=fiixed is unsupported/i);
   const blocker = summary.blockers.find((entry) => entry.code === "invalid_codex_model_strategy");
   assert.ok(blocker);
   assert.deepEqual(blocker.fieldKeys, ["codexModelStrategy"]);

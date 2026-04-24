@@ -224,6 +224,9 @@ const SETUP_POSTURE_GROUP_SUMMARIES: Record<ConfigFieldPostureTier, string> = {
   dangerous_explicit_opt_in:
     "Dangerous explicit opt-in settings are never presented as routine defaults or required next steps.",
 };
+const POSTURE_FIELD_ALIASES: Partial<Record<ConfigFieldName, SetupReadinessFieldKey>> = {
+  reviewBotLogins: "reviewProvider",
+};
 
 function readRawConfigDocument(configPath: string): RawConfigDocument {
   if (!fs.existsSync(configPath)) {
@@ -474,6 +477,7 @@ function buildConfigPostureGroups(args: {
   rawConfig: RawConfigDocument;
   configSummary: ReturnType<typeof loadConfigSummary>;
   fields: SetupReadinessField[];
+  modelRoutingPosture: SetupReadinessModelRoutingPosture;
 }): SetupReadinessConfigPostureGroup[] {
   const fieldByKey = new Map(args.fields.map((field) => [field.key, field]));
   const resolvedConfig = args.configSummary.config;
@@ -481,7 +485,8 @@ function buildConfigPostureGroups(args: {
   const postureFields = Object.values(CONFIG_FIELD_POSTURE_METADATA)
     .filter((entry): entry is ConfigFieldPostureMetadata => Boolean(entry))
     .map((posture): SetupReadinessConfigPostureField => {
-      const existing = fieldByKey.get(posture.field as SetupReadinessFieldKey);
+      const existingKey = POSTURE_FIELD_ALIASES[posture.field] ?? (posture.field as SetupReadinessFieldKey);
+      const existing = fieldByKey.get(existingKey);
       if (existing) {
         return {
           ...existing,
@@ -498,14 +503,26 @@ function buildConfigPostureGroups(args: {
             ? resolvedConfig?.[posture.field]
             : undefined,
       );
+      const invalidModelRoutingTarget = args.modelRoutingPosture.targets.find(
+        (target) => target.strategyField === posture.field && target.invalidStrategy,
+      );
+      const state: SetupFieldState = invalidModelRoutingTarget || args.configSummary.invalidFields.includes(posture.field)
+        ? "invalid"
+        : value === null
+          ? "missing"
+          : "configured";
       return {
         key: posture.field,
         label: displayConfigFieldLabel(posture.field),
-        state: (value === null ? "missing" : "configured") as SetupFieldState,
+        state,
         value,
-        message: value === null
-          ? buildMissingPostureMessage(posture)
-          : `${displayConfigFieldLabel(posture.field)} is configured.`,
+        message: invalidModelRoutingTarget
+          ? invalidModelRoutingTarget.guidance
+          : state === "invalid"
+            ? `${displayConfigFieldLabel(posture.field)} is present but invalid.`
+            : value === null
+              ? buildMissingPostureMessage(posture)
+              : `${displayConfigFieldLabel(posture.field)} is configured.`,
         required: posture.tier === "required",
         metadata: metadataForPostureField(posture.field),
         posture,
@@ -880,14 +897,15 @@ export async function diagnoseSetupReadiness(
     workspacePreparationWarning,
     recommendedWorkspacePreparationCommand,
   });
+  const modelRoutingPosture = buildModelRoutingPosture({
+    rawConfig,
+    config: configSummary.config,
+  });
   const configPostureGroups = buildConfigPostureGroups({
     rawConfig,
     configSummary,
     fields,
-  });
-  const modelRoutingPosture = buildModelRoutingPosture({
-    rawConfig,
-    config: configSummary.config,
+    modelRoutingPosture,
   });
   const hostDiagnostics = configSummary.config
     ? await diagnoseSupervisorHost({
