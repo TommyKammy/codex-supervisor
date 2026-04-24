@@ -8,7 +8,15 @@ import test from "node:test";
 import { StateStore } from "./core/state-store";
 import { MISSING_WORKSPACE_PREPARATION_CONTRACT_WARNING } from "./core/config";
 import { createConfig, createPullRequest, createRecord } from "./turn-execution-test-helpers";
-import { diagnoseBootstrapReadiness, diagnoseSupervisorHost, loadStateReadonlyForDoctor, renderDoctorReport } from "./doctor";
+import {
+  buildDoctorOperatorDecisionSurface,
+  collectDoctorRawHostDiagnostics,
+  collectDoctorRawDiagnostics,
+  diagnoseBootstrapReadiness,
+  diagnoseSupervisorHost,
+  loadStateReadonlyForDoctor,
+  renderDoctorReport,
+} from "./doctor";
 import { type SupervisorStateFile } from "./core/types";
 import { diagnoseSetupReadiness } from "./setup-readiness";
 
@@ -1451,6 +1459,89 @@ test("renderDoctorReport starts with decision summary and tiers active risks, ma
   assert.match(report, /^doctor_tier_item tier=informational source=worktrees detail=issue_host_paths issue=#177 workspace=auto_repaired journal_path=auto_repaired guidance=no_manual_action_required$/m);
   assert.match(report, /^doctor_check name=github_auth status=fail summary=GitHub CLI authentication is unavailable\.$/m);
   assert.match(report, /^doctor_detail name=worktrees detail=orphan_prune_candidate issue_number=201 eligibility=eligible /m);
+});
+
+test("doctor raw diagnostics stay separate from operator decision summary rendering", () => {
+  const rawDiagnostics = collectDoctorRawDiagnostics([
+    {
+      name: "github_auth",
+      status: "fail",
+      summary: "GitHub CLI authentication is unavailable.",
+      details: ["Run `gh auth status --hostname github.com` to inspect the current login state."],
+    },
+    {
+      name: "worktrees",
+      status: "warn",
+      summary: "orphaned prune candidates=1 eligible=1 locked=0 recent=0 unsafe_target=0",
+      details: [
+        "issue_host_paths issue=#177 workspace=auto_repaired journal_path=auto_repaired guidance=no_manual_action_required",
+        "orphan_prune_candidate issue_number=201 eligibility=eligible workspace=<workspace-root>/issue-201 branch=codex/issue-201 modified_at=2026-03-01T00:00:00.000Z reason=done_state_missing_from_supervisor_state",
+      ],
+    },
+  ]);
+
+  assert.equal(rawDiagnostics.overallStatus, "fail");
+  assert.deepEqual(
+    rawDiagnostics.checks.map((check) => ({ name: check.name, status: check.status })),
+    [
+      { name: "github_auth", status: "fail" },
+      { name: "worktrees", status: "warn" },
+    ],
+  );
+  assert.equal("decisionSummary" in rawDiagnostics, false);
+  assert.equal("diagnosticTiers" in rawDiagnostics, false);
+
+  const decisionSurface = buildDoctorOperatorDecisionSurface(rawDiagnostics);
+  assert.deepEqual(decisionSurface.decisionSummary, {
+    action: "stop",
+    summary: "2 active risk(s) require operator attention before continuing.",
+  });
+  assert.equal(decisionSurface.diagnosticTiers.active_risk.length, 2);
+  assert.equal(decisionSurface.diagnosticTiers.maintenance.length, 2);
+  assert.equal(decisionSurface.diagnosticTiers.informational.length, 1);
+});
+
+test("doctor raw host diagnostics collector returns checks without operator decision fields", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-doctor-raw-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = path.join(root, "repo");
+  const workspaceRoot = path.join(root, "workspaces");
+  const stateFile = path.join(root, "state.json");
+  await fs.mkdir(repoPath, { recursive: true });
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  execFileSync("git", ["init", "-b", "main"], { cwd: repoPath });
+
+  const rawDiagnostics = await collectDoctorRawHostDiagnostics({
+    config: createConfig({
+      repoPath,
+      workspaceRoot,
+      stateFile,
+      codexBinary: process.execPath,
+    }),
+    authStatus: async () => ({ ok: true, message: null }),
+    loadState: async () => ({
+      activeIssueNumber: null,
+      issues: {},
+    }),
+    github: {
+      getCandidateDiscoveryDiagnostics: async () => ({
+        fetchWindow: 100,
+        observedMatchingOpenIssues: 0,
+        truncated: false,
+      }),
+    },
+  });
+
+  assert.equal(rawDiagnostics.overallStatus, "pass");
+  assert.deepEqual(
+    rawDiagnostics.checks.map((check) => check.name),
+    ["github_auth", "codex_cli", "state_file", "worktrees"],
+  );
+  assert.equal("decisionSummary" in rawDiagnostics, false);
+  assert.equal("diagnosticTiers" in rawDiagnostics, false);
 });
 
 test("renderDoctorReport surfaces absent workspace preparation posture when no repo-owned contract exists", () => {
