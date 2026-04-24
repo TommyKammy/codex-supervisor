@@ -501,7 +501,6 @@ export function createSetupReadinessReport(
       createSetupField("workspaceRoot"),
       createSetupField("reviewProvider"),
     ],
-    configPostureGroups: createSetupConfigPostureGroups(),
     blockers: [createMissingReviewProviderBlocker()],
     hostReadiness: createSetupHostReadiness(),
     providerPosture: createSetupProviderPosture(),
