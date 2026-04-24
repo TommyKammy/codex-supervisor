@@ -1763,7 +1763,7 @@ test("getting started links to focused configuration and local review references
   assert.match(gettingStarted, /review provider profile/i);
   assert.match(gettingStarted, /provider-specific review settings/i);
   assert.match(gettingStarted, /disabled by default/i);
-  assert.match(gettingStarted, /recommended once enabled/i);
+  assert.match(gettingStarted, /recommended once-enabled/i);
   assert.doesNotMatch(gettingStarted, /review-bot profile/i);
   assert.doesNotMatch(gettingStarted, /^### Option 1: Auto-detect roles$/m);
   assert.doesNotMatch(gettingStarted, /^### Option 2: Explicit roles$/m);
@@ -1775,7 +1775,7 @@ test("getting started links to focused configuration and local review references
   assert.match(localReview, /^## Choosing reviewer roles$/m);
   assert.match(localReview, /^## Artifacts, thresholds, and guardrails$/m);
   assert.match(localReview, /disabled by default/i);
-  assert.match(localReview, /recommended once enabled/i);
+  assert.match(localReview, /recommended once-enabled/i);
 
   assert.match(configuration, /^## Model Routing Quick Recipes$/m);
   assert.match(configuration, /authoritative fields for Codex model selection/i);

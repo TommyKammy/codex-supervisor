@@ -4,7 +4,7 @@ This guide holds the detailed local-review swarm reference so the landing docs c
 
 ## What local review is for
 
-`codex-supervisor` can run a local review swarm on pull requests before merge. It is disabled by default in shipped starter configs and in default config loading behavior through `localReviewPosture: "off"`. Once an operator intentionally enables it, the recommended once enabled posture is `localReviewPosture: "block_merge"`, which maps to `localReviewAutoDetect: true`, `localReviewRoles: []`, `localReviewPolicy: "block_merge"`, `trackedPrCurrentHeadLocalReviewRequired: false`, `localReviewFollowUpRepairEnabled: false`, `localReviewManualReviewRepairEnabled: false`, `localReviewFollowUpIssueCreationEnabled: false`, and `localReviewHighSeverityAction: "blocked"`.
+`codex-supervisor` can run a local review swarm on pull requests before merge. It is disabled by default in shipped starter configs and in default config loading behavior through `localReviewPosture: "off"`. Once an operator intentionally enables it, the recommended once-enabled posture is `localReviewPosture: "block_merge"`, which maps to `localReviewAutoDetect: true`, `localReviewRoles: []`, `localReviewPolicy: "block_merge"`, `trackedPrCurrentHeadLocalReviewRequired: false`, `localReviewFollowUpRepairEnabled: false`, `localReviewManualReviewRepairEnabled: false`, `localReviewFollowUpIssueCreationEnabled: false`, and `localReviewHighSeverityAction: "blocked"`.
 
 The recommended starting policy is `block_merge`, because it preserves the usual ready-for-review flow while still making the swarm a practical merge gate on the current PR head.
 
