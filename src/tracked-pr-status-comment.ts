@@ -12,6 +12,7 @@ import {
   SupervisorConfig,
   SupervisorStateFile,
   LatestLocalCiResult,
+  LocalCiRemediationTarget,
 } from "./core/types";
 import { truncate } from "./core/utils";
 import { buildTrackedPrMismatch } from "./supervisor/tracked-pr-mismatch";
@@ -53,7 +54,8 @@ export function workspacePreparationFailureClass(
 
 export function workspacePreparationRemediationTarget(
   failureClass: Exclude<LatestLocalCiResult["failure_class"], "unset_contract"> | null,
-): string {
+): LocalCiRemediationTarget {
+  // Workspace preparation runs before the repo-owned verifier; generic command failures point at host setup.
   switch (failureClass) {
     case "worktree_helper_missing":
     case "missing_command":
