@@ -516,11 +516,31 @@ test("reconcileRecoverableBlockedIssueStates leaves closed issues blocked", asyn
   assert.equal(saveCalls, 0);
 });
 
-test("reconcileRecoverableBlockedIssueStates requeues requirements-blocked issues once metadata is execution-ready", async () => {
+test("reconcileRecoverableBlockedIssueStates requeues requirements-blocked issues once metadata is execution-ready even with a rehydrated journal", async () => {
   const config = createConfig();
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "requirements-rehydrated-"));
+  const workspacePath = path.join(tempDir, "workspaces", "issue-366");
+  const journalPath = path.join(workspacePath, ".codex-supervisor", "issues", "366", "issue-journal.md");
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  await fs.writeFile(
+    journalPath,
+    `# Issue #366: P3: Add regression coverage
+
+## Codex Working Notes
+### Current Handoff
+- Current blocker:
+- Next exact step: Continue after requirements recovery.
+
+### Scratchpad
+- Journal rehydration note: this journal was rehydrated on this host because the prior local-only handoff journal was unavailable.
+`,
+    "utf8",
+  );
   const original = createRecord({
     state: "blocked",
     blocked_reason: "requirements",
+    workspace: workspacePath,
+    journal_path: journalPath,
     last_error: "Missing required execution-ready metadata: scope, acceptance criteria, verification.",
     last_failure_kind: null,
     last_failure_context: {

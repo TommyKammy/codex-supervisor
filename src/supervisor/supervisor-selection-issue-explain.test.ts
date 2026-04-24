@@ -765,6 +765,112 @@ test("buildIssueExplainSummary surfaces host-migration path repair and journal r
   );
 });
 
+test("buildIssueExplainSummary treats requirements-recovered rehydrated journals as runnable", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 610;
+  const workspacePath = path.join(fixture.workspaceRoot, `issue-${issueNumber}`);
+  const journalPath = path.join(workspacePath, ".codex-supervisor", "issues", String(issueNumber), "issue-journal.md");
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  await fs.writeFile(path.join(workspacePath, ".git"), "gitdir: /tmp/fake\n", "utf8");
+  await fs.writeFile(
+    journalPath,
+    `# Issue #610: Requirements recovered explain
+
+## Supervisor Snapshot
+- Updated at: 2026-04-17T00:20:00Z
+
+## Latest Codex Summary
+- None yet.
+
+## Active Failure Context
+- None recorded.
+
+## Codex Working Notes
+### Current Handoff
+- Current blocker:
+- Next exact step: Continue after requirements recovery.
+
+### Scratchpad
+- Journal rehydration note: this journal was rehydrated on this host because the prior local-only handoff journal was unavailable.
+`,
+    "utf8",
+  );
+
+  const config = createConfig({
+    workspaceRoot: fixture.workspaceRoot,
+    stateFile: fixture.stateFile,
+    repoPath: fixture.repoPath,
+    issueJournalRelativePath: ".codex-supervisor/issues/{issueNumber}/issue-journal.md",
+  });
+  const issue = createIssue({
+    number: issueNumber,
+    title: "Requirements recovered explain",
+    body: `## Summary
+Cover requirements recovery after journal rehydration.
+
+## Scope
+- add explain coverage for recovered requirements blockers
+
+## Acceptance criteria
+- recovered issues are runnable
+
+## Verification
+- npx tsx --test src/supervisor/supervisor-selection-issue-explain.test.ts
+
+Depends on: none
+Parallelizable: No
+
+## Execution order
+1 of 1`,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "queued",
+        blocked_reason: null,
+        last_error: null,
+        last_failure_context: null,
+        last_failure_signature: null,
+        repeated_failure_signature_count: 0,
+        last_recovery_reason: `requirements_recovered: requeued issue #${issueNumber} after execution-ready metadata was added`,
+        last_recovery_at: "2026-04-17T00:21:00Z",
+        branch: branchName(config, issueNumber),
+        workspace: `/tmp/other-host/issue-${issueNumber}`,
+        journal_path: `/tmp/other-host/issue-${issueNumber}/.codex-supervisor/issues/${issueNumber}/issue-journal.md`,
+      }),
+    },
+  };
+
+  const lines = await buildIssueExplainSummary(
+    {
+      getIssue: async () => issue,
+      listAllIssues: async () => [issue],
+      listCandidateIssues: async () => [issue],
+      resolvePullRequestForBranch: async () => null,
+    },
+    config,
+    state,
+    issueNumber,
+  );
+
+  const explanation = lines.join("\n");
+  assert.match(explanation, /^runnable=yes$/m);
+  assert.match(explanation, /^selection_reason=ready /m);
+  assert.match(
+    explanation,
+    /^latest_recovery issue=#610 at=2026-04-17T00:21:00Z reason=requirements_recovered detail=requeued issue #610 after execution-ready metadata was added$/m,
+  );
+  assert.match(
+    explanation,
+    /^issue_journal_state issue=#610 status=rehydrated guidance=no_manual_action_required detail=prior_local_only_handoff_unavailable$/m,
+  );
+  assert.doesNotMatch(explanation, /local_state blocked/);
+  assert.doesNotMatch(explanation, /requirements missing=/);
+  assert.doesNotMatch(explanation, /Missing required execution-ready metadata/);
+});
+
 test("buildIssueExplainDto surfaces preserved partial work for no-PR manual-review recovery", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 607;
