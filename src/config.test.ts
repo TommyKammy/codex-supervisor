@@ -5,6 +5,8 @@ import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  CONFIG_FIELD_POSTURE_TIERS,
+  getConfigFieldPostureMetadata,
   findRepoOwnedWorkspacePreparationCandidate,
   loadConfig,
   loadConfigSummary,
@@ -26,6 +28,106 @@ function commitAll(repoPath: string, message: string): void {
   execFileSync("git", ["add", "."], { cwd: repoPath, stdio: "ignore" });
   execFileSync("git", ["commit", "-m", message], { cwd: repoPath, stdio: "ignore" });
 }
+
+test("config field posture metadata classifies setup and automation-expanding fields by typed tiers", () => {
+  assert.deepEqual(CONFIG_FIELD_POSTURE_TIERS, [
+    "required",
+    "recommended",
+    "advanced",
+    "dangerous_explicit_opt_in",
+  ]);
+
+  assert.deepEqual(
+    [
+      "repoPath",
+      "repoSlug",
+      "defaultBranch",
+      "workspaceRoot",
+      "stateFile",
+      "codexBinary",
+      "branchPrefix",
+      "trustMode",
+      "executionSafetyMode",
+      "reviewBotLogins",
+    ].map((field) => [field, getConfigFieldPostureMetadata(field)?.tier]),
+    [
+      ["repoPath", "required"],
+      ["repoSlug", "required"],
+      ["defaultBranch", "required"],
+      ["workspaceRoot", "required"],
+      ["stateFile", "required"],
+      ["codexBinary", "required"],
+      ["branchPrefix", "required"],
+      ["trustMode", "required"],
+      ["executionSafetyMode", "required"],
+      ["reviewBotLogins", "required"],
+    ],
+  );
+
+  assert.deepEqual(
+    [
+      "repoPath",
+      "trustMode",
+      "executionSafetyMode",
+      "reviewBotLogins",
+    ].map((field) => [field, getConfigFieldPostureMetadata(field)?.requirementScope]),
+    [
+      ["repoPath", "parser_required"],
+      ["trustMode", "first_run_setup"],
+      ["executionSafetyMode", "first_run_setup"],
+      ["reviewBotLogins", "first_run_setup"],
+    ],
+  );
+
+  assert.deepEqual(
+    [
+      "codexModelStrategy",
+      "workspacePreparationCommand",
+      "localCiCommand",
+      "localReviewPolicy",
+      "trackedPrCurrentHeadLocalReviewRequired",
+    ].map((field) => [field, getConfigFieldPostureMetadata(field)?.tier]),
+    [
+      ["codexModelStrategy", "recommended"],
+      ["workspacePreparationCommand", "recommended"],
+      ["localCiCommand", "recommended"],
+      ["localReviewPolicy", "recommended"],
+      ["trackedPrCurrentHeadLocalReviewRequired", "recommended"],
+    ],
+  );
+
+  assert.deepEqual(
+    [
+      "stateBackend",
+      "issueJournalRelativePath",
+      "candidateDiscoveryFetchWindow",
+      "configuredBotCurrentHeadSignalTimeoutMinutes",
+    ].map((field) => [field, getConfigFieldPostureMetadata(field)?.tier]),
+    [
+      ["stateBackend", "advanced"],
+      ["issueJournalRelativePath", "advanced"],
+      ["candidateDiscoveryFetchWindow", "advanced"],
+      ["configuredBotCurrentHeadSignalTimeoutMinutes", "advanced"],
+    ],
+  );
+
+  assert.deepEqual(
+    [
+      "localReviewFollowUpRepairEnabled",
+      "localReviewManualReviewRepairEnabled",
+      "localReviewFollowUpIssueCreationEnabled",
+      "localReviewHighSeverityAction",
+      "staleConfiguredBotReviewPolicy",
+    ].map((field) => [field, getConfigFieldPostureMetadata(field)?.tier]),
+    [
+      ["localReviewFollowUpRepairEnabled", "dangerous_explicit_opt_in"],
+      ["localReviewManualReviewRepairEnabled", "dangerous_explicit_opt_in"],
+      ["localReviewFollowUpIssueCreationEnabled", "dangerous_explicit_opt_in"],
+      ["localReviewHighSeverityAction", "dangerous_explicit_opt_in"],
+      ["staleConfiguredBotReviewPolicy", "dangerous_explicit_opt_in"],
+    ],
+  );
+});
 
 test("loadConfig leaves bare codexBinary values unresolved for PATH lookup", async (t) => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
