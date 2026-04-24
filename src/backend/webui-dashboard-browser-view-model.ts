@@ -153,6 +153,15 @@ export function describeLoopRuntime(loopRuntime: DashboardLoopRuntimeLike | null
   const ownershipConfidence =
     typeof loopRuntime?.ownershipConfidence === "string" ? loopRuntime.ownershipConfidence : "none";
   const duplicateDiagnostic = loopRuntime?.duplicateLoopDiagnostic ?? null;
+  const recoveryGuidance =
+    typeof loopRuntime?.recoveryGuidance === "string" && loopRuntime.recoveryGuidance.trim() !== ""
+      ? loopRuntime.recoveryGuidance
+      : typeof duplicateDiagnostic?.recoveryGuidance === "string" && duplicateDiagnostic.recoveryGuidance.trim() !== ""
+        ? duplicateDiagnostic.recoveryGuidance
+        : null;
+  function appendRecoveryGuidance(summary: string): string {
+    return recoveryGuidance === null ? summary : summary + ". " + recoveryGuidance;
+  }
   const hasDuplicateSignal =
     ownershipConfidence === "duplicate_suspected" ||
     duplicateDiagnostic?.kind === "duplicate_loop_processes" ||
@@ -162,9 +171,9 @@ export function describeLoopRuntime(loopRuntime: DashboardLoopRuntimeLike | null
       typeof duplicateDiagnostic?.matchingProcessCount === "number" ? duplicateDiagnostic.matchingProcessCount : null;
     return {
       modeBadge: "Mode: web + loop ambiguous",
-      summary: matchingProcessCount === null
+      summary: appendRecoveryGuidance(matchingProcessCount === null
         ? "Loop runtime ownership is ambiguous"
-        : "Loop runtime ownership is ambiguous: " + String(matchingProcessCount) + " matching loop processes",
+        : "Loop runtime ownership is ambiguous: " + String(matchingProcessCount) + " matching loop processes"),
       chipLabel: "loop ownership ambiguous",
       chipTone: "warn",
     };
@@ -180,7 +189,7 @@ export function describeLoopRuntime(loopRuntime: DashboardLoopRuntimeLike | null
   if (ownershipConfidence === "ambiguous_owner") {
     return {
       modeBadge: "Mode: local WebUI",
-      summary: "Loop runtime marker ownership is ambiguous",
+      summary: appendRecoveryGuidance("Loop runtime marker ownership is ambiguous"),
       chipLabel: "loop marker ambiguous",
       chipTone: "warn",
     };

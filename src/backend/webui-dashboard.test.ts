@@ -443,6 +443,8 @@ test("dashboard renders duplicate loop ownership as ambiguous instead of loop of
           startedAt: null,
           detail: null,
           ownershipConfidence: "duplicate_suspected",
+          recoveryGuidance:
+            "Safe recovery: for config /tmp/supervisor.config.json, stop the tmux-managed loop with ./scripts/stop-loop-tmux.sh, inspect the listed direct loop PIDs before stopping any process, then restart with ./scripts/start-loop-tmux.sh using the same config.",
           duplicateLoopDiagnostic: {
             kind: "duplicate_loop_processes",
             status: "duplicate",
@@ -450,6 +452,8 @@ test("dashboard renders duplicate loop ownership as ambiguous instead of loop of
             matchingPids: [4242, 4243],
             configPath: "/tmp/supervisor.config.json",
             stateFile: "/tmp/state.json",
+            recoveryGuidance:
+              "Safe recovery: for config /tmp/supervisor.config.json, stop the tmux-managed loop with ./scripts/stop-loop-tmux.sh, inspect the listed direct loop PIDs before stopping any process, then restart with ./scripts/start-loop-tmux.sh using the same config.",
           },
         },
       }),
@@ -465,6 +469,8 @@ test("dashboard renders duplicate loop ownership as ambiguous instead of loop of
   assert.match(loopModeBadge.textContent, /loop ambiguous/u);
   assert.doesNotMatch(loopModeBadge.textContent, /loop off/u);
   assert.match(loopStateSummary.textContent, /Loop runtime ownership is ambiguous: 2 matching loop processes/u);
+  assert.match(loopStateSummary.textContent, /inspect the listed direct loop PIDs before stopping any process/u);
+  assert.match(loopStateSummary.textContent, /\.\/scripts\/start-loop-tmux\.sh/u);
   assert.equal(harness.remainingFetches.length, 0);
 });
 

@@ -378,6 +378,7 @@ export function createDashboardStatusFixture(args: {
     startedAt: string | null;
     ownershipConfidence?: "none" | "live_lock" | "stale_lock" | "ambiguous_owner" | "duplicate_suspected" | null;
     detail: string | null;
+    recoveryGuidance?: string | null;
     duplicateLoopDiagnostic?: {
       kind: string;
       status: string;
@@ -385,6 +386,7 @@ export function createDashboardStatusFixture(args: {
       matchingPids: number[];
       configPath: string;
       stateFile: string;
+      recoveryGuidance?: string | null;
     };
   } | null;
   trackedIssues?: Array<{

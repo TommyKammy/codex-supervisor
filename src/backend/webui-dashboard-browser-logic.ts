@@ -48,6 +48,7 @@ export interface DashboardLoopRuntimeLike {
   startedAt?: string | null;
   ownershipConfidence?: "none" | "live_lock" | "stale_lock" | "ambiguous_owner" | "duplicate_suspected" | null;
   detail?: string | null;
+  recoveryGuidance?: string | null;
   duplicateLoopDiagnostic?: {
     kind?: string | null;
     status?: string | null;
@@ -55,6 +56,7 @@ export interface DashboardLoopRuntimeLike {
     matchingPids?: number[] | null;
     configPath?: string | null;
     stateFile?: string | null;
+    recoveryGuidance?: string | null;
   } | null;
 }
 
