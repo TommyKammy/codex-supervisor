@@ -33,6 +33,7 @@ function buildConfigDocument(args: {
   workspacePreparationCommand: unknown;
   includeTrustPosture?: boolean;
   localReviewPosture?: string;
+  approvedTrackedTopLevelEntries?: string[];
 }): Record<string, unknown> {
   return {
     repoPath: args.repoPath,
@@ -45,6 +46,9 @@ function buildConfigDocument(args: {
     reviewBotLogins: ["chatgpt-codex-connector"],
     workspacePreparationCommand: args.workspacePreparationCommand,
     ...(args.localReviewPosture ? { localReviewPosture: args.localReviewPosture } : {}),
+    ...(args.approvedTrackedTopLevelEntries
+      ? { approvedTrackedTopLevelEntries: args.approvedTrackedTopLevelEntries }
+      : {}),
     ...(args.includeTrustPosture === false
       ? {}
       : {
@@ -334,6 +338,12 @@ test("diagnoseSetupReadiness groups config fields by setup posture tier", async 
   assert.equal(staleBotPolicy?.state, "missing");
   assert.equal(staleBotPolicy?.required, false);
   assert.match(staleBotPolicy?.message ?? "", /dangerous explicit opt-in/i);
+  const skeletonGuard = dangerousGroup?.fields.find((field) => field.key === "approvedTrackedTopLevelEntries");
+  assert.equal(skeletonGuard?.state, "missing");
+  assert.equal(skeletonGuard?.required, false);
+  assert.equal(skeletonGuard?.value, null);
+  assert.match(skeletonGuard?.message ?? "", /conservative behavior remains in effect/i);
+  assert.equal(skeletonGuard?.posture.summary, "Approved tracked top-level repository skeleton entries.");
 
   assert.equal(
     summary.blockers.some((blocker) => blocker.fieldKeys.includes("boundedRepairModelStrategy")),
@@ -343,6 +353,47 @@ test("diagnoseSetupReadiness groups config fields by setup posture tier", async 
     summary.blockers.some((blocker) => blocker.fieldKeys.includes("staleConfiguredBotReviewPolicy")),
     false,
   );
+  assert.equal(
+    summary.blockers.some((blocker) => blocker.fieldKeys.includes("approvedTrackedTopLevelEntries")),
+    false,
+  );
+});
+
+test("diagnoseSetupReadiness exposes configured approved tracked top-level entries in posture groups", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = await createTrackedRepo(root);
+  const workspaceRoot = path.join(root, "workspaces");
+  const configPath = path.join(root, "supervisor.config.json");
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  await fs.writeFile(
+    configPath,
+    JSON.stringify(
+      buildConfigDocument({
+        repoPath,
+        workspaceRoot,
+        stateFile: path.join(root, "state.json"),
+        workspacePreparationCommand: undefined,
+        approvedTrackedTopLevelEntries: ["README.md", "src"],
+      }),
+    ),
+    "utf8",
+  );
+
+  const summary = await diagnoseSetupReadiness({
+    configPath,
+    authStatus: async () => ({ ok: true, message: null }),
+  });
+
+  const dangerousGroup = summary.configPostureGroups?.find((group) => group.tier === "dangerous_explicit_opt_in");
+  const skeletonGuard = dangerousGroup?.fields.find((field) => field.key === "approvedTrackedTopLevelEntries");
+  assert.equal(skeletonGuard?.state, "configured");
+  assert.equal(skeletonGuard?.required, false);
+  assert.equal(skeletonGuard?.value, "README.md, src");
+  assert.match(skeletonGuard?.message ?? "", /Approved tracked top level entries is configured/i);
 });
 
 test("diagnoseSetupReadiness reuses review provider validation for reviewBotLogins posture", async (t) => {
