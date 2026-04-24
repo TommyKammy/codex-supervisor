@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import { runCommand } from "./core/command";
 import {
   inferGitHubWaitStep,
@@ -17,39 +16,33 @@ import { inferFailureContext } from "./supervisor/supervisor-failure-context";
 import { shouldReconcileTrackedPrStaleReviewBot } from "./supervisor/supervisor-execution-policy";
 import {
   findHighRiskBlockingAmbiguity,
-  findParentIssuesReadyToClose,
   hasAvailableIssueLabels,
   lintExecutionReadyIssueBody,
 } from "./issue-metadata";
 import { buildIssueDefinitionFingerprint, issueDefinitionFreshnessPatch } from "./issue-definition-freshness";
-import { inspectFileLock } from "./core/lock";
 import { RecoveryEvent } from "./run-once-cycle-prelude";
 import { StateStore } from "./core/state-store";
 import { GitHubIssue, IssueRunRecord, PullRequestCheck, ReviewThread, RunState, SupervisorConfig, SupervisorStateFile } from "./core/types";
 import { nowIso, truncate } from "./core/utils";
-import {
-  executionMetricsRetentionRootPath,
-  syncExecutionMetricsRunSummarySafely,
-} from "./supervisor/execution-metrics-run-summary";
-import { syncPostMergeAuditArtifactSafely } from "./supervisor/post-merge-audit-artifact";
 import { resetTrackedPrHeadScopedStateOnAdvance } from "./tracked-pr-lifecycle-projection";
 import {
   buildSupervisorMutationRecordSnapshot,
   type SupervisorMutationRecordSnapshotDto,
   type SupervisorMutationResultDto,
 } from "./supervisor/supervisor-mutation-report";
-import {
-  getStaleStabilizingNoPrRecoveryCount,
-  STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE,
-} from "./no-pull-request-state";
+import { STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE } from "./no-pull-request-state";
 import { applyFailureSignature } from "./supervisor/supervisor-failure-helpers";
 import {
-  buildUnsafeNoPrFailureContext,
   doneResetPatch,
-  shouldReconsiderNoPrDoneRecord,
   sanitizeRecoveryReason,
 } from "./recovery-support";
 import { reconcileStaleFailedNoPrRecord } from "./recovery-no-pr-reconciliation";
+import { reconcileStaleActiveIssueReservationInModule } from "./recovery-active-reconciliation";
+import {
+  reconcileMergedIssueClosuresInModule,
+  reconcileStaleDoneIssueStatesInModule,
+} from "./recovery-historical-reconciliation";
+import { reconcileParentEpicClosuresInModule } from "./recovery-parent-epic-reconciliation";
 import {
   buildTrackedPrResumeRecoveryEvent,
   reconcileStaleFailedTrackedPrRecord,
@@ -64,28 +57,11 @@ export {
 } from "./recovery-workspace-reconciliation";
 import { cleanupExpiredDoneWorkspaces as cleanupExpiredDoneWorkspacesInModule } from "./recovery-workspace-reconciliation";
 import { buildTrackedPrStaleFailureConvergencePatch } from "./recovery-tracked-pr-support";
-import {
-  captureIssueJournalFingerprint,
-  clearInterruptedTurnMarker,
-  readInterruptedTurnMarker,
-  sameIssueJournalFingerprint,
-} from "./interrupted-turn-marker";
-import { resolveTrackedIssueHostPaths } from "./core/journal";
 import { mergeConflictDetected } from "./supervisor/supervisor-status-rendering";
 import { projectTrackedPrLifecycle } from "./tracked-pr-lifecycle-projection";
 import { hasFreshTrackedPrReadyPromotionBlockerEvidence } from "./tracked-pr-ready-promotion-blocker";
 import { clearRequirementsBlockerIssueComment } from "./requirements-blocker-issue-comment";
 
-const OWNER_GUARDED_ACTIVE_STATES = new Set<RunState>([
-  "planning",
-  "reproducing",
-  "implementing",
-  "local_review_fix",
-  "stabilizing",
-  "repairing_ci",
-  "resolving_conflict",
-  "addressing_review",
-]);
 const OPERATOR_REQUEUEABLE_STATES = new Set<RunState>(["blocked", "failed"]);
 type StaleStabilizingNoPrBranchState = "recoverable" | "already_satisfied_on_main";
 
@@ -110,13 +86,6 @@ async function fetchOriginDefaultBranch(
   });
 }
 
-function matchesTrackedBranch(
-  record: Pick<IssueRunRecord, "branch">,
-  pr: Pick<import("./core/types").GitHubPullRequest, "headRefName">,
-): boolean {
-  return pr.headRefName === record.branch;
-}
-
 function needsRecordUpdate(record: IssueRunRecord, patch: Partial<IssueRunRecord>): boolean {
   for (const [key, value] of Object.entries(patch)) {
     const recordValue = record[key as keyof IssueRunRecord];
@@ -126,181 +95,6 @@ function needsRecordUpdate(record: IssueRunRecord, patch: Partial<IssueRunRecord
   }
 
   return false;
-}
-
-type DurableTurnUpdateEvidence =
-  | "journal_changed"
-  | "journal_mtime_advanced"
-  | "record_updated_at_advanced"
-  | "journal_unchanged"
-  | "journal_missing"
-  | "record_updated_at_stale"
-  | "progress_unverifiable";
-
-async function detectDurableTurnUpdateSince(
-  config: Pick<SupervisorConfig, "issueJournalRelativePath" | "workspaceRoot"> | null,
-  record: Pick<IssueRunRecord, "issue_number" | "workspace" | "journal_path" | "updated_at">,
-  marker: {
-    startedAt: string;
-    journalFingerprint: import("./interrupted-turn-marker").InterruptedTurnMarker["journalFingerprint"];
-  },
-): Promise<{ hasDurableUpdate: boolean; evidence: DurableTurnUpdateEvidence }> {
-  const journalPath = config
-    ? (() => {
-      const resolvedPaths = resolveTrackedIssueHostPaths(config, record);
-      return record.journal_path || resolvedPaths.usingCanonicalWorkspace
-        ? resolvedPaths.journal_path
-        : null;
-    })()
-    : record.journal_path;
-
-  if (journalPath && marker.journalFingerprint) {
-    const currentJournalFingerprint = await captureIssueJournalFingerprint(journalPath);
-    if (!currentJournalFingerprint.exists) {
-      return { hasDurableUpdate: false, evidence: "journal_missing" };
-    }
-
-    return sameIssueJournalFingerprint(currentJournalFingerprint, marker.journalFingerprint)
-      ? { hasDurableUpdate: false, evidence: "journal_unchanged" }
-      : { hasDurableUpdate: true, evidence: "journal_changed" };
-  }
-
-  const startedAtMs = Date.parse(marker.startedAt);
-  if (journalPath && Number.isFinite(startedAtMs)) {
-    try {
-      const journalStats = await fs.promises.stat(journalPath);
-      if (journalStats.mtimeMs > startedAtMs) {
-        return { hasDurableUpdate: true, evidence: "journal_mtime_advanced" };
-      }
-      return { hasDurableUpdate: false, evidence: "journal_unchanged" };
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        return { hasDurableUpdate: false, evidence: "journal_missing" };
-      }
-      throw error;
-    }
-  }
-
-  const updatedAtMs = Date.parse(record.updated_at);
-  if (!Number.isFinite(updatedAtMs) || !Number.isFinite(startedAtMs)) {
-    return { hasDurableUpdate: false, evidence: "progress_unverifiable" };
-  }
-
-  return updatedAtMs > startedAtMs
-    ? { hasDurableUpdate: true, evidence: "record_updated_at_advanced" }
-    : { hasDurableUpdate: false, evidence: "record_updated_at_stale" };
-}
-
-function appendInterruptedTurnEvidence(
-  reason: string,
-  interruptedTurnUpdate: { evidence: DurableTurnUpdateEvidence } | null,
-): string {
-  return interruptedTurnUpdate
-    ? `${reason}; durable_progress_evidence=${interruptedTurnUpdate.evidence}`
-    : reason;
-}
-
-function trackedMergedButOpenLastProcessedIssueNumber(state: SupervisorStateFile): number | null {
-  return state.reconciliation_state?.tracked_merged_but_open_last_processed_issue_number ?? null;
-}
-
-function setTrackedMergedButOpenLastProcessedIssueNumber(
-  state: SupervisorStateFile,
-  issueNumber: number | null,
-): boolean {
-  const currentIssueNumber = trackedMergedButOpenLastProcessedIssueNumber(state);
-  if (currentIssueNumber === issueNumber) {
-    return false;
-  }
-
-  state.reconciliation_state = {
-    ...(state.reconciliation_state ?? {}),
-    tracked_merged_but_open_last_processed_issue_number: issueNumber,
-  };
-  return true;
-}
-
-function orderTrackedMergedButOpenRecordsForResume(
-  records: IssueRunRecord[],
-  lastProcessedIssueNumber: number | null,
-): IssueRunRecord[] {
-  if (records.length <= 1 || lastProcessedIssueNumber === null) {
-    return records;
-  }
-
-  const resumeIndex = records.findIndex((record) => record.issue_number === lastProcessedIssueNumber);
-  const nextIndex = resumeIndex !== -1
-    ? resumeIndex + 1
-    : records.findIndex((record) => record.issue_number > lastProcessedIssueNumber);
-  if (nextIndex === -1 || nextIndex >= records.length) {
-    return records;
-  }
-
-  return [
-    ...records.slice(nextIndex),
-    ...records.slice(0, nextIndex),
-  ];
-}
-
-function mergedIssueClosuresLastProcessedIssueNumber(state: SupervisorStateFile): number | null {
-  return state.reconciliation_state?.merged_issue_closures_last_processed_issue_number ?? null;
-}
-
-function setMergedIssueClosuresLastProcessedIssueNumber(
-  state: SupervisorStateFile,
-  issueNumber: number | null,
-): boolean {
-  const currentIssueNumber = mergedIssueClosuresLastProcessedIssueNumber(state);
-  if (currentIssueNumber === issueNumber) {
-    return false;
-  }
-
-  state.reconciliation_state = {
-    ...(state.reconciliation_state ?? {}),
-    merged_issue_closures_last_processed_issue_number: issueNumber,
-  };
-  return true;
-}
-
-function orderMergedIssueClosureRecordsForResume(
-  records: IssueRunRecord[],
-  lastProcessedIssueNumber: number | null,
-): IssueRunRecord[] {
-  const ordered = [...records].sort((left, right) => left.issue_number - right.issue_number);
-  if (lastProcessedIssueNumber === null) {
-    return ordered;
-  }
-
-  const nextIndex = ordered.findIndex((record) => record.issue_number > lastProcessedIssueNumber);
-  if (nextIndex === -1) {
-    return ordered;
-  }
-
-  return [
-    ...ordered.slice(nextIndex),
-    ...ordered.slice(0, nextIndex),
-  ];
-}
-
-function prioritizeMergedIssueClosureRecords(
-  records: IssueRunRecord[],
-  lastProcessedIssueNumber: number | null,
-  activeIssueNumber: number | null,
-): IssueRunRecord[] {
-  const activeRecord = activeIssueNumber === null
-    ? null
-    : records.find((record) => record.issue_number === activeIssueNumber) ?? null;
-  const remainingRecords = activeRecord === null
-    ? records
-    : records.filter((record) => record.issue_number !== activeRecord.issue_number);
-  const orderedRemainingRecords = orderMergedIssueClosureRecordsForResume(
-    remainingRecords,
-    activeRecord === null ? lastProcessedIssueNumber : activeRecord.issue_number,
-  );
-
-  return activeRecord === null
-    ? orderedRemainingRecords
-    : [activeRecord, ...orderedRemainingRecords];
 }
 
 export function buildRecoveryEvent(issueNumber: number, reason: string): RecoveryEvent {
@@ -408,50 +202,6 @@ function latestFiniteTimestamp(...values: Array<string | null | undefined>): num
     latest = latest === null ? parsed : Math.max(latest, parsed);
   }
   return latest;
-}
-
-function shouldRevalidateMergedIssueClosureRecord(
-  record: Pick<
-    IssueRunRecord,
-    | "issue_number"
-    | "state"
-    | "pr_number"
-    | "last_head_sha"
-    | "last_recovery_reason"
-    | "last_failure_context"
-    | "last_recovery_at"
-    | "updated_at"
-  >,
-  issue: Pick<GitHubIssue, "updatedAt">,
-  activeIssueNumber: number | null,
-): boolean {
-  if (activeIssueNumber === record.issue_number) {
-    return true;
-  }
-
-  if (record.state !== "done") {
-    return true;
-  }
-
-  if (record.pr_number === null || record.last_head_sha === null) {
-    return true;
-  }
-
-  if (!record.last_recovery_reason?.startsWith("merged_pr_convergence:")) {
-    return true;
-  }
-
-  const issueUpdatedAtMs = Date.parse(issue.updatedAt);
-  const localTerminalObservedAtMs = latestFiniteTimestamp(
-    record.last_failure_context?.updated_at,
-    record.last_recovery_at,
-    record.updated_at,
-  );
-  if (!Number.isFinite(issueUpdatedAtMs) || localTerminalObservedAtMs === null) {
-    return true;
-  }
-
-  return issueUpdatedAtMs > localTerminalObservedAtMs;
 }
 
 function shouldReconsiderBlockedNoPrStaleManualStop(
@@ -695,131 +445,20 @@ export async function reconcileMergedIssueClosures(
     maxRecords?: number | null;
   } = {},
 ): Promise<RecoveryEvent[]> {
-  const defaultMaxRecordsPerCycle = 25;
-  const maxRecordsPerCycle =
-    typeof options.maxRecords === "number" && Number.isFinite(options.maxRecords) && options.maxRecords >= 1
-      ? Math.floor(options.maxRecords)
-      : defaultMaxRecordsPerCycle;
-  let saveNeeded = false;
-  const recoveryEvents: RecoveryEvent[] = [];
-  const issueByNumber = new Map(issues.map((issue) => [issue.number, issue]));
-  const revalidationEligibleRecords = Object.values(state.issues).filter((record) => {
-    const issue = issueByNumber.get(record.issue_number);
-    return issue?.state === "CLOSED" && shouldRevalidateMergedIssueClosureRecord(record, issue, state.activeIssueNumber);
-  });
-  const orderedRecords = prioritizeMergedIssueClosureRecords(
-    revalidationEligibleRecords,
-    mergedIssueClosuresLastProcessedIssueNumber(state),
-    state.activeIssueNumber,
+  return reconcileMergedIssueClosuresInModule(
+    github,
+    stateStore,
+    state,
+    config,
+    issues,
+    {
+      buildRecoveryEvent,
+      applyRecoveryEvent,
+      needsRecordUpdate,
+    },
+    updateReconciliationProgress,
+    options,
   );
-  let processedRecords = 0;
-  let lastProcessedIssueNumber: number | null = null;
-
-  for (const record of orderedRecords) {
-    if (processedRecords >= maxRecordsPerCycle) {
-      break;
-    }
-    processedRecords += 1;
-    lastProcessedIssueNumber = record.issue_number;
-
-    await updateReconciliationProgress?.({
-      targetIssueNumber: record.issue_number,
-      targetPrNumber: record.pr_number,
-      waitStep: null,
-    });
-
-    const issue = issueByNumber.get(record.issue_number);
-    if (!issue) {
-      continue;
-    }
-    const satisfyingPullRequests = await github.getMergedPullRequestsClosingIssue(record.issue_number);
-    const satisfyingPullRequest = satisfyingPullRequests[0] ?? null;
-
-    if (!satisfyingPullRequest) {
-      const patch = doneResetPatch();
-      if (needsRecordUpdate(record, patch)) {
-        const updated = stateStore.touch(record, patch);
-        state.issues[String(record.issue_number)] = updated;
-        saveNeeded = true;
-      }
-      if (state.activeIssueNumber === record.issue_number) {
-        state.activeIssueNumber = null;
-        saveNeeded = true;
-      }
-      continue;
-    }
-
-    if (
-      record.pr_number !== null &&
-      record.pr_number !== satisfyingPullRequest.number
-    ) {
-      const trackedPullRequest = await github.getPullRequestIfExists(record.pr_number);
-      if (trackedPullRequest && trackedPullRequest.state === "OPEN" && !trackedPullRequest.mergedAt) {
-        await github.closePullRequest(
-          trackedPullRequest.number,
-          `Closing as superseded because issue #${record.issue_number} was satisfied by merged PR #${satisfyingPullRequest.number}.`,
-        );
-      }
-    }
-
-    const patch = doneResetPatch({
-      pr_number: satisfyingPullRequest.number,
-      last_head_sha: satisfyingPullRequest.headRefOid,
-    });
-    const needsMergedConvergenceBackfill =
-      !record.last_recovery_reason?.startsWith("merged_pr_convergence:");
-    if (needsRecordUpdate(record, patch) || needsMergedConvergenceBackfill) {
-      const recoveryEvent = buildRecoveryEvent(
-        record.issue_number,
-        `merged_pr_convergence: merged PR #${satisfyingPullRequest.number} satisfied issue #${record.issue_number}; marked issue #${record.issue_number} done`,
-      );
-      const updated = stateStore.touch(record, applyRecoveryEvent(patch, recoveryEvent));
-      state.issues[String(record.issue_number)] = updated;
-      saveNeeded = true;
-      recoveryEvents.push(recoveryEvent);
-      await syncExecutionMetricsRunSummarySafely({
-        previousRecord: record,
-        nextRecord: updated,
-        issue: issueByNumber.get(record.issue_number) ?? null,
-        pullRequest: satisfyingPullRequest,
-        recoveryEvents: [recoveryEvent],
-        retentionRootPath: executionMetricsRetentionRootPath(config.stateFile),
-        warningContext: "reconciling",
-      });
-      await syncPostMergeAuditArtifactSafely({
-        config,
-        previousRecord: record,
-        nextRecord: updated,
-        issue: issueByNumber.get(record.issue_number) ?? {
-          number: record.issue_number,
-          title: `Issue #${record.issue_number}`,
-          url: "",
-          createdAt: updated.updated_at,
-          updatedAt: updated.updated_at,
-        },
-        pullRequest: satisfyingPullRequest,
-        warningContext: "reconciling",
-      });
-    }
-    if (state.activeIssueNumber === record.issue_number) {
-      state.activeIssueNumber = null;
-      saveNeeded = true;
-    }
-  }
-
-  const nextLastProcessedIssueNumber =
-    processedRecords === 0 || processedRecords >= orderedRecords.length
-      ? null
-      : lastProcessedIssueNumber;
-  if (setMergedIssueClosuresLastProcessedIssueNumber(state, nextLastProcessedIssueNumber)) {
-    saveNeeded = true;
-  }
-
-  if (saveNeeded) {
-    await stateStore.save(state);
-  }
-
-  return recoveryEvents;
 }
 
 export async function reconcileTrackedMergedButOpenIssues(
@@ -1019,87 +658,16 @@ export async function reconcileStaleDoneIssueStates(
   state: SupervisorStateFile,
   issues: GitHubIssue[],
 ): Promise<RecoveryEvent[]> {
-  let changed = false;
-  const recoveryEvents: RecoveryEvent[] = [];
-  const issueStateByNumber = new Map(issues.map((issue) => [issue.number, issue.state ?? null]));
-
-  const downgradeToManualReview = (
-    record: IssueRunRecord,
-    failureContext: NonNullable<IssueRunRecord["last_failure_context"]>,
-    reason: string,
-  ): void => {
-    const recoveryEvent = buildRecoveryEvent(record.issue_number, reason);
-    const updated = stateStore.touch(
-      record,
-      applyRecoveryEvent({
-        state: "blocked",
-        blocked_reason: "manual_review",
-        codex_session_id: null,
-        last_error: truncate(failureContext.summary, 1000),
-        last_failure_kind: null,
-        last_failure_context: failureContext,
-        last_blocker_signature: null,
-        last_failure_signature: null,
-        repeated_failure_signature_count: 0,
-        stale_stabilizing_no_pr_recovery_count: 0,
-      }, recoveryEvent),
-    );
-    state.issues[String(record.issue_number)] = updated;
-    if (state.activeIssueNumber === record.issue_number) {
-      state.activeIssueNumber = null;
-    }
-    changed = true;
-    recoveryEvents.push(recoveryEvent);
-  };
-
-  for (const record of Object.values(state.issues)) {
-    if (record.state !== "done" || !shouldReconsiderNoPrDoneRecord(record)) {
-      continue;
-    }
-
-    let issueState = issueStateByNumber.get(record.issue_number) ?? null;
-    if (!issueStateByNumber.has(record.issue_number)) {
-      try {
-        issueState = (await github.getIssue(record.issue_number)).state ?? null;
-      } catch {
-        const failureContext = buildUnsafeNoPrFailureContext({
-          issueNumber: record.issue_number,
-          localState: "done",
-          githubIssueState: "UNKNOWN",
-          detail: "The stale no-PR done record was downgraded to manual review because GitHub revalidation failed and the supervisor cannot safely preserve a terminal local state.",
-        });
-        downgradeToManualReview(
-          record,
-          failureContext,
-          `stale_done_revalidation_failed_manual_review: blocked issue #${record.issue_number} after GitHub revalidation failed for a no-PR done record with no authoritative completion signal`,
-        );
-        continue;
-      }
-      issueStateByNumber.set(record.issue_number, issueState);
-    }
-
-    if (issueState !== "OPEN") {
-      continue;
-    }
-
-    const failureContext = buildUnsafeNoPrFailureContext({
-      issueNumber: record.issue_number,
-      localState: "done",
-      githubIssueState: "OPEN",
-      detail: "The stale no-PR done record was downgraded to manual review so the supervisor does not treat the issue as complete.",
-    });
-    downgradeToManualReview(
-      record,
-      failureContext,
-      `stale_done_manual_review: blocked issue #${record.issue_number} after reconsidering an open no-PR done record with no authoritative completion signal`,
-    );
-  }
-
-  if (changed) {
-    await stateStore.save(state);
-  }
-
-  return recoveryEvents;
+  return reconcileStaleDoneIssueStatesInModule(
+    github,
+    stateStore,
+    state,
+    issues,
+    {
+      buildRecoveryEvent,
+      applyRecoveryEvent,
+    },
+  );
 }
 
 export async function reconcileRecoverableBlockedIssueStates(
@@ -1507,56 +1075,18 @@ export async function reconcileParentEpicClosures(
   state: SupervisorStateFile,
   issues: GitHubIssue[],
 ): Promise<RecoveryEvent[]> {
-  const parentIssuesReadyToClose = findParentIssuesReadyToClose(issues);
-  if (parentIssuesReadyToClose.length === 0) {
-    return [];
-  }
-
-  let changed = false;
-  const recoveryEvents: RecoveryEvent[] = [];
-
-  for (const { parentIssue, childIssues } of parentIssuesReadyToClose) {
-    const childIssueNumbers = childIssues
-      .map((childIssue) => `#${childIssue.number}`)
-      .sort((left, right) => Number(left.slice(1)) - Number(right.slice(1)));
-    const recoveryEvent = buildRecoveryEvent(
-      parentIssue.number,
-      `parent_epic_auto_closed: auto-closed parent epic #${parentIssue.number} because child issues ${childIssueNumbers.join(", ")} are closed`,
-    );
-
-    await github.closeIssue(
-      parentIssue.number,
-      `Closed automatically because all child issues are closed: ${childIssueNumbers.join(", ")}.`,
-    );
-    recoveryEvents.push(recoveryEvent);
-
-    const existingRecord = state.issues[String(parentIssue.number)];
-    if (existingRecord) {
-      const patch = applyRecoveryEvent(doneResetPatch(), recoveryEvent);
-      if (needsRecordUpdate(existingRecord, patch)) {
-        const updated = stateStore.touch(existingRecord, patch);
-        state.issues[String(parentIssue.number)] = updated;
-        changed = true;
-      }
-      if (state.activeIssueNumber === parentIssue.number) {
-        state.activeIssueNumber = null;
-        changed = true;
-      }
-    } else {
-      const created = stateStore.touch(
-        createUntrackedRecoveredDoneRecord(parentIssue.number),
-        applyRecoveryEvent(doneResetPatch(), recoveryEvent),
-      );
-      state.issues[String(parentIssue.number)] = created;
-      changed = true;
-    }
-  }
-
-  if (changed) {
-    await stateStore.save(state);
-  }
-
-  return recoveryEvents;
+  return reconcileParentEpicClosuresInModule(
+    github,
+    stateStore,
+    state,
+    issues,
+    {
+      buildRecoveryEvent,
+      applyRecoveryEvent,
+      createRecoveredDoneRecord: createUntrackedRecoveredDoneRecord,
+      needsRecordUpdate,
+    },
+  );
 }
 
 export async function reconcileStaleActiveIssueReservation(args: {
@@ -1571,214 +1101,11 @@ export async function reconcileStaleActiveIssueReservation(args: {
     record: IssueRunRecord,
   ) => Promise<StaleStabilizingNoPrBranchState>;
 }): Promise<RecoveryEvent[]> {
-  const recoveryEvents: RecoveryEvent[] = [];
-  if (args.state.activeIssueNumber === null) {
-    return recoveryEvents;
-  }
-
-  const record = args.state.issues[String(args.state.activeIssueNumber)] ?? null;
-  if (!record) {
-    args.state.activeIssueNumber = null;
-    await args.stateStore.save(args.state);
-    return recoveryEvents;
-  }
-
-  if (!OWNER_GUARDED_ACTIVE_STATES.has(record.state)) {
-    args.state.activeIssueNumber = null;
-    await args.stateStore.save(args.state);
-    return recoveryEvents;
-  }
-
-  const issueLock = await inspectFileLock(args.issueLockPath(record.issue_number));
-  if (issueLock.status === "live" || issueLock.status === "ambiguous_owner") {
-    return recoveryEvents;
-  }
-
-  let missingLockReason = issueLock.status === "stale" ? "issue lock was stale" : "issue lock was missing";
-  if (record.codex_session_id) {
-    const sessionLock = await inspectFileLock(args.sessionLockPath(record.codex_session_id));
-    if (sessionLock.status === "live" || sessionLock.status === "ambiguous_owner") {
-      return recoveryEvents;
-    }
-    missingLockReason =
-      issueLock.status === "stale" && sessionLock.status === "stale"
-        ? "issue lock and session lock were stale"
-        : issueLock.status === "stale" && sessionLock.status === "missing"
-          ? "issue lock was stale and session lock was missing"
-          : issueLock.status === "missing" && sessionLock.status === "stale"
-            ? "issue lock was missing and session lock was stale"
-            : "issue lock and session lock were missing";
-  }
-
-  const interruptedTurnMarker = await readInterruptedTurnMarker(record.workspace);
-  const interruptedTurnUpdate =
-    interruptedTurnMarker && interruptedTurnMarker.issueNumber === record.issue_number
-      ? await detectDurableTurnUpdateSince(args.config ?? null, record, interruptedTurnMarker)
-      : null;
-  if (
-    interruptedTurnMarker &&
-    interruptedTurnMarker.issueNumber === record.issue_number &&
-    !interruptedTurnUpdate?.hasDurableUpdate
-  ) {
-    const failureContext = {
-      category: "blocked" as const,
-      summary: `Codex started a turn for issue #${record.issue_number} but no durable handoff was recorded before the process exited.`,
-      signature: "handoff-missing",
-      command: null,
-      details: [
-        `started_at=${interruptedTurnMarker.startedAt}`,
-        `durable_progress_evidence=${interruptedTurnUpdate?.evidence ?? "progress_unverifiable"}`,
-        "Update the Codex Working Notes section before ending the turn.",
-      ],
-      url: null,
-      updated_at: nowIso(),
-    };
-    const recoveryEvent = buildRecoveryEvent(
-      record.issue_number,
-      appendInterruptedTurnEvidence(
-        `interrupted_turn_recovery: blocked issue #${record.issue_number} after an in-progress Codex turn ended without a durable handoff`,
-        interruptedTurnUpdate,
-      ),
-    );
-    const patch: Partial<IssueRunRecord> = {
-      state: "blocked",
-      codex_session_id: null,
-      last_error: truncate(failureContext.summary, 1000),
-      last_failure_kind: null,
-      last_failure_context: failureContext,
-      ...applyFailureSignature(record, failureContext),
-      blocked_reason: "handoff_missing",
-      last_blocker_signature: null,
-      repeated_blocker_count: 0,
-      stale_stabilizing_no_pr_recovery_count: 0,
-    };
-    args.state.issues[String(record.issue_number)] = args.stateStore.touch(
-      record,
-      applyRecoveryEvent(patch, recoveryEvent),
-    );
-    args.state.activeIssueNumber = null;
-    await args.stateStore.save(args.state);
-    await clearInterruptedTurnMarker(record.workspace);
-    recoveryEvents.push(recoveryEvent);
-    return recoveryEvents;
-  }
-
-  const matchedPullRequest =
-    record.state === "stabilizing" && args.resolvePullRequestForBranch
-      ? await args.resolvePullRequestForBranch(record.branch, record.pr_number)
-      : null;
-  const staleNoPrBranchState =
-    record.state === "stabilizing" && matchedPullRequest === null && args.classifyStaleStabilizingNoPrBranchState
-      ? await args.classifyStaleStabilizingNoPrBranchState(record)
-      : "recoverable";
-  const shouldRequeueStabilizing = false;
-  const staleNoPrRepeatLimit = Math.max(args.sameFailureSignatureRepeatLimit ?? Number.POSITIVE_INFINITY, 1);
-  const shouldMarkAlreadySatisfiedOnMain =
-    shouldRequeueStabilizing && staleNoPrBranchState === "already_satisfied_on_main";
-  const previousStaleNoPrRecoveryCount = getStaleStabilizingNoPrRecoveryCount(record);
-  const staleNoPrRepeatedCount = shouldRequeueStabilizing
-    ? shouldMarkAlreadySatisfiedOnMain
-      ? previousStaleNoPrRecoveryCount
-      : previousStaleNoPrRecoveryCount + 1
-    : previousStaleNoPrRecoveryCount;
-  const shouldClearStaleNoPrFailureTracking =
-    record.state === "stabilizing" &&
-    matchedPullRequest !== null &&
-    (record.last_failure_signature === STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE || previousStaleNoPrRecoveryCount > 0);
-  const shouldStopRepeatedStaleNoPrLoop =
-    shouldRequeueStabilizing && !shouldMarkAlreadySatisfiedOnMain && staleNoPrRepeatedCount >= staleNoPrRepeatLimit;
-
-  const staleNoPrFailureContext = shouldRequeueStabilizing && !shouldMarkAlreadySatisfiedOnMain
-    ? {
-        category: "blocked" as const,
-        summary: shouldStopRepeatedStaleNoPrLoop
-          ? `Issue #${record.issue_number} re-entered stale stabilizing recovery without a tracked PR ${staleNoPrRepeatedCount} times; manual intervention is required.`
-          : `Issue #${record.issue_number} re-entered stale stabilizing recovery without a tracked PR; the supervisor will retry while the repeat count remains below ${staleNoPrRepeatLimit}.`,
-        signature: STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE,
-        command: null,
-        details: [
-          "state=stabilizing",
-          "tracked_pr=none",
-          `branch_state=${staleNoPrBranchState}`,
-          `repeat_count=${staleNoPrRepeatedCount}/${staleNoPrRepeatLimit}`,
-          "operator_action=confirm whether the implementation already landed elsewhere or retarget the tracked issue manually",
-        ],
-        url: null,
-        updated_at: nowIso(),
-      }
-    : null;
-
-  const staleNoPrManualReviewContext = shouldMarkAlreadySatisfiedOnMain
-    ? buildUnsafeNoPrFailureContext({
-        issueNumber: record.issue_number,
-        localState: "stabilizing",
-        githubIssueState: "OPEN",
-        detail: "Stale stabilizing recovery found no meaningful branch changes, so the supervisor cannot treat the open issue as complete without authoritative completion evidence.",
-      })
-    : null;
-
-  const recoveryEvent = buildRecoveryEvent(
-    record.issue_number,
-    appendInterruptedTurnEvidence(
-      shouldMarkAlreadySatisfiedOnMain
-        ? `stale_stabilizing_no_pr_manual_review: blocked issue #${record.issue_number} after stale stabilizing recovery found an open issue with no authoritative completion signal`
-        : shouldStopRepeatedStaleNoPrLoop
-        ? `stale_state_manual_stop: blocked issue #${record.issue_number} after repeated stale stabilizing recovery without a tracked PR`
-        : shouldRequeueStabilizing
-        ? `stale_state_cleanup: requeued stabilizing issue #${record.issue_number} after ${missingLockReason}`
-        : `stale_state_cleanup: cleared stale active reservation after ${missingLockReason}`,
-      interruptedTurnUpdate,
-    ),
-  );
-  const patch: Partial<IssueRunRecord> = shouldMarkAlreadySatisfiedOnMain
-    ? {
-        state: "blocked",
-        pr_number: null,
-        codex_session_id: null,
-        blocked_reason: "manual_review",
-        last_error: truncate(staleNoPrManualReviewContext?.summary ?? "", 1000),
-        last_failure_kind: null,
-        last_failure_context: staleNoPrManualReviewContext,
-        last_blocker_signature: null,
-        last_failure_signature: null,
-        repeated_failure_signature_count: 0,
-        stale_stabilizing_no_pr_recovery_count: 0,
-      }
-    : {
-        state: shouldStopRepeatedStaleNoPrLoop ? "blocked" : shouldRequeueStabilizing ? "queued" : record.state,
-        pr_number: shouldRequeueStabilizing ? null : record.pr_number,
-        codex_session_id: null,
-        last_error: staleNoPrFailureContext?.summary ?? (shouldClearStaleNoPrFailureTracking ? null : record.last_error),
-        last_failure_kind: shouldRequeueStabilizing ? null : record.last_failure_kind,
-        last_failure_context:
-          staleNoPrFailureContext ??
-          (shouldClearStaleNoPrFailureTracking ? null : record.last_failure_context),
-        last_failure_signature:
-          staleNoPrFailureContext?.signature ??
-          (shouldClearStaleNoPrFailureTracking ? null : record.last_failure_signature),
-        repeated_failure_signature_count: shouldRequeueStabilizing
-          ? 0
-          : shouldClearStaleNoPrFailureTracking
-            ? 0
-            : record.repeated_failure_signature_count,
-        stale_stabilizing_no_pr_recovery_count: shouldRequeueStabilizing
-          ? staleNoPrRepeatedCount
-          : shouldClearStaleNoPrFailureTracking
-            ? 0
-            : previousStaleNoPrRecoveryCount,
-        blocked_reason: shouldStopRepeatedStaleNoPrLoop ? "manual_review" : null,
-      };
-  args.state.issues[String(record.issue_number)] = args.stateStore.touch(
-    record,
-    applyRecoveryEvent(patch, recoveryEvent),
-  );
-  args.state.activeIssueNumber = null;
-  await args.stateStore.save(args.state);
-  if (interruptedTurnMarker) {
-    await clearInterruptedTurnMarker(record.workspace);
-  }
-  recoveryEvents.push(recoveryEvent);
-  return recoveryEvents;
+  return reconcileStaleActiveIssueReservationInModule({
+    ...args,
+    buildRecoveryEvent,
+    applyRecoveryEvent,
+  });
 }
 
 export type { StateStoreLike };
