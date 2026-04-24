@@ -82,6 +82,35 @@ test("readSupervisorLoopRuntime names tmux and manual run modes without broadeni
   assert.equal(tmuxRuntime.runMode, "macos_tmux_loop");
 });
 
+test("readSupervisorLoopRuntime does not promote WebUI launcher metadata to a loop run mode", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-loop-runtime-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const stateFile = path.join(root, "state.json");
+  const lockPath = supervisorLoopRuntimeLockPath(stateFile);
+  await fs.mkdir(path.dirname(lockPath), { recursive: true });
+  await fs.writeFile(
+    lockPath,
+    `${JSON.stringify({
+      pid: process.pid,
+      label: "supervisor-loop-runtime",
+      acquired_at: "2026-03-25T00:00:00.000Z",
+      host: "fixture-host",
+      owner: "fixture-owner",
+      launcher: "webui",
+    }, null, 2)}\n`,
+    "utf8",
+  );
+
+  const runtime = await readSupervisorLoopRuntime(stateFile);
+
+  assert.equal(runtime.state, "running");
+  assert.equal(runtime.hostMode, "direct");
+  assert.equal(runtime.runMode, "unknown");
+});
+
 test("readSupervisorLoopRuntime detects duplicate loop processes for the same resolved config and state target", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-loop-runtime-"));
   t.after(async () => {

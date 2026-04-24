@@ -174,10 +174,13 @@ test("getting-started documents tmux as the supported macOS loop host and keeps 
   assert.match(gettingStarted, /`\.\/scripts\/install-launchd\.sh` now fails closed/i);
   assert.match(gettingStarted, /If you want a launcher-managed background loop on Linux, use `\.\/scripts\/install-systemd\.sh`/);
   assert.match(gettingStarted, /For a launcher-managed WebUI on macOS, use `\.\/scripts\/install-launchd-web\.sh`/);
+  assert.match(gettingStarted, /A WebUI session is an operator surface, not a loop run mode/i);
+  assert.doesNotMatch(gettingStarted, /webui_attached/);
 
   assert.match(japaneseGettingStarted, /macOS でサポートしている常駐 loop host は `tmux`/);
   assert.match(japaneseGettingStarted, /`\.\/scripts\/start-loop-tmux\.sh`/);
   assert.match(japaneseGettingStarted, /`\.\/scripts\/stop-loop-tmux\.sh`/);
+  assert.match(japaneseGettingStarted, /WebUI は operator surface であり、loop run mode ではありません/);
 });
 
 test("japanese docs keep overview and getting-started responsibilities separate", async () => {

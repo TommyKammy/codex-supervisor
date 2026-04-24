@@ -217,6 +217,8 @@ host ごとの loop 運用ルール:
 
 WebUI は CLI と同じ `SupervisorService` を使い、typed な `status`、`doctor`、`explain`、`issue-lint` を読みます。現在の safe command surface は `run-once`、`requeue`、`prune-orphaned-workspaces`、`reset-corrupt-json-state` です。
 
+WebUI は operator surface であり、loop run mode ではありません。`status` と `doctor` が表示する loop runtime は、WebUI process ではなく観測可能な loop runtime marker に基づきます。launcher-managed WebUI restart は WebUI process だけを対象にし、background loop の所有権を意味しません。
+
 通常運用では、supervisor は次を繰り返します。
 
 1. GitHub とローカル state を再取得する

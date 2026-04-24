@@ -11,7 +11,6 @@ export type SupervisorRunMode =
   | "one_shot_manual"
   | "macos_tmux_loop"
   | "linux_systemd_loop"
-  | "webui_attached"
   | "unknown";
 export type SupervisorLoopOwnershipConfidence =
   | "none"
@@ -115,10 +114,6 @@ function inferRunMode(runtimeLock: ExistingLockState): SupervisorRunMode {
   if (normalizedLauncher === "systemd") {
     return "linux_systemd_loop";
   }
-  if (normalizedLauncher === "webui") {
-    return "webui_attached";
-  }
-
   return "unknown";
 }
 
