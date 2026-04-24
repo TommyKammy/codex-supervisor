@@ -1932,7 +1932,7 @@ test("diagnoseSupervisorHost exposes tracked PR mismatches when GitHub is ready 
   );
   assert.match(
     renderDoctorReport(diagnostics),
-    /doctor_detail name=worktrees detail=tracked_pr_mismatch issue=#171 pr=#271 github_state=ready_to_merge github_blocked_reason=none local_state=blocked local_blocked_reason=manual_review stale_local_blocker=yes/,
+    /doctor_detail name=worktrees detail=tracked_pr_mismatch issue=#171 pr=#271 recoverability=stale_but_recoverable github_state=ready_to_merge github_blocked_reason=none local_state=blocked local_blocked_reason=manual_review stale_local_blocker=yes/,
   );
   assert.match(
     renderDoctorReport(diagnostics),
@@ -2040,7 +2040,7 @@ test("diagnoseSupervisorHost skips tracked PR hydration for historical done reco
   assert.equal(getPullRequestIfExistsCalls, 1);
   assert.match(
     renderDoctorReport(diagnostics),
-    /doctor_detail name=worktrees detail=tracked_pr_mismatch issue=#171 pr=#271 github_state=ready_to_merge github_blocked_reason=none local_state=blocked local_blocked_reason=manual_review stale_local_blocker=yes/,
+    /doctor_detail name=worktrees detail=tracked_pr_mismatch issue=#171 pr=#271 recoverability=stale_but_recoverable github_state=ready_to_merge github_blocked_reason=none local_state=blocked local_blocked_reason=manual_review stale_local_blocker=yes/,
   );
 });
 
@@ -2120,7 +2120,7 @@ test("diagnoseSupervisorHost exposes stale_review_bot tracked PR mismatches when
   assert.equal(diagnostics.checks.find((check) => check.name === "worktrees")?.status, "warn");
   assert.match(
     renderDoctorReport(diagnostics),
-    /doctor_detail name=worktrees detail=tracked_pr_mismatch issue=#172 pr=#272 github_state=ready_to_merge github_blocked_reason=none local_state=blocked local_blocked_reason=stale_review_bot stale_local_blocker=yes/,
+    /doctor_detail name=worktrees detail=tracked_pr_mismatch issue=#172 pr=#272 recoverability=stale_already_handled github_state=ready_to_merge github_blocked_reason=none local_state=blocked local_blocked_reason=stale_review_bot stale_local_blocker=yes/,
   );
   assert.match(
     renderDoctorReport(diagnostics),
@@ -2215,7 +2215,7 @@ test("diagnoseSupervisorHost preserves draft tracked PR verification blockers in
   assert.equal(diagnostics.checks.find((check) => check.name === "worktrees")?.status, "warn");
   assert.match(
     renderDoctorReport(diagnostics),
-    /doctor_detail name=worktrees detail=tracked_pr_ready_promotion_blocked issue=#174 pr=#274 github_state=draft_pr local_state=blocked local_blocked_reason=verification stale_local_blocker=yes/,
+    /doctor_detail name=worktrees detail=tracked_pr_ready_promotion_blocked issue=#174 pr=#274 recoverability=manual_attention_required github_state=draft_pr local_state=blocked local_blocked_reason=verification stale_local_blocker=yes/,
   );
   assert.match(
     renderDoctorReport(diagnostics),
@@ -2319,7 +2319,7 @@ test("diagnoseSupervisorHost marks old-head ready-promotion blockers as stale", 
   assert.equal(diagnostics.checks.find((check) => check.name === "worktrees")?.status, "warn");
   assert.match(
     renderDoctorReport(diagnostics),
-    /doctor_detail name=worktrees detail=tracked_pr_ready_promotion_blocked issue=#175 pr=#275 github_state=draft_pr local_state=blocked local_blocked_reason=verification stale_local_blocker=yes/,
+    /doctor_detail name=worktrees detail=tracked_pr_ready_promotion_blocked issue=#175 pr=#275 recoverability=stale_but_recoverable github_state=draft_pr local_state=blocked local_blocked_reason=verification stale_local_blocker=yes/,
   );
   assert.match(
     renderDoctorReport(diagnostics),
@@ -2426,7 +2426,7 @@ test("diagnoseSupervisorHost marks same-head ready-promotion blockers as stale w
   assert.equal(diagnostics.checks.find((check) => check.name === "worktrees")?.status, "warn");
   assert.match(
     renderDoctorReport(diagnostics),
-    /doctor_detail name=worktrees detail=tracked_pr_ready_promotion_blocked issue=#176 pr=#276 github_state=draft_pr local_state=blocked local_blocked_reason=verification stale_local_blocker=yes/,
+    /doctor_detail name=worktrees detail=tracked_pr_ready_promotion_blocked issue=#176 pr=#276 recoverability=stale_but_recoverable github_state=draft_pr local_state=blocked local_blocked_reason=verification stale_local_blocker=yes/,
   );
   assert.match(
     renderDoctorReport(diagnostics),
@@ -2535,7 +2535,7 @@ test("diagnoseSupervisorHost keeps same-head host-local ready-promotion blockers
   assert.equal(diagnostics.checks.find((check) => check.name === "worktrees")?.status, "warn");
   assert.match(
     renderDoctorReport(diagnostics),
-    /doctor_detail name=worktrees detail=tracked_pr_ready_promotion_blocked issue=#177 pr=#277 github_state=draft_pr local_state=blocked local_blocked_reason=verification stale_local_blocker=yes/,
+    /doctor_detail name=worktrees detail=tracked_pr_ready_promotion_blocked issue=#177 pr=#277 recoverability=manual_attention_required github_state=draft_pr local_state=blocked local_blocked_reason=verification stale_local_blocker=yes/,
   );
   assert.match(
     renderDoctorReport(diagnostics),

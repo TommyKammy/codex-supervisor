@@ -1,4 +1,8 @@
 import { IssueRunRecord, RunState, SupervisorConfig, WorkspaceStatus } from "./core/types";
+import {
+  classifyStaleNoPrRecoverability,
+  recoverabilityStatusToken,
+} from "./supervisor/stale-diagnostic-recoverability";
 
 export const STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE = "stale-stabilizing-no-pr-recovery-loop";
 
@@ -84,6 +88,7 @@ export function buildStaleStabilizingNoPrRecoveryWarningLine(
     "stale_recovery_warning",
     `issue=#${record.issue_number}`,
     `status=${status}`,
+    recoverabilityStatusToken(classifyStaleNoPrRecoverability(status)),
     `state=${record.state}`,
     `repeat_count=${repeatedCount}/${repeatLimit}`,
     "tracked_pr=none",

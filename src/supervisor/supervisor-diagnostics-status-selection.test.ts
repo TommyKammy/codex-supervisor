@@ -1682,7 +1682,7 @@ test("status surfaces repeated stale cleanup risk before the stale recovery loop
   });
   assert.match(
     status,
-    /stale_recovery_warning issue=#366 status=retrying state=queued repeat_count=1\/3 tracked_pr=none action=confirm_whether_the_change_already_landed_or_retarget_the_issue_manually/,
+    /stale_recovery_warning issue=#366 status=retrying recoverability=stale_but_recoverable state=queued repeat_count=1\/3 tracked_pr=none action=confirm_whether_the_change_already_landed_or_retarget_the_issue_manually/,
   );
   assert.match(
     status,
@@ -3016,7 +3016,7 @@ test("status surfaces tracked PR mismatches when GitHub is ready but local state
   const report = await supervisor.statusReport();
   assert.match(
     report.detailedStatusLines.join("\n"),
-    /^tracked_pr_mismatch issue=#171 pr=#271 github_state=ready_to_merge github_blocked_reason=none local_state=blocked local_blocked_reason=manual_review stale_local_blocker=yes$/m,
+    /^tracked_pr_mismatch issue=#171 pr=#271 recoverability=stale_but_recoverable github_state=ready_to_merge github_blocked_reason=none local_state=blocked local_blocked_reason=manual_review stale_local_blocker=yes$/m,
   );
   assert.match(
     report.detailedStatusLines.join("\n"),
@@ -3026,7 +3026,7 @@ test("status surfaces tracked PR mismatches when GitHub is ready but local state
   const status = await supervisor.status();
   assert.match(
     status,
-    /^tracked_pr_mismatch issue=#171 pr=#271 github_state=ready_to_merge github_blocked_reason=none local_state=blocked local_blocked_reason=manual_review stale_local_blocker=yes$/m,
+    /^tracked_pr_mismatch issue=#171 pr=#271 recoverability=stale_but_recoverable github_state=ready_to_merge github_blocked_reason=none local_state=blocked local_blocked_reason=manual_review stale_local_blocker=yes$/m,
   );
   assert.match(
     status,
@@ -3109,7 +3109,7 @@ test("status skips tracked PR hydration for historical done records", async () =
   assert.equal(getPullRequestIfExistsCalls, 1);
   assert.match(
     report.detailedStatusLines.join("\n"),
-    /^tracked_pr_mismatch issue=#171 pr=#271 github_state=ready_to_merge github_blocked_reason=none local_state=blocked local_blocked_reason=manual_review stale_local_blocker=yes$/m,
+    /^tracked_pr_mismatch issue=#171 pr=#271 recoverability=stale_but_recoverable github_state=ready_to_merge github_blocked_reason=none local_state=blocked local_blocked_reason=manual_review stale_local_blocker=yes$/m,
   );
 });
 
@@ -3182,7 +3182,7 @@ test("status preserves draft tracked PR lifecycle when ready-for-review promotio
   const report = await supervisor.statusReport();
   assert.match(
     report.detailedStatusLines.join("\n"),
-    /^tracked_pr_ready_promotion_blocked issue=#174 pr=#274 github_state=draft_pr local_state=blocked local_blocked_reason=verification stale_local_blocker=yes$/m,
+    /^tracked_pr_ready_promotion_blocked issue=#174 pr=#274 recoverability=manual_attention_required github_state=draft_pr local_state=blocked local_blocked_reason=verification stale_local_blocker=yes$/m,
   );
   assert.match(
     report.detailedStatusLines.join("\n"),
@@ -3205,7 +3205,7 @@ test("status preserves draft tracked PR lifecycle when ready-for-review promotio
   const status = await supervisor.status();
   assert.match(
     status,
-    /^tracked_pr_ready_promotion_blocked issue=#174 pr=#274 github_state=draft_pr local_state=blocked local_blocked_reason=verification stale_local_blocker=yes$/m,
+    /^tracked_pr_ready_promotion_blocked issue=#174 pr=#274 recoverability=manual_attention_required github_state=draft_pr local_state=blocked local_blocked_reason=verification stale_local_blocker=yes$/m,
   );
   assert.match(
     status,
@@ -3292,7 +3292,7 @@ test("status marks old-head ready-promotion blockers as stale in recovery guidan
   const report = await supervisor.statusReport();
   assert.match(
     report.detailedStatusLines.join("\n"),
-    /^tracked_pr_ready_promotion_blocked issue=#175 pr=#275 github_state=draft_pr local_state=blocked local_blocked_reason=verification stale_local_blocker=yes$/m,
+    /^tracked_pr_ready_promotion_blocked issue=#175 pr=#275 recoverability=stale_but_recoverable github_state=draft_pr local_state=blocked local_blocked_reason=verification stale_local_blocker=yes$/m,
   );
   assert.match(
     report.detailedStatusLines.join("\n"),
@@ -3377,7 +3377,7 @@ test("status marks same-head ready-promotion blockers as stale when fresh blocke
   const report = await supervisor.statusReport();
   assert.match(
     report.detailedStatusLines.join("\n"),
-    /^tracked_pr_ready_promotion_blocked issue=#176 pr=#276 github_state=draft_pr local_state=blocked local_blocked_reason=verification stale_local_blocker=yes$/m,
+    /^tracked_pr_ready_promotion_blocked issue=#176 pr=#276 recoverability=stale_but_recoverable github_state=draft_pr local_state=blocked local_blocked_reason=verification stale_local_blocker=yes$/m,
   );
   assert.match(
     report.detailedStatusLines.join("\n"),
@@ -3464,7 +3464,7 @@ test("status keeps same-head host-local ready-promotion blockers current when th
   const report = await supervisor.statusReport();
   assert.match(
     report.detailedStatusLines.join("\n"),
-    /^tracked_pr_ready_promotion_blocked issue=#177 pr=#277 github_state=draft_pr local_state=blocked local_blocked_reason=verification stale_local_blocker=yes$/m,
+    /^tracked_pr_ready_promotion_blocked issue=#177 pr=#277 recoverability=manual_attention_required github_state=draft_pr local_state=blocked local_blocked_reason=verification stale_local_blocker=yes$/m,
   );
   assert.match(
     report.detailedStatusLines.join("\n"),

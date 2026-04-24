@@ -1044,7 +1044,7 @@ test("buildIssueExplainSummary surfaces repeated stale cleanup risk for no-PR re
 
   assert.ok(
     lines.includes(
-      "stale_recovery_warning issue=#608 status=retrying state=queued repeat_count=1/3 tracked_pr=none action=confirm_whether_the_change_already_landed_or_retarget_the_issue_manually",
+      "stale_recovery_warning issue=#608 status=retrying recoverability=stale_but_recoverable state=queued repeat_count=1/3 tracked_pr=none action=confirm_whether_the_change_already_landed_or_retarget_the_issue_manually",
     ),
   );
   assert.ok(

@@ -57,6 +57,10 @@ import {
 } from "./supervisor-operator-activity-context";
 import { formatPreMergeEvaluationStatusLine, loadPreMergeEvaluationDto } from "./supervisor-pre-merge-evaluation";
 import { summarizePreservedPartialWork } from "./supervisor-preserved-partial-work";
+import {
+  classifyStaleReviewBotRecoverability,
+  recoverabilityStatusToken,
+} from "./stale-diagnostic-recoverability";
 
 export type ExplainIssueGitHub =
   Pick<GitHubClient, "getIssue" | "listAllIssues" | "listCandidateIssues"> &
@@ -79,6 +83,7 @@ export interface SupervisorExplainDto {
   latestRecoverySummary: string | null;
   staleRecoveryWarningSummary: string | null;
   activityContext: SupervisorIssueActivityContextDto | null;
+  staleDiagnosticSummary?: string | null;
   trackedPrRetryabilitySummary?: string | null;
   trackedPrMismatchSummary: string | null;
   externalSignalReadinessSummary?: string | null;
@@ -474,6 +479,14 @@ export async function buildIssueExplainDto(
         preMergeEvaluation,
       })
       : null,
+    staleDiagnosticSummary: record && record.blocked_reason === "stale_review_bot"
+      ? (() => {
+        const recoverability = classifyStaleReviewBotRecoverability(record, config);
+        return recoverability === null
+          ? null
+          : ["stale_diagnostic", "kind=stale_review_bot", recoverabilityStatusToken(recoverability)].join(" ");
+      })()
+      : null,
     trackedPrRetryabilitySummary:
       record?.last_tracked_pr_repeat_failure_decision && record.last_tracked_pr_progress_summary
         ? [
@@ -515,6 +528,7 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
     ...(dto.journalStateSummary ? [dto.journalStateSummary] : []),
     ...(preMergeEvaluationLine ? [preMergeEvaluationLine] : []),
     ...(localCiStatusLine ? [localCiStatusLine] : []),
+    ...(dto.staleDiagnosticSummary ? [dto.staleDiagnosticSummary] : []),
     ...(dto.trackedPrRetryabilitySummary ? [dto.trackedPrRetryabilitySummary] : []),
     ...(dto.trackedPrMismatchSummary ? [dto.trackedPrMismatchSummary] : []),
     ...(dto.externalSignalReadinessSummary ? [dto.externalSignalReadinessSummary] : []),
