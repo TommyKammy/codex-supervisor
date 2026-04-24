@@ -116,6 +116,7 @@ const CONFIG_FIELD_POSTURE_METADATA_ENTRIES = [
   dangerousExplicitOptIn("localReviewFollowUpIssueCreationEnabled", "Automated local-review follow-up issue creation opt-in."),
   dangerousExplicitOptIn("localReviewHighSeverityAction", "High-severity local-review autonomous action posture."),
   dangerousExplicitOptIn("staleConfiguredBotReviewPolicy", "Configured-bot stale-thread reply or resolve behavior."),
+  dangerousExplicitOptIn("approvedTrackedTopLevelEntries", "Approved tracked top-level repository skeleton entries."),
 ] as const;
 
 const CONFIG_FIELD_POSTURE_METADATA_BY_FIELD: Partial<

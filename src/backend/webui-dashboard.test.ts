@@ -1758,6 +1758,20 @@ test("setup shell renders required fields first and separates advanced and dange
                   summary: "Configured-bot stale-thread reply or resolve behavior.",
                 },
               },
+              {
+                key: "approvedTrackedTopLevelEntries",
+                label: "Approved tracked top level entries",
+                state: "configured",
+                value: "README.md, src",
+                message: "Approved tracked top level entries is configured.",
+                required: false,
+                metadata: { source: "config", editable: true, valueType: "text" },
+                posture: {
+                  field: "approvedTrackedTopLevelEntries",
+                  tier: "dangerous_explicit_opt_in",
+                  summary: "Approved tracked top-level repository skeleton entries.",
+                },
+              },
             ],
           },
         ],
@@ -1771,6 +1785,8 @@ test("setup shell renders required fields first and separates advanced and dange
   assert.match(fieldsText, /Recommended setup contracts.*Workspace preparation command \[Missing\]/u);
   assert.match(fieldsText, /Advanced settings.*Bounded repair model strategy \[Missing\]/u);
   assert.match(fieldsText, /Dangerous explicit opt-in settings.*Stale configured bot review policy \[Missing\]/u);
+  assert.match(fieldsText, /Dangerous explicit opt-in settings.*Approved tracked top level entries \[Configured\]/u);
+  assert.match(fieldsText, /Current value: README\.md, src/u);
   assert.ok(fieldsText.indexOf("Required setup decisions") < fieldsText.indexOf("Advanced settings"));
   assert.ok(fieldsText.indexOf("Advanced settings") < fieldsText.indexOf("Dangerous explicit opt-in settings"));
   assert.match(fieldsText, /Dangerous explicit opt-in settings.*Dangerous settings are never routine defaults\./u);
