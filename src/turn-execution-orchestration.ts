@@ -350,6 +350,14 @@ export function nextReviewFollowUpPatch(args: {
   }
 
   const postRunActionableConfiguredThreads = unresolvedActionableConfiguredBotThreads(args.postRunReviewThreads);
+  const preRunActionableFingerprintKeys = new Set(
+    unresolvedActionableConfiguredBotThreads(args.preRunReviewThreads)
+      .map((thread) => {
+        const fingerprint = latestReviewThreadCommentFingerprint(thread);
+        return fingerprint ? `${thread.id}#${fingerprint}` : null;
+      })
+      .filter((key): key is string => key !== null),
+  );
 
   if (
     args.record.review_follow_up_head_sha === args.evaluatedReviewHeadSha &&
@@ -383,8 +391,13 @@ export function nextReviewFollowUpPatch(args: {
         latestComment.body.trim().split(/\s+/).length >= 6
       );
     });
+  const hasFreshActionableBotSignal = postRunActionableConfiguredThreads.some((thread) => {
+    const fingerprint = latestReviewThreadCommentFingerprint(thread);
+    return Boolean(fingerprint && !preRunActionableFingerprintKeys.has(`${thread.id}#${fingerprint}`));
+  });
 
-  return (madeProgress && postRunActionableConfiguredThreads.length > 0) || hasNarrowActionableThreadSet
+  return (madeProgress && postRunActionableConfiguredThreads.length > 0) ||
+    (hasNarrowActionableThreadSet && hasFreshActionableBotSignal)
     ? {
         review_follow_up_head_sha: args.evaluatedReviewHeadSha,
         review_follow_up_remaining: 1,
