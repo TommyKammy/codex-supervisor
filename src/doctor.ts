@@ -41,6 +41,7 @@ import {
 import { buildTrackedPrMismatch, shouldHydrateTrackedPrDiagnostics } from "./supervisor/tracked-pr-mismatch";
 import { buildTrustAndConfigWarnings, buildWarning, renderDoctorWarningLine } from "./warning-formatting";
 import { buildTrackedMergedButOpenBacklogDiagnosticLine } from "./reconciliation-backlog-diagnostics";
+import { renderOperatorActionLine, selectDoctorOperatorAction } from "./operator-actions";
 
 export type DoctorCheckStatus = "pass" | "warn" | "fail";
 export type DoctorDecisionAction = "stop" | "maintenance" | "continue";
@@ -997,9 +998,18 @@ export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
   const codexModelPolicyLines = (diagnostics.codexModelPolicyLines ?? [])
     .map((line) => sanitizeDoctorValue(line))
     .filter((line) => line.trim().length > 0);
+  const doctorOperatorActionLine = renderOperatorActionLine(
+    "doctor_operator_action",
+    selectDoctorOperatorAction({
+      overallStatus: diagnostics.overallStatus,
+      checks: diagnostics.checks,
+      localCiContract,
+    }),
+  );
 
   return [
     `doctor_decision action=${decisionSurface.decisionSummary.action} summary=${sanitizeDoctorValue(decisionSurface.decisionSummary.summary)}`,
+    doctorOperatorActionLine,
     ...(["active_risk", "maintenance", "informational"] as const).flatMap((tier) => [
       `doctor_tier tier=${tier} count=${decisionSurface.diagnosticTiers[tier].length}`,
       ...decisionSurface.diagnosticTiers[tier].map((item) =>

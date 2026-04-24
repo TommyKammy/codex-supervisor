@@ -426,6 +426,43 @@ test("renderSupervisorStatusDto appends canonical github rate-limit lines from d
   assert.match(status, /^github_rate_limit resource=graphql status=exhausted remaining=0 limit=5000 reset_at=2026-03-27T00:15:00.000Z$/m);
 });
 
+test("renderSupervisorStatusDto maps provider outage diagnostics to an operator action token", () => {
+  const status = renderSupervisorStatusDto({
+    gsdSummary: null,
+    candidateDiscovery: null,
+    loopRuntime: {
+      state: "running",
+      hostMode: "tmux",
+      runMode: "macos_tmux_loop",
+      markerPath: "/tmp/locks/supervisor/loop-runtime.lock",
+      configPath: "/tmp/supervisor.config.json",
+      stateFile: "/tmp/state.json",
+      pid: 4242,
+      startedAt: "2026-03-27T00:15:00.000Z",
+      ownershipConfidence: "live_lock",
+      detail: "supervisor-loop-runtime",
+    },
+    activeIssue: null,
+    selectionSummary: null,
+    trackedIssues: [],
+    runnableIssues: [],
+    blockedIssues: [],
+    detailedStatusLines: [
+      "review_bot_diagnostics status=provider_outage_suspected observed_review=none expected_reviewers=coderabbitai next_check=wait_or_provider_setup_or_manual_review recent_observation=required_checks_green:2026-03-16T00:10:00.000Z recoverability=provider_outage_suspected",
+    ],
+    reconciliationPhase: null,
+    reconciliationWarning: null,
+    readinessLines: [],
+    whyLines: [],
+    warning: null,
+  });
+
+  assert.match(
+    status,
+    /^operator_action action=provider_outage_suspected source=review_bot_diagnostics priority=70 summary=The configured review provider has not reported on the current head after checks turned green; wait, verify provider delivery, or escalate to manual review\.$/m,
+  );
+});
+
 test("renderSupervisorStatusDto sanitizes loop runtime host and timestamp tokens", () => {
   const status = renderSupervisorStatusDto({
     gsdSummary: null,
@@ -1194,6 +1231,10 @@ test("status surfaces loop-off as a blocker when tracked work is still active", 
   );
   assert.match(
     status,
+    /^operator_action action=restart_loop source=loop_runtime_blocker priority=90 summary=Tracked work is active but the supervisor loop is off; restart the loop to resume background execution\.$/m,
+  );
+  assert.match(
+    status,
     /^status_warning=Tracked work is active for issue #188, but the supervisor loop is off\. Restart the loop to resume background execution\.$/m,
   );
 });
@@ -1248,6 +1289,10 @@ test("status does not emit the loop-off restart blocker for blocked-only tracked
   const status = await supervisor.status();
   assert.doesNotMatch(status, /^loop_runtime_blocker /m);
   assert.doesNotMatch(status, /^status_warning=Tracked work is active for issue #188, but the supervisor loop is off\./m);
+  assert.match(
+    status,
+    /^operator_action action=continue source=status priority=0 summary=No blocking operator action was detected; continue normal supervisor operation\.$/m,
+  );
 });
 
 test("acquireSupervisorLock fails closed on ambiguous-owner run locks", async (t) => {
@@ -3556,6 +3601,10 @@ test("status surfaces host-local CI blocker details for tracked PR mismatches", 
   assert.match(
     status,
     /^tracked_pr_host_local_ci issue=#171 pr=#271 github_checks=green head_sha=head-ready-271 outcome=failed failure_class=workspace_toolchain_missing remediation_target=workspace_environment head=current summary=Configured local CI command could not run before marking PR #271 ready because the workspace toolchain is unavailable\. Remediation target: workspace environment\.$/m,
+  );
+  assert.match(
+    status,
+    /^operator_action action=fix_config source=tracked_pr_host_local_ci priority=80 summary=Host-local CI could not run because the workspace environment is missing prerequisites; fix configuration or workspace preparation before continuing\.$/m,
   );
   assert.match(
     status,
