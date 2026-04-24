@@ -17,14 +17,23 @@ export interface OperatorAction {
   summary: string;
 }
 
-function chooseHighestPriority(actions: OperatorAction[]): OperatorAction {
-  return [...actions].sort((left, right) => right.priority - left.priority)[0] ?? {
-    action: "continue",
-    source: "status",
-    priority: 0,
-    summary: "No blocking operator action was detected; continue normal supervisor operation.",
-  };
+function chooseHighestPriority(actions: OperatorAction[], fallback: OperatorAction): OperatorAction {
+  return [...actions].sort((left, right) => right.priority - left.priority)[0] ?? fallback;
 }
+
+const statusFallbackOperatorAction: OperatorAction = {
+  action: "continue",
+  source: "status",
+  priority: 0,
+  summary: "No blocking operator action was detected; continue normal supervisor operation.",
+};
+
+const doctorFallbackOperatorAction: OperatorAction = {
+  action: "continue",
+  source: "doctor",
+  priority: 0,
+  summary: "No blocking doctor action was detected; continue normal supervisor operation.",
+};
 
 export function selectStatusOperatorAction(args: {
   detailedStatusLines: string[];
@@ -89,7 +98,7 @@ export function selectStatusOperatorAction(args: {
     }
   }
 
-  return chooseHighestPriority(actions);
+  return chooseHighestPriority(actions, statusFallbackOperatorAction);
 }
 
 export function selectDoctorOperatorAction(args: {
@@ -136,7 +145,7 @@ export function selectDoctorOperatorAction(args: {
     });
   }
 
-  return chooseHighestPriority(actions);
+  return chooseHighestPriority(actions, doctorFallbackOperatorAction);
 }
 
 export function renderOperatorActionLine(prefix: "operator_action" | "doctor_operator_action", action: OperatorAction): string {

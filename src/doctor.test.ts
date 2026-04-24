@@ -1814,6 +1814,10 @@ test("renderDoctorReport surfaces absent local CI posture when no repo-owned con
     report,
     /doctor_local_ci configured=false source=config command=none summary=No repo-owned local CI contract is configured\./,
   );
+  assert.match(
+    report,
+    /^doctor_operator_action action=continue source=doctor priority=0 summary=No blocking doctor action was detected; continue normal supervisor operation\.$/m,
+  );
 });
 
 test("renderDoctorReport surfaces the selected local review posture preset", () => {
