@@ -65,6 +65,16 @@ export interface DoctorTierItem {
 
 export type DoctorTieredDiagnostics = Record<DoctorDiagnosticTier, DoctorTierItem[]>;
 
+export interface DoctorRawDiagnostics {
+  overallStatus: DoctorCheckStatus;
+  checks: DoctorCheck[];
+}
+
+export interface DoctorOperatorDecisionSurface {
+  decisionSummary: DoctorDecisionSummary;
+  diagnosticTiers: DoctorTieredDiagnostics;
+}
+
 export interface DoctorDiagnostics {
   overallStatus: DoctorCheckStatus;
   checks: DoctorCheck[];
@@ -101,7 +111,7 @@ export interface BootstrapReadinessSummary {
   };
 }
 
-interface DiagnoseSupervisorHostArgs {
+export interface DiagnoseSupervisorHostArgs {
   config: SupervisorConfig;
   configPath?: string;
   authStatus?: () => Promise<{ ok: boolean; message: string | null }>;
@@ -192,6 +202,16 @@ function overallStatusForChecks(checks: DoctorCheck[]): DoctorCheckStatus {
   return "pass";
 }
 
+export function collectDoctorRawDiagnostics(checks: DoctorCheck[]): DoctorRawDiagnostics {
+  return {
+    overallStatus: overallStatusForChecks(checks),
+    checks: checks.map((check) => ({
+      ...check,
+      details: [...check.details],
+    })),
+  };
+}
+
 function emptyDoctorDiagnosticTiers(): DoctorTieredDiagnostics {
   return {
     active_risk: [],
@@ -262,9 +282,9 @@ function buildDoctorDecisionSummary(
   };
 }
 
-function buildDoctorDecisionSurface(
-  diagnostics: Pick<DoctorDiagnostics, "overallStatus" | "checks" | "decisionSummary" | "diagnosticTiers">,
-): { decisionSummary: DoctorDecisionSummary; diagnosticTiers: DoctorTieredDiagnostics } {
+export function buildDoctorOperatorDecisionSurface(
+  diagnostics: DoctorRawDiagnostics & Partial<Pick<DoctorDiagnostics, "decisionSummary" | "diagnosticTiers">>,
+): DoctorOperatorDecisionSurface {
   const diagnosticTiers = diagnostics.diagnosticTiers ?? buildDoctorDiagnosticTiers(diagnostics.checks);
   const decisionSummary = diagnostics.decisionSummary ??
     buildDoctorDecisionSummary(diagnostics.overallStatus, diagnosticTiers);
@@ -803,7 +823,7 @@ async function diagnoseWorktrees(
   }
 }
 
-export async function diagnoseSupervisorHost(args: DiagnoseSupervisorHostArgs): Promise<DoctorDiagnostics> {
+export async function collectDoctorRawHostDiagnostics(args: DiagnoseSupervisorHostArgs): Promise<DoctorRawDiagnostics> {
   const authStatus =
     args.authStatus ??
     (() => new GitHubClient(args.config).authStatus());
@@ -814,12 +834,23 @@ export async function diagnoseSupervisorHost(args: DiagnoseSupervisorHostArgs): 
     args.github ??
     new GitHubClient(args.config);
 
-  const checks: DoctorCheck[] = await Promise.all([
+  return collectDoctorRawDiagnostics(await Promise.all([
     diagnoseGitHubAuth(authStatus),
     diagnoseCodexCli(args.config),
     diagnoseStateFile(args.config),
     diagnoseWorktrees(args.config, loadState, github),
-  ]);
+  ]));
+}
+
+export async function diagnoseSupervisorHost(args: DiagnoseSupervisorHostArgs): Promise<DoctorDiagnostics> {
+  const loadState =
+    args.loadState ??
+    (() => loadStateReadonlyForDoctor(args.config));
+  const github =
+    args.github ??
+    new GitHubClient(args.config);
+
+  const rawDiagnostics = await collectDoctorRawHostDiagnostics({ ...args, loadState, github });
   const loopRuntime = await readSupervisorLoopRuntime(args.config.stateFile, { configPath: args.configPath });
   const candidateDiscoveryWarning = formatCandidateDiscoveryWarningDetail(
     await github.getCandidateDiscoveryDiagnostics().catch(() => null),
@@ -832,21 +863,20 @@ export async function diagnoseSupervisorHost(args: DiagnoseSupervisorHostArgs): 
     }),
   );
   let state: SupervisorStateFile | null = null;
-  let finalChecks = checks;
+  let finalRawDiagnostics = rawDiagnostics;
   try {
     state = await loadState();
   } catch (error) {
-    finalChecks = withReconciliationBacklogStateReadFailure(checks, args.config, error);
+    finalRawDiagnostics = collectDoctorRawDiagnostics(
+      withReconciliationBacklogStateReadFailure(rawDiagnostics.checks, args.config, error),
+    );
   }
 
-  const overallStatus = overallStatusForChecks(finalChecks);
-  const diagnosticTiers = buildDoctorDiagnosticTiers(finalChecks);
+  const decisionSurface = buildDoctorOperatorDecisionSurface(finalRawDiagnostics);
 
   return {
-    overallStatus,
-    checks: finalChecks,
-    decisionSummary: buildDoctorDecisionSummary(overallStatus, diagnosticTiers),
-    diagnosticTiers,
+    ...finalRawDiagnostics,
+    ...decisionSurface,
     codexModelPolicyLines,
     reconciliationBacklogLine: state === null
       ? null
@@ -920,7 +950,7 @@ export async function diagnoseBootstrapReadiness(
 }
 
 export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
-  const decisionSurface = buildDoctorDecisionSurface(diagnostics);
+  const decisionSurface = buildDoctorOperatorDecisionSurface(diagnostics);
   const workspacePreparationContract =
     diagnostics.workspacePreparationContract
     ?? summarizeWorkspacePreparationContract({ workspacePreparationCommand: undefined, localCiCommand: undefined });
