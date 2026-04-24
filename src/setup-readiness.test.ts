@@ -144,7 +144,8 @@ test("diagnoseSetupReadiness keeps a tracked repo-owned workspace preparation he
   await fs.mkdir(path.join(repoPath, "scripts"), { recursive: true });
   await fs.mkdir(workspaceRoot, { recursive: true });
   await fs.writeFile(path.join(repoPath, "scripts", "prepare-workspace.sh"), "#!/bin/sh\nexit 0\n", "utf8");
-  execFileSync("git", ["add", "scripts/prepare-workspace.sh"], { cwd: repoPath });
+  await fs.writeFile(path.join(repoPath, "package-lock.json"), "{}\n", "utf8");
+  execFileSync("git", ["add", "scripts/prepare-workspace.sh", "package-lock.json"], { cwd: repoPath });
   execFileSync("git", ["commit", "-m", "add workspace helper"], {
     cwd: repoPath,
     env: {
@@ -178,6 +179,10 @@ test("diagnoseSetupReadiness keeps a tracked repo-owned workspace preparation he
   assert.equal(field?.state, "configured");
   assert.equal(field?.value, "./scripts/prepare-workspace.sh");
   assert.match(field?.message ?? "", /workspace preparation command is configured/i);
+  assert.doesNotMatch(
+    summary.nextActions.map((action) => action.source).join("\n"),
+    /workspace_preparation_candidate/u,
+  );
   assert.deepEqual(summary.nextActions, [
     {
       action: "continue",

@@ -658,6 +658,16 @@ function createFirstRunSetupService(args: {
             },
           ],
         blockers: [],
+        nextActions: [
+          {
+            action: "continue",
+            source: "setup_readiness",
+            priority: 0,
+            required: false,
+            summary: "No setup blockers or advisory setup decisions remain; continue normal supervisor operation.",
+            fieldKeys: [],
+          },
+        ],
         providerPosture: {
           profile: "codex",
           provider: "codex",

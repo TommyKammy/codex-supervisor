@@ -873,8 +873,13 @@ function buildNextActions(args: {
   configPostureGroups: SetupReadinessConfigPostureGroup[];
   localCiContract: LocalCiContractSummary;
   recommendedWorkspacePreparationCommand: string | null;
+  workspacePreparationCommand: ReturnType<typeof normalizeLocalCiCommand>;
 }): SetupReadinessNextAction[] {
   const actions: SetupReadinessNextAction[] = [];
+  const workspacePreparationField = args.configPostureGroups
+    .flatMap((group) => group.fields)
+    .find((field) => field.key === "workspacePreparationCommand");
+  const workspacePreparationCommandConfigured = args.workspacePreparationCommand !== undefined;
 
   for (const blocker of args.blockers) {
     actions.push({
@@ -887,7 +892,11 @@ function buildNextActions(args: {
     });
   }
 
-  if (args.recommendedWorkspacePreparationCommand !== null) {
+  if (
+    args.recommendedWorkspacePreparationCommand !== null &&
+    !workspacePreparationCommandConfigured &&
+    workspacePreparationField?.state !== "configured"
+  ) {
     actions.push({
       action: "adopt_local_ci",
       source: "workspace_preparation_candidate",
@@ -1035,6 +1044,7 @@ export async function diagnoseSetupReadiness(
     configPostureGroups,
     localCiContract,
     recommendedWorkspacePreparationCommand,
+    workspacePreparationCommand: localCiContractConfig.workspacePreparationCommand,
   });
 
   return {
