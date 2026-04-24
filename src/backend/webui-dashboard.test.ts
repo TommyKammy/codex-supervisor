@@ -2362,6 +2362,118 @@ test("setup shell saves through the narrow setup config API and revalidates read
   assert.equal(harness.remainingFetches.length, 0);
 });
 
+test("setup shell does not persist missing trust posture selects during unrelated saves", async () => {
+  const harness = createSetupHarness([
+    {
+      path: "/api/setup-readiness",
+      response: jsonResponse(createSetupReadinessReport({
+        ready: false,
+        overallStatus: "missing",
+        configPath: "/tmp/supervisor.config.json",
+        fields: [
+          createSetupField("repoPath", {
+            state: "missing",
+            value: null,
+            message: "Repository path is required before first-run setup is complete.",
+          }),
+          createSetupField("trustMode", {
+            state: "missing",
+            value: null,
+            message: "Trust mode needs an explicit first-run setup decision.",
+          }),
+          createSetupField("executionSafetyMode", {
+            state: "missing",
+            value: null,
+            message: "Execution safety mode needs an explicit first-run setup decision.",
+          }),
+          createSetupField("reviewProvider", {
+            state: "configured",
+            value: "chatgpt-codex-connector",
+            message: "Review provider posture is configured.",
+          }),
+        ],
+        blockers: [],
+        providerPosture: createSetupProviderPosture({
+          profile: "codex",
+          provider: "codex",
+          reviewers: ["chatgpt-codex-connector"],
+          signalSource: "reviewBotLogins",
+          configured: true,
+          summary: "Review provider posture uses codex via reviewBotLogins.",
+        }),
+        trustPosture: createSetupTrustPosture({
+          configured: false,
+          summary: "Trust posture needs an explicit first-run setup decision.",
+        }),
+      })),
+    },
+    {
+      path: "/api/setup-config",
+      method: "POST",
+      body: JSON.stringify({
+        changes: {
+          repoPath: "/tmp/repo",
+          reviewProvider: "codex",
+        },
+      }),
+      response: jsonResponse(createSetupConfigUpdateResult({
+        updatedFields: ["repoPath", "reviewProvider"],
+        restartRequired: true,
+        restartScope: "supervisor",
+        restartTriggeredByFields: ["repoPath", "reviewProvider"],
+      })),
+    },
+    {
+      path: "/api/setup-readiness",
+      response: jsonResponse(createSetupReadinessReport()),
+    },
+  ]);
+  await harness.flush();
+
+  const repoPathInput = harness.document.getElementById("setup-input-repoPath");
+  const trustModeInput = harness.document.getElementById("setup-input-trustMode");
+  const executionSafetyModeInput = harness.document.getElementById("setup-input-executionSafetyMode");
+  const setupForm = harness.document.getElementById("setup-form");
+  assert.ok(repoPathInput);
+  assert.ok(trustModeInput);
+  assert.ok(executionSafetyModeInput);
+  assert.ok(setupForm);
+  assert.equal(trustModeInput.value, "");
+  assert.equal(executionSafetyModeInput.value, "");
+  assert.deepEqual(
+    trustModeInput.children.map((child) => [child.value, child.textContent]),
+    [
+      ["", "Select an option"],
+      ["untrusted_or_mixed", "Untrusted or mixed authors"],
+      ["trusted_repo_and_authors", "Trusted repo and authors"],
+    ],
+  );
+
+  repoPathInput.value = "/tmp/repo";
+  await setupForm.dispatch("submit", {
+    preventDefault() {},
+  });
+  await harness.flush();
+
+  assert.deepEqual(
+    harness.fetchCalls.map((call) => ({ path: call.path, method: call.method, body: call.body })),
+    [
+      { path: "/api/setup-readiness", method: "GET", body: null },
+      {
+        path: "/api/setup-config",
+        method: "POST",
+        body: JSON.stringify({
+          changes: {
+            repoPath: "/tmp/repo",
+            reviewProvider: "codex",
+          },
+        }),
+      },
+      { path: "/api/setup-readiness", method: "GET", body: null },
+    ],
+  );
+});
+
 test("setup shell warns when localCiCommand is configured without workspacePreparationCommand", async () => {
   const harness = createSetupHarness([
     {

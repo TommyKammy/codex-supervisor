@@ -273,6 +273,60 @@ test("diagnoseSetupReadiness requires explicit trust posture decisions", async (
   );
 });
 
+test("diagnoseSetupReadiness validates trust posture fields as exact raw strings", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = await createTrackedRepo(root);
+  const workspaceRoot = path.join(root, "workspaces");
+  const configPath = path.join(root, "supervisor.config.json");
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      ...buildConfigDocument({
+        repoPath,
+        workspaceRoot,
+        stateFile: path.join(root, "state.json"),
+        workspacePreparationCommand: undefined,
+        includeTrustPosture: false,
+      }),
+      trustMode: " trusted_repo_and_authors ",
+      executionSafetyMode: ["operator_gated"],
+    }),
+    "utf8",
+  );
+
+  const summary = await diagnoseSetupReadiness({
+    configPath,
+    authStatus: async () => ({ ok: true, message: null }),
+  });
+
+  assert.equal(summary.ready, false);
+  assert.equal(summary.overallStatus, "invalid");
+  assert.equal(summary.trustPosture.configured, false);
+  assert.deepEqual(
+    summary.fields
+      .filter((field) => field.key === "trustMode" || field.key === "executionSafetyMode")
+      .map((field) => [field.key, field.state, field.value]),
+    [
+      ["trustMode", "invalid", " trusted_repo_and_authors "],
+      ["executionSafetyMode", "invalid", null],
+    ],
+  );
+  assert.deepEqual(
+    summary.blockers
+      .filter((blocker) => blocker.code === "invalid_trust_mode" || blocker.code === "invalid_execution_safety_mode")
+      .map((blocker) => [blocker.code, blocker.fieldKeys]),
+    [
+      ["invalid_trust_mode", ["trustMode"]],
+      ["invalid_execution_safety_mode", ["executionSafetyMode"]],
+    ],
+  );
+});
+
 test("diagnoseSetupReadiness fails closed when fixed model routing is missing an explicit model value", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
   t.after(async () => {

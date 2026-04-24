@@ -1881,6 +1881,49 @@ test("updateSetupConfig accepts trust posture through the setup-owned write surf
   assert.equal(result.readiness.trustPosture.warning, null);
 });
 
+test("updateSetupConfig restart detection treats trust posture values as exact enums", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-update-trust-posture-exact-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const configPath = path.join(tempDir, "supervisor.config.json");
+  await fs.writeFile(
+    configPath,
+    JSON.stringify(
+      {
+        repoPath: ".",
+        repoSlug: "owner/repo",
+        defaultBranch: "main",
+        workspaceRoot: "./worktrees",
+        stateFile: "./state.json",
+        codexBinary: process.execPath,
+        branchPrefix: "codex/issue-",
+        reviewBotLogins: ["chatgpt-codex-connector"],
+        trustMode: " untrusted_or_mixed ",
+        executionSafetyMode: " operator_gated ",
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+
+  const result = await updateSetupConfig({
+    configPath,
+    changes: {
+      trustMode: "untrusted_or_mixed",
+      executionSafetyMode: "operator_gated",
+    },
+  });
+
+  const updatedDocument = JSON.parse(await fs.readFile(configPath, "utf8")) as Record<string, unknown>;
+  assert.deepEqual(result.updatedFields, ["trustMode", "executionSafetyMode"]);
+  assert.equal(result.restartRequired, true);
+  assert.deepEqual(result.restartTriggeredByFields, ["trustMode", "executionSafetyMode"]);
+  assert.equal(updatedDocument.trustMode, "untrusted_or_mixed");
+  assert.equal(updatedDocument.executionSafetyMode, "operator_gated");
+});
+
 test("updateSetupConfig clears localCiCommand back to the unset state", async (t) => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-update-local-ci-clear-"));
   t.after(async () => {

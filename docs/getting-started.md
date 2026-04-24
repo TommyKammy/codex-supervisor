@@ -85,13 +85,17 @@ Then choose the review provider profile that matches your PR review flow. The ac
 
 Either copy one of those files over `supervisor.config.json` as a starting point, copy it to a separate profile such as `supervisor.config.local.json`, or copy only its `reviewBotLogins` into your active config.
 
-At minimum, set these fields before the first run:
+At minimum, set these first-run fields before the first run:
 
 - `repoPath`
 - `repoSlug`
 - `workspaceRoot`
 - `codexBinary`
+- `trustMode`
+- `executionSafetyMode`
 - provider-specific review settings you expect the supervisor to watch
+
+The setup/readiness report stays `ready: false` until these required first-run blockers, including the explicit trust posture decisions, are resolved.
 
 The shipped CodeRabbit profile intentionally uses a non-loadable `repoSlug` placeholder so operators must replace it before the first run.
 

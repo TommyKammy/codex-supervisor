@@ -216,6 +216,26 @@ function displayValue(value: unknown): string | null {
   return null;
 }
 
+function readExactSetupStringValue(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function trustPostureFieldState(args: {
+  key: "trustMode" | "executionSafetyMode";
+  rawValue: unknown;
+}): SetupFieldState {
+  const { key, rawValue } = args;
+  if (rawValue === undefined || rawValue === null || rawValue === "") {
+    return "missing";
+  }
+  if (key === "trustMode") {
+    return typeof rawValue === "string" && VALID_TRUST_MODES.has(rawValue as TrustMode) ? "configured" : "invalid";
+  }
+  return typeof rawValue === "string" && VALID_EXECUTION_SAFETY_MODES.has(rawValue as ExecutionSafetyMode)
+    ? "configured"
+    : "invalid";
+}
+
 function tryNormalizeLocalCiCommand(value: unknown): ReturnType<typeof normalizeLocalCiCommand> {
   try {
     return normalizeLocalCiCommand(value);
@@ -299,22 +319,15 @@ function buildConfigFields(args: {
   const resolvedConfig = configSummary.config;
   const fields = SETUP_FIELD_DEFINITIONS.map(({ key, label, required }) => {
     const rawValue = rawConfig?.[key];
-    const explicitValue = displayValue(rawValue);
+    const explicitValue =
+      key === "trustMode" || key === "executionSafetyMode"
+        ? readExactSetupStringValue(rawValue)
+        : displayValue(rawValue);
     const resolvedValue = key === "trustMode" || key === "executionSafetyMode"
       ? explicitValue
       : resolvedConfig !== null ? displayValue(resolvedConfig[key]) : explicitValue;
-    const state: SetupFieldState = key === "trustMode"
-      ? explicitValue === null
-        ? "missing"
-        : VALID_TRUST_MODES.has(explicitValue as TrustMode)
-          ? "configured"
-          : "invalid"
-      : key === "executionSafetyMode"
-        ? explicitValue === null
-          ? "missing"
-          : VALID_EXECUTION_SAFETY_MODES.has(explicitValue as ExecutionSafetyMode)
-            ? "configured"
-            : "invalid"
+    const state: SetupFieldState = key === "trustMode" || key === "executionSafetyMode"
+      ? trustPostureFieldState({ key, rawValue })
         : key === "workspacePreparationCommand" && workspacePreparationWarning !== null
       ? "invalid"
       : configSummary.missingRequiredFields.includes(key)

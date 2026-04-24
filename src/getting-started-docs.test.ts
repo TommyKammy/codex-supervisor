@@ -97,6 +97,9 @@ test("getting-started defines setup readiness as a typed first-run contract dist
   );
   assert.match(content, /localCiContract\?: LocalCiContractSummary/);
   assert.match(content, /setup flow and WebUI should surface whether the repo-owned local CI contract is configured/i);
+  assert.match(content, /At minimum, set these first-run fields before the first run:[\s\S]*`trustMode`[\s\S]*`executionSafetyMode`/i);
+  assert.match(content, /`ready: false` until these required first-run blockers/i);
+  assert.match(content, /explicit trust posture decisions/i);
 });
 
 test("getting-started defines the repo-owned local CI contract for pre-PR verification", async () => {

@@ -205,8 +205,8 @@ export function renderSetupBrowserScript(): string {
         return reviewProviderOptions.some((option) => option.value === profile) ? profile : "none";
       }
 
-      function normalizeSelectValue(options, value, fallback) {
-        return options.some((option) => option.value === value) ? value : fallback;
+      function normalizeSelectValue(options, value) {
+        return options.some((option) => option.value === value) ? value : "";
       }
 
       function createFieldInput(field, report) {
@@ -227,17 +227,25 @@ export function renderSetupBrowserScript(): string {
 
         if (field.key === "trustMode" || field.key === "executionSafetyMode") {
           const options = field.key === "trustMode" ? trustModeOptions : executionSafetyModeOptions;
+          const currentValue = typeof field.value === "string" ? field.value : "";
+          const selectedValue = normalizeSelectValue(options, currentValue);
           const select = document.createElement("select");
           select.id = "setup-input-" + field.key;
           select.className = "field-editor__input";
           select.disabled = saveInFlight;
+          if (selectedValue === "") {
+            const placeholder = document.createElement("option");
+            placeholder.value = "";
+            placeholder.textContent = "Select an option";
+            select.appendChild(placeholder);
+          }
           for (const option of options) {
             const optionElement = document.createElement("option");
             optionElement.value = option.value;
             optionElement.textContent = option.label;
             select.appendChild(optionElement);
           }
-          select.value = normalizeSelectValue(options, field.value, options[0].value);
+          select.value = selectedValue;
           return select;
         }
 
@@ -643,8 +651,11 @@ export function renderSetupBrowserScript(): string {
             continue;
           }
           if (field.key === "trustMode" || field.key === "executionSafetyMode") {
-            if (rawValue !== "") {
-              changes[field.key] = rawValue;
+            const currentValue = typeof field.value === "string" ? field.value : "";
+            const options = field.key === "trustMode" ? trustModeOptions : executionSafetyModeOptions;
+            const normalizedValue = normalizeSelectValue(options, rawValue);
+            if (normalizedValue !== "" && normalizedValue !== currentValue) {
+              changes[field.key] = normalizedValue;
             }
             continue;
           }

@@ -323,6 +323,10 @@ function displayStringValue(value: unknown): string | null {
   return normalized.length > 0 ? normalized : null;
 }
 
+function displayExactStringValue(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
 function currentSemanticFieldValue(args: {
   configSummary: ReturnType<typeof loadConfigSummary>;
   existingDocument: Record<string, unknown>;
@@ -375,7 +379,7 @@ function currentSemanticFieldValue(args: {
   }
 
   if (field === "trustMode" || field === "executionSafetyMode") {
-    return displayStringValue(existingDocument[field]);
+    return displayExactStringValue(existingDocument[field]);
   }
 
   if (resolvedConfig !== null) {
