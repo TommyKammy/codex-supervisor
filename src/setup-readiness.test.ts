@@ -178,6 +178,16 @@ test("diagnoseSetupReadiness keeps a tracked repo-owned workspace preparation he
   assert.equal(field?.state, "configured");
   assert.equal(field?.value, "./scripts/prepare-workspace.sh");
   assert.match(field?.message ?? "", /workspace preparation command is configured/i);
+  assert.deepEqual(summary.nextActions, [
+    {
+      action: "continue",
+      source: "setup_readiness",
+      priority: 0,
+      required: false,
+      summary: "No setup blockers or advisory setup decisions remain; continue normal supervisor operation.",
+      fieldKeys: [],
+    },
+  ]);
 });
 
 test("diagnoseSetupReadiness suggests a repo-native workspace preparation command when package-lock is present", async (t) => {
@@ -224,6 +234,13 @@ test("diagnoseSetupReadiness suggests a repo-native workspace preparation comman
   const field = summary.fields.find((entry) => entry.key === "workspacePreparationCommand");
   assert.equal(field?.state, "missing");
   assert.match(field?.message ?? "", /recommended repo-native command: npm ci/i);
+  assert.deepEqual(
+    summary.nextActions.map((action) => [action.action, action.source, action.required, action.fieldKeys]),
+    [
+      ["adopt_local_ci", "workspace_preparation_candidate", false, ["workspacePreparationCommand"]],
+    ],
+  );
+  assert.match(summary.nextActions[0]?.summary ?? "", /adopt the repo-owned workspace preparation command npm ci/i);
 });
 
 test("diagnoseSetupReadiness requires explicit trust posture decisions", async (t) => {
@@ -275,6 +292,15 @@ test("diagnoseSetupReadiness requires explicit trust posture decisions", async (
     [
       ["missing_trust_mode", ["trustMode"]],
       ["missing_execution_safety_mode", ["executionSafetyMode"]],
+    ],
+  );
+  assert.deepEqual(
+    summary.nextActions
+      .filter((action) => action.source === "missing_trust_mode" || action.source === "missing_execution_safety_mode")
+      .map((action) => [action.action, action.source, action.required, action.priority, action.fieldKeys]),
+    [
+      ["fix_config", "missing_trust_mode", true, 100, ["trustMode"]],
+      ["fix_config", "missing_execution_safety_mode", true, 100, ["executionSafetyMode"]],
     ],
   );
 });
@@ -394,6 +420,127 @@ test("diagnoseSetupReadiness exposes configured approved tracked top-level entri
   assert.equal(skeletonGuard?.required, false);
   assert.equal(skeletonGuard?.value, "README.md, src");
   assert.match(skeletonGuard?.message ?? "", /Approved tracked top level entries is configured/i);
+  const dangerousConfirmation = summary.nextActions.find(
+    (action) => action.source === "dangerous_explicit_opt_in:approvedTrackedTopLevelEntries",
+  );
+  assert.ok(dangerousConfirmation);
+  assert.equal(dangerousConfirmation.action, "manual_review");
+  assert.equal(dangerousConfirmation.required, false);
+  assert.deepEqual(dangerousConfirmation.fieldKeys, ["approvedTrackedTopLevelEntries"]);
+  assert.match(dangerousConfirmation.summary, /confirm approved tracked top level entries remains an intentional dangerous explicit opt-in/i);
+});
+
+test("diagnoseSetupReadiness summarizes advisory local CI adoption and dismissal decisions", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = await createTrackedRepo(root);
+  const workspaceRoot = path.join(root, "workspaces");
+  const configPath = path.join(root, "supervisor.config.json");
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  await fs.writeFile(
+    path.join(repoPath, "package.json"),
+    JSON.stringify({ private: true, scripts: { "verify:pre-pr": "tsx --test" } }, null, 2),
+    "utf8",
+  );
+  execFileSync("git", ["add", "package.json"], { cwd: repoPath });
+  execFileSync("git", ["commit", "-m", "add local ci script"], {
+    cwd: repoPath,
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Codex",
+      GIT_AUTHOR_EMAIL: "codex@example.com",
+      GIT_COMMITTER_NAME: "Codex",
+      GIT_COMMITTER_EMAIL: "codex@example.com",
+    },
+  });
+  await fs.writeFile(
+    configPath,
+    JSON.stringify(
+      buildConfigDocument({
+        repoPath,
+        workspaceRoot,
+        stateFile: path.join(root, "state.json"),
+        workspacePreparationCommand: undefined,
+      }),
+    ),
+    "utf8",
+  );
+
+  const summary = await diagnoseSetupReadiness({
+    configPath,
+    authStatus: async () => ({ ok: true, message: null }),
+  });
+
+  assert.equal(summary.ready, true);
+  assert.equal(summary.localCiContract?.source, "repo_script_candidate");
+  assert.deepEqual(
+    summary.nextActions.map((action) => [action.action, action.source, action.required, action.fieldKeys]),
+    [
+      ["adopt_local_ci", "local_ci_candidate", false, ["localCiCommand", "localCiCandidateDismissed"]],
+      ["dismiss_local_ci", "local_ci_candidate", false, ["localCiCandidateDismissed"]],
+    ],
+  );
+  assert.match(summary.nextActions[0]?.summary ?? "", /adopt the repo-owned local CI command npm run verify:pre-pr/i);
+  assert.match(summary.nextActions[1]?.summary ?? "", /dismiss the repo-owned local CI candidate npm run verify:pre-pr/i);
+});
+
+test("diagnoseSetupReadiness keeps dismissed local CI candidates visible as safe to ignore", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = await createTrackedRepo(root);
+  const workspaceRoot = path.join(root, "workspaces");
+  const configPath = path.join(root, "supervisor.config.json");
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  await fs.writeFile(
+    path.join(repoPath, "package.json"),
+    JSON.stringify({ private: true, scripts: { "verify:pre-pr": "tsx --test" } }, null, 2),
+    "utf8",
+  );
+  execFileSync("git", ["add", "package.json"], { cwd: repoPath });
+  execFileSync("git", ["commit", "-m", "add local ci script"], {
+    cwd: repoPath,
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Codex",
+      GIT_AUTHOR_EMAIL: "codex@example.com",
+      GIT_COMMITTER_NAME: "Codex",
+      GIT_COMMITTER_EMAIL: "codex@example.com",
+    },
+  });
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      ...buildConfigDocument({
+        repoPath,
+        workspaceRoot,
+        stateFile: path.join(root, "state.json"),
+        workspacePreparationCommand: undefined,
+      }),
+      localCiCandidateDismissed: true,
+    }),
+    "utf8",
+  );
+
+  const summary = await diagnoseSetupReadiness({
+    configPath,
+    authStatus: async () => ({ ok: true, message: null }),
+  });
+
+  assert.equal(summary.ready, true);
+  assert.equal(summary.localCiContract?.source, "dismissed_repo_script_candidate");
+  assert.deepEqual(
+    summary.nextActions.map((action) => [action.action, action.source, action.required, action.fieldKeys]),
+    [
+      ["safe_to_ignore", "local_ci_candidate_dismissed", false, ["localCiCandidateDismissed"]],
+    ],
+  );
+  assert.match(summary.nextActions[0]?.summary ?? "", /intentionally dismissed/i);
 });
 
 test("diagnoseSetupReadiness reuses review provider validation for reviewBotLogins posture", async (t) => {
@@ -571,6 +718,12 @@ test("diagnoseSetupReadiness fails closed when fixed model routing is missing an
   assert.match(blocker.message, /codexModelStrategy=fixed requires an explicit codexModel value before execution can proceed/i);
   assert.deepEqual(blocker.fieldKeys, ["codexModel"]);
   assert.deepEqual(blocker.remediation.fieldKeys, ["codexModel"]);
+  assert.deepEqual(
+    summary.nextActions
+      .filter((action) => action.source === "missing_codex_model")
+      .map((action) => [action.action, action.required, action.fieldKeys]),
+    [["fix_config", true, ["codexModel"]]],
+  );
 });
 
 test("diagnoseSetupReadiness reports fully explicit model routing when every route is overridden", async (t) => {

@@ -627,6 +627,20 @@ ${renderSetupNavigation()}
                   </div>
                 </div>
               </article>
+
+              <article id="setup-next-actions-card" class="panel">
+                <div class="panel-shell">
+                  <div class="panel-header">
+                    <h2>Next setup actions</h2>
+                    <p class="panel-subtitle">Ordered setup decisions from the typed readiness contract.</p>
+                  </div>
+                  <div class="panel-body">
+                    <ul id="setup-next-actions" class="list list--plain checklist-grid">
+                      <li>Loading setup next actions…</li>
+                    </ul>
+                  </div>
+                </div>
+              </article>
             </div>
           </section>
 

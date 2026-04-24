@@ -20,6 +20,7 @@ import type { CodexModelStrategy, LocalCiContractSummary, LocalReviewPostureSumm
 import { diagnoseSupervisorHost, type DoctorCheck, type DoctorCheckStatus } from "./doctor";
 import { reviewProviderProfileFromConfig } from "./core/review-providers";
 import type { ExecutionSafetyMode, TrustMode } from "./core/types";
+import type { OperatorActionToken } from "./operator-actions";
 
 export type SetupFieldState = "configured" | "missing" | "invalid";
 export type SetupReadinessOverallStatus = "configured" | "missing" | "invalid";
@@ -111,6 +112,15 @@ export interface SetupReadinessBlocker {
   remediation: SetupReadinessRemediation;
 }
 
+export interface SetupReadinessNextAction {
+  action: OperatorActionToken;
+  source: string;
+  priority: number;
+  required: boolean;
+  summary: string;
+  fieldKeys: SetupReadinessConfigFieldKey[];
+}
+
 export type SetupReadinessModelRoutingStrategy = CodexModelStrategy | string;
 
 export interface SetupReadinessHostSummary {
@@ -161,6 +171,7 @@ export interface SetupReadinessReport {
   fields: SetupReadinessField[];
   configPostureGroups?: SetupReadinessConfigPostureGroup[];
   blockers: SetupReadinessBlocker[];
+  nextActions: SetupReadinessNextAction[];
   hostReadiness: SetupReadinessHostSummary;
   providerPosture: SetupReadinessProviderPosture;
   trustPosture: SetupReadinessTrustPosture;
@@ -853,6 +864,109 @@ function buildBlockers(args: {
   return blockers;
 }
 
+function sortNextActions(actions: SetupReadinessNextAction[]): SetupReadinessNextAction[] {
+  return [...actions].sort((left, right) => right.priority - left.priority);
+}
+
+function buildNextActions(args: {
+  blockers: SetupReadinessBlocker[];
+  configPostureGroups: SetupReadinessConfigPostureGroup[];
+  localCiContract: LocalCiContractSummary;
+  recommendedWorkspacePreparationCommand: string | null;
+}): SetupReadinessNextAction[] {
+  const actions: SetupReadinessNextAction[] = [];
+
+  for (const blocker of args.blockers) {
+    actions.push({
+      action: "fix_config",
+      source: blocker.code,
+      priority: 100,
+      required: true,
+      summary: blocker.remediation.summary,
+      fieldKeys: [...blocker.remediation.fieldKeys],
+    });
+  }
+
+  if (args.recommendedWorkspacePreparationCommand !== null) {
+    actions.push({
+      action: "adopt_local_ci",
+      source: "workspace_preparation_candidate",
+      priority: 55,
+      required: false,
+      summary:
+        `Optional: adopt the repo-owned workspace preparation command ${args.recommendedWorkspacePreparationCommand} in workspacePreparationCommand, or leave it unset until you want the setup contract.`,
+      fieldKeys: ["workspacePreparationCommand"],
+    });
+  }
+
+  if (args.localCiContract.source === "repo_script_candidate" && args.localCiContract.recommendedCommand !== null) {
+    actions.push({
+      action: "adopt_local_ci",
+      source: "local_ci_candidate",
+      priority: 50,
+      required: false,
+      summary:
+        `Optional: adopt the repo-owned local CI command ${args.localCiContract.recommendedCommand} in localCiCommand, or explicitly dismiss the candidate if you do not want codex-supervisor to treat it as the local verification contract.`,
+      fieldKeys: ["localCiCommand", "localCiCandidateDismissed"],
+    });
+    actions.push({
+      action: "dismiss_local_ci",
+      source: "local_ci_candidate",
+      priority: 49,
+      required: false,
+      summary:
+        `Optional: dismiss the repo-owned local CI candidate ${args.localCiContract.recommendedCommand} to keep localCiCommand unset without repeating the adoption prompt.`,
+      fieldKeys: ["localCiCandidateDismissed"],
+    });
+  }
+
+  if (args.localCiContract.source === "dismissed_repo_script_candidate") {
+    actions.push({
+      action: "safe_to_ignore",
+      source: "local_ci_candidate_dismissed",
+      priority: 10,
+      required: false,
+      summary: args.localCiContract.summary,
+      fieldKeys: ["localCiCandidateDismissed"],
+    });
+  }
+
+  for (const group of args.configPostureGroups) {
+    if (group.tier !== "dangerous_explicit_opt_in") {
+      continue;
+    }
+
+    for (const field of group.fields) {
+      if (field.state !== "configured") {
+        continue;
+      }
+
+      actions.push({
+        action: "manual_review",
+        source: `dangerous_explicit_opt_in:${field.key}`,
+        priority: 40,
+        required: false,
+        summary:
+          `Confirm ${field.label} remains an intentional dangerous explicit opt-in; do not treat it as a recommended setup default.`,
+        fieldKeys: [field.key],
+      });
+    }
+  }
+
+  if (actions.length === 0) {
+    actions.push({
+      action: "continue",
+      source: "setup_readiness",
+      priority: 0,
+      required: false,
+      summary: "No setup blockers or advisory setup decisions remain; continue normal supervisor operation.",
+      fieldKeys: [],
+    });
+  }
+
+  return sortNextActions(actions);
+}
+
 function overallStatusFromFields(
   fields: SetupReadinessField[],
   modelRoutingPosture: SetupReadinessModelRoutingPosture,
@@ -915,6 +1029,13 @@ export async function diagnoseSetupReadiness(
     : null;
   const hostReadiness = buildHostReadiness(hostDiagnostics?.checks ?? null, hostDiagnostics?.overallStatus ?? null);
   const blockers = buildBlockers({ fields, hostReadiness, modelRoutingPosture });
+  const localCiContract = summarizeLocalCiContract(localCiContractConfig);
+  const nextActions = buildNextActions({
+    blockers,
+    configPostureGroups,
+    localCiContract,
+    recommendedWorkspacePreparationCommand,
+  });
 
   return {
     kind: "setup_readiness",
@@ -924,11 +1045,12 @@ export async function diagnoseSetupReadiness(
     fields,
     configPostureGroups,
     blockers,
+    nextActions,
     hostReadiness,
     providerPosture: buildProviderPosture(configSummary.config),
     trustPosture: buildTrustPostureFromRaw(rawConfig, configSummary.config),
     modelRoutingPosture,
-    localCiContract: summarizeLocalCiContract(localCiContractConfig),
+    localCiContract,
     localReviewPosture: configSummary.config ? summarizeLocalReviewPosture(configSummary.config) : undefined,
   };
 }

@@ -15,6 +15,7 @@ import type {
   SetupReadinessHostSummary,
   SetupReadinessModelRoutingPosture,
   SetupReadinessModelRoutingTarget,
+  SetupReadinessNextAction,
   SetupReadinessProviderPosture,
   SetupReadinessReport,
   SetupReadinessTrustPosture,
@@ -290,6 +291,20 @@ export function createMissingReviewProviderBlocker(
   };
 }
 
+export function createSetupNextAction(
+  overrides: Partial<SetupReadinessNextAction> = {},
+): SetupReadinessNextAction {
+  return {
+    action: "fix_config",
+    source: "missing_review_provider",
+    priority: 100,
+    required: true,
+    summary: "Configure at least one review provider before first-run setup is complete.",
+    fieldKeys: ["reviewProvider"],
+    ...overrides,
+  };
+}
+
 export function createSetupHostReadiness(
   overrides: Partial<SetupReadinessHostSummary> = {},
 ): SetupReadinessHostSummary {
@@ -502,6 +517,7 @@ export function createSetupReadinessReport(
       createSetupField("reviewProvider"),
     ],
     blockers: [createMissingReviewProviderBlocker()],
+    nextActions: [createSetupNextAction()],
     hostReadiness: createSetupHostReadiness(),
     providerPosture: createSetupProviderPosture(),
     trustPosture: createSetupTrustPosture(),

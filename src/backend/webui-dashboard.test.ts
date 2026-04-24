@@ -1635,6 +1635,8 @@ test("setup shell loads typed setup readiness without mixing in dashboard status
   assert.match(harness.document.getElementById("setup-blockers")?.textContent ?? "", /Configure at least one review provider before first-run setup is complete\./u);
   assert.match(harness.document.getElementById("setup-blockers")?.textContent ?? "", /Blocker code: missing review provider/u);
   assert.match(harness.document.getElementById("setup-blockers")?.textContent ?? "", /Suggested remediation: Configure at least one review provider before first-run setup is complete\./u);
+  assert.match(harness.document.getElementById("setup-next-actions")?.textContent ?? "", /Configure at least one review provider before first-run setup is complete\./u);
+  assert.match(harness.document.getElementById("setup-next-actions")?.textContent ?? "", /Action: fix config.*Source: missing review provider.*Required: yes.*Priority: 100/u);
   assert.match(harness.document.getElementById("setup-field-summary")?.textContent ?? "", /1 of 2 required setup fields configured\./u);
   assert.match(harness.document.getElementById("setup-fields")?.textContent ?? "", /Repository path \[Configured\].*Current value: \/tmp\/repo.*Type: directory path.*Repository path is configured\./u);
   assert.match(harness.document.getElementById("setup-fields")?.textContent ?? "", /Review provider \[Missing\].*Current value: Unset.*Type: review provider.*Configure at least one review provider before first-run setup is complete\./u);
