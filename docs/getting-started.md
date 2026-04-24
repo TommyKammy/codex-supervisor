@@ -85,13 +85,17 @@ Then choose the review provider profile that matches your PR review flow. The ac
 
 Either copy one of those files over `supervisor.config.json` as a starting point, copy it to a separate profile such as `supervisor.config.local.json`, or copy only its `reviewBotLogins` into your active config.
 
-At minimum, set these fields before the first run:
+At minimum, set these first-run fields before the first run:
 
 - `repoPath`
 - `repoSlug`
 - `workspaceRoot`
 - `codexBinary`
+- `trustMode`
+- `executionSafetyMode`
 - provider-specific review settings you expect the supervisor to watch
+
+The setup/readiness report stays `ready: false` until these required first-run blockers, including the explicit trust posture decisions, are resolved.
 
 The shipped CodeRabbit profile intentionally uses a non-loadable `repoSlug` placeholder so operators must replace it before the first run.
 
@@ -289,6 +293,8 @@ type SetupReadinessFieldKey =
   | "codexBinary"
   | "branchPrefix"
   | "localCiCommand"
+  | "trustMode"
+  | "executionSafetyMode"
   | "reviewProvider";
 type SetupReadinessFieldValueType =
   | "directory_path"
@@ -297,6 +303,8 @@ type SetupReadinessFieldValueType =
   | "file_path"
   | "executable_path"
   | "text"
+  | "trust_mode"
+  | "execution_safety_mode"
   | "review_provider";
 type SetupReadinessRemediationKind =
   | "edit_config"
@@ -347,6 +355,7 @@ Minimum rules for that contract:
 - `blockers` lists only the conditions that still prevent a safe first run
 - each blocker carries typed remediation guidance so the browser does not have to reverse-engineer next actions from free-form text
 - the setup flow and WebUI should surface whether the repo-owned local CI contract is configured so operators know whether PR publication depends on a canonical repo-owned pre-PR command or on issue-level verification guidance
+- the setup flow and WebUI should surface `trustMode` and `executionSafetyMode` as explicit first-run decisions; inferred runtime defaults remain compatibility behavior, not a completed setup decision
 - `ready` becomes `true` only when no first-run blockers remain
 - ongoing diagnostics such as GitHub auth details, corrupted state-file findings, orphaned worktree candidates, and other repair-oriented host checks stay in `doctor`
 

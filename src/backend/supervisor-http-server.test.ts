@@ -734,9 +734,12 @@ test("createSupervisorHttpServer serves read-only supervisor DTOs as JSON", asyn
     },
     trustPosture: {
       trustMode: "trusted_repo_and_authors",
+      configured: true,
       executionSafetyMode: "unsandboxed_autonomous",
-      warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
-      summary: "Trusted inputs with unsandboxed autonomous execution.",
+      warning:
+        "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs; confirm this explicit setup trust posture before starting autonomous execution.",
+      summary:
+        "Trusted inputs with unsandboxed autonomous execution. This is appropriate only for a trusted solo-lane repository and trusted GitHub authors.",
     },
     modelRoutingPosture: {
       summary: "Model routing follows the host Codex default model unless you opt into a per-target override.",
@@ -1355,9 +1358,12 @@ test("createSupervisorHttpServer accepts narrow setup config writes and returns 
       },
       trustPosture: {
         trustMode: "trusted_repo_and_authors",
+        configured: true,
         executionSafetyMode: "unsandboxed_autonomous",
-        warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
-        summary: "Trusted inputs with unsandboxed autonomous execution.",
+        warning:
+          "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs; confirm this explicit setup trust posture before starting autonomous execution.",
+        summary:
+          "Trusted inputs with unsandboxed autonomous execution. This is appropriate only for a trusted solo-lane repository and trusted GitHub authors.",
       },
       modelRoutingPosture: {
         summary: "Model routing follows the host Codex default model unless you opt into a per-target override.",
@@ -1609,9 +1615,12 @@ test("createSupervisorHttpServer surfaces no-op setup config writes without a re
           },
           trustPosture: {
             trustMode: "trusted_repo_and_authors",
+            configured: true,
             executionSafetyMode: "unsandboxed_autonomous",
-            warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
-            summary: "Trusted inputs with unsandboxed autonomous execution.",
+            warning:
+              "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs; confirm this explicit setup trust posture before starting autonomous execution.",
+            summary:
+              "Trusted inputs with unsandboxed autonomous execution. This is appropriate only for a trusted solo-lane repository and trusted GitHub authors.",
           },
         },
       },
@@ -1677,9 +1686,12 @@ test("createSupervisorHttpServer surfaces no-op setup config writes without a re
       },
       trustPosture: {
         trustMode: "trusted_repo_and_authors",
+        configured: true,
         executionSafetyMode: "unsandboxed_autonomous",
-        warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
-        summary: "Trusted inputs with unsandboxed autonomous execution.",
+        warning:
+          "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs; confirm this explicit setup trust posture before starting autonomous execution.",
+        summary:
+          "Trusted inputs with unsandboxed autonomous execution. This is appropriate only for a trusted solo-lane repository and trusted GitHub authors.",
       },
     },
   });
@@ -2022,7 +2034,8 @@ test("createSupervisorHttpServer keeps root on the operator dashboard after setu
         trustMode: "trusted_repo_and_authors",
         executionSafetyMode: "unsandboxed_autonomous",
         warning: null,
-        summary: "Trusted inputs with unsandboxed autonomous execution.",
+        summary:
+          "Trusted inputs with unsandboxed autonomous execution. This is appropriate only for a trusted solo-lane repository and trusted GitHub authors.",
       },
     },
   };

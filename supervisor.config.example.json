@@ -7,6 +7,8 @@
   "stateFile": "./.local/state.json",
   "stateBootstrapFile": "",
   "codexBinary": "/absolute/path/to/codex",
+  "trustMode": "untrusted_or_mixed",
+  "executionSafetyMode": "operator_gated",
   "codexModelStrategy": "inherit",
   "codexModel": "",
   "boundedRepairModelStrategy": "",

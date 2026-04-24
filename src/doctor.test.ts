@@ -81,7 +81,7 @@ test("diagnoseSupervisorHost reports representative auth, state, and workspace f
   );
   assert.match(
     renderDoctorReport(diagnostics),
-    /doctor_warning kind=execution_safety detail=Unsandboxed autonomous execution assumes trusted GitHub-authored inputs\./,
+    /doctor_warning kind=execution_safety detail=Unsandboxed autonomous execution assumes trusted GitHub-authored inputs; confirm this explicit setup trust posture before starting autonomous execution\./,
   );
   assert.match(
     renderDoctorReport(diagnostics),
@@ -834,18 +834,45 @@ test("diagnoseSetupReadiness returns typed first-run setup state distinct from d
       ["branchPrefix", "configured", "config", true, "text"],
       ["workspacePreparationCommand", "missing", "config", true, "text"],
       ["localCiCommand", "missing", "config", true, "text"],
+      ["trustMode", "missing", "config", true, "trust_mode"],
+      ["executionSafetyMode", "missing", "config", true, "execution_safety_mode"],
       ["reviewProvider", "missing", "config", true, "review_provider"],
     ],
   );
-  assert.deepEqual(summary.blockers, [
-    {
-      code: "missing_review_provider",
-      message: "Configure at least one review provider before first-run setup is complete.",
+  assert.deepEqual(summary.blockers.map((blocker) => blocker.code), [
+    "missing_trust_mode",
+    "missing_execution_safety_mode",
+    "missing_review_provider",
+  ]);
+  assert.deepEqual(summary.blockers.at(-1), {
+    code: "missing_review_provider",
+    message: "Configure at least one review provider before first-run setup is complete.",
+    fieldKeys: ["reviewProvider"],
+    remediation: {
+      kind: "configure_review_provider",
+      summary: "Configure at least one review provider before first-run setup is complete.",
       fieldKeys: ["reviewProvider"],
+    },
+  });
+  assert.deepEqual(summary.blockers.slice(0, 2), [
+    {
+      code: "missing_trust_mode",
+      message: "Trust mode needs an explicit first-run setup decision.",
+      fieldKeys: ["trustMode"],
       remediation: {
-        kind: "configure_review_provider",
-        summary: "Configure at least one review provider before first-run setup is complete.",
-        fieldKeys: ["reviewProvider"],
+        kind: "edit_config",
+        summary: "Trust mode needs an explicit first-run setup decision.",
+        fieldKeys: ["trustMode"],
+      },
+    },
+    {
+      code: "missing_execution_safety_mode",
+      message: "Execution safety mode needs an explicit first-run setup decision.",
+      fieldKeys: ["executionSafetyMode"],
+      remediation: {
+        kind: "edit_config",
+        summary: "Execution safety mode needs an explicit first-run setup decision.",
+        fieldKeys: ["executionSafetyMode"],
       },
     },
   ]);
@@ -867,9 +894,11 @@ test("diagnoseSetupReadiness returns typed first-run setup state distinct from d
   assert.deepEqual(summary.trustPosture, {
     trustMode: "trusted_repo_and_authors",
     executionSafetyMode: "unsandboxed_autonomous",
-    warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
+    warning:
+      "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs; confirm this explicit setup trust posture before starting autonomous execution.",
     configWarning: null,
-    summary: "Trusted inputs with unsandboxed autonomous execution.",
+    configured: false,
+    summary: "Trust posture needs an explicit first-run setup decision.",
   });
   assert.deepEqual(summary.localCiContract, {
     configured: false,
@@ -914,6 +943,8 @@ test("diagnoseSetupReadiness recommends a repo-owned local CI candidate when loc
       stateFile: path.join(root, "state.json"),
       codexBinary: process.execPath,
       branchPrefix: "codex/issue-",
+      trustMode: "trusted_repo_and_authors",
+      executionSafetyMode: "unsandboxed_autonomous",
       reviewBotLogins: ["chatgpt-codex-connector"],
     }),
     "utf8",
@@ -1023,6 +1054,8 @@ test("diagnoseSetupReadiness prefers the configured local CI command over repo-o
       stateFile: path.join(root, "state.json"),
       codexBinary: process.execPath,
       branchPrefix: "codex/issue-",
+      trustMode: "trusted_repo_and_authors",
+      executionSafetyMode: "unsandboxed_autonomous",
       reviewBotLogins: ["chatgpt-codex-connector"],
       localCiCommand: "npm run ci:local",
     }),
@@ -1068,6 +1101,8 @@ test("diagnoseSetupReadiness warns when localCiCommand is configured without wor
       stateFile: path.join(root, "state.json"),
       codexBinary: process.execPath,
       branchPrefix: "codex/issue-",
+      trustMode: "trusted_repo_and_authors",
+      executionSafetyMode: "unsandboxed_autonomous",
       reviewBotLogins: ["chatgpt-codex-connector"],
       localCiCommand: "npm run ci:local",
     }),
@@ -1113,6 +1148,8 @@ test("diagnoseSetupReadiness surfaces a structured local CI command as configure
       stateFile: path.join(root, "state.json"),
       codexBinary: process.execPath,
       branchPrefix: "codex/issue-",
+      trustMode: "trusted_repo_and_authors",
+      executionSafetyMode: "unsandboxed_autonomous",
       reviewBotLogins: ["chatgpt-codex-connector"],
       localCiCommand: {
         mode: "structured",

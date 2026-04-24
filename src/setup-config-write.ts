@@ -9,6 +9,7 @@ import {
 } from "./core/config";
 import { reviewProviderProfileFromConfig } from "./core/review-providers";
 import { isValidGitRefName, parseJson, resolveMaybeRelative, writeJsonAtomic } from "./core/utils";
+import type { ExecutionSafetyMode, TrustMode } from "./core/types";
 import type { SetupConfigPreviewSelectableReviewProviderProfile } from "./setup-config-preview";
 import { diagnoseSetupReadiness, type SetupReadinessFieldKey, type SetupReadinessReport } from "./setup-readiness";
 
@@ -22,6 +23,8 @@ export interface SetupConfigChanges {
   branchPrefix?: string;
   workspacePreparationCommand?: string | null;
   localCiCommand?: string | null;
+  trustMode?: TrustMode;
+  executionSafetyMode?: ExecutionSafetyMode;
   localCiCandidateDismissed?: boolean;
   reviewProvider?: SetupConfigPreviewSelectableReviewProviderProfile;
 }
@@ -55,6 +58,8 @@ const CONFIGURABLE_FIELDS: SetupConfigWritableFieldKey[] = [
   "branchPrefix",
   "workspacePreparationCommand",
   "localCiCommand",
+  "trustMode",
+  "executionSafetyMode",
   "localCiCandidateDismissed",
   "reviewProvider",
 ];
@@ -100,6 +105,22 @@ function assertReviewProvider(value: unknown): SetupConfigPreviewSelectableRevie
   }
 
   throw new Error("reviewProvider must be one of none, copilot, codex, or coderabbit.");
+}
+
+function assertTrustMode(value: unknown): TrustMode {
+  if (value === "trusted_repo_and_authors" || value === "untrusted_or_mixed") {
+    return value;
+  }
+
+  throw new Error("trustMode must be one of trusted_repo_and_authors or untrusted_or_mixed.");
+}
+
+function assertExecutionSafetyMode(value: unknown): ExecutionSafetyMode {
+  if (value === "unsandboxed_autonomous" || value === "operator_gated") {
+    return value;
+  }
+
+  throw new Error("executionSafetyMode must be one of unsandboxed_autonomous or operator_gated.");
 }
 
 function assertBoolean(value: unknown, fieldName: string): boolean {
@@ -182,6 +203,12 @@ function normalizeSetupChanges(changes: unknown): SetupConfigChanges {
   }
   if ("localCiCommand" in raw) {
     normalized.localCiCommand = normalizeLocalCiCommand(raw.localCiCommand);
+  }
+  if ("trustMode" in raw) {
+    normalized.trustMode = assertTrustMode(raw.trustMode);
+  }
+  if ("executionSafetyMode" in raw) {
+    normalized.executionSafetyMode = assertExecutionSafetyMode(raw.executionSafetyMode);
   }
   if ("localCiCandidateDismissed" in raw) {
     normalized.localCiCandidateDismissed = assertBoolean(raw.localCiCandidateDismissed, "localCiCandidateDismissed");
@@ -267,6 +294,12 @@ function applySetupChanges(document: Record<string, unknown>, changes: SetupConf
       delete nextDocument.localCiCandidateDismissed;
     }
   }
+  if (changes.trustMode !== undefined) {
+    nextDocument.trustMode = changes.trustMode;
+  }
+  if (changes.executionSafetyMode !== undefined) {
+    nextDocument.executionSafetyMode = changes.executionSafetyMode;
+  }
   if ("localCiCandidateDismissed" in changes) {
     if (changes.localCiCandidateDismissed) {
       nextDocument.localCiCandidateDismissed = true;
@@ -288,6 +321,10 @@ function displayStringValue(value: unknown): string | null {
 
   const normalized = value.trim();
   return normalized.length > 0 ? normalized : null;
+}
+
+function displayExactStringValue(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
 }
 
 function currentSemanticFieldValue(args: {
@@ -341,6 +378,10 @@ function currentSemanticFieldValue(args: {
     return effectiveDismissed ? "true" : "false";
   }
 
+  if (field === "trustMode" || field === "executionSafetyMode") {
+    return displayExactStringValue(existingDocument[field]);
+  }
+
   if (resolvedConfig !== null) {
     return displayStringValue(resolvedConfig[field]);
   }
@@ -370,6 +411,10 @@ function nextSemanticFieldValue(field: SetupConfigWritableFieldKey, changes: Set
       return changes.localCiCommand ?? null;
     case "localCiCandidateDismissed":
       return changes.localCiCandidateDismissed === true ? "true" : "false";
+    case "trustMode":
+      return changes.trustMode ?? null;
+    case "executionSafetyMode":
+      return changes.executionSafetyMode ?? null;
     case "reviewProvider":
       return changes.reviewProvider ?? null;
   }

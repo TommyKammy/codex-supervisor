@@ -158,7 +158,8 @@ test("loadConfigSummary surfaces the default trust diagnostics posture", async (
   assert.deepEqual(summary.trustDiagnostics, {
     trustMode: "trusted_repo_and_authors",
     executionSafetyMode: "unsandboxed_autonomous",
-    warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
+    warning:
+      "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs; confirm this explicit setup trust posture before starting autonomous execution.",
     configWarning: null,
   });
 });
@@ -1832,6 +1833,95 @@ test("updateSetupConfig accepts localCiCommand through the setup-owned write sur
     warning:
       "localCiCommand is configured but workspacePreparationCommand is unset. Configure a repo-owned workspacePreparationCommand so preserved issue worktrees can prepare toolchains before host-local CI runs. GitHub checks can stay green while host-local CI still blocks tracked PR progress.",
   });
+});
+
+test("updateSetupConfig accepts trust posture through the setup-owned write surface", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-update-trust-posture-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const configPath = path.join(tempDir, "supervisor.config.json");
+  await fs.writeFile(
+    configPath,
+    JSON.stringify(
+      {
+        repoPath: ".",
+        repoSlug: "owner/repo",
+        defaultBranch: "main",
+        workspaceRoot: "./worktrees",
+        stateFile: "./state.json",
+        codexBinary: process.execPath,
+        branchPrefix: "codex/issue-",
+        reviewBotLogins: ["chatgpt-codex-connector"],
+        experimentalFlag: true,
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+
+  const result = await updateSetupConfig({
+    configPath,
+    changes: {
+      trustMode: "untrusted_or_mixed",
+      executionSafetyMode: "operator_gated",
+    },
+  });
+
+  const updatedDocument = JSON.parse(await fs.readFile(configPath, "utf8")) as Record<string, unknown>;
+  assert.deepEqual(result.updatedFields, ["trustMode", "executionSafetyMode"]);
+  assert.equal(result.restartRequired, true);
+  assert.equal(result.restartScope, "supervisor");
+  assert.deepEqual(result.restartTriggeredByFields, ["trustMode", "executionSafetyMode"]);
+  assert.equal(updatedDocument.trustMode, "untrusted_or_mixed");
+  assert.equal(updatedDocument.executionSafetyMode, "operator_gated");
+  assert.equal(updatedDocument.experimentalFlag, true);
+  assert.equal(result.readiness.trustPosture.configured, true);
+  assert.equal(result.readiness.trustPosture.warning, null);
+});
+
+test("updateSetupConfig restart detection treats trust posture values as exact enums", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-update-trust-posture-exact-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const configPath = path.join(tempDir, "supervisor.config.json");
+  await fs.writeFile(
+    configPath,
+    JSON.stringify(
+      {
+        repoPath: ".",
+        repoSlug: "owner/repo",
+        defaultBranch: "main",
+        workspaceRoot: "./worktrees",
+        stateFile: "./state.json",
+        codexBinary: process.execPath,
+        branchPrefix: "codex/issue-",
+        reviewBotLogins: ["chatgpt-codex-connector"],
+        trustMode: " untrusted_or_mixed ",
+        executionSafetyMode: " operator_gated ",
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+
+  const result = await updateSetupConfig({
+    configPath,
+    changes: {
+      trustMode: "untrusted_or_mixed",
+      executionSafetyMode: "operator_gated",
+    },
+  });
+
+  const updatedDocument = JSON.parse(await fs.readFile(configPath, "utf8")) as Record<string, unknown>;
+  assert.deepEqual(result.updatedFields, ["trustMode", "executionSafetyMode"]);
+  assert.equal(result.restartRequired, true);
+  assert.deepEqual(result.restartTriggeredByFields, ["trustMode", "executionSafetyMode"]);
+  assert.equal(updatedDocument.trustMode, "untrusted_or_mixed");
+  assert.equal(updatedDocument.executionSafetyMode, "operator_gated");
 });
 
 test("updateSetupConfig clears localCiCommand back to the unset state", async (t) => {

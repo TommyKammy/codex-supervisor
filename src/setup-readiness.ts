@@ -13,6 +13,7 @@ import {
 import type { CodexModelStrategy, LocalCiContractSummary, TrustDiagnosticsSummary } from "./core/types";
 import { diagnoseSupervisorHost, type DoctorCheck, type DoctorCheckStatus } from "./doctor";
 import { reviewProviderProfileFromConfig } from "./core/review-providers";
+import type { ExecutionSafetyMode, TrustMode } from "./core/types";
 
 export type SetupFieldState = "configured" | "missing" | "invalid";
 export type SetupReadinessOverallStatus = "configured" | "missing" | "invalid";
@@ -26,6 +27,8 @@ export type SetupReadinessFieldKey =
   | "branchPrefix"
   | "workspacePreparationCommand"
   | "localCiCommand"
+  | "trustMode"
+  | "executionSafetyMode"
   | "reviewProvider";
 export type SetupReadinessConfigFieldKey =
   | SetupReadinessFieldKey
@@ -43,6 +46,8 @@ export type SetupReadinessFieldValueType =
   | "file_path"
   | "executable_path"
   | "text"
+  | "trust_mode"
+  | "execution_safety_mode"
   | "review_provider";
 
 export interface SetupReadinessFieldMetadata {
@@ -98,6 +103,7 @@ export interface SetupReadinessProviderPosture {
 }
 
 export interface SetupReadinessTrustPosture extends TrustDiagnosticsSummary {
+  configured?: boolean;
   summary: string;
 }
 
@@ -157,6 +163,8 @@ const SETUP_FIELD_DEFINITIONS: Array<{
   { key: "branchPrefix", label: "Branch prefix", required: true },
   { key: "workspacePreparationCommand", label: "Workspace preparation command", required: false },
   { key: "localCiCommand", label: "Local CI command", required: false },
+  { key: "trustMode", label: "Trust mode", required: true },
+  { key: "executionSafetyMode", label: "Execution safety mode", required: true },
 ];
 
 const SETUP_FIELD_METADATA: Record<SetupReadinessFieldKey, SetupReadinessFieldMetadata> = {
@@ -169,8 +177,13 @@ const SETUP_FIELD_METADATA: Record<SetupReadinessFieldKey, SetupReadinessFieldMe
   branchPrefix: { source: "config", editable: true, valueType: "text" },
   workspacePreparationCommand: { source: "config", editable: true, valueType: "text" },
   localCiCommand: { source: "config", editable: true, valueType: "text" },
+  trustMode: { source: "config", editable: true, valueType: "trust_mode" },
+  executionSafetyMode: { source: "config", editable: true, valueType: "execution_safety_mode" },
   reviewProvider: { source: "config", editable: true, valueType: "review_provider" },
 };
+
+const VALID_TRUST_MODES = new Set<TrustMode>(["trusted_repo_and_authors", "untrusted_or_mixed"]);
+const VALID_EXECUTION_SAFETY_MODES = new Set<ExecutionSafetyMode>(["unsandboxed_autonomous", "operator_gated"]);
 
 function readRawConfigDocument(configPath: string): RawConfigDocument {
   if (!fs.existsSync(configPath)) {
@@ -201,6 +214,26 @@ function displayValue(value: unknown): string | null {
   }
 
   return null;
+}
+
+function readExactSetupStringValue(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function trustPostureFieldState(args: {
+  key: "trustMode" | "executionSafetyMode";
+  rawValue: unknown;
+}): SetupFieldState {
+  const { key, rawValue } = args;
+  if (rawValue === undefined || rawValue === null || rawValue === "") {
+    return "missing";
+  }
+  if (key === "trustMode") {
+    return typeof rawValue === "string" && VALID_TRUST_MODES.has(rawValue as TrustMode) ? "configured" : "invalid";
+  }
+  return typeof rawValue === "string" && VALID_EXECUTION_SAFETY_MODES.has(rawValue as ExecutionSafetyMode)
+    ? "configured"
+    : "invalid";
 }
 
 function tryNormalizeLocalCiCommand(value: unknown): ReturnType<typeof normalizeLocalCiCommand> {
@@ -241,6 +274,26 @@ function buildFieldMessage(args: {
     return "Local CI command is optional until you opt in to the repo-owned contract.";
   }
 
+  if (field.key === "trustMode") {
+    if (field.state === "configured") {
+      return "Trust mode is explicitly configured.";
+    }
+    if (field.state === "missing") {
+      return "Trust mode needs an explicit first-run setup decision.";
+    }
+    return "Trust mode must be trusted_repo_and_authors or untrusted_or_mixed.";
+  }
+
+  if (field.key === "executionSafetyMode") {
+    if (field.state === "configured") {
+      return "Execution safety mode is explicitly configured.";
+    }
+    if (field.state === "missing") {
+      return "Execution safety mode needs an explicit first-run setup decision.";
+    }
+    return "Execution safety mode must be unsandboxed_autonomous or operator_gated.";
+  }
+
   if (field.state === "configured") {
     return `${field.label} is configured.`;
   }
@@ -265,8 +318,17 @@ function buildConfigFields(args: {
   const { rawConfig, configSummary, workspacePreparationWarning, recommendedWorkspacePreparationCommand } = args;
   const resolvedConfig = configSummary.config;
   const fields = SETUP_FIELD_DEFINITIONS.map(({ key, label, required }) => {
-    const resolvedValue = resolvedConfig !== null ? displayValue(resolvedConfig[key]) : displayValue(rawConfig?.[key]);
-    const state: SetupFieldState = key === "workspacePreparationCommand" && workspacePreparationWarning !== null
+    const rawValue = rawConfig?.[key];
+    const explicitValue =
+      key === "trustMode" || key === "executionSafetyMode"
+        ? readExactSetupStringValue(rawValue)
+        : displayValue(rawValue);
+    const resolvedValue = key === "trustMode" || key === "executionSafetyMode"
+      ? explicitValue
+      : resolvedConfig !== null ? displayValue(resolvedConfig[key]) : explicitValue;
+    const state: SetupFieldState = key === "trustMode" || key === "executionSafetyMode"
+      ? trustPostureFieldState({ key, rawValue })
+        : key === "workspacePreparationCommand" && workspacePreparationWarning !== null
       ? "invalid"
       : configSummary.missingRequiredFields.includes(key)
       ? "missing"
@@ -348,7 +410,17 @@ function buildProviderPosture(
   };
 }
 
-function buildTrustPosture(config: ReturnType<typeof loadConfigSummary>["config"]): SetupReadinessTrustPosture {
+function buildTrustPostureFromRaw(
+  rawConfig: RawConfigDocument,
+  config: ReturnType<typeof loadConfigSummary>["config"],
+): SetupReadinessTrustPosture {
+  const rawTrustMode = rawConfig?.trustMode;
+  const rawExecutionSafetyMode = rawConfig?.executionSafetyMode;
+  const configured =
+    typeof rawTrustMode === "string" &&
+    VALID_TRUST_MODES.has(rawTrustMode as TrustMode) &&
+    typeof rawExecutionSafetyMode === "string" &&
+    VALID_EXECUTION_SAFETY_MODES.has(rawExecutionSafetyMode as ExecutionSafetyMode);
   const trust = summarizeTrustDiagnostics(
     config ?? {
       trustMode: "trusted_repo_and_authors",
@@ -359,10 +431,13 @@ function buildTrustPosture(config: ReturnType<typeof loadConfigSummary>["config"
 
   return {
     ...trust,
+    configured,
     summary:
-      trust.warning === null
+      !configured
+        ? "Trust posture needs an explicit first-run setup decision."
+        : trust.warning === null
         ? "Trust posture avoids the default unsandboxed trusted-input assumption."
-        : "Trusted inputs with unsandboxed autonomous execution.",
+        : "Trusted inputs with unsandboxed autonomous execution. This is appropriate only for a trusted solo-lane repository and trusted GitHub authors.",
   };
 }
 
@@ -687,7 +762,7 @@ export async function diagnoseSetupReadiness(
     blockers,
     hostReadiness,
     providerPosture: buildProviderPosture(configSummary.config),
-    trustPosture: buildTrustPosture(configSummary.config),
+    trustPosture: buildTrustPostureFromRaw(rawConfig, configSummary.config),
     modelRoutingPosture,
     localCiContract: summarizeLocalCiContract(localCiContractConfig),
   };

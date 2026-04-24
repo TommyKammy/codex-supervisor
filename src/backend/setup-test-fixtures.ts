@@ -202,6 +202,30 @@ const DEFAULT_SETUP_FIELD_FIXTURES: Record<SetupReadinessFieldKey, Omit<SetupRea
       valueType: "text",
     },
   },
+  trustMode: {
+    label: "Trust mode",
+    state: "configured",
+    value: "trusted_repo_and_authors",
+    message: "Trust mode is explicitly configured.",
+    required: true,
+    metadata: {
+      source: "config",
+      editable: true,
+      valueType: "trust_mode",
+    },
+  },
+  executionSafetyMode: {
+    label: "Execution safety mode",
+    state: "configured",
+    value: "unsandboxed_autonomous",
+    message: "Execution safety mode is explicitly configured.",
+    required: true,
+    metadata: {
+      source: "config",
+      editable: true,
+      valueType: "execution_safety_mode",
+    },
+  },
   reviewProvider: {
     label: "Review provider",
     state: "missing",
@@ -301,8 +325,11 @@ export function createSetupTrustPosture(
   return {
     trustMode: "trusted_repo_and_authors",
     executionSafetyMode: "unsandboxed_autonomous",
-    warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
-    summary: "Trusted inputs with unsandboxed autonomous execution.",
+    configured: true,
+    warning:
+      "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs; confirm this explicit setup trust posture before starting autonomous execution.",
+    summary:
+      "Trusted inputs with unsandboxed autonomous execution. This is appropriate only for a trusted solo-lane repository and trusted GitHub authors.",
     ...overrides,
   };
 }
