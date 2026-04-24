@@ -470,7 +470,7 @@ test("handlePostTurnPullRequestTransitionsPhase refreshes PR state after marking
   assert.equal(readyCalls, 1);
   assert.equal(localCiCalls, 1);
   assert.equal(snapshotLoads, 2);
-  assert.equal(syncJournalCalls, 2);
+  assert.equal(syncJournalCalls, 3);
 });
 
 test("handlePostTurnPullRequestTransitionsPhase blocks draft-to-ready promotion when configured local CI fails", async () => {
@@ -887,7 +887,7 @@ test("handlePostTurnPullRequestTransitionsPhase reports workspace toolchain fail
     summary:
       "Configured local CI command could not run before marking PR #116 ready because the workspace toolchain is unavailable. Remediation target: workspace environment.",
     ran_at: result.record.latest_local_ci_result?.ran_at ?? "",
-    head_sha: draftPr.headRefOid,
+    head_sha: null,
     execution_mode: "legacy_shell_string",
     command: "npm run ci:local",
     stderr_summary: "tsc is not installed in this workspace",
@@ -5083,6 +5083,8 @@ test("handlePostTurnPullRequestTransitionsPhase blocks ready promotion until a l
   assert.match(result.record.last_failure_context?.details[0] ?? "", /local workspace HEAD/);
   assert.ok((result.record.last_failure_context?.details[0] ?? "").includes(localHead));
   assert.ok((result.record.last_failure_context?.details[0] ?? "").includes(remoteHead));
+  assert.equal(result.record.latest_local_ci_result?.outcome, "passed");
+  assert.equal(result.record.latest_local_ci_result?.head_sha, null);
   assert.equal(result.record.last_observed_host_local_pr_blocker_head_sha, remoteHead);
   assert.equal(
     result.record.last_observed_host_local_pr_blocker_signature,

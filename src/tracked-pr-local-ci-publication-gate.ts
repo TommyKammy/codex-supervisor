@@ -89,12 +89,7 @@ export async function runTrackedPrReadyLocalCiPublicationGate(args: {
     const failureContext = localCiGate.failureContext;
     let record = args.stateStore.touch(args.record, {
       state: "blocked",
-      latest_local_ci_result: localCiGate.latestResult
-        ? {
-            ...localCiGate.latestResult,
-            head_sha: args.pr.headRefOid,
-          }
-        : null,
+      latest_local_ci_result: localCiGate.latestResult ?? null,
       last_error: truncate(failureContext?.summary, 1000),
       last_failure_kind: null,
       last_failure_context: failureContext,
@@ -126,12 +121,7 @@ export async function runTrackedPrReadyLocalCiPublicationGate(args: {
   }
 
   const record = args.stateStore.touch(args.record, {
-    latest_local_ci_result: localCiGate.latestResult
-      ? {
-          ...localCiGate.latestResult,
-          head_sha: args.pr.headRefOid,
-        }
-      : null,
+    latest_local_ci_result: localCiGate.latestResult ?? null,
     last_observed_host_local_pr_blocker_signature: null,
     last_observed_host_local_pr_blocker_head_sha: null,
   });

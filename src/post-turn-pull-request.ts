@@ -708,6 +708,21 @@ export async function handlePostTurnPullRequestTransitionsPhase(
         reviewThreads: refreshed.reviewThreads,
       };
     }
+    if (
+      record.latest_local_ci_result !== null &&
+      record.latest_local_ci_result !== undefined &&
+      record.latest_local_ci_result.head_sha !== refreshed.pr.headRefOid
+    ) {
+      record = stateStore.touch(record, {
+        latest_local_ci_result: {
+          ...record.latest_local_ci_result,
+          head_sha: refreshed.pr.headRefOid,
+        },
+      });
+      state.issues[String(record.issue_number)] = record;
+      await stateStore.save(state);
+      await syncJournal(record);
+    }
     await github.markPullRequestReady(refreshed.pr.number);
   }
 
