@@ -6,7 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
 import { SupervisorConfig } from "./types";
-import { ensureWorkspace } from "./workspace";
+import { ensureWorkspace, listTrackedTopLevelEntries } from "./workspace";
 import { DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH, issueJournalPath, syncIssueJournal } from "./journal";
 
 const execFileAsync = promisify(execFile);
@@ -210,6 +210,24 @@ async function createDivergedDefaultBranchFixture(): Promise<SupervisorConfig> {
 
   return config;
 }
+
+test("listTrackedTopLevelEntries preserves spaces in git path tokens", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-tracked-top-level-"));
+  const repoPath = path.join(root, "repo");
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  await fs.mkdir(repoPath);
+  await git(repoPath, "init", "-b", "main");
+  await git(repoPath, "config", "user.name", "Codex Supervisor");
+  await git(repoPath, "config", "user.email", "codex@example.test");
+  await fs.writeFile(path.join(repoPath, " spaced top-level "), "fixture\n", "utf8");
+  await git(repoPath, "add", " spaced top-level ");
+  await git(repoPath, "commit", "-m", "seed spaced top-level entry");
+
+  assert.deepEqual(await listTrackedTopLevelEntries(repoPath), [" spaced top-level "]);
+});
 
 test("ensureWorkspace reports when a recreated workspace restores from an existing local branch", async () => {
   const config = await createRepositoryFixture();

@@ -40,6 +40,7 @@ export function createConfig(overrides: Partial<SupervisorConfig> = {}): Supervi
     localReviewFollowUpIssueCreationEnabled: false,
     localReviewHighSeverityAction: "retry",
     publishablePathAllowlistMarkers: [],
+    approvedTrackedTopLevelEntries: undefined,
     staleConfiguredBotReviewPolicy: "diagnose_only",
     reviewBotLogins: [],
     humanReviewBlocksMerge: true,

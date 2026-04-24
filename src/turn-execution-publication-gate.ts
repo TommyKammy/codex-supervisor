@@ -29,6 +29,7 @@ import {
   getWorkspaceStatus,
   isCurrentIssueJournalOnlyTrackedSupervisorArtifact,
   listTrackedSupervisorArtifactPaths,
+  listTrackedTopLevelEntries,
   untrackCurrentIssueJournalBeforePublication,
 } from "./core/workspace";
 
@@ -73,6 +74,8 @@ const TRUSTED_DURABLE_ARTIFACT_NORMALIZATION_COMMIT_MESSAGE =
   "Normalize trusted durable artifacts for path hygiene";
 const SUPERVISOR_LOCAL_DURABLE_ARTIFACT_SIGNATURE =
   "supervisor-local-durable-artifacts-tracked-before-publication";
+const TRACKED_TOP_LEVEL_ENTRY_DRIFT_SIGNATURE =
+  "tracked-top-level-entry-drift-before-publication";
 
 function buildSupervisorLocalArtifactFailureContext(
   trackedPaths: string[],
@@ -99,6 +102,62 @@ function buildSupervisorLocalArtifactFailureContext(
   };
 }
 
+function diffTrackedTopLevelEntries(args: {
+  approvedEntries: readonly string[] | undefined;
+  actualEntries: readonly string[];
+}): { unexpected: string[]; missing: string[] } | null {
+  if (!args.approvedEntries) {
+    return null;
+  }
+
+  const approved = new Set(args.approvedEntries);
+  const actual = new Set(args.actualEntries);
+  const unexpected = args.actualEntries.filter((entry) => !approved.has(entry));
+  const missing = args.approvedEntries.filter((entry) => !actual.has(entry));
+
+  if (unexpected.length === 0 && missing.length === 0) {
+    return null;
+  }
+
+  return { unexpected, missing };
+}
+
+function buildTrackedTopLevelEntryDriftFailureContext(args: {
+  issueNumber: number;
+  approvedEntries: readonly string[];
+  actualEntries: readonly string[];
+  unexpected: readonly string[];
+  missing: readonly string[];
+}): FailureContext {
+  const unexpectedSummary =
+    args.unexpected.length > 0
+      ? ` Unexpected: ${args.unexpected.join(", ")}.`
+      : "";
+  const missingSummary =
+    args.missing.length > 0 ? ` Missing: ${args.missing.join(", ")}.` : "";
+
+  return {
+    category: "blocked",
+    summary:
+      `Tracked top-level entries drifted from the configured repository skeleton baseline for issue #${args.issueNumber}.` +
+      unexpectedSummary +
+      missingSummary +
+      " Remove or reconcile the tracked top-level entries, or update approvedTrackedTopLevelEntries when the repository skeleton intentionally changes.",
+    signature: TRACKED_TOP_LEVEL_ENTRY_DRIFT_SIGNATURE,
+    command: "git ls-files -z",
+    details: [
+      `configured approved tracked top-level entries: ${args.approvedEntries.join(", ") || "(none)"}`,
+      `observed tracked top-level entries: ${args.actualEntries.join(", ") || "(none)"}`,
+      ...args.unexpected.map(
+        (entry) => `unexpected tracked top-level entry: ${entry}`,
+      ),
+      ...args.missing.map((entry) => `missing tracked top-level entry: ${entry}`),
+    ],
+    url: null,
+    updated_at: new Date().toISOString(),
+  };
+}
+
 export async function applyCodexTurnPublicationGate(args: {
   config: Pick<
     SupervisorConfig,
@@ -109,6 +168,7 @@ export async function applyCodexTurnPublicationGate(args: {
     | "workspacePreparationCommand"
     | "localCiCommand"
     | "publishablePathAllowlistMarkers"
+    | "approvedTrackedTopLevelEntries"
   >;
   stateStore: Pick<StateStore, "touch" | "save">;
   state: SupervisorStateFile;
@@ -285,6 +345,46 @@ export async function applyCodexTurnPublicationGate(args: {
         return {
           kind: "blocked",
           message: failureContext.summary,
+          record,
+          pr: null,
+          checks: [],
+          reviewThreads: [],
+        };
+      }
+    }
+
+    if (args.config.approvedTrackedTopLevelEntries) {
+      const trackedTopLevelEntries = await listTrackedTopLevelEntries(
+        args.workspacePath,
+      );
+      const trackedTopLevelDrift = diffTrackedTopLevelEntries({
+        approvedEntries: args.config.approvedTrackedTopLevelEntries,
+        actualEntries: trackedTopLevelEntries,
+      });
+      if (trackedTopLevelDrift) {
+        const failureContext = buildTrackedTopLevelEntryDriftFailureContext({
+          issueNumber: record.issue_number,
+          approvedEntries: args.config.approvedTrackedTopLevelEntries,
+          actualEntries: trackedTopLevelEntries,
+          unexpected: trackedTopLevelDrift.unexpected,
+          missing: trackedTopLevelDrift.missing,
+        });
+        record = args.stateStore.touch(record, {
+          state: "blocked",
+          last_error: truncate(failureContext.summary, 1000),
+          last_failure_kind: null,
+          last_failure_context: failureContext,
+          ...args.applyFailureSignature(record, failureContext),
+          blocked_reason: "verification",
+          ...issueDefinitionFreshnessPatch(args.issue),
+        });
+        args.state.issues[String(record.issue_number)] = record;
+        await args.stateStore.save(args.state);
+        await args.syncExecutionMetricsRunSummary(record);
+        await args.syncJournal(record);
+        return {
+          kind: "blocked",
+          message: `Tracked top-level entry guard blocked pull request creation for issue #${record.issue_number}.`,
           record,
           pr: null,
           checks: [],
