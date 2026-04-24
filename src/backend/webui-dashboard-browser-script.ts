@@ -182,6 +182,8 @@ export function renderDashboardBrowserScript(): string {
         trackedHistoryLines: document.getElementById("tracked-history-lines"),
         trackedHistoryToggle: document.getElementById("tracked-history-toggle"),
         doctorOverall: document.getElementById("doctor-overall"),
+        doctorDecision: document.getElementById("doctor-decision"),
+        doctorTiers: document.getElementById("doctor-tiers"),
         doctorChecks: document.getElementById("doctor-checks"),
         issueSummary: document.getElementById("issue-summary"),
         issueMetrics: document.getElementById("issue-metrics"),
@@ -946,6 +948,41 @@ export function renderDashboardBrowserScript(): string {
         if (elements.doctorOverall) {
           setText(elements.doctorOverall, doctor.overallStatus);
           elements.doctorOverall.className = "metric " + metricClass(doctor.overallStatus);
+        }
+        if (elements.doctorDecision) {
+          const decision = doctor.decisionSummary && typeof doctor.decisionSummary === "object"
+            ? doctor.decisionSummary
+            : null;
+          const action = typeof decision?.action === "string" ? decision.action : null;
+          const summaryText = typeof decision?.summary === "string" ? decision.summary : "Decision summary is unavailable.";
+          const decisionTone = action === "stop"
+            ? "fail"
+            : action === "maintenance"
+              ? "warn"
+              : action === "continue"
+                ? "pass"
+                : "";
+          setText(elements.doctorDecision, (action || "unknown") + ": " + summaryText);
+          elements.doctorDecision.className = ["status-line", metricClass(decisionTone)].filter(Boolean).join(" ");
+        }
+        if (elements.doctorTiers) {
+          elements.doctorTiers.innerHTML = "";
+          const tiers = doctor.diagnosticTiers && typeof doctor.diagnosticTiers === "object"
+            ? doctor.diagnosticTiers
+            : null;
+          if (tiers) {
+            for (const tierName of ["active_risk", "maintenance", "informational"]) {
+              const entries = Array.isArray(tiers[tierName]) ? tiers[tierName] : [];
+              const tone = entries.length > 0
+                ? tierName === "active_risk"
+                  ? "fail"
+                  : tierName === "maintenance"
+                    ? "warn"
+                    : "info"
+                : "info";
+              appendChip(elements.doctorTiers, tierName + " " + entries.length, tone);
+            }
+          }
         }
         const checks = doctor.checks || [];
         if (!elements.doctorChecks) {

@@ -441,6 +441,15 @@ export function createDashboardStatusFixture(args: {
 export function createDashboardDoctorFixture() {
   return {
     overallStatus: "pass",
+    decisionSummary: {
+      action: "continue",
+      summary: "No active risk or maintenance blocker was detected; continue normal supervisor operation.",
+    },
+    diagnosticTiers: {
+      active_risk: [],
+      maintenance: [],
+      informational: [],
+    },
     checks: [{ name: "github_auth", status: "pass", summary: "GitHub auth ok." }],
   };
 }

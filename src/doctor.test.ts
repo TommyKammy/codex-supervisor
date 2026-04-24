@@ -1298,6 +1298,54 @@ test("renderDoctorReport surfaces merge-critical recheck cadence visibility", ()
   assert.match(report, /doctor_local_ci configured=true source=config command=npm run ci:local summary=Repo-owned local CI contract is configured\./);
 });
 
+test("renderDoctorReport starts with decision summary and tiers active risks, maintenance, and informational details", () => {
+  const report = renderDoctorReport({
+    overallStatus: "fail",
+    trustDiagnostics: {
+      trustMode: "trusted_repo_and_authors",
+      executionSafetyMode: "unsandboxed_autonomous",
+      warning: null,
+      configWarning: null,
+    },
+    checks: [
+      {
+        name: "github_auth",
+        status: "fail",
+        summary: "GitHub CLI authentication is unavailable.",
+        details: ["Run `gh auth status --hostname github.com` to inspect the current login state."],
+      },
+      {
+        name: "worktrees",
+        status: "warn",
+        summary: "orphaned prune candidates=1 eligible=1 locked=0 recent=0 unsafe_target=0",
+        details: [
+          "issue_host_paths issue=#177 workspace=auto_repaired journal_path=auto_repaired guidance=no_manual_action_required",
+          "orphan_prune_candidate issue_number=201 eligibility=eligible workspace=<workspace-root>/issue-201 branch=codex/issue-201 modified_at=2026-03-01T00:00:00.000Z reason=done_state_missing_from_supervisor_state",
+        ],
+      },
+    ],
+    cadenceDiagnostics: {
+      pollIntervalSeconds: 120,
+      mergeCriticalRecheckSeconds: null,
+      mergeCriticalEffectiveSeconds: 120,
+      mergeCriticalRecheckEnabled: false,
+    },
+    candidateDiscoverySummary: "doctor_candidate_discovery fetch_window=100 strategy=paginated",
+    candidateDiscoveryWarning: null,
+  } as Awaited<ReturnType<typeof diagnoseSupervisorHost>>);
+
+  const lines = report.split("\n");
+  assert.match(lines[0], /^doctor_decision action=stop summary=/);
+  assert.equal(lines[1], "doctor_tier tier=active_risk count=2");
+  assert.equal(lines[4], "doctor_tier tier=maintenance count=2");
+  assert.equal(lines[7], "doctor_tier tier=informational count=1");
+  assert.match(report, /^doctor_tier_item tier=active_risk source=github_auth detail=GitHub CLI authentication is unavailable\.$/m);
+  assert.match(report, /^doctor_tier_item tier=maintenance source=worktrees detail=orphaned prune candidates=1 eligible=1 locked=0 recent=0 unsafe_target=0$/m);
+  assert.match(report, /^doctor_tier_item tier=informational source=worktrees detail=issue_host_paths issue=#177 workspace=auto_repaired journal_path=auto_repaired guidance=no_manual_action_required$/m);
+  assert.match(report, /^doctor_check name=github_auth status=fail summary=GitHub CLI authentication is unavailable\.$/m);
+  assert.match(report, /^doctor_detail name=worktrees detail=orphan_prune_candidate issue_number=201 eligibility=eligible /m);
+});
+
 test("renderDoctorReport surfaces absent workspace preparation posture when no repo-owned contract exists", () => {
   const report = renderDoctorReport({
     overallStatus: "pass",

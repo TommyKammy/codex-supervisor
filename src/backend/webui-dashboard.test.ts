@@ -144,6 +144,7 @@ test("dashboard page frames a summary-first shell and a collapsible details area
   );
   assert.match(html, /id="loop-state-summary"/u);
   assert.match(html, /id="selected-issue-summary-metrics"[\s\S]*id="selected-issue-summary-notes"/u);
+  assert.match(html, /id="doctor-decision"[\s\S]*id="doctor-tiers"[\s\S]*id="doctor-checks"/u);
   assert.match(
     html,
     /<details id="details-disclosure" class="details-disclosure">[\s\S]*<div class="details-body">[\s\S]*<h2 id="overview-heading">Advanced queue context<\/h2>[\s\S]*<div id="overview-grid" class="overview-grid" aria-label="overview" data-panel-grid="overview">/u,
@@ -314,6 +315,35 @@ test("dashboard derives the selected issue from typed status fields without pars
   assert.equal(issueNumberInput.value, "42");
   assert.match(statusWorkflow.textContent, /Execute/u);
   assert.match(statusWorkflow.textContent, /#42/u);
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
+test("dashboard does not render missing doctor decision or tier metadata as healthy", async () => {
+  const harness = createDashboardHarness([
+    ...dashboardServer.page({
+      doctor: jsonResponse({
+        overallStatus: "fail",
+        checks: [{ name: "github_auth", status: "fail", summary: "GitHub auth failed." }],
+      }),
+    }),
+  ]);
+  await harness.flush();
+
+  const doctorOverall = harness.document.getElementById("doctor-overall");
+  const doctorDecision = harness.document.getElementById("doctor-decision");
+  const doctorTiers = harness.document.getElementById("doctor-tiers");
+  const doctorChecks = harness.document.getElementById("doctor-checks");
+  assert.ok(doctorOverall);
+  assert.ok(doctorDecision);
+  assert.ok(doctorTiers);
+  assert.ok(doctorChecks);
+
+  assert.equal(doctorOverall.className, "metric fail");
+  assert.equal(doctorDecision.textContent, "unknown: Decision summary is unavailable.");
+  assert.equal(doctorDecision.className, "status-line");
+  assert.equal(doctorTiers.children.length, 0);
+  assert.match(doctorChecks.textContent, /github_auth GitHub auth failed\./u);
+  assert.match(doctorChecks.textContent, /fail/u);
   assert.equal(harness.remainingFetches.length, 0);
 });
 

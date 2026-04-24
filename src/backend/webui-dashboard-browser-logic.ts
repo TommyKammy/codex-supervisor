@@ -121,9 +121,21 @@ export interface DashboardDoctorCheckLike {
   summary?: string | null;
 }
 
+export interface DashboardDoctorDecisionLike {
+  action?: string | null;
+  summary?: string | null;
+}
+
+export interface DashboardDoctorTierItemLike {
+  source?: string | null;
+  detail?: string | null;
+}
+
 export interface DashboardDoctorLike {
   overallStatus?: string | null;
   checks?: DashboardDoctorCheckLike[] | null;
+  decisionSummary?: DashboardDoctorDecisionLike | null;
+  diagnosticTiers?: Record<string, DashboardDoctorTierItemLike[] | null | undefined> | null;
 }
 
 export interface DashboardIssueShortcut {
@@ -720,6 +732,7 @@ export function buildAttentionItems(args: {
   const runnableIssues = Array.isArray(args.status?.runnableIssues) ? args.status.runnableIssues : [];
   const inventoryStatus = args.status?.inventoryStatus ?? null;
   const doctorChecks = Array.isArray(args.doctor?.checks) ? args.doctor.checks : [];
+  const doctorDecision = args.doctor?.decisionSummary ?? null;
   const statusWarning = args.status?.warning?.message ?? null;
   const reconciliationWarning = args.status?.reconciliationWarning ?? null;
   const loopOffTrackedWorkBlocker = describeLoopOffTrackedWorkBlocker(args.status);
@@ -762,8 +775,17 @@ export function buildAttentionItems(args: {
     items.push(String(runnableIssues.length) + " runnable issue(s) are available.");
   }
 
-  for (const check of failingChecks.slice(0, 3)) {
-    items.push((check.name || "check") + ": " + (check.summary || check.status || "needs attention"));
+  if (
+    doctorDecision &&
+    (doctorDecision.action === "stop" || doctorDecision.action === "maintenance") &&
+    typeof doctorDecision.summary === "string" &&
+    doctorDecision.summary.trim().length > 0
+  ) {
+    items.push("Doctor decision: " + doctorDecision.summary);
+  } else {
+    for (const check of failingChecks.slice(0, 3)) {
+      items.push((check.name || "check") + ": " + (check.summary || check.status || "needs attention"));
+    }
   }
 
   if (statusWarning) {

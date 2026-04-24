@@ -41,6 +41,8 @@ import { buildTrustAndConfigWarnings, buildWarning, renderDoctorWarningLine } fr
 import { buildTrackedMergedButOpenBacklogDiagnosticLine } from "./reconciliation-backlog-diagnostics";
 
 export type DoctorCheckStatus = "pass" | "warn" | "fail";
+export type DoctorDecisionAction = "stop" | "maintenance" | "continue";
+export type DoctorDiagnosticTier = "active_risk" | "maintenance" | "informational";
 
 export interface DoctorCheck {
   name: "github_auth" | "codex_cli" | "state_file" | "worktrees";
@@ -49,9 +51,23 @@ export interface DoctorCheck {
   details: string[];
 }
 
+export interface DoctorDecisionSummary {
+  action: DoctorDecisionAction;
+  summary: string;
+}
+
+export interface DoctorTierItem {
+  source: string;
+  detail: string;
+}
+
+export type DoctorTieredDiagnostics = Record<DoctorDiagnosticTier, DoctorTierItem[]>;
+
 export interface DoctorDiagnostics {
   overallStatus: DoctorCheckStatus;
   checks: DoctorCheck[];
+  decisionSummary?: DoctorDecisionSummary;
+  diagnosticTiers?: DoctorTieredDiagnostics;
   codexModelPolicyLines?: string[];
   reconciliationBacklogLine?: string | null;
   trustDiagnostics: TrustDiagnosticsSummary;
@@ -144,6 +160,86 @@ function overallStatusForChecks(checks: DoctorCheck[]): DoctorCheckStatus {
   }
 
   return "pass";
+}
+
+function emptyDoctorDiagnosticTiers(): DoctorTieredDiagnostics {
+  return {
+    active_risk: [],
+    maintenance: [],
+    informational: [],
+  };
+}
+
+function isInformationalDoctorDetail(detail: string): boolean {
+  return /^issue_host_paths\b/.test(detail) ||
+    /^issue_journal_state\b/.test(detail) ||
+    /\bguidance=no_manual_action_required\b/.test(detail);
+}
+
+function buildDoctorDiagnosticTiers(checks: DoctorCheck[]): DoctorTieredDiagnostics {
+  const tiers = emptyDoctorDiagnosticTiers();
+
+  for (const check of checks) {
+    if (check.status === "fail") {
+      tiers.active_risk.push({ source: check.name, detail: check.summary });
+      for (const detail of check.details) {
+        tiers.active_risk.push({ source: check.name, detail });
+      }
+      continue;
+    }
+
+    if (check.status === "warn") {
+      tiers.maintenance.push({ source: check.name, detail: check.summary });
+      for (const detail of check.details) {
+        if (isInformationalDoctorDetail(detail)) {
+          tiers.informational.push({ source: check.name, detail });
+        } else {
+          tiers.maintenance.push({ source: check.name, detail });
+        }
+      }
+      continue;
+    }
+
+    for (const detail of check.details) {
+      tiers.informational.push({ source: check.name, detail });
+    }
+  }
+
+  return tiers;
+}
+
+function buildDoctorDecisionSummary(
+  overallStatus: DoctorCheckStatus,
+  diagnosticTiers: DoctorTieredDiagnostics,
+): DoctorDecisionSummary {
+  if (overallStatus === "fail" || diagnosticTiers.active_risk.length > 0) {
+    return {
+      action: "stop",
+      summary: `${diagnosticTiers.active_risk.length} active risk(s) require operator attention before continuing.`,
+    };
+  }
+
+  if (overallStatus === "warn" || diagnosticTiers.maintenance.length > 0) {
+    return {
+      action: "maintenance",
+      summary: `${diagnosticTiers.maintenance.length} maintenance item(s) should be handled, but no stop-now risk was detected.`,
+    };
+  }
+
+  return {
+    action: "continue",
+    summary: "No active risk or maintenance blocker was detected; continue normal supervisor operation.",
+  };
+}
+
+function buildDoctorDecisionSurface(
+  diagnostics: Pick<DoctorDiagnostics, "overallStatus" | "checks" | "decisionSummary" | "diagnosticTiers">,
+): { decisionSummary: DoctorDecisionSummary; diagnosticTiers: DoctorTieredDiagnostics } {
+  const diagnosticTiers = diagnostics.diagnosticTiers ?? buildDoctorDiagnosticTiers(diagnostics.checks);
+  const decisionSummary = diagnostics.decisionSummary ??
+    buildDoctorDecisionSummary(diagnostics.overallStatus, diagnosticTiers);
+
+  return { decisionSummary, diagnosticTiers };
 }
 
 function withReconciliationBacklogStateReadFailure(
@@ -713,9 +809,14 @@ export async function diagnoseSupervisorHost(args: DiagnoseSupervisorHostArgs): 
     finalChecks = withReconciliationBacklogStateReadFailure(checks, args.config, error);
   }
 
+  const overallStatus = overallStatusForChecks(finalChecks);
+  const diagnosticTiers = buildDoctorDiagnosticTiers(finalChecks);
+
   return {
-    overallStatus: overallStatusForChecks(finalChecks),
+    overallStatus,
     checks: finalChecks,
+    decisionSummary: buildDoctorDecisionSummary(overallStatus, diagnosticTiers),
+    diagnosticTiers,
     codexModelPolicyLines,
     reconciliationBacklogLine: state === null
       ? null
@@ -788,6 +889,7 @@ export async function diagnoseBootstrapReadiness(
 }
 
 export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
+  const decisionSurface = buildDoctorDecisionSurface(diagnostics);
   const workspacePreparationContract =
     diagnostics.workspacePreparationContract
     ?? summarizeWorkspacePreparationContract({ workspacePreparationCommand: undefined, localCiCommand: undefined });
@@ -815,6 +917,13 @@ export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
     .filter((line) => line.trim().length > 0);
 
   return [
+    `doctor_decision action=${decisionSurface.decisionSummary.action} summary=${sanitizeDoctorValue(decisionSurface.decisionSummary.summary)}`,
+    ...(["active_risk", "maintenance", "informational"] as const).flatMap((tier) => [
+      `doctor_tier tier=${tier} count=${decisionSurface.diagnosticTiers[tier].length}`,
+      ...decisionSurface.diagnosticTiers[tier].map((item) =>
+        `doctor_tier_item tier=${tier} source=${item.source} detail=${sanitizeDoctorValue(item.detail)}`
+      ),
+    ]),
     `doctor overall=${diagnostics.overallStatus} checks=${diagnostics.checks.length}`,
     `doctor_posture trust_mode=${diagnostics.trustDiagnostics.trustMode} execution_safety_mode=${diagnostics.trustDiagnostics.executionSafetyMode}`,
     `doctor_cadence poll_interval_seconds=${diagnostics.cadenceDiagnostics.pollIntervalSeconds} merge_critical_recheck_seconds=${mergeCriticalRecheckSeconds} merge_critical_effective_seconds=${diagnostics.cadenceDiagnostics.mergeCriticalEffectiveSeconds} enabled=${diagnostics.cadenceDiagnostics.mergeCriticalRecheckEnabled}`,
