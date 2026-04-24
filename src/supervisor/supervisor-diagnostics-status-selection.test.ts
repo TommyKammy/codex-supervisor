@@ -1320,8 +1320,12 @@ test("acquireLoopRuntimeLock fails closed on ambiguous-owner loop runtime locks 
   assert.deepEqual(report.loopRuntime, {
     state: "unknown",
     hostMode: "unknown",
+    markerPath: lockPath,
+    configPath: null,
+    stateFile: fixture.config.stateFile,
     pid: 999_999,
     startedAt: "2026-03-20T00:00:00.000Z",
+    ownershipConfidence: "ambiguous_owner",
     detail: "supervisor-loop-runtime",
   });
 });
