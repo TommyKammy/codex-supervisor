@@ -128,6 +128,7 @@ test("dedicated WebUI launcher assets enable managed restart for launcher-backed
   ]);
 
   assert.match(runWeb, /dist\/index\.js" web --config/u);
+  assertShellExport(runWeb, "CODEX_SUPERVISOR_LAUNCHER", "webui");
   assertShellExport(runWeb, "CODEX_SUPERVISOR_MANAGED_RESTART", "1");
   assertShellExport(runWeb, "CODEX_SUPERVISOR_MANAGED_RESTART_LAUNCHER", "custom");
 
@@ -161,6 +162,7 @@ test("existing loop launcher assets stay scoped to loop mode without managed res
   assert.doesNotMatch(runLoop, /^export CODEX_SUPERVISOR_MANAGED_RESTART(?:_LAUNCHER)?=/mu);
   assert.doesNotMatch(launchdTemplate, /<key>CODEX_SUPERVISOR_MANAGED_RESTART(?:_LAUNCHER)?<\/key>/u);
   assert.doesNotMatch(systemdTemplate, /^Environment=CODEX_SUPERVISOR_MANAGED_RESTART(?:_LAUNCHER)?=/mu);
+  assertSystemdEnvironmentVariable(systemdTemplate, "CODEX_SUPERVISOR_LAUNCHER", "systemd");
 });
 
 test("macOS tmux loop launcher assets define a single-session contract with explicit launcher metadata", async () => {

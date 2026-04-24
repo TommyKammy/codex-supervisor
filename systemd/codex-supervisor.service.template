@@ -12,6 +12,7 @@ RestartSec=5
 Environment=PATH=__PATH__
 Environment=NODE_BIN=__NODE__
 Environment=NPM_BIN=__NPM__
+Environment=CODEX_SUPERVISOR_LAUNCHER=systemd
 Environment=npm_config_yes=true
 Environment=CI=1
 [Install]

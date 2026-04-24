@@ -946,6 +946,7 @@ export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
   const loopRuntime = diagnostics.loopRuntime ?? {
     state: "off" as const,
     hostMode: "unknown" as const,
+    runMode: "one_shot_manual" as const,
     markerPath: "none",
     configPath: null,
     stateFile: "none",
@@ -981,7 +982,7 @@ export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
     diagnostics.candidateDiscoverySummary,
     ...codexModelPolicyLines,
     ...(diagnostics.reconciliationBacklogLine ? [diagnostics.reconciliationBacklogLine] : []),
-    `doctor_loop_runtime state=${loopRuntime.state} host_mode=${loopRuntime.hostMode} marker_path=${sanitizeDoctorValue(loopRuntimeMarkerPath)} config_path=${sanitizeDoctorValue(loopRuntimeConfigPath ?? "none")} state_file=${sanitizeDoctorValue(loopRuntimeStateFile)} pid=${loopRuntime.pid === null ? "none" : String(loopRuntime.pid)} started_at=${loopRuntime.startedAt ?? "none"} ownership_confidence=${loopRuntimeOwnershipConfidence} detail=${sanitizeDoctorValue(loopRuntime.detail ?? "none")}`,
+    `doctor_loop_runtime state=${loopRuntime.state} host_mode=${loopRuntime.hostMode} run_mode=${sanitizeDoctorValue(loopRuntime.runMode ?? "unknown")} marker_path=${sanitizeDoctorValue(loopRuntimeMarkerPath)} config_path=${sanitizeDoctorValue(loopRuntimeConfigPath ?? "none")} state_file=${sanitizeDoctorValue(loopRuntimeStateFile)} pid=${loopRuntime.pid === null ? "none" : String(loopRuntime.pid)} started_at=${loopRuntime.startedAt ?? "none"} ownership_confidence=${loopRuntimeOwnershipConfidence} detail=${sanitizeDoctorValue(loopRuntime.detail ?? "none")}`,
     ...(duplicateLoopDiagnosticLine ? [duplicateLoopDiagnosticLine] : []),
     ...(loopRuntimeRecoveryLine ? [loopRuntimeRecoveryLine] : []),
     ...(diagnostics.orphanPolicySummary ? [diagnostics.orphanPolicySummary] : []),

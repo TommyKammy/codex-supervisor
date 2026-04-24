@@ -468,7 +468,7 @@ test("renderSupervisorStatusDto sanitizes loop runtime host and timestamp tokens
 
   assert.match(
     status,
-    /^loop_runtime state=running host_mode=direct\\nlegacy marker_path=\/tmp\/locks\/supervisor\/loop-runtime\.lock\\nlegacy config_path=\/tmp\/supervisor\.config\.json\\nlegacy state_file=\/tmp\/state\.json\\nlegacy pid=4242 started_at=2026-03-27T00:15:00.000Z\\nlegacy ownership_confidence=duplicate_suspected detail=supervisor-loop-runtime$/m,
+    /^loop_runtime state=running host_mode=direct\\nlegacy run_mode=unknown marker_path=\/tmp\/locks\/supervisor\/loop-runtime\.lock\\nlegacy config_path=\/tmp\/supervisor\.config\.json\\nlegacy state_file=\/tmp\/state\.json\\nlegacy pid=4242 started_at=2026-03-27T00:15:00.000Z\\nlegacy ownership_confidence=duplicate_suspected detail=supervisor-loop-runtime$/m,
   );
   assert.match(
     status,
@@ -1123,6 +1123,7 @@ test("statusReport exposes typed loop runtime state from the host runtime marker
   assert.deepEqual(report.loopRuntime, {
     state: "running",
     hostMode: "unknown",
+    runMode: "unknown",
     markerPath: report.loopRuntime?.markerPath ?? "",
     configPath: null,
     stateFile: fixture.config.stateFile,
@@ -1134,7 +1135,7 @@ test("statusReport exposes typed loop runtime state from the host runtime marker
   assert.match(report.loopRuntime?.startedAt ?? "", /^\d{4}-\d{2}-\d{2}T/u);
 
   const status = await supervisor.status();
-  assert.match(status, /^loop_runtime state=running host_mode=unknown marker_path=.*loop-runtime\.lock config_path=none state_file=.*state\.json pid=\d+ started_at=\d{4}-\d{2}-\d{2}T.* ownership_confidence=live_lock detail=supervisor-loop-runtime$/m);
+  assert.match(status, /^loop_runtime state=running host_mode=unknown run_mode=unknown marker_path=.*loop-runtime\.lock config_path=none state_file=.*state\.json pid=\d+ started_at=\d{4}-\d{2}-\d{2}T.* ownership_confidence=live_lock detail=supervisor-loop-runtime$/m);
 });
 
 test("status surfaces loop-off as a blocker when tracked work is still active", async () => {
@@ -1328,6 +1329,7 @@ test("acquireLoopRuntimeLock fails closed on ambiguous-owner loop runtime locks 
   assert.deepEqual(report.loopRuntime, {
     state: "unknown",
     hostMode: "unknown",
+    runMode: "unknown",
     markerPath: lockPath,
     configPath: null,
     stateFile: fixture.config.stateFile,

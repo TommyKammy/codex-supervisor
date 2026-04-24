@@ -523,6 +523,7 @@ test("renderDoctorReport includes loop host diagnostics and macOS tmux drift war
     loopRuntime: {
       state: "running",
       hostMode: "direct",
+      runMode: "unknown",
       markerPath: "/tmp/locks/supervisor/loop-runtime.lock",
       configPath: "/tmp/supervisor.config.json",
       stateFile: "/tmp/state.json",
@@ -549,7 +550,7 @@ test("renderDoctorReport includes loop host diagnostics and macOS tmux drift war
 
   assert.match(
     report,
-    /doctor_loop_runtime state=running host_mode=direct marker_path=\/tmp\/locks\/supervisor\/loop-runtime\.lock config_path=\/tmp\/supervisor\.config\.json state_file=\/tmp\/state\.json pid=4242 started_at=2026-03-25T00:00:00.000Z ownership_confidence=duplicate_suspected detail=supervisor-loop-runtime/,
+    /doctor_loop_runtime state=running host_mode=direct run_mode=unknown marker_path=\/tmp\/locks\/supervisor\/loop-runtime\.lock config_path=\/tmp\/supervisor\.config\.json state_file=\/tmp\/state\.json pid=4242 started_at=2026-03-25T00:00:00.000Z ownership_confidence=duplicate_suspected detail=supervisor-loop-runtime/,
   );
   assert.match(
     report,
@@ -563,6 +564,43 @@ test("renderDoctorReport includes loop host diagnostics and macOS tmux drift war
     report,
     /doctor_warning kind=loop_host detail=macOS loop runtime is active outside tmux\. Restart it with \.\/scripts\/start-loop-tmux\.sh and stop unsupported direct hosts before relying on steady-state automation\./,
   );
+});
+
+test("renderDoctorReport sanitizes loop runtime run mode values", () => {
+  const report = renderDoctorReport({
+    overallStatus: "pass",
+    checks: [],
+    cadenceDiagnostics: {
+      pollIntervalSeconds: 120,
+      mergeCriticalRecheckSeconds: null,
+      mergeCriticalEffectiveSeconds: 120,
+      mergeCriticalRecheckEnabled: false,
+    },
+    candidateDiscoverySummary: "doctor_candidate_discovery fetch_window=100 strategy=paginated",
+    candidateDiscoveryWarning: null,
+    trustDiagnostics: {
+      trustMode: "untrusted_or_mixed",
+      executionSafetyMode: "operator_gated",
+      warning: null,
+      configWarning: null,
+    },
+    loopRuntime: {
+      state: "running",
+      hostMode: "unknown",
+      runMode: "unknown\nmutated=line" as never,
+      markerPath: "/tmp/locks/supervisor/loop-runtime.lock",
+      configPath: "/tmp/supervisor.config.json",
+      stateFile: "/tmp/state.json",
+      pid: 4242,
+      startedAt: "2026-03-25T00:00:00.000Z",
+      ownershipConfidence: "live_lock",
+      detail: "supervisor-loop-runtime",
+    },
+    loopHostWarning: null,
+  });
+
+  assert.match(report, /doctor_loop_runtime .* run_mode=unknown\\nmutated=line /);
+  assert.doesNotMatch(report, /\nmutated=line/);
 });
 
 test("renderDoctorReport sanitizes multiline Codex policy lines", () => {

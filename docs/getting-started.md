@@ -413,6 +413,15 @@ Host-specific loop guidance:
 - If you want a launcher-managed background loop on Linux, use `./scripts/install-systemd.sh`.
 - For a launcher-managed WebUI on macOS, use `./scripts/install-launchd-web.sh`. That launchd path is still supported because it hosts the WebUI entrypoint rather than the loop.
 
+Supported run-mode vocabulary:
+
+- `one_shot_manual`: a manually invoked CLI command such as `run-once`, `status`, or `doctor`; it does not own a background loop and has no safe automatic restart action.
+- `macos_tmux_loop`: the macOS loop hosted by `./scripts/start-loop-tmux.sh`; safe recovery is to stop it with `./scripts/stop-loop-tmux.sh`, inspect any ambiguous direct loop PIDs reported by diagnostics, and restart with the same `CODEX_SUPERVISOR_CONFIG`.
+- `linux_systemd_loop`: the Linux user service installed by `./scripts/install-systemd.sh`; safe recovery is through `systemctl --user status|restart codex-supervisor.service` after confirming `status` or `doctor` points at the intended config.
+- `webui_attached`: a local WebUI session launched through `node dist/index.js web --config <supervisor-config-path>` or the dedicated WebUI launchers; it exposes operator actions but does not own or restart the background loop unless the WebUI launcher explicitly reports managed restart capability.
+
+`status` and `doctor` report `run_mode=...` next to the loop runtime marker fields when the mode can be inferred from launcher metadata. If diagnostics show `run_mode=unknown`, `ownership_confidence=ambiguous_owner`, or duplicate loop processes, inspect the marker and listed PIDs instead of deleting marker files or killing processes automatically.
+
 The WebUI uses the same `SupervisorService` boundary as the CLI. It reads the same typed status, doctor, explain, and issue-lint data, and it only exposes the current safe command set: `run-once`, `requeue`, `prune-orphaned-workspaces`, and `reset-corrupt-json-state`.
 
 In normal operation, the supervisor will:
