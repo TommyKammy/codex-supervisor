@@ -1,6 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import {
+  CONFIG_FIELD_POSTURE_METADATA,
+  CONFIG_FIELD_POSTURE_TIERS,
+  type ConfigFieldName,
+  type ConfigFieldPostureMetadata,
+  type ConfigFieldPostureTier,
   displayLocalCiCommand,
   findRepoOwnedWorkspacePreparationCandidate,
   loadConfigSummary,
@@ -33,6 +38,7 @@ export type SetupReadinessFieldKey =
   | "reviewProvider";
 export type SetupReadinessConfigFieldKey =
   | SetupReadinessFieldKey
+  | ConfigFieldName
   | "codexModelStrategy"
   | "codexModel"
   | "boundedRepairModelStrategy"
@@ -65,6 +71,24 @@ export interface SetupReadinessField {
   message: string;
   required: boolean;
   metadata: SetupReadinessFieldMetadata;
+}
+
+export interface SetupReadinessConfigPostureField {
+  key: ConfigFieldName;
+  label: string;
+  state: SetupFieldState;
+  value: string | null;
+  message: string;
+  required: boolean;
+  metadata: SetupReadinessFieldMetadata;
+  posture: ConfigFieldPostureMetadata;
+}
+
+export interface SetupReadinessConfigPostureGroup {
+  tier: ConfigFieldPostureTier;
+  label: string;
+  summary: string;
+  fields: SetupReadinessConfigPostureField[];
 }
 
 export type SetupReadinessRemediationKind =
@@ -135,6 +159,7 @@ export interface SetupReadinessReport {
   overallStatus: SetupReadinessOverallStatus;
   configPath: string;
   fields: SetupReadinessField[];
+  configPostureGroups?: SetupReadinessConfigPostureGroup[];
   blockers: SetupReadinessBlocker[];
   hostReadiness: SetupReadinessHostSummary;
   providerPosture: SetupReadinessProviderPosture;
@@ -186,6 +211,19 @@ const SETUP_FIELD_METADATA: Record<SetupReadinessFieldKey, SetupReadinessFieldMe
 
 const VALID_TRUST_MODES = new Set<TrustMode>(["trusted_repo_and_authors", "untrusted_or_mixed"]);
 const VALID_EXECUTION_SAFETY_MODES = new Set<ExecutionSafetyMode>(["unsandboxed_autonomous", "operator_gated"]);
+const SETUP_POSTURE_GROUP_LABELS: Record<ConfigFieldPostureTier, string> = {
+  required: "Required setup decisions",
+  recommended: "Recommended setup contracts",
+  advanced: "Advanced settings",
+  dangerous_explicit_opt_in: "Dangerous explicit opt-in settings",
+};
+const SETUP_POSTURE_GROUP_SUMMARIES: Record<ConfigFieldPostureTier, string> = {
+  required: "Missing or invalid required setup decisions are first-run blockers.",
+  recommended: "Recommended fields improve repeatability without blocking first-run setup.",
+  advanced: "Advanced settings stay separate from first-run work until explicitly reviewed.",
+  dangerous_explicit_opt_in:
+    "Dangerous explicit opt-in settings are never presented as routine defaults or required next steps.",
+};
 
 function readRawConfigDocument(configPath: string): RawConfigDocument {
   if (!fs.existsSync(configPath)) {
@@ -215,6 +253,36 @@ function displayValue(value: unknown): string | null {
     return rendered.length > 0 ? rendered : null;
   }
 
+  return null;
+}
+
+function displayConfigFieldLabel(field: string): string {
+  return field
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/\b([a-z])/g, (match) => match.toUpperCase());
+}
+
+function displayPostureConfigValue(value: unknown): string | null {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    const rendered = value
+      .map((entry) => displayPostureConfigValue(entry))
+      .filter((entry): entry is string => entry !== null)
+      .join(", ");
+    return rendered.length > 0 ? rendered : null;
+  }
+  if (typeof value === "object") {
+    return JSON.stringify(value);
+  }
   return null;
 }
 
@@ -380,6 +448,76 @@ function buildConfigFields(args: {
           : "Configure at least one review provider before first-run setup is complete.",
     },
   ];
+}
+
+function buildMissingPostureMessage(posture: ConfigFieldPostureMetadata): string {
+  if (posture.tier === "required") {
+    return posture.requirementScope === "first_run_setup"
+      ? `${displayConfigFieldLabel(posture.field)} needs an explicit first-run setup decision.`
+      : `${displayConfigFieldLabel(posture.field)} is required before first-run setup is complete.`;
+  }
+  if (posture.tier === "recommended") {
+    return `${displayConfigFieldLabel(posture.field)} is recommended, but setup can continue until you opt in.`;
+  }
+  if (posture.tier === "advanced") {
+    return "Advanced setting is unset; inherited defaults remain in effect.";
+  }
+  return "Dangerous explicit opt-in setting is unset; conservative behavior remains in effect.";
+}
+
+function metadataForPostureField(field: ConfigFieldName): SetupReadinessFieldMetadata {
+  const existing = SETUP_FIELD_METADATA[field as SetupReadinessFieldKey];
+  return existing ?? { source: "config", editable: true, valueType: "text" };
+}
+
+function buildConfigPostureGroups(args: {
+  rawConfig: RawConfigDocument;
+  configSummary: ReturnType<typeof loadConfigSummary>;
+  fields: SetupReadinessField[];
+}): SetupReadinessConfigPostureGroup[] {
+  const fieldByKey = new Map(args.fields.map((field) => [field.key, field]));
+  const resolvedConfig = args.configSummary.config;
+  const rawConfig = args.rawConfig ?? {};
+  const postureFields = Object.values(CONFIG_FIELD_POSTURE_METADATA)
+    .filter((entry): entry is ConfigFieldPostureMetadata => Boolean(entry))
+    .map((posture): SetupReadinessConfigPostureField => {
+      const existing = fieldByKey.get(posture.field as SetupReadinessFieldKey);
+      if (existing) {
+        return {
+          ...existing,
+          key: posture.field,
+          posture,
+        };
+      }
+
+      const hasRawValue = Object.prototype.hasOwnProperty.call(rawConfig, posture.field);
+      const value = displayPostureConfigValue(
+        hasRawValue
+          ? rawConfig[posture.field]
+          : posture.tier === "required"
+            ? resolvedConfig?.[posture.field]
+            : undefined,
+      );
+      return {
+        key: posture.field,
+        label: displayConfigFieldLabel(posture.field),
+        state: (value === null ? "missing" : "configured") as SetupFieldState,
+        value,
+        message: value === null
+          ? buildMissingPostureMessage(posture)
+          : `${displayConfigFieldLabel(posture.field)} is configured.`,
+        required: posture.tier === "required",
+        metadata: metadataForPostureField(posture.field),
+        posture,
+      };
+    });
+
+  return CONFIG_FIELD_POSTURE_TIERS.map((tier) => ({
+    tier,
+    label: SETUP_POSTURE_GROUP_LABELS[tier],
+    summary: SETUP_POSTURE_GROUP_SUMMARIES[tier],
+    fields: postureFields.filter((field) => field.posture.tier === tier),
+  }));
 }
 
 function buildProviderPosture(
@@ -742,6 +880,11 @@ export async function diagnoseSetupReadiness(
     workspacePreparationWarning,
     recommendedWorkspacePreparationCommand,
   });
+  const configPostureGroups = buildConfigPostureGroups({
+    rawConfig,
+    configSummary,
+    fields,
+  });
   const modelRoutingPosture = buildModelRoutingPosture({
     rawConfig,
     config: configSummary.config,
@@ -761,6 +904,7 @@ export async function diagnoseSetupReadiness(
     overallStatus: overallStatusFromFields(fields, modelRoutingPosture),
     configPath,
     fields,
+    configPostureGroups,
     blockers,
     hostReadiness,
     providerPosture: buildProviderPosture(configSummary.config),

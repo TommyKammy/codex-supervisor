@@ -1667,6 +1667,115 @@ test("setup shell loads typed setup readiness without mixing in dashboard status
   assert.equal(harness.remainingFetches.length, 0);
 });
 
+test("setup shell renders required fields first and separates advanced and dangerous posture tiers", async () => {
+  const harness = createSetupHarness([
+    {
+      path: "/api/setup-readiness",
+      response: jsonResponse(withManagedRestart(createSetupReadinessReport({
+        fields: [
+          createSetupField("trustMode", {
+            state: "missing",
+            value: null,
+            message: "Trust mode needs an explicit first-run setup decision.",
+          }),
+          createSetupField("workspacePreparationCommand"),
+        ],
+        configPostureGroups: [
+          {
+            tier: "required",
+            label: "Required setup decisions",
+            summary: "Missing or invalid required setup decisions are first-run blockers.",
+            fields: [
+              {
+                ...createSetupField("trustMode", {
+                  state: "missing",
+                  value: null,
+                  message: "Trust mode needs an explicit first-run setup decision.",
+                }),
+                key: "trustMode",
+                posture: {
+                  field: "trustMode",
+                  tier: "required",
+                  summary: "Explicit first-run trust posture decision.",
+                  requirementScope: "first_run_setup",
+                },
+              },
+            ],
+          },
+          {
+            tier: "recommended",
+            label: "Recommended setup contracts",
+            summary: "Recommended fields improve repeatability without blocking first-run setup.",
+            fields: [
+              {
+                ...createSetupField("workspacePreparationCommand"),
+                key: "workspacePreparationCommand",
+                posture: {
+                  field: "workspacePreparationCommand",
+                  tier: "recommended",
+                  summary: "Repo-owned workspace setup contract.",
+                },
+              },
+            ],
+          },
+          {
+            tier: "advanced",
+            label: "Advanced settings",
+            summary: "Advanced settings stay collapsed until explicitly reviewed.",
+            fields: [
+              {
+                key: "boundedRepairModelStrategy",
+                label: "Bounded repair model strategy",
+                state: "missing",
+                value: null,
+                message: "Advanced setting is unset; inherited defaults remain in effect.",
+                required: false,
+                metadata: { source: "config", editable: true, valueType: "text" },
+                posture: {
+                  field: "boundedRepairModelStrategy",
+                  tier: "advanced",
+                  summary: "Bounded repair model routing override.",
+                },
+              },
+            ],
+          },
+          {
+            tier: "dangerous_explicit_opt_in",
+            label: "Dangerous explicit opt-in settings",
+            summary: "Dangerous settings are never routine defaults.",
+            fields: [
+              {
+                key: "staleConfiguredBotReviewPolicy",
+                label: "Stale configured bot review policy",
+                state: "missing",
+                value: null,
+                message: "Dangerous explicit opt-in setting is unset; conservative behavior remains in effect.",
+                required: false,
+                metadata: { source: "config", editable: true, valueType: "text" },
+                posture: {
+                  field: "staleConfiguredBotReviewPolicy",
+                  tier: "dangerous_explicit_opt_in",
+                  summary: "Configured-bot stale-thread reply or resolve behavior.",
+                },
+              },
+            ],
+          },
+        ],
+      }), unavailableManagedRestart)),
+    },
+  ]);
+  await harness.flush();
+
+  const fieldsText = harness.document.getElementById("setup-fields")?.textContent ?? "";
+  assert.match(fieldsText, /Required setup decisions.*Trust mode \[Missing\]/u);
+  assert.match(fieldsText, /Recommended setup contracts.*Workspace preparation command \[Missing\]/u);
+  assert.match(fieldsText, /Advanced settings.*Bounded repair model strategy \[Missing\]/u);
+  assert.match(fieldsText, /Dangerous explicit opt-in settings.*Stale configured bot review policy \[Missing\]/u);
+  assert.ok(fieldsText.indexOf("Required setup decisions") < fieldsText.indexOf("Advanced settings"));
+  assert.ok(fieldsText.indexOf("Advanced settings") < fieldsText.indexOf("Dangerous explicit opt-in settings"));
+  assert.match(fieldsText, /Dangerous explicit opt-in settings.*Dangerous settings are never routine defaults\./u);
+});
+
 test("setup shell highlights a repo-owned local CI candidate when localCiCommand is unset", async () => {
   const harness = createSetupHarness([
     {
