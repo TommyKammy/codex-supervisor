@@ -105,7 +105,8 @@ test("status surfaces the default trust posture and execution-safety warning", a
   assert.deepEqual(report.trustDiagnostics, {
     trustMode: "trusted_repo_and_authors",
     executionSafetyMode: "unsandboxed_autonomous",
-    warning: "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs.",
+    warning:
+      "Unsandboxed autonomous execution assumes trusted GitHub-authored inputs; confirm this explicit setup trust posture before starting autonomous execution.",
     configWarning:
       "Active config still uses legacy shared issue journal path .codex-supervisor/issue-journal.md; prefer .codex-supervisor/issues/{issueNumber}/issue-journal.md.",
   });
@@ -113,7 +114,10 @@ test("status surfaces the default trust posture and execution-safety warning", a
   const status = await supervisor.status();
   assert.match(status, /trust_mode=trusted_repo_and_authors/);
   assert.match(status, /execution_safety_mode=unsandboxed_autonomous/);
-  assert.match(status, /execution_safety_warning=Unsandboxed autonomous execution assumes trusted GitHub-authored inputs\./);
+  assert.match(
+    status,
+    /execution_safety_warning=Unsandboxed autonomous execution assumes trusted GitHub-authored inputs; confirm this explicit setup trust posture before starting autonomous execution\./,
+  );
   assert.match(
     status,
     /config_warning=Active config still uses legacy shared issue journal path \.codex-supervisor\/issue-journal\.md; prefer \.codex-supervisor\/issues\/\{issueNumber\}\/issue-journal\.md\./,
