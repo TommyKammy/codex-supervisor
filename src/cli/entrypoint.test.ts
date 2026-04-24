@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import type { CliIo } from "./replay-corpus-command";
 import { isDirectExecution, runCli, runCliMain } from "./entrypoint";
@@ -65,6 +68,27 @@ test("runCli routes replay commands through the replay handler and stdout bounda
 
   assert.equal(replayedSnapshotPath, "/tmp/snapshot.json");
   assert.deepEqual(stdout, ["replay output"]);
+});
+
+test("runCli prints the readiness checklist regardless of caller cwd", { concurrency: false }, async () => {
+  const originalCwd = process.cwd();
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-cli-"));
+  const stdout: string[] = [];
+
+  try {
+    process.chdir(tempDir);
+    await runCli(["readiness-checklist"], {
+      assertRuntimeFreshness: async () => {},
+      writeStdout: (line) => {
+        stdout.push(line);
+      },
+    });
+  } finally {
+    process.chdir(originalCwd);
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+
+  assert.match(stdout.join("\n"), /^# Release Readiness Checklist/m);
 });
 
 test("runCli fails closed on a stale compiled runtime before constructing supervisor services", async () => {

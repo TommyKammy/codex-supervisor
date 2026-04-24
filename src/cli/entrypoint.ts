@@ -22,7 +22,8 @@ import { assertRuntimeFreshness } from "../build-freshness";
 type SupervisorRuntimeOptions = Pick<CliOptions, "command" | "dryRun" | "why" | "issueNumber">;
 
 async function readReadinessChecklist(): Promise<string> {
-  return fs.readFile(path.join(process.cwd(), "docs", "validation-checklist.md"), "utf8");
+  const checklistPath = path.resolve(__dirname, "..", "..", "docs", "validation-checklist.md");
+  return fs.readFile(checklistPath, "utf8");
 }
 
 export interface CliEntrypointDependencies {
