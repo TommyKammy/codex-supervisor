@@ -43,8 +43,12 @@ function touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRu
   };
 }
 
-test("active recovery boundary clears a stale active reservation without loading aggregate reconciliation", async () => {
+test("active recovery boundary clears a stale active reservation without loading aggregate reconciliation", async (t) => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-active-boundary-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
   const record = createRecord({
     issue_number: 366,
     state: "implementing",
