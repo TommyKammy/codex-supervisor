@@ -1954,6 +1954,43 @@ test("updateSetupConfig records an explicit local CI candidate dismissal", async
   });
 });
 
+test("updateSetupConfig rejects conflicting local CI adoption and dismissal before touching the config file", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-local-ci-conflict-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const configPath = path.join(tempDir, "supervisor.config.json");
+  const originalDocument = {
+    repoPath: ".",
+    repoSlug: "owner/repo",
+    defaultBranch: "main",
+    workspaceRoot: "./worktrees",
+    stateFile: "./state.json",
+    codexBinary: process.execPath,
+    branchPrefix: "codex/issue-",
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    experimentalFlag: true,
+  };
+  await fs.writeFile(configPath, JSON.stringify(originalDocument, null, 2), "utf8");
+  const before = await fs.readFile(configPath, "utf8");
+
+  await assert.rejects(
+    () =>
+      updateSetupConfig({
+        configPath,
+        changes: {
+          localCiCommand: "npm run verify:pre-pr",
+          localCiCandidateDismissed: true,
+        },
+      }),
+    /localCiCommand and localCiCandidateDismissed=true cannot be set in the same update\./u,
+  );
+
+  const after = await fs.readFile(configPath, "utf8");
+  assert.equal(after, before);
+  await assert.rejects(fs.access(`${configPath}.bak`));
+});
+
 test("updateSetupConfig rejects invalid setup field values before touching the config file", async (t) => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-update-invalid-"));
   t.after(async () => {

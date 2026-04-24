@@ -122,6 +122,12 @@ function normalizeLocalCiCommand(value: unknown): string | null {
   return normalized.length > 0 ? normalized : null;
 }
 
+function assertNoConflictingLocalCiIntent(changes: SetupConfigChanges): void {
+  if (changes.localCiCandidateDismissed === true && typeof changes.localCiCommand === "string") {
+    throw new Error("localCiCommand and localCiCandidateDismissed=true cannot be set in the same update.");
+  }
+}
+
 function validateProspectiveSetupDocument(configPath: string, nextDocument: Record<string, unknown>): void {
   const configDir = path.dirname(configPath);
   const repoPath =
@@ -188,6 +194,8 @@ function normalizeSetupChanges(changes: unknown): SetupConfigChanges {
     throw new Error("changes must include at least one supported setup field.");
   }
 
+  assertNoConflictingLocalCiIntent(normalized);
+
   return normalized;
 }
 
@@ -220,6 +228,8 @@ async function readExistingConfigDocument(configPath: string): Promise<{
 }
 
 function applySetupChanges(document: Record<string, unknown>, changes: SetupConfigChanges): Record<string, unknown> {
+  assertNoConflictingLocalCiIntent(changes);
+
   const nextDocument = { ...document };
   if (changes.repoPath !== undefined) {
     nextDocument.repoPath = changes.repoPath;
