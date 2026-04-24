@@ -114,7 +114,16 @@ function renderDuplicateLoopDiagnosticLine(loopRuntime: SupervisorLoopRuntimeDto
     `pids=${diagnostic.matchingPids.join(",")}`,
     `config_path=${sanitizeStatusValue(diagnostic.configPath)}`,
     `state_file=${sanitizeStatusValue(diagnostic.stateFile)}`,
+    `recovery=${sanitizeStatusValue(diagnostic.recoveryGuidance ?? loopRuntime.recoveryGuidance ?? "none")}`,
   ].join(" ");
+}
+
+function renderLoopRuntimeRecoveryLine(loopRuntime: SupervisorLoopRuntimeDto): string | null {
+  if (!loopRuntime.recoveryGuidance) {
+    return null;
+  }
+
+  return `loop_runtime_recovery guidance=${sanitizeStatusValue(loopRuntime.recoveryGuidance)}`;
 }
 
 export function renderSupervisorStatusDto(dto: SupervisorStatusDto): string {
@@ -151,11 +160,13 @@ export function renderSupervisorStatusDto(dto: SupervisorStatusDto): string {
   const trustWarnings = buildTrustAndConfigWarnings(trustDiagnostics);
   const statusWarning = dto.warning === null ? null : buildWarning(dto.warning.kind, dto.warning.message);
   const duplicateLoopDiagnosticLine = renderDuplicateLoopDiagnosticLine(dto.loopRuntime);
+  const loopRuntimeRecoveryLine = renderLoopRuntimeRecoveryLine(dto.loopRuntime);
   const lines = [
     ...dto.detailedStatusLines,
     ...githubRateLimitLines,
     renderLoopRuntimeLine(dto.loopRuntime),
     ...(duplicateLoopDiagnosticLine ? [duplicateLoopDiagnosticLine] : []),
+    ...(loopRuntimeRecoveryLine ? [loopRuntimeRecoveryLine] : []),
     `trust_mode=${trustDiagnostics.trustMode}`,
     `execution_safety_mode=${trustDiagnostics.executionSafetyMode}`,
     ...trustWarnings.map((warning) => renderStatusWarningLine(warning, sanitizeStatusValue)),

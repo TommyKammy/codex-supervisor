@@ -21,6 +21,7 @@ export interface SupervisorDuplicateLoopDiagnostic {
   matchingPids: number[];
   configPath: string;
   stateFile: string;
+  recoveryGuidance?: string;
 }
 
 export interface SupervisorLoopRuntimeDto {
@@ -34,6 +35,7 @@ export interface SupervisorLoopRuntimeDto {
   ownershipConfidence: SupervisorLoopOwnershipConfidence;
   detail: string | null;
   duplicateLoopDiagnostic?: SupervisorDuplicateLoopDiagnostic;
+  recoveryGuidance?: string;
 }
 
 export interface LoopOffTrackedWorkLike {
@@ -100,6 +102,30 @@ export function buildMacOsLoopHostWarning(
   }
 
   return "macOS loop runtime is active outside tmux. Restart it with ./scripts/start-loop-tmux.sh and stop unsupported direct hosts before relying on steady-state automation.";
+}
+
+function formatLoopConfigReference(configPath: string | null | undefined): string {
+  return configPath === null || configPath === undefined || configPath.trim() === ""
+    ? "the active supervisor config"
+    : `config ${configPath}`;
+}
+
+export function buildLoopRuntimeRecoveryGuidance(loopRuntime: Pick<
+  SupervisorLoopRuntimeDto,
+  "configPath" | "ownershipConfidence" | "pid" | "duplicateLoopDiagnostic"
+>): string | null {
+  if (loopRuntime.duplicateLoopDiagnostic) {
+    const configReference = formatLoopConfigReference(loopRuntime.duplicateLoopDiagnostic.configPath);
+    return `Safe recovery: for ${configReference}, stop the tmux-managed loop with ./scripts/stop-loop-tmux.sh, inspect the listed direct loop PIDs before stopping any process, then restart with ./scripts/start-loop-tmux.sh using the same config.`;
+  }
+
+  if (loopRuntime.ownershipConfidence === "ambiguous_owner") {
+    const configReference = formatLoopConfigReference(loopRuntime.configPath);
+    const pidReference = loopRuntime.pid === null ? "the marker PID" : `marker PID ${loopRuntime.pid}`;
+    return `Safe recovery: verify ${pidReference} owns ${configReference} before restarting automation; if ownership is still unclear, inspect the process and marker instead of deleting the marker or killing processes automatically.`;
+  }
+
+  return null;
 }
 
 export function buildLoopOffTrackedWorkBlocker(args: {
@@ -298,13 +324,30 @@ function withDuplicateLoopDiagnostic(
   runtime: SupervisorLoopRuntimeDto,
   diagnostic: SupervisorDuplicateLoopDiagnostic | null,
 ): SupervisorLoopRuntimeDto {
-  return diagnostic === null
+  const runtimeWithDiagnostic = diagnostic === null
     ? runtime
     : {
       ...runtime,
-      ownershipConfidence: "duplicate_suspected",
+      ownershipConfidence: "duplicate_suspected" as const,
       duplicateLoopDiagnostic: diagnostic,
     };
+  const recoveryGuidance = buildLoopRuntimeRecoveryGuidance(runtimeWithDiagnostic);
+  if (recoveryGuidance === null) {
+    return runtimeWithDiagnostic;
+  }
+
+  return {
+    ...runtimeWithDiagnostic,
+    recoveryGuidance,
+    ...(runtimeWithDiagnostic.duplicateLoopDiagnostic
+      ? {
+        duplicateLoopDiagnostic: {
+          ...runtimeWithDiagnostic.duplicateLoopDiagnostic,
+          recoveryGuidance,
+        },
+      }
+      : {}),
+  };
 }
 
 export async function readSupervisorLoopRuntime(

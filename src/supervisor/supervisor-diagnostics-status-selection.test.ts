@@ -440,6 +440,8 @@ test("renderSupervisorStatusDto sanitizes loop runtime host and timestamp tokens
       startedAt: "2026-03-27T00:15:00.000Z\nlegacy",
       ownershipConfidence: "duplicate_suspected",
       detail: "supervisor-loop-runtime",
+      recoveryGuidance:
+        "Safe recovery: for config /tmp/supervisor.config.json, stop the tmux-managed loop with ./scripts/stop-loop-tmux.sh, inspect the listed direct loop PIDs before stopping any process, then restart with ./scripts/start-loop-tmux.sh using the same config.",
       duplicateLoopDiagnostic: {
         kind: "duplicate_loop_processes",
         status: "duplicate",
@@ -447,6 +449,8 @@ test("renderSupervisorStatusDto sanitizes loop runtime host and timestamp tokens
         matchingPids: [4242, 4243],
         configPath: "/tmp/supervisor.config.json",
         stateFile: "/tmp/state.json",
+        recoveryGuidance:
+          "Safe recovery: for config /tmp/supervisor.config.json, stop the tmux-managed loop with ./scripts/stop-loop-tmux.sh, inspect the listed direct loop PIDs before stopping any process, then restart with ./scripts/start-loop-tmux.sh using the same config.",
       },
     },
     activeIssue: null,
@@ -468,7 +472,11 @@ test("renderSupervisorStatusDto sanitizes loop runtime host and timestamp tokens
   );
   assert.match(
     status,
-    /^loop_runtime_diagnostic kind=duplicate_loop_processes status=duplicate matching_processes=2 pids=4242,4243 config_path=\/tmp\/supervisor.config.json state_file=\/tmp\/state.json$/m,
+    /^loop_runtime_diagnostic kind=duplicate_loop_processes status=duplicate matching_processes=2 pids=4242,4243 config_path=\/tmp\/supervisor.config.json state_file=\/tmp\/state.json recovery=Safe recovery: for config \/tmp\/supervisor.config.json, stop the tmux-managed loop with \.\/scripts\/stop-loop-tmux\.sh, inspect the listed direct loop PIDs before stopping any process, then restart with \.\/scripts\/start-loop-tmux\.sh using the same config\.$/m,
+  );
+  assert.match(
+    status,
+    /^loop_runtime_recovery guidance=Safe recovery: for config \/tmp\/supervisor.config.json, stop the tmux-managed loop with \.\/scripts\/stop-loop-tmux\.sh, inspect the listed direct loop PIDs before stopping any process, then restart with \.\/scripts\/start-loop-tmux\.sh using the same config\.$/m,
   );
 });
 
@@ -1327,6 +1335,8 @@ test("acquireLoopRuntimeLock fails closed on ambiguous-owner loop runtime locks 
     startedAt: "2026-03-20T00:00:00.000Z",
     ownershipConfidence: "ambiguous_owner",
     detail: "supervisor-loop-runtime",
+    recoveryGuidance:
+      "Safe recovery: verify marker PID 999999 owns the active supervisor config before restarting automation; if ownership is still unclear, inspect the process and marker instead of deleting the marker or killing processes automatically.",
   });
 });
 

@@ -153,7 +153,16 @@ function renderDoctorDuplicateLoopDiagnosticLine(loopRuntime: SupervisorLoopRunt
     `pids=${diagnostic.matchingPids.join(",")}`,
     `config_path=${sanitizeDoctorValue(diagnostic.configPath)}`,
     `state_file=${sanitizeDoctorValue(diagnostic.stateFile)}`,
+    `recovery=${sanitizeDoctorValue(diagnostic.recoveryGuidance ?? loopRuntime.recoveryGuidance ?? "none")}`,
   ].join(" ");
+}
+
+function renderDoctorLoopRuntimeRecoveryLine(loopRuntime: SupervisorLoopRuntimeDto): string | null {
+  if (!loopRuntime.recoveryGuidance) {
+    return null;
+  }
+
+  return `doctor_loop_runtime_recovery guidance=${sanitizeDoctorValue(loopRuntime.recoveryGuidance)}`;
 }
 
 function formatOrphanPolicySummary(config: SupervisorConfig): string {
@@ -938,6 +947,7 @@ export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
   const loopRuntimeOwnershipConfidence =
     ("ownershipConfidence" in loopRuntime ? loopRuntime.ownershipConfidence : null) ?? "none";
   const duplicateLoopDiagnosticLine = renderDoctorDuplicateLoopDiagnosticLine(loopRuntime);
+  const loopRuntimeRecoveryLine = renderDoctorLoopRuntimeRecoveryLine(loopRuntime);
   const workspacePreparationWarning = workspacePreparationContract.warning ?? localCiContract.warning ?? null;
   const configWarnings = workspacePreparationWarning === null ? [] : [renderDoctorWarningLine(buildWarning("config", workspacePreparationWarning)!, sanitizeDoctorValue)];
   const codexModelPolicyLines = (diagnostics.codexModelPolicyLines ?? [])
@@ -960,6 +970,7 @@ export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
     ...(diagnostics.reconciliationBacklogLine ? [diagnostics.reconciliationBacklogLine] : []),
     `doctor_loop_runtime state=${loopRuntime.state} host_mode=${loopRuntime.hostMode} marker_path=${sanitizeDoctorValue(loopRuntimeMarkerPath)} config_path=${sanitizeDoctorValue(loopRuntimeConfigPath ?? "none")} state_file=${sanitizeDoctorValue(loopRuntimeStateFile)} pid=${loopRuntime.pid === null ? "none" : String(loopRuntime.pid)} started_at=${loopRuntime.startedAt ?? "none"} ownership_confidence=${loopRuntimeOwnershipConfidence} detail=${sanitizeDoctorValue(loopRuntime.detail ?? "none")}`,
     ...(duplicateLoopDiagnosticLine ? [duplicateLoopDiagnosticLine] : []),
+    ...(loopRuntimeRecoveryLine ? [loopRuntimeRecoveryLine] : []),
     ...(diagnostics.orphanPolicySummary ? [diagnostics.orphanPolicySummary] : []),
     `doctor_workspace_preparation configured=${workspacePreparationContract.configured} source=${workspacePreparationContract.source} command=${sanitizeDoctorValue(workspacePreparationContract.command ?? "none")} summary=${sanitizeDoctorValue(workspacePreparationContract.summary)}`,
     `doctor_local_ci configured=${localCiContract.configured} source=${localCiContract.source} command=${sanitizeDoctorValue(localCiContract.command ?? "none")} summary=${sanitizeDoctorValue(localCiContract.summary)}`,

@@ -101,10 +101,16 @@ test("readSupervisorLoopRuntime detects duplicate loop processes for the same re
     matchingPids: [101, 102],
     configPath,
     stateFile,
+    recoveryGuidance:
+      `Safe recovery: for config ${configPath}, stop the tmux-managed loop with ./scripts/stop-loop-tmux.sh, inspect the listed direct loop PIDs before stopping any process, then restart with ./scripts/start-loop-tmux.sh using the same config.`,
   });
   assert.equal(runtime.state, "off");
   assert.equal(runtime.markerPath, supervisorLoopRuntimeLockPath(stateFile));
   assert.equal(runtime.configPath, configPath);
   assert.equal(runtime.stateFile, stateFile);
   assert.equal(runtime.ownershipConfidence, "duplicate_suspected");
+  assert.equal(
+    runtime.recoveryGuidance,
+    `Safe recovery: for config ${configPath}, stop the tmux-managed loop with ./scripts/stop-loop-tmux.sh, inspect the listed direct loop PIDs before stopping any process, then restart with ./scripts/start-loop-tmux.sh using the same config.`,
+  );
 });

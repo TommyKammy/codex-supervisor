@@ -77,6 +77,8 @@ test("describeLoopRuntime summarizes running, off, and unknown states with host 
     state: "off",
     hostMode: "unknown",
     ownershipConfidence: "duplicate_suspected",
+    recoveryGuidance:
+      "Safe recovery: for config /tmp/supervisor.config.json, stop the tmux-managed loop with ./scripts/stop-loop-tmux.sh, inspect the listed direct loop PIDs before stopping any process, then restart with ./scripts/start-loop-tmux.sh using the same config.",
     duplicateLoopDiagnostic: {
       kind: "duplicate_loop_processes",
       status: "duplicate",
@@ -84,11 +86,30 @@ test("describeLoopRuntime summarizes running, off, and unknown states with host 
       matchingPids: [4242, 4243],
       configPath: "/tmp/supervisor.config.json",
       stateFile: "/tmp/state.json",
+      recoveryGuidance:
+        "Safe recovery: for config /tmp/supervisor.config.json, stop the tmux-managed loop with ./scripts/stop-loop-tmux.sh, inspect the listed direct loop PIDs before stopping any process, then restart with ./scripts/start-loop-tmux.sh using the same config.",
     },
   }), {
     modeBadge: "Mode: web + loop ambiguous",
-    summary: "Loop runtime ownership is ambiguous: 2 matching loop processes",
+    summary:
+      "Loop runtime ownership is ambiguous: 2 matching loop processes. Safe recovery: for config /tmp/supervisor.config.json, stop the tmux-managed loop with ./scripts/stop-loop-tmux.sh, inspect the listed direct loop PIDs before stopping any process, then restart with ./scripts/start-loop-tmux.sh using the same config.",
     chipLabel: "loop ownership ambiguous",
+    chipTone: "warn",
+  });
+
+  assert.deepEqual(describeLoopRuntime({
+    state: "unknown",
+    hostMode: "unknown",
+    ownershipConfidence: "ambiguous_owner",
+    pid: 4242,
+    configPath: "/tmp/supervisor.config.json",
+    recoveryGuidance:
+      "Safe recovery: verify marker PID 4242 owns config /tmp/supervisor.config.json before restarting automation; if ownership is still unclear, inspect the process and marker instead of deleting the marker or killing processes automatically.",
+  }), {
+    modeBadge: "Mode: local WebUI",
+    summary:
+      "Loop runtime marker ownership is ambiguous. Safe recovery: verify marker PID 4242 owns config /tmp/supervisor.config.json before restarting automation; if ownership is still unclear, inspect the process and marker instead of deleting the marker or killing processes automatically.",
+    chipLabel: "loop marker ambiguous",
     chipTone: "warn",
   });
 
