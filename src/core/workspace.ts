@@ -796,8 +796,8 @@ export async function listTrackedTopLevelEntries(
   const entries = new Set<string>();
   for (const trackedPath of result.stdout
     .split("\0")
-    .map((entry) => entry.trim().replaceAll("\\", "/"))
-    .filter(Boolean)) {
+    .filter((entry) => entry.length > 0)
+    .map((entry) => entry.replaceAll("\\", "/"))) {
     const [topLevelEntry] = trackedPath.split("/");
     if (topLevelEntry) {
       entries.add(topLevelEntry);
