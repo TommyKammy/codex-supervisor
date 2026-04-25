@@ -5,13 +5,25 @@ import {
   TRUSTED_GENERATED_DURABLE_ARTIFACT_PROVENANCE_VALUE,
   withTrustedGeneratedDurableArtifactProvenance,
 } from "../durable-artifact-provenance";
-import { normalizeDurableTrackedArtifactContent } from "../core/journal";
+import {
+  extractIssueJournalHandoff,
+  normalizeDurableTrackedArtifactContent,
+  readIssueJournal,
+  type IssueJournalHandoff,
+} from "../core/journal";
 import { executionMetricsRunSummaryPath } from "./execution-metrics-run-summary";
 import {
   validateExecutionMetricsRunSummary,
   type ExecutionMetricsRunSummaryArtifact,
 } from "./execution-metrics-schema";
 import { type LocalReviewArtifact } from "../local-review/types";
+import {
+  extractIssueVerificationCommands,
+  OPERATOR_AUDIT_BUNDLE_SCHEMA_VERSION,
+  type OperatorAuditBundleDto,
+  type OperatorAuditBundleEvidence,
+} from "../operator-audit-bundle";
+import { type IssueRunTimelineEvent } from "../timeline-artifacts";
 
 export const POST_MERGE_AUDIT_ARTIFACT_SCHEMA_VERSION = 1;
 
@@ -81,6 +93,7 @@ export interface PostMergeAuditArtifact {
     } | null;
     staleStabilizingNoPrRecoveryCount: number;
   };
+  operatorAuditBundle?: OperatorAuditBundleDto | null;
 }
 
 function safeSlug(input: string): string {
@@ -172,6 +185,130 @@ function localReviewSourceRecord(
   return previousRecord.local_review_summary_path ? previousRecord : nextRecord;
 }
 
+function auditEvidence<T>(value: T | null, missingSummary: string): OperatorAuditBundleEvidence<T> {
+  return value === null
+    ? { status: "missing", value: null, summary: missingSummary }
+    : { status: "available", value, summary: "Evidence is available." };
+}
+
+async function readIssueJournalHandoff(journalPath: string | null): Promise<IssueJournalHandoff | null> {
+  if (!journalPath) {
+    return null;
+  }
+
+  const content = await readIssueJournal(journalPath);
+  return content === null ? null : extractIssueJournalHandoff(content);
+}
+
+type PostMergeOperatorAuditBundleSourceRecord = Pick<
+  IssueRunRecord,
+  | "issue_number"
+  | "branch"
+  | "pr_number"
+  | "last_head_sha"
+  | "attempt_count"
+  | "implementation_attempt_count"
+  | "repair_attempt_count"
+  | "last_error"
+  | "last_failure_signature"
+  | "latest_local_ci_result"
+  | "timeline_artifacts"
+  | "local_review_summary_path"
+  | "last_failure_kind"
+  | "last_failure_context"
+  | "blocked_reason"
+  | "updated_at"
+>;
+
+function buildPostMergeOperatorAuditBundle(args: {
+  issue: Pick<GitHubIssue, "number" | "title" | "url" | "createdAt" | "updatedAt"> & Partial<Pick<GitHubIssue, "body" | "state">>;
+  pullRequest: Pick<
+    GitHubPullRequest,
+    "number" | "title" | "url" | "createdAt" | "mergedAt" | "headRefName" | "headRefOid"
+  >;
+  previousRecord: PostMergeOperatorAuditBundleSourceRecord;
+  nextRecord: Pick<IssueRunRecord, "state" | "branch" | "updated_at">;
+  journalHandoff: IssueJournalHandoff | null;
+}): OperatorAuditBundleDto {
+  const record = args.previousRecord;
+  const verificationCommands = extractIssueVerificationCommands(args.issue.body ?? "");
+  const latestLocalCi = record.latest_local_ci_result ?? null;
+  const pathHygieneArtifact = [...(record.timeline_artifacts ?? [])]
+    .reverse()
+    .find((artifact) => artifact.gate === "workstation_local_path_hygiene") ?? null;
+
+  return {
+    schemaVersion: OPERATOR_AUDIT_BUNDLE_SCHEMA_VERSION,
+    advisoryOnly: true,
+    issue: {
+      number: args.issue.number,
+      title: args.issue.title,
+      url: args.issue.url,
+      state: args.issue.state ?? "UNKNOWN",
+      createdAt: args.issue.createdAt,
+      updatedAt: args.issue.updatedAt,
+      bodySnapshot: args.issue.body ?? "",
+    },
+    pullRequest: auditEvidence({
+      number: args.pullRequest.number,
+      title: args.pullRequest.title,
+      url: args.pullRequest.url,
+      state: "MERGED",
+      isDraft: false,
+      headRefName: args.pullRequest.headRefName,
+      headRefOid: args.pullRequest.headRefOid,
+      createdAt: args.pullRequest.createdAt,
+      mergedAt: args.pullRequest.mergedAt ?? null,
+    }, "No pull request is recorded for this tracked issue."),
+    stateRecord: auditEvidence({
+      state: args.nextRecord.state,
+      branch: args.nextRecord.branch,
+      prNumber: record.pr_number ?? args.pullRequest.number,
+      headSha: record.last_head_sha ?? args.pullRequest.headRefOid,
+      blockedReason: args.previousRecord.blocked_reason,
+      attempts: {
+        total: record.attempt_count ?? 0,
+        implementation: record.implementation_attempt_count ?? 0,
+        repair: record.repair_attempt_count ?? 0,
+      },
+      lastError: record.last_error ?? null,
+      lastFailureKind: args.previousRecord.last_failure_kind,
+      lastFailureSignature: record.last_failure_signature ?? args.previousRecord.last_failure_context?.signature ?? null,
+      updatedAt: args.nextRecord.updated_at,
+    }, "No supervisor state record is tracked for this issue."),
+    journal: auditEvidence<IssueJournalHandoff>(
+      args.journalHandoff,
+      "No issue journal content is embedded in the post-merge audit artifact.",
+    ),
+    localCi: auditEvidence(latestLocalCi, "No local CI result is recorded for this issue run."),
+    pathHygiene: auditEvidence(pathHygieneArtifact
+      ? {
+        outcome: pathHygieneArtifact.outcome,
+        summary: pathHygieneArtifact.summary,
+        command: pathHygieneArtifact.command,
+        headSha: pathHygieneArtifact.head_sha,
+        remediationTarget: pathHygieneArtifact.remediation_target,
+        nextAction: pathHygieneArtifact.next_action,
+        recordedAt: pathHygieneArtifact.recorded_at,
+        repairTargets: pathHygieneArtifact.repair_targets ?? [],
+      }
+      : null, "No workstation-local path hygiene result is recorded for this issue run."),
+    staleConfiguredBotRemediation: auditEvidence(
+      null,
+      "No stale configured-bot remediation result is recorded for this issue run.",
+    ),
+    recoveryEvents: auditEvidence<IssueRunTimelineEvent[]>(
+      null,
+      "No recovery event is embedded in the post-merge audit artifact.",
+    ),
+    timeline: null,
+    verificationCommands: auditEvidence(
+      verificationCommands.length > 0 ? verificationCommands : null,
+      "No verification commands are listed in the issue body.",
+    ),
+  };
+}
+
 export async function syncPostMergeAuditArtifact(args: {
   config: Pick<SupervisorConfig, "localReviewArtifactDir" | "repoSlug">;
   previousRecord: Pick<
@@ -179,6 +316,9 @@ export async function syncPostMergeAuditArtifact(args: {
     | "issue_number"
     | "branch"
     | "workspace"
+    | "journal_path"
+    | "pr_number"
+    | "last_head_sha"
     | "local_review_summary_path"
     | "local_review_run_at"
     | "local_review_recommendation"
@@ -192,8 +332,16 @@ export async function syncPostMergeAuditArtifact(args: {
     | "last_failure_kind"
     | "last_failure_context"
     | "blocked_reason"
+    | "attempt_count"
+    | "implementation_attempt_count"
+    | "repair_attempt_count"
+    | "last_error"
+    | "last_failure_signature"
+    | "latest_local_ci_result"
+    | "timeline_artifacts"
     | "repeated_failure_signature_count"
     | "stale_stabilizing_no_pr_recovery_count"
+    | "updated_at"
   >;
   nextRecord: Pick<
     IssueRunRecord,
@@ -213,7 +361,7 @@ export async function syncPostMergeAuditArtifact(args: {
     | "last_recovery_at"
     | "updated_at"
   >;
-  issue: Pick<GitHubIssue, "number" | "title" | "url" | "createdAt" | "updatedAt">;
+  issue: Pick<GitHubIssue, "number" | "title" | "url" | "createdAt" | "updatedAt"> & Partial<Pick<GitHubIssue, "body" | "state">>;
   pullRequest: Pick<
     GitHubPullRequest,
     "number" | "title" | "url" | "createdAt" | "mergedAt" | "headRefName" | "headRefOid"
@@ -240,6 +388,7 @@ export async function syncPostMergeAuditArtifact(args: {
   const { findingsPath: localReviewFindingsPath, artifact: localReviewArtifact } = await loadTypedLocalReviewArtifact(
     localReviewRecord.local_review_summary_path,
   );
+  const journalHandoff = await readIssueJournalHandoff(args.previousRecord.journal_path);
 
   const artifact: PostMergeAuditArtifact = withTrustedGeneratedDurableArtifactProvenance({
     schemaVersion: POST_MERGE_AUDIT_ARTIFACT_SCHEMA_VERSION,
@@ -321,6 +470,13 @@ export async function syncPostMergeAuditArtifact(args: {
       },
       staleStabilizingNoPrRecoveryCount: args.previousRecord.stale_stabilizing_no_pr_recovery_count ?? 0,
     },
+    operatorAuditBundle: buildPostMergeOperatorAuditBundle({
+      issue: args.issue,
+      pullRequest: args.pullRequest,
+      previousRecord: args.previousRecord,
+      nextRecord: args.nextRecord,
+      journalHandoff,
+    }),
   });
 
   const artifactPath = postMergeAuditArtifactPath({

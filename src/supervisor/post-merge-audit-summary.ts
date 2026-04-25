@@ -5,11 +5,12 @@ import type { SupervisorConfig } from "../core/types";
 import { TRUSTED_GENERATED_DURABLE_ARTIFACT_PROVENANCE_VALUE } from "../durable-artifact-provenance";
 import type { ExternalReviewMissArtifact, ExternalReviewRegressionCandidate } from "../external-review/external-review-miss-artifact-types";
 import type { ActionableSeverity, LocalReviewRootCauseSummary } from "../local-review/types";
+import type { OperatorAuditBundleDto } from "../operator-audit-bundle";
 import { hasMatchingPromotionIdentity } from "../persisted-artifact-promotion";
 import type { PostMergeAuditArtifact } from "./post-merge-audit-artifact";
 import { postMergeAuditArtifactDir } from "./post-merge-audit-artifact";
 
-export const POST_MERGE_AUDIT_PATTERN_SUMMARY_SCHEMA_VERSION = 4;
+export const POST_MERGE_AUDIT_PATTERN_SUMMARY_SCHEMA_VERSION = 5;
 export const POST_MERGE_AUDIT_PATTERN_SUMMARY_TOP_LEVEL_KEYS = [
   "schemaVersion",
   "generatedAt",
@@ -24,6 +25,7 @@ export const POST_MERGE_AUDIT_PATTERN_SUMMARY_TOP_LEVEL_KEYS = [
   "recoveryPatterns",
   "followUpCandidates",
   "promotionCandidates",
+  "releaseNotesSources",
 ] as const;
 const POST_MERGE_AUDIT_REVIEW_PATTERN_KEYS = [
   "key",
@@ -92,6 +94,28 @@ const POST_MERGE_AUDIT_FOLLOW_UP_CANDIDATE_EVIDENCE_KEYS = [
   "reviewerLogin",
   "file",
   "line",
+] as const;
+const POST_MERGE_AUDIT_RELEASE_NOTES_SOURCE_KEYS = [
+  "issue",
+  "pullRequest",
+  "auditBundle",
+  "verificationCommands",
+  "findingSummaries",
+  "followUpCandidateKeys",
+] as const;
+const POST_MERGE_AUDIT_RELEASE_NOTES_ISSUE_KEYS = ["number", "title", "url"] as const;
+const POST_MERGE_AUDIT_RELEASE_NOTES_PULL_REQUEST_KEYS = [
+  "number",
+  "title",
+  "url",
+  "mergedAt",
+  "headRefOid",
+] as const;
+const POST_MERGE_AUDIT_RELEASE_NOTES_AUDIT_BUNDLE_KEYS = [
+  "status",
+  "localCiSummary",
+  "pathHygieneSummary",
+  "journalSummary",
 ] as const;
 
 export interface PostMergeAuditReviewPatternDto {
@@ -170,6 +194,30 @@ export interface PostMergeAuditFollowUpCandidateDto {
   };
 }
 
+export interface PostMergeAuditReleaseNotesSourceDto {
+  issue: {
+    number: number;
+    title: string;
+    url: string;
+  };
+  pullRequest: {
+    number: number;
+    title: string;
+    url: string;
+    mergedAt: string;
+    headRefOid: string;
+  };
+  auditBundle: {
+    status: "available" | "missing";
+    localCiSummary: string | null;
+    pathHygieneSummary: string | null;
+    journalSummary: string | null;
+  };
+  verificationCommands: string[];
+  findingSummaries: string[];
+  followUpCandidateKeys: string[];
+}
+
 export interface PostMergeAuditPatternSummaryDto {
   schemaVersion: typeof POST_MERGE_AUDIT_PATTERN_SUMMARY_SCHEMA_VERSION;
   generatedAt: string;
@@ -184,6 +232,7 @@ export interface PostMergeAuditPatternSummaryDto {
   recoveryPatterns: PostMergeAuditRecoveryPatternDto[];
   followUpCandidates: PostMergeAuditFollowUpCandidateDto[];
   promotionCandidates: PostMergeAuditPromotionCandidateDto[];
+  releaseNotesSources: PostMergeAuditReleaseNotesSourceDto[];
 }
 
 function failSummaryValidation(message: string): never {
@@ -475,6 +524,71 @@ function expectFollowUpCandidate(
   };
 }
 
+function expectReleaseNotesSource(
+  value: unknown,
+  index: number,
+): PostMergeAuditReleaseNotesSourceDto {
+  const source = expectSummaryObject(value, `releaseNotesSources[${index}]`);
+  expectExactKeys(source, POST_MERGE_AUDIT_RELEASE_NOTES_SOURCE_KEYS, `releaseNotesSources[${index}]`);
+
+  const issue = expectSummaryObject(source.issue, `releaseNotesSources[${index}].issue`);
+  expectExactKeys(issue, POST_MERGE_AUDIT_RELEASE_NOTES_ISSUE_KEYS, `releaseNotesSources[${index}].issue`);
+  const pullRequest = expectSummaryObject(source.pullRequest, `releaseNotesSources[${index}].pullRequest`);
+  expectExactKeys(
+    pullRequest,
+    POST_MERGE_AUDIT_RELEASE_NOTES_PULL_REQUEST_KEYS,
+    `releaseNotesSources[${index}].pullRequest`,
+  );
+  const auditBundle = expectSummaryObject(source.auditBundle, `releaseNotesSources[${index}].auditBundle`);
+  expectExactKeys(
+    auditBundle,
+    POST_MERGE_AUDIT_RELEASE_NOTES_AUDIT_BUNDLE_KEYS,
+    `releaseNotesSources[${index}].auditBundle`,
+  );
+  if (auditBundle.status !== "available" && auditBundle.status !== "missing") {
+    failSummaryValidation(`releaseNotesSources[${index}].auditBundle.status must be available or missing.`);
+  }
+
+  return {
+    issue: {
+      number: expectSummaryInteger(issue.number, `releaseNotesSources[${index}].issue.number`),
+      title: expectSummaryString(issue.title, `releaseNotesSources[${index}].issue.title`),
+      url: expectSummaryString(issue.url, `releaseNotesSources[${index}].issue.url`),
+    },
+    pullRequest: {
+      number: expectSummaryInteger(pullRequest.number, `releaseNotesSources[${index}].pullRequest.number`),
+      title: expectSummaryString(pullRequest.title, `releaseNotesSources[${index}].pullRequest.title`),
+      url: expectSummaryString(pullRequest.url, `releaseNotesSources[${index}].pullRequest.url`),
+      mergedAt: expectSummaryString(pullRequest.mergedAt, `releaseNotesSources[${index}].pullRequest.mergedAt`),
+      headRefOid: expectSummaryString(pullRequest.headRefOid, `releaseNotesSources[${index}].pullRequest.headRefOid`),
+    },
+    auditBundle: {
+      status: auditBundle.status,
+      localCiSummary: expectNullableSummaryString(
+        auditBundle.localCiSummary,
+        `releaseNotesSources[${index}].auditBundle.localCiSummary`,
+      ),
+      pathHygieneSummary: expectNullableSummaryString(
+        auditBundle.pathHygieneSummary,
+        `releaseNotesSources[${index}].auditBundle.pathHygieneSummary`,
+      ),
+      journalSummary: expectNullableSummaryString(
+        auditBundle.journalSummary,
+        `releaseNotesSources[${index}].auditBundle.journalSummary`,
+      ),
+    },
+    verificationCommands: expectStringArray(
+      source.verificationCommands,
+      `releaseNotesSources[${index}].verificationCommands`,
+    ),
+    findingSummaries: expectStringArray(source.findingSummaries, `releaseNotesSources[${index}].findingSummaries`),
+    followUpCandidateKeys: expectStringArray(
+      source.followUpCandidateKeys,
+      `releaseNotesSources[${index}].followUpCandidateKeys`,
+    ),
+  };
+}
+
 export function validatePostMergeAuditPatternSummary(raw: unknown): PostMergeAuditPatternSummaryDto {
   const summary = expectSummaryObject(raw, "summary");
   expectExactKeys(summary, POST_MERGE_AUDIT_PATTERN_SUMMARY_TOP_LEVEL_KEYS, "summary");
@@ -505,6 +619,9 @@ export function validatePostMergeAuditPatternSummary(raw: unknown): PostMergeAud
   if (!Array.isArray(summary.promotionCandidates)) {
     failSummaryValidation("promotionCandidates must be an array.");
   }
+  if (!Array.isArray(summary.releaseNotesSources)) {
+    failSummaryValidation("releaseNotesSources must be an array.");
+  }
 
   return {
     schemaVersion: POST_MERGE_AUDIT_PATTERN_SUMMARY_SCHEMA_VERSION,
@@ -520,6 +637,7 @@ export function validatePostMergeAuditPatternSummary(raw: unknown): PostMergeAud
     recoveryPatterns: summary.recoveryPatterns.map((pattern, index) => expectRecoveryPattern(pattern, index)),
     followUpCandidates: summary.followUpCandidates.map((candidate, index) => expectFollowUpCandidate(candidate, index)),
     promotionCandidates: summary.promotionCandidates.map((candidate, index) => expectPromotionCandidate(candidate, index)),
+    releaseNotesSources: summary.releaseNotesSources.map((source, index) => expectReleaseNotesSource(source, index)),
   };
 }
 
@@ -557,8 +675,12 @@ function isActionableSeverity(value: unknown): value is ActionableSeverity {
   return value === "low" || value === "medium" || value === "high";
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
 function isLocalReviewRootCauseSummary(value: unknown): value is LocalReviewRootCauseSummary {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (!isPlainObject(value)) {
     return false;
   }
 
@@ -567,7 +689,7 @@ function isLocalReviewRootCauseSummary(value: unknown): value is LocalReviewRoot
 }
 
 function isPostMergeAuditArtifact(value: unknown): value is PostMergeAuditArtifact {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (!isPlainObject(value)) {
     return false;
   }
 
@@ -598,7 +720,7 @@ function isPromotablePostMergeAuditArtifact(artifact: PostMergeAuditArtifact): b
 }
 
 function isExternalReviewRegressionCandidate(value: unknown): value is ExternalReviewRegressionCandidate {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (!isPlainObject(value)) {
     return false;
   }
 
@@ -620,7 +742,7 @@ function isExternalReviewRegressionCandidate(value: unknown): value is ExternalR
 }
 
 function isExternalReviewMissArtifact(value: unknown): value is ExternalReviewMissArtifact {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (!isPlainObject(value)) {
     return false;
   }
 
@@ -632,6 +754,90 @@ function isExternalReviewMissArtifact(value: unknown): value is ExternalReviewMi
     typeof candidate.headSha === "string" &&
     Array.isArray(candidate.regressionTestCandidates) &&
     candidate.regressionTestCandidates.every((entry) => isExternalReviewRegressionCandidate(entry))
+  );
+}
+
+function isEvidence(
+  value: unknown,
+  availableValueGuard: (evidenceValue: unknown) => boolean = (evidenceValue) => evidenceValue !== null,
+): value is { status: "available" | "missing"; summary: string; value: unknown } {
+  if (!isPlainObject(value)) {
+    return false;
+  }
+
+  return (
+    (value.status === "available" || value.status === "missing") &&
+    typeof value.summary === "string" &&
+    (value.status === "missing" ? value.value === null : availableValueGuard(value.value))
+  );
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
+}
+
+function isOperatorAuditBundleIssue(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    typeof value.number === "number" &&
+    typeof value.title === "string" &&
+    typeof value.url === "string" &&
+    typeof value.state === "string" &&
+    typeof value.createdAt === "string" &&
+    typeof value.updatedAt === "string" &&
+    typeof value.bodySnapshot === "string"
+  );
+}
+
+function isOperatorAuditBundlePullRequest(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    typeof value.number === "number" &&
+    typeof value.title === "string" &&
+    typeof value.url === "string" &&
+    typeof value.state === "string" &&
+    typeof value.isDraft === "boolean" &&
+    typeof value.headRefName === "string" &&
+    typeof value.headRefOid === "string" &&
+    typeof value.createdAt === "string" &&
+    isNullableString(value.mergedAt)
+  );
+}
+
+function isOperatorAuditBundleLocalCi(value: unknown): boolean {
+  return isPlainObject(value) && typeof value.summary === "string";
+}
+
+function isOperatorAuditBundlePathHygiene(value: unknown): boolean {
+  return isPlainObject(value) && typeof value.summary === "string";
+}
+
+function isOperatorAuditBundleJournal(value: unknown): boolean {
+  return isPlainObject(value) && (value.whatChanged === null || typeof value.whatChanged === "string");
+}
+
+function isOperatorAuditBundle(value: unknown): value is OperatorAuditBundleDto {
+  if (!isPlainObject(value)) {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  return (
+    candidate.schemaVersion === 1 &&
+    candidate.advisoryOnly === true &&
+    isOperatorAuditBundleIssue(candidate.issue) &&
+    isEvidence(candidate.pullRequest, isOperatorAuditBundlePullRequest) &&
+    isEvidence(candidate.stateRecord) &&
+    isEvidence(candidate.journal, isOperatorAuditBundleJournal) &&
+    isEvidence(candidate.localCi, isOperatorAuditBundleLocalCi) &&
+    isEvidence(candidate.pathHygiene, isOperatorAuditBundlePathHygiene) &&
+    isEvidence(candidate.staleConfiguredBotRemediation) &&
+    isEvidence(candidate.recoveryEvents, Array.isArray) &&
+    (candidate.timeline === null || isPlainObject(candidate.timeline)) &&
+    isEvidence(
+      candidate.verificationCommands,
+      (evidenceValue) => Array.isArray(evidenceValue) && evidenceValue.every((command) => typeof command === "string"),
+    )
   );
 }
 
@@ -835,6 +1041,53 @@ function matchesExternalReviewMissArtifact(
   );
 }
 
+function availableBundleValue<T>(evidence: { status: string; value: T | null } | undefined): T | null {
+  return evidence?.status === "available" ? evidence.value : null;
+}
+
+function buildReleaseNotesSource(
+  artifact: PostMergeAuditArtifact,
+  followUpCandidateKeys: string[],
+): PostMergeAuditReleaseNotesSourceDto {
+  const bundle = isOperatorAuditBundle(artifact.operatorAuditBundle) ? artifact.operatorAuditBundle : null;
+  const localCi = availableBundleValue(bundle?.localCi);
+  const journal = availableBundleValue(bundle?.journal);
+  const verificationCommands = availableBundleValue(bundle?.verificationCommands) ?? [];
+  const findingSummaries = (artifact.localReview?.artifact?.rootCauseSummaries ?? [])
+    .filter(isLocalReviewRootCauseSummary)
+    .map((rootCause) => rootCause.summary.trim())
+    .filter((summary) => summary.length > 0)
+    .sort(compareStringsAscending);
+
+  return {
+    issue: {
+      number: artifact.issue.number,
+      title: bundle?.issue.title ?? artifact.issue.title,
+      url: bundle?.issue.url ?? artifact.issue.url,
+    },
+    pullRequest: {
+      number: artifact.pullRequest.number,
+      title: bundle?.pullRequest?.status === "available" && bundle.pullRequest.value
+        ? bundle.pullRequest.value.title
+        : artifact.pullRequest.title,
+      url: bundle?.pullRequest?.status === "available" && bundle.pullRequest.value
+        ? bundle.pullRequest.value.url
+        : artifact.pullRequest.url,
+      mergedAt: artifact.pullRequest.mergedAt,
+      headRefOid: artifact.pullRequest.headRefOid,
+    },
+    auditBundle: {
+      status: bundle ? "available" : "missing",
+      localCiSummary: localCi?.summary ?? bundle?.localCi?.summary ?? null,
+      pathHygieneSummary: bundle?.pathHygiene?.summary ?? null,
+      journalSummary: journal?.whatChanged ?? bundle?.journal?.summary ?? null,
+    },
+    verificationCommands: [...verificationCommands],
+    findingSummaries,
+    followUpCandidateKeys: [...followUpCandidateKeys].sort(compareStringsAscending),
+  };
+}
+
 export async function summarizePostMergeAuditPatterns(
   config: Pick<SupervisorConfig, "localReviewArtifactDir" | "repoSlug">,
 ): Promise<PostMergeAuditPatternSummaryDto> {
@@ -870,6 +1123,7 @@ export async function summarizePostMergeAuditPatterns(
     latestRecoveredAt: string | null;
   }>();
   const followUpCandidates = new Map<string, PostMergeAuditFollowUpCandidateDto>();
+  const releaseNotesSources: PostMergeAuditReleaseNotesSourceDto[] = [];
 
   for (const artifact of artifacts) {
     if (!isPromotablePostMergeAuditArtifact(artifact)) {
@@ -952,9 +1206,11 @@ export async function summarizePostMergeAuditPatterns(
 
     const externalReviewMissArtifact = await readExternalReviewMissArtifactSafely(artifact.artifacts.externalReviewMissesPath);
     const pullRequest = artifact.pullRequest;
+    const artifactFollowUpCandidateKeys: string[] = [];
     if (externalReviewMissArtifact && pullRequest && matchesExternalReviewMissArtifact(artifact, externalReviewMissArtifact)) {
       for (const candidate of externalReviewMissArtifact.regressionTestCandidates) {
         const key = `test_regression:${artifact.issue.number}:${pullRequest.number}:${candidate.id}`;
+        artifactFollowUpCandidateKeys.push(key);
         followUpCandidates.set(key, {
           key,
           category: "test_regression",
@@ -982,6 +1238,8 @@ export async function summarizePostMergeAuditPatterns(
         });
       }
     }
+
+    releaseNotesSources.push(buildReleaseNotesSource(artifact, artifactFollowUpCandidateKeys));
   }
 
   const summarizedReviewPatterns = [...reviewPatterns.values()]
@@ -1060,6 +1318,9 @@ export async function summarizePostMergeAuditPatterns(
     recoveryPatterns: summarizedRecoveryPatterns,
     followUpCandidates: summarizedFollowUpCandidates,
     promotionCandidates,
+    releaseNotesSources: releaseNotesSources.sort((left, right) =>
+      right.issue.number - left.issue.number ||
+      right.pullRequest.number - left.pullRequest.number),
   });
 }
 

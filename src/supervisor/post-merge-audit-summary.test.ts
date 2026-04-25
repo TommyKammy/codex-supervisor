@@ -195,6 +195,208 @@ function createExternalReviewMissArtifact(
   };
 }
 
+test("summarizePostMergeAuditPatterns exposes bundle-backed release note source material", async () => {
+  const { reviewDir } = await createArtifactTestPaths("post-merge-audit-summary-release-notes");
+  const config = createConfig({
+    localReviewArtifactDir: reviewDir,
+    repoSlug: "owner/repo",
+  });
+  const artifactDir = postMergeAuditArtifactDir(config);
+
+  await fs.mkdir(artifactDir, { recursive: true });
+  await writeJsonAtomic(
+    path.join(artifactDir, "issue-102-head-merged-head.json"),
+    createPostMergeArtifact({
+      operatorAuditBundle: {
+        schemaVersion: 1,
+        advisoryOnly: true,
+        issue: {
+          number: 102,
+          title: "Persist a completed-work audit artifact",
+          url: "https://example.test/issues/102",
+          state: "CLOSED",
+          createdAt: "2026-03-24T09:55:00Z",
+          updatedAt: "2026-03-24T10:06:00Z",
+          bodySnapshot: "## Summary\nPersist a completed-work audit artifact",
+        },
+        pullRequest: {
+          status: "available",
+          summary: "Evidence is available.",
+          value: {
+            number: 116,
+            title: "Persist completed-work audit artifact",
+            url: "https://example.test/pull/116",
+            state: "MERGED",
+            isDraft: false,
+            headRefName: "codex/issue-102",
+            headRefOid: "merged-head-116",
+            createdAt: "2026-03-24T10:03:00Z",
+            mergedAt: "2026-03-24T10:05:00Z",
+          },
+        },
+        stateRecord: {
+          status: "available",
+          summary: "Evidence is available.",
+          value: {
+            state: "done",
+            branch: "codex/issue-102",
+            prNumber: 116,
+            headSha: "merged-head-116",
+            blockedReason: null,
+            attempts: { total: 1, implementation: 1, repair: 0 },
+            lastError: null,
+            lastFailureKind: null,
+            lastFailureSignature: null,
+            updatedAt: "2026-03-24T10:06:00Z",
+          },
+        },
+        journal: {
+          status: "available",
+          summary: "Evidence is available.",
+          value: {
+            hypothesis: "Release notes need the audit evidence.",
+            whatChanged: "Persisted post-merge audit summary evidence.",
+            currentBlocker: "none",
+            nextExactStep: "Prepare release notes.",
+            verificationGap: "none",
+            filesTouched: "src/supervisor/post-merge-audit-summary.ts",
+            rollbackConcern: "none",
+            lastFocusedCommand: "npx tsx --test src/supervisor/post-merge-audit-summary.test.ts",
+          },
+        },
+        localCi: {
+          status: "available",
+          summary: "Evidence is available.",
+          value: {
+            outcome: "passed",
+            command: "npm run build",
+            ran_at: "2026-03-24T10:04:00Z",
+            head_sha: "merged-head-116",
+            execution_mode: "shell",
+            summary: "Build passed.",
+            stderr_summary: null,
+            failure_class: null,
+            remediation_target: null,
+          },
+        },
+        pathHygiene: {
+          status: "missing",
+          summary: "No workstation-local path hygiene result is recorded for this issue run.",
+          value: null,
+        },
+        staleConfiguredBotRemediation: {
+          status: "missing",
+          summary: "No stale configured-bot remediation result is recorded for this issue run.",
+          value: null,
+        },
+        recoveryEvents: {
+          status: "missing",
+          summary: "No recovery event is recorded for this issue run.",
+          value: null,
+        },
+        timeline: null,
+        verificationCommands: {
+          status: "available",
+          summary: "Evidence is available.",
+          value: [
+            "npx tsx --test src/supervisor/post-merge-audit-summary.test.ts",
+            "npm run build",
+          ],
+        },
+      },
+    } as unknown as Partial<PostMergeAuditArtifact>),
+  );
+
+  const summary = await summarizePostMergeAuditPatterns(config);
+
+  assert.deepEqual(summary.releaseNotesSources, [
+    {
+      issue: {
+        number: 102,
+        title: "Persist a completed-work audit artifact",
+        url: "https://example.test/issues/102",
+      },
+      pullRequest: {
+        number: 116,
+        title: "Persist completed-work audit artifact",
+        url: "https://example.test/pull/116",
+        mergedAt: "2026-03-24T10:05:00Z",
+        headRefOid: "merged-head-116",
+      },
+      auditBundle: {
+        status: "available",
+        localCiSummary: "Build passed.",
+        pathHygieneSummary: "No workstation-local path hygiene result is recorded for this issue run.",
+        journalSummary: "Persisted post-merge audit summary evidence.",
+      },
+      verificationCommands: [
+        "npx tsx --test src/supervisor/post-merge-audit-summary.test.ts",
+        "npm run build",
+      ],
+      findingSummaries: ["Retry path reused stale review context after the head changed."],
+      followUpCandidateKeys: [],
+    },
+  ]);
+});
+
+test("summarizePostMergeAuditPatterns treats incomplete operator bundles as missing release-note evidence", async () => {
+  const { reviewDir } = await createArtifactTestPaths("post-merge-audit-summary-incomplete-bundle");
+  const config = createConfig({
+    localReviewArtifactDir: reviewDir,
+    repoSlug: "owner/repo",
+  });
+  const artifactDir = postMergeAuditArtifactDir(config);
+
+  await fs.mkdir(artifactDir, { recursive: true });
+  await writeJsonAtomic(
+    path.join(artifactDir, "issue-102-head-merged-head.json"),
+    createPostMergeArtifact({
+      operatorAuditBundle: {
+        schemaVersion: 1,
+        advisoryOnly: true,
+        issue: {
+          number: 102,
+          title: "Persist a completed-work audit artifact",
+          url: "https://example.test/issues/102",
+          state: "CLOSED",
+          createdAt: "2026-03-24T09:55:00Z",
+          updatedAt: "2026-03-24T10:06:00Z",
+          bodySnapshot: "## Summary\nPersist a completed-work audit artifact",
+        },
+        pullRequest: {
+          status: "available",
+          summary: "Evidence is available.",
+          value: {
+            number: 116,
+            title: "Persist completed-work audit artifact",
+            url: "https://example.test/pull/116",
+            state: "MERGED",
+            isDraft: false,
+            headRefName: "codex/issue-102",
+            headRefOid: "merged-head-116",
+            createdAt: "2026-03-24T10:03:00Z",
+            mergedAt: "2026-03-24T10:05:00Z",
+          },
+        },
+        verificationCommands: {
+          status: "missing",
+          summary: "No verification commands are listed in the issue body.",
+          value: null,
+        },
+      },
+    } as unknown as Partial<PostMergeAuditArtifact>),
+  );
+
+  const summary = await summarizePostMergeAuditPatterns(config);
+
+  assert.deepEqual(summary.releaseNotesSources[0]?.auditBundle, {
+    status: "missing",
+    localCiSummary: null,
+    pathHygieneSummary: null,
+    journalSummary: null,
+  });
+});
+
 test("summarizePostMergeAuditPatterns aggregates recurring review, failure, and recovery patterns from persisted artifacts", async () => {
   const { reviewDir } = await createArtifactTestPaths("post-merge-audit-summary");
   const config = createConfig({
@@ -278,7 +480,7 @@ test("summarizePostMergeAuditPatterns aggregates recurring review, failure, and 
 
   assert.deepEqual(validatePostMergeAuditPatternSummary(summary), summary);
   assert.deepEqual(Object.keys(summary).sort(), [...POST_MERGE_AUDIT_PATTERN_SUMMARY_TOP_LEVEL_KEYS].sort());
-  assert.equal(summary.schemaVersion, 4);
+  assert.equal(summary.schemaVersion, 5);
   assert.equal(summary.advisoryOnly, true);
   assert.equal(summary.autoApplyGuardrails, false);
   assert.equal(summary.autoCreateFollowUpIssues, false);
@@ -337,6 +539,13 @@ test("summarizePostMergeAuditPatterns aggregates recurring review, failure, and 
   assert.deepEqual(summary.promotionCandidates[0]?.supportingFindingKeys, [
     "src/supervisor.ts|210|214|retry path|stale context",
   ]);
+  assert.equal(summary.releaseNotesSources.length, 2);
+  assert.deepEqual(summary.releaseNotesSources[0]?.auditBundle, {
+    status: "missing",
+    localCiSummary: null,
+    pathHygieneSummary: null,
+    journalSummary: null,
+  });
 });
 
 test("summarizePostMergeAuditPatterns skips persisted artifacts missing trusted provenance", async () => {
@@ -366,7 +575,7 @@ test("summarizePostMergeAuditPatterns skips persisted artifacts missing trusted 
 
 test("validatePostMergeAuditPatternSummary rejects unsupported schema versions and missing required fields", () => {
   const summary = {
-    schemaVersion: 4,
+    schemaVersion: 5,
     generatedAt: "2026-03-25T00:00:00Z",
     artifactDir: "/tmp/post-merge",
     advisoryOnly: true,
@@ -379,20 +588,21 @@ test("validatePostMergeAuditPatternSummary rejects unsupported schema versions a
     recoveryPatterns: [],
     followUpCandidates: [],
     promotionCandidates: [],
+    releaseNotesSources: [],
   } as const;
 
   assert.deepEqual(validatePostMergeAuditPatternSummary(summary), summary);
 
   assert.throws(
     () => validatePostMergeAuditPatternSummary({ ...summary, schemaVersion: 1 }),
-    /schemaVersion must be 4\./u,
+    /schemaVersion must be 5\./u,
   );
 
   const { promotionCandidates, ...summaryWithoutPromotionCandidates } = summary;
   void promotionCandidates;
   assert.throws(
     () => validatePostMergeAuditPatternSummary(summaryWithoutPromotionCandidates),
-    /summary must contain schemaVersion, generatedAt, artifactDir, advisoryOnly, autoApplyGuardrails, autoCreateFollowUpIssues, artifactsAnalyzed, artifactsSkipped, reviewPatterns, failurePatterns, recoveryPatterns, followUpCandidates, and promotionCandidates\./u,
+    /summary must contain schemaVersion, generatedAt, artifactDir, advisoryOnly, autoApplyGuardrails, autoCreateFollowUpIssues, artifactsAnalyzed, artifactsSkipped, reviewPatterns, failurePatterns, recoveryPatterns, followUpCandidates, promotionCandidates, and releaseNotesSources\./u,
   );
 });
 

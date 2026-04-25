@@ -41,9 +41,33 @@ test("syncPostMergeAuditArtifact persists a typed completed-work artifact", asyn
   });
   const localReviewSummaryPath = path.join(reviewDir, "owner-repo", "issue-102", "head-deadbeef.md");
   const localReviewFindingsPath = `${localReviewSummaryPath.slice(0, -3)}.json`;
+  const journalPath = path.join(workspacePath, ".codex-supervisor", "issue-journal.md");
 
   await fs.mkdir(path.dirname(localReviewSummaryPath), { recursive: true });
   await fs.writeFile(localReviewSummaryPath, "# local review\n", "utf8");
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  await fs.writeFile(
+    journalPath,
+    [
+      "# Issue #102",
+      "",
+      "## Codex Working Notes",
+      "### Current Handoff",
+      "- Hypothesis: Post-merge release notes need audit evidence.",
+      "- What changed: Persisted journal handoff evidence.",
+      "- Current blocker: none",
+      "- Next exact step: Prepare release notes.",
+      "- Verification gap: none",
+      "- Files touched: src/supervisor/post-merge-audit-artifact.ts",
+      "- Rollback concern: none",
+      "- Last focused command: npx tsx --test src/supervisor/post-merge-audit-artifact.test.ts",
+      "",
+      "### Scratchpad",
+      "- Journal handoff fixture.",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
   const localReviewArtifact: LocalReviewArtifact = {
     issueNumber: 102,
     prNumber: 116,
@@ -129,6 +153,7 @@ test("syncPostMergeAuditArtifact persists a typed completed-work artifact", asyn
     issue_number: 102,
     branch: "codex/issue-102",
     workspace: workspacePath,
+    journal_path: journalPath,
     local_review_summary_path: localReviewSummaryPath,
     local_review_run_at: "2026-03-24T10:00:00Z",
     local_review_recommendation: "changes_requested",
@@ -138,6 +163,17 @@ test("syncPostMergeAuditArtifact persists a typed completed-work artifact", asyn
     local_review_verified_findings_count: 0,
     local_review_verified_max_severity: "none",
     external_review_misses_path: "/tmp/reviews/external-review-misses-head-merged-head-116.json",
+    latest_local_ci_result: {
+      outcome: "passed",
+      summary: "Configured local CI passed.",
+      ran_at: "2026-03-24T10:04:00Z",
+      head_sha: "merged-head-116",
+      execution_mode: "shell",
+      command: "npm run build",
+      stderr_summary: null,
+      failure_class: null,
+      remediation_target: null,
+    },
     last_failure_kind: "command_error",
     last_failure_context: createFailureContext("Code review exposed a recurring mismatch."),
     blocked_reason: "manual_review",
@@ -154,6 +190,14 @@ test("syncPostMergeAuditArtifact persists a typed completed-work artifact", asyn
   const issue = createIssue({
     number: 102,
     title: "Persist a completed-work audit artifact",
+    body: [
+      "## Summary",
+      "Persist a completed-work audit artifact",
+      "",
+      "## Verification",
+      "- `npx tsx --test src/supervisor/post-merge-audit-artifact.test.ts`",
+      "- `npm run build`",
+    ].join("\n"),
     createdAt: "2026-03-24T09:55:00Z",
     updatedAt: "2026-03-24T10:06:00Z",
   });
@@ -191,6 +235,16 @@ test("syncPostMergeAuditArtifact persists a typed completed-work artifact", asyn
   assert.equal(artifact.localReview?.artifact?.summary, localReviewArtifact.summary);
   assert.equal(artifact.failureTaxonomy.latestFailure?.failureKind, "command_error");
   assert.equal(artifact.failureTaxonomy.latestRecovery?.reason, nextRecord.last_recovery_reason);
+  assert.equal(artifact.operatorAuditBundle?.journal.value?.whatChanged, "Persisted journal handoff evidence.");
+  assert.equal(
+    artifact.operatorAuditBundle?.journal.value?.lastFocusedCommand,
+    "npx tsx --test src/supervisor/post-merge-audit-artifact.test.ts",
+  );
+  assert.equal(artifact.operatorAuditBundle?.localCi.value?.summary, "Configured local CI passed.");
+  assert.deepEqual(artifact.operatorAuditBundle?.verificationCommands.value, [
+    "npx tsx --test src/supervisor/post-merge-audit-artifact.test.ts",
+    "npm run build",
+  ]);
   assert.doesNotMatch(JSON.stringify(artifact), new RegExp(workspacePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.doesNotMatch(JSON.stringify(artifact), /\/tmp\/reviews\/external-review-misses-head-merged-head-116\.json/);
 });
