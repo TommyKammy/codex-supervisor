@@ -10,11 +10,14 @@ Common flags:
   --why                             Include status decision details. Supported with status only.
 
 First run:
-  1. node dist/index.js doctor --config <supervisor-config-path>
-  2. node dist/index.js status --config <supervisor-config-path> --why
-  3. node dist/index.js run-once --config <supervisor-config-path> --dry-run
-  4. node dist/index.js run-once --config <supervisor-config-path>
-  5. node dist/index.js loop --config <supervisor-config-path>
+  1. node dist/index.js help
+  2. node dist/index.js web --config <supervisor-config-path>  # open /setup
+  3. node dist/index.js doctor --config <supervisor-config-path>
+  4. node dist/index.js status --config <supervisor-config-path> --why
+  5. node dist/index.js issue-lint <issue-number> --config <supervisor-config-path>
+  6. node dist/index.js run-once --config <supervisor-config-path> --dry-run
+  7. node dist/index.js run-once --config <supervisor-config-path>
+  8. node dist/index.js loop --config <supervisor-config-path>
 
 Run commands:
   run-once                          Run one supervisor cycle.

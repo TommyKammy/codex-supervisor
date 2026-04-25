@@ -202,7 +202,7 @@ Before `run-once`, do this quick check:
 Validate one issue before the loop:
 
 ```bash
-node dist/index.js issue-lint 123 --config /path/to/supervisor.config.codex.json
+node dist/index.js issue-lint <issue-number> --config <supervisor-config-path>
 ```
 
 What to do with the result:
@@ -210,7 +210,7 @@ What to do with the result:
 - if `issue-lint` reports `missing_required=...`, fix the issue body before `run-once`
 - if `issue-lint` reports `metadata_errors=...`, normalize the issue body instead of guessing what the supervisor will infer
 - if `issue-lint` is clean but selection still looks wrong, use `status` or `doctor` to inspect candidate discovery and host health
-- if one issue keeps getting picked unexpectedly, run `node dist/index.js explain 123 --config /path/to/supervisor.config.json` to compare the issue body with the current runtime state
+- if one issue keeps getting picked unexpectedly, run `node dist/index.js explain <issue-number> --config <supervisor-config-path>` to compare the issue body with the current runtime state
 
 Representative blocking messages:
 
@@ -235,20 +235,47 @@ How to tell “fix the issue” from “fix the host or config”:
 
 Issue readiness is not the same as trust. A perfectly structured issue is still not safe for autonomous execution when the GitHub-authored text comes from an untrusted repo or untrusted author set.
 
-## Run the first pass
+## First-run command flow
 
-Start with a single supervised pass so you can inspect the repo selection, worktree setup, and resulting state before you hand over the loop:
+Start with read-only or dry-run commands, then run a single supervised pass so you can inspect repo selection, worktree setup, and resulting state before you hand over the loop.
 
 ```bash
-node dist/index.js status --config /path/to/supervisor.config.codex.json
-node dist/index.js doctor --config /path/to/supervisor.config.codex.json
-node dist/index.js run-once --config /path/to/supervisor.config.codex.json
-node dist/index.js rollup-execution-metrics --config /path/to/supervisor.config.codex.json
+node dist/index.js help
+node dist/index.js web --config <supervisor-config-path>
+# In the WebUI, open /setup. The same typed setup surface is available as:
+# GET /api/setup-readiness
+node dist/index.js doctor --config <supervisor-config-path>
+node dist/index.js status --config <supervisor-config-path> --why
+node dist/index.js issue-lint <issue-number> --config <supervisor-config-path>
+node dist/index.js run-once --config <supervisor-config-path> --dry-run
+node dist/index.js run-once --config <supervisor-config-path>
+./scripts/start-loop-tmux.sh
 ```
 
-If you keep multiple profiles side by side, `status` and `doctor` are the fastest way to confirm that you are inspecting the same `supervisor.config.xxx.json` file you plan to use for `run-once` and `loop`.
+Read the command output as a sequence of decisions, not as unrelated logs:
 
-What to check after `run-once`:
+- `help` should show the same first-run shape: `doctor`, `status --why`, `run-once --dry-run`, `run-once`, then `loop`.
+- `/setup` and `GET /api/setup-readiness` return a typed setup report. `ready: false`, `blockers: [...]`, or fields in `missing` or `invalid` state mean setup is not complete yet. Fix those config fields before trusting `run-once`.
+- `doctor` reports host and state health. A line such as `doctor_check name=github_auth status=fail` means the host is not ready; fix `gh` auth rather than editing the GitHub issue body.
+- `status --why` reports queue, PR, CI, review, and loop state. Use `current_issue=...`, candidate details, and `operator_action action=...` lines to decide the next operator step.
+- `issue-lint` reports issue-body readiness. `missing_required=...` or `metadata_errors=...` means the issue body is not execution-ready; fix the GitHub issue body before `run-once`.
+- `run-once --dry-run` should explain the next cycle without running Codex. Use it when the selected issue, worktree, or PR state is surprising.
+- `run-once` should execute exactly one supervisor cycle. Inspect `status` and the issue journal before starting a background loop.
+- `./scripts/start-loop-tmux.sh` is the supported macOS loop start path. It uses `CODEX_SUPERVISOR_CONFIG`; set that environment variable to the same config path you validated above.
+
+Phase 5 operator-action vocabulary is intentionally small:
+
+- `operator_action action=fix_config` or `doctor_operator_action action=fix_config`: repair host prerequisites, setup fields, or workspace-preparation configuration before continuing.
+- `operator_action action=restart_loop`: tracked work exists but the background loop is off; restart the supported loop host after confirming the config.
+- `operator_action action=provider_outage_suspected`: required checks are green but the configured review provider has not produced a current-head signal; wait, verify provider delivery, or escalate to manual review.
+- `operator_action action=manual_review`: a tracked path has a manual-review blocker; do not let the loop infer success.
+- `operator_action action=continue`: no blocking operator action was detected on that surface.
+- `doctor_operator_action action=adopt_local_ci`: a repo-owned local CI candidate exists; configure it or explicitly dismiss it before treating the local CI posture as settled.
+- `doctor_operator_action action=safe_to_ignore`: a repo-owned local CI candidate was intentionally dismissed and is no longer an unresolved setup ambiguity.
+
+If you keep multiple profiles side by side, `status`, `doctor`, and `/api/setup-readiness` are the fastest way to confirm that you are inspecting the same config file you plan to use for `run-once` and `loop`.
+
+What to check after the first successful `run-once`:
 
 - the selected issue is the one you expected
 - the issue worktree was created under `workspaceRoot`
@@ -274,7 +301,7 @@ Host-migration note for worktree-local journals:
 - If the old host-local journal could not be recovered and the supervisor recreated the issue-scoped local journal, the same surfaces can emit `issue_journal_state ... status=rehydrated guidance=no_manual_action_required detail=prior_local_only_handoff_unavailable`. Treat that as an informational repair, not a blocking failure.
 - If those diagnostics instead say `guidance=manual_action_required`, the canonical local journal is still missing and the operator should inspect the current worktree before resuming autonomous execution.
 
-Execution metrics are retained independently of issue worktree cleanup. Terminal run summaries live under `<dirname(stateFile)>/execution-metrics/run-summaries/`, and `node dist/index.js rollup-execution-metrics --config /path/to/supervisor.config.json` writes `<dirname(stateFile)>/execution-metrics/daily-rollups.json` from those retained summaries.
+Execution metrics are retained independently of issue worktree cleanup. Terminal run summaries live under `<dirname(stateFile)>/execution-metrics/run-summaries/`, and `node dist/index.js rollup-execution-metrics --config <supervisor-config-path>` writes `<dirname(stateFile)>/execution-metrics/daily-rollups.json` from those retained summaries.
 
 ### Setup/readiness contract for first-run UX
 
@@ -397,13 +424,13 @@ Explicit non-goal: `codex-supervisor` does not infer or reconstruct workflow log
 When one supervised pass behaves correctly, switch to the continuous loop:
 
 ```bash
-node dist/index.js loop --config /path/to/supervisor.config.json
+node dist/index.js loop --config <supervisor-config-path>
 ```
 
 If you want a local operator view over the same supervisor service, you can also run:
 
 ```bash
-node dist/index.js web --config /path/to/supervisor.config.json
+node dist/index.js web --config <supervisor-config-path>
 ```
 
 Host-specific loop guidance:
