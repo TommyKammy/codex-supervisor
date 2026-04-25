@@ -280,6 +280,20 @@ test("parseArgs accepts explain timeline mode before the issue number", () => {
   });
 });
 
+test("parseArgs accepts explain timeline mode before the command", () => {
+  assert.deepEqual(parseArgs(["--timeline", "explain", "1743"]), {
+    command: "explain",
+    configPath: undefined,
+    dryRun: false,
+    why: false,
+    explainMode: "timeline",
+    issueNumber: 1743,
+    snapshotPath: undefined,
+    caseId: undefined,
+    corpusPath: undefined,
+  });
+});
+
 test("parseArgs rejects timeline mode outside explain", () => {
   assert.throws(
     () => parseArgs(["status", "--timeline"]),
