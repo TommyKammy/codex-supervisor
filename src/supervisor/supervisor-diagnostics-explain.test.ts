@@ -1488,7 +1488,7 @@ test("explain keeps same-head host-local ready-promotion blockers current when t
           command: "npm run verify:paths",
           stderr_summary: "docs/configuration.md contract drift: changed doc contract no longer matches repo-owned verifier expectation",
           failure_class: "non_zero_exit",
-          remediation_target: "repo_owned_command",
+          remediation_target: "tracked_publishable_content",
           verifier_drift_hint:
             "repo_owned_verifier_drift: the repo-owned verifier appears to disagree with a changed docs or contract expectation; repair the verifier expectation or the repo content before rerunning local CI.",
         },
@@ -1541,7 +1541,7 @@ test("explain keeps same-head host-local ready-promotion blockers current when t
   );
   assert.match(
     explanation,
-    /^local_ci_result outcome=failed context=blocking failure_class=non_zero_exit remediation_target=repo_owned_command head=current head_sha=head-draft-277 ran_at=2026-03-13T00:10:00Z summary=Configured local CI command failed before marking PR #277 ready\. command=npm run verify:paths stderr_summary=docs\/configuration\.md contract drift: changed doc contract no longer matches repo-owned verifier expectation hint=repo_owned_verifier_drift: the repo-owned verifier appears to disagree with a changed docs or contract expectation; repair the verifier expectation or the repo content before rerunning local CI\.$/m,
+    /^local_ci_result outcome=failed context=blocking failure_class=non_zero_exit remediation_target=tracked_publishable_content head=current head_sha=head-draft-277 ran_at=2026-03-13T00:10:00Z summary=Configured local CI command failed before marking PR #277 ready\. command=npm run verify:paths stderr_summary=docs\/configuration\.md contract drift: changed doc contract no longer matches repo-owned verifier expectation hint=repo_owned_verifier_drift: the repo-owned verifier appears to disagree with a changed docs or contract expectation; repair the verifier expectation or the repo content before rerunning local CI\.$/m,
   );
   assert.doesNotMatch(
     explanation,

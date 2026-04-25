@@ -787,6 +787,7 @@ test("dashboard status panel surfaces tracked PR host-local CI blockers", async 
             "tracked_pr_mismatch issue=#171 pr=#271 recoverability=stale_but_recoverable github_state=ready_to_merge github_blocked_reason=none local_state=blocked local_blocked_reason=verification stale_local_blocker=yes",
             "tracked_pr_host_local_ci issue=#171 pr=#271 github_checks=green head_sha=head-ready-271 outcome=failed failure_class=workspace_toolchain_missing remediation_target=workspace_environment head=current summary=Configured local CI command could not run before marking PR #271 ready because the workspace toolchain is unavailable. Remediation target: workspace environment.",
             `tracked_pr_host_local_ci_gap issue=#171 pr=#271 workspace_preparation_command=unset gap=missing_workspace_prerequisite_visibility likely_cause=${MISSING_WORKSPACE_PREPARATION_CONTRACT_WARNING}`,
+            "tracked_pr_ready_promotion_gate issue=#178 pr=#278 gate=workstation_local_path_hygiene remediation_target=repair_already_queued summary=Ready-promotion path hygiene found actionable publishable tracked content; supervisor will retry a repair turn before marking the draft PR ready. Actionable files: scripts/check-paths.sh.",
           ],
         }),
       ),
@@ -799,6 +800,7 @@ test("dashboard status panel surfaces tracked PR host-local CI blockers", async 
   assert.ok(statusLines);
   assert.match(statusLines.textContent, /tracked_pr_host_local_ci issue=#171 pr=#271 github_checks=green/u);
   assert.match(statusLines.textContent, /failure_class=workspace_toolchain_missing remediation_target=workspace_environment/u);
+  assert.match(statusLines.textContent, /gate=workstation_local_path_hygiene remediation_target=repair_already_queued/u);
   assert.match(statusLines.textContent, /likely_cause=localCiCommand is configured but workspacePreparationCommand is unset\./u);
   assert.match(statusLines.textContent, /workspace_preparation_command=unset gap=missing_workspace_prerequisite_visibility/u);
   assert.equal(harness.remainingFetches.length, 0);

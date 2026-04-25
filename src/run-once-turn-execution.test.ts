@@ -788,7 +788,7 @@ test("executeCodexTurnPhase blocks draft PR creation when configured local CI fa
   );
   assert.match(
     state.issues["102"]?.last_error ?? "",
-    /Configured local CI command failed before opening a pull request\. Remediation target: repo-owned command\./,
+    /Configured local CI command failed before opening a pull request\. Remediation target: tracked publishable content\./,
   );
 });
 

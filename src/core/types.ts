@@ -178,10 +178,11 @@ export type LocalCiFailureClass =
   | "non_zero_exit"
   | "unset_contract";
 export type LocalCiRemediationTarget =
-  | "issue_body"
-  | "repo_owned_command"
-  | "supervisor_config"
-  | "workspace_environment";
+  | "workspace_environment"
+  | "config_contract"
+  | "tracked_publishable_content"
+  | "repair_already_queued"
+  | "manual_review";
 
 export interface LatestLocalCiResult {
   outcome: LocalCiResultOutcome;

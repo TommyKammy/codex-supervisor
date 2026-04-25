@@ -3,6 +3,7 @@ import type {
   GitHubPullRequest,
   IssueRunRecord,
   LatestLocalCiResult,
+  LocalCiRemediationTarget,
   PullRequestCheck,
   ReviewThread,
   RunState,
@@ -12,6 +13,14 @@ import {
   buildMissingWorkspacePreparationContractWarning,
   displayLocalCiCommand,
 } from "../core/config";
+import {
+  REMEDIATION_TARGET_CONFIG_CONTRACT,
+  REMEDIATION_TARGET_MANUAL_REVIEW,
+  REMEDIATION_TARGET_REPAIR_ALREADY_QUEUED,
+  REMEDIATION_TARGET_TRACKED_PUBLISHABLE_CONTENT,
+  REMEDIATION_TARGET_WORKSPACE_ENVIRONMENT,
+  workspacePreparationRemediationTargetForFailureClass,
+} from "../remediation-targets";
 import { projectTrackedPrLifecycle } from "../tracked-pr-lifecycle-projection";
 import { hasFreshTrackedPrReadyPromotionBlockerEvidence } from "../tracked-pr-ready-promotion-blocker";
 import {
@@ -125,6 +134,39 @@ function buildTrackedPrHostLocalCiDetailLines(
   return detailLines;
 }
 
+function parseRemediationTargetFromSignature(
+  signature: string | null | undefined,
+): LocalCiRemediationTarget | null {
+  const target = signature?.match(/(?:^|\|)target=([^|]+)/)?.[1];
+  switch (target) {
+    case REMEDIATION_TARGET_WORKSPACE_ENVIRONMENT:
+    case REMEDIATION_TARGET_CONFIG_CONTRACT:
+    case REMEDIATION_TARGET_TRACKED_PUBLISHABLE_CONTENT:
+    case REMEDIATION_TARGET_REPAIR_ALREADY_QUEUED:
+    case REMEDIATION_TARGET_MANUAL_REVIEW:
+      return target;
+    default:
+      return null;
+  }
+}
+
+function deriveWorkstationLocalPathHygieneRemediationTarget(
+  record: IssueRunRecord,
+): LocalCiRemediationTarget {
+  if (record.state === "repairing_ci") {
+    return REMEDIATION_TARGET_REPAIR_ALREADY_QUEUED;
+  }
+
+  const persistedTarget = parseRemediationTargetFromSignature(
+    record.last_host_local_pr_blocker_comment_signature,
+  );
+  if (persistedTarget) {
+    return persistedTarget;
+  }
+
+  return REMEDIATION_TARGET_TRACKED_PUBLISHABLE_CONTENT;
+}
+
 function readyPromotionGateSummary(
   config: SupervisorConfig,
   record: IssueRunRecord,
@@ -155,24 +197,31 @@ function readyPromotionGateSummary(
     };
   }
 
-  if ((record.last_error ?? "").includes("workstation-local path hygiene before marking PR")) {
+  if (
+    record.last_failure_signature === "workstation-local-path-hygiene-failed" ||
+    (record.last_error ?? "").includes("workstation-local path hygiene before marking PR")
+  ) {
+    const remediationTarget = deriveWorkstationLocalPathHygieneRemediationTarget(record);
+    const pathHygieneSummary = record.last_error ?? summary;
     return {
       gate: "workstation_local_path_hygiene",
       failedGate: "workstation-local path hygiene",
-      summary,
+      summary: pathHygieneSummary,
       detailLines: [
         [
           "tracked_pr_ready_promotion_gate",
           `issue=#${record.issue_number}`,
           `pr=#${record.pr_number}`,
           "gate=workstation_local_path_hygiene",
-          `summary=${summary.replace(/\r?\n/g, "\\n")}`,
+          `remediation_target=${remediationTarget}`,
+          `summary=${pathHygieneSummary.replace(/\r?\n/g, "\\n")}`,
         ].join(" "),
       ],
     };
   }
 
-  if (workspacePreparationFailureClass(record.last_failure_signature)) {
+  const preparationFailureClass = workspacePreparationFailureClass(record.last_failure_signature);
+  if (preparationFailureClass) {
     return {
       gate: "workspace_preparation",
       failedGate: displayLocalCiCommand(config.workspacePreparationCommand) ?? "workspacePreparationCommand",
@@ -183,6 +232,8 @@ function readyPromotionGateSummary(
           `issue=#${record.issue_number}`,
           `pr=#${record.pr_number}`,
           "gate=workspace_preparation",
+          `failure_class=${preparationFailureClass}`,
+          `remediation_target=${workspacePreparationRemediationTargetForFailureClass(preparationFailureClass)}`,
           `summary=${summary.replace(/\r?\n/g, "\\n")}`,
         ].join(" "),
       ],

@@ -13,10 +13,10 @@ import {
   LocalCiExecutionMode,
   LatestLocalCiResult,
   LocalCiFailureClass,
-  LocalCiRemediationTarget,
   SupervisorConfig,
 } from "./core/types";
 import { nowIso, truncate, truncatePreservingStartAndEnd } from "./core/utils";
+import { localCiRemediationTargetForFailureClass } from "./remediation-targets";
 
 const LOCAL_CI_COMMAND_TIMEOUT_MS = 5 * 60_000;
 
@@ -213,21 +213,6 @@ function classifyLocalCiFailure(error: unknown, command: string): Exclude<LocalC
   return "non_zero_exit";
 }
 
-function remediationTargetForFailureClass(failureClass: LocalCiFailureClass): LocalCiRemediationTarget {
-  switch (failureClass) {
-    case "missing_command":
-      return "supervisor_config";
-    case "workspace_toolchain_missing":
-      return "workspace_environment";
-    case "worktree_helper_missing":
-      return "supervisor_config";
-    case "non_zero_exit":
-      return "repo_owned_command";
-    case "unset_contract":
-      return "issue_body";
-  }
-}
-
 function workspacePreparationFailureSignature(
   failureClass: Exclude<LocalCiFailureClass, "unset_contract">,
 ): string {
@@ -247,9 +232,9 @@ function buildSummary(args: {
     case "missing_command":
       return (
         truncate(
-          `Configured local CI command is unavailable ${args.gateLabel}. Remediation target: supervisor config.`,
+          `Configured local CI command is unavailable ${args.gateLabel}. Remediation target: config contract.`,
           1000,
-        ) ?? "Configured local CI command is unavailable. Remediation target: supervisor config."
+        ) ?? "Configured local CI command is unavailable. Remediation target: config contract."
       );
     case "workspace_toolchain_missing":
       return (
@@ -262,16 +247,16 @@ function buildSummary(args: {
     case "non_zero_exit":
       return (
         truncate(
-          `Configured local CI command failed ${args.gateLabel}. Remediation target: repo-owned command.`,
+          `Configured local CI command failed ${args.gateLabel}. Remediation target: tracked publishable content.`,
           1000,
-        ) ?? "Configured local CI command failed. Remediation target: repo-owned command."
+        ) ?? "Configured local CI command failed. Remediation target: tracked publishable content."
       );
     case "unset_contract":
       return (
         truncate(
-          `No repo-owned local CI contract is configured ${args.gateLabel}. Remediation target: issue body.`,
+          `No repo-owned local CI contract is configured ${args.gateLabel}. Remediation target: config contract.`,
           1000,
-        ) ?? "No repo-owned local CI contract is configured. Remediation target: issue body."
+        ) ?? "No repo-owned local CI contract is configured. Remediation target: config contract."
       );
     default:
       return truncate(`Configured local CI command failed ${args.gateLabel}.`, 1000) ?? "Configured local CI command failed.";
@@ -436,9 +421,9 @@ function buildWorkspacePreparationSummary(args: {
     case "missing_command":
       return (
         truncate(
-          `Configured workspace preparation command is unavailable ${args.gateLabel}. Remediation target: workspace environment.`,
+          `Configured workspace preparation command is unavailable ${args.gateLabel}. Remediation target: config contract.`,
           1000,
-        ) ?? "Configured workspace preparation command is unavailable. Remediation target: workspace environment."
+        ) ?? "Configured workspace preparation command is unavailable. Remediation target: config contract."
       );
     case "workspace_toolchain_missing":
       return (
@@ -455,10 +440,10 @@ function buildWorkspacePreparationSummary(args: {
         : "";
       return (
         truncate(
-          `Configured workspace preparation command could not run ${args.gateLabel} because repo-relative helper ${args.helperPath ?? "the configured helper"} is missing from this issue worktree.${likelyCause}${recommendedCommand} Remediation target: supervisor config.`,
+          `Configured workspace preparation command could not run ${args.gateLabel} because repo-relative helper ${args.helperPath ?? "the configured helper"} is missing from this issue worktree.${likelyCause}${recommendedCommand} Remediation target: config contract.`,
           1000,
         ) ??
-        "Configured workspace preparation command could not run because a repo-relative helper is missing from this issue worktree. Remediation target: supervisor config."
+        "Configured workspace preparation command could not run because a repo-relative helper is missing from this issue worktree. Remediation target: config contract."
       );
     }
     case "non_zero_exit":
@@ -607,7 +592,7 @@ export async function runLocalCiGate(args: {
         command: null,
         stderr_summary: null,
         failure_class: "unset_contract",
-        remediation_target: remediationTargetForFailureClass("unset_contract"),
+        remediation_target: localCiRemediationTargetForFailureClass("unset_contract"),
         verifier_drift_hint: null,
       },
     };
@@ -658,7 +643,7 @@ export async function runLocalCiGate(args: {
         command: command.displayCommand,
         stderr_summary: summarizeCommandStderr(error),
         failure_class: failureClass,
-        remediation_target: remediationTargetForFailureClass(failureClass),
+        remediation_target: localCiRemediationTargetForFailureClass(failureClass),
         verifier_drift_hint: verifierDriftHint,
       },
     };

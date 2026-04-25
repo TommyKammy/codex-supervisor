@@ -2413,7 +2413,7 @@ test("diagnoseSupervisorHost preserves draft tracked PR verification blockers in
           head_sha: "head-draft-274",
           execution_mode: "legacy_shell_string",
           failure_class: "non_zero_exit",
-          remediation_target: "repo_owned_command",
+          remediation_target: "tracked_publishable_content",
         },
       }),
     },
@@ -2516,7 +2516,7 @@ test("diagnoseSupervisorHost marks old-head ready-promotion blockers as stale", 
           head_sha: "head-old-275",
           execution_mode: "legacy_shell_string",
           failure_class: "non_zero_exit",
-          remediation_target: "repo_owned_command",
+          remediation_target: "tracked_publishable_content",
         },
       }),
     },
@@ -2765,6 +2765,10 @@ test("diagnoseSupervisorHost keeps same-head host-local ready-promotion blockers
   assert.match(
     renderDoctorReport(diagnostics),
     /doctor_detail name=worktrees detail=tracked_pr_ready_promotion_blocked issue=#177 pr=#277 recoverability=manual_attention_required github_state=draft_pr local_state=blocked local_blocked_reason=verification stale_local_blocker=yes/,
+  );
+  assert.match(
+    renderDoctorReport(diagnostics),
+    /doctor_detail name=worktrees detail=tracked_pr_ready_promotion_gate issue=#177 pr=#277 gate=workstation_local_path_hygiene remediation_target=tracked_publishable_content summary=Tracked durable artifacts failed workstation-local path hygiene before marking PR #277 ready\./,
   );
   assert.match(
     renderDoctorReport(diagnostics),
