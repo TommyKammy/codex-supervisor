@@ -1,4 +1,4 @@
-import type { SupervisorConfig } from "./types";
+import type { SupervisorConfig } from "./config-types";
 
 export const CONFIG_FIELD_POSTURE_TIERS = [
   "required",

@@ -3,14 +3,14 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import {
   CadenceDiagnosticsSummary,
-  LocalReviewPostureSummary,
   LocalCiContractSummary,
+  LocalReviewPostureSummary,
   LocalReviewPosturePreset,
   ReleaseReadinessGateSummary,
   SupervisorConfig,
   TrustDiagnosticsSummary,
   WorkspacePreparationContractSummary,
-} from "./types";
+} from "./config-types";
 import { parseJson } from "./utils";
 import {
   DEFAULT_CANDIDATE_DISCOVERY_FETCH_WINDOW,

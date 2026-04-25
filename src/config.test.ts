@@ -13,8 +13,9 @@ import {
   loadConfigSummaryFromDocument,
   resolveConfigPath,
   summarizeCadenceDiagnostics,
+  summarizeLocalCiContract,
 } from "./core/config";
-import { SupervisorConfig } from "./core/types";
+import type { LocalCiContractSummary, SupervisorConfig } from "./core/config-types";
 import { buildSetupConfigPreview } from "./setup-config-preview";
 import { updateSetupConfig } from "./setup-config-write";
 
@@ -158,6 +159,22 @@ test("config field posture metadata classifies setup and automation-expanding fi
       ["approvedTrackedTopLevelEntries", "dangerous_explicit_opt_in"],
     ],
   );
+});
+
+test("config-owned local CI summary type covers diagnostics behavior", () => {
+  const summary = summarizeLocalCiContract({
+    localCiCommand: {
+      mode: "structured",
+      executable: "npm",
+      args: ["run", "build"],
+    },
+    localCiCandidateDismissed: false,
+  }) satisfies LocalCiContractSummary;
+
+  assert.equal(summary.configured, true);
+  assert.equal(summary.command, "npm run build");
+  assert.equal(summary.source, "config");
+  assert.equal(summary.adoptionFlow?.state, "configured");
 });
 
 test("loadConfig leaves bare codexBinary values unresolved for PATH lookup", async (t) => {
