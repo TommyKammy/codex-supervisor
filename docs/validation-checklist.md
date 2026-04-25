@@ -1,6 +1,6 @@
 # Release Readiness Checklist
 
-Use this advisory checklist before treating `codex-supervisor` as ready for broader use on a repo. It is a release-readiness artifact for operators and maintainers, not an automatic hard gate. A separate explicit gate must be configured before readiness can block publication, merge, or loop operation.
+Use this advisory checklist before treating `codex-supervisor` as ready for broader use on a repo. It is a release-readiness artifact for operators and maintainers, not an automatic hard gate. A separate explicit release gate must be configured before readiness can block release publication.
 
 Print the same maintained checklist from the built CLI with:
 
@@ -18,6 +18,7 @@ Minimum readiness means one trusted repo can complete a controlled first run wit
 2. One execution-ready issue passes `node dist/index.js issue-lint <issue-number> --config <supervisor-config-path>` and then completes one-shot execution with `node dist/index.js run-once --config <supervisor-config-path>`.
 3. The run creates or updates the expected issue worktree, branch, commit, and draft PR without pushing directly to the default branch.
 4. Local CI posture is understood: either `localCiCommand` is configured and the repo-owned command passes, or the missing contract is accepted as an advisory warning for this release decision.
+5. Release-readiness posture is understood: `releaseReadinessGate: advisory` keeps this checklist non-blocking, while `releaseReadinessGate: block_release_publication` is an explicit opt-in to block release publication only.
 
 ### Recommended
 
@@ -50,6 +51,7 @@ Sufficient readiness means broader use is reasonable because the loop has surviv
 - [ ] `next issue selection`: after merge and done-state reconciliation, the active issue is released and the next runnable issue is selected from the open backlog by dependency and execution-order metadata.
 - [ ] `WebUI`: `node dist/index.js web --config <supervisor-config-path>` exposes setup and dashboard views for status, doctor, explain, and issue-lint data, and mutation routes require the documented local token.
 - [ ] `local CI`: configured `localCiCommand` blocks PR publication or ready-for-review promotion on failure; an unconfigured repo-owned local CI candidate remains advisory until the operator opts in.
+- [ ] `release gate`: `doctor_release_readiness_gate` and setup/readiness show whether the checklist is advisory or explicitly configured to block release publication only.
 - [ ] `trust boundaries`: GitHub-authored issue bodies and review text are treated as untrusted inputs, autonomous execution is limited to trusted repos and authors, and missing provenance, auth, scope, or boundary signals fail closed.
 - [ ] `state recovery`: corrupted JSON state is not mistaken for an empty bootstrap, restore precedence remains explicit, and failed recovery paths do not leave orphan records or partial durable writes.
 - [ ] `workspace recovery`: local branch, remote branch, and fresh bootstrap recovery paths keep dedicated worktrees isolated and never push directly to the default branch.
@@ -58,7 +60,7 @@ Sufficient readiness means broader use is reasonable because the loop has surviv
 
 ## Advisory boundary
 
-This checklist is advisory unless a separate release gate explicitly wires it into automation. Do not make release readiness depend on provider-specific external services being available at test time. Record unavailable provider signals as release notes or follow-up risks, and keep local product readiness focused on commands, state transitions, WebUI routes, local CI posture, and trust-boundary enforcement.
+This checklist is advisory unless `releaseReadinessGate: block_release_publication` is explicitly wired into release automation. That configured gate can block release publication only; it must not block PR publication, ready-for-review promotion, merge readiness, local CI, issue verification, or loop operation. Do not make release readiness depend on provider-specific external services being available at test time. Record unavailable provider signals as release notes or follow-up risks, and keep local product readiness focused on commands, state transitions, WebUI routes, local CI posture, and trust-boundary enforcement.
 
 ## Verification
 

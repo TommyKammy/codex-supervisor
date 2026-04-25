@@ -540,6 +540,24 @@ Operator rule:
 - let the supervisor execute it
 - do not ask the supervisor to infer CI behavior from workflow YAML
 
+### Release-readiness gate
+
+`releaseReadinessGate` controls whether the maintained release-readiness checklist is only advisory or is exposed as a repo-owned release publication gate.
+
+Supported values:
+
+- `advisory`: default. The checklist remains an operator-maintained release artifact. It cannot block PR publication, merge readiness, loop operation, or release publication.
+- `block_release_publication`: explicit opt-in. The configured release-readiness gate may block release publication only. It does not block PR publication, merge readiness, local CI, issue verification, or loop operation.
+
+Operational notes:
+
+- setup/readiness reports the effective release-readiness gate posture without treating unset config as a blocker
+- `doctor` prints `doctor_release_readiness_gate ...` so operators can verify the active posture for the selected config
+- local CI still owns PR publication and ready-for-review promotion when `localCiCommand` is configured
+- issue verification still comes from the issue's `## Verification` commands and supervisor verification policy
+- merge readiness still comes from fresh PR facts, required checks, required reviews, branch protection, and merge state
+- release automation must wire `block_release_publication` explicitly before the checklist becomes a blocking release gate
+
 ## Provider-Specific Notes
 
 ### CodeRabbit waits

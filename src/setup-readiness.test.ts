@@ -33,6 +33,7 @@ function buildConfigDocument(args: {
   workspacePreparationCommand: unknown;
   includeTrustPosture?: boolean;
   localReviewPosture?: string;
+  releaseReadinessGate?: string;
   approvedTrackedTopLevelEntries?: string[];
 }): Record<string, unknown> {
   return {
@@ -46,6 +47,7 @@ function buildConfigDocument(args: {
     reviewBotLogins: ["chatgpt-codex-connector"],
     workspacePreparationCommand: args.workspacePreparationCommand,
     ...(args.localReviewPosture ? { localReviewPosture: args.localReviewPosture } : {}),
+    ...(args.releaseReadinessGate ? { releaseReadinessGate: args.releaseReadinessGate } : {}),
     ...(args.approvedTrackedTopLevelEntries
       ? { approvedTrackedTopLevelEntries: args.approvedTrackedTopLevelEntries }
       : {}),
@@ -92,6 +94,123 @@ test("diagnoseSetupReadiness marks a repo-relative missing workspace preparation
   assert.equal(field?.state, "invalid");
   assert.match(field?.message ?? "", /does not resolve to a file inside repoPath/i);
   assert.match(field?.message ?? "", /move the helper into the repository and commit it/i);
+});
+
+test("diagnoseSetupReadiness surfaces advisory release readiness gate by default", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = await createTrackedRepo(root);
+  const workspaceRoot = path.join(root, "workspaces");
+  const configPath = path.join(root, "supervisor.config.json");
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  await fs.writeFile(
+    configPath,
+    JSON.stringify(
+      buildConfigDocument({
+        repoPath,
+        workspaceRoot,
+        stateFile: path.join(root, "state.json"),
+        workspacePreparationCommand: undefined,
+      }),
+    ),
+    "utf8",
+  );
+
+  const summary = await diagnoseSetupReadiness({
+    configPath,
+    authStatus: async () => ({ ok: true, message: null }),
+  });
+
+  assert.equal(summary.ready, true);
+  assert.deepEqual(summary.releaseReadinessGate, {
+    posture: "advisory",
+    configured: false,
+    canBlock: [],
+    cannotBlock: ["pr_publication", "merge_readiness", "loop_operation", "release_publication"],
+    summary: "Release readiness checklist is advisory; no release-readiness gate is configured.",
+  });
+});
+
+test("diagnoseSetupReadiness surfaces explicit release publication gate posture without blocking setup", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = await createTrackedRepo(root);
+  const workspaceRoot = path.join(root, "workspaces");
+  const configPath = path.join(root, "supervisor.config.json");
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  await fs.writeFile(
+    configPath,
+    JSON.stringify(
+      buildConfigDocument({
+        repoPath,
+        workspaceRoot,
+        stateFile: path.join(root, "state.json"),
+        workspacePreparationCommand: undefined,
+        releaseReadinessGate: "block_release_publication",
+      }),
+    ),
+    "utf8",
+  );
+
+  const summary = await diagnoseSetupReadiness({
+    configPath,
+    authStatus: async () => ({ ok: true, message: null }),
+  });
+
+  assert.equal(summary.ready, true);
+  assert.deepEqual(summary.releaseReadinessGate, {
+    posture: "block_release_publication",
+    configured: true,
+    canBlock: ["release_publication"],
+    cannotBlock: ["pr_publication", "merge_readiness", "loop_operation"],
+    summary: "Release readiness gate is configured to block release publication only.",
+  });
+});
+
+test("diagnoseSetupReadiness preserves raw release publication gate posture when another field is invalid", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = await createTrackedRepo(root);
+  const workspaceRoot = path.join(root, "workspaces");
+  const configPath = path.join(root, "supervisor.config.json");
+  const configDocument = buildConfigDocument({
+    repoPath,
+    workspaceRoot,
+    stateFile: path.join(root, "state.json"),
+    workspacePreparationCommand: undefined,
+    releaseReadinessGate: "block_release_publication",
+  });
+  configDocument.repoSlug = "not-a-repo-slug";
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  await fs.writeFile(
+    configPath,
+    JSON.stringify(configDocument),
+    "utf8",
+  );
+
+  const summary = await diagnoseSetupReadiness({
+    configPath,
+    authStatus: async () => ({ ok: true, message: null }),
+  });
+
+  assert.equal(summary.ready, false);
+  assert.equal(summary.overallStatus, "invalid");
+  assert.deepEqual(summary.releaseReadinessGate, {
+    posture: "block_release_publication",
+    configured: true,
+    canBlock: ["release_publication"],
+    cannotBlock: ["pr_publication", "merge_readiness", "loop_operation"],
+    summary: "Release readiness gate is configured to block release publication only.",
+  });
 });
 
 test("diagnoseSetupReadiness marks an untracked repo-relative workspace preparation helper invalid", async (t) => {

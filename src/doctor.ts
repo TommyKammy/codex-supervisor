@@ -7,6 +7,7 @@ import {
   summarizeCadenceDiagnostics,
   summarizeLocalCiContract,
   summarizeLocalReviewPosture,
+  summarizeReleaseReadinessGate,
   summarizeTrustDiagnostics,
   summarizeWorkspacePreparationContract,
   type ConfigLoadSummary,
@@ -19,6 +20,7 @@ import {
   type IssueRunRecord,
   type LocalCiContractSummary,
   type LocalReviewPostureSummary,
+  type ReleaseReadinessGateSummary,
   type StateLoadFinding,
   type SupervisorConfig,
   type SupervisorStateFile,
@@ -93,6 +95,7 @@ export interface DoctorDiagnostics {
   workspacePreparationContract?: WorkspacePreparationContractSummary;
   localCiContract?: LocalCiContractSummary;
   localReviewPosture?: LocalReviewPostureSummary;
+  releaseReadinessGate?: ReleaseReadinessGateSummary;
 }
 
 export interface BootstrapRepoSummary {
@@ -892,6 +895,7 @@ export async function diagnoseSupervisorHost(args: DiagnoseSupervisorHostArgs): 
     workspacePreparationContract: summarizeWorkspacePreparationContract(args.config),
     localCiContract: summarizeLocalCiContract(args.config),
     localReviewPosture: summarizeLocalReviewPosture(args.config),
+    releaseReadinessGate: summarizeReleaseReadinessGate(args.config),
   };
 }
 
@@ -967,6 +971,9 @@ export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
       localReviewFollowUpIssueCreationEnabled: false,
       localReviewHighSeverityAction: "blocked",
     });
+  const releaseReadinessGate =
+    diagnostics.releaseReadinessGate
+    ?? summarizeReleaseReadinessGate({ releaseReadinessGate: "advisory" });
   const mergeCriticalRecheckSeconds =
     diagnostics.cadenceDiagnostics.mergeCriticalRecheckSeconds === null
       ? "disabled"
@@ -1029,6 +1036,7 @@ export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
     `doctor_workspace_preparation configured=${workspacePreparationContract.configured} source=${workspacePreparationContract.source} command=${sanitizeDoctorValue(workspacePreparationContract.command ?? "none")} summary=${sanitizeDoctorValue(workspacePreparationContract.summary)}`,
     `doctor_local_ci configured=${localCiContract.configured} source=${localCiContract.source} command=${sanitizeDoctorValue(localCiContract.command ?? "none")} summary=${sanitizeDoctorValue(localCiContract.summary)}`,
     `doctor_local_review_posture preset=${localReviewPosture.preset} enabled=${localReviewPosture.enabled} policy=${localReviewPosture.policy} auto_repair=${localReviewPosture.autoRepair} follow_up_issue_creation=${localReviewPosture.followUpIssueCreation} summary=${sanitizeDoctorValue(localReviewPosture.summary)}`,
+    `doctor_release_readiness_gate posture=${releaseReadinessGate.posture} configured=${releaseReadinessGate.configured} can_block=${releaseReadinessGate.canBlock.length === 0 ? "none" : releaseReadinessGate.canBlock.join(",")} cannot_block=${releaseReadinessGate.cannotBlock.join(",")} summary=${sanitizeDoctorValue(releaseReadinessGate.summary)}`,
     ...trustWarnings.map((warning) => renderDoctorWarningLine(warning, sanitizeDoctorValue)),
     ...configWarnings,
     ...(loopHostWarning === null ? [] : [renderDoctorWarningLine(loopHostWarning, sanitizeDoctorValue)]),

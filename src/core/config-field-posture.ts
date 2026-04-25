@@ -58,6 +58,7 @@ const CONFIG_FIELD_POSTURE_METADATA_ENTRIES = [
   recommended("localReviewAutoDetect", "Local review role auto-detection posture."),
   recommended("localReviewPolicy", "Local review merge-gating posture."),
   recommended("trackedPrCurrentHeadLocalReviewRequired", "Current-head local review freshness posture."),
+  recommended("releaseReadinessGate", "Release-readiness gate posture."),
 
   advanced("stateBackend", "Durable state backend selection."),
   advanced("stateBootstrapFile", "Optional bootstrap state source."),
