@@ -11,7 +11,7 @@ import type {
 const MAX_TIMELINE_ARTIFACTS = 20;
 
 function escapeStatusLineValue(value: string): string {
-  return value.replace(/\r?\n/g, "\\n");
+  return value.replace(/\r\n|\r|\n/g, "\\n");
 }
 
 export function appendTimelineArtifact(
