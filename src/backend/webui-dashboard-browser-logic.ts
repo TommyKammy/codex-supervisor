@@ -567,7 +567,9 @@ export function buildOverviewSummary(args: {
   if (loopOffTrackedWorkBlocker) {
     return {
       headline: "Tracked work is waiting for the loop",
-      detail: loopOffTrackedWorkBlocker + " Restart the loop to resume background execution.",
+      detail:
+        loopOffTrackedWorkBlocker +
+        " Restart the supported loop host; expect loop_runtime state=running before tracked work advances.",
       tone: "warn",
     };
   }
@@ -778,7 +780,10 @@ export function buildAttentionItems(args: {
   }
 
   if (loopOffTrackedWorkBlocker) {
-    items.push(loopOffTrackedWorkBlocker + " Restart the loop to resume background execution.");
+    items.push(
+      loopOffTrackedWorkBlocker +
+        " Restart the supported loop host; expect loop_runtime state=running before tracked work advances.",
+    );
   }
 
   if (blockedIssues.length > 0) {

@@ -144,7 +144,8 @@ test("dashboard summaries treat loop-off tracked work as an active blocker", () 
     }),
     {
       headline: "Tracked work is waiting for the loop",
-      detail: "Tracked work is active for #58, but the supervisor loop is off. Restart the loop to resume background execution.",
+      detail:
+        "Tracked work is active for #58, but the supervisor loop is off. Restart the supported loop host; expect loop_runtime state=running before tracked work advances.",
       tone: "warn",
     },
   );
@@ -172,7 +173,9 @@ test("dashboard summaries treat loop-off tracked work as an active blocker", () 
       refreshPhase: "idle",
       hasSuccessfulRefresh: true,
     }),
-    ["Tracked work is active for #58, but the supervisor loop is off. Restart the loop to resume background execution."],
+    [
+      "Tracked work is active for #58, but the supervisor loop is off. Restart the supported loop host; expect loop_runtime state=running before tracked work advances.",
+    ],
   );
 });
 
@@ -207,7 +210,7 @@ test("dashboard summaries ignore blocked-only tracked work when the loop is off"
       refreshPhase: "idle",
       hasSuccessfulRefresh: true,
     }).detail,
-    /Restart the loop to resume background execution/u,
+    /Restart the supported loop host/u,
   );
   assert.doesNotMatch(
     buildPrimaryActionSummary({

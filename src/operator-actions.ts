@@ -47,7 +47,8 @@ export function selectStatusOperatorAction(args: {
         action: "restart_loop",
         source: "loop_runtime_blocker",
         priority: 90,
-        summary: "Tracked work is active but the supervisor loop is off; restart the loop to resume background execution.",
+        summary:
+          "Tracked work is active but the supervisor loop is off; restart the supported loop host so the runtime reports running and tracked work can advance.",
       });
       continue;
     }
