@@ -159,9 +159,9 @@ test("dashboard summaries treat loop-off tracked work as an active blocker", () 
       hasSuccessfulRefresh: true,
     }),
     {
-      title: "Restart the supervisor loop",
+      title: "Restart the supported loop host",
       detail:
-        "Tracked work is active for #58, but the supervisor loop is off. Background execution will not advance until the loop restarts.",
+        "Tracked work is active for #58, but the supervisor loop is off. Restart the supported loop host; expect loop_runtime state=running before tracked work advances.",
     },
   );
 
@@ -220,7 +220,7 @@ test("dashboard summaries ignore blocked-only tracked work when the loop is off"
       refreshPhase: "idle",
       hasSuccessfulRefresh: true,
     }).detail,
-    /Background execution will not advance until the loop restarts/u,
+    /Restart the supported loop host/u,
   );
   assert.deepEqual(
     buildAttentionItems({
