@@ -11,6 +11,7 @@ import {
   buildIssueExplainSummary,
   buildNonRunnableLocalStateReasons,
   renderIssueExplainDto,
+  renderIssueExplainTimelineDto,
 } from "./supervisor-selection-issue-explain";
 import {
   branchName,
@@ -102,7 +103,9 @@ test("buildIssueExplainSummary keeps non-runnable explain output stable", async 
     "state=blocked",
     "blocked_reason=verification",
     "runnable=no",
+    "no_active_tracked_record issue=#603 classification=manual_review_required state=blocked reason=verification",
     "retry_summary verification=3 same_blocker=2 same_failure_signature=3 last_failure_signature=verification-failure apparent_no_progress=yes",
+    "restart_recommendation category=manual_review_before_restart source=no_active_tracked_record summary=Manual review is required before a restart should be treated as a recovery action.",
     "reason_1=retry_budget implementation_attempt_count=5/5",
     "reason_2=retry_budget blocked_verification_retry_count=3/3",
     "reason_3=retry_budget repeated_blocker_count=2/2",
@@ -110,6 +113,215 @@ test("buildIssueExplainSummary keeps non-runnable explain output stable", async 
     "reason_5=local_state blocked",
     "last_error=verification still failing",
   ]);
+  assert.equal(lines.some((line) => line.startsWith("timeline_event ")), false);
+});
+
+test("renderIssueExplainTimelineDto shows ordered active issue timeline events", async () => {
+  const config = createConfig();
+  const issueNumber = 617;
+  const issue = createIssue({
+    number: issueNumber,
+    title: "Active explain timeline",
+  });
+  const state = createSupervisorState({
+    activeIssueNumber: issueNumber,
+    issues: [
+      createRecord({
+        issue_number: issueNumber,
+        state: "stabilizing",
+        branch: branchName(config, issueNumber),
+        pr_number: 716,
+        blocked_reason: null,
+        last_head_sha: "head-active",
+        last_codex_summary: "Implemented the active timeline slice.",
+        last_error: null,
+        last_failure_context: null,
+        last_failure_signature: null,
+        timeline_artifacts: [
+          {
+            type: "verification_result",
+            gate: "workspace_preparation",
+            command: "npm run verify:paths",
+            head_sha: "head-active",
+            outcome: "failed",
+            remediation_target: "tracked_publishable_content",
+            next_action: "repair_tracked_publishable_content",
+            summary: "Workspace preparation blocked publication.",
+            recorded_at: "2026-04-25T11:01:00Z",
+          },
+          {
+            type: "verification_result",
+            gate: "local_ci",
+            command: "npm run build",
+            head_sha: "head-active",
+            outcome: "passed",
+            remediation_target: null,
+            next_action: "continue",
+            summary: "Build passed.",
+            recorded_at: "2026-04-25T11:03:00Z",
+          },
+        ],
+        local_review_run_at: "2026-04-25T11:04:00Z",
+        local_review_recommendation: "ready",
+        local_review_head_sha: "head-active",
+        local_review_blocker_summary: null,
+        updated_at: "2026-04-25T11:05:00Z",
+      }),
+    ],
+  });
+
+  const dto = await buildIssueExplainDto(
+    {
+      getIssue: async () => issue,
+      listAllIssues: async () => [issue],
+      listCandidateIssues: async () => [issue],
+      resolvePullRequestForBranch: async () => createPullRequest({
+        number: 716,
+        createdAt: "2026-04-25T11:02:00Z",
+        headRefOid: "head-active",
+      }),
+    },
+    config,
+    state,
+    issueNumber,
+  );
+
+  const rendered = renderIssueExplainTimelineDto(dto);
+
+  assert.match(rendered, /^timeline issue=#617 pr=#716 events=11$/m);
+  assert.match(
+    rendered,
+    /^timeline_event index=1 issue=#617 pr=#716 type=reservation at=unknown outcome=recorded head_sha=head-active remediation_target=none next_action=none summary=Issue run reservation exists for branch codex\/reopen-issue-617\.$/m,
+  );
+  assert.match(
+    rendered,
+    /^timeline_event index=2 issue=#617 pr=#716 type=publication_gate at=2026-04-25T11:01:00Z outcome=failed head_sha=head-active remediation_target=tracked_publishable_content next_action=repair_tracked_publishable_content summary=Workspace preparation blocked publication\.$/m,
+  );
+  assert.match(
+    rendered,
+    /^timeline_event index=3 issue=#617 pr=#716 type=pr_created at=2026-04-25T11:02:00Z outcome=created head_sha=head-active remediation_target=none next_action=none summary=Pull request #716 is recorded for this issue run\.$/m,
+  );
+  assert.match(
+    rendered,
+    /^timeline_event index=4 issue=#617 pr=#716 type=local_ci at=2026-04-25T11:03:00Z outcome=passed head_sha=head-active remediation_target=none next_action=continue summary=Build passed\.$/m,
+  );
+  assert.match(
+    rendered,
+    /^timeline_event index=5 issue=#617 pr=#716 type=review at=2026-04-25T11:04:00Z outcome=ready head_sha=head-active remediation_target=none next_action=none summary=Local review recorded 0 finding\(s\)\.$/m,
+  );
+});
+
+test("renderIssueExplainTimelineDto shows done issue completion and merge events", async () => {
+  const config = createConfig();
+  const issueNumber = 618;
+  const issue = createIssue({
+    number: issueNumber,
+    title: "Done explain timeline",
+  });
+  const state = createSupervisorState({
+    issues: [
+      createRecord({
+        issue_number: issueNumber,
+        state: "done",
+        branch: branchName(config, issueNumber),
+        pr_number: 718,
+        blocked_reason: null,
+        last_head_sha: "head-done",
+        codex_session_id: null,
+        last_codex_summary: null,
+        last_error: null,
+        last_failure_context: null,
+        last_failure_signature: null,
+        updated_at: "2026-04-25T12:00:00Z",
+      }),
+    ],
+  });
+
+  const dto = await buildIssueExplainDto(
+    {
+      getIssue: async () => issue,
+      listAllIssues: async () => [issue],
+      listCandidateIssues: async () => [],
+      resolvePullRequestForBranch: async () => createPullRequest({
+        number: 718,
+        createdAt: "2026-04-25T11:40:00Z",
+        mergedAt: "2026-04-25T11:58:00Z",
+        headRefOid: "head-done",
+      }),
+    },
+    config,
+    state,
+    issueNumber,
+  );
+
+  const rendered = renderIssueExplainTimelineDto(dto);
+
+  assert.match(
+    rendered,
+    /^timeline_event index=2 issue=#618 pr=#718 type=pr_created at=2026-04-25T11:40:00Z outcome=created head_sha=head-done remediation_target=none next_action=none summary=Pull request #718 is recorded for this issue run\.$/m,
+  );
+  assert.match(
+    rendered,
+    /^timeline_event index=3 issue=#618 pr=#718 type=merge at=2026-04-25T11:58:00Z outcome=merged head_sha=head-done remediation_target=none next_action=none summary=Pull request #718 is merged\.$/m,
+  );
+  assert.match(
+    rendered,
+    /^timeline_event index=4 issue=#618 pr=#718 type=done at=2026-04-25T12:00:00Z outcome=done head_sha=head-done remediation_target=none next_action=none summary=Issue run is recorded as done\.$/m,
+  );
+});
+
+test("renderIssueExplainTimelineDto keeps sparse historical records readable", async () => {
+  const config = createConfig();
+  const issueNumber = 619;
+  const issue = createIssue({
+    number: issueNumber,
+    title: "Sparse explain timeline",
+  });
+  const state = createSupervisorState({
+    issues: [
+      createRecord({
+        issue_number: issueNumber,
+        branch: branchName(config, issueNumber),
+        pr_number: null,
+        codex_session_id: null,
+        last_codex_summary: null,
+        latest_local_ci_result: undefined,
+        timeline_artifacts: undefined,
+        local_review_run_at: null,
+        local_review_recommendation: null,
+        last_recovery_reason: null,
+        last_recovery_at: null,
+      }),
+    ],
+  });
+
+  const dto = await buildIssueExplainDto(
+    {
+      getIssue: async () => issue,
+      listAllIssues: async () => [issue],
+      listCandidateIssues: async () => [issue],
+      resolvePullRequestForBranch: async () => null,
+    },
+    config,
+    state,
+    issueNumber,
+  );
+
+  const rendered = renderIssueExplainTimelineDto(dto);
+
+  assert.match(rendered, /^timeline issue=#619 pr=none events=11$/m);
+  assert.match(
+    rendered,
+    /^timeline_event index=2 issue=#619 pr=none type=codex_turn at=unknown outcome=missing head_sha=unknown remediation_target=none next_action=none summary=No Codex turn summary is recorded for this issue run\.$/m,
+  );
+  assert.match(
+    rendered,
+    /^timeline_event index=5 issue=#619 pr=none type=local_ci at=unknown outcome=missing head_sha=unknown remediation_target=none next_action=none summary=No local CI result is recorded for this issue run\.$/m,
+  );
+  assert.match(
+    rendered,
+    /^timeline_event index=11 issue=#619 pr=none type=done at=unknown outcome=missing head_sha=unknown remediation_target=none next_action=none summary=Issue run is not recorded as done\.$/m,
+  );
 });
 
 test("buildNonRunnableLocalStateReasons keeps retry-budget ordering stable", () => {

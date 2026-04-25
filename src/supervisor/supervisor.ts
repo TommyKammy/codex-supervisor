@@ -104,6 +104,7 @@ import {
 import { buildIssueLintDto, type SupervisorIssueLintDto } from "./supervisor-selection-issue-lint";
 import {
   renderIssueExplainDto,
+  renderIssueExplainTimelineDto,
   SupervisorExplainDto,
 } from "./supervisor-selection-issue-explain";
 import { inferFailureContext } from "./supervisor-failure-context";
@@ -960,6 +961,10 @@ export class Supervisor {
 
   async explain(issueNumber: number): Promise<string> {
     return renderIssueExplainDto(await this.explainReport(issueNumber));
+  }
+
+  async explainTimeline(issueNumber: number): Promise<string> {
+    return renderIssueExplainTimelineDto(await this.explainReport(issueNumber));
   }
 
   async runRecoveryAction(

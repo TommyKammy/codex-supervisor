@@ -16,6 +16,7 @@ export function parseArgs(argv: string[]): CliOptions {
   let configPath: string | undefined;
   let dryRun = false;
   let why = false;
+  let timelineRequested = false;
   let issueNumber: number | undefined;
   let snapshotPath: string | undefined;
   let caseId: string | undefined;
@@ -70,6 +71,11 @@ export function parseArgs(argv: string[]): CliOptions {
       continue;
     }
 
+    if (token === "--timeline") {
+      timelineRequested = true;
+      continue;
+    }
+
     if ((command === "explain" || command === "issue-lint" || command === "requeue") && issueNumber === undefined) {
       if (/^[1-9]\d*$/.test(token)) {
         issueNumber = Number(token);
@@ -111,6 +117,10 @@ export function parseArgs(argv: string[]): CliOptions {
     throw new Error("The --why flag is only supported with the status command.");
   }
 
+  if (timelineRequested && command !== "explain") {
+    throw new Error("The --timeline flag is only supported with the explain command.");
+  }
+
   if (command === "explain" && issueNumber === undefined) {
     throw new Error("The explain command requires one issue number.");
   }
@@ -131,11 +141,14 @@ export function parseArgs(argv: string[]): CliOptions {
     throw new Error("The replay-corpus-promote command requires one snapshot path.");
   }
 
+  const explainMode: CliOptions["explainMode"] = timelineRequested ? "timeline" : "summary";
+
   return {
     command,
     configPath,
     dryRun,
     why,
+    explainMode,
     issueNumber,
     snapshotPath,
     caseId,

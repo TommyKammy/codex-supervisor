@@ -553,6 +553,7 @@ export interface CliOptions {
   configPath?: string;
   dryRun: boolean;
   why: boolean;
+  explainMode?: "summary" | "timeline";
   issueNumber?: number;
   snapshotPath?: string;
   caseId?: string;

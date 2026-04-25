@@ -11,7 +11,7 @@ import { renderSupervisorExecutionMetricsRollupResultDto } from "../supervisor/s
 import { renderSupervisorMutationResultDto } from "../supervisor/supervisor-mutation-report";
 import { renderSupervisorOrphanPruneResultDto } from "../supervisor/supervisor-mutation-report";
 import { renderPostMergeAuditPatternSummaryDto } from "../supervisor/post-merge-audit-summary";
-import { renderIssueExplainDto } from "../supervisor/supervisor-selection-status";
+import { renderIssueExplainDto, renderIssueExplainTimelineDto } from "../supervisor/supervisor-selection-status";
 import { renderIssueLintDto } from "../supervisor/supervisor-selection-issue-lint";
 import { isCorruptJsonFailClosedMessage } from "../supervisor/supervisor";
 import type { SupervisorLoopController } from "../supervisor/supervisor-loop-controller";
@@ -119,7 +119,7 @@ export async function runSupervisorCycle(
 }
 
 export async function runSupervisorCommand(
-  options: Pick<CliOptions, "dryRun" | "why" | "issueNumber"> & { command: SupervisorRuntimeCommand },
+  options: Pick<CliOptions, "dryRun" | "why" | "explainMode" | "issueNumber"> & { command: SupervisorRuntimeCommand },
   dependencies: SupervisorRuntimeDependencies,
 ): Promise<void> {
   const {
@@ -204,7 +204,8 @@ export async function runSupervisorCommand(
   }
 
   if (options.command === "explain") {
-    writeStdout(renderIssueExplainDto(await service.queryExplain(options.issueNumber!)));
+    const explain = await service.queryExplain(options.issueNumber!);
+    writeStdout(options.explainMode === "timeline" ? renderIssueExplainTimelineDto(explain) : renderIssueExplainDto(explain));
     return;
   }
 
