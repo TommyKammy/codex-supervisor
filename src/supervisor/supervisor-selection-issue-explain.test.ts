@@ -1243,3 +1243,117 @@ test("buildIssueExplainDto reports local-review-blocked external readiness for d
     "external_signal_readiness status=blocked_by_local_review ci=passing review=local_review_blocked workflows=absent",
   );
 });
+
+test("buildIssueExplainDto reports dependency root blockers for stale configured-bot predecessors", async () => {
+  const fixture = await createSupervisorFixture();
+  const rootIssue = createIssue({
+    number: 1695,
+    title: "Refresh configured-bot metadata",
+    body: `## Summary
+Clear stale configured-bot metadata before later issues run.
+
+## Scope
+- keep the stale review-bot predecessor blocked
+
+## Acceptance criteria
+- explain shows actionable remediation on the predecessor
+
+## Verification
+- npx tsx --test src/supervisor/supervisor-selection-issue-explain.test.ts
+
+Depends on: none
+Parallelizable: No
+
+## Execution order
+1 of 1`,
+  });
+  const firstDependent = createIssue({
+    number: 1696,
+    title: "Use fresh configured-bot metadata",
+    body: `## Summary
+Run after the configured-bot metadata blocker clears.
+
+## Scope
+- depend on the stale review-bot predecessor
+
+## Acceptance criteria
+- explain shows the dependency root blocker
+
+## Verification
+- npx tsx --test src/supervisor/supervisor-selection-issue-explain.test.ts
+
+Depends on: #1695
+Parallelizable: No
+
+## Execution order
+1 of 1`,
+  });
+  const secondDependent = createIssue({
+    number: 1697,
+    title: "Run after the dependent issue",
+    body: `## Summary
+Run after the dependent configured-bot metadata issue.
+
+## Scope
+- depend on the chained predecessor
+
+## Acceptance criteria
+- explain shows the dependency root blocker through the chain
+
+## Verification
+- npx tsx --test src/supervisor/supervisor-selection-issue-explain.test.ts
+
+Depends on: #1696
+Parallelizable: No
+
+## Execution order
+1 of 1`,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "1695": createRecord({
+        issue_number: 1695,
+        state: "blocked",
+        blocked_reason: "stale_review_bot",
+        branch: branchName(fixture.config, 1695),
+        workspace: path.join(fixture.workspaceRoot, "issue-1695"),
+        pr_number: 95,
+        last_head_sha: "head-1695",
+        last_stale_review_bot_reply_head_sha: "head-1695",
+        last_stale_review_bot_reply_signature: "stale-configured-bot-review",
+      }),
+    },
+  };
+  const issues = [rootIssue, firstDependent, secondDependent];
+  const github = {
+    getIssue: async (issueNumber: number) => issues.find((issue) => issue.number === issueNumber) ?? rootIssue,
+    listAllIssues: async () => issues,
+    listCandidateIssues: async () => [firstDependent, secondDependent],
+    resolvePullRequestForBranch: async () => createPullRequest({
+      number: 95,
+      headRefName: branchName(fixture.config, 1695),
+      headRefOid: "head-1695",
+      currentHeadCiGreenAt: "2026-04-25T00:10:00Z",
+    }),
+    getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const rootRendered = renderIssueExplainDto(
+    await buildIssueExplainDto(github, fixture.config, state, 1695),
+  );
+  assert.match(
+    rootRendered,
+    /^stale_review_bot_remediation issue=#1695 pr=#95 reason=stale_review_bot code_ci=green current_head_sha=head-1695 .*manual_next_step=inspect_exact_review_thread_then_resolve_or_leave_manual_note/m,
+  );
+
+  const dependentRendered = renderIssueExplainDto(
+    await buildIssueExplainDto(github, fixture.config, state, 1697),
+  );
+
+  assert.match(
+    dependentRendered,
+    /^reason_1=dependency depends on #1696 root_blocker=#1695 blocked_reason=stale_review_bot$/m,
+  );
+});

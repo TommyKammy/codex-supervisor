@@ -5,7 +5,8 @@ import path from "node:path";
 import test from "node:test";
 import { formatDetailedStatus, summarizeChecks } from "./supervisor-status-rendering";
 import { buildDetailedStatusSummaryLines } from "./supervisor-status-model";
-import { GitHubPullRequest, IssueRunRecord, PullRequestCheck, SupervisorConfig } from "../core/types";
+import { buildReadinessSummary } from "./supervisor-selection-readiness-summary";
+import { GitHubIssue, GitHubPullRequest, IssueRunRecord, PullRequestCheck, SupervisorConfig, SupervisorStateFile } from "../core/types";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
   return {
@@ -59,6 +60,123 @@ function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConf
     ...overrides,
   };
 }
+
+function createExecutionReadyIssue(overrides: Partial<GitHubIssue> = {}): GitHubIssue {
+  const number = overrides.number ?? 1695;
+  return {
+    number,
+    title: `Issue ${number}`,
+    body: `## Summary
+Keep the issue execution-ready.
+
+## Scope
+- preserve the focused test fixture
+
+## Acceptance criteria
+- status explains dependency readiness
+
+## Verification
+- npx tsx --test src/supervisor/supervisor-status-rendering-supervisor.test.ts
+
+Depends on: none
+Parallelizable: No
+
+## Execution order
+1 of 1`,
+    createdAt: "2026-04-25T00:00:00Z",
+    updatedAt: "2026-04-25T00:00:00Z",
+    url: `https://example.test/issues/${number}`,
+    state: "OPEN",
+    labels: [],
+    ...overrides,
+  };
+}
+
+test("status readiness shows stale-review root blockers through dependency chains", async () => {
+  const config = createConfig();
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "1695": createRecord({
+        issue_number: 1695,
+        state: "blocked",
+        blocked_reason: "stale_review_bot",
+      }),
+    },
+  };
+  const staleRoot = createExecutionReadyIssue({
+    number: 1695,
+    title: "Refresh configured-bot metadata",
+  });
+  const firstDependent = createExecutionReadyIssue({
+    number: 1696,
+    title: "Use fresh configured-bot metadata",
+    body: `## Summary
+Run only after the configured-bot metadata blocker clears.
+
+## Scope
+- depend on the stale review-bot predecessor
+
+## Acceptance criteria
+- status shows the dependency root blocker
+
+## Verification
+- npx tsx --test src/supervisor/supervisor-status-rendering-supervisor.test.ts
+
+Depends on: #1695
+Parallelizable: No
+
+## Execution order
+1 of 1`,
+  });
+  const secondDependent = createExecutionReadyIssue({
+    number: 1697,
+    title: "Run after the dependent issue",
+    body: `## Summary
+Run only after the previous dependent issue clears.
+
+## Scope
+- depend on the chained predecessor
+
+## Acceptance criteria
+- status shows the dependency root blocker through the chain
+
+## Verification
+- npx tsx --test src/supervisor/supervisor-status-rendering-supervisor.test.ts
+
+Depends on: #1696
+Parallelizable: No
+
+## Execution order
+1 of 1`,
+  });
+
+  const summary = await buildReadinessSummary(
+    {
+      listCandidateIssues: async () => [firstDependent, secondDependent],
+      listAllIssues: async () => [staleRoot, firstDependent, secondDependent],
+    },
+    config,
+    state,
+  );
+
+  assert.deepEqual(summary.blockedIssues, [
+    {
+      issueNumber: 1696,
+      title: "Use fresh configured-bot metadata",
+      blockedBy: "depends on #1695 root_blocker=#1695 blocked_reason=stale_review_bot",
+    },
+    {
+      issueNumber: 1697,
+      title: "Run after the dependent issue",
+      blockedBy: "depends on #1696 root_blocker=#1695 blocked_reason=stale_review_bot",
+    },
+  ]);
+  assert.match(
+    summary.readinessLines.join("\n"),
+    /blocked_issues=#1696 blocked_by=depends on #1695 root_blocker=#1695 blocked_reason=stale_review_bot; #1697 blocked_by=depends on #1696 root_blocker=#1695 blocked_reason=stale_review_bot/,
+  );
+});
 
 function createRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
   return {
