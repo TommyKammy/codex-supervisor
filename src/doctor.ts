@@ -44,17 +44,17 @@ import { buildTrackedPrMismatch, shouldHydrateTrackedPrDiagnostics } from "./sup
 import { buildTrustAndConfigWarnings, buildWarning, renderDoctorWarningLine } from "./warning-formatting";
 import { buildTrackedMergedButOpenBacklogDiagnosticLine } from "./reconciliation-backlog-diagnostics";
 import { appendRestartRecommendationLine, renderOperatorActionLine, selectDoctorOperatorAction } from "./operator-actions";
+import type {
+  SharedDiagnosticCheckDto,
+  SharedDiagnosticStatus,
+  SharedSupervisorDiagnosticCheckName,
+} from "./diagnostics-dto";
 
-export type DoctorCheckStatus = "pass" | "warn" | "fail";
+export type DoctorCheckStatus = SharedDiagnosticStatus;
 export type DoctorDecisionAction = "stop" | "maintenance" | "continue";
 export type DoctorDiagnosticTier = "active_risk" | "maintenance" | "informational";
 
-export interface DoctorCheck {
-  name: "github_auth" | "codex_cli" | "state_file" | "worktrees";
-  status: DoctorCheckStatus;
-  summary: string;
-  details: string[];
-}
+export type DoctorCheck = SharedDiagnosticCheckDto<SharedSupervisorDiagnosticCheckName>;
 
 export interface DoctorDecisionSummary {
   action: DoctorDecisionAction;
