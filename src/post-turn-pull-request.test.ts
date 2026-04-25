@@ -2736,6 +2736,9 @@ test("handlePostTurnPullRequestTransitionsPhase does not resolve stale configure
     isDraft: false,
     headRefOid: "head-116",
     mergeStateStatus: "CLEAN",
+    configuredBotCurrentHeadObservedAt: "2026-03-13T02:11:00Z",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
   });
   const state: SupervisorStateFile = {
     activeIssueNumber: 102,
