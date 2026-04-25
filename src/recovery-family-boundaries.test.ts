@@ -217,3 +217,38 @@ test("recovery entrypoint results normalize event arrays into a shared operator-
     events: [],
   });
 });
+
+test("recovery entrypoint results avoid summarizing mixed event reasons without an explicit batch reason", () => {
+  const noPrEvent = buildRecoveryEvent(
+    451,
+    "failed_no_pr_recovered: requeued issue #451 after branch recovered",
+  );
+  const trackedPrEvent = buildRecoveryEvent(
+    452,
+    "tracked_pr_lifecycle_recovered: resumed issue #452 using fresh tracked PR #952 facts",
+  );
+
+  assert.deepEqual(normalizeRecoveryEntrypointResult([noPrEvent, trackedPrEvent]), {
+    outcome: "recovered",
+    reason: null,
+    issueNumber: null,
+    prNumber: null,
+    operatorMessage: null,
+    events: [noPrEvent, trackedPrEvent],
+  });
+
+  assert.deepEqual(
+    normalizeRecoveryEntrypointResult([noPrEvent, trackedPrEvent], {
+      reason: "stale failed recovery batch",
+      operatorMessage: "stale failed recovery batch completed",
+    }),
+    {
+      outcome: "recovered",
+      reason: "stale failed recovery batch",
+      issueNumber: null,
+      prNumber: null,
+      operatorMessage: "stale failed recovery batch completed",
+      events: [noPrEvent, trackedPrEvent],
+    },
+  );
+});

@@ -68,7 +68,7 @@ interface RunOnceCyclePreludeArgs {
     state: SupervisorStateFile,
     issues: GitHubIssue[],
     updateReconciliationProgress: (patch: ReconciliationProgressPatch) => Promise<void>,
-  ) => Promise<RecoveryEvent[] | void>;
+  ) => Promise<RecoveryEvent[]>;
   reconcileStaleDoneIssueStates?: (
     state: SupervisorStateFile,
     issues: GitHubIssue[],
@@ -219,7 +219,7 @@ export async function runOnceCyclePrelude(
       if (allowDegradedContinuation && hasFailedRecords) {
         await setReconciliationPhase("stale_failed_issue_states");
         const staleFailedEvents = await args.reconcileStaleFailedIssueStates(state, [], updateReconciliationProgress);
-        collectRecoveryEvents(staleFailedEvents ?? []);
+        collectRecoveryEvents(staleFailedEvents);
       }
 
       const hasBlockedTrackedPrRecords = Object.values(state.issues).some((record) =>
@@ -290,7 +290,7 @@ export async function runOnceCyclePrelude(
 
     await setReconciliationPhase("stale_failed_issue_states");
     const staleFailedEvents = await args.reconcileStaleFailedIssueStates(state, issues, updateReconciliationProgress);
-    collectRecoveryEvents(staleFailedEvents ?? []);
+    collectRecoveryEvents(staleFailedEvents);
 
     if (args.reconcileStaleDoneIssueStates) {
       await setReconciliationPhase("stale_done_issue_states");

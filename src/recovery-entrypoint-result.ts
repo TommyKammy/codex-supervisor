@@ -26,13 +26,20 @@ function commonIssueNumber(events: RecoveryEvent[]): number | null {
   return events.every((event) => event.issueNumber === firstIssueNumber) ? firstIssueNumber : null;
 }
 
+function commonReason(events: RecoveryEvent[]): string | null {
+  const firstReason = events[0]?.reason ?? null;
+  if (firstReason === null) {
+    return null;
+  }
+  return events.every((event) => event.reason === firstReason) ? firstReason : null;
+}
+
 export function normalizeRecoveryEntrypointResult(
   events: readonly RecoveryEvent[] | null | undefined,
   options: RecoveryEntrypointResultOptions = {},
 ): RecoveryEntrypointResult {
   const recoveryEvents = [...(events ?? [])];
-  const firstReason = recoveryEvents[0]?.reason ?? null;
-  const reason = options.reason ?? firstReason;
+  const reason = options.reason ?? commonReason(recoveryEvents);
   const operatorMessage = options.operatorMessage ?? reason;
 
   return {
