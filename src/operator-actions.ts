@@ -111,6 +111,13 @@ export function selectRestartRecommendation(args: {
     }
 
     if (
+      noActiveClassification === "safe_to_ignore" ||
+      noActiveClassification === "stale_already_handled"
+    ) {
+      continue;
+    }
+
+    if (
       noActiveClassification === "active_tracked_work_blocker" ||
       noActiveClassification === "stale_but_recoverable"
     ) {

@@ -25,6 +25,37 @@ test("buildRuntimeRecoverySummary stays quiet when no actionable runtime recover
   );
 });
 
+test("buildRuntimeRecoverySummary stays quiet for quiet no-active tracked records", () => {
+  assert.equal(
+    buildRuntimeRecoverySummary({
+      loopRuntime: baseLoopRuntime,
+      trackedIssues: [
+        {
+          issueNumber: 188,
+          state: "done",
+          branch: "codex/issue-188",
+          prNumber: 288,
+          blockedReason: null,
+        },
+      ],
+      detailedStatusLines: [
+        "no_active_tracked_record issue=#188 classification=safe_to_ignore state=done reason=terminal_done",
+      ],
+    }),
+    null,
+  );
+  assert.equal(
+    buildRuntimeRecoverySummary({
+      loopRuntime: baseLoopRuntime,
+      trackedIssues: [],
+      detailedStatusLines: [
+        "no_active_tracked_record issue=#189 classification=stale_already_handled state=done reason=merged_pr_convergence",
+      ],
+    }),
+    null,
+  );
+});
+
 test("buildRuntimeRecoverySummary reuses restart recommendation vocabulary and classified recovery signals", () => {
   assert.deepEqual(
     buildRuntimeRecoverySummary({
