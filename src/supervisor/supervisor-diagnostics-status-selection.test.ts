@@ -463,6 +463,43 @@ test("renderSupervisorStatusDto maps provider outage diagnostics to an operator 
   );
 });
 
+test("renderSupervisorStatusDto maps stale configured-bot remediation to the root operator action", () => {
+  const status = renderSupervisorStatusDto({
+    gsdSummary: null,
+    candidateDiscovery: null,
+    loopRuntime: {
+      state: "running",
+      hostMode: "tmux",
+      runMode: "macos_tmux_loop",
+      markerPath: "/tmp/locks/supervisor/loop-runtime.lock",
+      configPath: "/tmp/supervisor.config.json",
+      stateFile: "/tmp/state.json",
+      pid: 4242,
+      startedAt: "2026-03-27T00:15:00.000Z",
+      ownershipConfidence: "live_lock",
+      detail: "supervisor-loop-runtime",
+    },
+    activeIssue: null,
+    selectionSummary: null,
+    trackedIssues: [],
+    runnableIssues: [],
+    blockedIssues: [],
+    detailedStatusLines: [
+      "stale_review_bot_remediation issue=#366 pr=#44 reason=stale_review_bot code_ci=green current_head_sha=deadbeef processed_on_current_head=yes review_thread_url=https://example.test/pr/44#discussion_r44 manual_next_step=inspect_exact_review_thread_then_resolve_or_leave_manual_note summary=code_or_ci_green_but_review_thread_metadata_unresolved",
+    ],
+    reconciliationPhase: null,
+    reconciliationWarning: null,
+    readinessLines: [],
+    whyLines: [],
+    warning: null,
+  });
+
+  assert.match(
+    status,
+    /^operator_action action=resolve_stale_review_bot source=stale_review_bot_remediation priority=72 summary=Code or CI is green but configured-bot review thread metadata is still unresolved; inspect the exact thread and resolve it or leave a manual note without changing merge policy\.$/m,
+  );
+});
+
 test("renderSupervisorStatusDto sanitizes loop runtime host and timestamp tokens", () => {
   const status = renderSupervisorStatusDto({
     gsdSummary: null,

@@ -268,6 +268,7 @@ Phase 5 operator-action vocabulary is intentionally small:
 - `operator_action action=fix_config` or `doctor_operator_action action=fix_config`: repair host prerequisites, setup fields, or workspace-preparation configuration before continuing.
 - `operator_action action=restart_loop`: tracked work exists but the background loop is off; restart the supported loop host after confirming the config.
 - `operator_action action=provider_outage_suspected`: required checks are green but the configured review provider has not produced a current-head signal; wait, verify provider delivery, or escalate to manual review.
+- `operator_action action=resolve_stale_review_bot`: code or CI is green, but stale configured-bot review thread metadata still blocks the tracked PR; inspect the exact thread URL reported by `stale_review_bot_remediation`, then resolve it or leave a manual note without changing merge policy.
 - `operator_action action=manual_review`: a tracked path has a manual-review blocker; do not let the loop infer success.
 - `operator_action action=continue`: no blocking operator action was detected on that surface.
 - `doctor_operator_action action=adopt_local_ci`: a repo-owned local CI candidate exists; configure it or explicitly dismiss it before treating the local CI posture as settled.
