@@ -136,6 +136,8 @@ test("getting-started protects the first-run command flow and operator action vo
     "dry-run",
     "operator_action action=fix_config",
     "operator_action action=restart_loop",
+    "loop_runtime_blocker",
+    "loop_runtime state=running",
     "operator_action action=provider_outage_suspected",
     "operator_action action=resolve_stale_review_bot",
     "operator_action action=manual_review",

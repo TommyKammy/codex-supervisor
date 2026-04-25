@@ -110,6 +110,18 @@ export interface DashboardStatusLike {
   warning?: { message?: string | null } | null;
 }
 
+export function describeLoopOffTrackedWorkRestartActionTitle(): string {
+  return "Restart the supported loop host";
+}
+
+export function describeLoopOffTrackedWorkRestartExpectation(): string {
+  return "Restart the supported loop host; expect loop_runtime state=running before tracked work advances.";
+}
+
+export function describeLoopOffTrackedWorkRestartGuidance(loopOffTrackedWorkBlocker: string): string {
+  return loopOffTrackedWorkBlocker + " " + describeLoopOffTrackedWorkRestartExpectation();
+}
+
 export function describeLoopOffTrackedWorkBlocker(status: DashboardStatusLike | null | undefined): string | null {
   if (status?.loopRuntime?.state !== "off") {
     return null;
@@ -567,7 +579,7 @@ export function buildOverviewSummary(args: {
   if (loopOffTrackedWorkBlocker) {
     return {
       headline: "Tracked work is waiting for the loop",
-      detail: loopOffTrackedWorkBlocker + " Restart the loop to resume background execution.",
+      detail: describeLoopOffTrackedWorkRestartGuidance(loopOffTrackedWorkBlocker),
       tone: "warn",
     };
   }
@@ -702,8 +714,8 @@ export function buildPrimaryActionSummary(args: {
 
   if (loopOffTrackedWorkBlocker) {
     return {
-      title: "Restart the supervisor loop",
-      detail: loopOffTrackedWorkBlocker + " Background execution will not advance until the loop restarts.",
+      title: describeLoopOffTrackedWorkRestartActionTitle(),
+      detail: describeLoopOffTrackedWorkRestartGuidance(loopOffTrackedWorkBlocker),
     };
   }
 
@@ -778,7 +790,7 @@ export function buildAttentionItems(args: {
   }
 
   if (loopOffTrackedWorkBlocker) {
-    items.push(loopOffTrackedWorkBlocker + " Restart the loop to resume background execution.");
+    items.push(describeLoopOffTrackedWorkRestartGuidance(loopOffTrackedWorkBlocker));
   }
 
   if (blockedIssues.length > 0) {

@@ -61,6 +61,9 @@ export interface ReadSupervisorLoopRuntimeOptions {
 }
 
 const LOOP_RUNTIME_LOCK_LABEL = "supervisor-loop-runtime";
+const LOOP_OFF_RESTART_REASON = "recoverable_active_tracked_work_waiting_for_loop";
+const LOOP_OFF_EXPECTED_OUTCOME = "loop_runtime_state_running_then_tracked_issue_advances";
+const LOOP_OFF_FALLBACK = "if_blocker_remains_run_status_why_and_doctor_then_inspect_runtime_marker_and_config";
 const execFileAsync = promisify(execFile);
 
 export function supervisorLoopRuntimeLockPath(stateFile: string): string {
@@ -172,8 +175,8 @@ export function buildLoopOffTrackedWorkBlocker(args: {
   const trackedPr = firstTrackedIssue.prNumber === null ? "none" : `#${firstTrackedIssue.prNumber}`;
   const warningMessage =
     activeTrackedIssues.length === 1
-      ? `Tracked work is active for issue #${firstTrackedIssue.issueNumber}, but the supervisor loop is off. Restart the loop to resume background execution.`
-      : `Tracked work is active for ${activeTrackedIssues.length} issues, but the supervisor loop is off. Restart the loop to resume background execution beginning with issue #${firstTrackedIssue.issueNumber}.`;
+      ? `Tracked work is active for issue #${firstTrackedIssue.issueNumber}, but the supervisor loop is off. Restart the supported loop host; expect loop_runtime state=running before issue #${firstTrackedIssue.issueNumber} advances.`
+      : `Tracked work is active for ${activeTrackedIssues.length} issues, but the supervisor loop is off. Restart the supported loop host; expect loop_runtime state=running before issue #${firstTrackedIssue.issueNumber} advances.`;
 
   return {
     summaryLine: [
@@ -184,6 +187,9 @@ export function buildLoopOffTrackedWorkBlocker(args: {
       `first_state=${firstTrackedIssue.state}`,
       `first_pr=${trackedPr}`,
       "action=restart_loop",
+      `restart_reason=${LOOP_OFF_RESTART_REASON}`,
+      `expected_outcome=${LOOP_OFF_EXPECTED_OUTCOME}`,
+      `fallback=${LOOP_OFF_FALLBACK}`,
     ].join(" "),
     warningMessage,
   };

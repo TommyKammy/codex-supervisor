@@ -633,7 +633,7 @@ test("dashboard treats loop-off tracked work as an active blocker instead of idl
         },
         warning: {
           message:
-            "Tracked work is active for issue #58, but the supervisor loop is off. Restart the loop to resume background execution.",
+            "Tracked work is active for issue #58, but the supervisor loop is off. Restart the supported loop host; expect loop_runtime state=running before issue #58 advances.",
         },
       }),
     }),
@@ -650,7 +650,7 @@ test("dashboard treats loop-off tracked work as an active blocker instead of idl
   assert.ok(attentionList);
 
   assert.match(overviewHeadline.textContent ?? "", /Tracked work is waiting for the loop/u);
-  assert.match(primaryActionTitle.textContent ?? "", /Restart the supervisor loop/u);
+  assert.match(primaryActionTitle.textContent ?? "", /Restart the supported loop host/u);
   assert.match(overviewWarning.textContent ?? "", /loop is off/u);
   assert.match(joinChildText(attentionList), /Tracked work is active for #58, but the supervisor loop is off\./u);
   assert.equal(harness.remainingFetches.length, 0);
@@ -684,7 +684,7 @@ test("dashboard does not tell the operator to restart the loop for blocked-only 
 
   const attentionList = harness.document.getElementById("attention-list");
   assert.ok(attentionList);
-  assert.doesNotMatch(joinChildText(attentionList), /Restart the loop to resume background execution/u);
+  assert.doesNotMatch(joinChildText(attentionList), /Restart the supported loop host/u);
   assert.equal(harness.remainingFetches.length, 0);
 });
 
