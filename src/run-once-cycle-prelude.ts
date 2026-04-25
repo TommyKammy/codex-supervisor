@@ -13,6 +13,10 @@ import {
   type SupervisorEventSink,
 } from "./supervisor/supervisor-events";
 import type { ReconciliationProgressUpdate } from "./supervisor/supervisor-reconciliation-phase";
+import {
+  normalizeRecoveryEntrypointResult,
+  type RecoveryEntrypointResult,
+} from "./recovery-entrypoint-result";
 
 export interface RecoveryEvent {
   issueNumber: number;
@@ -23,12 +27,14 @@ export interface RecoveryEvent {
 export interface RunOnceCyclePreludeResult {
   state: SupervisorStateFile;
   recoveryEvents: RecoveryEvent[];
+  recoveryResults: RecoveryEntrypointResult[];
 }
 
 export interface RunOnceCyclePreludeAuthFailure {
   kind: "auth_failure";
   message: string;
   recoveryEvents: RecoveryEvent[];
+  recoveryResults: RecoveryEntrypointResult[];
 }
 
 type ReconciliationProgressPatch = Partial<Omit<ReconciliationProgressUpdate, "phase">>;
@@ -62,7 +68,7 @@ interface RunOnceCyclePreludeArgs {
     state: SupervisorStateFile,
     issues: GitHubIssue[],
     updateReconciliationProgress: (patch: ReconciliationProgressPatch) => Promise<void>,
-  ) => Promise<void>;
+  ) => Promise<RecoveryEvent[] | void>;
   reconcileStaleDoneIssueStates?: (
     state: SupervisorStateFile,
     issues: GitHubIssue[],
@@ -88,6 +94,9 @@ export async function runOnceCyclePrelude(
 ): Promise<RunOnceCyclePreludeResult | RunOnceCyclePreludeAuthFailure> {
   const state = await args.stateStore.load();
   const recoveryEvents: RecoveryEvent[] = [...args.carryoverRecoveryEvents];
+  const recoveryResults: RecoveryEntrypointResult[] = args.carryoverRecoveryEvents.map((event) =>
+    normalizeRecoveryEntrypointResult([event])
+  );
   let currentReconciliationProgress: ReconciliationProgressUpdate | null = null;
   const setReconciliationProgress = async (progress: ReconciliationProgressUpdate | null) => {
     currentReconciliationProgress = progress;
@@ -114,7 +123,9 @@ export async function runOnceCyclePrelude(
       ...patch,
     });
   };
-  const emitRecoveryEvents = (events: RecoveryEvent[]) => {
+  const collectRecoveryEvents = (events: RecoveryEvent[]) => {
+    recoveryEvents.push(...events);
+    recoveryResults.push(normalizeRecoveryEntrypointResult(events));
     for (const event of events) {
       emitSupervisorEvent(args.emitEvent, buildRecoverySupervisorEvent(event));
     }
@@ -152,14 +163,14 @@ export async function runOnceCyclePrelude(
       kind: "auth_failure",
       message: authFailure,
       recoveryEvents,
+      recoveryResults,
     };
   }
 
   try {
     await setReconciliationPhase("stale_active_issue_reservation");
     const staleReservationEvents = await args.reconcileStaleActiveIssueReservation(state);
-    recoveryEvents.push(...staleReservationEvents);
-    emitRecoveryEvents(staleReservationEvents);
+    collectRecoveryEvents(staleReservationEvents);
 
     const activeRecord =
       state.activeIssueNumber === null ? null : state.issues[String(state.activeIssueNumber)] ?? null;
@@ -201,14 +212,14 @@ export async function runOnceCyclePrelude(
           updateReconciliationProgress,
           { onlyIssueNumber: activeRecord.issue_number },
         );
-        recoveryEvents.push(...activeMergedEvents);
-        emitRecoveryEvents(activeMergedEvents);
+        collectRecoveryEvents(activeMergedEvents);
       }
 
       const hasFailedRecords = Object.values(state.issues).some((record) => record.state === "failed");
       if (allowDegradedContinuation && hasFailedRecords) {
         await setReconciliationPhase("stale_failed_issue_states");
-        await args.reconcileStaleFailedIssueStates(state, [], updateReconciliationProgress);
+        const staleFailedEvents = await args.reconcileStaleFailedIssueStates(state, [], updateReconciliationProgress);
+        collectRecoveryEvents(staleFailedEvents ?? []);
       }
 
       const hasBlockedTrackedPrRecords = Object.values(state.issues).some((record) =>
@@ -226,8 +237,7 @@ export async function runOnceCyclePrelude(
         const recoverableBlockedEvents = await args.reconcileRecoverableBlockedIssueStates(state, [], {
           onlyTrackedPrStates: true,
         });
-        recoveryEvents.push(...recoverableBlockedEvents);
-        emitRecoveryEvents(recoverableBlockedEvents);
+        collectRecoveryEvents(recoverableBlockedEvents);
       }
 
       if (
@@ -238,12 +248,14 @@ export async function runOnceCyclePrelude(
         return {
           state,
           recoveryEvents,
+          recoveryResults,
         };
       }
 
       return {
         state,
         recoveryEvents,
+        recoveryResults,
       };
     }
 
@@ -255,14 +267,14 @@ export async function runOnceCyclePrelude(
         updateReconciliationProgress,
         { onlyIssueNumber: activeRecord.issue_number },
       );
-      recoveryEvents.push(...activeMergedEvents);
-      emitRecoveryEvents(activeMergedEvents);
+      collectRecoveryEvents(activeMergedEvents);
 
       const activeRecordAfterFastPath = state.issues[String(activeRecord.issue_number)] ?? null;
       if (activeRecordAfterFastPath?.state === "done") {
         return {
           state,
           recoveryEvents,
+          recoveryResults,
         };
       }
 
@@ -270,36 +282,32 @@ export async function runOnceCyclePrelude(
     }
 
     const trackedMergedEvents = await args.reconcileTrackedMergedButOpenIssues(state, issues, updateReconciliationProgress);
-    recoveryEvents.push(...trackedMergedEvents);
-    emitRecoveryEvents(trackedMergedEvents);
+    collectRecoveryEvents(trackedMergedEvents);
 
     await setReconciliationPhase("merged_issue_closures");
     const mergedIssueClosureEvents = await args.reconcileMergedIssueClosures(state, issues, updateReconciliationProgress);
-    recoveryEvents.push(...mergedIssueClosureEvents);
-    emitRecoveryEvents(mergedIssueClosureEvents);
+    collectRecoveryEvents(mergedIssueClosureEvents);
 
     await setReconciliationPhase("stale_failed_issue_states");
-    await args.reconcileStaleFailedIssueStates(state, issues, updateReconciliationProgress);
+    const staleFailedEvents = await args.reconcileStaleFailedIssueStates(state, issues, updateReconciliationProgress);
+    collectRecoveryEvents(staleFailedEvents ?? []);
 
     if (args.reconcileStaleDoneIssueStates) {
       await setReconciliationPhase("stale_done_issue_states");
       const staleDoneEvents = await args.reconcileStaleDoneIssueStates(state, issues);
-      recoveryEvents.push(...staleDoneEvents);
-      emitRecoveryEvents(staleDoneEvents);
+      collectRecoveryEvents(staleDoneEvents);
     }
 
     await setReconciliationPhase("recoverable_blocked_issue_states");
     const recoverableBlockedEvents = await args.reconcileRecoverableBlockedIssueStates(state, issues, {
       onlyTrackedPrStates: true,
     });
-    recoveryEvents.push(...recoverableBlockedEvents);
-    emitRecoveryEvents(recoverableBlockedEvents);
+    collectRecoveryEvents(recoverableBlockedEvents);
 
     if (hasNonTrackedRecoverableBlockedStates(state)) {
       await setReconciliationPhase("recoverable_blocked_issue_states");
       const remainingRecoverableBlockedEvents = await args.reconcileRecoverableBlockedIssueStates(state, issues);
-      recoveryEvents.push(...remainingRecoverableBlockedEvents);
-      emitRecoveryEvents(remainingRecoverableBlockedEvents);
+      collectRecoveryEvents(remainingRecoverableBlockedEvents);
     }
 
     if (
@@ -309,22 +317,22 @@ export async function runOnceCyclePrelude(
       return {
         state,
         recoveryEvents,
+        recoveryResults,
       };
     }
 
     await setReconciliationPhase("parent_epic_closures");
     const parentEpicClosureEvents = await args.reconcileParentEpicClosures(state, issues) ?? [];
-    recoveryEvents.push(...parentEpicClosureEvents);
-    emitRecoveryEvents(parentEpicClosureEvents);
+    collectRecoveryEvents(parentEpicClosureEvents);
 
     await setReconciliationPhase("cleanup_expired_done_workspaces");
     const cleanupEvents = await args.cleanupExpiredDoneWorkspaces(state);
-    recoveryEvents.push(...cleanupEvents);
-    emitRecoveryEvents(cleanupEvents);
+    collectRecoveryEvents(cleanupEvents);
 
     return {
       state,
       recoveryEvents,
+      recoveryResults,
     };
   } finally {
     await setReconciliationProgress(null);

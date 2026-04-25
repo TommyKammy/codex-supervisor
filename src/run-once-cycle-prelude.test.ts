@@ -48,6 +48,11 @@ test("runOnceCyclePrelude loads state and aggregates recovery setup events in or
     reason: "blocked recovery",
     at: "2026-03-14T00:03:00Z",
   };
+  const staleFailedRecoveryEvent: RecoveryEvent = {
+    issueNumber: 47,
+    reason: "failed no-PR recovery",
+    at: "2026-03-14T00:03:15Z",
+  };
   const parentEpicClosureEvent: RecoveryEvent = {
     issueNumber: 45,
     reason: "parent_epic_auto_closed: auto-closed parent epic #45 because child issues #46, #47 are closed",
@@ -101,6 +106,7 @@ test("runOnceCyclePrelude loads state and aggregates recovery setup events in or
       calls.push("reconcileStaleFailedIssueStates");
       assert.equal(loadedState, state);
       assert.equal(loadedIssues, issues);
+      return [staleFailedRecoveryEvent];
     },
     reconcileRecoverableBlockedIssueStates: async (loadedState, loadedIssues) => {
       calls.push("reconcileRecoverableBlockedIssueStates");
@@ -140,10 +146,78 @@ test("runOnceCyclePrelude loads state and aggregates recovery setup events in or
     ...carryover,
     staleReservationEvent,
     mergedConvergenceEvent,
+    staleFailedRecoveryEvent,
     blockedRecoveryEvent,
     parentEpicClosureEvent,
     orphanCleanupEvent,
   ]);
+  assert.deepEqual(
+    result.recoveryResults.map((recoveryResult) => ({
+      outcome: recoveryResult.outcome,
+      reason: recoveryResult.reason,
+      issueNumber: recoveryResult.issueNumber,
+      prNumber: recoveryResult.prNumber,
+      operatorMessage: recoveryResult.operatorMessage,
+    })),
+    [
+      {
+        outcome: "recovered",
+        reason: "carryover recovery",
+        issueNumber: 90,
+        prNumber: null,
+        operatorMessage: "carryover recovery",
+      },
+      {
+        outcome: "recovered",
+        reason: "cleared stale reservation",
+        issueNumber: 41,
+        prNumber: null,
+        operatorMessage: "cleared stale reservation",
+      },
+      {
+        outcome: "recovered",
+        reason: "merged convergence",
+        issueNumber: 42,
+        prNumber: null,
+        operatorMessage: "merged convergence",
+      },
+      {
+        outcome: "unchanged",
+        reason: null,
+        issueNumber: null,
+        prNumber: null,
+        operatorMessage: null,
+      },
+      {
+        outcome: "recovered",
+        reason: "failed no-PR recovery",
+        issueNumber: 47,
+        prNumber: null,
+        operatorMessage: "failed no-PR recovery",
+      },
+      {
+        outcome: "recovered",
+        reason: "blocked recovery",
+        issueNumber: 43,
+        prNumber: null,
+        operatorMessage: "blocked recovery",
+      },
+      {
+        outcome: "recovered",
+        reason: "parent_epic_auto_closed: auto-closed parent epic #45 because child issues #46, #47 are closed",
+        issueNumber: 45,
+        prNumber: null,
+        operatorMessage: "parent_epic_auto_closed: auto-closed parent epic #45 because child issues #46, #47 are closed",
+      },
+      {
+        outcome: "recovered",
+        reason: "pruned orphaned worktree",
+        issueNumber: 44,
+        prNumber: null,
+        operatorMessage: "pruned orphaned worktree",
+      },
+    ],
+  );
 });
 
 test("runOnceCyclePrelude persists the last-known-good inventory snapshot after a successful full inventory refresh", async () => {

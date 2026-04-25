@@ -77,7 +77,7 @@ export async function reconcileStaleFailedNoPrRecord(args: {
     patch: Partial<IssueRunRecord>,
     recoveryEvent: RecoveryEvent,
   ) => Partial<IssueRunRecord>;
-}): Promise<boolean> {
+}): Promise<RecoveryEvent | null> {
   const {
     github,
     stateStore,
@@ -100,7 +100,7 @@ export async function reconcileStaleFailedNoPrRecord(args: {
   }
 
   if (issueState !== "OPEN" || !shouldAutoRecoverFailedNoPr(record, config)) {
-    return false;
+    return null;
   }
 
   const branchRecovery = await classifyFailedNoPrBranchRecovery({
@@ -110,7 +110,7 @@ export async function reconcileStaleFailedNoPrRecord(args: {
     isSafeCleanupTarget,
   });
   if (branchRecovery.state === "dirty_workspace" && shouldAutoRetryTimeout(record, config)) {
-    return false;
+    return null;
   }
   const previousNoPrRecoveryCount = record.stale_stabilizing_no_pr_recovery_count ?? 0;
   const transientRuntimeEvidence = transientNoPrRuntimeEvidenceLabel(record, config);
@@ -141,7 +141,7 @@ export async function reconcileStaleFailedNoPrRecord(args: {
     };
     const updated = stateStore.touch(record, applyRecoveryEvent(patch, recoveryEvent));
     state.issues[String(record.issue_number)] = updated;
-    return true;
+    return recoveryEvent;
   }
   if (branchRecovery.state !== "recoverable") {
     const branchRecoveryReason = branchRecovery.state === "already_satisfied_on_main"
@@ -178,7 +178,7 @@ export async function reconcileStaleFailedNoPrRecord(args: {
     };
     const updated = stateStore.touch(record, applyRecoveryEvent(patch, recoveryEvent));
     state.issues[String(record.issue_number)] = updated;
-    return true;
+    return recoveryEvent;
   }
 
   const repeatLimit = Math.max(config.sameFailureSignatureRepeatLimit, 1);
@@ -222,5 +222,5 @@ export async function reconcileStaleFailedNoPrRecord(args: {
   };
   const updated = stateStore.touch(record, applyRecoveryEvent(patch, recoveryEvent));
   state.issues[String(record.issue_number)] = updated;
-  return true;
+  return recoveryEvent;
 }

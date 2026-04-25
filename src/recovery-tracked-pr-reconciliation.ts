@@ -641,15 +641,15 @@ export async function reconcileStaleFailedTrackedPrRecord(
     targetPrNumber?: number | null;
     waitStep?: string | null;
   }) => Promise<void>) | null = null,
-): Promise<boolean> {
+): Promise<RecoveryEvent | null> {
   const trackedPrNumber = record.pr_number;
   if (trackedPrNumber === null) {
-    return false;
+    return null;
   }
 
   const pr = await github.getPullRequestIfExists(trackedPrNumber);
   if (!pr || !deps.isOpenPullRequest(pr)) {
-    return false;
+    return null;
   }
 
   const checks = await github.getChecks(pr.number);
@@ -673,7 +673,7 @@ export async function reconcileStaleFailedTrackedPrRecord(
   });
 
   if (projection.shouldSuppressRecovery) {
-    return false;
+    return null;
   }
 
   const failureContext =
@@ -691,11 +691,11 @@ export async function reconcileStaleFailedTrackedPrRecord(
     copilotReviewTimeoutPatch: projection.copilotReviewTimeoutPatch,
   });
   if (!needsRecordUpdate(record, patch)) {
-    return false;
+    return null;
   }
   const recoveryEvent = buildTrackedPrResumeRecoveryEvent(record, pr, nextState, helpers.buildRecoveryEvent);
 
   const updated = stateStore.touch(record, helpers.applyRecoveryEvent(patch, recoveryEvent));
   state.issues[String(record.issue_number)] = updated;
-  return true;
+  return recoveryEvent;
 }

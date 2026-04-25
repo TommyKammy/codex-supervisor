@@ -7,6 +7,7 @@ import { type IssueRunRecord, type SupervisorStateFile } from "./core/types";
 import { reconcileStaleActiveIssueReservationInModule } from "./recovery-active-reconciliation";
 import { reconcileStaleDoneIssueStatesInModule } from "./recovery-historical-reconciliation";
 import { reconcileParentEpicClosuresInModule } from "./recovery-parent-epic-reconciliation";
+import { normalizeRecoveryEntrypointResult } from "./recovery-entrypoint-result";
 import { type RecoveryEvent } from "./run-once-cycle-prelude";
 import {
   createIssue,
@@ -184,4 +185,35 @@ test("parent epic recovery boundary closes ready parents without aggregate recon
   assert.equal(saveCalls, 1);
   assert.equal(state.issues["123"]?.state, "done");
   assert.equal(recoveryEvents[0]?.reason, "parent_epic_auto_closed: auto-closed parent epic #123 because child issues #201, #202 are closed");
+});
+
+test("recovery entrypoint results normalize event arrays into a shared operator-facing contract", () => {
+  const event = buildRecoveryEvent(
+    451,
+    "tracked_pr_lifecycle_recovered: resumed issue #451 from failed to pr_open using fresh tracked PR #951 facts at head head-951",
+  );
+
+  assert.deepEqual(
+    normalizeRecoveryEntrypointResult([event], {
+      prNumber: 951,
+      operatorMessage: "tracked PR recovery resumed issue #451",
+    }),
+    {
+      outcome: "recovered",
+      reason: event.reason,
+      issueNumber: 451,
+      prNumber: 951,
+      operatorMessage: "tracked PR recovery resumed issue #451",
+      events: [event],
+    },
+  );
+
+  assert.deepEqual(normalizeRecoveryEntrypointResult([]), {
+    outcome: "unchanged",
+    reason: null,
+    issueNumber: null,
+    prNumber: null,
+    operatorMessage: null,
+    events: [],
+  });
 });
