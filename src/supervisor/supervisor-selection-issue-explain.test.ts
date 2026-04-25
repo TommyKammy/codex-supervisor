@@ -1327,7 +1327,11 @@ Parallelizable: No
   };
   const issues = [rootIssue, firstDependent, secondDependent];
   const github = {
-    getIssue: async (issueNumber: number) => issues.find((issue) => issue.number === issueNumber) ?? rootIssue,
+    getIssue: async (issueNumber: number) => {
+      const found = issues.find((issue) => issue.number === issueNumber);
+      assert.ok(found, `Unexpected issue lookup in test fixture: ${issueNumber}`);
+      return found;
+    },
     listAllIssues: async () => issues,
     listCandidateIssues: async () => [firstDependent, secondDependent],
     resolvePullRequestForBranch: async () => createPullRequest({
