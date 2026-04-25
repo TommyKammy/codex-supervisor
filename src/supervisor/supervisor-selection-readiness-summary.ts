@@ -271,8 +271,12 @@ function buildReadinessSummaryFromIssues(
       )
       ? blockedPartialWorkIncident
       : null;
+  const queueIsIdle =
+    state.activeIssueNumber === null &&
+    runnableIssues.length === 0 &&
+    blockedIssues.length === 0;
   const latestMergedPrConvergenceLine =
-    runnableIssues.length === 0
+    queueIsIdle
       ? formatMergedPrConvergenceOperatorEventLine(findLatestMergedPrConvergenceRecord(state))
       : null;
 

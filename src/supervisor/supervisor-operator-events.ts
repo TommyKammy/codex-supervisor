@@ -7,7 +7,7 @@ function sanitizeStatusValue(value: string | null | undefined): string | null {
     return null;
   }
 
-  return value.replace(/\r?\n/g, "\\n");
+  return value.replace(/[\r\n]+/g, "\\n");
 }
 
 export function formatMergedPrConvergenceOperatorEventLine(record: RecoveryRecord | null | undefined): string | null {
