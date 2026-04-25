@@ -570,6 +570,10 @@ test("renderDoctorReport includes loop host diagnostics and macOS tmux drift war
   );
   assert.match(
     report,
+    /^doctor_restart_recommendation category=safe_restart source=doctor_loop_runtime_diagnostic summary=Restart can be safe after following the runtime ownership and duplicate-process guidance\.$/m,
+  );
+  assert.match(
+    report,
     /doctor_warning kind=loop_host detail=macOS loop runtime is active outside tmux\. Restart it with \.\/scripts\/start-loop-tmux\.sh and stop unsupported direct hosts before relying on steady-state automation\./,
   );
 });

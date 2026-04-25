@@ -18,8 +18,48 @@ export interface OperatorAction {
   summary: string;
 }
 
+export type RestartRecommendationCategory =
+  | "safe_restart"
+  | "restart_required_for_convergence"
+  | "restart_not_enough"
+  | "manual_review_before_restart";
+
+export interface RestartRecommendation {
+  category: RestartRecommendationCategory;
+  source: string;
+  priority: number;
+  summary: string;
+}
+
+const restartRecommendationPriority: Record<RestartRecommendationCategory, number> = {
+  restart_required_for_convergence: 90,
+  manual_review_before_restart: 80,
+  safe_restart: 70,
+  restart_not_enough: 40,
+};
+
 function chooseHighestPriority(actions: OperatorAction[], fallback: OperatorAction): OperatorAction {
   return [...actions].sort((left, right) => right.priority - left.priority)[0] ?? fallback;
+}
+
+function chooseHighestPriorityRecommendation(recommendations: RestartRecommendation[]): RestartRecommendation | null {
+  return [...recommendations].sort((left, right) => right.priority - left.priority)[0] ?? null;
+}
+
+function getSafeRestartSource(line: string): string | null {
+  if (/^loop_runtime_diagnostic\b/.test(line) && /\bstatus=duplicate\b/.test(line)) {
+    return "loop_runtime_diagnostic";
+  }
+  if (/^doctor_loop_runtime_diagnostic\b/.test(line) && /\bstatus=duplicate\b/.test(line)) {
+    return "doctor_loop_runtime_diagnostic";
+  }
+  if (/^loop_runtime_recovery\b/.test(line)) {
+    return "loop_runtime_recovery";
+  }
+  if (/^doctor_loop_runtime_recovery\b/.test(line)) {
+    return "doctor_loop_runtime_recovery";
+  }
+  return null;
 }
 
 const statusFallbackOperatorAction: OperatorAction = {
@@ -35,6 +75,108 @@ const doctorFallbackOperatorAction: OperatorAction = {
   priority: 0,
   summary: "No blocking doctor action was detected; continue normal supervisor operation.",
 };
+
+export function selectRestartRecommendation(args: {
+  detailedStatusLines: string[];
+}): RestartRecommendation | null {
+  const recommendations: RestartRecommendation[] = [];
+
+  for (const line of args.detailedStatusLines) {
+    if (/^loop_runtime_blocker\b/.test(line)) {
+      recommendations.push({
+        category: "restart_required_for_convergence",
+        source: "loop_runtime_blocker",
+        priority: restartRecommendationPriority.restart_required_for_convergence,
+        summary: "Restarting the supported supervisor loop is required before active tracked work can converge.",
+      });
+      continue;
+    }
+
+    const safeRestartSource = getSafeRestartSource(line);
+    if (safeRestartSource !== null) {
+      recommendations.push({
+        category: "safe_restart",
+        source: safeRestartSource,
+        priority: restartRecommendationPriority.safe_restart,
+        summary: "Restart can be safe after following the runtime ownership and duplicate-process guidance.",
+      });
+      continue;
+    }
+
+    const noActiveClassification = /^no_active_tracked_record\b/.test(line)
+      ? /\bclassification=([^\s]+)/.exec(line)?.[1] ?? null
+      : null;
+    if (!noActiveClassification) {
+      continue;
+    }
+
+    if (
+      noActiveClassification === "active_tracked_work_blocker" ||
+      noActiveClassification === "stale_but_recoverable"
+    ) {
+      recommendations.push({
+        category: "restart_required_for_convergence",
+        source: "no_active_tracked_record",
+        priority: 60,
+        summary: "Restarting the supported supervisor loop is required before active tracked work can converge.",
+      });
+      continue;
+    }
+
+    if (
+      noActiveClassification === "manual_review_required" ||
+      noActiveClassification === "provider_outage_suspected"
+    ) {
+      recommendations.push({
+        category: "manual_review_before_restart",
+        source: "no_active_tracked_record",
+        priority: restartRecommendationPriority.manual_review_before_restart,
+        summary: "Manual review is required before a restart should be treated as a recovery action.",
+      });
+      continue;
+    }
+
+    recommendations.push({
+      category: "restart_not_enough",
+      source: "no_active_tracked_record",
+      priority: restartRecommendationPriority.restart_not_enough,
+      summary: "Restart alone is not expected to resolve the current supervisor state.",
+    });
+  }
+
+  return chooseHighestPriorityRecommendation(recommendations);
+}
+
+export function renderRestartRecommendationLine(
+  prefix: "restart_recommendation" | "doctor_restart_recommendation",
+  recommendation: RestartRecommendation | null,
+): string | null {
+  if (recommendation === null) {
+    return null;
+  }
+
+  return [
+    prefix,
+    `category=${recommendation.category}`,
+    `source=${recommendation.source}`,
+    `summary=${recommendation.summary}`,
+  ].join(" ");
+}
+
+export function appendRestartRecommendationLine(
+  detailedStatusLines: string[],
+  prefix: "restart_recommendation" | "doctor_restart_recommendation" = "restart_recommendation",
+): string[] {
+  if (detailedStatusLines.some((line) => line.startsWith(`${prefix} `))) {
+    return detailedStatusLines;
+  }
+
+  const recommendationLine = renderRestartRecommendationLine(
+    prefix,
+    selectRestartRecommendation({ detailedStatusLines }),
+  );
+  return recommendationLine === null ? detailedStatusLines : [...detailedStatusLines, recommendationLine];
+}
 
 export function selectStatusOperatorAction(args: {
   detailedStatusLines: string[];

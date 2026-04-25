@@ -54,6 +54,7 @@ import {
   summarizeChecks,
 } from "./supervisor-status-rendering";
 import { buildTrackedMergedButOpenBacklogDiagnosticLine } from "../reconciliation-backlog-diagnostics";
+import { appendRestartRecommendationLine } from "../operator-actions";
 
 const LONG_RECONCILIATION_WARNING_THRESHOLD_MS = 5 * 60 * 1000;
 const MAX_RENDERED_STATUS_STATE_LOAD_FINDINGS = 5;
@@ -248,7 +249,7 @@ export async function buildSupervisorStatusReport(args: {
       const readinessSummary = buildLastKnownGoodSnapshotReadinessSummary(config, state);
       const whyLines = options.why ? await buildSelectionWhySummary(github, config, state) : [];
       const githubRateLimitStatus = await loadGitHubRateLimitStatus(github);
-      const inactiveDetailedStatusLines = [
+      const inactiveDetailedStatusLines = appendRestartRecommendationLine([
         ...detailedStatusLines,
         ...(loopOffTrackedWorkBlocker ? [loopOffTrackedWorkBlocker.summaryLine] : []),
         inventoryPostureLine,
@@ -257,7 +258,7 @@ export async function buildSupervisorStatusReport(args: {
         ...(inventorySnapshotStatusLine === null ? [] : [inventorySnapshotStatusLine]),
         ...(trackedMergedBacklogLine === null ? [] : [trackedMergedBacklogLine]),
         ...githubRateLimitStatus.githubRateLimitLines,
-      ];
+      ]);
 
       return {
         gsdSummary,
@@ -311,7 +312,7 @@ export async function buildSupervisorStatusReport(args: {
       const whyLines = options.why ? await buildSelectionWhySummary(github, config, state) : [];
       const selectionSummary = options.why ? await buildSelectionSummary(github, config, state) : null;
       const githubRateLimitStatus = await loadGitHubRateLimitStatus(github);
-      const inactiveDetailedStatusLines = [
+      const inactiveDetailedStatusLines = appendRestartRecommendationLine([
         ...detailedStatusLines,
         ...(loopOffTrackedWorkBlocker ? [loopOffTrackedWorkBlocker.summaryLine] : []),
         inventoryPostureLine,
@@ -320,7 +321,7 @@ export async function buildSupervisorStatusReport(args: {
         ...(inventorySnapshotStatusLine === null ? [] : [inventorySnapshotStatusLine]),
         ...(trackedMergedBacklogLine === null ? [] : [trackedMergedBacklogLine]),
         ...githubRateLimitStatus.githubRateLimitLines,
-      ];
+      ]);
 
       return {
         gsdSummary,
@@ -357,7 +358,7 @@ export async function buildSupervisorStatusReport(args: {
     } catch (error) {
       const message = sanitizeStatusValue(error instanceof Error ? error.message : String(error));
       const githubRateLimitStatus = await loadGitHubRateLimitStatus(github);
-      const inactiveDetailedStatusLines = [
+      const inactiveDetailedStatusLines = appendRestartRecommendationLine([
         ...detailedStatusLines,
         ...(loopOffTrackedWorkBlocker ? [loopOffTrackedWorkBlocker.summaryLine] : []),
         inventoryPostureLine,
@@ -365,7 +366,7 @@ export async function buildSupervisorStatusReport(args: {
         ...inventoryRefreshDiagnosticLines,
         ...(trackedMergedBacklogLine === null ? [] : [trackedMergedBacklogLine]),
         ...githubRateLimitStatus.githubRateLimitLines,
-      ];
+      ]);
 
       return {
         gsdSummary,
@@ -443,7 +444,7 @@ export async function buildSupervisorStatusReport(args: {
     executionMetricsSummaryLines: activeStatus.executionMetricsSummaryLines,
   });
   const githubRateLimitStatus = await loadGitHubRateLimitStatus(github);
-  const detailedStatusLinesWithInventory = [
+  const detailedStatusLinesWithInventory = appendRestartRecommendationLine([
     ...detailedStatusLines,
     ...(loopOffTrackedWorkBlocker ? [loopOffTrackedWorkBlocker.summaryLine] : []),
     inventoryPostureLine,
@@ -452,7 +453,7 @@ export async function buildSupervisorStatusReport(args: {
     ...(inventorySnapshotStatusLine === null ? [] : [inventorySnapshotStatusLine]),
     ...(trackedMergedBacklogLine === null ? [] : [trackedMergedBacklogLine]),
     ...githubRateLimitStatus.githubRateLimitLines,
-  ];
+  ]);
 
   return {
     gsdSummary,
