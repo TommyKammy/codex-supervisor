@@ -222,6 +222,69 @@ test("explain resolves tracked PR numbers to the owning issue context", async ()
   assert.doesNotMatch(explanation, /candidate filtered_by_candidate_list/);
 });
 
+test("explain surfaces merged PR convergence as an operator event for a tracked record", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 156;
+  const prNumber = 656;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "done",
+        branch,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: prNumber,
+        blocked_reason: null,
+        last_error: null,
+        last_failure_kind: null,
+        last_failure_context: null,
+        last_failure_signature: null,
+        last_recovery_reason: `merged_pr_convergence: tracked PR #${prNumber} merged; marked issue #${issueNumber} done`,
+        last_recovery_at: "2026-04-25T00:30:00Z",
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const owningIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Done issue after tracked PR convergence",
+    body: executionReadyBody("Explain should show the merged PR convergence event."),
+    createdAt: "2026-04-25T00:00:00Z",
+    updatedAt: "2026-04-25T00:30:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "CLOSED",
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => owningIssue,
+    listAllIssues: async () => [owningIssue],
+    listCandidateIssues: async () => [],
+    getPullRequestIfExists: async () =>
+      createPullRequest({
+        number: prNumber,
+        headRefName: branch,
+        mergedAt: "2026-04-25T00:25:00Z",
+      }),
+  };
+
+  const explanation = await supervisor.explain(issueNumber);
+
+  assert.match(
+    explanation,
+    /^operator_event type=merged_pr_convergence issue=#156 at=2026-04-25T00:30:00Z detail=tracked PR #656 merged; marked issue #156 done$/m,
+  );
+  assert.match(
+    explanation,
+    /^latest_recovery issue=#156 at=2026-04-25T00:30:00Z reason=merged_pr_convergence detail=tracked PR #656 merged; marked issue #156 done$/m,
+  );
+});
+
 test("explain surfaces loop-off as an operator blocker for active tracked work", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 189;

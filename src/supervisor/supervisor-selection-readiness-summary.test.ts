@@ -415,6 +415,51 @@ Hold the preserved workspace for manual review.
   ]);
 });
 
+test("buildReadinessSummary keeps merged PR convergence events scoped to idle queues", async () => {
+  const config = createConfig();
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      "240": createRecord({
+        issue_number: 240,
+        state: "done",
+        last_recovery_reason: "merged_pr_convergence: tracked PR #340 merged; marked issue #240 done",
+        last_recovery_at: "2026-04-25T00:20:00Z",
+      }),
+    },
+  };
+  const blockedIssue = createIssue({
+    number: 241,
+    title: "Missing execution metadata",
+    body: `## Summary
+This candidate is intentionally not execution-ready.`,
+  });
+
+  const summary = await buildReadinessSummary(
+    {
+      listCandidateIssues: async () => [blockedIssue],
+      listAllIssues: async () => [blockedIssue],
+    },
+    config,
+    state,
+  );
+
+  assert.deepEqual(summary, {
+    runnableIssues: [],
+    blockedIssues: [
+      {
+        issueNumber: 241,
+        title: "Missing execution metadata",
+        blockedBy: "requirements:scope, acceptance criteria, verification",
+      },
+    ],
+    readinessLines: [
+      "runnable_issues=none",
+      "blocked_issues=#241 blocked_by=requirements:scope, acceptance criteria, verification",
+    ],
+  });
+});
+
 test("buildReadinessSummary keeps downstream siblings blocked while predecessor final evaluation is unresolved", async () => {
   const config = createConfig();
   const state: SupervisorStateFile = {
