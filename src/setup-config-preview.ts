@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { loadConfigSummaryFromDocument, resolveConfigPath, type ConfigLoadStatus } from "./core/config";
+import { getConfigFieldPostureMetadata, type ConfigFieldName } from "./core/config-field-posture";
 import { reviewProviderProfileFromConfig, type ReviewProviderProfileId } from "./core/review-providers";
 import type { SetupReadinessFieldKey } from "./setup-readiness";
 
@@ -25,6 +26,16 @@ export interface SetupConfigPreviewFieldChange {
   summary: string;
 }
 
+export interface SetupConfigPreviewDangerousOptIn {
+  key: ConfigFieldName;
+  label: string;
+  currentValue: unknown;
+  previewValue: unknown;
+  state: SetupConfigPreviewFieldState;
+  requiresConfirmation: true;
+  operatorImpact: string;
+}
+
 export interface SetupConfigPreviewValidation {
   status: ConfigLoadStatus;
   missingRequiredFields: string[];
@@ -42,6 +53,7 @@ export interface SetupConfigPreview {
   preservedUnknownFields: string[];
   document: Record<string, unknown>;
   fieldChanges: SetupConfigPreviewFieldChange[];
+  dangerousExplicitOptIns: SetupConfigPreviewDangerousOptIn[];
   validation: SetupConfigPreviewValidation;
 }
 
@@ -84,7 +96,12 @@ const KNOWN_CONFIG_KEYS = new Set([
   "localReviewReviewerThresholds",
   "localReviewPolicy",
   "trackedPrCurrentHeadLocalReviewRequired",
+  "localReviewFollowUpRepairEnabled",
+  "localReviewManualReviewRepairEnabled",
+  "localReviewFollowUpIssueCreationEnabled",
   "localReviewHighSeverityAction",
+  "staleConfiguredBotReviewPolicy",
+  "approvedTrackedTopLevelEntries",
   "reviewBotLogins",
   "configuredReviewProviders",
   "humanReviewBlocksMerge",
@@ -128,6 +145,20 @@ const SETUP_FIELD_LABELS: Record<SetupConfigPreviewFieldKey, string> = {
   trustMode: "Trust mode",
   executionSafetyMode: "Execution safety mode",
   reviewProvider: "Review provider",
+};
+const DANGEROUS_EXPLICIT_OPT_IN_IMPACTS: Record<string, string> = {
+  localReviewFollowUpRepairEnabled:
+    "Allows same-PR automated repair for local-review follow-up findings that would otherwise stay advisory.",
+  localReviewManualReviewRepairEnabled:
+    "Allows same-PR automated repair for manual-review-blocked local-review findings when GitHub is otherwise clear.",
+  localReviewFollowUpIssueCreationEnabled:
+    "Allows automatic follow-up issue creation for eligible residual local-review findings.",
+  localReviewHighSeverityAction:
+    "Can route verifier-confirmed high-severity local-review findings into another repair pass instead of blocking.",
+  staleConfiguredBotReviewPolicy:
+    "Can let the supervisor reply to or resolve stale configured-bot review threads.",
+  approvedTrackedTopLevelEntries:
+    "Approves tracked top-level repository skeleton entries that the path-safety guard would otherwise flag.",
 };
 const SUPPORTED_REVIEW_PROVIDER_PROFILES: SetupConfigPreviewSupportedProfile[] = [
   {
@@ -273,6 +304,27 @@ function buildFieldChanges(args: {
   });
 }
 
+function buildDangerousExplicitOptIns(args: {
+  rawDocument: Record<string, unknown> | null;
+  previewDocument: Record<string, unknown>;
+}): SetupConfigPreviewDangerousOptIn[] {
+  const { rawDocument, previewDocument } = args;
+  return Object.keys(DANGEROUS_EXPLICIT_OPT_IN_IMPACTS).map((key) => {
+    const posture = getConfigFieldPostureMetadata(key);
+    const currentValue = rawDocument?.[key] ?? null;
+    const previewValue = previewDocument[key] ?? null;
+    return {
+      key: key as ConfigFieldName,
+      label: posture?.summary ?? key,
+      currentValue,
+      previewValue,
+      state: JSON.stringify(currentValue) === JSON.stringify(previewValue) ? "unchanged" : "suggested",
+      requiresConfirmation: true,
+      operatorImpact: DANGEROUS_EXPLICIT_OPT_IN_IMPACTS[key] ?? "Enables a dangerous explicit opt-in.",
+    };
+  });
+}
+
 export function buildSetupConfigPreview(args: BuildSetupConfigPreviewArgs = {}): SetupConfigPreview {
   const configPath = resolveConfigPath(args.configPath);
   const rawDocument = readRawConfigDocument(configPath);
@@ -297,6 +349,10 @@ export function buildSetupConfigPreview(args: BuildSetupConfigPreviewArgs = {}):
       rawDocument,
       previewDocument,
       selectedReviewProviderProfile,
+    }),
+    dangerousExplicitOptIns: buildDangerousExplicitOptIns({
+      rawDocument,
+      previewDocument,
     }),
     validation: {
       status: validation.status,

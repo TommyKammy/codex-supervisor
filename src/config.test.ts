@@ -1875,6 +1875,9 @@ test("buildSetupConfigPreview preserves unknown fields and leaves the config fil
     repoPath: ".",
     repoSlug: "owner/repo",
     defaultBranch: "main",
+    localReviewFollowUpRepairEnabled: true,
+    staleConfiguredBotReviewPolicy: "reply_only",
+    approvedTrackedTopLevelEntries: ["README.md"],
     experimentalFlag: {
       keep: true,
     },
@@ -1896,10 +1899,193 @@ test("buildSetupConfigPreview preserves unknown fields and leaves the config fil
   assert.equal(preview.writesConfig, false);
   assert.equal(preview.selectedReviewProviderProfile, "codex");
   assert.deepEqual(preview.preservedUnknownFields, ["experimentalFlag"]);
+  assert.equal(preview.document.localReviewFollowUpRepairEnabled, true);
+  assert.equal(preview.document.staleConfiguredBotReviewPolicy, "reply_only");
+  assert.deepEqual(preview.document.approvedTrackedTopLevelEntries, ["README.md"]);
   assert.deepEqual(preview.document.experimentalFlag, { keep: true });
   assert.deepEqual(preview.document.reviewBotLogins, ["chatgpt-codex-connector"]);
+  assert.deepEqual(
+    preview.dangerousExplicitOptIns.map((field) => [
+      field.key,
+      field.requiresConfirmation,
+      field.operatorImpact.length > 0,
+    ]),
+    [
+      ["localReviewFollowUpRepairEnabled", true, true],
+      ["localReviewManualReviewRepairEnabled", true, true],
+      ["localReviewFollowUpIssueCreationEnabled", true, true],
+      ["localReviewHighSeverityAction", true, true],
+      ["staleConfiguredBotReviewPolicy", true, true],
+      ["approvedTrackedTopLevelEntries", true, true],
+    ],
+  );
   assert.equal(preview.validation.status, "ready");
   assert.equal(before, after);
+});
+
+test("updateSetupConfig rejects dangerous explicit opt-ins without typed confirmation before touching the config file", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-dangerous-confirm-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const configPath = path.join(tempDir, "supervisor.config.json");
+  const originalDocument = {
+    repoPath: ".",
+    repoSlug: "owner/repo",
+    defaultBranch: "main",
+    workspaceRoot: "./worktrees",
+    stateFile: "./state.json",
+    codexBinary: "codex",
+    branchPrefix: "codex/issue-",
+    reviewBotLogins: ["chatgpt-codex-connector"],
+  };
+  await fs.writeFile(configPath, JSON.stringify(originalDocument, null, 2), "utf8");
+  const before = await fs.readFile(configPath, "utf8");
+
+  await assert.rejects(
+    updateSetupConfig({
+      configPath,
+      changes: {
+        localReviewFollowUpIssueCreationEnabled: true,
+        localReviewHighSeverityAction: "retry",
+        staleConfiguredBotReviewPolicy: "reply_and_resolve",
+        approvedTrackedTopLevelEntries: ["README.md", "src"],
+      },
+    }),
+    (error) => {
+      assert.equal((error as { code?: string }).code, "dangerous_confirmation_required");
+      assert.deepEqual((error as { dangerousFields?: string[] }).dangerousFields, [
+        "localReviewFollowUpIssueCreationEnabled",
+        "localReviewHighSeverityAction",
+        "staleConfiguredBotReviewPolicy",
+        "approvedTrackedTopLevelEntries",
+      ]);
+      return true;
+    },
+  );
+
+  assert.equal(await fs.readFile(configPath, "utf8"), before);
+});
+
+test("updateSetupConfig allows idempotent dangerous explicit opt-in resubmits without fresh confirmation", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-dangerous-idempotent-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const configPath = path.join(tempDir, "supervisor.config.json");
+  await fs.writeFile(
+    configPath,
+    JSON.stringify(
+      {
+        repoPath: ".",
+        repoSlug: "owner/repo",
+        defaultBranch: "main",
+        workspaceRoot: "./worktrees",
+        stateFile: "./state.json",
+        codexBinary: "codex",
+        branchPrefix: "codex/issue-",
+        reviewBotLogins: ["chatgpt-codex-connector"],
+        localReviewFollowUpRepairEnabled: true,
+        localReviewManualReviewRepairEnabled: true,
+        localReviewHighSeverityAction: "retry",
+        staleConfiguredBotReviewPolicy: "reply_only",
+        approvedTrackedTopLevelEntries: ["README.md", "src"],
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+
+  const result = await updateSetupConfig({
+    configPath,
+    changes: {
+      localReviewFollowUpRepairEnabled: true,
+      localReviewManualReviewRepairEnabled: true,
+      localReviewHighSeverityAction: "retry",
+      staleConfiguredBotReviewPolicy: "reply_only",
+      approvedTrackedTopLevelEntries: ["README.md", "src"],
+    },
+  });
+
+  assert.deepEqual(result.updatedFields, [
+    "localReviewFollowUpRepairEnabled",
+    "localReviewManualReviewRepairEnabled",
+    "localReviewHighSeverityAction",
+    "staleConfiguredBotReviewPolicy",
+    "approvedTrackedTopLevelEntries",
+  ]);
+  assert.equal(result.restartRequired, false);
+  assert.deepEqual(result.restartTriggeredByFields, []);
+});
+
+test("updateSetupConfig writes confirmed dangerous explicit opt-ins through the setup-owned surface", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-dangerous-write-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const configPath = path.join(tempDir, "supervisor.config.json");
+  await fs.writeFile(
+    configPath,
+    JSON.stringify(
+      {
+        repoPath: ".",
+        repoSlug: "owner/repo",
+        defaultBranch: "main",
+        workspaceRoot: "./worktrees",
+        stateFile: "./state.json",
+        codexBinary: "codex",
+        branchPrefix: "codex/issue-",
+        reviewBotLogins: ["chatgpt-codex-connector"],
+        experimentalFlag: true,
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+
+  const result = await updateSetupConfig({
+    configPath,
+    changes: {
+      localReviewFollowUpRepairEnabled: true,
+      localReviewManualReviewRepairEnabled: true,
+      localReviewFollowUpIssueCreationEnabled: true,
+      localReviewHighSeverityAction: "retry",
+      staleConfiguredBotReviewPolicy: "reply_only",
+      approvedTrackedTopLevelEntries: ["README.md", "src"],
+    },
+    dangerousOptInConfirmation: {
+      acknowledged: true,
+      fieldKeys: [
+        "localReviewFollowUpRepairEnabled",
+        "localReviewManualReviewRepairEnabled",
+        "localReviewFollowUpIssueCreationEnabled",
+        "localReviewHighSeverityAction",
+        "staleConfiguredBotReviewPolicy",
+        "approvedTrackedTopLevelEntries",
+      ],
+    },
+  });
+
+  const updatedDocument = JSON.parse(await fs.readFile(configPath, "utf8")) as Record<string, unknown>;
+  assert.deepEqual(result.updatedFields, [
+    "localReviewFollowUpRepairEnabled",
+    "localReviewManualReviewRepairEnabled",
+    "localReviewFollowUpIssueCreationEnabled",
+    "localReviewHighSeverityAction",
+    "staleConfiguredBotReviewPolicy",
+    "approvedTrackedTopLevelEntries",
+  ]);
+  assert.equal(result.restartRequired, true);
+  assert.deepEqual(result.restartTriggeredByFields, result.updatedFields);
+  assert.equal(updatedDocument.localReviewFollowUpRepairEnabled, true);
+  assert.equal(updatedDocument.localReviewManualReviewRepairEnabled, true);
+  assert.equal(updatedDocument.localReviewFollowUpIssueCreationEnabled, true);
+  assert.equal(updatedDocument.localReviewHighSeverityAction, "retry");
+  assert.equal(updatedDocument.staleConfiguredBotReviewPolicy, "reply_only");
+  assert.deepEqual(updatedDocument.approvedTrackedTopLevelEntries, ["README.md", "src"]);
+  assert.equal(updatedDocument.experimentalFlag, true);
 });
 
 test("updateSetupConfig preserves unrelated fields, writes a backup, and refreshes readiness", async (t) => {

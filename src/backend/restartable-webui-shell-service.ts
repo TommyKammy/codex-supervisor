@@ -2,7 +2,7 @@ import type { CliOptions } from "../core/types";
 import type { DoctorDiagnostics } from "../doctor";
 import type { ManagedRestartCapability, ManagedRestartCommandResultDto, ManagedRestartController } from "../managed-restart";
 import type { SetupConfigPreview, SetupConfigPreviewSelectableReviewProviderProfile } from "../setup-config-preview";
-import type { SetupConfigChanges, SetupConfigUpdateResult } from "../setup-config-write";
+import type { SetupConfigChanges, SetupConfigUpdateResult, UpdateSetupConfigArgs } from "../setup-config-write";
 import type { SetupReadinessReport } from "../setup-readiness";
 import type {
   SupervisorExecutionMetricsRollupResultDto,
@@ -269,7 +269,9 @@ export function createRestartableWebUiShellService(
         })
       : undefined,
     updateSetupConfig: activeService.updateSetupConfig
-      ? async (updateOptions: { changes: SetupConfigChanges }): Promise<SetupConfigUpdateResult> => {
+      ? async (
+        updateOptions: Pick<UpdateSetupConfigArgs, "changes" | "dangerousOptInConfirmation">,
+      ): Promise<SetupConfigUpdateResult> => {
         if (workerPhase === "restarting") {
           rejectWhileRestarting();
         }

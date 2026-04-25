@@ -114,7 +114,7 @@ import {
 import { StateStore } from "../core/state-store";
 import { renderDoctorReport } from "../doctor";
 import { buildSetupConfigPreview, type SetupConfigPreviewSelectableReviewProviderProfile } from "../setup-config-preview";
-import { updateSetupConfig, type SetupConfigChanges } from "../setup-config-write";
+import { updateSetupConfig, type SetupConfigChanges, type UpdateSetupConfigArgs } from "../setup-config-write";
 import {
   blockedReasonForLifecycleState,
   determineTrackedPrRepeatFailureDisposition,
@@ -1026,10 +1026,11 @@ export class Supervisor {
     });
   }
 
-  async updateSetupConfig(options: { changes: SetupConfigChanges }) {
+  async updateSetupConfig(options: Pick<UpdateSetupConfigArgs, "changes" | "dangerousOptInConfirmation">) {
     return updateSetupConfig({
       configPath: this.configPath,
       changes: options.changes,
+      dangerousOptInConfirmation: options.dangerousOptInConfirmation,
     });
   }
 

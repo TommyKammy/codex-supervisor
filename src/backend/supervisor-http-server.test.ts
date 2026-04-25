@@ -268,6 +268,7 @@ function createStubService(args?: {
   setupConfigPreview?: SetupConfigPreview;
   setupConfigUpdateCalls?: Array<unknown>;
   setupConfigUpdateResult?: SetupConfigUpdateResult;
+  updateSetupConfig?: SupervisorService["updateSetupConfig"];
   runOnceDryRunCalls?: boolean[];
   recoveryCalls?: { action: string; issueNumber: number }[];
   pruneCalls?: number;
@@ -509,6 +510,9 @@ function createStubService(args?: {
     },
     updateSetupConfig: async (payload) => {
       args?.setupConfigUpdateCalls?.push(payload);
+      if (args?.updateSetupConfig) {
+        return args.updateSetupConfig(payload);
+      }
       return setupConfigUpdateResult;
     },
     subscribeEvents: (listener) => {
@@ -871,6 +875,18 @@ test("createSupervisorHttpServer serves read-only supervisor DTOs as JSON", asyn
         source: "selected_review_provider_profile",
         state: "suggested",
         summary: "Applies the Codex Connector review provider profile.",
+      },
+    ],
+    dangerousExplicitOptIns: [
+      {
+        key: "localReviewHighSeverityAction",
+        label: "High-severity local-review autonomous action posture.",
+        currentValue: null,
+        previewValue: null,
+        state: "unchanged",
+        requiresConfirmation: true,
+        operatorImpact:
+          "Can route verifier-confirmed high-severity local-review findings into another repair pass instead of blocking.",
       },
     ],
     validation: {
@@ -1451,6 +1467,103 @@ test("createSupervisorHttpServer accepts narrow setup config writes and returns 
       },
     },
   });
+});
+
+test("createSupervisorHttpServer forwards dangerous opt-in confirmation and returns typed missing-confirmation errors", async (t) => {
+  const setupConfigUpdateCalls: Array<unknown> = [];
+  const server = createSupervisorHttpServer({
+    service: createStubService({
+      setupConfigUpdateCalls,
+      updateSetupConfig: async () => {
+        const { SetupConfigWriteError } = await import("../setup-config-write");
+        throw new SetupConfigWriteError("Dangerous explicit opt-in confirmation required for: localReviewHighSeverityAction.", [
+          "localReviewHighSeverityAction",
+        ]);
+      },
+    }),
+    mutationAuth: testMutationAuth,
+  });
+  t.after(async () => {
+    await closeServer(server);
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.listen(0, "127.0.0.1", () => resolve());
+    server.on("error", reject);
+  });
+
+  const response = await readJson({
+    server,
+    path: "/api/setup-config",
+    method: "POST",
+    headers: mutationAuthHeaders(server, { "Content-Type": "application/json" }),
+    body: JSON.stringify({
+      changes: {
+        localReviewHighSeverityAction: "retry",
+      },
+      dangerousOptInConfirmation: {
+        acknowledged: true,
+        fieldKeys: ["localReviewHighSeverityAction"],
+      },
+    }),
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.deepEqual(setupConfigUpdateCalls, [
+    {
+      changes: {
+        localReviewHighSeverityAction: "retry",
+      },
+      dangerousOptInConfirmation: {
+        acknowledged: true,
+        fieldKeys: ["localReviewHighSeverityAction"],
+      },
+    },
+  ]);
+  assert.deepEqual(response.body, {
+    error: "Dangerous explicit opt-in confirmation required for: localReviewHighSeverityAction.",
+    code: "dangerous_confirmation_required",
+    dangerousFields: ["localReviewHighSeverityAction"],
+  });
+});
+
+test("createSupervisorHttpServer rejects unknown dangerous opt-in confirmation field keys", async (t) => {
+  const setupConfigUpdateCalls: Array<unknown> = [];
+  const server = createSupervisorHttpServer({
+    service: createStubService({ setupConfigUpdateCalls }),
+    mutationAuth: testMutationAuth,
+  });
+  t.after(async () => {
+    await closeServer(server);
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.listen(0, "127.0.0.1", () => resolve());
+    server.on("error", reject);
+  });
+
+  const response = await readJson({
+    server,
+    path: "/api/setup-config",
+    method: "POST",
+    headers: mutationAuthHeaders(server, { "Content-Type": "application/json" }),
+    body: JSON.stringify({
+      changes: {
+        localReviewHighSeverityAction: "retry",
+      },
+      dangerousOptInConfirmation: {
+        acknowledged: true,
+        fieldKeys: ["localReviewHighSeverityAction", "unsupportedDangerousField"],
+      },
+    }),
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.deepEqual(response.body, {
+    error:
+      "dangerousOptInConfirmation.fieldKeys includes unknown dangerous setup config field: unsupportedDangerousField.",
+  });
+  assert.deepEqual(setupConfigUpdateCalls, []);
 });
 
 test("createSupervisorHttpServer only accepts managed restart commands when launcher support is available", async (t) => {

@@ -6,7 +6,12 @@ import {
   type ManagedRestartController,
 } from "../managed-restart";
 import type { SetupConfigPreviewSelectableReviewProviderProfile } from "../setup-config-preview";
-import type { SetupConfigUpdateResult } from "../setup-config-write";
+import {
+  DANGEROUS_SETUP_CONFIG_FIELD_KEYS,
+  SetupConfigWriteError,
+  type DangerousSetupConfigFieldKey,
+  type SetupConfigUpdateResult,
+} from "../setup-config-write";
 import type { SetupReadinessReport } from "../setup-readiness";
 import type { SupervisorLoopController } from "../supervisor/supervisor-loop-controller";
 import type { SupervisorEvent, SupervisorService } from "../supervisor";
@@ -25,12 +30,17 @@ export interface CreateSupervisorHttpServerOptions {
 
 interface JsonErrorBody {
   error: string;
+  code?: string;
+  dangerousFields?: string[];
 }
+
+const DANGEROUS_SETUP_CONFIG_FIELD_KEY_SET = new Set<string>(DANGEROUS_SETUP_CONFIG_FIELD_KEYS);
 
 class HttpRequestError extends Error {
   constructor(
     readonly statusCode: number,
     message: string,
+    readonly details: Omit<JsonErrorBody, "error"> = {},
   ) {
     super(message);
   }
@@ -80,7 +90,7 @@ export function createSupervisorHttpServer(options: CreateSupervisorHttpServerOp
       );
     } catch (error) {
       if (error instanceof HttpRequestError) {
-        writeJson(response, error.statusCode, { error: error.message });
+        writeJson(response, error.statusCode, { error: error.message, ...error.details });
         return;
       }
       const message = error instanceof Error ? error.message : String(error);
@@ -143,10 +153,24 @@ async function handleRequest(
       return;
     }
     const body = await readJsonBody(request);
-    const changes = readSetupConfigChanges(body);
+    const { changes, dangerousOptInConfirmation } = readSetupConfigWriteRequest(body);
     try {
-      writeJson(response, 200, withManagedRestartCapability(await service.updateSetupConfig({ changes }), managedRestart));
+      const updateOptions =
+        dangerousOptInConfirmation === undefined
+          ? { changes }
+          : { changes, dangerousOptInConfirmation };
+      writeJson(
+        response,
+        200,
+        withManagedRestartCapability(await service.updateSetupConfig(updateOptions), managedRestart),
+      );
     } catch (error) {
+      if (error instanceof SetupConfigWriteError) {
+        throw new HttpRequestError(400, error.message, {
+          code: error.code,
+          dangerousFields: error.dangerousFields,
+        });
+      }
       const message = error instanceof Error ? error.message : String(error);
       throw new HttpRequestError(400, message);
     }
@@ -490,7 +514,13 @@ function readPositiveInteger(body: unknown, fieldName: string): number | null {
   return Number.isInteger(value) && (value as number) > 0 ? (value as number) : null;
 }
 
-function readSetupConfigChanges(body: unknown): Record<string, unknown> {
+function readSetupConfigWriteRequest(body: unknown): {
+  changes: Record<string, unknown>;
+  dangerousOptInConfirmation?: {
+    acknowledged: true;
+    fieldKeys: DangerousSetupConfigFieldKey[];
+  };
+} {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     throw new HttpRequestError(400, "Request body must be a JSON object.");
   }
@@ -503,7 +533,40 @@ function readSetupConfigChanges(body: unknown): Record<string, unknown> {
     throw new HttpRequestError(400, "changes must be an object.");
   }
 
-  return changes as Record<string, unknown>;
+  const confirmation = (body as { dangerousOptInConfirmation?: unknown }).dangerousOptInConfirmation;
+  if (confirmation === undefined) {
+    return { changes: changes as Record<string, unknown> };
+  }
+  if (!confirmation || typeof confirmation !== "object" || Array.isArray(confirmation)) {
+    throw new HttpRequestError(400, "dangerousOptInConfirmation must be an object when provided.");
+  }
+  const rawConfirmation = confirmation as Record<string, unknown>;
+  if (rawConfirmation.acknowledged !== true) {
+    throw new HttpRequestError(400, "dangerousOptInConfirmation.acknowledged must be true.");
+  }
+  if (
+    !Array.isArray(rawConfirmation.fieldKeys) ||
+    rawConfirmation.fieldKeys.some((field) => typeof field !== "string")
+  ) {
+    throw new HttpRequestError(400, "dangerousOptInConfirmation.fieldKeys must be an array of strings.");
+  }
+  const unknownFieldKeys = rawConfirmation.fieldKeys.filter(
+    (field) => !DANGEROUS_SETUP_CONFIG_FIELD_KEY_SET.has(field),
+  );
+  if (unknownFieldKeys.length > 0) {
+    throw new HttpRequestError(
+      400,
+      `dangerousOptInConfirmation.fieldKeys includes unknown dangerous setup config field: ${unknownFieldKeys[0]}.`,
+    );
+  }
+
+  return {
+    changes: changes as Record<string, unknown>,
+    dangerousOptInConfirmation: {
+      acknowledged: true,
+      fieldKeys: rawConfirmation.fieldKeys as DangerousSetupConfigFieldKey[],
+    },
+  };
 }
 
 function writeJson(response: http.ServerResponse, statusCode: number, body: JsonErrorBody | unknown): void {
