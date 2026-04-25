@@ -46,3 +46,52 @@ test("selectRestartRecommendation classifies every restart recommendation catego
     "manual_review_before_restart",
   );
 });
+
+test("selectRestartRecommendation preserves the matching source for safe restart recovery lines", () => {
+  assert.equal(
+    requireRestartRecommendation(selectRestartRecommendation({
+      detailedStatusLines: [
+        "loop_runtime_recovery action=inspect_then_restart owner=supervisor recommendation=restart_loop",
+      ],
+    })).source,
+    "loop_runtime_recovery",
+  );
+  assert.equal(
+    requireRestartRecommendation(selectRestartRecommendation({
+      detailedStatusLines: [
+        "doctor_loop_runtime_recovery action=inspect_then_restart owner=supervisor recommendation=restart_loop",
+      ],
+    })).source,
+    "doctor_loop_runtime_recovery",
+  );
+  assert.equal(
+    requireRestartRecommendation(selectRestartRecommendation({
+      detailedStatusLines: [
+        "doctor_loop_runtime_diagnostic kind=duplicate_loop_processes status=duplicate matching_processes=2 pids=4242,4243 config_path=<supervisor-config-path> state_file=<state-file> recovery=inspect_then_restart",
+      ],
+    })).source,
+    "doctor_loop_runtime_diagnostic",
+  );
+});
+
+test("selectRestartRecommendation does not let safe restart outrank manual review before restart", () => {
+  const recommendation = requireRestartRecommendation(selectRestartRecommendation({
+    detailedStatusLines: [
+      "loop_runtime_diagnostic kind=duplicate_loop_processes status=duplicate matching_processes=2 pids=4242,4243 config_path=<supervisor-config-path> state_file=<state-file> recovery=inspect_then_restart",
+      "no_active_tracked_record issue=#188 classification=manual_review_required state=blocked reason=manual_review",
+    ],
+  }));
+
+  assert.equal(recommendation.category, "manual_review_before_restart");
+  assert.equal(recommendation.source, "no_active_tracked_record");
+
+  assert.equal(
+    requireRestartRecommendation(selectRestartRecommendation({
+      detailedStatusLines: [
+        "loop_runtime_diagnostic kind=duplicate_loop_processes status=duplicate matching_processes=2 pids=4242,4243 config_path=<supervisor-config-path> state_file=<state-file> recovery=inspect_then_restart",
+        "no_active_tracked_record issue=#188 classification=provider_outage_suspected state=blocked reason=review_provider_wait",
+      ],
+    })).category,
+    "manual_review_before_restart",
+  );
+});

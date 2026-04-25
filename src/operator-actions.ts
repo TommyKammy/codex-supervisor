@@ -31,12 +31,35 @@ export interface RestartRecommendation {
   summary: string;
 }
 
+const restartRecommendationPriority: Record<RestartRecommendationCategory, number> = {
+  restart_required_for_convergence: 90,
+  manual_review_before_restart: 80,
+  safe_restart: 70,
+  restart_not_enough: 40,
+};
+
 function chooseHighestPriority(actions: OperatorAction[], fallback: OperatorAction): OperatorAction {
   return [...actions].sort((left, right) => right.priority - left.priority)[0] ?? fallback;
 }
 
 function chooseHighestPriorityRecommendation(recommendations: RestartRecommendation[]): RestartRecommendation | null {
   return [...recommendations].sort((left, right) => right.priority - left.priority)[0] ?? null;
+}
+
+function getSafeRestartSource(line: string): string | null {
+  if (/^loop_runtime_diagnostic\b/.test(line) && /\bstatus=duplicate\b/.test(line)) {
+    return "loop_runtime_diagnostic";
+  }
+  if (/^doctor_loop_runtime_diagnostic\b/.test(line) && /\bstatus=duplicate\b/.test(line)) {
+    return "doctor_loop_runtime_diagnostic";
+  }
+  if (/^loop_runtime_recovery\b/.test(line)) {
+    return "loop_runtime_recovery";
+  }
+  if (/^doctor_loop_runtime_recovery\b/.test(line)) {
+    return "doctor_loop_runtime_recovery";
+  }
+  return null;
 }
 
 const statusFallbackOperatorAction: OperatorAction = {
@@ -63,22 +86,18 @@ export function selectRestartRecommendation(args: {
       recommendations.push({
         category: "restart_required_for_convergence",
         source: "loop_runtime_blocker",
-        priority: 90,
+        priority: restartRecommendationPriority.restart_required_for_convergence,
         summary: "Restarting the supported supervisor loop is required before active tracked work can converge.",
       });
       continue;
     }
 
-    if (
-      /^loop_runtime_diagnostic\b/.test(line) && /\bstatus=duplicate\b/.test(line) ||
-      /^doctor_loop_runtime_diagnostic\b/.test(line) && /\bstatus=duplicate\b/.test(line) ||
-      /^loop_runtime_recovery\b/.test(line) ||
-      /^doctor_loop_runtime_recovery\b/.test(line)
-    ) {
+    const safeRestartSource = getSafeRestartSource(line);
+    if (safeRestartSource !== null) {
       recommendations.push({
         category: "safe_restart",
-        source: "loop_runtime_diagnostic",
-        priority: 70,
+        source: safeRestartSource,
+        priority: restartRecommendationPriority.safe_restart,
         summary: "Restart can be safe after following the runtime ownership and duplicate-process guidance.",
       });
       continue;
@@ -111,7 +130,7 @@ export function selectRestartRecommendation(args: {
       recommendations.push({
         category: "manual_review_before_restart",
         source: "no_active_tracked_record",
-        priority: 55,
+        priority: restartRecommendationPriority.manual_review_before_restart,
         summary: "Manual review is required before a restart should be treated as a recovery action.",
       });
       continue;
@@ -120,7 +139,7 @@ export function selectRestartRecommendation(args: {
     recommendations.push({
       category: "restart_not_enough",
       source: "no_active_tracked_record",
-      priority: 40,
+      priority: restartRecommendationPriority.restart_not_enough,
       summary: "Restart alone is not expected to resolve the current supervisor state.",
     });
   }
