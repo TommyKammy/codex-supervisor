@@ -997,6 +997,104 @@ test("explain classifies handled stale configured-bot review threads as metadata
   );
 });
 
+test("explain keeps configured-bot success without current-head observation as unresolved work", async () => {
+  const fixture = await createSupervisorFixture();
+  fixture.config.reviewBotLogins = ["coderabbitai", "coderabbitai[bot]"];
+  const issueNumber = 197;
+  const prNumber = 297;
+  const headSha = "head-197";
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        branch: branchName(fixture.config, issueNumber),
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: prNumber,
+        blocked_reason: "stale_review_bot",
+        last_head_sha: headSha,
+        processed_review_thread_ids: [`thread-1@${headSha}`],
+        processed_review_thread_fingerprints: [`thread-1@${headSha}#comment-1`],
+        last_error:
+          "1 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
+        last_failure_context: {
+          category: "manual",
+          summary:
+            "1 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
+          signature: "stalled-bot:thread-1",
+          command: null,
+          details: ["reviewer=coderabbitai[bot] file=src/file.ts line=12 processed_on_current_head=yes"],
+          url: "https://example.test/pr/297#discussion_r297",
+          updated_at: "2026-03-13T00:20:00Z",
+        },
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Explain unobserved configured bot success",
+    body: executionReadyBody("Explain should require observed current-head configured-bot evidence."),
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const pr = createPullRequest({
+    number: prNumber,
+    headRefName: branchName(fixture.config, issueNumber),
+    headRefOid: headSha,
+    configuredBotCurrentHeadObservedAt: null,
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    currentHeadCiGreenAt: "2026-03-13T00:19:00Z",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+  const staleMetadataThread = {
+    id: "thread-1",
+    isResolved: false,
+    isOutdated: false,
+    path: "src/file.ts",
+    line: 12,
+    comments: {
+      nodes: [
+        {
+          id: "comment-1",
+          body: "Please address this stale finding.",
+          createdAt: "2026-03-13T00:05:00Z",
+          url: "https://example.test/pr/297#discussion_r297",
+          author: {
+            login: "coderabbitai[bot]",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => trackedIssue,
+    listAllIssues: async () => [trackedIssue],
+    listCandidateIssues: async () => [trackedIssue],
+    resolvePullRequestForBranch: async () => pr,
+    getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => [staleMetadataThread],
+  };
+
+  const explanation = await supervisor.explain(issueNumber);
+
+  assert.match(
+    explanation,
+    /^stale_review_bot_remediation issue=#197 pr=#297 reason=stale_review_bot code_ci=green current_head_sha=head-197 processed_on_current_head=yes classification=unresolved_work review_thread_url=https:\/\/example\.test\/pr\/297#discussion_r297 manual_next_step=inspect_exact_review_thread_then_resolve_or_leave_manual_note summary=code_or_ci_green_but_review_thread_metadata_unresolved$/m,
+  );
+  assert.doesNotMatch(explanation, /classification=metadata_only/m);
+});
+
 test("explain marks tracked stale configured-bot blockers runnable after reply_and_resolve is enabled", async () => {
   const fixture = await createSupervisorFixture();
   fixture.config.staleConfiguredBotReviewPolicy = "reply_and_resolve";

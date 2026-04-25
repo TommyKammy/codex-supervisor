@@ -100,6 +100,7 @@ function classifyRemediation(args: {
     configuredThreads.length === 0 ||
     manualReviewThreads(config, reviewThreads).length > 0 ||
     record.last_head_sha !== pr.headRefOid ||
+    !pr.configuredBotCurrentHeadObservedAt ||
     pr.configuredBotCurrentHeadStatusState !== "SUCCESS" ||
     !allChecksPassing(checks) ||
     !hasCleanMergeState(pr) ||
