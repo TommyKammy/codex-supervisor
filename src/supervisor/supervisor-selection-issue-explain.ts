@@ -31,7 +31,10 @@ import {
   buildVerificationPolicyStatusLine,
   loadStatusChangedFiles,
 } from "./supervisor-status-rendering";
-import { formatLatestRecoveryStatusLine } from "./supervisor-detailed-status-assembly";
+import {
+  formatLatestRecoveryStatusLine,
+  formatNoActiveTrackedRecordClassificationLine,
+} from "./supervisor-detailed-status-assembly";
 import { externalSignalReadinessDiagnostics } from "./supervisor-status-review-bot";
 import { inspectTrackedIssueHostDiagnostics, summarizeIssueJournalHandoff } from "../core/journal";
 import { formatInventoryRefreshDiagnosticLines, formatInventoryRefreshStatusLine } from "../inventory-refresh-state";
@@ -92,6 +95,7 @@ export interface SupervisorExplainDto {
   activityContext: SupervisorIssueActivityContextDto | null;
   staleDiagnosticSummary?: string | null;
   staleReviewBotRemediation?: StaleReviewBotRemediationDto | null;
+  noActiveTrackedRecordSummary?: string | null;
   trackedPrRetryabilitySummary?: string | null;
   trackedPrMismatchSummary: string | null;
   externalSignalReadinessSummary?: string | null;
@@ -330,6 +334,10 @@ export async function buildIssueExplainDto(
     record,
   });
   const latestRecoverySummary = record ? formatLatestRecoveryStatusLine(record) : null;
+  const noActiveTrackedRecordSummary =
+    record && state.activeIssueNumber === null
+      ? formatNoActiveTrackedRecordClassificationLine(config, record)
+      : null;
   const operatorEventSummary = record ? formatMergedPrConvergenceOperatorEventLine(record) : null;
   const staleRecoveryWarningSummary = record ? buildStaleStabilizingNoPrRecoveryWarningLine(record, config) : null;
   let pr: GitHubPullRequest | null = null;
@@ -508,6 +516,7 @@ export async function buildIssueExplainDto(
       })()
       : null,
     staleReviewBotRemediation,
+    noActiveTrackedRecordSummary,
     trackedPrRetryabilitySummary:
       record?.last_tracked_pr_repeat_failure_decision && record.last_tracked_pr_progress_summary
         ? [
@@ -551,6 +560,7 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
     ...(localCiStatusLine ? [localCiStatusLine] : []),
     ...(dto.staleDiagnosticSummary ? [dto.staleDiagnosticSummary] : []),
     ...(dto.staleReviewBotRemediation ? [formatStaleReviewBotRemediationLine(dto.staleReviewBotRemediation)] : []),
+    ...(dto.noActiveTrackedRecordSummary ? [dto.noActiveTrackedRecordSummary] : []),
     ...(dto.trackedPrRetryabilitySummary ? [dto.trackedPrRetryabilitySummary] : []),
     ...(dto.trackedPrMismatchSummary ? [dto.trackedPrMismatchSummary] : []),
     ...(dto.externalSignalReadinessSummary ? [dto.externalSignalReadinessSummary] : []),
