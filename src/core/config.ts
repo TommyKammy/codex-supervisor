@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { SupervisorConfig, type TrustDiagnosticsSummary } from "./types";
+import { SupervisorConfig, type TrustDiagnosticsSummary } from "./config-types";
 import { parseJson } from "./utils";
 import { DEFAULT_CONFIG_FILE } from "./config-constants";
 import {

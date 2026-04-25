@@ -2,7 +2,7 @@ import {
   ConfiguredReviewProvider,
   ConfiguredReviewProviderKind,
   SupervisorConfig,
-} from "./types";
+} from "./config-types";
 
 const COPILOT_REVIEWER_LOGIN = "copilot-pull-request-reviewer";
 const CODEX_REVIEWER_LOGIN = "chatgpt-codex-connector";

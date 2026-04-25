@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
-import { LocalCiCommandConfig, SupervisorConfig } from "./types";
+import { LocalCiCommandConfig, SupervisorConfig } from "./config-types";
 import { displayLocalCiCommand } from "./config-parsing";
 
 export const MISSING_WORKSPACE_PREPARATION_CONTRACT_WARNING =

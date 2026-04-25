@@ -6,17 +6,19 @@ import {
   LocalReviewHighSeverityAction,
   LocalReviewPolicy,
   LocalReviewPosturePreset,
-  LocalReviewReviewerThresholdConfig,
-  LocalReviewReviewerType,
   ReasoningEffort,
   ReleaseReadinessGatePosture,
-  RunState,
   ShellLocalCiCommandConfig,
   StaleConfiguredBotReviewPolicy,
   StructuredLocalCiCommandConfig,
   SupervisorConfig,
   TrustMode,
-} from "./types";
+} from "./config-types";
+import {
+  LocalReviewReviewerThresholdConfig,
+  LocalReviewReviewerType,
+} from "../local-review/types";
+import { RunState } from "./types";
 import { DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH } from "./journal";
 import { mapConfiguredReviewProviders } from "./review-providers";
 import { isValidGitRefName, resolveMaybeRelative } from "./utils";

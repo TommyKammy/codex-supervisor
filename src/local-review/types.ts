@@ -1,5 +1,5 @@
 import { type LocalReviewRoleSelection } from "../review-role-detector";
-import { type CodexExecutionTarget, type ReasoningEffort } from "../core/types";
+import { type CodexExecutionTarget, type ReasoningEffort } from "../core/config-types";
 import { type VerifierGuardrailRule } from "../verifier-guardrails";
 
 export type LocalReviewSeverity = "none" | "low" | "medium" | "high";
