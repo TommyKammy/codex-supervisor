@@ -2311,6 +2311,17 @@ test("updateSetupConfig accepts localCiCommand through the setup-owned write sur
     summary: "Repo-owned local CI contract is configured.",
     warning:
       "localCiCommand is configured but workspacePreparationCommand is unset. Configure a repo-owned workspacePreparationCommand so preserved issue worktrees can prepare toolchains before host-local CI runs. GitHub checks can stay green while host-local CI still blocks tracked PR progress.",
+    adoptionFlow: {
+      state: "configured",
+      candidateDetected: true,
+      commandPreview: "npm run verify:pre-pr",
+      validationStatus: "configured",
+      workspacePreparationCommand: null,
+      workspacePreparationRecommendedCommand: null,
+      workspacePreparationGuidance:
+        "workspacePreparationCommand is unset; confirm preserved issue worktrees can prepare required toolchains before adopting local CI.",
+      decisions: [],
+    },
   });
 });
 
@@ -2462,6 +2473,30 @@ test("updateSetupConfig clears localCiCommand back to the unset state", async (t
     source: "repo_script_candidate",
     summary: "Repo-owned local CI candidate exists but localCiCommand is unset. Recommended command: npm run verify:pre-pr.",
     warning: null,
+    adoptionFlow: {
+      state: "candidate_detected",
+      candidateDetected: true,
+      commandPreview: "npm run verify:pre-pr",
+      validationStatus: "not_run",
+      workspacePreparationCommand: null,
+      workspacePreparationRecommendedCommand: null,
+      workspacePreparationGuidance:
+        "workspacePreparationCommand is unset; confirm preserved issue worktrees can prepare required toolchains before adopting local CI.",
+      decisions: [
+        {
+          kind: "adopt",
+          enabled: true,
+          summary: "Save npm run verify:pre-pr as localCiCommand.",
+          writes: ["localCiCommand"],
+        },
+        {
+          kind: "dismiss",
+          enabled: true,
+          summary: "Record localCiCandidateDismissed=true without changing an already configured localCiCommand.",
+          writes: ["localCiCandidateDismissed"],
+        },
+      ],
+    },
   });
 });
 
@@ -2520,6 +2555,17 @@ test("updateSetupConfig records an explicit local CI candidate dismissal", async
     summary:
       "Repo-owned local CI candidate was intentionally dismissed; localCiCommand remains unset and non-blocking. Dismissed candidate: npm run verify:pre-pr.",
     warning: null,
+    adoptionFlow: {
+      state: "dismissed",
+      candidateDetected: true,
+      commandPreview: "npm run verify:pre-pr",
+      validationStatus: "dismissed",
+      workspacePreparationCommand: null,
+      workspacePreparationRecommendedCommand: null,
+      workspacePreparationGuidance:
+        "workspacePreparationCommand is unset; confirm preserved issue worktrees can prepare required toolchains before adopting local CI.",
+      decisions: [],
+    },
   });
 });
 
@@ -2619,6 +2665,17 @@ test("updateSetupConfig reports restart when dismissal resolves a malformed conf
     summary:
       "Repo-owned local CI candidate was intentionally dismissed; localCiCommand remains unset and non-blocking. Dismissed candidate: npm run verify:pre-pr.",
     warning: null,
+    adoptionFlow: {
+      state: "dismissed",
+      candidateDetected: true,
+      commandPreview: "npm run verify:pre-pr",
+      validationStatus: "dismissed",
+      workspacePreparationCommand: null,
+      workspacePreparationRecommendedCommand: null,
+      workspacePreparationGuidance:
+        "workspacePreparationCommand is unset; confirm preserved issue worktrees can prepare required toolchains before adopting local CI.",
+      decisions: [],
+    },
   });
 });
 

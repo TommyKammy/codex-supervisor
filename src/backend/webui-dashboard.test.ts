@@ -2045,6 +2045,30 @@ test("setup shell highlights a repo-owned local CI candidate when localCiCommand
           source: "repo_script_candidate",
           summary:
             "Repo-owned local CI candidate exists but localCiCommand is unset. Recommended command: npm run verify:pre-pr.",
+          adoptionFlow: {
+            state: "candidate_detected",
+            candidateDetected: true,
+            commandPreview: "npm run verify:pre-pr",
+            validationStatus: "not_run",
+            workspacePreparationCommand: null,
+            workspacePreparationRecommendedCommand: "npm ci",
+            workspacePreparationGuidance:
+              "workspacePreparationCommand is unset. Recommended repo-native preparation command: npm ci.",
+            decisions: [
+              {
+                kind: "adopt",
+                enabled: true,
+                summary: "Save npm run verify:pre-pr as localCiCommand.",
+                writes: ["localCiCommand"],
+              },
+              {
+                kind: "dismiss",
+                enabled: true,
+                summary: "Record localCiCandidateDismissed=true without changing an already configured localCiCommand.",
+                writes: ["localCiCandidateDismissed"],
+              },
+            ],
+          },
         },
       }), unavailableManagedRestart)),
     },
@@ -2057,7 +2081,7 @@ test("setup shell highlights a repo-owned local CI candidate when localCiCommand
   );
   assert.match(
     harness.document.getElementById("setup-local-ci-details")?.textContent ?? "",
-    /Configured: no.*Command: none.*Source: repo script candidate.*Recommended command: npm run verify:pre-pr.*This repo already defines a repo-owned local CI entrypoint, but codex-supervisor will not run it until localCiCommand is configured.*This warning is advisory only; first-run setup readiness and blocker semantics stay unchanged until you opt in by configuring localCiCommand\./u,
+    /Configured: no.*Command: none.*Source: repo script candidate.*Recommended command: npm run verify:pre-pr.*This repo already defines a repo-owned local CI entrypoint, but codex-supervisor will not run it until localCiCommand is configured.*Command preview: npm run verify:pre-pr.*Validation status: not run.*workspacePreparationCommand is unset\. Recommended repo-native preparation command: npm ci\..*Decision: Save npm run verify:pre-pr as localCiCommand\./u,
   );
   assert.equal(harness.document.getElementById("setup-input-localCiCommand")?.value, "");
   const adoptButton = harness.document.getElementById("setup-local-ci-adopt-recommended");

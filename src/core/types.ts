@@ -103,6 +103,25 @@ export interface LocalCiContractSummary {
   source: "config" | "repo_script_candidate" | "dismissed_repo_script_candidate";
   summary: string;
   warning?: string | null;
+  adoptionFlow?: LocalCiAdoptionFlow;
+}
+
+export interface LocalCiAdoptionDecision {
+  kind: "adopt" | "dismiss";
+  enabled: boolean;
+  summary: string;
+  writes: string[];
+}
+
+export interface LocalCiAdoptionFlow {
+  state: "not_available" | "candidate_detected" | "configured" | "dismissed";
+  candidateDetected: boolean;
+  commandPreview: string | null;
+  validationStatus: "not_available" | "not_run" | "configured" | "dismissed";
+  workspacePreparationCommand: string | null;
+  workspacePreparationRecommendedCommand: string | null;
+  workspacePreparationGuidance: string;
+  decisions: LocalCiAdoptionDecision[];
 }
 
 export interface WorkspacePreparationContractSummary {
