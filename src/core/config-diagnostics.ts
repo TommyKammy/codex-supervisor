@@ -144,6 +144,43 @@ export function summarizeLocalCiContract(
 ): LocalCiContractSummary {
   const command = displayLocalCiCommand(config.localCiCommand);
   const recommendedCommand = findRepoOwnedLocalCiCandidate(config.repoPath);
+  const workspacePreparationCommand = displayLocalCiCommand(config.workspacePreparationCommand);
+  const workspacePreparationRecommendedCommand = findRepoOwnedWorkspacePreparationCandidate(config.repoPath);
+  type LocalCiAdoptionFlowSummary = NonNullable<LocalCiContractSummary["adoptionFlow"]>;
+  const buildAdoptionFlow = (args: {
+    state: LocalCiAdoptionFlowSummary["state"];
+    validationStatus: LocalCiAdoptionFlowSummary["validationStatus"];
+    candidateDetected: boolean;
+    commandPreview: string | null;
+  }): LocalCiAdoptionFlowSummary => ({
+    state: args.state,
+    candidateDetected: args.candidateDetected,
+    commandPreview: args.commandPreview,
+    validationStatus: args.validationStatus,
+    workspacePreparationCommand,
+    workspacePreparationRecommendedCommand,
+    workspacePreparationGuidance: workspacePreparationCommand !== null
+      ? `workspacePreparationCommand is configured as ${workspacePreparationCommand}.`
+      : workspacePreparationRecommendedCommand !== null
+        ? `workspacePreparationCommand is unset. Recommended repo-native preparation command: ${workspacePreparationRecommendedCommand}.`
+        : "workspacePreparationCommand is unset; confirm preserved issue worktrees can prepare required toolchains before adopting local CI.",
+    decisions: args.state === "candidate_detected" && args.commandPreview !== null
+      ? [
+        {
+          kind: "adopt",
+          enabled: true,
+          summary: `Save ${args.commandPreview} as localCiCommand.`,
+          writes: ["localCiCommand"],
+        },
+        {
+          kind: "dismiss",
+          enabled: true,
+          summary: "Record localCiCandidateDismissed=true without changing an already configured localCiCommand.",
+          writes: ["localCiCandidateDismissed"],
+        },
+      ]
+      : [],
+  });
   const warning = buildMissingWorkspacePreparationContractWarning(config);
 
   if (command !== null) {
@@ -154,6 +191,12 @@ export function summarizeLocalCiContract(
       source: "config",
       summary: "Repo-owned local CI contract is configured.",
       warning,
+      adoptionFlow: buildAdoptionFlow({
+        state: "configured",
+        validationStatus: "configured",
+        candidateDetected: recommendedCommand !== null,
+        commandPreview: command,
+      }),
     };
   }
 
@@ -166,6 +209,12 @@ export function summarizeLocalCiContract(
       summary:
         `Repo-owned local CI candidate was intentionally dismissed; localCiCommand remains unset and non-blocking. Dismissed candidate: ${recommendedCommand}.`,
       warning: null,
+      adoptionFlow: buildAdoptionFlow({
+        state: "dismissed",
+        validationStatus: "dismissed",
+        candidateDetected: true,
+        commandPreview: recommendedCommand,
+      }),
     };
   }
 
@@ -177,6 +226,12 @@ export function summarizeLocalCiContract(
       source: "repo_script_candidate",
       summary: `Repo-owned local CI candidate exists but localCiCommand is unset. Recommended command: ${recommendedCommand}.`,
       warning: null,
+      adoptionFlow: buildAdoptionFlow({
+        state: "candidate_detected",
+        validationStatus: "not_run",
+        candidateDetected: true,
+        commandPreview: recommendedCommand,
+      }),
     };
   }
 
@@ -187,6 +242,12 @@ export function summarizeLocalCiContract(
     source: "config",
     summary: "No repo-owned local CI contract is configured.",
     warning: null,
+    adoptionFlow: buildAdoptionFlow({
+      state: "not_available",
+      validationStatus: "not_available",
+      candidateDetected: false,
+      commandPreview: null,
+    }),
   };
 }
 

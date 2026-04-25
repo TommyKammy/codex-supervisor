@@ -248,6 +248,94 @@ test("diagnoseSetupReadiness suggests a repo-native workspace preparation comman
   assert.match(summary.nextActions[0]?.summary ?? "", /adopt the repo-owned workspace preparation command npm ci/i);
 });
 
+test("diagnoseSetupReadiness exposes a guided local CI adoption flow for repo script candidates", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = await createTrackedRepo(root);
+  const workspaceRoot = path.join(root, "workspaces");
+  const configPath = path.join(root, "supervisor.config.json");
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  await fs.writeFile(
+    path.join(repoPath, "package.json"),
+    JSON.stringify(
+      {
+        private: true,
+        scripts: {
+          "verify:pre-pr": "node --test",
+        },
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+  await fs.writeFile(path.join(repoPath, "package-lock.json"), "{}\n", "utf8");
+  execFileSync("git", ["add", "package.json", "package-lock.json"], { cwd: repoPath });
+  execFileSync("git", ["commit", "-m", "add local ci candidate"], {
+    cwd: repoPath,
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Codex",
+      GIT_AUTHOR_EMAIL: "codex@example.com",
+      GIT_COMMITTER_NAME: "Codex",
+      GIT_COMMITTER_EMAIL: "codex@example.com",
+    },
+  });
+  await fs.writeFile(
+    configPath,
+    JSON.stringify(
+      buildConfigDocument({
+        repoPath,
+        workspaceRoot,
+        stateFile: path.join(root, "state.json"),
+        workspacePreparationCommand: undefined,
+      }),
+    ),
+    "utf8",
+  );
+
+  const summary = await diagnoseSetupReadiness({
+    configPath,
+    authStatus: async () => ({ ok: true, message: null }),
+  });
+
+  assert.deepEqual(summary.localCiContract?.adoptionFlow, {
+    state: "candidate_detected",
+    candidateDetected: true,
+    commandPreview: "npm run verify:pre-pr",
+    validationStatus: "not_run",
+    workspacePreparationCommand: null,
+    workspacePreparationRecommendedCommand: "npm ci",
+    workspacePreparationGuidance: "workspacePreparationCommand is unset. Recommended repo-native preparation command: npm ci.",
+    decisions: [
+      {
+        kind: "adopt",
+        enabled: true,
+        summary: "Save npm run verify:pre-pr as localCiCommand.",
+        writes: ["localCiCommand"],
+      },
+      {
+        kind: "dismiss",
+        enabled: true,
+        summary: "Record localCiCandidateDismissed=true without changing an already configured localCiCommand.",
+        writes: ["localCiCandidateDismissed"],
+      },
+    ],
+  });
+  assert.deepEqual(
+    summary.nextActions
+      .filter((action) => action.source === "local_ci_candidate")
+      .map((action) => [action.action, action.fieldKeys]),
+    [
+      ["adopt_local_ci", ["localCiCommand", "localCiCandidateDismissed"]],
+      ["dismiss_local_ci", ["localCiCandidateDismissed"]],
+    ],
+  );
+});
+
 test("diagnoseSetupReadiness requires explicit trust posture decisions", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
   t.after(async () => {

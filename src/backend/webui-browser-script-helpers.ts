@@ -12,6 +12,25 @@ export type BrowserLocalCiContractLike = {
   source?: string | null;
   summary?: string | null;
   warning?: string | null;
+  adoptionFlow?: BrowserLocalCiAdoptionFlowLike | null;
+};
+
+export type BrowserLocalCiAdoptionDecisionLike = {
+  kind?: string | null;
+  enabled?: boolean | null;
+  summary?: string | null;
+  writes?: string[] | null;
+};
+
+export type BrowserLocalCiAdoptionFlowLike = {
+  state?: string | null;
+  candidateDetected?: boolean | null;
+  commandPreview?: string | null;
+  validationStatus?: string | null;
+  workspacePreparationCommand?: string | null;
+  workspacePreparationRecommendedCommand?: string | null;
+  workspacePreparationGuidance?: string | null;
+  decisions?: BrowserLocalCiAdoptionDecisionLike[] | null;
 };
 
 export type BrowserHostLike = {
@@ -61,6 +80,7 @@ export function normalizeBrowserLocalCiContract(
     source: localCiContract?.source ?? "config",
     summary: localCiContract?.summary ?? "No repo-owned local CI contract is configured.",
     warning: localCiContract?.warning ?? null,
+    adoptionFlow: localCiContract?.adoptionFlow ?? null,
   };
 }
 
@@ -89,6 +109,20 @@ export function buildBrowserLocalCiChecklistEntries(
 ): BrowserChecklistEntry[] {
   const normalized = normalizeBrowserLocalCiContract(localCiContract);
   const dismissed = normalized.source === "dismissed_repo_script_candidate";
+  const adoptionFlow = normalized.adoptionFlow;
+  const adoptionFlowNotes = adoptionFlow
+    ? [
+      "Wizard state: " + formatBrowserToken(adoptionFlow.state),
+      "Command preview: " + (adoptionFlow.commandPreview || "none"),
+      "Validation status: " + formatBrowserToken(adoptionFlow.validationStatus),
+      adoptionFlow.workspacePreparationGuidance || "workspacePreparationCommand guidance unavailable.",
+      ...(Array.isArray(adoptionFlow.decisions)
+        ? adoptionFlow.decisions
+          .filter((decision) => decision && decision.enabled === true && typeof decision.summary === "string")
+          .map((decision) => "Decision: " + decision.summary)
+        : []),
+    ]
+    : [];
   return [{
     title: "Configured: " + (normalized.configured ? "yes" : "no"),
     tone: "",
@@ -97,22 +131,23 @@ export function buildBrowserLocalCiChecklistEntries(
       "Source: " + formatBrowserToken(normalized.source),
       ...(normalized.recommendedCommand ? ["Recommended command: " + normalized.recommendedCommand] : []),
     ],
-    notes: normalized.warning
-      ? [
+    notes: [
+      ...(normalized.warning
+        ? [
         "Warning: " + normalized.warning,
         "This warning is advisory only; configure a repo-owned workspacePreparationCommand so preserved issue worktrees can prepare toolchains before host-local CI runs.",
       ]
-      : normalized.configured
-      ? [
+        : normalized.configured
+        ? [
         "This repo-owned command is the canonical local verification step before PR publication or update.",
         "When configured local CI fails, PR publication or ready-for-review promotion stays blocked until the repo-owned command passes again.",
       ]
-      : dismissed
+        : dismissed
         ? [
           "This repo-owned local CI candidate was intentionally dismissed, so localCiCommand remains unset and non-blocking.",
           "codex-supervisor will not run the dismissed candidate unless you opt in later by configuring localCiCommand.",
         ]
-      : normalized.recommendedCommand
+        : normalized.recommendedCommand
         ? [
           "This repo already defines a repo-owned local CI entrypoint, but codex-supervisor will not run it until localCiCommand is configured.",
           "This warning is advisory only; first-run setup readiness and blocker semantics stay unchanged until you opt in by configuring localCiCommand.",
@@ -120,7 +155,9 @@ export function buildBrowserLocalCiChecklistEntries(
         : [
           "If the repo does not declare this contract, codex-supervisor falls back to the issue's ## Verification guidance and operator workflow.",
           "When configured local CI fails, PR publication or ready-for-review promotion stays blocked until the repo-owned command passes again.",
-        ],
+        ]),
+      ...adoptionFlowNotes,
+    ],
   }];
 }
 

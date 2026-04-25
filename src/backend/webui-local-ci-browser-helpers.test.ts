@@ -39,6 +39,50 @@ test("local CI browser helpers summarize a repo-owned candidate contract consist
   assert.equal(canDismissRecommendedLocalCiCommand(contract), true);
 });
 
+test("local CI browser helpers render guided adoption flow preview and decisions", () => {
+  const contract = {
+    configured: false,
+    command: null,
+    recommendedCommand: "npm run verify:pre-pr",
+    source: "repo_script_candidate",
+    summary:
+      "Repo-owned local CI candidate exists but localCiCommand is unset. Recommended command: npm run verify:pre-pr.",
+    adoptionFlow: {
+      state: "candidate_detected",
+      candidateDetected: true,
+      commandPreview: "npm run verify:pre-pr",
+      validationStatus: "not_run",
+      workspacePreparationCommand: null,
+      workspacePreparationRecommendedCommand: "npm ci",
+      workspacePreparationGuidance: "workspacePreparationCommand is unset. Recommended repo-native preparation command: npm ci.",
+      decisions: [
+        {
+          kind: "adopt",
+          enabled: true,
+          summary: "Save npm run verify:pre-pr as localCiCommand.",
+          writes: ["localCiCommand"],
+        },
+        {
+          kind: "dismiss",
+          enabled: true,
+          summary: "Record localCiCandidateDismissed=true without changing an already configured localCiCommand.",
+          writes: ["localCiCandidateDismissed"],
+        },
+      ],
+    },
+  };
+
+  const notes = buildLocalCiContractChecklistItems(contract)[0]?.notes.join("\n") ?? "";
+  assert.match(
+    notes,
+    /Wizard state: candidate detected\nCommand preview: npm run verify:pre-pr\nValidation status: not run\nworkspacePreparationCommand is unset\. Recommended repo-native preparation command: npm ci\.\nDecision: Save npm run verify:pre-pr as localCiCommand\./u,
+  );
+  assert.match(
+    notes,
+    /Decision: Record localCiCandidateDismissed=true without changing an already configured localCiCommand\./u,
+  );
+});
+
 test("local CI browser helpers summarize an explicitly dismissed candidate", () => {
   const contract = {
     configured: false,
