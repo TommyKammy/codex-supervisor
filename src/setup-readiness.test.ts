@@ -173,6 +173,46 @@ test("diagnoseSetupReadiness surfaces explicit release publication gate posture 
   });
 });
 
+test("diagnoseSetupReadiness preserves raw release publication gate posture when another field is invalid", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = await createTrackedRepo(root);
+  const workspaceRoot = path.join(root, "workspaces");
+  const configPath = path.join(root, "supervisor.config.json");
+  const configDocument = buildConfigDocument({
+    repoPath,
+    workspaceRoot,
+    stateFile: path.join(root, "state.json"),
+    workspacePreparationCommand: undefined,
+    releaseReadinessGate: "block_release_publication",
+  });
+  configDocument.repoSlug = "not-a-repo-slug";
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  await fs.writeFile(
+    configPath,
+    JSON.stringify(configDocument),
+    "utf8",
+  );
+
+  const summary = await diagnoseSetupReadiness({
+    configPath,
+    authStatus: async () => ({ ok: true, message: null }),
+  });
+
+  assert.equal(summary.ready, false);
+  assert.equal(summary.overallStatus, "invalid");
+  assert.deepEqual(summary.releaseReadinessGate, {
+    posture: "block_release_publication",
+    configured: true,
+    canBlock: ["release_publication"],
+    cannotBlock: ["pr_publication", "merge_readiness", "loop_operation"],
+    summary: "Release readiness gate is configured to block release publication only.",
+  });
+});
+
 test("diagnoseSetupReadiness marks an untracked repo-relative workspace preparation helper invalid", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
   t.after(async () => {

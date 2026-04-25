@@ -21,6 +21,7 @@ import type {
   CodexModelStrategy,
   LocalCiContractSummary,
   LocalReviewPostureSummary,
+  ReleaseReadinessGatePosture,
   ReleaseReadinessGateSummary,
   TrustDiagnosticsSummary,
 } from "./core/types";
@@ -334,6 +335,10 @@ function tryNormalizeLocalCiCommand(value: unknown): ReturnType<typeof normalize
   } catch {
     return undefined;
   }
+}
+
+function tryReadReleaseReadinessGatePosture(value: unknown): ReleaseReadinessGatePosture {
+  return value === "block_release_publication" ? "block_release_publication" : "advisory";
 }
 
 function buildFieldMessage(args: {
@@ -1022,7 +1027,7 @@ export async function diagnoseSetupReadiness(
   };
   const releaseReadinessGate = summarizeReleaseReadinessGate(
     configSummary.config ?? {
-      releaseReadinessGate: "advisory",
+      releaseReadinessGate: tryReadReleaseReadinessGatePosture(rawConfigDocument.releaseReadinessGate),
     },
   );
   const workspacePreparationWarning = validateWorkspacePreparationCommandForWorktrees(localCiContractConfig);
