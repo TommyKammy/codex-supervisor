@@ -57,6 +57,7 @@ Sufficient readiness means broader use is reasonable because the loop has surviv
 - [ ] `workspace recovery`: local branch, remote branch, and fresh bootstrap recovery paths keep dedicated worktrees isolated and never push directly to the default branch.
 - [ ] `orphan cleanup`: orphaned workspaces are only removed by explicit operator cleanup, with `locked`, `recent`, and `unsafe_target` candidates preserved.
 - [ ] `observability`: state files, issue journals, stdout/stderr logs, `status`, `doctor`, WebUI panels, GitHub PR history, and local CI output tell the same story.
+- [ ] `release notes source`: `node dist/index.js summarize-post-merge-audits --config <supervisor-config-path>` exposes `releaseNotesSources` entries for merged issue, PR, verification, audit-bundle, finding, and follow-up evidence that can be reused when drafting release notes or development-history updates.
 
 ## Advisory boundary
 
