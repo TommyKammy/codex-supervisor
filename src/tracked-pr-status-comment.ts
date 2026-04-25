@@ -174,6 +174,20 @@ function trackedPrReadyPromotionBlockedReasonCode(gateType: HostLocalTrackedPrBl
   return `ready_promotion_blocked_${gateType}`;
 }
 
+function trackedPrHostLocalBlockerCommentSignature(args: {
+  gateType: HostLocalTrackedPrBlockerGateType;
+  blockerSignature: string;
+  failureClass: string;
+  remediationTarget: string;
+}): string {
+  return [
+    args.blockerSignature,
+    `gate=${args.gateType}`,
+    `failure=${args.failureClass}`,
+    `target=${args.remediationTarget}`,
+  ].join("|");
+}
+
 function buildTrackedPrDraftReviewSuppressedComment(args: {
   pr: Pick<GitHubPullRequest, "headRefOid" | "number">;
 }): string {
@@ -655,10 +669,16 @@ export async function maybeCommentOnTrackedPrHostLocalBlocker(args: {
   if (!args.blockerSignature || !args.failureClass || !args.remediationTarget || !args.summary) {
     return args.record;
   }
+  const blockerCommentSignature = trackedPrHostLocalBlockerCommentSignature({
+    gateType: args.gateType,
+    blockerSignature: args.blockerSignature,
+    failureClass: args.failureClass,
+    remediationTarget: args.remediationTarget,
+  });
 
   if (
     args.record.last_host_local_pr_blocker_comment_head_sha === args.pr.headRefOid
-    && args.record.last_host_local_pr_blocker_comment_signature === args.blockerSignature
+    && args.record.last_host_local_pr_blocker_comment_signature === blockerCommentSignature
   ) {
     return args.record;
   }
@@ -689,7 +709,7 @@ export async function maybeCommentOnTrackedPrHostLocalBlocker(args: {
 
   const updatedRecord = args.stateStore.touch(args.record, {
     last_host_local_pr_blocker_comment_head_sha: args.pr.headRefOid,
-    last_host_local_pr_blocker_comment_signature: args.blockerSignature,
+    last_host_local_pr_blocker_comment_signature: blockerCommentSignature,
   });
   args.state.issues[String(updatedRecord.issue_number)] = updatedRecord;
   await args.stateStore.save(args.state);

@@ -1024,7 +1024,8 @@ test("handlePostTurnPullRequestTransitionsPhase dedupes tracked PR host-local bl
         state: "draft_pr",
         pr_number: draftPr.number,
         last_host_local_pr_blocker_comment_head_sha: "head-116",
-        last_host_local_pr_blocker_comment_signature: "workspace-preparation-gate-workspace_toolchain_missing",
+        last_host_local_pr_blocker_comment_signature:
+          "workspace-preparation-gate-workspace_toolchain_missing|gate=workspace_preparation|failure=workspace_toolchain_missing|target=workspace_environment",
       }),
     },
   };
@@ -1514,7 +1515,7 @@ test("handlePostTurnPullRequestTransitionsPhase updates the owned tracked PR hos
   assert.equal(result.record.last_host_local_pr_blocker_comment_head_sha, draftPr.headRefOid);
   assert.equal(
     result.record.last_host_local_pr_blocker_comment_signature,
-    "workspace-preparation-gate-workspace_toolchain_missing",
+    "workspace-preparation-gate-workspace_toolchain_missing|gate=workspace_preparation|failure=workspace_toolchain_missing|target=workspace_environment",
   );
 });
 
@@ -1726,7 +1727,14 @@ test("handlePostTurnPullRequestTransitionsPhase routes repairable ready-promotio
   const draftPr = createPullRequest({ title: "Repair ready promotion", isDraft: true });
   const state: SupervisorStateFile = {
     activeIssueNumber: 102,
-    issues: { "102": createRecord({ state: "draft_pr", pr_number: draftPr.number }) },
+    issues: {
+      "102": createRecord({
+        state: "draft_pr",
+        pr_number: draftPr.number,
+        last_host_local_pr_blocker_comment_head_sha: draftPr.headRefOid,
+        last_host_local_pr_blocker_comment_signature: "workstation-local-path-hygiene-failed",
+      }),
+    },
   };
 
   let readyCalls = 0;
@@ -1813,6 +1821,10 @@ test("handlePostTurnPullRequestTransitionsPhase routes repairable ready-promotio
   assert.equal(result.record.state, "repairing_ci");
   assert.equal(result.record.blocked_reason, null);
   assert.equal(result.record.last_failure_signature, "workstation-local-path-hygiene-failed");
+  assert.equal(
+    result.record.last_host_local_pr_blocker_comment_signature,
+    "workstation-local-path-hygiene-failed|gate=workstation_local_path_hygiene|failure=workstation-local-path-hygiene-failed|target=workspace_contents_repairable",
+  );
   assert.match(result.record.last_error ?? "", /will retry a repair turn/i);
   assert.deepEqual(result.record.last_failure_context?.details, failureDetails);
   assert.equal(commentBodies.length, 1);
@@ -2054,7 +2066,10 @@ test("handlePostTurnPullRequestTransitionsPhase comments once when workstation-l
   assert.equal(firstResult.record.state, "blocked");
   assert.equal(commentBodies.length, 1);
   assert.equal(firstResult.record.last_host_local_pr_blocker_comment_head_sha, draftPr.headRefOid);
-  assert.equal(firstResult.record.last_host_local_pr_blocker_comment_signature, "workstation-local-path-hygiene-failed");
+  assert.equal(
+    firstResult.record.last_host_local_pr_blocker_comment_signature,
+    "workstation-local-path-hygiene-failed|gate=workstation_local_path_hygiene|failure=workstation-local-path-hygiene-failed|target=workspace_contents",
+  );
   assert.match(commentBodies[0] ?? "", /still draft because ready-for-review promotion is blocked locally/i);
   assert.match(commentBodies[0] ?? "", /gate name: `workstation_local_path_hygiene`/i);
   assert.match(commentBodies[0] ?? "", /First fix: docs\/guide\.md/i);
