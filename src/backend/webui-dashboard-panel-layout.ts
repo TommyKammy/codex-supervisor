@@ -2,6 +2,7 @@ export type DashboardPanelId =
   | "status"
   | "doctor"
   | "issue-details"
+  | "issue-history"
   | "tracked-history"
   | "operator-actions"
   | "live-events"
@@ -177,6 +178,21 @@ export const DASHBOARD_PANEL_REGISTRY = [
                 <div class="row-label">Lint posture</div>
                 <div id="issue-lint" class="lint-grid">
                   <div class="metric-tile panel-empty-state">Issue lint appears here after a selection.</div>
+                </div>
+              </div>`,
+  }),
+  renderDashboardPanelShell({
+    id: "issue-history",
+    section: "details",
+    title: "Issue history",
+    subtitle: "Typed lifecycle timeline and recent evidence for the loaded issue.",
+    iconMarkup: renderPanelIcon("↧"),
+    headerMetaMarkup: '<span id="issue-history-summary" class="hint">Load an issue to inspect history.</span>',
+    bodyClassName: "stack",
+    bodyMarkup: `              <div class="row">
+                <div class="row-label">Timeline and evidence</div>
+                <div id="issue-history-lines" class="event-list">
+                  <div class="panel-empty-state event-item">Issue timeline appears after a selection.</div>
                 </div>
               </div>`,
   }),

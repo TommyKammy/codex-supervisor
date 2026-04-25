@@ -36,6 +36,8 @@ const panelNavIcons: Record<DashboardPanelId, string> = {
     '<svg viewBox="0 0 16 16" focusable="false"><path d="M7 2h2v3h3v2H9v3H7V7H4V5h3z"/></svg>',
   "issue-details":
     '<svg viewBox="0 0 16 16" focusable="false"><path d="M3 2.5h10v11H3zm2 2v1h6v-1zm0 3v1h6v-1zm0 3v1h4v-1z"/></svg>',
+  "issue-history":
+    '<svg viewBox="0 0 16 16" focusable="false"><path d="M4 2.5h8v2H4zm0 4h8v1H4zm0 3h5v1H4zm0 3h7v1H4z"/></svg>',
   "tracked-history":
     '<svg viewBox="0 0 16 16" focusable="false"><path d="M8 2.5a5.5 5.5 0 105.5 5.5h-2A3.5 3.5 0 118 4.5V2.5zm-.5 2h1v4l2.5 1.5-.5.9L7.5 9z"/></svg>',
   "operator-actions":

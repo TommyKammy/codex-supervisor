@@ -40,6 +40,10 @@ import {
 } from "./webui-dashboard-browser-view-model";
 import {
   buildIssueExplainSections,
+  formatIssueNumber,
+  formatIssueTimelineEvent,
+  formatIssueTimelineEvents,
+  formatIssueTimelineSummary,
   formatLatestRecovery,
   formatReviewWaits,
 } from "./webui-dashboard-browser-issue-details";
@@ -114,6 +118,10 @@ const injectedBrowserLogic = [
   describeLoopRuntime,
   formatLatestRecovery,
   formatReviewWaits,
+  formatIssueNumber,
+  formatIssueTimelineEvent,
+  formatIssueTimelineSummary,
+  formatIssueTimelineEvents,
   buildIssueExplainSections,
 ]
   .map((helper) => helper.toString().replace(/__name\([^;]+;\s*/gu, ""))
@@ -176,6 +184,7 @@ export function renderDashboardBrowserScript(): string {
         navPanelStatus: document.getElementById("nav-panel-status"),
         navPanelDoctor: document.getElementById("nav-panel-doctor"),
         navPanelIssueDetails: document.getElementById("nav-panel-issue-details"),
+        navPanelIssueHistory: document.getElementById("nav-panel-issue-history"),
         navPanelTrackedHistory: document.getElementById("nav-panel-tracked-history"),
         navPanelOperatorActions: document.getElementById("nav-panel-operator-actions"),
         navPanelLiveEvents: document.getElementById("nav-panel-live-events"),
@@ -196,6 +205,8 @@ export function renderDashboardBrowserScript(): string {
         doctorTiers: document.getElementById("doctor-tiers"),
         doctorChecks: document.getElementById("doctor-checks"),
         issueSummary: document.getElementById("issue-summary"),
+        issueHistorySummary: document.getElementById("issue-history-summary"),
+        issueHistoryLines: document.getElementById("issue-history-lines"),
         issueMetrics: document.getElementById("issue-metrics"),
         issueShortcuts: document.getElementById("issue-shortcuts"),
         issueExplain: document.getElementById("issue-explain"),
@@ -836,6 +847,45 @@ export function renderDashboardBrowserScript(): string {
         }
       }
 
+      function renderIssueHistory(explain) {
+        setText(elements.issueHistorySummary, formatIssueTimelineSummary(explain ? explain.timeline : null));
+        if (!elements.issueHistoryLines) {
+          return;
+        }
+
+        elements.issueHistoryLines.innerHTML = "";
+        const lines = formatIssueTimelineEvents(explain ? explain.timeline : null);
+        if (lines.length === 0) {
+          elements.issueHistoryLines.appendChild(
+            buildEmptyState(
+              "↧",
+              explain ? "No issue-run timeline events" : "No issue history loaded",
+              explain
+                ? "Sparse historical records stay explicit when the backend has no timeline events."
+                : "Load an issue to inspect typed lifecycle evidence.",
+            ),
+          );
+          return;
+        }
+
+        for (const line of lines) {
+          const card = document.createElement("div");
+          card.className = "event-item timeline-item";
+
+          const meta = document.createElement("div");
+          meta.className = "event-meta";
+          meta.textContent = "Typed issue timeline";
+
+          const summary = document.createElement("p");
+          summary.className = "event-summary";
+          summary.textContent = line;
+
+          card.appendChild(meta);
+          card.appendChild(summary);
+          elements.issueHistoryLines.appendChild(card);
+        }
+      }
+
       function renderStatus() {
         if (!state.status) {
           return;
@@ -1039,6 +1089,7 @@ export function renderDashboardBrowserScript(): string {
             elements.issueLint.innerHTML = "";
             elements.issueLint.appendChild(buildEmptyState("!", "No lint posture yet", "Issue lint will appear after an issue is loaded."));
           }
+          renderIssueHistory(null);
           renderSelectedIssueSummary();
           return;
         }
@@ -1080,6 +1131,7 @@ export function renderDashboardBrowserScript(): string {
           );
         }
         renderIssueExplainDetails(explain);
+        renderIssueHistory(explain);
 
         if (elements.issueLint) {
           elements.issueLint.innerHTML = "";
@@ -1474,6 +1526,8 @@ export function renderDashboardBrowserScript(): string {
         renderSelectedIssue();
         setText(elements.issueSummary, "Loading issue...");
         setText(elements.issueExplain, "Loading /api/issues/" + requestedIssueNumber + "/explain...");
+        setText(elements.issueHistorySummary, "Loading issue history...");
+        setText(elements.issueHistoryLines, "Loading typed issue timeline...");
         setCode(elements.issueLint, "Loading /api/issues/" + requestedIssueNumber + "/issue-lint...");
         setText(elements.selectedIssueHeading, "Loading issue " + formatIssueRef(requestedIssueNumber));
         setText(elements.selectedIssueDetail, "The dashboard is loading the detailed summary for this issue.");

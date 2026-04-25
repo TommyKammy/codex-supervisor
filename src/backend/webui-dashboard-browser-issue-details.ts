@@ -18,6 +18,24 @@ export interface DashboardIssueLatestRecoveryLike {
   detail?: string | null;
 }
 
+export interface DashboardIssueTimelineEventLike {
+  issue_number?: number | null;
+  pr_number?: number | null;
+  event_type?: string | null;
+  timestamp?: string | null;
+  outcome?: string | null;
+  summary?: string | null;
+  head_sha?: string | null;
+  remediation_target?: string | null;
+  next_action?: string | null;
+}
+
+export interface DashboardIssueTimelineLike {
+  issue_number?: number | null;
+  pr_number?: number | null;
+  events?: DashboardIssueTimelineEventLike[] | null;
+}
+
 export interface DashboardIssueDetailsActivityContextLike extends DashboardIssueActivityContextLike {
   handoffSummary?: string | null;
   localReviewRoutingSummary?: string | null;
@@ -43,6 +61,7 @@ export interface DashboardIssueExplainLike {
   lastError?: string | null;
   changeRiskLines?: string[] | null;
   activityContext?: DashboardIssueDetailsActivityContextLike | null;
+  timeline?: DashboardIssueTimelineLike | null;
 }
 
 export interface DashboardIssueDetailSection {
@@ -112,6 +131,51 @@ export function formatReviewWaits(activityContext: DashboardIssueDetailsActivity
       );
     })
     .join(" | ");
+}
+
+export function formatIssueNumber(value: number | null | undefined): string {
+  return Number.isInteger(value) ? "#" + value : "none";
+}
+
+export function formatIssueTimelineSummary(timeline: DashboardIssueTimelineLike | null | undefined): string {
+  if (!timeline) {
+    return "No issue-run timeline is recorded for this issue.";
+  }
+  const events = Array.isArray(timeline.events) ? timeline.events : [];
+  return "issue=" + formatIssueNumber(timeline.issue_number) +
+    " pr=" + formatIssueNumber(timeline.pr_number) +
+    " events=" + events.length;
+}
+
+export function formatIssueTimelineEvent(event: DashboardIssueTimelineEventLike): string {
+  const eventType = event.event_type?.trim() || "unknown";
+  const outcome = event.outcome?.trim() || "unknown";
+  const timestamp = event.timestamp?.trim() || "timestamp=none";
+  const summary = event.summary?.trim() || "No summary reported.";
+  const headSha = event.head_sha?.trim() || "none";
+  const remediationTarget = event.remediation_target?.trim() || "none";
+  const nextAction = event.next_action?.trim() || "none";
+  return (
+    "evidence type=" +
+    eventType +
+    " outcome=" +
+    outcome +
+    " at=" +
+    timestamp +
+    " head_sha=" +
+    headSha +
+    " remediation_target=" +
+    remediationTarget +
+    " action=" +
+    nextAction +
+    " summary=" +
+    summary
+  );
+}
+
+export function formatIssueTimelineEvents(timeline: DashboardIssueTimelineLike | null | undefined): string[] {
+  const events = Array.isArray(timeline?.events) ? timeline.events : [];
+  return events.map(formatIssueTimelineEvent);
 }
 
 export function buildIssueExplainSections(
