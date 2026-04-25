@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { buildSupervisorDashboardWorkflowSteps } from "./supervisor-dashboard-workflow";
 import { buildRuntimeRecoverySummary } from "./supervisor-status-report";
 
 const baseLoopRuntime = {
@@ -13,6 +14,65 @@ const baseLoopRuntime = {
   ownershipConfidence: "none" as const,
   detail: null,
 };
+
+test("buildSupervisorDashboardWorkflowSteps owns queue workflow state as a server DTO", () => {
+  assert.deepEqual(
+    buildSupervisorDashboardWorkflowSteps({
+      selectedIssueNumber: null,
+      runnableIssueCount: 0,
+      blockedIssueCount: 2,
+      trackedIssueCount: 3,
+      hasCandidateDiscovery: true,
+      reconciliationPhase: "steady",
+    }).map((step) => [step.id, step.state, step.detail]),
+    [
+      ["observe", "done", "Connection and freshness checks keep the workspace current."],
+      ["triage", "done", "3 tracked issues remain in the working set."],
+      ["select", "done", "No runnable issue is currently waiting for handoff."],
+      ["execute", "done", "No active issue is currently executing."],
+      ["recover", "current warn", "No runnable issue is available, so the supervisor is waiting on recovery or unblock work."],
+    ],
+  );
+});
+
+test("buildSupervisorDashboardWorkflowSteps uses neutral recover detail when no blockers are present", () => {
+  const recoverStep = buildSupervisorDashboardWorkflowSteps({
+    selectedIssueNumber: null,
+    runnableIssueCount: 0,
+    blockedIssueCount: 0,
+    trackedIssueCount: 1,
+    hasCandidateDiscovery: false,
+    reconciliationPhase: "steady",
+  }).find((step) => step.id === "recover");
+
+  assert.deepEqual(recoverStep, {
+    id: "recover",
+    title: "Recover",
+    detail: "Recovery remains quiet while no active blockers are reported.",
+    state: "idle",
+  });
+});
+
+test("buildSupervisorDashboardWorkflowSteps rejects invalid selected issue numbers before choosing execute", () => {
+  for (const selectedIssueNumber of [Number.NaN, 0, -7, 1.5]) {
+    const steps = buildSupervisorDashboardWorkflowSteps({
+      selectedIssueNumber,
+      runnableIssueCount: 1,
+      blockedIssueCount: 0,
+      trackedIssueCount: 3,
+      hasCandidateDiscovery: true,
+      reconciliationPhase: "steady",
+    });
+
+    assert.equal(steps.find((step) => step.id === "select")?.state, "current");
+    assert.deepEqual(steps.find((step) => step.id === "execute"), {
+      id: "execute",
+      title: "Execute",
+      detail: "No active issue is currently executing.",
+      state: "idle",
+    });
+  }
+});
 
 test("buildRuntimeRecoverySummary stays quiet when no actionable runtime recovery state exists", () => {
   assert.equal(

@@ -37,10 +37,169 @@ test("buildWorkflowSteps marks execute as current when a selected issue is prese
     {
       id: "recover",
       title: "Recover",
-      detail: "Recovery remains quiet while runnable work is available.",
+      detail: "Recovery remains quiet while no active blockers are reported.",
       state: "idle",
     },
   ]);
+});
+
+test("buildWorkflowSteps renders server-provided workflow DTOs instead of parsing status lines", () => {
+  assert.deepEqual(
+    buildWorkflowSteps({
+      workflowSteps: [
+        {
+          id: "observe",
+          title: "Observe",
+          detail: "Server DTO says observation is current.",
+          state: "current",
+        },
+        {
+          id: "execute",
+          title: "Execute",
+          detail: "Server DTO says no issue is executing.",
+          state: "idle",
+        },
+        {
+          id: "triage",
+          title: "Triage",
+          detail: "Server DTO says triage is idle.",
+          state: "idle",
+        },
+        {
+          id: "select",
+          title: "Select",
+          detail: "Server DTO says selection is idle.",
+          state: "idle",
+        },
+        {
+          id: "recover",
+          title: "Recover",
+          detail: "Server DTO says recovery is idle.",
+          state: "idle",
+        },
+      ],
+      whyLines: ["selected_issue=#99"],
+      detailedStatusLines: ["active_issue=#99"],
+    } as Parameters<typeof buildWorkflowSteps>[0] & {
+      workflowSteps: ReturnType<typeof buildWorkflowSteps>;
+    }),
+    [
+      {
+        id: "observe",
+        title: "Observe",
+        detail: "Server DTO says observation is current.",
+        state: "current",
+      },
+      {
+        id: "execute",
+        title: "Execute",
+        detail: "Server DTO says no issue is executing.",
+        state: "idle",
+      },
+      {
+        id: "triage",
+        title: "Triage",
+        detail: "Server DTO says triage is idle.",
+        state: "idle",
+      },
+      {
+        id: "select",
+        title: "Select",
+        detail: "Server DTO says selection is idle.",
+        state: "idle",
+      },
+      {
+        id: "recover",
+        title: "Recover",
+        detail: "Server DTO says recovery is idle.",
+        state: "idle",
+      },
+    ],
+  );
+});
+
+test("buildWorkflowSteps falls back when server workflow DTOs are partial", () => {
+  const steps = buildWorkflowSteps({
+    workflowSteps: [
+      {
+        id: "observe",
+        title: "Observe",
+        detail: "Partial server DTO should not render.",
+        state: "current",
+      },
+      {
+        id: "execute",
+        title: "Execute",
+        detail: "Partial server DTO should not render.",
+        state: "idle",
+      },
+    ],
+    whyLines: ["selected_issue=#99"],
+  } as Parameters<typeof buildWorkflowSteps>[0] & {
+    workflowSteps: ReturnType<typeof buildWorkflowSteps>;
+  });
+
+  assert.deepEqual(
+    steps.map((step) => [step.id, step.state]),
+    [
+      ["observe", "done"],
+      ["triage", "done"],
+      ["select", "done"],
+      ["execute", "current"],
+      ["recover", "idle"],
+    ],
+  );
+  assert.equal(steps[3].detail, "Issue #99 is the current active focus.");
+  assert.ok(steps.every((step) => !step.detail.includes("Partial server DTO")));
+});
+
+test("buildWorkflowSteps falls back when server workflow DTOs include malformed entries", () => {
+  const steps = buildWorkflowSteps({
+    workflowSteps: [
+      {
+        id: "observe",
+        title: "Observe",
+        detail: "Complete server DTO should not render with malformed extras.",
+        state: "current",
+      },
+      {
+        id: "triage",
+        title: "Triage",
+        detail: "Complete server DTO should not render with malformed extras.",
+        state: "idle",
+      },
+      {
+        id: "select",
+        title: "Select",
+        detail: "Complete server DTO should not render with malformed extras.",
+        state: "idle",
+      },
+      {
+        id: "execute",
+        title: "Execute",
+        detail: "Complete server DTO should not render with malformed extras.",
+        state: "idle",
+      },
+      {
+        id: "recover",
+        title: "Recover",
+        detail: "Complete server DTO should not render with malformed extras.",
+        state: "idle",
+      },
+      {
+        id: "observe",
+        title: "Malformed",
+        detail: "",
+        state: "idle",
+      },
+    ],
+    selectionSummary: { selectedIssueNumber: 101 },
+  } as Parameters<typeof buildWorkflowSteps>[0] & {
+    workflowSteps: ReturnType<typeof buildWorkflowSteps>;
+  });
+
+  assert.equal(steps[3].detail, "Issue #101 is the current active focus.");
+  assert.ok(steps.every((step) => !step.detail.includes("Complete server DTO")));
 });
 
 test("buildWorkflowSteps surfaces recover as the current step when only blocked issues remain", () => {

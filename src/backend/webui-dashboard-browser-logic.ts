@@ -93,6 +93,13 @@ export interface DashboardRuntimeRecoverySummaryLike {
   } | null;
 }
 
+export interface DashboardWorkflowStepLike {
+  id?: "observe" | "triage" | "select" | "execute" | "recover" | null;
+  title?: string | null;
+  detail?: string | null;
+  state?: "done" | "current" | "idle" | "current warn" | "warn" | null;
+}
+
 export interface DashboardInventoryStatusLike {
   mode?: "healthy" | "degraded" | null;
   posture?:
@@ -130,6 +137,7 @@ export interface DashboardStatusLike {
   trackedIssues?: DashboardTrackedIssueLike[] | null;
   runnableIssues?: DashboardRunnableIssueLike[] | null;
   blockedIssues?: DashboardBlockedIssueLike[] | null;
+  workflowSteps?: DashboardWorkflowStepLike[] | null;
   detailedStatusLines?: string[] | null;
   readinessLines?: string[] | null;
   whyLines?: string[] | null;

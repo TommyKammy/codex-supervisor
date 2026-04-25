@@ -9,6 +9,7 @@ import { sanitizeStatusValue } from "./supervisor-status-rendering";
 import { truncate } from "../core/utils";
 import type { BlockedReason, RunState, SupervisorStateFile, TimelineArtifact } from "../core/types";
 import type { SupervisorIssueActivityContextDto } from "./supervisor-operator-activity-context";
+import type { SupervisorDashboardWorkflowStepDto } from "./supervisor-dashboard-workflow";
 import type { SupervisorLoopRuntimeDto } from "./supervisor-loop-runtime-state";
 import type {
   SupervisorBlockedIssueDto,
@@ -102,6 +103,7 @@ export interface SupervisorStatusDto {
   trackedIssues: SupervisorTrackedIssueDto[];
   runnableIssues: SupervisorRunnableIssueDto[];
   blockedIssues: SupervisorBlockedIssueDto[];
+  workflowSteps?: SupervisorDashboardWorkflowStepDto[];
   detailedStatusLines: string[];
   reconciliationPhase: string | null;
   reconciliationProgress?: SupervisorReconciliationProgressDto | null;

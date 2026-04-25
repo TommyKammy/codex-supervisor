@@ -2,6 +2,7 @@ import type {
   DashboardLoopRuntimeLike,
   DashboardRuntimeRecoverySummaryLike,
   DashboardStatusLike,
+  DashboardWorkflowStepLike,
 } from "./webui-dashboard-browser-logic";
 
 export interface DashboardWorkflowStep {
@@ -106,6 +107,43 @@ export function countCandidateIssues(status: DashboardStatusLike | null | undefi
 }
 
 export function buildWorkflowSteps(status: DashboardStatusLike | null | undefined): DashboardWorkflowStep[] {
+  const workflowStepIds = new Set(["observe", "triage", "select", "execute", "recover"]);
+  const workflowStepStates = new Set(["done", "current", "idle", "current warn", "warn"]);
+
+  function normalizeWorkflowStep(step: DashboardWorkflowStepLike): DashboardWorkflowStep | null {
+    if (
+      typeof step.id !== "string" ||
+      !workflowStepIds.has(step.id) ||
+      typeof step.title !== "string" ||
+      step.title.trim() === "" ||
+      typeof step.detail !== "string" ||
+      step.detail.trim() === "" ||
+      typeof step.state !== "string" ||
+      !workflowStepStates.has(step.state)
+    ) {
+      return null;
+    }
+
+    return {
+      id: step.id,
+      title: step.title,
+      detail: step.detail,
+      state: step.state,
+    };
+  }
+
+  const serverWorkflowSteps = Array.isArray(status?.workflowSteps) ? status.workflowSteps : [];
+  const workflowSteps = serverWorkflowSteps
+    .map(normalizeWorkflowStep)
+    .filter((step): step is DashboardWorkflowStep => step !== null);
+  const hasCompleteServerWorkflow =
+    workflowSteps.length === serverWorkflowSteps.length &&
+    workflowSteps.length === workflowStepIds.size &&
+    new Set(workflowSteps.map((step) => step.id)).size === workflowStepIds.size;
+  if (hasCompleteServerWorkflow) {
+    return workflowSteps;
+  }
+
   const selectedIssueNumber = parseSelectedIssueNumber(status);
   const runnableCount = Array.isArray(status?.runnableIssues) ? status.runnableIssues.length : 0;
   const blockedCount = Array.isArray(status?.blockedIssues) ? status.blockedIssues.length : 0;
@@ -181,7 +219,7 @@ export function buildWorkflowSteps(status: DashboardStatusLike | null | undefine
           ? currentDetail
           : blockedCount > 0
             ? String(blockedCount) + " blocked issue(s) need unblock or recovery."
-            : "Recovery remains quiet while runnable work is available.",
+            : "Recovery remains quiet while no active blockers are reported.",
       state: currentIndex === 4 ? "current warn" : blockedCount > 0 && currentStepId !== "recover" ? "warn" : "idle",
     },
   ];
