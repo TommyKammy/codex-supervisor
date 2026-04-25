@@ -244,6 +244,40 @@ export function buildTrackedPrMismatch(
   });
   const githubState = projection.nextState;
   const githubBlockedReason = projection.nextBlockedReason;
+
+  if (
+    record.state === "repairing_ci" &&
+    record.last_failure_signature === "workstation-local-path-hygiene-failed" &&
+    githubState === "draft_pr" &&
+    pr.isDraft
+  ) {
+    const readyPromotionGate = readyPromotionGateSummary(config, record, pr, checks);
+    return {
+      issueNumber: record.issue_number,
+      prNumber: pr.number,
+      githubState,
+      githubBlockedReason,
+      localState: record.state,
+      localBlockedReason: record.blocked_reason,
+      staleLocalBlocker: false,
+      recoverability: "repair_queued",
+      summaryLine: [
+        "tracked_pr_ready_promotion_blocked",
+        `issue=#${record.issue_number}`,
+        `pr=#${pr.number}`,
+        recoverabilityStatusToken("repair_queued"),
+        `github_state=${githubState}`,
+        `local_state=${record.state}`,
+        `local_blocked_reason=${record.blocked_reason ?? "none"}`,
+        "stale_local_blocker=no",
+      ].join(" "),
+      guidanceLine:
+        `recovery_guidance=PR #${pr.number} is still draft because ready-for-review promotion found repairable workstation-local path hygiene findings. ` +
+        "The supervisor has queued a repair turn for the actionable publishable tracked files before retrying promotion.",
+      detailLines: readyPromotionGate.detailLines,
+    };
+  }
+
   const mismatch =
     isBlockedLikeState(record.state) &&
     (githubState !== record.state || (githubState === "blocked" && githubBlockedReason !== record.blocked_reason));

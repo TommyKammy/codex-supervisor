@@ -146,11 +146,13 @@ function summarizeWorkstationLocalPathFirstFix(details: string[] | null | undefi
 function buildTrackedPrReadyPromotionPathHygieneComment(args: {
   pr: Pick<GitHubPullRequest, "headRefOid">;
   blockerSignature: string;
+  remediationTarget: string | null;
   summary: string;
   details?: string[] | null;
 }): string {
   const firstFix = summarizeWorkstationLocalPathFirstFix(args.details);
   const conciseSummary = args.summary.replace(/\s+First fix:.*$/i, "").trim();
+  const repairable = args.remediationTarget === "workspace_contents_repairable";
   return [
     `Tracked PR head \`${args.pr.headRefOid}\` is still draft because ready-for-review promotion is blocked locally.`,
     "",
@@ -159,8 +161,10 @@ function buildTrackedPrReadyPromotionPathHygieneComment(args: {
     `- blocker signature: \`${args.blockerSignature}\``,
     `- what failed: ${conciseSummary}`,
     ...(firstFix ? [`- ${firstFix}`] : []),
-    "- automatic retry: no",
-    "- rerunning the supervisor alone will not help yet; fix the tracked workspace artifacts first, then rerun promotion.",
+    `- automatic retry: ${repairable ? "yes" : "no"}`,
+    repairable
+      ? "- next action: supervisor will retry a repair turn with these actionable publishable files, then re-run ready-for-review promotion."
+      : "- rerunning the supervisor alone will not help yet; fix the tracked workspace artifacts first, then rerun promotion.",
     "",
     "GitHub checks may still be green because this blocker is host-local to the supervisor workspace.",
   ].join("\n");
