@@ -1,6 +1,7 @@
 export interface DashboardPageLayoutInput {
   repoSlugMarkup: string;
   detailsMenuMarkup: string;
+  firstRunSetupMarkup?: string;
   overviewPanelsMarkup: string;
   detailPanelsMarkup: string;
   footerMarkup: string;
@@ -10,6 +11,7 @@ export interface DashboardPageLayoutInput {
 export function renderDashboardPageLayout({
   repoSlugMarkup,
   detailsMenuMarkup,
+  firstRunSetupMarkup = "",
   overviewPanelsMarkup,
   detailPanelsMarkup,
   footerMarkup,
@@ -144,6 +146,16 @@ export function renderDashboardPageLayout({
       .issue-summary-copy,
       .summary-list,
       .summary-banner {
+        display: grid;
+        gap: 12px;
+      }
+
+      .setup-readiness-panel,
+      .setup-readiness-header,
+      .setup-readiness-body,
+      .setup-readiness-section,
+      .setup-readiness-list,
+      .setup-context-grid {
         display: grid;
         gap: 12px;
       }
@@ -509,6 +521,55 @@ export function renderDashboardPageLayout({
         border-radius: var(--radius-md);
         background: var(--surface);
         box-shadow: var(--shadow-sm);
+      }
+
+      .setup-readiness-panel {
+        padding: 18px 20px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: var(--surface);
+        box-shadow: var(--shadow-sm);
+      }
+
+      .setup-readiness-header {
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: start;
+      }
+
+      .setup-readiness-header h2,
+      .setup-readiness-section h3 {
+        margin: 0;
+      }
+
+      .setup-readiness-header h2 {
+        letter-spacing: -0.03em;
+      }
+
+      .setup-readiness-body {
+        grid-template-columns: minmax(0, 1.05fr) minmax(280px, 0.95fr);
+        align-items: start;
+      }
+
+      .setup-context-grid {
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      }
+
+      .setup-readiness-list {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .setup-readiness-list li {
+        padding: 10px 12px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        background: var(--surface-soft);
+      }
+
+      .setup-danger-zone {
+        border-color: rgba(217, 83, 79, 0.4);
+        background: #fffafa;
       }
 
       .issue-summary-grid {
@@ -1046,6 +1107,7 @@ export function renderDashboardPageLayout({
         }
 
         .details-grid,
+        .setup-readiness-body,
         .workflow-rail {
           grid-template-columns: 1fr;
         }
@@ -1150,6 +1212,8 @@ ${detailsMenuMarkup}
             <strong id="last-refresh-badge">never</strong>
           </div>
         </section>
+
+${firstRunSetupMarkup}
 
         <details id="details-disclosure" class="details-disclosure">
           <summary>

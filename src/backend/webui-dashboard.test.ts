@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createSetupConfigUpdateResult,
+  createSetupConfigPostureField,
+  createSetupConfigPostureGroups,
   createSetupField,
+  createMissingReviewProviderBlocker,
+  createSetupNextAction,
+  createSetupHostReadiness,
   createSetupProviderPosture,
   createSetupReadinessReport,
   createSetupTrustPosture,
@@ -204,6 +209,138 @@ test("dashboard page renders repository identity from setup readiness data", () 
   assert.match(html, /id="repo-slug-value" class="masthead-repo">owner\/&lt;repo&gt;&quot;</u);
   assert.match(html, /id="repo-path-value" class="context-path">\/Users\/&lt;example&gt;\/dev\/&quot;repo</u);
   assert.match(html, /id="workspace-root-value" class="context-path">\/Users\/example\/dev\/work&quot;trees</u);
+});
+
+test("dashboard page renders first-run setup readiness from the typed setup DTO", () => {
+  const html = renderSupervisorDashboardHtml(createSetupReadinessReport({
+    ready: false,
+    overallStatus: "missing",
+    configPath: "<supervisor-config-path>",
+    fields: [
+      createSetupField("repoSlug", { value: "owner/repo" }),
+      createSetupField("repoPath", { value: "<codex-supervisor-root>" }),
+      createSetupField("workspaceRoot", { value: "<codex-supervisor-root>/.local/worktrees" }),
+      createSetupField("trustMode", {
+        state: "missing",
+        value: null,
+        message: "Trust mode needs an explicit first-run setup decision.",
+      }),
+      createSetupField("executionSafetyMode", {
+        state: "configured",
+        value: "operator_gated",
+        message: "Execution safety mode is explicitly configured.",
+      }),
+      createSetupField("reviewProvider", {
+        state: "missing",
+        value: null,
+        message: "Configure at least one review provider before first-run setup is complete.",
+      }),
+      createSetupField("localCiCommand", {
+        state: "missing",
+        value: null,
+        message: "Local CI command is optional until you opt in to the repo-owned contract.",
+      }),
+    ],
+    blockers: [
+      createMissingReviewProviderBlocker(),
+    ],
+    nextActions: [
+      createSetupNextAction({
+        action: "fix_config",
+        source: "missing_review_provider",
+        priority: 100,
+        required: true,
+        summary: "Configure at least one review provider before first-run setup is complete.",
+        fieldKeys: ["reviewProvider"],
+      }),
+      createSetupNextAction({
+        action: "manual_review",
+        source: "dangerous_explicit_opt_in:approvedTrackedTopLevelEntries",
+        priority: 300,
+        required: false,
+        summary:
+          "Confirm approved tracked top level entries remains an intentional dangerous explicit opt-in; do not treat it as a recommended setup default.",
+        fieldKeys: ["approvedTrackedTopLevelEntries"],
+      }),
+    ],
+    configPostureGroups: createSetupConfigPostureGroups({
+      dangerous_explicit_opt_in: [
+        createSetupConfigPostureField({
+          key: "approvedTrackedTopLevelEntries",
+          label: "Approved tracked top level entries",
+          state: "configured",
+          value: "dist",
+          message:
+            "Approved tracked top level entries is configured as a dangerous explicit opt-in.",
+          required: false,
+          metadata: { source: "config", editable: true, valueType: "text" },
+          posture: {
+            field: "approvedTrackedTopLevelEntries",
+            tier: "dangerous_explicit_opt_in",
+            summary: "Allows specific tracked top-level entries in worktrees.",
+          },
+        }),
+      ],
+    }),
+    hostReadiness: createSetupHostReadiness({
+      overallStatus: "fail",
+      checks: [
+        {
+          name: "github_auth",
+          status: "fail",
+          summary: "GitHub auth is not ready.",
+          details: ["Run gh auth status before starting autonomous operation."],
+        },
+      ],
+    }),
+    providerPosture: createSetupProviderPosture({
+      profile: "none",
+      provider: "none",
+      reviewers: [],
+      signalSource: "none",
+      configured: false,
+      summary: "No review provider is configured.",
+    }),
+    trustPosture: createSetupTrustPosture({
+      trustMode: "trusted_repo_and_authors",
+      executionSafetyMode: "operator_gated",
+      configured: false,
+      warning: null,
+      summary: "Trust posture needs an explicit first-run setup decision.",
+    }),
+    localCiContract: {
+      configured: false,
+      command: null,
+      recommendedCommand: "npm run verify:pre-pr",
+      source: "repo_script_candidate",
+      summary:
+        "Repo-owned local CI candidate exists but localCiCommand is unset. Recommended command: npm run verify:pre-pr.",
+    },
+    localReviewPosture: {
+      preset: "off",
+      enabled: false,
+      policy: "advisory",
+      autoRepair: "off",
+      followUpIssueCreation: false,
+      summary: "Local review provider is disabled.",
+      guarantees: ["No local review repair authority is enabled."],
+    },
+  }));
+
+  assert.match(html, /id="dashboard-first-run-setup"/u);
+  assert.match(html, /First-run setup/u);
+  assert.match(html, /Setup blocked/u);
+  assert.match(html, /Config path[\s\S]*&lt;supervisor-config-path&gt;/u);
+  assert.match(html, /Repository path[\s\S]*&lt;codex-supervisor-root&gt;/u);
+  assert.match(html, /Workspace root[\s\S]*&lt;codex-supervisor-root&gt;\/\.local\/worktrees/u);
+  assert.match(html, /GitHub auth readiness[\s\S]*GitHub auth is not ready\./u);
+  assert.match(html, /Trust posture[\s\S]*Trust posture needs an explicit first-run setup decision\./u);
+  assert.match(html, /Loop mode[\s\S]*WebUI is an operator surface only/u);
+  assert.match(html, /Local CI posture[\s\S]*Recommended command: npm run verify:pre-pr\./u);
+  assert.match(html, /Review provider posture[\s\S]*No review provider is configured\./u);
+  assert.match(html, /Required next actions[\s\S]*Configure at least one review provider before first-run setup is complete\./u);
+  assert.match(html, /Dangerous explicit opt-ins[\s\S]*Approved tracked top level entries[\s\S]*intentional dangerous explicit opt-in/u);
+  assert.doesNotMatch(html, /\/api\/commands\/loop/u);
 });
 
 test("dashboard page renders sidebar links from the panel registry", () => {
