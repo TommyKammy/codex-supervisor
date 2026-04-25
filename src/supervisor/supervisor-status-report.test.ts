@@ -35,6 +35,24 @@ test("buildSupervisorDashboardWorkflowSteps owns queue workflow state as a serve
   );
 });
 
+test("buildSupervisorDashboardWorkflowSteps uses neutral recover detail when no blockers are present", () => {
+  const recoverStep = buildSupervisorDashboardWorkflowSteps({
+    selectedIssueNumber: null,
+    runnableIssueCount: 0,
+    blockedIssueCount: 0,
+    trackedIssueCount: 1,
+    hasCandidateDiscovery: false,
+    reconciliationPhase: "steady",
+  }).find((step) => step.id === "recover");
+
+  assert.deepEqual(recoverStep, {
+    id: "recover",
+    title: "Recover",
+    detail: "Recovery remains quiet while no active blockers are reported.",
+    state: "idle",
+  });
+});
+
 test("buildRuntimeRecoverySummary stays quiet when no actionable runtime recovery state exists", () => {
   assert.equal(
     buildRuntimeRecoverySummary({

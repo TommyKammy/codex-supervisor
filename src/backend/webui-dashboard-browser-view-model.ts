@@ -19,9 +19,6 @@ export interface DashboardLoopRuntimeSummary {
   chipTone: "ok" | "warn" | "info";
 }
 
-const DASHBOARD_WORKFLOW_STEP_IDS = new Set(["observe", "triage", "select", "execute", "recover"]);
-const DASHBOARD_WORKFLOW_STEP_STATES = new Set(["done", "current", "idle", "current warn", "warn"]);
-
 export function buildRuntimeRecoverySummaryLines(
   summary: DashboardRuntimeRecoverySummaryLike | null | undefined,
 ): string[] {
@@ -104,38 +101,46 @@ function parseSelectedIssueNumber(status: DashboardStatusLike | null | undefined
   return null;
 }
 
-function normalizeWorkflowStep(step: DashboardWorkflowStepLike): DashboardWorkflowStep | null {
-  if (
-    typeof step.id !== "string" ||
-    !DASHBOARD_WORKFLOW_STEP_IDS.has(step.id) ||
-    typeof step.title !== "string" ||
-    step.title.trim() === "" ||
-    typeof step.detail !== "string" ||
-    step.detail.trim() === "" ||
-    typeof step.state !== "string" ||
-    !DASHBOARD_WORKFLOW_STEP_STATES.has(step.state)
-  ) {
-    return null;
-  }
-
-  return {
-    id: step.id,
-    title: step.title,
-    detail: step.detail,
-    state: step.state,
-  };
-}
-
 export function countCandidateIssues(status: DashboardStatusLike | null | undefined): string {
   const observed = status?.candidateDiscovery?.observedMatchingOpenIssues ?? null;
   return typeof observed === "number" ? String(observed) : "n/a";
 }
 
 export function buildWorkflowSteps(status: DashboardStatusLike | null | undefined): DashboardWorkflowStep[] {
-  const workflowSteps = Array.isArray(status?.workflowSteps)
-    ? status.workflowSteps.map(normalizeWorkflowStep).filter((step): step is DashboardWorkflowStep => step !== null)
-    : [];
-  if (workflowSteps.length > 0) {
+  const workflowStepIds = new Set(["observe", "triage", "select", "execute", "recover"]);
+  const workflowStepStates = new Set(["done", "current", "idle", "current warn", "warn"]);
+
+  function normalizeWorkflowStep(step: DashboardWorkflowStepLike): DashboardWorkflowStep | null {
+    if (
+      typeof step.id !== "string" ||
+      !workflowStepIds.has(step.id) ||
+      typeof step.title !== "string" ||
+      step.title.trim() === "" ||
+      typeof step.detail !== "string" ||
+      step.detail.trim() === "" ||
+      typeof step.state !== "string" ||
+      !workflowStepStates.has(step.state)
+    ) {
+      return null;
+    }
+
+    return {
+      id: step.id,
+      title: step.title,
+      detail: step.detail,
+      state: step.state,
+    };
+  }
+
+  const serverWorkflowSteps = Array.isArray(status?.workflowSteps) ? status.workflowSteps : [];
+  const workflowSteps = serverWorkflowSteps
+    .map(normalizeWorkflowStep)
+    .filter((step): step is DashboardWorkflowStep => step !== null);
+  const hasCompleteServerWorkflow =
+    workflowSteps.length === serverWorkflowSteps.length &&
+    workflowSteps.length === workflowStepIds.size &&
+    new Set(workflowSteps.map((step) => step.id)).size === workflowStepIds.size;
+  if (hasCompleteServerWorkflow) {
     return workflowSteps;
   }
 
@@ -214,7 +219,7 @@ export function buildWorkflowSteps(status: DashboardStatusLike | null | undefine
           ? currentDetail
           : blockedCount > 0
             ? String(blockedCount) + " blocked issue(s) need unblock or recovery."
-            : "Recovery remains quiet while runnable work is available.",
+            : "Recovery remains quiet while no active blockers are reported.",
       state: currentIndex === 4 ? "current warn" : blockedCount > 0 && currentStepId !== "recover" ? "warn" : "idle",
     },
   ];

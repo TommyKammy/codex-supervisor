@@ -93,7 +93,7 @@ export function buildSupervisorDashboardWorkflowSteps(args: {
           ? currentDetail
           : args.blockedIssueCount > 0
             ? String(args.blockedIssueCount) + " blocked issue(s) need unblock or recovery."
-            : "Recovery remains quiet while runnable work is available.",
+            : "Recovery remains quiet while no active blockers are reported.",
       state: currentIndex === 4 ? "current warn" : args.blockedIssueCount > 0 && currentStepId !== "recover" ? "warn" : "idle",
     },
   ];
