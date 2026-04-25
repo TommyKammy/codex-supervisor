@@ -1613,6 +1613,10 @@ test("explain distinguishes repairable ready-promotion path hygiene blockers que
   const explanation = await supervisor.explain(issueNumber);
   assert.match(
     explanation,
+    /^no_active_tracked_record issue=#178 classification=repair_already_queued state=repairing_ci reason=repairable_path_hygiene_retry_state$/m,
+  );
+  assert.match(
+    explanation,
     /^tracked_pr_ready_promotion_blocked issue=#178 pr=#278 recoverability=repair_queued github_state=draft_pr local_state=repairing_ci local_blocked_reason=none stale_local_blocker=no$/m,
   );
   assert.match(

@@ -225,7 +225,77 @@ test("buildDetailedStatusModel formats the latest record for idle status", () =>
     "No active issue.",
     "tracked_issues=2",
     "latest_record=#92 state=done updated_at=2026-03-13T01:20:00Z",
+    "no_active_tracked_record issue=#92 classification=safe_to_ignore state=done reason=terminal_done",
   ]);
+});
+
+test("buildDetailedStatusModel classifies no-active tracked records", () => {
+  const cases = [
+    {
+      name: "merged",
+      record: createRecord({
+        issue_number: 93,
+        state: "done",
+        updated_at: "2026-03-13T01:20:00Z",
+        last_recovery_reason: "merged_pr_convergence: tracked PR #193 merged; marked issue #93 done",
+      }),
+      expected:
+        "no_active_tracked_record issue=#93 classification=safe_to_ignore state=done reason=merged_pr_convergence",
+    },
+    {
+      name: "cleared",
+      record: createRecord({
+        issue_number: 94,
+        state: "done",
+        updated_at: "2026-03-13T01:21:00Z",
+        last_recovery_reason: "stale_state_cleanup: cleared stale active reservation after issue lock and session lock were missing",
+      }),
+      expected:
+        "no_active_tracked_record issue=#94 classification=safe_to_ignore state=done reason=cleared_stale_active_reservation",
+    },
+    {
+      name: "repair-queued",
+      record: createRecord({
+        issue_number: 95,
+        state: "repairing_ci",
+        updated_at: "2026-03-13T01:22:00Z",
+        blocked_reason: null,
+        last_failure_signature: "workstation-local-path-hygiene-failed",
+      }),
+      expected:
+        "no_active_tracked_record issue=#95 classification=repair_already_queued state=repairing_ci reason=repairable_path_hygiene_retry_state",
+    },
+    {
+      name: "manual-review-required",
+      record: createRecord({
+        issue_number: 96,
+        state: "blocked",
+        updated_at: "2026-03-13T01:23:00Z",
+        blocked_reason: "manual_review",
+      }),
+      expected:
+        "no_active_tracked_record issue=#96 classification=manual_review_required state=blocked reason=manual_review",
+    },
+  ];
+
+  for (const testCase of cases) {
+    const lines = buildDetailedStatusModel({
+      config: createConfig(),
+      activeRecord: null,
+      latestRecord: testCase.record,
+      trackedIssueCount: 1,
+      pr: null,
+      checks: [],
+      reviewThreads: [],
+      manualReviewThreads: noReviewThreads,
+      configuredBotReviewThreads: noReviewThreads,
+      pendingBotReviewThreads: noPendingReviewThreads,
+      summarizeChecks,
+      mergeConflictDetected: () => false,
+    });
+
+    assert.ok(lines.includes(testCase.expected), testCase.name);
+  }
 });
 
 test("buildDetailedStatusModel preserves active-line ordering across PR and failure sections", () => {

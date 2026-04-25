@@ -34,6 +34,7 @@ import type { IssueRunRecord } from "../core/types";
 import type { BuildDetailedStatusModelArgs } from "./supervisor-status-model";
 import { truncate } from "../core/utils";
 import { summarizePreservedPartialWork } from "./supervisor-preserved-partial-work";
+import { classifyStaleReviewBotRecoverability } from "./stale-diagnostic-recoverability";
 
 function unresolvedReviewThreads(reviewThreads: BuildDetailedStatusModelArgs["reviewThreads"]) {
   return reviewThreads.filter((thread) => !thread.isResolved && !thread.isOutdated);
@@ -67,15 +68,130 @@ export function formatLatestRecoveryStatusLine(
   return `latest_recovery issue=#${record.issue_number} at=${record.last_recovery_at} reason=${sanitizeStatusValue(reason)}${detail ? ` detail=${detail}` : ""}`;
 }
 
+export type NoActiveTrackedRecordClassification =
+  | "stale_but_recoverable"
+  | "active_tracked_work_blocker"
+  | "repair_already_queued"
+  | "safe_to_ignore"
+  | "manual_review_required"
+  | "stale_already_handled"
+  | "provider_outage_suspected";
+
+function noActiveTerminalReason(record: IssueRunRecord): string {
+  if (record.last_recovery_reason?.startsWith("merged_pr_convergence:")) {
+    return "merged_pr_convergence";
+  }
+  if (record.last_recovery_reason?.startsWith("stale_state_cleanup:")) {
+    return "cleared_stale_active_reservation";
+  }
+  return "terminal_done";
+}
+
+function activeTrackedWorkState(record: IssueRunRecord): boolean {
+  return (
+    record.state !== "done" &&
+    record.state !== "blocked" &&
+    record.state !== "failed" &&
+    record.state !== "repairing_ci"
+  );
+}
+
+export function classifyNoActiveTrackedRecord(
+  config: BuildDetailedStatusModelArgs["config"],
+  record: IssueRunRecord,
+): { classification: NoActiveTrackedRecordClassification; reason: string } {
+  if (record.state === "done") {
+    return {
+      classification: "safe_to_ignore",
+      reason: noActiveTerminalReason(record),
+    };
+  }
+
+  if (record.state === "repairing_ci") {
+    return {
+      classification: "repair_already_queued",
+      reason: record.last_failure_signature === "workstation-local-path-hygiene-failed"
+        ? "repairable_path_hygiene_retry_state"
+        : "repair_state_persisted",
+    };
+  }
+
+  if (activeTrackedWorkState(record)) {
+    return {
+      classification: "active_tracked_work_blocker",
+      reason: "tracked_record_not_terminal",
+    };
+  }
+
+  if (record.blocked_reason === "stale_review_bot") {
+    const recoverability = classifyStaleReviewBotRecoverability(record, config);
+    if (recoverability === "stale_already_handled") {
+      return {
+        classification: "stale_already_handled",
+        reason: "stale_review_bot_already_handled",
+      };
+    }
+    if (recoverability === "stale_but_recoverable") {
+      return {
+        classification: "stale_but_recoverable",
+        reason: "stale_review_bot_recoverable",
+      };
+    }
+    if (recoverability === "provider_outage_suspected") {
+      return {
+        classification: "provider_outage_suspected",
+        reason: "stale_review_bot_provider_signal_missing",
+      };
+    }
+  }
+
+  if (
+    record.blocked_reason === "verification" &&
+    record.last_failure_signature === "workstation-local-path-hygiene-failed"
+  ) {
+    return {
+      classification: "stale_but_recoverable",
+      reason: "stale_path_hygiene_blocker",
+    };
+  }
+
+  return {
+    classification: "manual_review_required",
+    reason: record.blocked_reason ?? record.last_failure_signature ?? "blocked_or_failed_record",
+  };
+}
+
+export function formatNoActiveTrackedRecordClassificationLine(
+  config: BuildDetailedStatusModelArgs["config"],
+  record: IssueRunRecord | null,
+): string | null {
+  if (!record) {
+    return null;
+  }
+
+  const classification = classifyNoActiveTrackedRecord(config, record);
+  return [
+    "no_active_tracked_record",
+    `issue=#${record.issue_number}`,
+    `classification=${classification.classification}`,
+    `state=${record.state}`,
+    `reason=${sanitizeStatusValue(classification.reason)}`,
+  ].join(" ");
+}
+
 export function buildInactiveDetailedStatusLines(
-  args: Pick<BuildDetailedStatusModelArgs, "latestRecord" | "latestRecoveryRecord" | "trackedIssueCount">,
+  args: Pick<BuildDetailedStatusModelArgs, "config" | "latestRecord" | "latestRecoveryRecord" | "trackedIssueCount">,
 ): string[] {
-  const { latestRecord, latestRecoveryRecord = null, trackedIssueCount } = args;
+  const { config, latestRecord, latestRecoveryRecord = null, trackedIssueCount } = args;
   const lines = [
     "No active issue.",
     `tracked_issues=${trackedIssueCount}`,
     `latest_record=${formatRecentRecord(latestRecord)}`,
   ];
+  const classificationLine = formatNoActiveTrackedRecordClassificationLine(config, latestRecord);
+  if (classificationLine) {
+    lines.push(classificationLine);
+  }
 
   if (latestRecoveryRecord?.last_recovery_reason && latestRecoveryRecord.last_recovery_at) {
     const latestRecoveryLine = formatLatestRecoveryStatusLine(latestRecoveryRecord);
