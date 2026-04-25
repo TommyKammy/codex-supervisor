@@ -389,6 +389,25 @@ export function createDashboardStatusFixture(args: {
       recoveryGuidance?: string | null;
     };
   } | null;
+  runtimeRecoverySummary?: {
+    loopState: string;
+    lockConfidence: string;
+    trackedRecords: Array<{
+      issueNumber: number;
+      state: string;
+      prNumber: number | null;
+      blockedReason: string | null;
+    }>;
+    signals: Array<{
+      kind: string;
+      summary: string;
+    }>;
+    recommendation: {
+      category: string;
+      source: string;
+      summary: string;
+    } | null;
+  } | null;
   trackedIssues?: Array<{
     issueNumber: number;
     state: string;
@@ -440,6 +459,7 @@ export function createDashboardStatusFixture(args: {
         ownershipConfidence: "none",
         detail: null,
       },
+    runtimeRecoverySummary: args.runtimeRecoverySummary ?? null,
     reconciliationPhase: null,
     warning: args.warning ?? null,
     detailedStatusLines: args.detailedStatusLines ?? [],

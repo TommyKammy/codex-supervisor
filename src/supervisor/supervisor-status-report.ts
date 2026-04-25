@@ -22,7 +22,12 @@ import {
   formatLastSuccessfulInventorySnapshotStatusLine,
 } from "../inventory-refresh-state";
 import { buildTrustAndConfigWarnings, buildWarning, renderStatusWarningLine } from "../warning-formatting";
-import { renderOperatorActionLine, selectStatusOperatorAction } from "../operator-actions";
+import {
+  type RestartRecommendation,
+  renderOperatorActionLine,
+  selectRestartRecommendation,
+  selectStatusOperatorAction,
+} from "../operator-actions";
 
 export interface SupervisorStatusWarningDto {
   kind: "readiness" | "status";
@@ -46,6 +51,32 @@ export interface SupervisorTrackedIssueDto {
   blockedReason: BlockedReason | null;
 }
 
+export interface SupervisorRuntimeRecoverySignalDto {
+  kind:
+    | "loop_runtime_recovery"
+    | "loop_runtime_duplicate"
+    | "loop_runtime_stale_lock"
+    | "loop_runtime_ambiguous_owner"
+    | "stale_review_bot_remediation"
+    | "repairable_path_hygiene";
+  summary: string;
+}
+
+export interface SupervisorRuntimeRecoveryTrackedRecordDto {
+  issueNumber: number;
+  state: RunState;
+  prNumber: number | null;
+  blockedReason: BlockedReason | null;
+}
+
+export interface SupervisorRuntimeRecoverySummaryDto {
+  loopState: SupervisorLoopRuntimeDto["state"];
+  lockConfidence: SupervisorLoopRuntimeDto["ownershipConfidence"];
+  trackedRecords: SupervisorRuntimeRecoveryTrackedRecordDto[];
+  signals: SupervisorRuntimeRecoverySignalDto[];
+  recommendation: Pick<RestartRecommendation, "category" | "source" | "summary"> | null;
+}
+
 export interface SupervisorReconciliationProgressDto {
   phase: string;
   startedAt: string | null;
@@ -64,6 +95,7 @@ export interface SupervisorStatusDto {
   candidateDiscovery: SupervisorCandidateDiscoveryDto | null;
   localCiContract?: LocalCiContractSummary;
   loopRuntime: SupervisorLoopRuntimeDto;
+  runtimeRecoverySummary?: SupervisorRuntimeRecoverySummaryDto | null;
   activeIssue: SupervisorActiveIssueDto | null;
   selectionSummary: SupervisorSelectionSummaryDto | null;
   trackedIssues: SupervisorTrackedIssueDto[];
@@ -76,6 +108,89 @@ export interface SupervisorStatusDto {
   readinessLines: string[];
   whyLines: string[];
   warning: SupervisorStatusWarningDto | null;
+}
+
+function collectRuntimeRecoverySignals(args: {
+  loopRuntime: SupervisorLoopRuntimeDto;
+  detailedStatusLines: string[];
+}): SupervisorRuntimeRecoverySignalDto[] {
+  const signals: SupervisorRuntimeRecoverySignalDto[] = [];
+  const seen = new Set<string>();
+
+  function push(kind: SupervisorRuntimeRecoverySignalDto["kind"], summary: string): void {
+    const key = `${kind}\0${summary}`;
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    signals.push({ kind, summary: truncate(sanitizeStatusValue(summary), 300) ?? summary });
+  }
+
+  if (args.loopRuntime.duplicateLoopDiagnostic) {
+    push(
+      "loop_runtime_duplicate",
+      args.loopRuntime.duplicateLoopDiagnostic.recoveryGuidance ??
+        args.loopRuntime.recoveryGuidance ??
+        "Loop runtime ownership is ambiguous because duplicate loop processes were detected.",
+    );
+  } else if (args.loopRuntime.recoveryGuidance) {
+    push("loop_runtime_recovery", args.loopRuntime.recoveryGuidance);
+  }
+
+  if (args.loopRuntime.ownershipConfidence === "stale_lock") {
+    push("loop_runtime_stale_lock", "Loop runtime marker is stale.");
+  } else if (args.loopRuntime.ownershipConfidence === "ambiguous_owner") {
+    push("loop_runtime_ambiguous_owner", args.loopRuntime.recoveryGuidance ?? "Loop runtime marker ownership is ambiguous.");
+  }
+
+  for (const line of args.detailedStatusLines) {
+    if (line.startsWith("stale_review_bot_remediation ")) {
+      push("stale_review_bot_remediation", line);
+      continue;
+    }
+    if (
+      /(?:repairable_path_hygiene|workstation_local_path_hygiene|workstation-local-path-hygiene-failed)/u.test(line)
+    ) {
+      push("repairable_path_hygiene", line);
+    }
+  }
+
+  return signals;
+}
+
+export function buildRuntimeRecoverySummary(args: {
+  loopRuntime: SupervisorLoopRuntimeDto;
+  trackedIssues: SupervisorTrackedIssueDto[];
+  detailedStatusLines: string[];
+}): SupervisorRuntimeRecoverySummaryDto | null {
+  const recommendation = selectRestartRecommendation({ detailedStatusLines: args.detailedStatusLines });
+  const signals = collectRuntimeRecoverySignals(args);
+
+  if (recommendation === null && signals.length === 0) {
+    return null;
+  }
+
+  return {
+    loopState: args.loopRuntime.state,
+    lockConfidence: args.loopRuntime.ownershipConfidence,
+    trackedRecords: args.trackedIssues
+      .filter((issue) => issue.state !== "done")
+      .map((issue) => ({
+        issueNumber: issue.issueNumber,
+        state: issue.state,
+        prNumber: issue.prNumber,
+        blockedReason: issue.blockedReason,
+      })),
+    signals,
+    recommendation:
+      recommendation === null
+        ? null
+        : {
+          category: recommendation.category,
+          source: recommendation.source,
+          summary: recommendation.summary,
+        },
+  };
 }
 
 export function renderGitHubRateLimitLine(resource: "rest" | "graphql", budget: GitHubRateLimitBudget): string {

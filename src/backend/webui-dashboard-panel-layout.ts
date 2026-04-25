@@ -120,6 +120,10 @@ export const DASHBOARD_PANEL_REGISTRY = [
                 <div id="status-lines" class="status-list">
                   <div class="status-line panel-empty-state">Loading /api/status?why=true…</div>
                 </div>
+              </div>
+              <div class="row" id="runtime-recovery-summary" hidden>
+                <div class="row-label">Runtime recovery</div>
+                <div id="runtime-recovery-lines" class="status-list"></div>
               </div>`,
   }),
   renderDashboardPanelShell({
