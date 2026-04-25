@@ -304,6 +304,88 @@ test("loadConfig keeps local review disabled by default while using the opiniona
   assert.equal(config.staleConfiguredBotReviewPolicy, "diagnose_only");
 });
 
+test("loadConfig keeps release readiness advisory by default", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const configPath = path.join(tempDir, "supervisor.config.json");
+
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "./workspaces",
+      stateFile: "./state.json",
+      codexBinary: "codex",
+      branchPrefix: "codex/issue-",
+    }),
+    "utf8",
+  );
+
+  const config = loadConfig(configPath);
+
+  assert.equal(config.releaseReadinessGate, "advisory");
+});
+
+test("loadConfig accepts explicit release readiness release-publication gate opt-in", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const configPath = path.join(tempDir, "supervisor.config.json");
+
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "./workspaces",
+      stateFile: "./state.json",
+      codexBinary: "codex",
+      branchPrefix: "codex/issue-",
+      releaseReadinessGate: "block_release_publication",
+    }),
+    "utf8",
+  );
+
+  const config = loadConfig(configPath);
+
+  assert.equal(config.releaseReadinessGate, "block_release_publication");
+});
+
+test("loadConfig rejects unsupported release readiness gate postures", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const configPath = path.join(tempDir, "supervisor.config.json");
+
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "./workspaces",
+      stateFile: "./state.json",
+      codexBinary: "codex",
+      branchPrefix: "codex/issue-",
+      releaseReadinessGate: "block_everything",
+    }),
+    "utf8",
+  );
+
+  const summary = loadConfigSummary(configPath);
+
+  assert.equal(summary.status, "invalid_config");
+  assert.deepEqual(summary.invalidFields, ["releaseReadinessGate"]);
+  assert.match(summary.error ?? "", /Invalid config field: releaseReadinessGate/);
+});
+
 test("loadConfig maps named local review posture presets onto existing low-level fields", async (t) => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
   t.after(async () => {

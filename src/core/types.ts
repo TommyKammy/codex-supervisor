@@ -50,6 +50,7 @@ export type LocalReviewPosturePreset =
   | "block_merge"
   | "repair_high_severity"
   | "follow_up_issue_creation";
+export type ReleaseReadinessGatePosture = "advisory" | "block_release_publication";
 export type StaleConfiguredBotReviewPolicy = "diagnose_only" | "reply_only" | "reply_and_resolve";
 export type CopilotReviewTimeoutAction = "continue" | "block";
 export type ConfiguredReviewProviderKind = "copilot" | "codex" | "coderabbit" | "custom";
@@ -143,6 +144,14 @@ export interface LocalReviewPostureSummary {
   guarantees: string[];
 }
 
+export interface ReleaseReadinessGateSummary {
+  posture: ReleaseReadinessGatePosture;
+  configured: boolean;
+  canBlock: Array<"release_publication">;
+  cannotBlock: Array<"pr_publication" | "merge_readiness" | "loop_operation" | "release_publication">;
+  summary: string;
+}
+
 export interface StructuredLocalCiCommandConfig {
   mode: "structured";
   executable: string;
@@ -225,6 +234,7 @@ export interface SupervisorConfig {
   localReviewManualReviewRepairEnabled?: boolean;
   localReviewFollowUpIssueCreationEnabled?: boolean;
   localReviewHighSeverityAction: LocalReviewHighSeverityAction;
+  releaseReadinessGate?: ReleaseReadinessGatePosture;
   publishablePathAllowlistMarkers?: string[];
   approvedTrackedTopLevelEntries?: string[];
   staleConfiguredBotReviewPolicy?: StaleConfiguredBotReviewPolicy;

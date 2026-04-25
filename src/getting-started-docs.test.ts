@@ -96,6 +96,8 @@ test("getting-started defines setup readiness as a typed first-run contract dist
     /type SetupReadinessFieldKey =[\s\S]*"repoPath"[\s\S]*"repoSlug"[\s\S]*"defaultBranch"[\s\S]*"workspaceRoot"[\s\S]*"stateFile"[\s\S]*"codexBinary"[\s\S]*"branchPrefix"[\s\S]*"localCiCommand"[\s\S]*"reviewProvider"/,
   );
   assert.match(content, /localCiContract\?: LocalCiContractSummary/);
+  assert.match(content, /releaseReadinessGate: advisory/i);
+  assert.match(content, /releaseReadinessGate: block_release_publication/i);
   assert.match(content, /setup flow and WebUI should surface whether the repo-owned local CI contract is configured/i);
   assert.match(content, /At minimum, set these first-run fields before the first run:[\s\S]*`trustMode`[\s\S]*`executionSafetyMode`/i);
   assert.match(content, /`ready: false` until these required first-run blockers/i);
@@ -146,6 +148,7 @@ test("getting-started protects the first-run command flow and operator action vo
     "operator_action action=adopt_local_ci",
     "doctor_operator_action action=adopt_local_ci",
     "doctor_operator_action action=safe_to_ignore",
+    "doctor_release_readiness_gate posture=",
   ]) {
     assert.match(content, new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")));
   }
@@ -202,6 +205,28 @@ test("operator-facing docs explain steady-state local CI posture and remediation
   assert.match(configuration, /repo script candidate/i);
   assert.match(configuration, /codex-supervisor will not run it until localCiCommand is configured/i);
   assert.match(configuration, /preserve backward compatibility by not inventing one/i);
+});
+
+test("operator-facing docs explain release-readiness gate posture", async () => {
+  const [gettingStarted, operatorDashboard, configuration, checklist] = await Promise.all([
+    readGettingStarted(),
+    fs.readFile(path.join(process.cwd(), "docs", "operator-dashboard.md"), "utf8"),
+    fs.readFile(path.join(process.cwd(), "docs", "configuration.md"), "utf8"),
+    fs.readFile(path.join(process.cwd(), "docs", "validation-checklist.md"), "utf8"),
+  ]);
+
+  for (const content of [gettingStarted, operatorDashboard, configuration, checklist]) {
+    assert.match(content, /releaseReadinessGate/i);
+    assert.match(content, /advisory/i);
+    assert.match(content, /block_release_publication/i);
+    assert.match(content, /release publication only/i);
+    assert.match(content, /PR publication/i);
+    assert.match(content, /merge readiness/i);
+  }
+
+  assert.match(operatorDashboard, /doctor_release_readiness_gate posture=advisory/i);
+  assert.match(configuration, /issue verification/i);
+  assert.match(checklist, /must not block PR publication/i);
 });
 
 test("getting-started points operators to doctor for the effective orphan cleanup policy", async () => {

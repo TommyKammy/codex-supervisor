@@ -97,6 +97,11 @@ Read the local CI posture the same way:
 - `Repo-owned local CI candidate was intentionally dismissed; localCiCommand remains unset and non-blocking.` An operator acknowledged the detected candidate and intentionally left local CI unset for this profile.
 - `Repo-owned local CI contract is configured.` The configured command is now the active fail-closed gate. When configured local CI fails, PR publication stays blocked and ready-for-review promotion stays blocked until the repo-owned command passes again.
 
+Read the release-readiness posture separately:
+
+- `doctor_release_readiness_gate posture=advisory` means the release-readiness checklist is visible but cannot block PR publication, merge readiness, loop operation, or release publication.
+- `doctor_release_readiness_gate posture=block_release_publication` means the repo explicitly opted in with `releaseReadinessGate: block_release_publication`. It can block release publication only and does not change local CI, issue verification, PR publication, merge readiness, or loop behavior.
+
 If local CI is configured, remember that the config can now use either:
 
 - structured execution mode for an explicit executable plus arguments

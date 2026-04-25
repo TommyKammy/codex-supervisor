@@ -257,6 +257,7 @@ Read the command output as a sequence of decisions, not as unrelated logs:
 - `help` should show the same first-run shape: `doctor`, `status --why`, `run-once --dry-run`, `run-once`, then `loop`.
 - `/setup` and `GET /api/setup-readiness` return a typed setup report. `ready: false`, `blockers: [...]`, or fields in `missing` or `invalid` state mean setup is not complete yet. Fix those config fields before trusting `run-once`.
 - `doctor` reports host and state health. A line such as `doctor_check name=github_auth status=fail` means the host is not ready; fix `gh` auth rather than editing the GitHub issue body.
+- `doctor_release_readiness_gate posture=...` reports whether the release-readiness checklist is advisory or explicitly configured to block release publication only.
 - `status --why` reports queue, PR, CI, review, and loop state. Use `current_issue=...`, candidate details, and `operator_action action=...` lines to decide the next operator step.
 - `issue-lint` reports issue-body readiness. `missing_required=...` or `metadata_errors=...` means the issue body is not execution-ready; fix the GitHub issue body before `run-once`.
 - `run-once --dry-run` should explain the next cycle without running Codex. Use it when the selected issue, worktree, or PR state is surprising.
@@ -273,6 +274,11 @@ Phase 5 operator-action vocabulary is intentionally small:
 - `operator_action action=continue`: no blocking operator action was detected on that surface.
 - `doctor_operator_action action=adopt_local_ci`: a repo-owned local CI candidate exists; configure it or explicitly dismiss it before treating the local CI posture as settled.
 - `doctor_operator_action action=safe_to_ignore`: a repo-owned local CI candidate was intentionally dismissed and is no longer an unresolved setup ambiguity.
+
+Read the release-readiness posture separately from local CI and issue verification:
+
+- `releaseReadinessGate: advisory` is the default. The release-readiness checklist remains visible but cannot block PR publication, merge readiness, loop operation, or release publication.
+- `releaseReadinessGate: block_release_publication` is an explicit repo-owned opt-in. It can block release publication only; it does not change PR publication, ready-for-review promotion, local CI, issue verification, merge readiness, or loop behavior.
 
 If you keep multiple profiles side by side, `status`, `doctor`, and `/api/setup-readiness` are the fastest way to confirm that you are inspecting the same config file you plan to use for `run-once` and `loop`.
 

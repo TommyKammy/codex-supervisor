@@ -17,8 +17,17 @@ import {
   loadStateReadonlyForDoctor,
   renderDoctorReport,
 } from "./doctor";
-import { type SupervisorStateFile } from "./core/types";
+import { type LocalCiContractSummary, type SupervisorStateFile } from "./core/types";
 import { diagnoseSetupReadiness } from "./setup-readiness";
+
+function withoutLocalCiAdoptionFlow(summary: LocalCiContractSummary | undefined): Omit<LocalCiContractSummary, "adoptionFlow"> | undefined {
+  if (summary === undefined) {
+    return undefined;
+  }
+
+  const { adoptionFlow: _adoptionFlow, ...rest } = summary;
+  return rest;
+}
 
 test("diagnoseSupervisorHost reports representative auth, state, and workspace failures without mutating state", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-doctor-"));
@@ -89,11 +98,47 @@ test("diagnoseSupervisorHost reports representative auth, state, and workspace f
   );
   assert.match(
     renderDoctorReport(diagnostics),
+    /doctor_release_readiness_gate posture=advisory configured=false can_block=none cannot_block=pr_publication,merge_readiness,loop_operation,release_publication summary=Release readiness checklist is advisory; no release-readiness gate is configured\./,
+  );
+  assert.match(
+    renderDoctorReport(diagnostics),
     /doctor_warning kind=execution_safety detail=Unsandboxed autonomous execution assumes trusted GitHub-authored inputs; confirm this explicit setup trust posture before starting autonomous execution\./,
   );
   assert.match(
     renderDoctorReport(diagnostics),
     /doctor_warning kind=config detail=Active config still uses legacy shared issue journal path \.codex-supervisor\/issue-journal\.md; prefer \.codex-supervisor\/issues\/\{issueNumber\}\/issue-journal\.md\./,
+  );
+});
+
+test("renderDoctorReport surfaces explicit release publication gate posture", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-doctor-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const config = createConfig({
+    repoPath: path.join(root, "repo"),
+    workspaceRoot: path.join(root, "workspaces"),
+    stateFile: path.join(root, "state.json"),
+    codexBinary: process.execPath,
+    releaseReadinessGate: "block_release_publication",
+  });
+  await fs.mkdir(config.repoPath, { recursive: true });
+  await fs.mkdir(config.workspaceRoot, { recursive: true });
+  execFileSync("git", ["init", "-b", "main"], { cwd: config.repoPath });
+
+  const diagnostics = await diagnoseSupervisorHost({
+    config,
+    authStatus: async () => ({ ok: true, message: null }),
+    loadState: async () => ({
+      activeIssueNumber: null,
+      issues: {},
+    }),
+  });
+
+  assert.match(
+    renderDoctorReport(diagnostics),
+    /doctor_release_readiness_gate posture=block_release_publication configured=true can_block=release_publication cannot_block=pr_publication,merge_readiness,loop_operation summary=Release readiness gate is configured to block release publication only\./,
   );
 });
 
@@ -982,7 +1027,7 @@ test("diagnoseSetupReadiness returns typed first-run setup state distinct from d
     configured: false,
     summary: "Trust posture needs an explicit first-run setup decision.",
   });
-  assert.deepEqual(summary.localCiContract, {
+  assert.deepEqual(withoutLocalCiAdoptionFlow(summary.localCiContract), {
     configured: false,
     command: null,
     recommendedCommand: null,
@@ -1037,7 +1082,7 @@ test("diagnoseSetupReadiness recommends a repo-owned local CI candidate when loc
     authStatus: async () => ({ ok: true, message: null }),
   });
 
-  assert.deepEqual(summary.localCiContract, {
+  assert.deepEqual(withoutLocalCiAdoptionFlow(summary.localCiContract), {
     configured: false,
     command: null,
     recommendedCommand: "npm run verify:supervisor-pre-pr",
@@ -1091,7 +1136,7 @@ test("diagnoseSetupReadiness still detects a repo-owned local CI candidate when 
     authStatus: async () => ({ ok: true, message: null }),
   });
 
-  assert.deepEqual(summary.localCiContract, {
+  assert.deepEqual(withoutLocalCiAdoptionFlow(summary.localCiContract), {
     configured: false,
     command: null,
     recommendedCommand: "npm run verify:supervisor-pre-pr",
@@ -1149,7 +1194,7 @@ test("diagnoseSetupReadiness prefers the configured local CI command over repo-o
     authStatus: async () => ({ ok: true, message: null }),
   });
 
-  assert.deepEqual(summary.localCiContract, {
+  assert.deepEqual(withoutLocalCiAdoptionFlow(summary.localCiContract), {
     configured: true,
     command: "npm run ci:local",
     recommendedCommand: null,
@@ -1247,7 +1292,7 @@ test("diagnoseSetupReadiness surfaces a structured local CI command as configure
     authStatus: async () => ({ ok: true, message: null }),
   });
 
-  assert.deepEqual(summary.localCiContract, {
+  assert.deepEqual(withoutLocalCiAdoptionFlow(summary.localCiContract), {
     configured: true,
     command: "npm run ci:local",
     recommendedCommand: null,
@@ -1298,7 +1343,7 @@ test("diagnoseSetupReadiness preserves structured local CI warnings when config 
   });
 
   assert.equal(summary.overallStatus, "invalid");
-  assert.deepEqual(summary.localCiContract, {
+  assert.deepEqual(withoutLocalCiAdoptionFlow(summary.localCiContract), {
     configured: true,
     command: "npm run ci:local",
     recommendedCommand: null,
@@ -1351,7 +1396,7 @@ test("diagnoseSetupReadiness suppresses the local CI warning when invalid config
   });
 
   assert.equal(summary.overallStatus, "invalid");
-  assert.deepEqual(summary.localCiContract, {
+  assert.deepEqual(withoutLocalCiAdoptionFlow(summary.localCiContract), {
     configured: true,
     command: "npm run ci:local",
     recommendedCommand: null,

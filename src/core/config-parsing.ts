@@ -9,6 +9,7 @@ import {
   LocalReviewReviewerThresholdConfig,
   LocalReviewReviewerType,
   ReasoningEffort,
+  ReleaseReadinessGatePosture,
   RunState,
   ShellLocalCiCommandConfig,
   StaleConfiguredBotReviewPolicy,
@@ -32,6 +33,10 @@ const VALID_LOCAL_REVIEW_POSTURE_PRESETS = new Set<LocalReviewPosturePreset>([
   "block_merge",
   "repair_high_severity",
   "follow_up_issue_creation",
+]);
+const VALID_RELEASE_READINESS_GATE_POSTURES = new Set<ReleaseReadinessGatePosture>([
+  "advisory",
+  "block_release_publication",
 ]);
 const VALID_STALE_CONFIGURED_BOT_REVIEW_POLICIES = new Set<StaleConfiguredBotReviewPolicy>([
   "diagnose_only",
@@ -292,6 +297,20 @@ function parseLocalReviewPosturePreset(value: unknown): LocalReviewPosturePreset
   );
 }
 
+function parseReleaseReadinessGatePosture(value: unknown): ReleaseReadinessGatePosture {
+  if (value === undefined) {
+    return "advisory";
+  }
+
+  if (typeof value === "string" && VALID_RELEASE_READINESS_GATE_POSTURES.has(value as ReleaseReadinessGatePosture)) {
+    return value as ReleaseReadinessGatePosture;
+  }
+
+  throw new Error(
+    `Invalid config field: releaseReadinessGate (unsupported value: ${String(value)}; supported values: advisory, block_release_publication)`,
+  );
+}
+
 function inferLocalReviewPosture(args: {
   localReviewEnabled: boolean;
   localReviewPolicy: LocalReviewPolicy;
@@ -506,6 +525,7 @@ export function parseSupervisorConfigDocument(raw: Record<string, unknown>, reso
     localReviewManualReviewRepairEnabled,
     localReviewFollowUpIssueCreationEnabled,
     localReviewHighSeverityAction,
+    releaseReadinessGate: parseReleaseReadinessGatePosture(raw.releaseReadinessGate),
     publishablePathAllowlistMarkers: Array.isArray(raw.publishablePathAllowlistMarkers)
       ? raw.publishablePathAllowlistMarkers.filter(
           (value): value is string => typeof value === "string" && value.trim().length > 0,

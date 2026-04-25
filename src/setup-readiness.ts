@@ -13,10 +13,17 @@ import {
   resolveConfigPath,
   summarizeLocalCiContract,
   summarizeLocalReviewPosture,
+  summarizeReleaseReadinessGate,
   summarizeTrustDiagnostics,
   validateWorkspacePreparationCommandForWorktrees,
 } from "./core/config";
-import type { CodexModelStrategy, LocalCiContractSummary, LocalReviewPostureSummary, TrustDiagnosticsSummary } from "./core/types";
+import type {
+  CodexModelStrategy,
+  LocalCiContractSummary,
+  LocalReviewPostureSummary,
+  ReleaseReadinessGateSummary,
+  TrustDiagnosticsSummary,
+} from "./core/types";
 import { diagnoseSupervisorHost, type DoctorCheck, type DoctorCheckStatus } from "./doctor";
 import { reviewProviderProfileFromConfig } from "./core/review-providers";
 import type { ExecutionSafetyMode, TrustMode } from "./core/types";
@@ -178,6 +185,7 @@ export interface SetupReadinessReport {
   modelRoutingPosture?: SetupReadinessModelRoutingPosture;
   localCiContract?: LocalCiContractSummary;
   localReviewPosture?: LocalReviewPostureSummary;
+  releaseReadinessGate?: ReleaseReadinessGateSummary;
 }
 
 interface DiagnoseSetupReadinessArgs {
@@ -1012,6 +1020,11 @@ export async function diagnoseSetupReadiness(
     localCiCandidateDismissed: rawConfigDocument.localCiCandidateDismissed === true,
     repoPath: fallbackRepoPath,
   };
+  const releaseReadinessGate = summarizeReleaseReadinessGate(
+    configSummary.config ?? {
+      releaseReadinessGate: "advisory",
+    },
+  );
   const workspacePreparationWarning = validateWorkspacePreparationCommandForWorktrees(localCiContractConfig);
   const recommendedWorkspacePreparationCommand = findRepoOwnedWorkspacePreparationCandidate(localCiContractConfig.repoPath);
   const fields = buildConfigFields({
@@ -1062,5 +1075,6 @@ export async function diagnoseSetupReadiness(
     modelRoutingPosture,
     localCiContract,
     localReviewPosture: configSummary.config ? summarizeLocalReviewPosture(configSummary.config) : undefined,
+    releaseReadinessGate,
   };
 }

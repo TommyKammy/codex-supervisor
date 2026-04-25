@@ -39,6 +39,7 @@ export function createConfig(overrides: Partial<SupervisorConfig> = {}): Supervi
     localReviewPolicy: "block_ready",
     localReviewFollowUpIssueCreationEnabled: false,
     localReviewHighSeverityAction: "retry",
+    releaseReadinessGate: "advisory",
     publishablePathAllowlistMarkers: [],
     approvedTrackedTopLevelEntries: undefined,
     staleConfiguredBotReviewPolicy: "diagnose_only",

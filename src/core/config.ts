@@ -26,6 +26,7 @@ import {
   summarizeCadenceDiagnostics,
   summarizeLocalCiContract,
   summarizeLocalReviewPosture,
+  summarizeReleaseReadinessGate,
   summarizeTrustDiagnostics,
   summarizeWorkspacePreparationContract,
 } from "./config-diagnostics";
@@ -46,6 +47,7 @@ export {
   summarizeCadenceDiagnostics,
   summarizeLocalCiContract,
   summarizeLocalReviewPosture,
+  summarizeReleaseReadinessGate,
   summarizeTrustDiagnostics,
   summarizeWorkspacePreparationContract,
   validateWorkspacePreparationCommandForWorktrees,

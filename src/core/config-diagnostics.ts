@@ -6,6 +6,7 @@ import {
   LocalReviewPostureSummary,
   LocalCiContractSummary,
   LocalReviewPosturePreset,
+  ReleaseReadinessGateSummary,
   SupervisorConfig,
   TrustDiagnosticsSummary,
   WorkspacePreparationContractSummary,
@@ -112,6 +113,29 @@ export function summarizeLocalReviewPosture(
         ? "follow-up issue creation is explicitly enabled"
         : "follow-up issue creation stays disabled",
     ],
+  };
+}
+
+export function summarizeReleaseReadinessGate(
+  config: Pick<SupervisorConfig, "releaseReadinessGate">,
+): ReleaseReadinessGateSummary {
+  const posture = config.releaseReadinessGate ?? "advisory";
+  if (posture === "block_release_publication") {
+    return {
+      posture: "block_release_publication",
+      configured: true,
+      canBlock: ["release_publication"],
+      cannotBlock: ["pr_publication", "merge_readiness", "loop_operation"],
+      summary: "Release readiness gate is configured to block release publication only.",
+    };
+  }
+
+  return {
+    posture: "advisory",
+    configured: false,
+    canBlock: [],
+    cannotBlock: ["pr_publication", "merge_readiness", "loop_operation", "release_publication"],
+    summary: "Release readiness checklist is advisory; no release-readiness gate is configured.",
   };
 }
 
