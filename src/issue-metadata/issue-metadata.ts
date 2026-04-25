@@ -43,6 +43,11 @@ export interface BlockingIssue {
   reason: string;
 }
 
+interface DependencyRootBlocker {
+  issue: GitHubIssue;
+  blockedReason: string;
+}
+
 export interface ParentIssueClosureCandidate {
   parentIssue: GitHubIssue;
   childIssues: GitHubIssue[];
@@ -116,7 +121,10 @@ export function findBlockingIssue(
     if (dependencyIssue.state !== "CLOSED") {
       return {
         issue: dependencyIssue,
-        reason: `depends on #${dependencyNumber}`,
+        reason: formatBlockingReasonWithRoot(
+          `depends on #${dependencyNumber}`,
+          findStaleReviewBotDependencyRootBlocker(dependencyIssue, issueByNumber, state),
+        ),
       };
     }
 
@@ -124,7 +132,10 @@ export function findBlockingIssue(
     if (!isRecordDoneForSequencing(dependencyRecord)) {
       return {
         issue: dependencyIssue,
-        reason: `depends on #${dependencyNumber}`,
+        reason: formatBlockingReasonWithRoot(
+          `depends on #${dependencyNumber}`,
+          findStaleReviewBotDependencyRootBlocker(dependencyIssue, issueByNumber, state),
+        ),
       };
     }
   }
@@ -155,7 +166,10 @@ export function findBlockingIssue(
     if (predecessor.issue.state !== "CLOSED") {
       return {
         issue: predecessor.issue,
-        reason: `execution order requires #${predecessor.issue.number} first`,
+        reason: formatBlockingReasonWithRoot(
+          `execution order requires #${predecessor.issue.number} first`,
+          findStaleReviewBotDependencyRootBlocker(predecessor.issue, issueByNumber, state),
+        ),
       };
     }
 
@@ -163,8 +177,99 @@ export function findBlockingIssue(
     if (!isRecordDoneForSequencing(predecessorRecord)) {
       return {
         issue: predecessor.issue,
-        reason: `execution order requires #${predecessor.issue.number} first`,
+        reason: formatBlockingReasonWithRoot(
+          `execution order requires #${predecessor.issue.number} first`,
+          findStaleReviewBotDependencyRootBlocker(predecessor.issue, issueByNumber, state),
+        ),
       };
+    }
+  }
+
+  return null;
+}
+
+function formatBlockingReasonWithRoot(reason: string, rootBlocker: DependencyRootBlocker | null): string {
+  if (rootBlocker === null) {
+    return reason;
+  }
+
+  return `${reason} root_blocker=#${rootBlocker.issue.number} blocked_reason=${rootBlocker.blockedReason}`;
+}
+
+function findStaleReviewBotDependencyRootBlocker(
+  issue: GitHubIssue,
+  issueByNumber: Map<number, GitHubIssue>,
+  state: SupervisorStateFile,
+  visited = new Set<number>(),
+): DependencyRootBlocker | null {
+  if (visited.has(issue.number)) {
+    return null;
+  }
+  visited.add(issue.number);
+
+  const record = state.issues[String(issue.number)];
+  if (record?.state === "blocked" && record.blocked_reason === "stale_review_bot") {
+    return {
+      issue,
+      blockedReason: record.blocked_reason,
+    };
+  }
+
+  const metadata = parseIssueMetadata(issue);
+  for (const dependencyNumber of metadata.dependsOn) {
+    const dependencyIssue = issueByNumber.get(dependencyNumber);
+    if (!dependencyIssue) {
+      continue;
+    }
+
+    const dependencyRecord = state.issues[String(dependencyNumber)];
+    if (dependencyIssue.state !== "CLOSED" || !isRecordDoneForSequencing(dependencyRecord)) {
+      const dependencyRoot = findStaleReviewBotDependencyRootBlocker(
+        dependencyIssue,
+        issueByNumber,
+        state,
+        visited,
+      );
+      if (dependencyRoot) {
+        return dependencyRoot;
+      }
+    }
+  }
+
+  if (!metadata.parentIssueNumber || !metadata.executionOrderIndex || metadata.executionOrderIndex <= 1) {
+    return null;
+  }
+
+  const predecessors = [...issueByNumber.values()]
+    .filter((candidate) => candidate.number !== issue.number)
+    .map((candidate) => ({
+      issue: candidate,
+      metadata: parseIssueMetadata(candidate),
+    }))
+    .filter(
+      ({ metadata: candidateMetadata }) =>
+        candidateMetadata.parentIssueNumber === metadata.parentIssueNumber &&
+        candidateMetadata.executionOrderIndex !== null &&
+        candidateMetadata.executionOrderIndex < metadata.executionOrderIndex!,
+    )
+    .sort((left, right) => {
+      const leftIndex = left.metadata.executionOrderIndex ?? Number.MAX_SAFE_INTEGER;
+      const rightIndex = right.metadata.executionOrderIndex ?? Number.MAX_SAFE_INTEGER;
+      return leftIndex - rightIndex;
+    });
+
+  for (const predecessor of predecessors) {
+    const predecessorRecord = state.issues[String(predecessor.issue.number)];
+    if (predecessor.issue.state !== "CLOSED" || !isRecordDoneForSequencing(predecessorRecord)) {
+      const predecessorRoot = findStaleReviewBotDependencyRootBlocker(
+        predecessor.issue,
+        issueByNumber,
+        state,
+        visited,
+      );
+      if (predecessorRoot) {
+        return predecessorRoot;
+      }
     }
   }
 
