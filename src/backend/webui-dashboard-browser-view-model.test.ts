@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildRuntimeRecoverySummaryLines,
   buildWorkflowSteps,
   countCandidateIssues,
   describeLoopRuntime,
@@ -146,4 +147,36 @@ test("countCandidateIssues and formatRefreshTime handle missing values predictab
   assert.equal(typeof refreshTime, "string");
   assert.notEqual(refreshTime, "");
   assert.notEqual(refreshTime, "never");
+});
+
+test("buildRuntimeRecoverySummaryLines skips malformed tracked records and signals", () => {
+  const lines = buildRuntimeRecoverySummaryLines({
+    loopState: "off",
+    lockConfidence: "stale_lock",
+    trackedRecords: [
+      null,
+      "invalid",
+      {
+        issueNumber: 1720,
+        state: "blocked",
+        prNumber: 1725,
+        blockedReason: "review",
+      },
+    ] as unknown as NonNullable<Parameters<typeof buildRuntimeRecoverySummaryLines>[0]>["trackedRecords"],
+    signals: [
+      42,
+      null,
+      {
+        kind: "stale_review_bot_remediation",
+        summary: "metadata_only",
+      },
+    ] as unknown as NonNullable<Parameters<typeof buildRuntimeRecoverySummaryLines>[0]>["signals"],
+  });
+
+  assert.deepEqual(lines, [
+    "loop_state: off",
+    "lock_confidence: stale_lock",
+    "tracked_records: #1720 blocked pr=#1725 blocked_reason=review",
+    "signal: stale_review_bot_remediation metadata_only",
+  ]);
 });

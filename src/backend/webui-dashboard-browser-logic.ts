@@ -60,6 +60,26 @@ export interface DashboardLoopRuntimeLike {
   } | null;
 }
 
+export interface DashboardRuntimeRecoverySummaryLike {
+  loopState?: string | null;
+  lockConfidence?: string | null;
+  trackedRecords?: Array<{
+    issueNumber?: number | null;
+    state?: string | null;
+    prNumber?: number | null;
+    blockedReason?: string | null;
+  }> | null;
+  signals?: Array<{
+    kind?: string | null;
+    summary?: string | null;
+  }> | null;
+  recommendation?: {
+    category?: string | null;
+    source?: string | null;
+    summary?: string | null;
+  } | null;
+}
+
 export interface DashboardInventoryStatusLike {
   mode?: "healthy" | "degraded" | null;
   posture?:
@@ -107,6 +127,7 @@ export interface DashboardStatusLike {
   reconciliationWarning?: string | null;
   reconciliationPhase?: string | null;
   loopRuntime?: DashboardLoopRuntimeLike | null;
+  runtimeRecoverySummary?: DashboardRuntimeRecoverySummaryLike | null;
   warning?: { message?: string | null } | null;
 }
 

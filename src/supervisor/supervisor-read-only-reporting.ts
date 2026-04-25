@@ -26,6 +26,7 @@ import {
 } from "./supervisor-selection-issue-explain";
 import { buildDetailedStatusModel, buildDetailedStatusSummaryLines } from "./supervisor-status-model";
 import {
+  buildRuntimeRecoverySummary,
   buildInventoryRefreshWarningMessage,
   buildTrackedIssueDtos,
   renderGitHubRateLimitLine,
@@ -270,6 +271,11 @@ export async function buildSupervisorStatusReport(args: {
         candidateDiscovery: buildCandidateDiscoverySummary(config, null),
         localCiContract,
         loopRuntime,
+        runtimeRecoverySummary: buildRuntimeRecoverySummary({
+          loopRuntime,
+          trackedIssues,
+          detailedStatusLines: [...inactiveDetailedStatusLines, ...trackedPrMismatchLines],
+        }),
         activeIssue: null,
         selectionSummary: null,
         trackedIssues,
@@ -333,6 +339,11 @@ export async function buildSupervisorStatusReport(args: {
         candidateDiscovery,
         localCiContract,
         loopRuntime,
+        runtimeRecoverySummary: buildRuntimeRecoverySummary({
+          loopRuntime,
+          trackedIssues,
+          detailedStatusLines: [...inactiveDetailedStatusLines, ...trackedPrMismatchLines],
+        }),
         activeIssue: null,
         selectionSummary,
         trackedIssues,
@@ -378,6 +389,11 @@ export async function buildSupervisorStatusReport(args: {
         candidateDiscovery: buildCandidateDiscoverySummary(config, null),
         localCiContract,
         loopRuntime,
+        runtimeRecoverySummary: buildRuntimeRecoverySummary({
+          loopRuntime,
+          trackedIssues,
+          detailedStatusLines: [...inactiveDetailedStatusLines, ...trackedPrMismatchLines],
+        }),
         activeIssue: null,
         selectionSummary: null,
         trackedIssues,
@@ -465,6 +481,11 @@ export async function buildSupervisorStatusReport(args: {
     candidateDiscovery: buildCandidateDiscoverySummary(config, null),
     localCiContract,
     loopRuntime,
+    runtimeRecoverySummary: buildRuntimeRecoverySummary({
+      loopRuntime,
+      trackedIssues,
+      detailedStatusLines: [...detailedStatusLinesWithInventory, ...summaryLines, ...trackedPrMismatchLines],
+    }),
     activeIssue: {
       issueNumber: statusRecords.activeRecord.issue_number,
       state: statusRecords.activeRecord.state,

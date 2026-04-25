@@ -1,4 +1,8 @@
-import type { DashboardLoopRuntimeLike, DashboardStatusLike } from "./webui-dashboard-browser-logic";
+import type {
+  DashboardLoopRuntimeLike,
+  DashboardRuntimeRecoverySummaryLike,
+  DashboardStatusLike,
+} from "./webui-dashboard-browser-logic";
 
 export interface DashboardWorkflowStep {
   id: "observe" | "triage" | "select" | "execute" | "recover";
@@ -12,6 +16,67 @@ export interface DashboardLoopRuntimeSummary {
   summary: string;
   chipLabel: string;
   chipTone: "ok" | "warn" | "info";
+}
+
+export function buildRuntimeRecoverySummaryLines(
+  summary: DashboardRuntimeRecoverySummaryLike | null | undefined,
+): string[] {
+  if (!summary) {
+    return [];
+  }
+
+  function formatRuntimeTrackedRecord(
+    record: NonNullable<DashboardRuntimeRecoverySummaryLike["trackedRecords"]>[number],
+  ): string {
+    return [
+      formatIssueRef(record.issueNumber),
+      record.state || "unknown",
+      "pr=" + (Number.isInteger(record.prNumber) ? "#" + record.prNumber : "none"),
+      "blocked_reason=" + (record.blockedReason || "none"),
+    ].join(" ");
+  }
+
+  function isRuntimeRecoveryRecord(
+    record: unknown,
+  ): record is NonNullable<DashboardRuntimeRecoverySummaryLike["trackedRecords"]>[number] {
+    return typeof record === "object" && record !== null;
+  }
+
+  function isRuntimeRecoverySignal(
+    signal: unknown,
+  ): signal is NonNullable<DashboardRuntimeRecoverySummaryLike["signals"]>[number] {
+    return typeof signal === "object" && signal !== null;
+  }
+
+  const lines = [
+    ["loop_state", summary.loopState || "unknown"],
+    ["lock_confidence", summary.lockConfidence || "none"],
+  ].map(([label, value]) => label + ": " + value);
+
+  const trackedRecords = Array.isArray(summary.trackedRecords) ? summary.trackedRecords : [];
+  const validTrackedRecords = trackedRecords.filter(isRuntimeRecoveryRecord);
+  lines.push(
+    "tracked_records: " +
+      (validTrackedRecords.length === 0 ? "none" : validTrackedRecords.map(formatRuntimeTrackedRecord).join("; ")),
+  );
+
+  const signals = Array.isArray(summary.signals) ? summary.signals : [];
+  for (const signal of signals.filter(isRuntimeRecoverySignal)) {
+    lines.push("signal: " + (signal.kind || "unknown") + " " + (signal.summary || ""));
+  }
+
+  if (summary.recommendation) {
+    lines.push(
+      "recommendation: " +
+        (summary.recommendation.category || "unknown") +
+        " source=" +
+        (summary.recommendation.source || "unknown") +
+        " summary=" +
+        (summary.recommendation.summary || ""),
+    );
+  }
+
+  return lines;
 }
 
 function formatIssueRef(issueNumber: number | null | undefined): string {

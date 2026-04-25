@@ -804,6 +804,65 @@ test("dashboard status panel surfaces tracked PR host-local CI blockers", async 
   assert.equal(harness.remainingFetches.length, 0);
 });
 
+test("dashboard renders the typed runtime recovery summary without parsing domain lines in the browser", async () => {
+  const harness = createDashboardHarness([
+    {
+      path: "/api/status?why=true",
+      response: jsonResponse(
+        createStatus({
+          includeWhyLines: false,
+          runtimeRecoverySummary: {
+            loopState: "off",
+            lockConfidence: "stale_lock",
+            trackedRecords: [
+              {
+                issueNumber: 171,
+                state: "blocked",
+                prNumber: 271,
+                blockedReason: "stale_review_bot",
+              },
+            ],
+            signals: [
+              {
+                kind: "stale_review_bot_remediation",
+                summary:
+                  "stale_review_bot_remediation issue=#171 pr=#271 classification=metadata_only manual_next_step=inspect_exact_review_thread_then_resolve_or_leave_manual_note",
+              },
+              {
+                kind: "repairable_path_hygiene",
+                summary:
+                  "tracked_pr_mismatch issue=#178 pr=#278 recoverability=stale_but_recoverable gate=workstation_local_path_hygiene",
+              },
+            ],
+            recommendation: {
+              category: "restart_required_for_convergence",
+              source: "loop_runtime_blocker",
+              summary: "Restarting the supported supervisor loop is required before active tracked work can converge.",
+            },
+          },
+        }),
+      ),
+    },
+    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+  ]);
+  await harness.flush();
+
+  const runtimeRecoverySummary = harness.document.getElementById("runtime-recovery-summary");
+  const runtimeRecoveryLines = harness.document.getElementById("runtime-recovery-lines");
+  assert.ok(runtimeRecoverySummary);
+  assert.ok(runtimeRecoveryLines);
+  assert.equal(runtimeRecoverySummary.hidden, false);
+  assert.match(runtimeRecoveryLines.textContent, /loop_state: off/u);
+  assert.match(runtimeRecoveryLines.textContent, /lock_confidence: stale_lock/u);
+  assert.match(runtimeRecoveryLines.textContent, /tracked_records: #171 blocked pr=#271 blocked_reason=stale_review_bot/u);
+  assert.match(runtimeRecoveryLines.textContent, /stale_review_bot_remediation/u);
+  assert.match(runtimeRecoveryLines.textContent, /classification=metadata_only/u);
+  assert.match(runtimeRecoveryLines.textContent, /workstation_local_path_hygiene/u);
+  assert.match(runtimeRecoveryLines.textContent, /recommendation: restart_required_for_convergence/u);
+  assert.match(runtimeRecoveryLines.textContent, /source=loop_runtime_blocker/u);
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
 test("dashboard moves tracked history into a dedicated panel with non-done default and reveal toggle", async () => {
   const harness = createDashboardHarness([
     {

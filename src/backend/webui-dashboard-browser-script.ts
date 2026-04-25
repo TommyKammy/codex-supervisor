@@ -30,6 +30,7 @@ import {
 } from "./webui-dashboard-browser-logic";
 import {
   buildWorkflowSteps,
+  buildRuntimeRecoverySummaryLines,
   countCandidateIssues,
   describeLoopRuntime,
   formatKeyValueBlock,
@@ -105,6 +106,7 @@ const injectedBrowserLogic = [
   parseSelectedIssueNumber,
   countCandidateIssues,
   buildWorkflowSteps,
+  buildRuntimeRecoverySummaryLines,
   metricClass,
   formatKeyValueBlock,
   liveBadgeClass,
@@ -183,6 +185,8 @@ export function renderDashboardBrowserScript(): string {
         statusMetrics: document.getElementById("status-metrics"),
         statusWorkflow: document.getElementById("status-workflow"),
         statusLines: document.getElementById("status-lines"),
+        runtimeRecoverySummary: document.getElementById("runtime-recovery-summary"),
+        runtimeRecoveryLines: document.getElementById("runtime-recovery-lines"),
         statusPanelWarning: document.getElementById("status-panel-warning"),
         trackedHistorySummary: document.getElementById("tracked-history-summary"),
         trackedHistoryLines: document.getElementById("tracked-history-lines"),
@@ -329,6 +333,18 @@ export function renderDashboardBrowserScript(): string {
         card.className = className;
         card.textContent = text;
         container.appendChild(card);
+      }
+
+      function renderRuntimeRecoverySummary(status) {
+        if (!elements.runtimeRecoverySummary || !elements.runtimeRecoveryLines) {
+          return;
+        }
+        const lines = buildRuntimeRecoverySummaryLines(status && status.runtimeRecoverySummary);
+        elements.runtimeRecoverySummary.hidden = lines.length === 0;
+        elements.runtimeRecoveryLines.innerHTML = "";
+        for (const line of lines) {
+          appendTextCard(elements.runtimeRecoveryLines, "status-line", line);
+        }
       }
 
       function renderWorkflow(status) {
@@ -877,6 +893,7 @@ export function renderDashboardBrowserScript(): string {
             appendTextCard(elements.statusLines, "status-line", line);
           }
         }
+        renderRuntimeRecoverySummary(status);
         renderTrackedHistory();
         renderSelectedIssueSummary();
       }
