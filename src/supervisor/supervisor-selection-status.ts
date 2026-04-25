@@ -7,6 +7,7 @@ export {
   buildNonRunnableLocalStateReasons,
   formatSelectionReason,
   renderIssueExplainDto,
+  renderIssueExplainAuditBundleDto,
   renderIssueExplainTimelineDto,
 } from "./supervisor-selection-issue-explain";
 export type { IssueLintGitHub, SupervisorIssueLintDto } from "./supervisor-selection-issue-lint";

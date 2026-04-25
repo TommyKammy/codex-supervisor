@@ -11,7 +11,11 @@ import { renderSupervisorExecutionMetricsRollupResultDto } from "../supervisor/s
 import { renderSupervisorMutationResultDto } from "../supervisor/supervisor-mutation-report";
 import { renderSupervisorOrphanPruneResultDto } from "../supervisor/supervisor-mutation-report";
 import { renderPostMergeAuditPatternSummaryDto } from "../supervisor/post-merge-audit-summary";
-import { renderIssueExplainDto, renderIssueExplainTimelineDto } from "../supervisor/supervisor-selection-status";
+import {
+  renderIssueExplainAuditBundleDto,
+  renderIssueExplainDto,
+  renderIssueExplainTimelineDto,
+} from "../supervisor/supervisor-selection-status";
 import { renderIssueLintDto } from "../supervisor/supervisor-selection-issue-lint";
 import { isCorruptJsonFailClosedMessage } from "../supervisor/supervisor";
 import type { SupervisorLoopController } from "../supervisor/supervisor-loop-controller";
@@ -205,7 +209,13 @@ export async function runSupervisorCommand(
 
   if (options.command === "explain") {
     const explain = await service.queryExplain(options.issueNumber!);
-    writeStdout(options.explainMode === "timeline" ? renderIssueExplainTimelineDto(explain) : renderIssueExplainDto(explain));
+    writeStdout(
+      options.explainMode === "audit_bundle"
+        ? renderIssueExplainAuditBundleDto(explain)
+        : options.explainMode === "timeline"
+          ? renderIssueExplainTimelineDto(explain)
+          : renderIssueExplainDto(explain),
+    );
     return;
   }
 

@@ -580,6 +580,93 @@ test("runSupervisorCommand routes query commands through the supervisor service 
   assert.match(stdout[0] ?? "", /status output/);
 });
 
+test("runSupervisorCommand renders explain audit bundles as JSON", async () => {
+  const stdout: string[] = [];
+
+  await runSupervisorCommand(
+    { command: "explain", dryRun: false, why: false, explainMode: "audit_bundle", issueNumber: 1745 },
+    {
+      service: {
+        config: {} as SupervisorConfig,
+        pollIntervalMs: async () => 50,
+        runOnce: async () => "runOnce",
+        queryStatus: async () => createStatusDto(),
+        queryExplain: async (issueNumber) => ({
+          issueNumber,
+          title: "Audit bundle",
+          state: "stabilizing",
+          blockedReason: "none",
+          runnable: false,
+          changeRiskLines: [],
+          externalReviewFollowUpSummary: null,
+          latestRecoverySummary: null,
+          operatorEventSummary: null,
+          staleRecoveryWarningSummary: null,
+          activityContext: null,
+          trackedPrMismatchSummary: null,
+          recoveryGuidance: null,
+          selectionReason: null,
+          reasons: [],
+          lastError: null,
+          failureSummary: null,
+          preservedPartialWorkSummary: null,
+          timeline: null,
+          auditBundle: {
+            schemaVersion: 1,
+            advisoryOnly: true,
+            issue: {
+              number: issueNumber,
+              title: "Audit bundle",
+              url: "https://example.test/issues/1745",
+              state: "OPEN",
+              createdAt: "2026-04-25T00:00:00Z",
+              updatedAt: "2026-04-25T00:00:00Z",
+              bodySnapshot: "## Summary\nAudit bundle",
+            },
+            pullRequest: { status: "missing", value: null, summary: "No pull request is recorded." },
+            stateRecord: { status: "missing", value: null, summary: "No state record is tracked." },
+            journal: { status: "missing", value: null, summary: "No journal is available." },
+            localCi: { status: "missing", value: null, summary: "No local CI result is recorded." },
+            pathHygiene: { status: "missing", value: null, summary: "No path hygiene result is recorded." },
+            staleConfiguredBotRemediation: {
+              status: "missing",
+              value: null,
+              summary: "No stale configured-bot remediation result is recorded.",
+            },
+            recoveryEvents: { status: "missing", value: null, summary: "No recovery event is recorded." },
+            timeline: null,
+            verificationCommands: { status: "missing", value: null, summary: "No verification commands are listed." },
+          },
+        }),
+        runRecoveryAction: async () => {
+          throw new Error("unexpected runRecoveryAction");
+        },
+        pruneOrphanedWorkspaces: async () => {
+          throw new Error("unexpected pruneOrphanedWorkspaces");
+        },
+        resetCorruptJsonState: async () => {
+          throw new Error("unexpected resetCorruptJsonState");
+        },
+        queryIssueLint: async () => {
+          throw new Error("unexpected queryIssueLint");
+        },
+        queryDoctor: async () => {
+          throw new Error("unexpected queryDoctor");
+        },
+      },
+      writeStdout: (line) => {
+        stdout.push(line);
+      },
+      registerStopSignals: () => {},
+    },
+  );
+
+  assert.equal(stdout.length, 1);
+  const rendered = JSON.parse(stdout[0] ?? "{}") as { advisoryOnly?: boolean; issue?: { number?: number } };
+  assert.equal(rendered.advisoryOnly, true);
+  assert.equal(rendered.issue?.number, 1745);
+});
+
 test("runSupervisorCommand renders issue-lint output from the structured DTO", async () => {
   const stdout: string[] = [];
   const dto = createIssueLintDto({

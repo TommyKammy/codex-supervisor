@@ -17,6 +17,7 @@ export function parseArgs(argv: string[]): CliOptions {
   let dryRun = false;
   let why = false;
   let timelineRequested = false;
+  let auditBundleRequested = false;
   let issueNumber: number | undefined;
   let snapshotPath: string | undefined;
   let caseId: string | undefined;
@@ -76,6 +77,11 @@ export function parseArgs(argv: string[]): CliOptions {
       continue;
     }
 
+    if (token === "--audit-bundle") {
+      auditBundleRequested = true;
+      continue;
+    }
+
     if ((command === "explain" || command === "issue-lint" || command === "requeue") && issueNumber === undefined) {
       if (/^[1-9]\d*$/.test(token)) {
         issueNumber = Number(token);
@@ -121,6 +127,14 @@ export function parseArgs(argv: string[]): CliOptions {
     throw new Error("The --timeline flag is only supported with the explain command.");
   }
 
+  if (auditBundleRequested && command !== "explain") {
+    throw new Error("The --audit-bundle flag is only supported with the explain command.");
+  }
+
+  if (timelineRequested && auditBundleRequested) {
+    throw new Error("The --timeline and --audit-bundle flags cannot be combined.");
+  }
+
   if (command === "explain" && issueNumber === undefined) {
     throw new Error("The explain command requires one issue number.");
   }
@@ -141,7 +155,11 @@ export function parseArgs(argv: string[]): CliOptions {
     throw new Error("The replay-corpus-promote command requires one snapshot path.");
   }
 
-  const explainMode: CliOptions["explainMode"] = timelineRequested ? "timeline" : "summary";
+  const explainMode: CliOptions["explainMode"] = auditBundleRequested
+    ? "audit_bundle"
+    : timelineRequested
+      ? "timeline"
+      : "summary";
 
   return {
     command,

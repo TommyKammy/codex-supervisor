@@ -76,6 +76,11 @@ import {
   type IssueRunTimelineEvent,
   type IssueRunTimelineExport,
 } from "../timeline-artifacts";
+import {
+  buildOperatorAuditBundle,
+  renderOperatorAuditBundleDto,
+  type OperatorAuditBundleDto,
+} from "../operator-audit-bundle";
 
 export type ExplainIssueGitHub =
   Pick<GitHubClient, "getIssue" | "listAllIssues" | "listCandidateIssues"> &
@@ -115,6 +120,7 @@ export interface SupervisorExplainDto {
   runtimeFailureKind?: IssueRunRecord["last_runtime_failure_kind"] | null;
   runtimeFailureSummary?: string | null;
   timeline?: IssueRunTimelineExport | null;
+  auditBundle?: OperatorAuditBundleDto | null;
 }
 
 async function buildExplainChangeRiskSummary(args: {
@@ -358,9 +364,11 @@ export async function buildIssueExplainDto(
   let handoffSummary: string | null = null;
   let hostPathSummary: string | null = null;
   let journalStateSummary: string | null = null;
+  let journalContent: string | null = null;
   if (record) {
     try {
       const hostDiagnostics = await inspectTrackedIssueHostDiagnostics(config, record);
+      journalContent = hostDiagnostics.journalContent;
       if (hostDiagnostics.journalContent !== null) {
         handoffSummary = summarizeIssueJournalHandoff(hostDiagnostics.journalContent);
       }
@@ -543,6 +551,13 @@ export async function buildIssueExplainDto(
     runtimeFailureKind: record?.last_runtime_failure_kind ?? null,
     runtimeFailureSummary: record?.last_runtime_failure_context?.summary ?? null,
     timeline: record ? buildIssueRunTimelineExport({ record, pr }) : null,
+    auditBundle: buildOperatorAuditBundle({
+      issue,
+      record: record ?? null,
+      pr,
+      journalContent,
+      staleConfiguredBotRemediation: staleReviewBotRemediation,
+    }),
   };
 }
 
@@ -643,6 +658,20 @@ export function renderIssueExplainTimelineDto(dto: SupervisorExplainDto): string
     `timeline issue=#${timeline.issue_number} pr=${timeline.pr_number === null ? "none" : `#${timeline.pr_number}`} events=${timeline.events.length}`,
     ...timeline.events.map((event, index) => renderIssueTimelineEvent(event, index + 1)),
   ].join("\n");
+}
+
+export function renderIssueExplainAuditBundleDto(dto: SupervisorExplainDto): string {
+  return renderOperatorAuditBundleDto(dto.auditBundle ?? buildOperatorAuditBundle({
+    issue: {
+      number: dto.issueNumber,
+      title: dto.title,
+      body: "",
+      createdAt: "",
+      updatedAt: "",
+      url: "",
+      state: "UNKNOWN",
+    },
+  }));
 }
 
 export async function buildIssueExplainSummary(
