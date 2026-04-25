@@ -29,6 +29,35 @@ function commitAll(repoPath: string, message: string): void {
   execFileSync("git", ["commit", "-m", message], { cwd: repoPath, stdio: "ignore" });
 }
 
+async function readShippedProfileJson(rootDir: string, relativePath: string): Promise<Record<string, unknown>> {
+  const indexPath = relativePath.split(path.sep).join("/");
+  let content: string;
+  try {
+    content = execFileSync("git", ["show", `:${indexPath}`], {
+      cwd: rootDir,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+  } catch {
+    content = await fs.readFile(path.join(rootDir, relativePath), "utf8");
+  }
+  return JSON.parse(content) as Record<string, unknown>;
+}
+
+function assertCodeRabbitStarterRepoSlugPlaceholder(raw: { repoSlug?: unknown }): void {
+  const repoSlug = raw.repoSlug;
+
+  if (typeof repoSlug !== "string") {
+    assert.fail("supervisor.config.coderabbit.json should define repoSlug as a string");
+  }
+  assert.notEqual(repoSlug, "TommyKammy/codex-supervisor");
+  assert.match(
+    repoSlug,
+    /^[^/]+$/u,
+    "supervisor.config.coderabbit.json should force operators to replace repoSlug before loadConfig accepts it",
+  );
+}
+
 test("config field posture metadata classifies setup and automation-expanding fields by typed tiers", () => {
   assert.deepEqual(CONFIG_FIELD_POSTURE_TIERS, [
     "required",
@@ -1718,18 +1747,41 @@ test("shipped config profiles declare the intended review bot logins", async () 
 
 test("shipped CodeRabbit starter profile uses a fail-fast repoSlug placeholder", async () => {
   const rootDir = path.resolve(__dirname, "..");
-  const profilePath = path.join(rootDir, "supervisor.config.coderabbit.json");
-  const raw = JSON.parse(await fs.readFile(profilePath, "utf8")) as { repoSlug?: unknown };
-  const repoSlug = raw.repoSlug;
+  const raw = (await readShippedProfileJson(rootDir, "supervisor.config.coderabbit.json")) as { repoSlug?: unknown };
 
-  if (typeof repoSlug !== "string") {
-    assert.fail("supervisor.config.coderabbit.json should define repoSlug as a string");
-  }
-  assert.notEqual(repoSlug, "TommyKammy/codex-supervisor");
-  assert.match(
-    repoSlug,
-    /^[^/]+$/u,
-    "supervisor.config.coderabbit.json should force operators to replace repoSlug before loadConfig accepts it",
+  assertCodeRabbitStarterRepoSlugPlaceholder(raw);
+});
+
+test("shipped CodeRabbit starter profile validation ignores unstaged host-local active profile drift", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-coderabbit-profile-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  initGitRepo(tempDir);
+
+  const relativeProfilePath = "supervisor.config.coderabbit.json";
+  const profilePath = path.join(tempDir, relativeProfilePath);
+  await fs.writeFile(profilePath, JSON.stringify({ repoSlug: "REPLACE_ME" }), "utf8");
+  commitAll(tempDir, "seed coderabbit profile");
+
+  await fs.writeFile(profilePath, JSON.stringify({ repoSlug: "owner/repo" }), "utf8");
+  assertCodeRabbitStarterRepoSlugPlaceholder(
+    (await readShippedProfileJson(tempDir, relativeProfilePath)) as { repoSlug?: unknown },
+  );
+
+  execFileSync("git", ["add", relativeProfilePath], { cwd: tempDir, stdio: "ignore" });
+  assert.throws(
+    () =>
+      assertCodeRabbitStarterRepoSlugPlaceholder(
+        JSON.parse(
+          execFileSync("git", ["show", `:${relativeProfilePath}`], {
+            cwd: tempDir,
+            encoding: "utf8",
+            stdio: ["ignore", "pipe", "ignore"],
+          }),
+        ) as { repoSlug?: unknown },
+      ),
+    /should force operators to replace repoSlug before loadConfig accepts it/,
   );
 });
 
