@@ -71,6 +71,11 @@ import {
 } from "./stale-review-bot-remediation";
 import { formatMergedPrConvergenceOperatorEventLine } from "./supervisor-operator-events";
 import { appendRestartRecommendationLine } from "../operator-actions";
+import {
+  buildIssueRunTimelineExport,
+  type IssueRunTimelineEvent,
+  type IssueRunTimelineExport,
+} from "../timeline-artifacts";
 
 export type ExplainIssueGitHub =
   Pick<GitHubClient, "getIssue" | "listAllIssues" | "listCandidateIssues"> &
@@ -109,6 +114,7 @@ export interface SupervisorExplainDto {
   preservedPartialWorkSummary: string | null;
   runtimeFailureKind?: IssueRunRecord["last_runtime_failure_kind"] | null;
   runtimeFailureSummary?: string | null;
+  timeline?: IssueRunTimelineExport | null;
 }
 
 async function buildExplainChangeRiskSummary(args: {
@@ -536,7 +542,28 @@ export async function buildIssueExplainDto(
     preservedPartialWorkSummary: summarizePreservedPartialWork(record?.last_failure_context),
     runtimeFailureKind: record?.last_runtime_failure_kind ?? null,
     runtimeFailureSummary: record?.last_runtime_failure_context?.summary ?? null,
+    timeline: record ? buildIssueRunTimelineExport({ record, pr }) : null,
   };
+}
+
+function formatTimelineValue(value: string): string {
+  return value.replace(/\r\n|\r|\n/g, "\\n");
+}
+
+function renderIssueTimelineEvent(event: IssueRunTimelineEvent, index: number): string {
+  return [
+    "timeline_event",
+    `index=${index}`,
+    `issue=#${event.issue_number}`,
+    `pr=${event.pr_number === null ? "none" : `#${event.pr_number}`}`,
+    `type=${event.event_type}`,
+    `at=${event.timestamp ?? "unknown"}`,
+    `outcome=${event.outcome}`,
+    `head_sha=${event.head_sha ?? "unknown"}`,
+    `remediation_target=${event.remediation_target ?? "none"}`,
+    `next_action=${event.next_action ?? "none"}`,
+    `summary=${formatTimelineValue(event.summary)}`,
+  ].join(" ");
 }
 
 export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
@@ -599,6 +626,23 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
   }
 
   return lines.join("\n");
+}
+
+export function renderIssueExplainTimelineDto(dto: SupervisorExplainDto): string {
+  const summary = renderIssueExplainDto(dto);
+  const timeline = dto.timeline;
+  if (!timeline) {
+    return [
+      summary,
+      `timeline issue=#${dto.issueNumber} status=untracked events=0 summary=No issue-run timeline is recorded for this issue.`,
+    ].join("\n");
+  }
+
+  return [
+    summary,
+    `timeline issue=#${timeline.issue_number} pr=${timeline.pr_number === null ? "none" : `#${timeline.pr_number}`} events=${timeline.events.length}`,
+    ...timeline.events.map((event, index) => renderIssueTimelineEvent(event, index + 1)),
+  ].join("\n");
 }
 
 export async function buildIssueExplainSummary(

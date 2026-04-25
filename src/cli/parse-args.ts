@@ -16,6 +16,7 @@ export function parseArgs(argv: string[]): CliOptions {
   let configPath: string | undefined;
   let dryRun = false;
   let why = false;
+  let explainMode: CliOptions["explainMode"] = "summary";
   let issueNumber: number | undefined;
   let snapshotPath: string | undefined;
   let caseId: string | undefined;
@@ -67,6 +68,14 @@ export function parseArgs(argv: string[]): CliOptions {
 
     if (token === "--why") {
       why = true;
+      continue;
+    }
+
+    if (token === "--timeline") {
+      if (command !== "explain") {
+        throw new Error("The --timeline flag is only supported with the explain command.");
+      }
+      explainMode = "timeline";
       continue;
     }
 
@@ -136,6 +145,7 @@ export function parseArgs(argv: string[]): CliOptions {
     configPath,
     dryRun,
     why,
+    explainMode,
     issueNumber,
     snapshotPath,
     caseId,

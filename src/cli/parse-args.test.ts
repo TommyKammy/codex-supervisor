@@ -8,6 +8,7 @@ test("parseArgs accepts --help as the help command", () => {
     configPath: undefined,
     dryRun: false,
     why: false,
+    explainMode: "summary",
     issueNumber: undefined,
     snapshotPath: undefined,
     caseId: undefined,
@@ -21,6 +22,7 @@ test("parseArgs accepts help as a command", () => {
     configPath: undefined,
     dryRun: false,
     why: false,
+    explainMode: "summary",
     issueNumber: undefined,
     snapshotPath: undefined,
     caseId: undefined,
@@ -34,6 +36,7 @@ test("parseArgs accepts doctor as a command", () => {
     configPath: undefined,
     dryRun: false,
     why: false,
+    explainMode: "summary",
     issueNumber: undefined,
     snapshotPath: undefined,
     caseId: undefined,
@@ -47,6 +50,7 @@ test("parseArgs accepts web as a command", () => {
     configPath: undefined,
     dryRun: false,
     why: false,
+    explainMode: "summary",
     issueNumber: undefined,
     snapshotPath: undefined,
     caseId: undefined,
@@ -60,6 +64,7 @@ test("parseArgs accepts issue-lint with an issue number", () => {
     configPath: undefined,
     dryRun: false,
     why: false,
+    explainMode: "summary",
     issueNumber: 123,
     snapshotPath: undefined,
     caseId: undefined,
@@ -73,6 +78,7 @@ test("parseArgs accepts readiness-checklist without an issue number", () => {
     configPath: undefined,
     dryRun: false,
     why: false,
+    explainMode: "summary",
     issueNumber: undefined,
     snapshotPath: undefined,
     caseId: undefined,
@@ -86,6 +92,7 @@ test("parseArgs accepts requeue with an issue number", () => {
     configPath: undefined,
     dryRun: false,
     why: false,
+    explainMode: "summary",
     issueNumber: 123,
     snapshotPath: undefined,
     caseId: undefined,
@@ -99,6 +106,7 @@ test("parseArgs accepts rollup-execution-metrics without an issue number", () =>
     configPath: undefined,
     dryRun: false,
     why: false,
+    explainMode: "summary",
     issueNumber: undefined,
     snapshotPath: undefined,
     caseId: undefined,
@@ -112,6 +120,7 @@ test("parseArgs accepts summarize-post-merge-audits without an issue number", ()
     configPath: undefined,
     dryRun: false,
     why: false,
+    explainMode: "summary",
     issueNumber: undefined,
     snapshotPath: undefined,
     caseId: undefined,
@@ -125,6 +134,7 @@ test("parseArgs accepts reset-corrupt-json-state without an issue number", () =>
     configPath: undefined,
     dryRun: false,
     why: false,
+    explainMode: "summary",
     issueNumber: undefined,
     snapshotPath: undefined,
     caseId: undefined,
@@ -138,6 +148,7 @@ test("parseArgs accepts prune-orphaned-workspaces without an issue number", () =
     configPath: undefined,
     dryRun: false,
     why: false,
+    explainMode: "summary",
     issueNumber: undefined,
     snapshotPath: undefined,
     caseId: undefined,
@@ -151,6 +162,7 @@ test("parseArgs accepts replay with a snapshot path", () => {
     configPath: undefined,
     dryRun: false,
     why: false,
+    explainMode: "summary",
     issueNumber: undefined,
     snapshotPath: "/tmp/decision-cycle-snapshot.json",
     caseId: undefined,
@@ -164,6 +176,7 @@ test("parseArgs accepts replay-corpus with an explicit corpus root", () => {
     configPath: undefined,
     dryRun: false,
     why: false,
+    explainMode: "summary",
     issueNumber: undefined,
     snapshotPath: undefined,
     caseId: undefined,
@@ -177,6 +190,7 @@ test("parseArgs defaults replay-corpus to the checked-in corpus path", () => {
     configPath: undefined,
     dryRun: false,
     why: false,
+    explainMode: "summary",
     issueNumber: undefined,
     snapshotPath: undefined,
     caseId: undefined,
@@ -195,6 +209,7 @@ test("parseArgs accepts replay-corpus-promote with explicit snapshot, case id, a
     configPath: undefined,
     dryRun: false,
     why: false,
+    explainMode: "summary",
     issueNumber: undefined,
     snapshotPath: "/tmp/decision-cycle-snapshot.json",
     caseId: "issue-408-reproducing",
@@ -212,6 +227,7 @@ test("parseArgs defaults replay-corpus-promote to the checked-in corpus path", (
     configPath: undefined,
     dryRun: false,
     why: false,
+    explainMode: "summary",
     issueNumber: undefined,
     snapshotPath: "/tmp/decision-cycle-snapshot.json",
     caseId: "issue-408-reproducing",
@@ -228,11 +244,47 @@ test("parseArgs accepts replay-corpus-promote without an explicit case id so sug
     configPath: undefined,
     dryRun: false,
     why: false,
+    explainMode: "summary",
     issueNumber: undefined,
     snapshotPath: "/tmp/decision-cycle-snapshot.json",
     caseId: undefined,
     corpusPath: "replay-corpus",
   });
+});
+
+test("parseArgs accepts explain timeline mode after the issue number", () => {
+  assert.deepEqual(parseArgs(["explain", "1743", "--timeline"]), {
+    command: "explain",
+    configPath: undefined,
+    dryRun: false,
+    why: false,
+    explainMode: "timeline",
+    issueNumber: 1743,
+    snapshotPath: undefined,
+    caseId: undefined,
+    corpusPath: undefined,
+  });
+});
+
+test("parseArgs accepts explain timeline mode before the issue number", () => {
+  assert.deepEqual(parseArgs(["explain", "--timeline", "1743"]), {
+    command: "explain",
+    configPath: undefined,
+    dryRun: false,
+    why: false,
+    explainMode: "timeline",
+    issueNumber: 1743,
+    snapshotPath: undefined,
+    caseId: undefined,
+    corpusPath: undefined,
+  });
+});
+
+test("parseArgs rejects timeline mode outside explain", () => {
+  assert.throws(
+    () => parseArgs(["status", "--timeline"]),
+    /The --timeline flag is only supported with the explain command\./,
+  );
 });
 
 test("parseArgs rejects a second command after replay", () => {
