@@ -22,14 +22,25 @@ test("extractIssueVerificationCommands reads the issue Verification section", ()
       "Ship a bundle.",
       "",
       "## Verification",
+      "Run locally first.",
+      "- Confirm the local environment is clean.",
       "- `npm run verify:paths`",
+      "- npx tsx --test src/operator-audit-bundle.test.ts",
+      "- CODEX_SUPERVISOR_CONFIG=<supervisor-config-path> node dist/index.js issue-lint 1745",
+      "`make verify`",
       "- `npm run build`",
       "",
       "## Notes",
       "- not a command",
       "",
     ].join("\n")),
-    ["npm run verify:paths", "npm run build"],
+    [
+      "npm run verify:paths",
+      "npx tsx --test src/operator-audit-bundle.test.ts",
+      "CODEX_SUPERVISOR_CONFIG=<supervisor-config-path> node dist/index.js issue-lint 1745",
+      "make verify",
+      "npm run build",
+    ],
   );
 });
 

@@ -19,6 +19,8 @@ import {
 export const OPERATOR_AUDIT_BUNDLE_SCHEMA_VERSION = 1;
 
 type EvidenceAvailability = "available" | "missing";
+const VERIFICATION_COMMAND_PATTERN =
+  /^(?:(?:[A-Z_][A-Z0-9_]*=\S+)\s+)*(?:npm|pnpm|yarn|npx|node|bun|make|\.\/|bash|sh)\b/u;
 
 export interface OperatorAuditBundleEvidence<T> {
   status: EvidenceAvailability;
@@ -101,9 +103,16 @@ export function extractIssueVerificationCommands(issueBody: string): string[] {
       continue;
     }
 
-    const bullet = trimmed.match(/^[-*]\s+(.+)$/u)?.[1] ?? trimmed;
-    const fenced = bullet.match(/^`([^`]+)`$/u)?.[1] ?? bullet;
-    commands.push(fenced);
+    const bullet = trimmed.match(/^[-*]\s+(.+)$/u)?.[1];
+    const entry = bullet ?? trimmed.match(/^`([^`]+)`$/u)?.[1];
+    if (!entry) {
+      continue;
+    }
+
+    const command = entry.match(/^`([^`]+)`$/u)?.[1] ?? entry;
+    if (VERIFICATION_COMMAND_PATTERN.test(command)) {
+      commands.push(command);
+    }
   }
 
   return commands;
