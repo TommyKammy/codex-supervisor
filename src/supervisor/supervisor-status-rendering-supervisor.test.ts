@@ -617,6 +617,48 @@ test("formatDetailedStatus surfaces active review-bot profile and missing extern
   );
 });
 
+test("formatDetailedStatus surfaces stale configured-bot remediation as an explicit operator action", () => {
+  const config = createConfig({
+    reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+  });
+  const status = formatDetailedStatus({
+    config,
+    activeRecord: createRecord({
+      pr_number: 44,
+      state: "blocked",
+      blocked_reason: "stale_review_bot",
+      last_head_sha: "deadbeef",
+      last_failure_context: {
+        category: "manual",
+        summary:
+          "1 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
+        signature: "stalled-bot:thread-1",
+        command: null,
+        details: [
+          "reviewer=coderabbitai[bot] file=src/file.ts line=12 processed_on_current_head=yes",
+        ],
+        url: "https://example.test/pr/44#discussion_r44",
+        updated_at: "2026-03-13T02:10:00Z",
+      },
+    }),
+    latestRecord: null,
+    trackedIssueCount: 1,
+    pr: createPullRequest({
+      number: 44,
+      headRefOid: "deadbeef",
+      currentHeadCiGreenAt: "2026-03-13T02:05:00Z",
+      configuredBotCurrentHeadObservedAt: null,
+    }),
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [],
+  });
+
+  assert.match(
+    status,
+    /^stale_review_bot_remediation issue=#366 pr=#44 reason=stale_review_bot code_ci=green current_head_sha=deadbeef processed_on_current_head=yes review_thread_url=https:\/\/example\.test\/pr\/44#discussion_r44 manual_next_step=inspect_exact_review_thread_then_resolve_or_leave_manual_note summary=code_or_ci_green_but_review_thread_metadata_unresolved$/m,
+  );
+});
+
 test("formatDetailedStatus marks bootstrap repos without workflows as not ready for expected external signals", async (t) => {
   const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-status-bootstrap-"));
   t.after(async () => {

@@ -7,6 +7,7 @@ export type OperatorActionToken =
   | "adopt_local_ci"
   | "dismiss_local_ci"
   | "manual_review"
+  | "resolve_stale_review_bot"
   | "provider_outage_suspected"
   | "safe_to_ignore";
 
@@ -80,6 +81,17 @@ export function selectStatusOperatorAction(args: {
         priority: 70,
         summary:
           "The configured review provider has not reported on the current head after checks turned green; wait, verify provider delivery, or escalate to manual review.",
+      });
+      continue;
+    }
+
+    if (/^stale_review_bot_remediation\b/.test(line)) {
+      actions.push({
+        action: "resolve_stale_review_bot",
+        source: "stale_review_bot_remediation",
+        priority: 72,
+        summary:
+          "Code or CI is green but configured-bot review thread metadata is still unresolved; inspect the exact thread and resolve it or leave a manual note without changing merge policy.",
       });
       continue;
     }

@@ -813,6 +813,90 @@ Explain should surface same-head no-actionable configured-bot blockers as stale 
   assert.doesNotMatch(explanation, /^blocked_reason=manual_review$/m);
 });
 
+test("explain surfaces stale configured-bot remediation with the exact review thread", async () => {
+  const fixture = await createSupervisorFixture();
+  fixture.config.reviewBotLogins = ["coderabbitai", "coderabbitai[bot]"];
+  const issueNumber = 195;
+  const prNumber = 295;
+  const headSha = "head-195";
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        branch: branchName(fixture.config, issueNumber),
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: prNumber,
+        blocked_reason: "stale_review_bot",
+        last_head_sha: headSha,
+        last_error:
+          "1 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
+        last_failure_context: {
+          category: "manual",
+          summary:
+            "1 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
+          signature: "stalled-bot:thread-1",
+          command: null,
+          details: [
+            "reviewer=coderabbitai[bot] file=src/file.ts line=12 processed_on_current_head=yes",
+          ],
+          url: "https://example.test/pr/295#discussion_r295",
+          updated_at: "2026-03-13T00:20:00Z",
+        },
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Explain stale configured bot remediation",
+    body: executionReadyBody("Explain should point operators at the stale configured-bot review thread."),
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const pr = createPullRequest({
+    number: prNumber,
+    headRefName: branchName(fixture.config, issueNumber),
+    headRefOid: headSha,
+    currentHeadCiGreenAt: "2026-03-13T00:19:00Z",
+  });
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => trackedIssue,
+    listAllIssues: async () => [trackedIssue],
+    listCandidateIssues: async () => [trackedIssue],
+    resolvePullRequestForBranch: async () => pr,
+    getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const report = await supervisor.explainReport(issueNumber);
+  assert.deepEqual(report.staleReviewBotRemediation, {
+    issueNumber,
+    prNumber,
+    reasonCode: "stale_review_bot",
+    currentHeadSha: headSha,
+    processedOnCurrentHead: "yes",
+    codeCiState: "green",
+    reviewThreadUrl: "https://example.test/pr/295#discussion_r295",
+    manualNextStep: "inspect_exact_review_thread_then_resolve_or_leave_manual_note",
+    summary: "code_or_ci_green_but_review_thread_metadata_unresolved",
+  });
+
+  const explanation = await supervisor.explain(issueNumber);
+  assert.match(
+    explanation,
+    /^stale_review_bot_remediation issue=#195 pr=#295 reason=stale_review_bot code_ci=green current_head_sha=head-195 processed_on_current_head=yes review_thread_url=https:\/\/example\.test\/pr\/295#discussion_r295 manual_next_step=inspect_exact_review_thread_then_resolve_or_leave_manual_note summary=code_or_ci_green_but_review_thread_metadata_unresolved$/m,
+  );
+});
+
 test("explain marks tracked stale configured-bot blockers runnable after reply_and_resolve is enabled", async () => {
   const fixture = await createSupervisorFixture();
   fixture.config.staleConfiguredBotReviewPolicy = "reply_and_resolve";

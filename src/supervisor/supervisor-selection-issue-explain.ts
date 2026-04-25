@@ -61,6 +61,11 @@ import {
   classifyStaleReviewBotRecoverability,
   recoverabilityStatusToken,
 } from "./stale-diagnostic-recoverability";
+import {
+  buildStaleReviewBotRemediation,
+  formatStaleReviewBotRemediationLine,
+  type StaleReviewBotRemediationDto,
+} from "./stale-review-bot-remediation";
 
 export type ExplainIssueGitHub =
   Pick<GitHubClient, "getIssue" | "listAllIssues" | "listCandidateIssues"> &
@@ -84,6 +89,7 @@ export interface SupervisorExplainDto {
   staleRecoveryWarningSummary: string | null;
   activityContext: SupervisorIssueActivityContextDto | null;
   staleDiagnosticSummary?: string | null;
+  staleReviewBotRemediation?: StaleReviewBotRemediationDto | null;
   trackedPrRetryabilitySummary?: string | null;
   trackedPrMismatchSummary: string | null;
   externalSignalReadinessSummary?: string | null;
@@ -407,6 +413,14 @@ export async function buildIssueExplainDto(
         return `external_signal_readiness status=${readiness.status} ci=${readiness.ci} review=${readiness.review} workflows=${readiness.workflows}`;
       })()
       : null;
+  const staleReviewBotRemediation =
+    record && pr && !trackedPrHydrationFailed
+      ? buildStaleReviewBotRemediation({
+        record,
+        pr,
+        checks: explainChecks,
+      })
+      : null;
 
   if (matchingSkipPrefix) {
     reasons.push(`skip_title_prefix ${matchingSkipPrefix}`);
@@ -487,6 +501,7 @@ export async function buildIssueExplainDto(
           : ["stale_diagnostic", "kind=stale_review_bot", recoverabilityStatusToken(recoverability)].join(" ");
       })()
       : null,
+    staleReviewBotRemediation,
     trackedPrRetryabilitySummary:
       record?.last_tracked_pr_repeat_failure_decision && record.last_tracked_pr_progress_summary
         ? [
@@ -529,6 +544,7 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
     ...(preMergeEvaluationLine ? [preMergeEvaluationLine] : []),
     ...(localCiStatusLine ? [localCiStatusLine] : []),
     ...(dto.staleDiagnosticSummary ? [dto.staleDiagnosticSummary] : []),
+    ...(dto.staleReviewBotRemediation ? [formatStaleReviewBotRemediationLine(dto.staleReviewBotRemediation)] : []),
     ...(dto.trackedPrRetryabilitySummary ? [dto.trackedPrRetryabilitySummary] : []),
     ...(dto.trackedPrMismatchSummary ? [dto.trackedPrMismatchSummary] : []),
     ...(dto.externalSignalReadinessSummary ? [dto.externalSignalReadinessSummary] : []),

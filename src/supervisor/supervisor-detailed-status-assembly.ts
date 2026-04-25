@@ -25,6 +25,10 @@ import {
   inferReviewBotProfile,
   reviewBotDiagnostics,
 } from "./supervisor-status-review-bot";
+import {
+  buildStaleReviewBotRemediation,
+  formatStaleReviewBotRemediationLine,
+} from "./stale-review-bot-remediation";
 import { buildIssueActivityContext, formatLocalCiStatusLine } from "./supervisor-operator-activity-context";
 import type { IssueRunRecord } from "../core/types";
 import type { BuildDetailedStatusModelArgs } from "./supervisor-status-model";
@@ -165,6 +169,14 @@ export function buildActiveDetailedStatusLines(
   }
 
   if (pr) {
+    const staleReviewBotRemediation = buildStaleReviewBotRemediation({
+      record: activeRecord,
+      pr,
+      checks,
+    });
+    if (staleReviewBotRemediation) {
+      lines.push(formatStaleReviewBotRemediationLine(staleReviewBotRemediation));
+    }
     const reviewBotProfile = inferReviewBotProfile(config);
     const reviewBotStatus = reviewBotDiagnostics(config, activeRecord, pr, reviewThreads, configuredBotReviewThreads);
     const copilotReviewState = pr.copilotReviewState === null ? "unknown" : (pr.copilotReviewState ?? "not_requested");

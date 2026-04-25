@@ -137,6 +137,7 @@ test("getting-started protects the first-run command flow and operator action vo
     "operator_action action=fix_config",
     "operator_action action=restart_loop",
     "operator_action action=provider_outage_suspected",
+    "operator_action action=resolve_stale_review_bot",
     "operator_action action=manual_review",
     "operator_action action=continue",
     "doctor_operator_action action=fix_config",
