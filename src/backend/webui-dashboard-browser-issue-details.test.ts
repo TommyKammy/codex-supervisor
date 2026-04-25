@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildIssueExplainSections,
+  formatIssueTimelineEvents,
+  formatIssueTimelineSummary,
   formatLatestRecovery,
   formatReviewWaits,
 } from "./webui-dashboard-browser-issue-details";
@@ -91,6 +93,61 @@ test("formatReviewWaits normalizes nullish fields to stable placeholders", () =>
       ],
     }),
     "none status=none provider=none pause_reason=none recent_observation=none observed_at=none configured_wait_seconds=none wait_until=none",
+  );
+});
+
+test("issue history helpers render typed timeline DTOs as evidence lines", () => {
+  const timeline = {
+    issue_number: 1744,
+    pr_number: 275,
+    events: [
+      {
+        event_type: "local_ci",
+        timestamp: "2026-04-25T10:06:00Z",
+        outcome: "failed",
+        summary: "Configured local CI command failed before marking PR ready.",
+        head_sha: "head-1744",
+        remediation_target: "tracked_publishable_content",
+        next_action: "repair_tracked_publishable_content",
+      },
+      {
+        event_type: "stale_review_metadata",
+        timestamp: "2026-04-25T10:08:00Z",
+        outcome: "recorded",
+        summary: "metadata_only",
+        head_sha: "head-1744",
+        remediation_target: null,
+        next_action: null,
+      },
+    ],
+  };
+
+  assert.equal(formatIssueTimelineSummary(timeline), "issue=#1744 pr=#275 events=2");
+  assert.deepEqual(formatIssueTimelineEvents(timeline), [
+    "evidence type=local_ci outcome=failed at=2026-04-25T10:06:00Z head_sha=head-1744 remediation_target=tracked_publishable_content action=repair_tracked_publishable_content summary=Configured local CI command failed before marking PR ready.",
+    "evidence type=stale_review_metadata outcome=recorded at=2026-04-25T10:08:00Z head_sha=head-1744 remediation_target=none action=none summary=metadata_only",
+  ]);
+  assert.equal(formatIssueTimelineSummary(null), "No issue-run timeline is recorded for this issue.");
+  assert.deepEqual(formatIssueTimelineEvents({ issue_number: 1744, pr_number: null, events: [] }), []);
+  assert.deepEqual(
+    formatIssueTimelineEvents({
+      issue_number: 1744,
+      pr_number: null,
+      events: [
+        {
+          event_type: "review",
+          timestamp: null,
+          outcome: "recorded",
+          summary: "Sparse review evidence.",
+          head_sha: null,
+          remediation_target: null,
+          next_action: null,
+        },
+      ],
+    }),
+    [
+      "evidence type=review outcome=recorded at=none head_sha=none remediation_target=none action=none summary=Sparse review evidence.",
+    ],
   );
 });
 

@@ -61,7 +61,7 @@ test("dashboard shell renders panels from the typed default layout in the curren
 
   assert.match(
     html,
-    /data-panel-id="status"[\s\S]*data-panel-id="doctor"[\s\S]*data-panel-id="issue-details"[\s\S]*data-panel-id="tracked-history"[\s\S]*data-panel-id="operator-actions"[\s\S]*data-panel-id="live-events"[\s\S]*data-panel-id="operator-timeline"/u,
+    /data-panel-id="status"[\s\S]*data-panel-id="doctor"[\s\S]*data-panel-id="issue-details"[\s\S]*data-panel-id="issue-history"[\s\S]*data-panel-id="tracked-history"[\s\S]*data-panel-id="operator-actions"[\s\S]*data-panel-id="live-events"[\s\S]*data-panel-id="operator-timeline"/u,
   );
 });
 
@@ -130,7 +130,7 @@ test("dashboard page section helper renders escaped setup context and panel-link
   assert.match(sections.overviewPanelsMarkup, /data-panel-id="status"[\s\S]*data-panel-id="doctor"/u);
   assert.match(
     sections.detailPanelsMarkup,
-    /data-panel-id="issue-details"[\s\S]*data-panel-id="tracked-history"[\s\S]*data-panel-id="operator-actions"[\s\S]*data-panel-id="live-events"[\s\S]*data-panel-id="operator-timeline"/u,
+    /data-panel-id="issue-details"[\s\S]*data-panel-id="issue-history"[\s\S]*data-panel-id="tracked-history"[\s\S]*data-panel-id="operator-actions"[\s\S]*data-panel-id="live-events"[\s\S]*data-panel-id="operator-timeline"/u,
   );
 });
 
@@ -393,7 +393,7 @@ test("dashboard keeps the fixed panel layout without any drag affordances", asyn
   );
   assert.match(
     html,
-    /<div id="details-grid" class="details-grid" aria-label="details" data-panel-grid="details">[\s\S]*data-panel-id="issue-details"[\s\S]*data-panel-id="tracked-history"[\s\S]*data-panel-id="operator-actions"[\s\S]*data-panel-id="live-events"[\s\S]*data-panel-id="operator-timeline"[\s\S]*<\/div>/u,
+    /<div id="details-grid" class="details-grid" aria-label="details" data-panel-grid="details">[\s\S]*data-panel-id="issue-details"[\s\S]*data-panel-id="issue-history"[\s\S]*data-panel-id="tracked-history"[\s\S]*data-panel-id="operator-actions"[\s\S]*data-panel-id="live-events"[\s\S]*data-panel-id="operator-timeline"[\s\S]*<\/div>/u,
   );
   assert.doesNotMatch(html, /panel-drag-|dashboard-panel-reorder|drag-active|drop-target/u);
 });
@@ -1111,12 +1111,16 @@ test("dashboard keeps requeue disabled after an issue load fails", async () => {
   const requeueButton = harness.document.getElementById("requeue-button");
   const selectedIssueHeading = harness.document.getElementById("selected-issue-heading");
   const selectedIssueDetail = harness.document.getElementById("selected-issue-detail");
+  const issueHistorySummary = harness.document.getElementById("issue-history-summary");
+  const issueHistoryLines = harness.document.getElementById("issue-history-lines");
   assert.ok(issueNumberInput);
   assert.ok(issueForm);
   assert.ok(issueSummary);
   assert.ok(requeueButton);
   assert.ok(selectedIssueHeading);
   assert.ok(selectedIssueDetail);
+  assert.ok(issueHistorySummary);
+  assert.ok(issueHistoryLines);
 
   issueNumberInput.value = "42";
   await issueForm.dispatch("submit", {
@@ -1128,6 +1132,10 @@ test("dashboard keeps requeue disabled after an issue load fails", async () => {
   assert.match(issueSummary.textContent, /Explain failed/u);
   assert.match(selectedIssueHeading.textContent, /#42 could not load/u);
   assert.match(selectedIssueDetail.textContent, /Explain failed/u);
+  assert.equal(issueHistorySummary.textContent, "Issue history unavailable.");
+  assert.match(issueHistoryLines.textContent, /Issue history failed to load/u);
+  assert.match(issueHistoryLines.textContent, /Explain failed/u);
+  assert.doesNotMatch(issueHistoryLines.textContent, /Loading typed issue timeline/u);
   assert.equal(harness.remainingFetches.length, 0);
 });
 
@@ -1233,6 +1241,68 @@ test("dashboard renders typed issue activity context without scraping legacy sum
   assert.doesNotMatch(issueExplain.textContent, /legacy recovery line that should only be used as fallback/u);
   assert.match(issueExplain.textContent, /Review waitswaits: configured_bot_initial_grace_wait status=active provider=coderabbit/u);
   assert.equal(harness.remainingFetches.length, 0);
+});
+
+test("dashboard renders issue history from typed timeline DTOs instead of status text", async () => {
+  const harness = createDashboardHarness([
+    ...dashboardServer.page({
+      status: createStatus({
+        selectedIssueNumber: 42,
+        detailedStatusLines: [
+          "timeline issue=#999 pr=#999 events=1",
+          "timeline_event 1 type=local_ci outcome=passed summary=browser must not parse this status text",
+        ],
+      }),
+    }),
+    ...dashboardServer.issue(42, {
+      explain: createExplain(42, {
+        timeline: {
+          issue_number: 42,
+          pr_number: 142,
+          events: [
+            {
+              issue_number: 42,
+              pr_number: 142,
+              event_type: "local_ci",
+              timestamp: "2026-04-25T10:06:00Z",
+              outcome: "failed",
+              summary: "Configured local CI command failed before marking PR ready.",
+              head_sha: "head-42",
+              remediation_target: "tracked_publishable_content",
+              next_action: "repair_tracked_publishable_content",
+            },
+            {
+              issue_number: 42,
+              pr_number: 142,
+              event_type: "stale_review_metadata",
+              timestamp: "2026-04-25T10:08:00Z",
+              outcome: "recorded",
+              summary: "metadata_only",
+              head_sha: "head-42",
+              remediation_target: null,
+              next_action: null,
+            },
+          ],
+        },
+      }),
+    }),
+  ]);
+  await harness.flush();
+
+  await harness.document.getElementById("hero-primary-button")?.dispatch("click");
+  await harness.flush();
+
+  const issueHistorySummary = harness.document.getElementById("issue-history-summary");
+  const issueHistoryLines = harness.document.getElementById("issue-history-lines");
+  assert.ok(issueHistorySummary);
+  assert.ok(issueHistoryLines);
+
+  assert.match(issueHistorySummary.textContent, /issue=#42 pr=#142 events=2/u);
+  assert.match(issueHistoryLines.textContent, /evidence type=local_ci outcome=failed/u);
+  assert.match(issueHistoryLines.textContent, /action=repair_tracked_publishable_content/u);
+  assert.match(issueHistoryLines.textContent, /evidence type=stale_review_metadata outcome=recorded/u);
+  assert.match(issueHistoryLines.textContent, /summary=metadata_only/u);
+  assert.doesNotMatch(issueHistoryLines.textContent, /browser must not parse this status text/u);
 });
 
 test("dashboard renders typed issue detail sections for operator context", async () => {
