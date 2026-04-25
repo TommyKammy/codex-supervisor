@@ -8,7 +8,11 @@ export interface SupervisorDashboardWorkflowStepDto {
 }
 
 function formatIssueRef(issueNumber: number | null | undefined): string {
-  return Number.isInteger(issueNumber) ? "#" + issueNumber : "none";
+  return isPositiveIssueNumber(issueNumber) ? "#" + issueNumber : "none";
+}
+
+function isPositiveIssueNumber(issueNumber: number | null | undefined): issueNumber is number {
+  return typeof issueNumber === "number" && Number.isInteger(issueNumber) && issueNumber > 0;
 }
 
 export function buildSupervisorDashboardWorkflowSteps(args: {
@@ -20,13 +24,14 @@ export function buildSupervisorDashboardWorkflowSteps(args: {
   reconciliationPhase: string | null;
 }): SupervisorDashboardWorkflowStepDto[] {
   const normalizedPhase = typeof args.reconciliationPhase === "string" ? args.reconciliationPhase.toLowerCase() : "steady";
+  const selectedIssueNumber = isPositiveIssueNumber(args.selectedIssueNumber) ? args.selectedIssueNumber : null;
 
   let currentStepId: SupervisorDashboardWorkflowStepId = "observe";
   let currentDetail = "Supervisor is watching the queue and waiting for the next actionable signal.";
 
-  if (args.selectedIssueNumber !== null) {
+  if (selectedIssueNumber !== null) {
     currentStepId = "execute";
-    currentDetail = "Issue " + formatIssueRef(args.selectedIssueNumber) + " is the current active focus.";
+    currentDetail = "Issue " + formatIssueRef(selectedIssueNumber) + " is the current active focus.";
   } else if (args.blockedIssueCount > 0 && args.runnableIssueCount === 0) {
     currentStepId = "recover";
     currentDetail = "No runnable issue is available, so the supervisor is waiting on recovery or unblock work.";
@@ -80,8 +85,8 @@ export function buildSupervisorDashboardWorkflowSteps(args: {
       detail:
         currentStepId === "execute"
           ? currentDetail
-          : args.selectedIssueNumber !== null
-            ? "Selected issue is " + formatIssueRef(args.selectedIssueNumber) + "."
+          : selectedIssueNumber !== null
+            ? "Selected issue is " + formatIssueRef(selectedIssueNumber) + "."
             : "No active issue is currently executing.",
       state: currentIndex > 3 ? "done" : currentIndex === 3 ? "current" : "idle",
     },

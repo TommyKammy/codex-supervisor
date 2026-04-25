@@ -53,6 +53,27 @@ test("buildSupervisorDashboardWorkflowSteps uses neutral recover detail when no 
   });
 });
 
+test("buildSupervisorDashboardWorkflowSteps rejects invalid selected issue numbers before choosing execute", () => {
+  for (const selectedIssueNumber of [Number.NaN, 0, -7, 1.5]) {
+    const steps = buildSupervisorDashboardWorkflowSteps({
+      selectedIssueNumber,
+      runnableIssueCount: 1,
+      blockedIssueCount: 0,
+      trackedIssueCount: 3,
+      hasCandidateDiscovery: true,
+      reconciliationPhase: "steady",
+    });
+
+    assert.equal(steps.find((step) => step.id === "select")?.state, "current");
+    assert.deepEqual(steps.find((step) => step.id === "execute"), {
+      id: "execute",
+      title: "Execute",
+      detail: "No active issue is currently executing.",
+      state: "idle",
+    });
+  }
+});
+
 test("buildRuntimeRecoverySummary stays quiet when no actionable runtime recovery state exists", () => {
   assert.equal(
     buildRuntimeRecoverySummary({
