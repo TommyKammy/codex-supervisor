@@ -1622,7 +1622,7 @@ test("statusReport exposes typed operator activity context for the active issue"
           head_sha: "head-new-58",
           execution_mode: "legacy_shell_string",
           failure_class: "non_zero_exit",
-          remediation_target: "repo_owned_command",
+          remediation_target: "tracked_publishable_content",
         },
         review_wait_started_at: "2099-01-01T00:00:30.000Z",
         review_wait_head_sha: "head-new-58",
@@ -1699,7 +1699,7 @@ Expose typed operator-facing issue detail fields.
       command: null,
       stderrSummary: null,
       failureClass: "non_zero_exit",
-      remediationTarget: "repo_owned_command",
+      remediationTarget: "tracked_publishable_content",
       verifierDriftHint: null,
     },
     latestRecovery: {
@@ -3294,7 +3294,7 @@ test("status preserves draft tracked PR lifecycle when ready-for-review promotio
           command: "npm run verify:paths",
           stderr_summary: "docs/configuration.md contract drift: changed doc contract no longer matches repo-owned verifier expectation",
           failure_class: "non_zero_exit",
-          remediation_target: "repo_owned_command",
+          remediation_target: "tracked_publishable_content",
           verifier_drift_hint:
             "repo_owned_verifier_drift: the repo-owned verifier appears to disagree with a changed docs or contract expectation; repair the verifier expectation or the repo content before rerunning local CI.",
         },
@@ -3343,7 +3343,7 @@ test("status preserves draft tracked PR lifecycle when ready-for-review promotio
   );
   assert.match(
     report.detailedStatusLines.join("\n"),
-    /^tracked_pr_host_local_ci issue=#174 pr=#274 github_checks=green head_sha=head-draft-274 outcome=failed failure_class=non_zero_exit remediation_target=repo_owned_command head=current summary=Configured local CI command failed before marking PR #274 ready\. command=npm run verify:paths stderr_summary=docs\/configuration\.md contract drift: changed doc contract no longer matches repo-owned verifier expectation$/m,
+    /^tracked_pr_host_local_ci issue=#174 pr=#274 github_checks=green head_sha=head-draft-274 outcome=failed failure_class=non_zero_exit remediation_target=tracked_publishable_content head=current summary=Configured local CI command failed before marking PR #274 ready\. command=npm run verify:paths stderr_summary=docs\/configuration\.md contract drift: changed doc contract no longer matches repo-owned verifier expectation$/m,
   );
   assert.match(
     report.detailedStatusLines.join("\n"),
@@ -3366,7 +3366,7 @@ test("status preserves draft tracked PR lifecycle when ready-for-review promotio
   );
   assert.match(
     status,
-    /^tracked_pr_host_local_ci issue=#174 pr=#274 github_checks=green head_sha=head-draft-274 outcome=failed failure_class=non_zero_exit remediation_target=repo_owned_command head=current summary=Configured local CI command failed before marking PR #274 ready\. command=npm run verify:paths stderr_summary=docs\/configuration\.md contract drift: changed doc contract no longer matches repo-owned verifier expectation$/m,
+    /^tracked_pr_host_local_ci issue=#174 pr=#274 github_checks=green head_sha=head-draft-274 outcome=failed failure_class=non_zero_exit remediation_target=tracked_publishable_content head=current summary=Configured local CI command failed before marking PR #274 ready\. command=npm run verify:paths stderr_summary=docs\/configuration\.md contract drift: changed doc contract no longer matches repo-owned verifier expectation$/m,
   );
   assert.match(
     status,
@@ -3405,7 +3405,7 @@ test("status marks old-head ready-promotion blockers as stale in recovery guidan
           head_sha: "head-old-275",
           execution_mode: "legacy_shell_string",
           failure_class: "non_zero_exit",
-          remediation_target: "repo_owned_command",
+          remediation_target: "tracked_publishable_content",
         },
       }),
     },
@@ -3621,6 +3621,10 @@ test("status keeps same-head host-local ready-promotion blockers current when th
   );
   assert.match(
     report.detailedStatusLines.join("\n"),
+    /^tracked_pr_ready_promotion_gate issue=#177 pr=#277 gate=workstation_local_path_hygiene remediation_target=tracked_publishable_content summary=Tracked durable artifacts failed workstation-local path hygiene before marking PR #277 ready\.$/m,
+  );
+  assert.match(
+    report.detailedStatusLines.join("\n"),
     /^recovery_guidance=PR #277 is still draft because ready-for-review promotion is blocked by local verification\. The same blocker is still present, so rerunning the supervisor alone will not help\./m,
   );
   assert.doesNotMatch(
@@ -3701,6 +3705,10 @@ test("status distinguishes repairable ready-promotion path hygiene blockers queu
   assert.match(
     status,
     /^tracked_pr_ready_promotion_blocked issue=#178 pr=#278 recoverability=repair_queued github_state=draft_pr local_state=repairing_ci local_blocked_reason=none stale_local_blocker=no$/m,
+  );
+  assert.match(
+    status,
+    /^tracked_pr_ready_promotion_gate issue=#178 pr=#278 gate=workstation_local_path_hygiene remediation_target=repair_already_queued summary=Ready-promotion path hygiene found actionable publishable tracked content; supervisor will retry a repair turn before marking the draft PR ready\. Actionable files: scripts\/check-paths\.sh\.$/m,
   );
   assert.match(
     status,

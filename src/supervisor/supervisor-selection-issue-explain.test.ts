@@ -351,7 +351,7 @@ test("buildIssueExplainDto exposes typed operator activity context", async () =>
           head_sha: "head-new-605",
           execution_mode: "legacy_shell_string",
           failure_class: "non_zero_exit",
-          remediation_target: "repo_owned_command",
+          remediation_target: "tracked_publishable_content",
         },
         blocked_reason: null,
         last_error: null,
@@ -410,7 +410,7 @@ test("buildIssueExplainDto exposes typed operator activity context", async () =>
       command: null,
       stderrSummary: null,
       failureClass: "non_zero_exit",
-      remediationTarget: "repo_owned_command",
+      remediationTarget: "tracked_publishable_content",
       verifierDriftHint: null,
     },
     latestRecovery: {

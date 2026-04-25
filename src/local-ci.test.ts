@@ -89,7 +89,7 @@ test("runTrackedPrReadyLocalCiPublicationGate blocks ready promotion on local CI
   assert.equal(result.record.last_observed_host_local_pr_blocker_head_sha, "head-116");
   assert.equal(
     result.record.last_host_local_pr_blocker_comment_signature,
-    "local-ci-gate-non_zero_exit|gate=local_ci|failure=non_zero_exit|target=repo_owned_command",
+    "local-ci-gate-non_zero_exit|gate=local_ci|failure=non_zero_exit|target=tracked_publishable_content",
   );
   assert.equal(result.record.last_host_local_pr_blocker_comment_head_sha, "head-116");
   assert.match(
@@ -112,14 +112,14 @@ test("runLocalCiGate reports an unset local CI contract as a non-blocking issue-
   assert.equal(result.failureContext, null);
   assert.deepEqual(result.latestResult, {
     outcome: "not_configured",
-    summary: "No repo-owned local CI contract is configured before opening a pull request. Remediation target: issue body.",
+    summary: "No repo-owned local CI contract is configured before opening a pull request. Remediation target: config contract.",
     ran_at: result.latestResult?.ran_at ?? "",
     head_sha: null,
     execution_mode: null,
     command: null,
     stderr_summary: null,
     failure_class: "unset_contract",
-    remediation_target: "issue_body",
+    remediation_target: "config_contract",
     verifier_drift_hint: null,
   });
 });
@@ -142,10 +142,10 @@ test("runLocalCiGate classifies missing configured commands as supervisor-config
   assert.equal(result.failureContext?.signature, "local-ci-gate-missing_command");
   assert.equal(
     result.failureContext?.summary,
-    "Configured local CI command is unavailable before opening a pull request. Remediation target: supervisor config.",
+    "Configured local CI command is unavailable before opening a pull request. Remediation target: config contract.",
   );
   assert.equal(result.latestResult?.failure_class, "missing_command");
-  assert.equal(result.latestResult?.remediation_target, "supervisor_config");
+  assert.equal(result.latestResult?.remediation_target, "config_contract");
 });
 
 test("runLocalCiGate classifies non-zero exits as repo-owned-command remediation", async () => {
@@ -167,10 +167,10 @@ test("runLocalCiGate classifies non-zero exits as repo-owned-command remediation
   assert.equal(result.failureContext?.signature, "local-ci-gate-non_zero_exit");
   assert.equal(
     result.failureContext?.summary,
-    "Configured local CI command failed before marking PR #116 ready. Remediation target: repo-owned command.",
+    "Configured local CI command failed before marking PR #116 ready. Remediation target: tracked publishable content.",
   );
   assert.equal(result.latestResult?.failure_class, "non_zero_exit");
-  assert.equal(result.latestResult?.remediation_target, "repo_owned_command");
+  assert.equal(result.latestResult?.remediation_target, "tracked_publishable_content");
   assert.equal(result.latestResult?.command, "npm run ci:local");
   assert.equal(result.latestResult?.stderr_summary, "tests failed");
 });
@@ -220,7 +220,7 @@ test("runLocalCiGate keeps nested missing binaries inside the configured command
   assert.equal(result.ok, false);
   assert.equal(result.failureContext?.signature, "local-ci-gate-non_zero_exit");
   assert.equal(result.latestResult?.failure_class, "non_zero_exit");
-  assert.equal(result.latestResult?.remediation_target, "repo_owned_command");
+  assert.equal(result.latestResult?.remediation_target, "tracked_publishable_content");
 });
 
 test("runLocalCiGate classifies a missing configured entrypoint as supervisor-config remediation", async () => {
@@ -240,10 +240,10 @@ test("runLocalCiGate classifies a missing configured entrypoint as supervisor-co
   assert.equal(result.ok, false);
   assert.equal(result.failureContext?.signature, "local-ci-gate-missing_command");
   assert.equal(result.latestResult?.failure_class, "missing_command");
-  assert.equal(result.latestResult?.remediation_target, "supervisor_config");
+  assert.equal(result.latestResult?.remediation_target, "config_contract");
 });
 
-test("runLocalCiGate classifies missing workspace toolchains separately from repo-owned command failures", async () => {
+test("runLocalCiGate classifies missing workspace toolchains separately from tracked publishable content failures", async () => {
   const failure = Object.assign(
     new Error("Command failed: sh -lc +1 args\nexitCode=1\ntsc is not installed in this workspace"),
     {

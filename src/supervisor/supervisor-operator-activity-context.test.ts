@@ -17,7 +17,7 @@ test("buildIssueActivityContext keeps the legacy local CI failure signature bloc
         head_sha: "head-1207",
         execution_mode: "legacy_shell_string",
         failure_class: "non_zero_exit",
-        remediation_target: "repo_owned_command",
+        remediation_target: "tracked_publishable_content",
       },
     }),
     pr: createPullRequest({
@@ -27,5 +27,5 @@ test("buildIssueActivityContext keeps the legacy local CI failure signature bloc
 
   assert.equal(context.localCiStatus?.context, "blocking");
   assert.equal(context.localCiStatus?.failureClass, "non_zero_exit");
-  assert.equal(context.localCiStatus?.remediationTarget, "repo_owned_command");
+  assert.equal(context.localCiStatus?.remediationTarget, "tracked_publishable_content");
 });

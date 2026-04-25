@@ -572,7 +572,7 @@ test("handlePostTurnPullRequestTransitionsPhase blocks draft-to-ready promotion 
   assert.equal(result.record.last_failure_signature, "local-ci-gate-non_zero_exit");
   assert.match(
     result.record.last_error ?? "",
-    /Configured local CI command failed before marking PR #116 ready\. Remediation target: repo-owned command\./,
+    /Configured local CI command failed before marking PR #116 ready\. Remediation target: tracked publishable content\./,
   );
 });
 
@@ -1823,7 +1823,7 @@ test("handlePostTurnPullRequestTransitionsPhase routes repairable ready-promotio
   assert.equal(result.record.last_failure_signature, "workstation-local-path-hygiene-failed");
   assert.equal(
     result.record.last_host_local_pr_blocker_comment_signature,
-    "workstation-local-path-hygiene-failed|gate=workstation_local_path_hygiene|failure=workstation-local-path-hygiene-failed|target=workspace_contents_repairable",
+    "workstation-local-path-hygiene-failed|gate=workstation_local_path_hygiene|failure=workstation-local-path-hygiene-failed|target=repair_already_queued",
   );
   assert.match(result.record.last_error ?? "", /will retry a repair turn/i);
   assert.deepEqual(result.record.last_failure_context?.details, failureDetails);
@@ -2068,7 +2068,7 @@ test("handlePostTurnPullRequestTransitionsPhase comments once when workstation-l
   assert.equal(firstResult.record.last_host_local_pr_blocker_comment_head_sha, draftPr.headRefOid);
   assert.equal(
     firstResult.record.last_host_local_pr_blocker_comment_signature,
-    "workstation-local-path-hygiene-failed|gate=workstation_local_path_hygiene|failure=workstation-local-path-hygiene-failed|target=workspace_contents",
+    "workstation-local-path-hygiene-failed|gate=workstation_local_path_hygiene|failure=workstation-local-path-hygiene-failed|target=tracked_publishable_content",
   );
   assert.match(commentBodies[0] ?? "", /still draft because ready-for-review promotion is blocked locally/i);
   assert.match(commentBodies[0] ?? "", /gate name: `workstation_local_path_hygiene`/i);

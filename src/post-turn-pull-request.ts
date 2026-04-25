@@ -566,7 +566,7 @@ export async function handlePostTurnPullRequestTransitionsPhase(
           gateType: "workstation_local_path_hygiene",
           blockerSignature: repairFailureContext.signature,
           failureClass: repairFailureContext.signature,
-          remediationTarget: "workspace_contents_repairable",
+          remediationTarget: "repair_already_queued",
           summary: repairFailureContext.summary,
           details: repairFailureContext.details,
         });
@@ -606,7 +606,7 @@ export async function handlePostTurnPullRequestTransitionsPhase(
         gateType: "workstation_local_path_hygiene",
         blockerSignature: failureContext?.signature ?? null,
         failureClass: failureContext?.signature ?? null,
-        remediationTarget: "workspace_contents",
+        remediationTarget: "tracked_publishable_content",
         summary: failureContext?.summary ?? null,
         details: failureContext?.details,
       });
@@ -770,7 +770,7 @@ export async function handlePostTurnPullRequestTransitionsPhase(
         gateType: "workstation_local_path_hygiene",
         blockerSignature: failureContext.signature,
         failureClass: failureContext.signature,
-        remediationTarget: "workspace_contents",
+        remediationTarget: "tracked_publishable_content",
         summary: failureContext.summary,
         details: failureContext.details,
       });

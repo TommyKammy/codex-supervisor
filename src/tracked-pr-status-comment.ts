@@ -18,6 +18,7 @@ import { truncate } from "./core/utils";
 import { buildTrackedPrMismatch } from "./supervisor/tracked-pr-mismatch";
 import { buildStaleReviewBotRemediation } from "./supervisor/stale-review-bot-remediation";
 import { configuredBotReviewThreads, latestReviewComment } from "./review-thread-reporting";
+import { workspacePreparationRemediationTargetForFailureClass } from "./remediation-targets";
 
 export type HostLocalTrackedPrBlockerGateType =
   | "workspace_preparation"
@@ -56,16 +57,7 @@ export function workspacePreparationFailureClass(
 export function workspacePreparationRemediationTarget(
   failureClass: Exclude<LatestLocalCiResult["failure_class"], "unset_contract"> | null,
 ): LocalCiRemediationTarget {
-  // Workspace preparation runs before the repo-owned verifier; generic command failures point at host setup.
-  switch (failureClass) {
-    case "worktree_helper_missing":
-    case "missing_command":
-      return "supervisor_config";
-    case "workspace_toolchain_missing":
-    case "non_zero_exit":
-    default:
-      return "workspace_environment";
-  }
+  return workspacePreparationRemediationTargetForFailureClass(failureClass);
 }
 
 function buildTrackedPrHostLocalBlockerComment(args: {
@@ -152,7 +144,7 @@ function buildTrackedPrReadyPromotionPathHygieneComment(args: {
 }): string {
   const firstFix = summarizeWorkstationLocalPathFirstFix(args.details);
   const conciseSummary = args.summary.replace(/\s+First fix:.*$/i, "").trim();
-  const repairable = args.remediationTarget === "workspace_contents_repairable";
+  const repairable = args.remediationTarget === "repair_already_queued";
   return [
     `Tracked PR head \`${args.pr.headRefOid}\` is still draft because ready-for-review promotion is blocked locally.`,
     "",
@@ -161,6 +153,7 @@ function buildTrackedPrReadyPromotionPathHygieneComment(args: {
     `- blocker signature: \`${args.blockerSignature}\``,
     `- what failed: ${conciseSummary}`,
     ...(firstFix ? [`- ${firstFix}`] : []),
+    `- remediation target: \`${args.remediationTarget ?? "manual_review"}\``,
     `- automatic retry: ${repairable ? "yes" : "no"}`,
     repairable
       ? "- next action: supervisor will retry a repair turn with these actionable publishable files, then re-run ready-for-review promotion."
