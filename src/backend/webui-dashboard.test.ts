@@ -863,6 +863,33 @@ test("dashboard renders the typed runtime recovery summary without parsing domai
   assert.equal(harness.remainingFetches.length, 0);
 });
 
+test("dashboard keeps runtime recovery summary hidden when typed summary is absent", async () => {
+  const harness = createDashboardHarness([
+    {
+      path: "/api/status?why=true",
+      response: jsonResponse(
+        createStatus({
+          includeWhyLines: false,
+          runtimeRecoverySummary: null,
+          detailedStatusLines: [
+            "no_active_tracked_record issue=#188 classification=safe_to_ignore state=done reason=terminal_done",
+          ],
+        }),
+      ),
+    },
+    { path: "/api/doctor", response: jsonResponse(createDoctor()) },
+  ]);
+  await harness.flush();
+
+  const runtimeRecoverySummary = harness.document.getElementById("runtime-recovery-summary");
+  const runtimeRecoveryLines = harness.document.getElementById("runtime-recovery-lines");
+  assert.ok(runtimeRecoverySummary);
+  assert.ok(runtimeRecoveryLines);
+  assert.equal(runtimeRecoverySummary.hidden, true);
+  assert.equal(runtimeRecoveryLines.textContent, "");
+  assert.equal(harness.remainingFetches.length, 0);
+});
+
 test("dashboard moves tracked history into a dedicated panel with non-done default and reveal toggle", async () => {
   const harness = createDashboardHarness([
     {

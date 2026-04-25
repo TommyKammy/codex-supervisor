@@ -32,10 +32,18 @@ test("selectRestartRecommendation classifies every restart recommendation catego
   assert.equal(
     requireRestartRecommendation(selectRestartRecommendation({
       detailedStatusLines: [
-        "no_active_tracked_record issue=#188 classification=safe_to_ignore state=done reason=terminal_done",
+        "no_active_tracked_record issue=#188 classification=active_tracked_work_blocker state=addressing_review reason=loop_off",
       ],
     })).category,
-    "restart_not_enough",
+    "restart_required_for_convergence",
+  );
+  assert.equal(
+    requireRestartRecommendation(selectRestartRecommendation({
+      detailedStatusLines: [
+        "no_active_tracked_record issue=#189 classification=stale_but_recoverable state=blocked reason=stale_review_bot",
+      ],
+    })).category,
+    "restart_required_for_convergence",
   );
   assert.equal(
     requireRestartRecommendation(selectRestartRecommendation({
@@ -44,6 +52,36 @@ test("selectRestartRecommendation classifies every restart recommendation catego
       ],
     })).category,
     "manual_review_before_restart",
+  );
+});
+
+test("selectRestartRecommendation stays quiet for completed no-active tracked records", () => {
+  assert.equal(
+    selectRestartRecommendation({
+      detailedStatusLines: [
+        "no_active_tracked_record issue=#188 classification=safe_to_ignore state=done reason=terminal_done",
+      ],
+    }),
+    null,
+  );
+  assert.equal(
+    selectRestartRecommendation({
+      detailedStatusLines: [
+        "no_active_tracked_record issue=#189 classification=stale_already_handled state=done reason=merged_pr_convergence",
+      ],
+    }),
+    null,
+  );
+});
+
+test("selectRestartRecommendation still flags non-quiet no-active classifications as restart-not-enough", () => {
+  assert.equal(
+    requireRestartRecommendation(selectRestartRecommendation({
+      detailedStatusLines: [
+        "no_active_tracked_record issue=#188 classification=repair_already_queued state=repairing_ci reason=repairable_path_hygiene_retry_state",
+      ],
+    })).category,
+    "restart_not_enough",
   );
 });
 
