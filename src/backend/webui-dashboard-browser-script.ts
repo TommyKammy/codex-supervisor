@@ -886,6 +886,21 @@ export function renderDashboardBrowserScript(): string {
         }
       }
 
+      function renderIssueHistoryLoadError(message) {
+        setText(elements.issueHistorySummary, "Issue history unavailable.");
+        if (!elements.issueHistoryLines) {
+          return;
+        }
+        elements.issueHistoryLines.innerHTML = "";
+        elements.issueHistoryLines.appendChild(
+          buildEmptyState(
+            "!",
+            "Issue history failed to load",
+            message || "The backend did not return issue timeline data.",
+          ),
+        );
+      }
+
       function renderStatus() {
         if (!state.status) {
           return;
@@ -1549,6 +1564,7 @@ export function renderDashboardBrowserScript(): string {
             return;
           }
           state.issueLoadError = error instanceof Error ? error.message : String(error);
+          renderIssueHistoryLoadError(state.issueLoadError);
           renderSelectedIssue();
           renderSelectedIssueSummary();
           throw error;

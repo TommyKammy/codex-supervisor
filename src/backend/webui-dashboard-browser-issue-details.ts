@@ -150,7 +150,7 @@ export function formatIssueTimelineSummary(timeline: DashboardIssueTimelineLike 
 export function formatIssueTimelineEvent(event: DashboardIssueTimelineEventLike): string {
   const eventType = event.event_type?.trim() || "unknown";
   const outcome = event.outcome?.trim() || "unknown";
-  const timestamp = event.timestamp?.trim() || "timestamp=none";
+  const timestamp = event.timestamp?.trim() || "none";
   const summary = event.summary?.trim() || "No summary reported.";
   const headSha = event.head_sha?.trim() || "none";
   const remediationTarget = event.remediation_target?.trim() || "none";

@@ -1111,12 +1111,16 @@ test("dashboard keeps requeue disabled after an issue load fails", async () => {
   const requeueButton = harness.document.getElementById("requeue-button");
   const selectedIssueHeading = harness.document.getElementById("selected-issue-heading");
   const selectedIssueDetail = harness.document.getElementById("selected-issue-detail");
+  const issueHistorySummary = harness.document.getElementById("issue-history-summary");
+  const issueHistoryLines = harness.document.getElementById("issue-history-lines");
   assert.ok(issueNumberInput);
   assert.ok(issueForm);
   assert.ok(issueSummary);
   assert.ok(requeueButton);
   assert.ok(selectedIssueHeading);
   assert.ok(selectedIssueDetail);
+  assert.ok(issueHistorySummary);
+  assert.ok(issueHistoryLines);
 
   issueNumberInput.value = "42";
   await issueForm.dispatch("submit", {
@@ -1128,6 +1132,10 @@ test("dashboard keeps requeue disabled after an issue load fails", async () => {
   assert.match(issueSummary.textContent, /Explain failed/u);
   assert.match(selectedIssueHeading.textContent, /#42 could not load/u);
   assert.match(selectedIssueDetail.textContent, /Explain failed/u);
+  assert.equal(issueHistorySummary.textContent, "Issue history unavailable.");
+  assert.match(issueHistoryLines.textContent, /Issue history failed to load/u);
+  assert.match(issueHistoryLines.textContent, /Explain failed/u);
+  assert.doesNotMatch(issueHistoryLines.textContent, /Loading typed issue timeline/u);
   assert.equal(harness.remainingFetches.length, 0);
 });
 

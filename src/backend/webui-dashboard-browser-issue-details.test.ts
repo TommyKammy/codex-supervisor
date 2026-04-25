@@ -129,6 +129,26 @@ test("issue history helpers render typed timeline DTOs as evidence lines", () =>
   ]);
   assert.equal(formatIssueTimelineSummary(null), "No issue-run timeline is recorded for this issue.");
   assert.deepEqual(formatIssueTimelineEvents({ issue_number: 1744, pr_number: null, events: [] }), []);
+  assert.deepEqual(
+    formatIssueTimelineEvents({
+      issue_number: 1744,
+      pr_number: null,
+      events: [
+        {
+          event_type: "review",
+          timestamp: null,
+          outcome: "recorded",
+          summary: "Sparse review evidence.",
+          head_sha: null,
+          remediation_target: null,
+          next_action: null,
+        },
+      ],
+    }),
+    [
+      "evidence type=review outcome=recorded at=none head_sha=none remediation_target=none action=none summary=Sparse review evidence.",
+    ],
+  );
 });
 
 test("buildIssueExplainSections keeps only non-empty typed detail sections", () => {
