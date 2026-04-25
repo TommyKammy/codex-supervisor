@@ -66,6 +66,7 @@ import {
   formatStaleReviewBotRemediationLine,
   type StaleReviewBotRemediationDto,
 } from "./stale-review-bot-remediation";
+import { formatMergedPrConvergenceOperatorEventLine } from "./supervisor-operator-events";
 
 export type ExplainIssueGitHub =
   Pick<GitHubClient, "getIssue" | "listAllIssues" | "listCandidateIssues"> &
@@ -86,6 +87,7 @@ export interface SupervisorExplainDto {
   hostPathSummary?: string | null;
   journalStateSummary?: string | null;
   latestRecoverySummary: string | null;
+  operatorEventSummary: string | null;
   staleRecoveryWarningSummary: string | null;
   activityContext: SupervisorIssueActivityContextDto | null;
   staleDiagnosticSummary?: string | null;
@@ -328,6 +330,7 @@ export async function buildIssueExplainDto(
     record,
   });
   const latestRecoverySummary = record ? formatLatestRecoveryStatusLine(record) : null;
+  const operatorEventSummary = record ? formatMergedPrConvergenceOperatorEventLine(record) : null;
   const staleRecoveryWarningSummary = record ? buildStaleStabilizingNoPrRecoveryWarningLine(record, config) : null;
   let pr: GitHubPullRequest | null = null;
   if (record && github.resolvePullRequestForBranch) {
@@ -483,6 +486,7 @@ export async function buildIssueExplainDto(
     hostPathSummary,
     journalStateSummary,
     latestRecoverySummary,
+    operatorEventSummary,
     staleRecoveryWarningSummary,
     activityContext: record
       ? maybeBuildIssueActivityContext({
@@ -554,6 +558,7 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
     ...(dto.loopRuntimeBlockerSummary ? [dto.loopRuntimeBlockerSummary] : []),
     ...(retrySummaryLine ? [retrySummaryLine] : []),
     ...(recoveryLoopSummaryLine ? [recoveryLoopSummaryLine] : []),
+    ...(dto.operatorEventSummary ? [dto.operatorEventSummary] : []),
     ...(dto.latestRecoverySummary ? [dto.latestRecoverySummary] : []),
     ...(dto.staleRecoveryWarningSummary ? [dto.staleRecoveryWarningSummary] : []),
   ];

@@ -33,6 +33,10 @@ import {
   findLatestBlockedPreservedPartialWorkIncident,
   formatBlockedPreservedPartialWorkLine,
 } from "./supervisor-preserved-partial-work";
+import {
+  findLatestMergedPrConvergenceRecord,
+  formatMergedPrConvergenceOperatorEventLine,
+} from "./supervisor-operator-events";
 
 type ReadinessSummaryGitHub =
   Pick<GitHubClient, "listAllIssues" | "listCandidateIssues">
@@ -267,6 +271,10 @@ function buildReadinessSummaryFromIssues(
       )
       ? blockedPartialWorkIncident
       : null;
+  const latestMergedPrConvergenceLine =
+    runnableIssues.length === 0
+      ? formatMergedPrConvergenceOperatorEventLine(findLatestMergedPrConvergenceRecord(state))
+      : null;
 
   return {
     runnableIssues,
@@ -276,6 +284,7 @@ function buildReadinessSummaryFromIssues(
       ...(candidateDiscoveryWarningLine === null ? [] : [candidateDiscoveryWarningLine]),
       `runnable_issues=${runnableIssues.length > 0 ? runnableIssues.map((issue) => `#${issue.issueNumber} ready=${issue.readiness}`).join(",") : "none"}`,
       `blocked_issues=${blockedIssues.length > 0 ? blockedIssues.map((issue) => `#${issue.issueNumber} blocked_by=${issue.blockedBy}`).join("; ") : "none"}`,
+      ...(latestMergedPrConvergenceLine === null ? [] : [latestMergedPrConvergenceLine]),
       ...(surfacedBlockedPartialWorkIncident === null
         ? []
         : [formatBlockedPreservedPartialWorkLine(surfacedBlockedPartialWorkIncident)]),

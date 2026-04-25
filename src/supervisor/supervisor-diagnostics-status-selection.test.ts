@@ -85,6 +85,56 @@ test("status surfaces corrupted JSON state as an explicit hard diagnostic", asyn
   assert.match(status, /^No active issue\.$/m);
 });
 
+test("status distinguishes an idle queue after merged PR convergence", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const issueNumber = 240;
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "done",
+        branch: branchName(fixture.config, issueNumber),
+        pr_number: 340,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        blocked_reason: null,
+        last_error: null,
+        last_failure_kind: null,
+        last_failure_context: null,
+        last_failure_signature: null,
+        last_recovery_reason: `merged_pr_convergence: tracked PR #340 merged; marked issue #${issueNumber} done`,
+        last_recovery_at: "2026-04-25T00:20:00Z",
+        updated_at: "2026-04-25T00:20:00Z",
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [],
+    listAllIssues: async () => [],
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const status = await supervisor.status();
+
+  assert.match(status, /^No active issue\.$/m);
+  assert.match(status, /^runnable_issues=none$/m);
+  assert.match(status, /^blocked_issues=none$/m);
+  assert.match(
+    status,
+    /^operator_event type=merged_pr_convergence issue=#240 at=2026-04-25T00:20:00Z detail=tracked PR #340 merged; marked issue #240 done$/m,
+  );
+});
+
 test("status surfaces the default trust posture and execution-safety warning", async (t) => {
   const fixture = await createSupervisorFixture();
   t.after(async () => {

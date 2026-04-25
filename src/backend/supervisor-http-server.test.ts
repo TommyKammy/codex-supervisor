@@ -424,6 +424,7 @@ function createStubService(args?: {
         changeRiskLines: [],
         externalReviewFollowUpSummary: null,
         latestRecoverySummary: null,
+        operatorEventSummary: null,
         staleRecoveryWarningSummary: null,
         activityContext: {
           handoffSummary: "blocker: waiting on typed explain activity context",

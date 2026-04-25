@@ -298,6 +298,7 @@ test("createSupervisorService preserves typed operator observability fields on s
     changeRiskLines: [],
     externalReviewFollowUpSummary: null,
     latestRecoverySummary: null,
+    operatorEventSummary: null,
     staleRecoveryWarningSummary: null,
     activityContext: statusReport.activeIssue.activityContext,
     trackedPrMismatchSummary: null,
