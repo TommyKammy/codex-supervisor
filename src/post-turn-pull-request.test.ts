@@ -2068,10 +2068,11 @@ test("handlePostTurnPullRequestTransitionsPhase comments once when workstation-l
   assert.equal(firstResult.record.last_host_local_pr_blocker_comment_head_sha, draftPr.headRefOid);
   assert.equal(
     firstResult.record.last_host_local_pr_blocker_comment_signature,
-    "workstation-local-path-hygiene-failed|gate=workstation_local_path_hygiene|failure=workstation-local-path-hygiene-failed|target=tracked_publishable_content",
+    "workstation-local-path-hygiene-failed|gate=workstation_local_path_hygiene|failure=workstation-local-path-hygiene-failed|target=manual_review",
   );
   assert.match(commentBodies[0] ?? "", /still draft because ready-for-review promotion is blocked locally/i);
   assert.match(commentBodies[0] ?? "", /gate name: `workstation_local_path_hygiene`/i);
+  assert.match(commentBodies[0] ?? "", /remediation target: `manual_review`/i);
   assert.match(commentBodies[0] ?? "", /First fix: docs\/guide\.md/i);
   assert.match(commentBodies[0] ?? "", /rerunning the supervisor alone will not help yet/i);
   assert.doesNotMatch(commentBodies[0] ?? "", /\.codex-supervisor\/issues\/181\/issue-journal\.md:4 matched/);

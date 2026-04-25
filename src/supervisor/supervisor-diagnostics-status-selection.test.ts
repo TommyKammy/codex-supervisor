@@ -3633,6 +3633,83 @@ test("status keeps same-head host-local ready-promotion blockers current when th
   );
 });
 
+test("status preserves manual-review ready-promotion path hygiene remediation targets", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 179;
+  const prNumber = 279;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        branch,
+        pr_number: prNumber,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        blocked_reason: "verification",
+        last_error:
+          "Tracked durable artifacts failed workstation-local path hygiene before marking PR #279 ready. Review repo policy or exclusions for expected-local durable artifacts.",
+        last_head_sha: "head-draft-279",
+        last_failure_signature: "workstation-local-path-hygiene-failed",
+        last_failure_context: {
+          category: "blocked",
+          summary:
+            "Tracked durable artifacts failed workstation-local path hygiene before marking PR #279 ready. Review repo policy or exclusions for expected-local durable artifacts.",
+          signature: "workstation-local-path-hygiene-failed",
+          command: "npm run verify:paths",
+          details: [`WORKLOG.md:2 matched /${"Users"}/placeholder via "<workstation-local>"`],
+          url: null,
+          updated_at: "2026-03-13T00:10:00Z",
+        },
+        last_observed_host_local_pr_blocker_head_sha: "head-draft-279",
+        last_observed_host_local_pr_blocker_signature: "workstation-local-path-hygiene-failed",
+        last_host_local_pr_blocker_comment_signature:
+          "workstation-local-path-hygiene-failed|gate=workstation_local_path_hygiene|failure=workstation-local-path-hygiene-failed|target=manual_review",
+        last_host_local_pr_blocker_comment_head_sha: "head-draft-279",
+        latest_local_ci_result: null,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Tracked manual path hygiene draft PR ready gate",
+    body: executionReadyBody("Surface manual ready-promotion path hygiene blockers."),
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const draftPr = createPullRequest({
+    number: prNumber,
+    headRefName: branch,
+    headRefOid: "head-draft-279",
+    isDraft: true,
+  });
+
+  const supervisor = new Supervisor({
+    ...fixture.config,
+    localCiCommand: "npm run verify:paths",
+  });
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [trackedIssue],
+    listAllIssues: async () => [trackedIssue],
+    getPullRequestIfExists: async () => draftPr,
+    getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const report = await supervisor.statusReport();
+  assert.match(
+    report.detailedStatusLines.join("\n"),
+    /^tracked_pr_ready_promotion_gate issue=#179 pr=#279 gate=workstation_local_path_hygiene remediation_target=manual_review summary=Tracked durable artifacts failed workstation-local path hygiene before marking PR #279 ready\. Review repo policy or exclusions for expected-local durable artifacts\.$/m,
+  );
+});
+
 test("status distinguishes repairable ready-promotion path hygiene blockers queued for repair", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 178;

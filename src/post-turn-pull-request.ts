@@ -606,7 +606,7 @@ export async function handlePostTurnPullRequestTransitionsPhase(
         gateType: "workstation_local_path_hygiene",
         blockerSignature: failureContext?.signature ?? null,
         failureClass: failureContext?.signature ?? null,
-        remediationTarget: "tracked_publishable_content",
+        remediationTarget: "manual_review",
         summary: failureContext?.summary ?? null,
         details: failureContext?.details,
       });
