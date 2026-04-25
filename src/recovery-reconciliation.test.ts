@@ -40,7 +40,7 @@ test("buildTrackedPrResumeRecoveryEvent reports draft ready-promotion verificati
   assert.deepEqual(event, {
     issueNumber: 366,
     reason:
-      "tracked_pr_ready_promotion_blocked: refreshed issue #366 while tracked PR #191 remains draft because ready-for-review promotion is blocked by local verification at head head-191",
+      "tracked_pr_ready_promotion_blocked: refreshed issue #366 while tracked PR #191 remains draft because ready-for-review promotion is blocked by a repo-owned gate at head head-191",
     at: "2026-03-13T00:30:00Z",
   });
 });

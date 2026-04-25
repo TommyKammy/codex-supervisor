@@ -2452,7 +2452,7 @@ test("diagnoseSupervisorHost preserves draft tracked PR verification blockers in
   );
   assert.match(
     renderDoctorReport(diagnostics),
-    /doctor_detail name=worktrees detail=recovery_guidance=PR #274 is still draft because ready-for-review promotion is blocked by local verification\. The same blocker is still present, so rerunning the supervisor alone will not help\. Failed gate: npm run verify:paths\. Fix the gate in the tracked workspace first, then rerun it to promote the PR\./,
+    /doctor_detail name=worktrees detail=recovery_guidance=PR #274 is still draft because ready-for-review promotion is blocked by a repo-owned gate\. The same blocker is still present, so rerunning the supervisor alone will not help\. Failed gate: npm run verify:paths\. Fix the gate in the tracked workspace first, then rerun it to promote the PR\./,
   );
   assert.doesNotMatch(
     renderDoctorReport(diagnostics),
@@ -2772,7 +2772,7 @@ test("diagnoseSupervisorHost keeps same-head host-local ready-promotion blockers
   );
   assert.match(
     renderDoctorReport(diagnostics),
-    /doctor_detail name=worktrees detail=recovery_guidance=PR #277 is still draft because ready-for-review promotion is blocked by local verification\. The same blocker is still present, so rerunning the supervisor alone will not help\./,
+    /doctor_detail name=worktrees detail=recovery_guidance=PR #277 is still draft because ready-for-review promotion is blocked by a repo-owned gate\. The same blocker is still present, so rerunning the supervisor alone will not help\./,
   );
   assert.doesNotMatch(
     renderDoctorReport(diagnostics),

@@ -159,6 +159,8 @@ test("getting-started protects the first-run command flow and operator action vo
 test("getting-started defines the repo-owned local CI contract for pre-PR verification", async () => {
   const content = await readGettingStarted();
 
+  assert.match(content, /issue-level `## Verification` is issue-authored guidance/i);
+  assert.match(content, /not a repo-owned fail-closed gate by itself/i);
   assert.match(content, /repo-owned local CI contract/i);
   assert.match(content, /ci:local/);
   assert.match(content, /verify:pre-pr/);
@@ -174,6 +176,7 @@ test("getting-started defines the repo-owned local CI contract for pre-PR verifi
   assert.match(content, /does not infer or reconstruct workflow logic from GitHub Actions YAML/i);
   assert.match(content, /when configured local CI fails, PR publication stays blocked/i);
   assert.match(content, /ready-for-review promotion stays blocked/i);
+  assert.match(content, /status and doctor wording should name the active repo-owned gate/i);
 });
 
 test("operator-facing docs explain steady-state local CI posture and remediation flow", async () => {

@@ -41,6 +41,8 @@ test("validation checklist is maintained as the release-readiness artifact", asy
     "release gate",
     "trust boundaries",
     "advisory checklist",
+    "issue-authored verification guidance",
+    "not a repo-owned fail-closed gate by itself",
     "releaseReadinessGate: advisory",
     "releaseReadinessGate: block_release_publication",
     "doctor_release_readiness_gate",
