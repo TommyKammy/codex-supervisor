@@ -16,6 +16,7 @@ import {
 } from "./core/types";
 import { truncate } from "./core/utils";
 import { buildTrackedPrMismatch } from "./supervisor/tracked-pr-mismatch";
+import { buildStaleReviewBotRemediation } from "./supervisor/stale-review-bot-remediation";
 import { configuredBotReviewThreads, latestReviewComment } from "./review-thread-reporting";
 
 export type HostLocalTrackedPrBlockerGateType =
@@ -769,6 +770,19 @@ export async function maybeCommentOnTrackedPrPersistentStatus(args: {
     failureContext: args.failureContext,
     summarizeChecks: args.summarizeChecks,
   });
+  const staleReviewBotRemediation =
+    args.record.state === "blocked" && args.record.blocked_reason === "stale_review_bot"
+      ? buildStaleReviewBotRemediation({
+          config: args.config,
+          record: args.record,
+          pr: args.pr,
+          checks: args.checks,
+          reviewThreads: args.reviewThreads,
+        })
+      : null;
+  const canResolveStaleConfiguredBotReview =
+    args.config.staleConfiguredBotReviewPolicy === "reply_and_resolve" &&
+    staleReviewBotRemediation?.classification === "metadata_only";
 
   const canAutoHandleStaleConfiguredBotReview =
     !args.skipAutoHandleStaleConfiguredBotReview &&
@@ -793,7 +807,7 @@ export async function maybeCommentOnTrackedPrPersistentStatus(args: {
       syncJournal: args.syncJournal,
       config: args.config,
       failureContext: args.failureContext,
-      resolveAfterReply: args.config.staleConfiguredBotReviewPolicy === "reply_and_resolve",
+      resolveAfterReply: canResolveStaleConfiguredBotReview,
     });
     currentRecord = repliedRecord;
     const replyHandled =

@@ -2537,6 +2537,9 @@ test("handlePostTurnPullRequestTransitionsPhase replies and resolves stale confi
     isDraft: false,
     headRefOid: "head-116",
     mergeStateStatus: "CLEAN",
+    configuredBotCurrentHeadObservedAt: "2026-03-13T02:11:00Z",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
   });
   const state: SupervisorStateFile = {
     activeIssueNumber: 102,
@@ -2547,6 +2550,11 @@ test("handlePostTurnPullRequestTransitionsPhase replies and resolves stale confi
         pr_number: pr.number,
         last_head_sha: pr.headRefOid,
         blocked_reason: "stale_review_bot",
+        processed_review_thread_ids: [`thread-1@${pr.headRefOid}`, `thread-2@${pr.headRefOid}`],
+        processed_review_thread_fingerprints: [
+          `thread-1@${pr.headRefOid}#comment-1`,
+          `thread-2@${pr.headRefOid}#comment-2`,
+        ],
       }),
     },
   };
@@ -2716,6 +2724,121 @@ test("handlePostTurnPullRequestTransitionsPhase replies and resolves stale confi
   assert.equal(resolveCalls.length, 2);
 });
 
+test("handlePostTurnPullRequestTransitionsPhase does not resolve stale configured-bot review threads until metadata-only evidence is satisfied", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["copilot-pull-request-reviewer"],
+    staleConfiguredBotReviewPolicy: "reply_and_resolve",
+  });
+  const issue = createIssue({ title: "Do not resolve unresolved configured-bot blockers" });
+  const pr = createPullRequest({
+    title: "Tracked PR stale configured-bot blocker without metadata-only evidence",
+    number: 116,
+    isDraft: false,
+    headRefOid: "head-116",
+    mergeStateStatus: "CLEAN",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        issue_number: 102,
+        state: "blocked",
+        pr_number: pr.number,
+        last_head_sha: pr.headRefOid,
+        blocked_reason: "stale_review_bot",
+      }),
+    },
+  };
+  const replyCalls: Array<{ threadId: string; body: string }> = [];
+  const resolveCalls: string[] = [];
+  const staleBotFailureContext = {
+    ...createFailureContext(
+      "1 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
+    ),
+    signature: "stalled-bot:thread-1",
+    details: [
+      "reviewer=copilot-pull-request-reviewer file=src/review-a.ts line=42 processed_on_current_head=yes",
+    ],
+    url: "https://example.test/review/1",
+  };
+  const reviewThreads = [
+    createReviewThread({
+      id: "thread-1",
+      path: "src/review-a.ts",
+      line: 42,
+      comments: {
+        nodes: [
+          {
+            id: "comment-1",
+            body: "This finding still needs explicit metadata-only evidence before resolution.",
+            createdAt: "2026-03-13T02:05:00Z",
+            url: "https://example.test/pr/116#discussion_r1",
+            author: {
+              login: "copilot-pull-request-reviewer",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  ] satisfies ReviewThread[];
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: createNoopStateStore(),
+    github: createDefaultGithub({
+      addIssueComment: async () => {
+        throw new Error("unexpected addIssueComment call");
+      },
+      replyToReviewThread: async (threadId: string, body: string) => {
+        replyCalls.push({ threadId, body });
+      },
+      resolveReviewThread: async (threadId: string) => {
+        resolveCalls.push(threadId);
+      },
+    }),
+    context: createPostTurnContext({
+      state,
+      record: state.issues["102"]!,
+      issue,
+      pr,
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+    }),
+    derivePullRequestLifecycleSnapshot: (recordForState) =>
+      createLifecycleSnapshot(recordForState, "blocked", {
+        failureContext: staleBotFailureContext,
+      }),
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    blockedReasonFromReviewState: () => "stale_review_bot",
+    summarizeChecks,
+    configuredBotReviewThreads: () => reviewThreads,
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runLocalCiCommand: async () => undefined,
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
+    loadOpenPullRequestSnapshot: async () => ({
+      pr,
+      checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      reviewThreads,
+    }),
+  });
+
+  assert.equal(result.record.state, "blocked");
+  assert.equal(result.record.blocked_reason, "stale_review_bot");
+  assert.deepEqual(
+    replyCalls.map((call) => call.threadId),
+    ["thread-1"],
+  );
+  assert.deepEqual(resolveCalls, []);
+  assert.match(replyCalls[0]?.body ?? "", /Leaving thread resolution to a human operator/i);
+});
+
 test("handlePostTurnPullRequestTransitionsPhase refreshes tracked PR state after reply_and_resolve clears stale configured-bot threads", async () => {
   const config = createConfig({
     reviewBotLogins: ["copilot-pull-request-reviewer"],
@@ -2730,6 +2853,8 @@ test("handlePostTurnPullRequestTransitionsPhase refreshes tracked PR state after
     mergeStateStatus: "CLEAN",
     currentHeadCiGreenAt: "2026-03-13T02:10:00Z",
     configuredBotCurrentHeadObservedAt: "2026-03-13T02:11:00Z",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
   });
   const state: SupervisorStateFile = {
     activeIssueNumber: 102,
@@ -2740,6 +2865,8 @@ test("handlePostTurnPullRequestTransitionsPhase refreshes tracked PR state after
         pr_number: pr.number,
         last_head_sha: pr.headRefOid,
         blocked_reason: "stale_review_bot",
+        processed_review_thread_ids: [`thread-1@${pr.headRefOid}`],
+        processed_review_thread_fingerprints: [`thread-1@${pr.headRefOid}#comment-1`],
       }),
     },
   };
@@ -2855,6 +2982,8 @@ test("handlePostTurnPullRequestTransitionsPhase refreshes the sticky stale-revie
     mergeStateStatus: "CLEAN",
     currentHeadCiGreenAt: "2026-03-13T02:10:00Z",
     configuredBotCurrentHeadObservedAt: "2026-03-13T02:11:00Z",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
   });
   const initialThread = createReviewThread({
     id: "thread-1",
@@ -2905,6 +3034,8 @@ test("handlePostTurnPullRequestTransitionsPhase refreshes the sticky stale-revie
         blocked_reason: "stale_review_bot",
         last_host_local_pr_blocker_comment_head_sha: pr.headRefOid,
         last_host_local_pr_blocker_comment_signature: "stalled-bot:thread-1",
+        processed_review_thread_ids: [`thread-1@${pr.headRefOid}`],
+        processed_review_thread_fingerprints: [`thread-1@${pr.headRefOid}#comment-1`],
       }),
     },
   };
@@ -3043,6 +3174,9 @@ test("handlePostTurnPullRequestTransitionsPhase resumes reply_and_resolve withou
     isDraft: false,
     headRefOid: "head-116",
     mergeStateStatus: "CLEAN",
+    configuredBotCurrentHeadObservedAt: "2026-03-13T02:11:00Z",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
   });
   const state: SupervisorStateFile = {
     activeIssueNumber: 102,
@@ -3053,6 +3187,11 @@ test("handlePostTurnPullRequestTransitionsPhase resumes reply_and_resolve withou
         pr_number: pr.number,
         last_head_sha: pr.headRefOid,
         blocked_reason: "stale_review_bot",
+        processed_review_thread_ids: [`thread-1@${pr.headRefOid}`, `thread-2@${pr.headRefOid}`],
+        processed_review_thread_fingerprints: [
+          `thread-1@${pr.headRefOid}#comment-1`,
+          `thread-2@${pr.headRefOid}#comment-2`,
+        ],
       }),
     },
   };
@@ -3243,6 +3382,9 @@ test("handlePostTurnPullRequestTransitionsPhase does not reuse another stale thr
     isDraft: false,
     headRefOid: "head-116",
     mergeStateStatus: "CLEAN",
+    configuredBotCurrentHeadObservedAt: "2026-03-13T02:11:00Z",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
   });
   const state: SupervisorStateFile = {
     activeIssueNumber: 102,
@@ -3253,6 +3395,11 @@ test("handlePostTurnPullRequestTransitionsPhase does not reuse another stale thr
         pr_number: pr.number,
         last_head_sha: pr.headRefOid,
         blocked_reason: "stale_review_bot",
+        processed_review_thread_ids: [`thread-1@${pr.headRefOid}`, `thread-2@${pr.headRefOid}`],
+        processed_review_thread_fingerprints: [
+          `thread-1@${pr.headRefOid}#comment-1`,
+          `thread-2@${pr.headRefOid}#comment-2`,
+        ],
       }),
     },
   };
