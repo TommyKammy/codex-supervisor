@@ -57,6 +57,20 @@ test("runTrackedPrReadyLocalCiPublicationGate reports workspace failures with th
   assert.equal(result.ok, false);
   assert.equal(result.record.latest_local_ci_result?.failure_class, "workspace_toolchain_missing");
   assert.equal(result.record.latest_local_ci_result?.remediation_target, "workspace_environment");
+  assert.deepEqual(result.record.timeline_artifacts, [
+    {
+      type: "verification_result",
+      gate: "local_ci",
+      command: "npm run ci:local",
+      head_sha: "head-116",
+      outcome: "failed",
+      remediation_target: "workspace_environment",
+      next_action: "fix_workspace_environment",
+      summary:
+        "Configured local CI command could not run before marking PR #116 ready because the workspace toolchain is unavailable. Remediation target: workspace environment.",
+      recorded_at: result.record.timeline_artifacts?.[0]?.recorded_at ?? "",
+    },
+  ]);
   assert.equal(
     result.record.last_host_local_pr_blocker_comment_signature,
     "local-ci-gate-workspace_toolchain_missing|gate=local_ci|failure=workspace_toolchain_missing|target=workspace_environment",

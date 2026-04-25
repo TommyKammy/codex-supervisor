@@ -23,6 +23,7 @@ import {
 } from "../remediation-targets";
 import { projectTrackedPrLifecycle } from "../tracked-pr-lifecycle-projection";
 import { hasFreshTrackedPrReadyPromotionBlockerEvidence } from "../tracked-pr-ready-promotion-blocker";
+import { formatTimelineArtifactStatusLine } from "../timeline-artifacts";
 import {
   classifyReadyPromotionRecoverability,
   classifyTrackedPrMismatchRecoverability,
@@ -134,6 +135,16 @@ function buildTrackedPrHostLocalCiDetailLines(
   return detailLines;
 }
 
+function buildTimelineArtifactDetailLines(record: IssueRunRecord): string[] {
+  return (record.timeline_artifacts ?? []).slice(-3).map((artifact) =>
+    formatTimelineArtifactStatusLine({
+      issueNumber: record.issue_number,
+      prNumber: record.pr_number,
+      artifact,
+    }),
+  );
+}
+
 function parseRemediationTargetFromSignature(
   signature: string | null | undefined,
 ): LocalCiRemediationTarget | null {
@@ -193,6 +204,7 @@ function readyPromotionGateSummary(
           `summary=${summary.replace(/\r?\n/g, "\\n")}`,
         ].join(" "),
         ...buildTrackedPrHostLocalCiDetailLines(config, record, pr, checks),
+        ...buildTimelineArtifactDetailLines(record),
       ],
     };
   }
@@ -216,6 +228,7 @@ function readyPromotionGateSummary(
           `remediation_target=${remediationTarget}`,
           `summary=${pathHygieneSummary.replace(/\r?\n/g, "\\n")}`,
         ].join(" "),
+        ...buildTimelineArtifactDetailLines(record),
       ],
     };
   }
@@ -236,6 +249,7 @@ function readyPromotionGateSummary(
           `remediation_target=${workspacePreparationRemediationTargetForFailureClass(preparationFailureClass)}`,
           `summary=${summary.replace(/\r?\n/g, "\\n")}`,
         ].join(" "),
+        ...buildTimelineArtifactDetailLines(record),
       ],
     };
   }

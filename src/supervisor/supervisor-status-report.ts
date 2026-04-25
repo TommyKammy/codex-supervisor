@@ -7,7 +7,7 @@ import type {
 } from "../core/types";
 import { sanitizeStatusValue } from "./supervisor-status-rendering";
 import { truncate } from "../core/utils";
-import type { BlockedReason, RunState, SupervisorStateFile } from "../core/types";
+import type { BlockedReason, RunState, SupervisorStateFile, TimelineArtifact } from "../core/types";
 import type { SupervisorIssueActivityContextDto } from "./supervisor-operator-activity-context";
 import type { SupervisorLoopRuntimeDto } from "./supervisor-loop-runtime-state";
 import type {
@@ -49,6 +49,7 @@ export interface SupervisorTrackedIssueDto {
   branch: string;
   prNumber: number | null;
   blockedReason: BlockedReason | null;
+  timelineArtifacts?: TimelineArtifact[];
 }
 
 export interface SupervisorRuntimeRecoverySignalDto {
@@ -338,11 +339,15 @@ export function buildInventoryRefreshWarningMessage(state: SupervisorStateFile):
 export function buildTrackedIssueDtos(state: SupervisorStateFile): SupervisorTrackedIssueDto[] {
   return Object.values(state.issues)
     .sort((left, right) => left.issue_number - right.issue_number)
-    .map((record) => ({
-      issueNumber: record.issue_number,
-      state: record.state,
-      branch: record.branch,
-      prNumber: record.pr_number,
-      blockedReason: record.blocked_reason,
-    }));
+    .map((record) => {
+      const timelineArtifacts = record.timeline_artifacts ?? [];
+      return {
+        issueNumber: record.issue_number,
+        state: record.state,
+        branch: record.branch,
+        prNumber: record.pr_number,
+        blockedReason: record.blocked_reason,
+        ...(timelineArtifacts.length > 0 ? { timelineArtifacts } : {}),
+      };
+    });
 }
