@@ -10,6 +10,10 @@ import type {
 
 const MAX_TIMELINE_ARTIFACTS = 20;
 
+function escapeStatusLineValue(value: string): string {
+  return value.replace(/\r?\n/g, "\\n");
+}
+
 export function appendTimelineArtifact(
   record: Pick<IssueRunRecord, "timeline_artifacts">,
   artifact: TimelineArtifact,
@@ -92,7 +96,7 @@ export function formatTimelineArtifactStatusLine(args: {
     `head_sha=${args.artifact.head_sha ?? "unknown"}`,
     `remediation_target=${args.artifact.remediation_target ?? "none"}`,
     `next_action=${args.artifact.next_action}`,
-    ...(args.artifact.command ? [`command=${args.artifact.command}`] : []),
-    `summary=${args.artifact.summary.replace(/\r?\n/g, "\\n")}`,
+    ...(args.artifact.command ? [`command=${escapeStatusLineValue(args.artifact.command)}`] : []),
+    `summary=${escapeStatusLineValue(args.artifact.summary)}`,
   ].join(" ");
 }
