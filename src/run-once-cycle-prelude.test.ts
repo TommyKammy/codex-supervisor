@@ -48,6 +48,11 @@ test("runOnceCyclePrelude loads state and aggregates recovery setup events in or
     reason: "blocked recovery",
     at: "2026-03-14T00:03:00Z",
   };
+  const staleFailedRecoveryEvent: RecoveryEvent = {
+    issueNumber: 47,
+    reason: "failed no-PR recovery",
+    at: "2026-03-14T00:03:15Z",
+  };
   const parentEpicClosureEvent: RecoveryEvent = {
     issueNumber: 45,
     reason: "parent_epic_auto_closed: auto-closed parent epic #45 because child issues #46, #47 are closed",
@@ -101,6 +106,7 @@ test("runOnceCyclePrelude loads state and aggregates recovery setup events in or
       calls.push("reconcileStaleFailedIssueStates");
       assert.equal(loadedState, state);
       assert.equal(loadedIssues, issues);
+      return [staleFailedRecoveryEvent];
     },
     reconcileRecoverableBlockedIssueStates: async (loadedState, loadedIssues) => {
       calls.push("reconcileRecoverableBlockedIssueStates");
@@ -140,10 +146,78 @@ test("runOnceCyclePrelude loads state and aggregates recovery setup events in or
     ...carryover,
     staleReservationEvent,
     mergedConvergenceEvent,
+    staleFailedRecoveryEvent,
     blockedRecoveryEvent,
     parentEpicClosureEvent,
     orphanCleanupEvent,
   ]);
+  assert.deepEqual(
+    result.recoveryResults.map((recoveryResult) => ({
+      outcome: recoveryResult.outcome,
+      reason: recoveryResult.reason,
+      issueNumber: recoveryResult.issueNumber,
+      prNumber: recoveryResult.prNumber,
+      operatorMessage: recoveryResult.operatorMessage,
+    })),
+    [
+      {
+        outcome: "recovered",
+        reason: "carryover recovery",
+        issueNumber: 90,
+        prNumber: null,
+        operatorMessage: "carryover recovery",
+      },
+      {
+        outcome: "recovered",
+        reason: "cleared stale reservation",
+        issueNumber: 41,
+        prNumber: null,
+        operatorMessage: "cleared stale reservation",
+      },
+      {
+        outcome: "recovered",
+        reason: "merged convergence",
+        issueNumber: 42,
+        prNumber: null,
+        operatorMessage: "merged convergence",
+      },
+      {
+        outcome: "unchanged",
+        reason: null,
+        issueNumber: null,
+        prNumber: null,
+        operatorMessage: null,
+      },
+      {
+        outcome: "recovered",
+        reason: "failed no-PR recovery",
+        issueNumber: 47,
+        prNumber: null,
+        operatorMessage: "failed no-PR recovery",
+      },
+      {
+        outcome: "recovered",
+        reason: "blocked recovery",
+        issueNumber: 43,
+        prNumber: null,
+        operatorMessage: "blocked recovery",
+      },
+      {
+        outcome: "recovered",
+        reason: "parent_epic_auto_closed: auto-closed parent epic #45 because child issues #46, #47 are closed",
+        issueNumber: 45,
+        prNumber: null,
+        operatorMessage: "parent_epic_auto_closed: auto-closed parent epic #45 because child issues #46, #47 are closed",
+      },
+      {
+        outcome: "recovered",
+        reason: "pruned orphaned worktree",
+        issueNumber: 44,
+        prNumber: null,
+        operatorMessage: "pruned orphaned worktree",
+      },
+    ],
+  );
 });
 
 test("runOnceCyclePrelude persists the last-known-good inventory snapshot after a successful full inventory refresh", async () => {
@@ -192,7 +266,7 @@ test("runOnceCyclePrelude persists the last-known-good inventory snapshot after 
     reserveRunnableIssueSelection: async () => false,
     reconcileTrackedMergedButOpenIssues: async () => [],
     reconcileMergedIssueClosures: async () => [],
-    reconcileStaleFailedIssueStates: async () => {},
+    reconcileStaleFailedIssueStates: async () => [],
     reconcileRecoverableBlockedIssueStates: async () => [],
     reconcileParentEpicClosures: async () => [],
     cleanupExpiredDoneWorkspaces: async () => [],
@@ -293,7 +367,7 @@ test("runOnceCyclePrelude prioritizes recoverable tracked PR reconciliation ahea
         options,
       ),
     reconcileMergedIssueClosures: async () => [],
-    reconcileStaleFailedIssueStates: async () => {},
+    reconcileStaleFailedIssueStates: async () => [],
     reconcileRecoverableBlockedIssueStates: async () => [],
     reconcileParentEpicClosures: async () => [],
     cleanupExpiredDoneWorkspaces: async () => [],
@@ -451,7 +525,7 @@ test("runOnceCyclePrelude bounds merged issue closure revalidation for historica
         loadedIssues,
       );
     },
-    reconcileStaleFailedIssueStates: async () => {},
+    reconcileStaleFailedIssueStates: async () => [],
     reconcileRecoverableBlockedIssueStates: async () => [],
     reconcileParentEpicClosures: async () => [],
     cleanupExpiredDoneWorkspaces: async () => [],
@@ -513,6 +587,7 @@ test("runOnceCyclePrelude rehydrates tracked blocked PRs before reserving select
     },
     reconcileStaleFailedIssueStates: async () => {
       calls.push("stale_failed");
+      return [];
     },
     reconcileRecoverableBlockedIssueStates: async (loadedState, _loadedIssues, options) => {
       calls.push(`recoverable_blocked:${options?.onlyTrackedPrStates === true ? "tracked" : "all"}`);
@@ -618,6 +693,7 @@ test("runOnceCyclePrelude requeues rehydrated requirements-blocked no-PR records
     },
     reconcileStaleFailedIssueStates: async () => {
       calls.push("stale_failed");
+      return [];
     },
     reconcileRecoverableBlockedIssueStates: async (loadedState, _loadedIssues, options) => {
       calls.push(`recoverable_blocked:${options?.onlyTrackedPrStates === true ? "tracked" : "all"}`);
@@ -711,6 +787,7 @@ test("runOnceCyclePrelude reconciles stale done no-PR records before reserving a
     },
     reconcileStaleFailedIssueStates: async () => {
       calls.push("stale_failed");
+      return [];
     },
     reconcileStaleDoneIssueStates: async (loadedState, loadedIssues) => {
       calls.push("stale_done");
@@ -811,6 +888,7 @@ test("runOnceCyclePrelude reconciles tracked PR-open issues before reserving a n
     },
     reconcileStaleFailedIssueStates: async () => {
       calls.push("stale_failed");
+      return [];
     },
     reconcileRecoverableBlockedIssueStates: async () => {
       calls.push("recoverable_blocked");
@@ -912,7 +990,7 @@ test("runOnceCyclePrelude publishes the active reconciliation phase and clears i
     listAllIssues: async () => [],
     reconcileTrackedMergedButOpenIssues: async () => [],
     reconcileMergedIssueClosures: async () => [],
-    reconcileStaleFailedIssueStates: async () => {},
+    reconcileStaleFailedIssueStates: async () => [],
     reconcileRecoverableBlockedIssueStates: async () => [],
     reconcileParentEpicClosures: async () => [],
     cleanupExpiredDoneWorkspaces: async () => [],
@@ -963,7 +1041,7 @@ test("runOnceCyclePrelude publishes reconciliation target updates within a phase
       });
       return [];
     },
-    reconcileStaleFailedIssueStates: async () => {},
+    reconcileStaleFailedIssueStates: async () => [],
     reconcileRecoverableBlockedIssueStates: async () => [],
     reconcileParentEpicClosures: async () => [],
     cleanupExpiredDoneWorkspaces: async () => [],
@@ -1057,7 +1135,7 @@ test("runOnceCyclePrelude emits typed recovery events for transport adapters", a
     listAllIssues: async () => issues,
     reconcileTrackedMergedButOpenIssues: async () => recoveryEvents,
     reconcileMergedIssueClosures: async () => [],
-    reconcileStaleFailedIssueStates: async () => {},
+    reconcileStaleFailedIssueStates: async () => [],
     reconcileRecoverableBlockedIssueStates: async () => [],
     reconcileParentEpicClosures: async () => [],
     cleanupExpiredDoneWorkspaces: async () => [],
@@ -1721,15 +1799,17 @@ test("runOnceCyclePrelude rehydrates stale failed tracked PRs during degraded in
     },
     reconcileStaleFailedIssueStates: async (loadedState, loadedIssues) => {
       staleFailedCalls.push({ loadedState, loadedIssues });
+      const reason =
+        "tracked_pr_head_advanced: resumed issue #77 from failed to addressing_review after tracked PR #170 advanced from head-old-170 to head-new-170";
       loadedState.issues["77"] = {
         ...loadedState.issues["77"]!,
         state: "addressing_review",
         last_head_sha: "head-new-170",
         last_failure_signature: null,
         repeated_failure_signature_count: 0,
-        last_recovery_reason:
-          "tracked_pr_head_advanced: resumed issue #77 from failed to addressing_review after tracked PR #170 advanced from head-old-170 to head-new-170",
+        last_recovery_reason: reason,
       };
+      return [{ issueNumber: 77, reason, at: "2026-03-26T00:06:00Z" }];
     },
     reconcileRecoverableBlockedIssueStates: async () => {
       throw new Error("unexpected reconcileRecoverableBlockedIssueStates call");
@@ -1750,6 +1830,9 @@ test("runOnceCyclePrelude rehydrates stale failed tracked PRs during degraded in
       loadedState: state,
       loadedIssues: [],
     },
+  ]);
+  assert.deepEqual(result.recoveryEvents.map((event) => event.reason), [
+    "tracked_pr_head_advanced: resumed issue #77 from failed to addressing_review after tracked PR #170 advanced from head-old-170 to head-new-170",
   ]);
   assert.equal(result.state.issues["77"]?.state, "addressing_review");
   assert.equal(result.state.issues["77"]?.last_head_sha, "head-new-170");
@@ -1798,6 +1881,8 @@ test("runOnceCyclePrelude rehydrates an active stale failed tracked PR during de
     },
     reconcileStaleFailedIssueStates: async (loadedState, loadedIssues) => {
       staleFailedCalls.push({ loadedState, loadedIssues });
+      const reason =
+        "tracked_pr_lifecycle_recovered: resumed issue #77 from failed to draft_pr using fresh tracked PR #170 facts at head head-old-170";
       loadedState.issues["77"] = {
         ...loadedState.issues["77"]!,
         state: "draft_pr",
@@ -1806,9 +1891,9 @@ test("runOnceCyclePrelude rehydrates an active stale failed tracked PR during de
         last_failure_context: null,
         last_failure_signature: null,
         repeated_failure_signature_count: 0,
-        last_recovery_reason:
-          "tracked_pr_lifecycle_recovered: resumed issue #77 from failed to draft_pr using fresh tracked PR #170 facts at head head-old-170",
+        last_recovery_reason: reason,
       };
+      return [{ issueNumber: 77, reason, at: "2026-03-26T00:06:00Z" }];
     },
     reconcileRecoverableBlockedIssueStates: async () => {
       throw new Error("unexpected reconcileRecoverableBlockedIssueStates call");
@@ -1827,6 +1912,9 @@ test("runOnceCyclePrelude rehydrates an active stale failed tracked PR during de
       loadedState: state,
       loadedIssues: [],
     },
+  ]);
+  assert.deepEqual(result.recoveryEvents.map((event) => event.reason), [
+    "tracked_pr_lifecycle_recovered: resumed issue #77 from failed to draft_pr using fresh tracked PR #170 facts at head head-old-170",
   ]);
   assert.equal(result.state.issues["77"]?.state, "draft_pr");
   assert.equal(result.state.issues["77"]?.last_error, null);
@@ -2132,7 +2220,7 @@ test("runOnceCyclePrelude does not attempt degraded parent epic closure from a p
     },
     reconcileTrackedMergedButOpenIssues: async () => [],
     reconcileMergedIssueClosures: async () => [],
-    reconcileStaleFailedIssueStates: async () => {},
+    reconcileStaleFailedIssueStates: async () => [],
     reconcileRecoverableBlockedIssueStates: async () => [],
     reconcileParentEpicClosures: async () => {
       parentEpicClosureCalls += 1;

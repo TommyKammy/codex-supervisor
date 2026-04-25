@@ -550,8 +550,9 @@ export async function reconcileStaleFailedIssueStates(
     targetPrNumber?: number | null;
     waitStep?: string | null;
   }) => Promise<void>) | null = null,
-): Promise<void> {
+): Promise<RecoveryEvent[]> {
   let changed = false;
+  const recoveryEvents: RecoveryEvent[] = [];
   const issuesByNumber = new Map(issues.map((issue) => [issue.number, issue]));
   const issueStateByNumber = new Map(issues.map((issue) => [issue.number, issue.state ?? null]));
   let failedNoPrFetchPromise: Promise<void> | null = null;
@@ -611,10 +612,11 @@ export async function reconcileStaleFailedIssueStates(
         });
         state.issues[String(record.issue_number)] = updated;
         changed = true;
+        recoveryEvents.push(recoveryEvent);
         continue;
       }
 
-      if (await reconcileStaleFailedNoPrRecord({
+      const noPrRecoveryEvent = await reconcileStaleFailedNoPrRecord({
         github,
         stateStore,
         state,
@@ -624,13 +626,15 @@ export async function reconcileStaleFailedIssueStates(
         ensureOriginDefaultBranchFetched,
         buildRecoveryEvent,
         applyRecoveryEvent,
-      })) {
+      });
+      if (noPrRecoveryEvent !== null) {
         changed = true;
+        recoveryEvents.push(noPrRecoveryEvent);
       }
       continue;
     }
 
-    if (await reconcileStaleFailedTrackedPrRecord(
+    const trackedPrRecoveryEvent = await reconcileStaleFailedTrackedPrRecord(
       github,
       stateStore,
       state,
@@ -642,14 +646,18 @@ export async function reconcileStaleFailedIssueStates(
         applyRecoveryEvent,
       },
       updateReconciliationProgress,
-    )) {
+    );
+    if (trackedPrRecoveryEvent !== null) {
       changed = true;
+      recoveryEvents.push(trackedPrRecoveryEvent);
     }
   }
 
   if (changed) {
     await stateStore.save(state);
   }
+
+  return recoveryEvents;
 }
 
 export async function reconcileStaleDoneIssueStates(

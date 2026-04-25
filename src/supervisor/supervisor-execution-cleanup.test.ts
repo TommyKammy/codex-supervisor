@@ -675,7 +675,9 @@ test("runOnce preserves orphaned done worktrees that are no longer referenced by
   const supervisor = new Supervisor(fixture.config);
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
     authStatus: async () => ({ ok: true, message: null }),
-    listAllIssues: async () => [],
+    listAllIssues: async () => [
+      createIssue({ number: trackedIssueNumber, state: "CLOSED" }),
+    ],
     listCandidateIssues: async () => [],
     getIssue: async () => {
       throw new Error("unexpected getIssue call");
@@ -746,7 +748,10 @@ test("runOnce still cleans tracked done workspaces under the done-workspace poli
   const supervisor = new Supervisor(fixture.config);
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
     authStatus: async () => ({ ok: true, message: null }),
-    listAllIssues: async () => [],
+    listAllIssues: async () => [
+      createIssue({ number: olderIssueNumber, state: "CLOSED" }),
+      createIssue({ number: newerIssueNumber, state: "CLOSED" }),
+    ],
     listCandidateIssues: async () => [],
     getIssue: async () => {
       throw new Error("unexpected getIssue call");
