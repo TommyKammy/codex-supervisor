@@ -15,6 +15,10 @@ import {
 } from "./core/types";
 import { truncate } from "./core/utils";
 import * as trackedPrStatusComments from "./tracked-pr-status-comment";
+import {
+  appendTimelineArtifact,
+  buildLocalCiTimelineArtifact,
+} from "./timeline-artifacts";
 
 export interface TrackedPrReadyLocalCiPublicationGateResult {
   ok: boolean;
@@ -90,6 +94,13 @@ export async function runTrackedPrReadyLocalCiPublicationGate(args: {
     let record = args.stateStore.touch(args.record, {
       state: "blocked",
       latest_local_ci_result: localCiGate.latestResult ?? null,
+      timeline_artifacts: localCiGate.latestResult
+        ? appendTimelineArtifact(args.record, buildLocalCiTimelineArtifact({
+          gate: "local_ci",
+          result: localCiGate.latestResult,
+          headSha: args.pr.headRefOid ?? null,
+        }))
+        : args.record.timeline_artifacts,
       last_error: truncate(failureContext?.summary, 1000),
       last_failure_kind: null,
       last_failure_context: failureContext,
@@ -122,6 +133,13 @@ export async function runTrackedPrReadyLocalCiPublicationGate(args: {
 
   const record = args.stateStore.touch(args.record, {
     latest_local_ci_result: localCiGate.latestResult ?? null,
+    timeline_artifacts: localCiGate.latestResult
+      ? appendTimelineArtifact(args.record, buildLocalCiTimelineArtifact({
+        gate: "local_ci",
+        result: localCiGate.latestResult,
+        headSha: args.pr.headRefOid ?? null,
+      }))
+      : args.record.timeline_artifacts,
     last_observed_host_local_pr_blocker_signature: null,
     last_observed_host_local_pr_blocker_head_sha: null,
   });

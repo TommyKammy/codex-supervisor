@@ -16,6 +16,19 @@ export interface DashboardTrackedIssueLike {
   branch?: string | null;
   prNumber?: number | null;
   blockedReason?: string | null;
+  timelineArtifacts?: DashboardTimelineArtifactLike[] | null;
+}
+
+export interface DashboardTimelineArtifactLike {
+  type?: string | null;
+  gate?: string | null;
+  command?: string | null;
+  head_sha?: string | null;
+  outcome?: string | null;
+  remediation_target?: string | null;
+  next_action?: string | null;
+  summary?: string | null;
+  recorded_at?: string | null;
 }
 
 export interface DashboardRunnableIssueLike {

@@ -50,6 +50,10 @@ import {
 } from "./post-turn-pull-request-policy";
 import { runTrackedPrReadyLocalCiPublicationGate } from "./tracked-pr-local-ci-publication-gate";
 import * as trackedPrStatusComments from "./tracked-pr-status-comment";
+import {
+  appendTimelineArtifact,
+  buildPathHygieneTimelineArtifact,
+} from "./timeline-artifacts";
 
 export { syncTrackedPrPersistentStatusComment } from "./tracked-pr-status-comment";
 
@@ -543,6 +547,13 @@ export async function handlePostTurnPullRequestTransitionsPhase(
         };
         record = stateStore.touch(record, {
           state: "repairing_ci",
+          timeline_artifacts: appendTimelineArtifact(record, buildPathHygieneTimelineArtifact({
+            failureContext: repairFailureContext,
+            headSha: refreshed.pr.headRefOid ?? null,
+            outcome: "repair_queued",
+            remediationTarget: "repair_already_queued",
+            repairTargets: actionablePublishableFilePaths,
+          })),
           last_error: truncate(repairFailureContext.summary, 1000),
           last_failure_kind: null,
           last_failure_context: repairFailureContext,
@@ -579,6 +590,14 @@ export async function handlePostTurnPullRequestTransitionsPhase(
       }
       record = stateStore.touch(record, {
         state: "blocked",
+        timeline_artifacts: failureContext
+          ? appendTimelineArtifact(record, buildPathHygieneTimelineArtifact({
+            failureContext,
+            headSha: refreshed.pr.headRefOid ?? null,
+            outcome: "failed",
+            remediationTarget: "manual_review",
+          }))
+          : record.timeline_artifacts,
         last_error: truncate(
           failureContext?.summary
             ?? `Tracked durable artifacts failed workstation-local path hygiene before marking PR #${refreshed.pr.number} ready.`,

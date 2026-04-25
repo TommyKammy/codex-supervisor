@@ -1827,6 +1827,24 @@ test("handlePostTurnPullRequestTransitionsPhase routes repairable ready-promotio
   );
   assert.match(result.record.last_error ?? "", /will retry a repair turn/i);
   assert.deepEqual(result.record.last_failure_context?.details, failureDetails);
+  assert.deepEqual(result.record.timeline_artifacts, [
+    {
+      type: "path_hygiene_result",
+      gate: "workstation_local_path_hygiene",
+      command: "npm run verify:paths",
+      head_sha: draftPr.headRefOid,
+      outcome: "repair_queued",
+      remediation_target: "repair_already_queued",
+      next_action: "wait_for_repair_turn",
+      summary: result.record.last_failure_context?.summary ?? "",
+      recorded_at: result.record.timeline_artifacts?.[0]?.recorded_at ?? "",
+      repair_targets: ["docs/guide.md", "scripts/check-paths.sh"],
+    },
+  ]);
+  assert.doesNotMatch(
+    JSON.stringify(result.record.timeline_artifacts),
+    /\/(?:Users|home)\//,
+  );
   assert.equal(commentBodies.length, 1);
   assert.match(commentBodies[0] ?? "", /automatic retry: yes/i);
   assert.match(commentBodies[0] ?? "", /next action: supervisor will retry a repair turn/i);

@@ -3298,6 +3298,19 @@ test("status preserves draft tracked PR lifecycle when ready-for-review promotio
           verifier_drift_hint:
             "repo_owned_verifier_drift: the repo-owned verifier appears to disagree with a changed docs or contract expectation; repair the verifier expectation or the repo content before rerunning local CI.",
         },
+        timeline_artifacts: [
+          {
+            type: "verification_result",
+            gate: "local_ci",
+            command: "npm run verify:paths",
+            head_sha: "head-draft-274",
+            outcome: "failed",
+            remediation_target: "tracked_publishable_content",
+            next_action: "repair_tracked_publishable_content",
+            summary: "Configured local CI command failed before marking PR #274 ready.",
+            recorded_at: "2026-03-13T00:10:00Z",
+          },
+        ],
       }),
     },
   };
@@ -3349,6 +3362,11 @@ test("status preserves draft tracked PR lifecycle when ready-for-review promotio
     report.detailedStatusLines.join("\n"),
     /^tracked_pr_host_local_ci_hint issue=#174 pr=#274 kind=repo_owned_verifier_drift summary=repo_owned_verifier_drift: the repo-owned verifier appears to disagree with a changed docs or contract expectation; repair the verifier expectation or the repo content before rerunning local CI\.$/m,
   );
+  assert.match(
+    report.detailedStatusLines.join("\n"),
+    /^timeline_artifact issue=#174 pr=#274 type=verification_result gate=local_ci outcome=failed head_sha=head-draft-274 remediation_target=tracked_publishable_content next_action=repair_tracked_publishable_content command=npm run verify:paths summary=Configured local CI command failed before marking PR #274 ready\.$/m,
+  );
+  assert.deepEqual(report.trackedIssues[0]?.timelineArtifacts, state.issues[String(issueNumber)]?.timeline_artifacts);
   assert.match(
     report.detailedStatusLines.join("\n"),
     /^recovery_guidance=PR #274 is still draft because ready-for-review promotion is blocked by a repo-owned gate\. The same blocker is still present, so rerunning the supervisor alone will not help\. Failed gate: npm run verify:paths\. Fix the gate in the tracked workspace first, then rerun it to promote the PR\.$/m,

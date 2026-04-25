@@ -197,6 +197,30 @@ export interface LatestLocalCiResult {
   verifier_drift_hint?: string | null;
 }
 
+export type TimelineArtifactOutcome =
+  | "passed"
+  | "failed"
+  | "not_configured"
+  | "repair_queued";
+
+export type TimelineArtifactGate =
+  | "local_ci"
+  | "workspace_preparation"
+  | "workstation_local_path_hygiene";
+
+export interface TimelineArtifact {
+  type: "verification_result" | "path_hygiene_result";
+  gate: TimelineArtifactGate;
+  command: string | null;
+  head_sha: string | null;
+  outcome: TimelineArtifactOutcome;
+  remediation_target: LocalCiRemediationTarget | null;
+  next_action: string;
+  summary: string;
+  recorded_at: string;
+  repair_targets?: string[];
+}
+
 export interface SupervisorConfig {
   repoPath: string;
   repoSlug: string;
@@ -408,6 +432,7 @@ export interface IssueRunRecord {
   last_local_review_signature: string | null;
   repeated_local_review_signature_count: number;
   latest_local_ci_result?: LatestLocalCiResult | null;
+  timeline_artifacts?: TimelineArtifact[];
   external_review_head_sha: string | null;
   external_review_misses_path: string | null;
   external_review_matched_findings_count: number;
