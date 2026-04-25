@@ -41,7 +41,7 @@ import {
 import { buildTrackedPrMismatch, shouldHydrateTrackedPrDiagnostics } from "./supervisor/tracked-pr-mismatch";
 import { buildTrustAndConfigWarnings, buildWarning, renderDoctorWarningLine } from "./warning-formatting";
 import { buildTrackedMergedButOpenBacklogDiagnosticLine } from "./reconciliation-backlog-diagnostics";
-import { renderOperatorActionLine, selectDoctorOperatorAction } from "./operator-actions";
+import { appendRestartRecommendationLine, renderOperatorActionLine, selectDoctorOperatorAction } from "./operator-actions";
 
 export type DoctorCheckStatus = "pass" | "warn" | "fail";
 export type DoctorDecisionAction = "stop" | "maintenance" | "continue";
@@ -1007,7 +1007,7 @@ export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
     }),
   );
 
-  return [
+  const lines = [
     `doctor_decision action=${decisionSurface.decisionSummary.action} summary=${sanitizeDoctorValue(decisionSurface.decisionSummary.summary)}`,
     doctorOperatorActionLine,
     ...(["active_risk", "maintenance", "informational"] as const).flatMap((tier) => [
@@ -1042,5 +1042,7 @@ export function renderDoctorReport(diagnostics: DoctorDiagnostics): string {
         (detail) => `doctor_detail name=${check.name} detail=${sanitizeDoctorValue(detail)}`,
       ),
     ),
-  ].join("\n");
+  ];
+
+  return appendRestartRecommendationLine(lines, "doctor_restart_recommendation").join("\n");
 }

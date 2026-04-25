@@ -1306,6 +1306,10 @@ test("status surfaces loop-off as a blocker when tracked work is still active", 
     report.detailedStatusLines.join("\n"),
     /^loop_runtime_blocker state=off active_tracked_issues=1 first_issue=#188 first_state=addressing_review first_pr=#288 action=restart_loop restart_reason=recoverable_active_tracked_work_waiting_for_loop expected_outcome=loop_runtime_state_running_then_tracked_issue_advances fallback=if_blocker_remains_run_status_why_and_doctor_then_inspect_runtime_marker_and_config$/m,
   );
+  assert.match(
+    report.detailedStatusLines.join("\n"),
+    /^restart_recommendation category=restart_required_for_convergence source=loop_runtime_blocker summary=Restarting the supported supervisor loop is required before active tracked work can converge\.$/m,
+  );
   assert.equal(
     report.warning?.message,
     "Tracked work is active for issue #188, but the supervisor loop is off. Restart the supported loop host; expect loop_runtime state=running before issue #188 advances.",
@@ -1319,6 +1323,10 @@ test("status surfaces loop-off as a blocker when tracked work is still active", 
   assert.match(
     status,
     /^operator_action action=restart_loop source=loop_runtime_blocker priority=90 summary=Tracked work is active but the supervisor loop is off; restart the supported loop host so the runtime reports running and tracked work can advance\.$/m,
+  );
+  assert.match(
+    status,
+    /^restart_recommendation category=restart_required_for_convergence source=loop_runtime_blocker summary=Restarting the supported supervisor loop is required before active tracked work can converge\.$/m,
   );
   assert.match(
     status,

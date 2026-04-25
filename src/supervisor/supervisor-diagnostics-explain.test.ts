@@ -333,6 +333,10 @@ test("explain surfaces loop-off as an operator blocker for active tracked work",
     explanation,
     /^loop_runtime_blocker state=off active_tracked_issues=1 first_issue=#189 first_state=queued first_pr=#289 action=restart_loop restart_reason=recoverable_active_tracked_work_waiting_for_loop expected_outcome=loop_runtime_state_running_then_tracked_issue_advances fallback=if_blocker_remains_run_status_why_and_doctor_then_inspect_runtime_marker_and_config$/m,
   );
+  assert.match(
+    explanation,
+    /^restart_recommendation category=restart_required_for_convergence source=loop_runtime_blocker summary=Restarting the supported supervisor loop is required before active tracked work can converge\.$/m,
+  );
 });
 
 test("explain loop-off blocker summarizes all tracked work even when the explained issue is untracked", async () => {

@@ -70,6 +70,7 @@ import {
   type StaleReviewBotRemediationDto,
 } from "./stale-review-bot-remediation";
 import { formatMergedPrConvergenceOperatorEventLine } from "./supervisor-operator-events";
+import { appendRestartRecommendationLine } from "../operator-actions";
 
 export type ExplainIssueGitHub =
   Pick<GitHubClient, "getIssue" | "listAllIssues" | "listCandidateIssues"> &
@@ -543,7 +544,7 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
   const preMergeEvaluationLine = formatPreMergeEvaluationStatusLine(dto.activityContext?.preMergeEvaluation ?? null);
   const retrySummaryLine = formatRetrySummaryLine(dto.activityContext);
   const recoveryLoopSummaryLine = formatRecoveryLoopSummaryLine(dto.activityContext);
-  const lines = [
+  const lines = appendRestartRecommendationLine([
     `issue=#${dto.issueNumber}`,
     `title=${dto.title}`,
     ...(dto.lookupTargetSummary ? [dto.lookupTargetSummary] : []),
@@ -571,7 +572,7 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
     ...(dto.operatorEventSummary ? [dto.operatorEventSummary] : []),
     ...(dto.latestRecoverySummary ? [dto.latestRecoverySummary] : []),
     ...(dto.staleRecoveryWarningSummary ? [dto.staleRecoveryWarningSummary] : []),
-  ];
+  ]);
 
   if (dto.selectionReason) {
     lines.push(`selection_reason=${dto.selectionReason}`);
