@@ -36,19 +36,32 @@ export function buildRuntimeRecoverySummaryLines(
     ].join(" ");
   }
 
+  function isRuntimeRecoveryRecord(
+    record: unknown,
+  ): record is NonNullable<DashboardRuntimeRecoverySummaryLike["trackedRecords"]>[number] {
+    return typeof record === "object" && record !== null;
+  }
+
+  function isRuntimeRecoverySignal(
+    signal: unknown,
+  ): signal is NonNullable<DashboardRuntimeRecoverySummaryLike["signals"]>[number] {
+    return typeof signal === "object" && signal !== null;
+  }
+
   const lines = [
     ["loop_state", summary.loopState || "unknown"],
     ["lock_confidence", summary.lockConfidence || "none"],
   ].map(([label, value]) => label + ": " + value);
 
   const trackedRecords = Array.isArray(summary.trackedRecords) ? summary.trackedRecords : [];
+  const validTrackedRecords = trackedRecords.filter(isRuntimeRecoveryRecord);
   lines.push(
     "tracked_records: " +
-      (trackedRecords.length === 0 ? "none" : trackedRecords.map(formatRuntimeTrackedRecord).join("; ")),
+      (validTrackedRecords.length === 0 ? "none" : validTrackedRecords.map(formatRuntimeTrackedRecord).join("; ")),
   );
 
   const signals = Array.isArray(summary.signals) ? summary.signals : [];
-  for (const signal of signals) {
+  for (const signal of signals.filter(isRuntimeRecoverySignal)) {
     lines.push("signal: " + (signal.kind || "unknown") + " " + (signal.summary || ""));
   }
 
