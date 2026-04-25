@@ -18,6 +18,7 @@ const EXPECTED_TOP_LEVEL_ENTRIES = {
   files: [
     "committed-guardrails-cli.ts",
     "committed-guardrails.ts",
+    "diagnostics-dto.ts",
     "doctor.ts",
     "gsd.ts",
     "index.ts",

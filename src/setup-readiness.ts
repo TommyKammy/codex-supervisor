@@ -25,10 +25,15 @@ import type {
   ReleaseReadinessGateSummary,
   TrustDiagnosticsSummary,
 } from "./core/types";
-import { diagnoseSupervisorHost, type DoctorCheck, type DoctorCheckStatus } from "./doctor";
+import { diagnoseSupervisorHost } from "./doctor";
 import { reviewProviderProfileFromConfig } from "./core/review-providers";
 import type { ExecutionSafetyMode, TrustMode } from "./core/types";
 import type { OperatorActionToken } from "./operator-actions";
+import type {
+  SharedDiagnosticCheckDto,
+  SharedDiagnosticStatus,
+  SharedSupervisorDiagnosticCheckName,
+} from "./diagnostics-dto";
 
 export type SetupFieldState = "configured" | "missing" | "invalid";
 export type SetupReadinessOverallStatus = "configured" | "missing" | "invalid";
@@ -132,8 +137,8 @@ export interface SetupReadinessNextAction {
 export type SetupReadinessModelRoutingStrategy = CodexModelStrategy | string;
 
 export interface SetupReadinessHostSummary {
-  overallStatus: DoctorCheckStatus | "not_ready";
-  checks: DoctorCheck[];
+  overallStatus: SharedDiagnosticStatus | "not_ready";
+  checks: Array<SharedDiagnosticCheckDto<SharedSupervisorDiagnosticCheckName>>;
 }
 
 export interface SetupReadinessProviderPosture {
@@ -759,8 +764,8 @@ function buildModelRoutingPosture(args: {
 }
 
 function buildHostReadiness(
-  checks: DoctorCheck[] | null,
-  overallStatus: DoctorCheckStatus | null,
+  checks: Array<SharedDiagnosticCheckDto<SharedSupervisorDiagnosticCheckName>> | null,
+  overallStatus: SharedDiagnosticStatus | null,
 ): SetupReadinessHostSummary {
   if (!checks || !overallStatus) {
     return {
@@ -812,7 +817,7 @@ function buildBlockers(args: {
     });
   }
 
-  const hostBlockerChecks = new Set<DoctorCheck["name"]>(["github_auth", "codex_cli", "worktrees"]);
+  const hostBlockerChecks = new Set<SharedSupervisorDiagnosticCheckName>(["github_auth", "codex_cli", "worktrees"]);
   for (const check of args.hostReadiness.checks) {
     if (check.status !== "fail" || !hostBlockerChecks.has(check.name)) {
       continue;

@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import path from "node:path";
 import test from "node:test";
 import {
   createSetupField,
@@ -11,6 +13,13 @@ import {
 import { createSetupHarness, jsonResponse } from "./webui-dashboard-test-fixtures";
 
 const unavailableManagedRestart = createUnavailableManagedRestart();
+
+test("WebUI setup API declares a server-side setup diagnostics DTO boundary", async () => {
+  const content = await fs.readFile(path.join(process.cwd(), "src", "backend", "supervisor-http-server.ts"), "utf8");
+
+  assert.match(content, /SetupReadinessResponseDto[\s\S]*SharedDiagnosticHostSummaryDto/u);
+  assert.doesNotMatch(content, /interface SetupReadinessResponseDto extends SetupReadinessReport/u);
+});
 
 test("setup shell renders guided local CI adoption flow details", async () => {
   const harness = createSetupHarness([

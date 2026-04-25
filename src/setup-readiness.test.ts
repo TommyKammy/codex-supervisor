@@ -6,6 +6,14 @@ import path from "node:path";
 import test from "node:test";
 import { diagnoseSetupReadiness } from "./setup-readiness";
 
+test("setup-readiness imports shared diagnostic DTOs instead of doctor raw types", async () => {
+  const content = await fs.readFile(path.join(process.cwd(), "src", "setup-readiness.ts"), "utf8");
+
+  assert.match(content, /from "\.\/diagnostics-dto"/u);
+  assert.doesNotMatch(content, /type\s+DoctorCheck/u);
+  assert.doesNotMatch(content, /type\s+DoctorCheckStatus/u);
+});
+
 async function createTrackedRepo(root: string): Promise<string> {
   const repoPath = path.join(root, "repo");
   await fs.mkdir(repoPath, { recursive: true });

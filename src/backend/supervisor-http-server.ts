@@ -12,6 +12,7 @@ import {
   type DangerousSetupConfigFieldKey,
   type SetupConfigUpdateResult,
 } from "../setup-config-write";
+import type { SharedDiagnosticHostSummaryDto } from "../diagnostics-dto";
 import type { SetupReadinessReport } from "../setup-readiness";
 import type { SupervisorLoopController } from "../supervisor/supervisor-loop-controller";
 import type { SupervisorEvent, SupervisorService } from "../supervisor";
@@ -52,7 +53,8 @@ interface RunOnceCommandResultDto {
   summary: string;
 }
 
-export interface SetupReadinessResponseDto extends SetupReadinessReport {
+export interface SetupReadinessResponseDto extends Omit<SetupReadinessReport, "hostReadiness"> {
+  hostReadiness: SharedDiagnosticHostSummaryDto;
   managedRestart: ManagedRestartCapability;
 }
 
