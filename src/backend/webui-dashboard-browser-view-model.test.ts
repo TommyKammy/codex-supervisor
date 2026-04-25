@@ -43,6 +43,45 @@ test("buildWorkflowSteps marks execute as current when a selected issue is prese
   ]);
 });
 
+test("buildWorkflowSteps renders server-provided workflow DTOs instead of parsing status lines", () => {
+  assert.deepEqual(
+    buildWorkflowSteps({
+      workflowSteps: [
+        {
+          id: "observe",
+          title: "Observe",
+          detail: "Server DTO says observation is current.",
+          state: "current",
+        },
+        {
+          id: "execute",
+          title: "Execute",
+          detail: "Server DTO says no issue is executing.",
+          state: "idle",
+        },
+      ],
+      whyLines: ["selected_issue=#99"],
+      detailedStatusLines: ["active_issue=#99"],
+    } as Parameters<typeof buildWorkflowSteps>[0] & {
+      workflowSteps: ReturnType<typeof buildWorkflowSteps>;
+    }),
+    [
+      {
+        id: "observe",
+        title: "Observe",
+        detail: "Server DTO says observation is current.",
+        state: "current",
+      },
+      {
+        id: "execute",
+        title: "Execute",
+        detail: "Server DTO says no issue is executing.",
+        state: "idle",
+      },
+    ],
+  );
+});
+
 test("buildWorkflowSteps surfaces recover as the current step when only blocked issues remain", () => {
   assert.deepEqual(
     buildWorkflowSteps({

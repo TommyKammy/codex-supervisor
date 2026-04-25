@@ -25,6 +25,7 @@ import {
   type SupervisorExplainDto,
 } from "./supervisor-selection-issue-explain";
 import { buildDetailedStatusModel, buildDetailedStatusSummaryLines } from "./supervisor-status-model";
+import { buildSupervisorDashboardWorkflowSteps } from "./supervisor-dashboard-workflow";
 import {
   buildRuntimeRecoverySummary,
   buildInventoryRefreshWarningMessage,
@@ -155,6 +156,17 @@ async function loadGitHubRateLimitStatus(github: GitHubClient) {
   };
 }
 
+function buildStatusWorkflowSteps(args: {
+  selectedIssueNumber: number | null;
+  trackedIssueCount: number;
+  runnableIssueCount: number;
+  blockedIssueCount: number;
+  hasCandidateDiscovery: boolean;
+  reconciliationPhase: string | null;
+}) {
+  return buildSupervisorDashboardWorkflowSteps(args);
+}
+
 export async function buildSupervisorStatusReport(args: {
   config: SupervisorConfig;
   configPath?: string;
@@ -281,6 +293,14 @@ export async function buildSupervisorStatusReport(args: {
         trackedIssues,
         runnableIssues: readinessSummary?.runnableIssues ?? [],
         blockedIssues: readinessSummary?.blockedIssues ?? [],
+        workflowSteps: buildStatusWorkflowSteps({
+          selectedIssueNumber: null,
+          trackedIssueCount: trackedIssues.length,
+          runnableIssueCount: readinessSummary?.runnableIssues.length ?? 0,
+          blockedIssueCount: readinessSummary?.blockedIssues.length ?? 0,
+          hasCandidateDiscovery: true,
+          reconciliationPhase,
+        }),
         detailedStatusLines: [...inactiveDetailedStatusLines, ...trackedPrMismatchLines, ...stateDiagnosticLines],
         reconciliationPhase,
         reconciliationProgress,
@@ -349,6 +369,14 @@ export async function buildSupervisorStatusReport(args: {
         trackedIssues,
         runnableIssues: readinessSummary.runnableIssues,
         blockedIssues: readinessSummary.blockedIssues,
+        workflowSteps: buildStatusWorkflowSteps({
+          selectedIssueNumber: selectionSummary?.selectedIssueNumber ?? null,
+          trackedIssueCount: trackedIssues.length,
+          runnableIssueCount: readinessSummary.runnableIssues.length,
+          blockedIssueCount: readinessSummary.blockedIssues.length,
+          hasCandidateDiscovery: candidateDiscovery !== null,
+          reconciliationPhase,
+        }),
         detailedStatusLines: [...inactiveDetailedStatusLines, ...trackedPrMismatchLines, ...stateDiagnosticLines],
         reconciliationPhase,
         reconciliationProgress,
@@ -399,6 +427,14 @@ export async function buildSupervisorStatusReport(args: {
         trackedIssues,
         runnableIssues: [],
         blockedIssues: [],
+        workflowSteps: buildStatusWorkflowSteps({
+          selectedIssueNumber: null,
+          trackedIssueCount: trackedIssues.length,
+          runnableIssueCount: 0,
+          blockedIssueCount: 0,
+          hasCandidateDiscovery: true,
+          reconciliationPhase,
+        }),
         detailedStatusLines: [...inactiveDetailedStatusLines, ...trackedPrMismatchLines, ...stateDiagnosticLines],
         reconciliationPhase,
         reconciliationProgress,
@@ -501,6 +537,14 @@ export async function buildSupervisorStatusReport(args: {
     trackedIssues,
     runnableIssues: [],
     blockedIssues: [],
+    workflowSteps: buildStatusWorkflowSteps({
+      selectedIssueNumber: statusRecords.activeRecord.issue_number,
+      trackedIssueCount: trackedIssues.length,
+      runnableIssueCount: 0,
+      blockedIssueCount: 0,
+      hasCandidateDiscovery: true,
+      reconciliationPhase,
+    }),
     detailedStatusLines: [...detailedStatusLinesWithInventory, ...summaryLines, ...trackedPrMismatchLines, ...stateDiagnosticLines],
     reconciliationPhase,
     reconciliationProgress,

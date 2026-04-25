@@ -2,6 +2,7 @@ import type {
   DashboardLoopRuntimeLike,
   DashboardRuntimeRecoverySummaryLike,
   DashboardStatusLike,
+  DashboardWorkflowStepLike,
 } from "./webui-dashboard-browser-logic";
 
 export interface DashboardWorkflowStep {
@@ -17,6 +18,9 @@ export interface DashboardLoopRuntimeSummary {
   chipLabel: string;
   chipTone: "ok" | "warn" | "info";
 }
+
+const DASHBOARD_WORKFLOW_STEP_IDS = new Set(["observe", "triage", "select", "execute", "recover"]);
+const DASHBOARD_WORKFLOW_STEP_STATES = new Set(["done", "current", "idle", "current warn", "warn"]);
 
 export function buildRuntimeRecoverySummaryLines(
   summary: DashboardRuntimeRecoverySummaryLike | null | undefined,
@@ -100,12 +104,41 @@ function parseSelectedIssueNumber(status: DashboardStatusLike | null | undefined
   return null;
 }
 
+function normalizeWorkflowStep(step: DashboardWorkflowStepLike): DashboardWorkflowStep | null {
+  if (
+    typeof step.id !== "string" ||
+    !DASHBOARD_WORKFLOW_STEP_IDS.has(step.id) ||
+    typeof step.title !== "string" ||
+    step.title.trim() === "" ||
+    typeof step.detail !== "string" ||
+    step.detail.trim() === "" ||
+    typeof step.state !== "string" ||
+    !DASHBOARD_WORKFLOW_STEP_STATES.has(step.state)
+  ) {
+    return null;
+  }
+
+  return {
+    id: step.id,
+    title: step.title,
+    detail: step.detail,
+    state: step.state,
+  };
+}
+
 export function countCandidateIssues(status: DashboardStatusLike | null | undefined): string {
   const observed = status?.candidateDiscovery?.observedMatchingOpenIssues ?? null;
   return typeof observed === "number" ? String(observed) : "n/a";
 }
 
 export function buildWorkflowSteps(status: DashboardStatusLike | null | undefined): DashboardWorkflowStep[] {
+  const workflowSteps = Array.isArray(status?.workflowSteps)
+    ? status.workflowSteps.map(normalizeWorkflowStep).filter((step): step is DashboardWorkflowStep => step !== null)
+    : [];
+  if (workflowSteps.length > 0) {
+    return workflowSteps;
+  }
+
   const selectedIssueNumber = parseSelectedIssueNumber(status);
   const runnableCount = Array.isArray(status?.runnableIssues) ? status.runnableIssues.length : 0;
   const blockedCount = Array.isArray(status?.blockedIssues) ? status.blockedIssues.length : 0;
