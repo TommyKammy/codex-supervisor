@@ -36,6 +36,7 @@ import {
   runWorkstationLocalPathGate,
   type WorkstationLocalPathGateResult,
 } from "./workstation-local-path-gate";
+import { deriveReadyPromotionPathHygieneDecision } from "./ready-promotion-gate";
 import {
   emitSupervisorEvent,
   maybeBuildReviewWaitChangedEvent,
@@ -50,10 +51,6 @@ import {
 } from "./post-turn-pull-request-policy";
 import { runTrackedPrReadyLocalCiPublicationGate } from "./tracked-pr-local-ci-publication-gate";
 import * as trackedPrStatusComments from "./tracked-pr-status-comment";
-import {
-  appendTimelineArtifact,
-  buildPathHygieneTimelineArtifact,
-} from "./timeline-artifacts";
 
 export { syncTrackedPrPersistentStatusComment } from "./tracked-pr-status-comment";
 
@@ -94,8 +91,6 @@ export interface PullRequestLifecycleSnapshot {
 }
 
 const TRUSTED_DURABLE_ARTIFACT_NORMALIZATION_COMMIT_MESSAGE = "Normalize trusted durable artifacts for path hygiene";
-const READY_PROMOTION_PATH_HYGIENE_REPAIR_SUMMARY =
-  "Ready-promotion path hygiene found actionable publishable tracked content; supervisor will retry a repair turn before marking the draft PR ready.";
 
 function staleConfiguredBotThreadIdsFromSignature(signature: string | null | undefined): string[] {
   if (!signature) {
@@ -537,81 +532,15 @@ export async function handlePostTurnPullRequestTransitionsPhase(
       gateLabel: `before marking PR #${refreshed.pr.number} ready`,
       publishablePathAllowlistMarkers: config.publishablePathAllowlistMarkers,
     });
-    if (!pathHygieneGate.ok) {
-      const failureContext = pathHygieneGate.failureContext;
-      const actionablePublishableFilePaths = pathHygieneGate.actionablePublishableFilePaths ?? [];
-      if (failureContext !== null && actionablePublishableFilePaths.length > 0) {
-        const repairFailureContext: FailureContext = {
-          ...failureContext,
-          summary: `${READY_PROMOTION_PATH_HYGIENE_REPAIR_SUMMARY} Actionable files: ${actionablePublishableFilePaths.join(", ")}. ${failureContext.summary}`,
-        };
-        record = stateStore.touch(record, {
-          state: "repairing_ci",
-          timeline_artifacts: appendTimelineArtifact(record, buildPathHygieneTimelineArtifact({
-            failureContext: repairFailureContext,
-            headSha: refreshed.pr.headRefOid ?? null,
-            outcome: "repair_queued",
-            remediationTarget: "repair_already_queued",
-            repairTargets: actionablePublishableFilePaths,
-          })),
-          last_error: truncate(repairFailureContext.summary, 1000),
-          last_failure_kind: null,
-          last_failure_context: repairFailureContext,
-          ...args.applyFailureSignature(record, repairFailureContext),
-          blocked_reason: null,
-          ...trackedPrStatusComments.observedTrackedPrHostLocalBlockerPatch({
-            pr: refreshed.pr,
-            blockerSignature: repairFailureContext.signature,
-          }),
-        });
-        state.issues[String(record.issue_number)] = record;
-        await stateStore.save(state);
-        await syncJournal(record);
-        record = await trackedPrStatusComments.maybeCommentOnTrackedPrHostLocalBlocker({
-          github,
-          stateStore,
-          state,
-          record,
-          pr: refreshed.pr,
-          syncJournal,
-          gateType: "workstation_local_path_hygiene",
-          blockerSignature: repairFailureContext.signature,
-          failureClass: repairFailureContext.signature,
-          remediationTarget: "repair_already_queued",
-          summary: repairFailureContext.summary,
-          details: repairFailureContext.details,
-        });
-        return {
-          record,
-          pr: refreshed.pr,
-          checks: refreshed.checks,
-          reviewThreads: refreshed.reviewThreads,
-        };
-      }
-      record = stateStore.touch(record, {
-        state: "blocked",
-        timeline_artifacts: failureContext
-          ? appendTimelineArtifact(record, buildPathHygieneTimelineArtifact({
-            failureContext,
-            headSha: refreshed.pr.headRefOid ?? null,
-            outcome: "failed",
-            remediationTarget: "manual_review",
-          }))
-          : record.timeline_artifacts,
-        last_error: truncate(
-          failureContext?.summary
-            ?? `Tracked durable artifacts failed workstation-local path hygiene before marking PR #${refreshed.pr.number} ready.`,
-          1000,
-        ),
-        last_failure_kind: null,
-        last_failure_context: failureContext,
-        ...args.applyFailureSignature(record, failureContext),
-        blocked_reason: "verification",
-        ...trackedPrStatusComments.observedTrackedPrHostLocalBlockerPatch({
-          pr: refreshed.pr,
-          blockerSignature: failureContext?.signature ?? null,
-        }),
-      });
+    const pathHygieneDecision = deriveReadyPromotionPathHygieneDecision({
+      record,
+      pr: refreshed.pr,
+      gate: pathHygieneGate,
+      fallbackSummary: `Tracked durable artifacts failed workstation-local path hygiene before marking PR #${refreshed.pr.number} ready.`,
+      applyFailureSignature: args.applyFailureSignature,
+    });
+    if (pathHygieneDecision.kind === "repair" || pathHygieneDecision.kind === "manual_review") {
+      record = stateStore.touch(record, pathHygieneDecision.recordPatch);
       state.issues[String(record.issue_number)] = record;
       await stateStore.save(state);
       await syncJournal(record);
@@ -622,12 +551,7 @@ export async function handlePostTurnPullRequestTransitionsPhase(
         record,
         pr: refreshed.pr,
         syncJournal,
-        gateType: "workstation_local_path_hygiene",
-        blockerSignature: failureContext?.signature ?? null,
-        failureClass: failureContext?.signature ?? null,
-        remediationTarget: "manual_review",
-        summary: failureContext?.summary ?? null,
-        details: failureContext?.details,
+        ...pathHygieneDecision.comment,
       });
       return {
         record,
@@ -636,11 +560,11 @@ export async function handlePostTurnPullRequestTransitionsPhase(
         reviewThreads: refreshed.reviewThreads,
       };
     }
-    const rewrittenTrackedPaths = [
-      ...(pathHygieneGate.rewrittenJournalPaths ?? []),
-      ...(pathHygieneGate.rewrittenTrustedGeneratedArtifactPaths ?? []),
-    ];
-    const presentRewrittenTrackedPaths = await filterPresentTrackedFilePaths(workspacePath, rewrittenTrackedPaths);
+
+    const presentRewrittenTrackedPaths = await filterPresentTrackedFilePaths(
+      workspacePath,
+      pathHygieneDecision.rewrittenTrackedPaths,
+    );
     if (presentRewrittenTrackedPaths.length > 0) {
       let persistedNormalizationCommit = false;
       try {
