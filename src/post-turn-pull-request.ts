@@ -90,6 +90,8 @@ export interface PullRequestLifecycleSnapshot {
 }
 
 const TRUSTED_DURABLE_ARTIFACT_NORMALIZATION_COMMIT_MESSAGE = "Normalize trusted durable artifacts for path hygiene";
+const READY_PROMOTION_PATH_HYGIENE_REPAIR_SUMMARY =
+  "Ready-promotion path hygiene found actionable publishable tracked content; supervisor will retry a repair turn before marking the draft PR ready.";
 
 function staleConfiguredBotThreadIdsFromSignature(signature: string | null | undefined): string[] {
   if (!signature) {
@@ -533,6 +535,48 @@ export async function handlePostTurnPullRequestTransitionsPhase(
     });
     if (!pathHygieneGate.ok) {
       const failureContext = pathHygieneGate.failureContext;
+      const actionablePublishableFilePaths = pathHygieneGate.actionablePublishableFilePaths ?? [];
+      if (failureContext !== null && actionablePublishableFilePaths.length > 0) {
+        const repairFailureContext: FailureContext = {
+          ...failureContext,
+          summary: `${READY_PROMOTION_PATH_HYGIENE_REPAIR_SUMMARY} Actionable files: ${actionablePublishableFilePaths.join(", ")}. ${failureContext.summary}`,
+        };
+        record = stateStore.touch(record, {
+          state: "repairing_ci",
+          last_error: truncate(repairFailureContext.summary, 1000),
+          last_failure_kind: null,
+          last_failure_context: repairFailureContext,
+          ...args.applyFailureSignature(record, repairFailureContext),
+          blocked_reason: null,
+          ...trackedPrStatusComments.observedTrackedPrHostLocalBlockerPatch({
+            pr: refreshed.pr,
+            blockerSignature: repairFailureContext.signature,
+          }),
+        });
+        state.issues[String(record.issue_number)] = record;
+        await stateStore.save(state);
+        await syncJournal(record);
+        record = await trackedPrStatusComments.maybeCommentOnTrackedPrHostLocalBlocker({
+          github,
+          stateStore,
+          state,
+          record,
+          pr: refreshed.pr,
+          syncJournal,
+          gateType: "workstation_local_path_hygiene",
+          blockerSignature: repairFailureContext.signature,
+          failureClass: repairFailureContext.signature,
+          remediationTarget: "workspace_contents_repairable",
+          summary: repairFailureContext.summary,
+          details: repairFailureContext.details,
+        });
+        return {
+          record,
+          pr: refreshed.pr,
+          checks: refreshed.checks,
+          reviewThreads: refreshed.reviewThreads,
+        };
+      }
       record = stateStore.touch(record, {
         state: "blocked",
         last_error: truncate(

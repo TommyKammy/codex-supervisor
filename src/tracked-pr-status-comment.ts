@@ -146,11 +146,13 @@ function summarizeWorkstationLocalPathFirstFix(details: string[] | null | undefi
 function buildTrackedPrReadyPromotionPathHygieneComment(args: {
   pr: Pick<GitHubPullRequest, "headRefOid">;
   blockerSignature: string;
+  remediationTarget: string | null;
   summary: string;
   details?: string[] | null;
 }): string {
   const firstFix = summarizeWorkstationLocalPathFirstFix(args.details);
   const conciseSummary = args.summary.replace(/\s+First fix:.*$/i, "").trim();
+  const repairable = args.remediationTarget === "workspace_contents_repairable";
   return [
     `Tracked PR head \`${args.pr.headRefOid}\` is still draft because ready-for-review promotion is blocked locally.`,
     "",
@@ -159,8 +161,10 @@ function buildTrackedPrReadyPromotionPathHygieneComment(args: {
     `- blocker signature: \`${args.blockerSignature}\``,
     `- what failed: ${conciseSummary}`,
     ...(firstFix ? [`- ${firstFix}`] : []),
-    "- automatic retry: no",
-    "- rerunning the supervisor alone will not help yet; fix the tracked workspace artifacts first, then rerun promotion.",
+    `- automatic retry: ${repairable ? "yes" : "no"}`,
+    repairable
+      ? "- next action: supervisor will retry a repair turn with these actionable publishable files, then re-run ready-for-review promotion."
+      : "- rerunning the supervisor alone will not help yet; fix the tracked workspace artifacts first, then rerun promotion.",
     "",
     "GitHub checks may still be green because this blocker is host-local to the supervisor workspace.",
   ].join("\n");
@@ -168,6 +172,20 @@ function buildTrackedPrReadyPromotionPathHygieneComment(args: {
 
 function trackedPrReadyPromotionBlockedReasonCode(gateType: HostLocalTrackedPrBlockerGateType): string {
   return `ready_promotion_blocked_${gateType}`;
+}
+
+function trackedPrHostLocalBlockerCommentSignature(args: {
+  gateType: HostLocalTrackedPrBlockerGateType;
+  blockerSignature: string;
+  failureClass: string;
+  remediationTarget: string;
+}): string {
+  return [
+    args.blockerSignature,
+    `gate=${args.gateType}`,
+    `failure=${args.failureClass}`,
+    `target=${args.remediationTarget}`,
+  ].join("|");
 }
 
 function buildTrackedPrDraftReviewSuppressedComment(args: {
@@ -651,10 +669,16 @@ export async function maybeCommentOnTrackedPrHostLocalBlocker(args: {
   if (!args.blockerSignature || !args.failureClass || !args.remediationTarget || !args.summary) {
     return args.record;
   }
+  const blockerCommentSignature = trackedPrHostLocalBlockerCommentSignature({
+    gateType: args.gateType,
+    blockerSignature: args.blockerSignature,
+    failureClass: args.failureClass,
+    remediationTarget: args.remediationTarget,
+  });
 
   if (
     args.record.last_host_local_pr_blocker_comment_head_sha === args.pr.headRefOid
-    && args.record.last_host_local_pr_blocker_comment_signature === args.blockerSignature
+    && args.record.last_host_local_pr_blocker_comment_signature === blockerCommentSignature
   ) {
     return args.record;
   }
@@ -685,7 +709,7 @@ export async function maybeCommentOnTrackedPrHostLocalBlocker(args: {
 
   const updatedRecord = args.stateStore.touch(args.record, {
     last_host_local_pr_blocker_comment_head_sha: args.pr.headRefOid,
-    last_host_local_pr_blocker_comment_signature: args.blockerSignature,
+    last_host_local_pr_blocker_comment_signature: blockerCommentSignature,
   });
   args.state.issues[String(updatedRecord.issue_number)] = updatedRecord;
   await args.stateStore.save(args.state);

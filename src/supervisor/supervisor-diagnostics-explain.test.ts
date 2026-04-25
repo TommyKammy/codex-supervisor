@@ -1482,6 +1482,82 @@ test("explain keeps same-head host-local ready-promotion blockers current when t
   );
 });
 
+test("explain distinguishes repairable ready-promotion path hygiene blockers queued for repair", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 178;
+  const prNumber = 278;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "repairing_ci",
+        branch,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: prNumber,
+        blocked_reason: null,
+        last_error:
+          "Ready-promotion path hygiene found actionable publishable tracked content; supervisor will retry a repair turn before marking the draft PR ready. Actionable files: scripts/check-paths.sh.",
+        last_head_sha: "head-draft-278",
+        last_failure_signature: "workstation-local-path-hygiene-failed",
+        last_failure_context: {
+          category: "blocked",
+          summary:
+            "Ready-promotion path hygiene found actionable publishable tracked content; supervisor will retry a repair turn before marking the draft PR ready. Actionable files: scripts/check-paths.sh.",
+          signature: "workstation-local-path-hygiene-failed",
+          command: "npm run verify:paths",
+          details: [`scripts/check-paths.sh:4 matched /${"home"}/placeholder via "<workspace-root>"`],
+          url: null,
+          updated_at: "2026-03-13T00:10:00Z",
+        },
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Tracked repairable draft PR ready gate",
+    body: executionReadyBody("Explain should surface repairable draft PR ready-promotion blockers."),
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const draftPr = createPullRequest({
+    number: prNumber,
+    headRefName: branch,
+    headRefOid: "head-draft-278",
+    isDraft: true,
+  });
+
+  const supervisor = new Supervisor({
+    ...fixture.config,
+    localCiCommand: "npm run verify:paths",
+  });
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => trackedIssue,
+    listAllIssues: async () => [trackedIssue],
+    listCandidateIssues: async () => [trackedIssue],
+    resolvePullRequestForBranch: async () => draftPr,
+    getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const explanation = await supervisor.explain(issueNumber);
+  assert.match(
+    explanation,
+    /^tracked_pr_ready_promotion_blocked issue=#178 pr=#278 recoverability=repair_queued github_state=draft_pr local_state=repairing_ci local_blocked_reason=none stale_local_blocker=no$/m,
+  );
+  assert.match(
+    explanation,
+    /^recovery_guidance=PR #278 is still draft because ready-for-review promotion found repairable workstation-local path hygiene findings\. The supervisor has queued a repair turn for the actionable publishable tracked files before retrying promotion\.$/m,
+  );
+});
+
 test("explain reports bootstrap repos as not ready for expected CI and review signals", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 181;

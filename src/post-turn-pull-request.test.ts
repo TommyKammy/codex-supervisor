@@ -1024,7 +1024,8 @@ test("handlePostTurnPullRequestTransitionsPhase dedupes tracked PR host-local bl
         state: "draft_pr",
         pr_number: draftPr.number,
         last_host_local_pr_blocker_comment_head_sha: "head-116",
-        last_host_local_pr_blocker_comment_signature: "workspace-preparation-gate-workspace_toolchain_missing",
+        last_host_local_pr_blocker_comment_signature:
+          "workspace-preparation-gate-workspace_toolchain_missing|gate=workspace_preparation|failure=workspace_toolchain_missing|target=workspace_environment",
       }),
     },
   };
@@ -1514,7 +1515,7 @@ test("handlePostTurnPullRequestTransitionsPhase updates the owned tracked PR hos
   assert.equal(result.record.last_host_local_pr_blocker_comment_head_sha, draftPr.headRefOid);
   assert.equal(
     result.record.last_host_local_pr_blocker_comment_signature,
-    "workspace-preparation-gate-workspace_toolchain_missing",
+    "workspace-preparation-gate-workspace_toolchain_missing|gate=workspace_preparation|failure=workspace_toolchain_missing|target=workspace_environment",
   );
 });
 
@@ -1718,6 +1719,118 @@ test("handlePostTurnPullRequestTransitionsPhase blocks draft-to-ready promotion 
     /Tracked durable artifacts failed workstation-local path hygiene before marking PR #116 ready\./,
   );
   assert.match(result.record.last_failure_context?.details[0] ?? "", /docs\/guide\.md:1/);
+});
+
+test("handlePostTurnPullRequestTransitionsPhase routes repairable ready-promotion path hygiene blockers into a repair turn", async () => {
+  const config = createConfig({ localCiCommand: "npm run ci:local" });
+  const issue = createIssue({ title: "Repair ready promotion path hygiene" });
+  const draftPr = createPullRequest({ title: "Repair ready promotion", isDraft: true });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "draft_pr",
+        pr_number: draftPr.number,
+        last_host_local_pr_blocker_comment_head_sha: draftPr.headRefOid,
+        last_host_local_pr_blocker_comment_signature: "workstation-local-path-hygiene-failed",
+      }),
+    },
+  };
+
+  let readyCalls = 0;
+  let syncJournalCalls = 0;
+  let localCiCalls = 0;
+  const commentBodies: string[] = [];
+  const failureDetails = [
+    `scripts/check-paths.sh:4 matched /${"home"}/ via "${SAMPLE_UNIX_WORKSTATION_PATH}"`,
+    `docs/guide.md:7 matched /${"Users"}/ via "${SAMPLE_MACOS_WORKSTATION_PATH}"`,
+  ];
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    github: {
+      getPullRequest: async () => {
+        throw new Error("unexpected getPullRequest call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      markPullRequestReady: async () => {
+        readyCalls += 1;
+      },
+      addIssueComment: async (_prNumber: number, body: string) => {
+        commentBodies.push(body);
+      },
+    },
+    context: {
+      state,
+      record: state.issues["102"]!,
+      issue,
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+      syncJournal: async () => {
+        syncJournalCalls += 1;
+      },
+      memoryArtifacts: TEST_MEMORY_ARTIFACTS,
+      pr: draftPr,
+      options: { dryRun: false },
+    },
+    derivePullRequestLifecycleSnapshot: (record) => createLifecycleSnapshot(record, "draft_pr"),
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    blockedReasonFromReviewState: () => null,
+    summarizeChecks: () => ({
+      hasPending: false,
+      hasFailing: false,
+    }),
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runLocalCiCommand: async () => {
+      localCiCalls += 1;
+    },
+    runWorkstationLocalPathGate: async () => ({
+      ok: false,
+      failureContext: {
+        ...createFailureContext(
+          "Tracked durable artifacts failed workstation-local path hygiene before marking PR #116 ready. Edit tracked publishable content to remove workstation-local paths. First fix: scripts/check-paths.sh (1 match, unix_home); docs/guide.md (1 match, macos_home).",
+        ),
+        signature: "workstation-local-path-hygiene-failed",
+        command: "npm run verify:paths",
+        details: failureDetails,
+      },
+      actionablePublishableFilePaths: ["docs/guide.md", "scripts/check-paths.sh"],
+    }),
+    loadOpenPullRequestSnapshot: async () => ({
+      pr: draftPr,
+      checks: [],
+      reviewThreads: [] satisfies ReviewThread[],
+    }),
+  });
+
+  assert.equal(readyCalls, 0);
+  assert.equal(localCiCalls, 0);
+  assert.equal(syncJournalCalls, 2);
+  assert.equal(result.record.state, "repairing_ci");
+  assert.equal(result.record.blocked_reason, null);
+  assert.equal(result.record.last_failure_signature, "workstation-local-path-hygiene-failed");
+  assert.equal(
+    result.record.last_host_local_pr_blocker_comment_signature,
+    "workstation-local-path-hygiene-failed|gate=workstation_local_path_hygiene|failure=workstation-local-path-hygiene-failed|target=workspace_contents_repairable",
+  );
+  assert.match(result.record.last_error ?? "", /will retry a repair turn/i);
+  assert.deepEqual(result.record.last_failure_context?.details, failureDetails);
+  assert.equal(commentBodies.length, 1);
+  assert.match(commentBodies[0] ?? "", /automatic retry: yes/i);
+  assert.match(commentBodies[0] ?? "", /next action: supervisor will retry a repair turn/i);
+  assert.match(commentBodies[0] ?? "", /scripts\/check-paths\.sh/);
 });
 
 test("handlePostTurnPullRequestTransitionsPhase forwards publishable allowlist markers to the path hygiene gate", async () => {
@@ -1953,7 +2066,10 @@ test("handlePostTurnPullRequestTransitionsPhase comments once when workstation-l
   assert.equal(firstResult.record.state, "blocked");
   assert.equal(commentBodies.length, 1);
   assert.equal(firstResult.record.last_host_local_pr_blocker_comment_head_sha, draftPr.headRefOid);
-  assert.equal(firstResult.record.last_host_local_pr_blocker_comment_signature, "workstation-local-path-hygiene-failed");
+  assert.equal(
+    firstResult.record.last_host_local_pr_blocker_comment_signature,
+    "workstation-local-path-hygiene-failed|gate=workstation_local_path_hygiene|failure=workstation-local-path-hygiene-failed|target=workspace_contents",
+  );
   assert.match(commentBodies[0] ?? "", /still draft because ready-for-review promotion is blocked locally/i);
   assert.match(commentBodies[0] ?? "", /gate name: `workstation_local_path_hygiene`/i);
   assert.match(commentBodies[0] ?? "", /First fix: docs\/guide\.md/i);

@@ -5,6 +5,7 @@ import { shouldAutoRecoverStaleReviewBot } from "./supervisor-execution-policy";
 export type StaleDiagnosticRecoverability =
   | "stale_but_recoverable"
   | "stale_already_handled"
+  | "repair_queued"
   | "manual_attention_required"
   | "provider_outage_suspected";
 

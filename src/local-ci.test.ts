@@ -87,7 +87,10 @@ test("runTrackedPrReadyLocalCiPublicationGate blocks ready promotion on local CI
   assert.equal(result.record.latest_local_ci_result?.failure_class, "non_zero_exit");
   assert.equal(result.record.last_observed_host_local_pr_blocker_signature, "local-ci-gate-non_zero_exit");
   assert.equal(result.record.last_observed_host_local_pr_blocker_head_sha, "head-116");
-  assert.equal(result.record.last_host_local_pr_blocker_comment_signature, "local-ci-gate-non_zero_exit");
+  assert.equal(
+    result.record.last_host_local_pr_blocker_comment_signature,
+    "local-ci-gate-non_zero_exit|gate=local_ci|failure=non_zero_exit|target=repo_owned_command",
+  );
   assert.equal(result.record.last_host_local_pr_blocker_comment_head_sha, "head-116");
   assert.match(
     comments[0] ?? "",
