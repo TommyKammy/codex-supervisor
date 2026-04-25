@@ -886,6 +886,7 @@ test("explain surfaces stale configured-bot remediation with the exact review th
     currentHeadSha: headSha,
     processedOnCurrentHead: "unknown",
     codeCiState: "green",
+    classification: "unresolved_work",
     reviewThreadUrl: "https://example.test/pr/295#discussion_r295",
     manualNextStep: "inspect_exact_review_thread_then_resolve_or_leave_manual_note",
     summary: "code_or_ci_green_but_review_thread_metadata_unresolved",
@@ -894,7 +895,105 @@ test("explain surfaces stale configured-bot remediation with the exact review th
   const explanation = await supervisor.explain(issueNumber);
   assert.match(
     explanation,
-    /^stale_review_bot_remediation issue=#195 pr=#295 reason=stale_review_bot code_ci=green current_head_sha=head-195 processed_on_current_head=unknown review_thread_url=https:\/\/example\.test\/pr\/295#discussion_r295 manual_next_step=inspect_exact_review_thread_then_resolve_or_leave_manual_note summary=code_or_ci_green_but_review_thread_metadata_unresolved$/m,
+    /^stale_review_bot_remediation issue=#195 pr=#295 reason=stale_review_bot code_ci=green current_head_sha=head-195 processed_on_current_head=unknown classification=unresolved_work review_thread_url=https:\/\/example\.test\/pr\/295#discussion_r295 manual_next_step=inspect_exact_review_thread_then_resolve_or_leave_manual_note summary=code_or_ci_green_but_review_thread_metadata_unresolved$/m,
+  );
+});
+
+test("explain classifies handled stale configured-bot review threads as metadata-only", async () => {
+  const fixture = await createSupervisorFixture();
+  fixture.config.reviewBotLogins = ["coderabbitai", "coderabbitai[bot]"];
+  const issueNumber = 196;
+  const prNumber = 296;
+  const headSha = "head-196";
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        branch: branchName(fixture.config, issueNumber),
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: prNumber,
+        blocked_reason: "stale_review_bot",
+        last_head_sha: headSha,
+        processed_review_thread_ids: [`thread-1@${headSha}`],
+        processed_review_thread_fingerprints: [`thread-1@${headSha}#comment-1`],
+        last_error:
+          "1 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
+        last_failure_context: {
+          category: "manual",
+          summary:
+            "1 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
+          signature: "stalled-bot:thread-1",
+          command: null,
+          details: ["reviewer=coderabbitai[bot] file=src/file.ts line=12 processed_on_current_head=yes"],
+          url: "https://example.test/pr/296#discussion_r296",
+          updated_at: "2026-03-13T00:20:00Z",
+        },
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Explain handled stale configured bot metadata",
+    body: executionReadyBody("Explain should identify stale configured-bot provider metadata drift."),
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const pr = createPullRequest({
+    number: prNumber,
+    headRefName: branchName(fixture.config, issueNumber),
+    headRefOid: headSha,
+    configuredBotCurrentHeadObservedAt: "2026-03-13T00:19:00Z",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    currentHeadCiGreenAt: "2026-03-13T00:19:00Z",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+  const staleMetadataThread = {
+    id: "thread-1",
+    isResolved: false,
+    isOutdated: false,
+    path: "src/file.ts",
+    line: 12,
+    comments: {
+      nodes: [
+        {
+          id: "comment-1",
+          body: "Please address this stale finding.",
+          createdAt: "2026-03-13T00:05:00Z",
+          url: "https://example.test/pr/296#discussion_r296",
+          author: {
+            login: "coderabbitai[bot]",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => trackedIssue,
+    listAllIssues: async () => [trackedIssue],
+    listCandidateIssues: async () => [trackedIssue],
+    resolvePullRequestForBranch: async () => pr,
+    getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => [staleMetadataThread],
+  };
+
+  const explanation = await supervisor.explain(issueNumber);
+
+  assert.match(explanation, /^blocked_reason=stale_review_bot$/m);
+  assert.match(
+    explanation,
+    /^stale_review_bot_remediation issue=#196 pr=#296 reason=stale_review_bot code_ci=green current_head_sha=head-196 processed_on_current_head=yes classification=metadata_only review_thread_url=https:\/\/example\.test\/pr\/296#discussion_r296 manual_next_step=inspect_exact_review_thread_then_resolve_or_leave_manual_note summary=stale_configured_bot_thread_metadata_only$/m,
   );
 });
 
