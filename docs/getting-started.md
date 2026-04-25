@@ -397,6 +397,8 @@ Minimum rules for that contract:
 
 When a managed repo wants a canonical local verification step before PR publication or update, use a repo-owned local CI contract. The repo-owned local CI contract is a single repo-defined entrypoint such as `npm run ci:local` or `npm run verify:pre-pr`.
 
+Issue-level `## Verification` is issue-authored guidance for the operator and Codex turn. It is not a repo-owned fail-closed gate by itself. Status and doctor wording should name the active repo-owned gate, such as `localCiCommand`, workstation-local path hygiene, release-readiness posture, or ready-for-review promotion, instead of implying that issue-authored verification text has become a configured repository gate.
+
 The repo remains the source of truth for what that command does. codex-supervisor only runs the configured entrypoint. It does not decompose the command, append inferred subtasks, or try to decide which subset of checks matters for the current diff.
 
 Minimum expectations for that contract:

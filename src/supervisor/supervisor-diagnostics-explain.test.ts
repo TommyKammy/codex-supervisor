@@ -1537,7 +1537,7 @@ test("explain keeps same-head host-local ready-promotion blockers current when t
   );
   assert.match(
     explanation,
-    /^recovery_guidance=PR #277 is still draft because ready-for-review promotion is blocked by local verification\. The same blocker is still present, so rerunning the supervisor alone will not help\./m,
+    /^recovery_guidance=PR #277 is still draft because ready-for-review promotion is blocked by a repo-owned gate\. The same blocker is still present, so rerunning the supervisor alone will not help\./m,
   );
   assert.match(
     explanation,

@@ -279,7 +279,7 @@ export function buildTrackedPrResumeRecoveryEvent(
   ) {
     return buildRecoveryEvent(
       record.issue_number,
-      `tracked_pr_ready_promotion_blocked: refreshed issue #${record.issue_number} while tracked PR #${pr.number} remains draft because ready-for-review promotion is blocked by local verification at head ${nextHead}`,
+      `tracked_pr_ready_promotion_blocked: refreshed issue #${record.issue_number} while tracked PR #${pr.number} remains draft because ready-for-review promotion is blocked by a repo-owned gate at head ${nextHead}`,
     );
   }
 

@@ -177,7 +177,7 @@ function readyPromotionGateSummary(
     record.latest_local_ci_result?.summary
     ?? record.last_failure_context?.summary
     ?? record.last_error
-    ?? "Local verification failed before ready-for-review promotion.";
+    ?? "A repo-owned gate failed before ready-for-review promotion.";
 
   if (record.latest_local_ci_result?.outcome === "failed") {
     return {
@@ -242,7 +242,7 @@ function readyPromotionGateSummary(
 
   return {
     gate: "verification",
-    failedGate: "local verification gate",
+    failedGate: "ready-promotion gate",
     summary,
     detailLines: [
       [
@@ -368,7 +368,7 @@ export function buildTrackedPrMismatch(
         `stale_local_blocker=${staleLocalBlocker ? "yes" : "no"}`,
       ].join(" "),
       guidanceLine: blockerHasFreshCurrentHeadEvidence
-        ? `recovery_guidance=PR #${pr.number} is still draft because ready-for-review promotion is blocked by local verification. ` +
+        ? `recovery_guidance=PR #${pr.number} is still draft because ready-for-review promotion is blocked by a repo-owned gate. ` +
           `The same blocker is still present, so rerunning the supervisor alone will not help. ` +
           `Failed gate: ${readyPromotionGate.failedGate}. Fix the gate in the tracked workspace first, then rerun it to promote the PR.`
         : `recovery_guidance=PR #${pr.number} is still draft, but the stored ready-for-review verification blocker is stale relative to the current head. ` +

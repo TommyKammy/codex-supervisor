@@ -60,7 +60,7 @@ Sufficient readiness means broader use is reasonable because the loop has surviv
 
 ## Advisory boundary
 
-This checklist is advisory unless `releaseReadinessGate: block_release_publication` is explicitly wired into release automation. That configured gate can block release publication only; it must not block PR publication, ready-for-review promotion, merge readiness, local CI, issue verification, or loop operation. Do not make release readiness depend on provider-specific external services being available at test time. Record unavailable provider signals as release notes or follow-up risks, and keep local product readiness focused on commands, state transitions, WebUI routes, local CI posture, and trust-boundary enforcement.
+This checklist is advisory unless `releaseReadinessGate: block_release_publication` is explicitly wired into release automation. That configured gate can block release publication only; it must not block PR publication, ready-for-review promotion, merge readiness, local CI, issue verification, or loop operation. Issue-authored verification guidance in `## Verification` helps define the expected work and review evidence, but it is not a repo-owned fail-closed gate by itself. Do not make release readiness depend on provider-specific external services being available at test time. Record unavailable provider signals as release notes or follow-up risks, and keep local product readiness focused on commands, state transitions, WebUI routes, local CI posture, and trust-boundary enforcement.
 
 ## Verification
 
