@@ -339,6 +339,64 @@ test("summarizePostMergeAuditPatterns exposes bundle-backed release note source 
   ]);
 });
 
+test("summarizePostMergeAuditPatterns treats incomplete operator bundles as missing release-note evidence", async () => {
+  const { reviewDir } = await createArtifactTestPaths("post-merge-audit-summary-incomplete-bundle");
+  const config = createConfig({
+    localReviewArtifactDir: reviewDir,
+    repoSlug: "owner/repo",
+  });
+  const artifactDir = postMergeAuditArtifactDir(config);
+
+  await fs.mkdir(artifactDir, { recursive: true });
+  await writeJsonAtomic(
+    path.join(artifactDir, "issue-102-head-merged-head.json"),
+    createPostMergeArtifact({
+      operatorAuditBundle: {
+        schemaVersion: 1,
+        advisoryOnly: true,
+        issue: {
+          number: 102,
+          title: "Persist a completed-work audit artifact",
+          url: "https://example.test/issues/102",
+          state: "CLOSED",
+          createdAt: "2026-03-24T09:55:00Z",
+          updatedAt: "2026-03-24T10:06:00Z",
+          bodySnapshot: "## Summary\nPersist a completed-work audit artifact",
+        },
+        pullRequest: {
+          status: "available",
+          summary: "Evidence is available.",
+          value: {
+            number: 116,
+            title: "Persist completed-work audit artifact",
+            url: "https://example.test/pull/116",
+            state: "MERGED",
+            isDraft: false,
+            headRefName: "codex/issue-102",
+            headRefOid: "merged-head-116",
+            createdAt: "2026-03-24T10:03:00Z",
+            mergedAt: "2026-03-24T10:05:00Z",
+          },
+        },
+        verificationCommands: {
+          status: "missing",
+          summary: "No verification commands are listed in the issue body.",
+          value: null,
+        },
+      },
+    } as unknown as Partial<PostMergeAuditArtifact>),
+  );
+
+  const summary = await summarizePostMergeAuditPatterns(config);
+
+  assert.deepEqual(summary.releaseNotesSources[0]?.auditBundle, {
+    status: "missing",
+    localCiSummary: null,
+    pathHygieneSummary: null,
+    journalSummary: null,
+  });
+});
+
 test("summarizePostMergeAuditPatterns aggregates recurring review, failure, and recovery patterns from persisted artifacts", async () => {
   const { reviewDir } = await createArtifactTestPaths("post-merge-audit-summary");
   const config = createConfig({

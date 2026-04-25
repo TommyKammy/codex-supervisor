@@ -675,8 +675,12 @@ function isActionableSeverity(value: unknown): value is ActionableSeverity {
   return value === "low" || value === "medium" || value === "high";
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
 function isLocalReviewRootCauseSummary(value: unknown): value is LocalReviewRootCauseSummary {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (!isPlainObject(value)) {
     return false;
   }
 
@@ -685,7 +689,7 @@ function isLocalReviewRootCauseSummary(value: unknown): value is LocalReviewRoot
 }
 
 function isPostMergeAuditArtifact(value: unknown): value is PostMergeAuditArtifact {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (!isPlainObject(value)) {
     return false;
   }
 
@@ -716,7 +720,7 @@ function isPromotablePostMergeAuditArtifact(artifact: PostMergeAuditArtifact): b
 }
 
 function isExternalReviewRegressionCandidate(value: unknown): value is ExternalReviewRegressionCandidate {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (!isPlainObject(value)) {
     return false;
   }
 
@@ -738,7 +742,7 @@ function isExternalReviewRegressionCandidate(value: unknown): value is ExternalR
 }
 
 function isExternalReviewMissArtifact(value: unknown): value is ExternalReviewMissArtifact {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (!isPlainObject(value)) {
     return false;
   }
 
@@ -753,20 +757,87 @@ function isExternalReviewMissArtifact(value: unknown): value is ExternalReviewMi
   );
 }
 
-function isOperatorAuditBundle(value: unknown): value is OperatorAuditBundleDto {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+function isEvidence(
+  value: unknown,
+  availableValueGuard: (evidenceValue: unknown) => boolean = (evidenceValue) => evidenceValue !== null,
+): value is { status: "available" | "missing"; summary: string; value: unknown } {
+  if (!isPlainObject(value)) {
     return false;
   }
 
-  const candidate = value as Partial<OperatorAuditBundleDto>;
+  return (
+    (value.status === "available" || value.status === "missing") &&
+    typeof value.summary === "string" &&
+    (value.status === "missing" ? value.value === null : availableValueGuard(value.value))
+  );
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
+}
+
+function isOperatorAuditBundleIssue(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    typeof value.number === "number" &&
+    typeof value.title === "string" &&
+    typeof value.url === "string" &&
+    typeof value.state === "string" &&
+    typeof value.createdAt === "string" &&
+    typeof value.updatedAt === "string" &&
+    typeof value.bodySnapshot === "string"
+  );
+}
+
+function isOperatorAuditBundlePullRequest(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    typeof value.number === "number" &&
+    typeof value.title === "string" &&
+    typeof value.url === "string" &&
+    typeof value.state === "string" &&
+    typeof value.isDraft === "boolean" &&
+    typeof value.headRefName === "string" &&
+    typeof value.headRefOid === "string" &&
+    typeof value.createdAt === "string" &&
+    isNullableString(value.mergedAt)
+  );
+}
+
+function isOperatorAuditBundleLocalCi(value: unknown): boolean {
+  return isPlainObject(value) && typeof value.summary === "string";
+}
+
+function isOperatorAuditBundlePathHygiene(value: unknown): boolean {
+  return isPlainObject(value) && typeof value.summary === "string";
+}
+
+function isOperatorAuditBundleJournal(value: unknown): boolean {
+  return isPlainObject(value) && (value.whatChanged === null || typeof value.whatChanged === "string");
+}
+
+function isOperatorAuditBundle(value: unknown): value is OperatorAuditBundleDto {
+  if (!isPlainObject(value)) {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
   return (
     candidate.schemaVersion === 1 &&
     candidate.advisoryOnly === true &&
-    !!candidate.issue &&
-    typeof candidate.issue.number === "number" &&
-    typeof candidate.issue.title === "string" &&
-    !!candidate.pullRequest &&
-    !!candidate.verificationCommands
+    isOperatorAuditBundleIssue(candidate.issue) &&
+    isEvidence(candidate.pullRequest, isOperatorAuditBundlePullRequest) &&
+    isEvidence(candidate.stateRecord) &&
+    isEvidence(candidate.journal, isOperatorAuditBundleJournal) &&
+    isEvidence(candidate.localCi, isOperatorAuditBundleLocalCi) &&
+    isEvidence(candidate.pathHygiene, isOperatorAuditBundlePathHygiene) &&
+    isEvidence(candidate.staleConfiguredBotRemediation) &&
+    isEvidence(candidate.recoveryEvents, Array.isArray) &&
+    (candidate.timeline === null || isPlainObject(candidate.timeline)) &&
+    isEvidence(
+      candidate.verificationCommands,
+      (evidenceValue) => Array.isArray(evidenceValue) && evidenceValue.every((command) => typeof command === "string"),
+    )
   );
 }
 
@@ -996,10 +1067,10 @@ function buildReleaseNotesSource(
     },
     pullRequest: {
       number: artifact.pullRequest.number,
-      title: bundle?.pullRequest.status === "available" && bundle.pullRequest.value
+      title: bundle?.pullRequest?.status === "available" && bundle.pullRequest.value
         ? bundle.pullRequest.value.title
         : artifact.pullRequest.title,
-      url: bundle?.pullRequest.status === "available" && bundle.pullRequest.value
+      url: bundle?.pullRequest?.status === "available" && bundle.pullRequest.value
         ? bundle.pullRequest.value.url
         : artifact.pullRequest.url,
       mergedAt: artifact.pullRequest.mergedAt,
@@ -1007,9 +1078,9 @@ function buildReleaseNotesSource(
     },
     auditBundle: {
       status: bundle ? "available" : "missing",
-      localCiSummary: localCi?.summary ?? bundle?.localCi.summary ?? null,
-      pathHygieneSummary: bundle?.pathHygiene.summary ?? null,
-      journalSummary: journal?.whatChanged ?? bundle?.journal.summary ?? null,
+      localCiSummary: localCi?.summary ?? bundle?.localCi?.summary ?? null,
+      pathHygieneSummary: bundle?.pathHygiene?.summary ?? null,
+      journalSummary: journal?.whatChanged ?? bundle?.journal?.summary ?? null,
     },
     verificationCommands: [...verificationCommands],
     findingSummaries,

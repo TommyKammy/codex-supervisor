@@ -5,7 +5,12 @@ import {
   TRUSTED_GENERATED_DURABLE_ARTIFACT_PROVENANCE_VALUE,
   withTrustedGeneratedDurableArtifactProvenance,
 } from "../durable-artifact-provenance";
-import { normalizeDurableTrackedArtifactContent, type IssueJournalHandoff } from "../core/journal";
+import {
+  extractIssueJournalHandoff,
+  normalizeDurableTrackedArtifactContent,
+  readIssueJournal,
+  type IssueJournalHandoff,
+} from "../core/journal";
 import { executionMetricsRunSummaryPath } from "./execution-metrics-run-summary";
 import {
   validateExecutionMetricsRunSummary,
@@ -186,25 +191,46 @@ function auditEvidence<T>(value: T | null, missingSummary: string): OperatorAudi
     : { status: "available", value, summary: "Evidence is available." };
 }
 
+async function readIssueJournalHandoff(journalPath: string | null): Promise<IssueJournalHandoff | null> {
+  if (!journalPath) {
+    return null;
+  }
+
+  const content = await readIssueJournal(journalPath);
+  return content === null ? null : extractIssueJournalHandoff(content);
+}
+
+type PostMergeOperatorAuditBundleSourceRecord = Pick<
+  IssueRunRecord,
+  | "issue_number"
+  | "branch"
+  | "pr_number"
+  | "last_head_sha"
+  | "attempt_count"
+  | "implementation_attempt_count"
+  | "repair_attempt_count"
+  | "last_error"
+  | "last_failure_signature"
+  | "latest_local_ci_result"
+  | "timeline_artifacts"
+  | "local_review_summary_path"
+  | "last_failure_kind"
+  | "last_failure_context"
+  | "blocked_reason"
+  | "updated_at"
+>;
+
 function buildPostMergeOperatorAuditBundle(args: {
   issue: Pick<GitHubIssue, "number" | "title" | "url" | "createdAt" | "updatedAt"> & Partial<Pick<GitHubIssue, "body" | "state">>;
   pullRequest: Pick<
     GitHubPullRequest,
     "number" | "title" | "url" | "createdAt" | "mergedAt" | "headRefName" | "headRefOid"
   >;
-  previousRecord: Pick<
-    IssueRunRecord,
-    | "issue_number"
-    | "branch"
-    | "local_review_summary_path"
-    | "last_failure_kind"
-    | "last_failure_context"
-    | "blocked_reason"
-    | "updated_at"
-  >;
+  previousRecord: PostMergeOperatorAuditBundleSourceRecord;
   nextRecord: Pick<IssueRunRecord, "state" | "branch" | "updated_at">;
+  journalHandoff: IssueJournalHandoff | null;
 }): OperatorAuditBundleDto {
-  const record = args.previousRecord as Partial<IssueRunRecord>;
+  const record = args.previousRecord;
   const verificationCommands = extractIssueVerificationCommands(args.issue.body ?? "");
   const latestLocalCi = record.latest_local_ci_result ?? null;
   const pathHygieneArtifact = [...(record.timeline_artifacts ?? [])]
@@ -251,7 +277,7 @@ function buildPostMergeOperatorAuditBundle(args: {
       updatedAt: args.nextRecord.updated_at,
     }, "No supervisor state record is tracked for this issue."),
     journal: auditEvidence<IssueJournalHandoff>(
-      null,
+      args.journalHandoff,
       "No issue journal content is embedded in the post-merge audit artifact.",
     ),
     localCi: auditEvidence(latestLocalCi, "No local CI result is recorded for this issue run."),
@@ -290,6 +316,9 @@ export async function syncPostMergeAuditArtifact(args: {
     | "issue_number"
     | "branch"
     | "workspace"
+    | "journal_path"
+    | "pr_number"
+    | "last_head_sha"
     | "local_review_summary_path"
     | "local_review_run_at"
     | "local_review_recommendation"
@@ -303,6 +332,13 @@ export async function syncPostMergeAuditArtifact(args: {
     | "last_failure_kind"
     | "last_failure_context"
     | "blocked_reason"
+    | "attempt_count"
+    | "implementation_attempt_count"
+    | "repair_attempt_count"
+    | "last_error"
+    | "last_failure_signature"
+    | "latest_local_ci_result"
+    | "timeline_artifacts"
     | "repeated_failure_signature_count"
     | "stale_stabilizing_no_pr_recovery_count"
     | "updated_at"
@@ -352,6 +388,7 @@ export async function syncPostMergeAuditArtifact(args: {
   const { findingsPath: localReviewFindingsPath, artifact: localReviewArtifact } = await loadTypedLocalReviewArtifact(
     localReviewRecord.local_review_summary_path,
   );
+  const journalHandoff = await readIssueJournalHandoff(args.previousRecord.journal_path);
 
   const artifact: PostMergeAuditArtifact = withTrustedGeneratedDurableArtifactProvenance({
     schemaVersion: POST_MERGE_AUDIT_ARTIFACT_SCHEMA_VERSION,
@@ -438,6 +475,7 @@ export async function syncPostMergeAuditArtifact(args: {
       pullRequest: args.pullRequest,
       previousRecord: args.previousRecord,
       nextRecord: args.nextRecord,
+      journalHandoff,
     }),
   });
 
