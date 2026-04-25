@@ -1,6 +1,7 @@
 import { unavailableManagedRestartCapability, type ManagedRestartCapability } from "../managed-restart";
 import type {
   SetupConfigPreview,
+  SetupConfigPreviewDangerousOptIn,
   SetupConfigPreviewFieldChange,
   SetupConfigPreviewSupportedProfile,
   SetupConfigPreviewValidation,
@@ -548,6 +549,22 @@ export function createSetupConfigPreviewFieldChange(
   };
 }
 
+export function createSetupConfigPreviewDangerousOptIn(
+  overrides: Partial<SetupConfigPreviewDangerousOptIn> = {},
+): SetupConfigPreviewDangerousOptIn {
+  return {
+    key: "localReviewHighSeverityAction",
+    label: "High-severity local-review autonomous action posture.",
+    currentValue: null,
+    previewValue: null,
+    state: "unchanged",
+    requiresConfirmation: true,
+    operatorImpact:
+      "Can route verifier-confirmed high-severity local-review findings into another repair pass instead of blocking.",
+    ...overrides,
+  };
+}
+
 export function createSetupConfigPreview(
   overrides: Partial<SetupConfigPreview> = {},
 ): SetupConfigPreview {
@@ -561,6 +578,7 @@ export function createSetupConfigPreview(
     preservedUnknownFields: ["experimentalFlag"],
     document: createSetupDocument(),
     fieldChanges: [createSetupConfigPreviewFieldChange()],
+    dangerousExplicitOptIns: [createSetupConfigPreviewDangerousOptIn()],
     validation: DEFAULT_CONFIG_PREVIEW_VALIDATION,
     ...overrides,
   };

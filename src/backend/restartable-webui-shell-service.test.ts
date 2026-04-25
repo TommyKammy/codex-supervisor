@@ -69,6 +69,7 @@ function createSetupConfigPreview(profile: PreviewCacheKey): SetupConfigPreview 
       reviewBotLogins: selectedReviewProviderProfile === "coderabbit" ? ["coderabbitai"] : [],
     },
     fieldChanges: [],
+    dangerousExplicitOptIns: [],
     validation: {
       status: "ready",
       missingRequiredFields: [],

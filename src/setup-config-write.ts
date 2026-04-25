@@ -10,6 +10,7 @@ import {
 import { reviewProviderProfileFromConfig } from "./core/review-providers";
 import { isValidGitRefName, parseJson, resolveMaybeRelative, writeJsonAtomic } from "./core/utils";
 import type { ExecutionSafetyMode, TrustMode } from "./core/types";
+import type { LocalReviewHighSeverityAction, StaleConfiguredBotReviewPolicy } from "./core/types";
 import type { SetupConfigPreviewSelectableReviewProviderProfile } from "./setup-config-preview";
 import { diagnoseSetupReadiness, type SetupReadinessFieldKey, type SetupReadinessReport } from "./setup-readiness";
 
@@ -27,11 +28,23 @@ export interface SetupConfigChanges {
   executionSafetyMode?: ExecutionSafetyMode;
   localCiCandidateDismissed?: boolean;
   reviewProvider?: SetupConfigPreviewSelectableReviewProviderProfile;
+  localReviewFollowUpRepairEnabled?: boolean;
+  localReviewManualReviewRepairEnabled?: boolean;
+  localReviewFollowUpIssueCreationEnabled?: boolean;
+  localReviewHighSeverityAction?: LocalReviewHighSeverityAction;
+  staleConfiguredBotReviewPolicy?: StaleConfiguredBotReviewPolicy;
+  approvedTrackedTopLevelEntries?: string[] | null;
+}
+
+export interface DangerousOptInConfirmation {
+  acknowledged: true;
+  fieldKeys: DangerousSetupConfigFieldKey[];
 }
 
 export interface UpdateSetupConfigArgs {
   configPath?: string;
   changes: SetupConfigChanges;
+  dangerousOptInConfirmation?: DangerousOptInConfirmation;
 }
 
 export interface SetupConfigUpdateResult {
@@ -46,7 +59,27 @@ export interface SetupConfigUpdateResult {
   readiness: SetupReadinessReport;
 }
 
-type SetupConfigWritableFieldKey = SetupReadinessFieldKey | "localCiCandidateDismissed";
+type SafeSetupConfigWritableFieldKey = SetupReadinessFieldKey | "localCiCandidateDismissed";
+export type DangerousSetupConfigFieldKey =
+  | "localReviewFollowUpRepairEnabled"
+  | "localReviewManualReviewRepairEnabled"
+  | "localReviewFollowUpIssueCreationEnabled"
+  | "localReviewHighSeverityAction"
+  | "staleConfiguredBotReviewPolicy"
+  | "approvedTrackedTopLevelEntries";
+type SetupConfigWritableFieldKey = SafeSetupConfigWritableFieldKey | DangerousSetupConfigFieldKey;
+
+export class SetupConfigWriteError extends Error {
+  readonly code: "dangerous_confirmation_required";
+  readonly dangerousFields: DangerousSetupConfigFieldKey[];
+
+  constructor(message: string, dangerousFields: DangerousSetupConfigFieldKey[]) {
+    super(message);
+    this.name = "SetupConfigWriteError";
+    this.code = "dangerous_confirmation_required";
+    this.dangerousFields = dangerousFields;
+  }
+}
 
 const CONFIGURABLE_FIELDS: SetupConfigWritableFieldKey[] = [
   "repoPath",
@@ -63,8 +96,17 @@ const CONFIGURABLE_FIELDS: SetupConfigWritableFieldKey[] = [
   "localCiCandidateDismissed",
   "reviewProvider",
 ];
+const DANGEROUS_CONFIGURABLE_FIELDS: DangerousSetupConfigFieldKey[] = [
+  "localReviewFollowUpRepairEnabled",
+  "localReviewManualReviewRepairEnabled",
+  "localReviewFollowUpIssueCreationEnabled",
+  "localReviewHighSeverityAction",
+  "staleConfiguredBotReviewPolicy",
+  "approvedTrackedTopLevelEntries",
+];
+const ALL_CONFIGURABLE_FIELDS = [...CONFIGURABLE_FIELDS, ...DANGEROUS_CONFIGURABLE_FIELDS] as const;
 
-const RESTART_REQUIRED_FIELDS = new Set<SetupConfigWritableFieldKey>(CONFIGURABLE_FIELDS);
+const RESTART_REQUIRED_FIELDS = new Set<string>(ALL_CONFIGURABLE_FIELDS);
 
 const REVIEW_PROVIDER_LOGIN_MAP: Record<SetupConfigPreviewSelectableReviewProviderProfile, string[]> = {
   none: [],
@@ -123,12 +165,48 @@ function assertExecutionSafetyMode(value: unknown): ExecutionSafetyMode {
   throw new Error("executionSafetyMode must be one of unsandboxed_autonomous or operator_gated.");
 }
 
+function assertLocalReviewHighSeverityAction(value: unknown): LocalReviewHighSeverityAction {
+  if (value === "retry" || value === "blocked") {
+    return value;
+  }
+
+  throw new Error("localReviewHighSeverityAction must be one of retry or blocked.");
+}
+
+function assertStaleConfiguredBotReviewPolicy(value: unknown): StaleConfiguredBotReviewPolicy {
+  if (value === "diagnose_only" || value === "reply_only" || value === "reply_and_resolve") {
+    return value;
+  }
+
+  throw new Error("staleConfiguredBotReviewPolicy must be one of diagnose_only, reply_only, or reply_and_resolve.");
+}
+
 function assertBoolean(value: unknown, fieldName: string): boolean {
   if (typeof value !== "boolean") {
     throw new Error(`${fieldName} must be a boolean.`);
   }
 
   return value;
+}
+
+function normalizeApprovedTrackedTopLevelEntries(value: unknown): string[] | null {
+  if (value === null) {
+    return null;
+  }
+  if (!Array.isArray(value)) {
+    throw new Error("approvedTrackedTopLevelEntries must be an array of top-level entry names or null.");
+  }
+
+  return value.map((entry, index) => {
+    if (typeof entry !== "string" || entry.trim() === "") {
+      throw new Error(`approvedTrackedTopLevelEntries[${index}] must be a non-empty string.`);
+    }
+    const normalized = entry.trim();
+    if (normalized === "." || normalized === ".." || normalized.includes("/") || normalized.includes("\\")) {
+      throw new Error(`approvedTrackedTopLevelEntries[${index}] must be a top-level entry name.`);
+    }
+    return normalized;
+  });
 }
 
 function normalizeLocalCiCommand(value: unknown): string | null {
@@ -171,7 +249,7 @@ function normalizeSetupChanges(changes: unknown): SetupConfigChanges {
   }
 
   const raw = changes as Record<string, unknown>;
-  const unknownFields = Object.keys(raw).filter((key) => !CONFIGURABLE_FIELDS.includes(key as SetupConfigWritableFieldKey));
+  const unknownFields = Object.keys(raw).filter((key) => !ALL_CONFIGURABLE_FIELDS.includes(key as (typeof ALL_CONFIGURABLE_FIELDS)[number]));
   if (unknownFields.length > 0) {
     throw new Error(`Unsupported setup config field: ${unknownFields[0]}`);
   }
@@ -215,6 +293,33 @@ function normalizeSetupChanges(changes: unknown): SetupConfigChanges {
   }
   if ("reviewProvider" in raw) {
     normalized.reviewProvider = assertReviewProvider(raw.reviewProvider);
+  }
+  if ("localReviewFollowUpRepairEnabled" in raw) {
+    normalized.localReviewFollowUpRepairEnabled = assertBoolean(
+      raw.localReviewFollowUpRepairEnabled,
+      "localReviewFollowUpRepairEnabled",
+    );
+  }
+  if ("localReviewManualReviewRepairEnabled" in raw) {
+    normalized.localReviewManualReviewRepairEnabled = assertBoolean(
+      raw.localReviewManualReviewRepairEnabled,
+      "localReviewManualReviewRepairEnabled",
+    );
+  }
+  if ("localReviewFollowUpIssueCreationEnabled" in raw) {
+    normalized.localReviewFollowUpIssueCreationEnabled = assertBoolean(
+      raw.localReviewFollowUpIssueCreationEnabled,
+      "localReviewFollowUpIssueCreationEnabled",
+    );
+  }
+  if ("localReviewHighSeverityAction" in raw) {
+    normalized.localReviewHighSeverityAction = assertLocalReviewHighSeverityAction(raw.localReviewHighSeverityAction);
+  }
+  if ("staleConfiguredBotReviewPolicy" in raw) {
+    normalized.staleConfiguredBotReviewPolicy = assertStaleConfiguredBotReviewPolicy(raw.staleConfiguredBotReviewPolicy);
+  }
+  if ("approvedTrackedTopLevelEntries" in raw) {
+    normalized.approvedTrackedTopLevelEntries = normalizeApprovedTrackedTopLevelEntries(raw.approvedTrackedTopLevelEntries);
   }
 
   if (Object.keys(normalized).length === 0) {
@@ -311,6 +416,29 @@ function applySetupChanges(document: Record<string, unknown>, changes: SetupConf
   if (changes.reviewProvider !== undefined) {
     nextDocument.reviewBotLogins = [...REVIEW_PROVIDER_LOGIN_MAP[changes.reviewProvider]];
   }
+  if (changes.localReviewFollowUpRepairEnabled !== undefined) {
+    nextDocument.localReviewFollowUpRepairEnabled = changes.localReviewFollowUpRepairEnabled;
+  }
+  if (changes.localReviewManualReviewRepairEnabled !== undefined) {
+    nextDocument.localReviewManualReviewRepairEnabled = changes.localReviewManualReviewRepairEnabled;
+  }
+  if (changes.localReviewFollowUpIssueCreationEnabled !== undefined) {
+    nextDocument.localReviewFollowUpIssueCreationEnabled = changes.localReviewFollowUpIssueCreationEnabled;
+  }
+  if (changes.localReviewHighSeverityAction !== undefined) {
+    nextDocument.localReviewHighSeverityAction = changes.localReviewHighSeverityAction;
+  }
+  if (changes.staleConfiguredBotReviewPolicy !== undefined) {
+    nextDocument.staleConfiguredBotReviewPolicy = changes.staleConfiguredBotReviewPolicy;
+  }
+  if ("approvedTrackedTopLevelEntries" in changes) {
+    const approvedEntries = changes.approvedTrackedTopLevelEntries ?? null;
+    if (approvedEntries === null || approvedEntries.length === 0) {
+      delete nextDocument.approvedTrackedTopLevelEntries;
+    } else {
+      nextDocument.approvedTrackedTopLevelEntries = [...approvedEntries];
+    }
+  }
   return nextDocument;
 }
 
@@ -330,7 +458,7 @@ function displayExactStringValue(value: unknown): string | null {
 function currentSemanticFieldValue(args: {
   configSummary: ReturnType<typeof loadConfigSummary>;
   existingDocument: Record<string, unknown>;
-  field: SetupConfigWritableFieldKey;
+  field: SetupConfigWritableFieldKey | DangerousSetupConfigFieldKey;
 }): string | null {
   const { configSummary, existingDocument, field } = args;
   const resolvedConfig = configSummary.config;
@@ -382,6 +510,28 @@ function currentSemanticFieldValue(args: {
     return displayExactStringValue(existingDocument[field]);
   }
 
+  if (
+    field === "localReviewFollowUpRepairEnabled" ||
+    field === "localReviewManualReviewRepairEnabled" ||
+    field === "localReviewFollowUpIssueCreationEnabled"
+  ) {
+    const value = existingDocument[field];
+    return typeof value === "boolean" ? String(value) : "false";
+  }
+
+  if (field === "localReviewHighSeverityAction") {
+    return displayExactStringValue(existingDocument.localReviewHighSeverityAction) ?? "blocked";
+  }
+
+  if (field === "staleConfiguredBotReviewPolicy") {
+    return displayExactStringValue(existingDocument.staleConfiguredBotReviewPolicy) ?? "diagnose_only";
+  }
+
+  if (field === "approvedTrackedTopLevelEntries") {
+    const value = existingDocument.approvedTrackedTopLevelEntries;
+    return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string").join("\n") : "";
+  }
+
   if (resolvedConfig !== null) {
     return displayStringValue(resolvedConfig[field]);
   }
@@ -389,7 +539,10 @@ function currentSemanticFieldValue(args: {
   return displayStringValue(existingDocument[field]);
 }
 
-function nextSemanticFieldValue(field: SetupConfigWritableFieldKey, changes: SetupConfigChanges): string | null {
+function nextSemanticFieldValue(
+  field: SetupConfigWritableFieldKey | DangerousSetupConfigFieldKey,
+  changes: SetupConfigChanges,
+): string | null {
   switch (field) {
     case "repoPath":
       return changes.repoPath ?? null;
@@ -417,6 +570,66 @@ function nextSemanticFieldValue(field: SetupConfigWritableFieldKey, changes: Set
       return changes.executionSafetyMode ?? null;
     case "reviewProvider":
       return changes.reviewProvider ?? null;
+    case "localReviewFollowUpRepairEnabled":
+      return changes.localReviewFollowUpRepairEnabled === true ? "true" : "false";
+    case "localReviewManualReviewRepairEnabled":
+      return changes.localReviewManualReviewRepairEnabled === true ? "true" : "false";
+    case "localReviewFollowUpIssueCreationEnabled":
+      return changes.localReviewFollowUpIssueCreationEnabled === true ? "true" : "false";
+    case "localReviewHighSeverityAction":
+      return changes.localReviewHighSeverityAction ?? "blocked";
+    case "staleConfiguredBotReviewPolicy":
+      return changes.staleConfiguredBotReviewPolicy ?? "diagnose_only";
+    case "approvedTrackedTopLevelEntries":
+      return changes.approvedTrackedTopLevelEntries?.join("\n") ?? "";
+  }
+}
+
+function dangerousOptInFieldsEnabledBy(changes: SetupConfigChanges): DangerousSetupConfigFieldKey[] {
+  const enabled: DangerousSetupConfigFieldKey[] = [];
+  if (changes.localReviewFollowUpRepairEnabled === true) {
+    enabled.push("localReviewFollowUpRepairEnabled");
+  }
+  if (changes.localReviewManualReviewRepairEnabled === true) {
+    enabled.push("localReviewManualReviewRepairEnabled");
+  }
+  if (changes.localReviewFollowUpIssueCreationEnabled === true) {
+    enabled.push("localReviewFollowUpIssueCreationEnabled");
+  }
+  if (changes.localReviewHighSeverityAction === "retry") {
+    enabled.push("localReviewHighSeverityAction");
+  }
+  if (
+    changes.staleConfiguredBotReviewPolicy !== undefined &&
+    changes.staleConfiguredBotReviewPolicy !== "diagnose_only"
+  ) {
+    enabled.push("staleConfiguredBotReviewPolicy");
+  }
+  if (
+    Array.isArray(changes.approvedTrackedTopLevelEntries) &&
+    changes.approvedTrackedTopLevelEntries.length > 0
+  ) {
+    enabled.push("approvedTrackedTopLevelEntries");
+  }
+  return enabled;
+}
+
+function assertDangerousOptInConfirmation(args: {
+  changes: SetupConfigChanges;
+  confirmation: DangerousOptInConfirmation | undefined;
+}): void {
+  const dangerousFields = dangerousOptInFieldsEnabledBy(args.changes);
+  if (dangerousFields.length === 0) {
+    return;
+  }
+
+  const confirmedFields = new Set(args.confirmation?.fieldKeys ?? []);
+  const confirmed = args.confirmation?.acknowledged === true && dangerousFields.every((field) => confirmedFields.has(field));
+  if (!confirmed) {
+    throw new SetupConfigWriteError(
+      `Dangerous explicit opt-in confirmation required for: ${dangerousFields.join(", ")}.`,
+      dangerousFields,
+    );
   }
 }
 
@@ -424,9 +637,9 @@ function determineRestartTriggeredFields(args: {
   configSummary: ReturnType<typeof loadConfigSummary>;
   existingDocument: Record<string, unknown>;
   changes: SetupConfigChanges;
-}): SetupConfigWritableFieldKey[] {
+}): Array<SetupConfigWritableFieldKey | DangerousSetupConfigFieldKey> {
   const { configSummary, existingDocument, changes } = args;
-  const updatedFields = CONFIGURABLE_FIELDS.filter((field) => field in changes);
+  const updatedFields = ALL_CONFIGURABLE_FIELDS.filter((field) => field in changes);
   return updatedFields.filter((field) => {
     if (!RESTART_REQUIRED_FIELDS.has(field)) {
       return false;
@@ -458,6 +671,7 @@ async function rotateSetupConfigBackups(backupPath: string): Promise<void> {
 export async function updateSetupConfig(args: UpdateSetupConfigArgs): Promise<SetupConfigUpdateResult> {
   const configPath = resolveConfigPath(args.configPath);
   const changes = normalizeSetupChanges(args.changes);
+  assertDangerousOptInConfirmation({ changes, confirmation: args.dangerousOptInConfirmation });
   const existing = await readExistingConfigDocument(configPath);
   const configSummary = loadConfigSummary(configPath);
   const restartTriggeredByFields = determineRestartTriggeredFields({
@@ -483,7 +697,7 @@ export async function updateSetupConfig(args: UpdateSetupConfigArgs): Promise<Se
     kind: "setup_config_update",
     configPath,
     backupPath,
-    updatedFields: CONFIGURABLE_FIELDS.filter((field) => field in changes),
+    updatedFields: ALL_CONFIGURABLE_FIELDS.filter((field) => field in changes),
     restartRequired: restartTriggeredByFields.length > 0,
     restartScope: restartTriggeredByFields.length > 0 ? "supervisor" : null,
     restartTriggeredByFields,
