@@ -841,6 +841,7 @@ test("explain surfaces stale configured-bot remediation with the exact review th
           command: null,
           details: [
             "reviewer=coderabbitai[bot] file=src/file.ts line=12 processed_on_current_head=yes",
+            "reviewer=coderabbitai[bot] file=src/other.ts line=24 processed_on_current_head=no",
           ],
           url: "https://example.test/pr/295#discussion_r295",
           updated_at: "2026-03-13T00:20:00Z",
@@ -883,7 +884,7 @@ test("explain surfaces stale configured-bot remediation with the exact review th
     prNumber,
     reasonCode: "stale_review_bot",
     currentHeadSha: headSha,
-    processedOnCurrentHead: "yes",
+    processedOnCurrentHead: "unknown",
     codeCiState: "green",
     reviewThreadUrl: "https://example.test/pr/295#discussion_r295",
     manualNextStep: "inspect_exact_review_thread_then_resolve_or_leave_manual_note",
@@ -893,7 +894,7 @@ test("explain surfaces stale configured-bot remediation with the exact review th
   const explanation = await supervisor.explain(issueNumber);
   assert.match(
     explanation,
-    /^stale_review_bot_remediation issue=#195 pr=#295 reason=stale_review_bot code_ci=green current_head_sha=head-195 processed_on_current_head=yes review_thread_url=https:\/\/example\.test\/pr\/295#discussion_r295 manual_next_step=inspect_exact_review_thread_then_resolve_or_leave_manual_note summary=code_or_ci_green_but_review_thread_metadata_unresolved$/m,
+    /^stale_review_bot_remediation issue=#195 pr=#295 reason=stale_review_bot code_ci=green current_head_sha=head-195 processed_on_current_head=unknown review_thread_url=https:\/\/example\.test\/pr\/295#discussion_r295 manual_next_step=inspect_exact_review_thread_then_resolve_or_leave_manual_note summary=code_or_ci_green_but_review_thread_metadata_unresolved$/m,
   );
 });
 

@@ -22,13 +22,27 @@ function formatTokenValue(value: string): string {
 }
 
 function processedOnCurrentHead(record: Pick<IssueRunRecord, "last_failure_context">): "yes" | "no" | "unknown" {
+  let sawYes = false;
+  let sawNo = false;
+
   for (const detail of record.last_failure_context?.details ?? []) {
     const match = detail.match(/\bprocessed_on_current_head=(yes|no)\b/u);
-    if (match?.[1] === "yes" || match?.[1] === "no") {
-      return match[1];
+    if (match?.[1] === "yes") {
+      sawYes = true;
+    } else if (match?.[1] === "no") {
+      sawNo = true;
     }
   }
 
+  if (sawYes && sawNo) {
+    return "unknown";
+  }
+  if (sawYes) {
+    return "yes";
+  }
+  if (sawNo) {
+    return "no";
+  }
   return "unknown";
 }
 
