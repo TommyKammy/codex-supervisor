@@ -24,7 +24,7 @@ test("getting-started stays focused on operator setup and flow", async () => {
     "## Choose the operating mode",
     "## Prepare the supervisor config",
     "## Write execution-ready issues",
-    "## Run the first pass",
+    "## First-run command flow",
     "## Move from run-once to loop",
     "## Common operator decisions",
     "## Common mistakes",
@@ -100,6 +100,54 @@ test("getting-started defines setup readiness as a typed first-run contract dist
   assert.match(content, /At minimum, set these first-run fields before the first run:[\s\S]*`trustMode`[\s\S]*`executionSafetyMode`/i);
   assert.match(content, /`ready: false` until these required first-run blockers/i);
   assert.match(content, /explicit trust posture decisions/i);
+});
+
+test("getting-started protects the first-run command flow and operator action vocabulary", async () => {
+  const content = await readGettingStarted();
+
+  const requiredFlow = [
+    "## First-run command flow",
+    "node dist/index.js help",
+    "node dist/index.js web --config <supervisor-config-path>",
+    "GET /api/setup-readiness",
+    "node dist/index.js doctor --config <supervisor-config-path>",
+    "node dist/index.js status --config <supervisor-config-path> --why",
+    "node dist/index.js issue-lint <issue-number> --config <supervisor-config-path>",
+    "node dist/index.js run-once --config <supervisor-config-path> --dry-run",
+    "node dist/index.js run-once --config <supervisor-config-path>",
+    "./scripts/start-loop-tmux.sh",
+  ];
+
+  let lastIndex = -1;
+  for (const phrase of requiredFlow) {
+    const index = content.indexOf(phrase, lastIndex + 1);
+    assert.notEqual(index, -1, `expected first-run flow to include ${phrase}`);
+    assert.ok(index > lastIndex, `expected ${phrase} to appear after the previous first-run step`);
+    lastIndex = index;
+  }
+
+  for (const phrase of [
+    "ready: false",
+    "blockers: [...]",
+    "doctor_check name=github_auth status=fail",
+    "current_issue=",
+    "missing_required=",
+    "metadata_errors=",
+    "dry-run",
+    "operator_action action=fix_config",
+    "operator_action action=restart_loop",
+    "operator_action action=provider_outage_suspected",
+    "operator_action action=manual_review",
+    "operator_action action=continue",
+    "doctor_operator_action action=fix_config",
+    "operator_action action=adopt_local_ci",
+    "doctor_operator_action action=adopt_local_ci",
+    "doctor_operator_action action=safe_to_ignore",
+  ]) {
+    assert.match(content, new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")));
+  }
+
+  assert.doesNotMatch(content, /--config \/path\/to\//);
 });
 
 test("getting-started defines the repo-owned local CI contract for pre-PR verification", async () => {

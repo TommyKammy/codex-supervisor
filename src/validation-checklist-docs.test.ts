@@ -63,4 +63,8 @@ test("operators can discover the release-readiness checklist from docs and CLI h
   assert.match(readme, /\[Release readiness checklist\]\(\.\/docs\/validation-checklist\.md\)/i);
   assert.match(gettingStarted, /\[Release readiness checklist\]\(\.\/validation-checklist\.md\)/i);
   assert.match(help, /readiness-checklist\s+Print the release-readiness checklist/i);
+  assert.match(help, /node dist\/index\.js help/);
+  assert.match(help, /node dist\/index\.js web --config <supervisor-config-path>\s+# open \/setup/);
+  assert.match(help, /node dist\/index\.js issue-lint <issue-number> --config <supervisor-config-path>/);
+  assert.match(help, /node dist\/index\.js run-once --config <supervisor-config-path> --dry-run/);
 });
