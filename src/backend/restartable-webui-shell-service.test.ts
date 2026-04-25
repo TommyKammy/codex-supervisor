@@ -121,6 +121,16 @@ function createStubService(args?: {
     configPath: "/tmp/supervisor.config.json",
     fields: [],
     blockers: [],
+    nextActions: [
+      {
+        action: "continue",
+        source: "setup_readiness",
+        priority: 0,
+        required: false,
+        summary: "No setup blockers or advisory setup decisions remain; continue normal supervisor operation.",
+        fieldKeys: [],
+      },
+    ],
     hostReadiness: {
       overallStatus: "pass",
       checks: [],

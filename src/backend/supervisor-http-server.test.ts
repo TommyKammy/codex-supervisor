@@ -729,6 +729,16 @@ test("createSupervisorHttpServer serves read-only supervisor DTOs as JSON", asyn
         },
       },
     ],
+    nextActions: [
+      {
+        action: "fix_config",
+        source: "missing_review_provider",
+        priority: 100,
+        required: true,
+        summary: "Configure at least one review provider before first-run setup is complete.",
+        fieldKeys: ["reviewProvider"],
+      },
+    ],
     hostReadiness: {
       overallStatus: "pass",
       checks: [
@@ -1353,6 +1363,16 @@ test("createSupervisorHttpServer accepts narrow setup config writes and returns 
           },
         },
       ],
+      nextActions: [
+        {
+          action: "fix_config",
+          source: "missing_review_provider",
+          priority: 100,
+          required: true,
+          summary: "Configure at least one review provider before first-run setup is complete.",
+          fieldKeys: ["reviewProvider"],
+        },
+      ],
       hostReadiness: {
         overallStatus: "pass",
         checks: [
@@ -1620,6 +1640,16 @@ test("createSupervisorHttpServer surfaces no-op setup config writes without a re
           configPath: "/tmp/supervisor.config.json",
           fields: [],
           blockers: [],
+          nextActions: [
+            {
+              action: "continue",
+              source: "setup_readiness",
+              priority: 0,
+              required: false,
+              summary: "No setup blockers or advisory setup decisions remain; continue normal supervisor operation.",
+              fieldKeys: [],
+            },
+          ],
           hostReadiness: { overallStatus: "pass", checks: [] },
           providerPosture: {
             profile: "codex",
@@ -1691,6 +1721,16 @@ test("createSupervisorHttpServer surfaces no-op setup config writes without a re
       configPath: "/tmp/supervisor.config.json",
       fields: [],
       blockers: [],
+      nextActions: [
+        {
+          action: "continue",
+          source: "setup_readiness",
+          priority: 0,
+          required: false,
+          summary: "No setup blockers or advisory setup decisions remain; continue normal supervisor operation.",
+          fieldKeys: [],
+        },
+      ],
       hostReadiness: { overallStatus: "pass", checks: [] },
       providerPosture: {
         profile: "codex",
@@ -2034,6 +2074,16 @@ test("createSupervisorHttpServer keeps root on the operator dashboard after setu
         },
       ],
       blockers: [],
+      nextActions: [
+        {
+          action: "continue",
+          source: "setup_readiness",
+          priority: 0,
+          required: false,
+          summary: "No setup blockers or advisory setup decisions remain; continue normal supervisor operation.",
+          fieldKeys: [],
+        },
+      ],
       hostReadiness: {
         overallStatus: "pass",
         checks: [],

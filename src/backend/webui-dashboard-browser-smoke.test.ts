@@ -462,6 +462,24 @@ function createFirstRunSetupService(args: {
         },
       },
     ],
+    nextActions: [
+      {
+        action: "fix_config",
+        source: "missing_repo_path",
+        priority: 100,
+        required: true,
+        summary: "Set repoPath in the supervisor config.",
+        fieldKeys: ["repoPath"],
+      },
+      {
+        action: "fix_config",
+        source: "missing_review_provider",
+        priority: 100,
+        required: true,
+        summary: "Configure at least one review provider before first-run setup is complete.",
+        fieldKeys: ["reviewProvider"],
+      },
+    ],
     hostReadiness: {
       overallStatus: "pass",
       checks: [
@@ -640,6 +658,16 @@ function createFirstRunSetupService(args: {
             },
           ],
         blockers: [],
+        nextActions: [
+          {
+            action: "continue",
+            source: "setup_readiness",
+            priority: 0,
+            required: false,
+            summary: "No setup blockers or advisory setup decisions remain; continue normal supervisor operation.",
+            fieldKeys: [],
+          },
+        ],
         providerPosture: {
           profile: "codex",
           provider: "codex",

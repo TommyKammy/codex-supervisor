@@ -382,6 +382,10 @@ export function renderSupervisorSetupPage(): string {
         grid-column: span 8;
       }
 
+      .next-actions-card {
+        grid-column: span 12;
+      }
+
       .config-card,
       .fields-card {
         grid-column: span 6;
@@ -495,6 +499,7 @@ export function renderSupervisorSetupPage(): string {
       @media (max-width: 1160px) {
         .summary-card,
         .blockers-card,
+        .next-actions-card,
         .config-card,
         .fields-card,
         .diagnostic-card {
@@ -624,6 +629,20 @@ ${renderSetupNavigation()}
                     <ul id="setup-blockers" class="list list--plain checklist-grid">
                       <li>Loading typed blockers…</li>
                     </ul>
+                  </div>
+                </div>
+              </article>
+
+              <article id="setup-next-actions-card" class="panel next-actions-card">
+                <div class="panel-shell">
+                  <div class="panel-header">
+                    <h2>Next setup actions</h2>
+                    <p class="panel-subtitle">Ordered setup decisions from the typed readiness contract.</p>
+                  </div>
+                  <div class="panel-body">
+                    <ol id="setup-next-actions" class="list list--plain checklist-grid">
+                      <li>Loading setup next actions…</li>
+                    </ol>
                   </div>
                 </div>
               </article>

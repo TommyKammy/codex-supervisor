@@ -18,6 +18,8 @@ test("createSetupReadinessReport builds the shared missing-provider fixture by d
   assert.equal(report.fields[0]?.key, "repoPath");
   assert.equal(report.fields.at(-1)?.key, "reviewProvider");
   assert.equal(report.blockers[0]?.code, "missing_review_provider");
+  assert.equal(report.nextActions[0]?.action, "fix_config");
+  assert.equal(report.nextActions[0]?.required, true);
   assert.equal(report.providerPosture.summary, "No review provider is configured.");
 });
 

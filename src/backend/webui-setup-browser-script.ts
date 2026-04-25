@@ -46,6 +46,7 @@ export function renderSetupBrowserScript(): string {
         summary: document.getElementById("setup-summary"),
         blockerSummary: document.getElementById("setup-blocker-summary"),
         blockers: document.getElementById("setup-blockers"),
+        nextActions: document.getElementById("setup-next-actions"),
         fieldSummary: document.getElementById("setup-field-summary"),
         fields: document.getElementById("setup-fields"),
         hostSummary: document.getElementById("setup-host-summary"),
@@ -570,6 +571,23 @@ export function renderSetupBrowserScript(): string {
             ],
           })),
           "No setup blockers remain. Open /dashboard for steady-state operations.",
+        );
+        renderChecklist(
+          elements.nextActions,
+          (report.nextActions || []).map((action) => ({
+            title: action.summary,
+            tone: action.required ? "blocker" : "normal",
+            meta: [
+              "Action: " + formatToken(action.action),
+              "Source: " + formatToken(action.source),
+              "Required: " + (action.required ? "yes" : "no"),
+              "Priority: " + action.priority,
+            ],
+            notes: [
+              "Related fields: " + (action.fieldKeys && action.fieldKeys.length > 0 ? action.fieldKeys.join(", ") : "none"),
+            ],
+          })),
+          "No setup next actions reported.",
         );
         setText(elements.fieldSummary, summarizeFields(report.fields));
         renderChecklist(

@@ -156,6 +156,16 @@ test("createSupervisorService exposes a dedicated typed setup readiness query", 
         },
       },
     ],
+    nextActions: [
+      {
+        action: "fix_config",
+        source: "missing_review_provider",
+        priority: 100,
+        required: true,
+        summary: "Add at least one review provider login before first-run setup is complete.",
+        fieldKeys: ["reviewProvider"],
+      },
+    ],
     hostReadiness: {
       overallStatus: "pass",
       checks: [
