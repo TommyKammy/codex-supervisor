@@ -27,6 +27,9 @@ Inspect commands:
   status [--why]                    Show queue, PR, CI, review, and loop state.
   doctor                            Check local configuration and repository prerequisites.
   explain <issue-number>            Explain supervisor readiness for one issue.
+  explain <issue-number> --timeline Show the issue-run evidence timeline.
+  explain <issue-number> --audit-bundle
+                                    Print a sanitized operator audit bundle.
   issue-lint <issue-number>         Validate an execution-ready issue body.
   readiness-checklist               Print the release-readiness checklist.
 

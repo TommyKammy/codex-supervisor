@@ -19,7 +19,7 @@ import { renderCliHelp } from "./help";
 import { isSupervisorRuntimeCommand, runSupervisorCommand } from "./supervisor-runtime";
 import { assertRuntimeFreshness } from "../build-freshness";
 
-type SupervisorRuntimeOptions = Pick<CliOptions, "command" | "dryRun" | "why" | "issueNumber">;
+type SupervisorRuntimeOptions = Pick<CliOptions, "command" | "dryRun" | "why" | "explainMode" | "issueNumber">;
 
 async function readReadinessChecklist(): Promise<string> {
   const checklistPath = path.resolve(__dirname, "..", "..", "docs", "validation-checklist.md");
@@ -130,6 +130,7 @@ export async function runCli(
       command: options.command,
       dryRun: options.dryRun,
       why: options.why,
+      explainMode: options.explainMode,
       issueNumber: options.issueNumber,
     },
     {

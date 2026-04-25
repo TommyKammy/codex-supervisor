@@ -294,10 +294,38 @@ test("parseArgs accepts explain timeline mode before the command", () => {
   });
 });
 
+test("parseArgs accepts explain audit bundle mode", () => {
+  assert.deepEqual(parseArgs(["explain", "1745", "--audit-bundle"]), {
+    command: "explain",
+    configPath: undefined,
+    dryRun: false,
+    why: false,
+    explainMode: "audit_bundle",
+    issueNumber: 1745,
+    snapshotPath: undefined,
+    caseId: undefined,
+    corpusPath: undefined,
+  });
+});
+
 test("parseArgs rejects timeline mode outside explain", () => {
   assert.throws(
     () => parseArgs(["status", "--timeline"]),
     /The --timeline flag is only supported with the explain command\./,
+  );
+});
+
+test("parseArgs rejects audit bundle mode outside explain", () => {
+  assert.throws(
+    () => parseArgs(["status", "--audit-bundle"]),
+    /The --audit-bundle flag is only supported with the explain command\./,
+  );
+});
+
+test("parseArgs rejects combining explain timeline and audit bundle modes", () => {
+  assert.throws(
+    () => parseArgs(["explain", "1745", "--timeline", "--audit-bundle"]),
+    /The --timeline and --audit-bundle flags cannot be combined\./,
   );
 });
 
