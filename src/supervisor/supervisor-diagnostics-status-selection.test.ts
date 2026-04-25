@@ -485,7 +485,7 @@ test("renderSupervisorStatusDto maps stale configured-bot remediation to the roo
     runnableIssues: [],
     blockedIssues: [],
     detailedStatusLines: [
-      "stale_review_bot_remediation issue=#366 pr=#44 reason=stale_review_bot code_ci=green current_head_sha=deadbeef processed_on_current_head=yes review_thread_url=https://example.test/pr/44#discussion_r44 manual_next_step=inspect_exact_review_thread_then_resolve_or_leave_manual_note summary=code_or_ci_green_but_review_thread_metadata_unresolved",
+      "stale_review_bot_remediation issue=#366 pr=#44 reason=stale_review_bot code_ci=green current_head_sha=deadbeef processed_on_current_head=yes classification=unresolved_work review_thread_url=https://example.test/pr/44#discussion_r44 manual_next_step=inspect_exact_review_thread_then_resolve_or_leave_manual_note summary=code_or_ci_green_but_review_thread_metadata_unresolved",
     ],
     reconciliationPhase: null,
     reconciliationWarning: null,

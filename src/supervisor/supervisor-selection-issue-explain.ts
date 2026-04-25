@@ -416,9 +416,11 @@ export async function buildIssueExplainDto(
   const staleReviewBotRemediation =
     record && pr && !trackedPrHydrationFailed
       ? buildStaleReviewBotRemediation({
+        config,
         record,
         pr,
         checks: explainChecks,
+        reviewThreads: explainReviewThreads,
       })
       : null;
 
