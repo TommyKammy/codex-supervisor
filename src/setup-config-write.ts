@@ -96,14 +96,15 @@ const CONFIGURABLE_FIELDS: SetupConfigWritableFieldKey[] = [
   "localCiCandidateDismissed",
   "reviewProvider",
 ];
-const DANGEROUS_CONFIGURABLE_FIELDS: DangerousSetupConfigFieldKey[] = [
+export const DANGEROUS_SETUP_CONFIG_FIELD_KEYS = [
   "localReviewFollowUpRepairEnabled",
   "localReviewManualReviewRepairEnabled",
   "localReviewFollowUpIssueCreationEnabled",
   "localReviewHighSeverityAction",
   "staleConfiguredBotReviewPolicy",
   "approvedTrackedTopLevelEntries",
-];
+] as const satisfies readonly DangerousSetupConfigFieldKey[];
+const DANGEROUS_CONFIGURABLE_FIELDS: DangerousSetupConfigFieldKey[] = [...DANGEROUS_SETUP_CONFIG_FIELD_KEYS];
 const ALL_CONFIGURABLE_FIELDS = [...CONFIGURABLE_FIELDS, ...DANGEROUS_CONFIGURABLE_FIELDS] as const;
 
 const RESTART_REQUIRED_FIELDS = new Set<string>(ALL_CONFIGURABLE_FIELDS);
@@ -585,40 +586,53 @@ function nextSemanticFieldValue(
   }
 }
 
-function dangerousOptInFieldsEnabledBy(changes: SetupConfigChanges): DangerousSetupConfigFieldKey[] {
-  const enabled: DangerousSetupConfigFieldKey[] = [];
-  if (changes.localReviewFollowUpRepairEnabled === true) {
-    enabled.push("localReviewFollowUpRepairEnabled");
+function dangerousOptInSemanticValueEnabled(field: DangerousSetupConfigFieldKey, value: string | null): boolean {
+  switch (field) {
+    case "localReviewFollowUpRepairEnabled":
+    case "localReviewManualReviewRepairEnabled":
+    case "localReviewFollowUpIssueCreationEnabled":
+      return value === "true";
+    case "localReviewHighSeverityAction":
+      return value === "retry";
+    case "staleConfiguredBotReviewPolicy":
+      return value === "reply_only" || value === "reply_and_resolve";
+    case "approvedTrackedTopLevelEntries":
+      return value !== null && value.length > 0;
   }
-  if (changes.localReviewManualReviewRepairEnabled === true) {
-    enabled.push("localReviewManualReviewRepairEnabled");
-  }
-  if (changes.localReviewFollowUpIssueCreationEnabled === true) {
-    enabled.push("localReviewFollowUpIssueCreationEnabled");
-  }
-  if (changes.localReviewHighSeverityAction === "retry") {
-    enabled.push("localReviewHighSeverityAction");
-  }
-  if (
-    changes.staleConfiguredBotReviewPolicy !== undefined &&
-    changes.staleConfiguredBotReviewPolicy !== "diagnose_only"
-  ) {
-    enabled.push("staleConfiguredBotReviewPolicy");
-  }
-  if (
-    Array.isArray(changes.approvedTrackedTopLevelEntries) &&
-    changes.approvedTrackedTopLevelEntries.length > 0
-  ) {
-    enabled.push("approvedTrackedTopLevelEntries");
-  }
-  return enabled;
+}
+
+function dangerousOptInFieldsEnabledByTransition(args: {
+  configSummary: ReturnType<typeof loadConfigSummary>;
+  existingDocument: Record<string, unknown>;
+  changes: SetupConfigChanges;
+}): DangerousSetupConfigFieldKey[] {
+  const { configSummary, existingDocument, changes } = args;
+  return DANGEROUS_CONFIGURABLE_FIELDS.filter((field) => {
+    if (!(field in changes)) {
+      return false;
+    }
+
+    const nextValue = nextSemanticFieldValue(field, changes);
+    if (!dangerousOptInSemanticValueEnabled(field, nextValue)) {
+      return false;
+    }
+
+    const currentValue = currentSemanticFieldValue({ configSummary, existingDocument, field });
+    return !dangerousOptInSemanticValueEnabled(field, currentValue);
+  });
 }
 
 function assertDangerousOptInConfirmation(args: {
+  configSummary: ReturnType<typeof loadConfigSummary>;
+  existingDocument: Record<string, unknown>;
   changes: SetupConfigChanges;
   confirmation: DangerousOptInConfirmation | undefined;
 }): void {
-  const dangerousFields = dangerousOptInFieldsEnabledBy(args.changes);
+  const dangerousFields = dangerousOptInFieldsEnabledByTransition({
+    configSummary: args.configSummary,
+    existingDocument: args.existingDocument,
+    changes: args.changes,
+  });
   if (dangerousFields.length === 0) {
     return;
   }
@@ -671,9 +685,14 @@ async function rotateSetupConfigBackups(backupPath: string): Promise<void> {
 export async function updateSetupConfig(args: UpdateSetupConfigArgs): Promise<SetupConfigUpdateResult> {
   const configPath = resolveConfigPath(args.configPath);
   const changes = normalizeSetupChanges(args.changes);
-  assertDangerousOptInConfirmation({ changes, confirmation: args.dangerousOptInConfirmation });
   const existing = await readExistingConfigDocument(configPath);
   const configSummary = loadConfigSummary(configPath);
+  assertDangerousOptInConfirmation({
+    configSummary,
+    existingDocument: existing.document,
+    changes,
+    confirmation: args.dangerousOptInConfirmation,
+  });
   const restartTriggeredByFields = determineRestartTriggeredFields({
     configSummary,
     existingDocument: existing.document,

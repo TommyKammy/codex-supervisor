@@ -1527,6 +1527,45 @@ test("createSupervisorHttpServer forwards dangerous opt-in confirmation and retu
   });
 });
 
+test("createSupervisorHttpServer rejects unknown dangerous opt-in confirmation field keys", async (t) => {
+  const setupConfigUpdateCalls: Array<unknown> = [];
+  const server = createSupervisorHttpServer({
+    service: createStubService({ setupConfigUpdateCalls }),
+    mutationAuth: testMutationAuth,
+  });
+  t.after(async () => {
+    await closeServer(server);
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.listen(0, "127.0.0.1", () => resolve());
+    server.on("error", reject);
+  });
+
+  const response = await readJson({
+    server,
+    path: "/api/setup-config",
+    method: "POST",
+    headers: mutationAuthHeaders(server, { "Content-Type": "application/json" }),
+    body: JSON.stringify({
+      changes: {
+        localReviewHighSeverityAction: "retry",
+      },
+      dangerousOptInConfirmation: {
+        acknowledged: true,
+        fieldKeys: ["localReviewHighSeverityAction", "unsupportedDangerousField"],
+      },
+    }),
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.deepEqual(response.body, {
+    error:
+      "dangerousOptInConfirmation.fieldKeys includes unknown dangerous setup config field: unsupportedDangerousField.",
+  });
+  assert.deepEqual(setupConfigUpdateCalls, []);
+});
+
 test("createSupervisorHttpServer only accepts managed restart commands when launcher support is available", async (t) => {
   let restartRequests = 0;
   const server = createSupervisorHttpServer({

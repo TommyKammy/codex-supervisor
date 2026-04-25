@@ -7,6 +7,7 @@ import {
 } from "../managed-restart";
 import type { SetupConfigPreviewSelectableReviewProviderProfile } from "../setup-config-preview";
 import {
+  DANGEROUS_SETUP_CONFIG_FIELD_KEYS,
   SetupConfigWriteError,
   type DangerousSetupConfigFieldKey,
   type SetupConfigUpdateResult,
@@ -32,6 +33,8 @@ interface JsonErrorBody {
   code?: string;
   dangerousFields?: string[];
 }
+
+const DANGEROUS_SETUP_CONFIG_FIELD_KEY_SET = new Set<string>(DANGEROUS_SETUP_CONFIG_FIELD_KEYS);
 
 class HttpRequestError extends Error {
   constructor(
@@ -546,6 +549,15 @@ function readSetupConfigWriteRequest(body: unknown): {
     rawConfirmation.fieldKeys.some((field) => typeof field !== "string")
   ) {
     throw new HttpRequestError(400, "dangerousOptInConfirmation.fieldKeys must be an array of strings.");
+  }
+  const unknownFieldKeys = rawConfirmation.fieldKeys.filter(
+    (field) => !DANGEROUS_SETUP_CONFIG_FIELD_KEY_SET.has(field),
+  );
+  if (unknownFieldKeys.length > 0) {
+    throw new HttpRequestError(
+      400,
+      `dangerousOptInConfirmation.fieldKeys includes unknown dangerous setup config field: ${unknownFieldKeys[0]}.`,
+    );
   }
 
   return {

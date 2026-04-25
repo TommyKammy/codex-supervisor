@@ -1875,6 +1875,9 @@ test("buildSetupConfigPreview preserves unknown fields and leaves the config fil
     repoPath: ".",
     repoSlug: "owner/repo",
     defaultBranch: "main",
+    localReviewFollowUpRepairEnabled: true,
+    staleConfiguredBotReviewPolicy: "reply_only",
+    approvedTrackedTopLevelEntries: ["README.md"],
     experimentalFlag: {
       keep: true,
     },
@@ -1896,6 +1899,9 @@ test("buildSetupConfigPreview preserves unknown fields and leaves the config fil
   assert.equal(preview.writesConfig, false);
   assert.equal(preview.selectedReviewProviderProfile, "codex");
   assert.deepEqual(preview.preservedUnknownFields, ["experimentalFlag"]);
+  assert.equal(preview.document.localReviewFollowUpRepairEnabled, true);
+  assert.equal(preview.document.staleConfiguredBotReviewPolicy, "reply_only");
+  assert.deepEqual(preview.document.approvedTrackedTopLevelEntries, ["README.md"]);
   assert.deepEqual(preview.document.experimentalFlag, { keep: true });
   assert.deepEqual(preview.document.reviewBotLogins, ["chatgpt-codex-connector"]);
   assert.deepEqual(
@@ -1959,6 +1965,58 @@ test("updateSetupConfig rejects dangerous explicit opt-ins without typed confirm
   );
 
   assert.equal(await fs.readFile(configPath, "utf8"), before);
+});
+
+test("updateSetupConfig allows idempotent dangerous explicit opt-in resubmits without fresh confirmation", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-dangerous-idempotent-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const configPath = path.join(tempDir, "supervisor.config.json");
+  await fs.writeFile(
+    configPath,
+    JSON.stringify(
+      {
+        repoPath: ".",
+        repoSlug: "owner/repo",
+        defaultBranch: "main",
+        workspaceRoot: "./worktrees",
+        stateFile: "./state.json",
+        codexBinary: "codex",
+        branchPrefix: "codex/issue-",
+        reviewBotLogins: ["chatgpt-codex-connector"],
+        localReviewFollowUpRepairEnabled: true,
+        localReviewManualReviewRepairEnabled: true,
+        localReviewHighSeverityAction: "retry",
+        staleConfiguredBotReviewPolicy: "reply_only",
+        approvedTrackedTopLevelEntries: ["README.md", "src"],
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+
+  const result = await updateSetupConfig({
+    configPath,
+    changes: {
+      localReviewFollowUpRepairEnabled: true,
+      localReviewManualReviewRepairEnabled: true,
+      localReviewHighSeverityAction: "retry",
+      staleConfiguredBotReviewPolicy: "reply_only",
+      approvedTrackedTopLevelEntries: ["README.md", "src"],
+    },
+  });
+
+  assert.deepEqual(result.updatedFields, [
+    "localReviewFollowUpRepairEnabled",
+    "localReviewManualReviewRepairEnabled",
+    "localReviewHighSeverityAction",
+    "staleConfiguredBotReviewPolicy",
+    "approvedTrackedTopLevelEntries",
+  ]);
+  assert.equal(result.restartRequired, false);
+  assert.deepEqual(result.restartTriggeredByFields, []);
 });
 
 test("updateSetupConfig writes confirmed dangerous explicit opt-ins through the setup-owned surface", async (t) => {
