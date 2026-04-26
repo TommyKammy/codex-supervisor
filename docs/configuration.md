@@ -365,7 +365,7 @@ Operator prerequisite:
 
 ### PR hydration authority
 
-Fresh GitHub PR facts are authoritative for review and merge decisions. Cached hydration can appear in diagnostics, but it is not the source of truth for readiness or merge safety.
+Fresh GitHub review facts are authoritative for review and merge decisions. Cached hydration can appear in diagnostics, but it is informational and non-authoritative, not the source of truth for readiness or merge safety. No configuration should treat cached pull-request hydration as authority for readiness, review-blocking, or merge decisions.
 
 ### JSON state recovery
 

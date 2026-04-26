@@ -623,6 +623,7 @@ test("buildDetailedStatusModel reports the latest recovery when no active issue 
       "No active issue.",
       "tracked_issues=2",
       "latest_record=#92 state=done updated_at=2026-03-13T01:20:00Z",
+      "no_active_tracked_record issue=#92 classification=safe_to_ignore state=done reason=terminal_done",
       "latest_recovery issue=#91 at=2026-03-13T00:20:00Z reason=merged_pr_convergence detail=tracked PR #191 merged; marked issue #91 done",
     ],
   );

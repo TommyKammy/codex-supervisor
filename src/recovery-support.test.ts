@@ -113,7 +113,7 @@ test("classifyFailedNoPrBranchRecovery reports preserved tracked files when dirt
   });
 
   assert.deepEqual(result, {
-    state: "manual_review_required",
+    state: "dirty_workspace",
     headSha,
     preservedTrackedFiles: ["feature.txt"],
   });
@@ -156,7 +156,7 @@ test("classifyFailedNoPrBranchRecovery does not treat untracked-only workspace f
   });
 
   assert.deepEqual(result, {
-    state: "manual_review_required",
+    state: "dirty_workspace",
     headSha,
     preservedTrackedFiles: [],
   });

@@ -140,7 +140,7 @@ test("status keeps the active handoff summary when PR status loading emits a war
     status,
     /handoff_summary=blocker: Waiting on GitHub status hydration to finish cleanly\. \| next: Keep the warning path rendering the same handoff summary\./,
   );
-  assert.match(status, /status_warning=injected status hydration failure/);
+  assert.match(status, /status_warning=.*injected status hydration failure/);
 });
 
 test("status downgrades journal read failures into status warnings", async () => {

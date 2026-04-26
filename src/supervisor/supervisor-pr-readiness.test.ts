@@ -12,6 +12,7 @@ import {
   createRecord,
   createSupervisorFixture,
   executionReadyBody,
+  git,
 } from "./supervisor-test-helpers";
 
 function runnableCodexIssueBody(summary: string): string {
@@ -37,6 +38,9 @@ test("post-turn PR transitions promote a clean draft PR into merging", async () 
         journal_path: null,
         pr_number: 113,
         blocked_reason: null,
+        pre_merge_evaluation_outcome: "mergeable",
+        local_review_head_sha: "head-113",
+        local_review_recommendation: "ready",
       }),
     },
   };
@@ -71,6 +75,21 @@ test("post-turn PR transitions promote a clean draft PR into merging", async () 
     isDraft: false,
   };
   await ensureWorkspace(fixture.config, issueNumber, branch);
+  const localHeadSha = git(["-C", path.join(fixture.workspaceRoot, `issue-${issueNumber}`), "rev-parse", "HEAD"]);
+  state.issues[String(issueNumber)] = {
+    ...state.issues[String(issueNumber)]!,
+    last_head_sha: localHeadSha,
+    local_review_head_sha: localHeadSha,
+  };
+  draftPr.headRefOid = localHeadSha;
+  readyPr.headRefOid = localHeadSha;
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  await fs.mkdir(path.join(fixture.workspaceRoot, `issue-${issueNumber}`, ".codex-supervisor"), { recursive: true });
+  await fs.writeFile(
+    path.join(fixture.workspaceRoot, `issue-${issueNumber}`, ".codex-supervisor", "issue-journal.md"),
+    "## Codex Working Notes\n",
+    "utf8",
+  );
 
   let readyCalls = 0;
   let snapshotLoads = 0;
@@ -98,7 +117,7 @@ test("post-turn PR transitions promote a clean draft PR into merging", async () 
     },
     enableAutoMerge: async (prNumber: number, headSha: string) => {
       assert.equal(prNumber, 113);
-      assert.equal(headSha, "head-113");
+      assert.equal(headSha, localHeadSha);
       autoMergeCalls += 1;
     },
     getPullRequestIfExists: async () => null,
@@ -156,7 +175,7 @@ test("post-turn PR transitions promote a clean draft PR into merging", async () 
   assert.equal(postTurn.record.state, "ready_to_merge");
   assert.equal(merged.pr_number, 113);
   assert.equal(merged.state, "merging");
-  assert.equal(merged.last_head_sha, "head-113");
+  assert.equal(merged.last_head_sha, localHeadSha);
   assert.equal(merged.blocked_reason, null);
   assert.equal(readyCalls, 1);
   assert.equal(autoMergeCalls, 1);
@@ -214,6 +233,15 @@ test("handlePostTurnPullRequestTransitions waits for Copilot propagation after m
   let autoMergeCalls = 0;
   const supervisor = new Supervisor(config);
   await ensureWorkspace(config, issueNumber, branch);
+  const localHeadSha = git(["-C", path.join(fixture.workspaceRoot, `issue-${issueNumber}`), "rev-parse", "HEAD"]);
+  draftPr.headRefOid = localHeadSha;
+  postReadyPr.headRefOid = localHeadSha;
+  await fs.mkdir(path.join(fixture.workspaceRoot, `issue-${issueNumber}`, ".codex-supervisor"), { recursive: true });
+  await fs.writeFile(
+    path.join(fixture.workspaceRoot, `issue-${issueNumber}`, ".codex-supervisor", "issue-journal.md"),
+    "## Codex Working Notes\n",
+    "utf8",
+  );
   let snapshotLoads = 0;
   (supervisor as unknown as { loadOpenPullRequestSnapshot: (prNumber: number) => Promise<unknown> }).loadOpenPullRequestSnapshot = async (
     prNumber: number,
@@ -262,6 +290,10 @@ test("handlePostTurnPullRequestTransitions waits for Copilot propagation after m
       journal_path: null,
       pr_number: 114,
       blocked_reason: null,
+      pre_merge_evaluation_outcome: "mergeable",
+      last_head_sha: localHeadSha,
+      local_review_head_sha: localHeadSha,
+      local_review_recommendation: "ready",
     }),
     issue,
     workspacePath: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
@@ -273,8 +305,8 @@ test("handlePostTurnPullRequestTransitions waits for Copilot propagation after m
 
   assert.equal(result.record.pr_number, 114);
   assert.equal(result.record.state, "waiting_ci");
-  assert.equal(result.record.last_head_sha, "head-114");
-  assert.equal(result.record.review_wait_head_sha, "head-114");
+  assert.equal(result.record.last_head_sha, localHeadSha);
+  assert.equal(result.record.review_wait_head_sha, localHeadSha);
   assert.ok(result.record.review_wait_started_at);
   assert.equal(Number.isNaN(Date.parse(result.record.review_wait_started_at ?? "")), false);
   assert.equal(result.record.blocked_reason, null);
@@ -298,6 +330,9 @@ test("handlePostTurnPullRequestTransitions refreshes PR state after marking read
         journal_path: null,
         pr_number: 116,
         blocked_reason: null,
+        pre_merge_evaluation_outcome: "mergeable",
+        local_review_head_sha: "head-116",
+        local_review_recommendation: "ready",
       }),
     },
   };
@@ -341,6 +376,21 @@ test("handlePostTurnPullRequestTransitions refreshes PR state after marking read
   let syncJournalCalls = 0;
   const supervisor = new Supervisor(fixture.config);
   await ensureWorkspace(fixture.config, issueNumber, branch);
+  const localHeadSha = git(["-C", path.join(fixture.workspaceRoot, `issue-${issueNumber}`), "rev-parse", "HEAD"]);
+  state.issues[String(issueNumber)] = {
+    ...state.issues[String(issueNumber)]!,
+    last_head_sha: localHeadSha,
+    local_review_head_sha: localHeadSha,
+  };
+  draftPr.headRefOid = localHeadSha;
+  readyPr.headRefOid = localHeadSha;
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  await fs.mkdir(path.join(fixture.workspaceRoot, `issue-${issueNumber}`, ".codex-supervisor"), { recursive: true });
+  await fs.writeFile(
+    path.join(fixture.workspaceRoot, `issue-${issueNumber}`, ".codex-supervisor", "issue-journal.md"),
+    "## Codex Working Notes\n",
+    "utf8",
+  );
   (supervisor as unknown as { loadOpenPullRequestSnapshot: (prNumber: number) => Promise<unknown> }).loadOpenPullRequestSnapshot = async (
     prNumber: number,
   ) => {
@@ -390,11 +440,11 @@ test("handlePostTurnPullRequestTransitions refreshes PR state after marking read
 
   assert.equal(result.pr.isDraft, false);
   assert.equal(result.record.state, "waiting_ci");
-  assert.equal(result.record.review_wait_head_sha, "head-116");
+  assert.equal(result.record.review_wait_head_sha, localHeadSha);
   assert.ok(result.record.review_wait_started_at);
   assert.equal(readyCalls, 1);
   assert.equal(snapshotLoads, 2);
-  assert.equal(syncJournalCalls, 1);
+  assert.equal(syncJournalCalls, 3);
 });
 
 test("handlePostTurnPullRequestTransitions does not mark block-merge draft PRs ready when final evaluation is unresolved", async () => {

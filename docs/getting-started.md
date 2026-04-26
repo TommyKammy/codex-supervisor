@@ -199,10 +199,10 @@ Before `run-once`, do this quick check:
 3. if `issue-lint` is clean, run `run-once`
 4. if `run-once` still behaves strangely, inspect `status`, `explain`, or `doctor`
 
-Validate one issue before the loop:
+Validate one issue before the loop. This example uses the shipped CodeRabbit profile; use the matching shipped profile for your review provider.
 
 ```bash
-node dist/index.js issue-lint <issue-number> --config <supervisor-config-path>
+node dist/index.js issue-lint <issue-number> --config supervisor.config.coderabbit.json
 ```
 
 What to do with the result:
@@ -251,6 +251,8 @@ node dist/index.js run-once --config <supervisor-config-path> --dry-run
 node dist/index.js run-once --config <supervisor-config-path>
 ./scripts/start-loop-tmux.sh
 ```
+
+For a concrete shipped profile, run the same checks against the matching provider config, for example: `node dist/index.js issue-lint <issue-number> --config supervisor.config.coderabbit.json`, `node dist/index.js status --config supervisor.config.coderabbit.json --why`, and `node dist/index.js doctor --config supervisor.config.coderabbit.json`.
 
 Read the command output as a sequence of decisions, not as unrelated logs:
 
