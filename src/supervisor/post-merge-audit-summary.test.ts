@@ -480,7 +480,7 @@ test("summarizePostMergeAuditPatterns aggregates recurring review, failure, and 
 
   assert.deepEqual(validatePostMergeAuditPatternSummary(summary), summary);
   assert.deepEqual(Object.keys(summary).sort(), [...POST_MERGE_AUDIT_PATTERN_SUMMARY_TOP_LEVEL_KEYS].sort());
-  assert.equal(summary.schemaVersion, 5);
+  assert.equal(summary.schemaVersion, 6);
   assert.equal(summary.advisoryOnly, true);
   assert.equal(summary.autoApplyGuardrails, false);
   assert.equal(summary.autoCreateFollowUpIssues, false);
@@ -575,7 +575,7 @@ test("summarizePostMergeAuditPatterns skips persisted artifacts missing trusted 
 
 test("validatePostMergeAuditPatternSummary rejects unsupported schema versions and missing required fields", () => {
   const summary = {
-    schemaVersion: 5,
+    schemaVersion: 6,
     generatedAt: "2026-03-25T00:00:00Z",
     artifactDir: "/tmp/post-merge",
     advisoryOnly: true,
@@ -589,20 +589,31 @@ test("validatePostMergeAuditPatternSummary rejects unsupported schema versions a
     followUpCandidates: [],
     promotionCandidates: [],
     releaseNotesSources: [],
+    evaluatorWorkflow: {
+      advisoryOnly: true,
+      autoCreateFollowUpIssues: false,
+      followUpIssueCreationRequiresConfirmation: true,
+      reviewerSummary: "Reviewed 0 post-merge audit artifacts.",
+      evaluatorSummary: "No evaluator evidence was available.",
+      productSafetyFindings: [],
+      verificationNotes: [],
+      followUpIssueDrafts: [],
+      obsidianHistoryDraft: "",
+    },
   } as const;
 
   assert.deepEqual(validatePostMergeAuditPatternSummary(summary), summary);
 
   assert.throws(
     () => validatePostMergeAuditPatternSummary({ ...summary, schemaVersion: 1 }),
-    /schemaVersion must be 5\./u,
+    /schemaVersion must be 6\./u,
   );
 
   const { promotionCandidates, ...summaryWithoutPromotionCandidates } = summary;
   void promotionCandidates;
   assert.throws(
     () => validatePostMergeAuditPatternSummary(summaryWithoutPromotionCandidates),
-    /summary must contain schemaVersion, generatedAt, artifactDir, advisoryOnly, autoApplyGuardrails, autoCreateFollowUpIssues, artifactsAnalyzed, artifactsSkipped, reviewPatterns, failurePatterns, recoveryPatterns, followUpCandidates, promotionCandidates, and releaseNotesSources\./u,
+    /summary must contain schemaVersion, generatedAt, artifactDir, advisoryOnly, autoApplyGuardrails, autoCreateFollowUpIssues, artifactsAnalyzed, artifactsSkipped, reviewPatterns, failurePatterns, recoveryPatterns, followUpCandidates, promotionCandidates, releaseNotesSources, and evaluatorWorkflow\./u,
   );
 });
 
@@ -925,6 +936,202 @@ test("summarizePostMergeAuditPatterns promotes missed focused test regressions i
       },
     },
   ]);
+});
+
+test("summarizePostMergeAuditPatterns builds confirm-required evaluator workflow handoff material", async () => {
+  const { reviewDir } = await createArtifactTestPaths("post-merge-audit-evaluator-workflow");
+  const config = createConfig({
+    localReviewArtifactDir: reviewDir,
+    repoSlug: "owner/repo",
+  });
+  const artifactDir = postMergeAuditArtifactDir(config);
+  const missArtifactPath = path.join(reviewDir, "owner-repo", "issue-102", "external-review-misses-head-merged-head.json");
+
+  await fs.mkdir(path.dirname(missArtifactPath), { recursive: true });
+  await fs.mkdir(artifactDir, { recursive: true });
+  await writeJsonAtomic(missArtifactPath, createExternalReviewMissArtifact());
+  await writeJsonAtomic(
+    path.join(artifactDir, "issue-102-head-merged-head.json"),
+    createPostMergeArtifact({
+      artifacts: {
+        executionMetricsSummaryPath: null,
+        localReviewSummaryPath: null,
+        localReviewFindingsPath: null,
+        externalReviewMissesPath: missArtifactPath,
+      },
+      operatorAuditBundle: {
+        schemaVersion: 1,
+        advisoryOnly: true,
+        issue: {
+          number: 102,
+          title: "Persist a completed-work audit artifact",
+          url: "https://example.test/issues/102",
+          state: "CLOSED",
+          createdAt: "2026-03-24T09:55:00Z",
+          updatedAt: "2026-03-24T10:06:00Z",
+          bodySnapshot: "## Summary\nPersist a completed-work audit artifact",
+        },
+        pullRequest: {
+          status: "available",
+          summary: "Evidence is available.",
+          value: {
+            number: 116,
+            title: "Persist completed-work audit artifact",
+            url: "https://example.test/pull/116",
+            state: "MERGED",
+            isDraft: false,
+            headRefName: "codex/issue-102",
+            headRefOid: "merged-head-116",
+            createdAt: "2026-03-24T10:03:00Z",
+            mergedAt: "2026-03-24T10:05:00Z",
+          },
+        },
+        stateRecord: {
+          status: "available",
+          summary: "Evidence is available.",
+          value: {
+            state: "done",
+            branch: "codex/issue-102",
+            prNumber: 116,
+            headSha: "merged-head-116",
+            blockedReason: null,
+            attempts: { total: 1, implementation: 1, repair: 0 },
+            lastError: null,
+            lastFailureKind: null,
+            lastFailureSignature: null,
+            updatedAt: "2026-03-24T10:06:00Z",
+          },
+        },
+        journal: {
+          status: "available",
+          summary: "Evidence is available.",
+          value: {
+            hypothesis: "Evaluator output should stay grounded in the merged PR evidence.",
+            whatChanged: "Persisted post-merge audit summary evidence.",
+            currentBlocker: "none",
+            nextExactStep: "Draft evaluator handoff.",
+            verificationGap: "none",
+            filesTouched: "src/supervisor/post-merge-audit-summary.ts",
+            rollbackConcern: "none",
+            lastFocusedCommand: "npx tsx --test src/supervisor/post-merge-audit-summary.test.ts",
+          },
+        },
+        localCi: {
+          status: "available",
+          summary: "Evidence is available.",
+          value: {
+            outcome: "passed",
+            command: "npm run build",
+            ran_at: "2026-03-24T10:04:00Z",
+            head_sha: "merged-head-116",
+            execution_mode: "shell",
+            summary: "Build passed.",
+            stderr_summary: null,
+            failure_class: null,
+            remediation_target: null,
+          },
+        },
+        pathHygiene: {
+          status: "missing",
+          summary: "No workstation-local path hygiene result is recorded for this issue run.",
+          value: null,
+        },
+        staleConfiguredBotRemediation: {
+          status: "missing",
+          summary: "No stale configured-bot remediation result is recorded for this issue run.",
+          value: null,
+        },
+        recoveryEvents: {
+          status: "missing",
+          summary: "No recovery event is recorded for this issue run.",
+          value: null,
+        },
+        timeline: null,
+        verificationCommands: {
+          status: "available",
+          summary: "Evidence is available.",
+          value: [
+            "npx tsx --test src/supervisor/post-merge-audit-summary.test.ts",
+            "npm run build",
+          ],
+        },
+      },
+    } as unknown as Partial<PostMergeAuditArtifact>),
+  );
+
+  const summary = await summarizePostMergeAuditPatterns(config);
+
+  assert.equal(summary.evaluatorWorkflow.advisoryOnly, true);
+  assert.equal(summary.evaluatorWorkflow.autoCreateFollowUpIssues, false);
+  assert.equal(summary.evaluatorWorkflow.followUpIssueCreationRequiresConfirmation, true);
+  assert.match(summary.evaluatorWorkflow.reviewerSummary, /issue #102/i);
+  assert.match(summary.evaluatorWorkflow.reviewerSummary, /PR #116/u);
+  assert.match(summary.evaluatorWorkflow.evaluatorSummary, /Build passed/u);
+  assert.deepEqual(summary.evaluatorWorkflow.productSafetyFindings, [
+    {
+      key: "correctness:medium:retry-path-reused-stale-review-context-after-the-head-changed",
+      severity: "medium",
+      summary: "Retry path reused stale review context after the head changed.",
+      evidenceIssueNumbers: [102],
+      evidenceFindingKeys: ["src/supervisor.ts|210|214|retry path|stale context"],
+    },
+  ]);
+  assert.deepEqual(summary.evaluatorWorkflow.verificationNotes, [
+    {
+      source: "local_ci",
+      summary: "Build passed.",
+      evidenceIssueNumber: 102,
+    },
+    {
+      source: "path_hygiene",
+      summary: "No workstation-local path hygiene result is recorded for this issue run.",
+      evidenceIssueNumber: 102,
+    },
+    {
+      source: "verification_command",
+      summary: "npx tsx --test src/supervisor/post-merge-audit-summary.test.ts",
+      evidenceIssueNumber: 102,
+    },
+    {
+      source: "verification_command",
+      summary: "npm run build",
+      evidenceIssueNumber: 102,
+    },
+  ]);
+  assert.deepEqual(summary.evaluatorWorkflow.followUpIssueDrafts, [
+    {
+      title: "Add regression coverage for execution-ready metadata hardening fixture drift",
+      body: [
+        "## Summary",
+        "Execution-ready metadata hardening can drift the recovery reconciliation fixture.",
+        "",
+        "## Scope",
+        "- Add focused regression coverage for `src/recovery-reconciliation.ts:412`.",
+        "- Keep the fix grounded in merged issue #102 / PR #116 evidence.",
+        "",
+        "## Acceptance criteria",
+        "- The missed regression is covered by a focused test.",
+        "- The follow-up remains scoped to the cited evidence.",
+        "",
+        "## Verification",
+        "- Run the focused regression test added for this follow-up.",
+        "",
+        "Depends on: none",
+        "Parallelizable: No",
+        "",
+        "## Execution order",
+        "1 of 1",
+      ].join("\n"),
+      confirmRequired: true,
+      autoCreate: false,
+      sourceFollowUpCandidateKey:
+        "test_regression:102:116:regression:src/recovery-reconciliation.ts:412:fixture-drift",
+    },
+  ]);
+  assert.match(
+    summary.evaluatorWorkflow.obsidianHistoryDraft,
+    /- Issue #102, PR #116: Persisted post-merge audit summary evidence\./u,
+  );
 });
 
 test("summarizePostMergeAuditPatterns ignores external review miss artifacts with malformed nullable evidence fields", async () => {
