@@ -1098,7 +1098,7 @@ export async function reconcileParentEpicClosures(
 }
 
 export async function reconcileStaleActiveIssueReservation(args: {
-  config?: Pick<SupervisorConfig, "issueJournalRelativePath" | "workspaceRoot">;
+  config?: Pick<SupervisorConfig, "issueJournalRelativePath" | "workspaceRoot"> & Partial<Pick<SupervisorConfig, "defaultBranch">>;
   stateStore: StateStoreLike;
   state: SupervisorStateFile;
   issueLockPath: (issueNumber: number) => string;

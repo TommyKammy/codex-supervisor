@@ -2340,7 +2340,7 @@ test("runOnce converges a stale no-PR issue to done when only supervisor-owned w
   const message = await supervisor.runOnce({ dryRun: false });
   assert.match(
     message,
-    /recovery issue=#92 reason=stale_stabilizing_no_pr_manual_review: blocked issue #92 after stale stabilizing recovery found an open issue with no authoritative completion signal; No matching open issue found\./,
+    /recovery issue=#92 reason=stale_stabilizing_no_pr_manual_review: blocked issue #92 after stale stabilizing recovery found the preserved branch already satisfied on origin\/main with no authoritative completion signal; No matching open issue found\./,
   );
 
   const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
@@ -2350,11 +2350,13 @@ test("runOnce converges a stale no-PR issue to done when only supervisor-owned w
   assert.equal(record.pr_number, null);
   assert.equal(record.codex_session_id, null);
   assert.equal(record.blocked_reason, "manual_review");
-  assert.match(record.last_error ?? "", /stale stabilizing recovery without authoritative completion evidence/);
+  assert.match(record.last_error ?? "", /preserved branch no longer differs from origin\/main/);
   assert.deepEqual(record.last_failure_context?.details ?? [], [
     "state=stabilizing",
     "tracked_pr=none",
     "github_issue_state=OPEN",
+    "branch_state=already_satisfied_on_main",
+    "default_branch=origin/main",
     "completion_evidence=missing",
     "operator_action=confirm whether the issue should be requeued or whether completion landed outside the tracked PR flow",
   ]);

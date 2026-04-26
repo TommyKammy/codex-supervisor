@@ -118,7 +118,7 @@ function appendInterruptedTurnEvidence(
 }
 
 export async function reconcileStaleActiveIssueReservationInModule(args: {
-  config?: Pick<SupervisorConfig, "issueJournalRelativePath" | "workspaceRoot">;
+  config?: Pick<SupervisorConfig, "issueJournalRelativePath" | "workspaceRoot"> & Partial<Pick<SupervisorConfig, "defaultBranch">>;
   stateStore: StateStoreLike;
   state: SupervisorStateFile;
   issueLockPath: (issueNumber: number) => string;
@@ -279,7 +279,9 @@ export async function reconcileStaleActiveIssueReservationInModule(args: {
         issueNumber: record.issue_number,
         localState: "stabilizing",
         githubIssueState: "OPEN",
-        detail: "Stale stabilizing recovery found no meaningful branch changes, so the supervisor cannot treat the open issue as complete without authoritative completion evidence.",
+        detail: `Stale stabilizing recovery found the preserved branch no longer differs from origin/${args.config?.defaultBranch ?? "main"}, so the supervisor cannot treat the open issue as complete without authoritative completion evidence.`,
+        branchState: "already_satisfied_on_main",
+        defaultBranch: args.config?.defaultBranch ?? "main",
       })
     : null;
 
@@ -287,7 +289,7 @@ export async function reconcileStaleActiveIssueReservationInModule(args: {
     record.issue_number,
     appendInterruptedTurnEvidence(
       shouldMarkAlreadySatisfiedOnMain
-        ? `stale_stabilizing_no_pr_manual_review: blocked issue #${record.issue_number} after stale stabilizing recovery found an open issue with no authoritative completion signal`
+        ? `stale_stabilizing_no_pr_manual_review: blocked issue #${record.issue_number} after stale stabilizing recovery found the preserved branch already satisfied on origin/${args.config?.defaultBranch ?? "main"} with no authoritative completion signal`
         : shouldStopRepeatedStaleNoPrLoop
         ? `stale_state_manual_stop: blocked issue #${record.issue_number} after repeated stale stabilizing recovery without a tracked PR`
         : shouldRequeueStabilizing
