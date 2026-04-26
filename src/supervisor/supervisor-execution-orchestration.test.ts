@@ -1623,7 +1623,6 @@ test("runOnce blocks an interrupted active turn before selecting the next runnab
   const interruptedIssueNumber = 91;
   const nextIssueNumber = 92;
   const interruptedBranch = branchName(fixture.config, interruptedIssueNumber);
-  const nextBranch = branchName(fixture.config, nextIssueNumber);
   const { workspacePath: interruptedWorkspace, journalPath: interruptedJournalPath } = trackedIssuePaths(
     fixture.workspaceRoot,
     interruptedIssueNumber,
@@ -1694,12 +1693,12 @@ test("runOnce blocks an interrupted active turn before selecting the next runnab
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
     authStatus: async () => ({ ok: true, message: null }),
     listAllIssues: async () => [nextIssue, interruptedIssue],
-    listCandidateIssues: async () => [nextIssue, interruptedIssue],
+    listCandidateIssues: async () => {
+      throw new Error("unexpected listCandidateIssues call");
+    },
     getIssue: async (issueNumber: number) => (issueNumber === nextIssueNumber ? nextIssue : interruptedIssue),
-    resolvePullRequestForBranch: async (branchName: string, prNumber: number | null) => {
-      assert.equal(branchName, nextBranch);
-      assert.equal(prNumber, null);
-      return null;
+    resolvePullRequestForBranch: async () => {
+      throw new Error("unexpected resolvePullRequestForBranch call");
     },
     getChecks: async () => [],
     getUnresolvedReviewThreads: async () => [],
@@ -1718,11 +1717,12 @@ test("runOnce blocks an interrupted active turn before selecting the next runnab
     message,
     /recovery issue=#91 reason=interrupted_turn_recovery: blocked issue #91 after an in-progress Codex turn ended without a durable handoff/,
   );
-  assert.match(message, /Dry run: would invoke Codex for issue #92\./);
+  assert.match(message, /Interrupted active turn for issue #91 requires manual recovery before selecting another runnable issue\./);
 
   const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
   const interruptedRecord = persisted.issues[String(interruptedIssueNumber)]!;
-  assert.equal(persisted.activeIssueNumber, nextIssueNumber);
+  assert.equal(persisted.activeIssueNumber, null);
+  assert.equal(persisted.issues[String(nextIssueNumber)], undefined);
   assert.equal(interruptedRecord.state, "blocked");
   assert.equal(interruptedRecord.codex_session_id, null);
   assert.equal(interruptedRecord.blocked_reason, "handoff_missing");
