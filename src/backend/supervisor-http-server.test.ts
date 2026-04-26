@@ -480,7 +480,7 @@ function createStubService(args?: {
         args.postMergeAuditSummaryCalls = (args.postMergeAuditSummaryCalls ?? 0) + 1;
       }
       return {
-        schemaVersion: 5,
+        schemaVersion: 6,
         advisoryOnly: true,
         autoApplyGuardrails: false,
         autoCreateFollowUpIssues: false,
@@ -494,6 +494,17 @@ function createStubService(args?: {
         followUpCandidates: [],
         promotionCandidates: [],
         releaseNotesSources: [],
+        evaluatorWorkflow: {
+          advisoryOnly: true,
+          autoCreateFollowUpIssues: false,
+          followUpIssueCreationRequiresConfirmation: true,
+          reviewerSummary: "Reviewed 0 post-merge audit artifacts.",
+          evaluatorSummary: "No evaluator evidence was available.",
+          productSafetyFindings: [],
+          verificationNotes: [],
+          followUpIssueDrafts: [],
+          obsidianHistoryDraft: "",
+        },
       };
     },
     queryDoctor: async () => doctorDiagnostics,
@@ -646,7 +657,7 @@ test("createSupervisorHttpServer serves read-only supervisor DTOs as JSON", asyn
   assert.equal(postMergeAuditSummaryResponse.statusCode, 200);
   assert.equal(serviceArgs.postMergeAuditSummaryCalls, 1);
   assert.deepEqual(postMergeAuditSummaryResponse.body, {
-    schemaVersion: 5,
+    schemaVersion: 6,
     advisoryOnly: true,
     autoApplyGuardrails: false,
     autoCreateFollowUpIssues: false,
@@ -660,6 +671,17 @@ test("createSupervisorHttpServer serves read-only supervisor DTOs as JSON", asyn
     followUpCandidates: [],
     promotionCandidates: [],
     releaseNotesSources: [],
+    evaluatorWorkflow: {
+      advisoryOnly: true,
+      autoCreateFollowUpIssues: false,
+      followUpIssueCreationRequiresConfirmation: true,
+      reviewerSummary: "Reviewed 0 post-merge audit artifacts.",
+      evaluatorSummary: "No evaluator evidence was available.",
+      productSafetyFindings: [],
+      verificationNotes: [],
+      followUpIssueDrafts: [],
+      obsidianHistoryDraft: "",
+    },
   });
 
   const setupReadinessResponse = await readJson({ server, path: "/api/setup-readiness" });

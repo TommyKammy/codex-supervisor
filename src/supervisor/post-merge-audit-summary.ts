@@ -10,7 +10,7 @@ import { hasMatchingPromotionIdentity } from "../persisted-artifact-promotion";
 import type { PostMergeAuditArtifact } from "./post-merge-audit-artifact";
 import { postMergeAuditArtifactDir } from "./post-merge-audit-artifact";
 
-export const POST_MERGE_AUDIT_PATTERN_SUMMARY_SCHEMA_VERSION = 5;
+export const POST_MERGE_AUDIT_PATTERN_SUMMARY_SCHEMA_VERSION = 6;
 export const POST_MERGE_AUDIT_PATTERN_SUMMARY_TOP_LEVEL_KEYS = [
   "schemaVersion",
   "generatedAt",
@@ -26,6 +26,7 @@ export const POST_MERGE_AUDIT_PATTERN_SUMMARY_TOP_LEVEL_KEYS = [
   "followUpCandidates",
   "promotionCandidates",
   "releaseNotesSources",
+  "evaluatorWorkflow",
 ] as const;
 const POST_MERGE_AUDIT_REVIEW_PATTERN_KEYS = [
   "key",
@@ -116,6 +117,36 @@ const POST_MERGE_AUDIT_RELEASE_NOTES_AUDIT_BUNDLE_KEYS = [
   "localCiSummary",
   "pathHygieneSummary",
   "journalSummary",
+] as const;
+const POST_MERGE_AUDIT_EVALUATOR_WORKFLOW_KEYS = [
+  "advisoryOnly",
+  "autoCreateFollowUpIssues",
+  "followUpIssueCreationRequiresConfirmation",
+  "reviewerSummary",
+  "evaluatorSummary",
+  "productSafetyFindings",
+  "verificationNotes",
+  "followUpIssueDrafts",
+  "obsidianHistoryDraft",
+] as const;
+const POST_MERGE_AUDIT_EVALUATOR_PRODUCT_SAFETY_FINDING_KEYS = [
+  "key",
+  "severity",
+  "summary",
+  "evidenceIssueNumbers",
+  "evidenceFindingKeys",
+] as const;
+const POST_MERGE_AUDIT_EVALUATOR_VERIFICATION_NOTE_KEYS = [
+  "source",
+  "summary",
+  "evidenceIssueNumber",
+] as const;
+const POST_MERGE_AUDIT_EVALUATOR_FOLLOW_UP_DRAFT_KEYS = [
+  "title",
+  "body",
+  "confirmRequired",
+  "autoCreate",
+  "sourceFollowUpCandidateKey",
 ] as const;
 
 export interface PostMergeAuditReviewPatternDto {
@@ -218,6 +249,39 @@ export interface PostMergeAuditReleaseNotesSourceDto {
   followUpCandidateKeys: string[];
 }
 
+export type PostMergeAuditEvaluatorVerificationNoteSourceDto =
+  | "local_ci"
+  | "path_hygiene"
+  | "verification_command";
+
+export interface PostMergeAuditEvaluatorWorkflowDto {
+  advisoryOnly: true;
+  autoCreateFollowUpIssues: false;
+  followUpIssueCreationRequiresConfirmation: true;
+  reviewerSummary: string;
+  evaluatorSummary: string;
+  productSafetyFindings: {
+    key: string;
+    severity: ActionableSeverity;
+    summary: string;
+    evidenceIssueNumbers: number[];
+    evidenceFindingKeys: string[];
+  }[];
+  verificationNotes: {
+    source: PostMergeAuditEvaluatorVerificationNoteSourceDto;
+    summary: string;
+    evidenceIssueNumber: number;
+  }[];
+  followUpIssueDrafts: {
+    title: string;
+    body: string;
+    confirmRequired: true;
+    autoCreate: false;
+    sourceFollowUpCandidateKey: string;
+  }[];
+  obsidianHistoryDraft: string;
+}
+
 export interface PostMergeAuditPatternSummaryDto {
   schemaVersion: typeof POST_MERGE_AUDIT_PATTERN_SUMMARY_SCHEMA_VERSION;
   generatedAt: string;
@@ -233,6 +297,7 @@ export interface PostMergeAuditPatternSummaryDto {
   followUpCandidates: PostMergeAuditFollowUpCandidateDto[];
   promotionCandidates: PostMergeAuditPromotionCandidateDto[];
   releaseNotesSources: PostMergeAuditReleaseNotesSourceDto[];
+  evaluatorWorkflow: PostMergeAuditEvaluatorWorkflowDto;
 }
 
 function failSummaryValidation(message: string): never {
@@ -589,6 +654,129 @@ function expectReleaseNotesSource(
   };
 }
 
+function expectEvaluatorVerificationNoteSource(
+  value: unknown,
+  field: string,
+): PostMergeAuditEvaluatorVerificationNoteSourceDto {
+  if (value !== "local_ci" && value !== "path_hygiene" && value !== "verification_command") {
+    failSummaryValidation(`${field} must be one of: local_ci, path_hygiene, verification_command.`);
+  }
+
+  return value;
+}
+
+function expectEvaluatorProductSafetyFinding(
+  value: unknown,
+  index: number,
+): PostMergeAuditEvaluatorWorkflowDto["productSafetyFindings"][number] {
+  const finding = expectSummaryObject(value, `evaluatorWorkflow.productSafetyFindings[${index}]`);
+  expectExactKeys(
+    finding,
+    POST_MERGE_AUDIT_EVALUATOR_PRODUCT_SAFETY_FINDING_KEYS,
+    `evaluatorWorkflow.productSafetyFindings[${index}]`,
+  );
+  const severity = expectSummaryString(
+    finding.severity,
+    `evaluatorWorkflow.productSafetyFindings[${index}].severity`,
+  );
+  if (!isActionableSeverity(severity)) {
+    failSummaryValidation(`evaluatorWorkflow.productSafetyFindings[${index}].severity must be one of: low, medium, high.`);
+  }
+
+  return {
+    key: expectSummaryString(finding.key, `evaluatorWorkflow.productSafetyFindings[${index}].key`),
+    severity,
+    summary: expectSummaryString(finding.summary, `evaluatorWorkflow.productSafetyFindings[${index}].summary`),
+    evidenceIssueNumbers: expectIntegerArray(
+      finding.evidenceIssueNumbers,
+      `evaluatorWorkflow.productSafetyFindings[${index}].evidenceIssueNumbers`,
+    ),
+    evidenceFindingKeys: expectStringArray(
+      finding.evidenceFindingKeys,
+      `evaluatorWorkflow.productSafetyFindings[${index}].evidenceFindingKeys`,
+    ),
+  };
+}
+
+function expectEvaluatorVerificationNote(
+  value: unknown,
+  index: number,
+): PostMergeAuditEvaluatorWorkflowDto["verificationNotes"][number] {
+  const note = expectSummaryObject(value, `evaluatorWorkflow.verificationNotes[${index}]`);
+  expectExactKeys(note, POST_MERGE_AUDIT_EVALUATOR_VERIFICATION_NOTE_KEYS, `evaluatorWorkflow.verificationNotes[${index}]`);
+
+  return {
+    source: expectEvaluatorVerificationNoteSource(note.source, `evaluatorWorkflow.verificationNotes[${index}].source`),
+    summary: expectSummaryString(note.summary, `evaluatorWorkflow.verificationNotes[${index}].summary`),
+    evidenceIssueNumber: expectSummaryInteger(
+      note.evidenceIssueNumber,
+      `evaluatorWorkflow.verificationNotes[${index}].evidenceIssueNumber`,
+    ),
+  };
+}
+
+function expectEvaluatorFollowUpIssueDraft(
+  value: unknown,
+  index: number,
+): PostMergeAuditEvaluatorWorkflowDto["followUpIssueDrafts"][number] {
+  const draft = expectSummaryObject(value, `evaluatorWorkflow.followUpIssueDrafts[${index}]`);
+  expectExactKeys(draft, POST_MERGE_AUDIT_EVALUATOR_FOLLOW_UP_DRAFT_KEYS, `evaluatorWorkflow.followUpIssueDrafts[${index}]`);
+  if (draft.confirmRequired !== true) {
+    failSummaryValidation(`evaluatorWorkflow.followUpIssueDrafts[${index}].confirmRequired must be true.`);
+  }
+  if (draft.autoCreate !== false) {
+    failSummaryValidation(`evaluatorWorkflow.followUpIssueDrafts[${index}].autoCreate must be false.`);
+  }
+
+  return {
+    title: expectSummaryString(draft.title, `evaluatorWorkflow.followUpIssueDrafts[${index}].title`),
+    body: expectSummaryString(draft.body, `evaluatorWorkflow.followUpIssueDrafts[${index}].body`),
+    confirmRequired: true,
+    autoCreate: false,
+    sourceFollowUpCandidateKey: expectSummaryString(
+      draft.sourceFollowUpCandidateKey,
+      `evaluatorWorkflow.followUpIssueDrafts[${index}].sourceFollowUpCandidateKey`,
+    ),
+  };
+}
+
+function expectEvaluatorWorkflow(value: unknown): PostMergeAuditEvaluatorWorkflowDto {
+  const workflow = expectSummaryObject(value, "evaluatorWorkflow");
+  expectExactKeys(workflow, POST_MERGE_AUDIT_EVALUATOR_WORKFLOW_KEYS, "evaluatorWorkflow");
+  if (workflow.advisoryOnly !== true) {
+    failSummaryValidation("evaluatorWorkflow.advisoryOnly must be true.");
+  }
+  if (workflow.autoCreateFollowUpIssues !== false) {
+    failSummaryValidation("evaluatorWorkflow.autoCreateFollowUpIssues must be false.");
+  }
+  if (workflow.followUpIssueCreationRequiresConfirmation !== true) {
+    failSummaryValidation("evaluatorWorkflow.followUpIssueCreationRequiresConfirmation must be true.");
+  }
+  if (!Array.isArray(workflow.productSafetyFindings)) {
+    failSummaryValidation("evaluatorWorkflow.productSafetyFindings must be an array.");
+  }
+  if (!Array.isArray(workflow.verificationNotes)) {
+    failSummaryValidation("evaluatorWorkflow.verificationNotes must be an array.");
+  }
+  if (!Array.isArray(workflow.followUpIssueDrafts)) {
+    failSummaryValidation("evaluatorWorkflow.followUpIssueDrafts must be an array.");
+  }
+
+  return {
+    advisoryOnly: true,
+    autoCreateFollowUpIssues: false,
+    followUpIssueCreationRequiresConfirmation: true,
+    reviewerSummary: expectSummaryString(workflow.reviewerSummary, "evaluatorWorkflow.reviewerSummary"),
+    evaluatorSummary: expectSummaryString(workflow.evaluatorSummary, "evaluatorWorkflow.evaluatorSummary"),
+    productSafetyFindings: workflow.productSafetyFindings.map((finding, index) =>
+      expectEvaluatorProductSafetyFinding(finding, index)),
+    verificationNotes: workflow.verificationNotes.map((note, index) => expectEvaluatorVerificationNote(note, index)),
+    followUpIssueDrafts: workflow.followUpIssueDrafts.map((draft, index) =>
+      expectEvaluatorFollowUpIssueDraft(draft, index)),
+    obsidianHistoryDraft: expectSummaryString(workflow.obsidianHistoryDraft, "evaluatorWorkflow.obsidianHistoryDraft"),
+  };
+}
+
 export function validatePostMergeAuditPatternSummary(raw: unknown): PostMergeAuditPatternSummaryDto {
   const summary = expectSummaryObject(raw, "summary");
   expectExactKeys(summary, POST_MERGE_AUDIT_PATTERN_SUMMARY_TOP_LEVEL_KEYS, "summary");
@@ -638,6 +826,7 @@ export function validatePostMergeAuditPatternSummary(raw: unknown): PostMergeAud
     followUpCandidates: summary.followUpCandidates.map((candidate, index) => expectFollowUpCandidate(candidate, index)),
     promotionCandidates: summary.promotionCandidates.map((candidate, index) => expectPromotionCandidate(candidate, index)),
     releaseNotesSources: summary.releaseNotesSources.map((source, index) => expectReleaseNotesSource(source, index)),
+    evaluatorWorkflow: expectEvaluatorWorkflow(summary.evaluatorWorkflow),
   };
 }
 
@@ -1088,6 +1277,167 @@ function buildReleaseNotesSource(
   };
 }
 
+function formatIssueList(issueNumbers: number[]): string {
+  if (issueNumbers.length === 0) {
+    return "no merged issues";
+  }
+  return issueNumbers.map((issueNumber) => `#${issueNumber}`).join(", ");
+}
+
+function buildEvaluatorReviewerSummary(args: {
+  artifactsAnalyzed: number;
+  reviewPatterns: PostMergeAuditReviewPatternDto[];
+  followUpCandidates: PostMergeAuditFollowUpCandidateDto[];
+  releaseNotesSources: PostMergeAuditReleaseNotesSourceDto[];
+}): string {
+  const issueNumbers = args.releaseNotesSources.map((source) => source.issue.number).sort(compareNumbersAscending);
+  const prNumbers = args.releaseNotesSources.map((source) => source.pullRequest.number).sort(compareNumbersAscending);
+  const findingCount = args.reviewPatterns.length;
+  const followUpCount = args.followUpCandidates.length;
+  if (issueNumbers.length === 0 && prNumbers.length === 0) {
+    return [
+      `Reviewed ${args.artifactsAnalyzed} post-merge audit artifact(s).`,
+      `Found ${findingCount} product/safety finding pattern(s) and ${followUpCount} confirm-required follow-up draft(s).`,
+    ].join(" ");
+  }
+  const issueSummary = issueNumbers.length === 1 ? `issue #${issueNumbers[0]}` : `issues ${formatIssueList(issueNumbers)}`;
+  const prSummary = prNumbers.length === 1
+    ? `PR #${prNumbers[0]}`
+    : `PRs ${prNumbers.map((prNumber) => `#${prNumber}`).join(", ")}`;
+
+  return [
+    `Reviewed ${args.artifactsAnalyzed} post-merge audit artifact(s) for ${issueSummary} and ${prSummary}.`,
+    `Found ${findingCount} product/safety finding pattern(s) and ${followUpCount} confirm-required follow-up draft(s).`,
+  ].join(" ");
+}
+
+function buildEvaluatorSummary(args: {
+  releaseNotesSources: PostMergeAuditReleaseNotesSourceDto[];
+  reviewPatterns: PostMergeAuditReviewPatternDto[];
+  followUpCandidates: PostMergeAuditFollowUpCandidateDto[];
+}): string {
+  const evidenceLines = args.releaseNotesSources.flatMap((source) => [
+    source.auditBundle.localCiSummary,
+    source.auditBundle.pathHygieneSummary,
+    source.auditBundle.journalSummary,
+  ]).filter((line): line is string => !!line && line.trim().length > 0);
+  const firstEvidence = evidenceLines[0] ?? "No local CI or journal summary evidence was available.";
+
+  return [
+    firstEvidence,
+    `Evaluator output is grounded in ${args.releaseNotesSources.length} merged PR evidence source(s), ${args.reviewPatterns.length} product/safety finding pattern(s), and ${args.followUpCandidates.length} follow-up candidate(s).`,
+    "Follow-up issue creation remains confirm-required and is not automatic.",
+  ].join(" ");
+}
+
+function buildEvaluatorVerificationNotes(
+  releaseNotesSources: PostMergeAuditReleaseNotesSourceDto[],
+): PostMergeAuditEvaluatorWorkflowDto["verificationNotes"] {
+  const notes: PostMergeAuditEvaluatorWorkflowDto["verificationNotes"] = [];
+  for (const source of releaseNotesSources) {
+    if (source.auditBundle.localCiSummary) {
+      notes.push({
+        source: "local_ci",
+        summary: source.auditBundle.localCiSummary,
+        evidenceIssueNumber: source.issue.number,
+      });
+    }
+    if (source.auditBundle.pathHygieneSummary) {
+      notes.push({
+        source: "path_hygiene",
+        summary: source.auditBundle.pathHygieneSummary,
+        evidenceIssueNumber: source.issue.number,
+      });
+    }
+    for (const command of source.verificationCommands) {
+      notes.push({
+        source: "verification_command",
+        summary: command,
+        evidenceIssueNumber: source.issue.number,
+      });
+    }
+  }
+
+  return notes;
+}
+
+function buildFollowUpIssueDraftBody(candidate: PostMergeAuditFollowUpCandidateDto): string {
+  return [
+    "## Summary",
+    candidate.summary,
+    "",
+    "## Scope",
+    `- Add focused regression coverage for \`${candidate.evidence.file}:${candidate.evidence.line}\`.`,
+    `- Keep the fix grounded in merged issue #${candidate.evidence.mergedIssueNumber} / PR #${candidate.evidence.mergedPrNumber} evidence.`,
+    "",
+    "## Acceptance criteria",
+    "- The missed regression is covered by a focused test.",
+    "- The follow-up remains scoped to the cited evidence.",
+    "",
+    "## Verification",
+    "- Run the focused regression test added for this follow-up.",
+    "",
+    "Depends on: none",
+    "Parallelizable: No",
+    "",
+    "## Execution order",
+    "1 of 1",
+  ].join("\n");
+}
+
+function buildObsidianHistoryDraft(
+  releaseNotesSources: PostMergeAuditReleaseNotesSourceDto[],
+  followUpCandidates: PostMergeAuditFollowUpCandidateDto[],
+): string {
+  const lines = releaseNotesSources.map((source) => {
+    const journalSummary = source.auditBundle.journalSummary ?? "Post-merge audit evidence evaluated.";
+    const followUpCount = source.followUpCandidateKeys.length;
+    const suffix = followUpCount > 0
+      ? ` Follow-up drafts: ${followUpCount} confirm-required.`
+      : " Follow-up drafts: none.";
+    return `- Issue #${source.issue.number}, PR #${source.pullRequest.number}: ${journalSummary.replace(/\.$/u, "")}.${suffix}`;
+  });
+
+  if (followUpCandidates.length > 0) {
+    lines.push(
+      `- Confirm-required follow-up candidates: ${followUpCandidates.map((candidate) => candidate.title).join("; ")}.`,
+    );
+  }
+
+  return lines.join("\n");
+}
+
+function buildEvaluatorWorkflow(args: {
+  artifactsAnalyzed: number;
+  reviewPatterns: PostMergeAuditReviewPatternDto[];
+  followUpCandidates: PostMergeAuditFollowUpCandidateDto[];
+  releaseNotesSources: PostMergeAuditReleaseNotesSourceDto[];
+}): PostMergeAuditEvaluatorWorkflowDto {
+  return {
+    advisoryOnly: true,
+    autoCreateFollowUpIssues: false,
+    followUpIssueCreationRequiresConfirmation: true,
+    reviewerSummary: buildEvaluatorReviewerSummary(args),
+    evaluatorSummary: buildEvaluatorSummary(args),
+    productSafetyFindings: args.reviewPatterns.map((pattern) => ({
+      key: pattern.key,
+      severity: pattern.severity,
+      summary: pattern.summary,
+      evidenceIssueNumbers: [...pattern.supportingIssueNumbers],
+      evidenceFindingKeys: [...pattern.supportingFindingKeys],
+    })),
+    verificationNotes: buildEvaluatorVerificationNotes(args.releaseNotesSources),
+    followUpIssueDrafts: args.followUpCandidates.map((candidate) => ({
+      title: candidate.title,
+      body: buildFollowUpIssueDraftBody(candidate),
+      confirmRequired: true,
+      autoCreate: false,
+      sourceFollowUpCandidateKey: candidate.key,
+    })),
+    obsidianHistoryDraft: buildObsidianHistoryDraft(args.releaseNotesSources, args.followUpCandidates),
+  };
+}
+
 export async function summarizePostMergeAuditPatterns(
   config: Pick<SupervisorConfig, "localReviewArtifactDir" | "repoSlug">,
 ): Promise<PostMergeAuditPatternSummaryDto> {
@@ -1303,6 +1653,9 @@ export async function summarizePostMergeAuditPatterns(
     right.evidence.mergedIssueNumber - left.evidence.mergedIssueNumber ||
     right.evidence.mergedPrNumber - left.evidence.mergedPrNumber ||
     compareStringsAscending(left.key, right.key));
+  const summarizedReleaseNotesSources = releaseNotesSources.sort((left, right) =>
+    right.issue.number - left.issue.number ||
+    right.pullRequest.number - left.pullRequest.number);
 
   return validatePostMergeAuditPatternSummary({
     schemaVersion: POST_MERGE_AUDIT_PATTERN_SUMMARY_SCHEMA_VERSION,
@@ -1318,9 +1671,13 @@ export async function summarizePostMergeAuditPatterns(
     recoveryPatterns: summarizedRecoveryPatterns,
     followUpCandidates: summarizedFollowUpCandidates,
     promotionCandidates,
-    releaseNotesSources: releaseNotesSources.sort((left, right) =>
-      right.issue.number - left.issue.number ||
-      right.pullRequest.number - left.pullRequest.number),
+    releaseNotesSources: summarizedReleaseNotesSources,
+    evaluatorWorkflow: buildEvaluatorWorkflow({
+      artifactsAnalyzed,
+      reviewPatterns: summarizedReviewPatterns,
+      followUpCandidates: summarizedFollowUpCandidates,
+      releaseNotesSources: summarizedReleaseNotesSources,
+    }),
   });
 }
 

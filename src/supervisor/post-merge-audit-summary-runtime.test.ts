@@ -37,7 +37,7 @@ test("runSupervisorCommand renders a structured post-merge audit summary result"
           throw new Error("unexpected resetCorruptJsonState");
         },
         queryPostMergeAuditSummary: async () => ({
-          schemaVersion: 5,
+          schemaVersion: 6,
           advisoryOnly: true,
           autoApplyGuardrails: false,
           autoCreateFollowUpIssues: false,
@@ -51,6 +51,17 @@ test("runSupervisorCommand renders a structured post-merge audit summary result"
           followUpCandidates: [],
           promotionCandidates: [],
           releaseNotesSources: [],
+          evaluatorWorkflow: {
+            advisoryOnly: true,
+            autoCreateFollowUpIssues: false,
+            followUpIssueCreationRequiresConfirmation: true,
+            reviewerSummary: "Reviewed 0 post-merge audit artifacts.",
+            evaluatorSummary: "No evaluator evidence was available.",
+            productSafetyFindings: [],
+            verificationNotes: [],
+            followUpIssueDrafts: [],
+            obsidianHistoryDraft: "",
+          },
         }),
       },
       writeStdout: (line) => {
@@ -61,7 +72,7 @@ test("runSupervisorCommand renders a structured post-merge audit summary result"
 
   assert.equal(stdout.length, 1);
   assert.deepEqual(JSON.parse(stdout[0] ?? ""), {
-    schemaVersion: 5,
+    schemaVersion: 6,
     advisoryOnly: true,
     autoApplyGuardrails: false,
     autoCreateFollowUpIssues: false,
@@ -75,5 +86,16 @@ test("runSupervisorCommand renders a structured post-merge audit summary result"
     followUpCandidates: [],
     promotionCandidates: [],
     releaseNotesSources: [],
+    evaluatorWorkflow: {
+      advisoryOnly: true,
+      autoCreateFollowUpIssues: false,
+      followUpIssueCreationRequiresConfirmation: true,
+      reviewerSummary: "Reviewed 0 post-merge audit artifacts.",
+      evaluatorSummary: "No evaluator evidence was available.",
+      productSafetyFindings: [],
+      verificationNotes: [],
+      followUpIssueDrafts: [],
+      obsidianHistoryDraft: "",
+    },
   });
 });
