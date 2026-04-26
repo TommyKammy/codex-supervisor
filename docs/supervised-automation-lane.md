@@ -76,7 +76,21 @@ Bounded recovery keeps failures inside the lane. The supervisor can retry known 
 
 ### Durable Memory Writeback
 
-Durable memory writeback is the repo-owned and issue-owned context that survives thread loss. The issue journal records the current hypothesis, changes, blockers, verification gap, files touched, and next exact step. Shared memory files and docs provide longer-lived operating context. Writeback should be concise, factual, and anchored to current evidence so later Codex turns can continue from the lane state instead of reconstructing from chat.
+Durable project memory writeback is the repo-owned, issue-owned, and operator-owned context that survives thread loss, process restarts, and future release review. It is different from transient chat memory: chat can explain the current turn, but durable memory must let a later operator or Codex session continue from evidence without reconstructing what happened from conversation history.
+
+Responsibility stays split across the product surfaces:
+
+- GitHub: owns the task contract, PR discussion, review facts, merge record, linked follow-up backlog, and release-facing issue/PR evidence.
+- CLI: owns commands and operator-visible handoffs such as `status`, `explain`, `issue-lint`, verification output, failure signatures, and the per-issue journal.
+- WebUI: presents the same authoritative lane state and evidence timeline for inspection, triage, and continuation, without becoming a separate source of truth.
+- Codex app Automation: may watch state, evaluate completed work, draft confirm-required follow-up issues, and prepare durable note patches, but it must not replace `codex-supervisor` as the implementation executor.
+- durable notes: capture long-lived project memory such as development history, release notes, roadmap changes, operator decisions, follow-up backlog context, and incident/recovery notes.
+
+Writeback should place each fact in the surface that owns it. Development history records what changed and why it matters for future continuation. Release notes collect user-facing changes and verification evidence after merge. Roadmap notes track planned or deferred product direction. Operator decisions record trust, scope, recovery, and manual-review choices that should not be re-decided from stale chat. Follow-up backlog entries should stay narrow and execution-ready. Incident/recovery notes should preserve the failure signature, authoritative state, cleanup result, and next safe action.
+
+The issue journal is the short-horizon memory surface for the active lane. It should record the current hypothesis, changes, blocker, verification gap, files touched, rollback concern, last focused command, and next exact step. Shared docs and durable notes are the longer-horizon surface. They should be concise, factual, anchored to authoritative records, and updated only when the information will help safe continuation, evaluation, or release work.
+
+Durable writeback is also a path-hygiene surface. Publishable guidance should use repo-relative commands, environment variables such as `CODEX_SUPERVISOR_CONFIG`, and placeholders such as `<supervisor-config-path>` or `<codex-supervisor-root>`. It should not write workstation-local absolute paths into durable docs, fixtures, prompts, or release material when a placeholder or repo-relative example verifies the same behavior.
 
 ## Difference From Vibe Coding
 

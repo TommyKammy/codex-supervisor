@@ -150,3 +150,35 @@ test("supervised automation lane documents contract-first issue authoring UX", a
   assert.doesNotMatch(note, /\/Users\/[A-Za-z0-9._-]+\//);
   assert.doesNotMatch(note, /C:\\Users\\[A-Za-z0-9._-]+\\/);
 });
+
+test("supervised automation lane defines durable project memory writeback responsibilities", async () => {
+  const note = await readRepoFile("docs/supervised-automation-lane.md");
+
+  assert.match(note, /^### Durable Memory Writeback$/m);
+  assert.match(note, /durable project memory writeback/i);
+  assert.match(note, /transient chat memory/i);
+
+  for (const surface of ["GitHub", "CLI", "WebUI", "Codex app Automation", "durable notes"]) {
+    assert.match(note, new RegExp(surface, "i"));
+  }
+
+  for (const memoryKind of [
+    "development history",
+    "release notes",
+    "roadmap",
+    "operator decisions",
+    "follow-up backlog",
+    "incident/recovery notes",
+  ]) {
+    assert.match(note, new RegExp(memoryKind, "i"));
+  }
+
+  for (const outcome of ["safe continuation", "evaluation", "release work"]) {
+    assert.match(note, new RegExp(outcome, "i"));
+  }
+
+  assert.match(note, /repo-relative/i);
+  assert.match(note, /placeholder/i);
+  assert.doesNotMatch(note, /\/Users\/[A-Za-z0-9._-]+\//);
+  assert.doesNotMatch(note, /C:\\Users\\[A-Za-z0-9._-]+\\/);
+});
