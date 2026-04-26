@@ -65,6 +65,7 @@ test("supervised automation lane documents an auditable work state machine", asy
     "queued",
     "running",
     "blocked",
+    "failed",
     "waiting_ci",
     "waiting_review",
     "repairing_ci",
