@@ -45,6 +45,29 @@ const FAILURE_KINDS = ["timeout", "command_error", "codex_exit", "codex_failed"]
 const COPILOT_REVIEW_TIMEOUT_ACTIONS = ["continue", "block"] as const;
 const LOCAL_REVIEW_SEVERITIES = ["none", "low", "medium", "high"] as const;
 const LOCAL_REVIEW_RECOMMENDATIONS = ["ready", "changes_requested", "unknown"] as const;
+const LOCAL_CI_OUTCOMES = ["passed", "failed", "not_configured"] as const;
+const LOCAL_CI_EXECUTION_MODES = ["structured", "shell", "legacy_shell_string"] as const;
+const LOCAL_CI_FAILURE_CLASSES = [
+  "missing_command",
+  "workspace_toolchain_missing",
+  "worktree_helper_missing",
+  "non_zero_exit",
+  "unset_contract",
+] as const;
+const LOCAL_CI_REMEDIATION_TARGETS = [
+  "workspace_environment",
+  "config_contract",
+  "tracked_publishable_content",
+  "repair_already_queued",
+  "manual_review",
+] as const;
+const TIMELINE_ARTIFACT_TYPES = ["verification_result", "path_hygiene_result"] as const;
+const TIMELINE_ARTIFACT_GATES = [
+  "local_ci",
+  "workspace_preparation",
+  "workstation_local_path_hygiene",
+] as const;
+const TIMELINE_ARTIFACT_OUTCOMES = ["passed", "failed", "not_configured", "repair_queued"] as const;
 const COPILOT_REVIEW_STATES = ["not_requested", "requested", "arrived"] as const;
 const CONFIGURED_BOT_TOP_LEVEL_REVIEW_STRENGTHS = ["nitpick_only", "blocking"] as const;
 
@@ -284,6 +307,56 @@ function validateFailureContext(
   };
 }
 
+function validateLatestLocalCiResult(
+  raw: unknown,
+  context: string,
+): NonNullable<ReplayCorpusInputSnapshot["local"]["record"]["latest_local_ci_result"]> {
+  const result = expectObject(raw, context);
+  return {
+    outcome: expectEnum(result.outcome, `${context} outcome`, LOCAL_CI_OUTCOMES),
+    summary: expectString(result.summary, `${context} summary`),
+    ran_at: expectString(result.ran_at, `${context} ran_at`),
+    head_sha: expectNullableString(result.head_sha, `${context} head_sha`),
+    execution_mode: expectNullableEnum(result.execution_mode, `${context} execution_mode`, LOCAL_CI_EXECUTION_MODES),
+    command: expectOptionalNullableString(result.command, `${context} command`),
+    stderr_summary: expectOptionalNullableString(result.stderr_summary, `${context} stderr_summary`),
+    failure_class: expectNullableEnum(result.failure_class, `${context} failure_class`, LOCAL_CI_FAILURE_CLASSES),
+    remediation_target: expectNullableEnum(
+      result.remediation_target,
+      `${context} remediation_target`,
+      LOCAL_CI_REMEDIATION_TARGETS,
+    ),
+    verifier_drift_hint: expectOptionalNullableString(result.verifier_drift_hint, `${context} verifier_drift_hint`),
+  };
+}
+
+function validateTimelineArtifact(
+  raw: unknown,
+  context: string,
+): NonNullable<ReplayCorpusInputSnapshot["local"]["record"]["timeline_artifacts"]>[number] {
+  const artifact = expectObject(raw, context);
+  const repairTargets =
+    artifact.repair_targets === undefined
+      ? undefined
+      : expectStringArray(artifact.repair_targets, `${context} repair_targets`);
+  return {
+    type: expectEnum(artifact.type, `${context} type`, TIMELINE_ARTIFACT_TYPES),
+    gate: expectEnum(artifact.gate, `${context} gate`, TIMELINE_ARTIFACT_GATES),
+    command: expectNullableString(artifact.command, `${context} command`),
+    head_sha: expectNullableString(artifact.head_sha, `${context} head_sha`),
+    outcome: expectEnum(artifact.outcome, `${context} outcome`, TIMELINE_ARTIFACT_OUTCOMES),
+    remediation_target: expectNullableEnum(
+      artifact.remediation_target,
+      `${context} remediation_target`,
+      LOCAL_CI_REMEDIATION_TARGETS,
+    ),
+    next_action: expectString(artifact.next_action, `${context} next_action`),
+    summary: expectString(artifact.summary, `${context} summary`),
+    recorded_at: expectString(artifact.recorded_at, `${context} recorded_at`),
+    ...(repairTargets === undefined ? {} : { repair_targets: repairTargets }),
+  };
+}
+
 function validateIssue(raw: unknown, context: string): ReplayCorpusInputSnapshot["issue"] {
   const issue = expectObject(raw, context);
   return {
@@ -406,6 +479,32 @@ function validateLocalRecord(raw: unknown, context: string): ReplayCorpusInputSn
     repeated_local_review_signature_count: expectInteger(
       record.repeated_local_review_signature_count,
       `${context} repeated_local_review_signature_count`,
+    ),
+    latest_local_ci_result:
+      record.latest_local_ci_result === undefined || record.latest_local_ci_result === null
+        ? null
+        : validateLatestLocalCiResult(record.latest_local_ci_result, `${context} latest_local_ci_result`),
+    timeline_artifacts:
+      record.timeline_artifacts === undefined
+        ? undefined
+        : expectArray(record.timeline_artifacts, `${context} timeline_artifacts`).map((artifact, index) =>
+            validateTimelineArtifact(artifact, `${context} timeline_artifacts[${index}]`),
+          ),
+    last_observed_host_local_pr_blocker_signature: expectOptionalNullableString(
+      record.last_observed_host_local_pr_blocker_signature,
+      `${context} last_observed_host_local_pr_blocker_signature`,
+    ),
+    last_observed_host_local_pr_blocker_head_sha: expectOptionalNullableString(
+      record.last_observed_host_local_pr_blocker_head_sha,
+      `${context} last_observed_host_local_pr_blocker_head_sha`,
+    ),
+    last_host_local_pr_blocker_comment_signature: expectOptionalNullableString(
+      record.last_host_local_pr_blocker_comment_signature,
+      `${context} last_host_local_pr_blocker_comment_signature`,
+    ),
+    last_host_local_pr_blocker_comment_head_sha: expectOptionalNullableString(
+      record.last_host_local_pr_blocker_comment_head_sha,
+      `${context} last_host_local_pr_blocker_comment_head_sha`,
     ),
     processed_review_thread_ids: expectStringArray(
       record.processed_review_thread_ids,

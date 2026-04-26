@@ -299,3 +299,52 @@ test("replay corpus validation backfills missing operator summaries from older s
 
   assert.equal(validated.operatorSummary, null);
 });
+
+test("replay corpus validation preserves host-local CI posture fields", () => {
+  const snapshot = createSnapshot({
+    record: createRecord({
+      latest_local_ci_result: {
+        outcome: "failed",
+        summary: "Configured local CI command failed before marking PR #90 ready.",
+        ran_at: "2026-03-16T10:04:00Z",
+        head_sha: "head-532",
+        execution_mode: "legacy_shell_string",
+        command: "npm run verify:paths",
+        stderr_summary: "docs/configuration.md contract drift",
+        failure_class: "non_zero_exit",
+        remediation_target: "tracked_publishable_content",
+        verifier_drift_hint:
+          "repo_owned_verifier_drift: repair the verifier expectation or repo content before rerunning local CI.",
+      },
+      timeline_artifacts: [
+        {
+          type: "verification_result",
+          gate: "local_ci",
+          command: "npm run verify:paths",
+          head_sha: "head-532",
+          outcome: "failed",
+          remediation_target: "tracked_publishable_content",
+          next_action: "repair_tracked_publishable_content",
+          summary: "Configured local CI command failed before marking PR #90 ready.",
+          recorded_at: "2026-03-16T10:04:00Z",
+        },
+      ],
+      last_observed_host_local_pr_blocker_signature: "local-ci-gate-non_zero_exit",
+      last_observed_host_local_pr_blocker_head_sha: "head-532",
+      last_host_local_pr_blocker_comment_signature: "local-ci-gate-non_zero_exit|gate=local_ci",
+      last_host_local_pr_blocker_comment_head_sha: "head-532",
+    }),
+  });
+
+  const validated = validateReplayCorpusInputSnapshot(snapshot, "host-local-ci-posture");
+
+  assert.deepEqual(validated.local.record.latest_local_ci_result, snapshot.local.record.latest_local_ci_result);
+  assert.deepEqual(validated.local.record.timeline_artifacts, snapshot.local.record.timeline_artifacts);
+  assert.equal(validated.local.record.last_observed_host_local_pr_blocker_signature, "local-ci-gate-non_zero_exit");
+  assert.equal(validated.local.record.last_observed_host_local_pr_blocker_head_sha, "head-532");
+  assert.equal(
+    validated.local.record.last_host_local_pr_blocker_comment_signature,
+    "local-ci-gate-non_zero_exit|gate=local_ci",
+  );
+  assert.equal(validated.local.record.last_host_local_pr_blocker_comment_head_sha, "head-532");
+});

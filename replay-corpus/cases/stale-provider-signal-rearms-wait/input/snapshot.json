@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-03-13T02:07:00Z",
+  "issue": {
+    "number": 593,
+    "title": "Stale provider signal does not unlock current head",
+    "url": "https://example.test/issues/593",
+    "state": "OPEN",
+    "updatedAt": "2026-03-13T02:06:50Z"
+  },
+  "local": {
+    "record": {
+      "issue_number": 593,
+      "state": "waiting_ci",
+      "branch": "codex/issue-593",
+      "pr_number": 693,
+      "workspace": ".",
+      "journal_path": ".codex-supervisor/issue-journal.md",
+      "attempt_count": 2,
+      "implementation_attempt_count": 2,
+      "repair_attempt_count": 0,
+      "blocked_reason": null,
+      "last_error": null,
+      "last_failure_signature": null,
+      "last_head_sha": "head-provider-current",
+      "review_wait_started_at": "2026-03-13T02:06:30Z",
+      "review_wait_head_sha": "head-provider-current",
+      "provider_success_observed_at": "2026-03-13T02:01:00Z",
+      "provider_success_head_sha": "head-provider-old",
+      "merge_readiness_last_evaluated_at": null,
+      "copilot_review_requested_observed_at": null,
+      "copilot_review_requested_head_sha": null,
+      "copilot_review_timed_out_at": null,
+      "copilot_review_timeout_action": null,
+      "copilot_review_timeout_reason": null,
+      "local_review_head_sha": null,
+      "local_review_blocker_summary": null,
+      "local_review_summary_path": null,
+      "local_review_run_at": null,
+      "local_review_max_severity": null,
+      "local_review_findings_count": 0,
+      "local_review_root_cause_count": 0,
+      "local_review_verified_max_severity": null,
+      "local_review_verified_findings_count": 0,
+      "local_review_recommendation": null,
+      "local_review_degraded": false,
+      "last_local_review_signature": null,
+      "repeated_local_review_signature_count": 0,
+      "latest_local_ci_result": null,
+      "processed_review_thread_ids": [],
+      "processed_review_thread_fingerprints": [],
+      "updated_at": "2026-03-13T02:07:00Z"
+    },
+    "workspaceStatus": {
+      "branch": "codex/issue-593",
+      "headSha": "head-provider-current",
+      "hasUncommittedChanges": false,
+      "baseAhead": 1,
+      "baseBehind": 0,
+      "remoteBranchExists": true,
+      "remoteAhead": 0,
+      "remoteBehind": 0
+    }
+  },
+  "github": {
+    "pullRequest": {
+      "number": 693,
+      "title": "Wait for current provider signal",
+      "url": "https://example.test/pr/693",
+      "state": "OPEN",
+      "createdAt": "2026-03-13T02:00:00Z",
+      "updatedAt": "2026-03-13T02:06:45Z",
+      "isDraft": false,
+      "reviewDecision": "APPROVED",
+      "mergeStateStatus": "CLEAN",
+      "mergeable": "MERGEABLE",
+      "headRefName": "codex/issue-593",
+      "headRefOid": "head-provider-current",
+      "copilotReviewState": "not_requested",
+      "copilotReviewRequestedAt": null,
+      "copilotReviewArrivedAt": null,
+      "currentHeadCiGreenAt": "2026-03-13T02:06:00Z",
+      "configuredBotCurrentHeadObservedAt": null,
+      "mergedAt": null
+    },
+    "checks": [
+      {
+        "name": "build",
+        "state": "SUCCESS",
+        "bucket": "pass",
+        "workflow": "CI"
+      }
+    ],
+    "reviewThreads": []
+  },
+  "decision": {
+    "nextState": "waiting_ci",
+    "shouldRunCodex": false,
+    "blockedReason": null,
+    "failureContext": null
+  }
+}
