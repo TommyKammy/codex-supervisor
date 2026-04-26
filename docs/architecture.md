@@ -48,6 +48,8 @@ Today the supervisor invokes Codex with `--dangerously-bypass-approvals-and-sand
 
 The same fail-open vs fail-closed distinction applies to state recovery guidance: missing JSON state can bootstrap, but corrupted JSON state should be surfaced to the operator through diagnostics and recovery flow, not silently reused as if it were trustworthy state.
 
+Codex app Automation is an orchestration boundary around this loop. It can watch loop state, evaluate merges, draft confirm-required follow-up issues, and record Obsidian history, but codex-supervisor remains the implementation executor. Automation is not an executor replacement, and it must preserve quiet-when-no-change behavior, no destructive git operations, and the same issue metadata, path hygiene, review, branch, and merge safety gates described here.
+
 ## Main reconciliations
 
 - merged PR -> close issue
