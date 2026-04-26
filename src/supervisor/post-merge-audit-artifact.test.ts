@@ -241,6 +241,18 @@ test("syncPostMergeAuditArtifact persists a typed completed-work artifact", asyn
     "npx tsx --test src/supervisor/post-merge-audit-artifact.test.ts",
   );
   assert.equal(artifact.operatorAuditBundle?.localCi.value?.summary, "Configured local CI passed.");
+  assert.deepEqual(
+    artifact.operatorAuditBundle?.timeline?.events
+      .filter((event) => ["issue_body", "pr_created", "local_ci", "merge", "terminal_state"].includes(event.event_type))
+      .map((event) => [event.event_type, event.outcome]),
+    [
+      ["pr_created", "created"],
+      ["local_ci", "passed"],
+      ["merge", "merged"],
+      ["issue_body", "available"],
+      ["terminal_state", "done"],
+    ],
+  );
   assert.deepEqual(artifact.operatorAuditBundle?.verificationCommands.value, [
     "npx tsx --test src/supervisor/post-merge-audit-artifact.test.ts",
     "npm run build",

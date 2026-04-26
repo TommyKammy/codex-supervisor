@@ -1,9 +1,11 @@
 import type {
   FailureContext,
+  GitHubIssue,
   GitHubPullRequest,
   IssueRunRecord,
   LatestLocalCiResult,
   LocalCiRemediationTarget,
+  PullRequestCheck,
   TimelineArtifact,
   TimelineArtifactGate,
   TimelineArtifactOutcome,
@@ -13,15 +15,21 @@ const MAX_TIMELINE_ARTIFACTS = 20;
 
 export type IssueRunTimelineEventType =
   | "reservation"
+  | "issue_body"
   | "codex_turn"
   | "publication_gate"
   | "pr_created"
+  | "github_ci"
   | "local_ci"
   | "path_hygiene"
+  | "review_provider"
   | "review"
   | "stale_review_metadata"
   | "recovery"
   | "merge"
+  | "status_comment"
+  | "terminal_state"
+  | "obsidian_writeback"
   | "done";
 
 export interface IssueRunTimelineEvent {
@@ -44,17 +52,31 @@ export interface IssueRunTimelineExport {
 
 const TIMELINE_EVENT_ORDER: IssueRunTimelineEventType[] = [
   "reservation",
+  "issue_body",
   "codex_turn",
   "publication_gate",
   "pr_created",
+  "github_ci",
   "local_ci",
   "path_hygiene",
+  "review_provider",
   "review",
   "stale_review_metadata",
   "recovery",
   "merge",
+  "status_comment",
+  "terminal_state",
+  "obsidian_writeback",
   "done",
 ];
+
+export interface IssueRunTimelineExternalEvidence {
+  outcome: string;
+  summary: string;
+  recordedAt: string | null;
+  headSha?: string | null;
+  nextAction?: string | null;
+}
 
 function escapeStatusLineValue(value: string): string {
   return value.replace(/\r\n|\r|\n/g, "\\n");
@@ -204,6 +226,162 @@ function timelineEventFromArtifact(record: IssueRunRecord, artifact: TimelineArt
   };
 }
 
+function checkEvidenceOutcome(checks: PullRequestCheck[]): "passed" | "failed" | "pending" | "skipped" | "unknown" {
+  if (checks.some((check) => check.bucket === "fail" || check.bucket === "cancel")) {
+    return "failed";
+  }
+  if (checks.some((check) => check.bucket === "pending")) {
+    return "pending";
+  }
+  if (checks.length > 0 && checks.every((check) => check.bucket === "pass" || check.bucket === "skipping")) {
+    return checks.some((check) => check.bucket === "pass") ? "passed" : "skipped";
+  }
+  return "unknown";
+}
+
+function summarizeCheckNames(checks: PullRequestCheck[]): string {
+  return checks
+    .map((check) => check.name)
+    .filter((name) => name.trim() !== "")
+    .sort((left, right) => left.localeCompare(right))
+    .join(", ");
+}
+
+function buildGithubCiEvent(args: {
+  record: IssueRunRecord;
+  pr: GitHubPullRequest | null;
+  checks: PullRequestCheck[];
+}): IssueRunTimelineEvent | null {
+  if (args.checks.length > 0) {
+    const outcome = checkEvidenceOutcome(args.checks);
+    const names = summarizeCheckNames(args.checks);
+    return {
+      issue_number: args.record.issue_number,
+      pr_number: args.pr?.number ?? args.record.pr_number,
+      event_type: "github_ci",
+      timestamp: outcome === "passed"
+        ? args.pr?.currentHeadCiGreenAt ?? args.pr?.updatedAt ?? args.pr?.createdAt ?? null
+        : args.pr?.updatedAt ?? args.pr?.createdAt ?? null,
+      outcome,
+      summary: outcome === "passed"
+        ? `GitHub CI evidence is green for ${args.checks.length} check(s): ${names}.`
+        : `GitHub CI evidence is ${outcome} for ${args.checks.length} check(s): ${names}.`,
+      head_sha: args.pr?.headRefOid ?? args.record.last_head_sha,
+      remediation_target: null,
+      next_action: outcome === "passed" || outcome === "skipped" ? null : "inspect_github_checks",
+    };
+  }
+
+  if (args.pr?.currentHeadCiGreenAt) {
+    return {
+      issue_number: args.record.issue_number,
+      pr_number: args.pr.number,
+      event_type: "github_ci",
+      timestamp: args.pr.currentHeadCiGreenAt,
+      outcome: "passed",
+      summary: `GitHub CI evidence is green for head ${args.pr.headRefOid}.`,
+      head_sha: args.pr.headRefOid,
+      remediation_target: null,
+      next_action: null,
+    };
+  }
+
+  return null;
+}
+
+function buildReviewProviderEvent(record: IssueRunRecord, pr: GitHubPullRequest | null): IssueRunTimelineEvent | null {
+  if (pr?.configuredBotCurrentHeadObservedAt) {
+    return {
+      issue_number: record.issue_number,
+      pr_number: pr.number,
+      event_type: "review_provider",
+      timestamp: pr.configuredBotCurrentHeadObservedAt,
+      outcome: pr.configuredBotCurrentHeadStatusState ?? "observed",
+      summary: `Configured review provider observed current head ${pr.headRefOid}.`,
+      head_sha: pr.headRefOid,
+      remediation_target: null,
+      next_action: null,
+    };
+  }
+
+  if (record.provider_success_observed_at) {
+    return {
+      issue_number: record.issue_number,
+      pr_number: record.pr_number,
+      event_type: "review_provider",
+      timestamp: record.provider_success_observed_at,
+      outcome: "observed",
+      summary: `Configured review provider success is recorded for head ${record.provider_success_head_sha ?? "unknown"}.`,
+      head_sha: record.provider_success_head_sha ?? null,
+      remediation_target: null,
+      next_action: null,
+    };
+  }
+
+  if (pr?.copilotReviewArrivedAt) {
+    return {
+      issue_number: record.issue_number,
+      pr_number: pr.number,
+      event_type: "review_provider",
+      timestamp: pr.copilotReviewArrivedAt,
+      outcome: "arrived",
+      summary: `Copilot review signal arrived for PR #${pr.number}.`,
+      head_sha: pr.headRefOid,
+      remediation_target: null,
+      next_action: null,
+    };
+  }
+
+  if (record.copilot_review_timed_out_at) {
+    return {
+      issue_number: record.issue_number,
+      pr_number: record.pr_number,
+      event_type: "review_provider",
+      timestamp: record.copilot_review_timed_out_at,
+      outcome: "timed_out",
+      summary: record.copilot_review_timeout_reason ?? "Copilot review signal timed out.",
+      head_sha: record.copilot_review_requested_head_sha,
+      remediation_target: null,
+      next_action: record.copilot_review_timeout_action,
+    };
+  }
+
+  if (record.copilot_review_requested_observed_at) {
+    return {
+      issue_number: record.issue_number,
+      pr_number: record.pr_number,
+      event_type: "review_provider",
+      timestamp: record.copilot_review_requested_observed_at,
+      outcome: "requested",
+      summary: "Copilot review request is recorded.",
+      head_sha: record.copilot_review_requested_head_sha,
+      remediation_target: null,
+      next_action: null,
+    };
+  }
+
+  return null;
+}
+
+function buildExternalEvidenceEvent(args: {
+  record: IssueRunRecord;
+  prNumber: number | null;
+  eventType: Extract<IssueRunTimelineEventType, "obsidian_writeback">;
+  evidence: IssueRunTimelineExternalEvidence;
+}): IssueRunTimelineEvent {
+  return {
+    issue_number: args.record.issue_number,
+    pr_number: args.prNumber,
+    event_type: args.eventType,
+    timestamp: args.evidence.recordedAt,
+    outcome: args.evidence.outcome,
+    summary: args.evidence.summary,
+    head_sha: args.evidence.headSha ?? args.record.last_head_sha,
+    remediation_target: null,
+    next_action: args.evidence.nextAction ?? null,
+  };
+}
+
 function sortTimelineEvents(left: IssueRunTimelineEvent, right: IssueRunTimelineEvent): number {
   if (left.event_type === "reservation" && right.event_type !== "reservation") {
     return -1;
@@ -224,11 +402,15 @@ function sortTimelineEvents(left: IssueRunTimelineEvent, right: IssueRunTimeline
 }
 
 export function buildIssueRunTimelineExport(args: {
+  issue?: Pick<GitHubIssue, "number" | "updatedAt" | "body"> | null;
   record: IssueRunRecord;
   pr?: GitHubPullRequest | null;
+  checks?: PullRequestCheck[];
+  obsidianWriteback?: IssueRunTimelineExternalEvidence | null;
 }): IssueRunTimelineExport {
   const { record } = args;
   const pr = args.pr ?? null;
+  const checks = args.checks ?? [];
   const events = new Map<IssueRunTimelineEventType, IssueRunTimelineEvent>();
 
   function setEvent(event: IssueRunTimelineEvent): void {
@@ -249,6 +431,22 @@ export function buildIssueRunTimelineExport(args: {
     remediation_target: null,
     next_action: null,
   });
+
+  if (args.issue) {
+    setEvent({
+      issue_number: record.issue_number,
+      pr_number: record.pr_number,
+      event_type: "issue_body",
+      timestamp: args.issue.updatedAt,
+      outcome: args.issue.body && args.issue.body.trim() !== "" ? "available" : "missing",
+      summary: args.issue.body && args.issue.body.trim() !== ""
+        ? `Issue body snapshot is available from issue #${args.issue.number}.`
+        : `Issue #${args.issue.number} does not have a recorded body snapshot.`,
+      head_sha: null,
+      remediation_target: null,
+      next_action: args.issue.body && args.issue.body.trim() !== "" ? null : "inspect_issue_body",
+    });
+  }
 
   if (record.codex_session_id !== null || record.last_codex_summary !== null) {
     setEvent({
@@ -278,6 +476,11 @@ export function buildIssueRunTimelineExport(args: {
     });
   }
 
+  const githubCiEvent = buildGithubCiEvent({ record, pr, checks });
+  if (githubCiEvent) {
+    setEvent(githubCiEvent);
+  }
+
   for (const artifact of record.timeline_artifacts ?? []) {
     setEvent(timelineEventFromArtifact(record, artifact));
   }
@@ -304,6 +507,11 @@ export function buildIssueRunTimelineExport(args: {
       remediation_target: null,
       next_action: record.local_review_recommendation === "changes_requested" ? "address_review_findings" : null,
     });
+  }
+
+  const reviewProviderEvent = buildReviewProviderEvent(record, pr);
+  if (reviewProviderEvent) {
+    setEvent(reviewProviderEvent);
   }
 
   if (hasStaleReviewMetadataHandling(record)) {
@@ -349,6 +557,48 @@ export function buildIssueRunTimelineExport(args: {
     });
   }
 
+  if (record.last_host_local_pr_blocker_comment_signature != null) {
+    setEvent({
+      issue_number: record.issue_number,
+      pr_number: record.pr_number,
+      event_type: "status_comment",
+      timestamp: record.updated_at,
+      outcome: "published",
+      summary: `Tracked PR status comment evidence is recorded: ${record.last_host_local_pr_blocker_comment_signature}.`,
+      head_sha: record.last_host_local_pr_blocker_comment_head_sha ?? null,
+      remediation_target: null,
+      next_action: null,
+    });
+  }
+
+  if (
+    record.state === "done" ||
+    record.state === "blocked" ||
+    record.state === "waiting_ci"
+  ) {
+    const outcome = record.state === "blocked" && record.blocked_reason === "manual_review" ? "manual_review" : record.state;
+    setEvent({
+      issue_number: record.issue_number,
+      pr_number: record.pr_number,
+      event_type: "terminal_state",
+      timestamp: record.updated_at,
+      outcome,
+      summary: `Issue run reached ${outcome}.`,
+      head_sha: record.last_head_sha,
+      remediation_target: null,
+      next_action: outcome === "done" ? null : "operator_follow_up",
+    });
+  }
+
+  if (args.obsidianWriteback) {
+    setEvent(buildExternalEvidenceEvent({
+      record,
+      prNumber: record.pr_number,
+      eventType: "obsidian_writeback",
+      evidence: args.obsidianWriteback,
+    }));
+  }
+
   if (record.state === "done") {
     setEvent({
       issue_number: record.issue_number,
@@ -365,15 +615,21 @@ export function buildIssueRunTimelineExport(args: {
 
   const missingSummaries: Record<IssueRunTimelineEventType, string> = {
     reservation: "No issue run reservation is recorded.",
+    issue_body: "No issue body snapshot is recorded for this issue run.",
     codex_turn: "No Codex turn summary is recorded for this issue run.",
     publication_gate: "No publication gate event is recorded for this issue run.",
     pr_created: "No pull request creation event is recorded for this issue run.",
+    github_ci: "No GitHub CI evidence is recorded for this issue run.",
     local_ci: "No local CI result is recorded for this issue run.",
     path_hygiene: "No workstation-local path hygiene result is recorded for this issue run.",
+    review_provider: "No review-provider signal is recorded for this issue run.",
     review: "No local review result is recorded for this issue run.",
     stale_review_metadata: "No stale review metadata handling event is recorded for this issue run.",
     recovery: "No recovery event is recorded for this issue run.",
     merge: "No merge event is recorded for this issue run.",
+    status_comment: "No tracked PR status comment evidence is recorded for this issue run.",
+    terminal_state: "Issue run has not reached done, blocked, waiting_ci, or manual_review.",
+    obsidian_writeback: "No Obsidian writeback evidence is recorded for this issue run.",
     done: "Issue run is not recorded as done.",
   };
 

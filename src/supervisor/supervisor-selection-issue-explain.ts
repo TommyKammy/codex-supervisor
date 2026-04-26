@@ -550,11 +550,12 @@ export async function buildIssueExplainDto(
     preservedPartialWorkSummary: summarizePreservedPartialWork(record?.last_failure_context),
     runtimeFailureKind: record?.last_runtime_failure_kind ?? null,
     runtimeFailureSummary: record?.last_runtime_failure_context?.summary ?? null,
-    timeline: record ? buildIssueRunTimelineExport({ record, pr }) : null,
+    timeline: record ? buildIssueRunTimelineExport({ issue, record, pr, checks: explainChecks }) : null,
     auditBundle: buildOperatorAuditBundle({
       issue,
       record: record ?? null,
       pr,
+      checks: explainChecks,
       journalContent,
       staleConfiguredBotRemediation: staleReviewBotRemediation,
     }),

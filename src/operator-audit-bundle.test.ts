@@ -124,6 +124,17 @@ test("buildOperatorAuditBundle includes structured issue-run evidence and explic
   assert.deepEqual(bundle.pathHygiene.value?.repairTargets, ["docs/guide.md"]);
   assert.equal(bundle.staleConfiguredBotRemediation.status, "missing");
   assert.equal(bundle.recoveryEvents.value?.[0]?.event_type, "recovery");
+  assert.deepEqual(
+    bundle.timeline?.events
+      .filter((event) => ["issue_body", "pr_created", "local_ci", "status_comment"].includes(event.event_type))
+      .map((event) => [event.event_type, event.outcome]),
+    [
+      ["issue_body", "available"],
+      ["pr_created", "created"],
+      ["local_ci", "failed"],
+      ["status_comment", "missing"],
+    ],
+  );
   assert.deepEqual(bundle.verificationCommands.value, [
     "npx tsx --test src/operator-audit-bundle.test.ts",
     "npm run verify:paths",

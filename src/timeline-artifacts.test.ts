@@ -4,7 +4,7 @@ import {
   buildIssueRunTimelineExport,
   formatTimelineArtifactStatusLine,
 } from "./timeline-artifacts";
-import { createPullRequest, createRecord } from "./turn-execution-test-helpers";
+import { createIssue, createPullRequest, createRecord } from "./turn-execution-test-helpers";
 
 test("formatTimelineArtifactStatusLine escapes multiline command and summary values", () => {
   const line = formatTimelineArtifactStatusLine({
@@ -106,6 +106,7 @@ test("buildIssueRunTimelineExport orders available major lifecycle events", () =
       ["review", "2026-04-25T10:08:00Z", "ready", null],
       ["merge", "2026-04-25T10:11:00Z", "merged", null],
       ["codex_turn", "2026-04-25T10:12:00Z", "completed", null],
+      ["terminal_state", "2026-04-25T10:12:00Z", "done", null],
       ["done", "2026-04-25T10:12:00Z", "done", null],
     ],
   );
@@ -120,6 +121,81 @@ test("buildIssueRunTimelineExport orders available major lifecycle events", () =
     remediation_target: null,
     next_action: null,
   });
+});
+
+test("buildIssueRunTimelineExport exposes the full post-merge evidence chain", () => {
+  const timeline = buildIssueRunTimelineExport({
+    issue: createIssue({
+      number: 1784,
+      updatedAt: "2026-04-26T01:00:00Z",
+      body: "## Summary\nBuild evidence timeline artifacts.\n\n## Verification\n- `npm test`\n",
+    }),
+    record: createRecord({
+      issue_number: 1784,
+      branch: "codex/issue-1784",
+      pr_number: 1800,
+      state: "done",
+      last_head_sha: "head-1784",
+      latest_local_ci_result: {
+        outcome: "passed",
+        summary: "npm test passed.",
+        ran_at: "2026-04-26T01:07:00Z",
+        head_sha: "head-1784",
+        execution_mode: "legacy_shell_string",
+        command: "npm test",
+        failure_class: null,
+        remediation_target: null,
+      },
+      local_review_run_at: "2026-04-26T01:10:00Z",
+      local_review_recommendation: "ready",
+      local_review_head_sha: "head-1784",
+      provider_success_observed_at: "2026-04-26T01:06:00Z",
+      provider_success_head_sha: "head-1784",
+      last_host_local_pr_blocker_comment_signature: "status-comment:cleared",
+      last_host_local_pr_blocker_comment_head_sha: "head-1784",
+      updated_at: "2026-04-26T01:20:00Z",
+    }),
+    pr: createPullRequest({
+      number: 1800,
+      createdAt: "2026-04-26T01:02:00Z",
+      updatedAt: "2026-04-26T01:05:00Z",
+      mergedAt: "2026-04-26T01:19:00Z",
+      headRefOid: "head-1784",
+      configuredBotCurrentHeadObservedAt: "2026-04-26T01:06:00Z",
+      configuredBotCurrentHeadStatusState: "COMMENTED",
+      currentHeadCiGreenAt: "2026-04-26T01:05:00Z",
+    }),
+    checks: [
+      { name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" },
+      { name: "test", state: "SUCCESS", bucket: "pass", workflow: "CI" },
+    ],
+    obsidianWriteback: {
+      outcome: "recorded",
+      summary: "Development history note was updated from the post-merge audit.",
+      recordedAt: "2026-04-26T01:21:00Z",
+      headSha: "head-1784",
+    },
+  });
+
+  assert.deepEqual(
+    timeline.events
+      .filter((event) => event.outcome !== "missing")
+      .map((event) => [event.event_type, event.timestamp, event.outcome, event.summary]),
+    [
+      ["reservation", null, "recorded", "Issue run reservation exists for branch codex/issue-1784."],
+      ["issue_body", "2026-04-26T01:00:00Z", "available", "Issue body snapshot is available from issue #1784."],
+      ["pr_created", "2026-04-26T01:02:00Z", "created", "Pull request #1800 is recorded for this issue run."],
+      ["github_ci", "2026-04-26T01:05:00Z", "passed", "GitHub CI evidence is green for 2 check(s): build, test."],
+      ["review_provider", "2026-04-26T01:06:00Z", "COMMENTED", "Configured review provider observed current head head-1784."],
+      ["local_ci", "2026-04-26T01:07:00Z", "passed", "npm test passed."],
+      ["review", "2026-04-26T01:10:00Z", "ready", "Local review recorded 0 finding(s)."],
+      ["merge", "2026-04-26T01:19:00Z", "merged", "Pull request #1800 is merged."],
+      ["status_comment", "2026-04-26T01:20:00Z", "published", "Tracked PR status comment evidence is recorded: status-comment:cleared."],
+      ["terminal_state", "2026-04-26T01:20:00Z", "done", "Issue run reached done."],
+      ["done", "2026-04-26T01:20:00Z", "done", "Issue run is recorded as done."],
+      ["obsidian_writeback", "2026-04-26T01:21:00Z", "recorded", "Development history note was updated from the post-merge audit."],
+    ],
+  );
 });
 
 test("buildIssueRunTimelineExport keeps sparse historical records explicit", () => {
@@ -145,15 +221,21 @@ test("buildIssueRunTimelineExport keeps sparse historical records explicit", () 
     timeline.events.map((event) => [event.event_type, event.timestamp, event.outcome, event.summary]),
     [
       ["reservation", null, "recorded", "Issue run reservation exists for branch codex/issue-102."],
+      ["issue_body", null, "missing", "No issue body snapshot is recorded for this issue run."],
       ["codex_turn", null, "missing", "No Codex turn summary is recorded for this issue run."],
       ["publication_gate", null, "missing", "No publication gate event is recorded for this issue run."],
       ["pr_created", null, "missing", "No pull request creation event is recorded for this issue run."],
+      ["github_ci", null, "missing", "No GitHub CI evidence is recorded for this issue run."],
       ["local_ci", null, "missing", "No local CI result is recorded for this issue run."],
       ["path_hygiene", null, "missing", "No workstation-local path hygiene result is recorded for this issue run."],
+      ["review_provider", null, "missing", "No review-provider signal is recorded for this issue run."],
       ["review", null, "missing", "No local review result is recorded for this issue run."],
       ["stale_review_metadata", null, "missing", "No stale review metadata handling event is recorded for this issue run."],
       ["recovery", null, "missing", "No recovery event is recorded for this issue run."],
       ["merge", null, "missing", "No merge event is recorded for this issue run."],
+      ["status_comment", null, "missing", "No tracked PR status comment evidence is recorded for this issue run."],
+      ["terminal_state", null, "missing", "Issue run has not reached done, blocked, waiting_ci, or manual_review."],
+      ["obsidian_writeback", null, "missing", "No Obsidian writeback evidence is recorded for this issue run."],
       ["done", null, "missing", "Issue run is not recorded as done."],
     ],
   );
