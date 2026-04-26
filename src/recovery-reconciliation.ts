@@ -828,13 +828,18 @@ export async function reconcileRecoverableBlockedIssueStates(
           buildRecoveryEvent,
         );
         const headAdvanceResetPatch = resetTrackedPrHeadScopedStateOnAdvance(record, trackedPullRequest.headRefOid);
+        const failureSignatureBaseRecord = {
+          ...record,
+          last_failure_signature: null,
+          repeated_failure_signature_count: 0,
+        };
         const updated = stateStore.touch(record, applyRecoveryEvent({
           state: "repairing_ci",
           blocked_reason: null,
           last_error: truncate(repairContext.summary, 1000),
           last_failure_kind: null,
           last_failure_context: repairContext,
-          last_failure_signature: repairContext.signature,
+          ...applyFailureSignature(failureSignatureBaseRecord, repairContext),
           last_blocker_signature: null,
           pr_number: trackedPullRequest.number,
           last_head_sha: trackedPullRequest.headRefOid,

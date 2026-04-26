@@ -846,6 +846,7 @@ test("reconcileRecoverableBlockedIssueStates resumes handoff-missing queued read
           updated_at: "2026-04-26T23:01:00Z",
         },
         last_failure_signature: "handoff-missing",
+        repeated_failure_signature_count: 4,
         last_observed_host_local_pr_blocker_signature: failureContext.signature,
         last_observed_host_local_pr_blocker_head_sha: "head-ready",
         timeline_artifacts: [
@@ -923,6 +924,7 @@ test("reconcileRecoverableBlockedIssueStates resumes handoff-missing queued read
     "Actionable file: backend/app/features/auth/bridge.py",
   ]);
   assert.equal(updated?.last_failure_signature, failureContext.signature);
+  assert.equal(updated?.repeated_failure_signature_count, 1);
   assert.equal(updated?.last_error, failureContext.summary);
   assert.equal(saveCalls, 1);
   assert.match(recoveryEvents[0]?.reason ?? "", /tracked_pr_lifecycle_recovered/);

@@ -43,9 +43,14 @@ function structuredRepairContext(record: IssueRunRecord): FailureContext | null 
 }
 
 function repairArtifactForHead(record: IssueRunRecord, pr: GitHubPullRequest): TimelineArtifact | null {
-  return (
-    record.timeline_artifacts ?? []
-  ).find((artifact) => repairQueuedArtifactForHead(artifact, pr)) ?? null;
+  const artifacts = record.timeline_artifacts ?? [];
+  for (let index = artifacts.length - 1; index >= 0; index -= 1) {
+    const artifact = artifacts[index];
+    if (artifact && repairQueuedArtifactForHead(artifact, pr)) {
+      return artifact;
+    }
+  }
+  return null;
 }
 
 export function queuedReadyPromotionPathHygieneRepairContext(
@@ -68,25 +73,20 @@ export function queuedReadyPromotionPathHygieneRepairContext(
     return null;
   }
 
-  const existingContext = structuredRepairContext(record);
-  if (existingContext !== null) {
-    return existingContext;
-  }
-
   const artifact = repairArtifactForHead(record, pr);
-  if (artifact === null) {
-    return null;
+  if (artifact !== null) {
+    return {
+      category: "blocked",
+      summary: artifact.summary,
+      signature: PATH_HYGIENE_SIGNATURE,
+      command: artifact.command,
+      details: (artifact.repair_targets ?? []).map((target) => `Actionable file: ${target}`),
+      url: null,
+      updated_at: artifact.recorded_at,
+    };
   }
 
-  return {
-    category: "blocked",
-    summary: artifact.summary,
-    signature: PATH_HYGIENE_SIGNATURE,
-    command: artifact.command,
-    details: (artifact.repair_targets ?? []).map((target) => `Actionable file: ${target}`),
-    url: null,
-    updated_at: artifact.recorded_at,
-  };
+  return structuredRepairContext(record);
 }
 
 export function hasQueuedReadyPromotionPathHygieneRepair(
