@@ -78,6 +78,11 @@ test("supervised automation lane documents an auditable work state machine", asy
 
   assert.match(note, /supervisor-owned/i);
   assert.match(note, /operator judgment/i);
+  assert.match(note, /live operator surfaces such as `status` and `explain`/i);
   assert.match(note, /fresh GitHub facts/i);
   assert.match(note, /issue journal/i);
+  assert.match(note, /Persisted PR status comments are snapshots/i);
+  assert.match(note, /must not be treated as authoritative lifecycle state/i);
+  assert.match(note, /tracked-done cleanup/i);
+  assert.doesNotMatch(note, /tracked done cleanup/i);
 });
