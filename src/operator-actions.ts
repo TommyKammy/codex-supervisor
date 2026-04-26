@@ -86,6 +86,18 @@ const doctorFallbackOperatorAction: OperatorAction = {
   summary: "No blocking doctor action was detected; continue normal supervisor operation.",
 };
 
+const validOperatorActions: Record<OperatorActionToken, true> = {
+  continue: true,
+  restart_loop: true,
+  fix_config: true,
+  adopt_local_ci: true,
+  dismiss_local_ci: true,
+  manual_review: true,
+  resolve_stale_review_bot: true,
+  provider_outage_suspected: true,
+  safe_to_ignore: true,
+};
+
 function readTokenValue(line: string, key: string): string | null {
   const match = new RegExp(`(?:^|\\s)${key}=([^\\s]+)`, "u").exec(line);
   return match?.[1] ?? null;
@@ -105,22 +117,11 @@ export function parseOperatorActionLine(line: string): OperatorAction | null {
   const source = readTokenValue(line, "source");
   const priorityValue = readTokenValue(line, "priority");
   const summary = readSummaryValue(line);
-  const validActions: Record<OperatorActionToken, true> = {
-    continue: true,
-    restart_loop: true,
-    fix_config: true,
-    adopt_local_ci: true,
-    dismiss_local_ci: true,
-    manual_review: true,
-    resolve_stale_review_bot: true,
-    provider_outage_suspected: true,
-    safe_to_ignore: true,
-  };
   const priority = priorityValue === null ? Number.NaN : Number.parseInt(priorityValue, 10);
 
   if (
     action === null ||
-    validActions[action] !== true ||
+    validOperatorActions[action] !== true ||
     source === null ||
     !Number.isFinite(priority) ||
     summary === null
