@@ -61,10 +61,45 @@ import { appendRestartRecommendationLine } from "../operator-actions";
 const LONG_RECONCILIATION_WARNING_THRESHOLD_MS = 5 * 60 * 1000;
 const MAX_RENDERED_STATUS_STATE_LOAD_FINDINGS = 5;
 
-function buildLongReconciliationWarning(snapshot: {
+function buildLongReconciliationWarningLine(snapshot: {
   phase: string;
   startedAt: string | null;
-} | null): string | null {
+}, elapsedMs: number): string {
+  return [
+    "reconciliation_warning=long_running",
+    `phase=${snapshot.phase}`,
+    `elapsed_seconds=${Math.floor(elapsedMs / 1000)}`,
+    `threshold_seconds=${Math.floor(LONG_RECONCILIATION_WARNING_THRESHOLD_MS / 1000)}`,
+    `started_at=${snapshot.startedAt}`,
+  ].join(" ");
+}
+
+function buildStaleReconciliationMarkerLine(snapshot: {
+  phase: string;
+  startedAt: string | null;
+}, elapsedMs: number): string {
+  return [
+    "reconciliation_marker=stale_artifact",
+    `phase=${snapshot.phase}`,
+    "classification=safe_to_ignore",
+    "maintenance=yes",
+    `elapsed_seconds=${Math.floor(elapsedMs / 1000)}`,
+    `threshold_seconds=${Math.floor(LONG_RECONCILIATION_WARNING_THRESHOLD_MS / 1000)}`,
+    `started_at=${snapshot.startedAt}`,
+  ].join(" ");
+}
+
+function buildReconciliationMarkerStatus(snapshot: {
+  phase: string;
+  startedAt: string | null;
+} | null, context: {
+  hasActiveIssue: boolean;
+  runnableIssueCount: number;
+  openIssueCount: number;
+  openPrCount: number;
+  loopRuntimeState: "running" | "off" | "unknown";
+  factsAvailable: boolean;
+}): string | null {
   if (snapshot === null || snapshot.startedAt === null) {
     return null;
   }
@@ -79,13 +114,17 @@ function buildLongReconciliationWarning(snapshot: {
     return null;
   }
 
-  return [
-    "reconciliation_warning=long_running",
-    `phase=${snapshot.phase}`,
-    `elapsed_seconds=${Math.floor(elapsedMs / 1000)}`,
-    `threshold_seconds=${Math.floor(LONG_RECONCILIATION_WARNING_THRESHOLD_MS / 1000)}`,
-    `started_at=${snapshot.startedAt}`,
-  ].join(" ");
+  const hasLiveWork =
+    !context.factsAvailable ||
+    context.hasActiveIssue ||
+    context.runnableIssueCount > 0 ||
+    context.openIssueCount > 0 ||
+    context.openPrCount > 0 ||
+    context.loopRuntimeState !== "off";
+
+  return hasLiveWork
+    ? buildLongReconciliationWarningLine(snapshot, elapsedMs)
+    : buildStaleReconciliationMarkerLine(snapshot, elapsedMs);
 }
 
 function formatStatusStateLoadFinding(finding: StateLoadFinding): string {
@@ -204,7 +243,6 @@ export async function buildSupervisorStatusReport(args: {
   const inventoryRefreshWarning = buildInventoryRefreshWarningMessage(state);
   const reconciliationSnapshot = await readCurrentReconciliationPhaseSnapshot(config);
   const reconciliationPhase = reconciliationSnapshot?.phase ?? null;
-  const reconciliationWarning = buildLongReconciliationWarning(reconciliationSnapshot);
   const reconciliationProgress = reconciliationSnapshot === null
     ? null
     : {
@@ -262,6 +300,14 @@ export async function buildSupervisorStatusReport(args: {
       const readinessSummary = buildLastKnownGoodSnapshotReadinessSummary(config, state);
       const whyLines = options.why ? await buildSelectionWhySummary(github, config, state) : [];
       const githubRateLimitStatus = await loadGitHubRateLimitStatus(github);
+      const reconciliationWarning = buildReconciliationMarkerStatus(reconciliationSnapshot, {
+        hasActiveIssue: false,
+        runnableIssueCount: readinessSummary?.runnableIssues.length ?? 0,
+        openIssueCount: (readinessSummary?.runnableIssues.length ?? 0) + (readinessSummary?.blockedIssues.length ?? 0),
+        openPrCount: trackedIssues.filter((issue) => issue.state !== "done" && issue.prNumber !== null).length,
+        loopRuntimeState: loopRuntime.state,
+        factsAvailable: true,
+      });
       const inactiveDetailedStatusLines = appendRestartRecommendationLine([
         ...detailedStatusLines,
         ...(loopOffTrackedWorkBlocker ? [loopOffTrackedWorkBlocker.summaryLine] : []),
@@ -338,6 +384,14 @@ export async function buildSupervisorStatusReport(args: {
       const whyLines = options.why ? await buildSelectionWhySummary(github, config, state) : [];
       const selectionSummary = options.why ? await buildSelectionSummary(github, config, state) : null;
       const githubRateLimitStatus = await loadGitHubRateLimitStatus(github);
+      const reconciliationWarning = buildReconciliationMarkerStatus(reconciliationSnapshot, {
+        hasActiveIssue: false,
+        runnableIssueCount: readinessSummary.runnableIssues.length,
+        openIssueCount: readinessSummary.runnableIssues.length + readinessSummary.blockedIssues.length,
+        openPrCount: trackedIssues.filter((issue) => issue.state !== "done" && issue.prNumber !== null).length,
+        loopRuntimeState: loopRuntime.state,
+        factsAvailable: true,
+      });
       const inactiveDetailedStatusLines = appendRestartRecommendationLine([
         ...detailedStatusLines,
         ...(loopOffTrackedWorkBlocker ? [loopOffTrackedWorkBlocker.summaryLine] : []),
@@ -397,6 +451,14 @@ export async function buildSupervisorStatusReport(args: {
     } catch (error) {
       const message = sanitizeStatusValue(error instanceof Error ? error.message : String(error));
       const githubRateLimitStatus = await loadGitHubRateLimitStatus(github);
+      const reconciliationWarning = buildReconciliationMarkerStatus(reconciliationSnapshot, {
+        hasActiveIssue: false,
+        runnableIssueCount: 0,
+        openIssueCount: 0,
+        openPrCount: trackedIssues.filter((issue) => issue.state !== "done" && issue.prNumber !== null).length,
+        loopRuntimeState: loopRuntime.state,
+        factsAvailable: false,
+      });
       const inactiveDetailedStatusLines = appendRestartRecommendationLine([
         ...detailedStatusLines,
         ...(loopOffTrackedWorkBlocker ? [loopOffTrackedWorkBlocker.summaryLine] : []),
@@ -496,6 +558,14 @@ export async function buildSupervisorStatusReport(args: {
     executionMetricsSummaryLines: activeStatus.executionMetricsSummaryLines,
   });
   const githubRateLimitStatus = await loadGitHubRateLimitStatus(github);
+  const reconciliationWarning = buildReconciliationMarkerStatus(reconciliationSnapshot, {
+    hasActiveIssue: true,
+    runnableIssueCount: 0,
+    openIssueCount: 0,
+    openPrCount: activeStatus.pr?.state === "OPEN" ? 1 : 0,
+    loopRuntimeState: loopRuntime.state,
+    factsAvailable: true,
+  });
   const detailedStatusLinesWithInventory = appendRestartRecommendationLine([
     ...detailedStatusLines,
     ...(loopOffTrackedWorkBlocker ? [loopOffTrackedWorkBlocker.summaryLine] : []),

@@ -2651,9 +2651,19 @@ test("status emits a warning only after reconciliation exceeds the long-running 
   await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
 
   const supervisor = new Supervisor(fixture.config);
+  const liveIssue = {
+    number: 1772,
+    title: "Classify stale reconciliation markers",
+    body: executionReadyBody("Classify stale reconciliation markers separately from live work."),
+    createdAt: "2026-03-20T00:00:00Z",
+    updatedAt: "2026-03-20T00:00:00Z",
+    url: "https://example.test/issues/1772",
+    labels: [],
+    state: "OPEN",
+  } satisfies GitHubIssue;
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
-    listCandidateIssues: async () => [],
-    listAllIssues: async () => [],
+    listCandidateIssues: async () => [liveIssue],
+    listAllIssues: async () => [liveIssue],
     getPullRequestIfExists: async () => null,
     getChecks: async () => [],
     getUnresolvedReviewThreads: async () => [],
@@ -2677,6 +2687,43 @@ test("status emits a warning only after reconciliation exceeds the long-running 
       status,
       /reconciliation_warning=long_running phase=tracked_merged_but_open_issues elapsed_seconds=301 threshold_seconds=\d+ started_at=2026-03-20T00:10:00\.000Z/,
     );
+  } finally {
+    Date.now = originalDateNow;
+    await clearCurrentReconciliationPhase(fixture.config);
+  }
+});
+
+test("status classifies an old reconciliation marker as stale artifact when no live work exists", async () => {
+  const fixture = await createSupervisorFixture();
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [],
+    listAllIssues: async () => [],
+    getPullRequestIfExists: async () => null,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const originalDateNow = Date.now;
+  try {
+    Date.now = () => Date.parse("2026-03-20T00:10:00.000Z");
+    await writeCurrentReconciliationPhase(fixture.config, "tracked_merged_but_open_issues");
+
+    Date.now = () => Date.parse("2026-03-20T00:16:00.000Z");
+    const status = await supervisor.status({ why: true });
+    assert.doesNotMatch(status, /reconciliation_warning=long_running/);
+    assert.match(
+      status,
+      /reconciliation_marker=stale_artifact phase=tracked_merged_but_open_issues classification=safe_to_ignore maintenance=yes/,
+    );
+    assert.match(status, /^selected_issue=none$/m);
+    assert.match(status, /^selection_reason=no_runnable_issue$/m);
   } finally {
     Date.now = originalDateNow;
     await clearCurrentReconciliationPhase(fixture.config);
