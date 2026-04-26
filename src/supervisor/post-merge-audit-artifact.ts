@@ -23,7 +23,7 @@ import {
   type OperatorAuditBundleDto,
   type OperatorAuditBundleEvidence,
 } from "../operator-audit-bundle";
-import { type IssueRunTimelineEvent } from "../timeline-artifacts";
+import { buildIssueRunTimelineExport, type IssueRunTimelineEvent } from "../timeline-artifacts";
 
 export const POST_MERGE_AUDIT_ARTIFACT_SCHEMA_VERSION = 1;
 
@@ -227,10 +227,29 @@ function buildPostMergeOperatorAuditBundle(args: {
     "number" | "title" | "url" | "createdAt" | "mergedAt" | "headRefName" | "headRefOid"
   >;
   previousRecord: PostMergeOperatorAuditBundleSourceRecord;
-  nextRecord: Pick<IssueRunRecord, "state" | "branch" | "updated_at">;
+  nextRecord: Pick<IssueRunRecord, "state" | "branch" | "updated_at"> &
+    Partial<Pick<IssueRunRecord, "last_recovery_reason" | "last_recovery_at">>;
   journalHandoff: IssueJournalHandoff | null;
 }): OperatorAuditBundleDto {
   const record = args.previousRecord;
+  const timelineRecord = {
+    ...args.previousRecord,
+    ...args.nextRecord,
+    issue_number: args.issue.number,
+    pr_number: args.previousRecord.pr_number ?? args.pullRequest.number,
+    last_head_sha: args.previousRecord.last_head_sha ?? args.pullRequest.headRefOid,
+    last_recovery_reason: args.nextRecord.last_recovery_reason ?? null,
+    last_recovery_at: args.nextRecord.last_recovery_at ?? null,
+  } as IssueRunRecord;
+  const timelinePr = {
+    ...args.pullRequest,
+    state: "MERGED",
+    updatedAt: args.pullRequest.mergedAt ?? args.pullRequest.createdAt,
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: null,
+    headRefOid: args.pullRequest.headRefOid,
+  } as GitHubPullRequest;
   const verificationCommands = extractIssueVerificationCommands(args.issue.body ?? "");
   const latestLocalCi = record.latest_local_ci_result ?? null;
   const pathHygieneArtifact = [...(record.timeline_artifacts ?? [])]
@@ -301,7 +320,15 @@ function buildPostMergeOperatorAuditBundle(args: {
       null,
       "No recovery event is embedded in the post-merge audit artifact.",
     ),
-    timeline: null,
+    timeline: buildIssueRunTimelineExport({
+      issue: {
+        number: args.issue.number,
+        updatedAt: args.issue.updatedAt,
+        body: args.issue.body ?? "",
+      },
+      record: timelineRecord,
+      pr: timelinePr,
+    }),
     verificationCommands: auditEvidence(
       verificationCommands.length > 0 ? verificationCommands : null,
       "No verification commands are listed in the issue body.",

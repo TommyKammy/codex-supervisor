@@ -188,26 +188,30 @@ test("renderIssueExplainTimelineDto shows ordered active issue timeline events",
 
   const rendered = renderIssueExplainTimelineDto(dto);
 
-  assert.match(rendered, /^timeline issue=#617 pr=#716 events=11$/m);
+  assert.match(rendered, /^timeline issue=#617 pr=#716 events=17$/m);
   assert.match(
     rendered,
     /^timeline_event index=1 issue=#617 pr=#716 type=reservation at=unknown outcome=recorded head_sha=head-active remediation_target=none next_action=none summary=Issue run reservation exists for branch codex\/reopen-issue-617\.$/m,
   );
   assert.match(
     rendered,
-    /^timeline_event index=2 issue=#617 pr=#716 type=publication_gate at=2026-04-25T11:01:00Z outcome=failed head_sha=head-active remediation_target=tracked_publishable_content next_action=repair_tracked_publishable_content summary=Workspace preparation blocked publication\.$/m,
+    /^timeline_event index=2 issue=#617 pr=#716 type=issue_body at=2026-03-19T00:00:00Z outcome=available head_sha=unknown remediation_target=none next_action=none summary=Issue body snapshot is available from issue #617\.$/m,
   );
   assert.match(
     rendered,
-    /^timeline_event index=3 issue=#617 pr=#716 type=pr_created at=2026-04-25T11:02:00Z outcome=created head_sha=head-active remediation_target=none next_action=none summary=Pull request #716 is recorded for this issue run\.$/m,
+    /^timeline_event index=3 issue=#617 pr=#716 type=publication_gate at=2026-04-25T11:01:00Z outcome=failed head_sha=head-active remediation_target=tracked_publishable_content next_action=repair_tracked_publishable_content summary=Workspace preparation blocked publication\.$/m,
   );
   assert.match(
     rendered,
-    /^timeline_event index=4 issue=#617 pr=#716 type=local_ci at=2026-04-25T11:03:00Z outcome=passed head_sha=head-active remediation_target=none next_action=continue summary=Build passed\.$/m,
+    /^timeline_event index=4 issue=#617 pr=#716 type=pr_created at=2026-04-25T11:02:00Z outcome=created head_sha=head-active remediation_target=none next_action=none summary=Pull request #716 is recorded for this issue run\.$/m,
   );
   assert.match(
     rendered,
-    /^timeline_event index=5 issue=#617 pr=#716 type=review at=2026-04-25T11:04:00Z outcome=ready head_sha=head-active remediation_target=none next_action=none summary=Local review recorded 0 finding\(s\)\.$/m,
+    /^timeline_event index=5 issue=#617 pr=#716 type=local_ci at=2026-04-25T11:03:00Z outcome=passed head_sha=head-active remediation_target=none next_action=continue summary=Build passed\.$/m,
+  );
+  assert.match(
+    rendered,
+    /^timeline_event index=6 issue=#617 pr=#716 type=review at=2026-04-25T11:04:00Z outcome=ready head_sha=head-active remediation_target=none next_action=none summary=Local review recorded 0 finding\(s\)\.$/m,
   );
 });
 
@@ -258,15 +262,19 @@ test("renderIssueExplainTimelineDto shows done issue completion and merge events
 
   assert.match(
     rendered,
-    /^timeline_event index=2 issue=#618 pr=#718 type=pr_created at=2026-04-25T11:40:00Z outcome=created head_sha=head-done remediation_target=none next_action=none summary=Pull request #718 is recorded for this issue run\.$/m,
+    /^timeline_event index=3 issue=#618 pr=#718 type=pr_created at=2026-04-25T11:40:00Z outcome=created head_sha=head-done remediation_target=none next_action=none summary=Pull request #718 is recorded for this issue run\.$/m,
   );
   assert.match(
     rendered,
-    /^timeline_event index=3 issue=#618 pr=#718 type=merge at=2026-04-25T11:58:00Z outcome=merged head_sha=head-done remediation_target=none next_action=none summary=Pull request #718 is merged\.$/m,
+    /^timeline_event index=4 issue=#618 pr=#718 type=merge at=2026-04-25T11:58:00Z outcome=merged head_sha=head-done remediation_target=none next_action=none summary=Pull request #718 is merged\.$/m,
   );
   assert.match(
     rendered,
-    /^timeline_event index=4 issue=#618 pr=#718 type=done at=2026-04-25T12:00:00Z outcome=done head_sha=head-done remediation_target=none next_action=none summary=Issue run is recorded as done\.$/m,
+    /^timeline_event index=5 issue=#618 pr=#718 type=terminal_state at=2026-04-25T12:00:00Z outcome=done head_sha=head-done remediation_target=none next_action=none summary=Issue run reached done\.$/m,
+  );
+  assert.match(
+    rendered,
+    /^timeline_event index=6 issue=#618 pr=#718 type=done at=2026-04-25T12:00:00Z outcome=done head_sha=head-done remediation_target=none next_action=none summary=Issue run is recorded as done\.$/m,
   );
 });
 
@@ -309,18 +317,22 @@ test("renderIssueExplainTimelineDto keeps sparse historical records readable", a
 
   const rendered = renderIssueExplainTimelineDto(dto);
 
-  assert.match(rendered, /^timeline issue=#619 pr=none events=11$/m);
+  assert.match(rendered, /^timeline issue=#619 pr=none events=17$/m);
   assert.match(
     rendered,
-    /^timeline_event index=2 issue=#619 pr=none type=codex_turn at=unknown outcome=missing head_sha=unknown remediation_target=none next_action=none summary=No Codex turn summary is recorded for this issue run\.$/m,
+    /^timeline_event index=2 issue=#619 pr=none type=terminal_state at=2026-03-11T01:50:41\.997Z outcome=blocked head_sha=abcdef1 remediation_target=none next_action=operator_follow_up summary=Issue run reached blocked\.$/m,
   );
   assert.match(
     rendered,
-    /^timeline_event index=5 issue=#619 pr=none type=local_ci at=unknown outcome=missing head_sha=unknown remediation_target=none next_action=none summary=No local CI result is recorded for this issue run\.$/m,
+    /^timeline_event index=4 issue=#619 pr=none type=codex_turn at=unknown outcome=missing head_sha=unknown remediation_target=none next_action=none summary=No Codex turn summary is recorded for this issue run\.$/m,
   );
   assert.match(
     rendered,
-    /^timeline_event index=11 issue=#619 pr=none type=done at=unknown outcome=missing head_sha=unknown remediation_target=none next_action=none summary=Issue run is not recorded as done\.$/m,
+    /^timeline_event index=8 issue=#619 pr=none type=local_ci at=unknown outcome=missing head_sha=unknown remediation_target=none next_action=none summary=No local CI result is recorded for this issue run\.$/m,
+  );
+  assert.match(
+    rendered,
+    /^timeline_event index=17 issue=#619 pr=none type=done at=unknown outcome=missing head_sha=unknown remediation_target=none next_action=none summary=Issue run is not recorded as done\.$/m,
   );
 });
 

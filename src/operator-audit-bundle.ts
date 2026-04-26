@@ -3,6 +3,7 @@ import type {
   GitHubPullRequest,
   IssueRunRecord,
   LatestLocalCiResult,
+  PullRequestCheck,
   TimelineArtifact,
 } from "./core/types";
 import {
@@ -12,6 +13,7 @@ import {
 } from "./core/journal";
 import {
   buildIssueRunTimelineExport,
+  type IssueRunTimelineExternalEvidence,
   type IssueRunTimelineEvent,
   type IssueRunTimelineExport,
 } from "./timeline-artifacts";
@@ -162,13 +164,23 @@ export function buildOperatorAuditBundle(args: {
   issue: GitHubIssue;
   record?: IssueRunRecord | null;
   pr?: GitHubPullRequest | null;
+  checks?: PullRequestCheck[];
   journalContent?: string | null;
+  obsidianWriteback?: IssueRunTimelineExternalEvidence | null;
   staleConfiguredBotRemediation?: unknown | null;
 }): OperatorAuditBundleDto {
   const record = args.record ?? null;
   const pr = args.pr ?? null;
   const workspacePath = record?.workspace ?? ".";
-  const timeline = record ? buildIssueRunTimelineExport({ record, pr }) : null;
+  const timeline = record
+    ? buildIssueRunTimelineExport({
+      issue: args.issue,
+      record,
+      pr,
+      checks: args.checks ?? [],
+      obsidianWriteback: args.obsidianWriteback ?? null,
+    })
+    : null;
   const pathHygieneArtifact = latestPathHygieneArtifact(record);
   const verificationCommands = extractIssueVerificationCommands(args.issue.body ?? "");
   const recoveryEvents = timeline?.events.filter((event) => event.event_type === "recovery" && event.outcome !== "missing") ?? [];
