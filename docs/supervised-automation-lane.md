@@ -16,7 +16,7 @@ The task contract is the execution-ready GitHub issue. It names the behavior del
 
 ### Contract-First Issue Authoring UX
 
-Contract-first issue authoring turns raw GitHub text into a guided Task Contract before the supervisor treats the issue as runnable work. The authoring experience should lead operators through the same fields that `docs/issue-metadata.md` defines as canonical: Summary, Scope, Acceptance criteria, Verification, dependencies, parallelization, and execution order. The UX goal is not to make weak issue bodies pass; it is to make the execution contract visible early enough that missing or unsafe inputs can be repaired before a Codex turn starts.
+Contract-first issue authoring turns raw GitHub text into a guided Task Contract before the supervisor treats the issue as runnable work. The authoring experience should lead operators through the same fields that `docs/issue-metadata.md` defines as canonical: `## Summary`, `## Scope`, `## Acceptance criteria`, `## Verification`, `Depends on:`, `Parallelizable:`, `## Execution order`, and `Part of: #...` when the issue is part of a sequenced child set. The UX goal is not to make weak issue bodies pass; it is to make the execution contract visible early enough that missing or unsafe inputs can be repaired before a Codex turn starts.
 
 Responsibility stays split across the existing product surfaces:
 

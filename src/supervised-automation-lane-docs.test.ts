@@ -99,7 +99,15 @@ test("supervised automation lane documents contract-first issue authoring UX", a
   assert.match(template, /## Scope/);
   assert.match(template, /## Acceptance criteria/);
   assert.match(template, /## Verification/);
+  assert.match(template, /^Part of: #____$/m);
+  assert.match(template, /^Depends on: none$/m);
+  assert.match(template, /^Parallelizable: No$/m);
+  assert.match(template, /^## Execution order$/m);
   assert.match(metadataReference, /Use this document as the canonical reference/i);
+  assert.match(metadataReference, /`Part of: #\.\.\.` line when the issue is part of a sequenced child set/);
+  assert.match(metadataReference, /one canonical `Depends on: none` or `Depends on: #\.\.\.` line/);
+  assert.match(metadataReference, /one canonical `Parallelizable: Yes\|No` line/);
+  assert.match(metadataReference, /one valid `Execution order` declaration/);
 
   assert.match(note, /^### Contract-First Issue Authoring UX$/m);
 
@@ -111,6 +119,7 @@ test("supervised automation lane documents contract-first issue authoring UX", a
     "dependencies",
     "parallelization",
     "execution order",
+    "Part of",
   ]) {
     assert.match(note, new RegExp(term, "i"));
   }
