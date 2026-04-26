@@ -78,6 +78,11 @@ export interface SupervisorCycleDecisionSnapshot {
       | "last_local_review_signature"
       | "repeated_local_review_signature_count"
       | "latest_local_ci_result"
+      | "timeline_artifacts"
+      | "last_observed_host_local_pr_blocker_signature"
+      | "last_observed_host_local_pr_blocker_head_sha"
+      | "last_host_local_pr_blocker_comment_signature"
+      | "last_host_local_pr_blocker_comment_head_sha"
       | "processed_review_thread_ids"
       | "processed_review_thread_fingerprints"
       | "updated_at"
@@ -174,6 +179,15 @@ export function buildSupervisorCycleDecisionSnapshot(args: {
         last_local_review_signature: record.last_local_review_signature,
         repeated_local_review_signature_count: record.repeated_local_review_signature_count,
         latest_local_ci_result: record.latest_local_ci_result ?? null,
+        timeline_artifacts: record.timeline_artifacts ? [...record.timeline_artifacts] : undefined,
+        last_observed_host_local_pr_blocker_signature:
+          record.last_observed_host_local_pr_blocker_signature ?? null,
+        last_observed_host_local_pr_blocker_head_sha:
+          record.last_observed_host_local_pr_blocker_head_sha ?? null,
+        last_host_local_pr_blocker_comment_signature:
+          record.last_host_local_pr_blocker_comment_signature ?? null,
+        last_host_local_pr_blocker_comment_head_sha:
+          record.last_host_local_pr_blocker_comment_head_sha ?? null,
         processed_review_thread_ids: [...record.processed_review_thread_ids],
         processed_review_thread_fingerprints: [...record.processed_review_thread_fingerprints],
         updated_at: record.updated_at,
@@ -250,6 +264,15 @@ export function buildSupervisorCycleDecisionSnapshot(args: {
         last_local_review_signature: record.last_local_review_signature,
         repeated_local_review_signature_count: record.repeated_local_review_signature_count,
         latest_local_ci_result: record.latest_local_ci_result ?? null,
+        timeline_artifacts: record.timeline_artifacts ? [...record.timeline_artifacts] : undefined,
+        last_observed_host_local_pr_blocker_signature:
+          record.last_observed_host_local_pr_blocker_signature ?? null,
+        last_observed_host_local_pr_blocker_head_sha:
+          record.last_observed_host_local_pr_blocker_head_sha ?? null,
+        last_host_local_pr_blocker_comment_signature:
+          record.last_host_local_pr_blocker_comment_signature ?? null,
+        last_host_local_pr_blocker_comment_head_sha:
+          record.last_host_local_pr_blocker_comment_head_sha ?? null,
         processed_review_thread_ids: [...record.processed_review_thread_ids],
         processed_review_thread_fingerprints: [...record.processed_review_thread_fingerprints],
         updated_at: record.updated_at,

@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "id": "stale-provider-signal-rearms-wait",
+  "issueNumber": 593,
+  "title": "Stale provider signal does not unlock current head",
+  "capturedAt": "2026-03-13T02:07:00Z"
+}

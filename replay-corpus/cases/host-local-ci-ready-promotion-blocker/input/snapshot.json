@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-03-13T00:13:00Z",
+  "issue": {
+    "number": 594,
+    "title": "Host-local CI blocker remains current for draft promotion",
+    "url": "https://example.test/issues/594",
+    "state": "OPEN",
+    "updatedAt": "2026-03-13T00:12:30Z"
+  },
+  "local": {
+    "record": {
+      "issue_number": 594,
+      "state": "blocked",
+      "branch": "codex/issue-594",
+      "pr_number": 694,
+      "workspace": ".",
+      "journal_path": ".codex-supervisor/issue-journal.md",
+      "attempt_count": 1,
+      "implementation_attempt_count": 1,
+      "repair_attempt_count": 0,
+      "blocked_reason": "verification",
+      "last_error": "Configured local CI command failed before marking PR #694 ready.",
+      "last_failure_context": {
+        "category": "blocked",
+        "summary": "Configured local CI command failed before marking PR #694 ready.",
+        "signature": "local-ci-gate-non_zero_exit",
+        "command": "npm run verify:paths",
+        "details": [
+          "docs/configuration.md contract drift: changed doc contract no longer matches repo-owned verifier expectation"
+        ],
+        "url": null,
+        "updated_at": "2026-03-13T00:10:00Z"
+      },
+      "last_failure_signature": "local-ci-gate-non_zero_exit",
+      "last_head_sha": "head-draft-594",
+      "review_wait_started_at": null,
+      "review_wait_head_sha": null,
+      "provider_success_observed_at": null,
+      "provider_success_head_sha": null,
+      "merge_readiness_last_evaluated_at": null,
+      "copilot_review_requested_observed_at": null,
+      "copilot_review_requested_head_sha": null,
+      "copilot_review_timed_out_at": null,
+      "copilot_review_timeout_action": null,
+      "copilot_review_timeout_reason": null,
+      "local_review_head_sha": "head-draft-594",
+      "local_review_blocker_summary": null,
+      "local_review_summary_path": null,
+      "local_review_run_at": "2026-03-13T00:09:00Z",
+      "local_review_max_severity": "none",
+      "local_review_findings_count": 0,
+      "local_review_root_cause_count": 0,
+      "local_review_verified_max_severity": "none",
+      "local_review_verified_findings_count": 0,
+      "local_review_recommendation": "ready",
+      "local_review_degraded": false,
+      "last_local_review_signature": null,
+      "repeated_local_review_signature_count": 0,
+      "latest_local_ci_result": {
+        "outcome": "failed",
+        "summary": "Configured local CI command failed before marking PR #694 ready.",
+        "ran_at": "2026-03-13T00:10:00Z",
+        "head_sha": "head-draft-594",
+        "execution_mode": "legacy_shell_string",
+        "command": "npm run verify:paths",
+        "stderr_summary": "docs/configuration.md contract drift: changed doc contract no longer matches repo-owned verifier expectation",
+        "failure_class": "non_zero_exit",
+        "remediation_target": "tracked_publishable_content",
+        "verifier_drift_hint": "repo_owned_verifier_drift: the repo-owned verifier appears to disagree with a changed docs or contract expectation; repair the verifier expectation or the repo content before rerunning local CI."
+      },
+      "timeline_artifacts": [
+        {
+          "type": "verification_result",
+          "gate": "local_ci",
+          "command": "npm run verify:paths",
+          "head_sha": "head-draft-594",
+          "outcome": "failed",
+          "remediation_target": "tracked_publishable_content",
+          "next_action": "repair_tracked_publishable_content",
+          "summary": "Configured local CI command failed before marking PR #694 ready.",
+          "recorded_at": "2026-03-13T00:10:00Z"
+        }
+      ],
+      "last_observed_host_local_pr_blocker_signature": "local-ci-gate-non_zero_exit",
+      "last_observed_host_local_pr_blocker_head_sha": "head-draft-594",
+      "last_host_local_pr_blocker_comment_signature": "local-ci-gate-non_zero_exit|gate=local_ci|failure=non_zero_exit|target=tracked_publishable_content",
+      "last_host_local_pr_blocker_comment_head_sha": "head-draft-594",
+      "processed_review_thread_ids": [],
+      "processed_review_thread_fingerprints": [],
+      "updated_at": "2026-03-13T00:13:00Z"
+    },
+    "workspaceStatus": {
+      "branch": "codex/issue-594",
+      "headSha": "head-draft-594",
+      "hasUncommittedChanges": false,
+      "baseAhead": 1,
+      "baseBehind": 0,
+      "remoteBranchExists": true,
+      "remoteAhead": 0,
+      "remoteBehind": 0
+    }
+  },
+  "github": {
+    "pullRequest": {
+      "number": 694,
+      "title": "Blocked draft implementation",
+      "url": "https://example.test/pr/694",
+      "state": "OPEN",
+      "createdAt": "2026-03-13T00:05:00Z",
+      "updatedAt": "2026-03-13T00:12:00Z",
+      "isDraft": true,
+      "reviewDecision": "APPROVED",
+      "mergeStateStatus": "CLEAN",
+      "mergeable": "MERGEABLE",
+      "headRefName": "codex/issue-594",
+      "headRefOid": "head-draft-594",
+      "copilotReviewState": "not_requested",
+      "copilotReviewRequestedAt": null,
+      "copilotReviewArrivedAt": null,
+      "currentHeadCiGreenAt": "2026-03-13T00:09:30Z",
+      "configuredBotCurrentHeadObservedAt": null,
+      "mergedAt": null
+    },
+    "checks": [
+      {
+        "name": "build",
+        "state": "SUCCESS",
+        "bucket": "pass",
+        "workflow": "CI"
+      }
+    ],
+    "reviewThreads": []
+  },
+  "decision": {
+    "nextState": "draft_pr",
+    "shouldRunCodex": false,
+    "blockedReason": null,
+    "failureContext": null
+  }
+}

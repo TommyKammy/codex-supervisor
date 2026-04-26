@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "id": "host-local-ci-ready-promotion-blocker",
+  "issueNumber": 594,
+  "title": "Host-local CI blocker remains current for draft promotion",
+  "capturedAt": "2026-03-13T00:13:00Z"
+}

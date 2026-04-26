@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "id": "clean-draft-ready-promotion",
+  "issueNumber": 592,
+  "title": "Clean draft PR stays in ready-promotion lifecycle",
+  "capturedAt": "2026-03-13T00:12:00Z"
+}

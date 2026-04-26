@@ -18,6 +18,22 @@
       "path": "cases/review-timing-ready-for-review-after-draft-skip"
     },
     {
+      "id": "active-merged-pr-convergence",
+      "path": "cases/active-merged-pr-convergence"
+    },
+    {
+      "id": "clean-draft-ready-promotion",
+      "path": "cases/clean-draft-ready-promotion"
+    },
+    {
+      "id": "stale-provider-signal-rearms-wait",
+      "path": "cases/stale-provider-signal-rearms-wait"
+    },
+    {
+      "id": "host-local-ci-ready-promotion-blocker",
+      "path": "cases/host-local-ci-ready-promotion-blocker"
+    },
+    {
       "id": "required-check-pending",
       "path": "cases/required-check-pending"
     },
