@@ -473,6 +473,118 @@ test("handlePostTurnPullRequestTransitionsPhase refreshes PR state after marking
   assert.equal(syncJournalCalls, 3);
 });
 
+test("handlePostTurnPullRequestTransitionsPhase clears stale ready-promotion blockers when refreshed state is waiting_ci", async (t) => {
+  const { workspacePath, headSha } = await createTrackedIssueBranchRepo();
+  t.after(async () => {
+    await fs.rm(workspacePath, { recursive: true, force: true });
+  });
+  const config = createConfig({ localCiCommand: "npm run ci:local" });
+  const issue = createIssue({ title: "Clear stale ready-promotion blocker" });
+  const draftPr = createPullRequest({
+    title: "Clear stale ready blocker",
+    isDraft: true,
+    headRefName: "codex/issue-102",
+    headRefOid: headSha,
+  });
+  const readyPr = createPullRequest({
+    title: "Clear stale ready blocker",
+    headRefName: "codex/issue-102",
+    headRefOid: headSha,
+  });
+  const staleFailureContext = createFailureContext("Configured local CI command failed before marking PR #116 ready.");
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "blocked",
+        blocked_reason: "verification",
+        pr_number: draftPr.number,
+        last_head_sha: headSha,
+        last_error: staleFailureContext.summary,
+        last_failure_context: staleFailureContext,
+        last_failure_signature: staleFailureContext.signature,
+        repeated_failure_signature_count: 2,
+        latest_local_ci_result: {
+          outcome: "failed",
+          summary: staleFailureContext.summary,
+          ran_at: "2026-03-13T06:20:00Z",
+          head_sha: headSha,
+          execution_mode: "legacy_shell_string",
+          command: "npm run ci:local",
+          stderr_summary: "previous local CI failure",
+          failure_class: "non_zero_exit",
+          remediation_target: "tracked_publishable_content",
+          verifier_drift_hint: null,
+        },
+      }),
+    },
+  };
+
+  let readyCalls = 0;
+  let snapshotLoads = 0;
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: createNoopStateStore(),
+    github: createDefaultGithub({
+      markPullRequestReady: async (prNumber: number) => {
+        assert.equal(prNumber, draftPr.number);
+        readyCalls += 1;
+      },
+    }),
+    context: {
+      state,
+      record: state.issues["102"]!,
+      issue,
+      workspacePath,
+      syncJournal: async () => undefined,
+      memoryArtifacts: TEST_MEMORY_ARTIFACTS,
+      pr: draftPr,
+      options: { dryRun: false },
+    },
+    derivePullRequestLifecycleSnapshot: (record, pr, checks, reviewThreads) =>
+      deriveSupervisorPullRequestLifecycleSnapshot(config, record, pr, checks, reviewThreads),
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    blockedReasonFromReviewState: (record, pr, checks, reviewThreads) =>
+      resolveBlockedReasonFromReviewState(config, record, pr, checks, reviewThreads),
+    summarizeChecks: (checks) => ({
+      hasPending: checks.some((check) => check.bucket === "pending"),
+      hasFailing: checks.some((check) => check.bucket === "fail"),
+    }),
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runLocalCiCommand: async () => undefined,
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
+    loadOpenPullRequestSnapshot: async () => {
+      snapshotLoads += 1;
+      return snapshotLoads === 1
+        ? { pr: draftPr, checks: [] satisfies PullRequestCheck[], reviewThreads: [] satisfies ReviewThread[] }
+        : {
+            pr: readyPr,
+            checks: [{ name: "build", state: "IN_PROGRESS", bucket: "pending", workflow: "CI" }],
+            reviewThreads: [] satisfies ReviewThread[],
+          };
+    },
+  });
+
+  assert.equal(result.pr.isDraft, false);
+  assert.equal(result.record.state, "waiting_ci");
+  assert.equal(result.record.blocked_reason, null);
+  assert.equal(result.record.last_error, null);
+  assert.equal(result.record.last_failure_context, null);
+  assert.equal(result.record.last_failure_signature, null);
+  assert.equal(result.record.repeated_failure_signature_count, 0);
+  assert.equal(result.record.latest_local_ci_result?.outcome, "passed");
+  assert.equal(readyCalls, 1);
+  assert.equal(snapshotLoads, 2);
+});
+
 test("handlePostTurnPullRequestTransitionsPhase blocks draft-to-ready promotion when configured local CI fails", async () => {
   const config = createConfig({ localCiCommand: "npm run ci:local" });
   const issue = createIssue({ title: "Gate draft promotion on local CI" });
