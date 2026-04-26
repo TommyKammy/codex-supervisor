@@ -10,9 +10,7 @@ import {
   appendTimelineArtifact,
   buildPathHygieneTimelineArtifact,
 } from "./timeline-artifacts";
-
-export const READY_PROMOTION_PATH_HYGIENE_REPAIR_SUMMARY =
-  "Ready-promotion path hygiene found actionable publishable tracked content; supervisor will retry a repair turn before marking the draft PR ready.";
+import { READY_PROMOTION_PATH_HYGIENE_REPAIR_SUMMARY } from "./ready-promotion-path-hygiene-repair";
 
 export type ReadyPromotionPathHygieneDecision =
   | {

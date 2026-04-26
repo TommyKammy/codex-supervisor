@@ -815,6 +815,121 @@ test("reconcileRecoverableBlockedIssueStates resumes conflicted tracked PR hando
   ]);
 });
 
+test("reconcileRecoverableBlockedIssueStates resumes handoff-missing queued ready-promotion path hygiene repairs", async () => {
+  const failureContext = {
+    category: "blocked" as const,
+    summary:
+      "Ready-promotion path hygiene found actionable publishable tracked content; supervisor will retry a repair turn before marking the draft PR ready. Actionable files: backend/app/features/auth/bridge.py.",
+    signature: "workstation-local-path-hygiene-failed",
+    command: "npm run verify:paths",
+    details: ["First fix: backend/app/features/auth/bridge.py (2 matches, Linux user home directory)."],
+    url: null,
+    updated_at: "2026-04-26T23:00:00Z",
+  };
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
+        issue_number: 315,
+        state: "blocked",
+        blocked_reason: "handoff_missing",
+        branch: "codex/issue-315",
+        pr_number: 321,
+        last_head_sha: "head-ready",
+        last_error: "Codex completed without updating the issue journal for issue #315.",
+        last_failure_context: {
+          category: "blocked",
+          summary: "Codex completed without updating the issue journal for issue #315.",
+          signature: "handoff-missing",
+          command: null,
+          details: ["Update the Codex Working Notes section before ending the turn."],
+          url: null,
+          updated_at: "2026-04-26T23:01:00Z",
+        },
+        last_failure_signature: "handoff-missing",
+        repeated_failure_signature_count: 4,
+        last_observed_host_local_pr_blocker_signature: failureContext.signature,
+        last_observed_host_local_pr_blocker_head_sha: "head-ready",
+        timeline_artifacts: [
+          {
+            type: "path_hygiene_result",
+            gate: "workstation_local_path_hygiene",
+            command: "npm run verify:paths",
+            head_sha: "head-ready",
+            outcome: "repair_queued",
+            remediation_target: "repair_already_queued",
+            next_action: "wait_for_repair_turn",
+            summary: failureContext.summary,
+            recorded_at: "2026-04-26T23:00:00Z",
+            repair_targets: ["backend/app/features/auth/bridge.py"],
+          },
+        ],
+      }),
+    ],
+  });
+  const issue = createIssue({
+    number: 315,
+    title: "Ready promotion repair",
+    updatedAt: "2026-04-26T23:01:00Z",
+  });
+  const pr = createPullRequest({
+    number: 321,
+    state: "OPEN",
+    isDraft: true,
+    headRefName: "codex/issue-315",
+    headRefOid: "head-ready",
+    mergeStateStatus: "CLEAN",
+  });
+  let saveCalls = 0;
+
+  const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => pr,
+      getIssue: async () => issue,
+      getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    {
+      touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+        return {
+          ...current,
+          ...patch,
+          updated_at: "2026-04-26T23:02:00Z",
+        };
+      },
+      async save(): Promise<void> {
+        saveCalls += 1;
+      },
+    },
+    state,
+    createConfig(),
+    [issue],
+    {
+      shouldAutoRetryHandoffMissing,
+      inferStateFromPullRequest,
+      inferFailureContext,
+      blockedReasonForLifecycleState,
+      isOpenPullRequest,
+      syncReviewWaitWindow,
+      syncCopilotReviewRequestObservation,
+      syncCopilotReviewTimeoutState,
+    },
+  );
+
+  const updated = state.issues["315"];
+  assert.equal(updated?.state, "repairing_ci");
+  assert.equal(updated?.blocked_reason, null);
+  assert.equal(updated?.last_failure_context?.summary, failureContext.summary);
+  assert.equal(updated?.last_failure_context?.command, "npm run verify:paths");
+  assert.deepEqual(updated?.last_failure_context?.details, [
+    "Actionable file: backend/app/features/auth/bridge.py",
+  ]);
+  assert.equal(updated?.last_failure_signature, failureContext.signature);
+  assert.equal(updated?.repeated_failure_signature_count, 1);
+  assert.equal(updated?.last_error, failureContext.summary);
+  assert.equal(saveCalls, 1);
+  assert.match(recoveryEvents[0]?.reason ?? "", /tracked_pr_lifecycle_recovered/);
+});
+
 test("reconcileRecoverableBlockedIssueStates clears stale tracked-PR review state when a conflicted handoff-missing PR advances heads", async () => {
   const config = createConfig();
   const state: SupervisorStateFile = createSupervisorState({

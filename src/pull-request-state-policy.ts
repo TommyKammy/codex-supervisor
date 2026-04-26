@@ -37,6 +37,7 @@ import {
   reviewProviderWaitPolicyFromConfig,
 } from "./core/review-providers";
 import { nowIso } from "./core/utils";
+import { hasQueuedReadyPromotionPathHygieneRepair } from "./ready-promotion-path-hygiene-repair";
 
 const COPILOT_REVIEW_PROPAGATION_GRACE_MS = 5_000;
 const DEFAULT_CONFIGURED_BOT_SETTLED_WAIT_MS = 5_000;
@@ -925,6 +926,10 @@ export function inferStateFromPullRequest(
 
   if (localReviewBlocksMerge(config, record, pr)) {
     return "blocked";
+  }
+
+  if (hasQueuedReadyPromotionPathHygieneRepair(record, pr)) {
+    return "repairing_ci";
   }
 
   if (pr.isDraft) {

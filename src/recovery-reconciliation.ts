@@ -60,6 +60,7 @@ import { buildTrackedPrStaleFailureConvergencePatch } from "./recovery-tracked-p
 import { mergeConflictDetected } from "./supervisor/supervisor-status-rendering";
 import { projectTrackedPrLifecycle } from "./tracked-pr-lifecycle-projection";
 import { hasFreshTrackedPrReadyPromotionBlockerEvidence } from "./tracked-pr-ready-promotion-blocker";
+import { queuedReadyPromotionPathHygieneRepairContext } from "./ready-promotion-path-hygiene-repair";
 import { clearRequirementsBlockerIssueComment } from "./requirements-blocker-issue-comment";
 
 const OPERATOR_REQUEUEABLE_STATES = new Set<RunState>(["blocked", "failed"]);
@@ -816,6 +817,41 @@ export async function reconcileRecoverableBlockedIssueStates(
       record.pr_number !== null
     ) {
       const trackedPullRequest = await github.getPullRequestIfExists(record.pr_number);
+      const repairContext = trackedPullRequest
+        ? queuedReadyPromotionPathHygieneRepairContext(record, trackedPullRequest)
+        : null;
+      if (trackedPullRequest && repairContext) {
+        const recoveryEvent = buildTrackedPrResumeRecoveryEvent(
+          record,
+          trackedPullRequest,
+          "repairing_ci",
+          buildRecoveryEvent,
+        );
+        const headAdvanceResetPatch = resetTrackedPrHeadScopedStateOnAdvance(record, trackedPullRequest.headRefOid);
+        const failureSignatureBaseRecord = {
+          ...record,
+          last_failure_signature: null,
+          repeated_failure_signature_count: 0,
+        };
+        const updated = stateStore.touch(record, applyRecoveryEvent({
+          state: "repairing_ci",
+          blocked_reason: null,
+          last_error: truncate(repairContext.summary, 1000),
+          last_failure_kind: null,
+          last_failure_context: repairContext,
+          ...applyFailureSignature(failureSignatureBaseRecord, repairContext),
+          last_blocker_signature: null,
+          pr_number: trackedPullRequest.number,
+          last_head_sha: trackedPullRequest.headRefOid,
+          codex_session_id: null,
+          ...headAdvanceResetPatch,
+        }, recoveryEvent));
+        state.issues[String(record.issue_number)] = updated;
+        changed = true;
+        recoveryEvents.push(recoveryEvent);
+        continue;
+      }
+
       if (!trackedPullRequest || trackedPullRequest.state !== "OPEN" || trackedPullRequest.mergedAt || !mergeConflictDetected(trackedPullRequest)) {
         continue;
       }
