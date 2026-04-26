@@ -677,6 +677,47 @@ test("shouldRunCodex only returns true for actionable supervisor states", () => 
   );
   assert.equal(
     shouldRunCodex(
+      createRecord({
+        state: "repairing_ci",
+        pr_number: 191,
+        last_head_sha: "head-ready",
+        last_failure_signature: "workstation-local-path-hygiene-failed",
+        last_failure_context: {
+          category: "blocked",
+          summary:
+            "Ready-promotion path hygiene found actionable publishable tracked content; supervisor will retry a repair turn before marking the draft PR ready. Actionable files: backend/app/features/auth/bridge.py.",
+          signature: "workstation-local-path-hygiene-failed",
+          command: "npm run verify:paths",
+          details: ["First fix: backend/app/features/auth/bridge.py (2 matches, Linux user home directory)."],
+          url: null,
+          updated_at: "2026-04-26T23:00:00Z",
+        },
+        last_observed_host_local_pr_blocker_signature: "workstation-local-path-hygiene-failed",
+        last_observed_host_local_pr_blocker_head_sha: "head-ready",
+        timeline_artifacts: [
+          {
+            type: "path_hygiene_result",
+            gate: "workstation_local_path_hygiene",
+            command: "npm run verify:paths",
+            head_sha: "head-ready",
+            outcome: "repair_queued",
+            remediation_target: "repair_already_queued",
+            next_action: "wait_for_repair_turn",
+            summary: "Ready-promotion path hygiene found actionable publishable tracked content.",
+            recorded_at: "2026-04-26T23:00:00Z",
+            repair_targets: ["backend/app/features/auth/bridge.py"],
+          },
+        ],
+      }),
+      createPullRequest({ number: 191, isDraft: true, headRefOid: "head-ready" }),
+      checks,
+      reviewThreads,
+      config,
+    ),
+    true,
+  );
+  assert.equal(
+    shouldRunCodex(
       createRecord({ state: "ready_to_merge", last_head_sha: "head-old" }),
       createPullRequest({ headRefOid: "head-new" }),
       checks,

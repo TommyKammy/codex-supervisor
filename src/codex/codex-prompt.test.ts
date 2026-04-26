@@ -895,6 +895,48 @@ test("buildCodexPrompt suppresses stale handoff next actions during repairing_ci
   assert.match(prompt, /- Primary failure or risk: npm run build currently fails on the active branch\./);
 });
 
+test("buildCodexPrompt includes current structured path hygiene repair context during repairing_ci", () => {
+  const prompt = buildCodexPrompt({
+    repoSlug: "owner/repo",
+    issue,
+    branch: "codex/issue-46",
+    workspacePath: "/tmp/workspaces/issue-46",
+    state: "repairing_ci" satisfies RunState,
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+    alwaysReadFiles: [],
+    onDemandMemoryFiles: [],
+    journalPath: "/tmp/workspaces/issue-46/.codex-supervisor/issue-journal.md",
+    journalExcerpt: `# Issue #46: Add a dedicated repair mode
+
+## Codex Working Notes
+### Current Handoff
+- Hypothesis: A stale handoff says checks are green.
+- Next exact step: Leave the draft PR alone and wait.
+
+### Scratchpad
+- Keep this section short.`,
+    failureContext: {
+      category: "blocked",
+      summary:
+        "Ready-promotion path hygiene found actionable publishable tracked content; supervisor will retry a repair turn before marking the draft PR ready. Actionable files: backend/app/features/auth/bridge.py.",
+      signature: "workstation-local-path-hygiene-failed",
+      command: "npm run verify:paths",
+      details: ["First fix: backend/app/features/auth/bridge.py (2 matches, Linux user home directory)."],
+      url: null,
+      updated_at: "2026-04-26T23:00:00Z",
+    },
+    previousSummary: "Checks are green.",
+    previousError: "wait_for_repair_turn",
+  });
+
+  assert.match(prompt, /Structured failure context:/);
+  assert.match(prompt, /Command\/source: npm run verify:paths/);
+  assert.match(prompt, /backend\/app\/features\/auth\/bridge\.py/);
+  assert.doesNotMatch(prompt, /Leave the draft PR alone and wait\./);
+});
+
 test("buildCodexPrompt suppresses structured next exact step guidance during local_review_fix without dropping later fields", () => {
   const prompt = buildCodexPrompt({
     repoSlug: "owner/repo",
