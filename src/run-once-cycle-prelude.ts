@@ -171,6 +171,9 @@ export async function runOnceCyclePrelude(
     await setReconciliationPhase("stale_active_issue_reservation");
     const staleReservationEvents = await args.reconcileStaleActiveIssueReservation(state);
     collectRecoveryEvents(staleReservationEvents);
+    const blockedInterruptedTurnThisCycle = staleReservationEvents.some((event) =>
+      event.reason.startsWith("interrupted_turn_recovery:")
+    );
 
     const activeRecord =
       state.activeIssueNumber === null ? null : state.issues[String(state.activeIssueNumber)] ?? null;
@@ -304,7 +307,7 @@ export async function runOnceCyclePrelude(
     });
     collectRecoveryEvents(recoverableBlockedEvents);
 
-    if (hasNonTrackedRecoverableBlockedStates(state)) {
+    if (!blockedInterruptedTurnThisCycle && hasNonTrackedRecoverableBlockedStates(state)) {
       await setReconciliationPhase("recoverable_blocked_issue_states");
       const remainingRecoverableBlockedEvents = await args.reconcileRecoverableBlockedIssueStates(state, issues);
       collectRecoveryEvents(remainingRecoverableBlockedEvents);

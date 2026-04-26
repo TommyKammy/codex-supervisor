@@ -171,6 +171,7 @@ test("runCli routes supervisor runtime commands through the supervisor runtime b
     command: "status",
     dryRun: false,
     why: true,
+    explainMode: "summary",
     issueNumber: undefined,
     service,
   });
@@ -206,6 +207,7 @@ test("runCli routes web through the supervisor runtime boundary", async () => {
     command: "web",
     dryRun: false,
     why: false,
+    explainMode: "summary",
     issueNumber: undefined,
     service,
     loopController,
@@ -245,6 +247,7 @@ test("runCli routes loop commands through a dedicated loop controller boundary",
     command: "loop",
     dryRun: false,
     why: false,
+    explainMode: "summary",
     issueNumber: undefined,
     service,
     loopController,
@@ -269,6 +272,7 @@ test("runCli routes requeue through the supervisor runtime boundary", async () =
     command: "requeue",
     dryRun: false,
     why: false,
+    explainMode: "summary",
     issueNumber: 123,
     service,
   });
@@ -292,6 +296,7 @@ test("runCli routes rollup-execution-metrics through the supervisor runtime boun
     command: "rollup-execution-metrics",
     dryRun: false,
     why: false,
+    explainMode: "summary",
     issueNumber: undefined,
     service,
   });
@@ -315,6 +320,7 @@ test("runCli routes summarize-post-merge-audits through the supervisor runtime b
     command: "summarize-post-merge-audits",
     dryRun: false,
     why: false,
+    explainMode: "summary",
     issueNumber: undefined,
     service,
   });
@@ -338,6 +344,7 @@ test("runCli routes reset-corrupt-json-state through the supervisor runtime boun
     command: "reset-corrupt-json-state",
     dryRun: false,
     why: false,
+    explainMode: "summary",
     issueNumber: undefined,
     service,
   });
@@ -361,6 +368,7 @@ test("runCli routes prune-orphaned-workspaces through the supervisor runtime bou
     command: "prune-orphaned-workspaces",
     dryRun: false,
     why: false,
+    explainMode: "summary",
     issueNumber: undefined,
     service,
   });

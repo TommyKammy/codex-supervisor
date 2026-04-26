@@ -253,8 +253,11 @@ test("buildSupervisorCycleDecisionSnapshot keeps the decision inputs narrow and 
     headSha: "head-407",
     headStatus: "current",
     context: "notice",
+    command: null,
+    stderrSummary: null,
     failureClass: null,
     remediationTarget: null,
+    verifierDriftHint: null,
   });
 });
 

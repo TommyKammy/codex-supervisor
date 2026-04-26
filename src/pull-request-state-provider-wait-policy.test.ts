@@ -450,7 +450,7 @@ test("inferStateFromPullRequest does not spend strict CodeRabbit timeout budget 
   });
 });
 
-test("inferStateFromPullRequest does not wait forever when strict CodeRabbit timeout is disabled", () => {
+test("inferStateFromPullRequest keeps waiting for strict CodeRabbit current-head signal when timeout is disabled", () => {
   withStubbedDateNow("2026-03-11T00:11:00Z", () => {
     const config = createConfig({
       reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
@@ -476,7 +476,7 @@ test("inferStateFromPullRequest does not wait forever when strict CodeRabbit tim
         passingChecks(),
         [],
       ),
-      "ready_to_merge",
+      "waiting_ci",
     );
   });
 });

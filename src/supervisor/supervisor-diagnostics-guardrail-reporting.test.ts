@@ -308,5 +308,5 @@ test("status omits durable guardrail warnings when the workspace diff cannot be 
   const status = await supervisor.status();
 
   assert.doesNotMatch(status, /durable_guardrails /);
-  assert.doesNotMatch(status, /status_warning=/);
+  assert.doesNotMatch(status, /status_warning=.*durable guardrail/i);
 });

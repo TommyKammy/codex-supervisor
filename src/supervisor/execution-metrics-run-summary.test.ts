@@ -353,7 +353,7 @@ test("prepareIssueExecutionContext writes a run summary artifact for done outcom
   assert.equal(postMergeAudit.executionMetrics?.terminalState, "done");
   assert.equal(postMergeAudit.completion.terminalState, "done");
   assert.match(postMergeAudit.completion.lastRecoveryReason ?? "", /merged_pr_convergence/u);
-  assert.equal(postMergeAudit.artifacts.executionMetricsSummaryPath, executionMetricsRunSummaryPath(workspacePath));
+  assert.equal(postMergeAudit.artifacts.executionMetricsSummaryPath, ".codex-supervisor/execution-metrics/run-summary.json");
 });
 
 test("executeCodexTurnPhase writes a run summary artifact for blocked outcomes", async () => {

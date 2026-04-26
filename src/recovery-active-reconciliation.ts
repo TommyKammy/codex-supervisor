@@ -36,6 +36,15 @@ const OWNER_GUARDED_ACTIVE_STATES = new Set<IssueRunRecord["state"]>([
   "addressing_review",
 ]);
 
+const PR_LIFECYCLE_ACTIVE_STATES = new Set<IssueRunRecord["state"]>([
+  "draft_pr",
+  "local_review",
+  "pr_open",
+  "waiting_ci",
+  "ready_to_merge",
+  "merging",
+]);
+
 type DurableTurnUpdateEvidence =
   | "journal_changed"
   | "journal_mtime_advanced"
@@ -135,6 +144,9 @@ export async function reconcileStaleActiveIssueReservationInModule(args: {
   }
 
   if (!OWNER_GUARDED_ACTIVE_STATES.has(record.state)) {
+    if (record.pr_number !== null && PR_LIFECYCLE_ACTIVE_STATES.has(record.state)) {
+      return recoveryEvents;
+    }
     args.state.activeIssueNumber = null;
     await args.stateStore.save(args.state);
     return recoveryEvents;
@@ -161,7 +173,10 @@ export async function reconcileStaleActiveIssueReservationInModule(args: {
             : "issue lock and session lock were missing";
   }
 
-  const interruptedTurnMarker = await readInterruptedTurnMarker(record.workspace);
+  const markerWorkspace = args.config
+    ? resolveTrackedIssueHostPaths(args.config, record).workspace
+    : record.workspace;
+  const interruptedTurnMarker = await readInterruptedTurnMarker(markerWorkspace);
   const interruptedTurnUpdate =
     interruptedTurnMarker && interruptedTurnMarker.issueNumber === record.issue_number
       ? await detectDurableTurnUpdateSince(args.config ?? null, record, interruptedTurnMarker)
@@ -209,7 +224,7 @@ export async function reconcileStaleActiveIssueReservationInModule(args: {
     );
     args.state.activeIssueNumber = null;
     await args.stateStore.save(args.state);
-    await clearInterruptedTurnMarker(record.workspace);
+    await clearInterruptedTurnMarker(markerWorkspace);
     recoveryEvents.push(recoveryEvent);
     return recoveryEvents;
   }
@@ -222,7 +237,7 @@ export async function reconcileStaleActiveIssueReservationInModule(args: {
     record.state === "stabilizing" && matchedPullRequest === null && args.classifyStaleStabilizingNoPrBranchState
       ? await args.classifyStaleStabilizingNoPrBranchState(record)
       : "recoverable";
-  const shouldRequeueStabilizing = false;
+  const shouldRequeueStabilizing = record.state === "stabilizing" && matchedPullRequest === null;
   const staleNoPrRepeatLimit = Math.max(args.sameFailureSignatureRepeatLimit ?? Number.POSITIVE_INFINITY, 1);
   const shouldMarkAlreadySatisfiedOnMain =
     shouldRequeueStabilizing && staleNoPrBranchState === "already_satisfied_on_main";
@@ -326,7 +341,7 @@ export async function reconcileStaleActiveIssueReservationInModule(args: {
   args.state.activeIssueNumber = null;
   await args.stateStore.save(args.state);
   if (interruptedTurnMarker) {
-    await clearInterruptedTurnMarker(record.workspace);
+    await clearInterruptedTurnMarker(markerWorkspace);
   }
   recoveryEvents.push(recoveryEvent);
   return recoveryEvents;

@@ -3681,7 +3681,7 @@ test("reconcileStaleActiveIssueReservation reports interrupted-turn progress as 
   await assert.rejects(fs.access(path.join(workspacePath, ".codex-supervisor", "turn-in-progress.json")));
 });
 
-test("reconcileStaleActiveIssueReservation clears only the stale reservation for a stabilizing issue without a tracked PR", async () => {
+test("reconcileStaleActiveIssueReservation requeues a stale stabilizing issue without a tracked PR", async () => {
   const config = createConfig();
   const lockRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-locks-"));
   const state: SupervisorStateFile = {
@@ -3720,14 +3720,16 @@ test("reconcileStaleActiveIssueReservation clears only the stale reservation for
   });
 
   assert.equal(state.activeIssueNumber, null);
-  assert.equal(state.issues["366"]?.state, "stabilizing");
+  assert.equal(state.issues["366"]?.state, "queued");
   assert.equal(state.issues["366"]?.pr_number, null);
   assert.equal(state.issues["366"]?.codex_session_id, null);
+  assert.equal(state.issues["366"]?.last_failure_signature, "stale-stabilizing-no-pr-recovery-loop");
+  assert.equal(state.issues["366"]?.stale_stabilizing_no_pr_recovery_count, 1);
   assert.equal(saveCalls, 1);
   assert.equal(recoveryEvents.length, 1);
   assert.match(
     formatRecoveryLog(recoveryEvents) ?? "",
-    /recovery issue=#366 reason=stale_state_cleanup: cleared stale active reservation after issue lock and session lock were missing/,
+    /recovery issue=#366 reason=stale_state_cleanup: requeued stabilizing issue #366 after issue lock and session lock were missing/,
   );
 });
 
@@ -3922,7 +3924,7 @@ test("reconcileStaleActiveIssueReservation clears stale no-PR failure tracking a
   );
 });
 
-test("reconcileStaleActiveIssueReservation leaves repeated stale stabilizing no-PR records unchanged while clearing the stale reservation", async () => {
+test("reconcileStaleActiveIssueReservation blocks repeated stale stabilizing no-PR records at the retry limit", async () => {
   const config = createConfig();
   const lockRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-locks-"));
   const state: SupervisorStateFile = {
@@ -3964,32 +3966,32 @@ test("reconcileStaleActiveIssueReservation leaves repeated stale stabilizing no-
   });
 
   assert.equal(state.activeIssueNumber, null);
-  assert.equal(state.issues["366"]?.state, "stabilizing");
+  assert.equal(state.issues["366"]?.state, "blocked");
   assert.equal(state.issues["366"]?.pr_number, null);
   assert.equal(state.issues["366"]?.codex_session_id, null);
-  assert.equal(state.issues["366"]?.blocked_reason, null);
+  assert.equal(state.issues["366"]?.blocked_reason, "manual_review");
   assert.equal(
     state.issues["366"]?.last_failure_signature,
     "stale-stabilizing-no-pr-recovery-loop",
   );
-  assert.equal(
-    state.issues["366"]?.repeated_failure_signature_count,
-    config.sameFailureSignatureRepeatLimit - 1,
-  );
+  assert.equal(state.issues["366"]?.repeated_failure_signature_count, 0);
   assert.equal(
     state.issues["366"]?.stale_stabilizing_no_pr_recovery_count,
-    config.sameFailureSignatureRepeatLimit - 1,
+    config.sameFailureSignatureRepeatLimit,
   );
-  assert.equal(state.issues["366"]?.last_error, createRecord().last_error);
+  assert.match(
+    state.issues["366"]?.last_error ?? "",
+    /re-entered stale stabilizing recovery without a tracked PR 3 times; manual intervention is required/,
+  );
   assert.equal(saveCalls, 1);
   assert.equal(recoveryEvents.length, 1);
   assert.match(
     formatRecoveryLog(recoveryEvents) ?? "",
-    /recovery issue=#366 reason=stale_state_cleanup: cleared stale active reservation after issue lock and session lock were missing/,
+    /recovery issue=#366 reason=stale_state_manual_stop: blocked issue #366 after repeated stale stabilizing recovery without a tracked PR/,
   );
 });
 
-test("reconcileStaleActiveIssueReservation leaves already-satisfied-on-main stale stabilizing records unchanged while clearing the stale reservation", async () => {
+test("reconcileStaleActiveIssueReservation blocks already-satisfied-on-main stale stabilizing records for manual review", async () => {
   const config = createConfig();
   const lockRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-locks-"));
   const state: SupervisorStateFile = {
@@ -4035,21 +4037,24 @@ test("reconcileStaleActiveIssueReservation leaves already-satisfied-on-main stal
   });
 
   assert.equal(state.activeIssueNumber, null);
-  assert.equal(state.issues["366"]?.state, "stabilizing");
+  assert.equal(state.issues["366"]?.state, "blocked");
   assert.equal(state.issues["366"]?.pr_number, null);
   assert.equal(state.issues["366"]?.codex_session_id, null);
-  assert.equal(state.issues["366"]?.blocked_reason, null);
-  assert.equal(state.issues["366"]?.last_error, createRecord().last_error);
-  assert.equal(state.issues["366"]?.last_failure_kind, createRecord().last_failure_kind);
-  assert.equal(state.issues["366"]?.last_failure_context?.signature, createRecord().last_failure_context?.signature);
-  assert.equal(state.issues["366"]?.last_failure_signature, "stale-stabilizing-no-pr-recovery-loop");
-  assert.equal(state.issues["366"]?.repeated_failure_signature_count, 1);
-  assert.equal(state.issues["366"]?.stale_stabilizing_no_pr_recovery_count, 1);
+  assert.equal(state.issues["366"]?.blocked_reason, "manual_review");
+  assert.match(
+    state.issues["366"]?.last_error ?? "",
+    /stale stabilizing recovery without authoritative completion evidence/,
+  );
+  assert.equal(state.issues["366"]?.last_failure_kind, null);
+  assert.equal(state.issues["366"]?.last_failure_context?.signature, "failed-no-pr-already-satisfied-on-main");
+  assert.equal(state.issues["366"]?.last_failure_signature, null);
+  assert.equal(state.issues["366"]?.repeated_failure_signature_count, 0);
+  assert.equal(state.issues["366"]?.stale_stabilizing_no_pr_recovery_count, 0);
   assert.equal(saveCalls, 1);
   assert.equal(recoveryEvents.length, 1);
   assert.match(
     formatRecoveryLog(recoveryEvents) ?? "",
-    /recovery issue=#366 reason=stale_state_cleanup: cleared stale active reservation after issue lock and session lock were missing/,
+    /recovery issue=#366 reason=stale_stabilizing_no_pr_manual_review: blocked issue #366 after stale stabilizing recovery found an open issue with no authoritative completion signal/,
   );
 });
 

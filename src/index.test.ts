@@ -912,6 +912,6 @@ test("replay-corpus prints one compact normalized mismatch line per failing case
   assert.match(result.stdout, /Replay corpus summary: total=1 passed=0 failed=1/);
   assert.match(
     result.stdout,
-    /Mismatch: review-blocked \(issue #532\) expected\(nextState=ready_to_merge, shouldRunCodex=true, blockedReason=none, failureSignature=none\) actual\(nextState=blocked, shouldRunCodex=false, blockedReason=manual_review, failureSignature=stalled-bot:thread-1\)/,
+    /Mismatch: review-blocked \(issue #532\) expected\(nextState=ready_to_merge, shouldRunCodex=true, blockedReason=none, failureSignature=none\) actual\(nextState=blocked, shouldRunCodex=false, blockedReason=stale_review_bot, failureSignature=stalled-bot:thread-1\)/,
   );
 });
