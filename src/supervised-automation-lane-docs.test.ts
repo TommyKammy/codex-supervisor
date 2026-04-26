@@ -48,3 +48,36 @@ test("supervised automation lane product primitive note is repo-owned and discov
   assert.doesNotMatch(note, /\/Users\/[A-Za-z0-9._-]+\//);
   assert.doesNotMatch(note, /C:\\Users\\[A-Za-z0-9._-]+\\/);
 });
+
+test("supervised automation lane documents an auditable work state machine", async () => {
+  const note = await readRepoFile("docs/supervised-automation-lane.md");
+
+  assert.match(note, /^### Auditable Work State Machine$/m);
+  assert.match(note, /operator-facing state is a trust surface/i);
+  assert.match(note, /status, explain, WebUI, evidence timeline, and recovery diagnostics/i);
+  assert.match(note, /does not rename runtime states/i);
+
+  for (const heading of ["State", "Reason", "Evidence", "Authority Boundary", "Next Operator Action"]) {
+    assert.match(note, new RegExp(`\\| ${heading} `));
+  }
+
+  for (const state of [
+    "queued",
+    "running",
+    "blocked",
+    "waiting_ci",
+    "waiting_review",
+    "repairing_ci",
+    "merging",
+    "done",
+    "manual_review",
+  ]) {
+    const row = new RegExp("\\| `" + state + "` \\|[^\\n]+\\|[^\\n]+\\|[^\\n]+\\|[^\\n]+\\|");
+    assert.match(note, row, `${state} must map to reason, evidence, authority, and action`);
+  }
+
+  assert.match(note, /supervisor-owned/i);
+  assert.match(note, /operator judgment/i);
+  assert.match(note, /fresh GitHub facts/i);
+  assert.match(note, /issue journal/i);
+});
