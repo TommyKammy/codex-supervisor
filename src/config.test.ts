@@ -1828,6 +1828,14 @@ test("shipped CodeRabbit starter profile enables strict current-head provider ga
   assert.equal(raw.configuredBotCurrentHeadSignalTimeoutAction, "block");
 });
 
+test("shipped CodeRabbit starter profile adopts the repo-owned local CI gate", async () => {
+  const rootDir = path.resolve(__dirname, "..");
+  const profilePath = path.join(rootDir, "supervisor.config.coderabbit.json");
+  const raw = JSON.parse(await fs.readFile(profilePath, "utf8")) as { localCiCommand?: unknown };
+
+  assert.equal(raw.localCiCommand, "npm run verify:supervisor-pre-pr");
+});
+
 test("repo gitignore ignores workstation noise and live issue journals without hiding intentional files", async (t) => {
   const rootDir = path.resolve(__dirname, "..");
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-gitignore-"));
