@@ -399,7 +399,9 @@ async function applyTrackedPrLifecycleState(args: {
         ? truncate(effectiveFailureContext.summary, 1000)
         : localReviewRepairSummary
           ? truncate(localReviewRepairSummary, 1000)
-          : args.record.last_error,
+          : refreshedLifecycle.nextState === "blocked"
+            ? args.record.last_error
+            : null,
     last_failure_context: effectiveFailureContext,
     ...args.applyFailureSignature(args.record, effectiveFailureContext),
     blocked_reason:
