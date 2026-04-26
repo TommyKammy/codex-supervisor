@@ -13,6 +13,7 @@ type DashboardOperatorActionToken =
 
 interface DashboardOperatorActionSummary {
   action: DashboardOperatorActionToken;
+  priority: number;
   summary: string;
 }
 
@@ -438,6 +439,8 @@ export function parseRenderedOperatorAction(line: string): DashboardOperatorActi
   }
 
   const action = readOperatorActionToken(line, "action") as DashboardOperatorActionToken | null;
+  const priorityValue = readOperatorActionToken(line, "priority");
+  const priority = priorityValue === null ? Number.NaN : Number.parseInt(priorityValue, 10);
   const summary = /(?:^|\s)summary=(.*)$/u.exec(line)?.[1]?.trim() || null;
   const validActions: Record<DashboardOperatorActionToken, true> = {
     continue: true,
@@ -451,22 +454,23 @@ export function parseRenderedOperatorAction(line: string): DashboardOperatorActi
     safe_to_ignore: true,
   };
 
-  if (action === null || validActions[action] !== true || summary === null) {
+  if (action === null || validActions[action] !== true || !Number.isFinite(priority) || summary === null) {
     return null;
   }
 
-  return { action, summary };
+  return { action, priority, summary };
 }
 
 export function selectRenderedOperatorAction(status: DashboardStatusLike | null | undefined): DashboardOperatorActionSummary | null {
   const lines = Array.isArray(status?.detailedStatusLines) ? status.detailedStatusLines : [];
+  let selected: DashboardOperatorActionSummary | null = null;
   for (const line of lines) {
     const action = parseRenderedOperatorAction(line);
-    if (action !== null) {
-      return action;
+    if (action !== null && (selected === null || action.priority > selected.priority)) {
+      selected = action;
     }
   }
-  return null;
+  return selected;
 }
 
 export function collectTrackedIssues(

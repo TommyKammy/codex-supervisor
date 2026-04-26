@@ -417,13 +417,18 @@ export function buildStatusOperatorCockpitViewModel(args: {
     ...(args.readinessLines ?? []),
     ...(args.whyLines ?? []),
   ];
+  const taskContractLines = [
+    ...(args.whyLines ?? []),
+    ...args.detailedStatusLines,
+    ...(args.readinessLines ?? []),
+  ];
   const action = selectStatusOperatorAction({ detailedStatusLines: args.detailedStatusLines });
   const evidenceLine = firstMatchingLine(lines, action.source);
   const evidence = evidenceLine === null ? [] : [evidenceLine];
 
   return {
     action,
-    currentTaskContract: summarizeCurrentTaskContract(lines),
+    currentTaskContract: summarizeCurrentTaskContract(taskContractLines),
     trustPosture: summarizeTrustPosture(lines),
     gateState: summarizeGateState(evidenceLine),
     blockingReason: summarizeBlockingReason(evidenceLine),

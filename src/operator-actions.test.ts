@@ -58,20 +58,30 @@ test("selectRestartRecommendation classifies every restart recommendation catego
 });
 
 test("parseOperatorActionLine reads rendered status and doctor action lines", () => {
+  const expected = {
+    action: "fix_config",
+    source: "tracked_pr_host_local_ci",
+    priority: 80,
+    summary:
+      "Host-local CI could not run because the workspace environment is missing prerequisites; fix configuration or workspace preparation before continuing.",
+  };
+
   assert.deepEqual(
     parseOperatorActionLine(
       "operator_action action=fix_config source=tracked_pr_host_local_ci priority=80 summary=Host-local CI could not run because the workspace environment is missing prerequisites; fix configuration or workspace preparation before continuing.",
     ),
-    {
-      action: "fix_config",
-      source: "tracked_pr_host_local_ci",
-      priority: 80,
-      summary:
-        "Host-local CI could not run because the workspace environment is missing prerequisites; fix configuration or workspace preparation before continuing.",
-    },
+    expected,
+  );
+
+  assert.deepEqual(
+    parseOperatorActionLine(
+      "doctor_operator_action action=fix_config source=tracked_pr_host_local_ci priority=80 summary=Host-local CI could not run because the workspace environment is missing prerequisites; fix configuration or workspace preparation before continuing.",
+    ),
+    expected,
   );
 
   assert.equal(parseOperatorActionLine("operator_action action=unknown source=status priority=0 summary=nope"), null);
+  assert.equal(parseOperatorActionLine("doctor_operator_action action=unknown source=doctor priority=0 summary=nope"), null);
 });
 
 test("buildStatusOperatorCockpitViewModel carries the shared action contract and evidence", () => {
@@ -100,6 +110,16 @@ test("buildStatusOperatorCockpitViewModel carries the shared action contract and
       ],
       fallbackCommand: "node dist/index.js doctor --config <supervisor-config-path>",
     },
+  );
+});
+
+test("buildStatusOperatorCockpitViewModel prefers whyLines for the current task contract", () => {
+  assert.equal(
+    buildStatusOperatorCockpitViewModel({
+      detailedStatusLines: ["selected_issue=#1777"],
+      whyLines: ["selected_issue=#1783"],
+    }).currentTaskContract,
+    "selected_issue=#1783",
   );
 });
 

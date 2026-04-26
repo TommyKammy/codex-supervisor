@@ -665,6 +665,27 @@ test("buildOverviewSummary and related beginner-first helpers produce concise En
   );
 
   assert.deepEqual(
+    buildPrimaryActionSummary({
+      status: {
+        selectionSummary: { selectedIssueNumber: 77 },
+        runnableIssues: [{ issueNumber: 77, title: "Ready issue", readiness: "execution_ready" }],
+        detailedStatusLines: [
+          "operator_action action=continue source=status priority=0 summary=No blocking operator action was detected; continue normal supervisor operation.",
+          "operator_action action=manual_review source=tracked_pr_review priority=70 summary=Review threads require operator attention before the supervisor can continue.",
+        ],
+      },
+      doctor: { overallStatus: "pass", checks: [] },
+      connectionPhase: "open",
+      refreshPhase: "idle",
+      hasSuccessfulRefresh: true,
+    }),
+    {
+      title: "Complete manual review",
+      detail: "Review threads require operator attention before the supervisor can continue.",
+    },
+  );
+
+  assert.deepEqual(
     buildAttentionItems({
       status: {
         inventoryStatus: {
