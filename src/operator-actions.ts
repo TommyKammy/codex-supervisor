@@ -18,6 +18,16 @@ export interface OperatorAction {
   summary: string;
 }
 
+export interface OperatorCockpitViewModel {
+  action: OperatorAction;
+  currentTaskContract: string | null;
+  trustPosture: string | null;
+  gateState: string | null;
+  blockingReason: string | null;
+  evidence: string[];
+  fallbackCommand: string | null;
+}
+
 export type RestartRecommendationCategory =
   | "safe_restart"
   | "restart_required_for_convergence"
@@ -75,6 +85,58 @@ const doctorFallbackOperatorAction: OperatorAction = {
   priority: 0,
   summary: "No blocking doctor action was detected; continue normal supervisor operation.",
 };
+
+function readTokenValue(line: string, key: string): string | null {
+  const match = new RegExp(`(?:^|\\s)${key}=([^\\s]+)`, "u").exec(line);
+  return match?.[1] ?? null;
+}
+
+function readSummaryValue(line: string): string | null {
+  const match = /(?:^|\s)summary=(.*)$/u.exec(line);
+  return match?.[1]?.trim() || null;
+}
+
+export function parseOperatorActionLine(line: string): OperatorAction | null {
+  if (!/^(operator_action|doctor_operator_action)\b/u.test(line)) {
+    return null;
+  }
+
+  const action = readTokenValue(line, "action") as OperatorActionToken | null;
+  const source = readTokenValue(line, "source");
+  const priorityValue = readTokenValue(line, "priority");
+  const summary = readSummaryValue(line);
+  const validActions: Record<OperatorActionToken, true> = {
+    continue: true,
+    restart_loop: true,
+    fix_config: true,
+    adopt_local_ci: true,
+    dismiss_local_ci: true,
+    manual_review: true,
+    resolve_stale_review_bot: true,
+    provider_outage_suspected: true,
+    safe_to_ignore: true,
+  };
+  const priority = priorityValue === null ? Number.NaN : Number.parseInt(priorityValue, 10);
+
+  if (
+    action === null ||
+    validActions[action] !== true ||
+    source === null ||
+    !Number.isFinite(priority) ||
+    summary === null
+  ) {
+    return null;
+  }
+
+  return { action, source, priority, summary };
+}
+
+function selectRenderedOperatorAction(lines: string[]): OperatorAction | null {
+  const actions = lines
+    .map(parseOperatorActionLine)
+    .filter((action): action is OperatorAction => action !== null);
+  return actions.length === 0 ? null : chooseHighestPriority(actions, statusFallbackOperatorAction);
+}
 
 export function selectRestartRecommendation(args: {
   detailedStatusLines: string[];
@@ -188,6 +250,11 @@ export function appendRestartRecommendationLine(
 export function selectStatusOperatorAction(args: {
   detailedStatusLines: string[];
 }): OperatorAction {
+  const renderedAction = selectRenderedOperatorAction(args.detailedStatusLines);
+  if (renderedAction !== null) {
+    return renderedAction;
+  }
+
   const actions: OperatorAction[] = [];
 
   for (const line of args.detailedStatusLines) {
@@ -261,6 +328,108 @@ export function selectStatusOperatorAction(args: {
   }
 
   return chooseHighestPriority(actions, statusFallbackOperatorAction);
+}
+
+function fallbackCommandForOperatorAction(action: OperatorActionToken): string | null {
+  if (action === "fix_config" || action === "adopt_local_ci" || action === "dismiss_local_ci") {
+    return "node dist/index.js doctor --config <supervisor-config-path>";
+  }
+  if (action === "restart_loop") {
+    return "node dist/index.js status --why --config <supervisor-config-path>";
+  }
+  if (
+    action === "manual_review" ||
+    action === "resolve_stale_review_bot" ||
+    action === "provider_outage_suspected"
+  ) {
+    return "node dist/index.js status --why --config <supervisor-config-path>";
+  }
+  return null;
+}
+
+function firstMatchingLine(lines: string[], source: string): string | null {
+  return lines.find((line) => line.startsWith(`${source} `) || line === source) ?? null;
+}
+
+function summarizeCurrentTaskContract(lines: string[]): string | null {
+  for (const line of lines) {
+    const selectedIssue = readTokenValue(line, "selected_issue");
+    if (selectedIssue !== null && selectedIssue !== "none") {
+      return `selected_issue=${selectedIssue}`;
+    }
+    const activeIssue = readTokenValue(line, "active_issue");
+    if (activeIssue !== null && activeIssue !== "none") {
+      return `active_issue=${activeIssue}`;
+    }
+    if (/^current_issue=/u.test(line) || /^current_issue\b/u.test(line)) {
+      return line;
+    }
+  }
+  return null;
+}
+
+function summarizeTrustPosture(lines: string[]): string | null {
+  const trustMode = lines.map((line) => readTokenValue(line, "trust_mode")).find((value) => value !== null) ?? null;
+  const executionSafetyMode =
+    lines.map((line) => readTokenValue(line, "execution_safety_mode")).find((value) => value !== null) ?? null;
+  if (trustMode === null && executionSafetyMode === null) {
+    return null;
+  }
+  return [
+    trustMode === null ? null : `trust_mode=${trustMode}`,
+    executionSafetyMode === null ? null : `execution_safety_mode=${executionSafetyMode}`,
+  ].filter(Boolean).join(" ");
+}
+
+function summarizeGateState(evidenceLine: string | null): string | null {
+  if (evidenceLine === null) {
+    return null;
+  }
+  const gate = readTokenValue(evidenceLine, "gate");
+  const remediationTarget = readTokenValue(evidenceLine, "remediation_target");
+  if (gate === null && remediationTarget === null) {
+    return null;
+  }
+  return [
+    gate === null ? null : `gate=${gate}`,
+    remediationTarget === null ? null : `remediation_target=${remediationTarget}`,
+  ].filter(Boolean).join(" ");
+}
+
+function summarizeBlockingReason(evidenceLine: string | null): string | null {
+  if (evidenceLine === null) {
+    return null;
+  }
+  return (
+    readTokenValue(evidenceLine, "blocked_reason") ??
+    readTokenValue(evidenceLine, "local_blocked_reason") ??
+    readTokenValue(evidenceLine, "reason")
+  );
+}
+
+export function buildStatusOperatorCockpitViewModel(args: {
+  detailedStatusLines: string[];
+  readinessLines?: string[];
+  whyLines?: string[];
+}): OperatorCockpitViewModel {
+  const lines = [
+    ...args.detailedStatusLines,
+    ...(args.readinessLines ?? []),
+    ...(args.whyLines ?? []),
+  ];
+  const action = selectStatusOperatorAction({ detailedStatusLines: args.detailedStatusLines });
+  const evidenceLine = firstMatchingLine(lines, action.source);
+  const evidence = evidenceLine === null ? [] : [evidenceLine];
+
+  return {
+    action,
+    currentTaskContract: summarizeCurrentTaskContract(lines),
+    trustPosture: summarizeTrustPosture(lines),
+    gateState: summarizeGateState(evidenceLine),
+    blockingReason: summarizeBlockingReason(evidenceLine),
+    evidence,
+    fallbackCommand: fallbackCommandForOperatorAction(action.action),
+  };
 }
 
 export function selectDoctorOperatorAction(args: {

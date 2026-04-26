@@ -27,6 +27,9 @@ import {
   collectTimelineEventIssueNumbers,
   humanizeTimelineValue,
   parseSelectedIssueNumber,
+  parseRenderedOperatorAction,
+  readOperatorActionToken,
+  selectRenderedOperatorAction,
 } from "./webui-dashboard-browser-logic";
 import {
   buildWorkflowSteps,
@@ -108,6 +111,9 @@ const injectedBrowserLogic = [
   describeTimelineEvent,
   collectTimelineEventIssueNumbers,
   parseSelectedIssueNumber,
+  readOperatorActionToken,
+  parseRenderedOperatorAction,
+  selectRenderedOperatorAction,
   countCandidateIssues,
   buildWorkflowSteps,
   buildRuntimeRecoverySummaryLines,

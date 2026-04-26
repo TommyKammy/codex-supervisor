@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildStatusOperatorCockpitViewModel,
+  parseOperatorActionLine,
   type RestartRecommendation,
   selectRestartRecommendation,
 } from "./operator-actions";
@@ -52,6 +54,52 @@ test("selectRestartRecommendation classifies every restart recommendation catego
       ],
     })).category,
     "manual_review_before_restart",
+  );
+});
+
+test("parseOperatorActionLine reads rendered status and doctor action lines", () => {
+  assert.deepEqual(
+    parseOperatorActionLine(
+      "operator_action action=fix_config source=tracked_pr_host_local_ci priority=80 summary=Host-local CI could not run because the workspace environment is missing prerequisites; fix configuration or workspace preparation before continuing.",
+    ),
+    {
+      action: "fix_config",
+      source: "tracked_pr_host_local_ci",
+      priority: 80,
+      summary:
+        "Host-local CI could not run because the workspace environment is missing prerequisites; fix configuration or workspace preparation before continuing.",
+    },
+  );
+
+  assert.equal(parseOperatorActionLine("operator_action action=unknown source=status priority=0 summary=nope"), null);
+});
+
+test("buildStatusOperatorCockpitViewModel carries the shared action contract and evidence", () => {
+  assert.deepEqual(
+    buildStatusOperatorCockpitViewModel({
+      detailedStatusLines: [
+        "tracked_pr_host_local_ci issue=#1783 gate=local_ci blocked_reason=workspace_environment remediation_target=workspace_environment",
+        "trust_mode=trusted_repo_and_authors execution_safety_mode=operator_gated",
+      ],
+      whyLines: ["selected_issue=#1783"],
+    }),
+    {
+      action: {
+        action: "fix_config",
+        source: "tracked_pr_host_local_ci",
+        priority: 80,
+        summary:
+          "Host-local CI could not run because the workspace environment is missing prerequisites; fix configuration or workspace preparation before continuing.",
+      },
+      currentTaskContract: "selected_issue=#1783",
+      trustPosture: "trust_mode=trusted_repo_and_authors execution_safety_mode=operator_gated",
+      gateState: "gate=local_ci remediation_target=workspace_environment",
+      blockingReason: "workspace_environment",
+      evidence: [
+        "tracked_pr_host_local_ci issue=#1783 gate=local_ci blocked_reason=workspace_environment remediation_target=workspace_environment",
+      ],
+      fallbackCommand: "node dist/index.js doctor --config <supervisor-config-path>",
+    },
   );
 });
 

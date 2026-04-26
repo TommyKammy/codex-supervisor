@@ -1,5 +1,21 @@
 import { buildBrowserLocalCiStatusLines } from "./webui-browser-script-helpers";
 
+type DashboardOperatorActionToken =
+  | "continue"
+  | "restart_loop"
+  | "fix_config"
+  | "adopt_local_ci"
+  | "dismiss_local_ci"
+  | "manual_review"
+  | "resolve_stale_review_bot"
+  | "provider_outage_suspected"
+  | "safe_to_ignore";
+
+interface DashboardOperatorActionSummary {
+  action: DashboardOperatorActionToken;
+  summary: string;
+}
+
 export interface DashboardSelectionSummaryLike {
   selectedIssueNumber?: number | null;
 }
@@ -411,6 +427,48 @@ export function parseSelectedIssueNumber(status: DashboardStatusLike | null | un
   return null;
 }
 
+export function readOperatorActionToken(line: string, key: string): string | null {
+  const match = new RegExp("(?:^|\\s)" + key + "=([^\\s]+)", "u").exec(line);
+  return match?.[1] ?? null;
+}
+
+export function parseRenderedOperatorAction(line: string): DashboardOperatorActionSummary | null {
+  if (!/^operator_action\b/u.test(line)) {
+    return null;
+  }
+
+  const action = readOperatorActionToken(line, "action") as DashboardOperatorActionToken | null;
+  const summary = /(?:^|\s)summary=(.*)$/u.exec(line)?.[1]?.trim() || null;
+  const validActions: Record<DashboardOperatorActionToken, true> = {
+    continue: true,
+    restart_loop: true,
+    fix_config: true,
+    adopt_local_ci: true,
+    dismiss_local_ci: true,
+    manual_review: true,
+    resolve_stale_review_bot: true,
+    provider_outage_suspected: true,
+    safe_to_ignore: true,
+  };
+
+  if (action === null || validActions[action] !== true || summary === null) {
+    return null;
+  }
+
+  return { action, summary };
+}
+
+export function selectRenderedOperatorAction(status: DashboardStatusLike | null | undefined): DashboardOperatorActionSummary | null {
+  const lines = Array.isArray(status?.detailedStatusLines) ? status.detailedStatusLines : [];
+  for (const line of lines) {
+    const action = parseRenderedOperatorAction(line);
+    if (action !== null) {
+      return action;
+    }
+  }
+  return null;
+}
+
 export function collectTrackedIssues(
   status: DashboardStatusLike | null | undefined,
   options: DashboardTrackedIssueFormatOptions = {},
@@ -732,6 +790,19 @@ export function buildPrimaryActionSummary(args: {
   const runnableCount = Array.isArray(args.status?.runnableIssues) ? args.status.runnableIssues.length : 0;
   const doctorStatus = typeof args.doctor?.overallStatus === "string" ? args.doctor.overallStatus.toLowerCase() : "";
   const loopOffTrackedWorkBlocker = describeLoopOffTrackedWorkBlocker(args.status);
+  const operatorAction = selectRenderedOperatorAction(args.status);
+
+  function titleForOperatorAction(action: DashboardOperatorActionToken): string {
+    if (action === "fix_config") return "Fix supervisor configuration";
+    if (action === "restart_loop") return describeLoopOffTrackedWorkRestartActionTitle();
+    if (action === "adopt_local_ci") return "Adopt local CI contract";
+    if (action === "dismiss_local_ci") return "Dismiss local CI recommendation";
+    if (action === "manual_review") return "Complete manual review";
+    if (action === "resolve_stale_review_bot") return "Resolve stale review metadata";
+    if (action === "provider_outage_suspected") return "Check review provider delivery";
+    if (action === "safe_to_ignore") return "No operator action required";
+    return "Observe and refresh";
+  }
 
   if (!args.hasSuccessfulRefresh) {
     return {
@@ -751,6 +822,13 @@ export function buildPrimaryActionSummary(args: {
     return {
       title: "Resolve environment checks",
       detail: "A required dependency is failing, so the supervisor should not advance until checks recover.",
+    };
+  }
+
+  if (operatorAction !== null && operatorAction.action !== "continue") {
+    return {
+      title: titleForOperatorAction(operatorAction.action),
+      detail: operatorAction.summary,
     };
   }
 
