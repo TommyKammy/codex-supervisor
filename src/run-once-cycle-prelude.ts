@@ -89,6 +89,10 @@ function hasNonTrackedRecoverableBlockedStates(state: SupervisorStateFile): bool
   return Object.values(state.issues).some((record) => record.state === "blocked" && record.pr_number === null);
 }
 
+function isInterruptedTurnRecoveryEvent(event: RecoveryEvent): boolean {
+  return event.reason.startsWith("interrupted_turn_recovery:");
+}
+
 export async function runOnceCyclePrelude(
   args: RunOnceCyclePreludeArgs,
 ): Promise<RunOnceCyclePreludeResult | RunOnceCyclePreludeAuthFailure> {
@@ -171,9 +175,7 @@ export async function runOnceCyclePrelude(
     await setReconciliationPhase("stale_active_issue_reservation");
     const staleReservationEvents = await args.reconcileStaleActiveIssueReservation(state);
     collectRecoveryEvents(staleReservationEvents);
-    const blockedInterruptedTurnThisCycle = staleReservationEvents.some((event) =>
-      event.reason.startsWith("interrupted_turn_recovery:")
-    );
+    const blockedInterruptedTurnThisCycle = staleReservationEvents.some(isInterruptedTurnRecoveryEvent);
 
     const activeRecord =
       state.activeIssueNumber === null ? null : state.issues[String(state.activeIssueNumber)] ?? null;
@@ -245,6 +247,7 @@ export async function runOnceCyclePrelude(
 
       if (
         state.activeIssueNumber === null
+        && !blockedInterruptedTurnThisCycle
         && allowBoundedContinuation
         && await args.reserveRunnableIssueSelection?.(state) === true
       ) {
@@ -315,6 +318,7 @@ export async function runOnceCyclePrelude(
 
     if (
       state.activeIssueNumber === null &&
+      !blockedInterruptedTurnThisCycle &&
       await args.reserveRunnableIssueSelection?.(state) === true
     ) {
       return {

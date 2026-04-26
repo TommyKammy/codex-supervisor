@@ -219,6 +219,11 @@ interface CachedFullIssueInventory {
   fetchedAtMs: number;
 }
 
+function interruptedTurnRecoveryIssueNumber(events: RecoveryEvent[]): number | null {
+  const event = events.find((candidate) => candidate.reason.startsWith("interrupted_turn_recovery:"));
+  return event?.issueNumber ?? null;
+}
+
 function shouldBlockTrackedPrRepeatedFailure(args: {
   record: Pick<IssueRunRecord, "pr_number">;
   failureContext: FailureContext | null;
@@ -1138,6 +1143,14 @@ export class Supervisor {
     });
     if ("kind" in prelude) {
       return prependRecoveryLog(prelude.message, formatRecoveryLog(prelude.recoveryEvents));
+    }
+
+    const interruptedIssueNumber = interruptedTurnRecoveryIssueNumber(prelude.recoveryEvents);
+    if (interruptedIssueNumber !== null) {
+      return prependRecoveryLog(
+        `Interrupted active turn for issue #${interruptedIssueNumber} requires manual recovery before selecting another runnable issue.`,
+        formatRecoveryLog(prelude.recoveryEvents),
+      );
     }
 
     return {
