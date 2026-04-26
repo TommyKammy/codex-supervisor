@@ -45,6 +45,7 @@ GitHub-authored issue bodies, PR review comments, and related GitHub text are ex
 If you want the setup flow, first-run commands, and operator decisions, start with [Getting started](./docs/getting-started.md).
 If you need to understand what to put in `supervisor.config.json`, jump straight to the [Configuration guide](./docs/configuration.md).
 If you are an AI agent entering the repo, start with the [AI agent handoff](./docs/agent-instructions.md) before reading the detailed references.
+If you need the product primitive framing for the supervised lane beside chat-driven Codex work, read the [Supervised automation lane](./docs/supervised-automation-lane.md) note.
 If you need the narrower freshness and durability contracts, use [Architecture](./docs/architecture.md) and [Configuration reference](./docs/configuration.md) instead of treating this README as the full runtime spec.
 If you use Codex app Automation around the loop, keep the [Codex app Automation boundary](./docs/automation.md) as the repo-owned contract: Automation orchestrates and records, while `codex-supervisor` remains the implementation executor.
 
@@ -265,6 +266,7 @@ Use the [Configuration guide](./docs/configuration.md) for the full routing rule
 - [Configuration reference](./docs/configuration.md): config setup, provider profiles, model/reasoning controls, durable memory, and execution policy
 - [Operator dashboard](./docs/operator-dashboard.md): WebUI launch, panel meanings, safe commands, and browser smoke verification
 - [Local review reference](./docs/local-review.md): local review policies, role selection, artifacts, thresholds, and committed guardrails
+- [Supervised automation lane](./docs/supervised-automation-lane.md): product primitive contract for issue/spec-driven supervised automation beside Codex chat and vibe coding
 - [Architecture](./docs/architecture.md): core loop, durable state, reconciliations, and safety boundaries
 - [Issue metadata](./docs/issue-metadata.md): canonical issue-body fields, sequencing rules, and execution-ready examples
 - [GSD to GitHub issues](./docs/examples/gsd-to-github-issues.md): how to hand planning output into execution-ready issues
