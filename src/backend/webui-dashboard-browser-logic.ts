@@ -1,15 +1,11 @@
 import { buildBrowserLocalCiStatusLines } from "./webui-browser-script-helpers";
+import {
+  parseOperatorActionPriority,
+  validOperatorActions,
+  type OperatorActionToken,
+} from "../operator-actions";
 
-type DashboardOperatorActionToken =
-  | "continue"
-  | "restart_loop"
-  | "fix_config"
-  | "adopt_local_ci"
-  | "dismiss_local_ci"
-  | "manual_review"
-  | "resolve_stale_review_bot"
-  | "provider_outage_suspected"
-  | "safe_to_ignore";
+type DashboardOperatorActionToken = OperatorActionToken;
 
 interface DashboardOperatorActionSummary {
   action: DashboardOperatorActionToken;
@@ -440,21 +436,10 @@ export function parseRenderedOperatorAction(line: string): DashboardOperatorActi
 
   const action = readOperatorActionToken(line, "action") as DashboardOperatorActionToken | null;
   const priorityValue = readOperatorActionToken(line, "priority");
-  const priority = priorityValue === null ? Number.NaN : Number.parseInt(priorityValue, 10);
+  const priority = parseOperatorActionPriority(priorityValue);
   const summary = /(?:^|\s)summary=(.*)$/u.exec(line)?.[1]?.trim() || null;
-  const validActions: Record<DashboardOperatorActionToken, true> = {
-    continue: true,
-    restart_loop: true,
-    fix_config: true,
-    adopt_local_ci: true,
-    dismiss_local_ci: true,
-    manual_review: true,
-    resolve_stale_review_bot: true,
-    provider_outage_suspected: true,
-    safe_to_ignore: true,
-  };
 
-  if (action === null || validActions[action] !== true || !Number.isFinite(priority) || summary === null) {
+  if (action === null || validOperatorActions[action] !== true || !Number.isFinite(priority) || summary === null) {
     return null;
   }
 

@@ -69,11 +69,20 @@ import {
   readStoredMutationAuthToken,
   writeStoredMutationAuthToken,
 } from "./webui-browser-script-helpers";
+import {
+  parseOperatorActionPriority,
+  validOperatorActions,
+} from "../operator-actions";
+
+const injectedBrowserConstants = [
+  `const validOperatorActions = ${JSON.stringify(validOperatorActions)};`,
+].join("\n\n");
 
 const injectedBrowserLogic = [
   formatBrowserToken,
   normalizeBrowserLocalCiContract,
   buildBrowserLocalCiStatusLines,
+  parseOperatorActionPriority,
   readStoredMutationAuthToken,
   writeStoredMutationAuthToken,
   promptForMutationAuthToken,
@@ -135,6 +144,8 @@ const injectedBrowserLogic = [
 
 export function renderDashboardBrowserScript(): string {
   return `
+      ${injectedBrowserConstants}
+
       ${injectedBrowserLogic}
 
       const state = {

@@ -18,6 +18,7 @@ import {
   formatRecoveryLoopSummary,
   formatRetryContextSummary,
   formatTrackedIssues,
+  parseRenderedOperatorAction,
   parseSelectedIssueNumber,
   type DashboardStatusLike,
 } from "./webui-dashboard-browser-logic";
@@ -683,6 +684,13 @@ test("buildOverviewSummary and related beginner-first helpers produce concise En
       title: "Complete manual review",
       detail: "Review threads require operator attention before the supervisor can continue.",
     },
+  );
+
+  assert.equal(
+    parseRenderedOperatorAction(
+      "operator_action action=fix_config source=tracked_pr_host_local_ci priority=80foo summary=Host-local CI needs attention.",
+    ),
+    null,
   );
 
   assert.deepEqual(

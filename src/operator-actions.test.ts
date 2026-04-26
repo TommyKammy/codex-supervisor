@@ -5,6 +5,7 @@ import {
   parseOperatorActionLine,
   type RestartRecommendation,
   selectRestartRecommendation,
+  selectStatusOperatorAction,
 } from "./operator-actions";
 
 function requireRestartRecommendation(recommendation: RestartRecommendation | null): RestartRecommendation {
@@ -82,6 +83,24 @@ test("parseOperatorActionLine reads rendered status and doctor action lines", ()
 
   assert.equal(parseOperatorActionLine("operator_action action=unknown source=status priority=0 summary=nope"), null);
   assert.equal(parseOperatorActionLine("doctor_operator_action action=unknown source=doctor priority=0 summary=nope"), null);
+  assert.equal(parseOperatorActionLine("operator_action action=fix_config source=status priority=80foo summary=nope"), null);
+});
+
+test("selectStatusOperatorAction ignores rendered doctor action lines", () => {
+  assert.deepEqual(
+    selectStatusOperatorAction({
+      detailedStatusLines: [
+        "doctor_operator_action action=fix_config source=doctor_check priority=80 summary=Doctor found a failing host prerequisite; fix the reported check before continuing supervisor operation.",
+        "operator_action action=continue source=status priority=0 summary=No blocking operator action was detected; continue normal supervisor operation.",
+      ],
+    }),
+    {
+      action: "continue",
+      source: "status",
+      priority: 0,
+      summary: "No blocking operator action was detected; continue normal supervisor operation.",
+    },
+  );
 });
 
 test("buildStatusOperatorCockpitViewModel carries the shared action contract and evidence", () => {

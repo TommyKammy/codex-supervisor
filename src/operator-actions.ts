@@ -86,7 +86,7 @@ const doctorFallbackOperatorAction: OperatorAction = {
   summary: "No blocking doctor action was detected; continue normal supervisor operation.",
 };
 
-const validOperatorActions: Record<OperatorActionToken, true> = {
+export const validOperatorActions: Record<OperatorActionToken, true> = {
   continue: true,
   restart_loop: true,
   fix_config: true,
@@ -97,6 +97,12 @@ const validOperatorActions: Record<OperatorActionToken, true> = {
   provider_outage_suspected: true,
   safe_to_ignore: true,
 };
+
+export function parseOperatorActionPriority(priorityValue: string | null): number {
+  return priorityValue !== null && /^-?\d+$/u.test(priorityValue)
+    ? Number.parseInt(priorityValue, 10)
+    : Number.NaN;
+}
 
 function readTokenValue(line: string, key: string): string | null {
   const match = new RegExp(`(?:^|\\s)${key}=([^\\s]+)`, "u").exec(line);
@@ -117,7 +123,7 @@ export function parseOperatorActionLine(line: string): OperatorAction | null {
   const source = readTokenValue(line, "source");
   const priorityValue = readTokenValue(line, "priority");
   const summary = readSummaryValue(line);
-  const priority = priorityValue === null ? Number.NaN : Number.parseInt(priorityValue, 10);
+  const priority = parseOperatorActionPriority(priorityValue);
 
   if (
     action === null ||
@@ -134,6 +140,7 @@ export function parseOperatorActionLine(line: string): OperatorAction | null {
 
 function selectRenderedOperatorAction(lines: string[]): OperatorAction | null {
   const actions = lines
+    .filter((line) => /^operator_action\b/u.test(line))
     .map(parseOperatorActionLine)
     .filter((action): action is OperatorAction => action !== null);
   return actions.length === 0 ? null : chooseHighestPriority(actions, statusFallbackOperatorAction);
