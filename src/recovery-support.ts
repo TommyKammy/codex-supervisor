@@ -33,6 +33,8 @@ export function buildUnsafeNoPrFailureContext(args: {
   localState: "done" | "stabilizing";
   githubIssueState: "OPEN" | "UNKNOWN";
   detail: string;
+  branchState?: "already_satisfied_on_main";
+  defaultBranch?: string;
 }): NonNullable<IssueRunRecord["last_failure_context"]> {
   const localStateSummary = args.localState === "done"
     ? `Issue #${args.issueNumber} is locally marked done without authoritative completion evidence`
@@ -52,6 +54,8 @@ export function buildUnsafeNoPrFailureContext(args: {
       `state=${args.localState}`,
       "tracked_pr=none",
       `github_issue_state=${args.githubIssueState}`,
+      ...(args.branchState ? [`branch_state=${args.branchState}`] : []),
+      ...(args.defaultBranch ? [`default_branch=origin/${args.defaultBranch}`] : []),
       "completion_evidence=missing",
       "operator_action=confirm whether the issue should be requeued or whether completion landed outside the tracked PR flow",
     ],

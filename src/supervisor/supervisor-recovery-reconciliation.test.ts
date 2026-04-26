@@ -4043,10 +4043,19 @@ test("reconcileStaleActiveIssueReservation blocks already-satisfied-on-main stal
   assert.equal(state.issues["366"]?.blocked_reason, "manual_review");
   assert.match(
     state.issues["366"]?.last_error ?? "",
-    /stale stabilizing recovery without authoritative completion evidence/,
+    /preserved branch no longer differs from origin\/main/,
   );
   assert.equal(state.issues["366"]?.last_failure_kind, null);
   assert.equal(state.issues["366"]?.last_failure_context?.signature, "failed-no-pr-already-satisfied-on-main");
+  assert.deepEqual(state.issues["366"]?.last_failure_context?.details ?? [], [
+    "state=stabilizing",
+    "tracked_pr=none",
+    "github_issue_state=OPEN",
+    "branch_state=already_satisfied_on_main",
+    "default_branch=origin/main",
+    "completion_evidence=missing",
+    "operator_action=confirm whether the issue should be requeued or whether completion landed outside the tracked PR flow",
+  ]);
   assert.equal(state.issues["366"]?.last_failure_signature, null);
   assert.equal(state.issues["366"]?.repeated_failure_signature_count, 0);
   assert.equal(state.issues["366"]?.stale_stabilizing_no_pr_recovery_count, 0);
@@ -4054,7 +4063,7 @@ test("reconcileStaleActiveIssueReservation blocks already-satisfied-on-main stal
   assert.equal(recoveryEvents.length, 1);
   assert.match(
     formatRecoveryLog(recoveryEvents) ?? "",
-    /recovery issue=#366 reason=stale_stabilizing_no_pr_manual_review: blocked issue #366 after stale stabilizing recovery found an open issue with no authoritative completion signal/,
+    /recovery issue=#366 reason=stale_stabilizing_no_pr_manual_review: blocked issue #366 after stale stabilizing recovery found the preserved branch already satisfied on origin\/main with no authoritative completion signal/,
   );
 });
 
