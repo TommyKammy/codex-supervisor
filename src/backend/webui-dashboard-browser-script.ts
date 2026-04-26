@@ -27,6 +27,9 @@ import {
   collectTimelineEventIssueNumbers,
   humanizeTimelineValue,
   parseSelectedIssueNumber,
+  parseRenderedOperatorAction,
+  readOperatorActionToken,
+  selectRenderedOperatorAction,
 } from "./webui-dashboard-browser-logic";
 import {
   buildWorkflowSteps,
@@ -66,11 +69,20 @@ import {
   readStoredMutationAuthToken,
   writeStoredMutationAuthToken,
 } from "./webui-browser-script-helpers";
+import {
+  parseOperatorActionPriority,
+  validOperatorActions,
+} from "../operator-actions";
+
+const injectedBrowserConstants = [
+  `const validOperatorActions = ${JSON.stringify(validOperatorActions)};`,
+].join("\n\n");
 
 const injectedBrowserLogic = [
   formatBrowserToken,
   normalizeBrowserLocalCiContract,
   buildBrowserLocalCiStatusLines,
+  parseOperatorActionPriority,
   readStoredMutationAuthToken,
   writeStoredMutationAuthToken,
   promptForMutationAuthToken,
@@ -108,6 +120,9 @@ const injectedBrowserLogic = [
   describeTimelineEvent,
   collectTimelineEventIssueNumbers,
   parseSelectedIssueNumber,
+  readOperatorActionToken,
+  parseRenderedOperatorAction,
+  selectRenderedOperatorAction,
   countCandidateIssues,
   buildWorkflowSteps,
   buildRuntimeRecoverySummaryLines,
@@ -129,6 +144,8 @@ const injectedBrowserLogic = [
 
 export function renderDashboardBrowserScript(): string {
   return `
+      ${injectedBrowserConstants}
+
       ${injectedBrowserLogic}
 
       const state = {

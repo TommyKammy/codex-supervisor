@@ -18,6 +18,7 @@ import {
   formatRecoveryLoopSummary,
   formatRetryContextSummary,
   formatTrackedIssues,
+  parseRenderedOperatorAction,
   parseSelectedIssueNumber,
   type DashboardStatusLike,
 } from "./webui-dashboard-browser-logic";
@@ -641,6 +642,55 @@ test("buildOverviewSummary and related beginner-first helpers produce concise En
       title: "Resolve environment checks",
       detail: "A required dependency is failing, so the supervisor should not advance until checks recover.",
     },
+  );
+
+  assert.deepEqual(
+    buildPrimaryActionSummary({
+      status: {
+        selectionSummary: { selectedIssueNumber: 77 },
+        runnableIssues: [{ issueNumber: 77, title: "Ready issue", readiness: "execution_ready" }],
+        detailedStatusLines: [
+          "operator_action action=fix_config source=tracked_pr_host_local_ci priority=80 summary=Host-local CI could not run because the workspace environment is missing prerequisites; fix configuration or workspace preparation before continuing.",
+        ],
+      },
+      doctor: { overallStatus: "pass", checks: [] },
+      connectionPhase: "open",
+      refreshPhase: "idle",
+      hasSuccessfulRefresh: true,
+    }),
+    {
+      title: "Fix supervisor configuration",
+      detail:
+        "Host-local CI could not run because the workspace environment is missing prerequisites; fix configuration or workspace preparation before continuing.",
+    },
+  );
+
+  assert.deepEqual(
+    buildPrimaryActionSummary({
+      status: {
+        selectionSummary: { selectedIssueNumber: 77 },
+        runnableIssues: [{ issueNumber: 77, title: "Ready issue", readiness: "execution_ready" }],
+        detailedStatusLines: [
+          "operator_action action=continue source=status priority=0 summary=No blocking operator action was detected; continue normal supervisor operation.",
+          "operator_action action=manual_review source=tracked_pr_review priority=70 summary=Review threads require operator attention before the supervisor can continue.",
+        ],
+      },
+      doctor: { overallStatus: "pass", checks: [] },
+      connectionPhase: "open",
+      refreshPhase: "idle",
+      hasSuccessfulRefresh: true,
+    }),
+    {
+      title: "Complete manual review",
+      detail: "Review threads require operator attention before the supervisor can continue.",
+    },
+  );
+
+  assert.equal(
+    parseRenderedOperatorAction(
+      "operator_action action=fix_config source=tracked_pr_host_local_ci priority=80foo summary=Host-local CI needs attention.",
+    ),
+    null,
   );
 
   assert.deepEqual(
