@@ -32,7 +32,7 @@ Operator action is explicit human control over the lane. Examples include choosi
 
 ### Bounded Recovery
 
-Bounded recovery keeps failures inside the lane. The supervisor can retry known repair states, resume Codex sessions, preserve issue journals, reconcile PR state, and keep failed attempts observable. Recovery must stay fail closed: corrupted state, missing auth, ambiguous scope, stale review facts, or half-written durable state should block or require explicit operator handling rather than becoming a new source of authority.
+Bounded recovery keeps failures inside the lane. The supervisor can retry known repair states, resume Codex sessions, preserve issue journals, reconcile PR state, and keep failed attempts observable. Recovery must stay fail-closed: corrupted state, missing auth, ambiguous scope, stale review facts, or half-written durable state should block or require explicit operator handling rather than becoming a new source of authority.
 
 ### Durable Memory Writeback
 

@@ -13,7 +13,11 @@ test("supervised automation lane product primitive note is repo-owned and discov
     readRepoFile("docs/supervised-automation-lane.md"),
   ]);
 
-  assert.match(readme, /\[Supervised automation lane\]\(\.\/docs\/supervised-automation-lane\.md\)/);
+  const laneLink = /\[Supervised automation lane\]\(\.\/docs\/supervised-automation-lane\.md\)/;
+  const docsMapIndex = readme.indexOf("## Docs Map");
+  assert.notEqual(docsMapIndex, -1, "README must include a Docs Map section");
+  assert.match(readme.slice(0, docsMapIndex), laneLink);
+  assert.match(readme.slice(docsMapIndex), laneLink);
 
   assert.match(note, /^# Supervised Automation Lane$/m);
   assert.match(note, /OpenAI-ready product primitive/i);
