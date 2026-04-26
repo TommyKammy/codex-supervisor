@@ -99,6 +99,31 @@ The setup/readiness report stays `ready: false` until these required first-run b
 
 The shipped CodeRabbit profile intentionally uses a non-loadable `repoSlug` placeholder so operators must replace it before the first run.
 
+### Explicit trust posture setup
+
+Trust posture setup is a product primitive for trusted solo-lane automation. It packages the authority choices that decide whether the supervisor may turn GitHub-authored text, local repo state, review signals, and configured commands into autonomous Codex work.
+
+Treat these as operator-owned decisions:
+
+- repo trust: the managed repository is the repo you intend to let the supervisor mutate
+- author trust: the GitHub authors who can edit issues, review comments, and related execution text are trusted for that repo
+- sandbox posture: `executionSafetyMode` is chosen deliberately, especially when the runtime is unsandboxed autonomous execution
+- local CI posture: `localCiCommand` is absent, dismissed, or configured as the repo-owned fail-closed gate
+- review provider posture: `reviewBotLogins` and provider wait settings match the review source you intend to trust
+- auto-merge posture: merge progression remains bounded by branch protection, fresh PR facts, and the configured merge policy
+- follow-up issue posture: automatic follow-up issue creation stays disabled unless the operator explicitly wants that route
+
+Automation-owned decisions start only after those operator-owned decisions are explicit. The supervisor can lint issue metadata, report setup/readiness, run the configured local CI command, wait for configured review providers, block on stale or missing signals, and advance the loop inside the chosen posture. It should not expand authority by inferring trust from repo names, author comments, nearby config, provider presence, or detected scripts.
+
+Dangerous or authority-expanding choices remain explicit opt-ins. Unsandboxed autonomous execution, local CI as a publication gate, local review as a merge gate, high-severity auto-repair, automatic follow-up issue creation, and any auto-merge path must be visible config or operator action rather than hidden authority. Local CI and review-provider posture contribute to trust by adding observable gates and signals without becoming hidden authority: a detected script is advisory until configured, and provider activity matters only for the configured provider identities.
+
+Use the same vocabulary across setup/readiness, `doctor`, `status`, and WebUI:
+
+- setup/readiness answers whether the required trust posture fields are configured, missing, or invalid before first run
+- `doctor` reports host, state, local CI candidate, release-readiness, and config health without rewriting the trust decision
+- `status` reports the active issue, external signal readiness, loop runtime, and operator actions inside the chosen posture
+- WebUI setup edits the same config-backed fields and should not imply a separate run mode or broader authority
+
 Recommended model posture for a first operator profile:
 
 - keep `codexModelStrategy: "inherit"` so the supervisor follows the host Codex CLI/App default model

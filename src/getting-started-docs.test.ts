@@ -104,6 +104,36 @@ test("getting-started defines setup readiness as a typed first-run contract dist
   assert.match(content, /explicit trust posture decisions/i);
 });
 
+test("getting-started defines explicit trust posture setup as a product primitive", async () => {
+  const content = await readGettingStarted();
+
+  assert.match(content, /^### Explicit trust posture setup$/m);
+  assert.match(content, /trust posture setup is a product primitive/i);
+
+  const requiredPostureSignals = [
+    "repo trust",
+    "author trust",
+    "sandbox posture",
+    "local CI posture",
+    "review provider posture",
+    "auto-merge posture",
+    "follow-up issue posture",
+  ];
+
+  for (const signal of requiredPostureSignals) {
+    assert.match(content, new RegExp(signal, "i"));
+  }
+
+  assert.match(content, /operator-owned decision/i);
+  assert.match(content, /automation-owned decision/i);
+  assert.match(content, /dangerous or authority-expanding choices/i);
+  assert.match(content, /explicit opt-ins/i);
+  assert.match(content, /local CI and review-provider posture contribute to trust/i);
+  assert.match(content, /without becoming hidden authority/i);
+  assert.match(content, /trusted solo-lane automation/i);
+  assert.match(content, /setup\/readiness, `doctor`, `status`, and WebUI/i);
+});
+
 test("getting-started protects the first-run command flow and operator action vocabulary", async () => {
   const content = await readGettingStarted();
 
