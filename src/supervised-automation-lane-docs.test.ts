@@ -87,3 +87,57 @@ test("supervised automation lane documents an auditable work state machine", asy
   assert.match(note, /tracked-done cleanup/i);
   assert.doesNotMatch(note, /tracked done cleanup/i);
 });
+
+test("supervised automation lane documents contract-first issue authoring UX", async () => {
+  const [template, metadataReference, note] = await Promise.all([
+    readRepoFile(".github/ISSUE_TEMPLATE/codex-execution-ready.md"),
+    readRepoFile("docs/issue-metadata.md"),
+    readRepoFile("docs/supervised-automation-lane.md"),
+  ]);
+
+  assert.match(template, /## Summary/);
+  assert.match(template, /## Scope/);
+  assert.match(template, /## Acceptance criteria/);
+  assert.match(template, /## Verification/);
+  assert.match(metadataReference, /Use this document as the canonical reference/i);
+
+  assert.match(note, /^### Contract-First Issue Authoring UX$/m);
+
+  for (const term of [
+    "Summary",
+    "Scope",
+    "Acceptance criteria",
+    "Verification",
+    "dependencies",
+    "parallelization",
+    "execution order",
+  ]) {
+    assert.match(note, new RegExp(term, "i"));
+  }
+
+  for (const surface of [
+    "GitHub issue template",
+    "docs/issue-metadata.md",
+    "issue-lint",
+    "CLI",
+    "WebUI",
+    "operator workflow",
+  ]) {
+    assert.match(note, new RegExp(surface.replace("/", "\\/"), "i"));
+  }
+
+  for (const unsafeInput of [
+    "missing metadata",
+    "unsafe scope",
+    "ambiguous verification",
+    "dependency",
+    "order",
+  ]) {
+    assert.match(note, new RegExp(unsafeInput, "i"));
+  }
+
+  assert.match(note, /fail closed/i);
+  assert.match(note, /node dist\/index\.js issue-lint <issue-number> --config <supervisor-config-path>/);
+  assert.doesNotMatch(note, /\/Users\/[A-Za-z0-9._-]+\//);
+  assert.doesNotMatch(note, /C:\\Users\\[A-Za-z0-9._-]+\\/);
+});

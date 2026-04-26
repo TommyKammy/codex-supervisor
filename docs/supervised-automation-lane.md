@@ -14,6 +14,27 @@ The supervised automation lane is a durable execution wrapper around Codex turns
 
 The task contract is the execution-ready GitHub issue. It names the behavior delta, scope, acceptance criteria, verification, dependencies, parallelization posture, and execution order. The issue body is an input to the lane, not a policy override. GitHub-authored text is execution input, not supervisor policy, and malformed or incomplete metadata should block or stay unrunnable instead of being inferred into a permissive plan.
 
+### Contract-First Issue Authoring UX
+
+Contract-first issue authoring turns raw GitHub text into a guided Task Contract before the supervisor treats the issue as runnable work. The authoring experience should lead operators through the same fields that `docs/issue-metadata.md` defines as canonical: Summary, Scope, Acceptance criteria, Verification, dependencies, parallelization, and execution order. The UX goal is not to make weak issue bodies pass; it is to make the execution contract visible early enough that missing or unsafe inputs can be repaired before a Codex turn starts.
+
+Responsibility stays split across the existing product surfaces:
+
+- GitHub issue template: provides the first runnable shape, safe standalone defaults, and the canonical sections an author should fill in.
+- `docs/issue-metadata.md`: remains the detailed source of truth for required metadata, examples, malformed cases, and how scheduling fields are interpreted.
+- `issue-lint`: is the readiness gate for missing metadata, malformed dependencies, duplicate or conflicting scheduling lines, vague verification, and dependency/order mistakes.
+- CLI: exposes the explicit preflight command and should keep issue readiness visible before `run-once` or `loop` is trusted.
+- WebUI: may guide repair from the same typed issue-lint facts, but it should not invent missing fields or silently rewrite unsafe scope.
+- operator workflow: owns the final trust decision, including whether the repository, issue author, scope, and verification evidence belong in the supervised lane.
+
+The UX should fail closed when the contract is incomplete or ambiguous. Missing metadata means the issue is not execution-ready. Unsafe scope should be narrowed by the author or split into a follow-up rather than being accepted as broad authority. Ambiguous verification should become a concrete command, test file, or manual check target. Dependency and order mistakes should be fixed in the issue body, not inferred from title wording, nearby issues, or parent epics. Use:
+
+```bash
+node dist/index.js issue-lint <issue-number> --config <supervisor-config-path>
+```
+
+Run `issue-lint` before loop execution whenever the issue is new, edited after planning, copied from another issue, part of a sequence, or suspected to have missing or malformed scheduling metadata.
+
 ### Trust Posture
 
 The lane starts from an operator trust decision. The managed repo, local config, GitHub authors, review-provider text, and Codex execution environment must be trusted before autonomous execution is appropriate. The current runtime invokes Codex with elevated local authority, so the safe boundary is to choose the trusted lane before the turn starts rather than trying to recover trust after untrusted text has become execution input.
