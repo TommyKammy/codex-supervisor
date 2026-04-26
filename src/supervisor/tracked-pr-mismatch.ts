@@ -23,6 +23,7 @@ import {
 } from "../remediation-targets";
 import { projectTrackedPrLifecycle } from "../tracked-pr-lifecycle-projection";
 import { hasFreshTrackedPrReadyPromotionBlockerEvidence } from "../tracked-pr-ready-promotion-blocker";
+import { hasQueuedReadyPromotionPathHygieneRepair } from "../ready-promotion-path-hygiene-repair";
 import { formatTimelineArtifactStatusLine } from "../timeline-artifacts";
 import {
   classifyReadyPromotionRecoverability,
@@ -300,28 +301,18 @@ export function buildTrackedPrMismatch(
     return null;
   }
 
-  const projection = projectTrackedPrLifecycle({
-    config,
-    record,
-    pr,
-    checks,
-    reviewThreads,
-  });
-  const githubState = projection.nextState;
-  const githubBlockedReason = projection.nextBlockedReason;
-
   if (
     record.state === "repairing_ci" &&
     record.last_failure_signature === "workstation-local-path-hygiene-failed" &&
-    githubState === "draft_pr" &&
-    pr.isDraft
+    pr.isDraft &&
+    hasQueuedReadyPromotionPathHygieneRepair(record, pr)
   ) {
     const readyPromotionGate = readyPromotionGateSummary(config, record, pr, checks);
     return {
       issueNumber: record.issue_number,
       prNumber: pr.number,
-      githubState,
-      githubBlockedReason,
+      githubState: "draft_pr",
+      githubBlockedReason: null,
       localState: record.state,
       localBlockedReason: record.blocked_reason,
       staleLocalBlocker: false,
@@ -331,7 +322,7 @@ export function buildTrackedPrMismatch(
         `issue=#${record.issue_number}`,
         `pr=#${pr.number}`,
         recoverabilityStatusToken("repair_queued"),
-        `github_state=${githubState}`,
+        "github_state=draft_pr",
         `local_state=${record.state}`,
         `local_blocked_reason=${record.blocked_reason ?? "none"}`,
         "stale_local_blocker=no",
@@ -342,6 +333,16 @@ export function buildTrackedPrMismatch(
       detailLines: readyPromotionGate.detailLines,
     };
   }
+
+  const projection = projectTrackedPrLifecycle({
+    config,
+    record,
+    pr,
+    checks,
+    reviewThreads,
+  });
+  const githubState = projection.nextState;
+  const githubBlockedReason = projection.nextBlockedReason;
 
   const mismatch =
     isBlockedLikeState(record.state) &&
