@@ -1,0 +1,417 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/TommyKammy/codex-supervisor/docs/trust-posture-config.schema.json",
+  "$ref": "#/$defs/trustPostureConfigContract",
+  "contractName": "codex-supervisor.trust-posture-config",
+  "contractVersion": 1,
+  "canonicalGuide": "docs/configuration.md",
+  "enforcementBoundary": "config-loader-and-setup-readiness",
+  "setupReadinessEndpoint": "GET /api/setup-readiness",
+  "description": "Portable contract for the operator-owned trust posture fields in supervisor config. The config loader and setup readiness report remain the enforcement boundary; this artifact publishes the machine-readable field choices, authority boundaries, and dangerous opt-ins for external setup tooling.",
+  "fields": [
+    {
+      "field": "trustMode",
+      "values": [
+        "trusted_repo_and_authors",
+        "untrusted_or_mixed"
+      ],
+      "default": "trusted_repo_and_authors",
+      "requiredBySetupReadiness": true,
+      "operatorAuthorityBoundary": "Operator declares whether the managed repository and GitHub authors that can provide execution text are trusted.",
+      "setupReadinessSurface": "trustPosture"
+    },
+    {
+      "field": "executionSafetyMode",
+      "values": [
+        "unsandboxed_autonomous",
+        "operator_gated"
+      ],
+      "default": "unsandboxed_autonomous",
+      "requiredBySetupReadiness": true,
+      "operatorAuthorityBoundary": "Operator declares whether Codex may run autonomously in the current execution-safety posture or must stay gated by operator action.",
+      "setupReadinessSurface": "trustPosture",
+      "dangerousOptIn": true
+    },
+    {
+      "field": "workspacePreparationCommand",
+      "default": null,
+      "requiredBySetupReadiness": false,
+      "operatorAuthorityBoundary": "Operator adopts a repo-owned setup command that prepares preserved issue worktrees before host-local CI runs.",
+      "setupReadinessSurface": "fields.workspacePreparationCommand"
+    },
+    {
+      "field": "localCiCommand",
+      "default": null,
+      "requiredBySetupReadiness": false,
+      "operatorAuthorityBoundary": "Operator adopts a repo-owned local CI command as the fail-closed local publication gate; detected scripts remain advisory until configured.",
+      "setupReadinessSurface": "localCiContract"
+    },
+    {
+      "field": "localCiCandidateDismissed",
+      "default": false,
+      "requiredBySetupReadiness": false,
+      "operatorAuthorityBoundary": "Operator explicitly acknowledges that a detected repo-owned local CI candidate should remain non-blocking for this supervisor profile.",
+      "setupReadinessSurface": "localCiContract"
+    },
+    {
+      "field": "configuredReviewProviders",
+      "default": null,
+      "requiredBySetupReadiness": false,
+      "operatorAuthorityBoundary": "Operator binds review-provider posture to explicit provider identities and signal sources instead of trusting arbitrary review text.",
+      "setupReadinessSurface": "providerPosture"
+    },
+    {
+      "field": "reviewBotLogins",
+      "default": [],
+      "requiredBySetupReadiness": true,
+      "operatorAuthorityBoundary": "Operator declares which review bot identities can contribute configured review-provider signals.",
+      "setupReadinessSurface": "providerPosture"
+    },
+    {
+      "field": "localReviewPosture",
+      "values": [
+        "off",
+        "advisory",
+        "block_merge",
+        "repair_high_severity",
+        "follow_up_issue_creation"
+      ],
+      "default": "off",
+      "requiredBySetupReadiness": false,
+      "operatorAuthorityBoundary": "Operator selects whether local review is disabled, advisory, merge-blocking, or allowed to expand into repair or follow-up issue workflows.",
+      "setupReadinessSurface": "localReviewPosture",
+      "dangerousOptIn": true
+    },
+    {
+      "field": "localReviewFollowUpRepairEnabled",
+      "default": false,
+      "requiredBySetupReadiness": false,
+      "operatorAuthorityBoundary": "Operator explicitly allows same-PR repair for local-review follow-up eligible findings.",
+      "setupReadinessSurface": "configPostureGroups.dangerous_explicit_opt_in",
+      "dangerousOptIn": true
+    },
+    {
+      "field": "localReviewManualReviewRepairEnabled",
+      "default": false,
+      "requiredBySetupReadiness": false,
+      "operatorAuthorityBoundary": "Operator explicitly allows same-PR repair for current-head manual-review-blocked local-review residuals.",
+      "setupReadinessSurface": "configPostureGroups.dangerous_explicit_opt_in",
+      "dangerousOptIn": true
+    },
+    {
+      "field": "localReviewFollowUpIssueCreationEnabled",
+      "default": false,
+      "requiredBySetupReadiness": false,
+      "operatorAuthorityBoundary": "Operator explicitly allows eligible local-review findings to create follow-up issues.",
+      "setupReadinessSurface": "configPostureGroups.dangerous_explicit_opt_in",
+      "dangerousOptIn": true
+    },
+    {
+      "field": "localReviewHighSeverityAction",
+      "values": [
+        "blocked",
+        "retry"
+      ],
+      "default": "blocked",
+      "requiredBySetupReadiness": false,
+      "operatorAuthorityBoundary": "Operator decides whether verifier-confirmed high-severity local-review findings stay blocked or may trigger bounded repair retries.",
+      "setupReadinessSurface": "localReviewPosture",
+      "dangerousOptIn": true
+    },
+    {
+      "field": "staleConfiguredBotReviewPolicy",
+      "values": [
+        "diagnose_only",
+        "reply_only",
+        "reply_and_resolve"
+      ],
+      "default": "diagnose_only",
+      "requiredBySetupReadiness": false,
+      "operatorAuthorityBoundary": "Operator decides whether stale configured-bot review threads are only diagnosed or can receive replies and resolution actions.",
+      "setupReadinessSurface": "configPostureGroups.dangerous_explicit_opt_in",
+      "dangerousOptIn": true
+    },
+    {
+      "field": "approvedTrackedTopLevelEntries",
+      "default": null,
+      "requiredBySetupReadiness": false,
+      "operatorAuthorityBoundary": "Operator explicitly expands the approved tracked repository skeleton entries used by path hygiene checks.",
+      "setupReadinessSurface": "configPostureGroups.dangerous_explicit_opt_in",
+      "dangerousOptIn": true
+    },
+    {
+      "field": "releaseReadinessGate",
+      "values": [
+        "advisory",
+        "block_release_publication"
+      ],
+      "default": "advisory",
+      "requiredBySetupReadiness": false,
+      "operatorAuthorityBoundary": "Operator decides whether release-readiness remains advisory or can block release publication only.",
+      "setupReadinessSurface": "releaseReadinessGate",
+      "dangerousOptIn": true
+    }
+  ],
+  "trustSafetyCombinations": [
+    {
+      "trustMode": "trusted_repo_and_authors",
+      "executionSafetyMode": "operator_gated",
+      "posture": "safe",
+      "dangerousOptIn": false,
+      "operatorMeaning": "Trusted repo and trusted GitHub authors are declared, while execution still stays operator gated."
+    },
+    {
+      "trustMode": "untrusted_or_mixed",
+      "executionSafetyMode": "operator_gated",
+      "posture": "cautious",
+      "dangerousOptIn": false,
+      "operatorMeaning": "Repo or author trust is mixed or unclear, so execution remains gated and issues need explicit trusted-input signals."
+    },
+    {
+      "trustMode": "trusted_repo_and_authors",
+      "executionSafetyMode": "unsandboxed_autonomous",
+      "posture": "dangerous_opt_in",
+      "dangerousOptIn": true,
+      "operatorMeaning": "Unsandboxed autonomous execution is allowed only because the operator has explicitly trusted the repo and GitHub authors."
+    },
+    {
+      "trustMode": "untrusted_or_mixed",
+      "executionSafetyMode": "unsandboxed_autonomous",
+      "posture": "dangerous",
+      "dangerousOptIn": true,
+      "operatorMeaning": "Untrusted or mixed GitHub-authored inputs are combined with unsandboxed autonomous execution; investigate before starting the loop."
+    }
+  ],
+  "dangerousOptIns": [
+    "executionSafetyMode: unsandboxed_autonomous",
+    "localReviewPosture: repair_high_severity",
+    "localReviewPosture: follow_up_issue_creation",
+    "localReviewFollowUpRepairEnabled",
+    "localReviewManualReviewRepairEnabled",
+    "localReviewFollowUpIssueCreationEnabled",
+    "localReviewHighSeverityAction: retry",
+    "staleConfiguredBotReviewPolicy: reply_only|reply_and_resolve",
+    "approvedTrackedTopLevelEntries",
+    "releaseReadinessGate: block_release_publication"
+  ],
+  "localCiPostures": [
+    {
+      "source": "config",
+      "configured": false,
+      "summary": "No repo-owned local CI contract is configured."
+    },
+    {
+      "source": "repo_script_candidate",
+      "configured": false,
+      "summary": "Repo-owned local CI candidate exists but localCiCommand is unset."
+    },
+    {
+      "source": "dismissed_repo_script_candidate",
+      "configured": false,
+      "summary": "Repo-owned local CI candidate was intentionally dismissed; localCiCommand remains unset and non-blocking."
+    },
+    {
+      "source": "config",
+      "configured": true,
+      "summary": "Repo-owned local CI contract is configured."
+    }
+  ],
+  "reviewProviderPosture": {
+    "configuredWhen": [
+      "reviewBotLogins contains at least one configured provider login",
+      "configuredReviewProviders contains at least one provider with reviewerLogins and signalSource"
+    ],
+    "signalSources": [
+      "copilot_lifecycle",
+      "review_threads"
+    ],
+    "operatorAuthorityBoundary": "Provider signals are trusted only for configured provider identities and signal sources; raw review text is not an authority boundary by itself."
+  },
+  "$defs": {
+    "trustPostureConfigContract": {
+      "type": "object",
+      "required": [
+        "contractName",
+        "contractVersion",
+        "canonicalGuide",
+        "enforcementBoundary",
+        "setupReadinessEndpoint",
+        "fields",
+        "trustSafetyCombinations",
+        "dangerousOptIns",
+        "localCiPostures",
+        "reviewProviderPosture"
+      ],
+      "properties": {
+        "contractName": {
+          "const": "codex-supervisor.trust-posture-config"
+        },
+        "contractVersion": {
+          "const": 1
+        },
+        "canonicalGuide": {
+          "const": "docs/configuration.md"
+        },
+        "enforcementBoundary": {
+          "const": "config-loader-and-setup-readiness"
+        },
+        "setupReadinessEndpoint": {
+          "const": "GET /api/setup-readiness"
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/field"
+          },
+          "minItems": 1
+        },
+        "trustSafetyCombinations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/trustSafetyCombination"
+          },
+          "minItems": 4
+        },
+        "dangerousOptIns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "localCiPostures": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/localCiPosture"
+          },
+          "minItems": 1
+        },
+        "reviewProviderPosture": {
+          "$ref": "#/$defs/reviewProviderPosture"
+        }
+      }
+    },
+    "field": {
+      "type": "object",
+      "required": [
+        "field",
+        "operatorAuthorityBoundary",
+        "setupReadinessSurface"
+      ],
+      "properties": {
+        "field": {
+          "type": "string"
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "default": {},
+        "requiredBySetupReadiness": {
+          "type": "boolean"
+        },
+        "operatorAuthorityBoundary": {
+          "type": "string"
+        },
+        "setupReadinessSurface": {
+          "type": "string"
+        },
+        "dangerousOptIn": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "trustSafetyCombination": {
+      "type": "object",
+      "required": [
+        "trustMode",
+        "executionSafetyMode",
+        "posture",
+        "dangerousOptIn",
+        "operatorMeaning"
+      ],
+      "properties": {
+        "trustMode": {
+          "enum": [
+            "trusted_repo_and_authors",
+            "untrusted_or_mixed"
+          ]
+        },
+        "executionSafetyMode": {
+          "enum": [
+            "unsandboxed_autonomous",
+            "operator_gated"
+          ]
+        },
+        "posture": {
+          "type": "string"
+        },
+        "dangerousOptIn": {
+          "type": "boolean"
+        },
+        "operatorMeaning": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "localCiPosture": {
+      "type": "object",
+      "required": [
+        "source",
+        "configured",
+        "summary"
+      ],
+      "properties": {
+        "source": {
+          "enum": [
+            "config",
+            "repo_script_candidate",
+            "dismissed_repo_script_candidate"
+          ]
+        },
+        "configured": {
+          "type": "boolean"
+        },
+        "summary": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "reviewProviderPosture": {
+      "type": "object",
+      "required": [
+        "configuredWhen",
+        "signalSources",
+        "operatorAuthorityBoundary"
+      ],
+      "properties": {
+        "configuredWhen": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "signalSources": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "copilot_lifecycle",
+              "review_threads"
+            ]
+          },
+          "minItems": 1
+        },
+        "operatorAuthorityBoundary": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
