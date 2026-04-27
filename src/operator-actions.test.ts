@@ -1,12 +1,38 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import {
   buildStatusOperatorCockpitViewModel,
+  operatorActionVocabulary,
   parseOperatorActionLine,
   type RestartRecommendation,
   selectRestartRecommendation,
   selectStatusOperatorAction,
+  validOperatorActions,
 } from "./operator-actions";
+import { operatorActionDashboardTitles } from "./backend/webui-dashboard-browser-logic";
+
+interface PublishedOperatorActionVocabulary {
+  contractName: string;
+  contractVersion: number;
+  canonicalSource: string;
+  actions: Array<{
+    action: string;
+    surfaces: string[];
+    meaning: string;
+  }>;
+}
+
+const operatorActionContractPath = resolve(process.cwd(), "docs/operator-actions.schema.json");
+
+function readPublishedOperatorActionVocabulary(): PublishedOperatorActionVocabulary {
+  return JSON.parse(readFileSync(operatorActionContractPath, "utf8")) as PublishedOperatorActionVocabulary;
+}
+
+function sortedTokens(tokens: Iterable<string>): string[] {
+  return [...tokens].sort((left, right) => left.localeCompare(right));
+}
 
 function requireRestartRecommendation(recommendation: RestartRecommendation | null): RestartRecommendation {
   if (recommendation === null) {
@@ -55,6 +81,36 @@ test("selectRestartRecommendation classifies every restart recommendation catego
       ],
     })).category,
     "manual_review_before_restart",
+  );
+});
+
+test("published operator action artifact matches the typed vocabulary", () => {
+  const contract = readPublishedOperatorActionVocabulary();
+
+  assert.equal(contract.contractName, "codex-supervisor.operator-actions");
+  assert.equal(contract.contractVersion, 1);
+  assert.equal(contract.canonicalSource, "src/operator-actions.ts");
+  assert.deepEqual(contract.actions, operatorActionVocabulary);
+  assert.deepEqual(sortedTokens(Object.keys(validOperatorActions)), sortedTokens(operatorActionVocabulary.map((entry) => entry.action)));
+});
+
+test("operator action docs and WebUI labels cannot reference tokens outside the shared vocabulary", () => {
+  const vocabulary = new Set<string>(operatorActionVocabulary.map((entry) => entry.action));
+  const docs = readFileSync(resolve(process.cwd(), "docs/getting-started.md"), "utf8");
+  const documentedTokens = [
+    ...docs.matchAll(/\b(?:operator_action|doctor_operator_action) action=([a-z0-9_]+)/gu),
+  ].map((match) => match[1]);
+
+  assert.ok(documentedTokens.length > 0, "getting-started docs should include operator action examples");
+  assert.deepEqual(
+    documentedTokens.filter((token) => !vocabulary.has(token)),
+    [],
+    "docs must not document action tokens outside src/operator-actions.ts",
+  );
+  assert.deepEqual(
+    sortedTokens(Object.keys(operatorActionDashboardTitles)),
+    sortedTokens(vocabulary),
+    "WebUI operator action titles must cover the shared action vocabulary exactly",
   );
 });
 
