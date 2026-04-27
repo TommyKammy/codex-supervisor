@@ -7,6 +7,7 @@ import type { GitHubIssue } from "./core/types";
 
 const demoPath = path.join("docs", "examples", "self-contained-demo-scenario.md");
 const dogfoodWalkthroughPath = path.join("docs", "examples", "phase-16-dogfood-pr-walkthrough.md");
+const publicDemoChecklistPath = path.join("docs", "public-demo-validation-checklist.md");
 
 async function readRepoFile(relativePath: string): Promise<string> {
   return fs.readFile(path.join(process.cwd(), relativePath), "utf8");
@@ -110,4 +111,58 @@ test("Phase 16 dogfood PR walkthrough is linked and annotates the supervised lif
   assert.match(walkthrough, /node dist\/index\.js issue-lint <issue-number> --config <supervisor-config-path>/);
   assert.doesNotMatch(walkthrough, /\/Users\/[A-Za-z0-9._-]+\//);
   assert.doesNotMatch(walkthrough, /C:\\Users\\[A-Za-z0-9._-]+\\/);
+});
+
+test("public demo validation checklist guards the publishable demo surfaces", async () => {
+  const [readme, checklist] = await Promise.all([readRepoFile("README.md"), readRepoFile(publicDemoChecklistPath)]);
+
+  assert.match(
+    readme,
+    /\[Public demo validation checklist\]\(\.\/docs\/public-demo-validation-checklist\.md\)/,
+  );
+
+  const requiredHeadings = [
+    "# Public Demo Validation Checklist",
+    "## Checklist",
+    "## Drift Checks",
+    "## Refresh Readiness Note",
+    "## Verification",
+  ];
+  for (const heading of requiredHeadings) {
+    assert.match(checklist, new RegExp(`^${heading}$`, "m"));
+  }
+
+  for (const phrase of [
+    "README positioning",
+    "self-contained demo scenario",
+    "annotated PR walkthrough",
+    "path hygiene",
+    "schema links",
+    "docs/examples/self-contained-demo-scenario.md",
+    "docs/examples/phase-16-dogfood-pr-walkthrough.md",
+    "docs/issue-body-contract.schema.json",
+    "docs/evidence-timeline.schema.json",
+    "docs/operator-actions.schema.json",
+    "node dist/index.js issue-lint <issue-number> --config <supervisor-config-path>",
+    "CODEX_SUPERVISOR_CONFIG",
+    "npm run verify:paths",
+    "npm run build",
+  ]) {
+    assert.match(checklist, new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "i"));
+  }
+
+  const requiredLinks = [
+    "./examples/self-contained-demo-scenario.md",
+    "./examples/phase-16-dogfood-pr-walkthrough.md",
+    "./issue-body-contract.schema.json",
+    "./evidence-timeline.schema.json",
+    "./operator-actions.schema.json",
+  ];
+  for (const link of requiredLinks) {
+    assert.match(checklist, new RegExp(`\\]${"\\("}${link.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}\\)`));
+  }
+
+  assert.doesNotMatch(checklist, /\/Users\/[A-Za-z0-9._-]+\//);
+  assert.doesNotMatch(checklist, /\/home\/[A-Za-z0-9._-]+\//);
+  assert.doesNotMatch(checklist, /C:\\Users\\[A-Za-z0-9._-]+\\/i);
 });
