@@ -2,6 +2,8 @@
 
 This publishable demo uses one realistic `codex` issue and shows the quality artifacts a normal supervised run produces. It is safe to read offline, copy into docs, or use for screenshots because all commands are repo-relative or placeholder-based and no live GitHub credentials are needed to validate the Markdown itself.
 
+For the compact primitive map behind those artifacts, read the [AI coding quality kit](../quality-kit.md).
+
 Use the scenario as a walkthrough script, not as a hidden policy source. The canonical issue-body rules still live in [Issue metadata](../issue-metadata.md).
 
 ## Demo issue body

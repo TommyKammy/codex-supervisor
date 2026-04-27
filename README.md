@@ -44,6 +44,7 @@ If you want the setup flow, first-run commands, and operator decisions, start wi
 If you want a disposable first supervised pass before production use, follow the [Playground smoke run](./docs/playground-smoke-run.md).
 If you need to understand what to put in `supervisor.config.json`, jump straight to the [Configuration guide](./docs/configuration.md).
 If you are an AI agent entering the repo, start with the [AI agent handoff](./docs/agent-instructions.md) before reading the detailed references.
+If you need the compact public primitive map, read the [AI coding quality kit](./docs/quality-kit.md).
 If you need the product primitive framing for the supervised lane beside chat-driven Codex work, read the [Supervised automation lane](./docs/supervised-automation-lane.md) note.
 If you want the same small change shown as an unstructured session versus a supervised loop, read the [Before / After narrative](./docs/vibe-coding-before-after.md).
 If you want to see the supervised PR lifecycle annotated with Phase 16's own dogfooding flow, read the [Phase 16 dogfood PR walkthrough](./docs/examples/phase-16-dogfood-pr-walkthrough.md).
@@ -285,6 +286,7 @@ Use the [Configuration guide](./docs/configuration.md) for the full routing rule
 - [Configuration reference](./docs/configuration.md): config setup, provider profiles, model/reasoning controls, durable memory, and execution policy
 - [Operator dashboard](./docs/operator-dashboard.md): WebUI launch, panel meanings, safe commands, and browser smoke verification
 - [Local review reference](./docs/local-review.md): local review policies, role selection, artifacts, thresholds, and committed guardrails
+- [AI coding quality kit](./docs/quality-kit.md): compact primitive map for the issue contract, local verification gate, prompt safety boundary, evidence timeline, operator action, and durable history writeback
 - [Supervised automation lane](./docs/supervised-automation-lane.md): product primitive contract for issue/spec-driven supervised automation beside Codex chat
 - [Before / After narrative](./docs/vibe-coding-before-after.md): the same small change compared as an unstructured session and a supervised loop
 - [Phase 16 dogfood PR walkthrough](./docs/examples/phase-16-dogfood-pr-walkthrough.md): annotated supervised PR lifecycle from the repo's own demo-material phase using sanitized public-safe placeholders

@@ -1,0 +1,85 @@
+# AI Coding Quality Kit
+
+This public product overview maps the implemented `codex-supervisor` primitives that turn Codex work into issue-driven, test-backed, reviewable delivery. It is adoption-oriented: use it to see what each primitive does and where the repo already backs it with docs, schema artifacts, or tests.
+
+The kit is intentionally small. It does not introduce new runtime primitives, and it points to existing artifacts instead of restating Phase 15 schema content.
+
+## Issue Contract
+
+An Issue Contract turns a GitHub issue into a bounded execution input. The issue must name the behavior delta, scope, acceptance criteria, verification, dependency posture, parallelization posture, and execution order before the supervisor treats it as runnable.
+
+Backed by:
+
+- [Issue metadata](./issue-metadata.md)
+- [issue body contract](./issue-body-contract.schema.json)
+- [codex issue template](../.github/ISSUE_TEMPLATE/codex-execution-ready.md)
+- `src/supervisor/supervisor-selection-issue-lint.test.ts`
+- `src/demo-scenario-docs.test.ts`
+
+## Local Verification Gate
+
+The Local Verification Gate keeps a change from advancing on prose alone. Focused issue verification, configured local CI, path hygiene, and build checks provide current-head evidence before PR publication or ready-for-review promotion.
+
+Backed by:
+
+- [Configuration reference](./configuration.md)
+- [Local review reference](./local-review.md)
+- [Release readiness checklist](./validation-checklist.md)
+- `src/local-ci.test.ts`
+- `src/tracked-pr-local-ci-publication-gate.test.ts`
+- `src/post-turn-pull-request.test.ts`
+
+## Prompt Safety Boundary
+
+The Prompt Safety Boundary is the trust posture around text that Codex receives. GitHub-authored issue bodies, PR review comments, and similar text are execution inputs, not supervisor policy; the operator must choose a trusted repo, author lane, config, and execution-safety posture before autonomous runs are appropriate.
+
+Backed by:
+
+- [AI agent handoff](./agent-instructions.md)
+- [trust posture](./trust-posture-config.schema.json)
+- [Architecture](./architecture.md)
+- [Codex app Automation boundary](./automation.md)
+- `src/codex/codex-prompt.test.ts`
+- `src/local-review/prompt.test.ts`
+
+## Evidence Timeline
+
+The Evidence Timeline records what happened so an operator, reviewer, or future Codex session can audit the run. It ties issue state, branch and head facts, PR state, checks, review facts, local verification, failure signatures, and journal handoff to durable records instead of chat memory.
+
+Backed by:
+
+- [evidence timeline](./evidence-timeline.schema.json)
+- [self-contained demo scenario](./examples/self-contained-demo-scenario.md)
+- [Phase 16 dogfood PR walkthrough](./examples/phase-16-dogfood-pr-walkthrough.md)
+- `src/timeline-artifacts.test.ts`
+- `src/operator-audit-bundle.test.ts`
+
+## Operator Action
+
+Operator Action is explicit human control over the lane. It covers setup choices, missing prerequisites, loop hosting, recovery acknowledgement, risky cleanup, local CI adoption, follow-up issue confirmation, and manual review decisions.
+
+Backed by:
+
+- [Operator actions](./operator-actions.schema.json)
+- [Operator dashboard](./operator-dashboard.md)
+- [Getting started](./getting-started.md)
+- [Supervised automation lane](./supervised-automation-lane.md)
+- `src/operator-actions.test.ts`
+- `src/supervisor/supervisor-diagnostics-status-selection.test.ts`
+
+## Durable History Writeback
+
+Durable History Writeback preserves the facts needed after thread loss, process restart, release review, or future planning. The active issue journal carries short-horizon working notes; GitHub issues, PRs, evidence timeline entries, and operator-maintained project notes carry longer-lived history.
+
+Backed by:
+
+- [Supervised automation lane](./supervised-automation-lane.md)
+- [Architecture](./architecture.md)
+- [self-contained demo scenario](./examples/self-contained-demo-scenario.md)
+- [Codex app Automation boundary](./automation.md)
+- `src/journal.test.ts`
+- `src/supervisor/supervisor-recovery-reconciliation.test.ts`
+
+## Reading Path
+
+Start with this map when you need the product primitive vocabulary. Then use [Getting started](./getting-started.md) for first-run operation, [Issue metadata](./issue-metadata.md) for authoring, [Configuration reference](./configuration.md) for trust and local verification posture, and [Architecture](./architecture.md) for the runtime boundaries.
