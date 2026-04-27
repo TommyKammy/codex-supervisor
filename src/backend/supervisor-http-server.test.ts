@@ -1185,6 +1185,132 @@ test("createSupervisorHttpServer rejects cross-origin mutation requests before s
   assert.deepEqual(setupConfigUpdateCalls, []);
 });
 
+test("createSupervisorHttpServer requires token, loopback http Origin, and matching Host port for mutations", async (t) => {
+  const setupConfigUpdateCalls: Array<unknown> = [];
+  const server = createSupervisorHttpServer({
+    service: createStubService({ setupConfigUpdateCalls }),
+    mutationAuth: testMutationAuth,
+  });
+  t.after(async () => {
+    await closeServer(server);
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.listen(0, "127.0.0.1", () => resolve());
+    server.on("error", reject);
+  });
+
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("Expected server to listen on an ephemeral port.");
+  }
+
+  const localHost = `127.0.0.1:${address.port}`;
+  const localOrigin = `http://${localHost}`;
+  const setupConfigWriteBody = JSON.stringify({
+    changes: {
+      reviewProvider: "codex",
+    },
+  });
+  const validHeaders = {
+    Host: localHost,
+    Origin: localOrigin,
+    "Content-Type": "application/json",
+    [WEBUI_MUTATION_AUTH_HEADER]: testMutationAuth.token,
+  };
+
+  const acceptedResponse = await readJson({
+    server,
+    path: "/api/setup-config",
+    method: "POST",
+    headers: validHeaders,
+    body: setupConfigWriteBody,
+  });
+
+  assert.equal(acceptedResponse.statusCode, 200);
+  assert.equal(setupConfigUpdateCalls.length, 1);
+
+  const rejectionCases: Array<{
+    name: string;
+    headers: http.OutgoingHttpHeaders;
+    statusCode: number;
+  }> = [
+    {
+      name: "token-only",
+      headers: {
+        Host: localHost,
+        "Content-Type": "application/json",
+        [WEBUI_MUTATION_AUTH_HEADER]: testMutationAuth.token,
+      },
+      statusCode: 403,
+    },
+    {
+      name: "origin-only",
+      headers: {
+        Host: localHost,
+        Origin: localOrigin,
+        "Content-Type": "application/json",
+      },
+      statusCode: 401,
+    },
+    {
+      name: "host-only",
+      headers: {
+        Host: localHost,
+        "Content-Type": "application/json",
+      },
+      statusCode: 401,
+    },
+    {
+      name: "non-loopback host",
+      headers: {
+        ...validHeaders,
+        Host: `example.test:${address.port}`,
+      },
+      statusCode: 403,
+    },
+    {
+      name: "non-http origin",
+      headers: {
+        ...validHeaders,
+        Origin: `https://${localHost}`,
+      },
+      statusCode: 403,
+    },
+    {
+      name: "port mismatch",
+      headers: {
+        ...validHeaders,
+        Origin: "http://127.0.0.1:1",
+      },
+      statusCode: 403,
+    },
+    {
+      name: "missing Origin",
+      headers: {
+        Host: localHost,
+        "Content-Type": "application/json",
+        [WEBUI_MUTATION_AUTH_HEADER]: testMutationAuth.token,
+      },
+      statusCode: 403,
+    },
+  ];
+
+  for (const rejectionCase of rejectionCases) {
+    const beforeCalls: number = setupConfigUpdateCalls.length;
+    const response = await readJson({
+      server,
+      path: "/api/setup-config",
+      method: "POST",
+      headers: rejectionCase.headers,
+      body: setupConfigWriteBody,
+    });
+
+    assert.equal(response.statusCode, rejectionCase.statusCode, rejectionCase.name);
+    assert.equal(setupConfigUpdateCalls.length, beforeCalls, rejectionCase.name);
+  }
+});
+
 test("createSupervisorHttpServer serializes concurrent run-once requests", async (t) => {
   let activeRuns = 0;
   let maxConcurrentRuns = 0;

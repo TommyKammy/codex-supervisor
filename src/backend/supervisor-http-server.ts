@@ -287,9 +287,6 @@ function authorizeMutationRequest(
   if (!isLocalHostHeader(request.headers.host)) {
     throw new HttpRequestError(403, "Mutation requests must target a localhost host.");
   }
-  if (!isAllowedLocalOrigin(request.headers.origin, request.headers.host)) {
-    throw new HttpRequestError(403, "Mutation requests must originate from the local WebUI origin.");
-  }
   if (!mutationAuth?.token) {
     throw new HttpRequestError(503, "Mutation auth is not configured.");
   }
@@ -297,6 +294,9 @@ function authorizeMutationRequest(
   const providedToken = readSingleHeaderValue(request.headers[WEBUI_MUTATION_AUTH_HEADER]);
   if (!providedToken || providedToken !== mutationAuth.token) {
     throw new HttpRequestError(401, "Mutation auth required.");
+  }
+  if (!isAllowedLocalOrigin(request.headers.origin, request.headers.host)) {
+    throw new HttpRequestError(403, "Mutation requests must originate from the local WebUI origin.");
   }
 }
 
@@ -325,7 +325,7 @@ function isLocalHostHeader(hostHeader: string | string[] | undefined): boolean {
 function isAllowedLocalOrigin(originHeader: string | string[] | undefined, hostHeader: string | string[] | undefined): boolean {
   const origin = readSingleHeaderValue(originHeader);
   if (origin === null) {
-    return true;
+    return false;
   }
 
   const host = readSingleHeaderValue(hostHeader);
