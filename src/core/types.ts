@@ -356,6 +356,7 @@ export interface CliOptions {
     | "reset-corrupt-json-state"
     | "explain"
     | "issue-lint"
+    | "sample-issue"
     | "readiness-checklist"
     | "init"
     | "doctor"
@@ -373,4 +374,5 @@ export interface CliOptions {
   snapshotPath?: string;
   caseId?: string;
   corpusPath?: string;
+  sampleIssueOutputPath?: string;
 }

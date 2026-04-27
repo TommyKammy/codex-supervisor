@@ -53,6 +53,8 @@ test("handleInitCommand previews a fail-closed scaffold without writing config c
   assert.match(output, /"reviewBotLogins": \[\]/u);
   assert.match(output, /"trustMode": "untrusted_or_mixed"/u);
   assert.match(output, /"executionSafetyMode": "operator_gated"/u);
+  assert.match(output, /^sample_issue_preview_command=node dist\/index\.js sample-issue$/m);
+  assert.match(output, /^sample_issue_file_command=node dist\/index\.js sample-issue --output SAMPLE_ISSUE\.md$/m);
   assert.match(output, /^next_command=node dist\/index\.js issue-lint <issue-number> --config <supervisor-config-path>$/m);
 });
 

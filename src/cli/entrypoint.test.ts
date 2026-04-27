@@ -118,6 +118,32 @@ test("runCli routes init before constructing supervisor services", async () => {
   assert.deepEqual(stdout, ["init preview"]);
 });
 
+test("runCli routes sample-issue before constructing supervisor services", async () => {
+  const stdout: string[] = [];
+  let createdSupervisorService = false;
+  let receivedOptions: Record<string, unknown> | undefined;
+
+  await runCli(["sample-issue", "--output", "SAMPLE_ISSUE.md"], {
+    createSupervisorService: () => {
+      createdSupervisorService = true;
+      throw new Error("unexpected createSupervisorService");
+    },
+    handleSampleIssueCommand: async (options) => {
+      receivedOptions = { ...options };
+      return "sample issue output";
+    },
+    writeStdout: (line) => {
+      stdout.push(line);
+    },
+  });
+
+  assert.equal(createdSupervisorService, false);
+  assert.deepEqual(receivedOptions, {
+    outputPath: "SAMPLE_ISSUE.md",
+  });
+  assert.deepEqual(stdout, ["sample issue output"]);
+});
+
 test("runCli fails closed on a stale compiled runtime before constructing supervisor services", async () => {
   let createdSupervisorService = false;
   let createdLoopController = false;

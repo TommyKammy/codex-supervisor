@@ -164,6 +164,8 @@ function renderInitResult(args: {
     "trust_posture trustMode=untrusted_or_mixed executionSafetyMode=operator_gated",
     "config_skeleton:",
     JSON.stringify(args.document, null, 2),
+    "sample_issue_preview_command=node dist/index.js sample-issue",
+    "sample_issue_file_command=node dist/index.js sample-issue --output SAMPLE_ISSUE.md",
     "next_command=node dist/index.js issue-lint <issue-number> --config <supervisor-config-path>",
   ].join("\n");
 }

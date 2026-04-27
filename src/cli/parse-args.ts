@@ -9,6 +9,15 @@ function readConfigPath(args: string[]): string {
   return configPath;
 }
 
+function readOutputPath(args: string[]): string {
+  const outputPath = args.shift();
+  if (!outputPath || outputPath.startsWith("-")) {
+    throw new Error("The --output flag requires a file path.");
+  }
+
+  return outputPath;
+}
+
 export function parseArgs(argv: string[]): CliOptions {
   const args = [...argv];
   let command: CliOptions["command"] = "run-once";
@@ -23,6 +32,7 @@ export function parseArgs(argv: string[]): CliOptions {
   let snapshotPath: string | undefined;
   let caseId: string | undefined;
   let corpusPath: string | undefined;
+  let sampleIssueOutputPath: string | undefined;
 
   while (args.length > 0) {
     const token = args.shift();
@@ -41,6 +51,7 @@ export function parseArgs(argv: string[]): CliOptions {
       token === "reset-corrupt-json-state" ||
       token === "explain" ||
       token === "issue-lint" ||
+      token === "sample-issue" ||
       token === "readiness-checklist" ||
       token === "init" ||
       token === "doctor" ||
@@ -76,6 +87,11 @@ export function parseArgs(argv: string[]): CliOptions {
 
     if (token === "--suggest") {
       issueLintSuggest = true;
+      continue;
+    }
+
+    if (token === "--output") {
+      sampleIssueOutputPath = readOutputPath(args);
       continue;
     }
 
@@ -134,6 +150,10 @@ export function parseArgs(argv: string[]): CliOptions {
     throw new Error("The --suggest flag is only supported with the issue-lint command.");
   }
 
+  if (sampleIssueOutputPath !== undefined && command !== "sample-issue") {
+    throw new Error("The --output flag is only supported with the sample-issue command.");
+  }
+
   if (timelineRequested && command !== "explain") {
     throw new Error("The --timeline flag is only supported with the explain command.");
   }
@@ -186,5 +206,6 @@ export function parseArgs(argv: string[]): CliOptions {
       command === "replay-corpus" || command === "replay-corpus-promote"
         ? (corpusPath ?? "replay-corpus")
         : undefined,
+    ...(sampleIssueOutputPath === undefined ? {} : { sampleIssueOutputPath }),
   };
 }
