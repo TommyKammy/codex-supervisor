@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { LockHandle } from "../core/lock";
 import type { SupervisorConfig } from "../core/types";
+import type { SetupReadinessReport } from "../setup-readiness";
 import type { SupervisorIssueLintDto } from "../supervisor/supervisor-selection-issue-lint";
 import type { SupervisorStatusDto } from "../supervisor/supervisor-status-report";
 import { runSupervisorCycle, runSupervisorCommand } from "./supervisor-runtime";
@@ -46,6 +47,81 @@ function createStatusDto(overrides: Partial<SupervisorStatusDto> = {}): Supervis
     readinessLines: [],
     whyLines: [],
     warning: null,
+    ...overrides,
+  };
+}
+
+function createSetupReadinessReport(overrides: Partial<SetupReadinessReport> = {}): SetupReadinessReport {
+  return {
+    kind: "setup_readiness",
+    ready: false,
+    overallStatus: "missing",
+    configPath: "supervisor.config.json",
+    fields: [
+      {
+        key: "repoPath",
+        label: "Repository path",
+        state: "configured",
+        value: null,
+        message: "Repository path is configured.",
+        required: true,
+        metadata: { source: "config", editable: true, valueType: "directory_path" },
+      },
+      {
+        key: "repoSlug",
+        label: "Repository slug",
+        state: "configured",
+        value: "owner/repo",
+        message: "Repository slug is configured.",
+        required: true,
+        metadata: { source: "config", editable: true, valueType: "repo_slug" },
+      },
+      {
+        key: "defaultBranch",
+        label: "Default branch",
+        state: "configured",
+        value: "main",
+        message: "Default branch is configured.",
+        required: true,
+        metadata: { source: "config", editable: true, valueType: "git_ref" },
+      },
+      {
+        key: "workspaceRoot",
+        label: "Workspace root",
+        state: "configured",
+        value: null,
+        message: "Workspace root is configured.",
+        required: true,
+        metadata: { source: "config", editable: true, valueType: "directory_path" },
+      },
+    ],
+    blockers: [],
+    nextActions: [
+      {
+        action: "fix_config",
+        source: "missing_trust_mode",
+        priority: 100,
+        required: true,
+        summary: "Trust mode needs an explicit first-run setup decision.",
+        fieldKeys: ["trustMode"],
+      },
+    ],
+    hostReadiness: { overallStatus: "pass", checks: [] },
+    providerPosture: {
+      profile: "codex",
+      provider: "codex",
+      reviewers: ["chatgpt-codex-connector"],
+      signalSource: "reviewBotLogins",
+      configured: true,
+      summary: "Codex review provider is configured.",
+    },
+    trustPosture: {
+      trustMode: "trusted_repo_and_authors",
+      executionSafetyMode: "unsandboxed_autonomous",
+      warning: null,
+      configured: false,
+      summary: "Trust posture needs an explicit first-run setup decision.",
+    },
     ...overrides,
   };
 }
@@ -578,6 +654,65 @@ test("runSupervisorCommand routes query commands through the supervisor service 
   assert.deepEqual(calls, ["status:true"]);
   assert.equal(stdout.length, 1);
   assert.match(stdout[0] ?? "", /status output/);
+});
+
+test("runSupervisorCommand renders doctor first-run summary from setup readiness", async () => {
+  const stdout: string[] = [];
+  const calls: string[] = [];
+
+  await runSupervisorCommand(
+    { command: "doctor", dryRun: false, why: false, firstRunDoctorSummary: true },
+    {
+      service: {
+        config: {} as SupervisorConfig,
+        pollIntervalMs: async () => 50,
+        runOnce: async () => {
+          calls.push("runOnce");
+          throw new Error("unexpected runOnce");
+        },
+        queryStatus: async () => {
+          calls.push("status");
+          return createStatusDto();
+        },
+        queryExplain: async () => {
+          calls.push("explain");
+          throw new Error("unexpected queryExplain");
+        },
+        runRecoveryAction: async () => {
+          calls.push("recovery");
+          throw new Error("unexpected runRecoveryAction");
+        },
+        pruneOrphanedWorkspaces: async () => {
+          calls.push("pruneOrphanedWorkspaces");
+          throw new Error("unexpected pruneOrphanedWorkspaces");
+        },
+        resetCorruptJsonState: async () => {
+          calls.push("resetCorruptJsonState");
+          throw new Error("unexpected resetCorruptJsonState");
+        },
+        queryIssueLint: async () => {
+          calls.push("issueLint");
+          return createIssueLintDto();
+        },
+        queryDoctor: async () => {
+          calls.push("doctor");
+          throw new Error("unexpected queryDoctor");
+        },
+        querySetupReadiness: async () => {
+          calls.push("setupReadiness");
+          return createSetupReadinessReport();
+        },
+      },
+      writeStdout: (line) => {
+        stdout.push(line);
+      },
+    },
+  );
+
+  assert.deepEqual(calls, ["setupReadiness"]);
+  assert.equal(stdout.length, 1);
+  assert.match(stdout[0] ?? "", /^first_run_readiness ready=false overall=missing/m);
+  assert.match(stdout[0] ?? "", /^first_run_next_action action=fix_config source=missing_trust_mode required=true/m);
 });
 
 test("runSupervisorCommand renders explain audit bundles as JSON", async () => {

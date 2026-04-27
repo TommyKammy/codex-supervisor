@@ -47,6 +47,22 @@ test("parseArgs accepts doctor as a command", () => {
   });
 });
 
+test("parseArgs accepts doctor first-run summary mode", () => {
+  assert.deepEqual(parseArgs(["doctor", "--first-run"]), {
+    command: "doctor",
+    configPath: undefined,
+    dryRun: false,
+    why: false,
+    issueLintSuggest: false,
+    explainMode: "summary",
+    issueNumber: undefined,
+    snapshotPath: undefined,
+    caseId: undefined,
+    corpusPath: undefined,
+    firstRunDoctorSummary: true,
+  });
+});
+
 test("parseArgs accepts web as a command", () => {
   assert.deepEqual(parseArgs(["web"]), {
     command: "web",
@@ -393,6 +409,13 @@ test("parseArgs rejects suggest mode outside issue-lint", () => {
   assert.throws(
     () => parseArgs(["status", "--suggest"]),
     /The --suggest flag is only supported with the issue-lint command\./,
+  );
+});
+
+test("parseArgs rejects first-run summary mode outside doctor", () => {
+  assert.throws(
+    () => parseArgs(["status", "--first-run"]),
+    /The --first-run flag is only supported with the doctor command\./,
   );
 });
 

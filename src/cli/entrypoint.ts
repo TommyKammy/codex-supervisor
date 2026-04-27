@@ -23,7 +23,7 @@ import { assertRuntimeFreshness } from "../build-freshness";
 
 type SupervisorRuntimeOptions = Pick<
   CliOptions,
-  "command" | "dryRun" | "why" | "issueLintSuggest" | "explainMode" | "issueNumber"
+  "command" | "dryRun" | "why" | "issueLintSuggest" | "explainMode" | "issueNumber" | "firstRunDoctorSummary"
 >;
 
 async function readReadinessChecklist(): Promise<string> {
@@ -157,6 +157,7 @@ export async function runCli(
       issueLintSuggest: options.issueLintSuggest,
       explainMode: options.explainMode,
       issueNumber: options.issueNumber,
+      ...(options.firstRunDoctorSummary ? { firstRunDoctorSummary: true } : {}),
     },
     {
       service,

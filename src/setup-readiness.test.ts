@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { diagnoseSetupReadiness } from "./setup-readiness";
+import { diagnoseSetupReadiness, renderFirstRunDoctorSummary } from "./setup-readiness";
 
 test("setup-readiness imports shared diagnostic DTOs instead of doctor raw types", async () => {
   const content = await fs.readFile(path.join(process.cwd(), "src", "setup-readiness.ts"), "utf8");
@@ -60,6 +60,74 @@ test("diagnoseSetupReadiness explains copied starter profile placeholders as fir
     summary.nextActions.find((action) => action.source === "invalid_repo_slug")?.summary ?? "",
     /replace it with the GitHub owner\/repo slug/i,
   );
+});
+
+test("renderFirstRunDoctorSummary orders beginner blockers and emits one next action", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = await createTrackedRepo(root);
+  await fs.writeFile(
+    path.join(repoPath, "package.json"),
+    JSON.stringify({ private: true, scripts: { "verify:pre-pr": "tsx --test" } }, null, 2),
+    "utf8",
+  );
+  execFileSync("git", ["add", "package.json"], { cwd: repoPath });
+  execFileSync("git", ["commit", "-m", "add local ci script"], {
+    cwd: repoPath,
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Codex",
+      GIT_AUTHOR_EMAIL: "codex@example.com",
+      GIT_COMMITTER_NAME: "Codex",
+      GIT_COMMITTER_EMAIL: "codex@example.com",
+    },
+  });
+
+  const workspaceRoot = path.join(root, "workspaces");
+  const configPath = path.join(root, "supervisor.config.json");
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  await fs.writeFile(
+    configPath,
+    JSON.stringify(
+      buildConfigDocument({
+        repoPath,
+        workspaceRoot,
+        stateFile: path.join(root, "state.json"),
+        workspacePreparationCommand: undefined,
+        includeTrustPosture: false,
+      }),
+    ),
+    "utf8",
+  );
+
+  const report = await diagnoseSetupReadiness({
+    configPath,
+    authStatus: async () => ({ ok: false, message: "not logged in" }),
+  });
+  const summary = renderFirstRunDoctorSummary(report);
+
+  assert.equal((summary.match(/^first_run_next_action /gm) ?? []).length, 1);
+
+  const orderedPhrases = [
+    "first_run_repo_identity",
+    "first_run_config_placeholders status=clear",
+    "first_run_local_ci status=optional",
+    "first_run_trust_posture status=blocked",
+    "first_run_github_auth status=blocked",
+    "first_run_next_action action=fix_config source=missing_trust_mode required=true",
+    "first_run_next_command command=node dist/index.js init --config <supervisor-config-path>; node dist/index.js sample-issue --output <sample-issue-path>; node dist/index.js issue-lint <issue-number> --config <supervisor-config-path>",
+  ];
+  let lastIndex = -1;
+  for (const phrase of orderedPhrases) {
+    const index = summary.indexOf(phrase);
+    assert.notEqual(index, -1, `expected first-run summary to include ${phrase}`);
+    assert.ok(index > lastIndex, `expected ${phrase} after the previous first-run summary section`);
+    lastIndex = index;
+  }
+  assert.doesNotMatch(summary, new RegExp(root.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });
 
 test("diagnoseSetupReadiness preserves provider-specific posture for copied CodeRabbit starter profile", async (t) => {
