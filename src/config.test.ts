@@ -1612,6 +1612,7 @@ test("shipped example configs recommend block_merge for local review gating", as
     path.join(rootDir, "supervisor.config.coderabbit.json"),
     path.join(rootDir, "supervisor.config.typescript-node.json"),
     path.join(rootDir, "supervisor.config.nextjs.json"),
+    path.join(rootDir, "supervisor.config.python-cli.json"),
     path.join(rootDir, "docs", "examples", "atlaspm.supervisor.config.example.json"),
   ];
 
@@ -1630,6 +1631,7 @@ test("shipped starter config profiles keep local review disabled until operators
     path.join(rootDir, "supervisor.config.coderabbit.json"),
     path.join(rootDir, "supervisor.config.typescript-node.json"),
     path.join(rootDir, "supervisor.config.nextjs.json"),
+    path.join(rootDir, "supervisor.config.python-cli.json"),
   ];
 
   for (const examplePath of examplePaths) {
@@ -1647,6 +1649,7 @@ test("shipped example configs keep local-review follow-up issue creation opt-in"
     path.join(rootDir, "supervisor.config.coderabbit.json"),
     path.join(rootDir, "supervisor.config.typescript-node.json"),
     path.join(rootDir, "supervisor.config.nextjs.json"),
+    path.join(rootDir, "supervisor.config.python-cli.json"),
     path.join(rootDir, "docs", "examples", "atlaspm.supervisor.config.example.json"),
   ];
 
@@ -1671,6 +1674,7 @@ test("shipped example configs keep local-review same-PR follow-up repair opt-in"
     path.join(rootDir, "supervisor.config.coderabbit.json"),
     path.join(rootDir, "supervisor.config.typescript-node.json"),
     path.join(rootDir, "supervisor.config.nextjs.json"),
+    path.join(rootDir, "supervisor.config.python-cli.json"),
     path.join(rootDir, "docs", "examples", "atlaspm.supervisor.config.example.json"),
   ];
 
@@ -1695,6 +1699,7 @@ test("shipped example configs recommend blocked for high-severity local review f
     path.join(rootDir, "supervisor.config.coderabbit.json"),
     path.join(rootDir, "supervisor.config.typescript-node.json"),
     path.join(rootDir, "supervisor.config.nextjs.json"),
+    path.join(rootDir, "supervisor.config.python-cli.json"),
     path.join(rootDir, "docs", "examples", "atlaspm.supervisor.config.example.json"),
   ];
 
@@ -1718,6 +1723,7 @@ test("shipped example configs use the issue-scoped journal path template and pre
     path.join(rootDir, "supervisor.config.coderabbit.json"),
     path.join(rootDir, "supervisor.config.typescript-node.json"),
     path.join(rootDir, "supervisor.config.nextjs.json"),
+    path.join(rootDir, "supervisor.config.python-cli.json"),
     path.join(rootDir, "docs", "examples", "atlaspm.supervisor.config.example.json"),
   ];
 
@@ -1765,6 +1771,7 @@ test("shipped config profiles declare the intended review bot logins", async () 
     ["supervisor.config.coderabbit.json", ["coderabbitai", "coderabbitai[bot]"]],
     ["supervisor.config.typescript-node.json", ["copilot-pull-request-reviewer"]],
     ["supervisor.config.nextjs.json", ["copilot-pull-request-reviewer"]],
+    ["supervisor.config.python-cli.json", ["copilot-pull-request-reviewer"]],
   ]);
 
   for (const [relativePath, expectedReviewBotLogins] of expectedProfiles) {
@@ -1794,6 +1801,10 @@ test("shipped starter profiles fail closed with first-run placeholder guidance",
     ["supervisor.config.coderabbit.json", ["repoSlug"]],
     ["supervisor.config.typescript-node.json", ["repoPath", "repoSlug", "workspaceRoot", "codexBinary"]],
     ["supervisor.config.nextjs.json", ["repoPath", "repoSlug", "workspaceRoot", "codexBinary"]],
+    [
+      "supervisor.config.python-cli.json",
+      ["repoPath", "repoSlug", "workspaceRoot", "codexBinary", "workspacePreparationCommand", "localCiCommand"],
+    ],
   ]);
 
   for (const [relativePath, invalidFields] of expectedInvalidFields) {
@@ -1962,6 +1973,70 @@ test("shipped Next.js starter profile publishes npm posture and execution-ready 
     createdAt: "2026-04-27T00:00:00Z",
     updatedAt: "2026-04-27T00:00:00Z",
     url: "https://example.com/issues/101",
+    labels: [{ name: "codex" }],
+    state: "OPEN",
+  };
+
+  assert.deepEqual(validateIssueMetadataSyntax(sampleIssue), []);
+  const lint = lintExecutionReadyIssueBody(sampleIssue);
+  assert.equal(lint.isExecutionReady, true);
+  assert.deepEqual(lint.missingRequired, []);
+  assert.deepEqual(lint.missingRecommended, []);
+});
+
+test("shipped Python and CLI starter profile publishes portable command substitution guidance", async () => {
+  const rootDir = path.resolve(__dirname, "..");
+  const relativePath = "supervisor.config.python-cli.json";
+  const raw = (await readShippedProfileJson(rootDir, relativePath)) as {
+    workspacePreparationCommand?: unknown;
+    localCiCommand?: unknown;
+    skipTitlePrefixes?: unknown;
+  };
+  const summary = loadConfigSummaryFromDocument(raw, path.join(rootDir, relativePath));
+  const docs = await Promise.all([
+    fs.readFile(path.join(rootDir, "README.md"), "utf8"),
+    fs.readFile(path.join(rootDir, "docs", "configuration.md"), "utf8"),
+    fs.readFile(path.join(rootDir, "docs", "getting-started.md"), "utf8"),
+    fs.readFile(path.join(rootDir, "docs", "examples", "python-cli.md"), "utf8"),
+  ]);
+
+  assert.equal(raw.workspacePreparationCommand, "<replace-with-repo-owned-setup-command>");
+  assert.equal(raw.localCiCommand, "<replace-with-repo-owned-pre-pr-command>");
+  assert.deepEqual(raw.skipTitlePrefixes, ["Epic:"]);
+  assert.equal(summary.status, "invalid_config");
+  assert.deepEqual(summary.invalidFields, [
+    "repoPath",
+    "repoSlug",
+    "workspaceRoot",
+    "codexBinary",
+    "workspacePreparationCommand",
+    "localCiCommand",
+  ]);
+
+  for (const content of docs) {
+    assert.match(content, /supervisor\.config\.python-cli\.json/);
+  }
+
+  const exampleDoc = docs[3] ?? "";
+  assert.match(exampleDoc, /<replace-with-repo-owned-setup-command>/);
+  assert.match(exampleDoc, /<replace-with-repo-owned-pre-pr-command>/);
+  assert.match(exampleDoc, /python -m pytest/);
+  assert.match(exampleDoc, /python -m build/);
+  assert.match(exampleDoc, /do not assume every Python package or CLI tool uses these commands/i);
+  assert.doesNotMatch(exampleDoc, /\/Users\/[A-Za-z0-9._-]+\//);
+  assert.doesNotMatch(exampleDoc, /C:\\Users\\[A-Za-z0-9._-]+\\/);
+
+  const match = exampleDoc.match(
+    /<!-- python-cli-first-issue:start -->\s*```md\s*([\s\S]*?)```\s*<!-- python-cli-first-issue:end -->/,
+  );
+  assert.ok(match, "Python/CLI starter doc must include the marked sample issue body");
+  const sampleIssue: GitHubIssue = {
+    number: 102,
+    title: "Add CLI version flag test",
+    body: match[1].trim(),
+    createdAt: "2026-04-27T00:00:00Z",
+    updatedAt: "2026-04-27T00:00:00Z",
+    url: "https://example.com/issues/102",
     labels: [{ name: "codex" }],
     state: "OPEN",
   };

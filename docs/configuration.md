@@ -23,6 +23,7 @@ Most operators start from one of these files:
 - [supervisor.config.coderabbit.json](../supervisor.config.coderabbit.json)
 - [supervisor.config.typescript-node.json](../supervisor.config.typescript-node.json)
 - [supervisor.config.nextjs.json](../supervisor.config.nextjs.json)
+- [supervisor.config.python-cli.json](../supervisor.config.python-cli.json)
 
 The shipped starter configs intentionally surface a short list of high-leverage optional fields in addition to the required baseline. In practice, operators most often need to discover model-routing overrides (`boundedRepairModel*`, `localReviewModel*`), current-head local-review freshness (`trackedPrCurrentHeadLocalReviewRequired`), and repo-owned host contracts (`workspacePreparationCommand`, `localCiCommand`) without reading the full schema first.
 
@@ -147,6 +148,7 @@ Each shipped profile only configures what the supervisor expects to observe. You
 | CodeRabbit | [supervisor.config.coderabbit.json](../supervisor.config.coderabbit.json) | You want bounded waiting for current-head CodeRabbit review signals. | `coderabbitai`, `coderabbitai[bot]` | Replace `repoSlug: "REPLACE_ME"` before first run; the placeholder is a fail-closed guardrail. |
 | TypeScript/Node | [supervisor.config.typescript-node.json](../supervisor.config.typescript-node.json) | Your repo can expose npm-owned `npm ci` setup and `npm run verify:pre-pr` verification commands. | `copilot-pull-request-reviewer` | Replace required path and repo placeholders, then confirm the managed repo defines `verify:pre-pr`; see the [TypeScript and Node starter profile](./examples/typescript-node.md). |
 | Next.js | [supervisor.config.nextjs.json](../supervisor.config.nextjs.json) | Your app can expose npm-owned `npm ci` setup and `npm run verify:pre-pr` verification commands around the scripts it actually defines. | `copilot-pull-request-reviewer` | Replace required path and repo placeholders, then confirm the managed repo defines `verify:pre-pr`; see the [Next.js starter profile](./examples/nextjs.md). |
+| Python/CLI | [supervisor.config.python-cli.json](../supervisor.config.python-cli.json) | Your Python package or CLI tool has repo-owned setup and pre-PR verification commands, but not necessarily npm scripts. | `copilot-pull-request-reviewer` | Replace required path placeholders and the command placeholders before first run; see the [Python and CLI starter profile](./examples/python-cli.md). |
 
 After choosing a starter profile, use the [review-provider settings](#review-and-merge-policy) for the full field list. Keep provider-specific setup outside the supervisor aligned with the same choice instead of copying every provider caveat into this quick comparison.
 

@@ -22,6 +22,8 @@ const STARTER_PROFILE_PLACEHOLDERS: Record<string, Set<string>> = {
   repoSlug: new Set(["OWNER/REPO", "REPLACE_ME"]),
   workspaceRoot: new Set(["/absolute/path/to/worktrees"]),
   codexBinary: new Set(["/absolute/path/to/codex"]),
+  workspacePreparationCommand: new Set(["<replace-with-repo-owned-setup-command>"]),
+  localCiCommand: new Set(["<replace-with-repo-owned-pre-pr-command>"]),
 };
 
 const WORKSPACE_PREPARATION_SCRIPT_RUNNERS = new Set(["bash", "sh", "node", "bun", "deno", "python", "python3", "ruby", "tsx", "ts-node"]);
@@ -56,7 +58,7 @@ export function isStarterProfilePlaceholder(field: string, value: unknown): bool
 }
 
 export function collectStarterProfilePlaceholderFields(raw: Record<string, unknown>): string[] {
-  return REQUIRED_STRING_CONFIG_FIELDS.filter((field) => isStarterProfilePlaceholder(field, raw[field])) as string[];
+  return Object.keys(STARTER_PROFILE_PLACEHOLDERS).filter((field) => isStarterProfilePlaceholder(field, raw[field]));
 }
 
 export function buildStarterProfilePlaceholderFieldMessage(field: string, value: unknown): string | null {
@@ -73,6 +75,10 @@ export function buildStarterProfilePlaceholderFieldMessage(field: string, value:
       return "Workspace root still contains a starter placeholder. Replace it with the directory where issue worktrees should be created.";
     case "codexBinary":
       return "Codex binary still contains a starter placeholder. Replace it with a PATH command such as codex or the path to the Codex executable.";
+    case "workspacePreparationCommand":
+      return "Workspace preparation command still contains a starter placeholder. Replace it with the repo-owned setup command or clear it intentionally.";
+    case "localCiCommand":
+      return "Local CI command still contains a starter placeholder. Replace it with the repo-owned pre-PR verification command or clear it intentionally.";
     default:
       return `${field} still contains a starter placeholder. Replace it before running the supervisor.`;
   }
