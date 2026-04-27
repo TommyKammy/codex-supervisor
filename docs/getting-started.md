@@ -103,6 +103,8 @@ The shipped CodeRabbit profile intentionally uses a non-loadable `repoSlug` plac
 
 For TypeScript and Node repositories, [supervisor.config.typescript-node.json](../supervisor.config.typescript-node.json) publishes an npm-oriented starter profile. It uses `npm ci` for worktree preparation and `npm run verify:pre-pr` for the repo-owned local CI gate; see the [TypeScript and Node starter profile](./examples/typescript-node.md) for the expected scripts and a first issue example.
 
+For Next.js app repositories, [supervisor.config.nextjs.json](../supervisor.config.nextjs.json) publishes the same npm-owned setup and local CI posture with Next.js-specific script guidance; see the [Next.js starter profile](./examples/nextjs.md) for common `build`, `lint`, and `test` mappings and a first issue example.
+
 ### Explicit trust posture setup
 
 Trust posture setup is a product primitive for trusted solo-lane automation. It packages the authority choices that decide whether the supervisor may turn GitHub-authored text, local repo state, review signals, and configured commands into autonomous Codex work.
@@ -283,7 +285,7 @@ node dist/index.js run-once --config <supervisor-config-path>
 ./scripts/start-loop-tmux.sh
 ```
 
-For a concrete shipped profile, run the same checks against the matching config, for example: `node dist/index.js issue-lint <issue-number> --config supervisor.config.coderabbit.json`, `node dist/index.js status --config supervisor.config.coderabbit.json --why`, and `node dist/index.js doctor --config supervisor.config.coderabbit.json`. For the TypeScript/Node starter, use `supervisor.config.typescript-node.json` after replacing the placeholders and confirming the repo owns `npm run verify:pre-pr`.
+For a concrete shipped profile, run the same checks against the matching config, for example: `node dist/index.js issue-lint <issue-number> --config supervisor.config.coderabbit.json`, `node dist/index.js status --config supervisor.config.coderabbit.json --why`, and `node dist/index.js doctor --config supervisor.config.coderabbit.json`. For the TypeScript/Node starter, use `supervisor.config.typescript-node.json` after replacing the placeholders and confirming the repo owns `npm run verify:pre-pr`. For the Next.js starter, use `supervisor.config.nextjs.json` after replacing the placeholders and mapping `verify:pre-pr` to the app scripts that actually exist.
 
 Read the command output as a sequence of decisions, not as unrelated logs:
 

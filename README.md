@@ -137,6 +137,10 @@ For a shipped provider profile, choose the command block that matches the copied
    node dist/index.js issue-lint <issue-number> --config supervisor.config.typescript-node.json
    node dist/index.js doctor --config supervisor.config.typescript-node.json
    node dist/index.js status --config supervisor.config.typescript-node.json --why
+
+   node dist/index.js issue-lint <issue-number> --config supervisor.config.nextjs.json
+   node dist/index.js doctor --config supervisor.config.nextjs.json
+   node dist/index.js status --config supervisor.config.nextjs.json --why
    ```
 
 On macOS, use `./scripts/start-loop-tmux.sh` to host the loop in a managed `tmux` session, and stop it with `./scripts/stop-loop-tmux.sh`. `./scripts/install-launchd.sh` is not a supported macOS loop path. The tmux scripts use `CODEX_SUPERVISOR_CONFIG`; keep it pointed at the config you validated.
@@ -264,6 +268,7 @@ Choose the review provider profile that matches how PR feedback arrives in your 
 - Codex Connector profile: [supervisor.config.codex.json](./supervisor.config.codex.json)
 - CodeRabbit profile: [supervisor.config.coderabbit.json](./supervisor.config.coderabbit.json)
 - TypeScript/Node starter profile: [supervisor.config.typescript-node.json](./supervisor.config.typescript-node.json), with setup notes and a first issue example in [TypeScript and Node starter profile](./docs/examples/typescript-node.md)
+- Next.js starter profile: [supervisor.config.nextjs.json](./supervisor.config.nextjs.json), with npm local CI mapping and a first issue example in [Next.js starter profile](./docs/examples/nextjs.md)
 
 Each profile is a starting point. Copy the review provider profile you want, then adjust the rest of `supervisor.config.json` for your repo before you run the supervisor.
 
