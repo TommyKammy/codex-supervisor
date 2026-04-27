@@ -43,6 +43,7 @@ flowchart LR
 GitHub-authored issue bodies, PR review comments, and related GitHub text are execution inputs, not trusted instructions by default. Treat that GitHub-authored text as part of the supervisor trust boundary and use the autonomous loop only in repos where the operator trusts both the repository and the GitHub authors who can supply that text.
 
 If you want the setup flow, first-run commands, and operator decisions, start with [Getting started](./docs/getting-started.md).
+If you want a disposable first supervised pass before production use, follow the [Playground smoke run](./docs/playground-smoke-run.md).
 If you need to understand what to put in `supervisor.config.json`, jump straight to the [Configuration guide](./docs/configuration.md).
 If you are an AI agent entering the repo, start with the [AI agent handoff](./docs/agent-instructions.md) before reading the detailed references.
 If you need the product primitive framing for the supervised lane beside chat-driven Codex work, read the [Supervised automation lane](./docs/supervised-automation-lane.md) note.
@@ -263,6 +264,7 @@ Use the [Configuration guide](./docs/configuration.md) for the full routing rule
 - [Configuration guide](./docs/configuration.md): the most important doc for operators; start here for required fields, provider profiles, safe defaults, and common setup recipes
 - [AI agent handoff](./docs/agent-instructions.md): bootstrap read order, first-run checks, and escalation rules for repo-entering AI agents
 - [Getting started](./docs/getting-started.md): setup checklist, execution-ready issue flow, first-run commands, and common operator decisions
+- [Playground smoke run](./docs/playground-smoke-run.md): sandbox-only first supervised pass, sample issue body, and smoke commands
 - [Configuration reference](./docs/configuration.md): config setup, provider profiles, model/reasoning controls, durable memory, and execution policy
 - [Operator dashboard](./docs/operator-dashboard.md): WebUI launch, panel meanings, safe commands, and browser smoke verification
 - [Local review reference](./docs/local-review.md): local review policies, role selection, artifacts, thresholds, and committed guardrails
