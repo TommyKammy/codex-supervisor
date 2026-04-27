@@ -39,6 +39,50 @@ test("README stays lightweight while routing humans and AI agents to the right d
   assert.doesNotMatch(content, /^## Complete operator manual$/m);
 });
 
+test("README Quick Start leads with the five-minute playground smoke flow", async () => {
+  const content = await readReadme();
+  const quickStartStart = content.indexOf("## Quick Start");
+  const webUiStart = content.indexOf("## WebUI");
+  assert.notEqual(quickStartStart, -1, "expected README.md to include Quick Start");
+  assert.ok(webUiStart > quickStartStart, "expected WebUI to follow Quick Start");
+
+  const quickStart = content.slice(quickStartStart, webUiStart);
+  const requiredFlow = [
+    "[Playground smoke run](./docs/playground-smoke-run.md)",
+    "npm install",
+    "npm run build",
+    "cp supervisor.config.example.json supervisor.config.playground.json",
+    "export CODEX_SUPERVISOR_CONFIG=<supervisor-config-path>",
+    "node dist/index.js help",
+    'node dist/index.js doctor --config "$CODEX_SUPERVISOR_CONFIG"',
+    'node dist/index.js status --config "$CODEX_SUPERVISOR_CONFIG" --why',
+    'node dist/index.js issue-lint <issue-number> --config "$CODEX_SUPERVISOR_CONFIG"',
+    'node dist/index.js run-once --config "$CODEX_SUPERVISOR_CONFIG" --dry-run',
+    'node dist/index.js run-once --config "$CODEX_SUPERVISOR_CONFIG"',
+    "Stop after one successful `run-once`.",
+  ];
+
+  let lastIndex = -1;
+  for (const phrase of requiredFlow) {
+    const index = quickStart.indexOf(phrase, lastIndex + 1);
+    assert.notEqual(index, -1, `expected Quick Start to include ${phrase}`);
+    assert.ok(index > lastIndex, `expected ${phrase} to appear after the previous quick-start step`);
+    lastIndex = index;
+  }
+
+  const safetyIndex = quickStart.search(/trusted repo with trusted GitHub authors/i);
+  const loopIndex = quickStart.indexOf("node dist/index.js loop");
+  assert.notEqual(safetyIndex, -1, "expected Quick Start to keep trust posture warning visible");
+  assert.notEqual(loopIndex, -1, "expected Quick Start to link the loop handoff");
+  assert.ok(safetyIndex < loopIndex, "expected safety warning to appear before loop guidance");
+
+  assert.match(quickStart, /\[Configuration guide\]\(\.\/docs\/configuration\.md\)/);
+  assert.match(quickStart, /\[Getting started\]\(\.\/docs\/getting-started\.md\)/);
+  assert.match(quickStart, /\[Issue metadata\]\(\.\/docs\/issue-metadata\.md\)/);
+  assert.match(quickStart, /\[Architecture\]\(\.\/docs\/architecture\.md\)/);
+  assert.doesNotMatch(quickStart, /--config \/path\/to\//);
+});
+
 test("README.ja stays lightweight while routing humans and AI agents to the right docs", async () => {
   const content = await readJapaneseOverview();
 

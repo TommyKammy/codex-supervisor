@@ -63,7 +63,7 @@ If you use Codex app Automation around the loop, keep the [Codex app Automation 
 
 Prerequisites: Node.js 18+, `gh auth status`, and `codex` CLI available from your shell.
 
-Before the first run, keep the [Configuration guide](./docs/configuration.md) open in another tab. It explains which fields you actually need to edit, which provider profile to start from, and which defaults are safest for a new repo.
+Start with the [Playground smoke run](./docs/playground-smoke-run.md) when you want a 5-minute first supervised pass before pointing the supervisor at production work. The playground path uses a disposable repo or fork, one harmless `codex` issue, and one explicit config file.
 
 1. Install dependencies and build the CLI.
 
@@ -72,60 +72,61 @@ Before the first run, keep the [Configuration guide](./docs/configuration.md) op
    npm run build
    ```
 
-2. Create your active config from the base example.
+2. Create a playground config.
 
    ```bash
-   cp supervisor.config.example.json supervisor.config.json
+   cp supervisor.config.example.json supervisor.config.playground.json
    ```
 
-3. Choose the review provider profile that matches your PR review flow. The active config is whichever file you pass with `--config`, so you can either keep a single `supervisor.config.json` file or operate directly against named profiles such as `supervisor.config.codex.json` or `supervisor.config.coderabbit.json`.
-
-   - [supervisor.config.copilot.json](./supervisor.config.copilot.json)
-   - [supervisor.config.codex.json](./supervisor.config.codex.json)
-   - [supervisor.config.coderabbit.json](./supervisor.config.coderabbit.json)
-
-   For example, if you want a Codex review profile as the active one:
+3. Edit `supervisor.config.playground.json` for the sandbox repo, then use one config variable for the smoke commands.
 
    ```bash
-   cp supervisor.config.codex.json supervisor.config.local.json
+   export CODEX_SUPERVISOR_CONFIG=<supervisor-config-path>
    ```
 
-4. Edit whichever config file you will pass with `--config` and set `repoPath`, `repoSlug`, `workspaceRoot`, `codexBinary`, and any review-provider-specific values you want to keep before the first run. Use the [Configuration guide](./docs/configuration.md) as the source of truth while you edit. The shipped CodeRabbit profile intentionally uses a non-loadable `repoSlug` placeholder so you must replace it for your repo.
+   At minimum, set `repoPath`, `repoSlug`, `workspaceRoot`, `codexBinary`, `trustMode`, and `executionSafetyMode`. Use the [Configuration guide](./docs/configuration.md) for full setup, provider profiles, model routing, and production-safe defaults.
 
-   Recommended model posture:
+4. Create one sandbox GitHub issue with the `codex` label using the sample body in the [Playground smoke run](./docs/playground-smoke-run.md). For real work, follow the [Issue metadata](./docs/issue-metadata.md) reference before starting the supervisor.
 
-   - keep `codexModelStrategy: "inherit"` so the supervisor follows the host Codex CLI/App default model
-   - set the host Codex default model intentionally before you trust `loop`
-   - switch to `fixed` only when this supervisor profile must pin a specific model regardless of the host default model
-
-   Keep the detailed routing rules in the [Configuration guide](./docs/configuration.md) rather than maintaining a second model-policy story here.
-
-5. Validate the issue body and inspect the effective profile before you run the loop.
+5. Validate the issue body and inspect the host/config posture before Codex runs.
 
    ```bash
-   node dist/index.js issue-lint 123 --config /path/to/supervisor.config.codex.json
-   node dist/index.js status --config /path/to/supervisor.config.codex.json
-   node dist/index.js doctor --config /path/to/supervisor.config.codex.json
+   node dist/index.js help
+   node dist/index.js doctor --config "$CODEX_SUPERVISOR_CONFIG"
+   node dist/index.js status --config "$CODEX_SUPERVISOR_CONFIG" --why
+   node dist/index.js issue-lint <issue-number> --config "$CODEX_SUPERVISOR_CONFIG"
    ```
 
-   `status` and `doctor` are the fastest way to confirm you passed the intended profile file and that the host and config are healthy before `loop` starts trusting that config.
-
-6. Run a single supervised pass, then switch to the loop when the config looks right.
+6. Run a dry run, then one supervised pass.
 
    ```bash
-   node dist/index.js run-once --config /path/to/supervisor.config.codex.json
-   node dist/index.js loop --config /path/to/supervisor.config.codex.json
+   node dist/index.js run-once --config "$CODEX_SUPERVISOR_CONFIG" --dry-run
+   node dist/index.js run-once --config "$CODEX_SUPERVISOR_CONFIG"
+   node dist/index.js status --config "$CODEX_SUPERVISOR_CONFIG" --why
    ```
 
-   On macOS, use `./scripts/start-loop-tmux.sh` to host the loop in a managed `tmux` session, and stop it with `./scripts/stop-loop-tmux.sh`. `./scripts/install-launchd.sh` is not a supported macOS loop path.
+Stop after one successful `run-once`. Inspect the sandbox repo, issue journal, and any draft PR before you operate on production work.
 
-   If you want the local operator dashboard, start the WebUI against the same config:
+Only use autonomous execution in a trusted repo with trusted GitHub authors. Current Codex runs use `--dangerously-bypass-approvals-and-sandbox`, so the production trust posture belongs in the config and operator process before background execution starts. Use [Getting started](./docs/getting-started.md), the [Configuration guide](./docs/configuration.md), and [Architecture](./docs/architecture.md) for the full execution-safety boundary.
+
+When the sandbox pass is clean, validate the production config and a real issue before starting the loop:
 
    ```bash
-   node dist/index.js web --config /path/to/supervisor.config.json
+   node dist/index.js issue-lint <issue-number> --config <supervisor-config-path>
+   node dist/index.js doctor --config <supervisor-config-path>
+   node dist/index.js status --config <supervisor-config-path> --why
+   node dist/index.js loop --config <supervisor-config-path>
    ```
 
-   The WebUI is an operator surface over the same supervisor service. It does not own the background loop or create a loop run mode; use `status` or `doctor` to inspect the observable loop runtime marker.
+On macOS, use `./scripts/start-loop-tmux.sh` to host the loop in a managed `tmux` session, and stop it with `./scripts/stop-loop-tmux.sh`. `./scripts/install-launchd.sh` is not a supported macOS loop path. The tmux scripts use `CODEX_SUPERVISOR_CONFIG`; keep it pointed at the config you validated.
+
+If you want the local operator dashboard, start the WebUI against the same config:
+
+```bash
+node dist/index.js web --config <supervisor-config-path>
+```
+
+The WebUI is an operator surface over the same supervisor service. It does not own the background loop or create a loop run mode; use `status` or `doctor` to inspect the observable loop runtime marker.
 
 ## WebUI
 
@@ -139,7 +140,7 @@ It observes and mutates through the supervisor service boundary, but it is not t
 Start it with:
 
 ```bash
-node dist/index.js web --config /path/to/supervisor.config.json
+node dist/index.js web --config <supervisor-config-path>
 ```
 
 Then open [http://127.0.0.1:4310/setup](http://127.0.0.1:4310/setup) for first-run setup or [http://127.0.0.1:4310/dashboard](http://127.0.0.1:4310/dashboard) for the operator dashboard.
@@ -150,7 +151,7 @@ WebUI mutation routes now fail closed. To allow `POST` actions such as `run-once
 
 ```bash
 CODEX_SUPERVISOR_WEBUI_MUTATION_TOKEN=choose-a-long-random-token \
-node dist/index.js web --config /path/to/supervisor.config.json
+node dist/index.js web --config <supervisor-config-path>
 ```
 
 The browser will prompt for that token on the first write action and then reuse it from local browser storage. Read-only routes remain available without the token.
@@ -216,7 +217,7 @@ Parallelizable: No
 Before trusting a new issue as runnable work, lint it directly:
 
 ```bash
-node dist/index.js issue-lint 123 --config /path/to/supervisor.config.codex.json
+node dist/index.js issue-lint <issue-number> --config <supervisor-config-path>
 ```
 
 If `issue-lint` reports missing or malformed metadata, fix the issue body before running `run-once` or `loop`.
@@ -247,8 +248,8 @@ Each profile is a starting point. Copy the review provider profile you want, the
 The active config is whichever file you pass with `--config`. If you keep several profiles side by side, verify the intended one with:
 
 ```bash
-node dist/index.js status --config /path/to/supervisor.config.codex.json
-node dist/index.js doctor --config /path/to/supervisor.config.codex.json
+node dist/index.js status --config <supervisor-config-path>
+node dist/index.js doctor --config <supervisor-config-path>
 ```
 
 Recommended model posture for those profiles:
