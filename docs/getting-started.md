@@ -12,6 +12,8 @@ It focuses on the practical flow:
 
 For the product overview, fit, and docs map, start with the [README](../README.md). If you are handing the repo to an AI operator, send it to the [Agent Bootstrap Protocol](./agent-instructions.md) instead of duplicating that bootstrap sequence here.
 
+If you want one disposable supervised pass before operating on production work, use the [Playground smoke run](./playground-smoke-run.md) first.
+
 ## Before you start
 
 Confirm these prerequisites before you run the supervisor:
@@ -539,6 +541,7 @@ Stop treating the issue as execution-ready. Tighten the issue body, split the wo
 
 - [README](../README.md) for the overview, fit, and docs map
 - [Agent Bootstrap Protocol](./agent-instructions.md) for the AI-agent bootstrap order, first-run checks, and escalation points
+- [Playground smoke run](./playground-smoke-run.md) for a sandbox-only first supervised pass and sample issue body
 - [Configuration reference](./configuration.md) for config fields, provider setup, model policy, and durable memory
 - [Operator dashboard](./operator-dashboard.md) for the local WebUI, panel meanings, safe command surface, and smoke-test harness
 - [Local review reference](./local-review.md) for review roles, artifacts, thresholds, and merge policy
