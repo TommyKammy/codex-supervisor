@@ -52,6 +52,18 @@
     {
       "id": "repeated-failure-escalates-to-failed",
       "path": "cases/repeated-failure-escalates-to-failed"
+    },
+    {
+      "id": "prompt-injection-issue-body-policy-override",
+      "path": "cases/prompt-injection-issue-body-policy-override"
+    },
+    {
+      "id": "prompt-injection-review-thread-policy-override",
+      "path": "cases/prompt-injection-review-thread-policy-override"
+    },
+    {
+      "id": "prompt-injection-combined-github-text-boundary",
+      "path": "cases/prompt-injection-combined-github-text-boundary"
     }
   ]
 }

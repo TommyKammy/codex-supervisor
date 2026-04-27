@@ -91,6 +91,14 @@ function expectString(value: unknown, context: string): string {
   return value;
 }
 
+function expectStringValue(value: unknown, context: string): string {
+  if (typeof value !== "string") {
+    throw validationError(`${context} must be a string`);
+  }
+
+  return value;
+}
+
 export function expectCaseId(value: unknown, context: string): string {
   const id = expectString(value, context);
   if (id === "." || id === ".." || id.includes("/") || id.includes("\\")) {
@@ -362,6 +370,7 @@ function validateIssue(raw: unknown, context: string): ReplayCorpusInputSnapshot
   return {
     number: expectInteger(issue.number, `${context} number`),
     title: expectString(issue.title, `${context} title`),
+    body: issue.body === undefined ? "" : expectStringValue(issue.body, `${context} body`),
     url: expectString(issue.url, `${context} url`),
     state: expectString(issue.state, `${context} state`),
     updatedAt: expectString(issue.updatedAt, `${context} updatedAt`),

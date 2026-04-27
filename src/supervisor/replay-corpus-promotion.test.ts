@@ -18,6 +18,7 @@ function createSnapshot(): ReplayCorpusInputSnapshot {
     issue: {
       number: 557,
       title: "Replay corpus promotion: suggest normalized case ids during promotion",
+      body: "",
       url: "https://example.test/issues/557",
       state: "OPEN",
       updatedAt: "2026-03-19T00:00:00Z",

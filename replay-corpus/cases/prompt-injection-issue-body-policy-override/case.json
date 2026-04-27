@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "id": "prompt-injection-issue-body-policy-override",
+  "issueNumber": 180701,
+  "title": "Prompt injection issue body policy override",
+  "capturedAt": "2026-03-16T10:07:00Z"
+}

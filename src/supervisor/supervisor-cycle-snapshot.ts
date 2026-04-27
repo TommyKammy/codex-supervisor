@@ -30,7 +30,7 @@ export interface SupervisorCycleOperatorSummarySnapshot {
 export interface SupervisorCycleDecisionSnapshot {
   schemaVersion: 1;
   capturedAt: string;
-  issue: Pick<GitHubIssue, "number" | "title" | "url" | "state" | "updatedAt">;
+  issue: Pick<GitHubIssue, "number" | "title" | "body" | "url" | "state" | "updatedAt">;
   local: {
     record: Pick<
       IssueRunRecord,
@@ -129,6 +129,7 @@ export function buildSupervisorCycleDecisionSnapshot(args: {
     issue: {
       number: issue.number,
       title: issue.title,
+      body: issue.body,
       url: issue.url,
       state: issue.state,
       updatedAt: issue.updatedAt,
@@ -214,6 +215,7 @@ export function buildSupervisorCycleDecisionSnapshot(args: {
     issue: {
       number: issue.number,
       title: issue.title,
+      body: issue.body,
       url: issue.url,
       state: issue.state,
       updatedAt: issue.updatedAt,
