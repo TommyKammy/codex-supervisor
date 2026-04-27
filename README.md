@@ -22,7 +22,7 @@ The related primitive artifacts are intentionally linked instead of re-explained
 
 Use `codex-supervisor` when you want Codex to work through execution-ready GitHub issues in a durable, explicit loop:
 
-- re-read issue state on each cycle and require fresh PR review facts before action-taking PR transitions
+- re-read issue state on each cycle and require fresh GitHub PR facts before action-taking PR transitions
 - select the next runnable issue instead of trusting chat history
 - run each turn in a dedicated worktree with a persistent issue journal
 - keep moving through draft PR, CI repair, review fixes, and merge
@@ -45,6 +45,7 @@ If you want a disposable first supervised pass before production use, follow the
 If you need to understand what to put in `supervisor.config.json`, jump straight to the [Configuration guide](./docs/configuration.md).
 If you are an AI agent entering the repo, start with the [AI agent handoff](./docs/agent-instructions.md) before reading the detailed references.
 If you need the product primitive framing for the supervised lane beside chat-driven Codex work, read the [Supervised automation lane](./docs/supervised-automation-lane.md) note.
+If you want the same small change shown as an unstructured session versus a supervised loop, read the [Before / After narrative](./docs/vibe-coding-before-after.md).
 If you need the narrower freshness and durability contracts, use [Architecture](./docs/architecture.md) and [Configuration reference](./docs/configuration.md) instead of treating this README as the full runtime spec.
 If you use Codex app Automation around the loop, keep the [Codex app Automation boundary](./docs/automation.md) as the repo-owned contract: Automation orchestrates and records, while `codex-supervisor` remains the implementation executor.
 
@@ -284,6 +285,7 @@ Use the [Configuration guide](./docs/configuration.md) for the full routing rule
 - [Operator dashboard](./docs/operator-dashboard.md): WebUI launch, panel meanings, safe commands, and browser smoke verification
 - [Local review reference](./docs/local-review.md): local review policies, role selection, artifacts, thresholds, and committed guardrails
 - [Supervised automation lane](./docs/supervised-automation-lane.md): product primitive contract for issue/spec-driven supervised automation beside Codex chat
+- [Before / After narrative](./docs/vibe-coding-before-after.md): the same small change compared as an unstructured session and a supervised loop
 - [Architecture](./docs/architecture.md): core loop, durable state, reconciliations, and safety boundaries
 - [Issue metadata](./docs/issue-metadata.md): canonical issue-body fields, sequencing rules, and execution-ready examples
 - [GSD to GitHub issues](./docs/examples/gsd-to-github-issues.md): how to hand planning output into execution-ready issues
