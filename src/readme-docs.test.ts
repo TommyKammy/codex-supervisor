@@ -11,6 +11,10 @@ async function readJapaneseOverview(): Promise<string> {
   return fs.readFile(path.join(process.cwd(), "docs", "README.ja.md"), "utf8");
 }
 
+async function readDoc(relativePath: string): Promise<string> {
+  return fs.readFile(path.join(process.cwd(), relativePath), "utf8");
+}
+
 test("README stays lightweight while routing humans and AI agents to the right docs", async () => {
   const content = await readReadme();
 
@@ -82,6 +86,47 @@ test("README first screen positions codex-supervisor as a quality layer", async 
   for (const link of requiredArtifactLinks) {
     assert.ok(firstScreen.includes(link), `expected first screen to link ${link}`);
   }
+});
+
+test("README links to a concrete Before / After narrative for the quality layer", async () => {
+  const [readme, narrative] = await Promise.all([
+    readReadme(),
+    readDoc(path.join("docs", "vibe-coding-before-after.md")),
+  ]);
+
+  const narrativeLink = "[Before / After narrative](./docs/vibe-coding-before-after.md)";
+  assert.ok(readme.includes(narrativeLink), "expected README to link the narrative");
+
+  const requiredHeadings = [
+    "# Vibe Coding Before / After",
+    "## Same Small Change",
+    "## Before: Unstructured Chat Session",
+    "## After: Supervised codex-supervisor Loop",
+    "## Quality Delta",
+    "## Operator Boundary",
+  ];
+  for (const heading of requiredHeadings) {
+    assert.match(narrative, new RegExp(`^${heading}$`, "m"));
+  }
+
+  for (const artifact of [
+    "execution-ready GitHub issue",
+    "per-issue worktree",
+    "issue journal",
+    "draft PR",
+    "local verification",
+    "evidence timeline",
+    "durable history",
+  ]) {
+    assert.match(narrative, new RegExp(artifact, "i"), `expected narrative to name ${artifact}`);
+  }
+
+  assert.match(narrative, /missing quality layer/i);
+  assert.match(narrative, /does not replace the human operator/i);
+  assert.doesNotMatch(narrative, /bypass(?:es)? human/i);
+  assert.doesNotMatch(narrative, /fully autonomous/i);
+  assert.doesNotMatch(narrative, /\/Users\/[A-Za-z0-9._-]+\//);
+  assert.doesNotMatch(narrative, /C:\\Users\\[A-Za-z0-9._-]+\\/);
 });
 
 test("README Quick Start leads with the five-minute playground smoke flow", async () => {
