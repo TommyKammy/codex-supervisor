@@ -8,6 +8,7 @@ Common flags:
   --config <supervisor-config-path>  Use an explicit supervisor config file.
   --dry-run                         Plan the next run-once or loop action without executing Codex.
   --why                             Include status decision details. Supported with status only.
+  --suggest                         Print a copyable issue metadata skeleton. Supported with issue-lint only.
 
 First run:
   1. node dist/index.js help
@@ -30,7 +31,8 @@ Inspect commands:
   explain <issue-number> --timeline Show the issue-run evidence timeline.
   explain <issue-number> --audit-bundle
                                     Print a sanitized operator audit bundle.
-  issue-lint <issue-number>         Validate an execution-ready issue body.
+  issue-lint <issue-number> [--suggest]
+                                    Validate an execution-ready issue body.
   readiness-checklist               Print the release-readiness checklist.
 
 Repair commands:

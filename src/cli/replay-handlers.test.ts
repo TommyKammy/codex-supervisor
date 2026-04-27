@@ -159,6 +159,7 @@ test("handleReplayCorpusPromoteCommand preserves missing-case-id stderr guidance
     issueNumber: undefined,
     dryRun: false,
     why: false,
+    issueLintSuggest: false,
     corpusPath: "replay-corpus",
     caseId: undefined,
   };
@@ -194,6 +195,7 @@ test("handleReplayCorpusPromoteCommand prints missing-case-id guidance before an
     issueNumber: undefined,
     dryRun: false,
     why: false,
+    issueLintSuggest: false,
     corpusPath: undefined,
     caseId: undefined,
   };

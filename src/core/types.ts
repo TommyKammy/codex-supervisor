@@ -366,6 +366,7 @@ export interface CliOptions {
   configPath?: string;
   dryRun: boolean;
   why: boolean;
+  issueLintSuggest: boolean;
   explainMode?: "summary" | "timeline" | "audit_bundle";
   issueNumber?: number;
   snapshotPath?: string;

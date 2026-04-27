@@ -123,7 +123,10 @@ export async function runSupervisorCycle(
 }
 
 export async function runSupervisorCommand(
-  options: Pick<CliOptions, "dryRun" | "why" | "explainMode" | "issueNumber"> & { command: SupervisorRuntimeCommand },
+  options: Pick<CliOptions, "dryRun" | "why" | "explainMode" | "issueNumber"> & {
+    command: SupervisorRuntimeCommand;
+    issueLintSuggest?: boolean;
+  },
   dependencies: SupervisorRuntimeDependencies,
 ): Promise<void> {
   const {
@@ -220,7 +223,9 @@ export async function runSupervisorCommand(
   }
 
   if (options.command === "issue-lint") {
-    writeStdout(renderIssueLintDto(await service.queryIssueLint(options.issueNumber!)));
+    writeStdout(renderIssueLintDto(await service.queryIssueLint(options.issueNumber!), {
+      suggest: options.issueLintSuggest,
+    }));
     return;
   }
 
