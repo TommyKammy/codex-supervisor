@@ -16,6 +16,8 @@ import {
   summarizeLocalCiContract,
 } from "./core/config";
 import type { LocalCiContractSummary, SupervisorConfig } from "./core/config-types";
+import type { GitHubIssue } from "./core/types";
+import { lintExecutionReadyIssueBody, validateIssueMetadataSyntax } from "./issue-metadata";
 import { buildSetupConfigPreview } from "./setup-config-preview";
 import { updateSetupConfig } from "./setup-config-write";
 
@@ -1609,6 +1611,7 @@ test("shipped example configs recommend block_merge for local review gating", as
     path.join(rootDir, "supervisor.config.codex.json"),
     path.join(rootDir, "supervisor.config.coderabbit.json"),
     path.join(rootDir, "supervisor.config.typescript-node.json"),
+    path.join(rootDir, "supervisor.config.nextjs.json"),
     path.join(rootDir, "docs", "examples", "atlaspm.supervisor.config.example.json"),
   ];
 
@@ -1626,6 +1629,7 @@ test("shipped starter config profiles keep local review disabled until operators
     path.join(rootDir, "supervisor.config.codex.json"),
     path.join(rootDir, "supervisor.config.coderabbit.json"),
     path.join(rootDir, "supervisor.config.typescript-node.json"),
+    path.join(rootDir, "supervisor.config.nextjs.json"),
   ];
 
   for (const examplePath of examplePaths) {
@@ -1642,6 +1646,7 @@ test("shipped example configs keep local-review follow-up issue creation opt-in"
     path.join(rootDir, "supervisor.config.codex.json"),
     path.join(rootDir, "supervisor.config.coderabbit.json"),
     path.join(rootDir, "supervisor.config.typescript-node.json"),
+    path.join(rootDir, "supervisor.config.nextjs.json"),
     path.join(rootDir, "docs", "examples", "atlaspm.supervisor.config.example.json"),
   ];
 
@@ -1665,6 +1670,7 @@ test("shipped example configs keep local-review same-PR follow-up repair opt-in"
     path.join(rootDir, "supervisor.config.codex.json"),
     path.join(rootDir, "supervisor.config.coderabbit.json"),
     path.join(rootDir, "supervisor.config.typescript-node.json"),
+    path.join(rootDir, "supervisor.config.nextjs.json"),
     path.join(rootDir, "docs", "examples", "atlaspm.supervisor.config.example.json"),
   ];
 
@@ -1688,6 +1694,7 @@ test("shipped example configs recommend blocked for high-severity local review f
     path.join(rootDir, "supervisor.config.codex.json"),
     path.join(rootDir, "supervisor.config.coderabbit.json"),
     path.join(rootDir, "supervisor.config.typescript-node.json"),
+    path.join(rootDir, "supervisor.config.nextjs.json"),
     path.join(rootDir, "docs", "examples", "atlaspm.supervisor.config.example.json"),
   ];
 
@@ -1710,6 +1717,7 @@ test("shipped example configs use the issue-scoped journal path template and pre
     path.join(rootDir, "supervisor.config.codex.json"),
     path.join(rootDir, "supervisor.config.coderabbit.json"),
     path.join(rootDir, "supervisor.config.typescript-node.json"),
+    path.join(rootDir, "supervisor.config.nextjs.json"),
     path.join(rootDir, "docs", "examples", "atlaspm.supervisor.config.example.json"),
   ];
 
@@ -1756,6 +1764,7 @@ test("shipped config profiles declare the intended review bot logins", async () 
     ["supervisor.config.codex.json", ["chatgpt-codex-connector"]],
     ["supervisor.config.coderabbit.json", ["coderabbitai", "coderabbitai[bot]"]],
     ["supervisor.config.typescript-node.json", ["copilot-pull-request-reviewer"]],
+    ["supervisor.config.nextjs.json", ["copilot-pull-request-reviewer"]],
   ]);
 
   for (const [relativePath, expectedReviewBotLogins] of expectedProfiles) {
@@ -1784,6 +1793,7 @@ test("shipped starter profiles fail closed with first-run placeholder guidance",
     ["supervisor.config.codex.json", ["repoPath", "repoSlug", "workspaceRoot", "codexBinary"]],
     ["supervisor.config.coderabbit.json", ["repoSlug"]],
     ["supervisor.config.typescript-node.json", ["repoPath", "repoSlug", "workspaceRoot", "codexBinary"]],
+    ["supervisor.config.nextjs.json", ["repoPath", "repoSlug", "workspaceRoot", "codexBinary"]],
   ]);
 
   for (const [relativePath, invalidFields] of expectedInvalidFields) {
@@ -1903,6 +1913,64 @@ test("shipped TypeScript and Node starter profile publishes npm setup and verifi
   assert.match(exampleDoc, /do not assume every TypeScript\/Node repo has these exact scripts/i);
   assert.doesNotMatch(exampleDoc, /\/Users\/[A-Za-z0-9._-]+\//);
   assert.doesNotMatch(exampleDoc, /C:\\Users\\[A-Za-z0-9._-]+\\/);
+});
+
+test("shipped Next.js starter profile publishes npm posture and execution-ready first issue", async () => {
+  const rootDir = path.resolve(__dirname, "..");
+  const relativePath = "supervisor.config.nextjs.json";
+  const raw = (await readShippedProfileJson(rootDir, relativePath)) as {
+    workspacePreparationCommand?: unknown;
+    localCiCommand?: unknown;
+    skipTitlePrefixes?: unknown;
+  };
+  const summary = loadConfigSummaryFromDocument(raw, path.join(rootDir, relativePath));
+  const docs = await Promise.all([
+    fs.readFile(path.join(rootDir, "README.md"), "utf8"),
+    fs.readFile(path.join(rootDir, "docs", "configuration.md"), "utf8"),
+    fs.readFile(path.join(rootDir, "docs", "getting-started.md"), "utf8"),
+    fs.readFile(path.join(rootDir, "docs", "examples", "nextjs.md"), "utf8"),
+  ]);
+
+  assert.equal(raw.workspacePreparationCommand, "npm ci");
+  assert.equal(raw.localCiCommand, "npm run verify:pre-pr");
+  assert.deepEqual(raw.skipTitlePrefixes, ["Epic:"]);
+  assert.equal(summary.status, "invalid_config");
+  assert.deepEqual(summary.invalidFields, ["repoPath", "repoSlug", "workspaceRoot", "codexBinary"]);
+
+  for (const content of docs) {
+    assert.match(content, /supervisor\.config\.nextjs\.json/);
+  }
+
+  const exampleDoc = docs[3] ?? "";
+  assert.match(exampleDoc, /npm ci/);
+  assert.match(exampleDoc, /npm run verify:pre-pr/);
+  assert.match(exampleDoc, /npm run build/);
+  assert.match(exampleDoc, /npm run lint/);
+  assert.match(exampleDoc, /npm run test/);
+  assert.match(exampleDoc, /do not assume every Next\.js app defines all of these scripts/i);
+  assert.doesNotMatch(exampleDoc, /\/Users\/[A-Za-z0-9._-]+\//);
+  assert.doesNotMatch(exampleDoc, /C:\\Users\\[A-Za-z0-9._-]+\\/);
+
+  const match = exampleDoc.match(
+    /<!-- nextjs-first-issue:start -->\s*```md\s*([\s\S]*?)```\s*<!-- nextjs-first-issue:end -->/,
+  );
+  assert.ok(match, "Next.js starter doc must include the marked sample issue body");
+  const sampleIssue: GitHubIssue = {
+    number: 101,
+    title: "Add metadata test for article page",
+    body: match[1].trim(),
+    createdAt: "2026-04-27T00:00:00Z",
+    updatedAt: "2026-04-27T00:00:00Z",
+    url: "https://example.com/issues/101",
+    labels: [{ name: "codex" }],
+    state: "OPEN",
+  };
+
+  assert.deepEqual(validateIssueMetadataSyntax(sampleIssue), []);
+  const lint = lintExecutionReadyIssueBody(sampleIssue);
+  assert.equal(lint.isExecutionReady, true);
+  assert.deepEqual(lint.missingRequired, []);
+  assert.deepEqual(lint.missingRecommended, []);
 });
 
 test("repo gitignore ignores workstation noise and live issue journals without hiding intentional files", async (t) => {
