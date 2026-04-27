@@ -143,6 +143,8 @@ For a shipped provider profile, choose the command block that matches the copied
    node dist/index.js status --config supervisor.config.nextjs.json --why
    ```
 
+The Next.js starter commands above expect an edited copy of `supervisor.config.nextjs.json`, not the shipped starter file. Replace its placeholders before running `issue-lint`, `doctor`, or `status`; see [Getting started](./docs/getting-started.md) for the first-run guidance.
+
 On macOS, use `./scripts/start-loop-tmux.sh` to host the loop in a managed `tmux` session, and stop it with `./scripts/stop-loop-tmux.sh`. `./scripts/install-launchd.sh` is not a supported macOS loop path. The tmux scripts use `CODEX_SUPERVISOR_CONFIG`; keep it pointed at the config you validated.
 
 If you want the local operator dashboard, start the WebUI against the same config:

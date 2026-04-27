@@ -182,6 +182,20 @@ test("README docs map links to the self-contained demo scenario", async () => {
   );
 });
 
+test("README says Next.js starter commands require an edited config copy", async () => {
+  const content = await readReadme();
+  const nextjsBlockStart = content.indexOf("node dist/index.js issue-lint <issue-number> --config supervisor.config.nextjs.json");
+  const macosStart = content.indexOf("On macOS, use `./scripts/start-loop-tmux.sh`");
+  assert.notEqual(nextjsBlockStart, -1, "expected README to include Next.js starter commands");
+  assert.ok(macosStart > nextjsBlockStart, "expected macOS guidance to follow provider profile commands");
+
+  const nextjsGuidance = content.slice(nextjsBlockStart, macosStart);
+  assert.match(nextjsGuidance, /edited copy of `supervisor\.config\.nextjs\.json`/i);
+  assert.match(nextjsGuidance, /not the shipped starter file/i);
+  assert.match(nextjsGuidance, /Replace its placeholders before running `issue-lint`, `doctor`, or `status`/);
+  assert.match(nextjsGuidance, /\[Getting started\]\(\.\/docs\/getting-started\.md\)/);
+});
+
 test("README.ja stays lightweight while routing humans and AI agents to the right docs", async () => {
   const content = await readJapaneseOverview();
 
