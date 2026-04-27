@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/TommyKammy/codex-supervisor/docs/codex-automation-connector-boundary.schema.json",
+  "$ref": "#/$defs/codexAutomationConnectorBoundaryArtifact",
+  "artifactName": "codex-supervisor.codex-automation-connector-boundary",
+  "artifactVersion": 1,
+  "canonicalGuide": "docs/automation.md",
+  "enforcementBoundary": "codex-supervisor-executor-safety-gates",
+  "description": "Portable connector-style artifact for Codex app Automation. Codex app Automation may evaluate, route, draft, record, notify, and prepare operator evidence, but codex-supervisor remains the implementation executor. Automation must not bypass executor safety gates, issue-lint, fresh PR facts, local CI, or operator confirmations. Multi-repo orchestration and new executor authority stay outside codex-supervisor core.",
+  "allowedResponsibilities": [
+    "evaluate",
+    "route",
+    "draft",
+    "record",
+    "notify",
+    "prepare_operator_evidence"
+  ],
+  "prohibitedBypasses": [
+    "executor_safety_gates",
+    "issue_lint",
+    "fresh_pr_facts",
+    "local_ci",
+    "operator_confirmations"
+  ],
+  "nonGoals": [
+    "new_executor_authority",
+    "multi_repo_orchestration_in_core"
+  ],
+  "$defs": {
+    "codexAutomationConnectorBoundaryArtifact": {
+      "type": "object",
+      "required": [
+        "artifactName",
+        "artifactVersion",
+        "canonicalGuide",
+        "enforcementBoundary",
+        "allowedResponsibilities",
+        "prohibitedBypasses",
+        "nonGoals"
+      ],
+      "properties": {
+        "artifactName": {
+          "const": "codex-supervisor.codex-automation-connector-boundary"
+        },
+        "artifactVersion": {
+          "const": 1
+        },
+        "canonicalGuide": {
+          "const": "docs/automation.md"
+        },
+        "enforcementBoundary": {
+          "const": "codex-supervisor-executor-safety-gates"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "allowedResponsibilities": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "evaluate",
+              "route",
+              "draft",
+              "record",
+              "notify",
+              "prepare_operator_evidence"
+            ]
+          },
+          "minItems": 6,
+          "uniqueItems": true
+        },
+        "prohibitedBypasses": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "executor_safety_gates",
+              "issue_lint",
+              "fresh_pr_facts",
+              "local_ci",
+              "operator_confirmations"
+            ]
+          },
+          "minItems": 5,
+          "uniqueItems": true
+        },
+        "nonGoals": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "new_executor_authority",
+              "multi_repo_orchestration_in_core"
+            ]
+          },
+          "minItems": 2,
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

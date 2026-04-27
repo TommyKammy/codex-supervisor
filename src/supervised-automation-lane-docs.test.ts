@@ -18,6 +18,16 @@ interface PublishedStateMachineContract {
   }>;
 }
 
+interface CodexAutomationConnectorBoundaryArtifact {
+  artifactName: string;
+  artifactVersion: number;
+  canonicalGuide: string;
+  enforcementBoundary: string;
+  allowedResponsibilities: string[];
+  prohibitedBypasses: string[];
+  nonGoals: string[];
+}
+
 function sortedValues(values: Iterable<string>): string[] {
   return [...values].sort((left, right) => left.localeCompare(right));
 }
@@ -241,4 +251,66 @@ test("supervised automation lane defines durable project memory writeback respon
   assert.match(note, /placeholder/i);
   assert.doesNotMatch(note, /\/Users\/[A-Za-z0-9._-]+\//);
   assert.doesNotMatch(note, /C:\\Users\\[A-Za-z0-9._-]+\\/);
+});
+
+test("Codex Automation connector boundary artifact agrees with lane docs and grants no executor authority", async () => {
+  const [artifactSource, automationGuide, laneNote, architecture] = await Promise.all([
+    readRepoFile("docs/codex-automation-connector-boundary.schema.json"),
+    readRepoFile("docs/automation.md"),
+    readRepoFile("docs/supervised-automation-lane.md"),
+    readRepoFile("docs/architecture.md"),
+  ]);
+  const artifact = JSON.parse(artifactSource) as CodexAutomationConnectorBoundaryArtifact;
+
+  assert.equal(artifact.artifactName, "codex-supervisor.codex-automation-connector-boundary");
+  assert.equal(artifact.artifactVersion, 1);
+  assert.equal(artifact.canonicalGuide, "docs/automation.md");
+  assert.equal(artifact.enforcementBoundary, "codex-supervisor-executor-safety-gates");
+
+  const expectedResponsibilities = [
+    "evaluate",
+    "route",
+    "draft",
+    "record",
+    "notify",
+    "prepare_operator_evidence",
+  ];
+  assert.deepEqual(
+    sortedValues(artifact.allowedResponsibilities),
+    sortedValues(expectedResponsibilities),
+    "allowedResponsibilities must match the published connector vocabulary exactly",
+  );
+
+  const expectedProhibitedBypasses = [
+    "executor_safety_gates",
+    "issue_lint",
+    "fresh_pr_facts",
+    "local_ci",
+    "operator_confirmations",
+  ];
+  assert.deepEqual(
+    sortedValues(artifact.prohibitedBypasses),
+    sortedValues(expectedProhibitedBypasses),
+    "prohibitedBypasses must match the published non-bypassable set exactly",
+  );
+
+  const expectedNonGoals = ["new_executor_authority", "multi_repo_orchestration_in_core"];
+  assert.deepEqual(
+    sortedValues(artifact.nonGoals),
+    sortedValues(expectedNonGoals),
+    "nonGoals must match the published exclusions exactly",
+  );
+
+  for (const source of [artifactSource, automationGuide, laneNote, architecture]) {
+    assert.match(source, /`?codex-supervisor`? remains the implementation executor/i);
+    assert.match(source, /must not bypass/i);
+    assert.match(source, /issue-lint/i);
+    assert.match(source, /fresh (GitHub )?PR facts/i);
+    assert.match(source, /local CI/i);
+    assert.match(source, /operator confirmations/i);
+    assert.match(source, /multi-repo orchestration/i);
+    assert.match(source, /new executor authority/i);
+    assert.doesNotMatch(source, /\/Users\/[A-Za-z0-9._-]+\//);
+    assert.doesNotMatch(source, /C:\\Users\\[A-Za-z0-9._-]+\\/);
+  }
 });
