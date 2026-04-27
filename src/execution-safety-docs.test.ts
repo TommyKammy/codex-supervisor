@@ -74,6 +74,8 @@ test("execution-safety docs include a compact trust mode and execution safety co
   assert.match(configuration, /setup\/readiness/);
   assert.match(configuration, /trusted GitHub authors/i);
   assert.match(configuration, /not a default/i);
+  assert.match(configuration, /explicit conservative posture marker/i);
+  assert.doesNotMatch(configuration, /still stays behind an operator gate/i);
 
   assert.match(
     readme,
