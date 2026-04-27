@@ -39,6 +39,51 @@ test("README stays lightweight while routing humans and AI agents to the right d
   assert.doesNotMatch(content, /^## Complete operator manual$/m);
 });
 
+test("README first screen positions codex-supervisor as a quality layer", async () => {
+  const content = await readReadme();
+  const whatItIsStart = content.indexOf("## What It Is");
+  const whoItIsForStart = content.indexOf("## Who It Is For");
+  assert.notEqual(whatItIsStart, -1, "expected README.md to include What It Is");
+  assert.ok(whoItIsForStart > whatItIsStart, "expected Who It Is For to follow What It Is");
+
+  const firstScreen = content.slice(0, whoItIsForStart);
+
+  assert.match(
+    firstScreen,
+    /Codex Supervisor turns vibe coding into issue-driven, test-backed, reviewable software delivery\./,
+  );
+  assert.equal(
+    [...content.matchAll(/vibe coding/g)].length,
+    1,
+    "expected README to use vibe coding only in the product positioning sentence",
+  );
+
+  const requiredLoop = [
+    "issue contract",
+    "local verification",
+    "reviewable PR",
+    "evidence timeline",
+  ];
+  let lastIndex = -1;
+  for (const phrase of requiredLoop) {
+    const index = firstScreen.indexOf(phrase, lastIndex + 1);
+    assert.notEqual(index, -1, `expected first screen to include ${phrase}`);
+    assert.ok(index > lastIndex, `expected ${phrase} to appear after the previous quality-loop step`);
+    lastIndex = index;
+  }
+
+  const requiredArtifactLinks = [
+    "[issue body contract](./docs/issue-body-contract.schema.json)",
+    "[trust posture](./docs/trust-posture-config.schema.json)",
+    "[operator actions](./docs/operator-actions.schema.json)",
+    "[evidence timeline](./docs/evidence-timeline.schema.json)",
+    "[automation boundary](./docs/codex-automation-connector-boundary.schema.json)",
+  ];
+  for (const link of requiredArtifactLinks) {
+    assert.ok(firstScreen.includes(link), `expected first screen to link ${link}`);
+  }
+});
+
 test("README Quick Start leads with the five-minute playground smoke flow", async () => {
   const content = await readReadme();
   const quickStartStart = content.indexOf("## Quick Start");
