@@ -68,6 +68,10 @@ export type GitHubWaitStep =
   | "copilot_review_requested_wait"
   | "checks_pending";
 
+function pullRequestStateInferenceNowMs(nowMs?: number): number {
+  return nowMs ?? Date.now.call(Date);
+}
+
 function reviewSatisfied(pr: GitHubPullRequest): boolean {
   return (
     (pr.reviewDecision !== "CHANGES_REQUESTED" || pr.configuredBotTopLevelReviewStrength === "nitpick_only") &&
@@ -86,6 +90,7 @@ export function copilotReviewArrived(pr: GitHubPullRequest): boolean {
 function determineConfiguredBotRateLimitWait(
   config: SupervisorConfig,
   pr: GitHubPullRequest,
+  nowMs: number,
 ): ConfiguredBotRateLimitWaitStatus {
   const policy = reviewProviderWaitPolicyFromConfig(config);
   const waitMinutes = config.configuredBotRateLimitWaitMinutes ?? 0;
@@ -106,7 +111,7 @@ function determineConfiguredBotRateLimitWait(
 
   const waitUntilMs = observedAtMs + waitMinutes * 60_000;
   return {
-    active: Date.now() < waitUntilMs,
+    active: nowMs < waitUntilMs,
     observedAt: pr.configuredBotRateLimitedAt,
     waitUntil: new Date(waitUntilMs).toISOString(),
   };
@@ -163,6 +168,7 @@ export function determineCopilotReviewTimeout(
   config: SupervisorConfig,
   record: IssueRunRecord,
   pr: GitHubPullRequest,
+  nowMs = pullRequestStateInferenceNowMs(),
 ): CopilotReviewTimeoutStatus {
   const policy = reviewProviderWaitPolicyFromConfig(config);
   const empty: CopilotReviewTimeoutStatus = {
@@ -181,7 +187,7 @@ export function determineCopilotReviewTimeout(
         const requestedAtMs = Date.parse(requestedReviewStartedAt);
         if (!Number.isNaN(requestedAtMs)) {
           const timeoutMs = config.copilotReviewWaitMinutes * 60_000;
-          if (Date.now() >= requestedAtMs + timeoutMs) {
+          if (nowMs >= requestedAtMs + timeoutMs) {
             return {
               timedOut: true,
               action: config.copilotReviewTimeoutAction,
@@ -229,7 +235,7 @@ export function determineCopilotReviewTimeout(
         }
 
         const timeoutMs = (config.configuredBotCurrentHeadSignalTimeoutMinutes ?? 0) * 60_000;
-        if (Date.now() < startedAtMs + timeoutMs) {
+        if (nowMs < startedAtMs + timeoutMs) {
           return {
             timedOut: false,
             action: null,
@@ -267,6 +273,7 @@ function shouldWaitForCopilotReviewPropagation(
   config: SupervisorConfig,
   record: Pick<IssueRunRecord, "review_wait_started_at" | "review_wait_head_sha">,
   pr: GitHubPullRequest,
+  nowMs: number,
 ): boolean {
   const policy = reviewProviderWaitPolicyFromConfig(config);
   if (
@@ -293,12 +300,13 @@ function shouldWaitForCopilotReviewPropagation(
     return false;
   }
 
-  return Date.now() < startedAtMs + COPILOT_REVIEW_PROPAGATION_GRACE_MS;
+  return nowMs < startedAtMs + COPILOT_REVIEW_PROPAGATION_GRACE_MS;
 }
 
 function shouldWaitForConfiguredBotCurrentHeadQuietPeriod(
   config: SupervisorConfig,
   pr: GitHubPullRequest,
+  nowMs: number,
 ): boolean {
   const policy = reviewProviderWaitPolicyFromConfig(config);
   if (!policy.shouldApplyCurrentHeadQuietPeriod || pr.isDraft || !pr.configuredBotCurrentHeadObservedAt) {
@@ -311,12 +319,13 @@ function shouldWaitForConfiguredBotCurrentHeadQuietPeriod(
   }
 
   const settledWaitMs = (config.configuredBotSettledWaitSeconds ?? DEFAULT_CONFIGURED_BOT_SETTLED_WAIT_MS / 1_000) * 1_000;
-  return Date.now() < observedAtMs + settledWaitMs;
+  return nowMs < observedAtMs + settledWaitMs;
 }
 
 function shouldWaitForConfiguredBotInitialGracePeriod(
   config: SupervisorConfig,
   pr: GitHubPullRequest,
+  nowMs: number,
 ): boolean {
   const policy = reviewProviderWaitPolicyFromConfig(config);
   if (
@@ -333,7 +342,7 @@ function shouldWaitForConfiguredBotInitialGracePeriod(
     return false;
   }
 
-  return Date.now() < ciGreenAtMs + configuredBotInitialGraceWaitMs(config);
+  return nowMs < ciGreenAtMs + configuredBotInitialGraceWaitMs(config);
 }
 
 function requiresConfiguredBotCurrentHeadSignal(config: SupervisorConfig): boolean {
@@ -372,6 +381,7 @@ function shouldWaitForConfiguredBotDraftSkipRearm(
   config: SupervisorConfig,
   record: IssueRunRecord,
   pr: GitHubPullRequest,
+  nowMs: number,
 ): boolean {
   const policy = reviewProviderWaitPolicyFromConfig(config);
   if (!policy.shouldApplyCurrentHeadQuietPeriod || pr.isDraft || !pr.configuredBotDraftSkipAt || !record.review_wait_started_at) {
@@ -396,7 +406,7 @@ function shouldWaitForConfiguredBotDraftSkipRearm(
     }
   }
 
-  return Date.now() < reviewWaitStartedAtMs + configuredBotInitialGraceWaitMs(config);
+  return nowMs < reviewWaitStartedAtMs + configuredBotInitialGraceWaitMs(config);
 }
 
 function configuredBotDraftSkipRearmStartedAt(
@@ -434,6 +444,7 @@ function shouldWaitForConfiguredBotLatestHeadRearm(
   config: SupervisorConfig,
   record: Pick<IssueRunRecord, "review_wait_started_at" | "review_wait_head_sha">,
   pr: GitHubPullRequest,
+  nowMs: number,
 ): boolean {
   const startedAt = configuredBotLatestHeadRearmStartedAt(config, record, pr);
   if (!startedAt) {
@@ -445,7 +456,7 @@ function shouldWaitForConfiguredBotLatestHeadRearm(
     return false;
   }
 
-  return Date.now() < startedAtMs + configuredBotInitialGraceWaitMs(config);
+  return nowMs < startedAtMs + configuredBotInitialGraceWaitMs(config);
 }
 
 function configuredBotLatestHeadRearmStartedAt(
@@ -565,8 +576,9 @@ export function buildCopilotReviewTimeoutFailureContext(
   config: SupervisorConfig,
   record: IssueRunRecord,
   pr: GitHubPullRequest,
+  nowMs = pullRequestStateInferenceNowMs(),
 ): FailureContext | null {
-  const timeout = determineCopilotReviewTimeout(config, record, pr);
+  const timeout = determineCopilotReviewTimeout(config, record, pr, nowMs);
   if (!timeout.timedOut || timeout.action !== "block") {
     return null;
   }
@@ -725,13 +737,14 @@ export function blockedReasonFromReviewState(
   pr: GitHubPullRequest,
   checks: PullRequestCheck[],
   reviewThreads: ReviewThread[],
+  nowMs = pullRequestStateInferenceNowMs(),
 ): Exclude<BlockedReason, null> | null {
   const manualThreads = manualReviewThreads(config, reviewThreads);
   const unresolvedBotThreads = effectiveConfiguredBotReviewThreads(config, pr, checks, reviewThreads);
   const staleBotThreads =
     manualThreads.length === 0 ? staleConfiguredBotReviewThreads(config, record, pr, unresolvedBotThreads) : [];
   const checkSummary = summarizeChecks(checks);
-  const copilotTimeout = determineCopilotReviewTimeout(config, record, pr);
+  const copilotTimeout = determineCopilotReviewTimeout(config, record, pr, nowMs);
   if (copilotTimeout.timedOut && copilotTimeout.action === "block") {
     return "review_bot_timeout";
   }
@@ -782,6 +795,7 @@ export function inferStateFromPullRequest(
   pr: GitHubPullRequest,
   checks: PullRequestCheck[],
   reviewThreads: ReviewThread[],
+  nowMs = pullRequestStateInferenceNowMs(),
 ): RunState {
   const manualThreads = manualReviewThreads(config, reviewThreads);
   const unresolvedBotThreads = effectiveConfiguredBotReviewThreads(config, pr, checks, reviewThreads);
@@ -936,29 +950,29 @@ export function inferStateFromPullRequest(
     return "draft_pr";
   }
 
-  const configuredBotRateLimitWait = determineConfiguredBotRateLimitWait(config, pr);
+  const configuredBotRateLimitWait = determineConfiguredBotRateLimitWait(config, pr, nowMs);
   if (configuredBotRateLimitWait.active) {
     return "waiting_ci";
   }
 
-  const copilotTimeout = determineCopilotReviewTimeout(config, record, pr);
+  const copilotTimeout = determineCopilotReviewTimeout(config, record, pr, nowMs);
   if (copilotTimeout.timedOut && copilotTimeout.action === "block") {
     return "blocked";
   }
 
-  if (shouldWaitForConfiguredBotLatestHeadRearm(config, record, pr)) {
+  if (shouldWaitForConfiguredBotLatestHeadRearm(config, record, pr, nowMs)) {
     return "waiting_ci";
   }
 
-  if (shouldWaitForConfiguredBotDraftSkipRearm(config, record, pr)) {
+  if (shouldWaitForConfiguredBotDraftSkipRearm(config, record, pr, nowMs)) {
     return "waiting_ci";
   }
 
-  if (shouldWaitForConfiguredBotInitialGracePeriod(config, pr)) {
+  if (shouldWaitForConfiguredBotInitialGracePeriod(config, pr, nowMs)) {
     return "waiting_ci";
   }
 
-  if (shouldWaitForConfiguredBotCurrentHeadQuietPeriod(config, pr)) {
+  if (shouldWaitForConfiguredBotCurrentHeadQuietPeriod(config, pr, nowMs)) {
     return "waiting_ci";
   }
 
@@ -966,7 +980,7 @@ export function inferStateFromPullRequest(
     return "waiting_ci";
   }
 
-  if (shouldWaitForCopilotReviewPropagation(config, record, pr)) {
+  if (shouldWaitForCopilotReviewPropagation(config, record, pr, nowMs)) {
     return "waiting_ci";
   }
 
@@ -994,34 +1008,35 @@ export function inferGitHubWaitStep(
   record: IssueRunRecord,
   pr: GitHubPullRequest,
   checks: PullRequestCheck[],
+  nowMs = pullRequestStateInferenceNowMs(),
 ): GitHubWaitStep | null {
-  const configuredBotRateLimitWait = determineConfiguredBotRateLimitWait(config, pr);
+  const configuredBotRateLimitWait = determineConfiguredBotRateLimitWait(config, pr, nowMs);
   if (configuredBotRateLimitWait.active) {
     return "configured_bot_rate_limit_wait";
   }
 
-  if (shouldWaitForConfiguredBotLatestHeadRearm(config, record, pr)) {
+  if (shouldWaitForConfiguredBotLatestHeadRearm(config, record, pr, nowMs)) {
     return "configured_bot_initial_grace_wait";
   }
 
-  if (shouldWaitForConfiguredBotDraftSkipRearm(config, record, pr)) {
+  if (shouldWaitForConfiguredBotDraftSkipRearm(config, record, pr, nowMs)) {
     return "configured_bot_initial_grace_wait";
   }
 
-  if (shouldWaitForConfiguredBotInitialGracePeriod(config, pr)) {
+  if (shouldWaitForConfiguredBotInitialGracePeriod(config, pr, nowMs)) {
     return "configured_bot_initial_grace_wait";
   }
 
-  if (shouldWaitForConfiguredBotCurrentHeadQuietPeriod(config, pr)) {
+  if (shouldWaitForConfiguredBotCurrentHeadQuietPeriod(config, pr, nowMs)) {
     return "configured_bot_settled_wait";
   }
 
-  const copilotTimeout = determineCopilotReviewTimeout(config, record, pr);
+  const copilotTimeout = determineCopilotReviewTimeout(config, record, pr, nowMs);
   if (configuredBotCurrentHeadSignalPending(config, record, pr) && !copilotTimeout.timedOut) {
     return "configured_bot_current_head_signal_wait";
   }
 
-  if (shouldWaitForCopilotReviewPropagation(config, record, pr)) {
+  if (shouldWaitForCopilotReviewPropagation(config, record, pr, nowMs)) {
     return "copilot_review_propagation_wait";
   }
 

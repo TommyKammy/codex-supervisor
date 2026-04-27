@@ -121,6 +121,51 @@ test("inferStateFromPullRequest does not let current-head timeout bypass the con
   });
 });
 
+test("inferStateFromPullRequest uses one time snapshot across current-head timeout and grace checks", () => {
+  const config = createConfig({
+    reviewBotLogins: ["coderabbitai[bot]"],
+    configuredBotRequireCurrentHeadSignal: true,
+    configuredBotInitialGraceWaitSeconds: 120,
+    configuredBotCurrentHeadSignalTimeoutMinutes: 1,
+  });
+  const record = createRecord({
+    state: "pr_open",
+    last_head_sha: "head123",
+  });
+  const pr = createPullRequest({
+    currentHeadCiGreenAt: "2026-03-16T00:00:00Z",
+  });
+  let dateNowCalls = 0;
+  const originalDateNow = Date.now;
+  Date.now = () => {
+    dateNowCalls += 1;
+    if (dateNowCalls > 1) {
+      throw new Error("Date.now called more than once during one PR state inference");
+    }
+
+    return Date.parse("2026-03-16T00:02:59.999Z");
+  };
+
+  try {
+    assert.equal(inferStateFromPullRequest(config, record, pr, passingChecks(), []), "waiting_ci");
+    assert.equal(dateNowCalls, 1);
+  } finally {
+    Date.now = originalDateNow;
+  }
+
+  Date.now = () => {
+    throw new Error("caller-provided PR state inference clock was ignored");
+  };
+  try {
+    assert.equal(
+      inferStateFromPullRequest(config, record, pr, passingChecks(), [], Date.parse("2026-03-16T00:02:59.999Z")),
+      "waiting_ci",
+    );
+  } finally {
+    Date.now = originalDateNow;
+  }
+});
+
 test("inferStateFromPullRequest keeps waiting for a required current-head signal even when no timeout is configured", () => {
   const config = createConfig({
     reviewBotLogins: ["coderabbitai[bot]"],
