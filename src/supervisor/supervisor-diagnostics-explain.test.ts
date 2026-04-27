@@ -1165,6 +1165,7 @@ test("explain keeps configured-bot success without current-head observation as u
     explanation,
     /^stale_review_bot_remediation issue=#197 pr=#297 reason=stale_review_bot code_ci=green current_head_sha=head-197 processed_on_current_head=yes classification=unresolved_work review_thread_url=https:\/\/example\.test\/pr\/297#discussion_r297 manual_next_step=inspect_exact_review_thread_then_resolve_or_leave_manual_note summary=code_or_ci_green_but_review_thread_metadata_unresolved$/m,
   );
+  assert.match(explanation, /^stale_diagnostic kind=stale_review_bot recoverability=provider_outage_suspected$/m);
   assert.doesNotMatch(explanation, /classification=metadata_only/m);
 });
 
