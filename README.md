@@ -118,9 +118,17 @@ When the sandbox pass is clean, validate the production config and a real issue 
    node dist/index.js loop --config <supervisor-config-path>
    ```
 
-For a shipped provider profile, pass the concrete profile file explicitly:
+For a shipped provider profile, choose the command block that matches the copied profile you are validating:
 
    ```bash
+   node dist/index.js issue-lint <issue-number> --config supervisor.config.copilot.json
+   node dist/index.js doctor --config supervisor.config.copilot.json
+   node dist/index.js status --config supervisor.config.copilot.json --why
+
+   node dist/index.js issue-lint <issue-number> --config supervisor.config.codex.json
+   node dist/index.js doctor --config supervisor.config.codex.json
+   node dist/index.js status --config supervisor.config.codex.json --why
+
    node dist/index.js issue-lint <issue-number> --config supervisor.config.coderabbit.json
    node dist/index.js doctor --config supervisor.config.coderabbit.json
    node dist/index.js status --config supervisor.config.coderabbit.json --why

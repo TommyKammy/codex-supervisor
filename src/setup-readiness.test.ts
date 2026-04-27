@@ -31,6 +31,9 @@ test("diagnoseSetupReadiness explains copied starter profile placeholders as fir
 
   assert.equal(summary.ready, false);
   assert.equal(summary.overallStatus, "invalid");
+  assert.equal(summary.providerPosture.profile, "copilot");
+  assert.deepEqual(summary.providerPosture.reviewers, ["copilot-pull-request-reviewer"]);
+  assert.equal(summary.localReviewPosture?.preset, "off");
   assert.deepEqual(
     summary.fields
       .filter((field) => field.state === "invalid")
@@ -56,6 +59,34 @@ test("diagnoseSetupReadiness explains copied starter profile placeholders as fir
   assert.match(
     summary.nextActions.find((action) => action.source === "invalid_repo_slug")?.summary ?? "",
     /replace it with the GitHub owner\/repo slug/i,
+  );
+});
+
+test("diagnoseSetupReadiness preserves provider-specific posture for copied CodeRabbit starter profile", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-coderabbit-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const sourcePath = path.join(process.cwd(), "supervisor.config.coderabbit.json");
+  const configPath = path.join(root, "supervisor.config.json");
+  await fs.copyFile(sourcePath, configPath);
+
+  const summary = await diagnoseSetupReadiness({
+    configPath,
+    authStatus: async () => ({ ok: true, message: null }),
+  });
+
+  assert.equal(summary.ready, false);
+  assert.equal(summary.overallStatus, "invalid");
+  assert.equal(summary.providerPosture.profile, "coderabbit");
+  assert.deepEqual(summary.providerPosture.reviewers, ["coderabbitai", "coderabbitai[bot]"]);
+  assert.equal(summary.localReviewPosture?.preset, "off");
+  assert.deepEqual(
+    summary.fields
+      .filter((field) => field.state === "invalid")
+      .map((field) => field.key),
+    ["repoSlug"],
   );
 });
 

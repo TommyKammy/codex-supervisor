@@ -21,7 +21,10 @@ import {
 import type {
   CodexModelStrategy,
   LocalCiContractSummary,
+  LocalReviewHighSeverityAction,
+  LocalReviewPolicy,
   LocalReviewPostureSummary,
+  LocalReviewPosturePreset,
   ReleaseReadinessGatePosture,
   ReleaseReadinessGateSummary,
   TrustDiagnosticsSummary,
@@ -237,6 +240,15 @@ const SETUP_FIELD_METADATA: Record<SetupReadinessFieldKey, SetupReadinessFieldMe
 
 const VALID_TRUST_MODES = new Set<TrustMode>(["trusted_repo_and_authors", "untrusted_or_mixed"]);
 const VALID_EXECUTION_SAFETY_MODES = new Set<ExecutionSafetyMode>(["unsandboxed_autonomous", "operator_gated"]);
+const VALID_LOCAL_REVIEW_POSTURE_PRESETS = new Set<LocalReviewPosturePreset>([
+  "off",
+  "advisory",
+  "block_merge",
+  "repair_high_severity",
+  "follow_up_issue_creation",
+]);
+const VALID_LOCAL_REVIEW_POLICIES = new Set<LocalReviewPolicy>(["advisory", "block_ready", "block_merge"]);
+const VALID_LOCAL_REVIEW_HIGH_SEVERITY_ACTIONS = new Set<LocalReviewHighSeverityAction>(["retry", "blocked"]);
 const SETUP_POSTURE_GROUP_LABELS: Record<ConfigFieldPostureTier, string> = {
   required: "Required setup decisions",
   recommended: "Recommended setup contracts",
@@ -345,6 +357,31 @@ function tryNormalizeLocalCiCommand(value: unknown): ReturnType<typeof normalize
 
 function tryReadReleaseReadinessGatePosture(value: unknown): ReleaseReadinessGatePosture {
   return value === "block_release_publication" ? "block_release_publication" : "advisory";
+}
+
+function readRawStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string" && entry.trim() !== "")
+    : [];
+}
+
+function readRawLocalReviewPosturePreset(value: unknown): LocalReviewPosturePreset | undefined {
+  return typeof value === "string" && VALID_LOCAL_REVIEW_POSTURE_PRESETS.has(value as LocalReviewPosturePreset)
+    ? (value as LocalReviewPosturePreset)
+    : undefined;
+}
+
+function readRawLocalReviewPolicy(value: unknown): LocalReviewPolicy | undefined {
+  return typeof value === "string" && VALID_LOCAL_REVIEW_POLICIES.has(value as LocalReviewPolicy)
+    ? (value as LocalReviewPolicy)
+    : undefined;
+}
+
+function readRawLocalReviewHighSeverityAction(value: unknown): LocalReviewHighSeverityAction | undefined {
+  return typeof value === "string" &&
+    VALID_LOCAL_REVIEW_HIGH_SEVERITY_ACTIONS.has(value as LocalReviewHighSeverityAction)
+    ? (value as LocalReviewHighSeverityAction)
+    : undefined;
 }
 
 function buildFieldMessage(args: {
@@ -579,19 +616,27 @@ function buildConfigPostureGroups(args: {
 
 function buildProviderPosture(
   config: ReturnType<typeof loadConfigSummary>["config"],
+  rawConfig: RawConfigDocument,
 ): SetupReadinessProviderPosture {
+  const providerConfig = config ?? {
+    reviewBotLogins: readRawStringArray(rawConfig?.reviewBotLogins),
+  };
   if (!config) {
-    return {
-      profile: "none",
-      provider: "none",
-      reviewers: [],
-      signalSource: "none",
-      configured: false,
-      summary: "No review provider is configured.",
-    };
+    const rawProfile = reviewProviderProfileFromConfig(providerConfig);
+    return rawProfile.profile === "none"
+      ? {
+        ...rawProfile,
+        configured: false,
+        summary: "No review provider is configured.",
+      }
+      : {
+        ...rawProfile,
+        configured: true,
+        summary: `Review provider posture uses ${rawProfile.provider} via ${rawProfile.signalSource}.`,
+      };
   }
 
-  const profile = reviewProviderProfileFromConfig(config);
+  const profile = reviewProviderProfileFromConfig(providerConfig);
   if (profile.profile === "none") {
     return {
       ...profile,
@@ -605,6 +650,55 @@ function buildProviderPosture(
     configured: true,
     summary: `Review provider posture uses ${profile.provider} via ${profile.signalSource}.`,
   };
+}
+
+function buildLocalReviewPosture(
+  config: ReturnType<typeof loadConfigSummary>["config"],
+  rawConfig: RawConfigDocument,
+): LocalReviewPostureSummary | undefined {
+  if (config) {
+    return summarizeLocalReviewPosture(config);
+  }
+
+  const rawDocument = rawConfig ?? {};
+  const hasRawLocalReviewSetting = [
+    "localReviewPosture",
+    "localReviewEnabled",
+    "localReviewPolicy",
+    "localReviewFollowUpIssueCreationEnabled",
+    "localReviewHighSeverityAction",
+  ].some((field) => Object.prototype.hasOwnProperty.call(rawDocument, field));
+  if (!hasRawLocalReviewSetting) {
+    return undefined;
+  }
+
+  const localReviewPosture = readRawLocalReviewPosturePreset(rawDocument.localReviewPosture);
+  const localReviewEnabled =
+    localReviewPosture !== undefined
+      ? localReviewPosture !== "off"
+      : rawDocument.localReviewEnabled === true;
+  const localReviewPolicy =
+    localReviewPosture === "advisory"
+      ? "advisory"
+      : localReviewPosture !== undefined
+        ? "block_merge"
+        : readRawLocalReviewPolicy(rawDocument.localReviewPolicy) ?? "block_merge";
+  const localReviewFollowUpIssueCreationEnabled =
+    localReviewPosture !== undefined
+      ? localReviewPosture === "follow_up_issue_creation"
+      : rawDocument.localReviewFollowUpIssueCreationEnabled === true;
+  const localReviewHighSeverityAction =
+    localReviewPosture !== undefined
+      ? localReviewPosture === "repair_high_severity" ? "retry" : "blocked"
+      : readRawLocalReviewHighSeverityAction(rawDocument.localReviewHighSeverityAction) ?? "blocked";
+
+  return summarizeLocalReviewPosture({
+    localReviewPosture,
+    localReviewEnabled,
+    localReviewPolicy,
+    localReviewFollowUpIssueCreationEnabled,
+    localReviewHighSeverityAction,
+  });
 }
 
 function buildTrustPostureFromRaw(
@@ -1091,11 +1185,11 @@ export async function diagnoseSetupReadiness(
     blockers,
     nextActions,
     hostReadiness,
-    providerPosture: buildProviderPosture(configSummary.config),
+    providerPosture: buildProviderPosture(configSummary.config, rawConfig),
     trustPosture: buildTrustPostureFromRaw(rawConfig, configSummary.config),
     modelRoutingPosture,
     localCiContract,
-    localReviewPosture: configSummary.config ? summarizeLocalReviewPosture(configSummary.config) : undefined,
+    localReviewPosture: buildLocalReviewPosture(configSummary.config, rawConfig),
     releaseReadinessGate,
   };
 }
