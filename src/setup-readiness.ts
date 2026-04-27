@@ -1150,6 +1150,47 @@ function firstRunSectionStatus(hasBlocker: boolean, fallback: FirstRunSummarySta
   return hasBlocker ? "blocked" : fallback;
 }
 
+function deriveFirstRunTrustSummary(report: SetupReadinessReport): string {
+  const trustMode = setupFieldValue(report, "trustMode");
+  const executionSafetyMode = setupFieldValue(report, "executionSafetyMode");
+  if (
+    report.trustPosture.configured !== true ||
+    setupFieldStatus(report, "trustMode") !== "configured" ||
+    setupFieldStatus(report, "executionSafetyMode") !== "configured" ||
+    !VALID_TRUST_MODES.has(trustMode as TrustMode) ||
+    !VALID_EXECUTION_SAFETY_MODES.has(executionSafetyMode as ExecutionSafetyMode)
+  ) {
+    return "unknown";
+  }
+
+  return trustMode === "trusted_repo_and_authors" && executionSafetyMode === "unsandboxed_autonomous"
+    ? "Trusted inputs with unsandboxed autonomous execution. This is appropriate only for a trusted solo-lane repository and trusted GitHub authors."
+    : "Trust posture avoids the default unsandboxed trusted-input assumption.";
+}
+
+function firstRunGitHubAuthStatus(report: SetupReadinessReport, githubAuthBlocked: boolean): FirstRunSummaryStatus {
+  if (githubAuthBlocked) {
+    return "blocked";
+  }
+
+  const githubAuthCheck = report.hostReadiness.checks.find((check) => check.name === "github_auth");
+  return githubAuthCheck?.status === "pass" ? "clear" : "unknown";
+}
+
+function firstRunNextCommand(nextAction: SetupReadinessNextAction): string | null {
+  if (nextAction.action === "fix_config") {
+    return nextAction.source === "host_github_auth"
+      ? "gh auth status --hostname github.com"
+      : "node dist/index.js init --config <supervisor-config-path>";
+  }
+
+  if (nextAction.action === "continue") {
+    return "node dist/index.js sample-issue --output <sample-issue-path>";
+  }
+
+  return null;
+}
+
 function selectFirstRunNextAction(report: SetupReadinessReport): SetupReadinessNextAction {
   const orderedSourcePrefixes = [
     "invalid_repo_path",
@@ -1202,6 +1243,7 @@ export function renderFirstRunDoctorSummary(report: SetupReadinessReport): strin
     );
   const githubAuthBlocked = report.blockers.some((blocker) => blocker.code === "host_github_auth");
   const nextAction = selectFirstRunNextAction(report);
+  const nextCommand = firstRunNextCommand(nextAction);
   const lines = [
     `first_run_readiness ready=${report.ready} overall=${report.overallStatus}`,
     [
@@ -1227,11 +1269,11 @@ export function renderFirstRunDoctorSummary(report: SetupReadinessReport): strin
     [
       "first_run_trust_posture",
       `status=${firstRunSectionStatus(trustBlocked)}`,
-      `summary=${sanitizeFirstRunSummaryValue(report.trustPosture.summary)}`,
+      `summary=${sanitizeFirstRunSummaryValue(deriveFirstRunTrustSummary(report))}`,
     ].join(" "),
     [
       "first_run_github_auth",
-      `status=${firstRunSectionStatus(githubAuthBlocked)}`,
+      `status=${firstRunGitHubAuthStatus(report, githubAuthBlocked)}`,
       `summary=${firstRunBlockerSummary(report, (blocker) => blocker.code === "host_github_auth")}`,
     ].join(" "),
     [
@@ -1241,7 +1283,7 @@ export function renderFirstRunDoctorSummary(report: SetupReadinessReport): strin
       `required=${nextAction.required}`,
       `summary=${sanitizeFirstRunSummaryValue(nextAction.summary)}`,
     ].join(" "),
-    "first_run_next_command command=node dist/index.js init --config <supervisor-config-path>; node dist/index.js sample-issue --output <sample-issue-path>; node dist/index.js issue-lint <issue-number> --config <supervisor-config-path>",
+    ...(nextCommand === null ? [] : [`first_run_next_command command=${nextCommand}`]),
   ];
 
   return lines.join("\n");

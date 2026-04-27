@@ -115,10 +115,10 @@ test("renderFirstRunDoctorSummary orders beginner blockers and emits one next ac
     "first_run_repo_identity",
     "first_run_config_placeholders status=clear",
     "first_run_local_ci status=optional",
-    "first_run_trust_posture status=blocked",
+    "first_run_trust_posture status=blocked summary=unknown",
     "first_run_github_auth status=blocked",
     "first_run_next_action action=fix_config source=missing_trust_mode required=true",
-    "first_run_next_command command=node dist/index.js init --config <supervisor-config-path>; node dist/index.js sample-issue --output <sample-issue-path>; node dist/index.js issue-lint <issue-number> --config <supervisor-config-path>",
+    "first_run_next_command command=node dist/index.js init --config <supervisor-config-path>",
   ];
   let lastIndex = -1;
   for (const phrase of orderedPhrases) {
@@ -127,6 +127,26 @@ test("renderFirstRunDoctorSummary orders beginner blockers and emits one next ac
     assert.ok(index > lastIndex, `expected ${phrase} after the previous first-run summary section`);
     lastIndex = index;
   }
+  assert.doesNotMatch(summary, new RegExp(root.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+});
+
+test("renderFirstRunDoctorSummary treats missing host diagnostics as unknown GitHub auth", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const report = await diagnoseSetupReadiness({
+    configPath: path.join(root, "supervisor.config.json"),
+    authStatus: async () => {
+      throw new Error("auth check should not run without a loaded config");
+    },
+  });
+  const summary = renderFirstRunDoctorSummary(report);
+
+  assert.match(summary, /^first_run_trust_posture status=blocked summary=unknown$/m);
+  assert.match(summary, /^first_run_github_auth status=unknown summary=none$/m);
+  assert.match(summary, /^first_run_next_command command=node dist\/index\.js init --config <supervisor-config-path>$/m);
   assert.doesNotMatch(summary, new RegExp(root.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });
 
