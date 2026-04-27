@@ -28,6 +28,13 @@ interface TrustPostureCombination {
 }
 
 interface TrustPostureConfigSchema {
+  $ref: string;
+  $defs: {
+    trustPostureConfigContract: {
+      required: string[];
+      properties: Record<string, unknown>;
+    };
+  };
   contractName: string;
   contractVersion: number;
   canonicalGuide: string;
@@ -53,6 +60,11 @@ function readSchema(): TrustPostureConfigSchema {
 test("published trust posture config schema captures the portable contract fields", () => {
   const schema = readSchema();
 
+  assert.equal(schema.$ref, "#/$defs/trustPostureConfigContract");
+  assert.ok(schema.$defs.trustPostureConfigContract.required.includes("localCiPostures"));
+  assert.ok(schema.$defs.trustPostureConfigContract.required.includes("reviewProviderPosture"));
+  assert.ok(schema.$defs.trustPostureConfigContract.properties.localCiPostures);
+  assert.ok(schema.$defs.trustPostureConfigContract.properties.reviewProviderPosture);
   assert.equal(schema.contractName, "codex-supervisor.trust-posture-config");
   assert.equal(schema.contractVersion, 1);
   assert.equal(schema.canonicalGuide, "docs/configuration.md");

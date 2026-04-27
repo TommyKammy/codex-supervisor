@@ -1,6 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/TommyKammy/codex-supervisor/docs/trust-posture-config.schema.json",
+  "$ref": "#/$defs/trustPostureConfigContract",
   "contractName": "codex-supervisor.trust-posture-config",
   "contractVersion": 1,
   "canonicalGuide": "docs/configuration.md",
@@ -277,6 +278,16 @@
             "type": "string"
           },
           "minItems": 1
+        },
+        "localCiPostures": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/localCiPosture"
+          },
+          "minItems": 1
+        },
+        "reviewProviderPosture": {
+          "$ref": "#/$defs/reviewProviderPosture"
         }
       }
     },
@@ -342,6 +353,61 @@
           "type": "boolean"
         },
         "operatorMeaning": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "localCiPosture": {
+      "type": "object",
+      "required": [
+        "source",
+        "configured",
+        "summary"
+      ],
+      "properties": {
+        "source": {
+          "enum": [
+            "config",
+            "repo_script_candidate",
+            "dismissed_repo_script_candidate"
+          ]
+        },
+        "configured": {
+          "type": "boolean"
+        },
+        "summary": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "reviewProviderPosture": {
+      "type": "object",
+      "required": [
+        "configuredWhen",
+        "signalSources",
+        "operatorAuthorityBoundary"
+      ],
+      "properties": {
+        "configuredWhen": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "signalSources": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "copilot_lifecycle",
+              "review_threads"
+            ]
+          },
+          "minItems": 1
+        },
+        "operatorAuthorityBoundary": {
           "type": "string"
         }
       },
