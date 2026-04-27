@@ -1062,6 +1062,12 @@ test("explain classifies handled stale configured-bot review threads as metadata
     explanation,
     /^stale_review_bot_remediation issue=#196 pr=#296 reason=stale_review_bot code_ci=green current_head_sha=head-196 processed_on_current_head=yes classification=metadata_only review_thread_url=https:\/\/example\.test\/pr\/296#discussion_r296 manual_next_step=inspect_exact_review_thread_then_resolve_or_leave_manual_note summary=stale_configured_bot_thread_metadata_only$/m,
   );
+  assert.match(
+    explanation,
+    /^no_active_tracked_record issue=#196 classification=stale_review_bot_remediation state=blocked reason=metadata_only$/m,
+  );
+  assert.doesNotMatch(explanation, /provider_outage_suspected/);
+  assert.doesNotMatch(explanation, /stale_review_bot_provider_signal_missing/);
 });
 
 test("explain keeps configured-bot success without current-head observation as unresolved work", async () => {

@@ -347,10 +347,6 @@ export async function buildIssueExplainDto(
     record,
   });
   const latestRecoverySummary = record ? formatLatestRecoveryStatusLine(record) : null;
-  const noActiveTrackedRecordSummary =
-    record && state.activeIssueNumber === null
-      ? formatNoActiveTrackedRecordClassificationLine(config, record)
-      : null;
   const operatorEventSummary = record ? formatMergedPrConvergenceOperatorEventLine(record) : null;
   const staleRecoveryWarningSummary = record ? buildStaleStabilizingNoPrRecoveryWarningLine(record, config) : null;
   let pr: GitHubPullRequest | null = null;
@@ -449,6 +445,18 @@ export async function buildIssueExplainDto(
         reviewThreads: explainReviewThreads,
       })
       : null;
+  const noActiveTrackedRecordSummary =
+    record && state.activeIssueNumber === null
+      ? formatNoActiveTrackedRecordClassificationLine(config, record, staleReviewBotRemediation)
+      : null;
+  const staleDiagnosticSummary = record && record.blocked_reason === "stale_review_bot" && !staleReviewBotRemediation
+    ? (() => {
+      const recoverability = classifyStaleReviewBotRecoverability(record, config);
+      return recoverability === null
+        ? null
+        : ["stale_diagnostic", "kind=stale_review_bot", recoverabilityStatusToken(recoverability)].join(" ");
+    })()
+    : null;
 
   if (matchingSkipPrefix) {
     reasons.push(`skip_title_prefix ${matchingSkipPrefix}`);
@@ -522,14 +530,7 @@ export async function buildIssueExplainDto(
         preMergeEvaluation,
       })
       : null,
-    staleDiagnosticSummary: record && record.blocked_reason === "stale_review_bot"
-      ? (() => {
-        const recoverability = classifyStaleReviewBotRecoverability(record, config);
-        return recoverability === null
-          ? null
-          : ["stale_diagnostic", "kind=stale_review_bot", recoverabilityStatusToken(recoverability)].join(" ");
-      })()
-      : null,
+    staleDiagnosticSummary,
     staleReviewBotRemediation,
     noActiveTrackedRecordSummary,
     trackedPrRetryabilitySummary:
