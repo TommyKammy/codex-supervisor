@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   CONFIG_FIELD_POSTURE_METADATA,
   CONFIG_FIELD_POSTURE_TIERS,
+  buildStarterProfilePlaceholderFieldMessage,
   type ConfigFieldName,
   type ConfigFieldPostureMetadata,
   type ConfigFieldPostureTier,
@@ -350,8 +351,13 @@ function buildFieldMessage(args: {
   field: SetupReadinessField;
   workspacePreparationWarning: string | null;
   recommendedWorkspacePreparationCommand: string | null;
+  starterPlaceholderMessage: string | null;
 }): string {
-  const { field, workspacePreparationWarning, recommendedWorkspacePreparationCommand } = args;
+  const { field, workspacePreparationWarning, recommendedWorkspacePreparationCommand, starterPlaceholderMessage } = args;
+  if (starterPlaceholderMessage !== null) {
+    return starterPlaceholderMessage;
+  }
+
   if (field.key === "workspacePreparationCommand") {
     if (workspacePreparationWarning !== null && field.state === "invalid") {
       return recommendedWorkspacePreparationCommand === null
@@ -450,7 +456,12 @@ function buildConfigFields(args: {
     };
     return {
       ...field,
-      message: buildFieldMessage({ field, workspacePreparationWarning, recommendedWorkspacePreparationCommand }),
+      message: buildFieldMessage({
+        field,
+        workspacePreparationWarning,
+        recommendedWorkspacePreparationCommand,
+        starterPlaceholderMessage: buildStarterProfilePlaceholderFieldMessage(key, rawValue),
+      }),
     };
   });
 

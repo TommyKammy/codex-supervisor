@@ -118,6 +118,14 @@ When the sandbox pass is clean, validate the production config and a real issue 
    node dist/index.js loop --config <supervisor-config-path>
    ```
 
+For a shipped provider profile, pass the concrete profile file explicitly:
+
+   ```bash
+   node dist/index.js issue-lint <issue-number> --config supervisor.config.coderabbit.json
+   node dist/index.js doctor --config supervisor.config.coderabbit.json
+   node dist/index.js status --config supervisor.config.coderabbit.json --why
+   ```
+
 On macOS, use `./scripts/start-loop-tmux.sh` to host the loop in a managed `tmux` session, and stop it with `./scripts/stop-loop-tmux.sh`. `./scripts/install-launchd.sh` is not a supported macOS loop path. The tmux scripts use `CODEX_SUPERVISOR_CONFIG`; keep it pointed at the config you validated.
 
 If you want the local operator dashboard, start the WebUI against the same config:

@@ -1769,6 +1769,31 @@ test("shipped CodeRabbit starter profile uses a fail-fast repoSlug placeholder",
   assertCodeRabbitStarterRepoSlugPlaceholder(raw);
 });
 
+test("shipped starter profiles fail closed with first-run placeholder guidance", async () => {
+  const rootDir = path.resolve(__dirname, "..");
+  const expectedInvalidFields = new Map<string, string[]>([
+    ["supervisor.config.example.json", ["repoPath", "repoSlug", "workspaceRoot", "codexBinary"]],
+    ["supervisor.config.copilot.json", ["repoPath", "repoSlug", "workspaceRoot", "codexBinary"]],
+    ["supervisor.config.codex.json", ["repoPath", "repoSlug", "workspaceRoot", "codexBinary"]],
+    ["supervisor.config.coderabbit.json", ["repoSlug"]],
+  ]);
+
+  for (const [relativePath, invalidFields] of expectedInvalidFields) {
+    const raw = await readShippedProfileJson(rootDir, relativePath);
+    const summary = loadConfigSummaryFromDocument(raw, path.join(rootDir, relativePath));
+
+    assert.equal(summary.status, "invalid_config", `${relativePath} should require placeholder replacement`);
+    assert.deepEqual(summary.invalidFields, invalidFields, `${relativePath} should identify starter placeholders`);
+    assert.match(summary.error ?? "", /Starter profile placeholders must be replaced before this config can run/);
+    assert.match(summary.error ?? "", /node dist\/index\.js doctor --config <supervisor-config-path>/);
+    assert.throws(
+      () => loadConfig(path.join(rootDir, relativePath)),
+      /Starter profile placeholders must be replaced before this config can run/,
+      `${relativePath} should fail closed before runtime use`,
+    );
+  }
+});
+
 test("shipped CodeRabbit starter profile validation ignores unstaged host-local active profile drift", async (t) => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-coderabbit-profile-"));
   t.after(async () => {
@@ -2078,7 +2103,9 @@ test("buildSetupConfigPreview preserves unknown fields and leaves the config fil
       ["approvedTrackedTopLevelEntries", true, true],
     ],
   );
-  assert.equal(preview.validation.status, "ready");
+  assert.equal(preview.validation.status, "invalid_config");
+  assert.deepEqual(preview.validation.invalidFields, ["workspaceRoot", "codexBinary"]);
+  assert.match(preview.validation.error ?? "", /Starter profile placeholders must be replaced/i);
   assert.equal(before, after);
 });
 

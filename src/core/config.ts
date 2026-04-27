@@ -10,7 +10,10 @@ import {
 } from "./config-field-posture";
 import { parseSupervisorConfigDocument, normalizeLocalCiCommand, displayLocalCiCommand } from "./config-parsing";
 import {
+  buildStarterProfilePlaceholderError,
+  buildStarterProfilePlaceholderFieldMessage,
   buildMissingWorkspacePreparationContractWarning,
+  collectStarterProfilePlaceholderFields,
   collectMissingRequiredFields,
   extractInvalidFieldName,
   extractRepoRelativeWorkspacePreparationHelper,
@@ -33,8 +36,11 @@ import {
 
 export {
   buildMissingWorkspacePreparationContractWarning,
+  buildStarterProfilePlaceholderError,
+  buildStarterProfilePlaceholderFieldMessage,
   CONFIG_FIELD_POSTURE_METADATA,
   CONFIG_FIELD_POSTURE_TIERS,
+  collectStarterProfilePlaceholderFields,
   DEFAULT_CANDIDATE_DISCOVERY_FETCH_WINDOW,
   displayLocalCiCommand,
   extractRepoRelativeWorkspacePreparationHelper,
@@ -74,6 +80,18 @@ export interface ConfigLoadSummary {
 
 function buildConfigLoadSummaryFromDocument(raw: Record<string, unknown>, resolvedPath: string): ConfigLoadSummary {
   const missingRequiredFields = collectMissingRequiredFields(raw);
+  const starterPlaceholderFields = collectStarterProfilePlaceholderFields(raw);
+  if (starterPlaceholderFields.length > 0) {
+    return {
+      configPath: resolvedPath,
+      status: "invalid_config",
+      missingRequiredFields,
+      invalidFields: starterPlaceholderFields,
+      error: buildStarterProfilePlaceholderError(raw, starterPlaceholderFields),
+      config: null,
+      trustDiagnostics: null,
+    };
+  }
 
   try {
     const config = parseSupervisorConfigDocument(raw, resolvedPath);
@@ -157,6 +175,10 @@ export function loadConfig(configPath?: string): SupervisorConfig {
   }
 
   const raw = parseJson<Record<string, unknown>>(fs.readFileSync(resolvedPath, "utf8"), resolvedPath);
+  const starterPlaceholderFields = collectStarterProfilePlaceholderFields(raw);
+  if (starterPlaceholderFields.length > 0) {
+    throw new Error(buildStarterProfilePlaceholderError(raw, starterPlaceholderFields));
+  }
   const config = parseSupervisorConfigDocument(raw, resolvedPath);
   validateParsedConfig(config);
   return config;
