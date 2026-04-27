@@ -138,28 +138,13 @@ If your config loads, `gh auth status` succeeds, and `run-once` chooses the righ
 
 Each shipped profile only configures what the supervisor expects to observe. You still need the provider itself installed and working on the repo.
 
-### Copilot
+| Profile | Start from | Choose when | Supervisor watches | First-run caveat |
+| --- | --- | --- | --- | --- |
+| Copilot | [supervisor.config.copilot.json](../supervisor.config.copilot.json) | Your PR flow already requests or auto-triggers Copilot review. | `copilot-pull-request-reviewer` | Confirm Copilot is enabled for the repo and requested by your normal PR flow. |
+| Codex Connector | [supervisor.config.codex.json](../supervisor.config.codex.json) | The repo is already connected to Codex review and you want that connector to be the trusted review signal. | `chatgpt-codex-connector` | Confirm the connector is installed for the target repo before treating missing review activity as settled. |
+| CodeRabbit | [supervisor.config.coderabbit.json](../supervisor.config.coderabbit.json) | You want bounded waiting for current-head CodeRabbit review signals. | `coderabbitai`, `coderabbitai[bot]` | Replace `repoSlug: "REPLACE_ME"` before first run; the placeholder is a fail-closed guardrail. |
 
-- Start from [supervisor.config.copilot.json](../supervisor.config.copilot.json)
-- Supervisor watches `copilot-pull-request-reviewer`
-- Best when your PR flow already requests or auto-triggers Copilot review
-
-### Codex Connector
-
-- Start from [supervisor.config.codex.json](../supervisor.config.codex.json)
-- Supervisor watches `chatgpt-codex-connector`
-- Best when the repo is already connected to Codex review
-
-### CodeRabbit
-
-- Start from [supervisor.config.coderabbit.json](../supervisor.config.coderabbit.json)
-- Supervisor watches both `coderabbitai` and `coderabbitai[bot]`
-- Good when you want bounded waiting for current-head CodeRabbit review signals
-
-Important note:
-
-- the shipped CodeRabbit profile intentionally uses `repoSlug: "REPLACE_ME"`
-- this is a fail-closed guardrail so you do not accidentally point the supervisor at the wrong repo
+After choosing a starter profile, use the [review-provider settings](#review-and-merge-policy) for the full field list. Keep provider-specific setup outside the supervisor aligned with the same choice instead of copying every provider caveat into this quick comparison.
 
 ## The Most Common Recipes
 

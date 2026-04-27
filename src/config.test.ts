@@ -2029,6 +2029,14 @@ test("getting started links to focused configuration and local review references
   assert.match(configuration, /requires `boundedRepairModel`/i);
   assert.match(configuration, /requires `localReviewModel`/i);
 
+  assert.match(configuration, /\| Profile \| Start from \| Choose when \| Supervisor watches \| First-run caveat \|/);
+  assert.match(configuration, /\| Copilot \| \[supervisor\.config\.copilot\.json\]\(\.\.\/supervisor\.config\.copilot\.json\) \|/);
+  assert.match(configuration, /\| Codex Connector \| \[supervisor\.config\.codex\.json\]\(\.\.\/supervisor\.config\.codex\.json\) \|/);
+  assert.match(configuration, /\| CodeRabbit \| \[supervisor\.config\.coderabbit\.json\]\(\.\.\/supervisor\.config\.coderabbit\.json\) \|/);
+  assert.match(configuration, /current-head CodeRabbit review signals/i);
+  assert.match(configuration, /`repoSlug: "REPLACE_ME"`/);
+  assert.match(configuration, /\[review-provider settings\]\(#review-and-merge-policy\)/i);
+
   assert.match(issueMetadata, /^# Issue Metadata$/m);
   assert.match(issueMetadata, /^## Canonical fields$/m);
   assert.match(issueMetadata, /^## How scheduling uses the fields$/m);
