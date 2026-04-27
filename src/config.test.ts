@@ -1608,6 +1608,7 @@ test("shipped example configs recommend block_merge for local review gating", as
     path.join(rootDir, "supervisor.config.copilot.json"),
     path.join(rootDir, "supervisor.config.codex.json"),
     path.join(rootDir, "supervisor.config.coderabbit.json"),
+    path.join(rootDir, "supervisor.config.typescript-node.json"),
     path.join(rootDir, "docs", "examples", "atlaspm.supervisor.config.example.json"),
   ];
 
@@ -1624,6 +1625,7 @@ test("shipped starter config profiles keep local review disabled until operators
     path.join(rootDir, "supervisor.config.copilot.json"),
     path.join(rootDir, "supervisor.config.codex.json"),
     path.join(rootDir, "supervisor.config.coderabbit.json"),
+    path.join(rootDir, "supervisor.config.typescript-node.json"),
   ];
 
   for (const examplePath of examplePaths) {
@@ -1639,6 +1641,7 @@ test("shipped example configs keep local-review follow-up issue creation opt-in"
     path.join(rootDir, "supervisor.config.copilot.json"),
     path.join(rootDir, "supervisor.config.codex.json"),
     path.join(rootDir, "supervisor.config.coderabbit.json"),
+    path.join(rootDir, "supervisor.config.typescript-node.json"),
     path.join(rootDir, "docs", "examples", "atlaspm.supervisor.config.example.json"),
   ];
 
@@ -1661,6 +1664,7 @@ test("shipped example configs keep local-review same-PR follow-up repair opt-in"
     path.join(rootDir, "supervisor.config.copilot.json"),
     path.join(rootDir, "supervisor.config.codex.json"),
     path.join(rootDir, "supervisor.config.coderabbit.json"),
+    path.join(rootDir, "supervisor.config.typescript-node.json"),
     path.join(rootDir, "docs", "examples", "atlaspm.supervisor.config.example.json"),
   ];
 
@@ -1683,6 +1687,7 @@ test("shipped example configs recommend blocked for high-severity local review f
     path.join(rootDir, "supervisor.config.copilot.json"),
     path.join(rootDir, "supervisor.config.codex.json"),
     path.join(rootDir, "supervisor.config.coderabbit.json"),
+    path.join(rootDir, "supervisor.config.typescript-node.json"),
     path.join(rootDir, "docs", "examples", "atlaspm.supervisor.config.example.json"),
   ];
 
@@ -1704,6 +1709,7 @@ test("shipped example configs use the issue-scoped journal path template and pre
     path.join(rootDir, "supervisor.config.copilot.json"),
     path.join(rootDir, "supervisor.config.codex.json"),
     path.join(rootDir, "supervisor.config.coderabbit.json"),
+    path.join(rootDir, "supervisor.config.typescript-node.json"),
     path.join(rootDir, "docs", "examples", "atlaspm.supervisor.config.example.json"),
   ];
 
@@ -1749,6 +1755,7 @@ test("shipped config profiles declare the intended review bot logins", async () 
     ["supervisor.config.copilot.json", ["copilot-pull-request-reviewer"]],
     ["supervisor.config.codex.json", ["chatgpt-codex-connector"]],
     ["supervisor.config.coderabbit.json", ["coderabbitai", "coderabbitai[bot]"]],
+    ["supervisor.config.typescript-node.json", ["copilot-pull-request-reviewer"]],
   ]);
 
   for (const [relativePath, expectedReviewBotLogins] of expectedProfiles) {
@@ -1776,6 +1783,7 @@ test("shipped starter profiles fail closed with first-run placeholder guidance",
     ["supervisor.config.copilot.json", ["repoPath", "repoSlug", "workspaceRoot", "codexBinary"]],
     ["supervisor.config.codex.json", ["repoPath", "repoSlug", "workspaceRoot", "codexBinary"]],
     ["supervisor.config.coderabbit.json", ["repoSlug"]],
+    ["supervisor.config.typescript-node.json", ["repoPath", "repoSlug", "workspaceRoot", "codexBinary"]],
   ]);
 
   for (const [relativePath, invalidFields] of expectedInvalidFields) {
@@ -1859,6 +1867,42 @@ test("shipped CodeRabbit starter profile adopts the repo-owned local CI gate", a
   const raw = JSON.parse(await fs.readFile(profilePath, "utf8")) as { localCiCommand?: unknown };
 
   assert.equal(raw.localCiCommand, "npm run verify:supervisor-pre-pr");
+});
+
+test("shipped TypeScript and Node starter profile publishes npm setup and verification commands", async () => {
+  const rootDir = path.resolve(__dirname, "..");
+  const relativePath = "supervisor.config.typescript-node.json";
+  const raw = (await readShippedProfileJson(rootDir, relativePath)) as {
+    workspacePreparationCommand?: unknown;
+    localCiCommand?: unknown;
+    skipTitlePrefixes?: unknown;
+  };
+  const summary = loadConfigSummaryFromDocument(raw, path.join(rootDir, relativePath));
+  const docs = await Promise.all([
+    fs.readFile(path.join(rootDir, "README.md"), "utf8"),
+    fs.readFile(path.join(rootDir, "docs", "configuration.md"), "utf8"),
+    fs.readFile(path.join(rootDir, "docs", "getting-started.md"), "utf8"),
+    fs.readFile(path.join(rootDir, "docs", "examples", "typescript-node.md"), "utf8"),
+  ]);
+
+  assert.equal(raw.workspacePreparationCommand, "npm ci");
+  assert.equal(raw.localCiCommand, "npm run verify:pre-pr");
+  assert.deepEqual(raw.skipTitlePrefixes, ["Epic:"]);
+  assert.equal(summary.status, "invalid_config");
+  assert.deepEqual(summary.invalidFields, ["repoPath", "repoSlug", "workspaceRoot", "codexBinary"]);
+
+  for (const content of docs) {
+    assert.match(content, /supervisor\.config\.typescript-node\.json/);
+  }
+
+  const exampleDoc = docs[3] ?? "";
+  assert.match(exampleDoc, /npm ci/);
+  assert.match(exampleDoc, /npm run verify:pre-pr/);
+  assert.match(exampleDoc, /"build": "tsc -p tsconfig\.json"/);
+  assert.match(exampleDoc, /"test": "node --test"/);
+  assert.match(exampleDoc, /do not assume every TypeScript\/Node repo has these exact scripts/i);
+  assert.doesNotMatch(exampleDoc, /\/Users\/[A-Za-z0-9._-]+\//);
+  assert.doesNotMatch(exampleDoc, /C:\\Users\\[A-Za-z0-9._-]+\\/);
 });
 
 test("repo gitignore ignores workstation noise and live issue journals without hiding intentional files", async (t) => {

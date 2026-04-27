@@ -101,6 +101,8 @@ The setup/readiness report stays `ready: false` until these required first-run b
 
 The shipped CodeRabbit profile intentionally uses a non-loadable `repoSlug` placeholder so operators must replace it before the first run.
 
+For TypeScript and Node repositories, [supervisor.config.typescript-node.json](../supervisor.config.typescript-node.json) publishes an npm-oriented starter profile. It uses `npm ci` for worktree preparation and `npm run verify:pre-pr` for the repo-owned local CI gate; see the [TypeScript and Node starter profile](./examples/typescript-node.md) for the expected scripts and a first issue example.
+
 ### Explicit trust posture setup
 
 Trust posture setup is a product primitive for trusted solo-lane automation. It packages the authority choices that decide whether the supervisor may turn GitHub-authored text, local repo state, review signals, and configured commands into autonomous Codex work.
@@ -281,7 +283,7 @@ node dist/index.js run-once --config <supervisor-config-path>
 ./scripts/start-loop-tmux.sh
 ```
 
-For a concrete shipped profile, run the same checks against the matching provider config, for example: `node dist/index.js issue-lint <issue-number> --config supervisor.config.coderabbit.json`, `node dist/index.js status --config supervisor.config.coderabbit.json --why`, and `node dist/index.js doctor --config supervisor.config.coderabbit.json`.
+For a concrete shipped profile, run the same checks against the matching config, for example: `node dist/index.js issue-lint <issue-number> --config supervisor.config.coderabbit.json`, `node dist/index.js status --config supervisor.config.coderabbit.json --why`, and `node dist/index.js doctor --config supervisor.config.coderabbit.json`. For the TypeScript/Node starter, use `supervisor.config.typescript-node.json` after replacing the placeholders and confirming the repo owns `npm run verify:pre-pr`.
 
 Read the command output as a sequence of decisions, not as unrelated logs:
 
