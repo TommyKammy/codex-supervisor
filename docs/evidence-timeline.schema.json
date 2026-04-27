@@ -1,0 +1,417 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/TommyKammy/codex-supervisor/docs/evidence-timeline.schema.json",
+  "contractName": "codex-supervisor.evidence-timeline",
+  "contractVersion": 1,
+  "runtimeBuilder": "src/timeline-artifacts.ts#buildIssueRunTimelineExport",
+  "auditBundleProducer": "src/supervisor/post-merge-audit-artifact.ts#syncPostMergeAuditArtifact",
+  "description": "Portable schema for evidence timeline artifacts emitted for supervised agent work. Runtime compatibility stays anchored to IssueRunTimelineExport and the post-merge operator audit bundle; this artifact publishes the stable field contract and a sanitized example for downstream tooling.",
+  "eventTypes": [
+    "reservation",
+    "issue_body",
+    "codex_turn",
+    "publication_gate",
+    "pr_created",
+    "github_ci",
+    "local_ci",
+    "path_hygiene",
+    "review_provider",
+    "review",
+    "stale_review_metadata",
+    "recovery",
+    "merge",
+    "status_comment",
+    "terminal_state",
+    "obsidian_writeback",
+    "done"
+  ],
+  "evidenceResponsibilities": {
+    "issue": "Issue body availability and scheduling context are represented by issue_body events and the operator audit bundle issue snapshot.",
+    "pullRequest": "PR creation and merge evidence are represented by pr_created and merge events.",
+    "githubCi": "GitHub checks and current-head green timestamps are represented by github_ci events.",
+    "reviewProvider": "Configured review provider and Copilot request/arrival/timeout signals are represented by review_provider events.",
+    "localReview": "Local review recommendation, finding counts, and blocker summaries are represented by review events and the post-merge audit localReview section.",
+    "localCi": "Repo-owned local CI command, outcome, remediation target, and next action are represented by local_ci events and operatorAuditBundle.localCi.",
+    "pathHygiene": "Workstation-local path hygiene outcomes and repair targets are represented by path_hygiene events and operatorAuditBundle.pathHygiene.",
+    "journal": "Issue journal handoff fields are carried by operatorAuditBundle.journal; journal content is not embedded in timeline events.",
+    "recovery": "Supervisor recovery reason and recovery timestamp are represented by recovery events and post-merge failure taxonomy.",
+    "statusComment": "Tracked PR status comment publication evidence is represented by status_comment events.",
+    "release": "Release and development-history drafting should read post-merge audit releaseNotesSources plus the timeline and operator audit bundle instead of scraping local logs.",
+    "terminalState": "Done, blocked, waiting_ci, and manual-review terminal surfaces are represented by terminal_state and done events."
+  },
+  "artifactShape": {
+    "type": "IssueRunTimelineExport",
+    "requiredFields": [
+      "issue_number",
+      "pr_number",
+      "events"
+    ],
+    "eventRequiredFields": [
+      "issue_number",
+      "pr_number",
+      "event_type",
+      "timestamp",
+      "outcome",
+      "summary",
+      "head_sha",
+      "remediation_target",
+      "next_action"
+    ],
+    "nullableEventFields": [
+      "pr_number",
+      "timestamp",
+      "head_sha",
+      "remediation_target",
+      "next_action"
+    ],
+    "compatibilityNotes": [
+      "Consumers must tolerate missing events with outcome=missing so sparse historical records remain explicit.",
+      "Consumers must treat timeline events as derived evidence surfaces; authoritative lifecycle state remains the supervisor issue run record and post-merge audit record.",
+      "Consumers must not infer repository, account, tenant, or issue linkage from branch names or artifact paths alone.",
+      "Publishable examples and generated release material must not include workstation-local absolute paths."
+    ]
+  },
+  "relatedArtifacts": [
+    {
+      "name": "postMergeAuditArtifact",
+      "schemaVersion": 1,
+      "producer": "syncPostMergeAuditArtifact",
+      "responsibilities": [
+        "post-merge issue and PR snapshot",
+        "execution metrics summary",
+        "local review artifact reference",
+        "failure taxonomy",
+        "operator audit bundle"
+      ]
+    },
+    {
+      "name": "operatorAuditBundle",
+      "schemaVersion": 1,
+      "producer": "buildPostMergeOperatorAuditBundle",
+      "responsibilities": [
+        "issue snapshot",
+        "pull request evidence",
+        "state record",
+        "journal handoff",
+        "local CI",
+        "path hygiene",
+        "timeline",
+        "verification commands"
+      ]
+    }
+  ],
+  "examples": [
+    {
+      "name": "sanitized merged supervised work",
+      "kind": "merged-work",
+      "sanitized": true,
+      "source": "runtime-equivalent synthetic fixture based on realistic merged supervised work",
+      "timeline": {
+        "issue_number": 1784,
+        "pr_number": 1800,
+        "events": [
+          {
+            "issue_number": 1784,
+            "pr_number": 1800,
+            "event_type": "reservation",
+            "timestamp": null,
+            "outcome": "recorded",
+            "summary": "Issue run reservation exists for branch codex/issue-1784.",
+            "head_sha": "head-1784",
+            "remediation_target": null,
+            "next_action": null
+          },
+          {
+            "issue_number": 1784,
+            "pr_number": 1800,
+            "event_type": "issue_body",
+            "timestamp": "2026-04-26T01:00:00Z",
+            "outcome": "available",
+            "summary": "Issue body snapshot is available from issue #1784.",
+            "head_sha": null,
+            "remediation_target": null,
+            "next_action": null
+          },
+          {
+            "issue_number": 1784,
+            "pr_number": 1800,
+            "event_type": "pr_created",
+            "timestamp": "2026-04-26T01:02:00Z",
+            "outcome": "created",
+            "summary": "Pull request #1800 is recorded for this issue run.",
+            "head_sha": "head-1784",
+            "remediation_target": null,
+            "next_action": null
+          },
+          {
+            "issue_number": 1784,
+            "pr_number": 1800,
+            "event_type": "github_ci",
+            "timestamp": "2026-04-26T01:05:00Z",
+            "outcome": "passed",
+            "summary": "GitHub CI evidence is green for 2 check(s): build, test.",
+            "head_sha": "head-1784",
+            "remediation_target": null,
+            "next_action": null
+          },
+          {
+            "issue_number": 1784,
+            "pr_number": 1800,
+            "event_type": "review_provider",
+            "timestamp": "2026-04-26T01:06:00Z",
+            "outcome": "COMMENTED",
+            "summary": "Configured review provider observed current head head-1784.",
+            "head_sha": "head-1784",
+            "remediation_target": null,
+            "next_action": null
+          },
+          {
+            "issue_number": 1784,
+            "pr_number": 1800,
+            "event_type": "local_ci",
+            "timestamp": "2026-04-26T01:07:00Z",
+            "outcome": "passed",
+            "summary": "npm test passed.",
+            "head_sha": "head-1784",
+            "remediation_target": null,
+            "next_action": "continue"
+          },
+          {
+            "issue_number": 1784,
+            "pr_number": 1800,
+            "event_type": "review",
+            "timestamp": "2026-04-26T01:10:00Z",
+            "outcome": "ready",
+            "summary": "Local review recorded 0 finding(s).",
+            "head_sha": "head-1784",
+            "remediation_target": null,
+            "next_action": null
+          },
+          {
+            "issue_number": 1784,
+            "pr_number": 1800,
+            "event_type": "merge",
+            "timestamp": "2026-04-26T01:19:00Z",
+            "outcome": "merged",
+            "summary": "Pull request #1800 is merged.",
+            "head_sha": "head-1784",
+            "remediation_target": null,
+            "next_action": null
+          },
+          {
+            "issue_number": 1784,
+            "pr_number": 1800,
+            "event_type": "status_comment",
+            "timestamp": "2026-04-26T01:20:00Z",
+            "outcome": "published",
+            "summary": "Tracked PR status comment evidence is recorded: status-comment:cleared.",
+            "head_sha": "head-1784",
+            "remediation_target": null,
+            "next_action": null
+          },
+          {
+            "issue_number": 1784,
+            "pr_number": 1800,
+            "event_type": "terminal_state",
+            "timestamp": "2026-04-26T01:20:00Z",
+            "outcome": "done",
+            "summary": "Issue run reached done.",
+            "head_sha": "head-1784",
+            "remediation_target": null,
+            "next_action": null
+          },
+          {
+            "issue_number": 1784,
+            "pr_number": 1800,
+            "event_type": "done",
+            "timestamp": "2026-04-26T01:20:00Z",
+            "outcome": "done",
+            "summary": "Issue run is recorded as done.",
+            "head_sha": "head-1784",
+            "remediation_target": null,
+            "next_action": null
+          },
+          {
+            "issue_number": 1784,
+            "pr_number": 1800,
+            "event_type": "obsidian_writeback",
+            "timestamp": "2026-04-26T01:21:00Z",
+            "outcome": "recorded",
+            "summary": "Development history note was updated from the post-merge audit.",
+            "head_sha": "head-1784",
+            "remediation_target": null,
+            "next_action": null
+          },
+          {
+            "issue_number": 1784,
+            "pr_number": 1800,
+            "event_type": "codex_turn",
+            "timestamp": null,
+            "outcome": "missing",
+            "summary": "No Codex turn summary is recorded for this issue run.",
+            "head_sha": null,
+            "remediation_target": null,
+            "next_action": null
+          },
+          {
+            "issue_number": 1784,
+            "pr_number": 1800,
+            "event_type": "publication_gate",
+            "timestamp": null,
+            "outcome": "missing",
+            "summary": "No publication gate event is recorded for this issue run.",
+            "head_sha": null,
+            "remediation_target": null,
+            "next_action": null
+          },
+          {
+            "issue_number": 1784,
+            "pr_number": 1800,
+            "event_type": "path_hygiene",
+            "timestamp": null,
+            "outcome": "missing",
+            "summary": "No workstation-local path hygiene result is recorded for this issue run.",
+            "head_sha": null,
+            "remediation_target": null,
+            "next_action": null
+          },
+          {
+            "issue_number": 1784,
+            "pr_number": 1800,
+            "event_type": "stale_review_metadata",
+            "timestamp": null,
+            "outcome": "missing",
+            "summary": "No stale review metadata handling event is recorded for this issue run.",
+            "head_sha": null,
+            "remediation_target": null,
+            "next_action": null
+          },
+          {
+            "issue_number": 1784,
+            "pr_number": 1800,
+            "event_type": "recovery",
+            "timestamp": null,
+            "outcome": "missing",
+            "summary": "No recovery event is recorded for this issue run.",
+            "head_sha": null,
+            "remediation_target": null,
+            "next_action": null
+          }
+        ]
+      }
+    }
+  ],
+  "$defs": {
+    "timeline": {
+      "type": "object",
+      "required": [
+        "issue_number",
+        "pr_number",
+        "events"
+      ],
+      "properties": {
+        "issue_number": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "pr_number": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/event"
+          },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "event": {
+      "type": "object",
+      "required": [
+        "issue_number",
+        "pr_number",
+        "event_type",
+        "timestamp",
+        "outcome",
+        "summary",
+        "head_sha",
+        "remediation_target",
+        "next_action"
+      ],
+      "properties": {
+        "issue_number": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "pr_number": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "event_type": {
+          "enum": [
+            "reservation",
+            "issue_body",
+            "codex_turn",
+            "publication_gate",
+            "pr_created",
+            "github_ci",
+            "local_ci",
+            "path_hygiene",
+            "review_provider",
+            "review",
+            "stale_review_metadata",
+            "recovery",
+            "merge",
+            "status_comment",
+            "terminal_state",
+            "obsidian_writeback",
+            "done"
+          ]
+        },
+        "timestamp": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "outcome": {
+          "type": "string",
+          "minLength": 1
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "head_sha": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "remediation_target": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "next_action": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,10 +1,93 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import {
   buildIssueRunTimelineExport,
   formatTimelineArtifactStatusLine,
 } from "./timeline-artifacts";
 import { createIssue, createPullRequest, createRecord } from "./turn-execution-test-helpers";
+
+interface EvidenceTimelineContract {
+  contractName: string;
+  contractVersion: number;
+  runtimeBuilder: string;
+  auditBundleProducer: string;
+  eventTypes: string[];
+  evidenceResponsibilities: Record<string, string>;
+  artifactShape: {
+    requiredFields: string[];
+    eventRequiredFields: string[];
+    compatibilityNotes: string[];
+  };
+  examples: Array<{
+    name: string;
+    kind: string;
+    sanitized: boolean;
+    timeline: ReturnType<typeof buildIssueRunTimelineExport>;
+  }>;
+}
+
+const evidenceTimelineContractPath = resolve(process.cwd(), "docs/evidence-timeline.schema.json");
+
+function readEvidenceTimelineContract(): EvidenceTimelineContract {
+  return JSON.parse(readFileSync(evidenceTimelineContractPath, "utf8")) as EvidenceTimelineContract;
+}
+
+function buildSanitizedMergedWorkTimeline() {
+  return buildIssueRunTimelineExport({
+    issue: createIssue({
+      number: 1784,
+      updatedAt: "2026-04-26T01:00:00Z",
+      body: "## Summary\nBuild evidence timeline artifacts.\n\n## Verification\n- `npm test`\n",
+    }),
+    record: createRecord({
+      issue_number: 1784,
+      branch: "codex/issue-1784",
+      pr_number: 1800,
+      state: "done",
+      last_head_sha: "head-1784",
+      latest_local_ci_result: {
+        outcome: "passed",
+        summary: "npm test passed.",
+        ran_at: "2026-04-26T01:07:00Z",
+        head_sha: "head-1784",
+        execution_mode: "legacy_shell_string",
+        command: "npm test",
+        failure_class: null,
+        remediation_target: null,
+      },
+      local_review_run_at: "2026-04-26T01:10:00Z",
+      local_review_recommendation: "ready",
+      local_review_head_sha: "head-1784",
+      provider_success_observed_at: "2026-04-26T01:06:00Z",
+      provider_success_head_sha: "head-1784",
+      last_host_local_pr_blocker_comment_signature: "status-comment:cleared",
+      last_host_local_pr_blocker_comment_head_sha: "head-1784",
+      updated_at: "2026-04-26T01:20:00Z",
+    }),
+    pr: createPullRequest({
+      number: 1800,
+      createdAt: "2026-04-26T01:02:00Z",
+      updatedAt: "2026-04-26T01:05:00Z",
+      mergedAt: "2026-04-26T01:19:00Z",
+      headRefOid: "head-1784",
+      configuredBotCurrentHeadObservedAt: "2026-04-26T01:06:00Z",
+      configuredBotCurrentHeadStatusState: "COMMENTED",
+      currentHeadCiGreenAt: "2026-04-26T01:05:00Z",
+    }),
+    checks: [
+      { name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" },
+      { name: "test", state: "SUCCESS", bucket: "pass", workflow: "CI" },
+    ],
+    obsidianWriteback: {
+      outcome: "recorded",
+      summary: "Development history note was updated from the post-merge audit.",
+      recordedAt: "2026-04-26T01:21:00Z",
+      headSha: "head-1784",
+    },
+  });
+}
 
 test("formatTimelineArtifactStatusLine escapes multiline command and summary values", () => {
   const line = formatTimelineArtifactStatusLine({
@@ -124,58 +207,7 @@ test("buildIssueRunTimelineExport orders available major lifecycle events", () =
 });
 
 test("buildIssueRunTimelineExport exposes the full post-merge evidence chain", () => {
-  const timeline = buildIssueRunTimelineExport({
-    issue: createIssue({
-      number: 1784,
-      updatedAt: "2026-04-26T01:00:00Z",
-      body: "## Summary\nBuild evidence timeline artifacts.\n\n## Verification\n- `npm test`\n",
-    }),
-    record: createRecord({
-      issue_number: 1784,
-      branch: "codex/issue-1784",
-      pr_number: 1800,
-      state: "done",
-      last_head_sha: "head-1784",
-      latest_local_ci_result: {
-        outcome: "passed",
-        summary: "npm test passed.",
-        ran_at: "2026-04-26T01:07:00Z",
-        head_sha: "head-1784",
-        execution_mode: "legacy_shell_string",
-        command: "npm test",
-        failure_class: null,
-        remediation_target: null,
-      },
-      local_review_run_at: "2026-04-26T01:10:00Z",
-      local_review_recommendation: "ready",
-      local_review_head_sha: "head-1784",
-      provider_success_observed_at: "2026-04-26T01:06:00Z",
-      provider_success_head_sha: "head-1784",
-      last_host_local_pr_blocker_comment_signature: "status-comment:cleared",
-      last_host_local_pr_blocker_comment_head_sha: "head-1784",
-      updated_at: "2026-04-26T01:20:00Z",
-    }),
-    pr: createPullRequest({
-      number: 1800,
-      createdAt: "2026-04-26T01:02:00Z",
-      updatedAt: "2026-04-26T01:05:00Z",
-      mergedAt: "2026-04-26T01:19:00Z",
-      headRefOid: "head-1784",
-      configuredBotCurrentHeadObservedAt: "2026-04-26T01:06:00Z",
-      configuredBotCurrentHeadStatusState: "COMMENTED",
-      currentHeadCiGreenAt: "2026-04-26T01:05:00Z",
-    }),
-    checks: [
-      { name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" },
-      { name: "test", state: "SUCCESS", bucket: "pass", workflow: "CI" },
-    ],
-    obsidianWriteback: {
-      outcome: "recorded",
-      summary: "Development history note was updated from the post-merge audit.",
-      recordedAt: "2026-04-26T01:21:00Z",
-      headSha: "head-1784",
-    },
-  });
+  const timeline = buildSanitizedMergedWorkTimeline();
 
   assert.deepEqual(
     timeline.events
@@ -196,6 +228,42 @@ test("buildIssueRunTimelineExport exposes the full post-merge evidence chain", (
       ["obsidian_writeback", "2026-04-26T01:21:00Z", "recorded", "Development history note was updated from the post-merge audit."],
     ],
   );
+});
+
+test("published evidence timeline contract reuses the runtime timeline export shape", () => {
+  const contract = readEvidenceTimelineContract();
+  const example = contract.examples.find((candidate) => candidate.name === "sanitized merged supervised work");
+
+  assert.equal(contract.contractName, "codex-supervisor.evidence-timeline");
+  assert.equal(contract.contractVersion, 1);
+  assert.match(contract.runtimeBuilder, /buildIssueRunTimelineExport/u);
+  assert.match(contract.auditBundleProducer, /syncPostMergeAuditArtifact/u);
+  assert.ok(example, "contract must publish a sanitized merged-work example");
+  assert.equal(example?.kind, "merged-work");
+  assert.equal(example?.sanitized, true);
+  assert.deepEqual(example?.timeline, buildSanitizedMergedWorkTimeline());
+  assert.deepEqual(contract.artifactShape.requiredFields, ["issue_number", "pr_number", "events"]);
+  assert.deepEqual(contract.artifactShape.eventRequiredFields, [
+    "issue_number",
+    "pr_number",
+    "event_type",
+    "timestamp",
+    "outcome",
+    "summary",
+    "head_sha",
+    "remediation_target",
+    "next_action",
+  ]);
+  assert.ok(contract.eventTypes.includes("github_ci"));
+  assert.ok(contract.eventTypes.includes("local_ci"));
+  assert.ok(contract.eventTypes.includes("review"));
+  assert.ok(contract.eventTypes.includes("recovery"));
+  assert.ok(contract.evidenceResponsibilities.journal.includes("operatorAuditBundle.journal"));
+  assert.ok(contract.evidenceResponsibilities.release.includes("releaseNotesSources"));
+  assert.ok(
+    contract.artifactShape.compatibilityNotes.some((note) => /workstation-local absolute paths/u.test(note)),
+  );
+  assert.doesNotMatch(JSON.stringify(contract), /\/Users\/|\/home\/[A-Za-z0-9._-]+\/|C:\\\\Users\\\\/u);
 });
 
 test("buildIssueRunTimelineExport keeps sparse historical records explicit", () => {
