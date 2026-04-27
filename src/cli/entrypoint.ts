@@ -8,6 +8,7 @@ import {
 } from "../supervisor";
 import type { CliOptions } from "../core/types";
 import { parseArgs } from "./parse-args";
+import { handleInitCommand } from "./init-command";
 import { handleReplayCommand } from "./replay-command";
 import {
   createProcessCliIo,
@@ -33,6 +34,7 @@ export interface CliEntrypointDependencies {
   assertRuntimeFreshness?: () => Promise<void>;
   parseArgs?: (argv: string[]) => CliOptions;
   handleReplayCommand?: (options: Pick<CliOptions, "configPath" | "snapshotPath">) => Promise<string>;
+  handleInitCommand?: (options: Pick<CliOptions, "configPath" | "dryRun">) => Promise<string>;
   createCliIo?: () => CliIo;
   handleReplayCorpusCommand?: (
     options: Pick<CliOptions, "configPath" | "corpusPath">,
@@ -75,6 +77,7 @@ export async function runCli(
   const runtimeFreshnessGuard = dependencies.assertRuntimeFreshness ?? assertRuntimeFreshness;
   const parseCliArgs = dependencies.parseArgs ?? parseArgs;
   const replayCommandHandler = dependencies.handleReplayCommand ?? handleReplayCommand;
+  const initCommandHandler = dependencies.handleInitCommand ?? handleInitCommand;
   const createCliIo = dependencies.createCliIo ?? createProcessCliIo;
   const replayCorpusCommandHandler =
     dependencies.handleReplayCorpusCommand ?? handleReplayCorpusCommand;
@@ -101,6 +104,14 @@ export async function runCli(
 
   if (options.command === "readiness-checklist") {
     writeStdout(await readReadinessChecklist());
+    return;
+  }
+
+  if (options.command === "init") {
+    writeStdout(await initCommandHandler({
+      configPath: options.configPath,
+      dryRun: options.dryRun,
+    }));
     return;
   }
 

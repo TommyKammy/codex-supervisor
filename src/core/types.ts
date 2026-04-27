@@ -357,6 +357,7 @@ export interface CliOptions {
     | "explain"
     | "issue-lint"
     | "readiness-checklist"
+    | "init"
     | "doctor"
     | "web"
     | "replay"
