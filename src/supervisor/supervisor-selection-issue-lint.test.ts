@@ -188,6 +188,110 @@ Parallelizable: No`,
   ]);
 });
 
+test("renderIssueLintDto appends a conservative standalone skeleton only in suggestion mode", async () => {
+  const issue = createIssue({
+    number: 608,
+    title: "Repair missing standalone metadata",
+    labels: [{ name: "codex" }],
+    body: `## Summary
+Repair a malformed standalone issue.
+
+## Scope
+- keep the issue standalone
+
+## Acceptance criteria
+- issue-lint reports copyable defaults
+
+## Verification
+- npx tsx --test src/supervisor/supervisor-selection-issue-lint.test.ts`,
+  });
+
+  const dto = await buildIssueLintDto(
+    {
+      getIssue: async () => issue,
+    },
+    issue.number,
+  );
+
+  assert.doesNotMatch(renderIssueLintDto(dto), /suggested_repair_skeleton:/);
+  assert.ok(
+    renderIssueLintDto(dto, { suggest: true }).includes(
+      [
+        "suggestion_mode=suggest",
+        "suggestion_status=standalone_default",
+        "suggestion_note=Conservative standalone skeleton; replace placeholders and do not add Part of unless this issue is a sequenced child.",
+        "suggested_repair_skeleton:",
+        "## Summary",
+        "<one short paragraph describing the intended outcome>",
+        "",
+        "## Scope",
+        "- <in-scope behavior delta>",
+        "",
+        "## Acceptance criteria",
+        "- <observable completion check>",
+        "",
+        "## Verification",
+        "- <exact command, test file, or manual check>",
+        "",
+        "Depends on: none",
+        "Parallelizable: No",
+        "",
+        "## Execution order",
+        "1 of 1",
+      ].join("\n"),
+    ),
+  );
+});
+
+test("renderIssueLintDto does not fabricate sequenced-child metadata in suggestion mode", async () => {
+  const issue = createIssue({
+    number: 609,
+    title: "Repair sequenced child metadata",
+    labels: [{ name: "codex" }],
+    body: `## Summary
+Repair a malformed child issue.
+
+## Scope
+- require explicit parent metadata
+
+## Acceptance criteria
+- issue-lint refuses to invent a parent tracker
+
+## Verification
+- npx tsx --test src/supervisor/supervisor-selection-issue-lint.test.ts
+
+Depends on: none
+Parallelizable: No
+
+## Execution order
+2 of 3`,
+  });
+
+  const dto = await buildIssueLintDto(
+    {
+      getIssue: async () => issue,
+    },
+    issue.number,
+  );
+
+  assert.ok(
+    renderIssueLintDto(dto, { suggest: true }).includes(
+      [
+        "suggestion_mode=suggest",
+        "suggestion_status=needs_explicit_sequence_input",
+        "suggestion_note=Sequenced-child metadata is incomplete; provide the parent issue number and confirmed order before copying a child skeleton.",
+        "suggested_repair_skeleton:",
+        "Part of: #<parent-issue-number>",
+        "Depends on: none",
+        "Parallelizable: No",
+        "",
+        "## Execution order",
+        "<N> of <M>",
+      ].join("\n"),
+    ),
+  );
+});
+
 test("buildIssueLintDto keeps repair guidance ordering stable", async () => {
   const issue = createIssue({
     number: 603,

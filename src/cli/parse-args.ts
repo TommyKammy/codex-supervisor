@@ -16,6 +16,7 @@ export function parseArgs(argv: string[]): CliOptions {
   let configPath: string | undefined;
   let dryRun = false;
   let why = false;
+  let issueLintSuggest = false;
   let timelineRequested = false;
   let auditBundleRequested = false;
   let issueNumber: number | undefined;
@@ -72,6 +73,11 @@ export function parseArgs(argv: string[]): CliOptions {
       continue;
     }
 
+    if (token === "--suggest") {
+      issueLintSuggest = true;
+      continue;
+    }
+
     if (token === "--timeline") {
       timelineRequested = true;
       continue;
@@ -123,6 +129,10 @@ export function parseArgs(argv: string[]): CliOptions {
     throw new Error("The --why flag is only supported with the status command.");
   }
 
+  if (issueLintSuggest && command !== "issue-lint") {
+    throw new Error("The --suggest flag is only supported with the issue-lint command.");
+  }
+
   if (timelineRequested && command !== "explain") {
     throw new Error("The --timeline flag is only supported with the explain command.");
   }
@@ -166,6 +176,7 @@ export function parseArgs(argv: string[]): CliOptions {
     configPath,
     dryRun,
     why,
+    issueLintSuggest,
     explainMode,
     issueNumber,
     snapshotPath,

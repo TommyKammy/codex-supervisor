@@ -24,6 +24,10 @@ export interface SupervisorIssueLintDto {
   repairGuidance: string[];
 }
 
+export interface RenderIssueLintOptions {
+  suggest?: boolean;
+}
+
 export async function buildIssueLintDto(
   github: IssueLintGitHub,
   issueNumber: number,
@@ -62,8 +66,11 @@ export function createIssueLintDto(issue: GitHubIssue): SupervisorIssueLintDto {
   };
 }
 
-export function renderIssueLintDto(dto: SupervisorIssueLintDto): string {
-  return [
+export function renderIssueLintDto(
+  dto: SupervisorIssueLintDto,
+  options: RenderIssueLintOptions = {},
+): string {
+  const lines = [
     `issue=#${dto.issueNumber}`,
     `title=${dto.title}`,
     `execution_ready=${dto.executionReady ? "yes" : "no"}`,
@@ -76,7 +83,62 @@ export function renderIssueLintDto(dto: SupervisorIssueLintDto): string {
     `metadata_errors=${dto.metadataErrors.length > 0 ? dto.metadataErrors.join("; ") : "none"}`,
     `high_risk_blocking_ambiguity=${dto.highRiskBlockingAmbiguity ?? "none"}`,
     ...dto.repairGuidance.map((line, index) => `repair_guidance_${index + 1}=${line}`),
-  ].join("\n");
+  ];
+
+  if (options.suggest) {
+    lines.push(...buildIssueLintSuggestionLines(dto));
+  }
+
+  return lines.join("\n");
+}
+
+function buildIssueLintSuggestionLines(dto: SupervisorIssueLintDto): string[] {
+  if (dto.executionReady && dto.metadataErrors.length === 0 && dto.missingRequired.length === 0) {
+    return [
+      "suggestion_mode=suggest",
+      "suggestion_status=not_needed",
+      "suggestion_note=Issue already has execution-ready metadata.",
+    ];
+  }
+
+  if (dto.missingRequired.includes("part of")) {
+    return [
+      "suggestion_mode=suggest",
+      "suggestion_status=needs_explicit_sequence_input",
+      "suggestion_note=Sequenced-child metadata is incomplete; provide the parent issue number and confirmed order before copying a child skeleton.",
+      "suggested_repair_skeleton:",
+      "Part of: #<parent-issue-number>",
+      "Depends on: none",
+      "Parallelizable: No",
+      "",
+      "## Execution order",
+      "<N> of <M>",
+    ];
+  }
+
+  return [
+    "suggestion_mode=suggest",
+    "suggestion_status=standalone_default",
+    "suggestion_note=Conservative standalone skeleton; replace placeholders and do not add Part of unless this issue is a sequenced child.",
+    "suggested_repair_skeleton:",
+    "## Summary",
+    "<one short paragraph describing the intended outcome>",
+    "",
+    "## Scope",
+    "- <in-scope behavior delta>",
+    "",
+    "## Acceptance criteria",
+    "- <observable completion check>",
+    "",
+    "## Verification",
+    "- <exact command, test file, or manual check>",
+    "",
+    "Depends on: none",
+    "Parallelizable: No",
+    "",
+    "## Execution order",
+    "1 of 1",
+  ];
 }
 
 function buildIssueLintRepairGuidance(

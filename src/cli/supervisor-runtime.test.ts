@@ -730,6 +730,61 @@ test("runSupervisorCommand renders issue-lint output from the structured DTO", a
   ]);
 });
 
+test("runSupervisorCommand renders issue-lint suggestions only when requested", async () => {
+  const stdout: string[] = [];
+  const dto = createIssueLintDto({
+    title: "Suggest metadata repair",
+    executionReady: false,
+    missingRequired: ["depends on", "parallelizable", "execution order"],
+    missingRecommended: [],
+    metadataErrors: [],
+    repairGuidance: [],
+  });
+
+  await runSupervisorCommand(
+    { command: "issue-lint", dryRun: false, why: false, issueNumber: 123, issueLintSuggest: true },
+    {
+      service: {
+        config: {} as SupervisorConfig,
+        pollIntervalMs: async () => 50,
+        runOnce: async () => {
+          throw new Error("unexpected runOnce");
+        },
+        queryStatus: async () => {
+          throw new Error("unexpected queryStatus");
+        },
+        queryExplain: async () => {
+          throw new Error("unexpected queryExplain");
+        },
+        queryIssueLint: async (issueNumber) => {
+          assert.equal(issueNumber, 123);
+          return dto;
+        },
+        queryDoctor: async () => {
+          throw new Error("unexpected queryDoctor");
+        },
+        runRecoveryAction: async () => {
+          throw new Error("unexpected runRecoveryAction");
+        },
+        pruneOrphanedWorkspaces: async () => {
+          throw new Error("unexpected pruneOrphanedWorkspaces");
+        },
+        resetCorruptJsonState: async () => {
+          throw new Error("unexpected resetCorruptJsonState");
+        },
+      },
+      writeStdout: (line) => {
+        stdout.push(line);
+      },
+    },
+  );
+
+  assert.match(stdout.join("\n"), /^suggestion_mode=suggest$/m);
+  assert.match(stdout.join("\n"), /^Depends on: none$/m);
+  assert.match(stdout.join("\n"), /^Parallelizable: No$/m);
+  assert.match(stdout.join("\n"), /^1 of 1$/m);
+});
+
 test("runSupervisorCommand renders a structured requeue result", async () => {
   const stdout: string[] = [];
 
