@@ -1,26 +1,24 @@
 # codex-supervisor
 
-Keep Codex moving through execution-ready GitHub issues without babysitting every CI run, review thread, or merge step.
+Codex Supervisor turns vibe coding into issue-driven, test-backed, reviewable software delivery.
 
-`codex-supervisor` wraps `codex exec` and `gh` in a durable outer loop: it keeps local state, works in per-issue worktrees, re-reads GitHub on each cycle, and requires fresh GitHub PR facts before action-taking review or merge transitions.
+It is an AI coding quality layer around `codex exec` and `gh`: you give it execution-ready GitHub issues, and it keeps the work moving through local verification, PR review, CI repair, and evidence capture without treating chat memory as the source of truth.
 
 Japanese overview: [docs/README.ja.md](./docs/README.ja.md)  
 Japanese getting started: [docs/getting-started.ja.md](./docs/getting-started.ja.md)
 
 If you read only one document before editing `supervisor.config.json`, read the [Configuration guide](./docs/configuration.md). It is the main operator reference for provider profiles, required fields, and safe defaults.
 
-## The Problem
-
-Codex CLI is powerful, but long-running execution often breaks at the edges:
-
-- Codex stops mid-task and the next session has to reconstruct context
-- CI fails and nothing automatically picks up the repair loop
-- review feedback arrives after the original session is gone
-- draft PRs, local state, and GitHub state can drift unless something keeps reconciling them
-
-`codex-supervisor` is the outer loop that keeps that work moving. You author execution-ready GitHub issues, and the supervisor keeps re-checking the repo, worktree, PR, CI, and review state needed to advance them safely.
-
 ## What It Is
+
+The first-screen loop is deliberately small:
+
+- issue contract: the [issue body contract](./docs/issue-body-contract.schema.json) and [Issue metadata](./docs/issue-metadata.md) define what makes a GitHub issue runnable
+- local verification: the configured commands prove the change inside the worktree before the supervisor can advance it
+- reviewable PR: each issue runs on its own branch and draft PR so CI, configured review providers, and humans can inspect the work
+- evidence timeline: the [evidence timeline](./docs/evidence-timeline.schema.json) records what happened for later audit, recovery, and handoff
+
+The related primitive artifacts are intentionally linked instead of re-explained here: [trust posture](./docs/trust-posture-config.schema.json), [operator actions](./docs/operator-actions.schema.json), [automation boundary](./docs/codex-automation-connector-boundary.schema.json), [Architecture](./docs/architecture.md), and [Codex app Automation boundary](./docs/automation.md).
 
 Use `codex-supervisor` when you want Codex to work through execution-ready GitHub issues in a durable, explicit loop:
 
@@ -285,7 +283,7 @@ Use the [Configuration guide](./docs/configuration.md) for the full routing rule
 - [Configuration reference](./docs/configuration.md): config setup, provider profiles, model/reasoning controls, durable memory, and execution policy
 - [Operator dashboard](./docs/operator-dashboard.md): WebUI launch, panel meanings, safe commands, and browser smoke verification
 - [Local review reference](./docs/local-review.md): local review policies, role selection, artifacts, thresholds, and committed guardrails
-- [Supervised automation lane](./docs/supervised-automation-lane.md): product primitive contract for issue/spec-driven supervised automation beside Codex chat and vibe coding
+- [Supervised automation lane](./docs/supervised-automation-lane.md): product primitive contract for issue/spec-driven supervised automation beside Codex chat
 - [Architecture](./docs/architecture.md): core loop, durable state, reconciliations, and safety boundaries
 - [Issue metadata](./docs/issue-metadata.md): canonical issue-body fields, sequencing rules, and execution-ready examples
 - [GSD to GitHub issues](./docs/examples/gsd-to-github-issues.md): how to hand planning output into execution-ready issues
