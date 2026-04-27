@@ -449,7 +449,10 @@ export async function buildIssueExplainDto(
     record && state.activeIssueNumber === null
       ? formatNoActiveTrackedRecordClassificationLine(config, record, staleReviewBotRemediation)
       : null;
-  const staleDiagnosticSummary = record && record.blocked_reason === "stale_review_bot" && !staleReviewBotRemediation
+  const staleDiagnosticSummary =
+    record &&
+    record.blocked_reason === "stale_review_bot" &&
+    staleReviewBotRemediation?.classification !== "metadata_only"
     ? (() => {
       const recoverability = classifyStaleReviewBotRecoverability(record, config);
       return recoverability === null
