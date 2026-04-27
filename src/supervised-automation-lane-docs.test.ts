@@ -267,26 +267,39 @@ test("Codex Automation connector boundary artifact agrees with lane docs and gra
   assert.equal(artifact.canonicalGuide, "docs/automation.md");
   assert.equal(artifact.enforcementBoundary, "codex-supervisor-executor-safety-gates");
 
-  for (const responsibility of ["evaluate", "route", "draft", "record", "notify", "prepare_operator_evidence"]) {
-    assert.ok(
-      artifact.allowedResponsibilities.includes(responsibility),
-      `${responsibility} must be published as an allowed connector responsibility`,
-    );
-  }
+  const expectedResponsibilities = [
+    "evaluate",
+    "route",
+    "draft",
+    "record",
+    "notify",
+    "prepare_operator_evidence",
+  ];
+  assert.deepEqual(
+    sortedValues(artifact.allowedResponsibilities),
+    sortedValues(expectedResponsibilities),
+    "allowedResponsibilities must match the published connector vocabulary exactly",
+  );
 
-  for (const prohibited of [
+  const expectedProhibitedBypasses = [
     "executor_safety_gates",
     "issue_lint",
     "fresh_pr_facts",
     "local_ci",
     "operator_confirmations",
-  ]) {
-    assert.ok(artifact.prohibitedBypasses.includes(prohibited), `${prohibited} must remain non-bypassable`);
-  }
+  ];
+  assert.deepEqual(
+    sortedValues(artifact.prohibitedBypasses),
+    sortedValues(expectedProhibitedBypasses),
+    "prohibitedBypasses must match the published non-bypassable set exactly",
+  );
 
-  for (const nonGoal of ["new_executor_authority", "multi_repo_orchestration_in_core"]) {
-    assert.ok(artifact.nonGoals.includes(nonGoal), `${nonGoal} must stay outside the connector boundary`);
-  }
+  const expectedNonGoals = ["new_executor_authority", "multi_repo_orchestration_in_core"];
+  assert.deepEqual(
+    sortedValues(artifact.nonGoals),
+    sortedValues(expectedNonGoals),
+    "nonGoals must match the published exclusions exactly",
+  );
 
   for (const source of [artifactSource, automationGuide, laneNote, architecture]) {
     assert.match(source, /`?codex-supervisor`? remains the implementation executor/i);
