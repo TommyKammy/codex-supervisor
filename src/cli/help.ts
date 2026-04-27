@@ -8,6 +8,7 @@ Common flags:
   --config <supervisor-config-path>  Use an explicit supervisor config file.
   --dry-run                         Plan the next run-once or loop action without executing Codex.
   --why                             Include status decision details. Supported with status only.
+  --first-run                       Print beginner first-run readiness. Supported with doctor only.
   --suggest                         Print a copyable issue metadata skeleton. Supported with issue-lint only.
   --output <path>                   Write a sample issue body. Supported with sample-issue only.
 
@@ -16,11 +17,12 @@ First run:
   2. node dist/index.js init --config <supervisor-config-path>
   3. node dist/index.js sample-issue
   4. node dist/index.js issue-lint <issue-number> --config <supervisor-config-path>
-  5. node dist/index.js doctor --config <supervisor-config-path>
-  6. node dist/index.js status --config <supervisor-config-path> --why
-  7. node dist/index.js run-once --config <supervisor-config-path> --dry-run
-  8. node dist/index.js run-once --config <supervisor-config-path>
-  9. node dist/index.js loop --config <supervisor-config-path>
+  5. node dist/index.js doctor --first-run --config <supervisor-config-path>
+  6. node dist/index.js doctor --config <supervisor-config-path>
+  7. node dist/index.js status --config <supervisor-config-path> --why
+  8. node dist/index.js run-once --config <supervisor-config-path> --dry-run
+  9. node dist/index.js run-once --config <supervisor-config-path>
+  10. node dist/index.js loop --config <supervisor-config-path>
 
 Run commands:
   run-once                          Run one supervisor cycle.
@@ -29,7 +31,7 @@ Run commands:
 Inspect commands:
   init [--dry-run]                  Create or preview a starter supervisor config.
   status [--why]                    Show queue, PR, CI, review, and loop state.
-  doctor                            Check local configuration and repository prerequisites.
+  doctor [--first-run]              Check local configuration and repository prerequisites.
   explain <issue-number>            Explain supervisor readiness for one issue.
   explain <issue-number> --timeline Show the issue-run evidence timeline.
   explain <issue-number> --audit-bundle

@@ -33,6 +33,7 @@ export function parseArgs(argv: string[]): CliOptions {
   let caseId: string | undefined;
   let corpusPath: string | undefined;
   let sampleIssueOutputPath: string | undefined;
+  let firstRunDoctorSummary = false;
 
   while (args.length > 0) {
     const token = args.shift();
@@ -95,6 +96,11 @@ export function parseArgs(argv: string[]): CliOptions {
       continue;
     }
 
+    if (token === "--first-run") {
+      firstRunDoctorSummary = true;
+      continue;
+    }
+
     if (token === "--timeline") {
       timelineRequested = true;
       continue;
@@ -154,6 +160,10 @@ export function parseArgs(argv: string[]): CliOptions {
     throw new Error("The --output flag is only supported with the sample-issue command.");
   }
 
+  if (firstRunDoctorSummary && command !== "doctor") {
+    throw new Error("The --first-run flag is only supported with the doctor command.");
+  }
+
   if (timelineRequested && command !== "explain") {
     throw new Error("The --timeline flag is only supported with the explain command.");
   }
@@ -207,5 +217,6 @@ export function parseArgs(argv: string[]): CliOptions {
         ? (corpusPath ?? "replay-corpus")
         : undefined,
     ...(sampleIssueOutputPath === undefined ? {} : { sampleIssueOutputPath }),
+    ...(firstRunDoctorSummary ? { firstRunDoctorSummary } : {}),
   };
 }

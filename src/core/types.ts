@@ -375,4 +375,5 @@ export interface CliOptions {
   caseId?: string;
   corpusPath?: string;
   sampleIssueOutputPath?: string;
+  firstRunDoctorSummary?: boolean;
 }

@@ -18,6 +18,7 @@ import {
 } from "../supervisor/supervisor-selection-status";
 import { renderIssueLintDto } from "../supervisor/supervisor-selection-issue-lint";
 import { isCorruptJsonFailClosedMessage } from "../supervisor/supervisor";
+import { renderFirstRunDoctorSummary } from "../setup-readiness";
 import type { SupervisorLoopController } from "../supervisor/supervisor-loop-controller";
 import type { SupervisorService } from "../supervisor/supervisor-service";
 import { renderSupervisorStatusDto } from "../supervisor/supervisor-status-report";
@@ -123,7 +124,7 @@ export async function runSupervisorCycle(
 }
 
 export async function runSupervisorCommand(
-  options: Pick<CliOptions, "dryRun" | "why" | "explainMode" | "issueNumber"> & {
+  options: Pick<CliOptions, "dryRun" | "why" | "explainMode" | "issueNumber" | "firstRunDoctorSummary"> & {
     command: SupervisorRuntimeCommand;
     issueLintSuggest?: boolean;
   },
@@ -230,6 +231,13 @@ export async function runSupervisorCommand(
   }
 
   if (options.command === "doctor") {
+    if (options.firstRunDoctorSummary) {
+      if (!service.querySetupReadiness) {
+        throw new Error("Missing setup readiness support.");
+      }
+      writeStdout(renderFirstRunDoctorSummary(await service.querySetupReadiness()));
+      return;
+    }
     writeStdout(renderDoctorReport(await service.queryDoctor()));
     return;
   }
