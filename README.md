@@ -290,6 +290,7 @@ Use the [Configuration guide](./docs/configuration.md) for the full routing rule
 - [Supervised automation lane](./docs/supervised-automation-lane.md): product primitive contract for issue/spec-driven supervised automation beside Codex chat
 - [Before / After narrative](./docs/vibe-coding-before-after.md): the same small change compared as an unstructured session and a supervised loop
 - [Phase 16 dogfood PR walkthrough](./docs/examples/phase-16-dogfood-pr-walkthrough.md): annotated supervised PR lifecycle from the repo's own demo-material phase using sanitized public-safe placeholders
+- [Public demo validation checklist](./docs/public-demo-validation-checklist.md): maintainer checklist for keeping public demo assets current, safe, and linked to current schema artifacts
 - [Architecture](./docs/architecture.md): core loop, durable state, reconciliations, and safety boundaries
 - [Issue metadata](./docs/issue-metadata.md): canonical issue-body fields, sequencing rules, and execution-ready examples
 - [Self-contained demo scenario](./docs/examples/self-contained-demo-scenario.md): publishable walkthrough artifact with a realistic issue body, expected verification, PR outcome, and evidence timeline references
