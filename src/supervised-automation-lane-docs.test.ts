@@ -7,6 +7,27 @@ async function readRepoFile(relativePath: string): Promise<string> {
   return fs.readFile(path.join(process.cwd(), relativePath), "utf8");
 }
 
+interface PublishedStateMachineContract {
+  contractName: string;
+  contractVersion: number;
+  canonicalSource: string;
+  publicStates: Array<{
+    state: string;
+    internalStates: string[];
+    operatorActions: string[];
+  }>;
+}
+
+function sortedValues(values: Iterable<string>): string[] {
+  return [...values].sort((left, right) => left.localeCompare(right));
+}
+
+function extractRunStateValues(source: string): string[] {
+  const runStateMatch = /export type RunState\s*=([\s\S]*?);/u.exec(source);
+  assert.ok(runStateMatch, "RunState union must stay discoverable for docs drift tests");
+  return [...runStateMatch[1]!.matchAll(/"([a-z0-9_]+)"/gu)].map((match) => match[1]!);
+}
+
 test("supervised automation lane product primitive note is repo-owned and discoverable", async () => {
   const [readme, note] = await Promise.all([
     readRepoFile("README.md"),
@@ -86,6 +107,45 @@ test("supervised automation lane documents an auditable work state machine", asy
   assert.match(note, /must not be treated as authoritative lifecycle state/i);
   assert.match(note, /tracked-done cleanup/i);
   assert.doesNotMatch(note, /tracked done cleanup/i);
+});
+
+test("published supervised automation state-machine contract maps every runtime state", async () => {
+  const [note, typesSource, contractSource, operatorActionsSource] = await Promise.all([
+    readRepoFile("docs/supervised-automation-lane.md"),
+    readRepoFile("src/core/types.ts"),
+    readRepoFile("docs/supervised-automation-state-machine.schema.json"),
+    readRepoFile("docs/operator-actions.schema.json"),
+  ]);
+  const contract = JSON.parse(contractSource) as PublishedStateMachineContract;
+  const operatorActionContract = JSON.parse(operatorActionsSource) as { actions: Array<{ action: string }> };
+  const operatorActionVocabulary = new Set(operatorActionContract.actions.map((entry) => entry.action));
+
+  assert.equal(contract.contractName, "codex-supervisor.supervised-automation-state-machine");
+  assert.equal(contract.contractVersion, 1);
+  assert.equal(contract.canonicalSource, "src/core/types.ts");
+
+  const runtimeStates = extractRunStateValues(typesSource);
+  const mappedInternalStates = contract.publicStates.flatMap((state) => state.internalStates);
+  assert.deepEqual(sortedValues(mappedInternalStates), sortedValues(runtimeStates));
+  assert.equal(new Set(mappedInternalStates).size, mappedInternalStates.length, "internal states must map exactly once");
+
+  for (const publicState of contract.publicStates) {
+    assert.match(note, new RegExp(`\\| \`${publicState.state}\` \\|`), `${publicState.state} must be documented`);
+    if (publicState.state === "manual_review") {
+      assert.deepEqual(publicState.internalStates, [], "manual_review is a public boundary, not a stored RunState");
+    } else {
+      assert.ok(publicState.internalStates.length > 0, `${publicState.state} must list internal runtime states`);
+    }
+    assert.ok(publicState.operatorActions.length > 0, `${publicState.state} must list next operator action vocabulary`);
+    assert.deepEqual(
+      publicState.operatorActions.filter((action) => !operatorActionVocabulary.has(action)),
+      [],
+      `${publicState.state} operator actions must use the published operator action vocabulary`,
+    );
+  }
+
+  assert.doesNotMatch(contractSource, /\/Users\/[A-Za-z0-9._-]+\//);
+  assert.doesNotMatch(contractSource, /C:\\Users\\[A-Za-z0-9._-]+\\/);
 });
 
 test("supervised automation lane documents contract-first issue authoring UX", async () => {
