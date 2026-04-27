@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/TommyKammy/codex-supervisor/docs/supervised-automation-state-machine.schema.json",
+  "$ref": "#/$defs/supervisedAutomationStateMachineContract",
+  "contractName": "codex-supervisor.supervised-automation-state-machine",
+  "contractVersion": 1,
+  "canonicalSource": "src/core/types.ts",
+  "description": "Portable contract for the supervised automation lane state-machine vocabulary. Runtime lifecycle storage remains backed by RunState in src/core/types.ts; this artifact maps those internal states to operator-facing states, evidence expectations, authority boundaries, and published operator action tokens.",
+  "publicStates": [
+    {
+      "state": "queued",
+      "internalStates": ["queued"],
+      "reason": "A runnable issue is ready or has been requeued for another supervised attempt.",
+      "evidence": ["issue metadata", "dependency order", "labels", "local state record", "absence of a blocking active attempt"],
+      "authorityBoundary": "Supervisor-owned once the issue body is execution-ready and the configured trust lane is acceptable.",
+      "operatorActions": ["continue", "fix_config"]
+    },
+    {
+      "state": "running",
+      "internalStates": ["planning", "reproducing", "implementing", "local_review_fix", "stabilizing", "local_review"],
+      "reason": "A Codex turn or local supervised work phase is actively moving the issue.",
+      "evidence": ["active issue record", "lock or session state", "worktree", "last head SHA", "issue journal handoff"],
+      "authorityBoundary": "Supervisor-owned while locks and the current session remain authoritative; operator judgment is required when process and durable state conflict.",
+      "operatorActions": ["continue", "manual_review"]
+    },
+    {
+      "state": "blocked",
+      "internalStates": ["blocked", "resolving_conflict"],
+      "reason": "The lane cannot advance because a prerequisite, conflict, or fail-closed guard is missing.",
+      "evidence": ["blocked reason", "failure context", "diagnostics", "issue journal", "path hygiene or verification artifacts", "explain output"],
+      "authorityBoundary": "Shared boundary: supervisor records the block; operator judgment owns requirements, permissions, secrets, manual review, and recovery acknowledgement.",
+      "operatorActions": ["fix_config", "manual_review", "resolve_stale_review_bot", "provider_outage_suspected"]
+    },
+    {
+      "state": "failed",
+      "internalStates": ["failed"],
+      "reason": "A Codex turn, recovery path, or repeated failure policy ended in a failed local lifecycle state instead of a named blocked prerequisite.",
+      "evidence": ["last failure kind", "failure signature", "last error", "failure context", "issue journal", "recovery diagnostics", "tracked PR facts"],
+      "authorityBoundary": "Shared boundary: supervisor records explicitly recoverable failures; operator judgment owns requeue, manual repair, close, or follow-up decisions when recovery evidence is missing.",
+      "operatorActions": ["manual_review", "fix_config"]
+    },
+    {
+      "state": "waiting_ci",
+      "internalStates": ["waiting_ci"],
+      "reason": "PR progress depends on check results, CI freshness, or local CI contract evidence.",
+      "evidence": ["PR number", "head SHA", "check rollup", "local CI artifact", "timeline entry"],
+      "authorityBoundary": "Supervisor-owned for observation and repair routing; GitHub checks and repo CI remain the authoritative result source.",
+      "operatorActions": ["continue", "fix_config"]
+    },
+    {
+      "state": "waiting_review",
+      "internalStates": ["draft_pr", "pr_open", "addressing_review"],
+      "reason": "PR progress depends on draft status, review-provider facts, required-review facts, or review feedback settling.",
+      "evidence": ["fresh PR review facts", "draft state", "review threads", "configured bot diagnostics", "review wait timestamps", "status or explain lines"],
+      "authorityBoundary": "Mixed boundary: supervisor observes and classifies; GitHub review state and provider behavior are authoritative; operator judgment handles provider outages or missing trusted review.",
+      "operatorActions": ["continue", "manual_review", "resolve_stale_review_bot", "provider_outage_suspected"]
+    },
+    {
+      "state": "repairing_ci",
+      "internalStates": ["repairing_ci"],
+      "reason": "The lane is running a bounded repair attempt for an in-scope CI, verification, or path-hygiene failure.",
+      "evidence": ["failure signature", "repair target", "previous verification artifact", "Codex turn record", "journal notes"],
+      "authorityBoundary": "Supervisor-owned only for the configured repair scope; it must not widen into unrelated behavior or invent missing authority.",
+      "operatorActions": ["continue", "manual_review"]
+    },
+    {
+      "state": "merging",
+      "internalStates": ["ready_to_merge", "merging"],
+      "reason": "The PR is ready for or already inside the merge path after readiness evidence has been established.",
+      "evidence": ["fresh PR facts", "branch protection", "check status", "review status", "head-SHA match", "merge attempt record"],
+      "authorityBoundary": "Supervisor-owned for merge readiness and merge attempts only when fresh facts match the recorded head; GitHub branch protection remains authoritative.",
+      "operatorActions": ["continue", "manual_review"]
+    },
+    {
+      "state": "done",
+      "internalStates": ["done"],
+      "reason": "The issue has reached a terminal completed lifecycle state.",
+      "evidence": ["merged PR", "authoritative completion record", "closed issue reconciliation", "final journal handoff", "cleanup eligibility"],
+      "authorityBoundary": "Supervisor-owned for reconciliation from authoritative lifecycle facts; derived summaries and counters must follow the terminal record.",
+      "operatorActions": ["safe_to_ignore"]
+    },
+    {
+      "state": "manual_review",
+      "internalStates": [],
+      "reason": "Progress requires human judgment, usually represented at runtime as blocked with blocked_reason=manual_review rather than a separate stored RunState.",
+      "evidence": ["manual-review blocked reason", "review residuals", "path-hygiene decision", "diagnostics", "sticky PR status comment", "journal handoff"],
+      "authorityBoundary": "Operator judgment owns the decision; the supervisor must preserve evidence and fail closed until that decision is made.",
+      "operatorActions": ["manual_review"]
+    }
+  ],
+  "$defs": {
+    "supervisedAutomationStateMachineContract": {
+      "type": "object",
+      "required": ["contractName", "contractVersion", "canonicalSource", "publicStates"],
+      "properties": {
+        "contractName": {
+          "const": "codex-supervisor.supervised-automation-state-machine"
+        },
+        "contractVersion": {
+          "const": 1
+        },
+        "canonicalSource": {
+          "const": "src/core/types.ts"
+        },
+        "publicStates": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/publicState"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "publicState": {
+      "type": "object",
+      "required": [
+        "state",
+        "internalStates",
+        "reason",
+        "evidence",
+        "authorityBoundary",
+        "operatorActions"
+      ],
+      "properties": {
+        "state": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "internalStates": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "uniqueItems": true
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "authorityBoundary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "operatorActions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
