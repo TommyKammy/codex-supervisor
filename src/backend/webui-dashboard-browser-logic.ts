@@ -169,6 +169,18 @@ export function describeLoopOffTrackedWorkRestartActionTitle(): string {
   return "Restart the supported loop host";
 }
 
+export const operatorActionDashboardTitles: Record<OperatorActionToken, string> = {
+  continue: "Observe and refresh",
+  restart_loop: describeLoopOffTrackedWorkRestartActionTitle(),
+  fix_config: "Fix supervisor configuration",
+  adopt_local_ci: "Adopt local CI contract",
+  dismiss_local_ci: "Dismiss local CI recommendation",
+  manual_review: "Complete manual review",
+  resolve_stale_review_bot: "Resolve stale review metadata",
+  provider_outage_suspected: "Check review provider delivery",
+  safe_to_ignore: "No operator action required",
+};
+
 export function describeLoopOffTrackedWorkRestartExpectation(): string {
   return "Restart the supported loop host; expect loop_runtime state=running before tracked work advances.";
 }
@@ -781,18 +793,6 @@ export function buildPrimaryActionSummary(args: {
   const loopOffTrackedWorkBlocker = describeLoopOffTrackedWorkBlocker(args.status);
   const operatorAction = selectRenderedOperatorAction(args.status);
 
-  function titleForOperatorAction(action: DashboardOperatorActionToken): string {
-    if (action === "fix_config") return "Fix supervisor configuration";
-    if (action === "restart_loop") return describeLoopOffTrackedWorkRestartActionTitle();
-    if (action === "adopt_local_ci") return "Adopt local CI contract";
-    if (action === "dismiss_local_ci") return "Dismiss local CI recommendation";
-    if (action === "manual_review") return "Complete manual review";
-    if (action === "resolve_stale_review_bot") return "Resolve stale review metadata";
-    if (action === "provider_outage_suspected") return "Check review provider delivery";
-    if (action === "safe_to_ignore") return "No operator action required";
-    return "Observe and refresh";
-  }
-
   if (!args.hasSuccessfulRefresh) {
     return {
       title: "Wait for the first refresh",
@@ -816,7 +816,7 @@ export function buildPrimaryActionSummary(args: {
 
   if (operatorAction !== null && operatorAction.action !== "continue") {
     return {
-      title: titleForOperatorAction(operatorAction.action),
+      title: operatorActionDashboardTitles[operatorAction.action],
       detail: operatorAction.summary,
     };
   }

@@ -1,15 +1,64 @@
 import type { LocalCiContractSummary } from "./core/types";
 
-export type OperatorActionToken =
-  | "continue"
-  | "restart_loop"
-  | "fix_config"
-  | "adopt_local_ci"
-  | "dismiss_local_ci"
-  | "manual_review"
-  | "resolve_stale_review_bot"
-  | "provider_outage_suspected"
-  | "safe_to_ignore";
+export interface OperatorActionVocabularyEntry {
+  readonly action: string;
+  readonly surfaces: ReadonlyArray<"status" | "doctor" | "webui">;
+  readonly meaning: string;
+}
+
+export const operatorActionVocabulary = [
+  {
+    action: "continue",
+    surfaces: ["status", "doctor", "webui"],
+    meaning: "No blocking operator action was detected; continue normal supervisor operation.",
+  },
+  {
+    action: "restart_loop",
+    surfaces: ["status", "webui"],
+    meaning:
+      "Tracked work is active but the supervisor loop is off; restart the supported loop host so the runtime reports running and tracked work can advance.",
+  },
+  {
+    action: "fix_config",
+    surfaces: ["status", "doctor", "webui"],
+    meaning:
+      "Repair host prerequisites, setup fields, workspace-preparation configuration, or incomplete local CI visibility before continuing.",
+  },
+  {
+    action: "adopt_local_ci",
+    surfaces: ["doctor", "webui"],
+    meaning: "A repo-owned local CI candidate exists; configure it before relying on local verification posture.",
+  },
+  {
+    action: "dismiss_local_ci",
+    surfaces: ["webui"],
+    meaning: "Explicitly dismiss a repo-owned local CI recommendation when local CI should remain unset.",
+  },
+  {
+    action: "manual_review",
+    surfaces: ["status", "doctor", "webui"],
+    meaning: "A tracked path or diagnostic warning requires human judgment before automation should continue.",
+  },
+  {
+    action: "resolve_stale_review_bot",
+    surfaces: ["status", "webui"],
+    meaning:
+      "Code or CI is green but stale configured-bot review thread metadata still blocks the tracked PR; inspect and resolve the exact thread or leave a manual note.",
+  },
+  {
+    action: "provider_outage_suspected",
+    surfaces: ["status", "webui"],
+    meaning:
+      "Required checks are green but the configured review provider has not reported on the current head; wait, verify provider delivery, or escalate to manual review.",
+  },
+  {
+    action: "safe_to_ignore",
+    surfaces: ["doctor", "webui"],
+    meaning: "A dismissed or already-completed advisory signal does not require operator action.",
+  },
+] as const satisfies readonly OperatorActionVocabularyEntry[];
+
+export type OperatorActionToken = typeof operatorActionVocabulary[number]["action"];
 
 export interface OperatorAction {
   action: OperatorActionToken;
@@ -86,17 +135,9 @@ const doctorFallbackOperatorAction: OperatorAction = {
   summary: "No blocking doctor action was detected; continue normal supervisor operation.",
 };
 
-export const validOperatorActions: Record<OperatorActionToken, true> = {
-  continue: true,
-  restart_loop: true,
-  fix_config: true,
-  adopt_local_ci: true,
-  dismiss_local_ci: true,
-  manual_review: true,
-  resolve_stale_review_bot: true,
-  provider_outage_suspected: true,
-  safe_to_ignore: true,
-};
+export const validOperatorActions = Object.fromEntries(
+  operatorActionVocabulary.map((entry) => [entry.action, true]),
+) as Record<OperatorActionToken, true>;
 
 export function parseOperatorActionPriority(priorityValue: string | null): number {
   return priorityValue !== null && /^-?\d+$/u.test(priorityValue)
