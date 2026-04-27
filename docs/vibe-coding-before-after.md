@@ -26,6 +26,8 @@ The human operator can still impose rigor manually. The problem is that the rigo
 
 With `codex-supervisor`, the same change starts from an execution-ready GitHub issue. The issue names the summary, scope, acceptance criteria, verification, dependency posture, parallelization posture, and execution order before the loop treats it as runnable.
 
+For an annotated version of the same lifecycle using Phase 16's own supervised demo-material work, read the [Phase 16 dogfood PR walkthrough](./examples/phase-16-dogfood-pr-walkthrough.md).
+
 For the README-link change, a supervised run produces concrete artifacts:
 
 - an execution-ready GitHub issue that defines the behavior delta and verification command

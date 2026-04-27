@@ -46,6 +46,7 @@ If you need to understand what to put in `supervisor.config.json`, jump straight
 If you are an AI agent entering the repo, start with the [AI agent handoff](./docs/agent-instructions.md) before reading the detailed references.
 If you need the product primitive framing for the supervised lane beside chat-driven Codex work, read the [Supervised automation lane](./docs/supervised-automation-lane.md) note.
 If you want the same small change shown as an unstructured session versus a supervised loop, read the [Before / After narrative](./docs/vibe-coding-before-after.md).
+If you want to see the supervised PR lifecycle annotated with Phase 16's own dogfooding flow, read the [Phase 16 dogfood PR walkthrough](./docs/examples/phase-16-dogfood-pr-walkthrough.md).
 If you need the narrower freshness and durability contracts, use [Architecture](./docs/architecture.md) and [Configuration reference](./docs/configuration.md) instead of treating this README as the full runtime spec.
 If you use Codex app Automation around the loop, keep the [Codex app Automation boundary](./docs/automation.md) as the repo-owned contract: Automation orchestrates and records, while `codex-supervisor` remains the implementation executor.
 
@@ -286,6 +287,7 @@ Use the [Configuration guide](./docs/configuration.md) for the full routing rule
 - [Local review reference](./docs/local-review.md): local review policies, role selection, artifacts, thresholds, and committed guardrails
 - [Supervised automation lane](./docs/supervised-automation-lane.md): product primitive contract for issue/spec-driven supervised automation beside Codex chat
 - [Before / After narrative](./docs/vibe-coding-before-after.md): the same small change compared as an unstructured session and a supervised loop
+- [Phase 16 dogfood PR walkthrough](./docs/examples/phase-16-dogfood-pr-walkthrough.md): annotated supervised PR lifecycle from the repo's own demo-material phase using sanitized public-safe placeholders
 - [Architecture](./docs/architecture.md): core loop, durable state, reconciliations, and safety boundaries
 - [Issue metadata](./docs/issue-metadata.md): canonical issue-body fields, sequencing rules, and execution-ready examples
 - [Self-contained demo scenario](./docs/examples/self-contained-demo-scenario.md): publishable walkthrough artifact with a realistic issue body, expected verification, PR outcome, and evidence timeline references

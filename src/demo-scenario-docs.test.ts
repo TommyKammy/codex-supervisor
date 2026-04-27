@@ -6,6 +6,7 @@ import { lintExecutionReadyIssueBody, validateIssueMetadataSyntax } from "./issu
 import type { GitHubIssue } from "./core/types";
 
 const demoPath = path.join("docs", "examples", "self-contained-demo-scenario.md");
+const dogfoodWalkthroughPath = path.join("docs", "examples", "phase-16-dogfood-pr-walkthrough.md");
 
 async function readRepoFile(relativePath: string): Promise<string> {
   return fs.readFile(path.join(process.cwd(), relativePath), "utf8");
@@ -62,4 +63,51 @@ test("self-contained demo issue body is execution-ready metadata", async () => {
   assert.equal(lint.isExecutionReady, true);
   assert.deepEqual(lint.missingRequired, []);
   assert.deepEqual(lint.missingRecommended, []);
+});
+
+test("Phase 16 dogfood PR walkthrough is linked and annotates the supervised lifecycle", async () => {
+  const [readme, beforeAfter, walkthrough] = await Promise.all([
+    readRepoFile("README.md"),
+    readRepoFile("docs/vibe-coding-before-after.md"),
+    readRepoFile(dogfoodWalkthroughPath),
+  ]);
+
+  assert.match(readme, /\[Phase 16 dogfood PR walkthrough\]\(\.\/docs\/examples\/phase-16-dogfood-pr-walkthrough\.md\)/);
+  assert.match(
+    beforeAfter,
+    /\[Phase 16 dogfood PR walkthrough\]\(\.\/examples\/phase-16-dogfood-pr-walkthrough\.md\)/,
+  );
+
+  const requiredHeadings = [
+    "# Phase 16 Dogfood PR Walkthrough",
+    "## Provenance",
+    "## Lifecycle Walkthrough",
+    "## Artifact Contracts",
+    "## Sanitization Boundary",
+    "## Read Offline",
+  ];
+  for (const heading of requiredHeadings) {
+    assert.match(walkthrough, new RegExp(`^${heading}$`, "m"));
+  }
+
+  for (const annotation of [
+    "issue-lint",
+    "local verification",
+    "review provider",
+    "operator action",
+    "evidence timeline",
+    "draft PR",
+    "issue journal",
+    "docs/issue-metadata.md",
+    "docs/evidence-timeline.schema.json",
+    "docs/operator-actions.schema.json",
+  ]) {
+    assert.match(walkthrough, new RegExp(annotation, "i"), `expected walkthrough to annotate ${annotation}`);
+  }
+
+  assert.match(walkthrough, /Phase 16/i);
+  assert.match(walkthrough, /sanitized equivalent/i);
+  assert.match(walkthrough, /node dist\/index\.js issue-lint <issue-number> --config <supervisor-config-path>/);
+  assert.doesNotMatch(walkthrough, /\/Users\/[A-Za-z0-9._-]+\//);
+  assert.doesNotMatch(walkthrough, /C:\\Users\\[A-Za-z0-9._-]+\\/);
 });
