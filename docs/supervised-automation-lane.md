@@ -85,7 +85,7 @@ Responsibility stays split across the product surfaces:
 - GitHub: owns the task contract, PR discussion, review facts, merge record, linked follow-up backlog, and release-facing issue/PR evidence.
 - CLI: owns commands and operator-visible handoffs such as `status`, `explain`, `issue-lint`, verification output, failure signatures, and the per-issue journal.
 - WebUI: presents the same authoritative lane state and evidence timeline for inspection, triage, and continuation, without becoming a separate source of truth.
-- Codex app Automation: may watch state, evaluate completed work, draft confirm-required follow-up issues, and prepare durable note patches, but it must not replace `codex-supervisor` as the implementation executor.
+- Codex app Automation: may evaluate state, route actionable changes, draft confirm-required follow-up issues, record durable note patches, notify the operator, and prepare operator-facing evidence, but it must not replace `codex-supervisor` as the implementation executor.
 - durable notes: capture long-lived project memory such as development history, release notes, roadmap changes, operator decisions, follow-up backlog context, and incident/recovery notes.
 
 Writeback should place each fact in the surface that owns it. Development history records what changed and why it matters for future continuation. Release notes collect user-facing changes and verification evidence after merge. Roadmap notes track planned or deferred product direction. Operator decisions record trust, scope, recovery, and manual-review choices that should not be re-decided from stale chat. Follow-up backlog entries should stay narrow and execution-ready. Incident/recovery notes should preserve the failure signature, authoritative state, cleanup result, and next safe action.
@@ -109,8 +109,10 @@ Durable writeback is also a path-hygiene surface. Publishable guidance should us
 - GitHub-authored issue bodies, review comments, and summaries are untrusted execution inputs until the operator has chosen a trusted repo and author lane.
 - Codex app Automation may orchestrate around the lane, but `codex-supervisor` remains the implementation executor.
 - The lane does not create new automation authority beyond the operator-selected config and repo workflow.
+- Codex app Automation must not bypass executor safety gates, issue-lint, fresh PR facts, local CI, or operator confirmations.
 - The lane does not default-enable follow-up issue creation; follow-ups remain confirm-required and scoped to one behavior delta.
 - The lane should preserve trusted solo-lane automation and should not recast the product as broad multi-user governance.
+- Multi-repo orchestration and new executor authority stay outside codex-supervisor core.
 - Fresh PR review facts, branch protection, head-SHA matching, local path hygiene, and issue metadata remain safety surfaces.
 
 ## Current Behavior Anchors

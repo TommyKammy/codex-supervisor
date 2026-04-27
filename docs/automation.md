@@ -7,10 +7,13 @@ record support around the loop. Keep the implementation turn, issue worktree,
 journal, PR lifecycle, CI repair loop, review handling, and merge safety inside
 the supervisor-owned flow.
 
+The portable connector-style artifact is [Codex Automation connector boundary](./codex-automation-connector-boundary.schema.json). It publishes the stable responsibility vocabulary for external automation while keeping the enforcement boundary inside `codex-supervisor`.
+
 ## Roles
 
 - Loop Watcher: reads roadmap, GitHub issue and PR state, local status, loop
-  runtime state, and supervisor diagnostics; reports only actionable changes.
+  runtime state, and supervisor diagnostics; routes or notifies only actionable
+  changes.
 - Merge Evaluator: inspects recently merged work against the roadmap and local
   repository state before declaring a phase complete or identifying a narrow
   follow-up.
@@ -19,6 +22,13 @@ the supervisor-owned flow.
   preserve canonical issue metadata.
 - Obsidian Recorder: updates external development history or operating notes
   after real issue, PR, verification, or phase state changes.
+- Operator Evidence Preparer: prepares operator-facing evidence from current
+  issue, PR, CI, review, and local status facts without treating that evidence
+  as execution authority.
+
+External automation may evaluate, route, draft, record, notify, and prepare
+operator-facing evidence. It may not execute implementation changes, decide
+merge readiness, or turn advisory context into supervisor authority.
 
 ## Safety Contract
 
@@ -38,6 +48,11 @@ fresh GitHub PR facts, review-provider boundaries, branch protection, head-SHA
 matching, local config drift, and fail-closed trust-boundary behavior remain
 supervisor requirements.
 
+Automation must not bypass executor safety gates, issue-lint, fresh PR facts,
+local CI, or operator confirmations. Operator confirmations include follow-up
+issue creation, destructive cleanup, recovery acknowledgement, and any manual
+review decision that the supervisor has surfaced as a prerequisite.
+
 ## Explicit Non-Goals
 
 - Do not move implementation execution from `codex-supervisor` into Codex app
@@ -46,6 +61,8 @@ supervisor requirements.
 - Do not add metadata-only review auto-resolve.
 - Do not run broad path repair as an Automation default.
 - Do not broaden the solo automation lane into multi-user governance.
+- Do not put multi-repo orchestration in codex-supervisor core.
+- Do not grant Codex app Automation new executor authority.
 
 ## Portable References
 
