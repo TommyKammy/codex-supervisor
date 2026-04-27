@@ -57,6 +57,7 @@ export interface CliEntrypointDependencies {
       service: SupervisorService;
       loopController?: SupervisorLoopController;
       createWebUiWorker?: () => { service: SupervisorService; loopController?: SupervisorLoopController };
+      writeStdout?: (line: string) => void;
     },
   ) => Promise<void>;
   writeStdout?: (line: string) => void;
@@ -162,6 +163,7 @@ export async function runCli(
     {
       service,
       loopController,
+      writeStdout,
       createWebUiWorker: options.command === "web"
         ? () => ({
           service: buildSupervisorService(options.configPath),
