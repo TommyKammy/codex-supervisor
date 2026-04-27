@@ -46,7 +46,27 @@ test("handleSampleIssueCommand writes SAMPLE_ISSUE.md only when output is explic
   const output = await handleSampleIssueCommand({ outputPath });
   const written = await fs.readFile(outputPath, "utf8");
 
-  assert.match(output, /^sample_issue_written path=/m);
+  assert.match(output, new RegExp(`^sample_issue_written path=${escapeRegExp(outputPath)}$`, "m"));
+  assert.match(output, new RegExp(`^copy_body_from_file=${escapeRegExp(outputPath)}$`, "m"));
   assert.match(written, /^## Summary$/m);
   assert.match(written, /^Depends on: none$/m);
 });
+
+test("handleSampleIssueCommand refuses to overwrite an existing output file", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-sample-issue-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+  const outputPath = path.join(root, "SAMPLE_ISSUE.md");
+  await fs.writeFile(outputPath, "existing body\n", "utf8");
+
+  await assert.rejects(
+    () => handleSampleIssueCommand({ outputPath }),
+    new RegExp(`Refusing to overwrite existing sample issue file: ${escapeRegExp(outputPath)}`, "u"),
+  );
+  assert.equal(await fs.readFile(outputPath, "utf8"), "existing body\n");
+});
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}

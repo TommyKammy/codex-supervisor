@@ -6,14 +6,6 @@ export interface SampleIssueCommandOptions {
   outputPath?: string;
 }
 
-async function fileExists(filePath: string): Promise<boolean> {
-  try {
-    return (await fs.stat(filePath)).isFile();
-  } catch {
-    return false;
-  }
-}
-
 export async function handleSampleIssueCommand(options: SampleIssueCommandOptions): Promise<string> {
   const body = `${buildStandaloneIssueBody()}\n`;
   if (!options.outputPath) {
@@ -21,15 +13,18 @@ export async function handleSampleIssueCommand(options: SampleIssueCommandOption
   }
 
   const outputPath = path.resolve(options.outputPath);
-  if (await fileExists(outputPath)) {
-    throw new Error(`Refusing to overwrite existing sample issue file: ${outputPath}`);
-  }
-
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
-  await fs.writeFile(outputPath, body, "utf8");
+  try {
+    await fs.writeFile(outputPath, body, { encoding: "utf8", flag: "wx" });
+  } catch (error) {
+    if ((error as { code?: string }).code === "EEXIST") {
+      throw new Error(`Refusing to overwrite existing sample issue file: ${outputPath}`);
+    }
+    throw error;
+  }
   return [
     `sample_issue_written path=${outputPath}`,
-    "copy_body_from_file=SAMPLE_ISSUE.md",
+    `copy_body_from_file=${outputPath}`,
     "after_creating_github_issue=node dist/index.js issue-lint <issue-number> --config <supervisor-config-path>",
   ].join("\n");
 }
