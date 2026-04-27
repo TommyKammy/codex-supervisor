@@ -53,9 +53,13 @@ test("README Quick Start leads with the five-minute playground smoke flow", asyn
     "npm run build",
     "cp supervisor.config.example.json supervisor.config.playground.json",
     "export CODEX_SUPERVISOR_CONFIG=<supervisor-config-path>",
+    "node dist/index.js help",
+    'node dist/index.js doctor --config "$CODEX_SUPERVISOR_CONFIG"',
+    'node dist/index.js status --config "$CODEX_SUPERVISOR_CONFIG" --why',
     'node dist/index.js issue-lint <issue-number> --config "$CODEX_SUPERVISOR_CONFIG"',
     'node dist/index.js run-once --config "$CODEX_SUPERVISOR_CONFIG" --dry-run',
     'node dist/index.js run-once --config "$CODEX_SUPERVISOR_CONFIG"',
+    "Stop after one successful `run-once`.",
   ];
 
   let lastIndex = -1;
