@@ -119,6 +119,8 @@ Automation-owned decisions start only after those operator-owned decisions are e
 
 Dangerous or authority-expanding choices remain explicit opt-ins. Unsandboxed autonomous execution, local CI as a publication gate, local review as a merge gate, high-severity auto-repair, automatic follow-up issue creation, and any auto-merge path must be visible config or operator action rather than hidden authority. Local CI and review-provider posture contribute to trust by adding observable gates and signals without becoming hidden authority: a detected script is advisory until configured, and provider activity matters only for the configured provider identities.
 
+Before choosing those two fields, read the compact [trust mode and execution safety mode combinations](./configuration.md#trust-mode-and-execution-safety-mode-combinations). It labels the safe, cautious, and dangerous postures without duplicating the full configuration reference here.
+
 Use the same vocabulary across setup/readiness, `doctor`, `status`, and WebUI:
 
 - setup/readiness answers whether the required trust posture fields are configured, missing, or invalid before first run

@@ -348,6 +348,19 @@ Operator prerequisite:
 - only use autonomous execution when this is a trusted repo with a trusted author set
 - if the repo or author trust is unclear, do not rely on bypassed sandbox or approval protections
 
+### Trust mode and execution safety mode combinations
+
+Setup/readiness treats `trustMode` and `executionSafetyMode` as explicit first-run decisions. `status` and `doctor` render the same posture with `trust_mode=...`, `execution_safety_mode=...`, `doctor_posture`, and, for unsandboxed trusted execution, `execution_safety_warning`. Unsandboxed autonomous execution requires trusted GitHub authors as part of the operator-owned posture.
+
+| `trustMode` | `executionSafetyMode` | Posture | Operator meaning | Status and doctor vocabulary |
+| --- | --- | --- | --- | --- |
+| `trusted_repo_and_authors` | `operator_gated` | Safe | The repo and GitHub authors are trusted. Use this as an explicit conservative posture marker; trust checks are already satisfied for trusted inputs. | `trust_mode=trusted_repo_and_authors`, `execution_safety_mode=operator_gated`; no unsandboxed warning. |
+| `untrusted_or_mixed` | `operator_gated` | Cautious | The repo or author set is mixed or unclear. Keep execution gated and require explicit trusted-input signals before individual issues can run. | `trust_mode=untrusted_or_mixed`, `execution_safety_mode=operator_gated`; trust-gated readiness can block issues without trusted input. |
+| `trusted_repo_and_authors` | `unsandboxed_autonomous` | Dangerous opt-in | Unsandboxed autonomous execution is allowed only because the operator has explicitly trusted the repo and the GitHub authors who can provide execution text. This is not a default for first-time operators. | `trust_mode=trusted_repo_and_authors`, `execution_safety_mode=unsandboxed_autonomous`, plus `execution_safety_warning` in `status` and `doctor_warning kind=execution_safety` in `doctor`. |
+| `untrusted_or_mixed` | `unsandboxed_autonomous` | Dangerous | This combines untrusted or mixed GitHub-authored inputs with unsandboxed autonomous execution. Do not normalize it as a default; use it only as an explicit operator override with a separate safety reason. | `trust_mode=untrusted_or_mixed`, `execution_safety_mode=unsandboxed_autonomous`; treat the posture as an override to investigate before starting `loop`. |
+
+The safest setup habit is to choose the row first, then run `setup/readiness`, `doctor`, and `status --why` against the same config before starting the loop.
+
 ### PR hydration authority
 
 Fresh GitHub review facts are authoritative for review decisions. Merge decisions should continue to rely on fresh GitHub PR/merge signals (checks, required reviews, branch protection, and merge state). Cached hydration can appear in diagnostics, but it is informational and non-authoritative, not the source of truth for readiness or merge safety. No configuration should treat cached pull-request hydration as authority for readiness, review-blocking, or merge decisions.
@@ -408,6 +421,8 @@ Diagnostics that matter here:
 - `codexReasoningEscalateOnRepeatedFailure`
 
 Choose `trustMode` and `executionSafetyMode` explicitly during first-run setup. `trusted_repo_and_authors` plus `unsandboxed_autonomous` is the trusted solo-lane posture: it is appropriate only when the operator trusts the repository and the GitHub authors who can write issue bodies, PR comments, and review text that become execution inputs. For untrusted or mixed-author repositories, set `executionSafetyMode: "operator_gated"`; setting only `trustMode: "untrusted_or_mixed"` does not force fail-closed execution because `unsandboxed_autonomous` remains an explicit override. Once execution is gated, `trustMode` is the secondary policy that decides whether trusted repo/authors are enough or whether `untrusted_or_mixed` requires an explicit trusted-input signal.
+
+Use [Trust mode and execution safety mode combinations](#trust-mode-and-execution-safety-mode-combinations) before changing either field.
 
 ### Durable memory and planning
 
