@@ -42,6 +42,7 @@ export function parseArgs(argv: string[]): CliOptions {
       token === "explain" ||
       token === "issue-lint" ||
       token === "readiness-checklist" ||
+      token === "init" ||
       token === "doctor" ||
       token === "web" ||
       token === "replay" ||

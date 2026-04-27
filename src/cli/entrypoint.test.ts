@@ -91,6 +91,33 @@ test("runCli prints the readiness checklist regardless of caller cwd", { concurr
   assert.match(stdout.join("\n"), /^# Release Readiness Checklist/m);
 });
 
+test("runCli routes init before constructing supervisor services", async () => {
+  const stdout: string[] = [];
+  let createdSupervisorService = false;
+  let receivedOptions: Record<string, unknown> | undefined;
+
+  await runCli(["init", "--config", "supervisor.config.json", "--dry-run"], {
+    createSupervisorService: () => {
+      createdSupervisorService = true;
+      throw new Error("unexpected createSupervisorService");
+    },
+    handleInitCommand: async (options) => {
+      receivedOptions = { ...options };
+      return "init preview";
+    },
+    writeStdout: (line) => {
+      stdout.push(line);
+    },
+  });
+
+  assert.equal(createdSupervisorService, false);
+  assert.deepEqual(receivedOptions, {
+    configPath: "supervisor.config.json",
+    dryRun: true,
+  });
+  assert.deepEqual(stdout, ["init preview"]);
+});
+
 test("runCli fails closed on a stale compiled runtime before constructing supervisor services", async () => {
   let createdSupervisorService = false;
   let createdLoopController = false;

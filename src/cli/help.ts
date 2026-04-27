@@ -11,11 +11,11 @@ Common flags:
   --suggest                         Print a copyable issue metadata skeleton. Supported with issue-lint only.
 
 First run:
-  1. node dist/index.js help
-  2. node dist/index.js web --config <supervisor-config-path>  # open /setup
-  3. node dist/index.js doctor --config <supervisor-config-path>
-  4. node dist/index.js status --config <supervisor-config-path> --why
-  5. node dist/index.js issue-lint <issue-number> --config <supervisor-config-path>
+  1. node dist/index.js init --dry-run --config <supervisor-config-path>
+  2. node dist/index.js init --config <supervisor-config-path>
+  3. node dist/index.js issue-lint <issue-number> --config <supervisor-config-path>
+  4. node dist/index.js doctor --config <supervisor-config-path>
+  5. node dist/index.js status --config <supervisor-config-path> --why
   6. node dist/index.js run-once --config <supervisor-config-path> --dry-run
   7. node dist/index.js run-once --config <supervisor-config-path>
   8. node dist/index.js loop --config <supervisor-config-path>
@@ -25,6 +25,7 @@ Run commands:
   loop                              Keep running supervisor cycles until stopped.
 
 Inspect commands:
+  init [--dry-run]                  Create or preview a starter supervisor config.
   status [--why]                    Show queue, PR, CI, review, and loop state.
   doctor                            Check local configuration and repository prerequisites.
   explain <issue-number>            Explain supervisor readiness for one issue.

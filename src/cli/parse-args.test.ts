@@ -107,6 +107,21 @@ test("parseArgs accepts readiness-checklist without an issue number", () => {
   });
 });
 
+test("parseArgs accepts init preview mode without an issue number", () => {
+  assert.deepEqual(parseArgs(["init", "--dry-run"]), {
+    command: "init",
+    configPath: undefined,
+    dryRun: true,
+    why: false,
+    issueLintSuggest: false,
+    explainMode: "summary",
+    issueNumber: undefined,
+    snapshotPath: undefined,
+    caseId: undefined,
+    corpusPath: undefined,
+  });
+});
+
 test("parseArgs accepts requeue with an issue number", () => {
   assert.deepEqual(parseArgs(["requeue", "123"]), {
     command: "requeue",
