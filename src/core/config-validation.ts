@@ -17,6 +17,13 @@ const REQUIRED_STRING_CONFIG_FIELDS = [
   "branchPrefix",
 ] as const;
 
+const STARTER_PROFILE_PLACEHOLDERS: Record<string, Set<string>> = {
+  repoPath: new Set(["/absolute/path/to/managed-repo"]),
+  repoSlug: new Set(["OWNER/REPO", "REPLACE_ME"]),
+  workspaceRoot: new Set(["/absolute/path/to/worktrees"]),
+  codexBinary: new Set(["/absolute/path/to/codex"]),
+};
+
 const WORKSPACE_PREPARATION_SCRIPT_RUNNERS = new Set(["bash", "sh", "node", "bun", "deno", "python", "python3", "ruby", "tsx", "ts-node"]);
 
 function hasNonEmptyString(value: unknown): boolean {
@@ -42,6 +49,44 @@ export function collectMissingRequiredFields(raw: Record<string, unknown>): stri
   }
 
   return missing;
+}
+
+export function isStarterProfilePlaceholder(field: string, value: unknown): boolean {
+  return typeof value === "string" && (STARTER_PROFILE_PLACEHOLDERS[field]?.has(value.trim()) ?? false);
+}
+
+export function collectStarterProfilePlaceholderFields(raw: Record<string, unknown>): string[] {
+  return REQUIRED_STRING_CONFIG_FIELDS.filter((field) => isStarterProfilePlaceholder(field, raw[field])) as string[];
+}
+
+export function buildStarterProfilePlaceholderFieldMessage(field: string, value: unknown): string | null {
+  if (!isStarterProfilePlaceholder(field, value)) {
+    return null;
+  }
+
+  switch (field) {
+    case "repoPath":
+      return "Repository path still contains a starter placeholder. Replace it with the absolute path to the managed repository.";
+    case "repoSlug":
+      return "Repository slug still contains a starter placeholder. Replace it with the GitHub owner/repo slug for the managed repository.";
+    case "workspaceRoot":
+      return "Workspace root still contains a starter placeholder. Replace it with the directory where issue worktrees should be created.";
+    case "codexBinary":
+      return "Codex binary still contains a starter placeholder. Replace it with a PATH command such as codex or the path to the Codex executable.";
+    default:
+      return `${field} still contains a starter placeholder. Replace it before running the supervisor.`;
+  }
+}
+
+export function buildStarterProfilePlaceholderError(raw: Record<string, unknown>, fields: string[]): string {
+  const details = fields
+    .map((field) => buildStarterProfilePlaceholderFieldMessage(field, raw[field]) ?? `${field} still contains a starter placeholder.`)
+    .join(" ");
+  return [
+    "Starter profile placeholders must be replaced before this config can run.",
+    details,
+    "Copy the starter profile to supervisor.config.json, replace the placeholders, then rerun node dist/index.js doctor --config <supervisor-config-path> or inspect /api/setup-readiness.",
+  ].join(" ");
 }
 
 export function extractInvalidFieldName(error: unknown): string | null {

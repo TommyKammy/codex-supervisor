@@ -14,6 +14,82 @@ test("setup-readiness imports shared diagnostic DTOs instead of doctor raw types
   assert.doesNotMatch(content, /type\s+DoctorCheckStatus/u);
 });
 
+test("diagnoseSetupReadiness explains copied starter profile placeholders as first-run setup blockers", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const sourcePath = path.join(process.cwd(), "supervisor.config.example.json");
+  const configPath = path.join(root, "supervisor.config.json");
+  await fs.copyFile(sourcePath, configPath);
+
+  const summary = await diagnoseSetupReadiness({
+    configPath,
+    authStatus: async () => ({ ok: true, message: null }),
+  });
+
+  assert.equal(summary.ready, false);
+  assert.equal(summary.overallStatus, "invalid");
+  assert.equal(summary.providerPosture.profile, "copilot");
+  assert.deepEqual(summary.providerPosture.reviewers, ["copilot-pull-request-reviewer"]);
+  assert.equal(summary.localReviewPosture?.preset, "off");
+  assert.deepEqual(
+    summary.fields
+      .filter((field) => field.state === "invalid")
+      .map((field) => [field.key, field.message]),
+    [
+      ["repoPath", "Repository path still contains a starter placeholder. Replace it with the absolute path to the managed repository."],
+      ["repoSlug", "Repository slug still contains a starter placeholder. Replace it with the GitHub owner/repo slug for the managed repository."],
+      ["workspaceRoot", "Workspace root still contains a starter placeholder. Replace it with the directory where issue worktrees should be created."],
+      ["codexBinary", "Codex binary still contains a starter placeholder. Replace it with a PATH command such as codex or the path to the Codex executable."],
+    ],
+  );
+  assert.deepEqual(
+    summary.blockers
+      .filter((blocker) => blocker.code.startsWith("invalid_"))
+      .map((blocker) => [blocker.code, blocker.fieldKeys]),
+    [
+      ["invalid_repo_path", ["repoPath"]],
+      ["invalid_repo_slug", ["repoSlug"]],
+      ["invalid_workspace_root", ["workspaceRoot"]],
+      ["invalid_codex_binary", ["codexBinary"]],
+    ],
+  );
+  assert.match(
+    summary.nextActions.find((action) => action.source === "invalid_repo_slug")?.summary ?? "",
+    /replace it with the GitHub owner\/repo slug/i,
+  );
+});
+
+test("diagnoseSetupReadiness preserves provider-specific posture for copied CodeRabbit starter profile", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-coderabbit-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const sourcePath = path.join(process.cwd(), "supervisor.config.coderabbit.json");
+  const configPath = path.join(root, "supervisor.config.json");
+  await fs.copyFile(sourcePath, configPath);
+
+  const summary = await diagnoseSetupReadiness({
+    configPath,
+    authStatus: async () => ({ ok: true, message: null }),
+  });
+
+  assert.equal(summary.ready, false);
+  assert.equal(summary.overallStatus, "invalid");
+  assert.equal(summary.providerPosture.profile, "coderabbit");
+  assert.deepEqual(summary.providerPosture.reviewers, ["coderabbitai", "coderabbitai[bot]"]);
+  assert.equal(summary.localReviewPosture?.preset, "off");
+  assert.deepEqual(
+    summary.fields
+      .filter((field) => field.state === "invalid")
+      .map((field) => field.key),
+    ["repoSlug"],
+  );
+});
+
 async function createTrackedRepo(root: string): Promise<string> {
   const repoPath = path.join(root, "repo");
   await fs.mkdir(repoPath, { recursive: true });
