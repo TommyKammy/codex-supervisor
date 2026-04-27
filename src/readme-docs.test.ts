@@ -173,6 +173,15 @@ test("README Quick Start leads with the five-minute playground smoke flow", asyn
   assert.doesNotMatch(quickStart, /--config \/path\/to\//);
 });
 
+test("README docs map links to the self-contained demo scenario", async () => {
+  const content = await readReadme();
+
+  assert.match(
+    content,
+    /\[Self-contained demo scenario\]\(\.\/docs\/examples\/self-contained-demo-scenario\.md\)/,
+  );
+});
+
 test("README.ja stays lightweight while routing humans and AI agents to the right docs", async () => {
   const content = await readJapaneseOverview();
 
