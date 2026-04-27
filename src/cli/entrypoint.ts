@@ -9,6 +9,7 @@ import {
 import type { CliOptions } from "../core/types";
 import { parseArgs } from "./parse-args";
 import { handleInitCommand } from "./init-command";
+import { handleSampleIssueCommand } from "./sample-issue-command";
 import { handleReplayCommand } from "./replay-command";
 import {
   createProcessCliIo,
@@ -35,6 +36,7 @@ export interface CliEntrypointDependencies {
   parseArgs?: (argv: string[]) => CliOptions;
   handleReplayCommand?: (options: Pick<CliOptions, "configPath" | "snapshotPath">) => Promise<string>;
   handleInitCommand?: (options: Pick<CliOptions, "configPath" | "dryRun">) => Promise<string>;
+  handleSampleIssueCommand?: (options: { outputPath?: string }) => Promise<string>;
   createCliIo?: () => CliIo;
   handleReplayCorpusCommand?: (
     options: Pick<CliOptions, "configPath" | "corpusPath">,
@@ -78,6 +80,7 @@ export async function runCli(
   const parseCliArgs = dependencies.parseArgs ?? parseArgs;
   const replayCommandHandler = dependencies.handleReplayCommand ?? handleReplayCommand;
   const initCommandHandler = dependencies.handleInitCommand ?? handleInitCommand;
+  const sampleIssueCommandHandler = dependencies.handleSampleIssueCommand ?? handleSampleIssueCommand;
   const createCliIo = dependencies.createCliIo ?? createProcessCliIo;
   const replayCorpusCommandHandler =
     dependencies.handleReplayCorpusCommand ?? handleReplayCorpusCommand;
@@ -111,6 +114,13 @@ export async function runCli(
     writeStdout(await initCommandHandler({
       configPath: options.configPath,
       dryRun: options.dryRun,
+    }));
+    return;
+  }
+
+  if (options.command === "sample-issue") {
+    writeStdout(await sampleIssueCommandHandler({
+      outputPath: options.sampleIssueOutputPath,
     }));
     return;
   }

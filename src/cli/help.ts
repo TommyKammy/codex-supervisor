@@ -9,16 +9,18 @@ Common flags:
   --dry-run                         Plan the next run-once or loop action without executing Codex.
   --why                             Include status decision details. Supported with status only.
   --suggest                         Print a copyable issue metadata skeleton. Supported with issue-lint only.
+  --output <path>                   Write a sample issue body. Supported with sample-issue only.
 
 First run:
   1. node dist/index.js init --dry-run --config <supervisor-config-path>
   2. node dist/index.js init --config <supervisor-config-path>
-  3. node dist/index.js issue-lint <issue-number> --config <supervisor-config-path>
-  4. node dist/index.js doctor --config <supervisor-config-path>
-  5. node dist/index.js status --config <supervisor-config-path> --why
-  6. node dist/index.js run-once --config <supervisor-config-path> --dry-run
-  7. node dist/index.js run-once --config <supervisor-config-path>
-  8. node dist/index.js loop --config <supervisor-config-path>
+  3. node dist/index.js sample-issue
+  4. node dist/index.js issue-lint <issue-number> --config <supervisor-config-path>
+  5. node dist/index.js doctor --config <supervisor-config-path>
+  6. node dist/index.js status --config <supervisor-config-path> --why
+  7. node dist/index.js run-once --config <supervisor-config-path> --dry-run
+  8. node dist/index.js run-once --config <supervisor-config-path>
+  9. node dist/index.js loop --config <supervisor-config-path>
 
 Run commands:
   run-once                          Run one supervisor cycle.
@@ -34,6 +36,8 @@ Inspect commands:
                                     Print a sanitized operator audit bundle.
   issue-lint <issue-number> [--suggest]
                                     Validate an execution-ready issue body.
+  sample-issue [--output SAMPLE_ISSUE.md]
+                                    Preview or write a standalone execution-ready issue body.
   readiness-checklist               Print the release-readiness checklist.
 
 Repair commands:

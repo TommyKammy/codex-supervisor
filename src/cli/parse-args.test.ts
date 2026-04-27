@@ -122,6 +122,22 @@ test("parseArgs accepts init preview mode without an issue number", () => {
   });
 });
 
+test("parseArgs accepts sample-issue with explicit file output", () => {
+  assert.deepEqual(parseArgs(["sample-issue", "--output", "SAMPLE_ISSUE.md"]), {
+    command: "sample-issue",
+    configPath: undefined,
+    dryRun: false,
+    why: false,
+    issueLintSuggest: false,
+    explainMode: "summary",
+    issueNumber: undefined,
+    snapshotPath: undefined,
+    caseId: undefined,
+    corpusPath: undefined,
+    sampleIssueOutputPath: "SAMPLE_ISSUE.md",
+  });
+});
+
 test("parseArgs accepts requeue with an issue number", () => {
   assert.deepEqual(parseArgs(["requeue", "123"]), {
     command: "requeue",

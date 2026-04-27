@@ -121,6 +121,12 @@ function buildIssueLintSuggestionLines(dto: SupervisorIssueLintDto): string[] {
     "suggestion_status=standalone_default",
     "suggestion_note=Conservative standalone skeleton; replace placeholders and do not add Part of unless this issue is a sequenced child.",
     "suggested_repair_skeleton:",
+    ...buildStandaloneIssueBodyLines(),
+  ];
+}
+
+export function buildStandaloneIssueBodyLines(): string[] {
+  return [
     "## Summary",
     "<one short paragraph describing the intended outcome>",
     "",
@@ -139,6 +145,10 @@ function buildIssueLintSuggestionLines(dto: SupervisorIssueLintDto): string[] {
     "## Execution order",
     "1 of 1",
   ];
+}
+
+export function buildStandaloneIssueBody(): string {
+  return buildStandaloneIssueBodyLines().join("\n");
 }
 
 function buildIssueLintRepairGuidance(
