@@ -52,6 +52,39 @@ test("execution-safety docs define the GitHub trust boundary and operator prereq
   assert.match(configuration, /trusted author/i);
 });
 
+test("execution-safety docs include a compact trust mode and execution safety combination table", async () => {
+  const [readme, gettingStarted, configuration] = await Promise.all([
+    readDoc("README.md"),
+    readDoc(path.join("docs", "getting-started.md")),
+    readDoc(path.join("docs", "configuration.md")),
+  ]);
+
+  assert.match(
+    configuration,
+    /\|\s*`?trustMode`?\s*\|\s*`?executionSafetyMode`?\s*\|\s*Posture\s*\|\s*Operator meaning\s*\|\s*Status and doctor vocabulary\s*\|/i,
+  );
+  assert.match(configuration, /`trusted_repo_and_authors`\s*\|\s*`operator_gated`\s*\|\s*Safe/i);
+  assert.match(configuration, /`untrusted_or_mixed`\s*\|\s*`operator_gated`\s*\|\s*Cautious/i);
+  assert.match(configuration, /`trusted_repo_and_authors`\s*\|\s*`unsandboxed_autonomous`\s*\|\s*Dangerous opt-in/i);
+  assert.match(configuration, /`untrusted_or_mixed`\s*\|\s*`unsandboxed_autonomous`\s*\|\s*Dangerous/i);
+  assert.match(configuration, /trust_mode=/);
+  assert.match(configuration, /execution_safety_mode=/);
+  assert.match(configuration, /doctor_posture/);
+  assert.match(configuration, /execution_safety_warning/);
+  assert.match(configuration, /setup\/readiness/);
+  assert.match(configuration, /trusted GitHub authors/i);
+  assert.match(configuration, /not a default/i);
+
+  assert.match(
+    readme,
+    /\[trust mode and execution safety mode combinations\]\(\.\/docs\/configuration\.md#trust-mode-and-execution-safety-mode-combinations\)/i,
+  );
+  assert.match(
+    gettingStarted,
+    /\[trust mode and execution safety mode combinations\]\(\.\/configuration\.md#trust-mode-and-execution-safety-mode-combinations\)/i,
+  );
+});
+
 test("docs define corrupted JSON state as an explicit recovery event, not empty bootstrap", async () => {
   const [readme, architecture, gettingStarted, configuration] = await Promise.all([
     readDoc("README.md"),

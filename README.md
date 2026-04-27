@@ -107,7 +107,7 @@ Start with the [Playground smoke run](./docs/playground-smoke-run.md) when you w
 
 Stop after one successful `run-once`. Inspect the sandbox repo, issue journal, and any draft PR before you operate on production work.
 
-Only use autonomous execution in a trusted repo with trusted GitHub authors. Current Codex runs use `--dangerously-bypass-approvals-and-sandbox`, so the production trust posture belongs in the config and operator process before background execution starts. Use [Getting started](./docs/getting-started.md), the [Configuration guide](./docs/configuration.md), and [Architecture](./docs/architecture.md) for the full execution-safety boundary.
+Only use autonomous execution in a trusted repo with trusted GitHub authors. Current Codex runs use `--dangerously-bypass-approvals-and-sandbox`, so the production trust posture belongs in the config and operator process before background execution starts. Use [Getting started](./docs/getting-started.md), the [Configuration guide](./docs/configuration.md), the [trust mode and execution safety mode combinations](./docs/configuration.md#trust-mode-and-execution-safety-mode-combinations), and [Architecture](./docs/architecture.md) for the full execution-safety boundary.
 
 When the sandbox pass is clean, validate the production config and a real issue before starting the loop:
 
@@ -238,7 +238,7 @@ node dist/index.js issue-lint <issue-number> --config <supervisor-config-path>
 
 If `issue-lint` reports missing or malformed metadata, fix the issue body before running `run-once` or `loop`.
 
-Requirements: `gh auth status` must succeed, `codex` CLI must be installed, the managed repository should already have branch protection and CI in place, and the operator should only enable autonomous execution in a trusted repo with trusted GitHub authors. The current Codex runs use `--dangerously-bypass-approvals-and-sandbox`; see [Getting started](./docs/getting-started.md), [Configuration reference](./docs/configuration.md), and [Architecture](./docs/architecture.md) for the execution-safety boundary.
+Requirements: `gh auth status` must succeed, `codex` CLI must be installed, the managed repository should already have branch protection and CI in place, and the operator should only enable autonomous execution in a trusted repo with trusted GitHub authors. The current Codex runs use `--dangerously-bypass-approvals-and-sandbox`; see [Getting started](./docs/getting-started.md), [Configuration reference](./docs/configuration.md), the [trust mode and execution safety mode combinations](./docs/configuration.md#trust-mode-and-execution-safety-mode-combinations), and [Architecture](./docs/architecture.md) for the execution-safety boundary.
 
 ## Operational Boundaries
 
