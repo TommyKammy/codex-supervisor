@@ -42,6 +42,7 @@ const EXPECTED_TOP_LEVEL_ENTRIES = {
     "pull-request-state-test-helpers.ts",
     "pull-request-state.ts",
     "ready-promotion-gate.ts",
+    "ready-promotion-path-hygiene-repair.ts",
     "reconciliation-backlog-diagnostics.ts",
     "recovery-active-reconciliation.ts",
     "recovery-entrypoint-result.ts",
