@@ -16,6 +16,7 @@ interface IssueBodyExample {
 
 interface IssueBodyContract {
   contractName: string;
+  contractVersion: number;
   canonicalGuide: string;
   requiredSections: string[];
   standaloneDefaults: {
@@ -56,6 +57,7 @@ test("published issue body contract captures required sections and scheduling sh
   const contract = readContract();
 
   assert.equal(contract.contractName, "codex-supervisor.issue-body-contract");
+  assert.equal(contract.contractVersion, 1);
   assert.equal(contract.canonicalGuide, "docs/issue-metadata.md");
   assert.deepEqual(contract.requiredSections, [
     "Summary",

@@ -68,6 +68,7 @@
       "type": "object",
       "required": [
         "contractName",
+        "contractVersion",
         "canonicalGuide",
         "requiredSections",
         "standaloneDefaults",
@@ -77,6 +78,9 @@
       "properties": {
         "contractName": {
           "const": "codex-supervisor.issue-body-contract"
+        },
+        "contractVersion": {
+          "const": 1
         },
         "canonicalGuide": {
           "const": "docs/issue-metadata.md"
