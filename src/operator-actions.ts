@@ -1,9 +1,9 @@
 import type { LocalCiContractSummary } from "./core/types";
 
 export interface OperatorActionVocabularyEntry {
-  action: string;
-  surfaces: Array<"status" | "doctor" | "webui">;
-  meaning: string;
+  readonly action: string;
+  readonly surfaces: ReadonlyArray<"status" | "doctor" | "webui">;
+  readonly meaning: string;
 }
 
 export const operatorActionVocabulary = [
