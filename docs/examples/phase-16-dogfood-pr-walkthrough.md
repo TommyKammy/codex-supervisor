@@ -2,6 +2,8 @@
 
 This walkthrough shows how a Phase 16 supervised issue becomes a reviewable PR with durable evidence. It is a docs artifact, not a new runner or a credentialed demo. A new reader can follow the lifecycle offline without running `codex-supervisor` or authenticating to GitHub.
 
+For the compact primitive map that names the quality surfaces in this walkthrough, read the [AI coding quality kit](../quality-kit.md).
+
 ## Provenance
 
 Phase 16 is the repository's own supervised-demo-material phase. The most faithful source is the live supervised PR flow that produces these docs. Because this page must be publishable without workstation-local paths, private config values, or live GitHub credentials, the walkthrough uses a sanitized equivalent of that flow:
