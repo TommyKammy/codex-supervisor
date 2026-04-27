@@ -288,6 +288,7 @@ Use the [Configuration guide](./docs/configuration.md) for the full routing rule
 - [Before / After narrative](./docs/vibe-coding-before-after.md): the same small change compared as an unstructured session and a supervised loop
 - [Architecture](./docs/architecture.md): core loop, durable state, reconciliations, and safety boundaries
 - [Issue metadata](./docs/issue-metadata.md): canonical issue-body fields, sequencing rules, and execution-ready examples
+- [Self-contained demo scenario](./docs/examples/self-contained-demo-scenario.md): publishable walkthrough artifact with a realistic issue body, expected verification, PR outcome, and evidence timeline references
 - [GSD to GitHub issues](./docs/examples/gsd-to-github-issues.md): how to hand planning output into execution-ready issues
 - [Atlas example](./docs/examples/atlaspm.md): a concrete config and workflow example
 - [Release readiness checklist](./docs/validation-checklist.md): advisory minimum, recommended, and sufficient release-readiness checks
