@@ -1,0 +1,204 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/TommyKammy/codex-supervisor/docs/issue-body-contract.schema.json",
+  "contractName": "codex-supervisor.issue-body-contract",
+  "contractVersion": 1,
+  "canonicalGuide": "docs/issue-metadata.md",
+  "description": "Portable contract for execution-ready codex issue bodies. Markdown parsing and readiness decisions remain enforced by issue-lint; this artifact publishes the required sections, scheduling metadata, defaults, and validation examples for external tooling.",
+  "requiredSections": [
+    "Summary",
+    "Scope",
+    "Acceptance criteria",
+    "Verification"
+  ],
+  "standaloneDefaults": {
+    "dependsOn": "none",
+    "parallelizable": "No",
+    "executionOrder": "1 of 1",
+    "partOf": null
+  },
+  "sequencedChildMetadata": {
+    "partOfPattern": "Part of: #<parent-issue-number>",
+    "dependsOnPattern": "Depends on: none|#<blocking-issue-number>[, #<blocking-issue-number>...]",
+    "parallelizable": "No",
+    "executionOrderPattern": "N of M"
+  },
+  "validationNotes": [
+    "Use docs/issue-metadata.md as the canonical human guide.",
+    "Use issue-lint as the enforcement boundary for Markdown parsing, duplicate metadata, malformed scheduling fields, and label-gated readiness.",
+    "Do not add Part of for standalone 1 of 1 issues unless the issue truly belongs to an epic and readiness rules require it.",
+    "Use Parallelizable: No unless parallel execution is explicitly safe."
+  ],
+  "examples": [
+    {
+      "name": "valid standalone codex issue",
+      "kind": "standalone",
+      "valid": true,
+      "body": "## Summary\nPublish a portable issue body contract artifact for external tooling.\n\n## Scope\n- add the contract artifact and keep existing issue-lint behavior unchanged\n\n## Acceptance criteria\n- the artifact lists required sections and standalone scheduling defaults\n\n## Verification\n- `npx tsx --test src/issue-metadata/issue-body-contract-artifact.test.ts`\n\nDepends on: none\nParallelizable: No\n\n## Execution order\n1 of 1"
+    },
+    {
+      "name": "valid sequenced child codex issue",
+      "kind": "sequenced-child",
+      "valid": true,
+      "body": "## Summary\nPublish child issue metadata examples for the portable contract.\n\n## Scope\n- document sequenced child metadata while preserving the issue-lint boundary\n\nPart of: #1830\nDepends on: #1831\nParallelizable: No\n\n## Execution order\n2 of 6\n\n## Acceptance criteria\n- child examples include canonical Part of, Depends on, Parallelizable, and Execution order metadata\n\n## Verification\n- `npx tsx --test src/issue-metadata/issue-body-contract-artifact.test.ts`"
+    },
+    {
+      "name": "invalid standalone missing scheduling metadata",
+      "kind": "standalone",
+      "valid": false,
+      "expectedMissingRequired": [
+        "depends on",
+        "parallelizable",
+        "execution order"
+      ],
+      "body": "## Summary\nPublish a portable issue body contract artifact.\n\n## Scope\n- add the contract artifact and keep lint behavior unchanged\n\n## Acceptance criteria\n- missing scheduling metadata fails issue-lint\n\n## Verification\n- `npx tsx --test src/issue-metadata/issue-body-contract-artifact.test.ts`"
+    },
+    {
+      "name": "invalid child with legacy parent syntax",
+      "kind": "sequenced-child",
+      "valid": false,
+      "expectedMissingRequired": [
+        "part of"
+      ],
+      "body": "## Summary\nPublish child issue metadata examples for the portable contract.\n\n## Scope\n- keep canonical child metadata required for codex-labeled sequenced work\n\nPart of #1830\nDepends on: #1831\nParallelizable: No\n\n## Execution order\n2 of 6\n\n## Acceptance criteria\n- legacy Part of syntax remains blocked for sequenced codex issues\n\n## Verification\n- `npx tsx --test src/issue-metadata/issue-body-contract-artifact.test.ts`"
+    }
+  ],
+  "$defs": {
+    "issueBodyContract": {
+      "type": "object",
+      "required": [
+        "contractName",
+        "contractVersion",
+        "canonicalGuide",
+        "requiredSections",
+        "standaloneDefaults",
+        "sequencedChildMetadata",
+        "examples"
+      ],
+      "properties": {
+        "contractName": {
+          "const": "codex-supervisor.issue-body-contract"
+        },
+        "contractVersion": {
+          "const": 1
+        },
+        "canonicalGuide": {
+          "const": "docs/issue-metadata.md"
+        },
+        "requiredSections": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "Summary",
+              "Scope",
+              "Acceptance criteria",
+              "Verification"
+            ]
+          },
+          "minItems": 4,
+          "uniqueItems": true
+        },
+        "standaloneDefaults": {
+          "type": "object",
+          "required": [
+            "dependsOn",
+            "parallelizable",
+            "executionOrder",
+            "partOf"
+          ],
+          "properties": {
+            "dependsOn": {
+              "const": "none"
+            },
+            "parallelizable": {
+              "enum": [
+                "No",
+                "Yes"
+              ]
+            },
+            "executionOrder": {
+              "const": "1 of 1"
+            },
+            "partOf": {
+              "type": "null"
+            }
+          },
+          "additionalProperties": false
+        },
+        "sequencedChildMetadata": {
+          "type": "object",
+          "required": [
+            "partOfPattern",
+            "dependsOnPattern",
+            "parallelizable",
+            "executionOrderPattern"
+          ],
+          "properties": {
+            "partOfPattern": {
+              "type": "string"
+            },
+            "dependsOnPattern": {
+              "type": "string"
+            },
+            "parallelizable": {
+              "enum": [
+                "No",
+                "Yes"
+              ]
+            },
+            "executionOrderPattern": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "examples": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/example"
+          },
+          "minItems": 4
+        }
+      }
+    },
+    "example": {
+      "type": "object",
+      "required": [
+        "name",
+        "kind",
+        "valid",
+        "body"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "standalone",
+            "sequenced-child"
+          ]
+        },
+        "valid": {
+          "type": "boolean"
+        },
+        "body": {
+          "type": "string"
+        },
+        "expectedMissingRequired": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "expectedMetadataErrors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

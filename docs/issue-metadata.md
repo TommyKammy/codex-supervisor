@@ -6,6 +6,8 @@ It explains which fields `codex-supervisor` reads, how scheduling uses them, and
 
 Trust boundary note: GitHub-authored issue bodies, PR review comments, review summaries, and related GitHub text are execution inputs. They tell the supervisor and Codex what to do next, so they are part of the execution-safety trust boundary rather than neutral metadata.
 
+Machine-readable contract: external tooling can read [`docs/issue-body-contract.schema.json`](issue-body-contract.schema.json) for the portable field list, standalone defaults, sequenced child metadata shape, and validation examples. `issue-lint` remains the enforcement boundary for Markdown parsing and readiness behavior.
+
 ## Start here
 
 If you are new to `codex-supervisor`, do not start by inventing your own structure. Copy one finished example first, then replace the placeholders.
