@@ -352,6 +352,8 @@ Operator prerequisite:
 
 Setup/readiness treats `trustMode` and `executionSafetyMode` as explicit first-run decisions. `status` and `doctor` render the same posture with `trust_mode=...`, `execution_safety_mode=...`, `doctor_posture`, and, for unsandboxed trusted execution, `execution_safety_warning`. Unsandboxed autonomous execution requires trusted GitHub authors as part of the operator-owned posture.
 
+Machine-readable contract: external setup tooling can read [`docs/trust-posture-config.schema.json`](trust-posture-config.schema.json) for the portable trust posture field list, local CI posture states, review provider posture boundary, trust/safety combinations, and dangerous opt-ins. Config loading and setup/readiness remain the enforcement boundary.
+
 | `trustMode` | `executionSafetyMode` | Posture | Operator meaning | Status and doctor vocabulary |
 | --- | --- | --- | --- | --- |
 | `trusted_repo_and_authors` | `operator_gated` | Safe | The repo and GitHub authors are trusted. Use this as an explicit conservative posture marker; trust checks are already satisfied for trusted inputs. | `trust_mode=trusted_repo_and_authors`, `execution_safety_mode=operator_gated`; no unsandboxed warning. |
