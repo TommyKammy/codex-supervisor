@@ -141,9 +141,14 @@ For a shipped provider profile, choose the command block that matches the copied
    node dist/index.js issue-lint <issue-number> --config supervisor.config.nextjs.json
    node dist/index.js doctor --config supervisor.config.nextjs.json
    node dist/index.js status --config supervisor.config.nextjs.json --why
+
+   node dist/index.js issue-lint <issue-number> --config supervisor.config.python-cli.json
+   node dist/index.js doctor --config supervisor.config.python-cli.json
+   node dist/index.js status --config supervisor.config.python-cli.json --why
    ```
 
 The Next.js starter commands above expect an edited copy of `supervisor.config.nextjs.json`, not the shipped starter file. Replace its placeholders before running `issue-lint`, `doctor`, or `status`; see [Getting started](./docs/getting-started.md) for the first-run guidance.
+The Python/CLI starter commands also expect an edited copy of `supervisor.config.python-cli.json`; replace the path and command placeholders with repo-owned setup and pre-PR verification commands first.
 
 On macOS, use `./scripts/start-loop-tmux.sh` to host the loop in a managed `tmux` session, and stop it with `./scripts/stop-loop-tmux.sh`. `./scripts/install-launchd.sh` is not a supported macOS loop path. The tmux scripts use `CODEX_SUPERVISOR_CONFIG`; keep it pointed at the config you validated.
 
@@ -271,6 +276,7 @@ Choose the review provider profile that matches how PR feedback arrives in your 
 - CodeRabbit profile: [supervisor.config.coderabbit.json](./supervisor.config.coderabbit.json)
 - TypeScript/Node starter profile: [supervisor.config.typescript-node.json](./supervisor.config.typescript-node.json), with setup notes and a first issue example in [TypeScript and Node starter profile](./docs/examples/typescript-node.md)
 - Next.js starter profile: [supervisor.config.nextjs.json](./supervisor.config.nextjs.json), with npm local CI mapping and a first issue example in [Next.js starter profile](./docs/examples/nextjs.md)
+- Python/CLI starter profile: [supervisor.config.python-cli.json](./supervisor.config.python-cli.json), with portable command substitution guidance and a first issue example in [Python and CLI starter profile](./docs/examples/python-cli.md)
 
 Each profile is a starting point. Copy the review provider profile you want, then adjust the rest of `supervisor.config.json` for your repo before you run the supervisor.
 
