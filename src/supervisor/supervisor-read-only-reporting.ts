@@ -2,7 +2,10 @@ import { summarizeCadenceDiagnostics, summarizeLocalCiContract, summarizeTrustDi
 import { StateStore } from "../core/state-store";
 import {
   CliOptions,
+  GitHubPullRequest,
   GitHubRateLimitTelemetry,
+  PullRequestCheck,
+  ReviewThread,
   StateLoadFinding,
   SupervisorConfig,
   SupervisorStateFile,
@@ -253,6 +256,11 @@ export async function buildSupervisorStatusReport(args: {
       waitStep: reconciliationSnapshot.waitStep,
     };
   const trackedPrMismatchLines: string[] = [];
+  let latestTrackedPrHydration: {
+    pr: GitHubPullRequest;
+    checks: PullRequestCheck[];
+    reviewThreads: ReviewThread[];
+  } | null = null;
   const trackedMergedBacklogLine = buildTrackedMergedButOpenBacklogDiagnosticLine(state);
 
   for (const record of Object.values(state.issues)) {
@@ -268,6 +276,9 @@ export async function buildSupervisorStatusReport(args: {
 
       const checks = await github.getChecks(pr.number);
       const reviewThreads = await github.getUnresolvedReviewThreads(pr.number);
+      if (statusRecords.latestRecord?.issue_number === record.issue_number) {
+        latestTrackedPrHydration = { pr, checks, reviewThreads };
+      }
       const mismatch = buildTrackedPrMismatch(config, record, pr, checks, reviewThreads);
       if (!mismatch) {
         continue;
@@ -286,9 +297,9 @@ export async function buildSupervisorStatusReport(args: {
       latestRecord: statusRecords.latestRecord,
       latestRecoveryRecord: statusRecords.latestRecoveryRecord,
       trackedIssueCount: statusRecords.trackedIssueCount,
-      pr: null,
-      checks: [],
-      reviewThreads: [],
+      pr: latestTrackedPrHydration?.pr ?? null,
+      checks: latestTrackedPrHydration?.checks ?? [],
+      reviewThreads: latestTrackedPrHydration?.reviewThreads ?? [],
       manualReviewThreads,
       configuredBotReviewThreads,
       pendingBotReviewThreads,

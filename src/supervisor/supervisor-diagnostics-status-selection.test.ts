@@ -550,6 +550,113 @@ test("renderSupervisorStatusDto maps stale configured-bot remediation to the roo
   );
 });
 
+test("status --why classifies current-head processed configured-bot success as stale metadata remediation while idle", async (t) => {
+  const fixture = await createSupervisorFixture();
+  fixture.config.reviewBotLogins = ["coderabbitai", "coderabbitai[bot]"];
+  const issueNumber = 365;
+  const prNumber = 372;
+  const headSha = "5de0d3844468d4a77cab512f8dcbe46171166c3a";
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        branch: "codex/issue-365",
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: prNumber,
+        blocked_reason: "stale_review_bot",
+        last_head_sha: headSha,
+        processed_review_thread_ids: [`thread-365@${headSha}`],
+        processed_review_thread_fingerprints: [`thread-365@${headSha}#comment-365`],
+        last_failure_signature: "stalled-bot:thread-365",
+        last_failure_context: {
+          category: "manual",
+          summary:
+            "1 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
+          signature: "stalled-bot:thread-365",
+          command: null,
+          details: ["reviewer=coderabbitai[bot] file=src/query.ts line=12 processed_on_current_head=yes"],
+          url: "https://example.test/pr/372#discussion_r365",
+          updated_at: "2026-04-25T00:20:00Z",
+        },
+        updated_at: "2026-04-25T07:20:00Z",
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "SafeQuery shaped stale configured bot metadata",
+    body: executionReadyBody("Classify stale configured-bot metadata precisely while idle."),
+    createdAt: "2026-04-25T00:00:00Z",
+    updatedAt: "2026-04-25T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const pr = createPullRequest({
+    number: prNumber,
+    headRefName: "codex/issue-365",
+    headRefOid: headSha,
+    currentHeadCiGreenAt: "2026-04-25T00:10:00Z",
+    configuredBotCurrentHeadObservedAt: "2026-04-25T00:11:00Z",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+  const staleMetadataThread = {
+    id: "thread-365",
+    isResolved: false,
+    isOutdated: false,
+    path: "src/query.ts",
+    line: 12,
+    comments: {
+      nodes: [
+        {
+          id: "comment-365",
+          body: "Please address this stale finding.",
+          createdAt: "2026-04-25T00:05:00Z",
+          url: "https://example.test/pr/372#discussion_r365",
+          author: {
+            login: "coderabbitai[bot]",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [trackedIssue],
+    listAllIssues: async () => [trackedIssue],
+    getPullRequestIfExists: async () => pr,
+    getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => [staleMetadataThread],
+  };
+
+  const status = await supervisor.status({ why: true });
+
+  assert.match(status, /^No active issue\.$/m);
+  assert.match(
+    status,
+    /^no_active_tracked_record issue=#365 classification=stale_review_bot_remediation state=blocked reason=metadata_only$/m,
+  );
+  assert.match(
+    status,
+    /^stale_review_bot_remediation issue=#365 pr=#372 reason=stale_review_bot code_ci=green current_head_sha=5de0d3844468d4a77cab512f8dcbe46171166c3a processed_on_current_head=yes classification=metadata_only review_thread_url=https:\/\/example\.test\/pr\/372#discussion_r365 manual_next_step=inspect_exact_review_thread_then_resolve_or_leave_manual_note summary=stale_configured_bot_thread_metadata_only$/m,
+  );
+  assert.match(status, /^operator_action action=resolve_stale_review_bot /m);
+  assert.doesNotMatch(status, /provider_outage_suspected/);
+  assert.doesNotMatch(status, /stale_review_bot_provider_signal_missing/);
+});
+
 test("renderSupervisorStatusDto sanitizes loop runtime host and timestamp tokens", () => {
   const status = renderSupervisorStatusDto({
     gsdSummary: null,

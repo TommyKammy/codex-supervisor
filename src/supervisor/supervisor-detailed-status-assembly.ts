@@ -74,6 +74,7 @@ export type NoActiveTrackedRecordClassification =
   | "repair_already_queued"
   | "safe_to_ignore"
   | "manual_review_required"
+  | "stale_review_bot_remediation"
   | "stale_already_handled"
   | "provider_outage_suspected";
 
@@ -99,6 +100,7 @@ function activeTrackedWorkState(record: IssueRunRecord): boolean {
 export function classifyNoActiveTrackedRecord(
   config: BuildDetailedStatusModelArgs["config"],
   record: IssueRunRecord,
+  staleReviewBotRemediation?: ReturnType<typeof buildStaleReviewBotRemediation>,
 ): { classification: NoActiveTrackedRecordClassification; reason: string } {
   if (record.state === "done") {
     return {
@@ -124,6 +126,13 @@ export function classifyNoActiveTrackedRecord(
   }
 
   if (record.blocked_reason === "stale_review_bot") {
+    if (staleReviewBotRemediation) {
+      return {
+        classification: "stale_review_bot_remediation",
+        reason: staleReviewBotRemediation.classification,
+      };
+    }
+
     const recoverability = classifyStaleReviewBotRecoverability(record, config);
     if (recoverability === "stale_already_handled") {
       return {
@@ -164,12 +173,13 @@ export function classifyNoActiveTrackedRecord(
 export function formatNoActiveTrackedRecordClassificationLine(
   config: BuildDetailedStatusModelArgs["config"],
   record: IssueRunRecord | null,
+  staleReviewBotRemediation?: ReturnType<typeof buildStaleReviewBotRemediation>,
 ): string | null {
   if (!record) {
     return null;
   }
 
-  const classification = classifyNoActiveTrackedRecord(config, record);
+  const classification = classifyNoActiveTrackedRecord(config, record, staleReviewBotRemediation);
   return [
     "no_active_tracked_record",
     `issue=#${record.issue_number}`,
@@ -180,17 +190,39 @@ export function formatNoActiveTrackedRecordClassificationLine(
 }
 
 export function buildInactiveDetailedStatusLines(
-  args: Pick<BuildDetailedStatusModelArgs, "config" | "latestRecord" | "latestRecoveryRecord" | "trackedIssueCount">,
+  args: Pick<
+    BuildDetailedStatusModelArgs,
+    "config" | "latestRecord" | "latestRecoveryRecord" | "trackedIssueCount" | "pr" | "checks" | "reviewThreads"
+  >,
 ): string[] {
-  const { config, latestRecord, latestRecoveryRecord = null, trackedIssueCount } = args;
+  const { config, latestRecord, latestRecoveryRecord = null, trackedIssueCount, pr, checks, reviewThreads } = args;
   const lines = [
     "No active issue.",
     `tracked_issues=${trackedIssueCount}`,
     `latest_record=${formatRecentRecord(latestRecord)}`,
   ];
-  const classificationLine = formatNoActiveTrackedRecordClassificationLine(config, latestRecord);
+  let staleReviewBotRemediation: ReturnType<typeof buildStaleReviewBotRemediation> = null;
+  if (
+    latestRecord &&
+    pr &&
+    latestRecord.last_head_sha === pr.headRefOid &&
+    pr.configuredBotCurrentHeadObservedAt &&
+    pr.configuredBotCurrentHeadStatusState === "SUCCESS"
+  ) {
+    staleReviewBotRemediation = buildStaleReviewBotRemediation({
+      config,
+      record: latestRecord,
+      pr,
+      checks,
+      reviewThreads,
+    });
+  }
+  const classificationLine = formatNoActiveTrackedRecordClassificationLine(config, latestRecord, staleReviewBotRemediation);
   if (classificationLine) {
     lines.push(classificationLine);
+  }
+  if (staleReviewBotRemediation) {
+    lines.push(formatStaleReviewBotRemediationLine(staleReviewBotRemediation));
   }
 
   if (latestRecoveryRecord?.last_recovery_reason && latestRecoveryRecord.last_recovery_at) {
