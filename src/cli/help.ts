@@ -59,5 +59,7 @@ Replay commands:
 
 Web-oriented commands:
   web                               Start the operator dashboard.
+  node dist/index.js web --config <supervisor-config-path>
+                                    # open /setup
 `;
 }
