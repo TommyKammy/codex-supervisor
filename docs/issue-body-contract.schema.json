@@ -3,6 +3,19 @@
   "$id": "https://github.com/TommyKammy/codex-supervisor/docs/issue-body-contract.schema.json",
   "contractName": "codex-supervisor.issue-body-contract",
   "contractVersion": 1,
+  "compatibilityPolicy": {
+    "versionField": "contractVersion",
+    "enforcementBoundary": "issue-lint and docs/issue-metadata.md remain the runtime enforcement boundary for issue body parsing and readiness.",
+    "additiveChanges": [
+      "Adding optional examples, validation notes, or non-required descriptive fields is additive when issue-lint behavior remains compatible.",
+      "Adding optional metadata documentation is additive only when existing valid issue bodies continue to pass issue-lint."
+    ],
+    "breakingChanges": [
+      "Removing or renaming required sections, scheduling metadata, defaults, or example fields is breaking.",
+      "Changing issue-lint semantics so previously valid codex issue bodies fail requires a new contractVersion and release note."
+    ],
+    "stabilityLimit": "The artifact is versioned with repo tags and does not claim stability beyond the existing runtime issue-lint enforcement."
+  },
   "canonicalGuide": "docs/issue-metadata.md",
   "description": "Portable contract for execution-ready codex issue bodies. Markdown parsing and readiness decisions remain enforced by issue-lint; this artifact publishes the required sections, scheduling metadata, defaults, and validation examples for external tooling.",
   "requiredSections": [

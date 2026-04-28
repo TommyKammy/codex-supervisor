@@ -10,7 +10,7 @@ External users adopt first a templates/docs bundle inside this repository:
 
 - `docs/quality-kit.md` as the primitive map
 - issue metadata docs and the codex execution-ready issue template
-- schema links for the issue body, evidence timeline, operator actions, trust posture, and automation boundary
+- schema links for the issue body, evidence timeline, operator actions, trust posture, supervised state machine, and automation boundary
 - demo and validation docs that show the workflow without requiring a new runtime
 
 This is the smallest package surface because it is copy/paste usable, versioned with the implementation that backs it, and discoverable from the README. It gives a new repo enough structure to author a first supervised issue and validation plan without installing an extra package or trusting a new authority boundary.
@@ -19,7 +19,7 @@ This is the smallest package surface because it is copy/paste usable, versioned 
 
 | Shape | What ships | Adoption friction | Versioning | Release burden | Docs discoverability | New-repo reuse |
 | --- | --- | --- | --- | --- | --- | --- |
-| repo-owned schema collection | Existing JSON schemas plus links from the quality kit map | Low for readers already in this repo; medium for users who only want templates | Versioned with this repo tag | Low while schemas remain implementation-backed | Good when linked from README and docs map | Good for validation references, weaker for first-issue copy/paste |
+| repo-owned schema collection | Existing JSON schemas plus links from the quality kit map | Low for readers already in this repo; medium for users who only want templates | Versioned with this repo tag and each artifact's compatibility policy | Low while schemas remain implementation-backed | Good when linked from README and docs map | Good for validation references, weaker for first-issue copy/paste |
 | npm package metadata | A named package that exposes schemas, template paths, and version metadata | Medium: users must install a package before they see value | Clear semver once package consumers exist | Medium to high: package publish, changelog, provenance, and deprecation policy | Good in package registries, weaker inside docs-first onboarding | Good for automated consumers, premature for manual adopters |
 | templates/docs bundle | Public docs, issue template, checklist, and schema links in this repo | Low: read, copy, adapt, and run repo-relative commands | Versioned with this repo tag and release notes | Low: documentation review plus existing path/link checks | Strong from README, demo docs, and validation checklist | Strong for a first supervised issue and starter repo adoption |
 

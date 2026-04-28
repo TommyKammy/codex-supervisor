@@ -4,6 +4,19 @@
   "$ref": "#/$defs/trustPostureConfigContract",
   "contractName": "codex-supervisor.trust-posture-config",
   "contractVersion": 1,
+  "compatibilityPolicy": {
+    "versionField": "contractVersion",
+    "enforcementBoundary": "config-loader and setup-readiness remain the runtime enforcement boundary for trust posture fields.",
+    "additiveChanges": [
+      "Adding optional config fields, optional setup-readiness detail, or new advisory posture descriptions is additive when existing configs load unchanged.",
+      "Adding new enum values is additive only when the config loader, setup-readiness summary, and docs describe the safe default behavior."
+    ],
+    "breakingChanges": [
+      "Removing, renaming, or making existing config fields required is breaking.",
+      "Changing defaults, dangerous opt-in meaning, or setup-readiness blocking behavior is a semantic breaking change."
+    ],
+    "stabilityLimit": "The artifact is versioned with repo tags and does not claim stability beyond existing runtime config parsing and setup-readiness behavior."
+  },
   "canonicalGuide": "docs/configuration.md",
   "enforcementBoundary": "config-loader-and-setup-readiness",
   "setupReadinessEndpoint": "GET /api/setup-readiness",
