@@ -15,6 +15,8 @@ External users adopt first a templates/docs bundle inside this repository:
 
 This is the smallest package surface because it is copy/paste usable, versioned with the implementation that backs it, and discoverable from the README. It gives a new repo enough structure to author a first supervised issue and validation plan without installing an extra package or trusting a new authority boundary.
 
+For this phase, `codex-supervisor` is not published as an npm package. The package metadata remains private and repo-linked so local CLI commands stay coherent without advertising a stable npm package API.
+
 ## Viable Package Shapes
 
 | Shape | What ships | Adoption friction | Versioning | Release burden | Docs discoverability | New-repo reuse |
