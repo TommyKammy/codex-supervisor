@@ -20,6 +20,6 @@ Use this template to document the repo-owned local verification gate that must p
 
 1. Add or identify the repo-owned local CI command.
 2. Run the command locally from `<repo-root>`.
-3. Configure the supervisor profile with `<repo-owned-local-ci-command>`.
+3. Configure the supervisor profile field `<local-ci-config-field>` with `<repo-owned-local-ci-command>`.
 4. Keep the focused issue verification command in each issue body.
 5. Record the command result in the issue or evidence timeline before promotion.

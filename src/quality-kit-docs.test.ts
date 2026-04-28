@@ -11,6 +11,10 @@ async function readRepoFile(relativePath: string): Promise<string> {
   return fs.readFile(path.join(process.cwd(), relativePath), "utf8");
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 test("quality kit map publishes the primitive overview and source anchors", async () => {
   const qualityKit = await readRepoFile(qualityKitPath);
 
@@ -178,7 +182,7 @@ test("quality kit publishes path-safe copyable primitive templates", async () =>
 
   for (const templateFile of templateFiles) {
     const template = await readRepoFile(path.join(qualityKitTemplatesPath, templateFile));
-    assert.match(templateIndex, new RegExp(`\\(${templateFile}\\)`), `expected index to link ${templateFile}`);
+    assert.match(templateIndex, new RegExp(`\\(${escapeRegExp(templateFile)}\\)`), `expected index to link ${templateFile}`);
     assert.match(template, /<[^>\n]+>/, `expected ${templateFile} to use placeholders`);
     assert.doesNotMatch(template, /\/Users\/[A-Za-z0-9._-]+\//);
     assert.doesNotMatch(template, /\/home\/[A-Za-z0-9._-]+\//);

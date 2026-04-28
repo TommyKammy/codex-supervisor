@@ -20,7 +20,7 @@ Use this template to make the execution-safety posture explicit before autonomou
 
 ## Required checks
 
-- Confirm the supervisor config declares the intended trust posture.
-- Confirm issue-lint passes for the target issue.
-- Confirm the focused issue verification and local CI gate are available.
-- Confirm review and operator action boundaries are documented before promoting the PR.
+- Verify the supervisor config declares the intended trust posture.
+- Run issue-lint against the target issue.
+- Ensure focused issue verification and the local CI gate are available.
+- Document review and operator action boundaries before promoting the PR.
