@@ -1,6 +1,6 @@
 {
   "name": "codex-supervisor",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "private": true,
   "description": "Issue-driven Codex quality layer for supervised GitHub PR delivery.",
   "license": "MIT",
