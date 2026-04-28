@@ -17,7 +17,7 @@ The public package surface is the docs-first bundle recommended by the [Quality 
 - `docs/supervised-automation-state-machine.schema.json`: operator-facing lifecycle vocabulary mapped to runtime `RunState`
 - `docs/codex-automation-connector-boundary.schema.json`: Codex app Automation boundary for orchestration without executor authority
 - `docs/templates/quality-primitives/`: [quality primitive templates](./templates/quality-primitives/README.md) for copying the issue contract, AGENTS.md guidance, local CI gate, evidence timeline, trust posture, and operator action vocabulary into a new repo
-- `docs/examples/self-contained-demo-scenario.md`, `docs/examples/phase-16-dogfood-pr-walkthrough.md`, and `docs/public-demo-validation-checklist.md`: public examples and publishable validation checklist
+- `docs/examples/self-contained-demo-scenario.md`, `docs/examples/phase-16-dogfood-pr-walkthrough.md`, [Quality gate examples](./examples/quality-gate-examples.md), and `docs/public-demo-validation-checklist.md`: public examples and publishable validation checklist
 
 This surface is intentionally repo-relative and placeholder-driven. It does not publish a cloud service, does not publish a WebUI package, does not publish a provider SDK, and does not expand executor authority beyond the local `codex-supervisor` loop.
 
@@ -60,6 +60,7 @@ Backed by:
 - [Configuration reference](./configuration.md)
 - [Local review reference](./local-review.md)
 - [Release readiness checklist](./validation-checklist.md)
+- [Quality gate examples](./examples/quality-gate-examples.md)
 - `src/local-ci.test.ts`
 - `src/tracked-pr-local-ci-publication-gate.test.ts`
 - `src/post-turn-pull-request.test.ts`
@@ -84,6 +85,7 @@ The Evidence Timeline records what happened so an operator, reviewer, or future 
 Backed by:
 
 - [evidence timeline](./evidence-timeline.schema.json)
+- [Quality gate examples](./examples/quality-gate-examples.md)
 - [self-contained demo scenario](./examples/self-contained-demo-scenario.md)
 - [Phase 16 dogfood PR walkthrough](./examples/phase-16-dogfood-pr-walkthrough.md)
 - `src/timeline-artifacts.test.ts`

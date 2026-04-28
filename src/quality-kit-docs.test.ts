@@ -5,6 +5,7 @@ import test from "node:test";
 
 const qualityKitPath = path.join("docs", "quality-kit.md");
 const qualityKitPackageSurfacesPath = path.join("docs", "quality-kit-package-surfaces.md");
+const qualityGateExamplesPath = path.join("docs", "examples", "quality-gate-examples.md");
 const qualityKitTemplatesPath = path.join("docs", "templates", "quality-primitives");
 const publicSchemaArtifactPaths = [
   "docs/issue-body-contract.schema.json",
@@ -266,4 +267,48 @@ test("quality kit publishes path-safe copyable primitive templates", async () =>
   const trustPosture = await readRepoFile(path.join(qualityKitTemplatesPath, "trust-posture.md"));
   assert.match(trustPosture, /GitHub-authored text is untrusted context/i);
   assert.match(trustPosture, /does not grant executor authority/i);
+});
+
+test("quality gate examples publish offline adoption scenarios with safe review boundaries", async () => {
+  const [qualityKit, readme, examples] = await Promise.all([
+    readRepoFile(qualityKitPath),
+    readRepoFile("README.md"),
+    readRepoFile(qualityGateExamplesPath),
+  ]);
+
+  assert.match(qualityKit, /\[Quality gate examples\]\(\.\/examples\/quality-gate-examples\.md\)/);
+  assert.match(readme, /\[Quality gate examples\]\(\.\/docs\/examples\/quality-gate-examples\.md\)/);
+  assert.match(examples, /^# Quality Gate Examples$/m);
+  assert.match(examples, /readable offline/i);
+  assert.match(examples, /do not require live GitHub credentials/i);
+  assert.doesNotMatch(examples, /\/Users\/[A-Za-z0-9._-]+\//);
+  assert.doesNotMatch(examples, /\/home\/[A-Za-z0-9._-]+\//);
+  assert.doesNotMatch(examples, /C:\\Users\\[A-Za-z0-9._-]+\\/);
+
+  for (const heading of [
+    "Local CI",
+    "Path Hygiene",
+    "Review Readiness",
+    "Stale Review Bot Remediation Boundary",
+    "Evidence Timeline",
+  ]) {
+    assert.match(examples, new RegExp(`^## ${heading}$`, "m"), `expected ${heading} example`);
+  }
+
+  for (const command of [
+    "npm run verify:paths",
+    "npm run verify:subprocess-safety",
+    "npm run build",
+    "node dist/index.js issue-lint <issue-number> --config <supervisor-config-path>",
+    "node dist/index.js explain <issue-number> --timeline --config <supervisor-config-path>",
+  ]) {
+    assert.match(examples, new RegExp(escapeRegExp(command)), `expected ${command}`);
+  }
+
+  assert.match(examples, /SafeQuery-shaped metadata-only stale review bot/i);
+  assert.match(examples, /metadata-only handled review state/i);
+  assert.match(examples, /genuine unresolved provider-signal/i);
+  assert.match(examples, /must stay unresolved/i);
+  assert.doesNotMatch(examples, /metadata-only review auto-resolve/i);
+  assert.doesNotMatch(examples, /provider-outage suppression/i);
 });
