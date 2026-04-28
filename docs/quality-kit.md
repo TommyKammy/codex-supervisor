@@ -15,6 +15,7 @@ The public package surface is the docs-first bundle recommended by the [Quality 
 - `docs/operator-actions.schema.json`: operator action tokens for status, doctor, WebUI, and external automation routing
 - `docs/trust-posture-config.schema.json`: explicit trust and execution-safety posture vocabulary
 - `docs/codex-automation-connector-boundary.schema.json`: Codex app Automation boundary for orchestration without executor authority
+- `docs/templates/quality-primitives/`: [quality primitive templates](./templates/quality-primitives/README.md) for copying the issue contract, AGENTS.md guidance, local CI gate, evidence timeline, trust posture, and operator action vocabulary into a new repo
 - `docs/examples/self-contained-demo-scenario.md`, `docs/examples/phase-16-dogfood-pr-walkthrough.md`, and `docs/public-demo-validation-checklist.md`: public examples and publishable validation checklist
 
 This surface is intentionally repo-relative and placeholder-driven. It does not publish a cloud service, does not publish a WebUI package, does not publish a provider SDK, and does not expand executor authority beyond the local `codex-supervisor` loop.
@@ -107,4 +108,4 @@ Backed by:
 
 ## Reading Path
 
-Start with this map when you need the product primitive vocabulary. Then use [Getting started](./getting-started.md) for first-run operation, [Issue metadata](./issue-metadata.md) for authoring, [Configuration reference](./configuration.md) for trust and local verification posture, and [Architecture](./architecture.md) for the runtime boundaries.
+Start with this map when you need the product primitive vocabulary. For a first safe issue in a new repo, copy [quality primitive templates](./templates/quality-primitives/README.md) starting with `issue-contract.md`, then use [Getting started](./getting-started.md) for first-run operation, [Issue metadata](./issue-metadata.md) for authoring, [Configuration reference](./configuration.md) for trust and local verification posture, and [Architecture](./architecture.md) for the runtime boundaries.
