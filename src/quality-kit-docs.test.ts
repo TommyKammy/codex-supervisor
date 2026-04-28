@@ -5,6 +5,7 @@ import test from "node:test";
 
 const qualityKitPath = path.join("docs", "quality-kit.md");
 const qualityKitAdoptionChecklistPath = path.join("docs", "quality-kit-adoption-checklist.md");
+const kanameBootstrapHandoffPath = path.join("docs", "kaname-bootstrap-handoff.md");
 const qualityKitPackageSurfacesPath = path.join("docs", "quality-kit-package-surfaces.md");
 const qualityGateExamplesPath = path.join("docs", "examples", "quality-gate-examples.md");
 const qualityKitTemplatesPath = path.join("docs", "templates", "quality-primitives");
@@ -369,5 +370,62 @@ test("quality kit publishes an incremental adoption checklist", async () => {
     "npm run build",
   ]) {
     assert.match(checklist, new RegExp(escapeRegExp(command)), `expected ${command}`);
+  }
+});
+
+test("KANAME bootstrap handoff maps foundation issues to quality kit reuse guidance", async () => {
+  const [qualityKit, packageSurfaces, handoff] = await Promise.all([
+    readRepoFile(qualityKitPath),
+    readRepoFile(qualityKitPackageSurfacesPath),
+    readRepoFile(kanameBootstrapHandoffPath),
+  ]);
+
+  assert.match(qualityKit, /\[KANAME bootstrap handoff\]\(\.\/kaname-bootstrap-handoff\.md\)/);
+  assert.match(packageSurfaces, /\[KANAME bootstrap handoff\]\(\.\/kaname-bootstrap-handoff\.md\)/);
+  assert.match(handoff, /^# KANAME Bootstrap Handoff$/m);
+  assert.match(handoff, /docs-only/i);
+  assert.match(handoff, /does not create the KANAME repository/i);
+  assert.match(handoff, /does not broaden `codex-supervisor` runtime authority/i);
+  assert.doesNotMatch(handoff, /\/Users\/[A-Za-z0-9._-]+\//);
+  assert.doesNotMatch(handoff, /\/home\/[A-Za-z0-9._-]+\//);
+  assert.doesNotMatch(handoff, /C:\\Users\\[A-Za-z0-9._-]+\\/);
+
+  for (const heading of [
+    "Handoff Boundary",
+    "Foundation Issue Map",
+    "Carry-Over Contracts",
+    "KANAME-Specific Differences",
+    "Verification",
+  ]) {
+    assert.match(handoff, new RegExp(`^## ${heading}$`, "m"), `expected ${heading} section`);
+  }
+
+  for (const issueId of ["KANAME-000", "KANAME-001", "KANAME-002", "KANAME-003", "KANAME-004", "KANAME-005", "KANAME-006"]) {
+    assert.match(handoff, new RegExp(`\\| ${issueId} \\|`), `expected ${issueId} mapping row`);
+  }
+
+  for (const artifact of [
+    "docs/templates/quality-primitives/issue-contract.md",
+    "docs/templates/quality-primitives/agent-instructions.md",
+    "docs/templates/quality-primitives/local-ci-gate.md",
+    "docs/templates/quality-primitives/evidence-timeline.md",
+    "docs/templates/quality-primitives/trust-posture.md",
+    "docs/templates/quality-primitives/operator-actions.md",
+    ".github/ISSUE_TEMPLATE/codex-execution-ready.md",
+    "docs/issue-body-contract.schema.json",
+    "docs/evidence-timeline.schema.json",
+    "docs/operator-actions.schema.json",
+    "docs/trust-posture-config.schema.json",
+    "docs/codex-automation-connector-boundary.schema.json",
+  ]) {
+    assert.match(handoff, new RegExp(escapeRegExp(artifact)), `expected ${artifact}`);
+  }
+
+  for (const command of [
+    "node dist/index.js issue-lint <issue-number> --config <supervisor-config-path>",
+    "npm run verify:paths",
+    "npm run build",
+  ]) {
+    assert.match(handoff, new RegExp(escapeRegExp(command)), `expected ${command}`);
   }
 });

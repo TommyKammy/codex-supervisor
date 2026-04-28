@@ -31,7 +31,7 @@ KANAME bootstrap bundle is deferred.
 
 It could eventually package opinionated starter materials for a new KANAME repository, including a quality-kit docs subset, issue templates, and bootstrap checklist. That shape has useful KANAME bootstrap reuse, but it is too broad for this phase because it implies new-repo creation decisions, repo naming, lifecycle ownership, and possibly dedicated release automation.
 
-Keep KANAME bootstrap reuse as an input to the templates/docs bundle: the current docs should stay easy to copy into a future KANAME repo, but this work must avoid creating the KANAME repo or introducing bootstrap runtime behavior.
+Keep KANAME bootstrap reuse as an input to the templates/docs bundle: the current docs should stay easy to copy into a future KANAME repo, but this work must avoid creating the KANAME repo or introducing bootstrap runtime behavior. The [KANAME bootstrap handoff](./kaname-bootstrap-handoff.md) maps that reuse to KANAME-000 through KANAME-006 as a docs-only planning artifact.
 
 ## Tradeoff Summary
 
