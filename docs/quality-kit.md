@@ -20,6 +20,7 @@ The public package surface is the docs-first bundle recommended by the [Quality 
 - `docs/examples/self-contained-demo-scenario.md`, `docs/examples/phase-16-dogfood-pr-walkthrough.md`, [Quality gate examples](./examples/quality-gate-examples.md), and `docs/public-demo-validation-checklist.md`: public examples and publishable validation checklist
 
 This surface is intentionally repo-relative and placeholder-driven. It does not publish a cloud service, does not publish a WebUI package, does not publish a provider SDK, and does not expand executor authority beyond the local `codex-supervisor` loop.
+It also does not publish an npm package or stable package API in this phase; the `package.json` metadata remains private and points readers back to this repository and docs-first surface.
 
 ## Schema Versioning and Compatibility
 

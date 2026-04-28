@@ -50,6 +50,7 @@ If you want the same small change shown as an unstructured session versus a supe
 If you want to see the supervised PR lifecycle annotated with Phase 16's own dogfooding flow, read the [Phase 16 dogfood PR walkthrough](./docs/examples/phase-16-dogfood-pr-walkthrough.md).
 If you need the narrower freshness and durability contracts, use [Architecture](./docs/architecture.md) and [Configuration reference](./docs/configuration.md) instead of treating this README as the full runtime spec.
 If you use Codex app Automation around the loop, keep the [Codex app Automation boundary](./docs/automation.md) as the repo-owned contract: Automation orchestrates and records, while `codex-supervisor` remains the implementation executor.
+The quality kit is a docs-first adoption surface in this repository, not published as an npm package or stable package API; use the repo-relative docs, schemas, templates, and `node dist/index.js ...` CLI commands above as the supported entrypoints.
 
 ## Who It Is For
 
