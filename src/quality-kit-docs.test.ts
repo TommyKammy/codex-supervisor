@@ -4,6 +4,7 @@ import path from "node:path";
 import test from "node:test";
 
 const qualityKitPath = path.join("docs", "quality-kit.md");
+const qualityKitAdoptionChecklistPath = path.join("docs", "quality-kit-adoption-checklist.md");
 const qualityKitPackageSurfacesPath = path.join("docs", "quality-kit-package-surfaces.md");
 const qualityGateExamplesPath = path.join("docs", "examples", "quality-gate-examples.md");
 const qualityKitTemplatesPath = path.join("docs", "templates", "quality-primitives");
@@ -311,4 +312,62 @@ test("quality gate examples publish offline adoption scenarios with safe review 
   assert.match(examples, /must stay unresolved/i);
   assert.doesNotMatch(examples, /metadata-only review auto-resolve/i);
   assert.doesNotMatch(examples, /provider-outage suppression/i);
+});
+
+test("quality kit publishes an incremental adoption checklist", async () => {
+  const [qualityKit, readme, checklist] = await Promise.all([
+    readRepoFile(qualityKitPath),
+    readRepoFile("README.md"),
+    readRepoFile(qualityKitAdoptionChecklistPath),
+  ]);
+
+  assert.match(qualityKit, /\[Quality kit adoption checklist\]\(\.\/quality-kit-adoption-checklist\.md\)/);
+  assert.match(readme, /\[Quality kit adoption checklist\]\(\.\/docs\/quality-kit-adoption-checklist\.md\)/);
+  assert.match(checklist, /^# Quality Kit Adoption Checklist$/m);
+  assert.match(checklist, /one repository and one safe issue/i);
+  assert.match(checklist, /does not require enabling broader automation/i);
+  assert.match(checklist, /does not expand executor authority/i);
+  assert.match(checklist, /rollback/i);
+  assert.match(checklist, /operator decision/i);
+  assert.doesNotMatch(checklist, /\/Users\/[A-Za-z0-9._-]+\//);
+  assert.doesNotMatch(checklist, /\/home\/[A-Za-z0-9._-]+\//);
+  assert.doesNotMatch(checklist, /C:\\Users\\[A-Za-z0-9._-]+\\/);
+
+  for (const heading of [
+    "Adoption Boundary",
+    "Prerequisites",
+    "First Safe Issue",
+    "Local CI Expectations",
+    "Review Provider Expectations",
+    "Trust Posture",
+    "Operator Decision Points",
+    "Rollback",
+    "Durable History Writeback",
+    "Verification",
+  ]) {
+    assert.match(checklist, new RegExp(`^## ${heading}$`, "m"), `expected ${heading} section`);
+  }
+
+  for (const link of [
+    "[AI Coding Quality Kit](./quality-kit.md)",
+    "[quality primitive templates](./templates/quality-primitives/README.md)",
+    "[codex issue template](../.github/ISSUE_TEMPLATE/codex-execution-ready.md)",
+    "[Issue metadata](./issue-metadata.md)",
+    "[Configuration reference](./configuration.md)",
+    "[Quality gate examples](./examples/quality-gate-examples.md)",
+    "[TypeScript and Node starter profile](./examples/typescript-node.md)",
+    "[Next.js starter profile](./examples/nextjs.md)",
+    "[Python and CLI starter profile](./examples/python-cli.md)",
+  ]) {
+    assert.ok(checklist.includes(link), `expected checklist to link ${link}`);
+  }
+
+  for (const command of [
+    "node dist/index.js doctor --config <supervisor-config-path>",
+    "node dist/index.js issue-lint <issue-number> --config <supervisor-config-path>",
+    "npm run verify:paths",
+    "npm run build",
+  ]) {
+    assert.match(checklist, new RegExp(escapeRegExp(command)), `expected ${command}`);
+  }
 });
