@@ -4,6 +4,31 @@ This public product overview maps the implemented `codex-supervisor` primitives 
 
 The kit is intentionally small. It does not introduce new runtime primitives, and it points to existing artifacts instead of restating Phase 15 schema content.
 
+## Public Package Surface
+
+The public package surface is the docs-first bundle recommended by the [Quality kit package surfaces](./quality-kit-package-surfaces.md) Phase 18.1 package-surface comparison. External adopters should treat these artifacts as the stable, copyable quality-kit surface:
+
+- `docs/quality-kit.md`: primitive map and adoption entrypoint
+- `docs/issue-metadata.md` and `.github/ISSUE_TEMPLATE/codex-execution-ready.md`: issue authoring contract and copyable execution-ready template
+- `docs/issue-body-contract.schema.json`: machine-readable issue-body field contract
+- `docs/evidence-timeline.schema.json`: evidence timeline vocabulary for audit and handoff records
+- `docs/operator-actions.schema.json`: operator action tokens for status, doctor, WebUI, and external automation routing
+- `docs/trust-posture-config.schema.json`: explicit trust and execution-safety posture vocabulary
+- `docs/codex-automation-connector-boundary.schema.json`: Codex app Automation boundary for orchestration without executor authority
+- `docs/examples/self-contained-demo-scenario.md`, `docs/examples/phase-16-dogfood-pr-walkthrough.md`, and `docs/public-demo-validation-checklist.md`: public examples and publishable validation checklist
+
+This surface is intentionally repo-relative and placeholder-driven. It does not publish a cloud service, does not publish a WebUI package, does not publish a provider SDK, and does not expand executor authority beyond the local `codex-supervisor` loop.
+
+## Internal-Only Surfaces
+
+The following surfaces may support or validate the kit, but external adopters should not depend on them as package contracts:
+
+- `src/**/*.ts`, `src/**/*.test.ts`, and `dist/`: implementation, regression tests, and compiled runtime output
+- `.codex-supervisor/` and `.local/`: issue-local supervisor state, journals, generated memory, and host-local runtime data
+- WebUI routes, backend DTO shapes, and browser helper internals beyond the published operator action and automation-boundary schema artifacts
+- provider-specific runner internals, review-provider adapters, and local CI orchestration details that are configured through `supervisor.config.json`
+- KANAME bootstrap bundle or KANAME handoff artifacts: future reusable inputs may consume this docs-first bundle, but this phase does not publish a KANAME repository scaffold, lifecycle owner, release workflow, or bootstrap runtime
+
 ## Issue Contract
 
 An Issue Contract turns a GitHub issue into a bounded execution input. The issue must name the behavior delta, scope, acceptance criteria, verification, dependency posture, parallelization posture, and execution order before the supervisor treats it as runnable.

@@ -113,3 +113,44 @@ test("quality kit package surface comparison names the smallest adoption surface
   assert.match(comparison, /no authority expansion/i);
   assert.match(readme, /\[Quality kit package surfaces\]\(\.\/docs\/quality-kit-package-surfaces\.md\)/i);
 });
+
+test("quality kit entrypoint defines the public package surface boundary", async () => {
+  const qualityKit = await readRepoFile(qualityKitPath);
+  const readme = await readRepoFile("README.md");
+
+  assert.match(qualityKit, /^## Public Package Surface$/m);
+  assert.match(qualityKit, /^## Internal-Only Surfaces$/m);
+  assert.match(qualityKit, /Phase 18\.1 package-surface comparison/i);
+  assert.match(qualityKit, /\[Quality kit package surfaces\]\(\.\/quality-kit-package-surfaces\.md\)/);
+
+  for (const publicArtifact of [
+    "docs/quality-kit.md",
+    ".github/ISSUE_TEMPLATE/codex-execution-ready.md",
+    "docs/issue-body-contract.schema.json",
+    "docs/evidence-timeline.schema.json",
+    "docs/operator-actions.schema.json",
+    "docs/trust-posture-config.schema.json",
+    "docs/codex-automation-connector-boundary.schema.json",
+  ]) {
+    assert.match(qualityKit, new RegExp(publicArtifact.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+
+  for (const internalSurface of [
+    "src/**/*.ts",
+    "dist/",
+    ".codex-supervisor/",
+    ".local/",
+    "WebUI",
+    "KANAME",
+  ]) {
+    assert.match(qualityKit, new RegExp(internalSurface.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+
+  assert.match(qualityKit, /does not publish a cloud service/i);
+  assert.match(qualityKit, /does not publish a provider SDK/i);
+  assert.match(qualityKit, /does not expand executor authority/i);
+  assert.match(
+    readme,
+    /\[AI coding quality kit\]\(\.\/docs\/quality-kit\.md\): compact primitive map and public package surface/i,
+  );
+});
