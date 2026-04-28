@@ -5,6 +5,7 @@ import test from "node:test";
 
 const qualityKitPath = path.join("docs", "quality-kit.md");
 const qualityKitPackageSurfacesPath = path.join("docs", "quality-kit-package-surfaces.md");
+const qualityKitTemplatesPath = path.join("docs", "templates", "quality-primitives");
 
 async function readRepoFile(relativePath: string): Promise<string> {
   return fs.readFile(path.join(process.cwd(), relativePath), "utf8");
@@ -153,4 +154,53 @@ test("quality kit entrypoint defines the public package surface boundary", async
     readme,
     /\[AI coding quality kit\]\(\.\/docs\/quality-kit\.md\): compact primitive map and public package surface/i,
   );
+});
+
+test("quality kit publishes path-safe copyable primitive templates", async () => {
+  const qualityKit = await readRepoFile(qualityKitPath);
+  const templateIndex = await readRepoFile(path.join(qualityKitTemplatesPath, "README.md"));
+  const templateFiles = [
+    "issue-contract.md",
+    "agent-instructions.md",
+    "local-ci-gate.md",
+    "evidence-timeline.md",
+    "trust-posture.md",
+    "operator-actions.md",
+  ];
+
+  assert.match(qualityKit, /\[quality primitive templates\]\(\.\/templates\/quality-primitives\/README\.md\)/i);
+  assert.match(templateIndex, /^# Quality Primitive Templates$/m);
+  assert.match(templateIndex, /start with `issue-contract\.md` for a first safe issue/i);
+  assert.match(templateIndex, /one adoption primitive/i);
+  assert.doesNotMatch(templateIndex, /\/Users\/[A-Za-z0-9._-]+\//);
+  assert.doesNotMatch(templateIndex, /\/home\/[A-Za-z0-9._-]+\//);
+  assert.doesNotMatch(templateIndex, /C:\\Users\\[A-Za-z0-9._-]+\\/);
+
+  for (const templateFile of templateFiles) {
+    const template = await readRepoFile(path.join(qualityKitTemplatesPath, templateFile));
+    assert.match(templateIndex, new RegExp(`\\(${templateFile}\\)`), `expected index to link ${templateFile}`);
+    assert.match(template, /<[^>\n]+>/, `expected ${templateFile} to use placeholders`);
+    assert.doesNotMatch(template, /\/Users\/[A-Za-z0-9._-]+\//);
+    assert.doesNotMatch(template, /\/home\/[A-Za-z0-9._-]+\//);
+    assert.doesNotMatch(template, /C:\\Users\\[A-Za-z0-9._-]+\\/);
+  }
+
+  const issueContract = await readRepoFile(path.join(qualityKitTemplatesPath, "issue-contract.md"));
+  assert.match(issueContract, /^## Summary$/m);
+  assert.match(issueContract, /^## Scope$/m);
+  assert.match(issueContract, /^## Acceptance criteria$/m);
+  assert.match(issueContract, /^## Verification$/m);
+  assert.match(issueContract, /^Depends on: none$/m);
+  assert.match(issueContract, /^Parallelizable: No$/m);
+  assert.match(issueContract, /^## Execution order$/m);
+  assert.match(issueContract, /^1 of 1$/m);
+  assert.match(issueContract, /node dist\/index\.js issue-lint <issue-number> --config <supervisor-config-path>/);
+
+  const localCiGate = await readRepoFile(path.join(qualityKitTemplatesPath, "local-ci-gate.md"));
+  assert.match(localCiGate, /local CI must not replace issue-lint/i);
+  assert.match(localCiGate, /review/i);
+
+  const trustPosture = await readRepoFile(path.join(qualityKitTemplatesPath, "trust-posture.md"));
+  assert.match(trustPosture, /GitHub-authored text is untrusted context/i);
+  assert.match(trustPosture, /does not grant executor authority/i);
 });
