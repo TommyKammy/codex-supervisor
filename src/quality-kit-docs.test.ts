@@ -6,6 +6,14 @@ import test from "node:test";
 const qualityKitPath = path.join("docs", "quality-kit.md");
 const qualityKitPackageSurfacesPath = path.join("docs", "quality-kit-package-surfaces.md");
 const qualityKitTemplatesPath = path.join("docs", "templates", "quality-primitives");
+const publicSchemaArtifactPaths = [
+  "docs/issue-body-contract.schema.json",
+  "docs/trust-posture-config.schema.json",
+  "docs/operator-actions.schema.json",
+  "docs/evidence-timeline.schema.json",
+  "docs/supervised-automation-state-machine.schema.json",
+  "docs/codex-automation-connector-boundary.schema.json",
+];
 
 async function readRepoFile(relativePath: string): Promise<string> {
   return fs.readFile(path.join(process.cwd(), relativePath), "utf8");
@@ -135,6 +143,7 @@ test("quality kit entrypoint defines the public package surface boundary", async
     "docs/evidence-timeline.schema.json",
     "docs/operator-actions.schema.json",
     "docs/trust-posture-config.schema.json",
+    "docs/supervised-automation-state-machine.schema.json",
     "docs/codex-automation-connector-boundary.schema.json",
   ]) {
     assert.match(qualityKit, new RegExp(publicArtifact.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
@@ -158,6 +167,56 @@ test("quality kit entrypoint defines the public package surface boundary", async
     readme,
     /\[AI coding quality kit\]\(\.\/docs\/quality-kit\.md\): compact primitive map and public package surface/i,
   );
+});
+
+test("public schema artifacts publish versioning and compatibility guidance", async () => {
+  const qualityKit = await readRepoFile(qualityKitPath);
+
+  assert.match(qualityKit, /^## Schema Versioning and Compatibility$/m);
+
+  for (const artifactPath of publicSchemaArtifactPaths) {
+    const source = await readRepoFile(artifactPath);
+    const artifact = JSON.parse(source) as {
+      contractVersion?: number;
+      artifactVersion?: number;
+      compatibilityPolicy?: {
+        versionField?: string;
+        enforcementBoundary?: string;
+        additiveChanges?: string[];
+        breakingChanges?: string[];
+        stabilityLimit?: string;
+      };
+    };
+    const versionField = artifact.contractVersion === undefined ? "artifactVersion" : "contractVersion";
+
+    assert.equal(typeof artifact[versionField], "number", `${artifactPath} must expose ${versionField}`);
+    assert.equal(
+      artifact.compatibilityPolicy?.versionField,
+      versionField,
+      `${artifactPath} must identify its version field`,
+    );
+    assert.match(
+      artifact.compatibilityPolicy?.enforcementBoundary ?? "",
+      /issue-lint|config-loader|setup-readiness|src\/operator-actions\.ts|IssueRunTimelineExport|RunState|codex-supervisor-executor-safety-gates/i,
+      `${artifactPath} must anchor compatibility to an existing enforcement boundary`,
+    );
+    assert.ok(
+      (artifact.compatibilityPolicy?.additiveChanges ?? []).some((note) => /additive|optional|new fields|new enum values/i.test(note)),
+      `${artifactPath} must explain additive changes`,
+    );
+    assert.ok(
+      (artifact.compatibilityPolicy?.breakingChanges ?? []).some((note) => /breaking|required|remov|rename|semantic/i.test(note)),
+      `${artifactPath} must explain breaking changes`,
+    );
+    assert.match(
+      artifact.compatibilityPolicy?.stabilityLimit ?? "",
+      /does not claim|not claim|no runtime enforcement|existing runtime|repo tag/i,
+      `${artifactPath} must avoid overstating schema stability`,
+    );
+    assert.doesNotMatch(source, /\/Users\/[A-Za-z0-9._-]+\//);
+    assert.doesNotMatch(source, /\/home\/[A-Za-z0-9._-]+\//);
+    assert.doesNotMatch(source, /C:\\Users\\[A-Za-z0-9._-]+\\/);
+  }
 });
 
 test("quality kit publishes path-safe copyable primitive templates", async () => {

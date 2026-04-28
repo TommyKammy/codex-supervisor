@@ -14,11 +14,20 @@ The public package surface is the docs-first bundle recommended by the [Quality 
 - `docs/evidence-timeline.schema.json`: evidence timeline vocabulary for audit and handoff records
 - `docs/operator-actions.schema.json`: operator action tokens for status, doctor, WebUI, and external automation routing
 - `docs/trust-posture-config.schema.json`: explicit trust and execution-safety posture vocabulary
+- `docs/supervised-automation-state-machine.schema.json`: operator-facing lifecycle vocabulary mapped to runtime `RunState`
 - `docs/codex-automation-connector-boundary.schema.json`: Codex app Automation boundary for orchestration without executor authority
 - `docs/templates/quality-primitives/`: [quality primitive templates](./templates/quality-primitives/README.md) for copying the issue contract, AGENTS.md guidance, local CI gate, evidence timeline, trust posture, and operator action vocabulary into a new repo
 - `docs/examples/self-contained-demo-scenario.md`, `docs/examples/phase-16-dogfood-pr-walkthrough.md`, and `docs/public-demo-validation-checklist.md`: public examples and publishable validation checklist
 
 This surface is intentionally repo-relative and placeholder-driven. It does not publish a cloud service, does not publish a WebUI package, does not publish a provider SDK, and does not expand executor authority beyond the local `codex-supervisor` loop.
+
+## Schema Versioning and Compatibility
+
+Public schema artifacts are versioned with the repository release that ships them. Artifacts named `contractName` use `contractVersion`; the Codex Automation connector boundary uses `artifactVersion` because it is a boundary artifact rather than a runtime contract. Each schema includes a `compatibilityPolicy` that names the version field, the existing runtime enforcement boundary, additive changes, breaking changes, and the stability limit.
+
+Additive changes are optional fields, optional examples, advisory notes, or new vocabulary values that existing consumers can ignore while the current parser, config loader, status model, or executor boundary keeps the same behavior. Breaking changes include removing or renaming mandatory fields, changing mandatory metadata, changing vocabulary semantics, changing lifecycle meaning, weakening prohibited bypasses, or changing which runtime boundary is authoritative.
+
+These schemas do not claim standalone runtime stability beyond what the repository enforces today. Compatibility remains anchored to existing behavior: `issue-lint`, config loading and setup readiness, `src/operator-actions.ts`, `IssueRunTimelineExport`, `RunState`, status/explain rendering, and the executor safety gates.
 
 ## Internal-Only Surfaces
 

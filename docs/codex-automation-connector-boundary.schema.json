@@ -4,6 +4,19 @@
   "$ref": "#/$defs/codexAutomationConnectorBoundaryArtifact",
   "artifactName": "codex-supervisor.codex-automation-connector-boundary",
   "artifactVersion": 1,
+  "compatibilityPolicy": {
+    "versionField": "artifactVersion",
+    "enforcementBoundary": "codex-supervisor-executor-safety-gates remain the runtime enforcement boundary for Automation handoff and executor authority.",
+    "additiveChanges": [
+      "Adding optional descriptive fields or new advisory responsibilities is additive when prohibited bypasses and executor authority limits remain unchanged.",
+      "Adding new enum values for allowed responsibilities is additive only when the automation guide keeps them non-executing and operator-gated where required."
+    ],
+    "breakingChanges": [
+      "Removing or weakening prohibited bypasses, non-goals, enforcement boundaries, or operator-confirmation requirements is breaking.",
+      "Changing Automation from orchestration into executor authority is a semantic breaking change."
+    ],
+    "stabilityLimit": "The artifact is versioned with repo tags and does not claim stability beyond existing runtime executor safety gates."
+  },
   "canonicalGuide": "docs/automation.md",
   "enforcementBoundary": "codex-supervisor-executor-safety-gates",
   "description": "Portable connector-style artifact for Codex app Automation. Codex app Automation may evaluate, route, draft, record, notify, and prepare operator evidence, but codex-supervisor remains the implementation executor. Automation must not bypass executor safety gates, issue-lint, fresh PR facts, local CI, or operator confirmations. Multi-repo orchestration and new executor authority stay outside codex-supervisor core.",

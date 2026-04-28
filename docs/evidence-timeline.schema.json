@@ -3,6 +3,19 @@
   "$id": "https://github.com/TommyKammy/codex-supervisor/docs/evidence-timeline.schema.json",
   "contractName": "codex-supervisor.evidence-timeline",
   "contractVersion": 1,
+  "compatibilityPolicy": {
+    "versionField": "contractVersion",
+    "enforcementBoundary": "IssueRunTimelineExport and syncPostMergeAuditArtifact remain the runtime enforcement boundary for timeline artifacts.",
+    "additiveChanges": [
+      "Adding optional top-level fields, optional event fields, new event types, or new missing-event entries is additive when consumers can ignore unknown fields.",
+      "Adding new fields to examples is additive only when requiredFields and eventRequiredFields do not force existing consumers to provide them."
+    ],
+    "breakingChanges": [
+      "Removing or renaming required timeline or event fields is breaking.",
+      "Changing event outcome semantics, authoritative lifecycle interpretation, or required event ordering is a semantic breaking change."
+    ],
+    "stabilityLimit": "The artifact is versioned with repo tags and does not claim stability beyond the existing runtime timeline export and audit bundle behavior."
+  },
   "runtimeBuilder": "src/timeline-artifacts.ts#buildIssueRunTimelineExport",
   "auditBundleProducer": "src/supervisor/post-merge-audit-artifact.ts#syncPostMergeAuditArtifact",
   "description": "Portable schema for evidence timeline artifacts emitted for supervised agent work. Runtime compatibility stays anchored to IssueRunTimelineExport and the post-merge operator audit bundle; this artifact publishes the stable field contract and a sanitized example for downstream tooling.",

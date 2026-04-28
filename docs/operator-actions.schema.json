@@ -4,6 +4,19 @@
   "$ref": "#/$defs/operatorActionVocabularyContract",
   "contractName": "codex-supervisor.operator-actions",
   "contractVersion": 1,
+  "compatibilityPolicy": {
+    "versionField": "contractVersion",
+    "enforcementBoundary": "src/operator-actions.ts remains the runtime enforcement boundary for operator action parsing and selection.",
+    "additiveChanges": [
+      "Adding optional action metadata is additive when existing tokens and meanings remain intact.",
+      "Adding new enum values for action tokens is additive only when status, doctor, WebUI, and docs surfaces can tolerate or render the token."
+    ],
+    "breakingChanges": [
+      "Removing or renaming an action token, surface, or meaning is breaking for external automation.",
+      "Changing a token's operator semantics or selection priority in a way that changes routing is a semantic breaking change."
+    ],
+    "stabilityLimit": "The artifact is versioned with repo tags and does not claim stability beyond existing runtime operator action parsing."
+  },
   "canonicalSource": "src/operator-actions.ts",
   "description": "Portable vocabulary contract for operator action tokens emitted by status, doctor, and WebUI surfaces. Runtime parsing and selection remain backed by src/operator-actions.ts; this artifact lets docs, UI, and external automation consume the token list without scraping TypeScript source.",
   "actions": [

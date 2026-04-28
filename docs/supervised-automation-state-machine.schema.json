@@ -4,6 +4,19 @@
   "$ref": "#/$defs/supervisedAutomationStateMachineContract",
   "contractName": "codex-supervisor.supervised-automation-state-machine",
   "contractVersion": 1,
+  "compatibilityPolicy": {
+    "versionField": "contractVersion",
+    "enforcementBoundary": "RunState in src/core/types.ts and status/explain rendering remain the runtime enforcement boundary for lifecycle state vocabulary.",
+    "additiveChanges": [
+      "Adding optional descriptive fields or additional evidence notes is additive when stored RunState values and existing public-state mappings remain unchanged.",
+      "Adding new enum values for stored RunState or operator-facing states is additive only when status, explain, WebUI, and evidence timeline surfaces define how to render them."
+    ],
+    "breakingChanges": [
+      "Removing or renaming public states, stored RunState mappings, evidence expectations, or operator action mappings is breaking.",
+      "Changing lifecycle semantics, terminal-state interpretation, or authority boundaries is a semantic breaking change."
+    ],
+    "stabilityLimit": "The artifact is versioned with repo tags and does not claim stability beyond the existing runtime RunState and status/explain behavior."
+  },
   "canonicalSource": "src/core/types.ts",
   "description": "Portable contract for the supervised automation lane state-machine vocabulary. Runtime lifecycle storage remains backed by RunState in src/core/types.ts; this artifact maps those internal states to operator-facing states, evidence expectations, authority boundaries, and published operator action tokens.",
   "publicStates": [
