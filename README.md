@@ -305,6 +305,7 @@ Use the [Configuration guide](./docs/configuration.md) for the full routing rule
 - [Operator dashboard](./docs/operator-dashboard.md): WebUI launch, panel meanings, safe commands, and browser smoke verification
 - [Local review reference](./docs/local-review.md): local review policies, role selection, artifacts, thresholds, and committed guardrails
 - [AI coding quality kit](./docs/quality-kit.md): compact primitive map for the issue contract, local verification gate, prompt safety boundary, evidence timeline, operator action, and durable history writeback
+- [Quality kit package surfaces](./docs/quality-kit-package-surfaces.md): comparison of docs, schema, npm metadata, and deferred KANAME bootstrap packaging options for external adoption
 - [Supervised automation lane](./docs/supervised-automation-lane.md): product primitive contract for issue/spec-driven supervised automation beside Codex chat
 - [Before / After narrative](./docs/vibe-coding-before-after.md): the same small change compared as an unstructured session and a supervised loop
 - [Phase 16 dogfood PR walkthrough](./docs/examples/phase-16-dogfood-pr-walkthrough.md): annotated supervised PR lifecycle from the repo's own demo-material phase using sanitized public-safe placeholders

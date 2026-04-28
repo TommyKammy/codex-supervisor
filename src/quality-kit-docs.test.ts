@@ -4,6 +4,7 @@ import path from "node:path";
 import test from "node:test";
 
 const qualityKitPath = path.join("docs", "quality-kit.md");
+const qualityKitPackageSurfacesPath = path.join("docs", "quality-kit-package-surfaces.md");
 
 async function readRepoFile(relativePath: string): Promise<string> {
   return fs.readFile(path.join(process.cwd(), relativePath), "utf8");
@@ -65,4 +66,50 @@ test("README and demo docs discover the quality kit map", async () => {
   assert.match(readme, /\[AI coding quality kit\]\(\.\/docs\/quality-kit\.md\)/i);
   assert.match(demo, /\[AI coding quality kit\]\(\.\.\/quality-kit\.md\)/i);
   assert.match(walkthrough, /\[AI coding quality kit\]\(\.\.\/quality-kit\.md\)/i);
+});
+
+test("quality kit package surface comparison names the smallest adoption surface", async () => {
+  const comparison = await readRepoFile(qualityKitPackageSurfacesPath);
+  const readme = await readRepoFile("README.md");
+
+  assert.match(comparison, /^# AI Coding Quality Kit Package Surfaces$/m);
+  assert.doesNotMatch(comparison, /\/Users\/[A-Za-z0-9._-]+\//);
+  assert.doesNotMatch(comparison, /C:\\Users\\[A-Za-z0-9._-]+\\/);
+
+  for (const heading of [
+    "Recommended Smallest Surface",
+    "Viable Package Shapes",
+    "Deferred Shape",
+    "Tradeoff Summary",
+    "KANAME Bootstrap Reuse",
+  ]) {
+    assert.match(comparison, new RegExp(`^## ${heading}$`, "m"), `expected ${heading} section`);
+  }
+
+  for (const packageShape of [
+    "repo-owned schema collection",
+    "npm package metadata",
+    "templates/docs bundle",
+    "KANAME bootstrap bundle",
+  ]) {
+    assert.match(comparison, new RegExp(packageShape, "i"), `expected ${packageShape} to be compared`);
+  }
+
+  for (const tradeoff of [
+    "adoption friction",
+    "versioning",
+    "release burden",
+    "copy/paste",
+    "docs discoverability",
+    "new-repo reuse",
+  ]) {
+    assert.match(comparison, new RegExp(tradeoff, "i"), `expected ${tradeoff} tradeoff`);
+  }
+
+  assert.match(comparison, /external users adopt first/i);
+  assert.match(comparison, /no runtime orchestration/i);
+  assert.match(comparison, /no WebUI/i);
+  assert.match(comparison, /no provider SDK/i);
+  assert.match(comparison, /no authority expansion/i);
+  assert.match(readme, /\[Quality kit package surfaces\]\(\.\/docs\/quality-kit-package-surfaces\.md\)/i);
 });
