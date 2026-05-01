@@ -17,6 +17,25 @@ const WINDOWS_USERS_PREFIX = `C:${WINDOWS_PATH_SEPARATOR}${"Users"}${WINDOWS_PAT
 const PATH_TOKEN_PATTERN = String.raw`[^\s"'` + "`" + String.raw`<>]+`;
 const COMPOUND_PATH_SEPARATORS = new Set([":", ";"]);
 const ABSOLUTE_PATH_PREFIXES = [UNIX_HOME_PREFIX, MACOS_USERS_PREFIX, WINDOWS_USERS_PREFIX] as const;
+const FILE_URL_PREFIX = "file://";
+const PATH_TOKEN_BOUNDARY_CHARS = new Set([
+  " ",
+  "\t",
+  "\r",
+  "\n",
+  "\"",
+  "'",
+  "`",
+  "<",
+  ">",
+  "=",
+  ":",
+  ";",
+  ",",
+  "(",
+  "[",
+  "{",
+]);
 // Keep this allowlist intentionally short so container defaults stop tripping the gate
 // without weakening workstation-home detection for typical developer paths.
 const KNOWN_CONTAINER_HOME_OWNERS = new Set(["node"]);
@@ -146,6 +165,19 @@ function startsWithAbsolutePathPrefix(candidate: string, index: number): boolean
   return ABSOLUTE_PATH_PREFIXES.some((prefix) => candidate.startsWith(prefix, index));
 }
 
+function hasPathTokenBoundaryBeforeCandidate(line: string, candidateIndex: number): boolean {
+  if (candidateIndex <= 0) {
+    return true;
+  }
+
+  const prefix = line.slice(0, candidateIndex);
+  if (prefix.endsWith(FILE_URL_PREFIX)) {
+    return true;
+  }
+
+  return PATH_TOKEN_BOUNDARY_CHARS.has(line[candidateIndex - 1]);
+}
+
 function splitCompoundCandidate(candidate: string): string[] {
   const parts: string[] = [];
   let segmentStart = 0;
@@ -187,6 +219,11 @@ function collectMatches(
     for (const pattern of CANDIDATE_PATTERNS) {
       pattern.regex.lastIndex = 0;
       for (const match of line.matchAll(pattern.regex)) {
+        const candidateIndex = match.index ?? 0;
+        if (!hasPathTokenBoundaryBeforeCandidate(line, candidateIndex)) {
+          continue;
+        }
+
         for (const candidate of splitCompoundCandidate(match[0])) {
           const classification = pattern.classify(candidate);
           if (!classification?.blocked) {
