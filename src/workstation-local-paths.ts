@@ -40,6 +40,7 @@ const PATH_TOKEN_BOUNDARY_CHARS = new Set([
 // without weakening workstation-home detection for typical developer paths.
 const KNOWN_CONTAINER_HOME_OWNERS = new Set(["node"]);
 const UNIX_HOME_OWNER_PATTERN = new RegExp(`^${escapeForRegex(UNIX_HOME_PREFIX)}([^/]+)(?:/|$)`);
+const FILE_URL_SCHEME = "file:";
 
 export interface WorkstationLocalPathClassification {
   blocked: boolean;
@@ -171,15 +172,43 @@ function hasPathTokenBoundaryBeforeCandidate(line: string, candidateIndex: numbe
   }
 
   const prefix = line.slice(0, candidateIndex);
-  if (prefix.endsWith(FILE_URL_PREFIX)) {
+  if (hasFileUrlPathBoundaryBeforeCandidate(prefix)) {
     return true;
   }
 
   return PATH_TOKEN_BOUNDARY_CHARS.has(line[candidateIndex - 1]);
 }
 
-function splitCompoundCandidate(candidate: string): string[] {
-  const parts: string[] = [];
+function hasFileUrlPathBoundaryBeforeCandidate(prefix: string): boolean {
+  const schemeIndex = prefix.lastIndexOf(FILE_URL_SCHEME);
+  if (schemeIndex < 0) {
+    return false;
+  }
+
+  if (schemeIndex > 0 && !PATH_TOKEN_BOUNDARY_CHARS.has(prefix[schemeIndex - 1])) {
+    return false;
+  }
+
+  const schemeSuffix = prefix.slice(schemeIndex + FILE_URL_SCHEME.length);
+  if (schemeSuffix.length === 0) {
+    return true;
+  }
+
+  if (!schemeSuffix.startsWith("//")) {
+    return false;
+  }
+
+  const authority = schemeSuffix.slice(FILE_URL_PREFIX.length - FILE_URL_SCHEME.length);
+  return !/[\\\s"'`<>]/.test(authority);
+}
+
+interface CompoundCandidateSegment {
+  value: string;
+  offset: number;
+}
+
+function splitCompoundCandidate(candidate: string): CompoundCandidateSegment[] {
+  const parts: CompoundCandidateSegment[] = [];
   let segmentStart = 0;
 
   for (let index = 1; index < candidate.length; index += 1) {
@@ -192,12 +221,18 @@ function splitCompoundCandidate(candidate: string): string[] {
       continue;
     }
 
-    parts.push(candidate.slice(segmentStart, index - 1));
+    parts.push({
+      value: candidate.slice(segmentStart, index - 1),
+      offset: segmentStart,
+    });
     segmentStart = index;
   }
 
-  parts.push(candidate.slice(segmentStart));
-  return parts.filter((part) => part.length > 0);
+  parts.push({
+    value: candidate.slice(segmentStart),
+    offset: segmentStart,
+  });
+  return parts.filter((part) => part.value.length > 0);
 }
 
 function lineContainsConfiguredAllowlistMarker(line: string, markers: readonly string[]): boolean {
@@ -220,11 +255,13 @@ function collectMatches(
       pattern.regex.lastIndex = 0;
       for (const match of line.matchAll(pattern.regex)) {
         const candidateIndex = match.index ?? 0;
-        if (!hasPathTokenBoundaryBeforeCandidate(line, candidateIndex)) {
-          continue;
-        }
+        for (const segment of splitCompoundCandidate(match[0])) {
+          const segmentStartIndex = candidateIndex + segment.offset;
+          if (!hasPathTokenBoundaryBeforeCandidate(line, segmentStartIndex)) {
+            continue;
+          }
 
-        for (const candidate of splitCompoundCandidate(match[0])) {
+          const candidate = segment.value;
           const classification = pattern.classify(candidate);
           if (!classification?.blocked) {
             continue;

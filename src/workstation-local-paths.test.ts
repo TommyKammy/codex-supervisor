@@ -163,6 +163,7 @@ test("findForbiddenWorkstationLocalPaths keeps file URLs to workstation homes bl
     path.join(repoPath, "docs", "guide.md"),
     [
       `Linux file URL: file://${buildUnixHomePath("alice", "dev", "private-repo")}`,
+      `Linux file URL with authority: file://localhost${buildUnixHomePath("alice", "dev", "private-repo")}`,
       `macOS file URL: file://${buildMacHomePath("alice", "Dev", "private-repo")}`,
       `Windows file URL: file://${buildWindowsHomePath("Alice", "private-repo")}`,
       "",
@@ -192,16 +193,62 @@ test("findForbiddenWorkstationLocalPaths keeps file URLs to workstation homes bl
       {
         filePath: "docs/guide.md",
         line: 2,
+        prefix: "/home/<user>/",
+        reason: "Linux user home directory",
+        match: buildUnixHomePath("alice", "dev", "private-repo"),
+      },
+      {
+        filePath: "docs/guide.md",
+        line: 3,
         prefix: "/Users/<user>/",
         reason: "macOS user home directory",
         match: buildMacHomePath("alice", "Dev", "private-repo"),
       },
       {
         filePath: "docs/guide.md",
-        line: 3,
+        line: 4,
         prefix: "C:\\Users\\<user>\\",
         reason: "Windows user home directory",
         match: buildWindowsHomePath("Alice", "private-repo"),
+      },
+    ],
+  );
+});
+
+test("findForbiddenWorkstationLocalPaths checks boundaries per compound path segment", async (t) => {
+  const repoPath = await createTrackedRepo();
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+
+  await fs.mkdir(path.join(repoPath, "docs"), { recursive: true });
+  await fs.writeFile(
+    path.join(repoPath, "docs", "guide.md"),
+    [
+      `Mixed token: https://example.test${buildUnixHomePath("alice", "docs")}:${buildUnixHomePath("bob", "private-repo")}`,
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  git(repoPath, "add", "docs/guide.md");
+
+  const findings = await findForbiddenWorkstationLocalPaths(repoPath);
+
+  assert.deepEqual(
+    findings.map((finding) => ({
+      filePath: finding.filePath,
+      line: finding.line,
+      prefix: finding.prefix,
+      reason: finding.reason,
+      match: finding.match,
+    })),
+    [
+      {
+        filePath: "docs/guide.md",
+        line: 1,
+        prefix: "/home/<user>/",
+        reason: "Linux user home directory",
+        match: buildUnixHomePath("bob", "private-repo"),
       },
     ],
   );
