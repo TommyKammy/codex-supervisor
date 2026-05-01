@@ -17,10 +17,30 @@ const WINDOWS_USERS_PREFIX = `C:${WINDOWS_PATH_SEPARATOR}${"Users"}${WINDOWS_PAT
 const PATH_TOKEN_PATTERN = String.raw`[^\s"'` + "`" + String.raw`<>]+`;
 const COMPOUND_PATH_SEPARATORS = new Set([":", ";"]);
 const ABSOLUTE_PATH_PREFIXES = [UNIX_HOME_PREFIX, MACOS_USERS_PREFIX, WINDOWS_USERS_PREFIX] as const;
+const FILE_URL_PREFIX = "file://";
+const PATH_TOKEN_BOUNDARY_CHARS = new Set([
+  " ",
+  "\t",
+  "\r",
+  "\n",
+  "\"",
+  "'",
+  "`",
+  "<",
+  ">",
+  "=",
+  ":",
+  ";",
+  ",",
+  "(",
+  "[",
+  "{",
+]);
 // Keep this allowlist intentionally short so container defaults stop tripping the gate
 // without weakening workstation-home detection for typical developer paths.
 const KNOWN_CONTAINER_HOME_OWNERS = new Set(["node"]);
 const UNIX_HOME_OWNER_PATTERN = new RegExp(`^${escapeForRegex(UNIX_HOME_PREFIX)}([^/]+)(?:/|$)`);
+const FILE_URL_SCHEME = "file:";
 
 export interface WorkstationLocalPathClassification {
   blocked: boolean;
@@ -146,8 +166,49 @@ function startsWithAbsolutePathPrefix(candidate: string, index: number): boolean
   return ABSOLUTE_PATH_PREFIXES.some((prefix) => candidate.startsWith(prefix, index));
 }
 
-function splitCompoundCandidate(candidate: string): string[] {
-  const parts: string[] = [];
+function hasPathTokenBoundaryBeforeCandidate(line: string, candidateIndex: number): boolean {
+  if (candidateIndex <= 0) {
+    return true;
+  }
+
+  const prefix = line.slice(0, candidateIndex);
+  if (hasFileUrlPathBoundaryBeforeCandidate(prefix)) {
+    return true;
+  }
+
+  return PATH_TOKEN_BOUNDARY_CHARS.has(line[candidateIndex - 1]);
+}
+
+function hasFileUrlPathBoundaryBeforeCandidate(prefix: string): boolean {
+  const schemeIndex = prefix.lastIndexOf(FILE_URL_SCHEME);
+  if (schemeIndex < 0) {
+    return false;
+  }
+
+  if (schemeIndex > 0 && !PATH_TOKEN_BOUNDARY_CHARS.has(prefix[schemeIndex - 1])) {
+    return false;
+  }
+
+  const schemeSuffix = prefix.slice(schemeIndex + FILE_URL_SCHEME.length);
+  if (schemeSuffix.length === 0) {
+    return true;
+  }
+
+  if (!schemeSuffix.startsWith("//")) {
+    return false;
+  }
+
+  const authority = schemeSuffix.slice(FILE_URL_PREFIX.length - FILE_URL_SCHEME.length);
+  return !/[\\\s"'`<>]/.test(authority);
+}
+
+interface CompoundCandidateSegment {
+  value: string;
+  offset: number;
+}
+
+function splitCompoundCandidate(candidate: string): CompoundCandidateSegment[] {
+  const parts: CompoundCandidateSegment[] = [];
   let segmentStart = 0;
 
   for (let index = 1; index < candidate.length; index += 1) {
@@ -160,12 +221,18 @@ function splitCompoundCandidate(candidate: string): string[] {
       continue;
     }
 
-    parts.push(candidate.slice(segmentStart, index - 1));
+    parts.push({
+      value: candidate.slice(segmentStart, index - 1),
+      offset: segmentStart,
+    });
     segmentStart = index;
   }
 
-  parts.push(candidate.slice(segmentStart));
-  return parts.filter((part) => part.length > 0);
+  parts.push({
+    value: candidate.slice(segmentStart),
+    offset: segmentStart,
+  });
+  return parts.filter((part) => part.value.length > 0);
 }
 
 function lineContainsConfiguredAllowlistMarker(line: string, markers: readonly string[]): boolean {
@@ -187,7 +254,14 @@ function collectMatches(
     for (const pattern of CANDIDATE_PATTERNS) {
       pattern.regex.lastIndex = 0;
       for (const match of line.matchAll(pattern.regex)) {
-        for (const candidate of splitCompoundCandidate(match[0])) {
+        const candidateIndex = match.index ?? 0;
+        for (const segment of splitCompoundCandidate(match[0])) {
+          const segmentStartIndex = candidateIndex + segment.offset;
+          if (!hasPathTokenBoundaryBeforeCandidate(line, segmentStartIndex)) {
+            continue;
+          }
+
+          const candidate = segment.value;
           const classification = pattern.classify(candidate);
           if (!classification?.blocked) {
             continue;
