@@ -401,6 +401,275 @@ test("requeueIssueForOperator rejects active tracked-PR work", async () => {
   assert.equal(saveCalls, 0);
 });
 
+test("requeueIssueForOperator rejects inactive tracked-PR work", async () => {
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
+        issue_number: 366,
+        state: "blocked",
+        blocked_reason: "review_bot_timeout",
+        pr_number: 191,
+        codex_session_id: "session-366",
+      }),
+    ],
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(record: IssueRunRecord): IssueRunRecord {
+      return record;
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const result = await requeueIssueForOperator(stateStore, state, 366);
+
+  assert.equal(result.outcome, "rejected");
+  assert.equal(result.summary, "Rejected requeue for issue #366: tracked PR work cannot be requeued explicitly.");
+  assert.equal(state.issues["366"]?.state, "blocked");
+  assert.equal(state.issues["366"]?.blocked_reason, "review_bot_timeout");
+  assert.equal(saveCalls, 0);
+});
+
+function createReviewBotTimeoutTrackedPrRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
+  return createRecord({
+    issue_number: 366,
+    state: "blocked",
+    blocked_reason: "review_bot_timeout",
+    branch: TRACKED_PR_HEAD_BRANCH,
+    pr_number: TRACKED_PR_NUMBER,
+    last_head_sha: TRACKED_PR_NEW_HEAD,
+    review_wait_started_at: "2026-03-13T00:00:00Z",
+    review_wait_head_sha: TRACKED_PR_NEW_HEAD,
+    copilot_review_timed_out_at: "2026-03-13T00:11:30.000Z",
+    copilot_review_timeout_action: "block",
+    copilot_review_timeout_reason:
+      `configured review bot (chatgpt-codex-connector) never produced a current-head review signal within 10 minute(s) for head ${TRACKED_PR_NEW_HEAD}.`,
+    last_error: "PR #191 is blocked while waiting for a current-head configured review bot signal.",
+    last_failure_context: {
+      category: "blocked",
+      summary: "PR #191 is blocked while waiting for a current-head configured review bot signal.",
+      signature: `review-bot-timeout:${TRACKED_PR_NEW_HEAD}:block`,
+      command: null,
+      details: ["timeout_kind=current_head_signal"],
+      url: TRACKED_PR_URL,
+      updated_at: "2026-03-13T00:12:00Z",
+    },
+    last_failure_signature: `review-bot-timeout:${TRACKED_PR_NEW_HEAD}:block`,
+    ...overrides,
+  });
+}
+
+function createCodexConnectorRecoveryConfig() {
+  return createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    configuredBotRequireCurrentHeadSignal: true,
+    configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+    configuredBotCurrentHeadSignalTimeoutAction: "block",
+    configuredBotInitialGraceWaitSeconds: 0,
+    configuredBotSettledWaitSeconds: 0,
+  });
+}
+
+test("reconcileTrackedMergedButOpenIssues recovers review_bot_timeout blocked tracked PR after same-head Codex Connector success", async () => {
+  const record = createReviewBotTimeoutTrackedPrRecord();
+  const state: SupervisorStateFile = createSupervisorState({ issues: [record] });
+  let saveCalls = 0;
+
+  const recoveryEvents = await reconcileTrackedMergedButOpenIssues(
+    {
+      getPullRequestIfExists: async () => createTrackedPrRecoveryPullRequest({
+        configuredBotCurrentHeadObservedAt: "2026-03-13T00:13:00Z",
+        configuredBotCurrentHeadStatusState: "SUCCESS",
+      }),
+      getIssue: async () => {
+        throw new Error("unexpected getIssue call");
+      },
+      closeIssue: async () => {
+        throw new Error("unexpected closeIssue call");
+      },
+      closePullRequest: async () => {
+        throw new Error("unexpected closePullRequest call");
+      },
+      getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getMergedPullRequestsClosingIssue: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    {
+      touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+        return {
+          ...current,
+          ...patch,
+          updated_at: "2026-03-13T00:14:00Z",
+        };
+      },
+      save: async () => {
+        saveCalls += 1;
+      },
+    },
+    state,
+    createCodexConnectorRecoveryConfig(),
+    [],
+  );
+
+  assert.equal(saveCalls, 1);
+  assert.equal(state.issues["366"]?.state, "ready_to_merge");
+  assert.equal(state.issues["366"]?.blocked_reason, null);
+  assert.equal(state.issues["366"]?.copilot_review_timed_out_at, null);
+  assert.equal(state.issues["366"]?.copilot_review_timeout_action, null);
+  assert.equal(state.issues["366"]?.copilot_review_timeout_reason, null);
+  assert.match(recoveryEvents[0]?.reason ?? "", /tracked_pr_lifecycle_recovered/);
+});
+
+test("reconcileTrackedMergedButOpenIssues leaves review_bot_timeout blocked when late provider signal is on a changed head", async () => {
+  const record = createReviewBotTimeoutTrackedPrRecord();
+  const state: SupervisorStateFile = createSupervisorState({ issues: [record] });
+  let saveCalls = 0;
+
+  const recoveryEvents = await reconcileTrackedMergedButOpenIssues(
+    {
+      getPullRequestIfExists: async () => createTrackedPrRecoveryPullRequest({
+        headRefOid: "head-newer-191",
+        configuredBotCurrentHeadObservedAt: "2026-03-13T00:13:00Z",
+        configuredBotCurrentHeadStatusState: "SUCCESS",
+      }),
+      getIssue: async () => {
+        throw new Error("unexpected getIssue call");
+      },
+      closeIssue: async () => {
+        throw new Error("unexpected closeIssue call");
+      },
+      closePullRequest: async () => {
+        throw new Error("unexpected closePullRequest call");
+      },
+      getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getMergedPullRequestsClosingIssue: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    {
+      touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+        return {
+          ...current,
+          ...patch,
+          updated_at: "2026-03-13T00:14:00Z",
+        };
+      },
+      save: async () => {
+        saveCalls += 1;
+      },
+    },
+    state,
+    createCodexConnectorRecoveryConfig(),
+    [],
+  );
+
+  assert.equal(saveCalls, 0);
+  assert.deepEqual(recoveryEvents, []);
+  assert.equal(state.issues["366"]?.state, "blocked");
+  assert.equal(state.issues["366"]?.blocked_reason, "review_bot_timeout");
+  assert.equal(state.issues["366"]?.last_head_sha, TRACKED_PR_NEW_HEAD);
+});
+
+test("reconcileTrackedMergedButOpenIssues leaves review_bot_timeout blocked without configured provider success", async () => {
+  const record = createReviewBotTimeoutTrackedPrRecord();
+  const state: SupervisorStateFile = createSupervisorState({ issues: [record] });
+  let saveCalls = 0;
+
+  const recoveryEvents = await reconcileTrackedMergedButOpenIssues(
+    {
+      getPullRequestIfExists: async () => createTrackedPrRecoveryPullRequest(),
+      getIssue: async () => {
+        throw new Error("unexpected getIssue call");
+      },
+      closeIssue: async () => {
+        throw new Error("unexpected closeIssue call");
+      },
+      closePullRequest: async () => {
+        throw new Error("unexpected closePullRequest call");
+      },
+      getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getMergedPullRequestsClosingIssue: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    {
+      touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+        return {
+          ...current,
+          ...patch,
+          updated_at: "2026-03-13T00:14:00Z",
+        };
+      },
+      save: async () => {
+        saveCalls += 1;
+      },
+    },
+    state,
+    createCodexConnectorRecoveryConfig(),
+    [],
+  );
+
+  assert.equal(saveCalls, 0);
+  assert.deepEqual(recoveryEvents, []);
+  assert.equal(state.issues["366"]?.state, "blocked");
+  assert.equal(state.issues["366"]?.blocked_reason, "review_bot_timeout");
+});
+
+test("reconcileTrackedMergedButOpenIssues does not refresh other blocked tracked PR reasons through review_bot_timeout recovery", async () => {
+  const record = createReviewBotTimeoutTrackedPrRecord({
+    blocked_reason: "manual_review",
+  });
+  const state: SupervisorStateFile = createSupervisorState({ issues: [record] });
+  let saveCalls = 0;
+  let checksFetched = 0;
+
+  const recoveryEvents = await reconcileTrackedMergedButOpenIssues(
+    {
+      getPullRequestIfExists: async () => createTrackedPrRecoveryPullRequest({
+        configuredBotCurrentHeadObservedAt: "2026-03-13T00:13:00Z",
+        configuredBotCurrentHeadStatusState: "SUCCESS",
+      }),
+      getIssue: async () => {
+        throw new Error("unexpected getIssue call");
+      },
+      closeIssue: async () => {
+        throw new Error("unexpected closeIssue call");
+      },
+      closePullRequest: async () => {
+        throw new Error("unexpected closePullRequest call");
+      },
+      getChecks: async () => {
+        checksFetched += 1;
+        return [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+      },
+      getMergedPullRequestsClosingIssue: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    {
+      touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+        return {
+          ...current,
+          ...patch,
+          updated_at: "2026-03-13T00:14:00Z",
+        };
+      },
+      save: async () => {
+        saveCalls += 1;
+      },
+    },
+    state,
+    createCodexConnectorRecoveryConfig(),
+    [],
+  );
+
+  assert.equal(checksFetched, 0);
+  assert.equal(saveCalls, 0);
+  assert.deepEqual(recoveryEvents, []);
+  assert.equal(state.issues["366"]?.state, "blocked");
+  assert.equal(state.issues["366"]?.blocked_reason, "manual_review");
+});
+
 test("reconcileRecoverableBlockedIssueStates requeues open no-PR handoff-missing issues without dropping repeat tracking", async () => {
   const config = createConfig();
   const original = createRecord();
