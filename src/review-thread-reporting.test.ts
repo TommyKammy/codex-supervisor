@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { configuredBotReviewThreads, manualReviewThreads } from "./supervisor/supervisor-reporting";
-import { staleConfiguredBotReviewThreads } from "./review-thread-reporting";
+import {
+  buildStalledBotReviewFailureContext,
+  codexConnectorMustFixReviewThreads,
+  staleConfiguredBotReviewThreads,
+} from "./review-thread-reporting";
 import { GitHubPullRequest, IssueRunRecord, ReviewThread, SupervisorConfig } from "./core/types";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
@@ -222,4 +226,27 @@ test("staleConfiguredBotReviewThreads treats non-actionable same-head configured
   });
 
   assert.deepEqual(staleConfiguredBotReviewThreads(config, record, pr, [nonActionableSameHeadThread]), [nonActionableSameHeadThread]);
+});
+
+test("codexConnectorMustFixReviewThreads tracks unresolved P1 findings and reports their severity", () => {
+  const p1Thread = createReviewThread({
+    comments: {
+      nodes: [
+        {
+          id: "comment-1",
+          body:
+            "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub> Restore test execution in pre-PR verification**",
+          createdAt: "2026-03-11T00:00:00Z",
+          url: "https://example.test/pr/44#discussion_r1",
+          author: {
+            login: "chatgpt-codex-connector[bot]",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(codexConnectorMustFixReviewThreads([p1Thread]), [p1Thread]);
+  assert.match(buildStalledBotReviewFailureContext([p1Thread])?.details[0] ?? "", /p_severity=P1/);
 });

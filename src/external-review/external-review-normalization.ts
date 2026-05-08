@@ -32,7 +32,32 @@ function summarizeComment(body: string): string {
   return truncate(sentence, 180) ?? "External review finding";
 }
 
-function inferSeverity(body: string): Exclude<LocalReviewSeverity, "none"> {
+export function isCodexConnectorReviewer(reviewerLogin: string): boolean {
+  return /^chatgpt-codex-connector(?:\[bot\])?$/iu.test(reviewerLogin);
+}
+
+export function extractCodexConnectorPSeverity(body: string): "P0" | "P1" | null {
+  const leadingBody = body.slice(0, 800);
+  const badgeLabel = leadingBody.match(/!\[[^\]]*\b(P[01])\b[^\]]*\]\([^)]*\)/iu)?.[1];
+  if (badgeLabel === "P0" || badgeLabel === "P1") {
+    return badgeLabel;
+  }
+
+  const shieldBadge = leadingBody.match(/https?:\/\/img\.shields\.io\/badge\/(P[01])(?:[-/?#)]|$)/iu)?.[1];
+  if (shieldBadge === "P0" || shieldBadge === "P1") {
+    return shieldBadge;
+  }
+
+  const textHeading = normalizeWhitespace(leadingBody.replace(/<[^>]+>/gu, " ").replace(/[*_`[\]]/gu, " "));
+  const headingLabel = textHeading.match(/^(?:#{1,6}\s*)?(P[01])(?:\s*[:\-]|\s+\b)/iu)?.[1];
+  return headingLabel === "P0" || headingLabel === "P1" ? headingLabel : null;
+}
+
+function inferSeverity(body: string, reviewerLogin: string): Exclude<LocalReviewSeverity, "none"> {
+  if (isCodexConnectorReviewer(reviewerLogin) && extractCodexConnectorPSeverity(body)) {
+    return "high";
+  }
+
   const normalized = body.toLowerCase();
   if (/\b(security|privilege|secret|panic|crash|corrupt|deadlock|critical|data loss)\b/.test(normalized)) {
     return "high";
@@ -45,7 +70,11 @@ function inferSeverity(body: string): Exclude<LocalReviewSeverity, "none"> {
   return "medium";
 }
 
-function inferConfidence(body: string): number {
+function inferConfidence(body: string, reviewerLogin: string): number {
+  if (isCodexConnectorReviewer(reviewerLogin) && extractCodexConnectorPSeverity(body)) {
+    return 0.95;
+  }
+
   const normalized = body.toLowerCase();
   if (/\b(will|can|break|fails?|throws?|incorrect|bug|missing|never|always)\b/.test(normalized)) {
     return 0.9;
@@ -77,8 +106,8 @@ export function normalizeExternalReviewSignal(
     line: signal.line,
     summary: summarizeComment(signal.body),
     rationale,
-    severity: inferSeverity(signal.body),
-    confidence: inferConfidence(signal.body),
+    severity: inferSeverity(signal.body, signal.reviewerLogin),
+    confidence: inferConfidence(signal.body, signal.reviewerLogin),
     url: signal.sourceUrl,
   };
 }

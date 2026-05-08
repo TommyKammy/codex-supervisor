@@ -2,6 +2,7 @@ import { hasProcessedReviewThread } from "./review-handling";
 import { configuredReviewBotLogins } from "./core/review-providers";
 import { FailureContext, GitHubPullRequest, IssueRunRecord, ReviewThread, SupervisorConfig } from "./core/types";
 import { nowIso } from "./core/utils";
+import { extractCodexConnectorPSeverity, isCodexConnectorReviewer } from "./external-review/external-review-normalization";
 
 function isAllowedReviewBotThread(config: SupervisorConfig, thread: ReviewThread): boolean {
   const configuredLogins = new Set(configuredReviewBotLogins(config).map((login) => login.toLowerCase()));
@@ -24,6 +25,27 @@ export function latestReviewCommentAuthorIsAllowedBot(config: SupervisorConfig, 
 
   const configuredLogins = new Set(configuredReviewBotLogins(config).map((login) => login.toLowerCase()));
   return configuredLogins.has(latestLogin);
+}
+
+function latestCodexConnectorPSeverity(thread: ReviewThread): "P0" | "P1" | null {
+  for (let index = thread.comments.nodes.length - 1; index >= 0; index -= 1) {
+    const comment = thread.comments.nodes[index];
+    const login = comment.author?.login;
+    if (!login || !isCodexConnectorReviewer(login)) {
+      continue;
+    }
+
+    const pSeverity = extractCodexConnectorPSeverity(comment.body);
+    if (pSeverity) {
+      return pSeverity;
+    }
+  }
+
+  return null;
+}
+
+export function codexConnectorMustFixReviewThreads(reviewThreads: ReviewThread[]): ReviewThread[] {
+  return reviewThreads.filter((thread) => !thread.isResolved && !thread.isOutdated && latestCodexConnectorPSeverity(thread));
 }
 
 function normalizeReviewCommentWhitespace(value: string): string {
@@ -49,9 +71,11 @@ function renderReviewThreadDetail(thread: ReviewThread, includeAuthor = false): 
   const latestComment = latestReviewComment(thread);
   const location = `${thread.path ?? "unknown"}:${thread.line ?? "?"}`;
   const author = includeAuthor ? ` reviewer=${latestComment?.author?.login ?? "unknown"}` : "";
+  const pSeverity = latestCodexConnectorPSeverity(thread);
+  const severity = pSeverity ? ` p_severity=${pSeverity}` : "";
   const summary = ` summary=${extractReviewCommentSummary(latestComment?.body ?? "")}`;
   const url = latestComment?.url ? ` url=${latestComment.url}` : "";
-  return `${location}${author}${summary}${url}`;
+  return `${location}${author}${severity}${summary}${url}`;
 }
 
 export function manualReviewThreads(config: SupervisorConfig, reviewThreads: ReviewThread[]): ReviewThread[] {
@@ -111,10 +135,14 @@ export function configuredBotReviewFollowUpState(
   pr: Pick<GitHubPullRequest, "headRefOid">,
   reviewThreads: ReviewThread[],
 ): "inactive" | "eligible" | "exhausted" {
-  const unresolvedThreadCount = actionableConfiguredBotReviewThreads(config, reviewThreads).filter(
+  const unresolvedActionableThreads = actionableConfiguredBotReviewThreads(config, reviewThreads).filter(
     (thread) => !thread.isResolved && !thread.isOutdated,
-  ).length;
-  if (unresolvedThreadCount === 0 || record.review_follow_up_head_sha !== pr.headRefOid) {
+  );
+  if (
+    unresolvedActionableThreads.length === 0 ||
+    codexConnectorMustFixReviewThreads(unresolvedActionableThreads).length > 0 ||
+    record.review_follow_up_head_sha !== pr.headRefOid
+  ) {
     return "inactive";
   }
 
@@ -248,7 +276,9 @@ export function buildStalledBotReviewFailureContext(
   const details = reviewThreads.slice(0, 5).map((thread) => {
     const latestComment = latestReviewComment(thread);
     const author = latestComment?.author?.login ?? "unknown";
-    return `reviewer=${author} file=${thread.path ?? "unknown"} line=${thread.line ?? "?"} processed_on_current_head=yes`;
+    const pSeverity = latestCodexConnectorPSeverity(thread);
+    const severity = pSeverity ? ` p_severity=${pSeverity}` : "";
+    return `reviewer=${author} file=${thread.path ?? "unknown"} line=${thread.line ?? "?"}${severity} processed_on_current_head=yes`;
   });
 
   return {
