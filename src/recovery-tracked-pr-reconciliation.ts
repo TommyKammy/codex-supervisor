@@ -55,6 +55,21 @@ const TRACKED_PR_LIFECYCLE_REFRESH_STATES = new Set<IssueRunRecord["state"]>([
   "merging",
 ]);
 
+function canRefreshTrackedPrLifecycle(
+  record: IssueRunRecord,
+  pr: GitHubPullRequest,
+): boolean {
+  if (TRACKED_PR_LIFECYCLE_REFRESH_STATES.has(record.state)) {
+    return true;
+  }
+
+  return (
+    record.state === "blocked" &&
+    record.blocked_reason === "review_bot_timeout" &&
+    record.last_head_sha === pr.headRefOid
+  );
+}
+
 function needsRecordUpdate(record: IssueRunRecord, patch: Partial<IssueRunRecord>): boolean {
   for (const [key, value] of Object.entries(patch)) {
     const recordValue = record[key as keyof IssueRunRecord];
@@ -394,7 +409,7 @@ export async function reconcileTrackedMergedButOpenIssuesInModule(
         continue;
       }
 
-      if (!TRACKED_PR_LIFECYCLE_REFRESH_STATES.has(record.state)) {
+      if (!canRefreshTrackedPrLifecycle(record, trackedPullRequest)) {
         continue;
       }
 
