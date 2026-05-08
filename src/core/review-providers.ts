@@ -6,6 +6,7 @@ import {
 
 const COPILOT_REVIEWER_LOGIN = "copilot-pull-request-reviewer";
 const CODEX_REVIEWER_LOGIN = "chatgpt-codex-connector";
+const CODEX_REVIEWER_LOGIN_ALIASES = [CODEX_REVIEWER_LOGIN, "chatgpt-codex-connector[bot]"] as const;
 const CODERABBIT_REVIEWER_LOGINS = ["coderabbitai", "coderabbitai[bot]"] as const;
 
 export type ReviewProviderProfileId = "none" | "copilot" | "codex" | "coderabbit" | "custom";
@@ -31,8 +32,27 @@ function trimReviewBotLogins(reviewBotLogins: string[]): string[] {
   return reviewBotLogins.map((login) => login.trim()).filter((login) => login.length > 0);
 }
 
+export function isCodexConnectorLogin(value: string | null | undefined): boolean {
+  const normalized = value?.trim().toLowerCase();
+  return CODEX_REVIEWER_LOGIN_ALIASES.includes(normalized as (typeof CODEX_REVIEWER_LOGIN_ALIASES)[number]);
+}
+
+export function normalizeReviewProviderLogin(value: string | null | undefined): string | null {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+  if (isCodexConnectorLogin(normalized)) {
+    return CODEX_REVIEWER_LOGIN;
+  }
+  return normalized;
+}
+
 export function normalizeReviewBotLogins(reviewBotLogins: string[]): string[] {
-  const normalized = trimReviewBotLogins(reviewBotLogins).map((login) => login.toLowerCase());
+  const normalized = trimReviewBotLogins(reviewBotLogins).flatMap((login) => {
+    const normalizedLogin = normalizeReviewProviderLogin(login);
+    return normalizedLogin ? [normalizedLogin] : [];
+  });
   return Array.from(new Set(normalized));
 }
 
@@ -40,7 +60,7 @@ function providerKindForLogin(login: string): ConfiguredReviewProviderKind {
   if (login === COPILOT_REVIEWER_LOGIN) {
     return "copilot";
   }
-  if (login === CODEX_REVIEWER_LOGIN) {
+  if (isCodexConnectorLogin(login)) {
     return "codex";
   }
   if (CODERABBIT_REVIEWER_LOGINS.includes(login as (typeof CODERABBIT_REVIEWER_LOGINS)[number])) {

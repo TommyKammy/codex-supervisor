@@ -990,6 +990,55 @@ test("buildConfiguredBotReviewSummary treats Codex Connector PR conversation suc
   });
 });
 
+test("buildConfiguredBotReviewSummary normalizes Codex Connector bot aliases across config and activity", () => {
+  const facts: CopilotReviewLifecycleFacts = {
+    reviewRequests: ["chatgpt-codex-connector[bot]"],
+    reviews: [
+      {
+        authorLogin: "chatgpt-codex-connector[bot]",
+        submittedAt: "2026-05-08T03:23:00Z",
+        commitOid: "head-44",
+        state: "COMMENTED",
+        body: "Nitpick: this branch still skips the provider guard.",
+      },
+    ],
+    comments: [],
+    issueComments: [
+      {
+        authorLogin: "chatgpt-codex-connector",
+        createdAt: "2026-05-08T03:24:00Z",
+        body: "Codex review completed successfully for this pull request. No issues found.",
+      },
+    ],
+    statusContexts: [],
+    timeline: [
+      {
+        type: "requested",
+        createdAt: "2026-05-08T03:22:00Z",
+        reviewerLogin: "chatgpt-codex-connector[bot]",
+      },
+    ],
+  };
+
+  assert.deepEqual(buildConfiguredBotReviewSummary(facts, ["chatgpt-codex-connector[bot]"], "head-44"), {
+    lifecycle: {
+      state: "arrived",
+      requestedAt: "2026-05-08T03:22:00Z",
+      arrivedAt: "2026-05-08T03:23:00Z",
+    },
+    topLevelReview: {
+      strength: null,
+      submittedAt: null,
+    },
+    currentHeadObservedAt: "2026-05-08T03:24:00Z",
+    currentHeadObservationSource: "codex_pr_success_comment",
+    currentHeadStatusState: null,
+    currentHeadCiGreenAt: null,
+    rateLimitWarningAt: null,
+    draftSkipAt: null,
+  });
+});
+
 test("buildConfiguredBotReviewSummary recognizes live Codex Connector no-major-issues wording", () => {
   const facts: CopilotReviewLifecycleFacts = {
     reviewRequests: [],

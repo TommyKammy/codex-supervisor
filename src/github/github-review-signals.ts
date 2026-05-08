@@ -5,7 +5,11 @@ import {
   isDraftSkipReviewText,
   isRateLimitReviewText,
 } from "../external-review/external-review-signal-heuristics";
-import { normalizeReviewBotLogins } from "../core/review-providers";
+import {
+  isCodexConnectorLogin,
+  normalizeReviewBotLogins,
+  normalizeReviewProviderLogin,
+} from "../core/review-providers";
 import type { CopilotReviewState } from "./types";
 
 export interface CopilotReviewLifecycleFacts {
@@ -91,17 +95,11 @@ function parseTimestamp(value: string | null | undefined): number {
 }
 
 function normalizeLogin(value: string | null | undefined): string | null {
-  const trimmed = value?.trim().toLowerCase();
-  return trimmed ? trimmed : null;
+  return normalizeReviewProviderLogin(value);
 }
 
 function isCodeRabbitLogin(value: string | null | undefined): boolean {
   return (normalizeLogin(value) ?? "").includes("coderabbit");
-}
-
-function isCodexConnectorLogin(value: string | null | undefined): boolean {
-  const normalized = normalizeLogin(value);
-  return normalized === "chatgpt-codex-connector" || normalized === "chatgpt-codex-connector[bot]";
 }
 
 function hasConfiguredCodexConnectorLogin(configuredReviewBots: Set<string>): boolean {
@@ -237,19 +235,22 @@ function summarizeConfiguredBotRequestWindow(
   latestRemovedByBot: Map<string, string | null>;
 } {
   const requestedTimes = timeline
-    .filter((event) => event.type === "requested" && event.reviewerLogin && configuredReviewBots.has(event.reviewerLogin))
+    .filter((event) => {
+      const reviewerLogin = normalizeLogin(event.reviewerLogin);
+      return event.type === "requested" && reviewerLogin && configuredReviewBots.has(reviewerLogin);
+    })
     .map((event) => event.createdAt);
   const latestRequestedAt = latestTimestamp(requestedTimes);
 
   const activeRequestStarts = Array.from(configuredReviewBots).flatMap((botLogin) => {
     const botLatestRequestedAt = latestTimestamp(
       timeline
-        .filter((event) => event.type === "requested" && event.reviewerLogin === botLogin)
+        .filter((event) => event.type === "requested" && normalizeLogin(event.reviewerLogin) === botLogin)
         .map((event) => event.createdAt),
     );
     const botLatestRemovedAt = latestTimestamp(
       timeline
-        .filter((event) => event.type === "removed" && event.reviewerLogin === botLogin)
+        .filter((event) => event.type === "removed" && normalizeLogin(event.reviewerLogin) === botLogin)
         .map((event) => event.createdAt),
     );
 
@@ -265,7 +266,7 @@ function summarizeConfiguredBotRequestWindow(
       botLogin,
       latestTimestamp(
         timeline
-          .filter((event) => event.type === "removed" && event.reviewerLogin === botLogin)
+          .filter((event) => event.type === "removed" && normalizeLogin(event.reviewerLogin) === botLogin)
           .map((event) => event.createdAt),
       ),
     );

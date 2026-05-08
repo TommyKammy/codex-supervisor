@@ -20,7 +20,7 @@ import {
 } from "../local-review/types";
 import { RunState } from "./types";
 import { DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH } from "./journal";
-import { mapConfiguredReviewProviders } from "./review-providers";
+import { mapConfiguredReviewProviders, normalizeReviewBotLogins } from "./review-providers";
 import { isValidGitRefName, resolveMaybeRelative } from "./utils";
 import { DEFAULT_CANDIDATE_DISCOVERY_FETCH_WINDOW } from "./config-constants";
 
@@ -535,11 +535,11 @@ export function parseSupervisorConfigDocument(raw: Record<string, unknown>, reso
       : [],
     approvedTrackedTopLevelEntries: parseApprovedTrackedTopLevelEntries(raw.approvedTrackedTopLevelEntries),
     staleConfiguredBotReviewPolicy: parseStaleConfiguredBotReviewPolicy(raw.staleConfiguredBotReviewPolicy),
-    reviewBotLogins: Array.isArray(raw.reviewBotLogins)
-      ? raw.reviewBotLogins
-          .filter((value): value is string => typeof value === "string" && value.trim() !== "")
-          .map((value) => value.trim().toLowerCase())
-      : ["copilot-pull-request-reviewer"],
+    reviewBotLogins: normalizeReviewBotLogins(
+      Array.isArray(raw.reviewBotLogins)
+        ? raw.reviewBotLogins.filter((value): value is string => typeof value === "string")
+        : ["copilot-pull-request-reviewer"],
+    ),
     configuredReviewProviders: mapConfiguredReviewProviders(
       Array.isArray(raw.reviewBotLogins)
         ? raw.reviewBotLogins.filter((value): value is string => typeof value === "string")

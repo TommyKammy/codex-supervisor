@@ -191,6 +191,13 @@ test("inferReviewBotProfile identifies configured provider patterns", () => {
       signalSource: "review_threads",
     },
   );
+
+  assert.deepEqual(inferReviewBotProfile(createConfig({ reviewBotLogins: ["chatgpt-codex-connector[bot]"] })), {
+    profile: "codex",
+    provider: "chatgpt-codex-connector",
+    reviewers: ["chatgpt-codex-connector"],
+    signalSource: "review_threads",
+  });
 });
 
 test("reviewBotDiagnostics tracks observed review signal precedence", () => {
