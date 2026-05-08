@@ -144,8 +144,13 @@ export function classifyWorkstationLocalPathCandidate(candidate: string): Workst
   };
 }
 
-function gitTrackedFiles(workspacePath: string): string[] {
-  const result = spawnSync("git", ["-C", workspacePath, "ls-files", "-z"], {
+interface GitTrackedEntry {
+  filePath: string;
+  mode: string;
+}
+
+function gitTrackedEntries(workspacePath: string): GitTrackedEntry[] {
+  const result = spawnSync("git", ["-C", workspacePath, "ls-files", "-s", "-z"], {
     encoding: "utf8",
   });
   if (result.status !== 0) {
@@ -155,7 +160,22 @@ function gitTrackedFiles(workspacePath: string): string[] {
   return result.stdout
     .split("\0")
     .filter((entry) => entry.length > 0)
-    .map((entry) => normalizeRepoRelativePath(entry));
+    .map((entry) => {
+      const tabIndex = entry.indexOf("\t");
+      if (tabIndex < 0) {
+        throw new Error(`unexpected git ls-files entry format: ${entry}`);
+      }
+      const metadata = entry.slice(0, tabIndex);
+      const [mode] = metadata.split(" ");
+      if (!mode) {
+        throw new Error(`unexpected git ls-files entry metadata: ${metadata}`);
+      }
+
+      return {
+        filePath: normalizeRepoRelativePath(entry.slice(tabIndex + 1)),
+        mode,
+      };
+    });
 }
 
 function isBinary(contents: Buffer): boolean {
@@ -382,13 +402,16 @@ export async function findForbiddenWorkstationLocalPaths(
     publishablePathAllowlistMarkers?: readonly string[];
   },
 ): Promise<WorkstationLocalPathMatch[]> {
-  const trackedFiles = gitTrackedFiles(workspacePath);
+  const trackedEntries = gitTrackedEntries(workspacePath);
   const normalizedExcludedPaths = new Set([...excludedPaths].map((entry) => normalizeRepoRelativePath(entry)));
   const publishablePathAllowlistMarkers = options?.publishablePathAllowlistMarkers ?? [];
   const findings: WorkstationLocalPathMatch[] = [];
 
-  for (const filePath of trackedFiles) {
+  for (const { filePath, mode } of trackedEntries) {
     if (normalizedExcludedPaths.has(filePath)) {
+      continue;
+    }
+    if (mode === "160000") {
       continue;
     }
 
