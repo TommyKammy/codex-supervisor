@@ -525,6 +525,44 @@ test("findForbiddenWorkstationLocalPaths skips tracked files omitted by sparse c
   );
 });
 
+test("findForbiddenWorkstationLocalPaths skips gitlink entries whose worktree path is a directory", async (t) => {
+  const repoPath = await createTrackedRepo();
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+
+  const docsPath = path.join(repoPath, "docs", "guide.md");
+  const gitlinkPath = ".oh-my-opencode";
+  await fs.mkdir(path.dirname(docsPath), { recursive: true });
+  await fs.writeFile(docsPath, `Visible leak: ${buildUnixHomePath("alice", "dev", "private-repo")}\n`, "utf8");
+  git(repoPath, "add", "docs/guide.md");
+  git(repoPath, "update-index", "--add", "--cacheinfo", `160000,${git(repoPath, "rev-parse", "HEAD").trim()},${gitlinkPath}`);
+  await fs.mkdir(path.join(repoPath, gitlinkPath), { recursive: true });
+
+  assert.match(git(repoPath, "ls-files", "-s", gitlinkPath).trimEnd(), /^160000 [0-9a-f]{40} 0\t\.oh-my-opencode$/u);
+
+  const findings = await findForbiddenWorkstationLocalPaths(repoPath);
+
+  assert.deepEqual(
+    findings.map((finding) => ({
+      filePath: finding.filePath,
+      line: finding.line,
+      prefix: finding.prefix,
+      reason: finding.reason,
+      match: finding.match,
+    })),
+    [
+      {
+        filePath: "docs/guide.md",
+        line: 1,
+        prefix: "/home/<user>/",
+        reason: "Linux user home directory",
+        match: buildUnixHomePath("alice", "dev", "private-repo"),
+      },
+    ],
+  );
+});
+
 test("findForbiddenWorkstationLocalPaths flags tracked supervisor-generated artifacts by path", async (t) => {
   const repoPath = await createTrackedRepo();
   t.after(async () => {
