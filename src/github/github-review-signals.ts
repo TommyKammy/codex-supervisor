@@ -100,7 +100,12 @@ function isCodeRabbitLogin(value: string | null | undefined): boolean {
 }
 
 function isCodexConnectorLogin(value: string | null | undefined): boolean {
-  return normalizeLogin(value) === "chatgpt-codex-connector";
+  const normalized = normalizeLogin(value);
+  return normalized === "chatgpt-codex-connector" || normalized === "chatgpt-codex-connector[bot]";
+}
+
+function hasConfiguredCodexConnectorLogin(configuredReviewBots: Set<string>): boolean {
+  return Array.from(configuredReviewBots).some((login) => isCodexConnectorLogin(login));
 }
 
 function hasConfiguredCodeRabbitLogin(configuredReviewBots: Set<string>): boolean {
@@ -188,12 +193,28 @@ function isCodexConnectorPrSuccessCommentText(value: string | null | undefined):
   }
 
   const mentionsReviewScope = /\b(review|reviewed|analysis|checked|pull request|pr)\b/.test(normalized);
-  const mentionsCompletion = /\b(successfully completed|completed successfully|review completed|finished review|review is complete|reviewed this pull request)\b/.test(
-    normalized,
-  );
-  const mentionsSuccess = /\b(success|successful|no issues found|no actionable issues|looks good)\b/.test(normalized);
+  const reportsIssues =
+    /\b(?:found|identified|detected)\s+(?:\w+\s+){0,3}(?:issues?|problems?|concerns?)\b/.test(normalized) ||
+    /\b(?:critical|major|blocking|actionable)\s+(?:issues?|problems?|concerns?)\s+(?:found|identified|detected|reported)\b/.test(
+      normalized,
+    );
+  if (reportsIssues) {
+    return false;
+  }
 
-  return mentionsReviewScope && mentionsCompletion && mentionsSuccess;
+  const mentionsCompletion =
+    /\b(successfully completed|completed successfully|review completed|finished review|review is complete|reviewed this pull request)\b/.test(
+      normalized,
+    );
+  const mentionsSuccess = /\b(success|successful|no issues found|no actionable issues|looks good)\b/.test(normalized);
+  const mentionsNoIssueSuccess =
+    /\bno\s+(?:major|actionable|blocking|critical)\s+issues?\b/.test(normalized) ||
+    /\bno\s+(?:major|actionable|blocking|critical)?\s*issues?\s+(?:found|detected|identified|reported)\b/.test(normalized) ||
+    /\b(?:didn't|did not|doesn't|does not)\s+(?:find|detect|identify|see)\s+(?:any\s+)?(?:major|actionable|blocking|critical)?\s*issues?\b/.test(
+      normalized,
+    );
+
+  return mentionsReviewScope && ((mentionsCompletion && mentionsSuccess) || mentionsNoIssueSuccess);
 }
 
 function summarizeConfiguredBotRequestWindow(
@@ -412,7 +433,7 @@ function inferConfiguredBotCurrentHeadObservation(
     }
   }
 
-  if (configuredReviewBots.has("chatgpt-codex-connector")) {
+  if (hasConfiguredCodexConnectorLogin(configuredReviewBots)) {
     for (const comment of facts.issueComments) {
       const authorLogin = normalizeLogin(comment.authorLogin);
       if (

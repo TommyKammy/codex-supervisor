@@ -863,6 +863,57 @@ test("GitHubPullRequestHydrator maps Codex Connector PR conversation success com
   assert.equal(pr?.copilotReviewArrivedAt, null);
 });
 
+test("GitHubPullRequestHydrator maps live Codex Connector no-major-issues comments with bot author suffix", async () => {
+  const config = createConfig({ reviewBotLogins: ["chatgpt-codex-connector"] });
+  const hydrator = new GitHubPullRequestHydrator(config, async (args) => {
+    if (args[0] === "api" && args[1] === "graphql") {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                reviewRequests: {
+                  nodes: [],
+                },
+                reviews: {
+                  nodes: [],
+                },
+                comments: {
+                  nodes: [
+                    {
+                      createdAt: "2026-05-08T04:44:37Z",
+                      body: "Codex Review: Didn't find any major issues. :tada:",
+                      author: {
+                        login: "chatgpt-codex-connector[bot]",
+                      },
+                    },
+                  ],
+                },
+                reviewThreads: {
+                  nodes: [],
+                },
+                timelineItems: {
+                  nodes: [],
+                },
+              },
+            },
+          },
+        }),
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  const pr = await hydrator.hydrate(createPullRequest());
+
+  assert.equal(pr?.configuredBotCurrentHeadObservedAt, "2026-05-08T04:44:37Z");
+  assert.equal(pr?.configuredBotCurrentHeadObservationSource, "codex_pr_success_comment");
+  assert.equal(pr?.copilotReviewArrivedAt, null);
+});
+
 test("GitHubPullRequestHydrator extends current-head observation with later weakly anchored CodeRabbit review comments", async () => {
   const config = createConfig({ reviewBotLogins: ["coderabbitai[bot]"] });
   const hydrator = new GitHubPullRequestHydrator(config, async (args) => {
