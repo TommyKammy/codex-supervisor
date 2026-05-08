@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { inferStateFromPullRequest } from "./pull-request-state";
+import { blockedReasonFromReviewState, inferStateFromPullRequest } from "./pull-request-state";
 import {
   createConfig,
   createPullRequest,
@@ -82,7 +82,7 @@ test("inferStateFromPullRequest does not time out immediately when configured re
   );
 });
 
-test("inferStateFromPullRequest does not wait for review-threads-only providers without a requested signal", () => {
+test("inferStateFromPullRequest waits for Codex Connector current-head activity without a requested signal", () => {
   withStubbedDateNow("2026-03-13T05:42:40Z", () => {
     const config = createConfig({
       copilotReviewWaitMinutes: 10,
@@ -113,8 +113,65 @@ test("inferStateFromPullRequest does not wait for review-threads-only providers 
         passingChecks(),
         [],
       ),
-      "ready_to_merge",
+      "waiting_ci",
     );
+  });
+});
+
+test("inferStateFromPullRequest fails closed for Codex Connector when no current-head signal exists", () => {
+  withStubbedDateNow("2026-05-08T03:30:00Z", () => {
+    const config = createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector"],
+    });
+    const record = createRecord({
+      state: "pr_open",
+      last_head_sha: "head-pr-4",
+      review_wait_started_at: "2026-05-08T03:09:36Z",
+      review_wait_head_sha: "head-pr-4",
+    });
+
+    const pr = createPullRequest({
+      number: 4,
+      createdAt: "2026-05-08T03:09:36Z",
+      headRefOid: "head-pr-4",
+      isDraft: false,
+      reviewDecision: null,
+      mergeStateStatus: "CLEAN",
+      mergeable: "MERGEABLE",
+      copilotReviewState: "not_requested",
+      copilotReviewRequestedAt: null,
+      copilotReviewArrivedAt: null,
+      configuredBotCurrentHeadObservedAt: null,
+      configuredBotTopLevelReviewSubmittedAt: null,
+    });
+
+    assert.equal(inferStateFromPullRequest(config, record, pr, [], []), "blocked");
+    assert.equal(blockedReasonFromReviewState(config, record, pr, [], []), "review_bot_timeout");
+  });
+});
+
+test("inferStateFromPullRequest fails closed for Codex Connector when current-head signals are malformed", () => {
+  withStubbedDateNow("2026-05-08T03:30:00Z", () => {
+    const config = createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector"],
+    });
+    const record = createRecord({
+      state: "pr_open",
+      last_head_sha: "head-pr-4",
+      review_wait_started_at: "2026-05-08T03:09:36Z",
+      review_wait_head_sha: "head-pr-4",
+    });
+
+    const pr = createPullRequest({
+      number: 4,
+      createdAt: "2026-05-08T03:09:36Z",
+      headRefOid: "head-pr-4",
+      currentHeadCiGreenAt: "not-a-timestamp",
+      configuredBotCurrentHeadObservedAt: "not-a-timestamp",
+    });
+
+    assert.equal(inferStateFromPullRequest(config, record, pr, passingChecks(), []), "blocked");
+    assert.equal(blockedReasonFromReviewState(config, record, pr, passingChecks(), []), "review_bot_timeout");
   });
 });
 
@@ -148,7 +205,7 @@ test("inferStateFromPullRequest allows merge after the Copilot propagation grace
   });
 });
 
-test("inferStateFromPullRequest ignores observed request fallbacks for review-threads-only providers", () => {
+test("inferStateFromPullRequest keeps Codex Connector on current-head wait instead of request fallback", () => {
   withStubbedDateNow("2026-03-11T00:10:00Z", () => {
     const config = createConfig({
       copilotReviewWaitMinutes: 10,
@@ -180,7 +237,7 @@ test("inferStateFromPullRequest ignores observed request fallbacks for review-th
         passingChecks(),
         [],
       ),
-      "ready_to_merge",
+      "waiting_ci",
     );
   });
 });
@@ -610,7 +667,7 @@ test("inferStateFromPullRequest can time out from the observed Copilot request t
   });
 });
 
-test("inferStateFromPullRequest does not time out review-threads-only providers from observed request fallback timestamps", () => {
+test("inferStateFromPullRequest blocks Codex Connector from current-head timeout instead of request fallback", () => {
   withStubbedDateNow("2026-03-11T00:30:00Z", () => {
     const config = createConfig({
       copilotReviewWaitMinutes: 10,
@@ -643,7 +700,7 @@ test("inferStateFromPullRequest does not time out review-threads-only providers 
         passingChecks(),
         [],
       ),
-      "waiting_ci",
+      "blocked",
     );
   });
 });

@@ -212,7 +212,7 @@ test("reviewProviderWaitPolicyFromConfig normalizes wait and timeout behavior be
       shouldTrackRequestedState: true,
       shouldApplyRequestedReviewTimeout: true,
       shouldApplyRateLimitCooldown: true,
-      shouldApplyCurrentHeadQuietPeriod: false,
+      shouldApplyCurrentHeadQuietPeriod: true,
     },
   );
 });

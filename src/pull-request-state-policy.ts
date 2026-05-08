@@ -33,6 +33,7 @@ import {
   SupervisorConfig,
 } from "./core/types";
 import {
+  configuredReviewProviderKinds,
   repoExpectsConfiguredBotReview,
   reviewProviderWaitPolicyFromConfig,
 } from "./core/review-providers";
@@ -322,6 +323,14 @@ function shouldWaitForConfiguredBotCurrentHeadQuietPeriod(
   return nowMs < observedAtMs + settledWaitMs;
 }
 
+function validTimestamp(value: string | null | undefined): string | null {
+  if (typeof value !== "string" || value.length === 0) {
+    return null;
+  }
+
+  return Number.isNaN(Date.parse(value)) ? null : value;
+}
+
 function shouldWaitForConfiguredBotInitialGracePeriod(
   config: SupervisorConfig,
   pr: GitHubPullRequest,
@@ -347,7 +356,10 @@ function shouldWaitForConfiguredBotInitialGracePeriod(
 
 function requiresConfiguredBotCurrentHeadSignal(config: SupervisorConfig): boolean {
   const policy = reviewProviderWaitPolicyFromConfig(config);
-  return policy.shouldApplyCurrentHeadQuietPeriod && config.configuredBotRequireCurrentHeadSignal === true;
+  return (
+    policy.shouldApplyCurrentHeadQuietPeriod &&
+    (config.configuredBotRequireCurrentHeadSignal === true || configuredReviewProviderKinds(config).includes("codex"))
+  );
 }
 
 function latestConfiguredBotActionableSignalAt(pr: GitHubPullRequest): string | null {
@@ -500,17 +512,25 @@ function configuredBotCurrentHeadSignalWaitStartAt(
   record: IssueRunRecord,
   pr: GitHubPullRequest,
 ): string | null {
-  if (!requiresConfiguredBotCurrentHeadSignal(config) || pr.isDraft || pr.configuredBotCurrentHeadObservedAt) {
+  if (!requiresConfiguredBotCurrentHeadSignal(config) || pr.isDraft || validTimestamp(pr.configuredBotCurrentHeadObservedAt)) {
     return null;
   }
 
-  const currentHeadCiGreenAt = pr.currentHeadCiGreenAt;
-  if (!currentHeadCiGreenAt) {
+  const currentHeadCiGreenAt = validTimestamp(pr.currentHeadCiGreenAt);
+  const codexConnectorRequiresSignal = configuredReviewProviderKinds(config).includes("codex");
+  const fallbackWaitStartedAt =
+    codexConnectorRequiresSignal && record.review_wait_head_sha === pr.headRefOid
+      ? validTimestamp(record.review_wait_started_at)
+      : codexConnectorRequiresSignal
+        ? validTimestamp(pr.createdAt)
+        : null;
+  const waitAnchor = currentHeadCiGreenAt ?? fallbackWaitStartedAt;
+  if (!waitAnchor) {
     return null;
   }
 
-  const currentHeadCiGreenAtMs = Date.parse(currentHeadCiGreenAt);
-  if (Number.isNaN(currentHeadCiGreenAtMs)) {
+  const waitAnchorMs = Date.parse(waitAnchor);
+  if (Number.isNaN(waitAnchorMs)) {
     return null;
   }
 
@@ -524,7 +544,7 @@ function configuredBotCurrentHeadSignalWaitStartAt(
       return null;
     }
 
-    return startedAtMs < currentHeadCiGreenAtMs ? currentHeadCiGreenAt : startedAt;
+    return startedAtMs < waitAnchorMs ? waitAnchor : startedAt;
   };
 
   const draftSkipStartedAt = configuredBotDraftSkipRearmStartedAt(config, record, pr);
@@ -539,7 +559,7 @@ function configuredBotCurrentHeadSignalWaitStartAt(
     return clampedLatestHeadRearmStartedAt;
   }
 
-  return currentHeadCiGreenAt;
+  return waitAnchor;
 }
 
 function configuredBotCurrentHeadSignalTimeoutStartAt(
@@ -690,9 +710,9 @@ function hasConfiguredProviderSuccess(
   }
 
   return Boolean(
-    pr.configuredBotCurrentHeadObservedAt ||
-      pr.copilotReviewArrivedAt ||
-      (pr.configuredBotTopLevelReviewStrength === "nitpick_only" && pr.configuredBotTopLevelReviewSubmittedAt),
+    validTimestamp(pr.configuredBotCurrentHeadObservedAt) ||
+      validTimestamp(pr.copilotReviewArrivedAt) ||
+      (pr.configuredBotTopLevelReviewStrength === "nitpick_only" && validTimestamp(pr.configuredBotTopLevelReviewSubmittedAt)),
   );
 }
 

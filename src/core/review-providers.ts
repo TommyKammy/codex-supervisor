@@ -116,7 +116,7 @@ export function reviewProviderWaitPolicyFromConfig(
     shouldTrackRequestedState: usesLifecycleSignals,
     shouldApplyRequestedReviewTimeout: usesLifecycleSignals,
     shouldApplyRateLimitCooldown: reviewers.length > 0,
-    shouldApplyCurrentHeadQuietPeriod: providerKinds.includes("coderabbit"),
+    shouldApplyCurrentHeadQuietPeriod: providerKinds.includes("coderabbit") || providerKinds.includes("codex"),
   };
 }
 
