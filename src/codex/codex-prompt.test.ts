@@ -814,6 +814,50 @@ test("buildCodexPrompt suppresses stale handoff next actions during addressing_r
   assert.match(prompt, /Live review guidance should take priority over stale handoff steps\./);
 });
 
+test("buildCodexPrompt adds Codex Connector P0/P1 must-fix guidance only for Codex Connector addressing_review", () => {
+  const codexContext = {
+    kind: "start",
+    config: createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector[bot]"],
+    }),
+    repoSlug: "owner/repo",
+    issue,
+    branch: "codex/issue-46",
+    workspacePath: "/tmp/workspaces/issue-46",
+    state: "addressing_review" satisfies RunState,
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+    alwaysReadFiles: [],
+    onDemandMemoryFiles: [],
+    journalPath: "/tmp/workspaces/issue-46/.codex-supervisor/issue-journal.md",
+  } satisfies AgentTurnContext;
+
+  const codexPrompt = buildCodexPrompt(codexContext);
+
+  assert.match(codexPrompt, /Codex Connector review handling:/);
+  assert.match(codexPrompt, /P0\/P1 Codex Connector findings are supervisor-enforced must-fix findings\./);
+  assert.match(codexPrompt, /Same-head reply-only disagreement does not clear a P0\/P1 finding for merge readiness\./);
+  assert.match(codexPrompt, /make the smallest valid code fix and push a new PR head/);
+  assert.match(codexPrompt, /route it to the existing manual\/operator review path/);
+
+  const coderabbitContext = {
+    ...codexContext,
+    config: createConfig({
+      reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+    }),
+  } satisfies AgentTurnContext;
+  const customContext = {
+    ...codexContext,
+    config: createConfig({
+      reviewBotLogins: ["custom-review-bot"],
+    }),
+  } satisfies AgentTurnContext;
+
+  assert.doesNotMatch(buildCodexPrompt(coderabbitContext), /Codex Connector review handling:/);
+  assert.doesNotMatch(buildCodexPrompt(customContext), /Codex Connector review handling:/);
+});
+
 test("buildCodexPrompt keeps explicit operator overrides during addressing_review", () => {
   const prompt = buildCodexPrompt({
     repoSlug: "owner/repo",

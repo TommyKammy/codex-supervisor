@@ -20,6 +20,7 @@ import type {
   ResumeAgentTurnContext,
   StartAgentTurnContext,
 } from "../supervisor/agent-runner";
+import { reviewProviderProfileFromConfig, type ReviewProviderProfileSummary } from "../core/review-providers";
 
 export interface LocalReviewRepairContext {
   repairIntent?: "same_pr_fix_blocked" | "same_pr_follow_up" | "same_pr_manual_review" | "high_severity_retry" | "unspecified";
@@ -210,6 +211,7 @@ export interface BuildCodexStartPromptInput {
   previousError?: string | null;
   localReviewRepairContext?: LocalReviewRepairContext | null;
   externalReviewMissContext?: ExternalReviewMissContext | null;
+  reviewProviderProfile?: ReviewProviderProfileSummary;
 }
 
 export interface BuildCodexResumePromptInput {
@@ -431,6 +433,16 @@ function buildCodexStartPrompt(input: BuildCodexStartPromptInput): string {
             : ["- No saved external review miss artifact is available for the current PR head."]),
         ]
       : [];
+  const codexConnectorReviewGuidance =
+    input.state === "addressing_review" && input.reviewProviderProfile?.profile === "codex"
+      ? [
+          "Codex Connector review handling:",
+          "- P0/P1 Codex Connector findings are supervisor-enforced must-fix findings.",
+          "- Same-head reply-only disagreement does not clear a P0/P1 finding for merge readiness.",
+          "- If the finding is valid, make the smallest valid code fix and push a new PR head.",
+          "- If a P0/P1 finding conflicts with issue scope or appears unsafe to apply, route it to the existing manual/operator review path instead of self-dismissing it.",
+        ]
+      : [];
   const verificationPolicy = describeVerificationPolicy(
     summarizeChangeRiskDecision({
       issue: input.issue,
@@ -512,6 +524,7 @@ function buildCodexStartPrompt(input: BuildCodexStartPromptInput): string {
     failureSummary,
     ...(localReviewRepairSummary.length > 0 ? ["", ...localReviewRepairSummary] : []),
     ...(externalReviewMissSummary.length > 0 ? ["", ...externalReviewMissSummary] : []),
+    ...(codexConnectorReviewGuidance.length > 0 ? ["", ...codexConnectorReviewGuidance] : []),
     ...((input.alwaysReadFiles.length > 0 || input.onDemandMemoryFiles.length > 0)
       ? [
           "",
@@ -692,6 +705,7 @@ function toStartPromptInput(input: StartAgentTurnContext): BuildCodexStartPrompt
     previousError: input.previousError,
     localReviewRepairContext: input.localReviewRepairContext,
     externalReviewMissContext: input.externalReviewMissContext,
+    reviewProviderProfile: reviewProviderProfileFromConfig(input.config),
   };
 }
 
