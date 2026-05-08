@@ -812,6 +812,57 @@ test("GitHubPullRequestHydrator extends current-head observation with later acti
   assert.equal(observedAt, "2026-03-13T02:04:00Z");
 });
 
+test("GitHubPullRequestHydrator maps Codex Connector PR conversation success comments to current-head observations", async () => {
+  const config = createConfig({ reviewBotLogins: ["chatgpt-codex-connector"] });
+  const hydrator = new GitHubPullRequestHydrator(config, async (args) => {
+    if (args[0] === "api" && args[1] === "graphql") {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                reviewRequests: {
+                  nodes: [],
+                },
+                reviews: {
+                  nodes: [],
+                },
+                comments: {
+                  nodes: [
+                    {
+                      createdAt: "2026-05-08T03:24:00Z",
+                      body: "Codex review completed successfully for this pull request. No issues found.",
+                      author: {
+                        login: "chatgpt-codex-connector",
+                      },
+                    },
+                  ],
+                },
+                reviewThreads: {
+                  nodes: [],
+                },
+                timelineItems: {
+                  nodes: [],
+                },
+              },
+            },
+          },
+        }),
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  const pr = await hydrator.hydrate(createPullRequest());
+
+  assert.equal(pr?.configuredBotCurrentHeadObservedAt, "2026-05-08T03:24:00Z");
+  assert.equal(pr?.configuredBotCurrentHeadObservationSource, "codex_pr_success_comment");
+  assert.equal(pr?.copilotReviewArrivedAt, null);
+});
+
 test("GitHubPullRequestHydrator extends current-head observation with later weakly anchored CodeRabbit review comments", async () => {
   const config = createConfig({ reviewBotLogins: ["coderabbitai[bot]"] });
   const hydrator = new GitHubPullRequestHydrator(config, async (args) => {

@@ -224,6 +224,24 @@ test("reviewBotDiagnostics tracks observed review signal precedence", () => {
 
   assert.deepEqual(
     reviewBotDiagnostics(
+      config,
+      createRecord(),
+      createPr({
+        configuredBotCurrentHeadObservedAt: "2026-05-08T03:24:00Z",
+        configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+      }),
+      [],
+      configuredBotReviewThreads,
+    ),
+    {
+      status: "review_signal_observed",
+      observedReview: "codex_pr_success_comment",
+      nextCheck: "none",
+    },
+  );
+
+  assert.deepEqual(
+    reviewBotDiagnostics(
       createConfig({ reviewBotLogins: ["copilot-pull-request-reviewer"] }),
       createRecord(),
       createPr({ copilotReviewState: "requested" }),

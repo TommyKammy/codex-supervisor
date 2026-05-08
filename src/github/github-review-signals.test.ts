@@ -342,6 +342,7 @@ test("buildConfiguredBotReviewSummary treats actionable configured-bot issue com
       submittedAt: null,
     },
     currentHeadObservedAt: null,
+    currentHeadObservationSource: null,
     currentHeadStatusState: null,
     currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
@@ -382,6 +383,7 @@ test("buildConfiguredBotReviewSummary keeps top-level review strength scoped to 
       submittedAt: "2026-03-13T02:03:04Z",
     },
     currentHeadObservedAt: null,
+    currentHeadObservationSource: null,
     currentHeadStatusState: null,
     currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
@@ -415,6 +417,7 @@ test("buildConfiguredBotReviewSummary treats configured-bot rate limit issue com
       submittedAt: null,
     },
     currentHeadObservedAt: null,
+    currentHeadObservationSource: null,
     currentHeadStatusState: null,
     currentHeadCiGreenAt: null,
     rateLimitWarningAt: "2026-03-13T03:15:00Z",
@@ -459,6 +462,7 @@ test("buildConfiguredBotReviewSummary records draft-skip issue comments distinct
       submittedAt: null,
     },
     currentHeadObservedAt: null,
+    currentHeadObservationSource: null,
     currentHeadStatusState: null,
     currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
@@ -503,6 +507,7 @@ test("buildConfiguredBotReviewSummary ignores configured-bot draft-skip signals 
       submittedAt: null,
     },
     currentHeadObservedAt: null,
+    currentHeadObservationSource: null,
     currentHeadStatusState: null,
     currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
@@ -547,6 +552,7 @@ test("buildConfiguredBotReviewSummary ignores configured-bot rate limit warnings
       submittedAt: null,
     },
     currentHeadObservedAt: null,
+    currentHeadObservationSource: null,
     currentHeadStatusState: null,
     currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
@@ -600,6 +606,7 @@ test("buildConfiguredBotReviewSummary records the latest configured-bot observat
       submittedAt: null,
     },
     currentHeadObservedAt: "2026-03-13T02:04:00Z",
+    currentHeadObservationSource: "review_thread_comment",
     currentHeadStatusState: null,
     currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
@@ -642,6 +649,7 @@ test("buildConfiguredBotReviewSummary treats summary-only configured-bot reviews
       submittedAt: null,
     },
     currentHeadObservedAt: "2026-03-13T02:02:00Z",
+    currentHeadObservationSource: "review",
     currentHeadStatusState: null,
     currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
@@ -688,6 +696,7 @@ test("buildConfiguredBotReviewSummary extends current-head observation with late
       submittedAt: null,
     },
     currentHeadObservedAt: "2026-03-13T02:04:00Z",
+    currentHeadObservationSource: "review_thread_comment",
     currentHeadStatusState: null,
     currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
@@ -729,6 +738,7 @@ test("buildConfiguredBotReviewSummary extends current-head observation with late
       submittedAt: null,
     },
     currentHeadObservedAt: "2026-03-13T02:04:00Z",
+    currentHeadObservationSource: "review_thread_comment",
     currentHeadStatusState: null,
     currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
@@ -770,6 +780,7 @@ test("buildConfiguredBotReviewSummary keeps weakly anchored CodeRabbit review co
       submittedAt: null,
     },
     currentHeadObservedAt: null,
+    currentHeadObservationSource: null,
     currentHeadStatusState: null,
     currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
@@ -811,6 +822,7 @@ test("buildConfiguredBotReviewSummary ignores late configured-bot closed-PR foll
       submittedAt: null,
     },
     currentHeadObservedAt: "2026-03-13T02:02:00Z",
+    currentHeadObservationSource: "review",
     currentHeadStatusState: null,
     currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
@@ -852,6 +864,7 @@ test("buildConfiguredBotReviewSummary leaves current-head observation empty when
       submittedAt: null,
     },
     currentHeadObservedAt: null,
+    currentHeadObservationSource: null,
     currentHeadStatusState: null,
     currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
@@ -896,6 +909,7 @@ test("buildConfiguredBotReviewSummary treats current-head CodeRabbit status cont
       submittedAt: null,
     },
     currentHeadObservedAt: "2026-03-13T02:04:00Z",
+    currentHeadObservationSource: "status_context",
     currentHeadStatusState: "SUCCESS",
     currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
@@ -933,6 +947,87 @@ test("buildConfiguredBotReviewSummary ignores CodeRabbit status contexts when on
       submittedAt: null,
     },
     currentHeadObservedAt: null,
+    currentHeadObservationSource: null,
+    currentHeadStatusState: null,
+    currentHeadCiGreenAt: null,
+    rateLimitWarningAt: null,
+    draftSkipAt: null,
+  });
+});
+
+test("buildConfiguredBotReviewSummary treats Codex Connector PR conversation success comments as current-head observations", () => {
+  const facts: CopilotReviewLifecycleFacts = {
+    reviewRequests: [],
+    reviews: [],
+    comments: [],
+    issueComments: [
+      {
+        authorLogin: "chatgpt-codex-connector",
+        createdAt: "2026-05-08T03:24:00Z",
+        body: "Codex review completed successfully for this pull request. No issues found.",
+      },
+    ],
+    statusContexts: [],
+    timeline: [],
+  };
+
+  assert.deepEqual(buildConfiguredBotReviewSummary(facts, ["chatgpt-codex-connector"], "head-44"), {
+    lifecycle: {
+      state: "not_requested",
+      requestedAt: null,
+      arrivedAt: null,
+    },
+    topLevelReview: {
+      strength: null,
+      submittedAt: null,
+    },
+    currentHeadObservedAt: "2026-05-08T03:24:00Z",
+    currentHeadObservationSource: "codex_pr_success_comment",
+    currentHeadStatusState: null,
+    currentHeadCiGreenAt: null,
+    rateLimitWarningAt: null,
+    draftSkipAt: null,
+  });
+});
+
+test("buildConfiguredBotReviewSummary rejects non-success and non-configured PR conversation comments as Codex Connector observations", () => {
+  const facts: CopilotReviewLifecycleFacts = {
+    reviewRequests: [],
+    reviews: [],
+    comments: [],
+    issueComments: [
+      {
+        authorLogin: "chatgpt-codex-connector",
+        createdAt: "2026-05-08T03:24:00Z",
+        body: "Codex is still reviewing this pull request.",
+      },
+      {
+        authorLogin: "codex",
+        createdAt: "2026-05-08T03:25:00Z",
+        body: "Codex review completed successfully for this pull request. No issues found.",
+      },
+      {
+        authorLogin: "coderabbitai[bot]",
+        createdAt: "2026-05-08T03:26:00Z",
+        body: "Codex review completed successfully for this pull request. No issues found.",
+      },
+    ],
+    statusContexts: [],
+    timeline: [],
+  };
+
+  assert.deepEqual(buildConfiguredBotReviewSummary(facts, ["chatgpt-codex-connector"], "head-44"), {
+    lifecycle: {
+      state: "not_requested",
+      requestedAt: null,
+      arrivedAt: null,
+    },
+    topLevelReview: {
+      strength: null,
+      submittedAt: null,
+    },
+    currentHeadObservedAt: null,
+    currentHeadObservationSource: null,
     currentHeadStatusState: null,
     currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
@@ -1041,6 +1136,7 @@ test("buildConfiguredBotReviewSummary records the current-head CI-green timestam
       submittedAt: null,
     },
     currentHeadObservedAt: null,
+    currentHeadObservationSource: null,
     currentHeadStatusState: null,
     currentHeadCiGreenAt: "2026-03-13T02:05:00Z",
     rateLimitWarningAt: null,
@@ -1096,6 +1192,7 @@ test("buildConfiguredBotReviewSummary leaves current-head CI-green timestamp emp
       submittedAt: null,
     },
     currentHeadObservedAt: null,
+    currentHeadObservationSource: null,
     currentHeadStatusState: null,
     currentHeadCiGreenAt: null,
     rateLimitWarningAt: null,
