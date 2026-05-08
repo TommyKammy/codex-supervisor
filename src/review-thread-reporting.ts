@@ -78,13 +78,15 @@ export function buildCodexConnectorPolicyBlockDiagnostic(
     return null;
   }
 
-  const firstThread = mustFixThreads[0];
-  const latestComment = latestReviewComment(firstThread);
+  const severity = maxCodexConnectorPSeverity(mustFixThreads);
+  const representativeThread =
+    mustFixThreads.find((thread) => latestCodexConnectorPSeverity(thread) === severity) ?? mustFixThreads[0];
+  const latestComment = latestReviewComment(representativeThread);
   return {
     count: mustFixThreads.length,
-    severity: maxCodexConnectorPSeverity(mustFixThreads),
-    file: formatDiagnosticToken(firstThread.path ?? "unknown"),
-    line: firstThread.line === null ? "unknown" : String(firstThread.line),
+    severity,
+    file: formatDiagnosticToken(representativeThread.path ?? "unknown"),
+    line: representativeThread.line == null ? "unknown" : String(representativeThread.line),
     threadUrl: formatDiagnosticToken(latestComment?.url ?? "none"),
     nextAction: "fix_on_new_head_or_wait_for_github_thread_resolution_or_use_explicit_manual_operator_path",
   };
