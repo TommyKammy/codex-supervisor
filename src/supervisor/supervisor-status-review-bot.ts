@@ -377,6 +377,10 @@ export function summarizeObservedReviewSignal(
     return { observedReview: "external_review_record", hasSignal: true };
   }
 
+  if (pr.configuredBotCurrentHeadObservationSource === "codex_pr_success_comment" && pr.configuredBotCurrentHeadObservedAt) {
+    return { observedReview: "codex_pr_success_comment", hasSignal: true };
+  }
+
   const lifecycleState = pr.copilotReviewState ?? "not_requested";
   if (lifecycleState === "arrived") {
     return { observedReview: "copilot_arrived", hasSignal: true };

@@ -175,6 +175,78 @@ test("inferStateFromPullRequest fails closed for Codex Connector when current-he
   });
 });
 
+test("inferStateFromPullRequest fails closed for stale Codex Connector PR conversation success comments before the active wait", () => {
+  withStubbedDateNow("2026-05-08T03:30:00Z", () => {
+    const config = createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector"],
+      configuredBotInitialGraceWaitSeconds: 0,
+      configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+      configuredBotCurrentHeadSignalTimeoutAction: "block",
+    });
+    const record = createRecord({
+      state: "pr_open",
+      last_head_sha: "head-pr-4",
+      review_wait_started_at: "2026-05-08T03:09:36Z",
+      review_wait_head_sha: "head-pr-4",
+    });
+
+    const pr = createPullRequest({
+      number: 4,
+      createdAt: "2026-05-08T03:00:00Z",
+      headRefOid: "head-pr-4",
+      isDraft: false,
+      reviewDecision: null,
+      mergeStateStatus: "CLEAN",
+      mergeable: "MERGEABLE",
+      copilotReviewState: "not_requested",
+      copilotReviewRequestedAt: null,
+      copilotReviewArrivedAt: null,
+      configuredBotCurrentHeadObservedAt: "2026-05-08T03:08:00Z",
+      configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+      configuredBotTopLevelReviewSubmittedAt: null,
+    });
+
+    assert.equal(inferStateFromPullRequest(config, record, pr, [], []), "blocked");
+    assert.equal(blockedReasonFromReviewState(config, record, pr, [], []), "review_bot_timeout");
+  });
+});
+
+test("inferStateFromPullRequest accepts Codex Connector PR conversation success comments after the active wait", () => {
+  withStubbedDateNow("2026-05-08T03:30:00Z", () => {
+    const config = createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector"],
+      configuredBotInitialGraceWaitSeconds: 0,
+      configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+      configuredBotCurrentHeadSignalTimeoutAction: "block",
+    });
+    const record = createRecord({
+      state: "pr_open",
+      last_head_sha: "head-pr-4",
+      review_wait_started_at: "2026-05-08T03:09:36Z",
+      review_wait_head_sha: "head-pr-4",
+    });
+
+    const pr = createPullRequest({
+      number: 4,
+      createdAt: "2026-05-08T03:00:00Z",
+      headRefOid: "head-pr-4",
+      isDraft: false,
+      reviewDecision: null,
+      mergeStateStatus: "CLEAN",
+      mergeable: "MERGEABLE",
+      copilotReviewState: "not_requested",
+      copilotReviewRequestedAt: null,
+      copilotReviewArrivedAt: null,
+      configuredBotCurrentHeadObservedAt: "2026-05-08T03:24:00Z",
+      configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+      configuredBotTopLevelReviewSubmittedAt: null,
+    });
+
+    assert.equal(inferStateFromPullRequest(config, record, pr, [], []), "ready_to_merge");
+    assert.equal(blockedReasonFromReviewState(config, record, pr, [], []), null);
+  });
+});
+
 test("inferStateFromPullRequest allows merge after the Copilot propagation grace window expires", () => {
   withStubbedDateNow("2026-03-13T05:42:42Z", () => {
     const config = createConfig({

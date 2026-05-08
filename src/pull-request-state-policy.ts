@@ -331,6 +331,23 @@ function validTimestamp(value: string | null | undefined): string | null {
   return Number.isNaN(Date.parse(value)) ? null : value;
 }
 
+function currentHeadObservationSatisfiesActiveWait(
+  record: Pick<IssueRunRecord, "review_wait_started_at" | "review_wait_head_sha">,
+  pr: GitHubPullRequest,
+): boolean {
+  if (pr.configuredBotCurrentHeadObservationSource !== "codex_pr_success_comment") {
+    return true;
+  }
+
+  const observedAt = validTimestamp(pr.configuredBotCurrentHeadObservedAt);
+  const waitStartedAt = validTimestamp(record.review_wait_started_at);
+  if (!observedAt || !waitStartedAt || record.review_wait_head_sha !== pr.headRefOid) {
+    return false;
+  }
+
+  return Date.parse(observedAt) >= Date.parse(waitStartedAt);
+}
+
 function shouldWaitForConfiguredBotInitialGracePeriod(
   config: SupervisorConfig,
   pr: GitHubPullRequest,
@@ -512,7 +529,11 @@ function configuredBotCurrentHeadSignalWaitStartAt(
   record: IssueRunRecord,
   pr: GitHubPullRequest,
 ): string | null {
-  if (!requiresConfiguredBotCurrentHeadSignal(config) || pr.isDraft || validTimestamp(pr.configuredBotCurrentHeadObservedAt)) {
+  if (
+    !requiresConfiguredBotCurrentHeadSignal(config) ||
+    pr.isDraft ||
+    (validTimestamp(pr.configuredBotCurrentHeadObservedAt) && currentHeadObservationSatisfiesActiveWait(record, pr))
+  ) {
     return null;
   }
 

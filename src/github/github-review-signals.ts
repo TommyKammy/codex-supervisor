@@ -67,11 +67,19 @@ export interface ConfiguredBotReviewSummary {
   lifecycle: CopilotReviewLifecycle;
   topLevelReview: ConfiguredBotTopLevelReviewSummary;
   currentHeadObservedAt: string | null;
+  currentHeadObservationSource: ConfiguredBotCurrentHeadObservationSource;
   currentHeadStatusState: string | null;
   currentHeadCiGreenAt: string | null;
   rateLimitWarningAt: string | null;
   draftSkipAt: string | null;
 }
+
+export type ConfiguredBotCurrentHeadObservationSource =
+  | "review"
+  | "review_thread_comment"
+  | "status_context"
+  | "codex_pr_success_comment"
+  | null;
 
 function parseTimestamp(value: string | null | undefined): number {
   if (!value) {
@@ -89,6 +97,10 @@ function normalizeLogin(value: string | null | undefined): string | null {
 
 function isCodeRabbitLogin(value: string | null | undefined): boolean {
   return (normalizeLogin(value) ?? "").includes("coderabbit");
+}
+
+function isCodexConnectorLogin(value: string | null | undefined): boolean {
+  return normalizeLogin(value) === "chatgpt-codex-connector";
 }
 
 function hasConfiguredCodeRabbitLogin(configuredReviewBots: Set<string>): boolean {
@@ -167,6 +179,21 @@ function latestTimestamp(values: Array<string | null | undefined>): string | nul
   }
 
   return latest;
+}
+
+function isCodexConnectorPrSuccessCommentText(value: string | null | undefined): boolean {
+  const normalized = value?.replace(/\s+/g, " ").trim().toLowerCase() ?? "";
+  if (!normalized) {
+    return false;
+  }
+
+  const mentionsReviewScope = /\b(review|reviewed|analysis|checked|pull request|pr)\b/.test(normalized);
+  const mentionsCompletion = /\b(successfully completed|completed successfully|review completed|finished review|review is complete|reviewed this pull request)\b/.test(
+    normalized,
+  );
+  const mentionsSuccess = /\b(success|successful|no issues found|no actionable issues|looks good)\b/.test(normalized);
+
+  return mentionsReviewScope && mentionsCompletion && mentionsSuccess;
 }
 
 function summarizeConfiguredBotRequestWindow(
@@ -333,59 +360,79 @@ function inferConfiguredBotTopLevelReviewSummary(
   return latestConfiguredReview;
 }
 
-function inferConfiguredBotCurrentHeadObservedAt(
+function inferConfiguredBotCurrentHeadObservation(
   facts: CopilotReviewLifecycleFacts,
   reviewBotLogins: string[],
   currentHeadOid: string | null | undefined,
-): string | null {
+): { observedAt: string | null; source: ConfiguredBotCurrentHeadObservationSource } {
   const normalizedCurrentHeadOid = currentHeadOid?.trim();
   if (!normalizedCurrentHeadOid) {
-    return null;
+    return { observedAt: null, source: null };
   }
 
   const configuredReviewBots = new Set(normalizeReviewBotLogins(reviewBotLogins));
   if (configuredReviewBots.size === 0) {
-    return null;
+    return { observedAt: null, source: null };
   }
 
-  const currentHeadReviewTimes = facts.reviews.flatMap((review) => {
+  const currentHeadObservations: Array<{ observedAt: string | null | undefined; source: NonNullable<ConfiguredBotCurrentHeadObservationSource> }> = [];
+  for (const review of facts.reviews) {
     const authorLogin = normalizeLogin(review.authorLogin);
-    return authorLogin &&
+    if (
+      authorLogin &&
       configuredReviewBots.has(authorLogin) &&
       review.commitOid === normalizedCurrentHeadOid
-      ? [review.submittedAt]
-      : [];
-  });
+    ) {
+      currentHeadObservations.push({ observedAt: review.submittedAt, source: "review" });
+    }
+  }
 
-  const currentHeadCommentTimes = facts.comments.flatMap((comment) => {
+  for (const comment of facts.comments) {
     const authorLogin = normalizeLogin(comment.authorLogin);
-    return authorLogin &&
+    if (
+      authorLogin &&
       configuredReviewBots.has(authorLogin) &&
       comment.originalCommitOid === normalizedCurrentHeadOid
-      ? [comment.createdAt]
-      : [];
-  });
-
-  const currentHeadStatusContextTimes = (facts.statusContexts ?? []).flatMap((statusContext) =>
-    statusContext.commitOid === normalizedCurrentHeadOid &&
-    isConfiguredBotStatusContextActivity({
-      creatorLogin: statusContext.creatorLogin,
-      context: statusContext.context,
-      description: statusContext.description,
-      configuredReviewBots,
-    })
-      ? [statusContext.createdAt]
-      : [],
-  );
-
-  const latestStrongCurrentHeadObservedAt = latestTimestamp([
-    ...currentHeadReviewTimes,
-    ...currentHeadCommentTimes,
-    ...currentHeadStatusContextTimes,
-  ]);
-  if (!latestStrongCurrentHeadObservedAt) {
-    return null;
+    ) {
+      currentHeadObservations.push({ observedAt: comment.createdAt, source: "review_thread_comment" });
+    }
   }
+
+  for (const statusContext of facts.statusContexts ?? []) {
+    if (
+      statusContext.commitOid === normalizedCurrentHeadOid &&
+      isConfiguredBotStatusContextActivity({
+        creatorLogin: statusContext.creatorLogin,
+        context: statusContext.context,
+        description: statusContext.description,
+        configuredReviewBots,
+      })
+    ) {
+      currentHeadObservations.push({ observedAt: statusContext.createdAt, source: "status_context" });
+    }
+  }
+
+  if (configuredReviewBots.has("chatgpt-codex-connector")) {
+    for (const comment of facts.issueComments) {
+      const authorLogin = normalizeLogin(comment.authorLogin);
+      if (
+        authorLogin &&
+        isCodexConnectorLogin(authorLogin) &&
+        isCodexConnectorPrSuccessCommentText(comment.body)
+      ) {
+        currentHeadObservations.push({ observedAt: comment.createdAt, source: "codex_pr_success_comment" });
+      }
+    }
+  }
+
+  const latestStrongCurrentHeadObservedAt = latestTimestamp(currentHeadObservations.map((observation) => observation.observedAt));
+  if (!latestStrongCurrentHeadObservedAt) {
+    return { observedAt: null, source: null };
+  }
+  const latestStrongCurrentHeadObservationSource =
+    currentHeadObservations
+      .filter((observation) => observation.observedAt === latestStrongCurrentHeadObservedAt)
+      .at(-1)?.source ?? null;
 
   const latestStrongCurrentHeadObservedAtMs = parseTimestamp(latestStrongCurrentHeadObservedAt);
   const weaklyAnchoredCodeRabbitCommentTimes = facts.comments.flatMap((comment) => {
@@ -408,11 +455,16 @@ function inferConfiguredBotCurrentHeadObservedAt(
       : [];
   });
 
-  return latestTimestamp([
+  const latestObservedAt = latestTimestamp([
     latestStrongCurrentHeadObservedAt,
     ...weaklyAnchoredCodeRabbitCommentTimes,
     ...followUpIssueCommentTimes,
   ]);
+
+  return {
+    observedAt: latestObservedAt,
+    source: latestObservedAt === latestStrongCurrentHeadObservedAt ? latestStrongCurrentHeadObservationSource : "review_thread_comment",
+  };
 }
 
 function inferConfiguredBotCurrentHeadStatusState(
@@ -581,10 +633,12 @@ export function buildConfiguredBotReviewSummary(
   reviewBotLogins: string[],
   currentHeadOid?: string | null,
 ): ConfiguredBotReviewSummary {
+  const currentHeadObservation = inferConfiguredBotCurrentHeadObservation(facts, reviewBotLogins, currentHeadOid);
   return {
     lifecycle: inferCopilotReviewLifecycle(facts, reviewBotLogins),
     topLevelReview: inferConfiguredBotTopLevelReviewSummary(facts, reviewBotLogins),
-    currentHeadObservedAt: inferConfiguredBotCurrentHeadObservedAt(facts, reviewBotLogins, currentHeadOid),
+    currentHeadObservedAt: currentHeadObservation.observedAt,
+    currentHeadObservationSource: currentHeadObservation.source,
     currentHeadStatusState: inferConfiguredBotCurrentHeadStatusState(facts, reviewBotLogins, currentHeadOid),
     currentHeadCiGreenAt: inferCurrentHeadCiGreenAt(facts, currentHeadOid),
     rateLimitWarningAt: inferConfiguredBotRateLimitWarningAt(facts, reviewBotLogins),
