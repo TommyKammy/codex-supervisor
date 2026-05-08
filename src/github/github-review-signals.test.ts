@@ -990,6 +990,46 @@ test("buildConfiguredBotReviewSummary treats Codex Connector PR conversation suc
   });
 });
 
+test("buildConfiguredBotReviewSummary recognizes live Codex Connector no-major-issues wording", () => {
+  const facts: CopilotReviewLifecycleFacts = {
+    reviewRequests: [],
+    reviews: [],
+    comments: [],
+    issueComments: [
+      {
+        authorLogin: "chatgpt-codex-connector[bot]",
+        createdAt: "2026-05-08T04:43:37Z",
+        body: "Codex Review: no major issues found.",
+      },
+      {
+        authorLogin: "chatgpt-codex-connector[bot]",
+        createdAt: "2026-05-08T04:44:37Z",
+        body: "Codex Review: Didn't find any major issues. :tada:",
+      },
+    ],
+    statusContexts: [],
+    timeline: [],
+  };
+
+  assert.deepEqual(buildConfiguredBotReviewSummary(facts, ["chatgpt-codex-connector"], "head-44"), {
+    lifecycle: {
+      state: "not_requested",
+      requestedAt: null,
+      arrivedAt: null,
+    },
+    topLevelReview: {
+      strength: null,
+      submittedAt: null,
+    },
+    currentHeadObservedAt: "2026-05-08T04:44:37Z",
+    currentHeadObservationSource: "codex_pr_success_comment",
+    currentHeadStatusState: null,
+    currentHeadCiGreenAt: null,
+    rateLimitWarningAt: null,
+    draftSkipAt: null,
+  });
+});
+
 test("buildConfiguredBotReviewSummary rejects non-success and non-configured PR conversation comments as Codex Connector observations", () => {
   const facts: CopilotReviewLifecycleFacts = {
     reviewRequests: [],
@@ -1005,6 +1045,16 @@ test("buildConfiguredBotReviewSummary rejects non-success and non-configured PR 
         authorLogin: "chatgpt-codex-connector",
         createdAt: "2026-05-08T03:25:00Z",
         body: "Review completed. Critical issues found.",
+      },
+      {
+        authorLogin: "chatgpt-codex-connector",
+        createdAt: "2026-05-08T03:25:30Z",
+        body: "Codex Review: Found major issues that need changes.",
+      },
+      {
+        authorLogin: "chatgpt-codex-connector",
+        createdAt: "2026-05-08T03:25:45Z",
+        body: "Codex Review: no major issues found, but found blocking problems.",
       },
       {
         authorLogin: "codex",
