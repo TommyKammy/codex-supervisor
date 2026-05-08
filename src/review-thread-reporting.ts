@@ -2,7 +2,12 @@ import { hasProcessedReviewThread } from "./review-handling";
 import { configuredReviewBotLogins, configuredReviewProviderKinds } from "./core/review-providers";
 import { FailureContext, GitHubPullRequest, IssueRunRecord, ReviewThread, SupervisorConfig } from "./core/types";
 import { nowIso } from "./core/utils";
-import { extractCodexConnectorPSeverity, isCodexConnectorReviewer } from "./external-review/external-review-normalization";
+import {
+  type CodexConnectorPSeverity,
+  extractCodexConnectorPSeverity,
+  hasCodexConnectorStrongRiskWording,
+  isCodexConnectorReviewer,
+} from "./external-review/external-review-normalization";
 
 function isAllowedReviewBotThread(config: SupervisorConfig, thread: ReviewThread): boolean {
   const configuredLogins = new Set(configuredReviewBotLogins(config).map((login) => login.toLowerCase()));
@@ -27,7 +32,10 @@ export function latestReviewCommentAuthorIsAllowedBot(config: SupervisorConfig, 
   return configuredLogins.has(latestLogin);
 }
 
-function latestCodexConnectorPSeverity(thread: ReviewThread): "P0" | "P1" | null {
+function latestCodexConnectorReviewComment(thread: ReviewThread): {
+  severity: CodexConnectorPSeverity;
+  body: string;
+} | null {
   for (let index = thread.comments.nodes.length - 1; index >= 0; index -= 1) {
     const comment = thread.comments.nodes[index];
     const login = comment.author?.login;
@@ -37,15 +45,25 @@ function latestCodexConnectorPSeverity(thread: ReviewThread): "P0" | "P1" | null
 
     const pSeverity = extractCodexConnectorPSeverity(comment.body);
     if (pSeverity) {
-      return pSeverity;
+      return {
+        severity: pSeverity,
+        body: comment.body,
+      };
     }
   }
 
   return null;
 }
 
+function latestCodexConnectorPSeverity(thread: ReviewThread): CodexConnectorPSeverity | null {
+  return latestCodexConnectorReviewComment(thread)?.severity ?? null;
+}
+
 export function codexConnectorMustFixReviewThreads(reviewThreads: ReviewThread[]): ReviewThread[] {
-  return reviewThreads.filter((thread) => !thread.isResolved && !thread.isOutdated && latestCodexConnectorPSeverity(thread));
+  return reviewThreads.filter((thread) => {
+    const pSeverity = latestCodexConnectorPSeverity(thread);
+    return !thread.isResolved && !thread.isOutdated && (pSeverity === "P0" || pSeverity === "P1");
+  });
 }
 
 export interface CodexConnectorPolicyBlockDiagnostic {
@@ -57,8 +75,22 @@ export interface CodexConnectorPolicyBlockDiagnostic {
   nextAction: "fix_on_new_head_or_wait_for_github_thread_resolution_or_use_explicit_manual_operator_path";
 }
 
+export interface CodexConnectorP2P3PolicyDiagnostic {
+  p2Actionable: number;
+  p3Softened: number;
+  p3Escalated: number;
+}
+
 function maxCodexConnectorPSeverity(threads: ReviewThread[]): "P0" | "P1" {
   return threads.some((thread) => latestCodexConnectorPSeverity(thread) === "P0") ? "P0" : "P1";
+}
+
+function isSoftenedCodexConnectorP3Thread(thread: ReviewThread): boolean {
+  const latestCodexConnectorReview = latestCodexConnectorReviewComment(thread);
+  return (
+    latestCodexConnectorReview?.severity === "P3" &&
+    !hasCodexConnectorStrongRiskWording(latestCodexConnectorReview.body)
+  );
 }
 
 function formatDiagnosticToken(value: string): string {
@@ -92,6 +124,40 @@ export function buildCodexConnectorPolicyBlockDiagnostic(
   };
 }
 
+export function buildCodexConnectorP2P3PolicyDiagnostic(
+  config: SupervisorConfig,
+  reviewThreads: ReviewThread[],
+): CodexConnectorP2P3PolicyDiagnostic | null {
+  if (!configuredReviewProviderKinds(config).includes("codex")) {
+    return null;
+  }
+
+  const diagnostic: CodexConnectorP2P3PolicyDiagnostic = {
+    p2Actionable: 0,
+    p3Softened: 0,
+    p3Escalated: 0,
+  };
+
+  for (const thread of reviewThreads) {
+    if (thread.isResolved || thread.isOutdated) {
+      continue;
+    }
+
+    const latestCodexConnectorReview = latestCodexConnectorReviewComment(thread);
+    if (latestCodexConnectorReview?.severity === "P2") {
+      diagnostic.p2Actionable += 1;
+    } else if (latestCodexConnectorReview?.severity === "P3") {
+      if (hasCodexConnectorStrongRiskWording(latestCodexConnectorReview.body)) {
+        diagnostic.p3Escalated += 1;
+      } else {
+        diagnostic.p3Softened += 1;
+      }
+    }
+  }
+
+  return diagnostic.p2Actionable > 0 || diagnostic.p3Softened > 0 || diagnostic.p3Escalated > 0 ? diagnostic : null;
+}
+
 export function formatCodexConnectorPolicyBlockDiagnostic(
   diagnostic: CodexConnectorPolicyBlockDiagnostic,
 ): string {
@@ -103,6 +169,15 @@ export function formatCodexConnectorPolicyBlockDiagnostic(
     `line=${diagnostic.line}`,
     `thread_url=${diagnostic.threadUrl}`,
     `next_action=${diagnostic.nextAction}`,
+  ].join(" ");
+}
+
+export function formatCodexConnectorP2P3PolicyDiagnostic(diagnostic: CodexConnectorP2P3PolicyDiagnostic): string {
+  return [
+    "codex_connector_policy_review",
+    `p2_actionable=${diagnostic.p2Actionable}`,
+    `p3_softened=${diagnostic.p3Softened}`,
+    `p3_escalated=${diagnostic.p3Escalated}`,
   ].join(" ");
 }
 
@@ -152,7 +227,7 @@ export function actionableConfiguredBotReviewThreads(
   reviewThreads: ReviewThread[],
 ): ReviewThread[] {
   return configuredBotReviewThreads(config, reviewThreads).filter((thread) =>
-    latestReviewCommentAuthorIsAllowedBot(config, thread),
+    latestReviewCommentAuthorIsAllowedBot(config, thread) && !isSoftenedCodexConnectorP3Thread(thread),
   );
 }
 

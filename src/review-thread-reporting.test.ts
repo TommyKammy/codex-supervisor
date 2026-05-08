@@ -3,6 +3,8 @@ import test from "node:test";
 import { configuredBotReviewThreads, manualReviewThreads } from "./supervisor/supervisor-reporting";
 import {
   buildCodexConnectorPolicyBlockDiagnostic,
+  buildCodexConnectorP2P3PolicyDiagnostic,
+  actionableBotReviewThreads,
   buildStalledBotReviewFailureContext,
   codexConnectorMustFixReviewThreads,
   staleConfiguredBotReviewThreads,
@@ -83,6 +85,42 @@ function createReviewThread(overrides: Partial<ReviewThread> = {}): ReviewThread
         },
       ],
     },
+    ...overrides,
+  };
+}
+
+function createReviewRecord(
+  overrides: Partial<
+    Pick<
+      IssueRunRecord,
+      | "processed_review_thread_ids"
+      | "processed_review_thread_fingerprints"
+      | "last_head_sha"
+      | "review_follow_up_head_sha"
+      | "review_follow_up_remaining"
+    >
+  > = {},
+): Pick<
+  IssueRunRecord,
+  | "processed_review_thread_ids"
+  | "processed_review_thread_fingerprints"
+  | "last_head_sha"
+  | "review_follow_up_head_sha"
+  | "review_follow_up_remaining"
+> {
+  return {
+    processed_review_thread_ids: [],
+    processed_review_thread_fingerprints: [],
+    last_head_sha: "head123",
+    review_follow_up_head_sha: null,
+    review_follow_up_remaining: 0,
+    ...overrides,
+  };
+}
+
+function createPr(overrides: Partial<Pick<GitHubPullRequest, "headRefOid">> = {}): Pick<GitHubPullRequest, "headRefOid"> {
+  return {
+    headRefOid: "head123",
     ...overrides,
   };
 }
@@ -303,4 +341,137 @@ test("buildCodexConnectorPolicyBlockDiagnostic reports the highest-severity thre
     threadUrl: "https://example.test/pr/44#discussion_r2",
     nextAction: "fix_on_new_head_or_wait_for_github_thread_resolution_or_use_explicit_manual_operator_path",
   });
+});
+
+test("buildCodexConnectorP2P3PolicyDiagnostic distinguishes actionable, softened, and escalated outcomes", () => {
+  const config = createConfig({ reviewBotLogins: ["chatgpt-codex-connector"] });
+  const p2Thread = createReviewThread({
+    id: "thread-p2",
+    comments: {
+      nodes: [
+        {
+          id: "comment-p2",
+          body: "P2: Repair the retry path before reporting verification success.",
+          createdAt: "2026-03-11T00:00:00Z",
+          url: "https://example.test/pr/44#discussion_r3",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const p3NitpickThread = createReviewThread({
+    id: "thread-p3-softened",
+    comments: {
+      nodes: [
+        {
+          id: "comment-p3-softened",
+          body: "P3: Nitpick: prefer a shorter helper name for readability.",
+          createdAt: "2026-03-11T00:01:00Z",
+          url: "https://example.test/pr/44#discussion_r4",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const p3RiskThread = createReviewThread({
+    id: "thread-p3-escalated",
+    comments: {
+      nodes: [
+        {
+          id: "comment-p3-escalated",
+          body: "P3: This cleanup can cause a regression in the restore failure path.",
+          createdAt: "2026-03-11T00:02:00Z",
+          url: "https://example.test/pr/44#discussion_r5",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(buildCodexConnectorP2P3PolicyDiagnostic(config, [p2Thread, p3NitpickThread, p3RiskThread]), {
+    p2Actionable: 1,
+    p3Softened: 1,
+    p3Escalated: 1,
+  });
+});
+
+test("actionableBotReviewThreads treats Codex Connector P2 as actionable by default", () => {
+  const config = createConfig({ reviewBotLogins: ["chatgpt-codex-connector"] });
+  const record = createReviewRecord();
+  const pr = createPr();
+  const p2Thread = createReviewThread({
+    comments: {
+      nodes: [
+        {
+          id: "comment-p2",
+          body: "P2: Repair the retry path so failed verification cannot be reported as success.",
+          createdAt: "2026-03-11T00:00:00Z",
+          url: "https://example.test/pr/44#discussion_r3",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(actionableBotReviewThreads(config, record, pr, [p2Thread]), [p2Thread]);
+});
+
+test("actionableBotReviewThreads softens Codex Connector P3 only without stronger risk wording", () => {
+  const config = createConfig({ reviewBotLogins: ["chatgpt-codex-connector"] });
+  const record = createReviewRecord();
+  const pr = createPr();
+  const p3NitpickThread = createReviewThread({
+    comments: {
+      nodes: [
+        {
+          id: "comment-p3",
+          body: "P3: Nitpick: prefer a shorter helper name for readability.",
+          createdAt: "2026-03-11T00:00:00Z",
+          url: "https://example.test/pr/44#discussion_r4",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(actionableBotReviewThreads(config, record, pr, [p3NitpickThread]), []);
+});
+
+test("actionableBotReviewThreads escalates Codex Connector P3 with stronger wording", () => {
+  const config = createConfig({ reviewBotLogins: ["chatgpt-codex-connector"] });
+  const record = createReviewRecord();
+  const pr = createPr();
+  const p3RiskThread = createReviewThread({
+    comments: {
+      nodes: [
+        {
+          id: "comment-p3",
+          body: "P3: This cleanup can cause a regression in the restore failure path.",
+          createdAt: "2026-03-11T00:00:00Z",
+          url: "https://example.test/pr/44#discussion_r5",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(actionableBotReviewThreads(config, record, pr, [p3RiskThread]), [p3RiskThread]);
 });

@@ -36,26 +36,46 @@ export function isCodexConnectorReviewer(reviewerLogin: string): boolean {
   return /^chatgpt-codex-connector(?:\[bot\])?$/iu.test(reviewerLogin);
 }
 
-export function extractCodexConnectorPSeverity(body: string): "P0" | "P1" | null {
+export type CodexConnectorPSeverity = "P0" | "P1" | "P2" | "P3";
+
+export function extractCodexConnectorPSeverity(body: string): CodexConnectorPSeverity | null {
   const leadingBody = body.slice(0, 800);
-  const badgeLabel = leadingBody.match(/!\[[^\]]*\b(P[01])\b[^\]]*\]\([^)]*\)/iu)?.[1];
-  if (badgeLabel === "P0" || badgeLabel === "P1") {
+  const badgeLabel = leadingBody.match(/!\[[^\]]*\b(P[0-3])\b[^\]]*\]\([^)]*\)/iu)?.[1];
+  if (isCodexConnectorPSeverity(badgeLabel)) {
     return badgeLabel;
   }
 
-  const shieldBadge = leadingBody.match(/https?:\/\/img\.shields\.io\/badge\/(P[01])(?:[-/?#)]|$)/iu)?.[1];
-  if (shieldBadge === "P0" || shieldBadge === "P1") {
+  const shieldBadge = leadingBody.match(/https?:\/\/img\.shields\.io\/badge\/(P[0-3])(?:[-/?#)]|$)/iu)?.[1];
+  if (isCodexConnectorPSeverity(shieldBadge)) {
     return shieldBadge;
   }
 
   const textHeading = normalizeWhitespace(leadingBody.replace(/<[^>]+>/gu, " ").replace(/[*_`[\]]/gu, " "));
-  const headingLabel = textHeading.match(/^(?:#{1,6}\s*)?(P[01])(?:\s*[:\-]|\s+\b)/iu)?.[1];
-  return headingLabel === "P0" || headingLabel === "P1" ? headingLabel : null;
+  const headingLabel = textHeading.match(/^(?:#{1,6}\s*)?(P[0-3])(?:\s*[:\-]|\s+\b)/iu)?.[1];
+  return isCodexConnectorPSeverity(headingLabel) ? headingLabel : null;
+}
+
+function isCodexConnectorPSeverity(value: string | undefined): value is CodexConnectorPSeverity {
+  return value === "P0" || value === "P1" || value === "P2" || value === "P3";
+}
+
+export function hasCodexConnectorStrongRiskWording(body: string): boolean {
+  const normalized = body.toLowerCase();
+  return /\b(correctness|correct|incorrect|safety|unsafe|security|auth|authorization|permission|privilege|secret|data[- ]?loss|verification|verify|test|tests|fails?|failure|broken|bug|issue|error|warning|missing|regression|risk|leak|panic|crash|deadlock|corrupt)\b/u.test(
+    normalized,
+  );
 }
 
 function inferSeverity(body: string, reviewerLogin: string): Exclude<LocalReviewSeverity, "none"> {
-  if (isCodexConnectorReviewer(reviewerLogin) && extractCodexConnectorPSeverity(body)) {
+  const codexConnectorPSeverity = isCodexConnectorReviewer(reviewerLogin) ? extractCodexConnectorPSeverity(body) : null;
+  if (codexConnectorPSeverity === "P0" || codexConnectorPSeverity === "P1") {
     return "high";
+  }
+  if (codexConnectorPSeverity === "P2") {
+    return "medium";
+  }
+  if (codexConnectorPSeverity === "P3" && hasCodexConnectorStrongRiskWording(body)) {
+    return "medium";
   }
 
   const normalized = body.toLowerCase();
@@ -71,8 +91,12 @@ function inferSeverity(body: string, reviewerLogin: string): Exclude<LocalReview
 }
 
 function inferConfidence(body: string, reviewerLogin: string): number {
-  if (isCodexConnectorReviewer(reviewerLogin) && extractCodexConnectorPSeverity(body)) {
+  const codexConnectorPSeverity = isCodexConnectorReviewer(reviewerLogin) ? extractCodexConnectorPSeverity(body) : null;
+  if (codexConnectorPSeverity === "P0" || codexConnectorPSeverity === "P1") {
     return 0.95;
+  }
+  if (codexConnectorPSeverity === "P2" || (codexConnectorPSeverity === "P3" && hasCodexConnectorStrongRiskWording(body))) {
+    return 0.9;
   }
 
   const normalized = body.toLowerCase();
