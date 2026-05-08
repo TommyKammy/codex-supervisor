@@ -999,7 +999,7 @@ test("buildConfiguredBotReviewSummary recognizes live Codex Connector no-major-i
       {
         authorLogin: "chatgpt-codex-connector[bot]",
         createdAt: "2026-05-08T04:43:37Z",
-        body: "Codex Review: no blocking issues.",
+        body: "Codex Review: no major issues found.",
       },
       {
         authorLogin: "chatgpt-codex-connector[bot]",
@@ -1050,6 +1050,11 @@ test("buildConfiguredBotReviewSummary rejects non-success and non-configured PR 
         authorLogin: "chatgpt-codex-connector",
         createdAt: "2026-05-08T03:25:30Z",
         body: "Codex Review: Found major issues that need changes.",
+      },
+      {
+        authorLogin: "chatgpt-codex-connector",
+        createdAt: "2026-05-08T03:25:45Z",
+        body: "Codex Review: no major issues found, but found blocking problems.",
       },
       {
         authorLogin: "codex",

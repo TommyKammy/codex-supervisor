@@ -193,13 +193,30 @@ function isCodexConnectorPrSuccessCommentText(value: string | null | undefined):
   }
 
   const mentionsReviewScope = /\b(review|reviewed|analysis|checked|pull request|pr)\b/.test(normalized);
-  const reportsIssues =
-    /\b(?:found|identified|detected)\s+(?:\w+\s+){0,3}(?:issues?|problems?|concerns?)\b/.test(normalized) ||
-    /\b(?:critical|major|blocking|actionable)\s+(?:issues?|problems?|concerns?)\s+(?:found|identified|detected|reported)\b/.test(
+  const mentionsNoIssueSuccess =
+    /\bno\s+(?:major|actionable|blocking|critical)\s+issues?\b/.test(normalized) ||
+    /\bno\s+(?:major|actionable|blocking|critical)?\s*issues?\s+(?:found|detected|identified|reported)\b/.test(normalized) ||
+    /\b(?:didn't|did not|doesn't|does not)\s+(?:find|detect|identify|see)\s+(?:any\s+)?(?:major|actionable|blocking|critical)?\s*issues?\b/.test(
       normalized,
+    );
+  const issueReportText = normalized
+    .replace(/\bno\s+(?:major|actionable|blocking|critical)\s+issues?\b/g, " ")
+    .replace(/\bno\s+(?:major|actionable|blocking|critical)?\s*issues?\s+(?:found|detected|identified|reported)\b/g, " ")
+    .replace(
+      /\b(?:didn't|did not|doesn't|does not)\s+(?:find|detect|identify|see)\s+(?:any\s+)?(?:major|actionable|blocking|critical)?\s*issues?\b/g,
+      " ",
+    );
+
+  const reportsIssues =
+    /\b(?:found|identified|detected)\s+(?:\w+\s+){0,3}(?:issues?|problems?|concerns?)\b/.test(issueReportText) ||
+    /\b(?:critical|major|blocking|actionable)\s+(?:issues?|problems?|concerns?)\s+(?:found|identified|detected|reported)\b/.test(
+      issueReportText,
     );
   if (reportsIssues) {
     return false;
+  }
+  if (mentionsNoIssueSuccess) {
+    return mentionsReviewScope;
   }
 
   const mentionsCompletion =
@@ -207,14 +224,8 @@ function isCodexConnectorPrSuccessCommentText(value: string | null | undefined):
       normalized,
     );
   const mentionsSuccess = /\b(success|successful|no issues found|no actionable issues|looks good)\b/.test(normalized);
-  const mentionsNoIssueSuccess =
-    /\bno\s+(?:major|actionable|blocking|critical)\s+issues?\b/.test(normalized) ||
-    /\bno\s+(?:major|actionable|blocking|critical)?\s*issues?\s+(?:found|detected|identified|reported)\b/.test(normalized) ||
-    /\b(?:didn't|did not|doesn't|does not)\s+(?:find|detect|identify|see)\s+(?:any\s+)?(?:major|actionable|blocking|critical)?\s*issues?\b/.test(
-      normalized,
-    );
 
-  return mentionsReviewScope && ((mentionsCompletion && mentionsSuccess) || mentionsNoIssueSuccess);
+  return mentionsReviewScope && mentionsCompletion && mentionsSuccess;
 }
 
 function summarizeConfiguredBotRequestWindow(
