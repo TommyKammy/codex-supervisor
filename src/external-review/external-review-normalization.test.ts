@@ -76,3 +76,59 @@ test("normalizeExternalReviewSignal shapes the selected configured-bot thread si
   assert.equal(finding?.severity, "medium");
   assert.equal(finding?.confidence, 0.75);
 });
+
+test("normalizeExternalReviewSignal treats Codex Connector P1 badge comments as high severity", () => {
+  const thread = createReviewThread({
+    path: "package.json",
+    comments: {
+      nodes: [
+        {
+          id: "comment-1",
+          body:
+            "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Restore test execution in pre-PR verification**\n\nThe verification command no longer runs the test suite before merge.",
+          createdAt: "2026-03-12T00:00:00Z",
+          url: "https://example.test/pr/8#discussion_r1",
+          author: {
+            login: "chatgpt-codex-connector[bot]",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  const signal = toExternalReviewThreadSignal(thread, ["chatgpt-codex-connector[bot]"]);
+  const finding = signal ? normalizeExternalReviewSignal(signal) : null;
+
+  assert.equal(finding?.reviewerLogin, "chatgpt-codex-connector[bot]");
+  assert.equal(finding?.file, "package.json");
+  assert.match(finding?.summary ?? "", /P1 Badge/);
+  assert.equal(finding?.severity, "high");
+  assert.ok((finding?.confidence ?? 0) >= 0.9);
+});
+
+test("normalizeExternalReviewSignal treats Codex Connector textual P0 headings as high severity", () => {
+  const thread = createReviewThread({
+    comments: {
+      nodes: [
+        {
+          id: "comment-1",
+          body: "P0: Do not merge while the authorization bypass remains reachable.",
+          createdAt: "2026-03-12T00:00:00Z",
+          url: "https://example.test/pr/8#discussion_r2",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  const signal = toExternalReviewThreadSignal(thread, ["chatgpt-codex-connector"]);
+  const finding = signal ? normalizeExternalReviewSignal(signal) : null;
+
+  assert.equal(finding?.reviewerLogin, "chatgpt-codex-connector");
+  assert.equal(finding?.severity, "high");
+  assert.ok((finding?.confidence ?? 0) >= 0.9);
+});

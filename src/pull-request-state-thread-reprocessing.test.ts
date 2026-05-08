@@ -300,6 +300,43 @@ test("inferStateFromPullRequest allows one same-head follow-up turn after partia
   assert.equal(inferStateFromPullRequest(config, record, pr, [], [remainingThread]), "addressing_review");
 });
 
+test("inferStateFromPullRequest does not allow same-head follow-up for unresolved Codex Connector P1 findings", () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector[bot]"],
+  });
+  const record = createRecord({
+    state: "pr_open",
+    last_head_sha: "head-a",
+    processed_review_thread_ids: ["thread-1@head-a"],
+    processed_review_thread_fingerprints: ["thread-1@head-a#comment-1"],
+    review_follow_up_head_sha: "head-a",
+    review_follow_up_remaining: 1,
+  });
+  const pr = createPullRequest({
+    reviewDecision: "CHANGES_REQUESTED",
+    headRefOid: "head-a",
+  });
+  const p1Thread = createReviewThread({
+    comments: {
+      nodes: [
+        {
+          id: "comment-1",
+          body:
+            "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub> Restore test execution in pre-PR verification**",
+          createdAt: "2026-03-11T00:05:00Z",
+          url: "https://example.test/pr/44#discussion_r2",
+          author: {
+            login: "chatgpt-codex-connector[bot]",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.equal(inferStateFromPullRequest(config, record, pr, [], [p1Thread]), "blocked");
+});
+
 test("inferStateFromPullRequest still blocks same-head configured bot threads when no follow-up progress was recorded", () => {
   const config = createConfig({
     reviewBotLogins: ["copilot-pull-request-reviewer"],

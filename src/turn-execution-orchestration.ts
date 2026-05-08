@@ -18,6 +18,7 @@ import {
 } from "./review-handling";
 import {
   actionableConfiguredBotReviewThreads,
+  codexConnectorMustFixReviewThreads,
   configuredBotReviewThreads,
   latestReviewCommentAuthorIsAllowedBot,
 } from "./review-thread-reporting";
@@ -346,6 +347,9 @@ export function nextReviewFollowUpPatch(args: {
   const preRunConfiguredThreads = unresolvedConfiguredBotThreads(args.preRunReviewThreads);
   const postRunConfiguredThreads = unresolvedConfiguredBotThreads(args.postRunReviewThreads);
   if (postRunConfiguredThreads.length === 0) {
+    return defaultPatch;
+  }
+  if (codexConnectorMustFixReviewThreads(postRunConfiguredThreads).length > 0) {
     return defaultPatch;
   }
 
