@@ -302,6 +302,83 @@ test("status reports bootstrap repos as not ready for expected CI and review sig
   );
 });
 
+test("status reports Codex Connector P1 policy blocks with thread diagnostics", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const issueNumber = 146;
+  const prNumber = 246;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "addressing_review",
+        branch,
+        pr_number: prNumber,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        blocked_reason: "stale_review_bot",
+        last_error: "Codex Connector P1 finding remains unresolved.",
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const pr = createPullRequest({
+    number: prNumber,
+    headRefName: branch,
+    headRefOid: "head-246",
+    isDraft: false,
+    configuredBotCurrentHeadObservedAt: "2026-03-11T14:05:00Z",
+  });
+  const p1Thread = {
+    id: "thread-p1",
+    isResolved: false,
+    isOutdated: false,
+    path: "src/supervisor/policy.ts",
+    line: 42,
+    comments: {
+      nodes: [
+        {
+          id: "comment-p1",
+          body:
+            "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub> Restore fail-closed review handling**",
+          createdAt: "2026-03-11T14:06:00Z",
+          url: "https://example.test/pr/246#discussion_r1",
+          author: {
+            login: "chatgpt-codex-connector[bot]",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  };
+
+  const supervisor = new Supervisor({
+    ...fixture.config,
+    reviewBotLogins: ["chatgpt-codex-connector"],
+  });
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [],
+    listAllIssues: async () => [],
+    getPullRequestIfExists: async () => pr,
+    resolvePullRequestForBranch: async () => pr,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [p1Thread],
+  };
+
+  const status = await supervisor.status({ why: true });
+  assert.match(
+    status,
+    /^codex_connector_policy_block count=1 severity=P1 file=src\/supervisor\/policy\.ts line=42 thread_url=https:\/\/example\.test\/pr\/246#discussion_r1 next_action=fix_on_new_head_or_wait_for_github_thread_resolution_or_use_explicit_manual_operator_path$/m,
+  );
+  assert.doesNotMatch(status, /^codex_connector_policy_block .*severity=nitpick_only/m);
+});
+
 test("status surfaces host-migration path repair and journal rehydration from the canonical local journal", async (t) => {
   const fixture = await createSupervisorFixture();
   t.after(async () => {
