@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { configuredBotReviewThreads, manualReviewThreads } from "./supervisor/supervisor-reporting";
 import {
+  buildCodexConnectorPolicyBlockDiagnostic,
   buildStalledBotReviewFailureContext,
   codexConnectorMustFixReviewThreads,
   staleConfiguredBotReviewThreads,
@@ -249,4 +250,57 @@ test("codexConnectorMustFixReviewThreads tracks unresolved P1 findings and repor
 
   assert.deepEqual(codexConnectorMustFixReviewThreads([p1Thread]), [p1Thread]);
   assert.match(buildStalledBotReviewFailureContext([p1Thread])?.details[0] ?? "", /p_severity=P1/);
+});
+
+test("buildCodexConnectorPolicyBlockDiagnostic reports the highest-severity thread location", () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+  });
+  const p1Thread = createReviewThread({
+    id: "thread-p1",
+    path: "src/policy.ts",
+    line: 12,
+    comments: {
+      nodes: [
+        {
+          id: "comment-p1",
+          body: "P1: Tighten the diagnostic wording before merge.",
+          createdAt: "2026-03-11T00:00:00Z",
+          url: "https://example.test/pr/44#discussion_r1",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const p0Thread = createReviewThread({
+    id: "thread-p0",
+    path: "src/auth.ts",
+    line: 24,
+    comments: {
+      nodes: [
+        {
+          id: "comment-p0",
+          body: "P0: Keep the authorization bypass blocked.",
+          createdAt: "2026-03-11T00:05:00Z",
+          url: "https://example.test/pr/44#discussion_r2",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(buildCodexConnectorPolicyBlockDiagnostic(config, [p1Thread, p0Thread]), {
+    count: 2,
+    severity: "P0",
+    file: "src/auth.ts",
+    line: "24",
+    threadUrl: "https://example.test/pr/44#discussion_r2",
+    nextAction: "fix_on_new_head_or_wait_for_github_thread_resolution_or_use_explicit_manual_operator_path",
+  });
 });

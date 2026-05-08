@@ -69,6 +69,10 @@ import {
   formatStaleReviewBotRemediationLine,
   type StaleReviewBotRemediationDto,
 } from "./stale-review-bot-remediation";
+import {
+  buildCodexConnectorPolicyBlockDiagnostic,
+  formatCodexConnectorPolicyBlockDiagnostic,
+} from "../review-thread-reporting";
 import { formatMergedPrConvergenceOperatorEventLine } from "./supervisor-operator-events";
 import { appendRestartRecommendationLine } from "../operator-actions";
 import {
@@ -106,6 +110,7 @@ export interface SupervisorExplainDto {
   activityContext: SupervisorIssueActivityContextDto | null;
   staleDiagnosticSummary?: string | null;
   staleReviewBotRemediation?: StaleReviewBotRemediationDto | null;
+  codexConnectorPolicyBlockSummary?: string | null;
   noActiveTrackedRecordSummary?: string | null;
   trackedPrRetryabilitySummary?: string | null;
   trackedPrMismatchSummary: string | null;
@@ -445,6 +450,13 @@ export async function buildIssueExplainDto(
         reviewThreads: explainReviewThreads,
       })
       : null;
+  const codexConnectorPolicyBlockSummary =
+    record && pr && !trackedPrHydrationFailed
+      ? (() => {
+        const diagnostic = buildCodexConnectorPolicyBlockDiagnostic(config, explainReviewThreads);
+        return diagnostic ? formatCodexConnectorPolicyBlockDiagnostic(diagnostic) : null;
+      })()
+      : null;
   const noActiveTrackedRecordSummary =
     record && state.activeIssueNumber === null
       ? formatNoActiveTrackedRecordClassificationLine(config, record, staleReviewBotRemediation)
@@ -535,6 +547,7 @@ export async function buildIssueExplainDto(
       : null,
     staleDiagnosticSummary,
     staleReviewBotRemediation,
+    codexConnectorPolicyBlockSummary,
     noActiveTrackedRecordSummary,
     trackedPrRetryabilitySummary:
       record?.last_tracked_pr_repeat_failure_decision && record.last_tracked_pr_progress_summary
@@ -608,6 +621,7 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
     ...(localCiStatusLine ? [localCiStatusLine] : []),
     ...(dto.staleDiagnosticSummary ? [dto.staleDiagnosticSummary] : []),
     ...(dto.staleReviewBotRemediation ? [formatStaleReviewBotRemediationLine(dto.staleReviewBotRemediation)] : []),
+    ...(dto.codexConnectorPolicyBlockSummary ? [dto.codexConnectorPolicyBlockSummary] : []),
     ...(dto.noActiveTrackedRecordSummary ? [dto.noActiveTrackedRecordSummary] : []),
     ...(dto.trackedPrRetryabilitySummary ? [dto.trackedPrRetryabilitySummary] : []),
     ...(dto.trackedPrMismatchSummary ? [dto.trackedPrMismatchSummary] : []),

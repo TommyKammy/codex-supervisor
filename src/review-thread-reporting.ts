@@ -1,5 +1,5 @@
 import { hasProcessedReviewThread } from "./review-handling";
-import { configuredReviewBotLogins } from "./core/review-providers";
+import { configuredReviewBotLogins, configuredReviewProviderKinds } from "./core/review-providers";
 import { FailureContext, GitHubPullRequest, IssueRunRecord, ReviewThread, SupervisorConfig } from "./core/types";
 import { nowIso } from "./core/utils";
 import { extractCodexConnectorPSeverity, isCodexConnectorReviewer } from "./external-review/external-review-normalization";
@@ -46,6 +46,64 @@ function latestCodexConnectorPSeverity(thread: ReviewThread): "P0" | "P1" | null
 
 export function codexConnectorMustFixReviewThreads(reviewThreads: ReviewThread[]): ReviewThread[] {
   return reviewThreads.filter((thread) => !thread.isResolved && !thread.isOutdated && latestCodexConnectorPSeverity(thread));
+}
+
+export interface CodexConnectorPolicyBlockDiagnostic {
+  count: number;
+  severity: "P0" | "P1";
+  file: string;
+  line: string;
+  threadUrl: string;
+  nextAction: "fix_on_new_head_or_wait_for_github_thread_resolution_or_use_explicit_manual_operator_path";
+}
+
+function maxCodexConnectorPSeverity(threads: ReviewThread[]): "P0" | "P1" {
+  return threads.some((thread) => latestCodexConnectorPSeverity(thread) === "P0") ? "P0" : "P1";
+}
+
+function formatDiagnosticToken(value: string): string {
+  return value.replace(/\s+/g, "_");
+}
+
+export function buildCodexConnectorPolicyBlockDiagnostic(
+  config: SupervisorConfig,
+  reviewThreads: ReviewThread[],
+): CodexConnectorPolicyBlockDiagnostic | null {
+  if (!configuredReviewProviderKinds(config).includes("codex")) {
+    return null;
+  }
+
+  const mustFixThreads = codexConnectorMustFixReviewThreads(reviewThreads);
+  if (mustFixThreads.length === 0) {
+    return null;
+  }
+
+  const severity = maxCodexConnectorPSeverity(mustFixThreads);
+  const representativeThread =
+    mustFixThreads.find((thread) => latestCodexConnectorPSeverity(thread) === severity) ?? mustFixThreads[0];
+  const latestComment = latestReviewComment(representativeThread);
+  return {
+    count: mustFixThreads.length,
+    severity,
+    file: formatDiagnosticToken(representativeThread.path ?? "unknown"),
+    line: representativeThread.line == null ? "unknown" : String(representativeThread.line),
+    threadUrl: formatDiagnosticToken(latestComment?.url ?? "none"),
+    nextAction: "fix_on_new_head_or_wait_for_github_thread_resolution_or_use_explicit_manual_operator_path",
+  };
+}
+
+export function formatCodexConnectorPolicyBlockDiagnostic(
+  diagnostic: CodexConnectorPolicyBlockDiagnostic,
+): string {
+  return [
+    "codex_connector_policy_block",
+    `count=${diagnostic.count}`,
+    `severity=${diagnostic.severity}`,
+    `file=${diagnostic.file}`,
+    `line=${diagnostic.line}`,
+    `thread_url=${diagnostic.threadUrl}`,
+    `next_action=${diagnostic.nextAction}`,
+  ].join(" ");
 }
 
 function normalizeReviewCommentWhitespace(value: string): string {

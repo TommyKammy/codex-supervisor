@@ -1698,6 +1698,88 @@ test("explain reports bootstrap repos as not ready for expected CI and review si
   );
 });
 
+test("explain reports Codex Connector P0 policy blocks with thread diagnostics", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 182;
+  const prNumber = 282;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        branch,
+        pr_number: prNumber,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        blocked_reason: "stale_review_bot",
+        last_error: "Codex Connector P0 finding remains unresolved.",
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Codex Connector policy diagnostic",
+    body: executionReadyBody("Explain should surface P0 Codex Connector review policy blockers."),
+    createdAt: "2026-03-13T00:05:00Z",
+    updatedAt: "2026-03-13T00:05:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const p0Thread = {
+    id: "thread-p0",
+    isResolved: false,
+    isOutdated: false,
+    path: "src/supervisor/auth.ts",
+    line: 17,
+    comments: {
+      nodes: [
+        {
+          id: "comment-p0",
+          body: "P0: Do not merge while the authorization bypass remains reachable.",
+          createdAt: "2026-03-11T14:06:00Z",
+          url: "https://example.test/pr/282#discussion_r2",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  };
+
+  const supervisor = new Supervisor({
+    ...fixture.config,
+    reviewBotLogins: ["chatgpt-codex-connector"],
+  });
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => issue,
+    listAllIssues: async () => [issue],
+    listCandidateIssues: async () => [issue],
+    resolvePullRequestForBranch: async () =>
+      createPullRequest({
+        number: prNumber,
+        headRefName: branch,
+        headRefOid: "head-282",
+        isDraft: false,
+        configuredBotCurrentHeadObservedAt: "2026-03-11T14:05:00Z",
+      }),
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [p0Thread],
+  };
+
+  const explanation = await supervisor.explain(issueNumber);
+  assert.match(
+    explanation,
+    /^codex_connector_policy_block count=1 severity=P0 file=src\/supervisor\/auth\.ts line=17 thread_url=https:\/\/example\.test\/pr\/282#discussion_r2 next_action=fix_on_new_head_or_wait_for_github_thread_resolution_or_use_explicit_manual_operator_path$/m,
+  );
+  assert.match(explanation, /^reason_1=manual_block stale_review_bot$/m);
+});
+
 test("explain degrades gracefully when tracked PR mismatch hydration fails", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 172;
