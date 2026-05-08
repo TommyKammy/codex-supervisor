@@ -1002,13 +1002,18 @@ test("buildConfiguredBotReviewSummary rejects non-success and non-configured PR 
         body: "Codex is still reviewing this pull request.",
       },
       {
-        authorLogin: "codex",
+        authorLogin: "chatgpt-codex-connector",
         createdAt: "2026-05-08T03:25:00Z",
+        body: "Review completed. Critical issues found.",
+      },
+      {
+        authorLogin: "codex",
+        createdAt: "2026-05-08T03:26:00Z",
         body: "Codex review completed successfully for this pull request. No issues found.",
       },
       {
         authorLogin: "coderabbitai[bot]",
-        createdAt: "2026-05-08T03:26:00Z",
+        createdAt: "2026-05-08T03:27:00Z",
         body: "Codex review completed successfully for this pull request. No issues found.",
       },
     ],

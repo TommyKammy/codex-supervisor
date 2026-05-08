@@ -191,7 +191,7 @@ function isCodexConnectorPrSuccessCommentText(value: string | null | undefined):
   const mentionsCompletion = /\b(successfully completed|completed successfully|review completed|finished review|review is complete|reviewed this pull request)\b/.test(
     normalized,
   );
-  const mentionsSuccess = /\b(success|successful|complete|completed|no issues found|no actionable issues|looks good)\b/.test(normalized);
+  const mentionsSuccess = /\b(success|successful|no issues found|no actionable issues|looks good)\b/.test(normalized);
 
   return mentionsReviewScope && mentionsCompletion && mentionsSuccess;
 }
