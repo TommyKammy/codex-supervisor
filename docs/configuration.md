@@ -144,7 +144,7 @@ Each shipped profile only configures what the supervisor expects to observe. You
 | Profile | Start from | Choose when | Supervisor watches | First-run caveat |
 | --- | --- | --- | --- | --- |
 | Copilot | [supervisor.config.copilot.json](../supervisor.config.copilot.json) | Your PR flow already requests or auto-triggers Copilot review. | `copilot-pull-request-reviewer` | Confirm Copilot is enabled for the repo and requested by your normal PR flow. |
-| Codex Connector | [supervisor.config.codex.json](../supervisor.config.codex.json) | The repo is already connected to Codex review and you want that connector to be the trusted review signal. | `chatgpt-codex-connector` | Confirm the connector is installed for the target repo before treating missing review activity as settled. |
+| Codex Connector | [supervisor.config.codex.json](../supervisor.config.codex.json) | The repo is already connected to Codex review and you want that connector to be the trusted review signal. | `chatgpt-codex-connector` current-head activity | Missing connector activity is fail-closed; confirm the connector is installed for the target repo before running merge automation. |
 | CodeRabbit | [supervisor.config.coderabbit.json](../supervisor.config.coderabbit.json) | You want bounded waiting for current-head CodeRabbit review signals. | `coderabbitai`, `coderabbitai[bot]` | Replace `repoSlug: "REPLACE_ME"` before first run; the placeholder is a fail-closed guardrail. |
 | TypeScript/Node | [supervisor.config.typescript-node.json](../supervisor.config.typescript-node.json) | Your repo can expose npm-owned `npm ci` setup and `npm run verify:pre-pr` verification commands. | `copilot-pull-request-reviewer` | Replace required path and repo placeholders, then confirm the managed repo defines `verify:pre-pr`; see the [TypeScript and Node starter profile](./examples/typescript-node.md). |
 | Next.js | [supervisor.config.nextjs.json](../supervisor.config.nextjs.json) | Your app can expose npm-owned `npm ci` setup and `npm run verify:pre-pr` verification commands around the scripts it actually defines. | `copilot-pull-request-reviewer` | Replace required path and repo placeholders, then confirm the managed repo defines `verify:pre-pr`; see the [Next.js starter profile](./examples/nextjs.md). |
@@ -567,6 +567,12 @@ Operational notes:
 - release automation must wire `block_release_publication` explicitly before the checklist becomes a blocking release gate
 
 ## Provider-Specific Notes
+
+### Codex Connector waits
+
+The Codex Connector profile is observer-only. The supervisor does not trigger `@codex` or request review in this profile; it waits for review, comment, thread, status, or current-head observation from `chatgpt-codex-connector`.
+
+If a merge-critical PR has no Codex Connector signal for the current head, the supervisor keeps the PR out of `ready_to_merge` and blocks after the configured current-head signal timeout. Empty checks, empty reviews, empty review requests, and no PR comments are not enough to satisfy the connector review contract.
 
 ### CodeRabbit waits
 
