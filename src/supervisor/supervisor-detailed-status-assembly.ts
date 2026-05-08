@@ -3,8 +3,10 @@ import {
 } from "../review-handling";
 import {
   actionableBotReviewThreads,
+  buildCodexConnectorP2P3PolicyDiagnostic,
   buildCodexConnectorPolicyBlockDiagnostic,
   configuredBotReviewFollowUpState,
+  formatCodexConnectorP2P3PolicyDiagnostic,
   formatCodexConnectorPolicyBlockDiagnostic,
 } from "../review-thread-reporting";
 import { formatWorkspaceRestoreStatusLine } from "../core/workspace";
@@ -330,6 +332,10 @@ export function buildActiveDetailedStatusLines(
     const codexConnectorPolicyBlock = buildCodexConnectorPolicyBlockDiagnostic(config, reviewThreads);
     if (codexConnectorPolicyBlock) {
       lines.push(formatCodexConnectorPolicyBlockDiagnostic(codexConnectorPolicyBlock));
+    }
+    const codexConnectorP2P3Policy = buildCodexConnectorP2P3PolicyDiagnostic(config, reviewThreads);
+    if (codexConnectorP2P3Policy) {
+      lines.push(formatCodexConnectorP2P3PolicyDiagnostic(codexConnectorP2P3Policy));
     }
     const reviewBotProfile = inferReviewBotProfile(config);
     const reviewBotStatus = reviewBotDiagnostics(config, activeRecord, pr, reviewThreads, configuredBotReviewThreads);

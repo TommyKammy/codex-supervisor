@@ -357,6 +357,69 @@ test("status reports Codex Connector P1 policy blocks with thread diagnostics", 
       ],
     },
   };
+  const p2Thread = {
+    id: "thread-p2",
+    isResolved: false,
+    isOutdated: false,
+    path: "src/supervisor/retry.ts",
+    line: 50,
+    comments: {
+      nodes: [
+        {
+          id: "comment-p2",
+          body: "P2: Repair the retry path so failed verification cannot be reported as success.",
+          createdAt: "2026-03-11T14:07:00Z",
+          url: "https://example.test/pr/246#discussion_r2",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  };
+  const p3NitpickThread = {
+    id: "thread-p3-softened",
+    isResolved: false,
+    isOutdated: false,
+    path: "src/supervisor/naming.ts",
+    line: 60,
+    comments: {
+      nodes: [
+        {
+          id: "comment-p3-softened",
+          body: "P3: Nitpick: prefer a shorter helper name for readability.",
+          createdAt: "2026-03-11T14:08:00Z",
+          url: "https://example.test/pr/246#discussion_r3",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  };
+  const p3RiskThread = {
+    id: "thread-p3-escalated",
+    isResolved: false,
+    isOutdated: false,
+    path: "src/supervisor/restore.ts",
+    line: 70,
+    comments: {
+      nodes: [
+        {
+          id: "comment-p3-escalated",
+          body: "P3: This cleanup can cause a regression in the restore failure path.",
+          createdAt: "2026-03-11T14:09:00Z",
+          url: "https://example.test/pr/246#discussion_r4",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  };
 
   const supervisor = new Supervisor({
     ...fixture.config,
@@ -368,7 +431,7 @@ test("status reports Codex Connector P1 policy blocks with thread diagnostics", 
     getPullRequestIfExists: async () => pr,
     resolvePullRequestForBranch: async () => pr,
     getChecks: async () => [],
-    getUnresolvedReviewThreads: async () => [p1Thread],
+    getUnresolvedReviewThreads: async () => [p1Thread, p2Thread, p3NitpickThread, p3RiskThread],
   };
 
   const status = await supervisor.status({ why: true });
@@ -376,6 +439,7 @@ test("status reports Codex Connector P1 policy blocks with thread diagnostics", 
     status,
     /^codex_connector_policy_block count=1 severity=P1 file=src\/supervisor\/policy\.ts line=42 thread_url=https:\/\/example\.test\/pr\/246#discussion_r1 next_action=fix_on_new_head_or_wait_for_github_thread_resolution_or_use_explicit_manual_operator_path$/m,
   );
+  assert.match(status, /^codex_connector_policy_review p2_actionable=1 p3_softened=1 p3_escalated=1$/m);
   assert.doesNotMatch(status, /^codex_connector_policy_block .*severity=nitpick_only/m);
 });
 

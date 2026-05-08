@@ -132,3 +132,53 @@ test("normalizeExternalReviewSignal treats Codex Connector textual P0 headings a
   assert.equal(finding?.severity, "high");
   assert.ok((finding?.confidence ?? 0) >= 0.9);
 });
+
+test("normalizeExternalReviewSignal treats Codex Connector P2 comments as actionable severity", () => {
+  const thread = createReviewThread({
+    comments: {
+      nodes: [
+        {
+          id: "comment-1",
+          body: "P2: This retry path drops the verification failure and can report success after tests fail.",
+          createdAt: "2026-03-12T00:00:00Z",
+          url: "https://example.test/pr/8#discussion_r3",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  const signal = toExternalReviewThreadSignal(thread, ["chatgpt-codex-connector"]);
+  const finding = signal ? normalizeExternalReviewSignal(signal) : null;
+
+  assert.equal(finding?.severity, "medium");
+  assert.ok((finding?.confidence ?? 0) >= 0.8);
+});
+
+test("normalizeExternalReviewSignal escalates Codex Connector P3 comments with stronger risk wording", () => {
+  const thread = createReviewThread({
+    comments: {
+      nodes: [
+        {
+          id: "comment-1",
+          body: "P3: This looks like a formatting cleanup, but it can cause a regression in state restore.",
+          createdAt: "2026-03-12T00:00:00Z",
+          url: "https://example.test/pr/8#discussion_r4",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  const signal = toExternalReviewThreadSignal(thread, ["chatgpt-codex-connector"]);
+  const finding = signal ? normalizeExternalReviewSignal(signal) : null;
+
+  assert.equal(finding?.severity, "medium");
+  assert.ok((finding?.confidence ?? 0) >= 0.8);
+});
