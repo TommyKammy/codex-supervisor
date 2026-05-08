@@ -91,6 +91,10 @@ function isCodeRabbitLogin(value: string | null | undefined): boolean {
   return (normalizeLogin(value) ?? "").includes("coderabbit");
 }
 
+function hasConfiguredCodeRabbitLogin(configuredReviewBots: Set<string>): boolean {
+  return Array.from(configuredReviewBots).some((login) => isCodeRabbitLogin(login));
+}
+
 function isConfiguredBotStatusContextActivity(args: {
   creatorLogin: string | null | undefined;
   context: string | null | undefined;
@@ -104,7 +108,10 @@ function isConfiguredBotStatusContextActivity(args: {
 
   const normalizedContext = (args.context ?? "").trim().toLowerCase();
   const normalizedDescription = (args.description ?? "").trim().toLowerCase();
-  return normalizedContext.includes("coderabbit") || normalizedDescription.includes("coderabbit");
+  return (
+    hasConfiguredCodeRabbitLogin(args.configuredReviewBots) &&
+    (normalizedContext.includes("coderabbit") || normalizedDescription.includes("coderabbit"))
+  );
 }
 
 function isCodeRabbitStatusContext(args: {

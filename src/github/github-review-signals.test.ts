@@ -903,6 +903,43 @@ test("buildConfiguredBotReviewSummary treats current-head CodeRabbit status cont
   });
 });
 
+test("buildConfiguredBotReviewSummary ignores CodeRabbit status contexts when only Codex Connector is configured", () => {
+  const facts: CopilotReviewLifecycleFacts = {
+    reviewRequests: [],
+    reviews: [],
+    comments: [],
+    issueComments: [],
+    statusContexts: [
+      {
+        creatorLogin: "coderabbitai",
+        context: "CodeRabbit",
+        description: "CodeRabbit finished preparing its review.",
+        state: "SUCCESS",
+        createdAt: "2026-03-13T02:04:00Z",
+        commitOid: "head-44",
+      },
+    ],
+    timeline: [],
+  };
+
+  assert.deepEqual(buildConfiguredBotReviewSummary(facts, ["chatgpt-codex-connector"], "head-44"), {
+    lifecycle: {
+      state: "not_requested",
+      requestedAt: null,
+      arrivedAt: null,
+    },
+    topLevelReview: {
+      strength: null,
+      submittedAt: null,
+    },
+    currentHeadObservedAt: null,
+    currentHeadStatusState: null,
+    currentHeadCiGreenAt: null,
+    rateLimitWarningAt: null,
+    draftSkipAt: null,
+  });
+});
+
 test("buildConfiguredBotReviewSummary scopes current-head status state to CodeRabbit-specific contexts", () => {
   const facts: CopilotReviewLifecycleFacts = {
     reviewRequests: [],
