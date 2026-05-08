@@ -1146,7 +1146,7 @@ test("loadConfig maps reviewBotLogins into the internal configuredReviewProvider
       stateFile: "./state.json",
       codexBinary: "codex",
       branchPrefix: "codex/issue-",
-      reviewBotLogins: ["CodeRabbitAI", "coderabbitai[bot]", "chatgpt-codex-connector"],
+      reviewBotLogins: ["CodeRabbitAI", "coderabbitai[bot]", "chatgpt-codex-connector", "chatgpt-codex-connector[bot]"],
     }),
     "utf8",
   );

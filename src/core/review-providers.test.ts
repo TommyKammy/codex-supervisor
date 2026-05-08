@@ -99,6 +99,14 @@ test("mapConfiguredReviewProviders preserves compatibility with existing reviewB
       signalSource: "copilot_lifecycle",
     },
   ]);
+
+  assert.deepEqual(mapConfiguredReviewProviders(["chatgpt-codex-connector", "chatgpt-codex-connector[bot]"]), [
+    {
+      kind: "codex",
+      reviewerLogins: ["chatgpt-codex-connector"],
+      signalSource: "review_threads",
+    },
+  ]);
 });
 
 test("reviewProviderProfileFromConfig summarizes the mapped internal provider model", () => {
@@ -111,6 +119,16 @@ test("reviewProviderProfileFromConfig summarizes the mapped internal provider mo
 
   assert.deepEqual(
     reviewProviderProfileFromConfig(createConfig({ reviewBotLogins: ["chatgpt-codex-connector"] })),
+    {
+      profile: "codex",
+      provider: "chatgpt-codex-connector",
+      reviewers: ["chatgpt-codex-connector"],
+      signalSource: "review_threads",
+    },
+  );
+
+  assert.deepEqual(
+    reviewProviderProfileFromConfig(createConfig({ reviewBotLogins: ["chatgpt-codex-connector[bot]"] })),
     {
       profile: "codex",
       provider: "chatgpt-codex-connector",
