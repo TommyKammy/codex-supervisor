@@ -88,6 +88,11 @@ export function selectReviewThreadsForTurn(args: {
     return pendingThreads;
   }
 
+  const codexConnectorMustFixThreads = codexConnectorMustFixReviewThreads(actionableFollowUpThreads);
+  if (codexConnectorMustFixThreads.length > 0) {
+    return codexConnectorMustFixThreads;
+  }
+
   return (
     args.record.review_follow_up_head_sha === currentPr.headRefOid &&
     (args.record.review_follow_up_remaining ?? 0) > 0 &&

@@ -301,7 +301,7 @@ test("inferStateFromPullRequest allows one same-head follow-up turn after partia
   assert.equal(inferStateFromPullRequest(config, record, pr, [], [remainingThread]), "addressing_review");
 });
 
-test("inferStateFromPullRequest does not allow same-head follow-up for unresolved Codex Connector P1 findings", () => {
+test("inferStateFromPullRequest routes unresolved Codex Connector P1 findings into same-PR repair", () => {
   const config = createConfig({
     reviewBotLogins: ["chatgpt-codex-connector[bot]"],
   });
@@ -335,10 +335,10 @@ test("inferStateFromPullRequest does not allow same-head follow-up for unresolve
     },
   });
 
-  assert.equal(inferStateFromPullRequest(config, record, pr, [], [p1Thread]), "blocked");
+  assert.equal(inferStateFromPullRequest(config, record, pr, [], [p1Thread]), "addressing_review");
 });
 
-test("inferStateFromPullRequest blocks same-head follow-up for unresolved Codex Connector P2 findings", () => {
+test("inferStateFromPullRequest routes unresolved Codex Connector P2 findings into same-PR repair", () => {
   const config = createConfig({
     reviewBotLogins: ["chatgpt-codex-connector[bot]"],
   });
@@ -372,7 +372,42 @@ test("inferStateFromPullRequest blocks same-head follow-up for unresolved Codex 
     },
   });
 
-  assert.equal(inferStateFromPullRequest(config, record, pr, [], [p2Thread]), "blocked");
+  assert.equal(inferStateFromPullRequest(config, record, pr, [], [p2Thread]), "addressing_review");
+});
+
+test("inferStateFromPullRequest routes escalated Codex Connector P3 findings into same-PR repair", () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector[bot]"],
+  });
+  const record = createRecord({
+    state: "pr_open",
+    last_head_sha: "head-a",
+    processed_review_thread_ids: ["thread-1@head-a"],
+    processed_review_thread_fingerprints: ["thread-1@head-a#comment-1"],
+  });
+  const pr = createPullRequest({
+    reviewDecision: "CHANGES_REQUESTED",
+    headRefOid: "head-a",
+    configuredBotCurrentHeadObservedAt: "2026-03-11T00:05:00Z",
+  });
+  const p3RiskThread = createReviewThread({
+    comments: {
+      nodes: [
+        {
+          id: "comment-1",
+          body: "P3: This is blocking because the restore path can leave partial durable state after failure.",
+          createdAt: "2026-03-11T00:05:00Z",
+          url: "https://example.test/pr/44#discussion_r2",
+          author: {
+            login: "chatgpt-codex-connector[bot]",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.equal(inferStateFromPullRequest(config, record, pr, [], [p3RiskThread]), "addressing_review");
 });
 
 test("inferStateFromPullRequest softens unresolved Codex Connector P3 nitpick-only findings for merge readiness", () => {

@@ -89,6 +89,45 @@ test("selectReviewThreadsForTurn re-includes same-head configured-bot threads wh
   assert.equal(selected[0]?.id, "thread-1");
 });
 
+test("selectReviewThreadsForTurn re-includes processed Codex Connector must-fix threads for same-PR repair", () => {
+  const selected = selectReviewThreadsForTurn({
+    config: createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector[bot]"],
+    }),
+    preRunState: "addressing_review",
+    record: {
+      processed_review_thread_ids: ["thread-1@head-a"],
+      processed_review_thread_fingerprints: ["thread-1@head-a#comment-1"],
+      last_head_sha: "head-a",
+      review_follow_up_head_sha: null,
+      review_follow_up_remaining: 0,
+    },
+    pr: createPullRequest({ headRefOid: "head-a" }),
+    reviewThreads: [
+      createReviewThread({
+        id: "thread-1",
+        comments: {
+          nodes: [
+            {
+              id: "comment-1",
+              body: "P2: Preserve failed restore cleanup as a blocking verification failure.",
+              createdAt: "2026-03-11T00:05:00Z",
+              url: "https://example.test/pr/44#discussion_r2",
+              author: {
+                login: "chatgpt-codex-connector[bot]",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+  });
+
+  assert.equal(selected.length, 1);
+  assert.equal(selected[0]?.id, "thread-1");
+});
+
 test("selectReviewThreadsForTurn does not reopen same-head follow-up when stale bookkeeping remains for non-actionable configured-bot threads", () => {
   const selected = selectReviewThreadsForTurn({
     config: createConfig({
