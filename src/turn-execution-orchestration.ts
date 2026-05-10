@@ -193,6 +193,7 @@ export async function prepareCodexTurnPrompt(args: {
         reviews: externalReviewSurface?.reviews ?? [],
         issueComments: externalReviewSurface?.issueComments ?? [],
         reviewBotLogins: args.config.reviewBotLogins,
+        headSha: currentPr.headRefOid,
       }),
       reviewBotLogins: args.config.reviewBotLogins,
       localReviewSummaryPath,

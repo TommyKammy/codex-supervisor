@@ -102,6 +102,8 @@ test("collectExternalReviewSignals uses the final configured-bot thread comment"
 
   assert.deepEqual(signals, [
     {
+      provider: "copilot",
+      headSha: null,
       sourceKind: "review_thread",
       sourceId: "thread-1",
       sourceUrl: "https://example.test/thread-1#comment-3",
@@ -124,6 +126,8 @@ test("collectExternalReviewSignals normalizes thread, top-level review, and issu
 
   assert.deepEqual(
     signals.map((signal) => ({
+      provider: signal.provider,
+      headSha: signal.headSha,
       sourceKind: signal.sourceKind,
       sourceId: signal.sourceId,
       file: signal.file,
@@ -132,6 +136,8 @@ test("collectExternalReviewSignals normalizes thread, top-level review, and issu
     })),
     [
       {
+        provider: "copilot",
+        headSha: null,
         sourceKind: "review_thread",
         sourceId: "thread-1",
         file: "src/auth.ts",
@@ -139,6 +145,8 @@ test("collectExternalReviewSignals normalizes thread, top-level review, and issu
         threadId: "thread-1",
       },
       {
+        provider: "coderabbit",
+        headSha: null,
         sourceKind: "top_level_review",
         sourceId: "review-1",
         file: null,
@@ -146,6 +154,8 @@ test("collectExternalReviewSignals normalizes thread, top-level review, and issu
         threadId: null,
       },
       {
+        provider: "coderabbit",
+        headSha: null,
         sourceKind: "issue_comment",
         sourceId: "issue-comment-1",
         file: null,
@@ -171,6 +181,8 @@ test("collectExternalReviewSignals preserves actionable top-level reviews that o
 
   assert.deepEqual(signals, [
     {
+      provider: "coderabbit",
+      headSha: null,
       sourceKind: "top_level_review",
       sourceId: "review-state-only",
       sourceUrl: "https://example.test/pr/1#pullrequestreview-2",
@@ -191,6 +203,80 @@ test("collectExternalReviewSignals ignores late configured-bot closed-PR follow-
       }),
     ],
     reviewBotLogins: ["coderabbitai[bot]"],
+  });
+
+  assert.deepEqual(signals, []);
+});
+
+test("collectExternalReviewSignals tags Codex Connector findings with provider and current head", () => {
+  const signals = collectExternalReviewSignals({
+    reviewThreads: [
+      createReviewThread({
+        comments: {
+          nodes: [
+            {
+              id: "comment-1",
+              body: "P2: This retry path drops the verification failure.",
+              createdAt: "2026-03-12T00:00:00Z",
+              url: "https://example.test/thread-1#comment-1",
+              author: {
+                login: "chatgpt-codex-connector[bot]",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    headSha: "head-current",
+  });
+
+  assert.deepEqual(
+    signals.map((signal) => ({
+      provider: signal.provider,
+      headSha: signal.headSha,
+      sourceKind: signal.sourceKind,
+      sourceId: signal.sourceId,
+      file: signal.file,
+      line: signal.line,
+    })),
+    [
+      {
+        provider: "codex",
+        headSha: "head-current",
+        sourceKind: "review_thread",
+        sourceId: "thread-1",
+        file: "src/auth.ts",
+        line: 42,
+      },
+    ],
+  );
+});
+
+test("collectExternalReviewSignals rejects outdated configured-bot threads", () => {
+  const signals = collectExternalReviewSignals({
+    reviewThreads: [
+      createReviewThread({
+        isOutdated: true,
+        comments: {
+          nodes: [
+            {
+              id: "comment-1",
+              body: "P1: This stale finding came from an older PR head.",
+              createdAt: "2026-03-12T00:00:00Z",
+              url: "https://example.test/thread-1#comment-1",
+              author: {
+                login: "chatgpt-codex-connector[bot]",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    headSha: "head-current",
   });
 
   assert.deepEqual(signals, []);

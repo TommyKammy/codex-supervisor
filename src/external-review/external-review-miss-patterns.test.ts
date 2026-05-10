@@ -6,6 +6,8 @@ import { type ExternalReviewMissFinding } from "./external-review-classifier";
 function createMissFinding(overrides: Partial<ExternalReviewMissFinding> = {}): ExternalReviewMissFinding {
   return {
     source: "external_bot",
+    provider: "copilot",
+    headSha: "deadbeef",
     sourceKind: "review_thread",
     sourceId: "thread-1",
     sourceUrl: "https://example.test/thread-1#comment-1",

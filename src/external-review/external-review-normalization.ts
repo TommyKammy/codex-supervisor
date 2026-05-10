@@ -4,6 +4,8 @@ import { type ExternalReviewSignalEnvelope, type ExternalReviewSignalSourceKind 
 
 export interface NormalizedExternalReviewFinding {
   source: "external_bot";
+  provider: "codex" | "copilot" | "coderabbit" | "custom";
+  headSha: string | null;
   sourceKind: ExternalReviewSignalSourceKind;
   sourceId: string;
   sourceUrl: string | null;
@@ -121,6 +123,8 @@ export function normalizeExternalReviewSignal(
 
   return {
     source: "external_bot",
+    provider: signal.provider,
+    headSha: signal.headSha,
     sourceKind: signal.sourceKind,
     sourceId: signal.sourceId,
     sourceUrl: signal.sourceUrl,

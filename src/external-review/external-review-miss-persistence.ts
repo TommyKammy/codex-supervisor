@@ -41,6 +41,7 @@ export async function writeExternalReviewMissArtifact(args: {
     collectExternalReviewSignals({
       reviewThreads: args.reviewThreads ?? [],
       reviewBotLogins: args.reviewBotLogins,
+      headSha: args.headSha,
     }))
     .map((signal) => normalizeExternalReviewSignal(signal))
     .filter((finding): finding is NormalizedExternalReviewFinding => finding !== null);

@@ -148,6 +148,8 @@ test("writeExternalReviewMissArtifact persists missed external findings for the 
     findings: Array<{
       classification: string;
       preventionTarget: string | null;
+      provider: string;
+      headSha: string | null;
       reviewerLogin: string;
       file: string | null;
       line: number | null;
@@ -162,6 +164,8 @@ test("writeExternalReviewMissArtifact persists missed external findings for the 
   assert.deepEqual(artifact.findings.map((finding) => ({
       classification: finding.classification,
       preventionTarget: finding.preventionTarget,
+      provider: finding.provider,
+      headSha: finding.headSha,
       reviewerLogin: finding.reviewerLogin,
       file: finding.file,
       line: finding.line,
@@ -169,6 +173,8 @@ test("writeExternalReviewMissArtifact persists missed external findings for the 
     {
       classification: "missed_by_local_review",
       preventionTarget: "regression_test",
+      provider: "copilot",
+      headSha: "deadbeefcafebabe",
       reviewerLogin: "copilot-pull-request-reviewer",
       file: "src/auth.ts",
       line: 42,
@@ -201,6 +207,7 @@ test("writeExternalReviewMissArtifact carries source-aware signals through downs
       reviews: [createTopLevelReview()],
       issueComments: [createIssueComment()],
       reviewBotLogins: ["copilot-pull-request-reviewer", "coderabbitai[bot]"],
+      headSha: "deadbeefcafebabe",
     }),
     reviewBotLogins: ["copilot-pull-request-reviewer", "coderabbitai[bot]"],
     localReviewSummaryPath,
@@ -323,6 +330,7 @@ test("writeExternalReviewMissArtifact emits a follow-up action digest beside the
         }),
       ],
       reviewBotLogins: ["copilot-pull-request-reviewer", "coderabbitai[bot]"],
+      headSha: "deadbeefcafebabe",
     }),
     reviewBotLogins: ["copilot-pull-request-reviewer", "coderabbitai[bot]"],
     localReviewSummaryPath,
@@ -386,6 +394,7 @@ test("writeExternalReviewMissArtifact derives reviewer-grade findings from actio
         }),
       ],
       reviewBotLogins: ["coderabbitai[bot]"],
+      headSha: "deadbeefcafebabe",
     }),
     reviewBotLogins: ["coderabbitai[bot]"],
     localReviewSummaryPath,
