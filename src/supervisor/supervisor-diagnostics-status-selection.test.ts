@@ -495,7 +495,7 @@ test("status reports Codex Connector P1 policy blocks with thread diagnostics", 
   const status = await supervisor.status({ why: true });
   assert.match(
     status,
-    /^codex_connector_policy_block count=1 severity=P1 file=src\/supervisor\/policy\.ts line=42 thread_url=https:\/\/example\.test\/pr\/246#discussion_r1 next_action=fix_on_new_head_or_wait_for_github_thread_resolution_or_use_explicit_manual_operator_path$/m,
+    /^codex_connector_policy_block count=3 severity=P1 file=src\/supervisor\/policy\.ts line=42 thread_url=https:\/\/example\.test\/pr\/246#discussion_r1 next_action=fix_on_new_head_or_wait_for_github_thread_resolution_or_use_explicit_manual_operator_path$/m,
   );
   assert.match(status, /^codex_connector_policy_review p2_actionable=1 p3_softened=1 p3_escalated=1$/m);
   assert.doesNotMatch(status, /^codex_connector_policy_block .*severity=nitpick_only/m);
