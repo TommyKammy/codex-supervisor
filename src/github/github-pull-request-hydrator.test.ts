@@ -206,6 +206,64 @@ test("GitHubPullRequestHydrator keeps configured-bot top-level review strength s
   assert.equal(pr?.configuredBotTopLevelReviewSubmittedAt, "2026-03-13T02:03:04Z");
 });
 
+test("GitHubPullRequestHydrator hydrates supervisor-authored Codex Connector review request markers for the current head", async () => {
+  const config = createConfig({ reviewBotLogins: ["chatgpt-codex-connector"] });
+  let lifecycleQuery: string | null = null;
+  const hydrator = new GitHubPullRequestHydrator(config, async (args) => {
+    if (args[0] === "api" && args[1] === "graphql") {
+      lifecycleQuery = args.find((arg) => arg.startsWith("query=")) ?? null;
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                reviewRequests: { nodes: [] },
+                reviews: { nodes: [] },
+                comments: {
+                  nodes: [
+                    {
+                      createdAt: "2026-03-13T01:00:00Z",
+                      body: "<!-- codex-supervisor:codex-connector-review-request issue=1923 pr=44 head=head-old -->\n@codex review",
+                      viewerDidAuthor: true,
+                      author: { login: "codex-supervisor[bot]" },
+                    },
+                    {
+                      createdAt: "2026-03-13T01:05:00Z",
+                      body: "<!-- codex-supervisor:codex-connector-review-request issue=1923 pr=44 head=head-44 -->\n@codex review",
+                      viewerDidAuthor: true,
+                      author: { login: "codex-supervisor[bot]" },
+                    },
+                    {
+                      createdAt: "2026-03-13T01:06:00Z",
+                      body: "<!-- codex-supervisor:codex-connector-review-request issue=1923 pr=44 head=head-44 -->\n@codex review",
+                      viewerDidAuthor: false,
+                      author: { login: "octocat" },
+                    },
+                  ],
+                },
+                reviewThreads: { nodes: [] },
+                timelineItems: { nodes: [] },
+                commits: { nodes: [] },
+              },
+            },
+          },
+        }),
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  const pr = await hydrator.hydrate(createPullRequest());
+
+  assert.ok(lifecycleQuery);
+  assert.match(lifecycleQuery, /viewerDidAuthor/);
+  assert.equal(pr?.codexConnectorReviewRequestedAt, "2026-03-13T01:05:00Z");
+  assert.equal(pr?.codexConnectorReviewRequestedHeadSha, "head-44");
+});
+
 test("GitHubPullRequestHydrator hydrates Copilot arrival from long review threads without truncating comments to 20", async () => {
   const config = createConfig();
   let lifecycleQuery: string | null = null;

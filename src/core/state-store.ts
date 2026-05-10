@@ -93,6 +93,14 @@ export class StateStore {
         hasOwn(patch, "copilot_review_requested_head_sha")
           ? patch.copilot_review_requested_head_sha ?? null
           : record.copilot_review_requested_head_sha ?? null,
+      codex_connector_review_requested_observed_at:
+        hasOwn(patch, "codex_connector_review_requested_observed_at")
+          ? patch.codex_connector_review_requested_observed_at ?? null
+          : record.codex_connector_review_requested_observed_at ?? null,
+      codex_connector_review_requested_head_sha:
+        hasOwn(patch, "codex_connector_review_requested_head_sha")
+          ? patch.codex_connector_review_requested_head_sha ?? null
+          : record.codex_connector_review_requested_head_sha ?? null,
       copilot_review_timed_out_at:
         hasOwn(patch, "copilot_review_timed_out_at")
           ? patch.copilot_review_timed_out_at ?? null

@@ -101,6 +101,8 @@ export function normalizeIssueRecord(value: IssueRunRecord): IssueRunRecord {
     merge_readiness_last_evaluated_at: value.merge_readiness_last_evaluated_at ?? null,
     copilot_review_requested_observed_at: value.copilot_review_requested_observed_at ?? null,
     copilot_review_requested_head_sha: value.copilot_review_requested_head_sha ?? null,
+    codex_connector_review_requested_observed_at: value.codex_connector_review_requested_observed_at ?? null,
+    codex_connector_review_requested_head_sha: value.codex_connector_review_requested_head_sha ?? null,
     copilot_review_timed_out_at: value.copilot_review_timed_out_at ?? null,
     copilot_review_timeout_action: value.copilot_review_timeout_action ?? null,
     copilot_review_timeout_reason: value.copilot_review_timeout_reason ?? null,

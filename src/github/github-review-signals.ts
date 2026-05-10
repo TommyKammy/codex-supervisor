@@ -30,6 +30,7 @@ export interface CopilotReviewLifecycleFacts {
     authorLogin: string | null;
     createdAt: string | null;
     body: string | null;
+    viewerDidAuthor?: boolean | null;
   }>;
   statusContexts?: Array<{
     creatorLogin: string | null;
@@ -70,6 +71,7 @@ export interface ConfiguredBotTopLevelReviewSummary {
 export interface ConfiguredBotReviewSummary {
   lifecycle: CopilotReviewLifecycle;
   topLevelReview: ConfiguredBotTopLevelReviewSummary;
+  codexConnectorReviewRequest?: CodexConnectorReviewRequestObservation | null;
   currentHeadObservedAt: string | null;
   currentHeadObservationSource: ConfiguredBotCurrentHeadObservationSource;
   currentHeadStatusState: string | null;
@@ -84,6 +86,94 @@ export type ConfiguredBotCurrentHeadObservationSource =
   | "status_context"
   | "codex_pr_success_comment"
   | null;
+
+export interface CodexConnectorReviewRequestObservation {
+  requestedAt: string | null;
+  headSha: string;
+}
+
+export interface CodexConnectorReviewRequestIdentity {
+  issueNumber?: number | null;
+  prNumber: number;
+  headSha: string;
+}
+
+const CODEX_CONNECTOR_REVIEW_REQUEST_MARKER = "codex-supervisor:codex-connector-review-request";
+
+function markerValue(value: string | number): string {
+  return String(value).replace(/[\s<>]/g, "");
+}
+
+export function renderCodexConnectorReviewRequestComment(
+  identity: CodexConnectorReviewRequestIdentity & { issueNumber: number },
+): string {
+  const issue = markerValue(identity.issueNumber);
+  const pr = markerValue(identity.prNumber);
+  const head = markerValue(identity.headSha);
+  return [
+    `<!-- ${CODEX_CONNECTOR_REVIEW_REQUEST_MARKER} issue=${issue} pr=${pr} head=${head} -->`,
+    "@codex review",
+  ].join("\n");
+}
+
+function parseCodexConnectorReviewRequestMarker(
+  body: string | null | undefined,
+): { issueNumber: number | null; prNumber: number; headSha: string } | null {
+  const markerPattern =
+    /<!--\s*codex-supervisor:codex-connector-review-request\s+issue=(\d+)\s+pr=(\d+)\s+head=([^\s>]+)\s*-->/;
+  const match = markerPattern.exec(body ?? "");
+  if (!match) {
+    return null;
+  }
+
+  const issueNumber = Number.parseInt(match[1] ?? "", 10);
+  const prNumber = Number.parseInt(match[2] ?? "", 10);
+  const headSha = match[3]?.trim() ?? "";
+  if (!Number.isInteger(issueNumber) || !Number.isInteger(prNumber) || !headSha) {
+    return null;
+  }
+
+  return { issueNumber, prNumber, headSha };
+}
+
+export function findCodexConnectorReviewRequest(
+  issueComments: CopilotReviewLifecycleFacts["issueComments"],
+  identity: CodexConnectorReviewRequestIdentity,
+): CodexConnectorReviewRequestObservation | null {
+  const normalizedHeadSha = identity.headSha.trim();
+  if (!normalizedHeadSha || !Number.isInteger(identity.prNumber)) {
+    return null;
+  }
+
+  let latest: CodexConnectorReviewRequestObservation | null = null;
+  let latestMs = 0;
+  for (const comment of issueComments) {
+    if (comment.viewerDidAuthor !== true || !/^@codex review$/m.test(comment.body ?? "")) {
+      continue;
+    }
+
+    const marker = parseCodexConnectorReviewRequestMarker(comment.body);
+    if (
+      !marker ||
+      marker.prNumber !== identity.prNumber ||
+      marker.headSha !== normalizedHeadSha ||
+      (identity.issueNumber !== undefined && identity.issueNumber !== null && marker.issueNumber !== identity.issueNumber)
+    ) {
+      continue;
+    }
+
+    const createdAtMs = parseTimestamp(comment.createdAt);
+    if (!latest || createdAtMs >= latestMs) {
+      latest = {
+        requestedAt: comment.createdAt,
+        headSha: marker.headSha,
+      };
+      latestMs = createdAtMs;
+    }
+  }
+
+  return latest;
+}
 
 function parseTimestamp(value: string | null | undefined): number {
   if (!value) {
@@ -665,11 +755,17 @@ export function buildConfiguredBotReviewSummary(
   facts: CopilotReviewLifecycleFacts,
   reviewBotLogins: string[],
   currentHeadOid?: string | null,
+  codexConnectorReviewRequestIdentity?: CodexConnectorReviewRequestIdentity | null,
 ): ConfiguredBotReviewSummary {
   const currentHeadObservation = inferConfiguredBotCurrentHeadObservation(facts, reviewBotLogins, currentHeadOid);
   return {
     lifecycle: inferCopilotReviewLifecycle(facts, reviewBotLogins),
     topLevelReview: inferConfiguredBotTopLevelReviewSummary(facts, reviewBotLogins),
+    ...(codexConnectorReviewRequestIdentity
+      ? {
+          codexConnectorReviewRequest: findCodexConnectorReviewRequest(facts.issueComments, codexConnectorReviewRequestIdentity),
+        }
+      : {}),
     currentHeadObservedAt: currentHeadObservation.observedAt,
     currentHeadObservationSource: currentHeadObservation.source,
     currentHeadStatusState: inferConfiguredBotCurrentHeadStatusState(facts, reviewBotLogins, currentHeadOid),

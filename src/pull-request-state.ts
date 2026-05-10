@@ -7,6 +7,7 @@ export {
   syncMergeLatencyVisibility,
 } from "./pull-request-state-policy";
 export {
+  syncCodexConnectorReviewRequestObservation,
   syncCopilotReviewRequestObservation,
   syncCopilotReviewTimeoutState,
   syncReviewWaitWindow,

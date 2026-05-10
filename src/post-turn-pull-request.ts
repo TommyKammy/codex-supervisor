@@ -80,6 +80,10 @@ export interface PullRequestLifecycleSnapshot {
   copilotRequestObservationPatch: Partial<
     Pick<IssueRunRecord, "copilot_review_requested_observed_at" | "copilot_review_requested_head_sha">
   >;
+  codexConnectorRequestObservationPatch?: Pick<
+    IssueRunRecord,
+    "codex_connector_review_requested_observed_at" | "codex_connector_review_requested_head_sha"
+  >;
   mergeLatencyVisibilityPatch: Pick<
     IssueRunRecord,
     "provider_success_observed_at" | "provider_success_head_sha" | "merge_readiness_last_evaluated_at"
@@ -386,6 +390,7 @@ async function applyTrackedPrLifecycleState(args: {
   const updatedRecord = args.stateStore.touch(args.record, {
     pr_number: args.pr.number,
     ...refreshedLifecycle.reviewWaitPatch,
+    ...refreshedLifecycle.codexConnectorRequestObservationPatch,
     ...refreshedLifecycle.copilotRequestObservationPatch,
     merge_readiness_last_evaluated_at: refreshedLifecycle.mergeLatencyVisibilityPatch.merge_readiness_last_evaluated_at,
     provider_success_head_sha: refreshedLifecycle.mergeLatencyVisibilityPatch.provider_success_head_sha,

@@ -1,5 +1,6 @@
 import {
   buildConfiguredBotReviewSummary as summarizeConfiguredBotReviewSignals,
+  CodexConnectorReviewRequestIdentity,
   ConfiguredBotReviewSummary,
   CopilotReviewLifecycleFacts,
 } from "./github-review-signals";
@@ -49,6 +50,7 @@ export interface PullRequestCopilotReviewLifecycleResponse {
     nodes?: Array<{
       createdAt?: string | null;
       body?: string | null;
+      viewerDidAuthor?: boolean | null;
       author?: {
         login?: string | null;
       } | null;
@@ -250,6 +252,7 @@ export function mapCopilotReviewLifecycleFacts(
         authorLogin: normalizeLogin(comment?.author?.login ?? null),
         createdAt: comment?.createdAt ?? null,
         body: comment?.body ?? null,
+        viewerDidAuthor: comment?.viewerDidAuthor ?? null,
       })) ?? [],
     statusContexts:
       lifecycle?.commits?.nodes?.flatMap((node) => {
@@ -322,8 +325,14 @@ export function buildConfiguredBotReviewSummary(
   lifecycle: PullRequestCopilotReviewLifecycleResponse | null | undefined,
   reviewBotLogins: string[],
   currentHeadOid?: string | null,
+  codexConnectorReviewRequestIdentity?: CodexConnectorReviewRequestIdentity | null,
 ): ConfiguredBotReviewSummary {
-  return summarizeConfiguredBotReviewSignals(mapCopilotReviewLifecycleFacts(lifecycle), reviewBotLogins, currentHeadOid);
+  return summarizeConfiguredBotReviewSignals(
+    mapCopilotReviewLifecycleFacts(lifecycle),
+    reviewBotLogins,
+    currentHeadOid,
+    codexConnectorReviewRequestIdentity,
+  );
 }
 
 export function applyConfiguredBotReviewSummary(
@@ -335,6 +344,8 @@ export function applyConfiguredBotReviewSummary(
     copilotReviewState: summary?.lifecycle.state ?? null,
     copilotReviewRequestedAt: summary?.lifecycle.requestedAt ?? null,
     copilotReviewArrivedAt: summary?.lifecycle.arrivedAt ?? null,
+    codexConnectorReviewRequestedAt: summary?.codexConnectorReviewRequest?.requestedAt ?? null,
+    codexConnectorReviewRequestedHeadSha: summary?.codexConnectorReviewRequest?.headSha ?? null,
     configuredBotCurrentHeadObservedAt: summary?.currentHeadObservedAt ?? null,
     configuredBotCurrentHeadObservationSource: summary?.currentHeadObservationSource ?? null,
     configuredBotCurrentHeadStatusState: summary?.currentHeadStatusState ?? null,

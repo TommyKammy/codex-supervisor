@@ -65,6 +65,7 @@ class ConfiguredBotReviewSummaryCache {
         currentHeadCiGreenAt: null,
         rateLimitWarningAt: null,
         draftSkipAt: null,
+        codexConnectorReviewRequest: null,
       }),
     };
     const lifecyclePromise = lifecyclePromiseFactory()
@@ -205,6 +206,7 @@ export class GitHubPullRequestHydrator {
               nodes {
                 createdAt
                 body
+                viewerDidAuthor
                 author {
                   login
                 }
@@ -322,7 +324,12 @@ export class GitHubPullRequestHydrator {
       };
     }>(result.stdout, `gh api graphql copilot review lifecycle pr=${prNumber}`);
 
-    return buildConfiguredBotReviewSummary(payload.data?.repository?.pullRequest, this.config.reviewBotLogins, currentHeadOid);
+    return buildConfiguredBotReviewSummary(
+      payload.data?.repository?.pullRequest,
+      this.config.reviewBotLogins,
+      currentHeadOid,
+      { prNumber, headSha: currentHeadOid },
+    );
   }
 }
 
