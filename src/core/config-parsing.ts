@@ -45,7 +45,11 @@ const VALID_STALE_CONFIGURED_BOT_REVIEW_POLICIES = new Set<StaleConfiguredBotRev
   "reply_only",
   "reply_and_resolve",
 ]);
-const VALID_COPILOT_REVIEW_TIMEOUT_ACTIONS = new Set<CopilotReviewTimeoutAction>(["continue", "block"]);
+const VALID_COPILOT_REVIEW_TIMEOUT_ACTIONS = new Set<CopilotReviewTimeoutAction>([
+  "continue",
+  "block",
+  "request_review_comment",
+]);
 const VALID_LOCAL_REVIEW_MINIMUM_SEVERITIES = new Set<LocalReviewReviewerThresholdConfig["minimumSeverity"]>(["low", "medium", "high"]);
 const VALID_RUN_STATES = new Set<RunState>([
   "queued",

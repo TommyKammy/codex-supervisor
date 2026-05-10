@@ -91,7 +91,7 @@ These fields control how the supervisor waits on CI, review bots, human review, 
 - `configuredBotSettledWaitSeconds`
 - `configuredBotRequireCurrentHeadSignal`
 - `configuredBotCurrentHeadSignalTimeoutMinutes`
-- `configuredBotCurrentHeadSignalTimeoutAction`
+- `configuredBotCurrentHeadSignalTimeoutAction` (`continue`, `block`, or Codex Connector-only `request_review_comment`)
 - `localReviewEnabled`
 - `localReviewPolicy`
 - `trackedPrCurrentHeadLocalReviewRequired`
@@ -473,7 +473,7 @@ Default note:
 - `configuredBotSettledWaitSeconds`
 - `configuredBotRequireCurrentHeadSignal`
 - `configuredBotCurrentHeadSignalTimeoutMinutes`
-- `configuredBotCurrentHeadSignalTimeoutAction`
+- `configuredBotCurrentHeadSignalTimeoutAction` (`continue`, `block`, or Codex Connector-only `request_review_comment`)
 - `localReviewEnabled`
 - `localReviewPosture`
 - `localReviewAutoDetect`
