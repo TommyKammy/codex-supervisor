@@ -2376,6 +2376,102 @@ test("handlePostTurnPullRequestTransitionsPhase forwards publishable allowlist m
   assert.equal(result.record.blocked_reason, null);
 });
 
+test("handlePostTurnPullRequestTransitionsPhase scopes ready-promotion path hygiene to PR changed files", async (t) => {
+  const workspacePath = await createTrackedRepo();
+  t.after(async () => {
+    await fs.rm(workspacePath, { recursive: true, force: true });
+  });
+
+  await fs.mkdir(path.join(workspacePath, "docs"), { recursive: true });
+  await fs.writeFile(
+    path.join(workspacePath, "docs", "baseline.md"),
+    `Baseline note: ${SAMPLE_UNIX_WORKSTATION_PATH}\n`,
+    "utf8",
+  );
+  git(workspacePath, "add", "docs/baseline.md");
+  git(workspacePath, "commit", "-m", "seed baseline finding");
+  git(workspacePath, "push", "origin", "main");
+  git(workspacePath, "checkout", "-b", "codex/issue-102");
+  await fs.writeFile(path.join(workspacePath, "docs", "changed.md"), "No local path here.\n", "utf8");
+  git(workspacePath, "add", "docs/changed.md");
+  git(workspacePath, "commit", "-m", "change unrelated file");
+  git(workspacePath, "push", "-u", "origin", "codex/issue-102");
+  const headSha = git(workspacePath, "rev-parse", "HEAD").trim();
+
+  const config = createConfig();
+  const issue = createIssue({ title: "Ignore baseline-only path findings" });
+  const draftPr = createPullRequest({
+    title: "Ignore baseline-only path findings",
+    isDraft: true,
+    headRefName: "codex/issue-102",
+    headRefOid: headSha,
+  });
+  const readyPr = createPullRequest({
+    title: "Ignore baseline-only path findings",
+    isDraft: false,
+    headRefName: "codex/issue-102",
+    headRefOid: headSha,
+  });
+  const record = createRecord({
+    state: "draft_pr",
+    pr_number: draftPr.number,
+    last_head_sha: headSha,
+    branch: "codex/issue-102",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: { "102": createRecord({ ...record }) },
+  };
+
+  let readyCalls = 0;
+  let snapshotLoads = 0;
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: createNoopStateStore(),
+    github: createDefaultGithub({
+      markPullRequestReady: async (prNumber: number) => {
+        assert.equal(prNumber, draftPr.number);
+        readyCalls += 1;
+      },
+    }),
+    context: createPostTurnContext({
+      issue,
+      pr: draftPr,
+      workspacePath,
+      state,
+      record,
+    }),
+    derivePullRequestLifecycleSnapshot: (currentRecord, pr) =>
+      createLifecycleSnapshot(currentRecord, pr.isDraft ? "draft_pr" : "pr_open"),
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    blockedReasonFromReviewState: () => null,
+    summarizeChecks: () => ({
+      hasPending: false,
+      hasFailing: false,
+    }),
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runLocalCiCommand: async () => undefined,
+    loadOpenPullRequestSnapshot: async () => {
+      snapshotLoads += 1;
+      return {
+        pr: snapshotLoads === 1 ? draftPr : readyPr,
+        checks: [],
+        reviewThreads: [] satisfies ReviewThread[],
+      };
+    },
+  });
+
+  assert.equal(readyCalls, 1);
+  assert.equal(result.record.state, "pr_open");
+  assert.equal(result.record.blocked_reason, null);
+  assert.equal(result.record.last_failure_signature, null);
+});
+
 test("handlePostTurnPullRequestTransitionsPhase comments once when workstation-local path hygiene blocks tracked ready promotion", async (t) => {
   const { workspacePath, headSha } = await createTrackedIssueBranchRepo();
   t.after(async () => {

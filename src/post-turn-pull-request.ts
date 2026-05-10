@@ -33,6 +33,7 @@ import { nowIso, truncate } from "./core/utils";
 import { type LocalCiCommandRunner } from "./local-ci";
 import {
   buildWorkstationLocalPathFailureContext,
+  listReadyPromotionChangedFilePaths,
   runWorkstationLocalPathGate,
   type WorkstationLocalPathGateResult,
 } from "./workstation-local-path-gate";
@@ -316,6 +317,7 @@ export interface HandlePostTurnPullRequestTransitionsArgs {
     workspacePath: string;
     gateLabel: string;
     publishablePathAllowlistMarkers?: readonly string[];
+    readyPromotionChangedFilePaths?: readonly string[];
   }) => Promise<WorkstationLocalPathGateResult>;
   emitEvent?: SupervisorEventSink;
   loadOpenPullRequestSnapshot?: (prNumber: number) => Promise<{
@@ -670,10 +672,23 @@ export async function handlePostTurnPullRequestTransitionsPhase(
     !localReviewBlocksReady(config, record, refreshed.pr) &&
     !options.dryRun
   ) {
+    const readyPromotionChangedFilePaths =
+      listReadyPromotionChangedFilePaths({
+        workspacePath,
+        baseRef: `origin/${config.defaultBranch}`,
+        headRef: refreshed.pr.headRefName,
+      }) ??
+      listReadyPromotionChangedFilePaths({
+        workspacePath,
+        baseRef: config.defaultBranch,
+        headRef: refreshed.pr.headRefName,
+      }) ??
+      undefined;
     const pathHygieneGate = await runWorkstationLocalPathGateImpl({
       workspacePath,
       gateLabel: `before marking PR #${refreshed.pr.number} ready`,
       publishablePathAllowlistMarkers: config.publishablePathAllowlistMarkers,
+      readyPromotionChangedFilePaths,
     });
     const pathHygieneDecision = deriveReadyPromotionPathHygieneDecision({
       record,
