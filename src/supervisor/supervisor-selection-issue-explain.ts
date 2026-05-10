@@ -37,6 +37,7 @@ import {
 } from "./supervisor-detailed-status-assembly";
 import {
   externalSignalReadinessDiagnostics,
+  formatCodexConnectorConvergenceDiagnostic,
   formatCodexConnectorReviewFallbackDiagnostic,
 } from "./supervisor-status-review-bot";
 import { inspectTrackedIssueHostDiagnostics, summarizeIssueJournalHandoff } from "../core/journal";
@@ -115,6 +116,7 @@ export interface SupervisorExplainDto {
   staleReviewBotRemediation?: StaleReviewBotRemediationDto | null;
   codexConnectorPolicyBlockSummary?: string | null;
   codexConnectorReviewFallbackSummary?: string | null;
+  codexConnectorConvergenceSummary?: string | null;
   noActiveTrackedRecordSummary?: string | null;
   trackedPrRetryabilitySummary?: string | null;
   trackedPrMismatchSummary: string | null;
@@ -469,6 +471,15 @@ export async function buildIssueExplainDto(
         pr,
       })
       : null;
+  const codexConnectorConvergenceSummary =
+    record && pr && !trackedPrHydrationFailed
+      ? formatCodexConnectorConvergenceDiagnostic({
+        config,
+        record,
+        pr,
+        reviewThreads: explainReviewThreads,
+      })
+      : null;
   const noActiveTrackedRecordSummary =
     record && state.activeIssueNumber === null
       ? formatNoActiveTrackedRecordClassificationLine(config, record, staleReviewBotRemediation)
@@ -561,6 +572,7 @@ export async function buildIssueExplainDto(
     staleReviewBotRemediation,
     codexConnectorPolicyBlockSummary,
     codexConnectorReviewFallbackSummary,
+    codexConnectorConvergenceSummary,
     noActiveTrackedRecordSummary,
     trackedPrRetryabilitySummary:
       record?.last_tracked_pr_repeat_failure_decision && record.last_tracked_pr_progress_summary
@@ -636,6 +648,7 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
     ...(dto.staleReviewBotRemediation ? [formatStaleReviewBotRemediationLine(dto.staleReviewBotRemediation)] : []),
     ...(dto.codexConnectorPolicyBlockSummary ? [dto.codexConnectorPolicyBlockSummary] : []),
     ...(dto.codexConnectorReviewFallbackSummary ? [dto.codexConnectorReviewFallbackSummary] : []),
+    ...(dto.codexConnectorConvergenceSummary ? [dto.codexConnectorConvergenceSummary] : []),
     ...(dto.noActiveTrackedRecordSummary ? [dto.noActiveTrackedRecordSummary] : []),
     ...(dto.trackedPrRetryabilitySummary ? [dto.trackedPrRetryabilitySummary] : []),
     ...(dto.trackedPrMismatchSummary ? [dto.trackedPrMismatchSummary] : []),
