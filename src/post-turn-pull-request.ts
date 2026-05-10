@@ -51,6 +51,7 @@ import {
 } from "./post-turn-pull-request-policy";
 import { runTrackedPrReadyLocalCiPublicationGate } from "./tracked-pr-local-ci-publication-gate";
 import * as trackedPrStatusComments from "./tracked-pr-status-comment";
+import { configuredReviewProviderKinds } from "./core/review-providers";
 
 export { syncTrackedPrPersistentStatusComment } from "./tracked-pr-status-comment";
 
@@ -335,6 +336,133 @@ async function loadOpenPullRequestSnapshot(
   const checks = await github.getChecks(prNumber);
   const reviewThreads = await github.getUnresolvedReviewThreads(prNumber);
   return { pr, checks, reviewThreads };
+}
+
+function isValidTimestamp(value: string | null | undefined): boolean {
+  return typeof value === "string" && value.length > 0 && !Number.isNaN(Date.parse(value));
+}
+
+function shouldRequestCodexConnectorReviewComment(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+  summarizeChecks: HandlePostTurnPullRequestTransitionsArgs["summarizeChecks"];
+  configuredBotReviewThreads: HandlePostTurnPullRequestTransitionsArgs["configuredBotReviewThreads"];
+  manualReviewThreads: HandlePostTurnPullRequestTransitionsArgs["manualReviewThreads"];
+  mergeConflictDetected: HandlePostTurnPullRequestTransitionsArgs["mergeConflictDetected"];
+}): boolean {
+  if (
+    args.config.configuredBotCurrentHeadSignalTimeoutAction !== "request_review_comment" ||
+    !configuredReviewProviderKinds(args.config).includes("codex") ||
+    args.record.copilot_review_timeout_action !== "request_review_comment" ||
+    !args.record.copilot_review_timed_out_at ||
+    args.record.codex_connector_review_requested_head_sha === args.pr.headRefOid ||
+    args.pr.isDraft ||
+    args.mergeConflictDetected(args.pr) ||
+    args.configuredBotReviewThreads(args.config, args.reviewThreads).length > 0 ||
+    args.manualReviewThreads(args.config, args.reviewThreads).length > 0 ||
+    isValidTimestamp(args.pr.configuredBotCurrentHeadObservedAt) ||
+    !isValidTimestamp(args.pr.currentHeadCiGreenAt)
+  ) {
+    return false;
+  }
+
+  const checkSummary = args.summarizeChecks(args.checks);
+  return !checkSummary.hasPending && !checkSummary.hasFailing;
+}
+
+function buildCodexConnectorReviewRequestFailureContext(args: {
+  pr: GitHubPullRequest;
+  error: unknown;
+}): FailureContext {
+  const message = args.error instanceof Error ? args.error.message : String(args.error);
+  return {
+    category: "blocked",
+    summary: `Failed to request Codex Connector review for PR #${args.pr.number}.`,
+    signature: `codex-connector-review-request-failed:${args.pr.headRefOid}`,
+    command: null,
+    details: [
+      `head=${args.pr.headRefOid}`,
+      `mutation=add_pr_comment`,
+      `error=${truncate(message, 500) ?? "unknown error"}`,
+    ],
+    url: args.pr.url,
+    updated_at: nowIso(),
+  };
+}
+
+async function maybeRequestCodexConnectorReviewComment(args: {
+  config: SupervisorConfig;
+  stateStore: Pick<StateStore, "touch" | "save">;
+  state: SupervisorStateFile;
+  github: Partial<Pick<GitHubClient, "addIssueComment">>;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+  syncJournal: IssueJournalSync;
+  applyFailureSignature: HandlePostTurnPullRequestTransitionsArgs["applyFailureSignature"];
+  blockedReasonFromReviewState: HandlePostTurnPullRequestTransitionsArgs["blockedReasonFromReviewState"];
+  summarizeChecks: HandlePostTurnPullRequestTransitionsArgs["summarizeChecks"];
+  configuredBotReviewThreads: HandlePostTurnPullRequestTransitionsArgs["configuredBotReviewThreads"];
+  manualReviewThreads: HandlePostTurnPullRequestTransitionsArgs["manualReviewThreads"];
+  mergeConflictDetected: HandlePostTurnPullRequestTransitionsArgs["mergeConflictDetected"];
+}): Promise<IssueRunRecord> {
+  if (
+    !shouldRequestCodexConnectorReviewComment({
+      config: args.config,
+      record: args.record,
+      pr: args.pr,
+      checks: args.checks,
+      reviewThreads: args.reviewThreads,
+      summarizeChecks: args.summarizeChecks,
+      configuredBotReviewThreads: args.configuredBotReviewThreads,
+      manualReviewThreads: args.manualReviewThreads,
+      mergeConflictDetected: args.mergeConflictDetected,
+    })
+  ) {
+    return args.record;
+  }
+
+  try {
+    if (!args.github.addIssueComment) {
+      throw new Error("GitHub comment transport unavailable");
+    }
+    await args.github.addIssueComment(args.pr.number, "@codex review");
+  } catch (error) {
+    const failureContext = buildCodexConnectorReviewRequestFailureContext({ pr: args.pr, error });
+    const blockedRecord = args.stateStore.touch(args.record, {
+      state: "blocked",
+      last_error: truncate(failureContext.summary, 1000),
+      last_failure_kind: null,
+      last_failure_context: failureContext,
+      ...args.applyFailureSignature(args.record, failureContext),
+      blocked_reason:
+        args.blockedReasonFromReviewState(args.record, args.pr, args.checks, args.reviewThreads) ?? "review_bot_timeout",
+    });
+    args.state.issues[String(blockedRecord.issue_number)] = blockedRecord;
+    await args.stateStore.save(args.state);
+    await args.syncJournal(blockedRecord);
+    return blockedRecord;
+  }
+
+  const updatedRecord = args.stateStore.touch(args.record, {
+    state: "waiting_ci",
+    codex_connector_review_requested_observed_at: nowIso(),
+    codex_connector_review_requested_head_sha: args.pr.headRefOid,
+    blocked_reason: null,
+    last_error: null,
+    last_failure_kind: null,
+    last_failure_context: null,
+    last_failure_signature: null,
+    repeated_failure_signature_count: 0,
+  });
+  args.state.issues[String(updatedRecord.issue_number)] = updatedRecord;
+  await args.stateStore.save(args.state);
+  await args.syncJournal(updatedRecord);
+  return updatedRecord;
 }
 
 async function applyTrackedPrLifecycleState(args: {
@@ -791,6 +919,26 @@ export async function handlePostTurnPullRequestTransitionsPhase(
   });
   record = lifecycleResult.record;
   let effectiveFailureContext = lifecycleResult.effectiveFailureContext;
+  record = await maybeRequestCodexConnectorReviewComment({
+    config,
+    stateStore,
+    state,
+    github,
+    record,
+    pr: postReady.pr,
+    checks: postReady.checks,
+    reviewThreads: postReady.reviewThreads,
+    syncJournal,
+    applyFailureSignature: args.applyFailureSignature,
+    blockedReasonFromReviewState: args.blockedReasonFromReviewState,
+    summarizeChecks: args.summarizeChecks,
+    configuredBotReviewThreads: args.configuredBotReviewThreads,
+    manualReviewThreads: args.manualReviewThreads,
+    mergeConflictDetected: args.mergeConflictDetected,
+  });
+  if (record.state === "blocked" && record.last_failure_context?.signature?.startsWith("codex-connector-review-request-failed:")) {
+    effectiveFailureContext = record.last_failure_context;
+  }
   record = await trackedPrStatusComments.maybeCommentOnTrackedPrPersistentStatus({
     github,
     stateStore,

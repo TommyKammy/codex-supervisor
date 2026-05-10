@@ -9331,6 +9331,8 @@ test("buildTrackedPrStaleFailureConvergencePatch isolates persisted tracked PR r
     external_review_missed_findings_count: 0,
     review_follow_up_head_sha: null,
     review_follow_up_remaining: 0,
+    codex_connector_review_requested_observed_at: null,
+    codex_connector_review_requested_head_sha: null,
     last_observed_host_local_pr_blocker_signature: null,
     last_observed_host_local_pr_blocker_head_sha: null,
     last_host_local_pr_blocker_comment_signature: null,

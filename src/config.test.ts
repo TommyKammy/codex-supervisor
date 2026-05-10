@@ -1311,6 +1311,35 @@ test("loadConfig accepts strict current-head configured-bot signal settings", as
   assert.equal(config.configuredBotCurrentHeadSignalTimeoutAction, "block");
 });
 
+test("loadConfig accepts Codex Connector review request timeout action", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  const configPath = path.join(tempDir, "supervisor.config.json");
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "./.local/worktrees",
+      stateBackend: "json",
+      stateFile: "./.local/state.json",
+      codexBinary: "codex",
+      branchPrefix: "codex/issue-",
+      reviewBotLogins: ["chatgpt-codex-connector"],
+      configuredBotCurrentHeadSignalTimeoutMinutes: 12,
+      configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+    }),
+    "utf8",
+  );
+
+  const config = loadConfig(configPath);
+  assert.equal(config.configuredBotCurrentHeadSignalTimeoutAction, "request_review_comment");
+});
+
 test("loadConfig accepts explicit stale configured-bot reply_only policy", async (t) => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
   t.after(async () => {

@@ -1001,6 +1001,10 @@ export function inferStateFromPullRequest(
     return "blocked";
   }
 
+  if (copilotTimeout.timedOut && copilotTimeout.action === "request_review_comment") {
+    return "waiting_ci";
+  }
+
   if (shouldWaitForConfiguredBotLatestHeadRearm(config, record, pr, nowMs)) {
     return "waiting_ci";
   }

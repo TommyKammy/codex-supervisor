@@ -548,6 +548,36 @@ test("inferStateFromPullRequest blocks after a strict CodeRabbit current-head si
   });
 });
 
+test("inferStateFromPullRequest keeps waiting after an opted-in Codex Connector review request timeout", () => {
+  withStubbedDateNow("2026-05-08T03:30:00Z", () => {
+    const config = createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector"],
+      configuredBotInitialGraceWaitSeconds: 0,
+      configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+      configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+    });
+    const record = createRecord({
+      state: "waiting_ci",
+      review_wait_started_at: "2026-05-08T03:09:36Z",
+      review_wait_head_sha: "head123",
+    });
+
+    assert.equal(
+      inferStateFromPullRequest(
+        config,
+        record,
+        createPullRequest({
+          currentHeadCiGreenAt: "2026-05-08T03:09:36Z",
+          configuredBotCurrentHeadObservedAt: null,
+        }),
+        passingChecks(),
+        [],
+      ),
+      "waiting_ci",
+    );
+  });
+});
+
 test("inferStateFromPullRequest does not spend strict CodeRabbit timeout budget before checks turn green", () => {
   withStubbedDateNow("2026-03-11T00:11:00Z", () => {
     const config = createConfig({

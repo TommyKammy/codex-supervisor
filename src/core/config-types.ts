@@ -17,7 +17,7 @@ export type LocalReviewPosturePreset =
   | "follow_up_issue_creation";
 export type ReleaseReadinessGatePosture = "advisory" | "block_release_publication";
 export type StaleConfiguredBotReviewPolicy = "diagnose_only" | "reply_only" | "reply_and_resolve";
-export type CopilotReviewTimeoutAction = "continue" | "block";
+export type CopilotReviewTimeoutAction = "continue" | "block" | "request_review_comment";
 export type ConfiguredReviewProviderKind = "copilot" | "codex" | "coderabbit" | "custom";
 export type ConfiguredReviewSignalSource = "copilot_lifecycle" | "review_threads";
 
