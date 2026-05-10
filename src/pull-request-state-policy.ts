@@ -16,8 +16,10 @@ import {
   summarizeChecks,
 } from "./supervisor/supervisor-reporting";
 import {
+  codexConnectorNitpickOnlyReviewThreads,
   configuredBotReviewFollowUpState,
   configuredBotReviewThreads,
+  evaluateCodexConnectorConvergencePolicy,
   manualReviewThreads,
   pendingBotReviewThreads,
   staleConfiguredBotReviewThreads,
@@ -700,9 +702,15 @@ function effectiveConfiguredBotReviewThreads(
   reviewThreads: ReviewThread[],
 ): ReviewThread[] {
   const unresolvedConfiguredBotThreads = configuredBotReviewThreads(config, reviewThreads);
-  return allowJournalOnlyConfiguredBotThreadException(config, pr, checks, unresolvedConfiguredBotThreads)
-    ? unresolvedConfiguredBotThreads.filter((thread) => !isIssueJournalThreadPath(thread))
-    : unresolvedConfiguredBotThreads;
+  const codexConnectorPolicy = evaluateCodexConnectorConvergencePolicy(config, pr, unresolvedConfiguredBotThreads);
+  const codexConnectorNitpickThreads = new Set(codexConnectorNitpickOnlyReviewThreads(unresolvedConfiguredBotThreads));
+  const effectiveThreads =
+    codexConnectorPolicy?.outcome === "nitpick_only" || codexConnectorPolicy?.outcome === "converged"
+      ? unresolvedConfiguredBotThreads.filter((thread) => !codexConnectorNitpickThreads.has(thread))
+      : unresolvedConfiguredBotThreads;
+  return allowJournalOnlyConfiguredBotThreadException(config, pr, checks, effectiveThreads)
+    ? effectiveThreads.filter((thread) => !isIssueJournalThreadPath(thread))
+    : effectiveThreads;
 }
 
 function pullRequestHeadMatchesRecord(record: Pick<IssueRunRecord, "last_head_sha">, pr: GitHubPullRequest): boolean {
@@ -722,7 +730,14 @@ function hasConfiguredProviderSuccess(
     return false;
   }
 
-  if (configuredBotReviewThreads(config, reviewThreads).length > 0) {
+  const codexConnectorPolicy = evaluateCodexConnectorConvergencePolicy(config, pr, reviewThreads);
+  if (codexConnectorPolicy?.outcome === "must_fix_remaining" || codexConnectorPolicy?.outcome === "missing_current_head_review") {
+    return false;
+  }
+
+  const configuredBotThreads = configuredBotReviewThreads(config, reviewThreads);
+  const codexConnectorNitpickThreads = new Set(codexConnectorNitpickOnlyReviewThreads(configuredBotThreads));
+  if (configuredBotThreads.filter((thread) => !codexConnectorNitpickThreads.has(thread)).length > 0) {
     return false;
   }
 

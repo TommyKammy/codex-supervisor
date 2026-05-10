@@ -6,6 +6,7 @@ import {
   createPullRequest,
   createRecord,
   createReviewThread,
+  passingChecks,
 } from "./pull-request-state-test-helpers";
 
 test("inferStateFromPullRequest keeps an unresolved configured bot thread blocked on the same head after processing", () => {
@@ -335,6 +336,79 @@ test("inferStateFromPullRequest does not allow same-head follow-up for unresolve
   });
 
   assert.equal(inferStateFromPullRequest(config, record, pr, [], [p1Thread]), "blocked");
+});
+
+test("inferStateFromPullRequest blocks same-head follow-up for unresolved Codex Connector P2 findings", () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector[bot]"],
+  });
+  const record = createRecord({
+    state: "pr_open",
+    last_head_sha: "head-a",
+    processed_review_thread_ids: ["thread-1@head-a"],
+    processed_review_thread_fingerprints: ["thread-1@head-a#comment-1"],
+    review_follow_up_head_sha: "head-a",
+    review_follow_up_remaining: 1,
+  });
+  const pr = createPullRequest({
+    reviewDecision: "CHANGES_REQUESTED",
+    headRefOid: "head-a",
+    configuredBotCurrentHeadObservedAt: "2026-03-11T00:05:00Z",
+  });
+  const p2Thread = createReviewThread({
+    comments: {
+      nodes: [
+        {
+          id: "comment-1",
+          body: "P2: Preserve failed restore cleanup as a blocking verification failure.",
+          createdAt: "2026-03-11T00:05:00Z",
+          url: "https://example.test/pr/44#discussion_r2",
+          author: {
+            login: "chatgpt-codex-connector[bot]",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.equal(inferStateFromPullRequest(config, record, pr, [], [p2Thread]), "blocked");
+});
+
+test("inferStateFromPullRequest softens unresolved Codex Connector P3 nitpick-only findings for merge readiness", () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector[bot]"],
+  });
+  const record = createRecord({
+    state: "pr_open",
+    last_head_sha: "head-a",
+    processed_review_thread_ids: ["thread-1@head-a"],
+    processed_review_thread_fingerprints: ["thread-1@head-a#comment-1"],
+  });
+  const pr = createPullRequest({
+    reviewDecision: "CHANGES_REQUESTED",
+    headRefOid: "head-a",
+    configuredBotCurrentHeadObservedAt: "2026-03-11T00:05:00Z",
+    configuredBotTopLevelReviewStrength: "nitpick_only",
+  });
+  const p3NitpickThread = createReviewThread({
+    comments: {
+      nodes: [
+        {
+          id: "comment-1",
+          body: "P3: Nitpick: prefer a shorter helper name for readability.",
+          createdAt: "2026-03-11T00:05:00Z",
+          url: "https://example.test/pr/44#discussion_r2",
+          author: {
+            login: "chatgpt-codex-connector[bot]",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.equal(inferStateFromPullRequest(config, record, pr, passingChecks(), [p3NitpickThread]), "ready_to_merge");
 });
 
 test("inferStateFromPullRequest still blocks same-head configured bot threads when no follow-up progress was recorded", () => {

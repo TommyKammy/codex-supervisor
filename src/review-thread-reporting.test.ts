@@ -7,6 +7,7 @@ import {
   actionableBotReviewThreads,
   buildStalledBotReviewFailureContext,
   codexConnectorMustFixReviewThreads,
+  evaluateCodexConnectorConvergencePolicy,
   staleConfiguredBotReviewThreads,
 } from "./review-thread-reporting";
 import { GitHubPullRequest, IssueRunRecord, ReviewThread, SupervisorConfig } from "./core/types";
@@ -290,6 +291,65 @@ test("codexConnectorMustFixReviewThreads tracks unresolved P1 findings and repor
   assert.match(buildStalledBotReviewFailureContext([p1Thread])?.details[0] ?? "", /p_severity=P1/);
 });
 
+test("codexConnectorMustFixReviewThreads treats P2 and escalated P3 findings as must-fix", () => {
+  const p2Thread = createReviewThread({
+    id: "thread-p2",
+    comments: {
+      nodes: [
+        {
+          id: "comment-p2",
+          body: "P2: Preserve failed restore cleanup as a blocking verification failure.",
+          createdAt: "2026-03-11T00:00:00Z",
+          url: "https://example.test/pr/44#discussion_r3",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const p3NitpickThread = createReviewThread({
+    id: "thread-p3-softened",
+    comments: {
+      nodes: [
+        {
+          id: "comment-p3-softened",
+          body: "P3: Nitpick: prefer a shorter helper name for readability.",
+          createdAt: "2026-03-11T00:01:00Z",
+          url: "https://example.test/pr/44#discussion_r4",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const p3RiskThread = createReviewThread({
+    id: "thread-p3-escalated",
+    comments: {
+      nodes: [
+        {
+          id: "comment-p3-escalated",
+          body: "P3: This cleanup can cause a regression in the restore failure path.",
+          createdAt: "2026-03-11T00:02:00Z",
+          url: "https://example.test/pr/44#discussion_r5",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(codexConnectorMustFixReviewThreads([p2Thread, p3NitpickThread, p3RiskThread]), [
+    p2Thread,
+    p3RiskThread,
+  ]);
+});
+
 test("buildCodexConnectorPolicyBlockDiagnostic reports the highest-severity thread location", () => {
   const config = createConfig({
     reviewBotLogins: ["chatgpt-codex-connector"],
@@ -402,6 +462,56 @@ test("buildCodexConnectorP2P3PolicyDiagnostic distinguishes actionable, softened
     p3Softened: 1,
     p3Escalated: 1,
   });
+});
+
+test("evaluateCodexConnectorConvergencePolicy separates missing, must-fix, nitpick-only, and converged outcomes", () => {
+  const config = createConfig({ reviewBotLogins: ["chatgpt-codex-connector"] });
+  const currentHeadPr = {
+    configuredBotCurrentHeadObservedAt: "2026-03-11T00:04:00Z",
+  };
+  const p2Thread = createReviewThread({
+    id: "thread-p2",
+    comments: {
+      nodes: [
+        {
+          id: "comment-p2",
+          body: "P2: Preserve failed restore cleanup as a blocking verification failure.",
+          createdAt: "2026-03-11T00:00:00Z",
+          url: "https://example.test/pr/44#discussion_r3",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const p3NitpickThread = createReviewThread({
+    id: "thread-p3-softened",
+    comments: {
+      nodes: [
+        {
+          id: "comment-p3-softened",
+          body: "P3: Nitpick: prefer a shorter helper name for readability.",
+          createdAt: "2026-03-11T00:01:00Z",
+          url: "https://example.test/pr/44#discussion_r4",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.equal(evaluateCodexConnectorConvergencePolicy(config, { configuredBotCurrentHeadObservedAt: null }, [])?.outcome, "missing_current_head_review");
+  assert.equal(evaluateCodexConnectorConvergencePolicy(config, currentHeadPr, [p2Thread])?.outcome, "must_fix_remaining");
+  assert.equal(
+    evaluateCodexConnectorConvergencePolicy(config, { configuredBotCurrentHeadObservedAt: null }, [p3NitpickThread])?.outcome,
+    "missing_current_head_review",
+  );
+  assert.equal(evaluateCodexConnectorConvergencePolicy(config, currentHeadPr, [p3NitpickThread])?.outcome, "nitpick_only");
+  assert.equal(evaluateCodexConnectorConvergencePolicy(config, currentHeadPr, [])?.outcome, "converged");
 });
 
 test("actionableBotReviewThreads treats Codex Connector P2 as actionable by default", () => {
