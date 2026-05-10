@@ -97,10 +97,12 @@ test("normalizeExternalReviewSignal treats Codex Connector P1 badge comments as 
     },
   });
 
-  const signal = toExternalReviewThreadSignal(thread, ["chatgpt-codex-connector[bot]"]);
+  const signal = toExternalReviewThreadSignal(thread, ["chatgpt-codex-connector[bot]"], "head-current");
   const finding = signal ? normalizeExternalReviewSignal(signal) : null;
 
   assert.equal(finding?.reviewerLogin, "chatgpt-codex-connector[bot]");
+  assert.equal(finding?.provider, "codex");
+  assert.equal(finding?.headSha, "head-current");
   assert.equal(finding?.file, "package.json");
   assert.match(finding?.summary ?? "", /P1 Badge/);
   assert.equal(finding?.severity, "high");
