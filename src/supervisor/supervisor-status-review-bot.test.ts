@@ -10,6 +10,7 @@ import {
   configuredBotRateLimitWaitWindow,
   configuredBotTopLevelReviewEffect,
   externalSignalReadinessDiagnostics,
+  formatCodexConnectorReviewFallbackDiagnostic,
   configuredReviewStatusLabel,
   inferReviewBotProfile,
   reviewBotDiagnostics,
@@ -853,6 +854,64 @@ test("configuredBotCurrentHeadSignalWaitWindow reports an active Codex Connector
         configuredWaitMinutes: 10,
         waitUntil: "2026-03-16T00:20:00.000Z",
       },
+    );
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
+test("formatCodexConnectorReviewFallbackDiagnostic surfaces Codex Connector wait and request states", () => {
+  const originalNow = Date.now;
+  Date.now = () => Date.parse("2026-03-16T00:12:00.000Z");
+
+  try {
+    const config = createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector"],
+      configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+      configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+    });
+    const waitingPr = createPr({
+      headRefOid: "head-340",
+      currentHeadCiGreenAt: "2026-03-16T00:10:00.000Z",
+      configuredBotCurrentHeadObservedAt: null,
+    });
+
+    assert.equal(
+      formatCodexConnectorReviewFallbackDiagnostic({
+        config,
+        record: createRecord(),
+        pr: waitingPr,
+      }),
+      "codex_connector_review_fallback status=waiting_current_head_signal provider=codex current_head_sha=head-340 current_head_observed_at=none required_checks_green_at=2026-03-16T00:10:00.000Z timeout_action=request_review_comment requested_at=none requested_head_sha=none review_signal=missing note=request_comment_is_not_review_completion wait_until=2026-03-16T00:20:00.000Z",
+    );
+
+    assert.equal(
+      formatCodexConnectorReviewFallbackDiagnostic({
+        config,
+        record: createRecord({
+          codex_connector_review_requested_observed_at: "2026-03-16T00:21:00.000Z",
+          codex_connector_review_requested_head_sha: "head-340",
+        }),
+        pr: {
+          ...waitingPr,
+          codexConnectorReviewRequestedAt: "2026-03-16T00:21:00.000Z",
+          codexConnectorReviewRequestedHeadSha: "head-340",
+        },
+      }),
+      "codex_connector_review_fallback status=request_posted provider=codex current_head_sha=head-340 current_head_observed_at=none required_checks_green_at=2026-03-16T00:10:00.000Z timeout_action=request_review_comment requested_at=2026-03-16T00:21:00.000Z requested_head_sha=head-340 review_signal=missing note=request_comment_is_not_review_completion wait_until=2026-03-16T00:20:00.000Z",
+    );
+
+    assert.equal(
+      formatCodexConnectorReviewFallbackDiagnostic({
+        config,
+        record: createRecord(),
+        pr: {
+          ...waitingPr,
+          codexConnectorReviewRequestedAt: "2026-03-16T00:21:00.000Z",
+          codexConnectorReviewRequestedHeadSha: "head-340",
+        },
+      }),
+      "codex_connector_review_fallback status=already_requested provider=codex current_head_sha=head-340 current_head_observed_at=none required_checks_green_at=2026-03-16T00:10:00.000Z timeout_action=request_review_comment requested_at=2026-03-16T00:21:00.000Z requested_head_sha=head-340 review_signal=missing note=request_comment_is_not_review_completion wait_until=2026-03-16T00:20:00.000Z",
     );
   } finally {
     Date.now = originalNow;
