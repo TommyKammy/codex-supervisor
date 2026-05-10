@@ -954,6 +954,7 @@ export async function executeCodexTurnPhase(
         record = stateStore.touch(record, {
           pr_number: pr?.number ?? null,
           ...(postRunSnapshot?.reviewWaitPatch ?? {}),
+          ...(postRunSnapshot?.codexConnectorRequestObservationPatch ?? {}),
           ...(postRunSnapshot?.copilotRequestObservationPatch ?? {}),
           ...(postRunSnapshot?.copilotTimeoutPatch ?? {}),
           ...processedReviewThreadPatch,

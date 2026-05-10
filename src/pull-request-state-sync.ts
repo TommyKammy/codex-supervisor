@@ -68,6 +68,39 @@ export function syncCopilotReviewRequestObservation(
   };
 }
 
+export function syncCodexConnectorReviewRequestObservation(
+  record: IssueRunRecord,
+  pr: GitHubPullRequest,
+): Pick<
+  IssueRunRecord,
+  "codex_connector_review_requested_observed_at" | "codex_connector_review_requested_head_sha"
+> {
+  if (
+    pr.codexConnectorReviewRequestedAt &&
+    pr.codexConnectorReviewRequestedHeadSha === pr.headRefOid
+  ) {
+    return {
+      codex_connector_review_requested_observed_at: pr.codexConnectorReviewRequestedAt,
+      codex_connector_review_requested_head_sha: pr.headRefOid,
+    };
+  }
+
+  if (
+    record.codex_connector_review_requested_observed_at &&
+    record.codex_connector_review_requested_head_sha === pr.headRefOid
+  ) {
+    return {
+      codex_connector_review_requested_observed_at: record.codex_connector_review_requested_observed_at,
+      codex_connector_review_requested_head_sha: record.codex_connector_review_requested_head_sha,
+    };
+  }
+
+  return {
+    codex_connector_review_requested_observed_at: null,
+    codex_connector_review_requested_head_sha: null,
+  };
+}
+
 export function syncCopilotReviewTimeoutState(
   config: SupervisorConfig,
   record: IssueRunRecord,

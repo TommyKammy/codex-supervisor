@@ -223,6 +223,8 @@ export interface IssueRunRecord {
   merge_readiness_last_evaluated_at?: string | null;
   copilot_review_requested_observed_at: string | null;
   copilot_review_requested_head_sha: string | null;
+  codex_connector_review_requested_observed_at?: string | null;
+  codex_connector_review_requested_head_sha?: string | null;
   copilot_review_timed_out_at: string | null;
   copilot_review_timeout_action: CopilotReviewTimeoutAction | null;
   copilot_review_timeout_reason: string | null;

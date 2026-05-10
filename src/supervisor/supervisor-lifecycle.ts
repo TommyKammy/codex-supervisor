@@ -369,6 +369,7 @@ export function derivePullRequestLifecycleSnapshot(
     nextState: inferStateFromPullRequest(config, finalizedRecordForState, pr, checks, reviewThreads),
     failureContext: inferFailureContext(config, finalizedRecordForState, pr, checks, reviewThreads),
     reviewWaitPatch: trackedPrProjection.reviewWaitPatch,
+    codexConnectorRequestObservationPatch: trackedPrProjection.codexConnectorReviewRequestObservationPatch,
     copilotRequestObservationPatch: trackedPrProjection.copilotReviewRequestObservationPatch,
     mergeLatencyVisibilityPatch,
     copilotTimeoutPatch: trackedPrProjection.copilotReviewTimeoutPatch,

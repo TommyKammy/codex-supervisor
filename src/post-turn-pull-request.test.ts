@@ -123,6 +123,10 @@ function createLifecycleSnapshot(
     nextState,
     failureContext: null,
     reviewWaitPatch: {},
+    codexConnectorRequestObservationPatch: {
+      codex_connector_review_requested_observed_at: null,
+      codex_connector_review_requested_head_sha: null,
+    },
     copilotRequestObservationPatch: {},
     mergeLatencyVisibilityPatch: {
       provider_success_observed_at: null,

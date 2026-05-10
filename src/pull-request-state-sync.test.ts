@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  syncCodexConnectorReviewRequestObservation,
   syncCopilotReviewRequestObservation,
   syncReviewWaitWindow,
 } from "./pull-request-state-sync";
@@ -81,5 +82,45 @@ test("syncCopilotReviewRequestObservation clears a stale same-head observation o
   assert.deepEqual(patch, {
     copilot_review_requested_observed_at: null,
     copilot_review_requested_head_sha: null,
+  });
+});
+
+test("syncCodexConnectorReviewRequestObservation preserves one request per current PR head", () => {
+  const current = syncCodexConnectorReviewRequestObservation(
+    createRecord({
+      issue_number: 1923,
+      codex_connector_review_requested_observed_at: null,
+      codex_connector_review_requested_head_sha: null,
+    }),
+    createPullRequest({
+      number: 44,
+      headRefOid: "head-current",
+      codexConnectorReviewRequestedAt: "2026-03-13T01:00:00Z",
+      codexConnectorReviewRequestedHeadSha: "head-current",
+    }),
+  );
+
+  assert.deepEqual(current, {
+    codex_connector_review_requested_observed_at: "2026-03-13T01:00:00Z",
+    codex_connector_review_requested_head_sha: "head-current",
+  });
+
+  const stale = syncCodexConnectorReviewRequestObservation(
+    createRecord({
+      issue_number: 1923,
+      codex_connector_review_requested_observed_at: "2026-03-13T00:00:00Z",
+      codex_connector_review_requested_head_sha: "head-old",
+    }),
+    createPullRequest({
+      number: 44,
+      headRefOid: "head-current",
+      codexConnectorReviewRequestedAt: null,
+      codexConnectorReviewRequestedHeadSha: null,
+    }),
+  );
+
+  assert.deepEqual(stale, {
+    codex_connector_review_requested_observed_at: null,
+    codex_connector_review_requested_head_sha: null,
   });
 });

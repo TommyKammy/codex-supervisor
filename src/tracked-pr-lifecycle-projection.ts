@@ -11,6 +11,7 @@ import {
   inferStateFromPullRequest,
 } from "./pull-request-state";
 import {
+  syncCodexConnectorReviewRequestObservation,
   syncCopilotReviewRequestObservation,
   syncCopilotReviewTimeoutState,
   syncReviewWaitWindow,
@@ -26,6 +27,7 @@ interface ProjectTrackedPrLifecycleArgs {
   inferStateFromPullRequest?: typeof inferStateFromPullRequest;
   blockedReasonForLifecycleState?: typeof blockedReasonForLifecycleState;
   syncReviewWaitWindow?: typeof syncReviewWaitWindow;
+  syncCodexConnectorReviewRequestObservation?: typeof syncCodexConnectorReviewRequestObservation;
   syncCopilotReviewRequestObservation?: typeof syncCopilotReviewRequestObservation;
   syncCopilotReviewTimeoutState?: typeof syncCopilotReviewTimeoutState;
 }
@@ -34,6 +36,10 @@ export interface TrackedPrLifecycleProjection {
   recordForState: IssueRunRecord;
   reviewWaitPatch: Partial<IssueRunRecord>;
   copilotReviewRequestObservationPatch: Partial<IssueRunRecord>;
+  codexConnectorReviewRequestObservationPatch: Pick<
+    IssueRunRecord,
+    "codex_connector_review_requested_observed_at" | "codex_connector_review_requested_head_sha"
+  >;
   copilotReviewTimeoutPatch: Pick<
     IssueRunRecord,
     "copilot_review_timed_out_at" | "copilot_review_timeout_action" | "copilot_review_timeout_reason"
@@ -98,6 +104,9 @@ export function resetTrackedPrHeadScopedStateOnAdvance(
   const localCiHeadStale =
     record.latest_local_ci_result?.head_sha != null
     && record.latest_local_ci_result.head_sha !== nextHeadSha;
+  const codexConnectorReviewRequestHeadStale =
+    record.codex_connector_review_requested_head_sha != null
+    && record.codex_connector_review_requested_head_sha !== nextHeadSha;
   const processedThreadIdsHeadStale = processedReviewThreadIdsStaleForHead(
     record.processed_review_thread_ids ?? [],
     nextHeadSha,
@@ -121,6 +130,7 @@ export function resetTrackedPrHeadScopedStateOnAdvance(
     || blockerCommentHeadStale
     || observedHostLocalBlockerHeadStale
     || localCiHeadStale
+    || codexConnectorReviewRequestHeadStale
     || processedThreadIdsHeadStale
     || processedThreadFingerprintsHeadStale;
   const sameTrackedHead = record.last_head_sha === nextHeadSha;
@@ -152,6 +162,12 @@ export function resetTrackedPrHeadScopedStateOnAdvance(
           }
         : {}),
       ...(localCiHeadStale ? { latest_local_ci_result: null } : {}),
+      ...(codexConnectorReviewRequestHeadStale
+        ? {
+            codex_connector_review_requested_observed_at: null,
+            codex_connector_review_requested_head_sha: null,
+          }
+        : {}),
       ...(observedHostLocalBlockerHeadStale
         ? {
             last_observed_host_local_pr_blocker_signature: null,
@@ -193,6 +209,8 @@ export function resetTrackedPrHeadScopedStateOnAdvance(
     external_review_missed_findings_count: 0,
     review_follow_up_head_sha: null,
     review_follow_up_remaining: 0,
+    codex_connector_review_requested_observed_at: null,
+    codex_connector_review_requested_head_sha: null,
     last_observed_host_local_pr_blocker_signature: null,
     last_observed_host_local_pr_blocker_head_sha: null,
     last_host_local_pr_blocker_comment_signature: null,
@@ -206,6 +224,8 @@ export function projectTrackedPrLifecycle(args: ProjectTrackedPrLifecycleArgs): 
   const inferStateFromPullRequestImpl = args.inferStateFromPullRequest ?? inferStateFromPullRequest;
   const blockedReasonForLifecycleStateImpl = args.blockedReasonForLifecycleState ?? blockedReasonForLifecycleState;
   const syncReviewWaitWindowImpl = args.syncReviewWaitWindow ?? syncReviewWaitWindow;
+  const syncCodexConnectorReviewRequestObservationImpl =
+    args.syncCodexConnectorReviewRequestObservation ?? syncCodexConnectorReviewRequestObservation;
   const syncCopilotReviewRequestObservationImpl =
     args.syncCopilotReviewRequestObservation ?? syncCopilotReviewRequestObservation;
   const syncCopilotReviewTimeoutStateImpl =
@@ -224,10 +244,15 @@ export function projectTrackedPrLifecycle(args: ProjectTrackedPrLifecycleArgs): 
     projectionSeedRecord,
     args.pr,
   );
+  const codexConnectorReviewRequestObservationPatch = syncCodexConnectorReviewRequestObservationImpl(
+    projectionSeedRecord,
+    args.pr,
+  );
   const copilotReviewTimeoutPatch = syncCopilotReviewTimeoutStateImpl(args.config, projectionSeedRecord, args.pr);
   const recordForState: IssueRunRecord = {
     ...projectionSeedRecord,
     ...reviewWaitPatch,
+    ...codexConnectorReviewRequestObservationPatch,
     ...copilotReviewRequestObservationPatch,
     ...copilotReviewTimeoutPatch,
   };
@@ -243,6 +268,7 @@ export function projectTrackedPrLifecycle(args: ProjectTrackedPrLifecycleArgs): 
     recordForState,
     reviewWaitPatch,
     copilotReviewRequestObservationPatch,
+    codexConnectorReviewRequestObservationPatch,
     copilotReviewTimeoutPatch,
     nextState,
     nextBlockedReason:
