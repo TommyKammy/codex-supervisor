@@ -282,6 +282,66 @@ export function configuredBotCurrentHeadSignalWaitWindow(
   };
 }
 
+export function formatCodexConnectorReviewFallbackDiagnostic(args: {
+  config: SupervisorConfig;
+  record: Pick<
+    IssueRunRecord,
+    "codex_connector_review_requested_observed_at" | "codex_connector_review_requested_head_sha"
+  >;
+  pr: GitHubPullRequest;
+}): string | null {
+  if (!configuredReviewProviderKinds(args.config).includes("codex")) {
+    return null;
+  }
+
+  const waitWindow = configuredBotCurrentHeadSignalWaitWindow(args.config, args.pr);
+  const currentHeadObservedAt = args.pr.configuredBotCurrentHeadObservedAt ?? null;
+  const recordRequestAt = args.record.codex_connector_review_requested_observed_at ?? null;
+  const recordRequestHeadSha = args.record.codex_connector_review_requested_head_sha ?? null;
+  const prRequestAt = args.pr.codexConnectorReviewRequestedAt ?? null;
+  const prRequestHeadSha = args.pr.codexConnectorReviewRequestedHeadSha ?? null;
+  const requestAt = recordRequestAt ?? prRequestAt;
+  const requestHeadSha = recordRequestHeadSha ?? prRequestHeadSha;
+  const requestMatchesCurrentHead = Boolean(requestAt && requestHeadSha === args.pr.headRefOid);
+  const reviewSignal = currentHeadObservedAt ? "current_head_observed" : "missing";
+  const timeoutAction = args.config.configuredBotCurrentHeadSignalTimeoutAction ?? args.config.copilotReviewTimeoutAction;
+
+  let status:
+    | "current_head_observed"
+    | "waiting_current_head_signal"
+    | "timeout_elapsed"
+    | "request_posted"
+    | "already_requested"
+    | "missing_current_head_signal";
+  if (currentHeadObservedAt) {
+    status = "current_head_observed";
+  } else if (requestMatchesCurrentHead && recordRequestAt) {
+    status = "request_posted";
+  } else if (requestMatchesCurrentHead) {
+    status = "already_requested";
+  } else if (waitWindow.status === "active") {
+    status = "waiting_current_head_signal";
+  } else if (waitWindow.status === "expired") {
+    status = "timeout_elapsed";
+  } else {
+    status = "missing_current_head_signal";
+  }
+
+  const waitUntilSuffix = waitWindow.waitUntil ? ` wait_until=${waitWindow.waitUntil}` : "";
+  return [
+    `codex_connector_review_fallback status=${status}`,
+    "provider=codex",
+    `current_head_sha=${args.pr.headRefOid}`,
+    `current_head_observed_at=${currentHeadObservedAt ?? "none"}`,
+    `required_checks_green_at=${args.pr.currentHeadCiGreenAt ?? "none"}`,
+    `timeout_action=${timeoutAction}`,
+    `requested_at=${requestAt ?? "none"}`,
+    `requested_head_sha=${requestHeadSha ?? "none"}`,
+    `review_signal=${reviewSignal}`,
+    "note=request_comment_is_not_review_completion",
+  ].join(" ") + waitUntilSuffix;
+}
+
 export function configuredBotInitialGraceWaitWindow(
   config: SupervisorConfig,
   pr: GitHubPullRequest,

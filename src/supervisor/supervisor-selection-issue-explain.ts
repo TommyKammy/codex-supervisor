@@ -35,7 +35,10 @@ import {
   formatLatestRecoveryStatusLine,
   formatNoActiveTrackedRecordClassificationLine,
 } from "./supervisor-detailed-status-assembly";
-import { externalSignalReadinessDiagnostics } from "./supervisor-status-review-bot";
+import {
+  externalSignalReadinessDiagnostics,
+  formatCodexConnectorReviewFallbackDiagnostic,
+} from "./supervisor-status-review-bot";
 import { inspectTrackedIssueHostDiagnostics, summarizeIssueJournalHandoff } from "../core/journal";
 import { formatInventoryRefreshDiagnosticLines, formatInventoryRefreshStatusLine } from "../inventory-refresh-state";
 import { buildTrackedPrMismatch } from "./tracked-pr-mismatch";
@@ -111,6 +114,7 @@ export interface SupervisorExplainDto {
   staleDiagnosticSummary?: string | null;
   staleReviewBotRemediation?: StaleReviewBotRemediationDto | null;
   codexConnectorPolicyBlockSummary?: string | null;
+  codexConnectorReviewFallbackSummary?: string | null;
   noActiveTrackedRecordSummary?: string | null;
   trackedPrRetryabilitySummary?: string | null;
   trackedPrMismatchSummary: string | null;
@@ -457,6 +461,14 @@ export async function buildIssueExplainDto(
         return diagnostic ? formatCodexConnectorPolicyBlockDiagnostic(diagnostic) : null;
       })()
       : null;
+  const codexConnectorReviewFallbackSummary =
+    record && pr && !trackedPrHydrationFailed
+      ? formatCodexConnectorReviewFallbackDiagnostic({
+        config,
+        record,
+        pr,
+      })
+      : null;
   const noActiveTrackedRecordSummary =
     record && state.activeIssueNumber === null
       ? formatNoActiveTrackedRecordClassificationLine(config, record, staleReviewBotRemediation)
@@ -548,6 +560,7 @@ export async function buildIssueExplainDto(
     staleDiagnosticSummary,
     staleReviewBotRemediation,
     codexConnectorPolicyBlockSummary,
+    codexConnectorReviewFallbackSummary,
     noActiveTrackedRecordSummary,
     trackedPrRetryabilitySummary:
       record?.last_tracked_pr_repeat_failure_decision && record.last_tracked_pr_progress_summary
@@ -622,6 +635,7 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
     ...(dto.staleDiagnosticSummary ? [dto.staleDiagnosticSummary] : []),
     ...(dto.staleReviewBotRemediation ? [formatStaleReviewBotRemediationLine(dto.staleReviewBotRemediation)] : []),
     ...(dto.codexConnectorPolicyBlockSummary ? [dto.codexConnectorPolicyBlockSummary] : []),
+    ...(dto.codexConnectorReviewFallbackSummary ? [dto.codexConnectorReviewFallbackSummary] : []),
     ...(dto.noActiveTrackedRecordSummary ? [dto.noActiveTrackedRecordSummary] : []),
     ...(dto.trackedPrRetryabilitySummary ? [dto.trackedPrRetryabilitySummary] : []),
     ...(dto.trackedPrMismatchSummary ? [dto.trackedPrMismatchSummary] : []),

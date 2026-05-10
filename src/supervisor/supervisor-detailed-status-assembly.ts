@@ -26,6 +26,7 @@ import {
   configuredReviewBots,
   configuredReviewStatusLabel,
   externalSignalReadinessDiagnostics,
+  formatCodexConnectorReviewFallbackDiagnostic,
   inferReviewBotProfile,
   reviewBotDiagnostics,
 } from "./supervisor-status-review-bot";
@@ -364,6 +365,14 @@ export function buildActiveDetailedStatusLines(
     lines.push(
       `${reviewStatusLabel} state=${copilotReviewState}${reviewersSuffix} requested_at=${pr.copilotReviewRequestedAt ?? "none"} arrived_at=${pr.copilotReviewArrivedAt ?? "none"} timed_out_at=${activeRecord.copilot_review_timed_out_at ?? "none"} timeout_action=${activeRecord.copilot_review_timeout_action ?? "none"}`,
     );
+    const codexConnectorReviewFallback = formatCodexConnectorReviewFallbackDiagnostic({
+      config,
+      record: activeRecord,
+      pr,
+    });
+    if (codexConnectorReviewFallback) {
+      lines.push(codexConnectorReviewFallback);
+    }
     lines.push(`pr_hydration provenance=${pr.hydrationProvenance ?? "unknown"} head_sha=${pr.headRefOid}`);
     lines.push(
       `configured_bot_top_level_review strength=${pr.configuredBotTopLevelReviewStrength ?? "none"} submitted_at=${pr.configuredBotTopLevelReviewSubmittedAt ?? "none"} effect=${configuredBotTopLevelReviewEffect(config, pr, reviewThreads, configuredBotReviewThreads)}`,
