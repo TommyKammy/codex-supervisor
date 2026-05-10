@@ -26,6 +26,7 @@ import {
   configuredReviewBots,
   configuredReviewStatusLabel,
   externalSignalReadinessDiagnostics,
+  formatCodexConnectorConvergenceDiagnostic,
   formatCodexConnectorReviewFallbackDiagnostic,
   inferReviewBotProfile,
   reviewBotDiagnostics,
@@ -372,6 +373,15 @@ export function buildActiveDetailedStatusLines(
     });
     if (codexConnectorReviewFallback) {
       lines.push(codexConnectorReviewFallback);
+    }
+    const codexConnectorConvergence = formatCodexConnectorConvergenceDiagnostic({
+      config,
+      record: activeRecord,
+      pr,
+      reviewThreads,
+    });
+    if (codexConnectorConvergence) {
+      lines.push(codexConnectorConvergence);
     }
     lines.push(`pr_hydration provenance=${pr.hydrationProvenance ?? "unknown"} head_sha=${pr.headRefOid}`);
     lines.push(

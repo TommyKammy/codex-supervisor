@@ -10,6 +10,7 @@ import {
   configuredBotRateLimitWaitWindow,
   configuredBotTopLevelReviewEffect,
   externalSignalReadinessDiagnostics,
+  formatCodexConnectorConvergenceDiagnostic,
   formatCodexConnectorReviewFallbackDiagnostic,
   configuredReviewStatusLabel,
   inferReviewBotProfile,
@@ -916,6 +917,52 @@ test("formatCodexConnectorReviewFallbackDiagnostic surfaces Codex Connector wait
   } finally {
     Date.now = originalNow;
   }
+});
+
+test("formatCodexConnectorConvergenceDiagnostic surfaces must-fix convergence state", () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+  });
+  const pr = createPr({
+    headRefOid: "head-1939",
+    configuredBotCurrentHeadObservedAt: "2026-05-08T03:24:00Z",
+    configuredBotCurrentHeadStatusState: "COMMENTED",
+    configuredBotTopLevelReviewStrength: "blocking",
+    configuredBotTopLevelReviewSubmittedAt: "2026-05-08T03:25:00Z",
+  });
+  const mustFixThread = createThread({
+    comments: {
+      nodes: [
+        {
+          id: "comment-1",
+          body: "P1: Fix this before merge.",
+          createdAt: "2026-05-08T03:25:00Z",
+          url: "https://example.test/pr/1939#discussion_r1",
+          author: {
+            login: "chatgpt-codex-connector[bot]",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.equal(
+    formatCodexConnectorConvergenceDiagnostic({
+      config,
+      record: createRecord({
+        state: "local_review_fix",
+        pr_number: pr.number,
+        provider_success_head_sha: null,
+        provider_success_observed_at: null,
+      }),
+      pr,
+      reviewThreads: [mustFixThread],
+    }),
+    "codex_connector_convergence status=repairing_must_fix provider=codex current_head_sha=head-1939 current_head_observed_at=2026-05-08T03:24:00Z latest_signal_head_sha=head-1939 highest_severity=P1 finding_count=1 merge_effect=blocked next_action=repair_must_fix_findings",
+  );
 });
 
 test("configuredBotInitialGraceWaitWindow reports the active CodeRabbit re-wait after a draft skip when the PR becomes ready", () => {

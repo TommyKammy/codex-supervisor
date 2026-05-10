@@ -349,6 +349,10 @@ test("explain surfaces Codex Connector review-request fallback lifecycle for the
     explanation,
     /^codex_connector_review_fallback status=request_posted provider=codex current_head_sha=head-1925 current_head_observed_at=none required_checks_green_at=2026-05-08T03:09:36Z timeout_action=request_review_comment requested_at=2026-05-08T03:30:00Z requested_head_sha=head-1925 review_signal=missing note=request_comment_is_not_review_completion wait_until=2026-05-08T03:19:36\.000Z$/m,
   );
+  assert.match(
+    explanation,
+    /^codex_connector_convergence status=re_requested_review provider=codex current_head_sha=head-1925 current_head_observed_at=none latest_signal_head_sha=none highest_severity=none finding_count=0 merge_effect=blocked next_action=wait_for_requested_review$/m,
+  );
 });
 
 test("explain surfaces loop-off as an operator blocker for active tracked work", async () => {

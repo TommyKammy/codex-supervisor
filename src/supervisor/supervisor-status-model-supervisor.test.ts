@@ -453,6 +453,11 @@ test("buildDetailedStatusModel explains Codex Connector current-head signal wait
         "review_bot_diagnostics status=missing_provider_signal observed_review=none expected_reviewers=chatgpt-codex-connector next_check=provider_setup_or_delivery",
       ),
     );
+    assert.ok(
+      lines.includes(
+        "codex_connector_convergence status=waiting_review provider=codex current_head_sha=deadbeef current_head_observed_at=none latest_signal_head_sha=none highest_severity=none finding_count=0 merge_effect=blocked next_action=wait_for_current_head_signal",
+      ),
+    );
   } finally {
     Date.now = originalNow;
   }
@@ -552,6 +557,11 @@ test("buildDetailedStatusModel reports stale provider signal diagnostics with re
   assert.ok(
     lines.includes(
       "review_bot_diagnostics status=stale_provider_signal observed_review=stale_external_review_record expected_reviewers=chatgpt-codex-connector next_check=wait_for_current_head_signal recent_observation=external_review_record:head-old->head-new",
+    ),
+  );
+  assert.ok(
+    lines.includes(
+      "codex_connector_convergence status=stale_head provider=codex current_head_sha=head-new current_head_observed_at=none latest_signal_head_sha=head-old highest_severity=none finding_count=0 merge_effect=blocked next_action=wait_for_current_head_signal",
     ),
   );
 });
