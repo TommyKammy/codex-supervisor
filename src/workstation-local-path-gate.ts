@@ -67,6 +67,7 @@ export function listReadyPromotionChangedFilePaths(args: {
   const changedFiles = gitOutput(args.workspacePath, [
     "diff",
     "--name-only",
+    "-z",
     "--diff-filter=ACMRTUXB",
     `${mergeBase.stdout.trim()}...${headRef}`,
   ]);
@@ -75,8 +76,9 @@ export function listReadyPromotionChangedFilePaths(args: {
   }
 
   return changedFiles.stdout
-    .split(/\r?\n/)
-    .map((entry) => normalizeRepoRelativePath(entry.trim()))
+    .split("\0")
+    .filter((entry) => entry.length > 0)
+    .map((entry) => normalizeRepoRelativePath(entry))
     .filter((entry) => entry.length > 0);
 }
 

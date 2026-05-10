@@ -4,7 +4,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { runWorkstationLocalPathGate } from "./workstation-local-path-gate";
+import {
+  listReadyPromotionChangedFilePaths,
+  runWorkstationLocalPathGate,
+} from "./workstation-local-path-gate";
 
 const SAMPLE_FORBIDDEN_PATH = ["", "home", "alice", "dev", "private-repo"].join("/");
 const TRUSTED_GENERATED_DURABLE_ARTIFACT_MARKDOWN_MARKER =
@@ -99,6 +102,23 @@ function extractRenderedFindingLines(stderr: string): string[] {
 
   return findingLines;
 }
+
+test("ready-promotion changed-file listing preserves filenames with embedded newlines", async (t) => {
+  const repoPath = await createTrackedRepo();
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+
+  git(repoPath, "checkout", "-b", "codex/issue-newline-path");
+  await fs.mkdir(path.join(repoPath, "docs"), { recursive: true });
+  await fs.writeFile(path.join(repoPath, "docs", "a\nb.md"), "fixture\n", "utf8");
+  git(repoPath, "add", "docs/a\nb.md");
+  git(repoPath, "commit", "-m", "add newline filename");
+
+  assert.deepEqual(listReadyPromotionChangedFilePaths({ workspacePath: repoPath, baseRef: "main" }), [
+    "docs/a\nb.md",
+  ]);
+});
 
 test("workstation-local path detector flags tracked durable artifacts and allows explicit exclusions", async (t) => {
   const repoPath = await createTrackedRepo();
