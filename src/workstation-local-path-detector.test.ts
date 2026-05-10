@@ -4,7 +4,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { runWorkstationLocalPathGate } from "./workstation-local-path-gate";
+import {
+  listReadyPromotionChangedFilePaths,
+  runWorkstationLocalPathGate,
+} from "./workstation-local-path-gate";
 
 const SAMPLE_FORBIDDEN_PATH = ["", "home", "alice", "dev", "private-repo"].join("/");
 const TRUSTED_GENERATED_DURABLE_ARTIFACT_MARKDOWN_MARKER =
@@ -99,6 +102,23 @@ function extractRenderedFindingLines(stderr: string): string[] {
 
   return findingLines;
 }
+
+test("ready-promotion changed-file listing preserves filenames with embedded newlines", async (t) => {
+  const repoPath = await createTrackedRepo();
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+
+  git(repoPath, "checkout", "-b", "codex/issue-newline-path");
+  await fs.mkdir(path.join(repoPath, "docs"), { recursive: true });
+  await fs.writeFile(path.join(repoPath, "docs", "a\nb.md"), "fixture\n", "utf8");
+  git(repoPath, "add", "docs/a\nb.md");
+  git(repoPath, "commit", "-m", "add newline filename");
+
+  assert.deepEqual(listReadyPromotionChangedFilePaths({ workspacePath: repoPath, baseRef: "main" }), [
+    "docs/a\nb.md",
+  ]);
+});
 
 test("workstation-local path detector flags tracked durable artifacts and allows explicit exclusions", async (t) => {
   const repoPath = await createTrackedRepo();
@@ -228,6 +248,93 @@ test("runtime gate reuses the CLI finding rendering for workstation-local path v
 
   assert.equal(gateResult.ok, false);
   assert.deepEqual(gateResult.failureContext?.details, renderedFindings);
+});
+
+test("runtime gate can scope ready promotion blockers to changed files while surfacing baseline maintenance findings", async (t) => {
+  const repoPath = await createTrackedRepo();
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+
+  await fs.mkdir(path.join(repoPath, "docs"), { recursive: true });
+  await fs.writeFile(path.join(repoPath, "docs", "baseline.md"), `Workspace note: ${SAMPLE_FORBIDDEN_PATH}\n`, "utf8");
+  await fs.writeFile(path.join(repoPath, "docs", "changed.md"), "No local path here.\n", "utf8");
+  git(repoPath, "add", "docs/baseline.md", "docs/changed.md");
+
+  const gateResult = await runWorkstationLocalPathGate({
+    workspacePath: repoPath,
+    gateLabel: "before marking PR #116 ready",
+    readyPromotionChangedFilePaths: ["docs/changed.md"],
+  });
+
+  assert.equal(gateResult.ok, true);
+  assert.equal(gateResult.failureContext, null);
+  assert.deepEqual(gateResult.readyPromotionMaintenanceFindingDetails, [
+    `- docs/baseline.md:1 matched /home/<user>/ (Linux user home directory) via ${JSON.stringify(SAMPLE_FORBIDDEN_PATH)}. Remediation: rewrite the path repo-relatively or redact the operator-local absolute path`,
+  ]);
+});
+
+test("runtime gate blocks ready promotion when a changed file still contains a workstation-local path", async (t) => {
+  const repoPath = await createTrackedRepo();
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+
+  await fs.mkdir(path.join(repoPath, "docs"), { recursive: true });
+  await fs.writeFile(path.join(repoPath, "docs", "changed.md"), `Workspace note: ${SAMPLE_FORBIDDEN_PATH}\n`, "utf8");
+  git(repoPath, "add", "docs/changed.md");
+
+  const gateResult = await runWorkstationLocalPathGate({
+    workspacePath: repoPath,
+    gateLabel: "before marking PR #116 ready",
+    readyPromotionChangedFilePaths: ["docs/changed.md"],
+  });
+
+  assert.equal(gateResult.ok, false);
+  assert.match(gateResult.failureContext?.summary ?? "", /workstation-local path hygiene before marking PR #116 ready/);
+  assert.deepEqual(gateResult.failureContext?.details, [
+    `- docs/changed.md:1 matched /home/<user>/ (Linux user home directory) via ${JSON.stringify(SAMPLE_FORBIDDEN_PATH)}. Remediation: rewrite the path repo-relatively or redact the operator-local absolute path`,
+  ]);
+});
+
+test("runtime gate keeps trusted generated durable artifacts fail-closed outside the changed-file scope", async (t) => {
+  const repoPath = await createTrackedRepo();
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+
+  await fs.mkdir(path.join(repoPath, "docs"), { recursive: true });
+  await fs.writeFile(
+    path.join(repoPath, "docs", "generated-summary.md"),
+    [
+      TRUSTED_GENERATED_DURABLE_ARTIFACT_MARKDOWN_MARKER,
+      "",
+      `Generated note: ${SAMPLE_FORBIDDEN_PATH}`,
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  await fs.writeFile(path.join(repoPath, "docs", "changed.md"), "No local path here.\n", "utf8");
+  git(repoPath, "add", "docs/generated-summary.md", "docs/changed.md");
+
+  const gateResult = await runWorkstationLocalPathGate({
+    workspacePath: repoPath,
+    gateLabel: "before marking PR #116 ready",
+    readyPromotionChangedFilePaths: ["docs/changed.md"],
+  });
+
+  assert.equal(gateResult.ok, true);
+  assert.deepEqual(gateResult.rewrittenTrustedGeneratedArtifactPaths, ["docs/generated-summary.md"]);
+  assert.deepEqual(gateResult.readyPromotionMaintenanceFindingDetails, []);
+  assert.equal(
+    await fs.readFile(path.join(repoPath, "docs", "generated-summary.md"), "utf8"),
+    [
+      TRUSTED_GENERATED_DURABLE_ARTIFACT_MARKDOWN_MARKER,
+      "",
+      "Generated note: <redacted-local-path>",
+      "",
+    ].join("\n"),
+  );
 });
 
 test("verify:paths and runtime gate honor configured same-line publishable allowlist markers", async (t) => {

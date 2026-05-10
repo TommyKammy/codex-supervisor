@@ -1,5 +1,6 @@
 import path from "node:path";
 import fs from "node:fs/promises";
+import { spawnSync } from "node:child_process";
 import { FailureContext } from "./core/types";
 import { nowIso } from "./core/utils";
 import {
@@ -25,12 +26,60 @@ export interface WorkstationLocalPathGateResult {
   rewrittenJournalPaths?: string[];
   rewrittenTrustedGeneratedArtifactPaths?: string[];
   actionablePublishableFilePaths?: string[];
+  readyPromotionMaintenanceFindingDetails?: string[];
 }
 
 function normalizeRepoRelativePath(filePath: string): string {
   return path.posix
     .normalize(filePath.replace(/\\/g, "/"))
     .replace(/^(?:\.\/)+/, "");
+}
+
+function gitOutput(
+  workspacePath: string,
+  args: string[],
+): { ok: true; stdout: string } | { ok: false; stderr: string } {
+  const result = spawnSync("git", ["-C", workspacePath, ...args], {
+    encoding: "utf8",
+  });
+  if (result.status !== 0) {
+    return { ok: false, stderr: result.stderr || result.stdout || "" };
+  }
+
+  return { ok: true, stdout: result.stdout };
+}
+
+export function listReadyPromotionChangedFilePaths(args: {
+  workspacePath: string;
+  baseRef: string;
+  headRef?: string;
+}): string[] | null {
+  const headRef = args.headRef ?? "HEAD";
+  const mergeBase = gitOutput(args.workspacePath, [
+    "merge-base",
+    args.baseRef,
+    headRef,
+  ]);
+  if (!mergeBase.ok) {
+    return null;
+  }
+
+  const changedFiles = gitOutput(args.workspacePath, [
+    "diff",
+    "--name-only",
+    "-z",
+    "--diff-filter=ACMRTUXB",
+    `${mergeBase.stdout.trim()}...${headRef}`,
+  ]);
+  if (!changedFiles.ok) {
+    return null;
+  }
+
+  return changedFiles.stdout
+    .split("\0")
+    .filter((entry) => entry.length > 0)
+    .map((entry) => normalizeRepoRelativePath(entry))
+    .filter((entry) => entry.length > 0);
 }
 
 function isSupervisorOwnedDurableJournalPath(filePath: string): boolean {
@@ -374,6 +423,7 @@ export async function runWorkstationLocalPathGate(args: {
   workspacePath: string;
   gateLabel: string;
   publishablePathAllowlistMarkers?: readonly string[];
+  readyPromotionChangedFilePaths?: readonly string[];
 }): Promise<WorkstationLocalPathGateResult> {
   const detectorOptions = {
     publishablePathAllowlistMarkers: args.publishablePathAllowlistMarkers ?? [],
@@ -435,11 +485,21 @@ export async function runWorkstationLocalPathGate(args: {
       rewrittenJournalPaths,
       rewrittenTrustedGeneratedArtifactPaths,
       actionablePublishableFilePaths: [],
+      readyPromotionMaintenanceFindingDetails: [],
     };
   }
 
+  const readyPromotionChangedFilePathSet =
+    args.readyPromotionChangedFilePaths === undefined
+      ? null
+      : new Set(
+          args.readyPromotionChangedFilePaths.map((entry) =>
+            normalizeRepoRelativePath(entry),
+          ),
+        );
   const categorizedFindings = await Promise.all(
     findings.map(async (finding) => ({
+      finding,
       filePath: finding.filePath,
       category: await categorizeWorkstationLocalArtifact(
         args.workspacePath,
@@ -447,19 +507,59 @@ export async function runWorkstationLocalPathGate(args: {
       ),
     })),
   );
+  const blockingFindings =
+    readyPromotionChangedFilePathSet === null
+      ? findings
+      : categorizedFindings
+          .filter(
+            (entry) =>
+              entry.category !== "publishable_tracked_content" ||
+              readyPromotionChangedFilePathSet.has(entry.filePath),
+          )
+          .map((entry) => entry.finding);
+  const maintenanceFindings =
+    readyPromotionChangedFilePathSet === null
+      ? []
+      : categorizedFindings
+          .filter(
+            (entry) =>
+              entry.category === "publishable_tracked_content" &&
+              !readyPromotionChangedFilePathSet.has(entry.filePath),
+          )
+          .map((entry) => entry.finding);
+
+  if (
+    blockingFindings.length === 0 &&
+    journalNormalizationErrors.length === 0 &&
+    trustedGeneratedArtifactNormalizationErrors.length === 0
+  ) {
+    return {
+      ok: true,
+      failureContext: null,
+      rewrittenJournalPaths,
+      rewrittenTrustedGeneratedArtifactPaths,
+      actionablePublishableFilePaths: [],
+      readyPromotionMaintenanceFindingDetails: maintenanceFindings.map(
+        formatWorkstationLocalPathMatch,
+      ),
+    };
+  }
+
   const actionablePublishableFilePaths =
     journalNormalizationErrors.length === 0 &&
     trustedGeneratedArtifactNormalizationErrors.length === 0 &&
-    categorizedFindings.length > 0 &&
+    blockingFindings.length > 0 &&
     categorizedFindings.every(
-      (entry) => entry.category === "publishable_tracked_content",
+      (entry) =>
+        !blockingFindings.includes(entry.finding) ||
+        entry.category === "publishable_tracked_content",
     )
-      ? [...new Set(categorizedFindings.map((entry) => entry.filePath))].sort(
+      ? [...new Set(blockingFindings.map((finding) => finding.filePath))].sort(
           (left, right) => left.localeCompare(right),
         )
       : [];
 
-  const remediationSummary = summarizeWorkstationLocalPathMatches(findings);
+  const remediationSummary = summarizeWorkstationLocalPathMatches(blockingFindings);
   return {
     ok: false,
     failureContext: buildWorkstationLocalPathFailureContext({
@@ -467,13 +567,13 @@ export async function runWorkstationLocalPathGate(args: {
       details: [
         ...journalNormalizationErrors,
         ...trustedGeneratedArtifactNormalizationErrors,
-        ...findings.map(formatWorkstationLocalPathMatch),
+        ...blockingFindings.map(formatWorkstationLocalPathMatch),
       ],
       summary:
         (await summarizeWorkstationLocalPathRemediation({
           workspacePath: args.workspacePath,
           gateLabel: args.gateLabel,
-          findings,
+          findings: blockingFindings,
           journalNormalizationErrors,
           trustedGeneratedArtifactNormalizationErrors,
           rewrittenJournalPaths,
@@ -486,5 +586,8 @@ export async function runWorkstationLocalPathGate(args: {
     rewrittenJournalPaths,
     rewrittenTrustedGeneratedArtifactPaths,
     actionablePublishableFilePaths,
+    readyPromotionMaintenanceFindingDetails: maintenanceFindings.map(
+      formatWorkstationLocalPathMatch,
+    ),
   };
 }
