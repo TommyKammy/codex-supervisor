@@ -401,6 +401,63 @@ test("buildDetailedStatusModel explains when strict CodeRabbit current-head gati
   }
 });
 
+test("buildDetailedStatusModel explains Codex Connector current-head signal waits with Codex provider diagnostics", () => {
+  const originalNow = Date.now;
+  Date.now = () => Date.parse("2026-03-16T00:12:00.000Z");
+
+  try {
+    const lines = buildDetailedStatusModel({
+      config: createConfig({
+        reviewBotLogins: ["chatgpt-codex-connector"],
+        configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+      }),
+      activeRecord: createRecord({
+        pr_number: 44,
+        state: "waiting_ci",
+        blocked_reason: null,
+        last_error: null,
+        review_wait_started_at: "2026-03-16T00:00:00.000Z",
+        review_wait_head_sha: "deadbeef",
+      }),
+      latestRecord: null,
+      trackedIssueCount: 1,
+      pr: createPullRequest({
+        currentHeadCiGreenAt: "2026-03-16T00:10:00.000Z",
+        configuredBotCurrentHeadObservedAt: null,
+      }),
+      checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      reviewThreads: [],
+      manualReviewThreads,
+      configuredBotReviewThreads,
+      pendingBotReviewThreads: (innerConfig, innerRecord, innerPr, innerReviewThreads) =>
+        configuredBotReviewThreads(innerConfig, innerReviewThreads).filter(
+          (thread) =>
+            !innerRecord.processed_review_thread_ids.includes(thread.id) &&
+            innerRecord.last_head_sha === innerPr.headRefOid,
+        ),
+      summarizeChecks: (checks) => ({
+        allPassing: checks.every((check) => check.bucket === "pass"),
+        hasPending: checks.some((check) => check.bucket === "pending" || check.bucket === "cancel"),
+        hasFailing: checks.some((check) => check.bucket === "fail"),
+      }),
+      mergeConflictDetected: (pr) => pr.mergeStateStatus === "DIRTY",
+    });
+
+    assert.ok(
+      lines.includes(
+        "configured_bot_current_head_signal_wait status=active provider=codex pause_reason=awaiting_current_head_signal_after_required_checks recent_observation=required_checks_green observed_at=2026-03-16T00:10:00.000Z configured_wait_minutes=10 wait_until=2026-03-16T00:20:00.000Z",
+      ),
+    );
+    assert.ok(
+      lines.includes(
+        "review_bot_diagnostics status=missing_provider_signal observed_review=none expected_reviewers=chatgpt-codex-connector next_check=provider_setup_or_delivery",
+      ),
+    );
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
 test("buildDetailedStatusModel explains when CodeRabbit is re-waiting after a draft skip and ready-for-review", () => {
   const originalNow = Date.now;
   Date.now = () => Date.parse("2026-03-16T00:00:45.000Z");

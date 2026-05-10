@@ -14,6 +14,7 @@ import { classifyStaleReviewBotRecoverability, recoverabilityStatusToken } from 
 type ReviewThreadClassifier = (config: SupervisorConfig, reviewThreads: ReviewThread[]) => ReviewThread[];
 const DEFAULT_CONFIGURED_BOT_SETTLED_WAIT_MS = 5_000;
 const DEFAULT_CONFIGURED_BOT_INITIAL_GRACE_WAIT_MS = 90_000;
+type CurrentHeadSignalWaitProvider = "none" | "coderabbit" | "codex";
 
 function latestConfiguredBotActionableSignalAt(pr: GitHubPullRequest): string | null {
   const candidates = [
@@ -122,6 +123,22 @@ export function configuredReviewBots(config: SupervisorConfig): string[] {
   return configuredReviewBotLogins(config);
 }
 
+function currentHeadSignalWaitProvider(config: SupervisorConfig): Exclude<CurrentHeadSignalWaitProvider, "none"> | null {
+  const providerKinds = configuredReviewProviderKinds(config);
+  if (providerKinds.includes("codex")) {
+    return "codex";
+  }
+  if (providerKinds.includes("coderabbit")) {
+    return "coderabbit";
+  }
+  return null;
+}
+
+function requiresCurrentHeadSignalWait(config: SupervisorConfig): boolean {
+  const provider = currentHeadSignalWaitProvider(config);
+  return provider !== null && (provider === "codex" || config.configuredBotRequireCurrentHeadSignal === true);
+}
+
 function repoHasGitHubActionsWorkflows(repoPath: string): boolean | null {
   try {
     const workflowDir = path.join(repoPath, ".github", "workflows");
@@ -213,16 +230,17 @@ export function configuredBotCurrentHeadSignalWaitWindow(
   pr: GitHubPullRequest,
 ): {
   status: "inactive" | "active" | "expired";
-  provider: "none" | "coderabbit";
+  provider: CurrentHeadSignalWaitProvider;
   pauseReason: "none" | "awaiting_current_head_signal_after_required_checks";
   recentObservation: "none" | "required_checks_green";
   observedAt: string | null;
   configuredWaitMinutes: number | null;
   waitUntil: string | null;
 } {
+  const provider = currentHeadSignalWaitProvider(config);
   if (
-    !configuredReviewProviderKinds(config).includes("coderabbit") ||
-    !config.configuredBotRequireCurrentHeadSignal ||
+    !provider ||
+    !requiresCurrentHeadSignalWait(config) ||
     pr.isDraft ||
     pr.configuredBotCurrentHeadObservedAt ||
     !pr.currentHeadCiGreenAt
@@ -243,7 +261,7 @@ export function configuredBotCurrentHeadSignalWaitWindow(
   if (Number.isNaN(observedAtMs) || !configuredWaitMinutes || configuredWaitMinutes <= 0) {
     return {
       status: "inactive",
-      provider: "coderabbit",
+      provider,
       pauseReason: "awaiting_current_head_signal_after_required_checks",
       recentObservation: "required_checks_green",
       observedAt: pr.currentHeadCiGreenAt,
@@ -255,7 +273,7 @@ export function configuredBotCurrentHeadSignalWaitWindow(
   const waitUntil = new Date(observedAtMs + configuredWaitMinutes * 60_000).toISOString();
   return {
     status: Date.now() < Date.parse(waitUntil) ? "active" : "expired",
-    provider: "coderabbit",
+    provider,
     pauseReason: "awaiting_current_head_signal_after_required_checks",
     recentObservation: "required_checks_green",
     observedAt: pr.currentHeadCiGreenAt,

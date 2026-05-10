@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   configuredBotInitialGraceWaitWindow,
+  configuredBotCurrentHeadSignalWaitWindow,
   configuredBotSettledWaitWindow,
   configuredBotRateLimitWaitWindow,
   configuredBotTopLevelReviewEffect,
@@ -820,6 +821,37 @@ test("configuredBotInitialGraceWaitWindow reports the active CodeRabbit startup 
         observedAt: "2026-03-16T00:00:00.000Z",
         configuredWaitSeconds: null,
         waitUntil: null,
+      },
+    );
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
+test("configuredBotCurrentHeadSignalWaitWindow reports an active Codex Connector current-head wait", () => {
+  const originalNow = Date.now;
+  Date.now = () => Date.parse("2026-03-16T00:12:00.000Z");
+
+  try {
+    assert.deepEqual(
+      configuredBotCurrentHeadSignalWaitWindow(
+        createConfig({
+          reviewBotLogins: ["chatgpt-codex-connector"],
+          configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+        }),
+        createPr({
+          currentHeadCiGreenAt: "2026-03-16T00:10:00.000Z",
+          configuredBotCurrentHeadObservedAt: null,
+        }),
+      ),
+      {
+        status: "active",
+        provider: "codex",
+        pauseReason: "awaiting_current_head_signal_after_required_checks",
+        recentObservation: "required_checks_green",
+        observedAt: "2026-03-16T00:10:00.000Z",
+        configuredWaitMinutes: 10,
+        waitUntil: "2026-03-16T00:20:00.000Z",
       },
     );
   } finally {

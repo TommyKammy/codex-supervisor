@@ -24,7 +24,7 @@ export interface SupervisorReviewWaitDto {
     | "configured_bot_current_head_signal_wait"
     | "configured_bot_settled_wait";
   status: "active";
-  provider: "coderabbit";
+  provider: "coderabbit" | "codex";
   pauseReason: string;
   recentObservation: string;
   observedAt: string | null;
@@ -341,11 +341,11 @@ export function buildReviewWaitDtos(
   }
 
   const currentHeadSignalWait = configuredBotCurrentHeadSignalWaitWindow(config, pr);
-  if (currentHeadSignalWait.status === "active" && currentHeadSignalWait.provider === "coderabbit") {
+  if (currentHeadSignalWait.status === "active" && currentHeadSignalWait.provider !== "none") {
     reviewWaits.push({
       kind: "configured_bot_current_head_signal_wait",
       status: "active",
-      provider: "coderabbit",
+      provider: currentHeadSignalWait.provider,
       pauseReason: currentHeadSignalWait.pauseReason,
       recentObservation: currentHeadSignalWait.recentObservation,
       observedAt: currentHeadSignalWait.observedAt,
