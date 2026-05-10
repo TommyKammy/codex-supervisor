@@ -52,6 +52,7 @@ import {
 import { runTrackedPrReadyLocalCiPublicationGate } from "./tracked-pr-local-ci-publication-gate";
 import * as trackedPrStatusComments from "./tracked-pr-status-comment";
 import { configuredReviewProviderKinds } from "./core/review-providers";
+import { renderCodexConnectorReviewRequestComment } from "./github/github-review-signals";
 
 export { syncTrackedPrPersistentStatusComment } from "./tracked-pr-status-comment";
 
@@ -430,7 +431,14 @@ async function maybeRequestCodexConnectorReviewComment(args: {
     if (!args.github.addIssueComment) {
       throw new Error("GitHub comment transport unavailable");
     }
-    await args.github.addIssueComment(args.pr.number, "@codex review");
+    await args.github.addIssueComment(
+      args.pr.number,
+      renderCodexConnectorReviewRequestComment({
+        issueNumber: args.record.issue_number,
+        prNumber: args.pr.number,
+        headSha: args.pr.headRefOid,
+      }),
+    );
   } catch (error) {
     const failureContext = buildCodexConnectorReviewRequestFailureContext({ pr: args.pr, error });
     const blockedRecord = args.stateStore.touch(args.record, {

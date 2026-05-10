@@ -9,6 +9,7 @@ import { IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorStateFile } f
 import { derivePullRequestLifecycleSnapshot as deriveSupervisorPullRequestLifecycleSnapshot } from "./supervisor/supervisor-lifecycle";
 import { blockedReasonFromReviewState as resolveBlockedReasonFromReviewState, inferStateFromPullRequest } from "./pull-request-state";
 import type { GitHubClient } from "./github";
+import { findCodexConnectorReviewRequest } from "./github/github-review-signals";
 import type { LocalReviewResult, PreMergeFinalEvaluation, PreMergeResidualFinding } from "./local-review";
 import {
   createConfig,
@@ -547,7 +548,28 @@ test("handlePostTurnPullRequestTransitionsPhase requests Codex Connector review 
 
     assert.equal(comments.length, 1);
     assert.equal(comments[0]?.issueNumber, pr.number);
-    assert.equal(comments[0]?.body, "@codex review");
+    assert.match(
+      comments[0]?.body ?? "",
+      new RegExp(
+        `^<!-- codex-supervisor:codex-connector-review-request issue=${issue.number} pr=${pr.number} head=${pr.headRefOid} -->$`,
+        "m",
+      ),
+    );
+    assert.match(comments[0]?.body ?? "", /^@codex review$/m);
+    assert.deepEqual(
+      findCodexConnectorReviewRequest(
+        [
+          {
+            authorLogin: "codex-supervisor[bot]",
+            createdAt: "2026-05-08T03:30:00Z",
+            body: comments[0]?.body ?? null,
+            viewerDidAuthor: true,
+          },
+        ],
+        { issueNumber: issue.number, prNumber: pr.number, headSha: pr.headRefOid },
+      ),
+      { requestedAt: "2026-05-08T03:30:00Z", headSha: pr.headRefOid },
+    );
     assert.equal(result.record.state, "waiting_ci");
     assert.equal(result.record.codex_connector_review_requested_head_sha, pr.headRefOid);
     assert.ok(result.record.codex_connector_review_requested_observed_at);
@@ -586,6 +608,80 @@ test("handlePostTurnPullRequestTransitionsPhase requests Codex Connector review 
 
     assert.equal(comments.length, 1);
     assert.equal(retryResult.record.codex_connector_review_requested_head_sha, pr.headRefOid);
+  } finally {
+    Date.now = originalDateNow;
+  }
+});
+
+test("handlePostTurnPullRequestTransitionsPhase skips duplicate Codex Connector request when GitHub comments hydrate current-head marker", async () => {
+  const originalDateNow = Date.now;
+  Date.now = () => Date.parse("2026-05-08T03:45:00Z");
+  try {
+    const config = createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector"],
+      configuredBotInitialGraceWaitSeconds: 0,
+      configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+      configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+    });
+    const issue = createIssue({ number: 1924, title: "Hydrated Codex Connector request" });
+    const pr = createPullRequest({
+      number: 1924,
+      title: "Hydrated Codex Connector request",
+      isDraft: false,
+      headRefOid: "head-1924",
+      currentHeadCiGreenAt: "2026-05-08T03:09:36Z",
+      configuredBotCurrentHeadObservedAt: null,
+      codexConnectorReviewRequestedAt: "2026-05-08T03:30:00Z",
+      codexConnectorReviewRequestedHeadSha: "head-1924",
+    });
+    const record = createRecord({
+      issue_number: issue.number,
+      state: "waiting_ci",
+      pr_number: pr.number,
+      last_head_sha: pr.headRefOid,
+      review_wait_started_at: "2026-05-08T03:09:36Z",
+      review_wait_head_sha: pr.headRefOid,
+      codex_connector_review_requested_observed_at: null,
+      codex_connector_review_requested_head_sha: null,
+    });
+    const state: SupervisorStateFile = {
+      activeIssueNumber: issue.number,
+      issues: { [String(issue.number)]: record },
+    };
+
+    const result = await handlePostTurnPullRequestTransitionsPhase({
+      config,
+      stateStore: createNoopStateStore(),
+      github: createDefaultGithub({
+        addIssueComment: async () => {
+          throw new Error("unexpected duplicate Codex Connector request");
+        },
+      }),
+      context: createPostTurnContext({
+        issue,
+        pr,
+        workspacePath: "/tmp/workspaces/issue-1924",
+        state,
+        record,
+      }),
+      loadOpenPullRequestSnapshot: async () => ({
+        pr,
+        checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+        reviewThreads: [],
+      }),
+      derivePullRequestLifecycleSnapshot: (currentRecord, currentPr, checks, reviewThreads, recordPatch) =>
+        deriveSupervisorPullRequestLifecycleSnapshot(config, currentRecord, currentPr, checks, reviewThreads, recordPatch),
+      applyFailureSignature: () => ({ last_failure_signature: null, repeated_failure_signature_count: 0 }),
+      blockedReasonFromReviewState: (currentRecord, currentPr, checks, reviewThreads) =>
+        resolveBlockedReasonFromReviewState(config, currentRecord, currentPr, checks, reviewThreads),
+      summarizeChecks,
+      configuredBotReviewThreads: () => [],
+      manualReviewThreads: () => [],
+      mergeConflictDetected: () => false,
+    });
+
+    assert.equal(result.record.codex_connector_review_requested_observed_at, "2026-05-08T03:30:00Z");
+    assert.equal(result.record.codex_connector_review_requested_head_sha, pr.headRefOid);
   } finally {
     Date.now = originalDateNow;
   }
