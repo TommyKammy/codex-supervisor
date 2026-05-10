@@ -687,6 +687,95 @@ test("handlePostTurnPullRequestTransitionsPhase skips duplicate Codex Connector 
   }
 });
 
+test("handlePostTurnPullRequestTransitionsPhase re-requests Codex Connector review for a repaired new head", async () => {
+  const originalDateNow = Date.now;
+  Date.now = () => Date.parse("2026-05-08T04:00:00Z");
+  try {
+    const config = createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector"],
+      configuredBotInitialGraceWaitSeconds: 0,
+      configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+      configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+    });
+    const issue = createIssue({ number: 1937, title: "Re-request Codex Connector review after repair" });
+    const pr = createPullRequest({
+      number: 1937,
+      title: "Re-request Codex Connector review after repair",
+      isDraft: false,
+      headRefOid: "head-new-1937",
+      currentHeadCiGreenAt: "2026-05-08T03:45:00Z",
+      configuredBotCurrentHeadObservedAt: null,
+      codexConnectorReviewRequestedAt: null,
+      codexConnectorReviewRequestedHeadSha: null,
+    });
+    const record = createRecord({
+      issue_number: issue.number,
+      state: "waiting_ci",
+      pr_number: pr.number,
+      last_head_sha: "head-old-1937",
+      review_wait_started_at: "2026-05-08T03:20:00Z",
+      review_wait_head_sha: "head-old-1937",
+      provider_success_observed_at: "2026-05-08T03:24:00Z",
+      provider_success_head_sha: "head-old-1937",
+      codex_connector_review_requested_observed_at: "2026-05-08T03:30:00Z",
+      codex_connector_review_requested_head_sha: "head-old-1937",
+    });
+    const state: SupervisorStateFile = {
+      activeIssueNumber: issue.number,
+      issues: { [String(issue.number)]: record },
+    };
+    const comments: Array<{ issueNumber: number; body: string }> = [];
+
+    const result = await handlePostTurnPullRequestTransitionsPhase({
+      config,
+      stateStore: createNoopStateStore(),
+      github: createDefaultGithub({
+        addIssueComment: async (issueNumber, body) => {
+          comments.push({ issueNumber, body });
+        },
+      }),
+      context: createPostTurnContext({
+        issue,
+        pr,
+        workspacePath: path.join(os.tmpdir(), "workspaces", "issue-1937"),
+        state,
+        record,
+      }),
+      loadOpenPullRequestSnapshot: async () => ({
+        pr,
+        checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+        reviewThreads: [],
+      }),
+      derivePullRequestLifecycleSnapshot: (currentRecord, currentPr, checks, reviewThreads, recordPatch) =>
+        deriveSupervisorPullRequestLifecycleSnapshot(config, currentRecord, currentPr, checks, reviewThreads, recordPatch),
+      applyFailureSignature: () => ({ last_failure_signature: null, repeated_failure_signature_count: 0 }),
+      blockedReasonFromReviewState: (currentRecord, currentPr, checks, reviewThreads) =>
+        resolveBlockedReasonFromReviewState(config, currentRecord, currentPr, checks, reviewThreads),
+      summarizeChecks,
+      configuredBotReviewThreads: () => [],
+      manualReviewThreads: () => [],
+      mergeConflictDetected: () => false,
+    });
+
+    assert.equal(comments.length, 1);
+    assert.equal(comments[0]?.issueNumber, pr.number);
+    assert.match(
+      comments[0]?.body ?? "",
+      new RegExp(
+        `^<!-- codex-supervisor:codex-connector-review-request issue=${issue.number} pr=${pr.number} head=${pr.headRefOid} -->$`,
+        "m",
+      ),
+    );
+    assert.equal(result.record.last_head_sha, pr.headRefOid);
+    assert.equal(result.record.provider_success_observed_at, null);
+    assert.equal(result.record.provider_success_head_sha, null);
+    assert.equal(result.record.codex_connector_review_requested_head_sha, pr.headRefOid);
+    assert.ok(result.record.codex_connector_review_requested_observed_at);
+  } finally {
+    Date.now = originalDateNow;
+  }
+});
+
 test("handlePostTurnPullRequestTransitionsPhase clears stale ready-promotion blockers when refreshed state is waiting_ci", async (t) => {
   const { workspacePath, headSha } = await createTrackedIssueBranchRepo();
   t.after(async () => {

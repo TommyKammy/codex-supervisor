@@ -298,6 +298,8 @@ test("resetTrackedPrHeadScopedStateOnAdvance does not preserve review bookkeepin
     last_local_review_signature: null,
     repeated_local_review_signature_count: 0,
     latest_local_ci_result: null,
+    provider_success_observed_at: null,
+    provider_success_head_sha: null,
     external_review_head_sha: null,
     external_review_misses_path: null,
     external_review_matched_findings_count: 0,
@@ -305,6 +307,8 @@ test("resetTrackedPrHeadScopedStateOnAdvance does not preserve review bookkeepin
     external_review_missed_findings_count: 0,
     review_follow_up_head_sha: null,
     review_follow_up_remaining: 0,
+    codex_connector_review_requested_observed_at: null,
+    codex_connector_review_requested_head_sha: null,
     last_observed_host_local_pr_blocker_signature: null,
     last_observed_host_local_pr_blocker_head_sha: null,
     last_host_local_pr_blocker_comment_signature: null,
@@ -312,6 +316,23 @@ test("resetTrackedPrHeadScopedStateOnAdvance does not preserve review bookkeepin
     processed_review_thread_ids: [],
     processed_review_thread_fingerprints: [],
   });
+});
+
+test("resetTrackedPrHeadScopedStateOnAdvance clears old-head provider success after a PR head advance", () => {
+  const record = createRecord({
+    last_head_sha: "head-old-191",
+    provider_success_observed_at: "2026-05-08T03:24:00Z",
+    provider_success_head_sha: "head-old-191",
+    codex_connector_review_requested_observed_at: "2026-05-08T03:30:00Z",
+    codex_connector_review_requested_head_sha: "head-old-191",
+  });
+
+  const patch = resetTrackedPrHeadScopedStateOnAdvance(record, "head-new-191");
+
+  assert.equal(patch.provider_success_observed_at, null);
+  assert.equal(patch.provider_success_head_sha, null);
+  assert.equal(patch.codex_connector_review_requested_observed_at, null);
+  assert.equal(patch.codex_connector_review_requested_head_sha, null);
 });
 
 test("resetTrackedPrHeadScopedStateOnAdvance clears review bookkeeping when processed thread markers belong to an older head", () => {
@@ -352,6 +373,8 @@ test("resetTrackedPrHeadScopedStateOnAdvance clears review bookkeeping when proc
     last_local_review_signature: null,
     repeated_local_review_signature_count: 0,
     latest_local_ci_result: null,
+    provider_success_observed_at: null,
+    provider_success_head_sha: null,
     external_review_head_sha: null,
     external_review_misses_path: null,
     external_review_matched_findings_count: 0,
@@ -359,6 +382,8 @@ test("resetTrackedPrHeadScopedStateOnAdvance clears review bookkeeping when proc
     external_review_missed_findings_count: 0,
     review_follow_up_head_sha: null,
     review_follow_up_remaining: 0,
+    codex_connector_review_requested_observed_at: null,
+    codex_connector_review_requested_head_sha: null,
     last_observed_host_local_pr_blocker_signature: null,
     last_observed_host_local_pr_blocker_head_sha: null,
     last_host_local_pr_blocker_comment_signature: null,

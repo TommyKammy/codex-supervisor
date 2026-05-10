@@ -104,6 +104,9 @@ export function resetTrackedPrHeadScopedStateOnAdvance(
   const localCiHeadStale =
     record.latest_local_ci_result?.head_sha != null
     && record.latest_local_ci_result.head_sha !== nextHeadSha;
+  const providerSuccessHeadStale =
+    record.provider_success_head_sha != null
+    && record.provider_success_head_sha !== nextHeadSha;
   const codexConnectorReviewRequestHeadStale =
     record.codex_connector_review_requested_head_sha != null
     && record.codex_connector_review_requested_head_sha !== nextHeadSha;
@@ -130,6 +133,7 @@ export function resetTrackedPrHeadScopedStateOnAdvance(
     || blockerCommentHeadStale
     || observedHostLocalBlockerHeadStale
     || localCiHeadStale
+    || providerSuccessHeadStale
     || codexConnectorReviewRequestHeadStale
     || processedThreadIdsHeadStale
     || processedThreadFingerprintsHeadStale;
@@ -162,6 +166,12 @@ export function resetTrackedPrHeadScopedStateOnAdvance(
           }
         : {}),
       ...(localCiHeadStale ? { latest_local_ci_result: null } : {}),
+      ...(providerSuccessHeadStale
+        ? {
+            provider_success_observed_at: null,
+            provider_success_head_sha: null,
+          }
+        : {}),
       ...(codexConnectorReviewRequestHeadStale
         ? {
             codex_connector_review_requested_observed_at: null,
@@ -202,6 +212,8 @@ export function resetTrackedPrHeadScopedStateOnAdvance(
     last_local_review_signature: null,
     repeated_local_review_signature_count: 0,
     latest_local_ci_result: null,
+    provider_success_observed_at: null,
+    provider_success_head_sha: null,
     external_review_head_sha: null,
     external_review_misses_path: null,
     external_review_matched_findings_count: 0,
