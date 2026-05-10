@@ -1,5 +1,9 @@
 import { hasProcessedReviewThread } from "./review-handling";
-import { configuredReviewBotLogins, configuredReviewProviderKinds } from "./core/review-providers";
+import {
+  configuredReviewBotLogins,
+  configuredReviewProviderKinds,
+  normalizeReviewProviderLogin,
+} from "./core/review-providers";
 import { FailureContext, GitHubPullRequest, IssueRunRecord, ReviewThread, SupervisorConfig } from "./core/types";
 import { nowIso } from "./core/utils";
 import {
@@ -10,9 +14,9 @@ import {
 } from "./external-review/external-review-normalization";
 
 function isAllowedReviewBotThread(config: SupervisorConfig, thread: ReviewThread): boolean {
-  const configuredLogins = new Set(configuredReviewBotLogins(config).map((login) => login.toLowerCase()));
+  const configuredLogins = new Set(configuredReviewBotLogins(config));
   return thread.comments.nodes.some((comment) => {
-    const login = comment.author?.login?.toLowerCase();
+    const login = normalizeReviewProviderLogin(comment.author?.login);
     return Boolean(login && configuredLogins.has(login));
   });
 }
@@ -23,12 +27,12 @@ export function latestReviewComment(thread: ReviewThread) {
 
 export function latestReviewCommentAuthorIsAllowedBot(config: SupervisorConfig, thread: ReviewThread): boolean {
   const latestComment = latestReviewComment(thread);
-  const latestLogin = latestComment?.author?.login?.toLowerCase();
+  const latestLogin = normalizeReviewProviderLogin(latestComment?.author?.login);
   if (!latestLogin) {
     return false;
   }
 
-  const configuredLogins = new Set(configuredReviewBotLogins(config).map((login) => login.toLowerCase()));
+  const configuredLogins = new Set(configuredReviewBotLogins(config));
   return configuredLogins.has(latestLogin);
 }
 
@@ -59,16 +63,30 @@ function latestCodexConnectorPSeverity(thread: ReviewThread): CodexConnectorPSev
   return latestCodexConnectorReviewComment(thread)?.severity ?? null;
 }
 
+function isCodexConnectorMustFixReviewThread(thread: ReviewThread): boolean {
+  const latestCodexConnectorReview = latestCodexConnectorReviewComment(thread);
+  if (!latestCodexConnectorReview || thread.isResolved || thread.isOutdated) {
+    return false;
+  }
+
+  if (
+    latestCodexConnectorReview.severity === "P0" ||
+    latestCodexConnectorReview.severity === "P1" ||
+    latestCodexConnectorReview.severity === "P2"
+  ) {
+    return true;
+  }
+
+  return latestCodexConnectorReview.severity === "P3" && hasCodexConnectorStrongRiskWording(latestCodexConnectorReview.body);
+}
+
 export function codexConnectorMustFixReviewThreads(reviewThreads: ReviewThread[]): ReviewThread[] {
-  return reviewThreads.filter((thread) => {
-    const pSeverity = latestCodexConnectorPSeverity(thread);
-    return !thread.isResolved && !thread.isOutdated && (pSeverity === "P0" || pSeverity === "P1");
-  });
+  return reviewThreads.filter(isCodexConnectorMustFixReviewThread);
 }
 
 export interface CodexConnectorPolicyBlockDiagnostic {
   count: number;
-  severity: "P0" | "P1";
+  severity: CodexConnectorPSeverity;
   file: string;
   line: string;
   threadUrl: string;
@@ -81,8 +99,28 @@ export interface CodexConnectorP2P3PolicyDiagnostic {
   p3Escalated: number;
 }
 
-function maxCodexConnectorPSeverity(threads: ReviewThread[]): "P0" | "P1" {
-  return threads.some((thread) => latestCodexConnectorPSeverity(thread) === "P0") ? "P0" : "P1";
+export type CodexConnectorConvergencePolicyOutcome =
+  | "missing_current_head_review"
+  | "must_fix_remaining"
+  | "nitpick_only"
+  | "converged";
+
+export interface CodexConnectorConvergencePolicyResult {
+  outcome: CodexConnectorConvergencePolicyOutcome;
+  currentHeadObservedAt: string | null;
+  mustFixCount: number;
+  nitpickCount: number;
+}
+
+function codexConnectorPSeverityRank(severity: CodexConnectorPSeverity): number {
+  return { P0: 0, P1: 1, P2: 2, P3: 3 }[severity];
+}
+
+function maxCodexConnectorPSeverity(threads: ReviewThread[]): CodexConnectorPSeverity {
+  return threads
+    .map((thread) => latestCodexConnectorPSeverity(thread))
+    .filter((severity): severity is CodexConnectorPSeverity => severity !== null)
+    .sort((left, right) => codexConnectorPSeverityRank(left) - codexConnectorPSeverityRank(right))[0] ?? "P3";
 }
 
 function isSoftenedCodexConnectorP3Thread(thread: ReviewThread): boolean {
@@ -93,8 +131,69 @@ function isSoftenedCodexConnectorP3Thread(thread: ReviewThread): boolean {
   );
 }
 
+export function codexConnectorNitpickOnlyReviewThreads(reviewThreads: ReviewThread[]): ReviewThread[] {
+  return reviewThreads.filter(
+    (thread) => !thread.isResolved && !thread.isOutdated && isSoftenedCodexConnectorP3Thread(thread),
+  );
+}
+
 function formatDiagnosticToken(value: string): string {
   return value.replace(/\s+/g, "_");
+}
+
+function validPolicyTimestamp(value: string | null | undefined): string | null {
+  if (!value || Number.isNaN(Date.parse(value))) {
+    return null;
+  }
+
+  return value;
+}
+
+export function evaluateCodexConnectorConvergencePolicy(
+  config: SupervisorConfig,
+  pr: Pick<GitHubPullRequest, "configuredBotCurrentHeadObservedAt">,
+  reviewThreads: ReviewThread[],
+): CodexConnectorConvergencePolicyResult | null {
+  if (!configuredReviewProviderKinds(config).includes("codex")) {
+    return null;
+  }
+
+  const mustFixCount = codexConnectorMustFixReviewThreads(reviewThreads).length;
+  const nitpickCount = codexConnectorNitpickOnlyReviewThreads(reviewThreads).length;
+  const currentHeadObservedAt = validPolicyTimestamp(pr.configuredBotCurrentHeadObservedAt);
+  if (mustFixCount > 0) {
+    return {
+      outcome: "must_fix_remaining",
+      currentHeadObservedAt,
+      mustFixCount,
+      nitpickCount,
+    };
+  }
+
+  if (!currentHeadObservedAt) {
+    return {
+      outcome: "missing_current_head_review",
+      currentHeadObservedAt: null,
+      mustFixCount,
+      nitpickCount,
+    };
+  }
+
+  if (nitpickCount > 0) {
+    return {
+      outcome: "nitpick_only",
+      currentHeadObservedAt,
+      mustFixCount,
+      nitpickCount,
+    };
+  }
+
+  return {
+    outcome: "converged",
+    currentHeadObservedAt,
+    mustFixCount,
+    nitpickCount,
+  };
 }
 
 export function buildCodexConnectorPolicyBlockDiagnostic(
