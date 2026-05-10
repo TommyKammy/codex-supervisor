@@ -46,6 +46,31 @@ export interface TrackedPrMismatch {
   detailLines: string[];
 }
 
+export function buildTrackedPrReadyPromotionMaintenanceLines(
+  record: IssueRunRecord,
+  pr: GitHubPullRequest,
+): string[] {
+  const details = record.ready_promotion_maintenance_finding_details ?? [];
+  if (details.length === 0) {
+    return [];
+  }
+
+  return [
+    [
+      "tracked_pr_ready_promotion_maintenance",
+      `issue=#${record.issue_number}`,
+      `pr=#${pr.number}`,
+      "gate=workstation_local_path_hygiene",
+      "readiness=ignored_for_current_pr",
+      "maintenance=yes",
+      `findings=${details.length}`,
+      `head_sha=${record.ready_promotion_maintenance_head_sha ?? pr.headRefOid ?? "unknown"}`,
+      "summary=Baseline-only workstation-local path findings were ignored for current-PR readiness but remain maintenance debt.",
+      `first_finding=${details[0]?.replace(/\r?\n/g, "\\n")}`,
+    ].join(" "),
+  ];
+}
+
 export function shouldHydrateTrackedPrDiagnostics(
   record: IssueRunRecord,
 ): record is IssueRunRecord & { pr_number: number } {

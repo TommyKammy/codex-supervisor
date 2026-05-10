@@ -36,7 +36,11 @@ import {
   renderGitHubRateLimitLine,
   type SupervisorStatusDto,
 } from "./supervisor-status-report";
-import { buildTrackedPrMismatch, shouldHydrateTrackedPrDiagnostics } from "./tracked-pr-mismatch";
+import {
+  buildTrackedPrMismatch,
+  buildTrackedPrReadyPromotionMaintenanceLines,
+  shouldHydrateTrackedPrDiagnostics,
+} from "./tracked-pr-mismatch";
 import {
   buildLoopOffTrackedWorkBlocker,
   buildMacOsLoopHostWarning,
@@ -279,6 +283,7 @@ export async function buildSupervisorStatusReport(args: {
       if (statusRecords.latestRecord?.issue_number === record.issue_number) {
         latestTrackedPrHydration = { pr, checks, reviewThreads };
       }
+      trackedPrMismatchLines.push(...buildTrackedPrReadyPromotionMaintenanceLines(record, pr));
       const mismatch = buildTrackedPrMismatch(config, record, pr, checks, reviewThreads);
       if (!mismatch) {
         continue;

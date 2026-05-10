@@ -1706,6 +1706,75 @@ test("explain distinguishes repairable ready-promotion path hygiene blockers que
   );
 });
 
+test("explain surfaces baseline-only ready-promotion path hygiene findings as maintenance context", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 180;
+  const prNumber = 280;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "pr_open",
+        branch,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: prNumber,
+        blocked_reason: null,
+        last_error: null,
+        last_head_sha: "head-ready-280",
+        last_failure_signature: null,
+        ready_promotion_maintenance_head_sha: "head-ready-280",
+        ready_promotion_maintenance_finding_details: [
+          `docs/baseline.md:1 matched /${"home"}/placeholder via "<workstation-local>"`,
+        ],
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Tracked baseline path maintenance context",
+    body: executionReadyBody("Explain baseline-only ready-promotion path findings."),
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const openPr = createPullRequest({
+    number: prNumber,
+    headRefName: branch,
+    headRefOid: "head-ready-280",
+    isDraft: false,
+  });
+
+  const supervisor = new Supervisor({
+    ...fixture.config,
+    localCiCommand: "npm run verify:paths",
+  });
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => trackedIssue,
+    listAllIssues: async () => [trackedIssue],
+    listCandidateIssues: async () => [trackedIssue],
+    resolvePullRequestForBranch: async () => openPr,
+    getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const explanation = await supervisor.explain(issueNumber);
+  assert.match(
+    explanation,
+    new RegExp(
+      `^tracked_pr_ready_promotion_maintenance issue=#180 pr=#280 gate=workstation_local_path_hygiene readiness=ignored_for_current_pr maintenance=yes findings=1 head_sha=head-ready-280 summary=Baseline-only workstation-local path findings were ignored for current-PR readiness but remain maintenance debt\\. first_finding=docs\\/baseline\\.md:1 matched /${"home"}\\/placeholder via "<workstation-local>"$`,
+      "m",
+    ),
+  );
+  assert.doesNotMatch(explanation, /ready_promotion_blocked_workstation_local_path_hygiene/);
+});
+
 test("explain reports bootstrap repos as not ready for expected CI and review signals", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 181;

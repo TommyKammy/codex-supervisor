@@ -16,6 +16,7 @@ export type ReadyPromotionPathHygieneDecision =
   | {
       kind: "passed";
       rewrittenTrackedPaths: string[];
+      maintenanceFindingDetails: string[];
     }
   | {
       kind: "repair";
@@ -61,6 +62,7 @@ export function deriveReadyPromotionPathHygieneDecision(args: {
         ...(args.gate.rewrittenJournalPaths ?? []),
         ...(args.gate.rewrittenTrustedGeneratedArtifactPaths ?? []),
       ],
+      maintenanceFindingDetails: args.gate.readyPromotionMaintenanceFindingDetails ?? [],
     };
   }
 
