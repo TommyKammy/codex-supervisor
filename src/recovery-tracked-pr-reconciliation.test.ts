@@ -2,7 +2,178 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { type IssueRunRecord, type SupervisorStateFile } from "./core/types";
 import { reconcileTrackedMergedButOpenIssues } from "./recovery-reconciliation";
+import { reconcileStaleFailedTrackedPrRecord } from "./recovery-tracked-pr-reconciliation";
+import {
+  blockedReasonForLifecycleState,
+  isOpenPullRequest,
+} from "./supervisor/supervisor-lifecycle";
+import { inferFailureContext } from "./supervisor/supervisor-failure-context";
 import { createConfig, createPullRequest, createRecord } from "./supervisor/supervisor-test-helpers";
+import { inferGitHubWaitStep, inferStateFromPullRequest } from "./pull-request-state";
+import {
+  syncCopilotReviewRequestObservation,
+  syncCopilotReviewTimeoutState,
+  syncReviewWaitWindow,
+} from "./pull-request-state-sync";
+
+test("reconcileTrackedMergedButOpenIssues uses action-grade hydration for merge-critical lifecycle refresh", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    configuredBotRequireCurrentHeadSignal: true,
+    configuredBotInitialGraceWaitSeconds: 0,
+    configuredBotCurrentHeadSignalTimeoutAction: "block",
+  });
+  const record = createRecord({
+    issue_number: 1949,
+    state: "blocked",
+    branch: "codex/issue-1949",
+    pr_number: 2499,
+    blocked_reason: "review_bot_timeout",
+    last_head_sha: "head-current",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: { "1949": record },
+  };
+  let saveCalls = 0;
+
+  await reconcileTrackedMergedButOpenIssues(
+    {
+      getPullRequestIfExists: async (prNumber, options) => {
+        assert.equal(prNumber, 2499);
+        assert.equal(options?.purpose, "action");
+        return createPullRequest({
+          number: 2499,
+          state: "OPEN",
+          isDraft: false,
+          headRefName: "codex/issue-1949",
+          headRefOid: "head-current",
+          mergeStateStatus: "CLEAN",
+          reviewDecision: "APPROVED",
+          currentHeadCiGreenAt: "2026-05-10T23:39:00Z",
+          configuredBotCurrentHeadObservedAt: "2026-05-10T23:40:00Z",
+          configuredBotCurrentHeadStatusState: "SUCCESS",
+        });
+      },
+      getIssue: async () => {
+        throw new Error("unexpected getIssue call");
+      },
+      closeIssue: async () => {
+        throw new Error("unexpected closeIssue call");
+      },
+      closePullRequest: async () => {
+        throw new Error("unexpected closePullRequest call");
+      },
+      getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getMergedPullRequestsClosingIssue: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    {
+      touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+        return {
+          ...current,
+          ...patch,
+          updated_at: "2026-05-10T23:41:00Z",
+        };
+      },
+      save: async () => {
+        saveCalls += 1;
+      },
+    },
+    state,
+    config,
+    [],
+  );
+
+  assert.equal(saveCalls, 1);
+  assert.equal(state.issues["1949"]?.state, "ready_to_merge");
+  assert.equal(state.issues["1949"]?.blocked_reason, null);
+});
+
+test("reconcileStaleFailedTrackedPrRecord uses action-grade hydration before mutating stale review timeout state", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    configuredBotRequireCurrentHeadSignal: true,
+    configuredBotInitialGraceWaitSeconds: 0,
+    configuredBotCurrentHeadSignalTimeoutAction: "block",
+  });
+  const record = createRecord({
+    issue_number: 1950,
+    state: "blocked",
+    branch: "codex/issue-1950",
+    pr_number: 2500,
+    blocked_reason: "review_bot_timeout",
+    last_head_sha: "head-current",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: { "1950": record },
+  };
+
+  const recoveryEvent = await reconcileStaleFailedTrackedPrRecord(
+    {
+      getPullRequestIfExists: async (prNumber, options) => {
+        assert.equal(prNumber, 2500);
+        assert.equal(options?.purpose, "action");
+        return createPullRequest({
+          number: 2500,
+          state: "OPEN",
+          isDraft: false,
+          headRefName: "codex/issue-1950",
+          headRefOid: "head-current",
+          mergeStateStatus: "CLEAN",
+          reviewDecision: "APPROVED",
+          currentHeadCiGreenAt: "2026-05-10T23:39:00Z",
+          configuredBotCurrentHeadObservedAt: "2026-05-10T23:40:00Z",
+          configuredBotCurrentHeadStatusState: "SUCCESS",
+        });
+      },
+      getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    {
+      touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+        return {
+          ...current,
+          ...patch,
+          updated_at: "2026-05-10T23:41:00Z",
+        };
+      },
+      save: async () => {
+        throw new Error("unexpected save call");
+      },
+    },
+    state,
+    config,
+    record,
+    {
+      inferStateFromPullRequest,
+      inferFailureContext,
+      blockedReasonForLifecycleState,
+      isOpenPullRequest,
+      syncReviewWaitWindow,
+      syncCopilotReviewRequestObservation,
+      syncCopilotReviewTimeoutState,
+      inferGitHubWaitStep,
+    },
+    {
+      buildRecoveryEvent: (issueNumber, reason) => ({
+        issueNumber,
+        reason,
+        at: "2026-05-10T23:41:00Z",
+      }),
+      applyRecoveryEvent: (patch, event) => ({
+        ...patch,
+        last_recovery_reason: event.reason,
+        last_recovery_at: event.at,
+      }),
+    },
+  );
+
+  assert.ok(recoveryEvent);
+  assert.equal(state.issues["1950"]?.state, "ready_to_merge");
+  assert.equal(state.issues["1950"]?.blocked_reason, null);
+});
 
 test("reconcileTrackedMergedButOpenIssues default pass stops after recoverable tracked PR records in a mixed state", async () => {
   const recoverableRecords = [

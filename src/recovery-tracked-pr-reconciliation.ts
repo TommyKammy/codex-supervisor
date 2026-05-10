@@ -384,7 +384,7 @@ export async function reconcileTrackedMergedButOpenIssuesInModule(
       continue;
     }
 
-    const trackedPullRequest = await github.getPullRequestIfExists(trackedPrNumber);
+    const trackedPullRequest = await github.getPullRequestIfExists(trackedPrNumber, { purpose: "action" });
     if (trackedPullRequest && !matchesTrackedBranch(record, trackedPullRequest)) {
       if (state.activeIssueNumber === record.issue_number) {
         continue;
@@ -662,7 +662,7 @@ export async function reconcileStaleFailedTrackedPrRecord(
     return null;
   }
 
-  const pr = await github.getPullRequestIfExists(trackedPrNumber);
+  const pr = await github.getPullRequestIfExists(trackedPrNumber, { purpose: "action" });
   if (!pr || !deps.isOpenPullRequest(pr)) {
     return null;
   }

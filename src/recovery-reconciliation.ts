@@ -816,7 +816,7 @@ export async function reconcileRecoverableBlockedIssueStates(
       record.blocked_reason === "handoff_missing" &&
       record.pr_number !== null
     ) {
-      const trackedPullRequest = await github.getPullRequestIfExists(record.pr_number);
+      const trackedPullRequest = await github.getPullRequestIfExists(record.pr_number, { purpose: "action" });
       const repairContext = trackedPullRequest
         ? queuedReadyPromotionPathHygieneRepairContext(record, trackedPullRequest)
         : null;
@@ -903,7 +903,7 @@ export async function reconcileRecoverableBlockedIssueStates(
         shouldReconcileTrackedPrStaleReviewBot(record, config)
       )
     ) {
-      const trackedPullRequest = await github.getPullRequestIfExists(record.pr_number);
+      const trackedPullRequest = await github.getPullRequestIfExists(record.pr_number, { purpose: "action" });
       if (!trackedPullRequest || !isOpenPullRequestImpl(trackedPullRequest)) {
         continue;
       }
@@ -1140,7 +1140,11 @@ export async function reconcileStaleActiveIssueReservation(args: {
   issueLockPath: (issueNumber: number) => string;
   sessionLockPath: (sessionId: string) => string;
   sameFailureSignatureRepeatLimit?: number;
-  resolvePullRequestForBranch?: (branch: string, trackedPrNumber: number | null) => Promise<import("./core/types").GitHubPullRequest | null>;
+  resolvePullRequestForBranch?: (
+    branch: string,
+    trackedPrNumber: number | null,
+    options?: { purpose?: "status" | "action" },
+  ) => Promise<import("./core/types").GitHubPullRequest | null>;
   classifyStaleStabilizingNoPrBranchState?: (
     record: IssueRunRecord,
   ) => Promise<StaleStabilizingNoPrBranchState>;
