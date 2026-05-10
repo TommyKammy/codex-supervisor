@@ -570,6 +570,73 @@ test("reconcileTrackedMergedButOpenIssues recovers review_bot_timeout blocked tr
   assert.match(recoveryEvents[0]?.reason ?? "", /tracked_pr_lifecycle_recovered/);
 });
 
+test("reconcileTrackedMergedButOpenIssues does not recover Codex Connector success to ready_to_merge with unresolved must-fix findings", async () => {
+  const record = createReviewBotTimeoutTrackedPrRecord();
+  const state: SupervisorStateFile = createSupervisorState({ issues: [record] });
+  let saveCalls = 0;
+
+  const recoveryEvents = await reconcileTrackedMergedButOpenIssues(
+    {
+      getPullRequestIfExists: async () => createTrackedPrRecoveryPullRequest({
+        configuredBotCurrentHeadObservedAt: "2026-03-13T00:13:00Z",
+        configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+      }),
+      getIssue: async () => {
+        throw new Error("unexpected getIssue call");
+      },
+      closeIssue: async () => {
+        throw new Error("unexpected closeIssue call");
+      },
+      closePullRequest: async () => {
+        throw new Error("unexpected closePullRequest call");
+      },
+      getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getMergedPullRequestsClosingIssue: async () => [],
+      getUnresolvedReviewThreads: async () => [
+        createReviewThread({
+          id: "thread-codex-p2",
+          comments: {
+            nodes: [
+              {
+                id: "comment-codex-p2",
+                body: "P2: Keep the merge gate blocked while this current-head finding is unresolved.",
+                createdAt: "2026-03-13T00:13:30Z",
+                url: "https://example.test/pr/191#discussion_r2",
+                author: {
+                  login: "chatgpt-codex-connector",
+                  typeName: "Bot",
+                },
+              },
+            ],
+          },
+        }),
+      ],
+    },
+    {
+      touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+        return {
+          ...current,
+          ...patch,
+          updated_at: "2026-03-13T00:14:00Z",
+        };
+      },
+      save: async () => {
+        saveCalls += 1;
+      },
+    },
+    state,
+    createCodexConnectorRecoveryConfig(),
+    [],
+  );
+
+  assert.equal(saveCalls, 1);
+  assert.equal(state.issues["366"]?.state, "addressing_review");
+  assert.equal(state.issues["366"]?.blocked_reason, null);
+  assert.notEqual(state.issues["366"]?.state, "ready_to_merge");
+  assert.match(recoveryEvents[0]?.reason ?? "", /tracked_pr_lifecycle_recovered/);
+  assert.match(recoveryEvents[0]?.reason ?? "", /to addressing_review/);
+});
+
 test("reconcileTrackedMergedButOpenIssues leaves review_bot_timeout blocked for stale Codex Connector PR comment success", async () => {
   const record = createReviewBotTimeoutTrackedPrRecord();
   const state: SupervisorStateFile = createSupervisorState({ issues: [record] });
@@ -9324,6 +9391,8 @@ test("buildTrackedPrStaleFailureConvergencePatch isolates persisted tracked PR r
     last_local_review_signature: null,
     repeated_local_review_signature_count: 0,
     latest_local_ci_result: null,
+    provider_success_observed_at: null,
+    provider_success_head_sha: null,
     external_review_head_sha: null,
     external_review_misses_path: null,
     external_review_matched_findings_count: 0,
