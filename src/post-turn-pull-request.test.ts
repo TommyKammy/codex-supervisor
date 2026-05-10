@@ -2470,6 +2470,11 @@ test("handlePostTurnPullRequestTransitionsPhase scopes ready-promotion path hygi
   assert.equal(result.record.state, "pr_open");
   assert.equal(result.record.blocked_reason, null);
   assert.equal(result.record.last_failure_signature, null);
+  assert.equal(result.record.ready_promotion_maintenance_finding_details?.length, 1);
+  assert.match(
+    result.record.ready_promotion_maintenance_finding_details?.[0] ?? "",
+    new RegExp(`^\\- docs/baseline\\.md:1 matched /${"home"}/<user>/ .*Remediation: rewrite the path repo-relatively`),
+  );
 });
 
 test("handlePostTurnPullRequestTransitionsPhase comments once when workstation-local path hygiene blocks tracked ready promotion", async (t) => {

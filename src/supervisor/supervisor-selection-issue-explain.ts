@@ -42,7 +42,7 @@ import {
 } from "./supervisor-status-review-bot";
 import { inspectTrackedIssueHostDiagnostics, summarizeIssueJournalHandoff } from "../core/journal";
 import { formatInventoryRefreshDiagnosticLines, formatInventoryRefreshStatusLine } from "../inventory-refresh-state";
-import { buildTrackedPrMismatch } from "./tracked-pr-mismatch";
+import { buildTrackedPrMismatch, buildTrackedPrReadyPromotionMaintenanceLines } from "./tracked-pr-mismatch";
 import {
   BlockedReason,
   GitHubIssue,
@@ -119,6 +119,7 @@ export interface SupervisorExplainDto {
   codexConnectorConvergenceSummary?: string | null;
   noActiveTrackedRecordSummary?: string | null;
   trackedPrRetryabilitySummary?: string | null;
+  trackedPrReadyPromotionMaintenanceSummary?: string | null;
   trackedPrMismatchSummary: string | null;
   externalSignalReadinessSummary?: string | null;
   recoveryGuidance: string | null;
@@ -425,6 +426,10 @@ export async function buildIssueExplainDto(
     record && pr && !trackedPrHydrationFailed
       ? buildTrackedPrMismatch(config, record, pr, explainChecks, explainReviewThreads)
       : null;
+  const trackedPrReadyPromotionMaintenanceSummary =
+    record && pr && !trackedPrHydrationFailed
+      ? buildTrackedPrReadyPromotionMaintenanceLines(record, pr)[0] ?? null
+      : null;
   const externalSignalReadinessSummary =
     record && pr && !trackedPrHydrationFailed
       ? (() => {
@@ -582,6 +587,7 @@ export async function buildIssueExplainDto(
           `signal=${record.last_tracked_pr_progress_summary.replace(/\s+/g, "_")}`,
         ].join(" ")
         : null,
+    trackedPrReadyPromotionMaintenanceSummary,
     trackedPrMismatchSummary: trackedPrMismatch?.summaryLine ?? null,
     externalSignalReadinessSummary,
     recoveryGuidance: trackedPrMismatch?.guidanceLine ?? null,
@@ -651,6 +657,7 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
     ...(dto.codexConnectorConvergenceSummary ? [dto.codexConnectorConvergenceSummary] : []),
     ...(dto.noActiveTrackedRecordSummary ? [dto.noActiveTrackedRecordSummary] : []),
     ...(dto.trackedPrRetryabilitySummary ? [dto.trackedPrRetryabilitySummary] : []),
+    ...(dto.trackedPrReadyPromotionMaintenanceSummary ? [dto.trackedPrReadyPromotionMaintenanceSummary] : []),
     ...(dto.trackedPrMismatchSummary ? [dto.trackedPrMismatchSummary] : []),
     ...(dto.externalSignalReadinessSummary ? [dto.externalSignalReadinessSummary] : []),
     ...(dto.recoveryGuidance ? [dto.recoveryGuidance] : []),

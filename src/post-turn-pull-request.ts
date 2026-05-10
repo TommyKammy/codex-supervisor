@@ -719,6 +719,19 @@ export async function handlePostTurnPullRequestTransitionsPhase(
       };
     }
 
+    if (
+      pathHygieneDecision.maintenanceFindingDetails.length > 0 ||
+      (record.ready_promotion_maintenance_finding_details?.length ?? 0) > 0
+    ) {
+      record = stateStore.touch(record, {
+        ready_promotion_maintenance_finding_details: pathHygieneDecision.maintenanceFindingDetails,
+        ready_promotion_maintenance_head_sha: refreshed.pr.headRefOid ?? null,
+      });
+      state.issues[String(record.issue_number)] = record;
+      await stateStore.save(state);
+      await syncJournal(record);
+    }
+
     const presentRewrittenTrackedPaths = await filterPresentTrackedFilePaths(
       workspacePath,
       pathHygieneDecision.rewrittenTrackedPaths,
