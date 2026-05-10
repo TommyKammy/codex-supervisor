@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { buildCodexPrompt, buildCodexResumePrompt, shouldUseCompactResumePrompt } from "./codex-prompt";
 import { FailureContext, GitHubIssue, RunState } from "../core/types";
 import type { AgentTurnContext } from "../supervisor/agent-runner";
-import { createConfig } from "../turn-execution-test-helpers";
+import { createConfig, createPullRequest, createReviewThread } from "../turn-execution-test-helpers";
 
 const issue: GitHubIssue = {
   number: 46,
@@ -814,7 +814,30 @@ test("buildCodexPrompt suppresses stale handoff next actions during addressing_r
   assert.match(prompt, /Live review guidance should take priority over stale handoff steps\./);
 });
 
-test("buildCodexPrompt adds Codex Connector P0/P1 must-fix guidance only for Codex Connector addressing_review", () => {
+test("buildCodexPrompt adds structured Codex Connector must-fix guidance only for Codex Connector addressing_review", () => {
+  const pr = createPullRequest({
+    number: 144,
+    headRefOid: "head-connector-144",
+  });
+  const p2Thread = createReviewThread({
+    id: "thread-p2",
+    path: "src/restore.ts",
+    line: 42,
+    comments: {
+      nodes: [
+        {
+          id: "comment-p2",
+          body: "P2: Preserve failed restore cleanup as a blocking verification failure.",
+          createdAt: "2026-03-11T00:05:00Z",
+          url: "https://example.test/pr/144#discussion_r2",
+          author: {
+            login: "chatgpt-codex-connector[bot]",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
   const codexContext = {
     kind: "start",
     config: createConfig({
@@ -825,9 +848,9 @@ test("buildCodexPrompt adds Codex Connector P0/P1 must-fix guidance only for Cod
     branch: "codex/issue-46",
     workspacePath: "/tmp/workspaces/issue-46",
     state: "addressing_review" satisfies RunState,
-    pr: null,
+    pr,
     checks: [],
-    reviewThreads: [],
+    reviewThreads: [p2Thread],
     alwaysReadFiles: [],
     onDemandMemoryFiles: [],
     journalPath: "/tmp/workspaces/issue-46/.codex-supervisor/issue-journal.md",
@@ -836,10 +859,19 @@ test("buildCodexPrompt adds Codex Connector P0/P1 must-fix guidance only for Cod
   const codexPrompt = buildCodexPrompt(codexContext);
 
   assert.match(codexPrompt, /Codex Connector review handling:/);
-  assert.match(codexPrompt, /P0\/P1 Codex Connector findings are supervisor-enforced must-fix findings\./);
-  assert.match(codexPrompt, /Same-head reply-only disagreement does not clear a P0\/P1 finding for merge readiness\./);
+  assert.match(codexPrompt, /P0\/P1\/P2 and escalated P3 Codex Connector findings are supervisor-enforced must-fix findings\./);
+  assert.match(codexPrompt, /Same-head reply-only disagreement does not clear a must-fix finding for merge readiness\./);
+  assert.match(codexPrompt, /P3 nitpick-only findings are not enough by themselves to require a same-PR repair pass\./);
   assert.match(codexPrompt, /make the smallest valid code fix and push a new PR head/);
   assert.match(codexPrompt, /route it to the existing manual\/operator review path/);
+  assert.match(codexPrompt, /Policy: Codex Connector must_fix_remaining/);
+  assert.match(codexPrompt, /Severity: P2/);
+  assert.match(codexPrompt, /PR: #144/);
+  assert.match(codexPrompt, /Head SHA: head-connector-144/);
+  assert.match(codexPrompt, /Source URL: https:\/\/example\.test\/pr\/144#discussion_r2/);
+  assert.match(codexPrompt, /File: src\/restore\.ts/);
+  assert.match(codexPrompt, /Line range: 42/);
+  assert.match(codexPrompt, /Summary: P2: Preserve failed restore cleanup as a blocking verification failure\./);
 
   const coderabbitContext = {
     ...codexContext,

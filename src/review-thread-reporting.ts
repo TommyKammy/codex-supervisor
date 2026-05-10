@@ -36,7 +36,7 @@ export function latestReviewCommentAuthorIsAllowedBot(config: SupervisorConfig, 
   return configuredLogins.has(latestLogin);
 }
 
-function latestCodexConnectorReviewComment(thread: ReviewThread): {
+export function latestCodexConnectorReviewComment(thread: ReviewThread): {
   severity: CodexConnectorPSeverity;
   body: string;
 } | null {
@@ -308,6 +308,28 @@ function renderReviewThreadDetail(thread: ReviewThread, includeAuthor = false): 
   const summary = ` summary=${extractReviewCommentSummary(latestComment?.body ?? "")}`;
   const url = latestComment?.url ? ` url=${latestComment.url}` : "";
   return `${location}${author}${severity}${summary}${url}`;
+}
+
+export function buildCodexConnectorMustFixFindingDetails(args: {
+  pr: Pick<GitHubPullRequest, "number" | "headRefOid"> | null;
+  reviewThreads: ReviewThread[];
+}): string[] {
+  return codexConnectorMustFixReviewThreads(args.reviewThreads).map((thread, index) => {
+    const latestComment = latestReviewComment(thread);
+    const latestCodexConnectorReview = latestCodexConnectorReviewComment(thread);
+    const lineRange = thread.line == null ? "unknown" : String(thread.line);
+    return [
+      `- Finding ${index + 1}`,
+      `  Policy: Codex Connector must_fix_remaining`,
+      `  Severity: ${latestCodexConnectorReview?.severity ?? "unknown"}`,
+      `  PR: ${args.pr ? `#${args.pr.number}` : "unknown"}`,
+      `  Head SHA: ${args.pr?.headRefOid ?? "unknown"}`,
+      `  Source URL: ${latestComment?.url ?? "n/a"}`,
+      `  File: ${thread.path ?? "unknown"}`,
+      `  Line range: ${lineRange}`,
+      `  Summary: ${extractReviewCommentSummary(latestComment?.body ?? "")}`,
+    ].join("\n");
+  });
 }
 
 export function manualReviewThreads(config: SupervisorConfig, reviewThreads: ReviewThread[]): ReviewThread[] {

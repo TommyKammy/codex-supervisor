@@ -21,6 +21,7 @@ import type {
   StartAgentTurnContext,
 } from "../supervisor/agent-runner";
 import { reviewProviderProfileFromConfig, type ReviewProviderProfileSummary } from "../core/review-providers";
+import { buildCodexConnectorMustFixFindingDetails } from "../review-thread-reporting";
 
 export interface LocalReviewRepairContext {
   repairIntent?: "same_pr_fix_blocked" | "same_pr_follow_up" | "same_pr_manual_review" | "high_severity_retry" | "unspecified";
@@ -433,14 +434,28 @@ function buildCodexStartPrompt(input: BuildCodexStartPromptInput): string {
             : ["- No saved external review miss artifact is available for the current PR head."]),
         ]
       : [];
+  const codexConnectorMustFixFindingDetails =
+    input.state === "addressing_review" && input.reviewProviderProfile?.profile === "codex"
+      ? buildCodexConnectorMustFixFindingDetails({
+          pr: input.pr,
+          reviewThreads: input.reviewThreads,
+        })
+      : [];
   const codexConnectorReviewGuidance =
     input.state === "addressing_review" && input.reviewProviderProfile?.profile === "codex"
       ? [
           "Codex Connector review handling:",
-          "- P0/P1 Codex Connector findings are supervisor-enforced must-fix findings.",
-          "- Same-head reply-only disagreement does not clear a P0/P1 finding for merge readiness.",
+          "- P0/P1/P2 and escalated P3 Codex Connector findings are supervisor-enforced must-fix findings.",
+          "- Same-head reply-only disagreement does not clear a must-fix finding for merge readiness.",
+          "- P3 nitpick-only findings are not enough by themselves to require a same-PR repair pass.",
           "- If the finding is valid, make the smallest valid code fix and push a new PR head.",
-          "- If a P0/P1 finding conflicts with issue scope or appears unsafe to apply, route it to the existing manual/operator review path instead of self-dismissing it.",
+          "- If a must-fix finding conflicts with issue scope or appears unsafe to apply, route it to the existing manual/operator review path instead of self-dismissing it.",
+          ...(codexConnectorMustFixFindingDetails.length > 0
+            ? [
+                "Codex Connector must-fix findings:",
+                ...codexConnectorMustFixFindingDetails,
+              ]
+            : []),
         ]
       : [];
   const verificationPolicy = describeVerificationPolicy(

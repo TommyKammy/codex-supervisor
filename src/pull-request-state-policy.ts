@@ -17,6 +17,7 @@ import {
 } from "./supervisor/supervisor-reporting";
 import {
   codexConnectorNitpickOnlyReviewThreads,
+  codexConnectorMustFixReviewThreads,
   configuredBotReviewFollowUpState,
   configuredBotReviewThreads,
   evaluateCodexConnectorConvergencePolicy,
@@ -857,6 +858,7 @@ export function inferStateFromPullRequest(
   const unresolvedBotThreads = effectiveConfiguredBotReviewThreads(config, pr, checks, reviewThreads);
   const pendingBotThreads = pendingBotReviewThreads(config, record, pr, unresolvedBotThreads);
   const botFollowUpState = configuredBotReviewFollowUpState(config, record, pr, unresolvedBotThreads);
+  const codexConnectorMustFixThreads = codexConnectorMustFixReviewThreads(unresolvedBotThreads);
   const checkSummary = summarizeChecks(checks);
 
   if (pr.mergedAt || pr.state === "MERGED") {
@@ -874,6 +876,16 @@ export function inferStateFromPullRequest(
       manualThreads.length === 0;
 
     if (unresolvedBotThreads.length > 0 || pr.configuredBotTopLevelReviewStrength === "blocking") {
+      if (
+        codexConnectorMustFixThreads.length > 0 &&
+        !checkSummary.hasFailing &&
+        !checkSummary.hasPending &&
+        (!config.humanReviewBlocksMerge || manualThreads.length === 0) &&
+        !mergeConflictDetected(pr)
+      ) {
+        return "addressing_review";
+      }
+
       return "blocked";
     }
 
@@ -938,6 +950,16 @@ export function inferStateFromPullRequest(
     !mergeConflictDetected(pr)
   ) {
     return "local_review_fix";
+  }
+
+  if (
+    codexConnectorMustFixThreads.length > 0 &&
+    !checkSummary.hasFailing &&
+    !checkSummary.hasPending &&
+    (!config.humanReviewBlocksMerge || manualThreads.length === 0) &&
+    !mergeConflictDetected(pr)
+  ) {
+    return "addressing_review";
   }
 
   if (checkSummary.hasFailing) {
