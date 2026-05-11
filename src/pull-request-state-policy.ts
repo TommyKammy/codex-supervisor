@@ -9,6 +9,7 @@ import {
   localReviewRequiresManualReview,
   localReviewRetryLoopStalled,
   reviewDecisionAllowsSamePrRepair,
+  hasProcessedReviewThread,
 } from "./review-handling";
 import { shouldRunLocalReview } from "./local-review";
 import {
@@ -21,6 +22,7 @@ import {
   configuredBotReviewFollowUpState,
   configuredBotReviewThreads,
   evaluateCodexConnectorConvergencePolicy,
+  latestReviewCommentAuthorIsAllowedBot,
   manualReviewThreads,
   pendingBotReviewThreads,
   staleConfiguredBotReviewThreads,
@@ -714,6 +716,75 @@ function effectiveConfiguredBotReviewThreads(
     : effectiveThreads;
 }
 
+function configuredBotThreadsAllowCodexConnectorCurrentHeadWait(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  configuredThreads: ReviewThread[];
+}): boolean {
+  if (codexConnectorMustFixReviewThreads(args.configuredThreads).length > 0) {
+    return false;
+  }
+
+  if (configuredBotReviewFollowUpState(args.config, args.record, args.pr, args.configuredThreads) === "eligible") {
+    return false;
+  }
+
+  return args.configuredThreads.every(
+    (thread) =>
+      hasProcessedReviewThread(args.record, args.pr, thread) ||
+      !latestReviewCommentAuthorIsAllowedBot(args.config, thread),
+  );
+}
+
+function shouldWaitForCodexConnectorCurrentHeadReview(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+  manualThreads: ReviewThread[];
+  unresolvedBotThreads: ReviewThread[];
+  nowMs: number;
+}): boolean {
+  if (
+    !configuredReviewProviderKinds(args.config).includes("codex") ||
+    args.pr.isDraft ||
+    mergeConflictDetected(args.pr) ||
+    args.manualThreads.length > 0 ||
+    validTimestamp(args.pr.configuredBotCurrentHeadObservedAt)
+  ) {
+    return false;
+  }
+
+  const checkSummary = summarizeChecks(args.checks);
+  if (checkSummary.hasFailing || checkSummary.hasPending) {
+    return false;
+  }
+
+  const loadedChecksAreGreen = args.checks.length > 0 && args.checks.every((check) => check.bucket === "pass");
+  if (!validTimestamp(args.pr.currentHeadCiGreenAt) && !loadedChecksAreGreen) {
+    return false;
+  }
+
+  if (
+    !configuredBotThreadsAllowCodexConnectorCurrentHeadWait({
+      config: args.config,
+      record: args.record,
+      pr: args.pr,
+      configuredThreads: args.unresolvedBotThreads,
+    })
+  ) {
+    return false;
+  }
+
+  const timeout = determineCopilotReviewTimeout(args.config, args.record, args.pr, args.nowMs);
+  return (
+    (configuredBotCurrentHeadSignalPending(args.config, args.record, args.pr) && !timeout.timedOut) ||
+    (timeout.timedOut && timeout.action === "request_review_comment")
+  );
+}
+
 function pullRequestHeadMatchesRecord(record: Pick<IssueRunRecord, "last_head_sha">, pr: GitHubPullRequest): boolean {
   return record.last_head_sha === null || record.last_head_sha === pr.headRefOid;
 }
@@ -863,6 +934,21 @@ export function inferStateFromPullRequest(
 
   if (pr.mergedAt || pr.state === "MERGED") {
     return "done";
+  }
+
+  if (
+    shouldWaitForCodexConnectorCurrentHeadReview({
+      config,
+      record,
+      pr,
+      checks,
+      reviewThreads,
+      manualThreads,
+      unresolvedBotThreads,
+      nowMs,
+    })
+  ) {
+    return "waiting_ci";
   }
 
   if (pr.reviewDecision === "CHANGES_REQUESTED") {
