@@ -981,6 +981,70 @@ test("formatCodexConnectorConvergenceDiagnostic surfaces must-fix convergence st
   );
 });
 
+test("formatCodexConnectorConvergenceDiagnostic distinguishes Codex Connector request lifecycle states", () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+  });
+  const pr = createPr({
+    headRefOid: "head-1958",
+    currentHeadCiGreenAt: "2026-05-08T03:09:36Z",
+    configuredBotCurrentHeadObservedAt: null,
+  });
+
+  assert.equal(
+    formatCodexConnectorConvergenceDiagnostic({
+      config,
+      record: createRecord({
+        state: "waiting_ci",
+        pr_number: pr.number,
+        provider_success_head_sha: null,
+        provider_success_observed_at: null,
+      }),
+      pr,
+      reviewThreads: [],
+    }),
+    "codex_connector_convergence status=missing_current_head_review provider=codex current_head_sha=head-1958 current_head_observed_at=none latest_signal_head_sha=none highest_severity=none finding_count=0 merge_effect=blocked next_action=request_current_head_review",
+  );
+
+  assert.equal(
+    formatCodexConnectorConvergenceDiagnostic({
+      config,
+      record: createRecord({
+        state: "waiting_ci",
+        pr_number: pr.number,
+        provider_success_head_sha: null,
+        provider_success_observed_at: null,
+        codex_connector_review_requested_observed_at: "2026-05-08T03:30:00Z",
+        codex_connector_review_requested_head_sha: "head-1958",
+      }),
+      pr,
+      reviewThreads: [],
+    }),
+    "codex_connector_convergence status=re_requested_review provider=codex current_head_sha=head-1958 current_head_observed_at=none latest_signal_head_sha=none highest_severity=none finding_count=0 merge_effect=blocked next_action=wait_for_requested_review",
+  );
+
+  assert.equal(
+    formatCodexConnectorConvergenceDiagnostic({
+      config,
+      record: createRecord({
+        state: "waiting_ci",
+        pr_number: pr.number,
+        provider_success_head_sha: null,
+        provider_success_observed_at: null,
+      }),
+      pr: {
+        ...pr,
+        codexConnectorReviewRequestedAt: "2026-05-08T03:30:00Z",
+        codexConnectorReviewRequestedHeadSha: "head-1958",
+      },
+      reviewThreads: [],
+    }),
+    "codex_connector_convergence status=same_head_request_hydrated provider=codex current_head_sha=head-1958 current_head_observed_at=none latest_signal_head_sha=none highest_severity=none finding_count=0 merge_effect=blocked next_action=wait_for_requested_review",
+  );
+});
+
 test("configuredBotInitialGraceWaitWindow reports the active CodeRabbit re-wait after a draft skip when the PR becomes ready", () => {
   const originalNow = Date.now;
   Date.now = () => Date.parse("2026-03-16T00:00:45.000Z");

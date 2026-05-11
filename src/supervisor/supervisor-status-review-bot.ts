@@ -392,6 +392,11 @@ export function formatCodexConnectorConvergenceDiagnostic(args: {
     args.record.codex_connector_review_requested_observed_at &&
       args.record.codex_connector_review_requested_head_sha === currentHeadSha,
   );
+  const hydratedRequestMatchesCurrentHead = Boolean(
+    !requestMatchesCurrentHead &&
+      args.pr.codexConnectorReviewRequestedAt &&
+      args.pr.codexConnectorReviewRequestedHeadSha === currentHeadSha,
+  );
   const hasCurrentHeadProviderSuccess = Boolean(
     args.record.provider_success_observed_at && args.record.provider_success_head_sha === currentHeadSha,
   );
@@ -405,6 +410,7 @@ export function formatCodexConnectorConvergenceDiagnostic(args: {
     | "stale_head"
     | "repairing_must_fix"
     | "re_requested_review"
+    | "same_head_request_hydrated"
     | "waiting_review"
     | "missing_current_head_review"
     | "nitpick_only"
@@ -415,7 +421,7 @@ export function formatCodexConnectorConvergenceDiagnostic(args: {
     | "wait_for_current_head_signal"
     | "repair_must_fix_findings"
     | "wait_for_requested_review"
-    | "request_or_wait_for_current_head_review"
+    | "request_current_head_review"
     | "merge_or_follow_up_nitpicks"
     | "merge_ready";
 
@@ -432,9 +438,13 @@ export function formatCodexConnectorConvergenceDiagnostic(args: {
     mergeEffect = "blocked";
     nextAction = "repair_must_fix_findings";
   } else if (policy.outcome === "missing_current_head_review") {
-    status = requestMatchesCurrentHead ? "re_requested_review" : "missing_current_head_review";
+    status = requestMatchesCurrentHead
+      ? "re_requested_review"
+      : hydratedRequestMatchesCurrentHead
+        ? "same_head_request_hydrated"
+        : "missing_current_head_review";
     mergeEffect = "blocked";
-    nextAction = requestMatchesCurrentHead ? "wait_for_requested_review" : "request_or_wait_for_current_head_review";
+    nextAction = requestMatchesCurrentHead || hydratedRequestMatchesCurrentHead ? "wait_for_requested_review" : "request_current_head_review";
   } else if (policy.outcome === "nitpick_only") {
     status = "nitpick_only";
     mergeEffect = "nitpick_only";
