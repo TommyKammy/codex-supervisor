@@ -111,8 +111,9 @@ export function renderCodexConnectorReviewRequestComment(
   const pr = markerValue(identity.prNumber);
   const head = markerValue(identity.headSha);
   return [
-    `<!-- ${CODEX_CONNECTOR_REVIEW_REQUEST_MARKER} issue=${issue} pr=${pr} head=${head} -->`,
     "@codex review",
+    "",
+    `<!-- ${CODEX_CONNECTOR_REVIEW_REQUEST_MARKER} issue=${issue} pr=${pr} head=${head} -->`,
   ].join("\n");
 }
 
