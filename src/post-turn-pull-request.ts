@@ -6,6 +6,7 @@ import {
   type PreMergeResidualFinding,
 } from "./local-review";
 import {
+  hasProcessedReviewThread,
   localReviewBlocksReady,
   localReviewFailureContext,
   localReviewHighSeverityNeedsBlock,
@@ -44,6 +45,12 @@ import {
   type SupervisorEventSink,
 } from "./supervisor/supervisor-events";
 import { reviewBotDiagnostics } from "./supervisor/supervisor-status-review-bot";
+import {
+  codexConnectorMustFixReviewThreads,
+  configuredBotReviewFollowUpState,
+  latestReviewCommentAuthorIsAllowedBot,
+  staleConfiguredBotReviewThreads,
+} from "./review-thread-reporting";
 import { parseIssueMetadata } from "./issue-metadata";
 import { commitAndPushTrackedFiles, filterPresentTrackedFilePaths, getWorkspaceStatus } from "./core/workspace";
 import {
@@ -345,6 +352,36 @@ function isValidTimestamp(value: string | null | undefined): boolean {
   return typeof value === "string" && value.length > 0 && !Number.isNaN(Date.parse(value));
 }
 
+function configuredBotThreadsAllowCodexConnectorRequest(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  reviewThreads: ReviewThread[];
+  configuredThreads: ReviewThread[];
+}): boolean {
+  if (args.configuredThreads.length === 0) {
+    return true;
+  }
+
+  if (codexConnectorMustFixReviewThreads(args.configuredThreads).length > 0) {
+    return false;
+  }
+
+  if (configuredBotReviewFollowUpState(args.config, args.record, args.pr, args.configuredThreads) === "eligible") {
+    return false;
+  }
+
+  const staleConfiguredThreadIds = new Set(
+    staleConfiguredBotReviewThreads(args.config, args.record, args.pr, args.reviewThreads).map((thread) => thread.id),
+  );
+  return args.configuredThreads.every(
+    (thread) =>
+      staleConfiguredThreadIds.has(thread.id) ||
+      (latestReviewCommentAuthorIsAllowedBot(args.config, thread) &&
+        hasProcessedReviewThread(args.record, args.pr, thread)),
+  );
+}
+
 function shouldRequestCodexConnectorReviewComment(args: {
   config: SupervisorConfig;
   record: IssueRunRecord;
@@ -357,6 +394,14 @@ function shouldRequestCodexConnectorReviewComment(args: {
   mergeConflictDetected: HandlePostTurnPullRequestTransitionsArgs["mergeConflictDetected"];
 }): boolean {
   const checkSummary = args.summarizeChecks(args.checks);
+  const configuredThreads = args.configuredBotReviewThreads(args.config, args.reviewThreads);
+  const configuredThreadsAreSafeForCodexRequest = configuredBotThreadsAllowCodexConnectorRequest({
+    config: args.config,
+    record: args.record,
+    pr: args.pr,
+    reviewThreads: args.reviewThreads,
+    configuredThreads,
+  });
   const loadedChecksAreGreen =
     args.checks.length > 0 && args.checks.every((check) => check.bucket === "pass");
   const hasGreenCheckSignal = isValidTimestamp(args.pr.currentHeadCiGreenAt) || loadedChecksAreGreen;
@@ -369,7 +414,7 @@ function shouldRequestCodexConnectorReviewComment(args: {
     args.record.codex_connector_review_requested_head_sha === args.pr.headRefOid ||
     args.pr.isDraft ||
     args.mergeConflictDetected(args.pr) ||
-    args.configuredBotReviewThreads(args.config, args.reviewThreads).length > 0 ||
+    !configuredThreadsAreSafeForCodexRequest ||
     args.manualReviewThreads(args.config, args.reviewThreads).length > 0 ||
     isValidTimestamp(args.pr.configuredBotCurrentHeadObservedAt) ||
     !hasGreenCheckSignal
