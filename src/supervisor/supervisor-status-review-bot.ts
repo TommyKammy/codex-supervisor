@@ -7,7 +7,7 @@ import {
   repoUsesCopilotOnlyReviewBot,
   reviewProviderProfileFromConfig,
 } from "../core/review-providers";
-import { GitHubPullRequest, IssueRunRecord, ReviewThread, SupervisorConfig } from "../core/types";
+import { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "../core/types";
 import { localReviewDegradedNeedsBlock } from "../review-handling";
 import {
   buildCodexConnectorPolicyBlockDiagnostic,
@@ -293,6 +293,7 @@ export function formatCodexConnectorReviewFallbackDiagnostic(args: {
     "codex_connector_review_requested_observed_at" | "codex_connector_review_requested_head_sha"
   >;
   pr: GitHubPullRequest;
+  checks?: PullRequestCheck[];
 }): string | null {
   if (!configuredReviewProviderKinds(args.config).includes("codex")) {
     return null;
@@ -309,6 +310,10 @@ export function formatCodexConnectorReviewFallbackDiagnostic(args: {
   const requestMatchesCurrentHead = Boolean(requestAt && requestHeadSha === args.pr.headRefOid);
   const reviewSignal = currentHeadObservedAt ? "current_head_observed" : "missing";
   const timeoutAction = args.config.configuredBotCurrentHeadSignalTimeoutAction ?? args.config.copilotReviewTimeoutAction;
+  const loadedChecksAreGreen = Boolean(
+    args.checks && args.checks.length > 0 && args.checks.every((check) => check.bucket === "pass"),
+  );
+  const requiredChecksGreenAt = args.pr.currentHeadCiGreenAt ?? (loadedChecksAreGreen ? "loaded_checks_passed" : "none");
 
   let status:
     | "current_head_observed"
@@ -337,7 +342,7 @@ export function formatCodexConnectorReviewFallbackDiagnostic(args: {
     "provider=codex",
     `current_head_sha=${args.pr.headRefOid}`,
     `current_head_observed_at=${currentHeadObservedAt ?? "none"}`,
-    `required_checks_green_at=${args.pr.currentHeadCiGreenAt ?? "none"}`,
+    `required_checks_green_at=${requiredChecksGreenAt}`,
     `timeout_action=${timeoutAction}`,
     `requested_at=${requestAt ?? "none"}`,
     `requested_head_sha=${requestHeadSha ?? "none"}`,

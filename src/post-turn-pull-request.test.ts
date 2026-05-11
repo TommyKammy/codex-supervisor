@@ -494,7 +494,7 @@ test("handlePostTurnPullRequestTransitionsPhase requests Codex Connector review 
       title: "Request Codex Connector review after timeout",
       isDraft: false,
       headRefOid: "head-1924",
-      currentHeadCiGreenAt: "2026-05-08T03:09:36Z",
+      currentHeadCiGreenAt: null,
       configuredBotCurrentHeadObservedAt: null,
       codexConnectorReviewRequestedAt: null,
       codexConnectorReviewRequestedHeadSha: null,
@@ -610,6 +610,251 @@ test("handlePostTurnPullRequestTransitionsPhase requests Codex Connector review 
     assert.equal(retryResult.record.codex_connector_review_requested_head_sha, pr.headRefOid);
   } finally {
     Date.now = originalDateNow;
+  }
+});
+
+test("handlePostTurnPullRequestTransitionsPhase does not request Codex Connector review on non-green loaded checks without green timestamp", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    configuredBotInitialGraceWaitSeconds: 0,
+    configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+  });
+  const issue = createIssue({ number: 1951, title: "Suppress Codex Connector request" });
+  const pr = createPullRequest({
+    number: 1951,
+    title: "Suppress Codex Connector request",
+    isDraft: false,
+    headRefOid: "head-1951",
+    currentHeadCiGreenAt: null,
+    configuredBotCurrentHeadObservedAt: null,
+  });
+  const baseRecord = createRecord({
+    issue_number: issue.number,
+    state: "waiting_ci",
+    pr_number: pr.number,
+    last_head_sha: pr.headRefOid,
+    review_wait_started_at: "2026-05-08T03:09:36Z",
+    review_wait_head_sha: pr.headRefOid,
+    copilot_review_timed_out_at: "2026-05-08T03:19:36.000Z",
+    copilot_review_timeout_action: "request_review_comment",
+    copilot_review_timeout_reason:
+      "Configured review bot never produced a current-head signal within 10 minute(s).",
+    codex_connector_review_requested_observed_at: null,
+    codex_connector_review_requested_head_sha: null,
+  });
+
+  const cases: Array<{ name: string; checks: PullRequestCheck[] }> = [
+    {
+      name: "pending",
+      checks: [{ name: "build", state: "IN_PROGRESS", bucket: "pending", workflow: "CI" }],
+    },
+    {
+      name: "cancelled",
+      checks: [{ name: "merge-queue", state: "CANCELLED", bucket: "cancel", workflow: "CI" }],
+    },
+    {
+      name: "failing",
+      checks: [{ name: "build", state: "FAILURE", bucket: "fail", workflow: "CI" }],
+    },
+  ];
+
+  for (const scenario of cases) {
+    const record = createRecord({ ...baseRecord, issue_number: issue.number });
+    const state: SupervisorStateFile = {
+      activeIssueNumber: issue.number,
+      issues: { [String(issue.number)]: record },
+    };
+    const commentBodies: string[] = [];
+
+    const result = await handlePostTurnPullRequestTransitionsPhase({
+      config,
+      stateStore: createNoopStateStore(),
+      github: createDefaultGithub({
+        addIssueComment: async (_issueNumber, body) => {
+          commentBodies.push(body);
+        },
+      }),
+      context: createPostTurnContext({
+        issue,
+        pr,
+        workspacePath: path.join(os.tmpdir(), "workspaces", `issue-1951-${scenario.name}`),
+        state,
+        record,
+      }),
+      loadOpenPullRequestSnapshot: async () => ({
+        pr,
+        checks: scenario.checks,
+        reviewThreads: [],
+      }),
+      derivePullRequestLifecycleSnapshot: (currentRecord, currentPr, checks, reviewThreads, recordPatch) =>
+        deriveSupervisorPullRequestLifecycleSnapshot(config, currentRecord, currentPr, checks, reviewThreads, recordPatch),
+      applyFailureSignature: () => ({ last_failure_signature: null, repeated_failure_signature_count: 0 }),
+      blockedReasonFromReviewState: (currentRecord, currentPr, checks, reviewThreads) =>
+        resolveBlockedReasonFromReviewState(config, currentRecord, currentPr, checks, reviewThreads),
+      summarizeChecks,
+      configuredBotReviewThreads: () => [],
+      manualReviewThreads: () => [],
+      mergeConflictDetected: () => false,
+    });
+
+    assert.equal(
+      commentBodies.some((body) => body.includes("codex-supervisor:codex-connector-review-request")),
+      false,
+      scenario.name,
+    );
+    assert.equal(result.record.codex_connector_review_requested_head_sha, null, scenario.name);
+  }
+});
+
+test("handlePostTurnPullRequestTransitionsPhase keeps Codex Connector review request suppressed by PR and review blockers without green timestamp", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    configuredBotInitialGraceWaitSeconds: 0,
+    configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+  });
+  const issue = createIssue({ number: 1951, title: "Blocked Codex Connector request" });
+  const basePr = createPullRequest({
+    number: 1951,
+    title: "Blocked Codex Connector request",
+    isDraft: false,
+    headRefOid: "head-1951",
+    currentHeadCiGreenAt: null,
+    configuredBotCurrentHeadObservedAt: null,
+  });
+  const passingChecks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+  const blockerThread = createReviewThread({
+    comments: {
+      nodes: [
+        {
+          id: "comment-codex",
+          body: "P1: fix this before merge.",
+          createdAt: "2026-05-08T03:30:00Z",
+          url: "https://example.test/pr/1951#discussion_r1",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const manualThread = createReviewThread({
+    id: "manual-thread",
+    comments: {
+      nodes: [
+        {
+          id: "comment-human",
+          body: "Please revise this.",
+          createdAt: "2026-05-08T03:30:00Z",
+          url: "https://example.test/pr/1951#discussion_r2",
+          author: {
+            login: "reviewer",
+            typeName: "User",
+          },
+        },
+      ],
+    },
+  });
+  const cases: Array<{
+    name: string;
+    pr: ReturnType<typeof createPullRequest>;
+    reviewThreads: ReviewThread[];
+    configuredBotReviewThreads: ReviewThread[];
+    manualReviewThreads: ReviewThread[];
+    mergeConflict: boolean;
+  }> = [
+    {
+      name: "draft",
+      pr: { ...basePr, isDraft: true },
+      reviewThreads: [],
+      configuredBotReviewThreads: [],
+      manualReviewThreads: [],
+      mergeConflict: false,
+    },
+    {
+      name: "merge-conflict",
+      pr: basePr,
+      reviewThreads: [],
+      configuredBotReviewThreads: [],
+      manualReviewThreads: [],
+      mergeConflict: true,
+    },
+    {
+      name: "configured-bot-thread",
+      pr: basePr,
+      reviewThreads: [blockerThread],
+      configuredBotReviewThreads: [blockerThread],
+      manualReviewThreads: [],
+      mergeConflict: false,
+    },
+    {
+      name: "manual-thread",
+      pr: basePr,
+      reviewThreads: [manualThread],
+      configuredBotReviewThreads: [],
+      manualReviewThreads: [manualThread],
+      mergeConflict: false,
+    },
+  ];
+
+  for (const scenario of cases) {
+    const record = createRecord({
+      issue_number: issue.number,
+      state: "waiting_ci",
+      pr_number: scenario.pr.number,
+      last_head_sha: scenario.pr.headRefOid,
+      review_wait_started_at: "2026-05-08T03:09:36Z",
+      review_wait_head_sha: scenario.pr.headRefOid,
+      copilot_review_timed_out_at: "2026-05-08T03:19:36.000Z",
+      copilot_review_timeout_action: "request_review_comment",
+      codex_connector_review_requested_observed_at: null,
+      codex_connector_review_requested_head_sha: null,
+    });
+    const state: SupervisorStateFile = {
+      activeIssueNumber: issue.number,
+      issues: { [String(issue.number)]: record },
+    };
+    const commentBodies: string[] = [];
+
+    const result = await handlePostTurnPullRequestTransitionsPhase({
+      config,
+      stateStore: createNoopStateStore(),
+      github: createDefaultGithub({
+        addIssueComment: async (_issueNumber, body) => {
+          commentBodies.push(body);
+        },
+      }),
+      context: createPostTurnContext({
+        issue,
+        pr: scenario.pr,
+        workspacePath: process.cwd(),
+        state,
+        record,
+      }),
+      loadOpenPullRequestSnapshot: async () => ({
+        pr: scenario.pr,
+        checks: passingChecks,
+        reviewThreads: scenario.reviewThreads,
+      }),
+      derivePullRequestLifecycleSnapshot: (currentRecord, currentPr, checks, reviewThreads, recordPatch) =>
+        deriveSupervisorPullRequestLifecycleSnapshot(config, currentRecord, currentPr, checks, reviewThreads, recordPatch),
+      applyFailureSignature: () => ({ last_failure_signature: null, repeated_failure_signature_count: 0 }),
+      blockedReasonFromReviewState: (currentRecord, currentPr, checks, reviewThreads) =>
+        resolveBlockedReasonFromReviewState(config, currentRecord, currentPr, checks, reviewThreads),
+      summarizeChecks,
+      configuredBotReviewThreads: () => scenario.configuredBotReviewThreads,
+      manualReviewThreads: () => scenario.manualReviewThreads,
+      mergeConflictDetected: () => scenario.mergeConflict,
+    });
+
+    assert.equal(
+      commentBodies.some((body) => body.includes("codex-supervisor:codex-connector-review-request")),
+      false,
+      scenario.name,
+    );
+    assert.equal(result.record.codex_connector_review_requested_head_sha, null, scenario.name);
   }
 });
 
