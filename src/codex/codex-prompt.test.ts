@@ -890,6 +890,101 @@ test("buildCodexPrompt adds structured Codex Connector must-fix guidance only fo
   assert.doesNotMatch(buildCodexPrompt(customContext), /Codex Connector review handling:/);
 });
 
+test("buildCodexPrompt uses compact Codex Connector review-thread context for actionable current-head repairs", () => {
+  const pr = createPullRequest({
+    number: 144,
+    headRefOid: "head-connector-144",
+  });
+  const p1Thread = createReviewThread({
+    id: "thread-p1",
+    path: "src/restore.ts",
+    line: 42,
+    comments: {
+      nodes: [
+        {
+          id: "comment-old",
+          body: "Older review context that has been superseded.",
+          createdAt: "2026-03-11T00:01:00Z",
+          url: "https://example.test/pr/144#discussion_r1",
+          author: {
+            login: "chatgpt-codex-connector[bot]",
+            typeName: "Bot",
+          },
+        },
+        {
+          id: "comment-p1",
+          body:
+            "P1: Failed restore can leave a half-restored durable state. Add a regression that proves the restore failure rolls back every persisted record.",
+          createdAt: "2026-03-11T00:05:00Z",
+          url: "https://example.test/pr/144#discussion_r2",
+          author: {
+            login: "chatgpt-codex-connector[bot]",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  const prompt = buildCodexPrompt({
+    kind: "start",
+    config: createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector[bot]"],
+    }),
+    repoSlug: "owner/repo",
+    issue: {
+      ...issue,
+      body: `## Summary
+Fix the restore rollback boundary.
+
+## Long stale implementation history
+This stale handoff history should not be replayed into a targeted thread repair prompt.
+
+## Acceptance criteria
+- Failed restore leaves no partial durable state.
+
+## Verification
+- npm test -- src/restore.test.ts`,
+    },
+    branch: "codex/issue-46",
+    workspacePath: "/tmp/workspaces/issue-46",
+    state: "addressing_review" satisfies RunState,
+    pr,
+    checks: [{ name: "build", bucket: "passed", state: "SUCCESS" }],
+    reviewThreads: [p1Thread],
+    alwaysReadFiles: [".codex-supervisor/issue-journal.md"],
+    onDemandMemoryFiles: ["README.md"],
+    journalPath: "/tmp/workspaces/issue-46/.codex-supervisor/issue-journal.md",
+    journalExcerpt: `# Issue #46: Add a dedicated review-repair mode
+
+## Codex Working Notes
+### Current Handoff
+- Hypothesis: A stale broad handoff should be ignored.
+- Next exact step: Re-read the stale broad implementation plan before touching code.
+
+### Scratchpad
+- Keep this section short.`,
+  } satisfies AgentTurnContext);
+
+  assert.match(prompt, /Codex Connector actionable review-thread fast path:/);
+  assert.match(prompt, /Severity: P1/);
+  assert.match(prompt, /Source URL: https:\/\/example\.test\/pr\/144#discussion_r2/);
+  assert.match(prompt, /File: src\/restore\.ts/);
+  assert.match(prompt, /Line range: 42/);
+  assert.match(prompt, /Head SHA: head-connector-144/);
+  assert.match(prompt, /Latest relevant comment: P1: Failed restore can leave a half-restored durable state\./);
+  assert.match(prompt, /Checks:\n- build: passed\/SUCCESS/);
+  assert.match(prompt, /## Acceptance criteria\n- Failed restore leaves no partial durable state\./);
+  assert.match(prompt, /## Verification\n- npm test -- src\/restore\.test\.ts/);
+  assert.match(prompt, /Path-literal hygiene:/);
+  assert.match(prompt, /Committed fail-closed review heuristics:/);
+  assert.match(prompt, /Read the issue journal before making changes/);
+  assert.doesNotMatch(prompt, /Long stale implementation history/);
+  assert.doesNotMatch(prompt, /Re-read the stale broad implementation plan before touching code/);
+  assert.doesNotMatch(prompt, /Always-read memory files:/);
+  assert.doesNotMatch(prompt, /On-demand durable memory files:/);
+});
+
 test("buildCodexPrompt keeps explicit operator overrides during addressing_review", () => {
   const prompt = buildCodexPrompt({
     repoSlug: "owner/repo",

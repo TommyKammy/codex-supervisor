@@ -328,6 +328,7 @@ export function buildCodexConnectorMustFixFindingDetails(args: {
       `  File: ${thread.path ?? "unknown"}`,
       `  Line range: ${lineRange}`,
       `  Summary: ${extractReviewCommentSummary(latestComment?.body ?? "")}`,
+      `  Latest relevant comment: ${extractReviewCommentSummary(latestComment?.body ?? "")}`,
     ].join("\n");
   });
 }
