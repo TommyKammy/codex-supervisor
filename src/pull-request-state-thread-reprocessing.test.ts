@@ -446,6 +446,53 @@ test("inferStateFromPullRequest softens unresolved Codex Connector P3 nitpick-on
   assert.equal(inferStateFromPullRequest(config, record, pr, passingChecks(), [p3NitpickThread]), "ready_to_merge");
 });
 
+test("inferStateFromPullRequest waits for current-head Codex Connector review instead of reprocessing stale processed nitpicks", () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector[bot]"],
+    configuredBotInitialGraceWaitSeconds: 0,
+    configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+  });
+  const record = createRecord({
+    state: "pr_open",
+    last_head_sha: "head-a",
+    review_wait_started_at: "2026-03-11T00:00:00Z",
+    review_wait_head_sha: "head-a",
+    copilot_review_timed_out_at: "2026-03-11T00:10:00.000Z",
+    copilot_review_timeout_action: "request_review_comment",
+    processed_review_thread_ids: ["thread-1@head-a"],
+    processed_review_thread_fingerprints: ["thread-1@head-a#comment-1"],
+  });
+  const pr = createPullRequest({
+    reviewDecision: "CHANGES_REQUESTED",
+    headRefOid: "head-a",
+    currentHeadCiGreenAt: "2026-03-11T00:00:00Z",
+    configuredBotCurrentHeadObservedAt: null,
+    configuredBotTopLevelReviewStrength: null,
+  });
+  const p3NitpickThread = createReviewThread({
+    comments: {
+      nodes: [
+        {
+          id: "comment-1",
+          body: "P3: Nitpick: prefer a shorter helper name for readability.",
+          createdAt: "2026-03-11T00:05:00Z",
+          url: "https://example.test/pr/44#discussion_r2",
+          author: {
+            login: "chatgpt-codex-connector[bot]",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.equal(
+    inferStateFromPullRequest(config, record, pr, passingChecks(), [p3NitpickThread], Date.parse("2026-03-11T00:12:00Z")),
+    "waiting_ci",
+  );
+});
+
 test("inferStateFromPullRequest still blocks same-head configured bot threads when no follow-up progress was recorded", () => {
   const config = createConfig({
     reviewBotLogins: ["copilot-pull-request-reviewer"],
