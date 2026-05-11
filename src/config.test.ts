@@ -1911,6 +1911,26 @@ test("shipped CodeRabbit starter profile enables strict current-head provider ga
   assert.equal(raw.configuredBotCurrentHeadSignalTimeoutAction, "block");
 });
 
+test("shipped Codex Connector starter profile uses a faster fail-closed review request cadence", async () => {
+  const rootDir = path.resolve(__dirname, "..");
+  const profilePath = path.join(rootDir, "supervisor.config.codex.json");
+  const raw = JSON.parse(await fs.readFile(profilePath, "utf8")) as {
+    pollIntervalSeconds?: unknown;
+    mergeCriticalRecheckSeconds?: unknown;
+    configuredBotRequireCurrentHeadSignal?: unknown;
+    configuredBotCurrentHeadSignalTimeoutMinutes?: unknown;
+    configuredBotCurrentHeadSignalTimeoutAction?: unknown;
+    sameFailureSignatureRepeatLimit?: unknown;
+  };
+
+  assert.equal(raw.configuredBotRequireCurrentHeadSignal, true);
+  assert.equal(raw.configuredBotCurrentHeadSignalTimeoutMinutes, 5);
+  assert.equal(raw.configuredBotCurrentHeadSignalTimeoutAction, "request_review_comment");
+  assert.equal(raw.mergeCriticalRecheckSeconds, 30);
+  assert.equal(raw.pollIntervalSeconds, 120);
+  assert.equal(raw.sameFailureSignatureRepeatLimit, 3);
+});
+
 test("shipped CodeRabbit starter profile adopts the repo-owned local CI gate", async () => {
   const rootDir = path.resolve(__dirname, "..");
   const profilePath = path.join(rootDir, "supervisor.config.coderabbit.json");
