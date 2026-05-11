@@ -230,6 +230,70 @@ test("status surfaces Codex Connector review-request fallback lifecycle for the 
     report.detailedStatusLines.join("\n"),
     /^codex_connector_review_fallback status=request_posted provider=codex current_head_sha=head-1925 current_head_observed_at=none required_checks_green_at=2026-05-08T03:09:36Z timeout_action=request_review_comment requested_at=2026-05-08T03:30:00Z requested_head_sha=head-1925 review_signal=missing note=request_comment_is_not_review_completion wait_until=2026-05-08T03:19:36\.000Z$/m,
   );
+  assert.match(
+    report.detailedStatusLines.join("\n"),
+    /^codex_connector_convergence status=re_requested_review provider=codex current_head_sha=head-1925 current_head_observed_at=none latest_signal_head_sha=none highest_severity=none finding_count=0 merge_effect=blocked next_action=wait_for_requested_review$/m,
+  );
+});
+
+test("status --why distinguishes hydrated same-head Codex Connector review requests", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const issueNumber = 1958;
+  const prNumber = 2958;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "waiting_ci",
+        branch,
+        pr_number: prNumber,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        last_head_sha: "head-1958",
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const supervisor = new Supervisor({
+    ...fixture.config,
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+  });
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [],
+    listAllIssues: async () => [],
+    resolvePullRequestForBranch: async () =>
+      createPullRequest({
+        number: prNumber,
+        headRefName: branch,
+        headRefOid: "head-1958",
+        currentHeadCiGreenAt: "2026-05-08T03:09:36Z",
+        configuredBotCurrentHeadObservedAt: null,
+        codexConnectorReviewRequestedAt: "2026-05-08T03:30:00Z",
+        codexConnectorReviewRequestedHeadSha: "head-1958",
+      }),
+    getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const report = await supervisor.statusReport({ why: true });
+
+  assert.match(
+    report.detailedStatusLines.join("\n"),
+    /^codex_connector_review_fallback status=already_requested provider=codex current_head_sha=head-1958 current_head_observed_at=none required_checks_green_at=2026-05-08T03:09:36Z timeout_action=request_review_comment requested_at=2026-05-08T03:30:00Z requested_head_sha=head-1958 review_signal=missing note=request_comment_is_not_review_completion wait_until=2026-05-08T03:19:36\.000Z$/m,
+  );
+  assert.match(
+    report.detailedStatusLines.join("\n"),
+    /^codex_connector_convergence status=same_head_request_hydrated provider=codex current_head_sha=head-1958 current_head_observed_at=none latest_signal_head_sha=none highest_severity=none finding_count=0 merge_effect=blocked next_action=wait_for_requested_review$/m,
+  );
 });
 
 test("status reports effective Codex routing for inherited defaults and explicit overrides", async (t) => {

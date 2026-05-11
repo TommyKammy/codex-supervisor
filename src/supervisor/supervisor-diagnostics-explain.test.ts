@@ -355,6 +355,74 @@ test("explain surfaces Codex Connector review-request fallback lifecycle for the
   );
 });
 
+test("explain distinguishes hydrated same-head Codex Connector review requests", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 1958;
+  const prNumber = 2958;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "waiting_ci",
+        branch,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: prNumber,
+        last_head_sha: "head-1958",
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Codex Connector hydrated request lifecycle",
+    body: executionReadyBody("Explain should report Codex Connector hydrated request lifecycle."),
+    createdAt: "2026-05-08T03:00:00Z",
+    updatedAt: "2026-05-08T03:30:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+
+  const supervisor = new Supervisor({
+    ...fixture.config,
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+  });
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => trackedIssue,
+    listAllIssues: async () => [trackedIssue],
+    listCandidateIssues: async () => [trackedIssue],
+    resolvePullRequestForBranch: async () =>
+      createPullRequest({
+        number: prNumber,
+        headRefName: branch,
+        headRefOid: "head-1958",
+        currentHeadCiGreenAt: "2026-05-08T03:09:36Z",
+        configuredBotCurrentHeadObservedAt: null,
+        codexConnectorReviewRequestedAt: "2026-05-08T03:30:00Z",
+        codexConnectorReviewRequestedHeadSha: "head-1958",
+      }),
+    getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const explanation = await supervisor.explain(issueNumber);
+
+  assert.match(
+    explanation,
+    /^codex_connector_review_fallback status=already_requested provider=codex current_head_sha=head-1958 current_head_observed_at=none required_checks_green_at=2026-05-08T03:09:36Z timeout_action=request_review_comment requested_at=2026-05-08T03:30:00Z requested_head_sha=head-1958 review_signal=missing note=request_comment_is_not_review_completion wait_until=2026-05-08T03:19:36\.000Z$/m,
+  );
+  assert.match(
+    explanation,
+    /^codex_connector_convergence status=same_head_request_hydrated provider=codex current_head_sha=head-1958 current_head_observed_at=none latest_signal_head_sha=none highest_severity=none finding_count=0 merge_effect=blocked next_action=wait_for_requested_review$/m,
+  );
+});
+
 test("explain surfaces loop-off as an operator blocker for active tracked work", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 189;
