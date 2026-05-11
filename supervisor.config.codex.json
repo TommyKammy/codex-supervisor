@@ -82,7 +82,7 @@
   "copilotReviewTimeoutAction": "continue",
   "configuredBotRequireCurrentHeadSignal": true,
   "configuredBotCurrentHeadSignalTimeoutMinutes": 10,
-  "configuredBotCurrentHeadSignalTimeoutAction": "block",
+  "configuredBotCurrentHeadSignalTimeoutAction": "request_review_comment",
   "codexExecTimeoutMinutes": 30,
   "maxCodexAttemptsPerIssue": 30,
   "maxImplementationAttemptsPerIssue": 30,
