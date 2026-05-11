@@ -99,7 +99,7 @@ test("reconcileStaleFailedTrackedPrRecord uses action-grade hydration before mut
   });
   const record = createRecord({
     issue_number: 1950,
-    state: "blocked",
+    state: "failed",
     branch: "codex/issue-1950",
     pr_number: 2500,
     blocked_reason: "review_bot_timeout",
