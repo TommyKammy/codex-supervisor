@@ -124,7 +124,11 @@ export async function reconcileStaleActiveIssueReservationInModule(args: {
   issueLockPath: (issueNumber: number) => string;
   sessionLockPath: (sessionId: string) => string;
   sameFailureSignatureRepeatLimit?: number;
-  resolvePullRequestForBranch?: (branch: string, trackedPrNumber: number | null) => Promise<GitHubPullRequest | null>;
+  resolvePullRequestForBranch?: (
+    branch: string,
+    trackedPrNumber: number | null,
+    options?: { purpose?: "status" | "action" },
+  ) => Promise<GitHubPullRequest | null>;
   classifyStaleStabilizingNoPrBranchState?: (
     record: IssueRunRecord,
   ) => Promise<StaleStabilizingNoPrBranchState>;
@@ -231,7 +235,7 @@ export async function reconcileStaleActiveIssueReservationInModule(args: {
 
   const matchedPullRequest =
     record.state === "stabilizing" && args.resolvePullRequestForBranch
-      ? await args.resolvePullRequestForBranch(record.branch, record.pr_number)
+      ? await args.resolvePullRequestForBranch(record.branch, record.pr_number, { purpose: "action" })
       : null;
   const staleNoPrBranchState =
     record.state === "stabilizing" && matchedPullRequest === null && args.classifyStaleStabilizingNoPrBranchState

@@ -11,6 +11,7 @@ import { normalizeRecoveryEntrypointResult } from "./recovery-entrypoint-result"
 import { type RecoveryEvent } from "./run-once-cycle-prelude";
 import {
   createIssue,
+  createPullRequest,
   createRecord,
   createSupervisorState,
 } from "./supervisor/supervisor-test-helpers";
@@ -83,6 +84,55 @@ test("active recovery boundary clears a stale active reservation without loading
     recoveryEvents[0]?.reason,
     "stale_state_cleanup: cleared stale active reservation after issue lock was missing",
   );
+});
+
+test("active stabilizing recovery resolves tracked PRs with action-grade hydration", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-active-pr-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  const record = createRecord({
+    issue_number: 367,
+    state: "stabilizing",
+    branch: "codex/issue-367",
+    pr_number: 467,
+    workspace: tempDir,
+    codex_session_id: null,
+  });
+  const state = createSupervisorState({
+    activeIssueNumber: 367,
+    issues: [record],
+  });
+  let saveCalls = 0;
+
+  const recoveryEvents = await reconcileStaleActiveIssueReservationInModule({
+    state,
+    stateStore: {
+      touch,
+      async save(): Promise<void> {
+        saveCalls += 1;
+      },
+    },
+    issueLockPath: (issueNumber) => path.join(tempDir, `issue-${issueNumber}.lock`),
+    sessionLockPath: (sessionId) => path.join(tempDir, `${sessionId}.lock`),
+    resolvePullRequestForBranch: async (branch, trackedPrNumber, options) => {
+      assert.equal(branch, "codex/issue-367");
+      assert.equal(trackedPrNumber, 467);
+      assert.equal(options?.purpose, "action");
+      return createPullRequest({
+        number: 467,
+        headRefName: "codex/issue-367",
+      });
+    },
+    buildRecoveryEvent,
+    applyRecoveryEvent,
+  });
+
+  assert.equal(saveCalls, 1);
+  assert.equal(state.activeIssueNumber, null);
+  assert.equal(state.issues["367"]?.pr_number, 467);
+  assert.equal(recoveryEvents[0]?.reason, "stale_state_cleanup: cleared stale active reservation after issue lock was missing");
 });
 
 test("historical recovery boundary downgrades stale no-PR done records", async () => {
