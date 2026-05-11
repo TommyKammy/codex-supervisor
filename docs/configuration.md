@@ -570,7 +570,7 @@ Operational notes:
 
 ### Codex Connector waits
 
-The default Codex Connector profile waits for review, comment, thread, status, or current-head observation from `chatgpt-codex-connector`. If that current-head signal does not arrive within the configured timeout, `configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment"` posts a one-shot `@codex review` fallback request while keeping the PR out of `ready_to_merge` until Codex responds.
+The default Codex Connector profile waits for review, comment, thread, status, or current-head observation from `chatgpt-codex-connector`. If that current-head signal does not arrive within the configured Codex-profile timeout, `configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment"` posts a one-shot `@codex review` fallback request while keeping the PR out of `ready_to_merge` until Codex responds.
 
 The shipped profile is still fail-closed for merge readiness: empty checks, empty reviews, empty review requests, and no PR comments are not enough to satisfy the connector review contract. The fallback request only asks Codex Connector to review; it is not treated as a successful review signal or review completion by itself.
 
@@ -579,11 +579,14 @@ The default Codex Connector profile uses:
 ```json
 {
   "reviewBotLogins": ["chatgpt-codex-connector"],
+  "mergeCriticalRecheckSeconds": 30,
   "configuredBotRequireCurrentHeadSignal": true,
-  "configuredBotCurrentHeadSignalTimeoutMinutes": 10,
+  "configuredBotCurrentHeadSignalTimeoutMinutes": 5,
   "configuredBotCurrentHeadSignalTimeoutAction": "request_review_comment"
 }
 ```
+
+These cadence overrides are specific to `supervisor.config.codex.json`; global parser defaults and the other shipped profiles keep their existing wait behavior. `mergeCriticalRecheckSeconds` lets merge-critical Codex Connector waits recheck faster than the general poll interval, while the current-head timeout keeps fallback review requests responsive without treating the request itself as approval.
 
 With that setting, a timed-out current-head wait may post `@codex review` once for the current PR head. `status --why` and `explain <issue>` report `codex_connector_review_fallback` with the current PR head, the configured timeout action, and whether the supervisor is still waiting, already requested review for that head, or has a real current-head connector signal.
 
