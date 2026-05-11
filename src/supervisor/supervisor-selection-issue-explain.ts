@@ -474,6 +474,7 @@ export async function buildIssueExplainDto(
         config,
         record,
         pr,
+        checks: explainChecks,
       })
       : null;
   const codexConnectorConvergenceSummary =

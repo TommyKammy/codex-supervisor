@@ -370,6 +370,7 @@ export function buildActiveDetailedStatusLines(
       config,
       record: activeRecord,
       pr,
+      checks,
     });
     if (codexConnectorReviewFallback) {
       lines.push(codexConnectorReviewFallback);

@@ -356,6 +356,11 @@ function shouldRequestCodexConnectorReviewComment(args: {
   manualReviewThreads: HandlePostTurnPullRequestTransitionsArgs["manualReviewThreads"];
   mergeConflictDetected: HandlePostTurnPullRequestTransitionsArgs["mergeConflictDetected"];
 }): boolean {
+  const checkSummary = args.summarizeChecks(args.checks);
+  const loadedChecksAreGreen =
+    args.checks.length > 0 && args.checks.every((check) => check.bucket === "pass");
+  const hasGreenCheckSignal = isValidTimestamp(args.pr.currentHeadCiGreenAt) || loadedChecksAreGreen;
+
   if (
     args.config.configuredBotCurrentHeadSignalTimeoutAction !== "request_review_comment" ||
     !configuredReviewProviderKinds(args.config).includes("codex") ||
@@ -367,12 +372,11 @@ function shouldRequestCodexConnectorReviewComment(args: {
     args.configuredBotReviewThreads(args.config, args.reviewThreads).length > 0 ||
     args.manualReviewThreads(args.config, args.reviewThreads).length > 0 ||
     isValidTimestamp(args.pr.configuredBotCurrentHeadObservedAt) ||
-    !isValidTimestamp(args.pr.currentHeadCiGreenAt)
+    !hasGreenCheckSignal
   ) {
     return false;
   }
 
-  const checkSummary = args.summarizeChecks(args.checks);
   return !checkSummary.hasPending && !checkSummary.hasFailing;
 }
 
