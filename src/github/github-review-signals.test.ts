@@ -27,39 +27,38 @@ test("inferCopilotReviewLifecycle returns not_requested when no Copilot signal e
   });
 });
 
-test("renderCodexConnectorReviewRequestComment emits a machine marker and exact Codex trigger", () => {
+test("renderCodexConnectorReviewRequestComment starts with the exact Codex trigger before the machine marker", () => {
   const body = renderCodexConnectorReviewRequestComment({
     issueNumber: 1923,
     prNumber: 44,
     headSha: "head-current",
   });
 
-  assert.match(
+  assert.equal(
     body,
-    /<!-- codex-supervisor:codex-connector-review-request issue=1923 pr=44 head=head-current -->/,
+    "@codex review\n\n<!-- codex-supervisor:codex-connector-review-request issue=1923 pr=44 head=head-current -->",
   );
-  assert.match(body, /^@codex review$/m);
 });
 
-test("findCodexConnectorReviewRequest matches only supervisor-authored markers for the current PR head", () => {
+test("findCodexConnectorReviewRequest matches trigger-first supervisor-authored markers for the current PR head", () => {
   const current = findCodexConnectorReviewRequest(
     [
       {
         authorLogin: "coderabbitai[bot]",
         createdAt: "2026-03-13T01:00:00Z",
-        body: "<!-- codex-supervisor:codex-connector-review-request issue=1923 pr=44 head=head-current -->\n@codex review",
+        body: "@codex review\n\n<!-- codex-supervisor:codex-connector-review-request issue=1923 pr=44 head=head-current -->",
         viewerDidAuthor: true,
       },
       {
         authorLogin: "octocat",
         createdAt: "2026-03-13T01:01:00Z",
-        body: "<!-- codex-supervisor:codex-connector-review-request issue=1923 pr=44 head=head-current -->\n@codex review",
+        body: "@codex review\n\n<!-- codex-supervisor:codex-connector-review-request issue=1923 pr=44 head=head-current -->",
         viewerDidAuthor: false,
       },
       {
         authorLogin: "codex-supervisor[bot]",
         createdAt: "2026-03-13T01:02:00Z",
-        body: "<!-- codex-supervisor:codex-connector-review-request issue=1923 pr=44 head=head-old -->\n@codex review",
+        body: "@codex review\n\n<!-- codex-supervisor:codex-connector-review-request issue=1923 pr=44 head=head-old -->",
         viewerDidAuthor: true,
       },
       {
@@ -98,6 +97,30 @@ test("findCodexConnectorReviewRequest matches only supervisor-authored markers f
       },
     ),
     null,
+  );
+});
+
+test("findCodexConnectorReviewRequest still hydrates historical marker-first request comments", () => {
+  assert.deepEqual(
+    findCodexConnectorReviewRequest(
+      [
+        {
+          authorLogin: "codex-supervisor[bot]",
+          createdAt: "2026-03-13T01:00:00Z",
+          body: "<!-- codex-supervisor:codex-connector-review-request issue=1923 pr=44 head=head-current -->\n@codex review",
+          viewerDidAuthor: true,
+        },
+      ],
+      {
+        issueNumber: 1923,
+        prNumber: 44,
+        headSha: "head-current",
+      },
+    ),
+    {
+      requestedAt: "2026-03-13T01:00:00Z",
+      headSha: "head-current",
+    },
   );
 });
 

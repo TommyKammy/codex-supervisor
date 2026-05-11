@@ -230,7 +230,7 @@ test("GitHubPullRequestHydrator hydrates supervisor-authored Codex Connector rev
                     },
                     {
                       createdAt: "2026-03-13T01:05:00Z",
-                      body: "<!-- codex-supervisor:codex-connector-review-request issue=1923 pr=44 head=head-44 -->\n@codex review",
+                      body: "@codex review\n\n<!-- codex-supervisor:codex-connector-review-request issue=1923 pr=44 head=head-44 -->",
                       viewerDidAuthor: true,
                       author: { login: "codex-supervisor[bot]" },
                     },

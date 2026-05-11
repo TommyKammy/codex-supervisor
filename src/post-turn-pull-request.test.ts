@@ -548,14 +548,10 @@ test("handlePostTurnPullRequestTransitionsPhase requests Codex Connector review 
 
     assert.equal(comments.length, 1);
     assert.equal(comments[0]?.issueNumber, pr.number);
-    assert.match(
+    assert.equal(
       comments[0]?.body ?? "",
-      new RegExp(
-        `^<!-- codex-supervisor:codex-connector-review-request issue=${issue.number} pr=${pr.number} head=${pr.headRefOid} -->$`,
-        "m",
-      ),
+      `@codex review\n\n<!-- codex-supervisor:codex-connector-review-request issue=${issue.number} pr=${pr.number} head=${pr.headRefOid} -->`,
     );
-    assert.match(comments[0]?.body ?? "", /^@codex review$/m);
     assert.deepEqual(
       findCodexConnectorReviewRequest(
         [
@@ -1004,12 +1000,9 @@ test("handlePostTurnPullRequestTransitionsPhase re-requests Codex Connector revi
 
     assert.equal(comments.length, 1);
     assert.equal(comments[0]?.issueNumber, pr.number);
-    assert.match(
+    assert.equal(
       comments[0]?.body ?? "",
-      new RegExp(
-        `^<!-- codex-supervisor:codex-connector-review-request issue=${issue.number} pr=${pr.number} head=${pr.headRefOid} -->$`,
-        "m",
-      ),
+      `@codex review\n\n<!-- codex-supervisor:codex-connector-review-request issue=${issue.number} pr=${pr.number} head=${pr.headRefOid} -->`,
     );
     assert.equal(result.record.last_head_sha, pr.headRefOid);
     assert.equal(result.record.provider_success_observed_at, null);
