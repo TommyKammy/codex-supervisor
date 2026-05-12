@@ -60,6 +60,7 @@ import {
 import { runTrackedPrReadyLocalCiPublicationGate } from "./tracked-pr-local-ci-publication-gate";
 import * as trackedPrStatusComments from "./tracked-pr-status-comment";
 import { configuredReviewProviderKinds } from "./core/review-providers";
+import { displayLocalCiCommand } from "./core/config-parsing";
 import { renderCodexConnectorReviewRequestComment } from "./github/github-review-signals";
 
 export { syncTrackedPrPersistentStatusComment } from "./tracked-pr-status-comment";
@@ -404,7 +405,9 @@ function shouldRequestCodexConnectorReviewComment(args: {
   });
   const loadedChecksAreGreen =
     args.checks.length > 0 && args.checks.every((check) => check.bucket === "pass");
-  const hasGreenCheckSignal = isValidTimestamp(args.pr.currentHeadCiGreenAt) || loadedChecksAreGreen;
+  const noChecksAndNoLocalCi = args.checks.length === 0 && !displayLocalCiCommand(args.config.localCiCommand);
+  const hasFallbackEligibleSignal =
+    isValidTimestamp(args.pr.currentHeadCiGreenAt) || loadedChecksAreGreen || noChecksAndNoLocalCi;
 
   if (
     args.config.configuredBotCurrentHeadSignalTimeoutAction !== "request_review_comment" ||
@@ -417,7 +420,7 @@ function shouldRequestCodexConnectorReviewComment(args: {
     !configuredThreadsAreSafeForCodexRequest ||
     args.manualReviewThreads(args.config, args.reviewThreads).length > 0 ||
     isValidTimestamp(args.pr.configuredBotCurrentHeadObservedAt) ||
-    !hasGreenCheckSignal
+    !hasFallbackEligibleSignal
   ) {
     return false;
   }

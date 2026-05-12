@@ -7,6 +7,7 @@ import {
   repoUsesCopilotOnlyReviewBot,
   reviewProviderProfileFromConfig,
 } from "../core/review-providers";
+import { displayLocalCiCommand } from "../core/config-parsing";
 import { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "../core/types";
 import { localReviewDegradedNeedsBlock } from "../review-handling";
 import {
@@ -313,7 +314,12 @@ export function formatCodexConnectorReviewFallbackDiagnostic(args: {
   const loadedChecksAreGreen = Boolean(
     args.checks && args.checks.length > 0 && args.checks.every((check) => check.bucket === "pass"),
   );
-  const requiredChecksGreenAt = args.pr.currentHeadCiGreenAt ?? (loadedChecksAreGreen ? "loaded_checks_passed" : "none");
+  const noChecksAndNoLocalCi = Boolean(
+    args.checks && args.checks.length === 0 && !displayLocalCiCommand(args.config.localCiCommand),
+  );
+  const requiredChecksGreenAt =
+    args.pr.currentHeadCiGreenAt ??
+    (loadedChecksAreGreen ? "loaded_checks_passed" : noChecksAndNoLocalCi ? "no_checks_local_ci_unset" : "none");
 
   let status:
     | "current_head_observed"
