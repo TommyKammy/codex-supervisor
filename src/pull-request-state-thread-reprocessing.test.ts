@@ -301,6 +301,43 @@ test("inferStateFromPullRequest allows one same-head follow-up turn after partia
   assert.equal(inferStateFromPullRequest(config, record, pr, [], [remainingThread]), "addressing_review");
 });
 
+test("inferStateFromPullRequest blocks same-head follow-up when the tracked PR repeat budget already stopped", () => {
+  const config = createConfig({
+    reviewBotLogins: ["copilot-pull-request-reviewer"],
+  });
+  const record = createRecord({
+    state: "addressing_review",
+    last_head_sha: "head-a",
+    processed_review_thread_ids: ["thread-1@head-a"],
+    processed_review_thread_fingerprints: ["thread-1@head-a#comment-1"],
+    last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+    review_follow_up_head_sha: "head-a",
+    review_follow_up_remaining: 1,
+  });
+  const pr = createPullRequest({
+    reviewDecision: "CHANGES_REQUESTED",
+    headRefOid: "head-a",
+  });
+  const remainingThread = createReviewThread({
+    comments: {
+      nodes: [
+        {
+          id: "comment-1",
+          body: "Still unresolved.",
+          createdAt: "2026-03-11T00:05:00Z",
+          url: "https://example.test/pr/44#discussion_r2",
+          author: {
+            login: "copilot-pull-request-reviewer",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.equal(inferStateFromPullRequest(config, record, pr, [], [remainingThread]), "blocked");
+});
+
 test("inferStateFromPullRequest routes unresolved Codex Connector P1 findings into same-PR repair", () => {
   const config = createConfig({
     reviewBotLogins: ["chatgpt-codex-connector[bot]"],

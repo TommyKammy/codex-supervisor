@@ -785,6 +785,8 @@ function shouldWaitForCodexConnectorCurrentHeadReview(args: {
   );
 }
 
+// Blocks already-processed Codex Connector must-fix threads once the tracked PR
+// repeat budget has made a no-progress stop decision.
 function processedCodexConnectorMustFixThreadsExhaustedRepeatBudget(args: {
   config: SupervisorConfig;
   record: IssueRunRecord;

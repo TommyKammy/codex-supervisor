@@ -386,7 +386,8 @@ export function pendingBotReviewThreads(
 
 export function configuredBotReviewFollowUpState(
   config: SupervisorConfig,
-  record: Pick<IssueRunRecord, "review_follow_up_head_sha" | "review_follow_up_remaining">,
+  record: Pick<IssueRunRecord, "review_follow_up_head_sha" | "review_follow_up_remaining"> &
+    Partial<Pick<IssueRunRecord, "last_tracked_pr_repeat_failure_decision">>,
   pr: Pick<GitHubPullRequest, "headRefOid">,
   reviewThreads: ReviewThread[],
 ): "inactive" | "eligible" | "exhausted" {
@@ -395,9 +396,16 @@ export function configuredBotReviewFollowUpState(
   );
   if (
     unresolvedActionableThreads.length === 0 ||
-    codexConnectorMustFixReviewThreads(unresolvedActionableThreads).length > 0 ||
     record.review_follow_up_head_sha !== pr.headRefOid
   ) {
+    return "inactive";
+  }
+
+  if (record.last_tracked_pr_repeat_failure_decision === "stop_no_progress") {
+    return "exhausted";
+  }
+
+  if (codexConnectorMustFixReviewThreads(unresolvedActionableThreads).length > 0) {
     return "inactive";
   }
 
