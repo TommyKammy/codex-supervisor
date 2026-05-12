@@ -143,6 +143,7 @@ function parseTrackedPrProgressSnapshotThreadFingerprints(
 export function suppressSameHeadNoProgressReviewThreadRecovery(
   record: Pick<
     IssueRunRecord,
+    | "blocked_reason"
     | "last_head_sha"
     | "last_failure_signature"
     | "last_tracked_pr_progress_snapshot"
@@ -183,6 +184,10 @@ export function suppressSameHeadNoProgressReviewThreadRecovery(
     previousThreadIds.every((threadId, index) => threadId === currentThreadIds[index]);
   const sameBlockingThread =
     typeof failureSignature === "string" && failureSignature.length > 0 && currentThreadIds.includes(failureSignature);
+  const stoppedStaleReviewBotNoAutoRetry =
+    record.blocked_reason === "stale_review_bot" &&
+    typeof failureSignature === "string" &&
+    failureSignature.length > 0;
   const hasComparableThreadGuidanceBaseline =
     previousThreadFingerprints !== null &&
     previousThreadFingerprints.length > 0 &&
@@ -191,17 +196,21 @@ export function suppressSameHeadNoProgressReviewThreadRecovery(
     hasComparableThreadGuidanceBaseline &&
     previousThreadFingerprints.every((fingerprint, index) => fingerprint === currentThreadFingerprints[index]);
 
-  if (!sameThreadIds || !sameBlockingThread) {
+  if (!sameThreadIds || (!sameBlockingThread && !stoppedStaleReviewBotNoAutoRetry)) {
     return {
       shouldSuppress: false,
       progressSummary: null,
     };
   }
 
+  const suppressedProgressSummary = stoppedStaleReviewBotNoAutoRetry
+    ? "recovery_blocked=stale_review_bot_no_auto_retry"
+    : "suppressed_same_head_same_review_thread_blocker";
+
   if (!hasComparableThreadGuidanceBaseline) {
     return {
       shouldSuppress: true,
-      progressSummary: "suppressed_same_head_same_review_thread_blocker",
+      progressSummary: suppressedProgressSummary,
     };
   }
 
@@ -214,7 +223,7 @@ export function suppressSameHeadNoProgressReviewThreadRecovery(
 
   return {
     shouldSuppress: true,
-    progressSummary: "suppressed_same_head_same_review_thread_blocker",
+    progressSummary: suppressedProgressSummary,
   };
 }
 

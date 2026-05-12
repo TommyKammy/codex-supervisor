@@ -2445,6 +2445,168 @@ test("reconcileRecoverableBlockedIssueStates suppresses same-head tracked PR rec
   assert.deepEqual(recoveryEvents, []);
 });
 
+test("reconcileRecoverableBlockedIssueStates keeps stopped stale_review_bot records blocked when no-auto retry saw no same-head progress", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["codex-connector"],
+    staleConfiguredBotReviewPolicy: "reply_only",
+  });
+  const previousProgressSnapshot = JSON.stringify({
+    headRefOid: "head-191",
+    reviewDecision: "CHANGES_REQUESTED",
+    mergeStateStatus: "CLEAN",
+    copilotReviewState: null,
+    copilotReviewRequestedAt: null,
+    copilotReviewArrivedAt: null,
+    configuredBotCurrentHeadObservedAt: null,
+    configuredBotCurrentHeadStatusState: null,
+    currentHeadCiGreenAt: "2026-05-12T00:18:00Z",
+    configuredBotRateLimitedAt: null,
+    configuredBotDraftSkipAt: null,
+    configuredBotTopLevelReviewStrength: "blocking",
+    configuredBotTopLevelReviewSubmittedAt: "2026-05-12T00:10:00Z",
+    checks: ["build:pass:SUCCESS:CI"],
+    unresolvedReviewThreadIds: ["PRRT_thread_1", "PRRT_thread_2", "PRRT_thread_3", "PRRT_thread_4"],
+    unresolvedReviewThreadFingerprints: [
+      "PRRT_thread_1#comment-1",
+      "PRRT_thread_2#comment-2",
+      "PRRT_thread_3#comment-3",
+      "PRRT_thread_4#comment-4",
+    ],
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
+        state: "blocked",
+        blocked_reason: "stale_review_bot",
+        pr_number: 191,
+        last_head_sha: "head-191",
+        last_error:
+          "4 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
+        last_failure_kind: null,
+        last_failure_context: {
+          category: "manual",
+          summary:
+            "4 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
+          signature: "stalled-bot:codex-connector-p2",
+          command: null,
+          details: [
+            "reviewer=codex-connector severity=P2 processed_on_current_head=yes thread=PRRT_thread_1",
+            "reviewer=codex-connector severity=P2 processed_on_current_head=yes thread=PRRT_thread_2",
+            "reviewer=codex-connector severity=P2 processed_on_current_head=yes thread=PRRT_thread_3",
+            "reviewer=codex-connector severity=P2 processed_on_current_head=yes thread=PRRT_thread_4",
+          ],
+          url: "https://example.test/pr/191",
+          updated_at: "2026-05-12T00:20:00Z",
+        },
+        last_failure_signature: "stalled-bot:codex-connector-p2",
+        repeated_failure_signature_count: 3,
+        last_stale_review_bot_reply_head_sha: "head-191",
+        last_stale_review_bot_reply_signature: "stalled-bot:codex-connector-p2",
+        stale_review_bot_reply_progress_keys: [
+          "PRRT_thread_1@head-191",
+          "PRRT_thread_2@head-191",
+          "PRRT_thread_3@head-191",
+          "PRRT_thread_4@head-191",
+        ],
+        processed_review_thread_ids: [
+          "PRRT_thread_1@head-191",
+          "PRRT_thread_2@head-191",
+          "PRRT_thread_3@head-191",
+          "PRRT_thread_4@head-191",
+        ],
+        processed_review_thread_fingerprints: [
+          "PRRT_thread_1@head-191#comment-1",
+          "PRRT_thread_2@head-191#comment-2",
+          "PRRT_thread_3@head-191#comment-3",
+          "PRRT_thread_4@head-191#comment-4",
+        ],
+        last_tracked_pr_progress_snapshot: previousProgressSnapshot,
+        last_tracked_pr_progress_summary: "no_meaningful_tracked_pr_progress",
+        last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+      }),
+    ],
+  });
+  const issue = createIssue({
+    title: "Recovery issue",
+    updatedAt: "2026-05-12T00:21:00Z",
+  });
+  const pr = createPullRequest({
+    number: 191,
+    title: "Recovery implementation",
+    url: "https://example.test/pr/191",
+    headRefName: "codex/reopen-issue-366",
+    headRefOid: "head-191",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    reviewDecision: "CHANGES_REQUESTED",
+    configuredBotTopLevelReviewStrength: "blocking",
+    configuredBotTopLevelReviewSubmittedAt: "2026-05-12T00:10:00Z",
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-05-12T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => pr,
+      getIssue: async () => issue,
+      getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getUnresolvedReviewThreads: async () => [
+        createReviewThread({
+          id: "PRRT_thread_1",
+          comments: { nodes: [{ id: "comment-1", body: "P2 finding 1", createdAt: "2026-05-12T00:11:00Z", url: "https://example.test/pr/191#discussion_r1", author: { login: "codex-connector", typeName: "Bot" } }] },
+        }),
+        createReviewThread({
+          id: "PRRT_thread_2",
+          comments: { nodes: [{ id: "comment-2", body: "P2 finding 2", createdAt: "2026-05-12T00:12:00Z", url: "https://example.test/pr/191#discussion_r2", author: { login: "codex-connector", typeName: "Bot" } }] },
+        }),
+        createReviewThread({
+          id: "PRRT_thread_3",
+          comments: { nodes: [{ id: "comment-3", body: "P2 finding 3", createdAt: "2026-05-12T00:13:00Z", url: "https://example.test/pr/191#discussion_r3", author: { login: "codex-connector", typeName: "Bot" } }] },
+        }),
+        createReviewThread({
+          id: "PRRT_thread_4",
+          comments: { nodes: [{ id: "comment-4", body: "P2 finding 4", createdAt: "2026-05-12T00:14:00Z", url: "https://example.test/pr/191#discussion_r4", author: { login: "codex-connector", typeName: "Bot" } }] },
+        }),
+      ],
+    },
+    stateStore,
+    state,
+    config,
+    [issue],
+    {
+      shouldAutoRetryHandoffMissing,
+      inferStateFromPullRequest: () => "addressing_review",
+      inferFailureContext,
+      blockedReasonForLifecycleState,
+      isOpenPullRequest,
+      syncReviewWaitWindow,
+      syncCopilotReviewRequestObservation,
+      syncCopilotReviewTimeoutState,
+    },
+  );
+
+  const updated = state.issues["366"];
+  assert.equal(updated.state, "blocked");
+  assert.equal(updated.blocked_reason, "stale_review_bot");
+  assert.equal(updated.last_tracked_pr_progress_summary, "recovery_blocked=stale_review_bot_no_auto_retry");
+  assert.equal(updated.last_tracked_pr_repeat_failure_decision, "stop_no_progress");
+  assert.equal(updated.last_recovery_reason, null);
+  assert.equal(saveCalls, 1);
+  assert.deepEqual(recoveryEvents, []);
+});
+
 test("reconcileRecoverableBlockedIssueStates preserves same-head suppression when older progress snapshots lack review-thread fingerprints", async () => {
   const config = createConfig();
   const previousProgressSnapshot = JSON.stringify({
