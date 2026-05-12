@@ -744,6 +744,60 @@ Parallelizable: No
   );
 });
 
+test("buildIssueExplainDto reports stale-review-bot no-auto retry recovery suppression distinctly", async () => {
+  const issue = createIssue({
+    number: 613,
+    title: "Suppressed stale review bot recovery",
+    body: `## Summary
+Keep stale-review-bot no-auto retry stops stable.
+
+## Scope
+- do not restart same-head repair after stale review bot no-auto retry suppression
+
+## Acceptance criteria
+- explain shows the stale review bot no-auto retry recovery block
+
+## Verification
+- npx tsx --test src/supervisor/supervisor-selection-issue-explain.test.ts
+
+Depends on: none
+Parallelizable: No
+
+## Execution order
+1 of 1`,
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
+        issue_number: 613,
+        state: "blocked",
+        blocked_reason: "stale_review_bot",
+        last_failure_signature: "stalled-bot:codex-connector-p2",
+        repeated_failure_signature_count: 3,
+        last_tracked_pr_progress_summary: "recovery_blocked=stale_review_bot_no_auto_retry",
+        last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+      }),
+    ],
+  });
+
+  const dto = await buildIssueExplainDto(
+    {
+      getIssue: async () => issue,
+      listAllIssues: async () => [issue],
+      listCandidateIssues: async () => [issue],
+    },
+    createConfig(),
+    state,
+    613,
+  );
+
+  const rendered = renderIssueExplainDto(dto);
+  assert.match(
+    rendered,
+    /^tracked_pr_repeat_failure decision=stop_no_progress signal=recovery_blocked=stale_review_bot_no_auto_retry$/m,
+  );
+});
+
 test("buildIssueExplainDto reports same-thread tracked PR blocker guidance changes distinctly", async () => {
   const issue = createIssue({
     number: 612,
