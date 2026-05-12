@@ -930,6 +930,27 @@ test("formatCodexConnectorReviewFallbackDiagnostic surfaces Codex Connector wait
       }),
       "codex_connector_review_fallback status=request_posted provider=codex current_head_sha=head-340 current_head_observed_at=none required_checks_green_at=loaded_checks_passed timeout_action=request_review_comment requested_at=2026-03-16T00:21:00.000Z requested_head_sha=head-340 review_signal=missing note=request_comment_is_not_review_completion",
     );
+
+    assert.equal(
+      formatCodexConnectorReviewFallbackDiagnostic({
+        config: createConfig({
+          reviewBotLogins: ["chatgpt-codex-connector"],
+          localCiCommand: "",
+          configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+          configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+        }),
+        record: createRecord({
+          codex_connector_review_requested_observed_at: "2026-03-16T00:21:00.000Z",
+          codex_connector_review_requested_head_sha: "head-340",
+        }),
+        pr: {
+          ...waitingPr,
+          currentHeadCiGreenAt: null,
+        },
+        checks: [],
+      }),
+      "codex_connector_review_fallback status=request_posted provider=codex current_head_sha=head-340 current_head_observed_at=none required_checks_green_at=no_checks_local_ci_unset timeout_action=request_review_comment requested_at=2026-03-16T00:21:00.000Z requested_head_sha=head-340 review_signal=missing note=request_comment_is_not_review_completion",
+    );
   } finally {
     Date.now = originalNow;
   }

@@ -610,6 +610,135 @@ test("handlePostTurnPullRequestTransitionsPhase requests Codex Connector review 
   }
 });
 
+test("handlePostTurnPullRequestTransitionsPhase requests Codex Connector review once for no-checks repos without local CI", async () => {
+  const originalDateNow = Date.now;
+  Date.now = () => Date.parse("2026-05-12T04:30:00Z");
+  try {
+    const config = createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector"],
+      localCiCommand: "",
+      configuredBotInitialGraceWaitSeconds: 0,
+      configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+      configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+    });
+    const issue = createIssue({ number: 1969, title: "Request Codex Connector review without checks" });
+    const pr = createPullRequest({
+      number: 1969,
+      title: "Request Codex Connector review without checks",
+      isDraft: false,
+      headRefOid: "head-1969",
+      currentHeadCiGreenAt: null,
+      configuredBotCurrentHeadObservedAt: null,
+      configuredBotTopLevelReviewSubmittedAt: "2026-05-12T03:40:00Z",
+      codexConnectorReviewRequestedAt: null,
+      codexConnectorReviewRequestedHeadSha: null,
+    });
+    const record = createRecord({
+      issue_number: issue.number,
+      state: "waiting_ci",
+      pr_number: pr.number,
+      last_head_sha: pr.headRefOid,
+      review_wait_started_at: "2026-05-12T04:09:36Z",
+      review_wait_head_sha: pr.headRefOid,
+      copilot_review_timed_out_at: "2026-05-12T04:19:36.000Z",
+      copilot_review_timeout_action: "request_review_comment",
+      codex_connector_review_requested_observed_at: null,
+      codex_connector_review_requested_head_sha: null,
+    });
+    const state: SupervisorStateFile = {
+      activeIssueNumber: issue.number,
+      issues: { [String(issue.number)]: record },
+    };
+    const comments: Array<{ issueNumber: number; body: string }> = [];
+
+    const result = await handlePostTurnPullRequestTransitionsPhase({
+      config,
+      stateStore: createNoopStateStore(),
+      github: createDefaultGithub({
+        addIssueComment: async (issueNumber, body) => {
+          comments.push({ issueNumber, body });
+        },
+      }),
+      context: createPostTurnContext({
+        issue,
+        pr,
+        workspacePath: path.join(os.tmpdir(), "workspaces", "issue-1969"),
+        state,
+        record,
+      }),
+      loadOpenPullRequestSnapshot: async () => ({
+        pr,
+        checks: [],
+        reviewThreads: [],
+      }),
+      derivePullRequestLifecycleSnapshot: (currentRecord, currentPr, checks, reviewThreads, recordPatch) =>
+        deriveSupervisorPullRequestLifecycleSnapshot(config, currentRecord, currentPr, checks, reviewThreads, recordPatch),
+      applyFailureSignature: () => ({ last_failure_signature: null, repeated_failure_signature_count: 0 }),
+      blockedReasonFromReviewState: (currentRecord, currentPr, checks, reviewThreads) =>
+        resolveBlockedReasonFromReviewState(config, currentRecord, currentPr, checks, reviewThreads),
+      summarizeChecks,
+      configuredBotReviewThreads: () => [],
+      manualReviewThreads: () => [],
+      mergeConflictDetected: () => false,
+    });
+
+    assert.equal(comments.length, 1);
+    assert.equal(comments[0]?.issueNumber, pr.number);
+    assert.equal(
+      comments[0]?.body ?? "",
+      `@codex review\n\n<!-- codex-supervisor:codex-connector-review-request issue=${issue.number} pr=${pr.number} head=${pr.headRefOid} -->`,
+    );
+    assert.equal(result.record.state, "waiting_ci");
+    assert.notEqual(result.record.state, "ready_to_merge");
+    assert.equal(result.record.codex_connector_review_requested_head_sha, pr.headRefOid);
+    assert.ok(result.record.codex_connector_review_requested_observed_at);
+
+    const retryResult = await handlePostTurnPullRequestTransitionsPhase({
+      config,
+      stateStore: createNoopStateStore(),
+      github: createDefaultGithub({
+        addIssueComment: async (issueNumber, body) => {
+          comments.push({ issueNumber, body });
+        },
+      }),
+      context: createPostTurnContext({
+        issue,
+        pr: {
+          ...pr,
+          codexConnectorReviewRequestedAt: result.record.codex_connector_review_requested_observed_at,
+          codexConnectorReviewRequestedHeadSha: result.record.codex_connector_review_requested_head_sha,
+        },
+        workspacePath: path.join(os.tmpdir(), "workspaces", "issue-1969"),
+        state,
+        record: result.record,
+      }),
+      loadOpenPullRequestSnapshot: async () => ({
+        pr: {
+          ...pr,
+          codexConnectorReviewRequestedAt: result.record.codex_connector_review_requested_observed_at,
+          codexConnectorReviewRequestedHeadSha: result.record.codex_connector_review_requested_head_sha,
+        },
+        checks: [],
+        reviewThreads: [],
+      }),
+      derivePullRequestLifecycleSnapshot: (currentRecord, currentPr, checks, reviewThreads, recordPatch) =>
+        deriveSupervisorPullRequestLifecycleSnapshot(config, currentRecord, currentPr, checks, reviewThreads, recordPatch),
+      applyFailureSignature: () => ({ last_failure_signature: null, repeated_failure_signature_count: 0 }),
+      blockedReasonFromReviewState: (currentRecord, currentPr, checks, reviewThreads) =>
+        resolveBlockedReasonFromReviewState(config, currentRecord, currentPr, checks, reviewThreads),
+      summarizeChecks,
+      configuredBotReviewThreads: () => [],
+      manualReviewThreads: () => [],
+      mergeConflictDetected: () => false,
+    });
+
+    assert.equal(comments.length, 1);
+    assert.equal(retryResult.record.codex_connector_review_requested_head_sha, pr.headRefOid);
+  } finally {
+    Date.now = originalDateNow;
+  }
+});
+
 test("handlePostTurnPullRequestTransitionsPhase requests Codex Connector review despite stale processed Codex threads", async () => {
   const originalDateNow = Date.now;
   Date.now = () => Date.parse("2026-05-08T03:35:00Z");

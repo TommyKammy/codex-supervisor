@@ -42,6 +42,7 @@ import {
   repoExpectsConfiguredBotReview,
   reviewProviderWaitPolicyFromConfig,
 } from "./core/review-providers";
+import { displayLocalCiCommand } from "./core/config-parsing";
 import { nowIso } from "./core/utils";
 import { hasQueuedReadyPromotionPathHygieneRepair } from "./ready-promotion-path-hygiene-repair";
 
@@ -763,7 +764,8 @@ function shouldWaitForCodexConnectorCurrentHeadReview(args: {
   }
 
   const loadedChecksAreGreen = args.checks.length > 0 && args.checks.every((check) => check.bucket === "pass");
-  if (!validTimestamp(args.pr.currentHeadCiGreenAt) && !loadedChecksAreGreen) {
+  const noChecksAndNoLocalCi = args.checks.length === 0 && !displayLocalCiCommand(args.config.localCiCommand);
+  if (!validTimestamp(args.pr.currentHeadCiGreenAt) && !loadedChecksAreGreen && !noChecksAndNoLocalCi) {
     return false;
   }
 
