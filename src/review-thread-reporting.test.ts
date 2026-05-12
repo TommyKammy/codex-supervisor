@@ -7,6 +7,7 @@ import {
   actionableBotReviewThreads,
   buildStalledBotReviewFailureContext,
   codexConnectorMustFixReviewThreads,
+  configuredBotReviewFollowUpState,
   evaluateCodexConnectorConvergencePolicy,
   staleConfiguredBotReviewThreads,
 } from "./review-thread-reporting";
@@ -99,6 +100,7 @@ function createReviewRecord(
       | "last_head_sha"
       | "review_follow_up_head_sha"
       | "review_follow_up_remaining"
+      | "last_tracked_pr_repeat_failure_decision"
     >
   > = {},
 ): Pick<
@@ -108,6 +110,7 @@ function createReviewRecord(
   | "last_head_sha"
   | "review_follow_up_head_sha"
   | "review_follow_up_remaining"
+  | "last_tracked_pr_repeat_failure_decision"
 > {
   return {
     processed_review_thread_ids: [],
@@ -115,6 +118,7 @@ function createReviewRecord(
     last_head_sha: "head123",
     review_follow_up_head_sha: null,
     review_follow_up_remaining: 0,
+    last_tracked_pr_repeat_failure_decision: null,
     ...overrides,
   };
 }
@@ -134,6 +138,23 @@ test("configuredBotReviewThreads normalizes configured bot logins before classif
 
   assert.equal(configuredBotReviewThreads(config, [thread]).length, 1);
   assert.equal(manualReviewThreads(config, [thread]).length, 0);
+});
+
+test("configuredBotReviewFollowUpState treats repeat-stop records as exhausted even if follow-up budget remains", () => {
+  const config = createConfig({
+    reviewBotLogins: ["copilot-pull-request-reviewer"],
+  });
+  const record = createReviewRecord({
+    processed_review_thread_ids: ["thread-1@head123"],
+    processed_review_thread_fingerprints: ["thread-1@head123#comment-1"],
+    review_follow_up_head_sha: "head123",
+    review_follow_up_remaining: 1,
+    last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+  });
+  const thread = createReviewThread();
+
+  assert.equal(configuredBotReviewFollowUpState(config, record, createPr(), [thread]), "exhausted");
+  assert.deepEqual(actionableBotReviewThreads(config, record, createPr(), [thread]), []);
 });
 
 test("staleConfiguredBotReviewThreads requires current-head processing evidence before classifying stale bot blockers", () => {
