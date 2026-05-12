@@ -785,6 +785,33 @@ function shouldWaitForCodexConnectorCurrentHeadReview(args: {
   );
 }
 
+function processedCodexConnectorMustFixThreadsExhaustedRepeatBudget(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  manualThreads: ReviewThread[];
+  codexConnectorMustFixThreads: ReviewThread[];
+}): boolean {
+  if (
+    !configuredReviewProviderKinds(args.config).includes("codex") ||
+    args.codexConnectorMustFixThreads.length === 0 ||
+    args.manualThreads.length > 0 ||
+    args.record.last_tracked_pr_repeat_failure_decision !== "stop_no_progress"
+  ) {
+    return false;
+  }
+
+  const checkSummary = summarizeChecks(args.checks);
+  if (checkSummary.hasFailing || checkSummary.hasPending || mergeConflictDetected(args.pr)) {
+    return false;
+  }
+
+  return args.codexConnectorMustFixThreads.every((thread) =>
+    hasProcessedReviewThread(args.record, args.pr, thread),
+  );
+}
+
 function pullRequestHeadMatchesRecord(record: Pick<IssueRunRecord, "last_head_sha">, pr: GitHubPullRequest): boolean {
   return record.last_head_sha === null || record.last_head_sha === pr.headRefOid;
 }
@@ -960,6 +987,19 @@ export function inferStateFromPullRequest(
       pr.configuredBotTopLevelReviewStrength === "nitpick_only" &&
       unresolvedBotThreads.length === 0 &&
       manualThreads.length === 0;
+
+    if (
+      processedCodexConnectorMustFixThreadsExhaustedRepeatBudget({
+        config,
+        record,
+        pr,
+        checks,
+        manualThreads,
+        codexConnectorMustFixThreads,
+      })
+    ) {
+      return "blocked";
+    }
 
     if (unresolvedBotThreads.length > 0 || pr.configuredBotTopLevelReviewStrength === "blocking") {
       if (

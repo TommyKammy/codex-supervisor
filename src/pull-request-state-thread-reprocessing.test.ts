@@ -375,6 +375,72 @@ test("inferStateFromPullRequest routes unresolved Codex Connector P2 findings in
   assert.equal(inferStateFromPullRequest(config, record, pr, [], [p2Thread]), "addressing_review");
 });
 
+test("inferStateFromPullRequest blocks processed Codex Connector P2 duplicates after the repeat budget is exhausted", () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector[bot]"],
+    sameFailureSignatureRepeatLimit: 3,
+  });
+  const record = createRecord({
+    state: "addressing_review",
+    last_head_sha: "head-a",
+    last_failure_signature: "stalled-bot:thread-1|stalled-bot:thread-2",
+    repeated_failure_signature_count: 3,
+    last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+    processed_review_thread_ids: ["thread-1@head-a", "thread-2@head-a"],
+    processed_review_thread_fingerprints: ["thread-1@head-a#comment-1", "thread-2@head-a#comment-2"],
+    review_follow_up_head_sha: "head-a",
+    review_follow_up_remaining: 0,
+  });
+  const pr = createPullRequest({
+    reviewDecision: "CHANGES_REQUESTED",
+    headRefOid: "head-a",
+    currentHeadCiGreenAt: "2026-03-11T00:05:00Z",
+    configuredBotCurrentHeadObservedAt: "2026-03-11T00:06:00Z",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+  const p2Threads = [
+    createReviewThread({
+      id: "thread-1",
+      comments: {
+        nodes: [
+          {
+            id: "comment-1",
+            body: "P2: Preserve failed restore cleanup as a blocking verification failure.",
+            createdAt: "2026-03-11T00:05:00Z",
+            url: "https://example.test/pr/44#discussion_r1",
+            author: {
+              login: "chatgpt-codex-connector[bot]",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+    createReviewThread({
+      id: "thread-2",
+      line: 24,
+      comments: {
+        nodes: [
+          {
+            id: "comment-2",
+            body: "P2: Keep restore failure cleanup atomic.",
+            createdAt: "2026-03-11T00:06:00Z",
+            url: "https://example.test/pr/44#discussion_r2",
+            author: {
+              login: "chatgpt-codex-connector[bot]",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  ];
+
+  assert.equal(inferStateFromPullRequest(config, record, pr, passingChecks(), p2Threads), "blocked");
+});
+
 test("inferStateFromPullRequest routes escalated Codex Connector P3 findings into same-PR repair", () => {
   const config = createConfig({
     reviewBotLogins: ["chatgpt-codex-connector[bot]"],
