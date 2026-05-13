@@ -99,7 +99,10 @@ function codexConnectorCurrentHeadReviewState(args: {
     return "not_applicable";
   }
 
-  if (args.pr.configuredBotCurrentHeadObservedAt) {
+  if (
+    args.pr.configuredBotCurrentHeadObservationSource === "codex_pr_success_comment" &&
+    args.pr.configuredBotCurrentHeadObservedAt
+  ) {
     return "observed";
   }
 
@@ -174,9 +177,16 @@ function classifyCodexMetadataOnly(args: {
     }
   }
 
+  if (policy.outcome === "converged" || policy.outcome === "nitpick_only") {
+    return {
+      classification: "metadata_only_current_head_converged",
+      summary: STALE_REVIEW_BOT_METADATA_ONLY_SUMMARY,
+    };
+  }
+
   return {
-    classification: "metadata_only_current_head_converged",
-    summary: STALE_REVIEW_BOT_METADATA_ONLY_SUMMARY,
+    classification: "unknown_needs_operator",
+    summary: STALE_REVIEW_BOT_SUMMARY,
   };
 }
 
