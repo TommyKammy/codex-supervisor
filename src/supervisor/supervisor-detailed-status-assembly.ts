@@ -1,6 +1,7 @@
 import {
   localReviewRetryLoopStalled,
 } from "../review-handling";
+import { configuredReviewProviderKinds } from "../core/review-providers";
 import {
   actionableBotReviewThreads,
   buildCodexConnectorP2P3PolicyDiagnostic,
@@ -208,11 +209,12 @@ export function buildInactiveDetailedStatusLines(
     `latest_record=${formatRecentRecord(latestRecord)}`,
   ];
   let staleReviewBotRemediation: ReturnType<typeof buildStaleReviewBotRemediation> = null;
+  const configTargetsCodex = configuredReviewProviderKinds(config).includes("codex");
   if (
     latestRecord &&
     pr &&
     latestRecord.last_head_sha === pr.headRefOid &&
-    pr.configuredBotCurrentHeadObservedAt &&
+    (pr.configuredBotCurrentHeadObservedAt || configTargetsCodex) &&
     pr.configuredBotCurrentHeadStatusState === "SUCCESS"
   ) {
     staleReviewBotRemediation = buildStaleReviewBotRemediation({

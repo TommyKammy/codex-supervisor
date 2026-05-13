@@ -3,9 +3,12 @@ import { hasProcessedReviewThread } from "../review-handling";
 import {
   configuredBotReviewFollowUpState,
   configuredBotReviewThreads,
+  codexConnectorMustFixReviewThreads,
+  evaluateCodexConnectorConvergencePolicy,
   manualReviewThreads,
   pendingBotReviewThreads,
 } from "../review-thread-reporting";
+import { configuredReviewProviderKinds } from "../core/review-providers";
 
 export interface StaleReviewBotRemediationDto {
   issueNumber: number;
@@ -14,7 +17,13 @@ export interface StaleReviewBotRemediationDto {
   currentHeadSha: string;
   processedOnCurrentHead: "yes" | "no" | "unknown";
   codeCiState: "green" | "not_green" | "unknown";
-  classification: "metadata_only" | "unresolved_work";
+  classification:
+    | "metadata_only"
+    | "metadata_only_missing_current_head_review"
+    | "metadata_only_current_head_converged"
+    | "unresolved_work"
+    | "unknown_needs_operator";
+  codexCurrentHeadReviewState: "observed" | "requested" | "missing" | "not_applicable";
   reviewThreadUrl: string | null;
   manualNextStep: string;
   summary: string;
@@ -26,6 +35,8 @@ const STALE_REVIEW_BOT_SUMMARY =
   "code_or_ci_green_but_review_thread_metadata_unresolved";
 const STALE_REVIEW_BOT_METADATA_ONLY_SUMMARY =
   "stale_configured_bot_thread_metadata_only";
+const STALE_REVIEW_BOT_METADATA_CURRENT_HEAD_SUMMARY =
+  "stale_configured_bot_thread_metadata_only_pending_current_head_review_request";
 
 function formatTokenValue(value: string): string {
   return value.replace(/\r?\n/gu, "\\n");
@@ -79,6 +90,96 @@ function hasCleanMergeState(pr: GitHubPullRequest): boolean {
   return pr.state === "OPEN" && !pr.isDraft && pr.mergeStateStatus === "CLEAN" && pr.mergeable === "MERGEABLE";
 }
 
+function codexConnectorCurrentHeadReviewState(args: {
+  config: SupervisorConfig | null;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+}): "observed" | "requested" | "missing" | "not_applicable" {
+  if (!args.config || !configuredReviewProviderKinds(args.config).includes("codex")) {
+    return "not_applicable";
+  }
+
+  if (args.pr.configuredBotCurrentHeadObservedAt) {
+    return "observed";
+  }
+
+  const recordRequestedSha = args.record.codex_connector_review_requested_head_sha;
+  const prRequestedSha = args.pr.codexConnectorReviewRequestedHeadSha;
+  if (
+    (args.record.codex_connector_review_requested_observed_at || args.pr.codexConnectorReviewRequestedAt) &&
+    (recordRequestedSha ?? prRequestedSha) === args.pr.headRefOid
+  ) {
+    return "requested";
+  }
+
+  return "missing";
+}
+
+function classifyCodexMetadataOnly(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+}): Pick<StaleReviewBotRemediationDto, "classification" | "summary"> {
+  const unresolvedWork = {
+    classification: "unresolved_work" as const,
+    summary: STALE_REVIEW_BOT_SUMMARY,
+  };
+
+  const configuredThreads = configuredBotReviewThreads(args.config, args.reviewThreads);
+  if (configuredThreads.length === 0) {
+    return unresolvedWork;
+  }
+
+  if (
+    manualReviewThreads(args.config, args.reviewThreads).length > 0 ||
+    args.record.last_head_sha !== args.pr.headRefOid ||
+    !allChecksPassing(args.checks) ||
+    !hasCleanMergeState(args.pr) ||
+    pendingBotReviewThreads(args.config, args.record, args.pr, configuredThreads).length > 0 ||
+    configuredBotReviewFollowUpState(args.config, args.record, args.pr, configuredThreads) === "eligible" ||
+    !configuredThreads.every((thread) => hasProcessedReviewThread(args.record, args.pr, thread))
+  ) {
+    return unresolvedWork;
+  }
+
+  const policy = evaluateCodexConnectorConvergencePolicy(args.config, args.pr, args.reviewThreads);
+  if (!policy) {
+    return {
+      classification: "unknown_needs_operator",
+      summary: STALE_REVIEW_BOT_SUMMARY,
+    };
+  }
+
+  if (policy.outcome === "missing_current_head_review") {
+    return {
+      classification: "metadata_only_missing_current_head_review",
+      summary: STALE_REVIEW_BOT_METADATA_CURRENT_HEAD_SUMMARY,
+    };
+  }
+
+  if (policy.outcome === "must_fix_remaining") {
+    const hasUnprocessedMustFix = codexConnectorMustFixReviewThreads(args.reviewThreads).some(
+      (thread) => !hasProcessedReviewThread(args.record, args.pr, thread),
+    );
+    if (hasUnprocessedMustFix) {
+      return unresolvedWork;
+    }
+    if (!policy.currentHeadObservedAt) {
+      return {
+        classification: "metadata_only_missing_current_head_review",
+        summary: STALE_REVIEW_BOT_METADATA_CURRENT_HEAD_SUMMARY,
+      };
+    }
+  }
+
+  return {
+    classification: "metadata_only_current_head_converged",
+    summary: STALE_REVIEW_BOT_METADATA_ONLY_SUMMARY,
+  };
+}
+
 function classifyRemediation(args: {
   config: SupervisorConfig | null;
   record: IssueRunRecord;
@@ -96,6 +197,16 @@ function classifyRemediation(args: {
 
   const { config, record, pr, checks, reviewThreads } = args;
   const configuredThreads = configuredBotReviewThreads(config, reviewThreads);
+  if (configuredReviewProviderKinds(config).includes("codex")) {
+    return classifyCodexMetadataOnly({
+      config,
+      record,
+      pr,
+      checks,
+      reviewThreads,
+    });
+  }
+
   if (
     configuredThreads.length === 0 ||
     manualReviewThreads(config, reviewThreads).length > 0 ||
@@ -139,6 +250,13 @@ export function buildStaleReviewBotRemediation(args: {
     checks: args.checks,
     reviewThreads: args.reviewThreads ?? [],
   });
+  const codexCurrentHeadReviewState = args.pr
+    ? codexConnectorCurrentHeadReviewState({
+      config: args.config ?? null,
+      record: args.record,
+      pr: args.pr,
+    })
+    : "not_applicable";
 
   return {
     issueNumber: args.record.issue_number,
@@ -148,6 +266,7 @@ export function buildStaleReviewBotRemediation(args: {
     processedOnCurrentHead: processedOnCurrentHead(args.record),
     codeCiState: codeCiState(args.pr, args.checks),
     classification: classification.classification,
+    codexCurrentHeadReviewState,
     reviewThreadUrl: args.record.last_failure_context?.url ?? null,
     manualNextStep: STALE_REVIEW_BOT_MANUAL_NEXT_STEP,
     summary: classification.summary,
@@ -155,7 +274,7 @@ export function buildStaleReviewBotRemediation(args: {
 }
 
 export function formatStaleReviewBotRemediationLine(remediation: StaleReviewBotRemediationDto): string {
-  return [
+  const tokens = [
     "stale_review_bot_remediation",
     `issue=#${remediation.issueNumber}`,
     `pr=${remediation.prNumber === null ? "none" : `#${remediation.prNumber}`}`,
@@ -167,5 +286,9 @@ export function formatStaleReviewBotRemediationLine(remediation: StaleReviewBotR
     `review_thread_url=${remediation.reviewThreadUrl ? formatTokenValue(remediation.reviewThreadUrl) : "none"}`,
     `manual_next_step=${remediation.manualNextStep}`,
     `summary=${remediation.summary}`,
-  ].join(" ");
+  ];
+  if (remediation.codexCurrentHeadReviewState !== "not_applicable") {
+    tokens.splice(8, 0, `codex_current_head_review_state=${remediation.codexCurrentHeadReviewState}`);
+  }
+  return tokens.join(" ");
 }
