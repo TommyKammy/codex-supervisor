@@ -7,6 +7,7 @@ import {
 } from "./local-review";
 import {
   hasProcessedReviewThread,
+  latestReviewThreadCommentFingerprint,
   localReviewBlocksReady,
   localReviewFailureContext,
   localReviewHighSeverityNeedsBlock,
@@ -353,6 +354,29 @@ function isValidTimestamp(value: string | null | undefined): boolean {
   return typeof value === "string" && value.length > 0 && !Number.isNaN(Date.parse(value));
 }
 
+function hasProcessedReviewThreadOnNonCurrentHead(
+  record: Pick<IssueRunRecord, "processed_review_thread_ids" | "processed_review_thread_fingerprints">,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
+  thread: Pick<ReviewThread, "id" | "comments">,
+): boolean {
+  const latestCommentFingerprint = latestReviewThreadCommentFingerprint(thread);
+  if (!latestCommentFingerprint) {
+    return false;
+  }
+
+  const processedKeys = new Set(record.processed_review_thread_ids ?? []);
+  const fingerprintPrefix = `${thread.id}@`;
+  const fingerprintSuffix = `#${latestCommentFingerprint}`;
+  return (record.processed_review_thread_fingerprints ?? []).some((key) => {
+    if (!key.startsWith(fingerprintPrefix) || !key.endsWith(fingerprintSuffix)) {
+      return false;
+    }
+
+    const headSha = key.slice(fingerprintPrefix.length, key.length - fingerprintSuffix.length);
+    return Boolean(headSha && headSha !== pr.headRefOid && processedKeys.has(`${thread.id}@${headSha}`));
+  });
+}
+
 function configuredBotThreadsAllowCodexConnectorRequest(args: {
   config: SupervisorConfig;
   record: IssueRunRecord;
@@ -364,7 +388,21 @@ function configuredBotThreadsAllowCodexConnectorRequest(args: {
     return true;
   }
 
-  if (codexConnectorMustFixReviewThreads(args.configuredThreads).length > 0) {
+  const staleHeadConfiguredThreadIds = new Set(
+    args.configuredThreads
+      .filter(
+        (thread) =>
+          latestReviewCommentAuthorIsAllowedBot(args.config, thread) &&
+          hasProcessedReviewThreadOnNonCurrentHead(args.record, args.pr, thread),
+      )
+      .map((thread) => thread.id),
+  );
+
+  if (
+    codexConnectorMustFixReviewThreads(args.configuredThreads).some(
+      (thread) => !staleHeadConfiguredThreadIds.has(thread.id),
+    )
+  ) {
     return false;
   }
 
@@ -377,6 +415,7 @@ function configuredBotThreadsAllowCodexConnectorRequest(args: {
   );
   return args.configuredThreads.every(
     (thread) =>
+      staleHeadConfiguredThreadIds.has(thread.id) ||
       staleConfiguredThreadIds.has(thread.id) ||
       (latestReviewCommentAuthorIsAllowedBot(args.config, thread) &&
         hasProcessedReviewThread(args.record, args.pr, thread)),
