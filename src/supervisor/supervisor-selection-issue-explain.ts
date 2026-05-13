@@ -493,7 +493,9 @@ export async function buildIssueExplainDto(
   const staleDiagnosticSummary =
     record &&
     record.blocked_reason === "stale_review_bot" &&
-    staleReviewBotRemediation?.classification !== "metadata_only"
+    !(staleReviewBotRemediation?.classification === "metadata_only" ||
+      staleReviewBotRemediation?.classification === "metadata_only_missing_current_head_review" ||
+      staleReviewBotRemediation?.classification === "metadata_only_current_head_converged")
     ? (() => {
       const recoverability = classifyStaleReviewBotRecoverability(record, config);
       return recoverability === null

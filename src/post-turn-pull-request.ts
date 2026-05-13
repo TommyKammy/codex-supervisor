@@ -63,6 +63,7 @@ import * as trackedPrStatusComments from "./tracked-pr-status-comment";
 import { configuredReviewProviderKinds } from "./core/review-providers";
 import { displayLocalCiCommand } from "./core/config-parsing";
 import { renderCodexConnectorReviewRequestComment } from "./github/github-review-signals";
+import { buildStaleReviewBotRemediation } from "./supervisor/stale-review-bot-remediation";
 
 export { syncTrackedPrPersistentStatusComment } from "./tracked-pr-status-comment";
 
@@ -397,10 +398,23 @@ function configuredBotThreadsAllowCodexConnectorRequest(args: {
       )
       .map((thread) => thread.id),
   );
+  const currentHeadConfiguredThreadIds = new Set(
+    args.configuredThreads
+      .filter((thread) => hasProcessedReviewThread(args.record, args.pr, thread))
+      .map((thread) => thread.id),
+  );
+  const staleConfiguredThreadIds = new Set(
+    staleConfiguredBotReviewThreads(args.config, args.record, args.pr, args.reviewThreads).map((thread) => thread.id),
+  );
+  const codexMustFixThreadIds = new Set(codexConnectorMustFixReviewThreads(args.configuredThreads).map((thread) => thread.id));
 
   if (
-    codexConnectorMustFixReviewThreads(args.configuredThreads).some(
-      (thread) => !staleHeadConfiguredThreadIds.has(thread.id),
+    args.configuredThreads.some(
+      (thread) =>
+        codexMustFixThreadIds.has(thread.id) &&
+        !staleHeadConfiguredThreadIds.has(thread.id) &&
+        !currentHeadConfiguredThreadIds.has(thread.id) &&
+        !staleConfiguredThreadIds.has(thread.id),
     )
   ) {
     return false;
@@ -410,9 +424,6 @@ function configuredBotThreadsAllowCodexConnectorRequest(args: {
     return false;
   }
 
-  const staleConfiguredThreadIds = new Set(
-    staleConfiguredBotReviewThreads(args.config, args.record, args.pr, args.reviewThreads).map((thread) => thread.id),
-  );
   return args.configuredThreads.every(
     (thread) =>
       staleHeadConfiguredThreadIds.has(thread.id) ||
@@ -435,6 +446,35 @@ function shouldRequestCodexConnectorReviewComment(args: {
 }): boolean {
   const checkSummary = args.summarizeChecks(args.checks);
   const configuredThreads = args.configuredBotReviewThreads(args.config, args.reviewThreads);
+  const staleCodexReviewState = configuredReviewProviderKinds(args.config).includes("codex")
+    ? buildStaleReviewBotRemediation({
+        config: args.config,
+        record: args.record,
+        pr: args.pr,
+        checks: args.checks,
+        reviewThreads: args.reviewThreads,
+      })
+    : null;
+  const isCodexMissingCurrentHeadReview =
+    staleCodexReviewState?.classification === "metadata_only_missing_current_head_review";
+  const isCodexConvergedCurrentHeadReview =
+    staleCodexReviewState?.classification === "metadata_only_current_head_converged";
+  const isCodexMetadataOnly =
+    staleCodexReviewState?.classification === "metadata_only" ||
+    staleCodexReviewState?.classification === "metadata_only_missing_current_head_review" ||
+    staleCodexReviewState?.classification === "metadata_only_current_head_converged";
+
+  if (
+    configuredReviewProviderKinds(args.config).includes("codex") &&
+    !isCodexMissingCurrentHeadReview &&
+    (isCodexConvergedCurrentHeadReview ||
+      isCodexMetadataOnly ||
+      staleCodexReviewState?.classification === "unresolved_work" ||
+      staleCodexReviewState?.classification === "unknown_needs_operator")
+  ) {
+    return false;
+  }
+
   const configuredThreadsAreSafeForCodexRequest = configuredBotThreadsAllowCodexConnectorRequest({
     config: args.config,
     record: args.record,

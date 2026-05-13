@@ -844,7 +844,8 @@ export async function maybeCommentOnTrackedPrPersistentStatus(args: {
       : null;
   const canResolveStaleConfiguredBotReview =
     args.config.staleConfiguredBotReviewPolicy === "reply_and_resolve" &&
-    staleReviewBotRemediation?.classification === "metadata_only";
+    (staleReviewBotRemediation?.classification === "metadata_only" ||
+      staleReviewBotRemediation?.classification === "metadata_only_current_head_converged");
 
   const canAutoHandleStaleConfiguredBotReview =
     !args.skipAutoHandleStaleConfiguredBotReview &&

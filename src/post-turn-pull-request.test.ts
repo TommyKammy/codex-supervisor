@@ -845,7 +845,7 @@ test("handlePostTurnPullRequestTransitionsPhase requests Codex Connector review 
   }
 });
 
-test("handlePostTurnPullRequestTransitionsPhase keeps Codex Connector review request suppressed by must-fix Codex threads", async () => {
+test("handlePostTurnPullRequestTransitionsPhase keeps Codex Connector review request suppressed by unprocessed must-fix Codex threads", async () => {
   const config = createConfig({
     reviewBotLogins: ["chatgpt-codex-connector"],
     configuredBotInitialGraceWaitSeconds: 0,
@@ -891,8 +891,6 @@ test("handlePostTurnPullRequestTransitionsPhase keeps Codex Connector review req
     review_wait_head_sha: pr.headRefOid,
     copilot_review_timed_out_at: "2026-05-08T03:19:36.000Z",
     copilot_review_timeout_action: "request_review_comment",
-    processed_review_thread_ids: [`${mustFixThread.id}@${pr.headRefOid}`],
-    processed_review_thread_fingerprints: [`${mustFixThread.id}@${pr.headRefOid}#comment-must-fix-codex`],
     codex_connector_review_requested_observed_at: null,
     codex_connector_review_requested_head_sha: null,
   });
@@ -1330,17 +1328,158 @@ test("handlePostTurnPullRequestTransitionsPhase re-requests Codex Connector revi
       mergeConflictDetected: () => false,
     });
 
+  assert.equal(comments.length, 1);
+  assert.equal(comments[0]?.issueNumber, pr.number);
+  assert.equal(
+    comments[0]?.body ?? "",
+      `@codex review\n\n<!-- codex-supervisor:codex-connector-review-request issue=${issue.number} pr=${pr.number} head=${pr.headRefOid} -->`,
+    );
+    assert.equal(result.record.last_head_sha, pr.headRefOid);
+    assert.equal(result.record.provider_success_observed_at, null);
+    assert.equal(result.record.provider_success_head_sha, null);
+  assert.equal(result.record.codex_connector_review_requested_head_sha, pr.headRefOid);
+  assert.ok(result.record.codex_connector_review_requested_observed_at);
+  } finally {
+    Date.now = originalDateNow;
+  }
+});
+
+test("handlePostTurnPullRequestTransitionsPhase requests Codex Connector review for processed must-fix metadata residue", async () => {
+  const originalDateNow = Date.now;
+  Date.now = () => Date.parse("2026-05-13T03:40:00Z");
+  try {
+    const config = createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector"],
+      configuredBotInitialGraceWaitSeconds: 0,
+      configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+      configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+    });
+    const issue = createIssue({ number: 1960, title: "Request Codex Connector review for processed must-fix residue" });
+    const pr = createPullRequest({
+      number: 1960,
+      title: "Request Codex Connector review for processed must-fix residue",
+      isDraft: false,
+      headRefOid: "head-1960",
+      currentHeadCiGreenAt: "2026-05-13T03:30:00Z",
+      configuredBotCurrentHeadObservedAt: null,
+      codexConnectorReviewRequestedAt: null,
+      codexConnectorReviewRequestedHeadSha: null,
+    });
+    const mustFixThread = createReviewThread({
+      id: "thread-processed-must-fix",
+      path: "src/example.ts",
+      line: 31,
+      comments: {
+        nodes: [
+          {
+            id: "comment-processed-must-fix",
+            body: "P2: Fix this before another review request.",
+            createdAt: "2026-05-13T03:12:00Z",
+            url: "https://example.test/pr/1960#discussion_r1",
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    });
+    const record = createRecord({
+      issue_number: issue.number,
+      state: "waiting_ci",
+      pr_number: pr.number,
+      last_head_sha: pr.headRefOid,
+      review_wait_started_at: "2026-05-13T03:09:36Z",
+      review_wait_head_sha: pr.headRefOid,
+      copilot_review_timed_out_at: "2026-05-13T03:19:36.000Z",
+      copilot_review_timeout_action: "request_review_comment",
+      processed_review_thread_ids: [`${mustFixThread.id}@${pr.headRefOid}`],
+      processed_review_thread_fingerprints: [`${mustFixThread.id}@${pr.headRefOid}#comment-processed-must-fix`],
+      codex_connector_review_requested_observed_at: null,
+      codex_connector_review_requested_head_sha: null,
+    });
+    const state: SupervisorStateFile = {
+      activeIssueNumber: issue.number,
+      issues: { [String(issue.number)]: record },
+    };
+    const comments: Array<{ issueNumber: number; body: string }> = [];
+
+    const result = await handlePostTurnPullRequestTransitionsPhase({
+      config,
+      stateStore: createNoopStateStore(),
+      github: createDefaultGithub({
+        addIssueComment: async (issueNumber, body) => {
+          comments.push({ issueNumber, body });
+        },
+      }),
+      context: createPostTurnContext({
+        issue,
+        pr,
+        workspacePath: path.join(os.tmpdir(), "workspaces", "issue-1960"),
+        state,
+        record,
+      }),
+      loadOpenPullRequestSnapshot: async () => ({
+        pr,
+        checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+        reviewThreads: [mustFixThread],
+      }),
+      derivePullRequestLifecycleSnapshot: (currentRecord, currentPr, checks, reviewThreads, recordPatch) =>
+        deriveSupervisorPullRequestLifecycleSnapshot(config, currentRecord, currentPr, checks, reviewThreads, recordPatch),
+      applyFailureSignature: () => ({ last_failure_signature: null, repeated_failure_signature_count: 0 }),
+      blockedReasonFromReviewState: (currentRecord, currentPr, checks, reviewThreads) =>
+        resolveBlockedReasonFromReviewState(config, currentRecord, currentPr, checks, reviewThreads),
+      summarizeChecks,
+      configuredBotReviewThreads,
+      manualReviewThreads,
+      mergeConflictDetected: () => false,
+    });
+
     assert.equal(comments.length, 1);
     assert.equal(comments[0]?.issueNumber, pr.number);
     assert.equal(
       comments[0]?.body ?? "",
       `@codex review\n\n<!-- codex-supervisor:codex-connector-review-request issue=${issue.number} pr=${pr.number} head=${pr.headRefOid} -->`,
     );
-    assert.equal(result.record.last_head_sha, pr.headRefOid);
-    assert.equal(result.record.provider_success_observed_at, null);
-    assert.equal(result.record.provider_success_head_sha, null);
     assert.equal(result.record.codex_connector_review_requested_head_sha, pr.headRefOid);
-    assert.ok(result.record.codex_connector_review_requested_observed_at);
+
+    const retryResult = await handlePostTurnPullRequestTransitionsPhase({
+      config,
+      stateStore: createNoopStateStore(),
+      github: createDefaultGithub({
+        addIssueComment: async () => {
+          throw new Error("unexpected duplicate request");
+        },
+      }),
+      context: createPostTurnContext({
+        issue,
+        pr,
+        workspacePath: path.join(os.tmpdir(), "workspaces", "issue-1960"),
+        state,
+        record: result.record,
+      }),
+      loadOpenPullRequestSnapshot: async () => ({
+        pr: {
+          ...pr,
+          codexConnectorReviewRequestedAt: result.record.codex_connector_review_requested_observed_at,
+          codexConnectorReviewRequestedHeadSha: result.record.codex_connector_review_requested_head_sha,
+        },
+        checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+        reviewThreads: [mustFixThread],
+      }),
+      derivePullRequestLifecycleSnapshot: (currentRecord, currentPr, checks, reviewThreads, recordPatch) =>
+        deriveSupervisorPullRequestLifecycleSnapshot(config, currentRecord, currentPr, checks, reviewThreads, recordPatch),
+      applyFailureSignature: () => ({ last_failure_signature: null, repeated_failure_signature_count: 0 }),
+      blockedReasonFromReviewState: (currentRecord, currentPr, checks, reviewThreads) =>
+        resolveBlockedReasonFromReviewState(config, currentRecord, currentPr, checks, reviewThreads),
+      summarizeChecks,
+      configuredBotReviewThreads,
+      manualReviewThreads,
+      mergeConflictDetected: () => false,
+    });
+
+    assert.equal(comments.length, 1);
+    assert.equal(retryResult.record.codex_connector_review_requested_head_sha, pr.headRefOid);
   } finally {
     Date.now = originalDateNow;
   }

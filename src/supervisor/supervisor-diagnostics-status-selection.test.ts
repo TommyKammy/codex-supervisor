@@ -920,6 +920,102 @@ test("status --why classifies current-head processed configured-bot success as s
   assert.doesNotMatch(status, /stale_review_bot_provider_signal_missing/);
 });
 
+test("status --why includes codex processed-residue missing-current-head review state", async (t) => {
+  const fixture = await createSupervisorFixture();
+  fixture.config.reviewBotLogins = ["chatgpt-codex-connector"];
+  const issueNumber = 398;
+  const prNumber = 498;
+  const headSha = "5de0d3844468d4a77cab512f8dcbe46171166c3a";
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        branch: "codex/issue-398",
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: prNumber,
+        blocked_reason: "stale_review_bot",
+        last_head_sha: headSha,
+        processed_review_thread_ids: [`thread-398@${headSha}`],
+        processed_review_thread_fingerprints: [`thread-398@${headSha}#comment-398`],
+        last_failure_signature: "stalled-bot:thread-398",
+        last_failure_context: {
+          category: "manual",
+          summary:
+            "1 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
+          signature: "stalled-bot:thread-398",
+          command: null,
+          details: ["reviewer=chatgpt-codex-connector file=src/query.ts line=12 processed_on_current_head=yes"],
+          url: "https://example.test/pr/498#discussion_r398",
+          updated_at: "2026-05-13T00:20:00Z",
+        },
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Status why classifies codex processed residue",
+    body: executionReadyBody("Classify Codex processed residue as missing current-head review metadata."),
+    createdAt: "2026-05-13T00:00:00Z",
+    updatedAt: "2026-05-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const pr = createPullRequest({
+    number: prNumber,
+    headRefName: "codex/issue-398",
+    headRefOid: headSha,
+    currentHeadCiGreenAt: "2026-05-13T00:10:00Z",
+    configuredBotCurrentHeadObservedAt: null,
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+  const staleMetadataThread = {
+    id: "thread-398",
+    isResolved: false,
+    isOutdated: false,
+    path: "src/query.ts",
+    line: 12,
+    comments: {
+      nodes: [
+        {
+          id: "comment-398",
+          body: "P1: Fix this stale finding before merge.",
+          createdAt: "2026-05-13T00:05:00Z",
+          url: "https://example.test/pr/498#discussion_r398",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [trackedIssue],
+    listAllIssues: async () => [trackedIssue],
+    getPullRequestIfExists: async () => pr,
+    getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => [staleMetadataThread],
+  };
+
+  const status = await supervisor.status({ why: true });
+
+  assert.match(
+    status,
+    /^stale_review_bot_remediation issue=#398 pr=#498 reason=stale_review_bot code_ci=green current_head_sha=5de0d3844468d4a77cab512f8dcbe46171166c3a processed_on_current_head=yes classification=metadata_only_missing_current_head_review codex_current_head_review_state=missing review_thread_url=https:\/\/example\.test\/pr\/498#discussion_r398 manual_next_step=inspect_exact_review_thread_then_resolve_or_leave_manual_note summary=stale_configured_bot_thread_metadata_only_pending_current_head_review_request$/m,
+  );
+  assert.match(status, /^operator_action action=resolve_stale_review_bot source=stale_review_bot_remediation /m);
+});
+
 test("renderSupervisorStatusDto sanitizes loop runtime host and timestamp tokens", () => {
   const status = renderSupervisorStatusDto({
     gsdSummary: null,

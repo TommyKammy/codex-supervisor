@@ -1092,6 +1092,7 @@ test("explain surfaces stale configured-bot remediation with the exact review th
     processedOnCurrentHead: "unknown",
     codeCiState: "green",
     classification: "unresolved_work",
+    codexCurrentHeadReviewState: "not_applicable",
     reviewThreadUrl: "https://example.test/pr/295#discussion_r295",
     manualNextStep: "inspect_exact_review_thread_then_resolve_or_leave_manual_note",
     summary: "code_or_ci_green_but_review_thread_metadata_unresolved",
@@ -1305,6 +1306,103 @@ test("explain keeps configured-bot success without current-head observation as u
   );
   assert.match(explanation, /^stale_diagnostic kind=stale_review_bot recoverability=provider_outage_suspected$/m);
   assert.doesNotMatch(explanation, /classification=metadata_only/m);
+});
+
+test("explain classifies processed Codex must-fix residue as missing-current-head review metadata", async () => {
+  const fixture = await createSupervisorFixture();
+  fixture.config.reviewBotLogins = ["chatgpt-codex-connector"];
+  const issueNumber = 198;
+  const prNumber = 398;
+  const headSha = "head-198";
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        branch: branchName(fixture.config, issueNumber),
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: prNumber,
+        blocked_reason: "stale_review_bot",
+        last_head_sha: headSha,
+        processed_review_thread_ids: [`thread-198@${headSha}`],
+        processed_review_thread_fingerprints: [`thread-198@${headSha}#comment-198`],
+        last_error:
+          "1 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
+        last_failure_context: {
+          category: "manual",
+          summary:
+            "1 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
+          signature: "stalled-bot:thread-198",
+          command: null,
+          details: ["reviewer=chatgpt-codex-connector file=src/file.ts line=12 processed_on_current_head=yes"],
+          url: "https://example.test/pr/398#discussion_r398",
+          updated_at: "2026-05-13T00:20:00Z",
+        },
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Explain Codex processed metadata residue",
+    body: executionReadyBody("Explain should classify Codex must-fix residue as metadata-only pending review."),
+    createdAt: "2026-05-13T00:00:00Z",
+    updatedAt: "2026-05-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const pr = createPullRequest({
+    number: prNumber,
+    headRefName: branchName(fixture.config, issueNumber),
+    headRefOid: headSha,
+    configuredBotCurrentHeadObservedAt: null,
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    currentHeadCiGreenAt: "2026-05-13T00:19:00Z",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+  const staleMetadataThread = {
+    id: "thread-198",
+    isResolved: false,
+    isOutdated: false,
+    path: "src/file.ts",
+    line: 12,
+    comments: {
+      nodes: [
+        {
+          id: "comment-198",
+          body: "P2: Fix this stale finding before merge.",
+          createdAt: "2026-05-13T00:05:00Z",
+          url: "https://example.test/pr/398#discussion_r398",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => trackedIssue,
+    listAllIssues: async () => [trackedIssue],
+    listCandidateIssues: async () => [trackedIssue],
+    resolvePullRequestForBranch: async () => pr,
+    getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => [staleMetadataThread],
+  };
+
+  const explanation = await supervisor.explain(issueNumber);
+
+  assert.match(
+    explanation,
+    /^stale_review_bot_remediation issue=#198 pr=#398 reason=stale_review_bot code_ci=green current_head_sha=head-198 processed_on_current_head=yes classification=metadata_only_missing_current_head_review codex_current_head_review_state=missing review_thread_url=https:\/\/example\.test\/pr\/398#discussion_r398 manual_next_step=inspect_exact_review_thread_then_resolve_or_leave_manual_note summary=stale_configured_bot_thread_metadata_only_pending_current_head_review_request$/m,
+  );
 });
 
 test("explain marks tracked stale configured-bot blockers runnable after reply_and_resolve is enabled", async () => {
