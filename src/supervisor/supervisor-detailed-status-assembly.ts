@@ -42,6 +42,7 @@ import type { BuildDetailedStatusModelArgs } from "./supervisor-status-model";
 import { truncate } from "../core/utils";
 import { summarizePreservedPartialWork } from "./supervisor-preserved-partial-work";
 import { classifyStaleReviewBotRecoverability } from "./stale-diagnostic-recoverability";
+import { isWorkstationLocalPathHygieneFailureSignature } from "../workstation-local-path-gate";
 
 function unresolvedReviewThreads(reviewThreads: BuildDetailedStatusModelArgs["reviewThreads"]) {
   return reviewThreads.filter((thread) => !thread.isResolved && !thread.isOutdated);
@@ -119,7 +120,7 @@ export function classifyNoActiveTrackedRecord(
   if (record.state === "repairing_ci") {
     return {
       classification: "repair_already_queued",
-      reason: record.last_failure_signature === "workstation-local-path-hygiene-failed"
+      reason: isWorkstationLocalPathHygieneFailureSignature(record.last_failure_signature)
         ? "repairable_path_hygiene_retry_state"
         : "repair_state_persisted",
     };
@@ -163,7 +164,7 @@ export function classifyNoActiveTrackedRecord(
 
   if (
     record.blocked_reason === "verification" &&
-    record.last_failure_signature === "workstation-local-path-hygiene-failed"
+    isWorkstationLocalPathHygieneFailureSignature(record.last_failure_signature)
   ) {
     return {
       classification: "stale_but_recoverable",

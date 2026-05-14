@@ -12,8 +12,10 @@ import {
   createPullRequest,
   createRecord,
 } from "./turn-execution-test-helpers";
+import { WORKSTATION_LOCAL_PATH_HYGIENE_REPAIRABLE_PUBLICATION_SIGNATURE } from "./workstation-local-path-gate";
 
 const SAMPLE_MACOS_WORKSTATION_PATH = `/${"Users"}/alice/Dev/private-repo`;
+const SAMPLE_UNIX_WORKSTATION_PATH = `/${"home"}/alice/dev/private-repo`;
 const TRUSTED_GENERATED_DURABLE_ARTIFACT_MARKDOWN_MARKER =
   "<!-- codex-supervisor-provenance: trusted-generated-durable-artifact/v1 -->";
 
@@ -143,6 +145,109 @@ test("applyCodexTurnPublicationGate blocks draft PR creation when path hygiene f
   assert.equal(runLocalCiCalls, 0);
 });
 
+test("applyCodexTurnPublicationGate classifies actionable publishable path hygiene as repairable publication repair", async () => {
+  const issue = createIssue({
+    title: "Route publishable path hygiene to repairable publication flow",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "stabilizing",
+        pr_number: null,
+        implementation_attempt_count: 1,
+      }),
+    },
+  };
+
+  const result = await applyCodexTurnPublicationGate({
+    config: createConfig({ localCiCommand: "npm run ci:local" }),
+    stateStore: {
+      touch: (record, patch) => ({
+        ...record,
+        ...patch,
+        updated_at: record.updated_at,
+      }),
+      save: async () => undefined,
+    },
+    state,
+    record: state.issues["102"]!,
+    issue,
+    workspacePath: "/tmp/workspaces/issue-102",
+    workspaceStatus: {
+      branch: "codex/issue-102",
+      headSha: "head-102",
+      hasUncommittedChanges: false,
+      baseAhead: 1,
+      baseBehind: 0,
+      remoteBranchExists: true,
+      remoteAhead: 0,
+      remoteBehind: 0,
+    },
+    github: {
+      resolvePullRequestForBranch: async () => null,
+      createPullRequest: async () => {
+        throw new Error("unexpected createPullRequest call");
+      },
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    syncJournal: async () => undefined,
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    runWorkstationLocalPathGate: async () => ({
+      ok: false,
+      failureContext: {
+        category: "blocked",
+        summary:
+          "Tracked durable artifacts failed workstation-local path hygiene before publication.",
+        signature: "workstation-local-path-hygiene-failed",
+        command: "npm run verify:paths",
+        details: [
+          `docs/guide.md:1 matched /${"home"}/ via "${SAMPLE_UNIX_WORKSTATION_PATH}"`,
+        ],
+        url: null,
+        updated_at: "2026-03-27T00:00:00Z",
+      },
+      actionablePublishableFilePaths: ["docs/guide.md"],
+    }),
+    runLocalCiCommand: async () => undefined,
+    syncExecutionMetricsRunSummary: async () => undefined,
+  });
+
+  assert.equal(result.kind, "blocked");
+  assert.equal(result.record.state, "repairing_ci");
+  assert.equal(result.record.blocked_reason, null);
+  assert.equal(
+    result.record.last_failure_signature,
+    WORKSTATION_LOCAL_PATH_HYGIENE_REPAIRABLE_PUBLICATION_SIGNATURE,
+  );
+  assert.equal(
+    result.record.last_failure_context?.signature,
+    WORKSTATION_LOCAL_PATH_HYGIENE_REPAIRABLE_PUBLICATION_SIGNATURE,
+  );
+  assert.match(
+    result.record.last_error ?? "",
+    /Publication failed due to workstation-local path hygiene in publishable tracked content/,
+  );
+  assert.equal(result.record.timeline_artifacts?.length ?? 0, 1);
+  assert.deepEqual(result.record.timeline_artifacts?.[0], {
+    type: "path_hygiene_result",
+    gate: "workstation_local_path_hygiene",
+    command: "npm run verify:paths",
+    head_sha: "head-102",
+    outcome: "repair_queued",
+    remediation_target: "repair_already_queued",
+    next_action: "wait_for_repair_turn",
+    summary: result.record.last_failure_context?.summary,
+    recorded_at: "2026-03-27T00:00:00Z",
+    repair_targets: ["docs/guide.md"],
+  });
+  assert.equal(result.record.state, "repairing_ci");
+});
+
 test("applyCodexTurnPublicationGate keeps the existing verification block once same-turn path repair retry is exhausted", async () => {
   const issue = createIssue({
     title:
@@ -210,7 +315,7 @@ test("applyCodexTurnPublicationGate keeps the existing verification block once s
         url: null,
         updated_at: "2026-03-27T00:00:00Z",
       },
-      actionablePublishableFilePaths: ["docs/guide.md"],
+      actionablePublishableFilePaths: [],
     }),
     allowSameTurnPathRepairRetry: false,
     changedFilesInCurrentTurn: ["docs/guide.md"],

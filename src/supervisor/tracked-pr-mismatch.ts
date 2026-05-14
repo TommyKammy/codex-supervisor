@@ -31,6 +31,7 @@ import {
   recoverabilityStatusToken,
   type StaleDiagnosticRecoverability,
 } from "./stale-diagnostic-recoverability";
+import { isWorkstationLocalPathHygieneFailureSignature } from "../workstation-local-path-gate";
 
 export interface TrackedPrMismatch {
   issueNumber: number;
@@ -236,7 +237,7 @@ function readyPromotionGateSummary(
   }
 
   if (
-    record.last_failure_signature === "workstation-local-path-hygiene-failed" ||
+    isWorkstationLocalPathHygieneFailureSignature(record.last_failure_signature) ||
     (record.last_error ?? "").includes("workstation-local path hygiene before marking PR")
   ) {
     const remediationTarget = deriveWorkstationLocalPathHygieneRemediationTarget(record);
@@ -328,7 +329,7 @@ export function buildTrackedPrMismatch(
 
   if (
     record.state === "repairing_ci" &&
-    record.last_failure_signature === "workstation-local-path-hygiene-failed" &&
+    isWorkstationLocalPathHygieneFailureSignature(record.last_failure_signature) &&
     pr.isDraft &&
     hasQueuedReadyPromotionPathHygieneRepair(record, pr)
   ) {

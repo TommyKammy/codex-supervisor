@@ -20,6 +20,7 @@ import { truncate } from "./core/utils";
 import { issueDefinitionFreshnessPatch } from "./issue-definition-freshness";
 import {
   buildWorkstationLocalPathFailureContext,
+  WORKSTATION_LOCAL_PATH_HYGIENE_REPAIRABLE_PUBLICATION_SIGNATURE,
   runWorkstationLocalPathGate,
   type WorkstationLocalPathGateResult,
 } from "./workstation-local-path-gate";
@@ -32,6 +33,10 @@ import {
   listTrackedTopLevelEntries,
   untrackCurrentIssueJournalBeforePublication,
 } from "./core/workspace";
+import { appendTimelineArtifact, buildPathHygieneTimelineArtifact } from "./timeline-artifacts";
+
+const PUBLICATION_PATH_HYGIENE_REPAIR_SUMMARY =
+  "Publication failed due to workstation-local path hygiene in publishable tracked content; supervisor will repair and retry publication once after this turn.";
 
 function isOpenPullRequest(
   pr: GitHubPullRequest | null,
@@ -403,6 +408,15 @@ export async function applyCodexTurnPublicationGate(args: {
       const failureContext = pathHygieneGate.failureContext;
       const actionablePublishableFilePaths =
         pathHygieneGate.actionablePublishableFilePaths ?? [];
+      const repairFailureContext =
+        failureContext !== null && actionablePublishableFilePaths.length > 0
+          ? {
+              ...failureContext,
+              summary: `${PUBLICATION_PATH_HYGIENE_REPAIR_SUMMARY} Actionable files: ${actionablePublishableFilePaths.join(", ")}. ${failureContext.summary}`,
+              signature:
+                WORKSTATION_LOCAL_PATH_HYGIENE_REPAIRABLE_PUBLICATION_SIGNATURE,
+            }
+          : null;
       const rewrittenTrackedPaths = [
         ...(pathHygieneGate.rewrittenJournalPaths ?? []),
         ...(pathHygieneGate.rewrittenTrustedGeneratedArtifactPaths ?? []),
@@ -425,6 +439,39 @@ export async function applyCodexTurnPublicationGate(args: {
           failureContext,
           actionablePublishableFilePaths,
           rewrittenTrackedPaths,
+        };
+      }
+      if (repairFailureContext !== null) {
+        record = args.stateStore.touch(record, {
+          state: "repairing_ci",
+          last_error: truncate(repairFailureContext.summary, 1000),
+          last_failure_kind: null,
+          last_failure_context: repairFailureContext,
+          timeline_artifacts: appendTimelineArtifact(
+            record,
+            buildPathHygieneTimelineArtifact({
+              failureContext: repairFailureContext,
+              headSha: workspaceStatus.headSha,
+              outcome: "repair_queued",
+              remediationTarget: "repair_already_queued",
+              repairTargets: actionablePublishableFilePaths,
+            }),
+          ),
+          ...args.applyFailureSignature(record, repairFailureContext),
+          blocked_reason: null,
+          ...issueDefinitionFreshnessPatch(args.issue),
+        });
+        args.state.issues[String(record.issue_number)] = record;
+        await args.stateStore.save(args.state);
+        await args.syncExecutionMetricsRunSummary(record);
+        await args.syncJournal(record);
+        return {
+          kind: "blocked",
+          message: `Workstation-local path hygiene blocked pull request creation for issue #${record.issue_number}.`,
+          record,
+          pr: null,
+          checks: [],
+          reviewThreads: [],
         };
       }
       record = args.stateStore.touch(record, {

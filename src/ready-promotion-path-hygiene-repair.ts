@@ -1,11 +1,20 @@
-import type { FailureContext, GitHubPullRequest, IssueRunRecord, TimelineArtifact } from "./core/types";
+import {
+  type FailureContext,
+  type GitHubPullRequest,
+  type IssueRunRecord,
+  type TimelineArtifact,
+} from "./core/types";
+import {
+  isWorkstationLocalPathHygieneFailureSignature,
+  WORKSTATION_LOCAL_PATH_HYGIENE_FAILURE_SIGNATURE,
+} from "./workstation-local-path-gate";
 
-const PATH_HYGIENE_SIGNATURE = "workstation-local-path-hygiene-failed";
+const PATH_HYGIENE_SIGNATURE = WORKSTATION_LOCAL_PATH_HYGIENE_FAILURE_SIGNATURE;
 export const READY_PROMOTION_PATH_HYGIENE_REPAIR_SUMMARY =
   "Ready-promotion path hygiene found actionable publishable tracked content; supervisor will retry a repair turn before marking the draft PR ready.";
 
 function matchesPathHygieneSignature(signature: string | null | undefined): boolean {
-  return typeof signature === "string" && signature.includes(PATH_HYGIENE_SIGNATURE);
+  return isWorkstationLocalPathHygieneFailureSignature(signature);
 }
 
 function isCurrentHead(record: IssueRunRecord, pr: GitHubPullRequest): boolean {
@@ -29,8 +38,11 @@ function repairQueuedArtifactForHead(artifact: TimelineArtifact, pr: GitHubPullR
 
 function hasStructuredRepairContext(record: IssueRunRecord): boolean {
   const context = record.last_failure_context;
+  if (!context) {
+    return false;
+  }
   return (
-    context?.signature === PATH_HYGIENE_SIGNATURE &&
+    isWorkstationLocalPathHygieneFailureSignature(context.signature) &&
     context.summary.includes(READY_PROMOTION_PATH_HYGIENE_REPAIR_SUMMARY) &&
     context.summary.includes("Actionable files:") &&
     context.command !== null &&
@@ -78,7 +90,7 @@ export function queuedReadyPromotionPathHygieneRepairContext(
     return {
       category: "blocked",
       summary: artifact.summary,
-      signature: PATH_HYGIENE_SIGNATURE,
+      signature: record.last_failure_context?.signature ?? PATH_HYGIENE_SIGNATURE,
       command: artifact.command,
       details: (artifact.repair_targets ?? []).map((target) => `Actionable file: ${target}`),
       url: null,
