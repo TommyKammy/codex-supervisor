@@ -121,6 +121,7 @@ export interface SupervisorExplainDto {
   trackedPrRetryabilitySummary?: string | null;
   trackedPrReadyPromotionMaintenanceSummary?: string | null;
   trackedPrMismatchSummary: string | null;
+  trackedPrMismatchDetailLines?: string[];
   externalSignalReadinessSummary?: string | null;
   recoveryGuidance: string | null;
   loopRuntimeBlockerSummary?: string | null;
@@ -592,6 +593,7 @@ export async function buildIssueExplainDto(
         : null,
     trackedPrReadyPromotionMaintenanceSummary,
     trackedPrMismatchSummary: trackedPrMismatch?.summaryLine ?? null,
+    trackedPrMismatchDetailLines: trackedPrMismatch?.detailLines ?? [],
     externalSignalReadinessSummary,
     recoveryGuidance: trackedPrMismatch?.guidanceLine ?? null,
     selectionReason,
@@ -662,6 +664,7 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
     ...(dto.trackedPrRetryabilitySummary ? [dto.trackedPrRetryabilitySummary] : []),
     ...(dto.trackedPrReadyPromotionMaintenanceSummary ? [dto.trackedPrReadyPromotionMaintenanceSummary] : []),
     ...(dto.trackedPrMismatchSummary ? [dto.trackedPrMismatchSummary] : []),
+    ...(dto.trackedPrMismatchDetailLines ? dto.trackedPrMismatchDetailLines : []),
     ...(dto.externalSignalReadinessSummary ? [dto.externalSignalReadinessSummary] : []),
     ...(dto.recoveryGuidance ? [dto.recoveryGuidance] : []),
     ...(dto.loopRuntimeBlockerSummary ? [dto.loopRuntimeBlockerSummary] : []),
