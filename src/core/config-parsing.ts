@@ -8,6 +8,7 @@ import {
   LocalReviewPosturePreset,
   ReasoningEffort,
   ReleaseReadinessGatePosture,
+  CodexConnectorReviewRequestRetryMode,
   ShellLocalCiCommandConfig,
   StaleConfiguredBotReviewPolicy,
   StructuredLocalCiCommandConfig,
@@ -49,6 +50,10 @@ const VALID_COPILOT_REVIEW_TIMEOUT_ACTIONS = new Set<CopilotReviewTimeoutAction>
   "continue",
   "block",
   "request_review_comment",
+]);
+const VALID_CODEX_CONNECTOR_REVIEW_REQUEST_RETRY_MODES = new Set<CodexConnectorReviewRequestRetryMode>([
+  "supervisor_marker",
+  "plain",
 ]);
 const VALID_LOCAL_REVIEW_MINIMUM_SEVERITIES = new Set<LocalReviewReviewerThresholdConfig["minimumSeverity"]>(["low", "medium", "high"]);
 const VALID_RUN_STATES = new Set<RunState>([
@@ -630,6 +635,24 @@ export function parseSupervisorConfigDocument(raw: Record<string, unknown>, reso
       VALID_COPILOT_REVIEW_TIMEOUT_ACTIONS.has(raw.configuredBotCurrentHeadSignalTimeoutAction as CopilotReviewTimeoutAction)
         ? (raw.configuredBotCurrentHeadSignalTimeoutAction as CopilotReviewTimeoutAction)
         : "block",
+    codexConnectorReviewRequestNoResponseMinutes:
+      typeof raw.codexConnectorReviewRequestNoResponseMinutes === "number" &&
+      Number.isFinite(raw.codexConnectorReviewRequestNoResponseMinutes) &&
+      raw.codexConnectorReviewRequestNoResponseMinutes >= 0
+        ? raw.codexConnectorReviewRequestNoResponseMinutes
+        : 10,
+    codexConnectorReviewRequestRetryLimit:
+      typeof raw.codexConnectorReviewRequestRetryLimit === "number" &&
+      Number.isFinite(raw.codexConnectorReviewRequestRetryLimit) &&
+      Number.isInteger(raw.codexConnectorReviewRequestRetryLimit) &&
+      raw.codexConnectorReviewRequestRetryLimit >= 0
+        ? raw.codexConnectorReviewRequestRetryLimit
+        : 1,
+    codexConnectorReviewRequestRetryMode:
+      typeof raw.codexConnectorReviewRequestRetryMode === "string" &&
+      VALID_CODEX_CONNECTOR_REVIEW_REQUEST_RETRY_MODES.has(raw.codexConnectorReviewRequestRetryMode as CodexConnectorReviewRequestRetryMode)
+        ? (raw.codexConnectorReviewRequestRetryMode as CodexConnectorReviewRequestRetryMode)
+        : "plain",
     codexExecTimeoutMinutes:
       typeof raw.codexExecTimeoutMinutes === "number" && raw.codexExecTimeoutMinutes > 0
         ? raw.codexExecTimeoutMinutes

@@ -309,6 +309,9 @@ test("resetTrackedPrHeadScopedStateOnAdvance does not preserve review bookkeepin
     review_follow_up_remaining: 0,
     codex_connector_review_requested_observed_at: null,
     codex_connector_review_requested_head_sha: null,
+    codex_connector_review_request_retry_count: 0,
+    codex_connector_review_request_retry_head_sha: null,
+    codex_connector_review_request_last_retried_at: null,
     last_observed_host_local_pr_blocker_signature: null,
     last_observed_host_local_pr_blocker_head_sha: null,
     last_host_local_pr_blocker_comment_signature: null,
@@ -325,6 +328,9 @@ test("resetTrackedPrHeadScopedStateOnAdvance clears old-head provider success af
     provider_success_head_sha: "head-old-191",
     codex_connector_review_requested_observed_at: "2026-05-08T03:30:00Z",
     codex_connector_review_requested_head_sha: "head-old-191",
+    codex_connector_review_request_retry_count: 1,
+    codex_connector_review_request_retry_head_sha: "head-old-191",
+    codex_connector_review_request_last_retried_at: "2026-05-08T03:45:00Z",
   });
 
   const patch = resetTrackedPrHeadScopedStateOnAdvance(record, "head-new-191");
@@ -333,6 +339,9 @@ test("resetTrackedPrHeadScopedStateOnAdvance clears old-head provider success af
   assert.equal(patch.provider_success_head_sha, null);
   assert.equal(patch.codex_connector_review_requested_observed_at, null);
   assert.equal(patch.codex_connector_review_requested_head_sha, null);
+  assert.equal(patch.codex_connector_review_request_retry_count, 0);
+  assert.equal(patch.codex_connector_review_request_retry_head_sha, null);
+  assert.equal(patch.codex_connector_review_request_last_retried_at, null);
 });
 
 test("resetTrackedPrHeadScopedStateOnAdvance clears review bookkeeping when processed thread markers belong to an older head", () => {
@@ -384,6 +393,9 @@ test("resetTrackedPrHeadScopedStateOnAdvance clears review bookkeeping when proc
     review_follow_up_remaining: 0,
     codex_connector_review_requested_observed_at: null,
     codex_connector_review_requested_head_sha: null,
+    codex_connector_review_request_retry_count: 0,
+    codex_connector_review_request_retry_head_sha: null,
+    codex_connector_review_request_last_retried_at: null,
     last_observed_host_local_pr_blocker_signature: null,
     last_observed_host_local_pr_blocker_head_sha: null,
     last_host_local_pr_blocker_comment_signature: null,

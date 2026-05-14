@@ -919,6 +919,36 @@ test("formatCodexConnectorReviewFallbackDiagnostic surfaces Codex Connector wait
       formatCodexConnectorReviewFallbackDiagnostic({
         config,
         record: createRecord({
+          codex_connector_review_requested_observed_at: "2026-03-16T00:00:00.000Z",
+          codex_connector_review_requested_head_sha: "head-340",
+          codex_connector_review_request_retry_count: 0,
+          codex_connector_review_request_retry_head_sha: null,
+          codex_connector_review_request_last_retried_at: null,
+        }),
+        pr: waitingPr,
+      }),
+      "codex_connector_review_fallback status=request_posted_no_current_head_signal provider=codex current_head_sha=head-340 current_head_observed_at=none required_checks_green_at=2026-03-16T00:10:00.000Z timeout_action=request_review_comment requested_at=2026-03-16T00:00:00.000Z requested_head_sha=head-340 review_signal=missing note=request_comment_is_not_review_completion retry_status=eligible retry_count=0 retry_limit=1 retry_wait_until=2026-03-16T00:10:00.000Z next_action=retry_request_review_comment wait_until=2026-03-16T00:20:00.000Z",
+    );
+
+    assert.equal(
+      formatCodexConnectorReviewFallbackDiagnostic({
+        config,
+        record: createRecord({
+          codex_connector_review_requested_observed_at: "2026-03-16T00:00:00.000Z",
+          codex_connector_review_requested_head_sha: "head-340",
+          codex_connector_review_request_retry_count: 1,
+          codex_connector_review_request_retry_head_sha: "head-340",
+          codex_connector_review_request_last_retried_at: "2026-03-16T00:01:00.000Z",
+        }),
+        pr: waitingPr,
+      }),
+      "codex_connector_review_fallback status=request_retry_exhausted provider=codex current_head_sha=head-340 current_head_observed_at=none required_checks_green_at=2026-03-16T00:10:00.000Z timeout_action=request_review_comment requested_at=2026-03-16T00:00:00.000Z requested_head_sha=head-340 review_signal=missing note=request_comment_is_not_review_completion retry_status=exhausted retry_count=1 retry_limit=1 retry_wait_until=2026-03-16T00:11:00.000Z next_action=operator_manual_review wait_until=2026-03-16T00:20:00.000Z",
+    );
+
+    assert.equal(
+      formatCodexConnectorReviewFallbackDiagnostic({
+        config,
+        record: createRecord({
           codex_connector_review_requested_observed_at: "2026-03-16T00:21:00.000Z",
           codex_connector_review_requested_head_sha: "head-340",
         }),

@@ -21,6 +21,15 @@ const DEFAULT_CONFIGURED_BOT_SETTLED_WAIT_MS = 5_000;
 const DEFAULT_CONFIGURED_BOT_INITIAL_GRACE_WAIT_MS = 90_000;
 type CurrentHeadSignalWaitProvider = "none" | "coderabbit" | "codex";
 
+function addMinutes(timestamp: string, minutes: number): string | null {
+  const parsed = Date.parse(timestamp);
+  if (Number.isNaN(parsed)) {
+    return null;
+  }
+
+  return new Date(parsed + minutes * 60_000).toISOString();
+}
+
 function latestConfiguredBotActionableSignalAt(pr: GitHubPullRequest): string | null {
   const candidates = [
     pr.configuredBotCurrentHeadObservedAt,
@@ -291,7 +300,11 @@ export function formatCodexConnectorReviewFallbackDiagnostic(args: {
   config: SupervisorConfig;
   record: Pick<
     IssueRunRecord,
-    "codex_connector_review_requested_observed_at" | "codex_connector_review_requested_head_sha"
+    | "codex_connector_review_requested_observed_at"
+    | "codex_connector_review_requested_head_sha"
+    | "codex_connector_review_request_retry_count"
+    | "codex_connector_review_request_retry_head_sha"
+    | "codex_connector_review_request_last_retried_at"
   >;
   pr: GitHubPullRequest;
   checks?: PullRequestCheck[];
@@ -309,6 +322,25 @@ export function formatCodexConnectorReviewFallbackDiagnostic(args: {
   const requestAt = recordRequestAt ?? prRequestAt;
   const requestHeadSha = recordRequestHeadSha ?? prRequestHeadSha;
   const requestMatchesCurrentHead = Boolean(requestAt && requestHeadSha === args.pr.headRefOid);
+  const retryCount =
+    args.record.codex_connector_review_request_retry_head_sha === args.pr.headRefOid
+      ? args.record.codex_connector_review_request_retry_count ?? 0
+      : 0;
+  const retryLimit = args.config.codexConnectorReviewRequestRetryLimit ?? 1;
+  const retryAnchorAt =
+    args.record.codex_connector_review_request_retry_head_sha === args.pr.headRefOid &&
+    args.record.codex_connector_review_request_last_retried_at
+      ? args.record.codex_connector_review_request_last_retried_at
+      : requestAt;
+  const retryWaitUntil = retryAnchorAt
+    ? addMinutes(retryAnchorAt, args.config.codexConnectorReviewRequestNoResponseMinutes ?? 10)
+    : null;
+  const requestNoResponseElapsed = Boolean(
+    requestMatchesCurrentHead &&
+    !currentHeadObservedAt &&
+    retryWaitUntil &&
+    Date.now() >= Date.parse(retryWaitUntil),
+  );
   const reviewSignal = currentHeadObservedAt ? "current_head_observed" : "missing";
   const timeoutAction = args.config.configuredBotCurrentHeadSignalTimeoutAction ?? args.config.copilotReviewTimeoutAction;
   const loadedChecksAreGreen = Boolean(
@@ -327,9 +359,15 @@ export function formatCodexConnectorReviewFallbackDiagnostic(args: {
     | "timeout_elapsed"
     | "request_posted"
     | "already_requested"
+    | "request_posted_no_current_head_signal"
+    | "request_retry_exhausted"
     | "missing_current_head_signal";
   if (currentHeadObservedAt) {
     status = "current_head_observed";
+  } else if (requestNoResponseElapsed && retryCount >= retryLimit) {
+    status = "request_retry_exhausted";
+  } else if (requestNoResponseElapsed) {
+    status = "request_posted_no_current_head_signal";
   } else if (requestMatchesCurrentHead && recordRequestAt) {
     status = "request_posted";
   } else if (requestMatchesCurrentHead) {
@@ -343,6 +381,16 @@ export function formatCodexConnectorReviewFallbackDiagnostic(args: {
   }
 
   const waitUntilSuffix = waitWindow.waitUntil ? ` wait_until=${waitWindow.waitUntil}` : "";
+  const retryStatusSuffix =
+    status === "request_posted_no_current_head_signal" || status === "request_retry_exhausted"
+      ? [
+          ` retry_status=${status === "request_retry_exhausted" ? "exhausted" : "eligible"}`,
+          `retry_count=${retryCount}`,
+          `retry_limit=${retryLimit}`,
+          `retry_wait_until=${retryWaitUntil ?? "none"}`,
+          `next_action=${status === "request_retry_exhausted" ? "operator_manual_review" : "retry_request_review_comment"}`,
+        ].join(" ")
+      : "";
   return [
     `codex_connector_review_fallback status=${status}`,
     "provider=codex",
@@ -354,7 +402,7 @@ export function formatCodexConnectorReviewFallbackDiagnostic(args: {
     `requested_head_sha=${requestHeadSha ?? "none"}`,
     `review_signal=${reviewSignal}`,
     "note=request_comment_is_not_review_completion",
-  ].join(" ") + waitUntilSuffix;
+  ].join(" ") + retryStatusSuffix + waitUntilSuffix;
 }
 
 export function formatCodexConnectorConvergenceDiagnostic(args: {
