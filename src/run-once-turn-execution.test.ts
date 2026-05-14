@@ -25,6 +25,7 @@ import {
 } from "./turn-execution-test-helpers";
 import { AgentRunner, AgentTurnRequest } from "./supervisor/agent-runner";
 import { interruptedTurnMarkerPath } from "./interrupted-turn-marker";
+import type { GitHubClient } from "./github";
 
 const SAMPLE_UNIX_WORKSTATION_PATH = `/${"home"}/alice/dev/private-repo`;
 const SAMPLE_MACOS_WORKSTATION_PATH = `/${"Users"}/alice/Dev/private-repo`;
@@ -810,6 +811,7 @@ test("executeCodexTurnPhase blocks branch publication when workstation-local pat
   let pushBranchCalls = 0;
   let syncJournalCalls = 0;
   const observedAllowlistMarkers: Array<readonly string[] | undefined> = [];
+  const publishedComments: string[] = [];
   const context = createCodexTurnContext({
     state,
     record: state.issues["102"]!,
@@ -844,11 +846,23 @@ test("executeCodexTurnPhase blocks branch publication when workstation-local pat
       createPullRequest: async () => {
         throw new Error("unexpected createPullRequest call");
       },
+      addIssueComment: async (_prNumber: number, body: string) => {
+        publishedComments.push(body);
+      },
       getChecks: async () => [],
       getUnresolvedReviewThreads: async () => [],
       getExternalReviewSurface: async () => {
         throw new Error("unexpected getExternalReviewSurface call");
       },
+    } as Pick<
+      GitHubClient,
+      | "resolvePullRequestForBranch"
+      | "createPullRequest"
+      | "getChecks"
+      | "getUnresolvedReviewThreads"
+      | "getExternalReviewSurface"
+    > & {
+      addIssueComment: (_prNumber: number, body: string) => Promise<void>;
     },
     context,
     acquireSessionLock: async () => null,
@@ -981,6 +995,29 @@ test("executeCodexTurnPhase blocks branch publication when workstation-local pat
   assert.match(
     state.issues["102"]?.last_failure_context?.details[0] ?? "",
     /docs\/guide\.md:1/,
+  );
+  assert.equal(publishedComments.length, 1);
+  assert.match(
+    publishedComments[0] ?? "",
+    /Tracked PR head `head-b` is still draft because ready-for-review promotion is blocked locally\./,
+  );
+  assert.match(publishedComments[0] ?? "", /- local head SHA: `head-b`/);
+  assert.match(publishedComments[0] ?? "", /- remote PR head SHA: `head-b`/);
+  assert.match(
+    publishedComments[0] ?? "",
+    /- blocker signature: `workstation-local-path-hygiene-failed`/,
+  );
+  assert.match(
+    publishedComments[0] ?? "",
+    /- gate name: `workstation_local_path_hygiene`/,
+  );
+  assert.match(
+    publishedComments[0] ?? "",
+    /- evidence: docs\/guide\.md:1 matched .*<redacted-user-home>.*/,
+  );
+  assert.doesNotMatch(
+    publishedComments[0] ?? "",
+    /\/Users\/alice\/|\/home\/alice\//,
   );
 });
 
@@ -1507,6 +1544,200 @@ test("executeCodexTurnPhase persists rewritten tracked paths before continuing a
     await fs.readFile(trustedArtifactPath, "utf8"),
     "Trusted artifact path: <workstation-local>\n",
   );
+});
+
+test("executeCodexTurnPhase deduplicates tracked PR publication gate comments for unchanged blockers", async () => {
+  const issue = createIssue({
+    title: "Deduplicate tracked PR publication-blocker comments",
+  });
+  const pr = createPullRequest({ isDraft: true, headRefOid: "head-b" });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "draft_pr",
+        pr_number: pr.number,
+        implementation_attempt_count: 1,
+      }),
+    },
+  };
+  const publishedComments: string[] = [];
+  let blockerSignature = "workstation-local-path-hygiene-failed-a";
+
+  const executeTurn = async () =>
+    executeCodexTurnPhase({
+      config: createConfig({
+        publishablePathAllowlistMarkers: ["publishable-path-hygiene: allowlist"],
+      }),
+      stateStore: {
+        touch: (record, patch) => ({
+          ...record,
+          ...patch,
+          updated_at: record.updated_at,
+        }),
+        save: async () => undefined,
+      },
+      github: {
+        resolvePullRequestForBranch: async () => pr,
+        createPullRequest: async () => {
+          throw new Error("unexpected createPullRequest call");
+        },
+        addIssueComment: async (_prNumber: number, body: string) => {
+          publishedComments.push(body);
+        },
+        getChecks: async () => [],
+        getUnresolvedReviewThreads: async () => [],
+        getExternalReviewSurface: async () => {
+          throw new Error("unexpected getExternalReviewSurface call");
+        },
+      } as Pick<
+        GitHubClient,
+        | "resolvePullRequestForBranch"
+        | "createPullRequest"
+        | "getChecks"
+        | "getUnresolvedReviewThreads"
+        | "getExternalReviewSurface"
+      > & {
+        addIssueComment: (_prNumber: number, body: string) => Promise<void>;
+      },
+      context: createCodexTurnContext({
+        state,
+        record: state.issues["102"]!,
+        issue,
+        syncJournal: async () => undefined,
+        workspaceStatus: {
+          branch: "codex/issue-102",
+          headSha: "head-a",
+        },
+        pr,
+        checks: [],
+        reviewThreads: [],
+      }),
+      acquireSessionLock: async () => null,
+      classifyFailure: () => "command_error",
+      buildCodexFailureContext: (category, summary, details) => ({
+        category,
+        summary,
+        signature: `${category}:${summary}`,
+        command: null,
+        details,
+        url: null,
+        updated_at: "2026-03-13T06:20:00Z",
+      }),
+      applyFailureSignature: (_record, failureContext) => ({
+        last_failure_signature: failureContext?.signature ?? null,
+        repeated_failure_signature_count: failureContext ? 1 : 0,
+      }),
+      normalizeBlockerSignature: () => null,
+      isVerificationBlockedMessage: () => false,
+      derivePullRequestLifecycleSnapshot: (record) => ({
+        recordForState: record,
+        nextState: "draft_pr",
+        failureContext: null,
+        reviewWaitPatch: {},
+        copilotRequestObservationPatch: {},
+        mergeLatencyVisibilityPatch: {
+          provider_success_observed_at: null,
+          provider_success_head_sha: null,
+          merge_readiness_last_evaluated_at: null,
+        },
+        copilotTimeoutPatch: {
+          copilot_review_timed_out_at: null,
+          copilot_review_timeout_action: null,
+          copilot_review_timeout_reason: null,
+        },
+      }),
+      inferStateWithoutPullRequest: () => "draft_pr",
+      blockedReasonFromReviewState: () => null,
+      recoverUnexpectedCodexTurnFailure: async () => {
+        throw new Error("unexpected recoverUnexpectedCodexTurnFailure call");
+      },
+      getWorkspaceStatus: async () =>
+        createWorkspaceStatus({
+          branch: "codex/issue-102",
+          headSha: "head-b",
+          remoteAhead: 1,
+        }),
+      listChangedTrackedFilesBetween: async () => ["docs/guide.md"],
+      pushBranch: async () => {
+        throw new Error("unexpected pushBranch call");
+      },
+      readIssueJournal: (() => {
+        let readCount = 0;
+        return async () => {
+          readCount += 1;
+          return [
+            "## Codex Working Notes",
+            "### Current Handoff",
+            "- Hypothesis: prevent duplicate tracked PR blocker comments.",
+            ...(readCount > 1
+              ? ["- What changed: completed the implementation turn once."]
+              : []),
+          ].join("\n");
+        };
+      })(),
+      runWorkstationLocalPathGate: async () => ({
+        ok: false,
+        failureContext: {
+          category: "blocked",
+          summary:
+            "Tracked durable artifacts failed workstation-local path hygiene before publication.",
+          signature: blockerSignature,
+          command: "npm run verify:paths",
+          details: [
+            `docs/guide.md:1 matched /${"home"}/ via "${SAMPLE_UNIX_WORKSTATION_PATH}"`,
+          ],
+          url: null,
+          updated_at: "2026-03-13T06:20:00Z",
+        },
+      }),
+      agentRunner: createSuccessfulAgentRunner(async () => ({
+        exitCode: 0,
+        sessionId: "session-102",
+        supervisorMessage: [
+          "Summary: implementation complete",
+          "State hint: draft_pr",
+          "Blocked reason: none",
+          "Tests: not run",
+          "Failure signature: none",
+          "Next action: push the branch update",
+        ].join("\n"),
+        stderr: "",
+        stdout: "",
+        structuredResult: {
+          summary: "implementation complete",
+          stateHint: "draft_pr",
+          blockedReason: null,
+          failureSignature: null,
+          nextAction: "push the branch update",
+          tests: "not run",
+        },
+        failureKind: null,
+        failureContext: null,
+      })),
+    });
+
+  assert.deepEqual(await executeTurn(), {
+    kind: "returned",
+    message:
+      "Workstation-local path hygiene blocked publication for issue #102.",
+  });
+  assert.equal(publishedComments.length, 1);
+
+  assert.deepEqual(await executeTurn(), {
+    kind: "returned",
+    message:
+      "Workstation-local path hygiene blocked publication for issue #102.",
+  });
+  assert.equal(publishedComments.length, 1);
+
+  blockerSignature = "workstation-local-path-hygiene-failed-b";
+  assert.deepEqual(await executeTurn(), {
+    kind: "returned",
+    message:
+      "Workstation-local path hygiene blocked publication for issue #102.",
+  });
+  assert.equal(publishedComments.length, 2);
 });
 
 test("executeCodexTurnPhase routes start and resume turns through the shared agent runner contract", async () => {
