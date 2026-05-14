@@ -228,7 +228,7 @@ test("status surfaces Codex Connector review-request fallback lifecycle for the 
 
   assert.match(
     report.detailedStatusLines.join("\n"),
-    /^codex_connector_review_fallback status=request_posted provider=codex current_head_sha=head-1925 current_head_observed_at=none required_checks_green_at=2026-05-08T03:09:36Z timeout_action=request_review_comment requested_at=2026-05-08T03:30:00Z requested_head_sha=head-1925 review_signal=missing note=request_comment_is_not_review_completion wait_until=2026-05-08T03:19:36\.000Z$/m,
+    /^codex_connector_review_fallback status=request_posted_no_current_head_signal provider=codex current_head_sha=head-1925 current_head_observed_at=none required_checks_green_at=2026-05-08T03:09:36Z timeout_action=request_review_comment requested_at=2026-05-08T03:30:00Z requested_head_sha=head-1925 review_signal=missing note=request_comment_is_not_review_completion retry_status=eligible retry_count=0 retry_limit=1 retry_wait_until=2026-05-08T03:40:00\.000Z next_action=retry_request_review_comment wait_until=2026-05-08T03:19:36\.000Z$/m,
   );
   assert.match(
     report.detailedStatusLines.join("\n"),
@@ -288,7 +288,7 @@ test("status --why distinguishes hydrated same-head Codex Connector review reque
 
   assert.match(
     report.detailedStatusLines.join("\n"),
-    /^codex_connector_review_fallback status=already_requested provider=codex current_head_sha=head-1958 current_head_observed_at=none required_checks_green_at=2026-05-08T03:09:36Z timeout_action=request_review_comment requested_at=2026-05-08T03:30:00Z requested_head_sha=head-1958 review_signal=missing note=request_comment_is_not_review_completion wait_until=2026-05-08T03:19:36\.000Z$/m,
+    /^codex_connector_review_fallback status=request_posted_no_current_head_signal provider=codex current_head_sha=head-1958 current_head_observed_at=none required_checks_green_at=2026-05-08T03:09:36Z timeout_action=request_review_comment requested_at=2026-05-08T03:30:00Z requested_head_sha=head-1958 review_signal=missing note=request_comment_is_not_review_completion retry_status=eligible retry_count=0 retry_limit=1 retry_wait_until=2026-05-08T03:40:00\.000Z next_action=retry_request_review_comment wait_until=2026-05-08T03:19:36\.000Z$/m,
   );
   assert.match(
     report.detailedStatusLines.join("\n"),

@@ -18,6 +18,7 @@ export type LocalReviewPosturePreset =
 export type ReleaseReadinessGatePosture = "advisory" | "block_release_publication";
 export type StaleConfiguredBotReviewPolicy = "diagnose_only" | "reply_only" | "reply_and_resolve";
 export type CopilotReviewTimeoutAction = "continue" | "block" | "request_review_comment";
+export type CodexConnectorReviewRequestRetryMode = "supervisor_marker" | "plain";
 export type ConfiguredReviewProviderKind = "copilot" | "codex" | "coderabbit" | "custom";
 export type ConfiguredReviewSignalSource = "copilot_lifecycle" | "review_threads";
 
@@ -212,6 +213,9 @@ export interface SupervisorConfig {
   configuredBotRequireCurrentHeadSignal?: boolean;
   configuredBotCurrentHeadSignalTimeoutMinutes?: number;
   configuredBotCurrentHeadSignalTimeoutAction?: CopilotReviewTimeoutAction;
+  codexConnectorReviewRequestNoResponseMinutes?: number;
+  codexConnectorReviewRequestRetryLimit?: number;
+  codexConnectorReviewRequestRetryMode?: CodexConnectorReviewRequestRetryMode;
   codexExecTimeoutMinutes: number;
   maxCodexAttemptsPerIssue: number;
   maxImplementationAttemptsPerIssue: number;

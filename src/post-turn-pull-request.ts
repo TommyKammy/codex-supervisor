@@ -355,6 +355,15 @@ function isValidTimestamp(value: string | null | undefined): boolean {
   return typeof value === "string" && value.length > 0 && !Number.isNaN(Date.parse(value));
 }
 
+function addMinutes(timestamp: string, minutes: number): string | null {
+  const parsed = Date.parse(timestamp);
+  if (Number.isNaN(parsed)) {
+    return null;
+  }
+
+  return new Date(parsed + minutes * 60_000).toISOString();
+}
+
 function hasProcessedReviewThreadOnNonCurrentHead(
   record: Pick<IssueRunRecord, "processed_review_thread_ids" | "processed_review_thread_fingerprints">,
   pr: Pick<GitHubPullRequest, "headRefOid">,
@@ -433,7 +442,12 @@ function configuredBotThreadsAllowCodexConnectorRequest(args: {
   );
 }
 
-function shouldRequestCodexConnectorReviewComment(args: {
+type CodexConnectorReviewRequestAction =
+  | { kind: "none" }
+  | { kind: "initial" }
+  | { kind: "retry"; retryCount: number; retryAttempt: number };
+
+function codexConnectorReviewRequestAction(args: {
   config: SupervisorConfig;
   record: IssueRunRecord;
   pr: GitHubPullRequest;
@@ -443,7 +457,7 @@ function shouldRequestCodexConnectorReviewComment(args: {
   configuredBotReviewThreads: HandlePostTurnPullRequestTransitionsArgs["configuredBotReviewThreads"];
   manualReviewThreads: HandlePostTurnPullRequestTransitionsArgs["manualReviewThreads"];
   mergeConflictDetected: HandlePostTurnPullRequestTransitionsArgs["mergeConflictDetected"];
-}): boolean {
+}): CodexConnectorReviewRequestAction {
   const checkSummary = args.summarizeChecks(args.checks);
   const configuredThreads = args.configuredBotReviewThreads(args.config, args.reviewThreads);
   const staleCodexReviewState = configuredReviewProviderKinds(args.config).includes("codex")
@@ -472,7 +486,7 @@ function shouldRequestCodexConnectorReviewComment(args: {
       staleCodexReviewState?.classification === "unresolved_work" ||
       staleCodexReviewState?.classification === "unknown_needs_operator")
   ) {
-    return false;
+    return { kind: "none" };
   }
 
   const configuredThreadsAreSafeForCodexRequest = configuredBotThreadsAllowCodexConnectorRequest({
@@ -493,18 +507,81 @@ function shouldRequestCodexConnectorReviewComment(args: {
     !configuredReviewProviderKinds(args.config).includes("codex") ||
     args.record.copilot_review_timeout_action !== "request_review_comment" ||
     !args.record.copilot_review_timed_out_at ||
-    args.record.codex_connector_review_requested_head_sha === args.pr.headRefOid ||
     args.pr.isDraft ||
+    args.pr.reviewDecision === "CHANGES_REQUESTED" ||
     args.mergeConflictDetected(args.pr) ||
     !configuredThreadsAreSafeForCodexRequest ||
     args.manualReviewThreads(args.config, args.reviewThreads).length > 0 ||
     isValidTimestamp(args.pr.configuredBotCurrentHeadObservedAt) ||
     !hasFallbackEligibleSignal
   ) {
-    return false;
+    return { kind: "none" };
   }
 
-  return !checkSummary.hasPending && !checkSummary.hasFailing;
+  if (checkSummary.hasPending || checkSummary.hasFailing) {
+    return { kind: "none" };
+  }
+
+  const recordRequestAt = args.record.codex_connector_review_requested_observed_at ?? null;
+  const recordRequestHeadSha = args.record.codex_connector_review_requested_head_sha ?? null;
+  const prRequestAt = args.pr.codexConnectorReviewRequestedAt ?? null;
+  const prRequestHeadSha = args.pr.codexConnectorReviewRequestedHeadSha ?? null;
+  const requestAt = recordRequestAt ?? prRequestAt;
+  const requestHeadSha = recordRequestHeadSha ?? prRequestHeadSha;
+  const requestMatchesCurrentHead = Boolean(requestAt && requestHeadSha === args.pr.headRefOid);
+
+  if (!requestMatchesCurrentHead) {
+    return { kind: "initial" };
+  }
+
+  const retryLimit = args.config.codexConnectorReviewRequestRetryLimit ?? 1;
+  if (retryLimit <= 0) {
+    return { kind: "none" };
+  }
+
+  const retryCount =
+    args.record.codex_connector_review_request_retry_head_sha === args.pr.headRefOid
+      ? args.record.codex_connector_review_request_retry_count ?? 0
+      : 0;
+  if (retryCount >= retryLimit) {
+    return { kind: "none" };
+  }
+
+  const retryAnchorAt =
+    args.record.codex_connector_review_request_retry_head_sha === args.pr.headRefOid &&
+    args.record.codex_connector_review_request_last_retried_at
+      ? args.record.codex_connector_review_request_last_retried_at
+      : requestAt;
+  const waitUntil = retryAnchorAt
+    ? addMinutes(retryAnchorAt, args.config.codexConnectorReviewRequestNoResponseMinutes ?? 10)
+    : null;
+  if (!waitUntil || Date.now() < Date.parse(waitUntil)) {
+    return { kind: "none" };
+  }
+
+  return {
+    kind: "retry",
+    retryCount,
+    retryAttempt: retryCount + 1,
+  };
+}
+
+function renderCodexConnectorReviewRequestCommentForAction(args: {
+  action: CodexConnectorReviewRequestAction;
+  config: SupervisorConfig;
+  issueNumber: number;
+  prNumber: number;
+  headSha: string;
+}): string {
+  if (args.action.kind === "retry" && (args.config.codexConnectorReviewRequestRetryMode ?? "plain") === "plain") {
+    return "@codex review";
+  }
+
+  return renderCodexConnectorReviewRequestComment({
+    issueNumber: args.issueNumber,
+    prNumber: args.prNumber,
+    headSha: args.headSha,
+  });
 }
 
 function buildCodexConnectorReviewRequestFailureContext(args: {
@@ -544,19 +621,18 @@ async function maybeRequestCodexConnectorReviewComment(args: {
   manualReviewThreads: HandlePostTurnPullRequestTransitionsArgs["manualReviewThreads"];
   mergeConflictDetected: HandlePostTurnPullRequestTransitionsArgs["mergeConflictDetected"];
 }): Promise<IssueRunRecord> {
-  if (
-    !shouldRequestCodexConnectorReviewComment({
-      config: args.config,
-      record: args.record,
-      pr: args.pr,
-      checks: args.checks,
-      reviewThreads: args.reviewThreads,
-      summarizeChecks: args.summarizeChecks,
-      configuredBotReviewThreads: args.configuredBotReviewThreads,
-      manualReviewThreads: args.manualReviewThreads,
-      mergeConflictDetected: args.mergeConflictDetected,
-    })
-  ) {
+  const requestAction = codexConnectorReviewRequestAction({
+    config: args.config,
+    record: args.record,
+    pr: args.pr,
+    checks: args.checks,
+    reviewThreads: args.reviewThreads,
+    summarizeChecks: args.summarizeChecks,
+    configuredBotReviewThreads: args.configuredBotReviewThreads,
+    manualReviewThreads: args.manualReviewThreads,
+    mergeConflictDetected: args.mergeConflictDetected,
+  });
+  if (requestAction.kind === "none") {
     return args.record;
   }
 
@@ -566,7 +642,9 @@ async function maybeRequestCodexConnectorReviewComment(args: {
     }
     await args.github.addIssueComment(
       args.pr.number,
-      renderCodexConnectorReviewRequestComment({
+      renderCodexConnectorReviewRequestCommentForAction({
+        action: requestAction,
+        config: args.config,
         issueNumber: args.record.issue_number,
         prNumber: args.pr.number,
         headSha: args.pr.headRefOid,
@@ -589,10 +667,20 @@ async function maybeRequestCodexConnectorReviewComment(args: {
     return blockedRecord;
   }
 
+  const requestedAt = nowIso();
   const updatedRecord = args.stateStore.touch(args.record, {
     state: "waiting_ci",
-    codex_connector_review_requested_observed_at: nowIso(),
+    codex_connector_review_requested_observed_at:
+      requestAction.kind === "initial"
+        ? requestedAt
+        : args.record.codex_connector_review_requested_observed_at ?? args.pr.codexConnectorReviewRequestedAt ?? requestedAt,
     codex_connector_review_requested_head_sha: args.pr.headRefOid,
+    codex_connector_review_request_retry_count:
+      requestAction.kind === "retry" ? requestAction.retryAttempt : 0,
+    codex_connector_review_request_retry_head_sha:
+      requestAction.kind === "retry" ? args.pr.headRefOid : null,
+    codex_connector_review_request_last_retried_at:
+      requestAction.kind === "retry" ? requestedAt : null,
     blocked_reason: null,
     last_error: null,
     last_failure_kind: null,

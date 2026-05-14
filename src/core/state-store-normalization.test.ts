@@ -145,3 +145,16 @@ test("normalizeState helpers coerce invalid top-level active issue and issues pa
   assert.equal(saved.activeIssueNumber, null);
   assert.deepEqual(saved.issues, {});
 });
+
+test("normalizeStateForLoad defaults Codex Connector retry bookkeeping", () => {
+  const loaded = normalizeStateForLoad({
+    activeIssueNumber: null,
+    issues: {
+      "1976": createRecord(1976),
+    },
+  } satisfies SupervisorStateFile);
+
+  assert.equal(loaded.issues["1976"]?.codex_connector_review_request_retry_count, 0);
+  assert.equal(loaded.issues["1976"]?.codex_connector_review_request_retry_head_sha, null);
+  assert.equal(loaded.issues["1976"]?.codex_connector_review_request_last_retried_at, null);
+});

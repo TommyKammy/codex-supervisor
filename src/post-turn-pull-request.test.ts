@@ -610,6 +610,128 @@ test("handlePostTurnPullRequestTransitionsPhase requests Codex Connector review 
   }
 });
 
+test("handlePostTurnPullRequestTransitionsPhase retries Codex Connector review once after same-head request gets no response", async () => {
+  const originalDateNow = Date.now;
+  Date.now = () => Date.parse("2026-05-08T04:00:00Z");
+  try {
+    const config = createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector"],
+      configuredBotInitialGraceWaitSeconds: 0,
+      configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+      configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+      codexConnectorReviewRequestNoResponseMinutes: 10,
+      codexConnectorReviewRequestRetryLimit: 1,
+      codexConnectorReviewRequestRetryMode: "plain",
+    });
+    const issue = createIssue({ number: 1976, title: "Retry Codex Connector review after no response" });
+    const pr = createPullRequest({
+      number: 1976,
+      title: "Retry Codex Connector review after no response",
+      isDraft: false,
+      headRefOid: "head-1976",
+      currentHeadCiGreenAt: "2026-05-08T03:09:36Z",
+      configuredBotCurrentHeadObservedAt: null,
+      codexConnectorReviewRequestedAt: "2026-05-08T03:30:00Z",
+      codexConnectorReviewRequestedHeadSha: "head-1976",
+    });
+    const record = createRecord({
+      issue_number: issue.number,
+      state: "waiting_ci",
+      pr_number: pr.number,
+      last_head_sha: pr.headRefOid,
+      review_wait_started_at: "2026-05-08T03:09:36Z",
+      review_wait_head_sha: pr.headRefOid,
+      copilot_review_timed_out_at: "2026-05-08T03:19:36.000Z",
+      copilot_review_timeout_action: "request_review_comment",
+      codex_connector_review_requested_observed_at: "2026-05-08T03:30:00Z",
+      codex_connector_review_requested_head_sha: pr.headRefOid,
+      codex_connector_review_request_retry_count: 0,
+      codex_connector_review_request_retry_head_sha: null,
+      codex_connector_review_request_last_retried_at: null,
+    });
+    const state: SupervisorStateFile = {
+      activeIssueNumber: issue.number,
+      issues: { [String(issue.number)]: record },
+    };
+    const comments: Array<{ issueNumber: number; body: string }> = [];
+
+    const result = await handlePostTurnPullRequestTransitionsPhase({
+      config,
+      stateStore: createNoopStateStore(),
+      github: createDefaultGithub({
+        addIssueComment: async (issueNumber, body) => {
+          comments.push({ issueNumber, body });
+        },
+      }),
+      context: createPostTurnContext({
+        issue,
+        pr,
+        workspacePath: "/tmp/workspaces/issue-1976",
+        state,
+        record,
+      }),
+      loadOpenPullRequestSnapshot: async () => ({
+        pr,
+        checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+        reviewThreads: [],
+      }),
+      derivePullRequestLifecycleSnapshot: (currentRecord, currentPr, checks, reviewThreads, recordPatch) =>
+        deriveSupervisorPullRequestLifecycleSnapshot(config, currentRecord, currentPr, checks, reviewThreads, recordPatch),
+      applyFailureSignature: () => ({ last_failure_signature: null, repeated_failure_signature_count: 0 }),
+      blockedReasonFromReviewState: (currentRecord, currentPr, checks, reviewThreads) =>
+        resolveBlockedReasonFromReviewState(config, currentRecord, currentPr, checks, reviewThreads),
+      summarizeChecks,
+      configuredBotReviewThreads: () => [],
+      manualReviewThreads: () => [],
+      mergeConflictDetected: () => false,
+    });
+
+    assert.deepEqual(comments, [{ issueNumber: pr.number, body: "@codex review" }]);
+    assert.equal(result.record.state, "waiting_ci");
+    assert.equal(result.record.codex_connector_review_requested_observed_at, "2026-05-08T03:30:00Z");
+    assert.equal(result.record.codex_connector_review_requested_head_sha, pr.headRefOid);
+    assert.equal(result.record.codex_connector_review_request_retry_count, 1);
+    assert.equal(result.record.codex_connector_review_request_retry_head_sha, pr.headRefOid);
+    assert.ok(result.record.codex_connector_review_request_last_retried_at);
+
+    const duplicateCycle = await handlePostTurnPullRequestTransitionsPhase({
+      config,
+      stateStore: createNoopStateStore(),
+      github: createDefaultGithub({
+        addIssueComment: async (issueNumber, body) => {
+          comments.push({ issueNumber, body });
+        },
+      }),
+      context: createPostTurnContext({
+        issue,
+        pr,
+        workspacePath: "/tmp/workspaces/issue-1976",
+        state,
+        record: result.record,
+      }),
+      loadOpenPullRequestSnapshot: async () => ({
+        pr,
+        checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+        reviewThreads: [],
+      }),
+      derivePullRequestLifecycleSnapshot: (currentRecord, currentPr, checks, reviewThreads, recordPatch) =>
+        deriveSupervisorPullRequestLifecycleSnapshot(config, currentRecord, currentPr, checks, reviewThreads, recordPatch),
+      applyFailureSignature: () => ({ last_failure_signature: null, repeated_failure_signature_count: 0 }),
+      blockedReasonFromReviewState: (currentRecord, currentPr, checks, reviewThreads) =>
+        resolveBlockedReasonFromReviewState(config, currentRecord, currentPr, checks, reviewThreads),
+      summarizeChecks,
+      configuredBotReviewThreads: () => [],
+      manualReviewThreads: () => [],
+      mergeConflictDetected: () => false,
+    });
+
+    assert.equal(comments.length, 1);
+    assert.equal(duplicateCycle.record.codex_connector_review_request_retry_count, 1);
+  } finally {
+    Date.now = originalDateNow;
+  }
+});
+
 test("handlePostTurnPullRequestTransitionsPhase requests Codex Connector review once for no-checks repos without local CI", async () => {
   const originalDateNow = Date.now;
   Date.now = () => Date.parse("2026-05-12T04:30:00Z");
@@ -1106,6 +1228,14 @@ test("handlePostTurnPullRequestTransitionsPhase keeps Codex Connector review req
       configuredBotReviewThreads: [],
       manualReviewThreads: [],
       mergeConflict: true,
+    },
+    {
+      name: "requested-changes",
+      pr: { ...basePr, reviewDecision: "CHANGES_REQUESTED" },
+      reviewThreads: [],
+      configuredBotReviewThreads: [],
+      manualReviewThreads: [],
+      mergeConflict: false,
     },
     {
       name: "configured-bot-thread",

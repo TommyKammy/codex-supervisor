@@ -225,6 +225,9 @@ export interface IssueRunRecord {
   copilot_review_requested_head_sha: string | null;
   codex_connector_review_requested_observed_at?: string | null;
   codex_connector_review_requested_head_sha?: string | null;
+  codex_connector_review_request_retry_count?: number;
+  codex_connector_review_request_retry_head_sha?: string | null;
+  codex_connector_review_request_last_retried_at?: string | null;
   copilot_review_timed_out_at: string | null;
   copilot_review_timeout_action: CopilotReviewTimeoutAction | null;
   copilot_review_timeout_reason: string | null;

@@ -110,6 +110,9 @@ export function resetTrackedPrHeadScopedStateOnAdvance(
   const codexConnectorReviewRequestHeadStale =
     record.codex_connector_review_requested_head_sha != null
     && record.codex_connector_review_requested_head_sha !== nextHeadSha;
+  const codexConnectorReviewRequestRetryHeadStale =
+    record.codex_connector_review_request_retry_head_sha != null
+    && record.codex_connector_review_request_retry_head_sha !== nextHeadSha;
   const processedThreadIdsHeadStale = processedReviewThreadIdsStaleForHead(
     record.processed_review_thread_ids ?? [],
     nextHeadSha,
@@ -135,6 +138,7 @@ export function resetTrackedPrHeadScopedStateOnAdvance(
     || localCiHeadStale
     || providerSuccessHeadStale
     || codexConnectorReviewRequestHeadStale
+    || codexConnectorReviewRequestRetryHeadStale
     || processedThreadIdsHeadStale
     || processedThreadFingerprintsHeadStale;
   const sameTrackedHead = record.last_head_sha === nextHeadSha;
@@ -176,6 +180,13 @@ export function resetTrackedPrHeadScopedStateOnAdvance(
         ? {
             codex_connector_review_requested_observed_at: null,
             codex_connector_review_requested_head_sha: null,
+          }
+        : {}),
+      ...(codexConnectorReviewRequestRetryHeadStale
+        ? {
+            codex_connector_review_request_retry_count: 0,
+            codex_connector_review_request_retry_head_sha: null,
+            codex_connector_review_request_last_retried_at: null,
           }
         : {}),
       ...(observedHostLocalBlockerHeadStale
@@ -223,6 +234,9 @@ export function resetTrackedPrHeadScopedStateOnAdvance(
     review_follow_up_remaining: 0,
     codex_connector_review_requested_observed_at: null,
     codex_connector_review_requested_head_sha: null,
+    codex_connector_review_request_retry_count: 0,
+    codex_connector_review_request_retry_head_sha: null,
+    codex_connector_review_request_last_retried_at: null,
     last_observed_host_local_pr_blocker_signature: null,
     last_observed_host_local_pr_blocker_head_sha: null,
     last_host_local_pr_blocker_comment_signature: null,
