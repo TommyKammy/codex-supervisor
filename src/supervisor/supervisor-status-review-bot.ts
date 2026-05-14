@@ -335,14 +335,16 @@ export function formatCodexConnectorReviewFallbackDiagnostic(args: {
   const retryWaitUntil = retryAnchorAt
     ? addMinutes(retryAnchorAt, args.config.codexConnectorReviewRequestNoResponseMinutes ?? 10)
     : null;
+  const timeoutAction = args.config.configuredBotCurrentHeadSignalTimeoutAction ?? args.config.copilotReviewTimeoutAction;
+  const retryConfigured = timeoutAction === "request_review_comment";
   const requestNoResponseElapsed = Boolean(
+    retryConfigured &&
     requestMatchesCurrentHead &&
     !currentHeadObservedAt &&
     retryWaitUntil &&
     Date.now() >= Date.parse(retryWaitUntil),
   );
   const reviewSignal = currentHeadObservedAt ? "current_head_observed" : "missing";
-  const timeoutAction = args.config.configuredBotCurrentHeadSignalTimeoutAction ?? args.config.copilotReviewTimeoutAction;
   const loadedChecksAreGreen = Boolean(
     args.checks && args.checks.length > 0 && args.checks.every((check) => check.bucket === "pass"),
   );

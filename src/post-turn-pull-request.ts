@@ -508,6 +508,7 @@ function codexConnectorReviewRequestAction(args: {
     args.record.copilot_review_timeout_action !== "request_review_comment" ||
     !args.record.copilot_review_timed_out_at ||
     args.pr.isDraft ||
+    args.pr.reviewDecision === "CHANGES_REQUESTED" ||
     args.mergeConflictDetected(args.pr) ||
     !configuredThreadsAreSafeForCodexRequest ||
     args.manualReviewThreads(args.config, args.reviewThreads).length > 0 ||

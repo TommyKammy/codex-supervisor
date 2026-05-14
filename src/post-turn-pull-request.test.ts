@@ -1230,6 +1230,14 @@ test("handlePostTurnPullRequestTransitionsPhase keeps Codex Connector review req
       mergeConflict: true,
     },
     {
+      name: "requested-changes",
+      pr: { ...basePr, reviewDecision: "CHANGES_REQUESTED" },
+      reviewThreads: [],
+      configuredBotReviewThreads: [],
+      manualReviewThreads: [],
+      mergeConflict: false,
+    },
+    {
       name: "configured-bot-thread",
       pr: basePr,
       reviewThreads: [blockerThread],

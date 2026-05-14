@@ -947,6 +947,25 @@ test("formatCodexConnectorReviewFallbackDiagnostic surfaces Codex Connector wait
 
     assert.equal(
       formatCodexConnectorReviewFallbackDiagnostic({
+        config: createConfig({
+          reviewBotLogins: ["chatgpt-codex-connector"],
+          configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+          configuredBotCurrentHeadSignalTimeoutAction: "block",
+        }),
+        record: createRecord({
+          codex_connector_review_requested_observed_at: "2026-03-16T00:00:00.000Z",
+          codex_connector_review_requested_head_sha: "head-340",
+          codex_connector_review_request_retry_count: 0,
+          codex_connector_review_request_retry_head_sha: null,
+          codex_connector_review_request_last_retried_at: null,
+        }),
+        pr: waitingPr,
+      }),
+      "codex_connector_review_fallback status=request_posted provider=codex current_head_sha=head-340 current_head_observed_at=none required_checks_green_at=2026-03-16T00:10:00.000Z timeout_action=block requested_at=2026-03-16T00:00:00.000Z requested_head_sha=head-340 review_signal=missing note=request_comment_is_not_review_completion wait_until=2026-03-16T00:20:00.000Z",
+    );
+
+    assert.equal(
+      formatCodexConnectorReviewFallbackDiagnostic({
         config,
         record: createRecord({
           codex_connector_review_requested_observed_at: "2026-03-16T00:21:00.000Z",
