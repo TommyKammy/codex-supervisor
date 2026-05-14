@@ -21,6 +21,7 @@ import {
 import { type LocalCiCommandRunner } from "./local-ci";
 import {
   buildWorkstationLocalPathFailureContext,
+  WORKSTATION_LOCAL_PATH_HYGIENE_REPAIRABLE_PUBLICATION_SIGNATURE,
   runWorkstationLocalPathGate,
   type WorkstationLocalPathGateResult,
 } from "./workstation-local-path-gate";
@@ -617,6 +618,16 @@ export async function executeCodexTurnPhase(
             const failureContext = pathHygieneGate.failureContext;
             const actionablePublishableFilePaths =
               pathHygieneGate.actionablePublishableFilePaths ?? [];
+            const repairFailureContext =
+              failureContext !== null && actionablePublishableFilePaths.length > 0
+                ? {
+                    ...failureContext,
+                    summary:
+                      `Publication path hygiene found actionable fixture-level failures on publishable files (${actionablePublishableFilePaths.join(", ")}). ${failureContext.summary}`,
+                    signature:
+                      WORKSTATION_LOCAL_PATH_HYGIENE_REPAIRABLE_PUBLICATION_SIGNATURE,
+                  }
+                : null;
             const sameTurnRepairEligible =
               !usedSameTurnPathRepairRetry &&
               failureContext !== null &&
@@ -718,6 +729,57 @@ export async function executeCodexTurnPhase(
               await stateStore.save(state);
               await syncJournal(record);
               continue;
+            }
+            if (repairFailureContext !== null) {
+              record = stateStore.touch(record, {
+                state: "repairing_ci",
+                timeline_artifacts: [
+                  ...(record.timeline_artifacts ?? []),
+                  {
+                    type: "path_hygiene_result",
+                    gate: "workstation_local_path_hygiene",
+                    command: repairFailureContext.command,
+                    head_sha: workspaceStatus.headSha,
+                    outcome: "repair_queued",
+                    remediation_target: "repair_already_queued",
+                    next_action: "wait_for_repair_turn",
+                    summary: repairFailureContext.summary,
+                    recorded_at: repairFailureContext.updated_at,
+                    repair_targets: [...actionablePublishableFilePaths].sort((left, right) => left.localeCompare(right)),
+                  },
+                ],
+                last_error: truncate(repairFailureContext.summary, 1000),
+                last_failure_kind: null,
+                last_failure_context: repairFailureContext,
+                ...args.applyFailureSignature(record, repairFailureContext),
+                blocked_reason: null,
+                ...issueDefinitionFreshnessPatch(issue),
+              });
+              state.issues[String(record.issue_number)] = record;
+              await stateStore.save(state);
+              await syncExecutionMetricsRunSummarySafely({
+                previousRecord: args.context.record,
+                nextRecord: record,
+                issue,
+                pullRequest: pr,
+                retentionRootPath: executionMetricsRetentionRootPath(
+                  args.config.stateFile,
+                ),
+                warningContext: "persisting",
+              });
+              const { record: blockageRecord, didPublish } =
+                await publishTrackedPrHostLocalBlockerComment(
+                  repairFailureContext,
+                  "repair_already_queued",
+                );
+              record = blockageRecord;
+              if (!didPublish) {
+                await syncJournal(record);
+              }
+              return {
+                kind: "returned",
+                message: `Workstation-local path hygiene blocked publication for issue #${record.issue_number}.`,
+              };
             }
             record = stateStore.touch(record, {
               state: "blocked",

@@ -19,6 +19,17 @@ import {
 
 export const WORKSTATION_LOCAL_PATH_HYGIENE_FAILURE_SIGNATURE =
   "workstation-local-path-hygiene-failed";
+export const WORKSTATION_LOCAL_PATH_HYGIENE_REPAIRABLE_PUBLICATION_SIGNATURE =
+  `${WORKSTATION_LOCAL_PATH_HYGIENE_FAILURE_SIGNATURE}|repairable_publication_hygiene`;
+
+export function isWorkstationLocalPathHygieneFailureSignature(
+  signature: string | null | undefined,
+): boolean {
+  return (
+    typeof signature === "string" &&
+    signature.includes(WORKSTATION_LOCAL_PATH_HYGIENE_FAILURE_SIGNATURE)
+  );
+}
 
 export interface WorkstationLocalPathGateResult {
   ok: boolean;
