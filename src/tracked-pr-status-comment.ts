@@ -73,6 +73,8 @@ function buildTrackedPrHostLocalBlockerComment(args: {
   remediationTarget: string | null;
   summary: string;
   details?: string[] | null;
+  localHeadSha?: string | null;
+  remoteHeadSha?: string | null;
 }): string {
   if (args.gateType === "workstation_local_path_hygiene") {
     return buildTrackedPrReadyPromotionPathHygieneComment(args);
@@ -81,12 +83,15 @@ function buildTrackedPrHostLocalBlockerComment(args: {
   return [
     `Tracked PR head \`${args.pr.headRefOid}\` is still draft because ready-for-review promotion is blocked locally.`,
     "",
+    ...(args.localHeadSha === undefined || args.localHeadSha === null ? [] : [`- local head SHA: \`${args.localHeadSha}\``]),
+    ...(args.remoteHeadSha === undefined || args.remoteHeadSha === null ? [] : [`- remote PR head SHA: \`${args.remoteHeadSha}\``]),
     `- reason code: \`${trackedPrReadyPromotionBlockedReasonCode(args.gateType)}\``,
     `- gate type: \`${args.gateType}\``,
     `- blocker signature: \`${args.blockerSignature}\``,
     `- failure class: \`${args.failureClass ?? "unknown"}\``,
     `- remediation target: \`${args.remediationTarget ?? "unknown"}\``,
     `- summary: ${args.summary}`,
+    ...appendEvidenceLines(args.details),
     "- automatic retry: no",
     "- next action: fix the tracked workspace blocker, then rerun the supervisor to retry ready-for-review promotion.",
     "",
@@ -111,6 +116,13 @@ function summarizeWorkstationLocalPathFirstFix(details: string[] | null | undefi
 
   const countsByFile = new Map<string, number>();
   for (const detail of details) {
+    if (
+      detail.includes(".codex-supervisor/issues/") &&
+      detail.includes("issue-journal.md")
+    ) {
+      continue;
+    }
+
     const match = detail.match(/^-?\s*([^:\s][^:]*)\:\d+\s+matched\b/);
     if (!match) {
       continue;
@@ -140,12 +152,33 @@ function summarizeWorkstationLocalPathFirstFix(details: string[] | null | undefi
   return `First fix: ${visibleFiles.join("; ")}${tail}.`;
 }
 
+function sanitizePathHygieneEvidenceLine(line: string): string {
+  return line
+    .replace(/\/(?:home|Users)(?:\/[^\s"'`<>:;,\)\]\}]*)?/g, "/<redacted-user-home>")
+    .replace(/C:\\Users\\[^\s"'`<>:;,\)\]\}]+/g, "C:\\<redacted-user-home>");
+}
+
+function appendEvidenceLines(details: string[] | null | undefined, limit = 3): string[] {
+  return compactEvidenceLines(
+    (details ?? [])
+      .filter(
+        (detail) =>
+          !detail.includes(".codex-supervisor/issues/") ||
+          !detail.includes("issue-journal.md"),
+      )
+      .map((detail) => sanitizePathHygieneEvidenceLine(detail)),
+    limit,
+  ).map((detail) => `- evidence: ${detail}`);
+}
+
 function buildTrackedPrReadyPromotionPathHygieneComment(args: {
   pr: Pick<GitHubPullRequest, "headRefOid">;
   blockerSignature: string;
   remediationTarget: string | null;
   summary: string;
   details?: string[] | null;
+  localHeadSha?: string | null;
+  remoteHeadSha?: string | null;
 }): string {
   const firstFix = summarizeWorkstationLocalPathFirstFix(args.details);
   const conciseSummary = args.summary.replace(/\s+First fix:.*$/i, "").trim();
@@ -153,9 +186,12 @@ function buildTrackedPrReadyPromotionPathHygieneComment(args: {
   return [
     `Tracked PR head \`${args.pr.headRefOid}\` is still draft because ready-for-review promotion is blocked locally.`,
     "",
+    ...(args.localHeadSha === undefined || args.localHeadSha === null ? [] : [`- local head SHA: \`${args.localHeadSha}\``]),
+    ...(args.remoteHeadSha === undefined || args.remoteHeadSha === null ? [] : [`- remote PR head SHA: \`${args.remoteHeadSha}\``]),
     `- reason code: \`${trackedPrReadyPromotionBlockedReasonCode("workstation_local_path_hygiene")}\``,
     `- gate name: \`workstation_local_path_hygiene\``,
     `- blocker signature: \`${args.blockerSignature}\``,
+    ...appendEvidenceLines(args.details),
     `- what failed: ${conciseSummary}`,
     ...(firstFix ? [`- ${firstFix}`] : []),
     `- remediation target: \`${args.remediationTarget ?? "manual_review"}\``,
@@ -699,6 +735,8 @@ export async function maybeCommentOnTrackedPrHostLocalBlocker(args: {
   remediationTarget: string | null;
   summary: string | null;
   details?: string[] | null;
+  localHeadSha?: string | null;
+  remoteHeadSha?: string | null;
 }): Promise<IssueRunRecord> {
   if (!args.github.addIssueComment) {
     return args.record;
@@ -735,6 +773,8 @@ export async function maybeCommentOnTrackedPrHostLocalBlocker(args: {
         remediationTarget: args.remediationTarget,
         summary: args.summary,
         details: args.details,
+        localHeadSha: args.localHeadSha,
+        remoteHeadSha: args.remoteHeadSha,
       }),
     });
   } catch (error) {

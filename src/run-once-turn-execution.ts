@@ -29,6 +29,7 @@ import {
   getStaleStabilizingNoPrRecoveryCount,
   shouldPreserveStaleStabilizingNoPrRecoveryTracking,
 } from "./no-pull-request-state";
+import * as trackedPrStatusComments from "./tracked-pr-status-comment";
 import {
   nextProcessedReviewThreadPatch,
   nextReviewFollowUpPatch,
@@ -336,35 +337,36 @@ export async function executeCodexTurnPhase(
   } = args.context;
   let { record, workspaceStatus, pr, checks, reviewThreads } = args.context;
   let turnMarkerWritten = false;
+  let sessionLock: LockHandle | null = null;
   const turnStartHeadSha = workspaceStatus.headSha;
   let usedSameTurnPathRepairRetry = false;
 
   try {
-    if (options.dryRun) {
-      return {
-        kind: "returned",
-        message: `Dry run: would invoke Codex for issue #${record.issue_number}.`,
-      };
-    }
-
-    const preRunState = record.state;
-    const shouldResumeTurn = shouldResumeAgentTurn({
-      record,
-      agentRunnerCapabilities: agentRunner.capabilities,
-    });
-    const sessionLock =
-      args.sessionLock ??
-      (shouldResumeTurn
-        ? await args.acquireSessionLock(record.codex_session_id!)
-        : null);
-    if (sessionLock && !sessionLock.acquired) {
-      return {
-        kind: "returned",
-        message: `Skipped issue #${record.issue_number}: ${sessionLock.reason}.`,
-      };
-    }
-
     try {
+      if (options.dryRun) {
+        return {
+          kind: "returned",
+          message: `Dry run: would invoke Codex for issue #${record.issue_number}.`,
+        };
+      }
+
+      const preRunState = record.state;
+      const shouldResumeTurn = shouldResumeAgentTurn({
+        record,
+        agentRunnerCapabilities: agentRunner.capabilities,
+      });
+      sessionLock =
+        args.sessionLock ??
+        (shouldResumeTurn
+          ? await args.acquireSessionLock(record.codex_session_id!)
+          : null);
+      if (sessionLock && !sessionLock.acquired) {
+        return {
+          kind: "returned",
+          message: `Skipped issue #${record.issue_number}: ${sessionLock.reason}.`,
+        };
+      }
+
       while (true) {
         let journalContent = await readIssueJournalImpl(journalPath);
         if (journalContent === null) {
@@ -568,6 +570,38 @@ export async function executeCodexTurnPhase(
                 workspaceStatus.headSha,
               );
 
+        const publishTrackedPrHostLocalBlockerComment = async (
+          failureContext: WorkstationLocalPathGateResult["failureContext"] | null,
+          remediationTarget: "manual_review" | "repair_already_queued",
+        ): Promise<{ record: IssueRunRecord; didPublish: boolean }> => {
+          if (!pr) {
+            return { record, didPublish: false };
+          }
+
+          const originalRecord = record;
+          const updatedRecord = await trackedPrStatusComments.maybeCommentOnTrackedPrHostLocalBlocker({
+            github,
+            stateStore,
+            state,
+            record,
+            pr,
+            syncJournal,
+            gateType: "workstation_local_path_hygiene",
+            blockerSignature: failureContext?.signature ?? null,
+            failureClass: failureContext?.signature ?? null,
+            remediationTarget,
+            summary:
+              failureContext?.summary ??
+              "Tracked durable artifacts failed workstation-local path hygiene before publication.",
+            details: failureContext?.details,
+            localHeadSha: workspaceStatus.headSha,
+            remoteHeadSha: pr.headRefOid,
+          });
+          return {
+            record: updatedRecord,
+            didPublish: updatedRecord !== originalRecord,
+          };
+        };
         if (
           (workspaceStatus.remoteAhead > 0 ||
             !workspaceStatus.remoteBranchExists) &&
@@ -636,8 +670,16 @@ export async function executeCodexTurnPhase(
                     blocked_reason: "verification",
                     ...issueDefinitionFreshnessPatch(issue),
                   });
-                  state.issues[String(record.issue_number)] = record;
-                  await stateStore.save(state);
+                  const { record: blockageRecord, didPublish } =
+                    await publishTrackedPrHostLocalBlockerComment(
+                      retryPersistenceFailureContext,
+                      "manual_review",
+                    );
+                  record = blockageRecord;
+                  if (!didPublish) {
+                    state.issues[String(record.issue_number)] = record;
+                    await stateStore.save(state);
+                  }
                   await syncExecutionMetricsRunSummarySafely({
                     previousRecord: args.context.record,
                     nextRecord: record,
@@ -648,7 +690,9 @@ export async function executeCodexTurnPhase(
                     ),
                     warningContext: "persisting",
                   });
-                  await syncJournal(record);
+                  if (!didPublish) {
+                    await syncJournal(record);
+                  }
                   return {
                     kind: "returned",
                     message: `Workstation-local path hygiene blocked publication for issue #${record.issue_number}.`,
@@ -688,8 +732,16 @@ export async function executeCodexTurnPhase(
               blocked_reason: "verification",
               ...issueDefinitionFreshnessPatch(issue),
             });
-            state.issues[String(record.issue_number)] = record;
-            await stateStore.save(state);
+            const { record: blockageRecord, didPublish } =
+              await publishTrackedPrHostLocalBlockerComment(
+              failureContext,
+              "manual_review",
+            );
+            record = blockageRecord;
+            if (!didPublish) {
+              state.issues[String(record.issue_number)] = record;
+              await stateStore.save(state);
+            }
             await syncExecutionMetricsRunSummarySafely({
               previousRecord: args.context.record,
               nextRecord: record,
@@ -700,7 +752,9 @@ export async function executeCodexTurnPhase(
               ),
               warningContext: "persisting",
             });
-            await syncJournal(record);
+            if (!didPublish) {
+              await syncJournal(record);
+            }
             return {
               kind: "returned",
               message: `Workstation-local path hygiene blocked publication for issue #${record.issue_number}.`,
@@ -743,8 +797,16 @@ export async function executeCodexTurnPhase(
                 blocked_reason: "verification",
                 ...issueDefinitionFreshnessPatch(issue),
               });
-              state.issues[String(record.issue_number)] = record;
-              await stateStore.save(state);
+              const { record: blockageRecord, didPublish } =
+                await publishTrackedPrHostLocalBlockerComment(
+                failureContext,
+                "manual_review",
+              );
+              record = blockageRecord;
+              if (!didPublish) {
+                state.issues[String(record.issue_number)] = record;
+                await stateStore.save(state);
+              }
               await syncExecutionMetricsRunSummarySafely({
                 previousRecord: args.context.record,
                 nextRecord: record,
@@ -755,7 +817,9 @@ export async function executeCodexTurnPhase(
                 ),
                 warningContext: "persisting",
               });
-              await syncJournal(record);
+              if (!didPublish) {
+                await syncJournal(record);
+              }
               return {
                 kind: "returned",
                 message: `Workstation-local path hygiene blocked publication for issue #${record.issue_number}.`,
