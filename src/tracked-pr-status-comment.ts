@@ -538,10 +538,12 @@ async function publishTrackedPrStatusComment(args: {
 }
 
 function buildStaleConfiguredBotReplyBody(args: {
+  issueNumber: number;
   pr: GitHubPullRequest;
   thread: ReviewThread;
   failureContext: FailureContext | null;
   resolveAfterReply: boolean;
+  reasonCode?: string;
 }): string {
   const latestComment = latestReviewComment(args.thread);
   const location = `${args.thread.path ?? "unknown"}:${args.thread.line ?? "?"}`;
@@ -555,9 +557,12 @@ function buildStaleConfiguredBotReplyBody(args: {
   const sourceLine = sourceLink ? ` Source: ${sourceLink}` : "";
   return [
     `The supervisor reprocessed this configured-bot finding on the current head \`${args.pr.headRefOid}\` and classified it as stale.`,
+    `Audit: issue=#${args.issueNumber} pr=#${args.pr.number} head=${args.pr.headRefOid} thread=${args.thread.id} reason=${args.reasonCode ?? TRACKED_PR_STATUS_COMMENT_REASON_CODE_STALE_REVIEW_BOT}.`,
     `Evidence: ${evidenceLine}.${sourceLine}`,
     args.resolveAfterReply
-      ? "Under the configured `reply_and_resolve` policy, the supervisor is auto-resolving this stale thread now."
+      ? args.reasonCode === "verified_no_source_change_auto_resolve"
+        ? "Under the configured verified no-source-change auto-resolve opt-in, the supervisor is auto-resolving this thread now."
+        : "Under the configured `reply_and_resolve` policy, the supervisor is auto-resolving this stale thread now."
       : "Leaving thread resolution to a human operator.",
   ].join("\n\n");
 }
@@ -613,6 +618,7 @@ async function maybeHandleTrackedPrStaleConfiguredBotReview(args: {
   config: SupervisorConfig;
   failureContext: FailureContext | null;
   resolveAfterReply: boolean;
+  reasonCode?: string;
 }): Promise<IssueRunRecord> {
   if (!args.github.replyToReviewThread) {
     return args.record;
@@ -656,10 +662,12 @@ async function maybeHandleTrackedPrStaleConfiguredBotReview(args: {
       });
       if (!replyProgressKeys.has(replyKey)) {
         const replyBody = buildStaleConfiguredBotReplyBody({
+          issueNumber: record.issue_number,
           pr: args.pr,
           thread: replyThread,
           failureContext: args.failureContext,
           resolveAfterReply: args.resolveAfterReply,
+          reasonCode: args.reasonCode,
         });
         await args.github.replyToReviewThread(replyThread.id, replyBody);
         record = await persistStaleConfiguredBotReviewProgress({
@@ -886,6 +894,9 @@ export async function maybeCommentOnTrackedPrPersistentStatus(args: {
     args.config.staleConfiguredBotReviewPolicy === "reply_and_resolve" &&
     (staleReviewBotRemediation?.classification === "metadata_only" ||
       staleReviewBotRemediation?.classification === "metadata_only_current_head_converged");
+  const canResolveVerifiedNoSourceChangeThreadResolution =
+    args.config.verifiedNoSourceChangeReviewThreadAutoResolve === true &&
+    staleReviewBotRemediation?.classification === "verified_no_source_change_pending_thread_resolution";
 
   const canAutoHandleStaleConfiguredBotReview =
     !args.skipAutoHandleStaleConfiguredBotReview &&
@@ -896,7 +907,8 @@ export async function maybeCommentOnTrackedPrPersistentStatus(args: {
     !args.summarizeChecks(args.checks).hasPending &&
     !args.summarizeChecks(args.checks).hasFailing &&
     (args.config.staleConfiguredBotReviewPolicy === "reply_only" ||
-      args.config.staleConfiguredBotReviewPolicy === "reply_and_resolve");
+      args.config.staleConfiguredBotReviewPolicy === "reply_and_resolve" ||
+      canResolveVerifiedNoSourceChangeThreadResolution);
 
   let currentRecord = args.record;
   if (canAutoHandleStaleConfiguredBotReview && args.github.replyToReviewThread) {
@@ -910,7 +922,10 @@ export async function maybeCommentOnTrackedPrPersistentStatus(args: {
       syncJournal: args.syncJournal,
       config: args.config,
       failureContext: args.failureContext,
-      resolveAfterReply: canResolveStaleConfiguredBotReview,
+      resolveAfterReply: canResolveStaleConfiguredBotReview || canResolveVerifiedNoSourceChangeThreadResolution,
+      reasonCode: canResolveVerifiedNoSourceChangeThreadResolution
+        ? "verified_no_source_change_auto_resolve"
+        : TRACKED_PR_STATUS_COMMENT_REASON_CODE_STALE_REVIEW_BOT,
     });
     currentRecord = repliedRecord;
     const replyHandled =

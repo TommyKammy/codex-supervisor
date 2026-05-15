@@ -21,6 +21,7 @@ export interface StaleReviewBotRemediationDto {
     | "metadata_only"
     | "metadata_only_missing_current_head_review"
     | "metadata_only_current_head_converged"
+    | "verified_no_source_change_pending_thread_resolution"
     | "unresolved_work"
     | "unknown_needs_operator";
   codexCurrentHeadReviewState: "observed" | "requested" | "missing" | "not_applicable";
@@ -37,6 +38,10 @@ const STALE_REVIEW_BOT_METADATA_ONLY_SUMMARY =
   "stale_configured_bot_thread_metadata_only";
 const STALE_REVIEW_BOT_METADATA_CURRENT_HEAD_SUMMARY =
   "stale_configured_bot_thread_metadata_only_pending_current_head_review_request";
+const VERIFIED_NO_SOURCE_CHANGE_MANUAL_NEXT_STEP =
+  "resolve_verified_configured_bot_threads_then_rerun_supervisor";
+const VERIFIED_NO_SOURCE_CHANGE_SUMMARY =
+  "verified_no_source_change_configured_bot_thread_resolution_pending";
 
 function formatTokenValue(value: string): string {
   return value.replace(/\r?\n/gu, "\\n");
@@ -171,8 +176,8 @@ function classifyCodexMetadataOnly(args: {
     }
     if (!policy.currentHeadObservedAt) {
       return {
-        classification: "metadata_only_missing_current_head_review",
-        summary: STALE_REVIEW_BOT_METADATA_CURRENT_HEAD_SUMMARY,
+        classification: "verified_no_source_change_pending_thread_resolution",
+        summary: VERIFIED_NO_SOURCE_CHANGE_SUMMARY,
       };
     }
   }
@@ -278,7 +283,10 @@ export function buildStaleReviewBotRemediation(args: {
     classification: classification.classification,
     codexCurrentHeadReviewState,
     reviewThreadUrl: args.record.last_failure_context?.url ?? null,
-    manualNextStep: STALE_REVIEW_BOT_MANUAL_NEXT_STEP,
+    manualNextStep:
+      classification.classification === "verified_no_source_change_pending_thread_resolution"
+        ? VERIFIED_NO_SOURCE_CHANGE_MANUAL_NEXT_STEP
+        : STALE_REVIEW_BOT_MANUAL_NEXT_STEP,
     summary: classification.summary,
   };
 }

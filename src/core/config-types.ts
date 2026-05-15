@@ -190,6 +190,7 @@ export interface SupervisorConfig {
   publishablePathAllowlistMarkers?: string[];
   approvedTrackedTopLevelEntries?: string[];
   staleConfiguredBotReviewPolicy?: StaleConfiguredBotReviewPolicy;
+  verifiedNoSourceChangeReviewThreadAutoResolve?: boolean;
   reviewBotLogins: string[];
   configuredReviewProviders?: ConfiguredReviewProvider[];
   humanReviewBlocksMerge: boolean;

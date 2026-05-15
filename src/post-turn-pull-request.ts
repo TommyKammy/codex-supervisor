@@ -473,15 +473,19 @@ function codexConnectorReviewRequestAction(args: {
     staleCodexReviewState?.classification === "metadata_only_missing_current_head_review";
   const isCodexConvergedCurrentHeadReview =
     staleCodexReviewState?.classification === "metadata_only_current_head_converged";
+  const isCodexVerifiedNoSourceChangeThreadResolution =
+    staleCodexReviewState?.classification === "verified_no_source_change_pending_thread_resolution";
   const isCodexMetadataOnly =
     staleCodexReviewState?.classification === "metadata_only" ||
     staleCodexReviewState?.classification === "metadata_only_missing_current_head_review" ||
-    staleCodexReviewState?.classification === "metadata_only_current_head_converged";
+    staleCodexReviewState?.classification === "metadata_only_current_head_converged" ||
+    isCodexVerifiedNoSourceChangeThreadResolution;
 
   if (
     configuredReviewProviderKinds(args.config).includes("codex") &&
     !isCodexMissingCurrentHeadReview &&
     (isCodexConvergedCurrentHeadReview ||
+      isCodexVerifiedNoSourceChangeThreadResolution ||
       isCodexMetadataOnly ||
       staleCodexReviewState?.classification === "unresolved_work" ||
       staleCodexReviewState?.classification === "unknown_needs_operator")
@@ -1226,7 +1230,8 @@ export async function handlePostTurnPullRequestTransitionsPhase(
   const staleReviewBotReplySignature =
     effectiveFailureContext?.signature ?? trackedPrStatusComments.TRACKED_PR_STATUS_COMMENT_REASON_CODE_STALE_REVIEW_BOT;
   const shouldRefreshAfterReplyAndResolve =
-    config.staleConfiguredBotReviewPolicy === "reply_and_resolve" &&
+    (config.staleConfiguredBotReviewPolicy === "reply_and_resolve" ||
+      config.verifiedNoSourceChangeReviewThreadAutoResolve === true) &&
     record.state === "blocked" &&
     record.blocked_reason === "stale_review_bot" &&
     record.last_stale_review_bot_reply_head_sha === postReady.pr.headRefOid &&
@@ -1283,6 +1288,23 @@ export async function handlePostTurnPullRequestTransitionsPhase(
           skipAutoHandleStaleConfiguredBotReview: true,
         });
       }
+      record = await maybeRequestCodexConnectorReviewComment({
+        config,
+        stateStore,
+        state,
+        github,
+        record,
+        pr: postReady.pr,
+        checks: postReady.checks,
+        reviewThreads: postReady.reviewThreads,
+        syncJournal,
+        applyFailureSignature: args.applyFailureSignature,
+        blockedReasonFromReviewState: args.blockedReasonFromReviewState,
+        summarizeChecks: args.summarizeChecks,
+        configuredBotReviewThreads: args.configuredBotReviewThreads,
+        manualReviewThreads: args.manualReviewThreads,
+        mergeConflictDetected: args.mergeConflictDetected,
+      });
     }
   }
   if (
