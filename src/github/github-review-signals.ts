@@ -27,9 +27,12 @@ export interface CopilotReviewLifecycleFacts {
     originalCommitOid?: string | null;
   }>;
   issueComments: Array<{
+    id?: string | null;
+    databaseId?: number | null;
     authorLogin: string | null;
     createdAt: string | null;
     body: string | null;
+    url?: string | null;
     viewerDidAuthor?: boolean | null;
   }>;
   statusContexts?: Array<{
@@ -90,6 +93,9 @@ export type ConfiguredBotCurrentHeadObservationSource =
 export interface CodexConnectorReviewRequestObservation {
   requestedAt: string | null;
   headSha: string;
+  commentDatabaseId: number | null;
+  commentNodeId: string | null;
+  commentUrl: string | null;
 }
 
 export interface CodexConnectorReviewRequestIdentity {
@@ -168,6 +174,9 @@ export function findCodexConnectorReviewRequest(
       latest = {
         requestedAt: comment.createdAt,
         headSha: marker.headSha,
+        commentDatabaseId: typeof comment.databaseId === "number" ? comment.databaseId : null,
+        commentNodeId: comment.id ?? null,
+        commentUrl: comment.url ?? null,
       };
       latestMs = createdAtMs;
     }

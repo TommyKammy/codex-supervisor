@@ -522,6 +522,11 @@ test("handlePostTurnPullRequestTransitionsPhase requests Codex Connector review 
       github: createDefaultGithub({
         addIssueComment: async (issueNumber, body) => {
           comments.push({ issueNumber, body });
+          return {
+            databaseId: 1976001,
+            nodeId: "IC_kwDOissue1976_request",
+            url: "https://github.com/owner/repo/issues/1976#issuecomment-1976001",
+          };
         },
       }),
       context: createPostTurnContext({
@@ -565,11 +570,24 @@ test("handlePostTurnPullRequestTransitionsPhase requests Codex Connector review 
         ],
         { issueNumber: issue.number, prNumber: pr.number, headSha: pr.headRefOid },
       ),
-      { requestedAt: "2026-05-08T03:30:00Z", headSha: pr.headRefOid },
+      {
+        requestedAt: "2026-05-08T03:30:00Z",
+        headSha: pr.headRefOid,
+        commentDatabaseId: null,
+        commentNodeId: null,
+        commentUrl: null,
+      },
     );
     assert.equal(result.record.state, "waiting_ci");
     assert.equal(result.record.codex_connector_review_requested_head_sha, pr.headRefOid);
     assert.ok(result.record.codex_connector_review_requested_observed_at);
+    assert.equal(result.record.codex_connector_review_request_comment_identity_status, "available");
+    assert.equal(result.record.codex_connector_review_request_comment_database_id, 1976001);
+    assert.equal(result.record.codex_connector_review_request_comment_node_id, "IC_kwDOissue1976_request");
+    assert.equal(
+      result.record.codex_connector_review_request_comment_url,
+      "https://github.com/owner/repo/issues/1976#issuecomment-1976001",
+    );
     assert.equal(result.record.blocked_reason, null);
 
     const retryResult = await handlePostTurnPullRequestTransitionsPhase({
@@ -578,6 +596,11 @@ test("handlePostTurnPullRequestTransitionsPhase requests Codex Connector review 
       github: createDefaultGithub({
         addIssueComment: async (issueNumber, body) => {
           comments.push({ issueNumber, body });
+          return {
+            databaseId: 1924001,
+            nodeId: "IC_kwDOissue1924_request",
+            url: "https://github.com/owner/repo/issues/1924#issuecomment-1924001",
+          };
         },
       }),
       context: createPostTurnContext({
@@ -661,6 +684,11 @@ test("handlePostTurnPullRequestTransitionsPhase retries Codex Connector review o
       github: createDefaultGithub({
         addIssueComment: async (issueNumber, body) => {
           comments.push({ issueNumber, body });
+          return {
+            databaseId: 1924001,
+            nodeId: "IC_kwDOissue1924_request",
+            url: "https://github.com/owner/repo/issues/1924#issuecomment-1924001",
+          };
         },
       }),
       context: createPostTurnContext({
@@ -693,6 +721,13 @@ test("handlePostTurnPullRequestTransitionsPhase retries Codex Connector review o
     assert.equal(result.record.codex_connector_review_request_retry_count, 1);
     assert.equal(result.record.codex_connector_review_request_retry_head_sha, pr.headRefOid);
     assert.ok(result.record.codex_connector_review_request_last_retried_at);
+    assert.equal(result.record.codex_connector_review_request_comment_identity_status, "available");
+    assert.equal(result.record.codex_connector_review_request_comment_database_id, 1924001);
+    assert.equal(result.record.codex_connector_review_request_comment_node_id, "IC_kwDOissue1924_request");
+    assert.equal(
+      result.record.codex_connector_review_request_comment_url,
+      "https://github.com/owner/repo/issues/1924#issuecomment-1924001",
+    );
 
     const duplicateCycle = await handlePostTurnPullRequestTransitionsPhase({
       config,

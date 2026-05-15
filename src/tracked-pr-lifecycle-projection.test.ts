@@ -312,6 +312,10 @@ test("resetTrackedPrHeadScopedStateOnAdvance does not preserve review bookkeepin
     codex_connector_review_request_retry_count: 0,
     codex_connector_review_request_retry_head_sha: null,
     codex_connector_review_request_last_retried_at: null,
+    codex_connector_review_request_comment_identity_status: null,
+    codex_connector_review_request_comment_database_id: null,
+    codex_connector_review_request_comment_node_id: null,
+    codex_connector_review_request_comment_url: null,
     last_observed_host_local_pr_blocker_signature: null,
     last_observed_host_local_pr_blocker_head_sha: null,
     last_host_local_pr_blocker_comment_signature: null,
@@ -331,6 +335,10 @@ test("resetTrackedPrHeadScopedStateOnAdvance clears old-head provider success af
     codex_connector_review_request_retry_count: 1,
     codex_connector_review_request_retry_head_sha: "head-old-191",
     codex_connector_review_request_last_retried_at: "2026-05-08T03:45:00Z",
+    codex_connector_review_request_comment_identity_status: "available",
+    codex_connector_review_request_comment_database_id: 191001,
+    codex_connector_review_request_comment_node_id: "IC_head_old_191",
+    codex_connector_review_request_comment_url: "https://github.com/owner/repo/issues/191#issuecomment-191001",
   });
 
   const patch = resetTrackedPrHeadScopedStateOnAdvance(record, "head-new-191");
@@ -342,6 +350,10 @@ test("resetTrackedPrHeadScopedStateOnAdvance clears old-head provider success af
   assert.equal(patch.codex_connector_review_request_retry_count, 0);
   assert.equal(patch.codex_connector_review_request_retry_head_sha, null);
   assert.equal(patch.codex_connector_review_request_last_retried_at, null);
+  assert.equal(patch.codex_connector_review_request_comment_identity_status, null);
+  assert.equal(patch.codex_connector_review_request_comment_database_id, null);
+  assert.equal(patch.codex_connector_review_request_comment_node_id, null);
+  assert.equal(patch.codex_connector_review_request_comment_url, null);
 });
 
 test("resetTrackedPrHeadScopedStateOnAdvance clears review bookkeeping when processed thread markers belong to an older head", () => {
@@ -396,6 +408,10 @@ test("resetTrackedPrHeadScopedStateOnAdvance clears review bookkeeping when proc
     codex_connector_review_request_retry_count: 0,
     codex_connector_review_request_retry_head_sha: null,
     codex_connector_review_request_last_retried_at: null,
+    codex_connector_review_request_comment_identity_status: null,
+    codex_connector_review_request_comment_database_id: null,
+    codex_connector_review_request_comment_node_id: null,
+    codex_connector_review_request_comment_url: null,
     last_observed_host_local_pr_blocker_signature: null,
     last_observed_host_local_pr_blocker_head_sha: null,
     last_host_local_pr_blocker_comment_signature: null,

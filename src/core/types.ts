@@ -115,6 +115,7 @@ export interface TimelineArtifact {
 }
 
 export type FailureKind = "timeout" | "command_error" | "codex_exit" | "codex_failed" | null;
+export type CommentIdentityStatus = "available" | "unavailable" | null;
 
 export type FailureContextCategory =
   | "checks"
@@ -228,6 +229,10 @@ export interface IssueRunRecord {
   codex_connector_review_request_retry_count?: number;
   codex_connector_review_request_retry_head_sha?: string | null;
   codex_connector_review_request_last_retried_at?: string | null;
+  codex_connector_review_request_comment_identity_status?: CommentIdentityStatus;
+  codex_connector_review_request_comment_database_id?: number | null;
+  codex_connector_review_request_comment_node_id?: string | null;
+  codex_connector_review_request_comment_url?: string | null;
   copilot_review_timed_out_at: string | null;
   copilot_review_timeout_action: CopilotReviewTimeoutAction | null;
   copilot_review_timeout_reason: string | null;

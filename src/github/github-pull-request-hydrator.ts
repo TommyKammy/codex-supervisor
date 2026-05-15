@@ -204,8 +204,11 @@ export class GitHubPullRequestHydrator {
             }
             comments(last: 100) {
               nodes {
+                id
+                databaseId
                 createdAt
                 body
+                url
                 viewerDidAuthor
                 author {
                   login
