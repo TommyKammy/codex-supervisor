@@ -247,8 +247,9 @@ function buildUnpublishedLocalRepairCommitLines(
 ): string[] {
   const localHeadSha = record.last_head_sha ?? null;
   const remoteHeadSha = pr.headRefOid ?? null;
+  const prNumber = record.pr_number;
 
-  if (localHeadSha === null || remoteHeadSha === null) {
+  if (localHeadSha === null || remoteHeadSha === null || prNumber === null) {
     return [];
   }
 
@@ -268,7 +269,7 @@ function buildUnpublishedLocalRepairCommitLines(
     [
       "tracked_pr_local_repair_commit_unpublished",
       `issue=#${record.issue_number}`,
-      `pr=#${record.pr_number}`,
+      `pr=#${prNumber}`,
       `local_repair_commit_unpublished=${localHeadSha}`,
       `local_head_sha=${localHeadSha}`,
       `remote_head_sha=${remoteHeadSha}`,
