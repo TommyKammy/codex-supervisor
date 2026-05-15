@@ -4324,6 +4324,78 @@ test("status distinguishes repairable ready-promotion path hygiene blockers queu
   );
 });
 
+test("status reports unpublished local repair commits when publication fails before push", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 190;
+  const prNumber = 290;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        branch,
+        pr_number: prNumber,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        blocked_reason: "verification",
+        last_error:
+          "Tracked durable artifacts failed workstation-local path hygiene before marking PR #290 ready.",
+        last_head_sha: "head-local-290",
+        last_failure_signature: "workstation-local-path-hygiene-failed",
+        last_host_local_pr_blocker_comment_signature:
+          "workstation-local-path-hygiene-failed|gate=workstation_local_path_hygiene|failure=workstation-local-path-hygiene-failed|target=tracked_publishable_content",
+        last_host_local_pr_blocker_comment_head_sha: "head-local-290",
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Tracked publication failure before push",
+    body: executionReadyBody("Surface publication-gate failures where the fix stays local-only."),
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const draftPr = createPullRequest({
+    number: prNumber,
+    headRefName: branch,
+    headRefOid: "head-pr-290",
+    isDraft: true,
+  });
+
+  const supervisor = new Supervisor({
+    ...fixture.config,
+    localCiCommand: "npm run verify:paths",
+  });
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [trackedIssue],
+    listAllIssues: async () => [trackedIssue],
+    getPullRequestIfExists: async () => draftPr,
+    getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const status = await supervisor.status();
+  assert.match(
+    status,
+    /^tracked_pr_ready_promotion_blocked issue=#190 pr=#290 recoverability=stale_but_recoverable github_state=draft_pr local_state=blocked local_blocked_reason=verification stale_local_blocker=yes$/m,
+  );
+  assert.match(
+    status,
+    /^tracked_pr_ready_promotion_gate issue=#190 pr=#290 gate=workstation_local_path_hygiene remediation_target=tracked_publishable_content summary=Tracked durable artifacts failed workstation-local path hygiene before marking PR #290 ready\.$/m,
+  );
+  assert.match(
+    status,
+    /^tracked_pr_local_repair_commit_unpublished issue=#190 pr=#290 local_repair_commit_unpublished=head-local-290 local_head_sha=head-local-290 remote_head_sha=head-pr-290 publication_gate=failed publication_gate_name=workstation_local_path_hygiene failure_signature=workstation-local-path-hygiene-failed$/m,
+  );
+});
+
 test("status surfaces baseline-only ready-promotion path hygiene findings as maintenance context", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 180;

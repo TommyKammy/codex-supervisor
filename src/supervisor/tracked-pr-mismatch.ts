@@ -205,6 +205,81 @@ function deriveWorkstationLocalPathHygieneRemediationTarget(
   return REMEDIATION_TARGET_TRACKED_PUBLISHABLE_CONTENT;
 }
 
+function isWorkstationLocalPathHygienePublicationFailure(record: IssueRunRecord): boolean {
+  return (
+    isWorkstationLocalPathHygieneFailureSignature(record.last_failure_signature)
+    || (record.last_error ?? "").includes("workstation-local path hygiene before marking PR")
+  );
+}
+
+function hasFreshLocalHeadPublicationEvidence(record: IssueRunRecord, localHeadSha: string | null): boolean {
+  if (localHeadSha === null) {
+    return false;
+  }
+
+  if (
+    record.latest_local_ci_result?.outcome === "failed"
+    && record.latest_local_ci_result.head_sha === localHeadSha
+  ) {
+    return true;
+  }
+
+  if (
+    record.last_observed_host_local_pr_blocker_head_sha === localHeadSha
+    && typeof record.last_observed_host_local_pr_blocker_signature === "string"
+    && record.last_observed_host_local_pr_blocker_signature.length > 0
+    && !record.last_observed_host_local_pr_blocker_signature.startsWith("cleared:")
+  ) {
+    return true;
+  }
+
+  return (
+    record.last_host_local_pr_blocker_comment_head_sha === localHeadSha
+    && typeof record.last_host_local_pr_blocker_comment_signature === "string"
+    && record.last_host_local_pr_blocker_comment_signature.length > 0
+    && !record.last_host_local_pr_blocker_comment_signature.startsWith("cleared:")
+  );
+}
+
+function buildUnpublishedLocalRepairCommitLines(
+  record: IssueRunRecord,
+  pr: GitHubPullRequest,
+): string[] {
+  const localHeadSha = record.last_head_sha ?? null;
+  const remoteHeadSha = pr.headRefOid ?? null;
+  const prNumber = record.pr_number;
+
+  if (localHeadSha === null || remoteHeadSha === null || prNumber === null) {
+    return [];
+  }
+
+  if (localHeadSha === remoteHeadSha) {
+    return [];
+  }
+
+  if (!isWorkstationLocalPathHygienePublicationFailure(record)) {
+    return [];
+  }
+
+  if (!hasFreshLocalHeadPublicationEvidence(record, localHeadSha)) {
+    return [];
+  }
+
+  return [
+    [
+      "tracked_pr_local_repair_commit_unpublished",
+      `issue=#${record.issue_number}`,
+      `pr=#${prNumber}`,
+      `local_repair_commit_unpublished=${localHeadSha}`,
+      `local_head_sha=${localHeadSha}`,
+      `remote_head_sha=${remoteHeadSha}`,
+      "publication_gate=failed",
+      "publication_gate_name=workstation_local_path_hygiene",
+      `failure_signature=${record.last_failure_signature ?? "unknown"}`,
+    ].join(" "),
+  ];
+}
+
 function readyPromotionGateSummary(
   config: SupervisorConfig,
   record: IssueRunRecord,
@@ -236,10 +311,7 @@ function readyPromotionGateSummary(
     };
   }
 
-  if (
-    isWorkstationLocalPathHygieneFailureSignature(record.last_failure_signature) ||
-    (record.last_error ?? "").includes("workstation-local path hygiene before marking PR")
-  ) {
+  if (isWorkstationLocalPathHygienePublicationFailure(record)) {
     const remediationTarget = deriveWorkstationLocalPathHygieneRemediationTarget(record);
     const pathHygieneSummary = record.last_error ?? summary;
     return {
@@ -255,6 +327,7 @@ function readyPromotionGateSummary(
           `remediation_target=${remediationTarget}`,
           `summary=${pathHygieneSummary.replace(/\r?\n/g, "\\n")}`,
         ].join(" "),
+        ...buildUnpublishedLocalRepairCommitLines(record, pr),
         ...buildTimelineArtifactDetailLines(record),
       ],
     };
