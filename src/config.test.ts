@@ -150,6 +150,7 @@ test("config field posture metadata classifies setup and automation-expanding fi
       "localReviewFollowUpIssueCreationEnabled",
       "localReviewHighSeverityAction",
       "staleConfiguredBotReviewPolicy",
+      "verifiedNoSourceChangeReviewThreadAutoResolve",
       "approvedTrackedTopLevelEntries",
     ].map((field) => [field, getConfigFieldPostureMetadata(field)?.tier]),
     [
@@ -158,6 +159,7 @@ test("config field posture metadata classifies setup and automation-expanding fi
       ["localReviewFollowUpIssueCreationEnabled", "dangerous_explicit_opt_in"],
       ["localReviewHighSeverityAction", "dangerous_explicit_opt_in"],
       ["staleConfiguredBotReviewPolicy", "dangerous_explicit_opt_in"],
+      ["verifiedNoSourceChangeReviewThreadAutoResolve", "dangerous_explicit_opt_in"],
       ["approvedTrackedTopLevelEntries", "dangerous_explicit_opt_in"],
     ],
   );

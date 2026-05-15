@@ -1401,7 +1401,7 @@ test("explain classifies processed Codex must-fix residue as missing-current-hea
 
   assert.match(
     explanation,
-    /^stale_review_bot_remediation issue=#198 pr=#398 reason=stale_review_bot code_ci=green current_head_sha=head-198 processed_on_current_head=yes classification=metadata_only_missing_current_head_review codex_current_head_review_state=missing review_thread_url=https:\/\/example\.test\/pr\/398#discussion_r398 manual_next_step=inspect_exact_review_thread_then_resolve_or_leave_manual_note summary=stale_configured_bot_thread_metadata_only_pending_current_head_review_request$/m,
+    /^stale_review_bot_remediation issue=#198 pr=#398 reason=stale_review_bot code_ci=green current_head_sha=head-198 processed_on_current_head=yes classification=verified_no_source_change_pending_thread_resolution codex_current_head_review_state=missing review_thread_url=https:\/\/example\.test\/pr\/398#discussion_r398 manual_next_step=resolve_verified_configured_bot_threads_then_rerun_supervisor summary=verified_no_source_change_configured_bot_thread_resolution_pending$/m,
   );
 });
 

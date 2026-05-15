@@ -544,6 +544,7 @@ export function parseSupervisorConfigDocument(raw: Record<string, unknown>, reso
       : [],
     approvedTrackedTopLevelEntries: parseApprovedTrackedTopLevelEntries(raw.approvedTrackedTopLevelEntries),
     staleConfiguredBotReviewPolicy: parseStaleConfiguredBotReviewPolicy(raw.staleConfiguredBotReviewPolicy),
+    verifiedNoSourceChangeReviewThreadAutoResolve: raw.verifiedNoSourceChangeReviewThreadAutoResolve === true,
     reviewBotLogins: normalizeReviewBotLogins(
       Array.isArray(raw.reviewBotLogins)
         ? raw.reviewBotLogins.filter((value): value is string => typeof value === "string")

@@ -52,6 +52,7 @@ export function createConfig(overrides: Partial<SupervisorConfig> = {}): Supervi
     localReviewHighSeverityAction: "retry",
     publishablePathAllowlistMarkers: [],
     staleConfiguredBotReviewPolicy: "diagnose_only",
+    verifiedNoSourceChangeReviewThreadAutoResolve: false,
     reviewBotLogins: [],
     humanReviewBlocksMerge: true,
     issueJournalRelativePath: ".codex-supervisor/issue-journal.md",

@@ -4394,6 +4394,145 @@ test("handlePostTurnPullRequestTransitionsPhase replies and resolves stale confi
   assert.equal(resolveCalls.length, 2);
 });
 
+test("handlePostTurnPullRequestTransitionsPhase resolves verified no-source-change Codex threads and requests current-head review when enabled", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+    verifiedNoSourceChangeReviewThreadAutoResolve: true,
+  });
+  const issue = createIssue({ title: "Resolve verified no-source-change Codex thread residue" });
+  const pr = createPullRequest({
+    title: "Tracked PR verified no-source-change Codex residue",
+    number: 1985,
+    isDraft: false,
+    headRefOid: "head-1985",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-05-15T00:10:00Z",
+    configuredBotCurrentHeadObservedAt: null,
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        issue_number: 102,
+        state: "blocked",
+        pr_number: pr.number,
+        last_head_sha: pr.headRefOid,
+        blocked_reason: "stale_review_bot",
+        copilot_review_timed_out_at: "2026-05-15T00:20:00Z",
+        copilot_review_timeout_action: "request_review_comment",
+        processed_review_thread_ids: [`thread-codex@${pr.headRefOid}`],
+        processed_review_thread_fingerprints: [`thread-codex@${pr.headRefOid}#comment-codex`],
+      }),
+    },
+  };
+  const staleBotFailureContext = {
+    ...createFailureContext(
+      "1 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
+    ),
+    signature: "stalled-bot:thread-codex",
+    details: ["reviewer=chatgpt-codex-connector file=src/review.ts line=7 p_severity=P1 processed_on_current_head=yes"],
+    url: "https://example.test/pr/1985#discussion_r1985",
+  };
+  const reviewThreads = [
+    createReviewThread({
+      id: "thread-codex",
+      path: "src/review.ts",
+      line: 7,
+      comments: {
+        nodes: [
+          {
+            id: "comment-codex",
+            body: "P1: This finding was verified as no source change needed.",
+            createdAt: "2026-05-15T00:05:00Z",
+            url: "https://example.test/pr/1985#discussion_r1985",
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  ] satisfies ReviewThread[];
+  const replyCalls: Array<{ threadId: string; body: string }> = [];
+  const resolveCalls: string[] = [];
+  const requestComments: string[] = [];
+  let snapshotLoads = 0;
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: createNoopStateStore(),
+    github: createDefaultGithub({
+      addIssueComment: async (_prNumber: number, body: string) => {
+        requestComments.push(body);
+        return {
+          databaseId: 1985001,
+          nodeId: "IC_kwDO1985",
+          url: "https://example.test/pr/1985#issuecomment-1985001",
+        };
+      },
+      replyToReviewThread: async (threadId: string, body: string) => {
+        replyCalls.push({ threadId, body });
+      },
+      resolveReviewThread: async (threadId: string) => {
+        resolveCalls.push(threadId);
+      },
+    }),
+    context: createPostTurnContext({
+      state,
+      record: state.issues["102"]!,
+      issue,
+      pr,
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+    }),
+    derivePullRequestLifecycleSnapshot: (recordForState, _pr, _checks, currentReviewThreads) =>
+      createLifecycleSnapshot(recordForState, currentReviewThreads.length === 0 ? "waiting_ci" : "blocked", {
+        failureContext: currentReviewThreads.length === 0 ? null : staleBotFailureContext,
+        copilotTimeoutPatch: {
+          copilot_review_timed_out_at: "2026-05-15T00:20:00Z",
+          copilot_review_timeout_action: "request_review_comment",
+          copilot_review_timeout_reason: "current_head_signal_timeout",
+        },
+      }),
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    blockedReasonFromReviewState: (_record, _pr, _checks, currentReviewThreads) =>
+      currentReviewThreads.length === 0 ? null : "stale_review_bot",
+    summarizeChecks,
+    configuredBotReviewThreads,
+    manualReviewThreads,
+    mergeConflictDetected: () => false,
+    runLocalCiCommand: async () => undefined,
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
+    loadOpenPullRequestSnapshot: async () => {
+      snapshotLoads += 1;
+      return {
+        pr,
+        checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+        reviewThreads: snapshotLoads <= 2 ? reviewThreads : [],
+      };
+    },
+  });
+
+  assert.equal(result.record.state, "waiting_ci");
+  assert.deepEqual(replyCalls.map((call) => call.threadId), ["thread-codex"]);
+  assert.deepEqual(resolveCalls, ["thread-codex"]);
+  assert.match(replyCalls[0]?.body ?? "", /reason=verified_no_source_change_auto_resolve/);
+  assert.match(replyCalls[0]?.body ?? "", /issue=#102 pr=#1985 head=head-1985 thread=thread-codex/);
+  assert.equal(requestComments.length, 1);
+  assert.match(requestComments[0] ?? "", /@codex review/);
+  assert.match(requestComments[0] ?? "", /codex-supervisor:codex-connector-review-request issue=102 pr=1985 head=head-1985/);
+});
+
 test("handlePostTurnPullRequestTransitionsPhase does not resolve stale configured-bot review threads until metadata-only evidence is satisfied", async () => {
   const config = createConfig({
     reviewBotLogins: ["copilot-pull-request-reviewer"],

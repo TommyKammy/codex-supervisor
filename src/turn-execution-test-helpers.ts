@@ -43,6 +43,7 @@ export function createConfig(overrides: Partial<SupervisorConfig> = {}): Supervi
     publishablePathAllowlistMarkers: [],
     approvedTrackedTopLevelEntries: undefined,
     staleConfiguredBotReviewPolicy: "diagnose_only",
+    verifiedNoSourceChangeReviewThreadAutoResolve: false,
     reviewBotLogins: [],
     humanReviewBlocksMerge: true,
     issueJournalRelativePath: ".codex-supervisor/issue-journal.md",
