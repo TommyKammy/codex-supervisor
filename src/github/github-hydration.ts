@@ -48,8 +48,11 @@ export interface PullRequestCopilotReviewLifecycleResponse {
   } | null;
   comments?: {
     nodes?: Array<{
+      id?: string | null;
+      databaseId?: number | null;
       createdAt?: string | null;
       body?: string | null;
+      url?: string | null;
       viewerDidAuthor?: boolean | null;
       author?: {
         login?: string | null;
@@ -249,9 +252,12 @@ export function mapCopilotReviewLifecycleFacts(
       ) ?? [],
     issueComments:
       lifecycle?.comments?.nodes?.map((comment) => ({
+        id: comment?.id ?? null,
+        databaseId: comment?.databaseId ?? null,
         authorLogin: normalizeLogin(comment?.author?.login ?? null),
         createdAt: comment?.createdAt ?? null,
         body: comment?.body ?? null,
+        url: comment?.url ?? null,
         viewerDidAuthor: comment?.viewerDidAuthor ?? null,
       })) ?? [],
     statusContexts:
@@ -346,6 +352,9 @@ export function applyConfiguredBotReviewSummary(
     copilotReviewArrivedAt: summary?.lifecycle.arrivedAt ?? null,
     codexConnectorReviewRequestedAt: summary?.codexConnectorReviewRequest?.requestedAt ?? null,
     codexConnectorReviewRequestedHeadSha: summary?.codexConnectorReviewRequest?.headSha ?? null,
+    codexConnectorReviewRequestCommentDatabaseId: summary?.codexConnectorReviewRequest?.commentDatabaseId ?? null,
+    codexConnectorReviewRequestCommentNodeId: summary?.codexConnectorReviewRequest?.commentNodeId ?? null,
+    codexConnectorReviewRequestCommentUrl: summary?.codexConnectorReviewRequest?.commentUrl ?? null,
     configuredBotCurrentHeadObservedAt: summary?.currentHeadObservedAt ?? null,
     configuredBotCurrentHeadObservationSource: summary?.currentHeadObservationSource ?? null,
     configuredBotCurrentHeadStatusState: summary?.currentHeadStatusState ?? null,

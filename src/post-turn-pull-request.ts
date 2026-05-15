@@ -640,7 +640,7 @@ async function maybeRequestCodexConnectorReviewComment(args: {
     if (!args.github.addIssueComment) {
       throw new Error("GitHub comment transport unavailable");
     }
-    await args.github.addIssueComment(
+    const commentIdentity = await args.github.addIssueComment(
       args.pr.number,
       renderCodexConnectorReviewRequestCommentForAction({
         action: requestAction,
@@ -650,6 +650,46 @@ async function maybeRequestCodexConnectorReviewComment(args: {
         headSha: args.pr.headRefOid,
       }),
     );
+    const commentIdentityPatch: Partial<IssueRunRecord> = commentIdentity
+      ? {
+          codex_connector_review_request_comment_identity_status: "available",
+          codex_connector_review_request_comment_database_id: commentIdentity.databaseId,
+          codex_connector_review_request_comment_node_id: commentIdentity.nodeId,
+          codex_connector_review_request_comment_url: commentIdentity.url,
+        }
+      : {
+          codex_connector_review_request_comment_identity_status: "unavailable",
+          codex_connector_review_request_comment_database_id: null,
+          codex_connector_review_request_comment_node_id: null,
+          codex_connector_review_request_comment_url: null,
+        };
+
+    const requestedAt = nowIso();
+    const updatedRecord = args.stateStore.touch(args.record, {
+      state: "waiting_ci",
+      codex_connector_review_requested_observed_at:
+        requestAction.kind === "initial"
+          ? requestedAt
+          : args.record.codex_connector_review_requested_observed_at ?? args.pr.codexConnectorReviewRequestedAt ?? requestedAt,
+      codex_connector_review_requested_head_sha: args.pr.headRefOid,
+      codex_connector_review_request_retry_count:
+        requestAction.kind === "retry" ? requestAction.retryAttempt : 0,
+      codex_connector_review_request_retry_head_sha:
+        requestAction.kind === "retry" ? args.pr.headRefOid : null,
+      codex_connector_review_request_last_retried_at:
+        requestAction.kind === "retry" ? requestedAt : null,
+      ...commentIdentityPatch,
+      blocked_reason: null,
+      last_error: null,
+      last_failure_kind: null,
+      last_failure_context: null,
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    });
+    args.state.issues[String(updatedRecord.issue_number)] = updatedRecord;
+    await args.stateStore.save(args.state);
+    await args.syncJournal(updatedRecord);
+    return updatedRecord;
   } catch (error) {
     const failureContext = buildCodexConnectorReviewRequestFailureContext({ pr: args.pr, error });
     const blockedRecord = args.stateStore.touch(args.record, {
@@ -667,31 +707,6 @@ async function maybeRequestCodexConnectorReviewComment(args: {
     return blockedRecord;
   }
 
-  const requestedAt = nowIso();
-  const updatedRecord = args.stateStore.touch(args.record, {
-    state: "waiting_ci",
-    codex_connector_review_requested_observed_at:
-      requestAction.kind === "initial"
-        ? requestedAt
-        : args.record.codex_connector_review_requested_observed_at ?? args.pr.codexConnectorReviewRequestedAt ?? requestedAt,
-    codex_connector_review_requested_head_sha: args.pr.headRefOid,
-    codex_connector_review_request_retry_count:
-      requestAction.kind === "retry" ? requestAction.retryAttempt : 0,
-    codex_connector_review_request_retry_head_sha:
-      requestAction.kind === "retry" ? args.pr.headRefOid : null,
-    codex_connector_review_request_last_retried_at:
-      requestAction.kind === "retry" ? requestedAt : null,
-    blocked_reason: null,
-    last_error: null,
-    last_failure_kind: null,
-    last_failure_context: null,
-    last_failure_signature: null,
-    repeated_failure_signature_count: 0,
-  });
-  args.state.issues[String(updatedRecord.issue_number)] = updatedRecord;
-  await args.stateStore.save(args.state);
-  await args.syncJournal(updatedRecord);
-  return updatedRecord;
 }
 
 async function applyTrackedPrLifecycleState(args: {

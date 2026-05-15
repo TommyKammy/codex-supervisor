@@ -157,4 +157,8 @@ test("normalizeStateForLoad defaults Codex Connector retry bookkeeping", () => {
   assert.equal(loaded.issues["1976"]?.codex_connector_review_request_retry_count, 0);
   assert.equal(loaded.issues["1976"]?.codex_connector_review_request_retry_head_sha, null);
   assert.equal(loaded.issues["1976"]?.codex_connector_review_request_last_retried_at, null);
+  assert.equal(loaded.issues["1976"]?.codex_connector_review_request_comment_identity_status, null);
+  assert.equal(loaded.issues["1976"]?.codex_connector_review_request_comment_database_id, null);
+  assert.equal(loaded.issues["1976"]?.codex_connector_review_request_comment_node_id, null);
+  assert.equal(loaded.issues["1976"]?.codex_connector_review_request_comment_url, null);
 });

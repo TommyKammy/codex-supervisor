@@ -45,8 +45,11 @@ test("findCodexConnectorReviewRequest matches trigger-first supervisor-authored 
     [
       {
         authorLogin: "coderabbitai[bot]",
+        id: "IC_request_current",
+        databaseId: 44001,
         createdAt: "2026-03-13T01:00:00Z",
         body: "@codex review\n\n<!-- codex-supervisor:codex-connector-review-request issue=1923 pr=44 head=head-current -->",
+        url: "https://github.com/owner/repo/issues/44#issuecomment-44001",
         viewerDidAuthor: true,
       },
       {
@@ -78,6 +81,9 @@ test("findCodexConnectorReviewRequest matches trigger-first supervisor-authored 
   assert.deepEqual(current, {
     requestedAt: "2026-03-13T01:00:00Z",
     headSha: "head-current",
+    commentDatabaseId: 44001,
+    commentNodeId: "IC_request_current",
+    commentUrl: "https://github.com/owner/repo/issues/44#issuecomment-44001",
   });
 
   assert.equal(
@@ -120,6 +126,9 @@ test("findCodexConnectorReviewRequest still hydrates historical marker-first req
     {
       requestedAt: "2026-03-13T01:00:00Z",
       headSha: "head-current",
+      commentDatabaseId: null,
+      commentNodeId: null,
+      commentUrl: null,
     },
   );
 });

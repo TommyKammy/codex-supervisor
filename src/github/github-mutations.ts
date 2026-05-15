@@ -1,7 +1,7 @@
 import { IssueRunRecord, SupervisorConfig } from "../core/types";
 import { CommandResult } from "../core/command";
 import { parseJson, truncate } from "../core/utils";
-import type { GitHubIssue, GitHubPullRequest } from "./types";
+import type { GitHubIssue, GitHubIssueCommentIdentity, GitHubPullRequest } from "./types";
 
 const POST_CREATE_PR_LOOKUP_RETRY_LIMIT = 2;
 const POST_CREATE_PR_LOOKUP_BASE_DELAY_MS = 200;
@@ -16,6 +16,12 @@ interface GitHubRestIssue {
   state: string;
   labels?: Array<{ name: string }>;
   pull_request?: unknown;
+}
+
+interface GitHubRestIssueComment {
+  id?: number | null;
+  node_id?: string | null;
+  html_url?: string | null;
 }
 
 export class GitHubMutationClient {
@@ -120,16 +126,25 @@ export class GitHubMutationClient {
     );
   }
 
-  async addIssueComment(issueNumber: number, body: string): Promise<void> {
-    await this.runGhCommand([
-      "issue",
-      "comment",
-      String(issueNumber),
-      "--repo",
-      this.config.repoSlug,
-      "--body",
-      body,
+  async addIssueComment(issueNumber: number, body: string): Promise<GitHubIssueCommentIdentity | null> {
+    const { owner, repo } = this.repoOwnerAndName();
+    const result = await this.runGhCommand([
+      "api",
+      `repos/${owner}/${repo}/issues/${issueNumber}/comments`,
+      "--method",
+      "POST",
+      "-f",
+      `body=${body}`,
     ]);
+    const created = parseJson<GitHubRestIssueComment>(
+      result.stdout,
+      `gh api repos/${owner}/${repo}/issues/${issueNumber}/comments`,
+    );
+    return {
+      databaseId: typeof created.id === "number" ? created.id : null,
+      nodeId: created.node_id ?? null,
+      url: created.html_url ?? null,
+    };
   }
 
   async updateIssueComment(commentDatabaseId: number, body: string): Promise<void> {

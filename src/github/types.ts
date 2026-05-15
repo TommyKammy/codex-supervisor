@@ -34,6 +34,9 @@ export interface GitHubPullRequest {
   copilotReviewArrivedAt?: string | null;
   codexConnectorReviewRequestedAt?: string | null;
   codexConnectorReviewRequestedHeadSha?: string | null;
+  codexConnectorReviewRequestCommentDatabaseId?: number | null;
+  codexConnectorReviewRequestCommentNodeId?: string | null;
+  codexConnectorReviewRequestCommentUrl?: string | null;
   configuredBotCurrentHeadObservedAt?: string | null;
   configuredBotCurrentHeadObservationSource?: string | null;
   configuredBotCurrentHeadStatusState?: string | null;
@@ -98,4 +101,10 @@ export interface IssueComment {
   url: string | null;
   author: ExternalReviewActor | null;
   viewerDidAuthor?: boolean | null;
+}
+
+export interface GitHubIssueCommentIdentity {
+  databaseId: number | null;
+  nodeId: string | null;
+  url: string | null;
 }

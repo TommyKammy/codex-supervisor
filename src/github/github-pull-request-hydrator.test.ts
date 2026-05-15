@@ -223,14 +223,20 @@ test("GitHubPullRequestHydrator hydrates supervisor-authored Codex Connector rev
                 comments: {
                   nodes: [
                     {
+                      id: "IC_old_request",
+                      databaseId: 44000,
                       createdAt: "2026-03-13T01:00:00Z",
                       body: "<!-- codex-supervisor:codex-connector-review-request issue=1923 pr=44 head=head-old -->\n@codex review",
+                      url: "https://github.com/owner/repo/issues/44#issuecomment-44000",
                       viewerDidAuthor: true,
                       author: { login: "codex-supervisor[bot]" },
                     },
                     {
+                      id: "IC_current_request",
+                      databaseId: 44001,
                       createdAt: "2026-03-13T01:05:00Z",
                       body: "@codex review\n\n<!-- codex-supervisor:codex-connector-review-request issue=1923 pr=44 head=head-44 -->",
+                      url: "https://github.com/owner/repo/issues/44#issuecomment-44001",
                       viewerDidAuthor: true,
                       author: { login: "codex-supervisor[bot]" },
                     },
@@ -262,6 +268,9 @@ test("GitHubPullRequestHydrator hydrates supervisor-authored Codex Connector rev
   assert.match(lifecycleQuery, /viewerDidAuthor/);
   assert.equal(pr?.codexConnectorReviewRequestedAt, "2026-03-13T01:05:00Z");
   assert.equal(pr?.codexConnectorReviewRequestedHeadSha, "head-44");
+  assert.equal(pr?.codexConnectorReviewRequestCommentDatabaseId, 44001);
+  assert.equal(pr?.codexConnectorReviewRequestCommentNodeId, "IC_current_request");
+  assert.equal(pr?.codexConnectorReviewRequestCommentUrl, "https://github.com/owner/repo/issues/44#issuecomment-44001");
 });
 
 test("GitHubPullRequestHydrator hydrates Copilot arrival from long review threads without truncating comments to 20", async () => {

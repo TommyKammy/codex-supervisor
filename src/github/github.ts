@@ -13,7 +13,15 @@ import {
   PullRequestReviewSurfaceOptions,
 } from "./github-review-surface";
 import { GitHubTransport, isGitHubRateLimitFailure } from "./github-transport";
-import type { GitHubIssue, GitHubPullRequest, IssueComment, PullRequestCheck, PullRequestReview, ReviewThread } from "./types";
+import type {
+  GitHubIssue,
+  GitHubIssueCommentIdentity,
+  GitHubPullRequest,
+  IssueComment,
+  PullRequestCheck,
+  PullRequestReview,
+  ReviewThread,
+} from "./types";
 
 export { isTransientGitHubCommandFailure } from "./github-transport";
 export { isGitHubRateLimitFailure } from "./github-transport";
@@ -24,6 +32,7 @@ export type {
   CopilotReviewState,
   ExternalReviewActor,
   GitHubIssue,
+  GitHubIssueCommentIdentity,
   GitHubLabel,
   GitHubPullRequest,
   IssueComment,
@@ -176,7 +185,7 @@ export class GitHubClient {
     return this.mutations.markPullRequestReady(prNumber);
   }
 
-  async addIssueComment(issueNumber: number, body: string): Promise<void> {
+  async addIssueComment(issueNumber: number, body: string): Promise<GitHubIssueCommentIdentity | null | void> {
     return this.mutations.addIssueComment(issueNumber, body);
   }
 

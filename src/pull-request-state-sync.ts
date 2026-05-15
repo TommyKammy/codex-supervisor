@@ -73,8 +73,24 @@ export function syncCodexConnectorReviewRequestObservation(
   pr: GitHubPullRequest,
 ): Pick<
   IssueRunRecord,
-  "codex_connector_review_requested_observed_at" | "codex_connector_review_requested_head_sha"
+  | "codex_connector_review_requested_observed_at"
+  | "codex_connector_review_requested_head_sha"
+  | "codex_connector_review_request_comment_identity_status"
+  | "codex_connector_review_request_comment_database_id"
+  | "codex_connector_review_request_comment_node_id"
+  | "codex_connector_review_request_comment_url"
 > {
+  if (pr.configuredBotCurrentHeadObservedAt) {
+    return {
+      codex_connector_review_requested_observed_at: null,
+      codex_connector_review_requested_head_sha: null,
+      codex_connector_review_request_comment_identity_status: null,
+      codex_connector_review_request_comment_database_id: null,
+      codex_connector_review_request_comment_node_id: null,
+      codex_connector_review_request_comment_url: null,
+    };
+  }
+
   if (
     pr.codexConnectorReviewRequestedAt &&
     pr.codexConnectorReviewRequestedHeadSha === pr.headRefOid
@@ -82,6 +98,29 @@ export function syncCodexConnectorReviewRequestObservation(
     return {
       codex_connector_review_requested_observed_at: pr.codexConnectorReviewRequestedAt,
       codex_connector_review_requested_head_sha: pr.headRefOid,
+      codex_connector_review_request_comment_identity_status:
+        pr.codexConnectorReviewRequestCommentDatabaseId ||
+        pr.codexConnectorReviewRequestCommentNodeId ||
+        pr.codexConnectorReviewRequestCommentUrl
+          ? "available"
+          : record.codex_connector_review_requested_head_sha === pr.headRefOid
+            ? record.codex_connector_review_request_comment_identity_status ?? null
+            : null,
+      codex_connector_review_request_comment_database_id:
+        pr.codexConnectorReviewRequestCommentDatabaseId ??
+        (record.codex_connector_review_requested_head_sha === pr.headRefOid
+          ? record.codex_connector_review_request_comment_database_id ?? null
+          : null),
+      codex_connector_review_request_comment_node_id:
+        pr.codexConnectorReviewRequestCommentNodeId ??
+        (record.codex_connector_review_requested_head_sha === pr.headRefOid
+          ? record.codex_connector_review_request_comment_node_id ?? null
+          : null),
+      codex_connector_review_request_comment_url:
+        pr.codexConnectorReviewRequestCommentUrl ??
+        (record.codex_connector_review_requested_head_sha === pr.headRefOid
+          ? record.codex_connector_review_request_comment_url ?? null
+          : null),
     };
   }
 
@@ -92,12 +131,24 @@ export function syncCodexConnectorReviewRequestObservation(
     return {
       codex_connector_review_requested_observed_at: record.codex_connector_review_requested_observed_at,
       codex_connector_review_requested_head_sha: record.codex_connector_review_requested_head_sha,
+      codex_connector_review_request_comment_identity_status:
+        record.codex_connector_review_request_comment_identity_status ?? null,
+      codex_connector_review_request_comment_database_id:
+        record.codex_connector_review_request_comment_database_id ?? null,
+      codex_connector_review_request_comment_node_id:
+        record.codex_connector_review_request_comment_node_id ?? null,
+      codex_connector_review_request_comment_url:
+        record.codex_connector_review_request_comment_url ?? null,
     };
   }
 
   return {
     codex_connector_review_requested_observed_at: null,
     codex_connector_review_requested_head_sha: null,
+    codex_connector_review_request_comment_identity_status: null,
+    codex_connector_review_request_comment_database_id: null,
+    codex_connector_review_request_comment_node_id: null,
+    codex_connector_review_request_comment_url: null,
   };
 }
 

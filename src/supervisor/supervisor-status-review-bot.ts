@@ -305,6 +305,10 @@ export function formatCodexConnectorReviewFallbackDiagnostic(args: {
     | "codex_connector_review_request_retry_count"
     | "codex_connector_review_request_retry_head_sha"
     | "codex_connector_review_request_last_retried_at"
+    | "codex_connector_review_request_comment_identity_status"
+    | "codex_connector_review_request_comment_database_id"
+    | "codex_connector_review_request_comment_node_id"
+    | "codex_connector_review_request_comment_url"
   >;
   pr: GitHubPullRequest;
   checks?: PullRequestCheck[];
@@ -383,6 +387,14 @@ export function formatCodexConnectorReviewFallbackDiagnostic(args: {
   }
 
   const waitUntilSuffix = waitWindow.waitUntil ? ` wait_until=${waitWindow.waitUntil}` : "";
+  const commentIdentity =
+    args.record.codex_connector_review_request_comment_identity_status === "available"
+      ? [
+          `database_id=${args.record.codex_connector_review_request_comment_database_id ?? "none"}`,
+          `node_id=${args.record.codex_connector_review_request_comment_node_id ?? "none"}`,
+          `url=${args.record.codex_connector_review_request_comment_url ?? "none"}`,
+        ].join(",")
+      : "unavailable";
   const retryStatusSuffix =
     status === "request_posted_no_current_head_signal" || status === "request_retry_exhausted"
       ? [
@@ -390,6 +402,7 @@ export function formatCodexConnectorReviewFallbackDiagnostic(args: {
           `retry_count=${retryCount}`,
           `retry_limit=${retryLimit}`,
           `retry_wait_until=${retryWaitUntil ?? "none"}`,
+          `request_comment_identity=${commentIdentity}`,
           `next_action=${status === "request_retry_exhausted" ? "operator_manual_review" : "retry_request_review_comment"}`,
         ].join(" ")
       : "";

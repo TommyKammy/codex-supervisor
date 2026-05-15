@@ -111,6 +111,22 @@ export class StateStore {
         hasOwn(patch, "codex_connector_review_request_last_retried_at")
           ? patch.codex_connector_review_request_last_retried_at ?? null
           : record.codex_connector_review_request_last_retried_at ?? null,
+      codex_connector_review_request_comment_identity_status:
+        hasOwn(patch, "codex_connector_review_request_comment_identity_status")
+          ? patch.codex_connector_review_request_comment_identity_status ?? null
+          : record.codex_connector_review_request_comment_identity_status ?? null,
+      codex_connector_review_request_comment_database_id:
+        hasOwn(patch, "codex_connector_review_request_comment_database_id")
+          ? patch.codex_connector_review_request_comment_database_id ?? null
+          : record.codex_connector_review_request_comment_database_id ?? null,
+      codex_connector_review_request_comment_node_id:
+        hasOwn(patch, "codex_connector_review_request_comment_node_id")
+          ? patch.codex_connector_review_request_comment_node_id ?? null
+          : record.codex_connector_review_request_comment_node_id ?? null,
+      codex_connector_review_request_comment_url:
+        hasOwn(patch, "codex_connector_review_request_comment_url")
+          ? patch.codex_connector_review_request_comment_url ?? null
+          : record.codex_connector_review_request_comment_url ?? null,
       copilot_review_timed_out_at:
         hasOwn(patch, "copilot_review_timed_out_at")
           ? patch.copilot_review_timed_out_at ?? null
