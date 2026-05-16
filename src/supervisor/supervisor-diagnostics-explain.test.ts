@@ -1094,6 +1094,7 @@ test("explain surfaces stale configured-bot remediation with the exact review th
     classification: "unresolved_work",
     codexCurrentHeadReviewState: "not_applicable",
     reviewThreadUrl: "https://example.test/pr/295#discussion_r295",
+    verificationEvidenceSummary: null,
     manualNextStep: "inspect_exact_review_thread_then_resolve_or_leave_manual_note",
     summary: "code_or_ci_green_but_review_thread_metadata_unresolved",
   });

@@ -475,17 +475,21 @@ function codexConnectorReviewRequestAction(args: {
     staleCodexReviewState?.classification === "metadata_only_current_head_converged";
   const isCodexVerifiedNoSourceChangeThreadResolution =
     staleCodexReviewState?.classification === "verified_no_source_change_pending_thread_resolution";
+  const isCodexVerifiedCurrentHeadRepairThreadResolution =
+    staleCodexReviewState?.classification === "verified_current_head_repair_pending_thread_resolution";
   const isCodexMetadataOnly =
     staleCodexReviewState?.classification === "metadata_only" ||
     staleCodexReviewState?.classification === "metadata_only_missing_current_head_review" ||
     staleCodexReviewState?.classification === "metadata_only_current_head_converged" ||
-    isCodexVerifiedNoSourceChangeThreadResolution;
+    isCodexVerifiedNoSourceChangeThreadResolution ||
+    isCodexVerifiedCurrentHeadRepairThreadResolution;
 
   if (
     configuredReviewProviderKinds(args.config).includes("codex") &&
     !isCodexMissingCurrentHeadReview &&
     (isCodexConvergedCurrentHeadReview ||
       isCodexVerifiedNoSourceChangeThreadResolution ||
+      isCodexVerifiedCurrentHeadRepairThreadResolution ||
       isCodexMetadataOnly ||
       staleCodexReviewState?.classification === "unresolved_work" ||
       staleCodexReviewState?.classification === "unknown_needs_operator")
@@ -1231,7 +1235,8 @@ export async function handlePostTurnPullRequestTransitionsPhase(
     effectiveFailureContext?.signature ?? trackedPrStatusComments.TRACKED_PR_STATUS_COMMENT_REASON_CODE_STALE_REVIEW_BOT;
   const shouldRefreshAfterReplyAndResolve =
     (config.staleConfiguredBotReviewPolicy === "reply_and_resolve" ||
-      config.verifiedNoSourceChangeReviewThreadAutoResolve === true) &&
+      config.verifiedNoSourceChangeReviewThreadAutoResolve === true ||
+      config.verifiedCurrentHeadRepairReviewThreadAutoResolve === true) &&
     record.state === "blocked" &&
     record.blocked_reason === "stale_review_bot" &&
     record.last_stale_review_bot_reply_head_sha === postReady.pr.headRefOid &&

@@ -151,6 +151,7 @@ test("config field posture metadata classifies setup and automation-expanding fi
       "localReviewHighSeverityAction",
       "staleConfiguredBotReviewPolicy",
       "verifiedNoSourceChangeReviewThreadAutoResolve",
+      "verifiedCurrentHeadRepairReviewThreadAutoResolve",
       "approvedTrackedTopLevelEntries",
     ].map((field) => [field, getConfigFieldPostureMetadata(field)?.tier]),
     [
@@ -160,6 +161,7 @@ test("config field posture metadata classifies setup and automation-expanding fi
       ["localReviewHighSeverityAction", "dangerous_explicit_opt_in"],
       ["staleConfiguredBotReviewPolicy", "dangerous_explicit_opt_in"],
       ["verifiedNoSourceChangeReviewThreadAutoResolve", "dangerous_explicit_opt_in"],
+      ["verifiedCurrentHeadRepairReviewThreadAutoResolve", "dangerous_explicit_opt_in"],
       ["approvedTrackedTopLevelEntries", "dangerous_explicit_opt_in"],
     ],
   );
@@ -352,6 +354,8 @@ test("loadConfig keeps local review disabled by default while using the opiniona
   assert.equal(config.localReviewFollowUpIssueCreationEnabled, false);
   assert.equal(config.localReviewHighSeverityAction, "blocked");
   assert.equal(config.staleConfiguredBotReviewPolicy, "diagnose_only");
+  assert.equal(config.verifiedNoSourceChangeReviewThreadAutoResolve, false);
+  assert.equal(config.verifiedCurrentHeadRepairReviewThreadAutoResolve, false);
 });
 
 test("loadConfig keeps release readiness advisory by default", async (t) => {
