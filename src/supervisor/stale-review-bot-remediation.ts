@@ -55,7 +55,7 @@ interface StaleReviewBotClassification {
   verificationEvidenceSummary?: string | null;
 }
 
-function formatTokenValue(value: string): string {
+export function formatStaleReviewBotTokenValue(value: string): string {
   return value.replace(/\r?\n/gu, "\\n");
 }
 
@@ -334,31 +334,4 @@ export function buildStaleReviewBotRemediation(args: {
         : STALE_REVIEW_BOT_MANUAL_NEXT_STEP,
     summary: classification.summary,
   };
-}
-
-export function formatStaleReviewBotRemediationLine(remediation: StaleReviewBotRemediationDto): string {
-  const tokens = [
-    "stale_review_bot_remediation",
-    `issue=#${remediation.issueNumber}`,
-    `pr=${remediation.prNumber === null ? "none" : `#${remediation.prNumber}`}`,
-    `reason=${remediation.reasonCode}`,
-    `code_ci=${remediation.codeCiState}`,
-    `current_head_sha=${formatTokenValue(remediation.currentHeadSha)}`,
-    `processed_on_current_head=${remediation.processedOnCurrentHead}`,
-    `classification=${remediation.classification}`,
-    `review_thread_url=${remediation.reviewThreadUrl ? formatTokenValue(remediation.reviewThreadUrl) : "none"}`,
-    `manual_next_step=${remediation.manualNextStep}`,
-    `summary=${remediation.summary}`,
-  ];
-  if (remediation.codexCurrentHeadReviewState !== "not_applicable") {
-    tokens.splice(8, 0, `codex_current_head_review_state=${remediation.codexCurrentHeadReviewState}`);
-  }
-  if (remediation.verificationEvidenceSummary) {
-    tokens.splice(
-      tokens.length - 1,
-      0,
-      `verification_evidence=${formatTokenValue(remediation.verificationEvidenceSummary).replace(/\s+/gu, "_")}`,
-    );
-  }
-  return tokens.join(" ");
 }
