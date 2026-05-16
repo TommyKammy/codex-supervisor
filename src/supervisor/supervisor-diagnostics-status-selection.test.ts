@@ -15,6 +15,10 @@ import {
   git,
 } from "./supervisor-test-helpers";
 import {
+  CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+  createCodexConnectorTrackedReviewResidueScenario,
+} from "../codex-connector-tracked-pr-test-helpers";
+import {
   clearCurrentReconciliationPhase,
   writeCurrentReconciliationPhase,
 } from "./supervisor-reconciliation-phase";
@@ -922,35 +926,28 @@ test("status --why classifies current-head processed configured-bot success as s
 
 test("status --why includes codex processed-residue missing-current-head review state", async (t) => {
   const fixture = await createSupervisorFixture();
-  fixture.config.reviewBotLogins = ["chatgpt-codex-connector"];
+  fixture.config.reviewBotLogins = [CODEX_CONNECTOR_REVIEW_BOT_LOGIN];
   const issueNumber = 398;
   const prNumber = 498;
   const headSha = "5de0d3844468d4a77cab512f8dcbe46171166c3a";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-398",
+    commentId: "comment-398",
+    path: "src/query.ts",
+    line: 12,
+    commentBody: "P1: Fix this stale finding before merge.",
+    discussionUrl: "https://example.test/pr/498#discussion_r398",
+  });
   const state: SupervisorStateFile = {
     activeIssueNumber: null,
     issues: {
       [String(issueNumber)]: createRecord({
-        issue_number: issueNumber,
-        state: "blocked",
-        branch: "codex/issue-398",
+        ...scenario.recordPatch,
         workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
         journal_path: null,
-        pr_number: prNumber,
-        blocked_reason: "stale_review_bot",
-        last_head_sha: headSha,
-        processed_review_thread_ids: [`thread-398@${headSha}`],
-        processed_review_thread_fingerprints: [`thread-398@${headSha}#comment-398`],
-        last_failure_signature: "stalled-bot:thread-398",
-        last_failure_context: {
-          category: "manual",
-          summary:
-            "1 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
-          signature: "stalled-bot:thread-398",
-          command: null,
-          details: ["reviewer=chatgpt-codex-connector file=src/query.ts line=12 processed_on_current_head=yes"],
-          url: "https://example.test/pr/498#discussion_r398",
-          updated_at: "2026-05-13T00:20:00Z",
-        },
       }),
     },
   };
@@ -966,44 +963,15 @@ test("status --why includes codex processed-residue missing-current-head review 
     labels: [],
     state: "OPEN",
   };
-  const pr = createPullRequest({
-    number: prNumber,
-    headRefName: "codex/issue-398",
-    headRefOid: headSha,
-    currentHeadCiGreenAt: "2026-05-13T00:10:00Z",
-    configuredBotCurrentHeadObservedAt: null,
-    configuredBotCurrentHeadStatusState: "SUCCESS",
-    mergeStateStatus: "CLEAN",
-    mergeable: "MERGEABLE",
-  });
-  const staleMetadataThread = {
-    id: "thread-398",
-    isResolved: false,
-    isOutdated: false,
-    path: "src/query.ts",
-    line: 12,
-    comments: {
-      nodes: [
-        {
-          id: "comment-398",
-          body: "P1: Fix this stale finding before merge.",
-          createdAt: "2026-05-13T00:05:00Z",
-          url: "https://example.test/pr/498#discussion_r398",
-          author: {
-            login: "chatgpt-codex-connector",
-            typeName: "Bot",
-          },
-        },
-      ],
-    },
-  };
+  const pr = createPullRequest(scenario.pullRequestPatch);
+  const staleMetadataThread = scenario.reviewThread;
 
   const supervisor = new Supervisor(fixture.config);
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
     listCandidateIssues: async () => [trackedIssue],
     listAllIssues: async () => [trackedIssue],
     getPullRequestIfExists: async () => pr,
-    getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getChecks: async () => scenario.passingChecks,
     getUnresolvedReviewThreads: async () => [staleMetadataThread],
   };
 
@@ -1018,45 +986,34 @@ test("status --why includes codex processed-residue missing-current-head review 
 
 test("status --why distinguishes codex verified current-head repair residue from no-source-change residue", async (t) => {
   const fixture = await createSupervisorFixture();
-  fixture.config.reviewBotLogins = ["chatgpt-codex-connector"];
+  fixture.config.reviewBotLogins = [CODEX_CONNECTOR_REVIEW_BOT_LOGIN];
   const issueNumber = 399;
   const prNumber = 499;
   const headSha = "76060523f803ebe25832cb2c355aaaa9530502f3";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-399",
+    commentId: "comment-399",
+    path: "scripts/verify-closeout.sh",
+    line: 124,
+    commentBody: "P2: Cover the production-secret closeout overclaim.",
+    discussionUrl: "https://example.test/pr/499#discussion_r399",
+    severity: "P2",
+    verifiedRepair: {
+      summary: "Focused verifier passed after the repair commit.",
+      ranAt: "2026-05-13T00:18:00Z",
+      command: "npm test -- src/supervisor/supervisor-diagnostics-status-selection.test.ts",
+    },
+  });
   const state: SupervisorStateFile = {
     activeIssueNumber: null,
     issues: {
       [String(issueNumber)]: createRecord({
-        issue_number: issueNumber,
-        state: "blocked",
-        branch: "codex/issue-399",
+        ...scenario.recordPatch,
         workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
         journal_path: null,
-        pr_number: prNumber,
-        blocked_reason: "stale_review_bot",
-        last_head_sha: headSha,
-        processed_review_thread_ids: [`thread-399@${headSha}`],
-        processed_review_thread_fingerprints: [`thread-399@${headSha}#comment-399`],
-        latest_local_ci_result: {
-          outcome: "passed",
-          summary: "Focused verifier passed after the repair commit.",
-          ran_at: "2026-05-13T00:18:00Z",
-          head_sha: headSha,
-          execution_mode: "shell",
-          command: "npm test -- src/supervisor/supervisor-diagnostics-status-selection.test.ts",
-          failure_class: null,
-          remediation_target: null,
-        },
-        last_failure_signature: "stalled-bot:thread-399",
-        last_failure_context: {
-          category: "manual",
-          summary:
-            "1 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
-          signature: "stalled-bot:thread-399",
-          command: null,
-          details: ["reviewer=chatgpt-codex-connector file=scripts/verify-closeout.sh line=124 processed_on_current_head=yes"],
-          url: "https://example.test/pr/499#discussion_r399",
-          updated_at: "2026-05-13T00:20:00Z",
-        },
       }),
     },
   };
@@ -1072,44 +1029,15 @@ test("status --why distinguishes codex verified current-head repair residue from
     labels: [],
     state: "OPEN",
   };
-  const pr = createPullRequest({
-    number: prNumber,
-    headRefName: "codex/issue-399",
-    headRefOid: headSha,
-    currentHeadCiGreenAt: "2026-05-13T00:19:00Z",
-    configuredBotCurrentHeadObservedAt: null,
-    configuredBotCurrentHeadStatusState: "SUCCESS",
-    mergeStateStatus: "CLEAN",
-    mergeable: "MERGEABLE",
-  });
-  const staleMetadataThread = {
-    id: "thread-399",
-    isResolved: false,
-    isOutdated: false,
-    path: "scripts/verify-closeout.sh",
-    line: 124,
-    comments: {
-      nodes: [
-        {
-          id: "comment-399",
-          body: "P2: Cover the production-secret closeout overclaim.",
-          createdAt: "2026-05-13T00:05:00Z",
-          url: "https://example.test/pr/499#discussion_r399",
-          author: {
-            login: "chatgpt-codex-connector",
-            typeName: "Bot",
-          },
-        },
-      ],
-    },
-  };
+  const pr = createPullRequest(scenario.pullRequestPatch);
+  const staleMetadataThread = scenario.reviewThread;
 
   const supervisor = new Supervisor(fixture.config);
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
     listCandidateIssues: async () => [trackedIssue],
     listAllIssues: async () => [trackedIssue],
     getPullRequestIfExists: async () => pr,
-    getChecks: async () => [{ name: "focused verifier", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getChecks: async () => scenario.passingChecks,
     getUnresolvedReviewThreads: async () => [staleMetadataThread],
   };
 
