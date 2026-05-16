@@ -13,6 +13,10 @@ import { findCodexConnectorReviewRequest } from "./github/github-review-signals"
 import type { LocalReviewResult, PreMergeFinalEvaluation, PreMergeResidualFinding } from "./local-review";
 import { configuredBotReviewThreads, manualReviewThreads } from "./review-thread-reporting";
 import {
+  CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+  createCodexConnectorTrackedReviewResidueScenario,
+} from "./codex-connector-tracked-pr-test-helpers";
+import {
   createConfig,
   createFailureContext,
   createIssue,
@@ -4396,68 +4400,30 @@ test("handlePostTurnPullRequestTransitionsPhase replies and resolves stale confi
 
 test("handlePostTurnPullRequestTransitionsPhase resolves verified no-source-change Codex threads and requests current-head review when enabled", async () => {
   const config = createConfig({
-    reviewBotLogins: ["chatgpt-codex-connector"],
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
     configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
     verifiedNoSourceChangeReviewThreadAutoResolve: true,
   });
   const issue = createIssue({ title: "Resolve verified no-source-change Codex thread residue" });
-  const pr = createPullRequest({
-    title: "Tracked PR verified no-source-change Codex residue",
-    number: 1985,
-    isDraft: false,
-    headRefOid: "head-1985",
-    mergeStateStatus: "CLEAN",
-    mergeable: "MERGEABLE",
-    currentHeadCiGreenAt: "2026-05-15T00:10:00Z",
-    configuredBotCurrentHeadObservedAt: null,
-    configuredBotCurrentHeadStatusState: "SUCCESS",
-    configuredBotTopLevelReviewStrength: null,
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber: issue.number,
+    prNumber: 1985,
+    headSha: "head-1985",
+    threadId: "thread-codex",
+    commentId: "comment-codex",
+    path: "src/review.ts",
+    line: 7,
+    commentBody: "P1: This finding was verified as no source change needed.",
+    discussionUrl: "https://example.test/pr/1985#discussion_r1985",
   });
+  const pr = createPullRequest(scenario.pullRequestPatch);
   const state: SupervisorStateFile = {
     activeIssueNumber: 102,
     issues: {
-      "102": createRecord({
-        issue_number: 102,
-        state: "blocked",
-        pr_number: pr.number,
-        last_head_sha: pr.headRefOid,
-        blocked_reason: "stale_review_bot",
-        copilot_review_timed_out_at: "2026-05-15T00:20:00Z",
-        copilot_review_timeout_action: "request_review_comment",
-        processed_review_thread_ids: [`thread-codex@${pr.headRefOid}`],
-        processed_review_thread_fingerprints: [`thread-codex@${pr.headRefOid}#comment-codex`],
-      }),
+      "102": createRecord(scenario.recordPatch),
     },
   };
-  const staleBotFailureContext = {
-    ...createFailureContext(
-      "1 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
-    ),
-    signature: "stalled-bot:thread-codex",
-    details: ["reviewer=chatgpt-codex-connector file=src/review.ts line=7 p_severity=P1 processed_on_current_head=yes"],
-    url: "https://example.test/pr/1985#discussion_r1985",
-  };
-  const reviewThreads = [
-    createReviewThread({
-      id: "thread-codex",
-      path: "src/review.ts",
-      line: 7,
-      comments: {
-        nodes: [
-          {
-            id: "comment-codex",
-            body: "P1: This finding was verified as no source change needed.",
-            createdAt: "2026-05-15T00:05:00Z",
-            url: "https://example.test/pr/1985#discussion_r1985",
-            author: {
-              login: "chatgpt-codex-connector",
-              typeName: "Bot",
-            },
-          },
-        ],
-      },
-    }),
-  ] satisfies ReviewThread[];
+  const reviewThreads = [scenario.reviewThread] satisfies ReviewThread[];
   const replyCalls: Array<{ threadId: string; body: string }> = [];
   const resolveCalls: string[] = [];
   const requestComments: string[] = [];
@@ -4491,7 +4457,7 @@ test("handlePostTurnPullRequestTransitionsPhase resolves verified no-source-chan
     }),
     derivePullRequestLifecycleSnapshot: (recordForState, _pr, _checks, currentReviewThreads) =>
       createLifecycleSnapshot(recordForState, currentReviewThreads.length === 0 ? "waiting_ci" : "blocked", {
-        failureContext: currentReviewThreads.length === 0 ? null : staleBotFailureContext,
+        failureContext: currentReviewThreads.length === 0 ? null : scenario.staleReviewFailureContext,
         copilotTimeoutPatch: {
           copilot_review_timed_out_at: "2026-05-15T00:20:00Z",
           copilot_review_timeout_action: "request_review_comment",
@@ -4517,7 +4483,7 @@ test("handlePostTurnPullRequestTransitionsPhase resolves verified no-source-chan
       snapshotLoads += 1;
       return {
         pr,
-        checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+        checks: scenario.passingChecks,
         reviewThreads: snapshotLoads <= 2 ? reviewThreads : [],
       };
     },
@@ -4535,78 +4501,35 @@ test("handlePostTurnPullRequestTransitionsPhase resolves verified no-source-chan
 
 test("handlePostTurnPullRequestTransitionsPhase resolves verified current-head repair Codex threads only with the repair opt-in", async () => {
   const config = createConfig({
-    reviewBotLogins: ["chatgpt-codex-connector"],
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
     configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
     verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
   });
   const issue = createIssue({ title: "Resolve verified current-head repair Codex thread residue" });
-  const pr = createPullRequest({
-    title: "Tracked PR verified current-head repair Codex residue",
-    number: 1988,
-    isDraft: false,
-    headRefOid: "head-1988",
-    mergeStateStatus: "CLEAN",
-    mergeable: "MERGEABLE",
-    currentHeadCiGreenAt: "2026-05-15T00:10:00Z",
-    configuredBotCurrentHeadObservedAt: null,
-    configuredBotCurrentHeadStatusState: "SUCCESS",
-    configuredBotTopLevelReviewStrength: null,
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber: issue.number,
+    prNumber: 1988,
+    headSha: "head-1988",
+    threadId: "thread-codex-repair",
+    commentId: "comment-codex-repair",
+    path: "src/review.ts",
+    line: 7,
+    commentBody: "P1: Verify the repair covers this finding before merge.",
+    discussionUrl: "https://example.test/pr/1988#discussion_r1988",
+    verifiedRepair: {
+      summary: "Focused verifier passed after the repair commit.",
+      ranAt: "2026-05-15T00:18:00Z",
+      command: "npm test -- src/post-turn-pull-request.test.ts",
+    },
   });
+  const pr = createPullRequest(scenario.pullRequestPatch);
   const state: SupervisorStateFile = {
     activeIssueNumber: 102,
     issues: {
-      "102": createRecord({
-        issue_number: 102,
-        state: "blocked",
-        pr_number: pr.number,
-        last_head_sha: pr.headRefOid,
-        blocked_reason: "stale_review_bot",
-        copilot_review_timed_out_at: "2026-05-15T00:20:00Z",
-        copilot_review_timeout_action: "request_review_comment",
-        processed_review_thread_ids: [`thread-codex-repair@${pr.headRefOid}`],
-        processed_review_thread_fingerprints: [`thread-codex-repair@${pr.headRefOid}#comment-codex-repair`],
-        latest_local_ci_result: {
-          outcome: "passed",
-          summary: "Focused verifier passed after the repair commit.",
-          ran_at: "2026-05-15T00:18:00Z",
-          head_sha: pr.headRefOid,
-          execution_mode: "shell",
-          command: "npm test -- src/post-turn-pull-request.test.ts",
-          failure_class: null,
-          remediation_target: null,
-        },
-      }),
+      "102": createRecord(scenario.recordPatch),
     },
   };
-  const staleBotFailureContext = {
-    ...createFailureContext(
-      "1 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
-    ),
-    signature: "stalled-bot:thread-codex-repair",
-    details: ["reviewer=chatgpt-codex-connector file=src/review.ts line=7 p_severity=P1 processed_on_current_head=yes"],
-    url: "https://example.test/pr/1988#discussion_r1988",
-  };
-  const reviewThreads = [
-    createReviewThread({
-      id: "thread-codex-repair",
-      path: "src/review.ts",
-      line: 7,
-      comments: {
-        nodes: [
-          {
-            id: "comment-codex-repair",
-            body: "P1: Verify the repair covers this finding before merge.",
-            createdAt: "2026-05-15T00:05:00Z",
-            url: "https://example.test/pr/1988#discussion_r1988",
-            author: {
-              login: "chatgpt-codex-connector",
-              typeName: "Bot",
-            },
-          },
-        ],
-      },
-    }),
-  ] satisfies ReviewThread[];
+  const reviewThreads = [scenario.reviewThread] satisfies ReviewThread[];
   const replyCalls: Array<{ threadId: string; body: string }> = [];
   const resolveCalls: string[] = [];
   const requestComments: string[] = [];
@@ -4640,7 +4563,7 @@ test("handlePostTurnPullRequestTransitionsPhase resolves verified current-head r
     }),
     derivePullRequestLifecycleSnapshot: (recordForState, _pr, _checks, currentReviewThreads) =>
       createLifecycleSnapshot(recordForState, currentReviewThreads.length === 0 ? "waiting_ci" : "blocked", {
-        failureContext: currentReviewThreads.length === 0 ? null : staleBotFailureContext,
+        failureContext: currentReviewThreads.length === 0 ? null : scenario.staleReviewFailureContext,
         copilotTimeoutPatch: {
           copilot_review_timed_out_at: "2026-05-15T00:20:00Z",
           copilot_review_timeout_action: "request_review_comment",
@@ -4666,7 +4589,7 @@ test("handlePostTurnPullRequestTransitionsPhase resolves verified current-head r
       snapshotLoads += 1;
       return {
         pr,
-        checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+        checks: scenario.passingChecks,
         reviewThreads: snapshotLoads <= 2 ? reviewThreads : [],
       };
     },
