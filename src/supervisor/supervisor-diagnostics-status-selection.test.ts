@@ -1016,6 +1016,112 @@ test("status --why includes codex processed-residue missing-current-head review 
   assert.match(status, /^operator_action action=resolve_stale_review_bot source=stale_review_bot_remediation /m);
 });
 
+test("status --why distinguishes codex verified current-head repair residue from no-source-change residue", async (t) => {
+  const fixture = await createSupervisorFixture();
+  fixture.config.reviewBotLogins = ["chatgpt-codex-connector"];
+  const issueNumber = 399;
+  const prNumber = 499;
+  const headSha = "76060523f803ebe25832cb2c355aaaa9530502f3";
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        branch: "codex/issue-399",
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: prNumber,
+        blocked_reason: "stale_review_bot",
+        last_head_sha: headSha,
+        processed_review_thread_ids: [`thread-399@${headSha}`],
+        processed_review_thread_fingerprints: [`thread-399@${headSha}#comment-399`],
+        latest_local_ci_result: {
+          outcome: "passed",
+          summary: "Focused verifier passed after the repair commit.",
+          ran_at: "2026-05-13T00:18:00Z",
+          head_sha: headSha,
+          execution_mode: "shell",
+          command: "npm test -- src/supervisor/supervisor-diagnostics-status-selection.test.ts",
+          failure_class: null,
+          remediation_target: null,
+        },
+        last_failure_signature: "stalled-bot:thread-399",
+        last_failure_context: {
+          category: "manual",
+          summary:
+            "1 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
+          signature: "stalled-bot:thread-399",
+          command: null,
+          details: ["reviewer=chatgpt-codex-connector file=scripts/verify-closeout.sh line=124 processed_on_current_head=yes"],
+          url: "https://example.test/pr/499#discussion_r399",
+          updated_at: "2026-05-13T00:20:00Z",
+        },
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Status why classifies Codex verified repair residue",
+    body: executionReadyBody("Classify verified Codex repair residue separately from no-source-change residue."),
+    createdAt: "2026-05-13T00:00:00Z",
+    updatedAt: "2026-05-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const pr = createPullRequest({
+    number: prNumber,
+    headRefName: "codex/issue-399",
+    headRefOid: headSha,
+    currentHeadCiGreenAt: "2026-05-13T00:19:00Z",
+    configuredBotCurrentHeadObservedAt: null,
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+  const staleMetadataThread = {
+    id: "thread-399",
+    isResolved: false,
+    isOutdated: false,
+    path: "scripts/verify-closeout.sh",
+    line: 124,
+    comments: {
+      nodes: [
+        {
+          id: "comment-399",
+          body: "P2: Cover the production-secret closeout overclaim.",
+          createdAt: "2026-05-13T00:05:00Z",
+          url: "https://example.test/pr/499#discussion_r399",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [trackedIssue],
+    listAllIssues: async () => [trackedIssue],
+    getPullRequestIfExists: async () => pr,
+    getChecks: async () => [{ name: "focused verifier", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => [staleMetadataThread],
+  };
+
+  const status = await supervisor.status({ why: true });
+
+  assert.match(
+    status,
+    /^stale_review_bot_remediation issue=#399 pr=#499 reason=stale_review_bot code_ci=green current_head_sha=76060523f803ebe25832cb2c355aaaa9530502f3 processed_on_current_head=yes classification=verified_current_head_repair_pending_thread_resolution codex_current_head_review_state=missing review_thread_url=https:\/\/example\.test\/pr\/499#discussion_r399 manual_next_step=resolve_verified_repaired_configured_bot_threads_then_rerun_supervisor verification_evidence=Focused_verifier_passed_after_the_repair_commit\. summary=verified_current_head_repair_configured_bot_thread_resolution_pending$/m,
+  );
+  assert.doesNotMatch(status, /classification=verified_no_source_change_pending_thread_resolution/);
+});
+
 test("renderSupervisorStatusDto sanitizes loop runtime host and timestamp tokens", () => {
   const status = renderSupervisorStatusDto({
     gsdSummary: null,

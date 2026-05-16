@@ -22,10 +22,12 @@ export interface StaleReviewBotRemediationDto {
     | "metadata_only_missing_current_head_review"
     | "metadata_only_current_head_converged"
     | "verified_no_source_change_pending_thread_resolution"
+    | "verified_current_head_repair_pending_thread_resolution"
     | "unresolved_work"
     | "unknown_needs_operator";
   codexCurrentHeadReviewState: "observed" | "requested" | "missing" | "not_applicable";
   reviewThreadUrl: string | null;
+  verificationEvidenceSummary: string | null;
   manualNextStep: string;
   summary: string;
 }
@@ -42,6 +44,16 @@ const VERIFIED_NO_SOURCE_CHANGE_MANUAL_NEXT_STEP =
   "resolve_verified_configured_bot_threads_then_rerun_supervisor";
 const VERIFIED_NO_SOURCE_CHANGE_SUMMARY =
   "verified_no_source_change_configured_bot_thread_resolution_pending";
+const VERIFIED_CURRENT_HEAD_REPAIR_MANUAL_NEXT_STEP =
+  "resolve_verified_repaired_configured_bot_threads_then_rerun_supervisor";
+const VERIFIED_CURRENT_HEAD_REPAIR_SUMMARY =
+  "verified_current_head_repair_configured_bot_thread_resolution_pending";
+
+interface StaleReviewBotClassification {
+  classification: StaleReviewBotRemediationDto["classification"];
+  summary: string;
+  verificationEvidenceSummary?: string | null;
+}
 
 function formatTokenValue(value: string): string {
   return value.replace(/\r?\n/gu, "\\n");
@@ -123,13 +135,35 @@ function codexConnectorCurrentHeadReviewState(args: {
   return "missing";
 }
 
+function currentHeadVerificationEvidenceSummary(
+  record: Pick<IssueRunRecord, "latest_local_ci_result" | "timeline_artifacts">,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
+): string | null {
+  const latestLocalCi = record.latest_local_ci_result;
+  if (latestLocalCi?.outcome === "passed" && latestLocalCi.head_sha === pr.headRefOid) {
+    return latestLocalCi.summary || latestLocalCi.command || "current_head_local_ci_passed";
+  }
+
+  const timelineEvidence = (record.timeline_artifacts ?? []).find(
+    (artifact) =>
+      artifact.type === "verification_result" &&
+      artifact.outcome === "passed" &&
+      artifact.head_sha === pr.headRefOid,
+  );
+  if (timelineEvidence) {
+    return timelineEvidence.summary || timelineEvidence.command || "current_head_verification_passed";
+  }
+
+  return null;
+}
+
 function classifyCodexMetadataOnly(args: {
   config: SupervisorConfig;
   record: IssueRunRecord;
   pr: GitHubPullRequest;
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
-}): Pick<StaleReviewBotRemediationDto, "classification" | "summary"> {
+}): StaleReviewBotClassification {
   const unresolvedWork = {
     classification: "unresolved_work" as const,
     summary: STALE_REVIEW_BOT_SUMMARY,
@@ -174,6 +208,14 @@ function classifyCodexMetadataOnly(args: {
     if (hasUnprocessedMustFix) {
       return unresolvedWork;
     }
+    const verificationEvidenceSummary = currentHeadVerificationEvidenceSummary(args.record, args.pr);
+    if (verificationEvidenceSummary) {
+      return {
+        classification: "verified_current_head_repair_pending_thread_resolution",
+        summary: VERIFIED_CURRENT_HEAD_REPAIR_SUMMARY,
+        verificationEvidenceSummary,
+      };
+    }
     if (!policy.currentHeadObservedAt) {
       return {
         classification: "verified_no_source_change_pending_thread_resolution",
@@ -201,7 +243,7 @@ function classifyRemediation(args: {
   pr: GitHubPullRequest | null;
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
-}): Pick<StaleReviewBotRemediationDto, "classification" | "summary"> {
+}): StaleReviewBotClassification {
   const unresolvedWork = {
     classification: "unresolved_work" as const,
     summary: STALE_REVIEW_BOT_SUMMARY,
@@ -283,8 +325,11 @@ export function buildStaleReviewBotRemediation(args: {
     classification: classification.classification,
     codexCurrentHeadReviewState,
     reviewThreadUrl: args.record.last_failure_context?.url ?? null,
+    verificationEvidenceSummary: classification.verificationEvidenceSummary ?? null,
     manualNextStep:
-      classification.classification === "verified_no_source_change_pending_thread_resolution"
+      classification.classification === "verified_current_head_repair_pending_thread_resolution"
+        ? VERIFIED_CURRENT_HEAD_REPAIR_MANUAL_NEXT_STEP
+        : classification.classification === "verified_no_source_change_pending_thread_resolution"
         ? VERIFIED_NO_SOURCE_CHANGE_MANUAL_NEXT_STEP
         : STALE_REVIEW_BOT_MANUAL_NEXT_STEP,
     summary: classification.summary,
@@ -307,6 +352,13 @@ export function formatStaleReviewBotRemediationLine(remediation: StaleReviewBotR
   ];
   if (remediation.codexCurrentHeadReviewState !== "not_applicable") {
     tokens.splice(8, 0, `codex_current_head_review_state=${remediation.codexCurrentHeadReviewState}`);
+  }
+  if (remediation.verificationEvidenceSummary) {
+    tokens.splice(
+      tokens.length - 1,
+      0,
+      `verification_evidence=${formatTokenValue(remediation.verificationEvidenceSummary).replace(/\s+/gu, "_")}`,
+    );
   }
   return tokens.join(" ");
 }

@@ -191,6 +191,7 @@ export interface SupervisorConfig {
   approvedTrackedTopLevelEntries?: string[];
   staleConfiguredBotReviewPolicy?: StaleConfiguredBotReviewPolicy;
   verifiedNoSourceChangeReviewThreadAutoResolve?: boolean;
+  verifiedCurrentHeadRepairReviewThreadAutoResolve?: boolean;
   reviewBotLogins: string[];
   configuredReviewProviders?: ConfiguredReviewProvider[];
   humanReviewBlocksMerge: boolean;

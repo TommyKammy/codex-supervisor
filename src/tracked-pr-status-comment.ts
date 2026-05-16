@@ -562,6 +562,8 @@ function buildStaleConfiguredBotReplyBody(args: {
     args.resolveAfterReply
       ? args.reasonCode === "verified_no_source_change_auto_resolve"
         ? "Under the configured verified no-source-change auto-resolve opt-in, the supervisor is auto-resolving this thread now."
+        : args.reasonCode === "verified_current_head_repair_auto_resolve"
+          ? "Under the configured verified current-head repair auto-resolve opt-in, the supervisor is auto-resolving this thread now."
         : "Under the configured `reply_and_resolve` policy, the supervisor is auto-resolving this stale thread now."
       : "Leaving thread resolution to a human operator.",
   ].join("\n\n");
@@ -897,6 +899,9 @@ export async function maybeCommentOnTrackedPrPersistentStatus(args: {
   const canResolveVerifiedNoSourceChangeThreadResolution =
     args.config.verifiedNoSourceChangeReviewThreadAutoResolve === true &&
     staleReviewBotRemediation?.classification === "verified_no_source_change_pending_thread_resolution";
+  const canResolveVerifiedCurrentHeadRepairThreadResolution =
+    args.config.verifiedCurrentHeadRepairReviewThreadAutoResolve === true &&
+    staleReviewBotRemediation?.classification === "verified_current_head_repair_pending_thread_resolution";
 
   const canAutoHandleStaleConfiguredBotReview =
     !args.skipAutoHandleStaleConfiguredBotReview &&
@@ -908,7 +913,8 @@ export async function maybeCommentOnTrackedPrPersistentStatus(args: {
     !args.summarizeChecks(args.checks).hasFailing &&
     (args.config.staleConfiguredBotReviewPolicy === "reply_only" ||
       args.config.staleConfiguredBotReviewPolicy === "reply_and_resolve" ||
-      canResolveVerifiedNoSourceChangeThreadResolution);
+      canResolveVerifiedNoSourceChangeThreadResolution ||
+      canResolveVerifiedCurrentHeadRepairThreadResolution);
 
   let currentRecord = args.record;
   if (canAutoHandleStaleConfiguredBotReview && args.github.replyToReviewThread) {
@@ -922,8 +928,13 @@ export async function maybeCommentOnTrackedPrPersistentStatus(args: {
       syncJournal: args.syncJournal,
       config: args.config,
       failureContext: args.failureContext,
-      resolveAfterReply: canResolveStaleConfiguredBotReview || canResolveVerifiedNoSourceChangeThreadResolution,
-      reasonCode: canResolveVerifiedNoSourceChangeThreadResolution
+      resolveAfterReply:
+        canResolveStaleConfiguredBotReview ||
+        canResolveVerifiedNoSourceChangeThreadResolution ||
+        canResolveVerifiedCurrentHeadRepairThreadResolution,
+      reasonCode: canResolveVerifiedCurrentHeadRepairThreadResolution
+        ? "verified_current_head_repair_auto_resolve"
+        : canResolveVerifiedNoSourceChangeThreadResolution
         ? "verified_no_source_change_auto_resolve"
         : TRACKED_PR_STATUS_COMMENT_REASON_CODE_STALE_REVIEW_BOT,
     });
