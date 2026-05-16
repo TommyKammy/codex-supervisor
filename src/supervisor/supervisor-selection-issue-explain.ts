@@ -70,9 +70,9 @@ import {
 } from "./stale-diagnostic-recoverability";
 import {
   buildStaleReviewBotRemediation,
-  formatStaleReviewBotRemediationLine,
   type StaleReviewBotRemediationDto,
 } from "./stale-review-bot-remediation";
+import { formatStaleReviewBotRemediationLine } from "./stale-review-bot-diagnostics-presenter";
 import {
   buildCodexConnectorPolicyBlockDiagnostic,
   formatCodexConnectorPolicyBlockDiagnostic,

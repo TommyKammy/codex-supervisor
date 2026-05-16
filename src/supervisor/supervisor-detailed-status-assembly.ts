@@ -34,8 +34,8 @@ import {
 } from "./supervisor-status-review-bot";
 import {
   buildStaleReviewBotRemediation,
-  formatStaleReviewBotRemediationLine,
 } from "./stale-review-bot-remediation";
+import { formatStaleReviewBotRemediationLine } from "./stale-review-bot-diagnostics-presenter";
 import { buildIssueActivityContext, formatLocalCiStatusLine } from "./supervisor-operator-activity-context";
 import type { IssueRunRecord } from "../core/types";
 import type { BuildDetailedStatusModelArgs } from "./supervisor-status-model";
@@ -327,9 +327,11 @@ export function buildActiveDetailedStatusLines(
 
   if (pr) {
     const staleReviewBotRemediation = buildStaleReviewBotRemediation({
+      config,
       record: activeRecord,
       pr,
       checks,
+      reviewThreads,
     });
     if (staleReviewBotRemediation) {
       lines.push(formatStaleReviewBotRemediationLine(staleReviewBotRemediation));

@@ -1050,6 +1050,71 @@ test("status --why distinguishes codex verified current-head repair residue from
   assert.doesNotMatch(status, /classification=verified_no_source_change_pending_thread_resolution/);
 });
 
+test("status --why uses the shared stale review-bot presenter for active verified repair residue", async (t) => {
+  const fixture = await createSupervisorFixture();
+  fixture.config.reviewBotLogins = [CODEX_CONNECTOR_REVIEW_BOT_LOGIN];
+  const issueNumber = 400;
+  const prNumber = 500;
+  const headSha = "76060523f803ebe25832cb2c355aaaa9530502f4";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-400",
+    commentId: "comment-400",
+    path: "src/auth-boundary.ts",
+    line: 91,
+    commentBody: "P1: Prove the repaired auth boundary is covered before merge.",
+    discussionUrl: "https://example.test/pr/500#discussion_r400",
+    verifiedRepair: {
+      summary: "Focused verifier passed after the repair commit.",
+      ranAt: "2026-05-15T00:18:00Z",
+      command: "npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts",
+    },
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        ...scenario.recordPatch,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Status why active Codex verified repair residue",
+    body: executionReadyBody("Status should classify active verified Codex repair residue distinctly."),
+    createdAt: "2026-05-15T00:00:00Z",
+    updatedAt: "2026-05-15T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const pr = createPullRequest(scenario.pullRequestPatch);
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [trackedIssue],
+    listAllIssues: async () => [trackedIssue],
+    getPullRequestIfExists: async () => pr,
+    resolvePullRequestForBranch: async () => pr,
+    getChecks: async () => scenario.passingChecks,
+    getUnresolvedReviewThreads: async () => [scenario.reviewThread],
+  };
+
+  const status = await supervisor.status({ why: true });
+
+  assert.match(
+    status,
+    /^stale_review_bot_remediation issue=#400 pr=#500 reason=stale_review_bot code_ci=green current_head_sha=76060523f803ebe25832cb2c355aaaa9530502f4 processed_on_current_head=yes classification=verified_current_head_repair_pending_thread_resolution codex_current_head_review_state=missing review_thread_url=https:\/\/example\.test\/pr\/500#discussion_r400 manual_next_step=resolve_verified_repaired_configured_bot_threads_then_rerun_supervisor verification_evidence=Focused_verifier_passed_after_the_repair_commit\. summary=verified_current_head_repair_configured_bot_thread_resolution_pending$/m,
+  );
+  assert.doesNotMatch(status, /classification=verified_no_source_change_pending_thread_resolution/);
+});
+
 test("renderSupervisorStatusDto sanitizes loop runtime host and timestamp tokens", () => {
   const status = renderSupervisorStatusDto({
     gsdSummary: null,
