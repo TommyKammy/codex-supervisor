@@ -4,6 +4,7 @@ import {
   attemptBudgetForLane,
   attemptLane,
   attemptsUsedForLane,
+  addressingReviewStrategyPatch,
   hasAttemptBudgetRemaining,
   incrementAttemptCounters,
   isEligibleForSelection,
@@ -214,6 +215,46 @@ test("attempt helpers split implementation and repair budgets without using tota
     attempt_count: 9,
     implementation_attempt_count: 2,
     repair_attempt_count: 7,
+  });
+});
+
+test("addressingReviewStrategyPatch switches repeated review failures to root-cause analysis", () => {
+  assert.deepEqual(
+    addressingReviewStrategyPatch(
+      createRecord({
+        state: "addressing_review",
+        last_failure_signature: "review-thread-cluster-a",
+        repeated_failure_signature_count: 2,
+        last_tracked_pr_progress_summary: "no_meaningful_tracked_pr_progress",
+        last_tracked_pr_repeat_failure_decision: "retry_on_progress",
+      }),
+      "addressing_review",
+    ),
+    {
+      addressing_review_strategy: "root_cause_analysis",
+      addressing_review_strategy_reason:
+        "repeated_failure_signature_count=2; signature=review-thread-cluster-a; tracked_pr_progress=no_meaningful_tracked_pr_progress; repeat_decision=retry_on_progress",
+    },
+  );
+
+  assert.deepEqual(
+    addressingReviewStrategyPatch(
+      createRecord({
+        state: "addressing_review",
+        last_failure_signature: "review-thread-cluster-a",
+        repeated_failure_signature_count: 1,
+      }),
+      "addressing_review",
+    ),
+    {
+      addressing_review_strategy: "normal_patch",
+      addressing_review_strategy_reason: null,
+    },
+  );
+
+  assert.deepEqual(addressingReviewStrategyPatch(createRecord(), "repairing_ci"), {
+    addressing_review_strategy: null,
+    addressing_review_strategy_reason: null,
   });
 });
 

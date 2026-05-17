@@ -144,6 +144,38 @@ export function incrementAttemptCounters(
   };
 }
 
+export function addressingReviewStrategyPatch(
+  record: Pick<
+    IssueRunRecord,
+    | "last_failure_signature"
+    | "repeated_failure_signature_count"
+    | "last_tracked_pr_progress_summary"
+    | "last_tracked_pr_repeat_failure_decision"
+  >,
+  nextState: IssueRunRecord["state"],
+): Pick<IssueRunRecord, "addressing_review_strategy" | "addressing_review_strategy_reason"> {
+  if (
+    nextState !== "addressing_review" ||
+    !record.last_failure_signature ||
+    record.repeated_failure_signature_count < 2
+  ) {
+    return {
+      addressing_review_strategy: nextState === "addressing_review" ? "normal_patch" : null,
+      addressing_review_strategy_reason: null,
+    };
+  }
+
+  const progressSummary = record.last_tracked_pr_progress_summary ?? "no progress baseline";
+  const repeatDecision = record.last_tracked_pr_repeat_failure_decision ?? "pending";
+  return {
+    addressing_review_strategy: "root_cause_analysis",
+    addressing_review_strategy_reason:
+      `repeated_failure_signature_count=${record.repeated_failure_signature_count}; ` +
+      `signature=${record.last_failure_signature}; ` +
+      `tracked_pr_progress=${progressSummary}; repeat_decision=${repeatDecision}`,
+  };
+}
+
 export function isEligibleForSelection(record: IssueRunRecord | undefined, config: SupervisorConfig): boolean {
   if (!record) {
     return true;

@@ -163,6 +163,8 @@ export function normalizeIssueRecord(value: IssueRunRecord): IssueRunRecord {
     last_tracked_pr_progress_snapshot: value.last_tracked_pr_progress_snapshot ?? null,
     last_tracked_pr_progress_summary: value.last_tracked_pr_progress_summary ?? null,
     last_tracked_pr_repeat_failure_decision: value.last_tracked_pr_repeat_failure_decision ?? null,
+    addressing_review_strategy: value.addressing_review_strategy ?? null,
+    addressing_review_strategy_reason: value.addressing_review_strategy_reason ?? null,
     last_observed_host_local_pr_blocker_signature: value.last_observed_host_local_pr_blocker_signature ?? null,
     last_observed_host_local_pr_blocker_head_sha: value.last_observed_host_local_pr_blocker_head_sha ?? null,
     last_host_local_pr_blocker_comment_signature: value.last_host_local_pr_blocker_comment_signature ?? null,
