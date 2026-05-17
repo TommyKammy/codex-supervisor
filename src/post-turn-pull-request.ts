@@ -58,6 +58,7 @@ import {
   codexConnectorReviewRequestAction,
   type CodexConnectorReviewRequestAction,
 } from "./codex-connector-review-request-decision";
+import { hasResolvedAllStaleConfiguredBotThreads } from "./supervisor/stale-review-bot-recovery";
 
 export { syncTrackedPrPersistentStatusComment } from "./tracked-pr-status-comment";
 
@@ -102,35 +103,6 @@ export interface PullRequestLifecycleSnapshot {
 }
 
 const TRUSTED_DURABLE_ARTIFACT_NORMALIZATION_COMMIT_MESSAGE = "Normalize trusted durable artifacts for path hygiene";
-
-function staleConfiguredBotThreadIdsFromSignature(signature: string | null | undefined): string[] {
-  if (!signature) {
-    return [];
-  }
-
-  return signature
-    .split("|")
-    .map((part) => part.trim())
-    .filter((part) => part.startsWith("stalled-bot:"))
-    .map((part) => part.slice("stalled-bot:".length).trim())
-    .filter((threadId) => threadId.length > 0);
-}
-
-function hasResolvedAllStaleConfiguredBotThreads(args: {
-  record: Pick<IssueRunRecord, "stale_review_bot_resolve_progress_keys">;
-  headSha: string;
-  signature: string;
-}): boolean {
-  const threadIds = staleConfiguredBotThreadIdsFromSignature(args.signature);
-  if (threadIds.length === 0) {
-    return false;
-  }
-
-  const progressKeys = new Set(args.record.stale_review_bot_resolve_progress_keys ?? []);
-  return threadIds.every((threadId) =>
-    progressKeys.has(`resolve:${threadId}@${args.headSha}:${args.signature}`),
-  );
-}
 
 function escapeRegExp(input: string): string {
   return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
