@@ -35,8 +35,20 @@ interface AgentRunnerBaseRequest {
   state: RunState;
   record?: Pick<
     IssueRunRecord,
-    "repeated_failure_signature_count" | "blocked_verification_retry_count" | "timeout_retry_count"
-  > | null;
+    | "repeated_failure_signature_count"
+    | "blocked_verification_retry_count"
+    | "timeout_retry_count"
+  > &
+    Partial<
+      Pick<
+        IssueRunRecord,
+        | "last_failure_signature"
+        | "last_tracked_pr_progress_summary"
+        | "last_tracked_pr_repeat_failure_decision"
+        | "addressing_review_strategy"
+        | "addressing_review_strategy_reason"
+      >
+    > | null;
   repoSlug: string;
   issue: GitHubIssue;
   branch: string;

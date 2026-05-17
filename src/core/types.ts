@@ -291,6 +291,8 @@ export interface IssueRunRecord {
   last_tracked_pr_progress_snapshot?: string | null;
   last_tracked_pr_progress_summary?: string | null;
   last_tracked_pr_repeat_failure_decision?: "retry_on_progress" | "stop_no_progress" | null;
+  addressing_review_strategy?: "normal_patch" | "root_cause_analysis" | null;
+  addressing_review_strategy_reason?: string | null;
   last_observed_host_local_pr_blocker_signature?: string | null;
   last_observed_host_local_pr_blocker_head_sha?: string | null;
   ready_promotion_maintenance_finding_details?: string[];

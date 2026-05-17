@@ -90,7 +90,20 @@ function normalizeInventoryRefreshDiagnostics(
   return normalized.length > 0 ? normalized : undefined;
 }
 
+function normalizeAddressingReviewStrategy(value: unknown): IssueRunRecord["addressing_review_strategy"] {
+  return value === "normal_patch" || value === "root_cause_analysis" ? value : null;
+}
+
+function normalizeAddressingReviewStrategyReason(
+  value: unknown,
+  strategy: IssueRunRecord["addressing_review_strategy"],
+): string | null {
+  return strategy && typeof value === "string" && value.trim() !== "" ? value : null;
+}
+
 export function normalizeIssueRecord(value: IssueRunRecord): IssueRunRecord {
+  const addressingReviewStrategy = normalizeAddressingReviewStrategy(value.addressing_review_strategy);
+
   return {
     ...value,
     journal_path: value.journal_path ?? null,
@@ -163,6 +176,11 @@ export function normalizeIssueRecord(value: IssueRunRecord): IssueRunRecord {
     last_tracked_pr_progress_snapshot: value.last_tracked_pr_progress_snapshot ?? null,
     last_tracked_pr_progress_summary: value.last_tracked_pr_progress_summary ?? null,
     last_tracked_pr_repeat_failure_decision: value.last_tracked_pr_repeat_failure_decision ?? null,
+    addressing_review_strategy: addressingReviewStrategy,
+    addressing_review_strategy_reason: normalizeAddressingReviewStrategyReason(
+      value.addressing_review_strategy_reason,
+      addressingReviewStrategy,
+    ),
     last_observed_host_local_pr_blocker_signature: value.last_observed_host_local_pr_blocker_signature ?? null,
     last_observed_host_local_pr_blocker_head_sha: value.last_observed_host_local_pr_blocker_head_sha ?? null,
     last_host_local_pr_blocker_comment_signature: value.last_host_local_pr_blocker_comment_signature ?? null,

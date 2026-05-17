@@ -814,6 +814,67 @@ test("buildCodexPrompt suppresses stale handoff next actions during addressing_r
   assert.match(prompt, /Live review guidance should take priority over stale handoff steps\./);
 });
 
+test("buildCodexPrompt switches repeated addressing-review failures to root-cause analysis", () => {
+  const prompt = buildCodexPrompt({
+    kind: "start",
+    config: createConfig(),
+    repoSlug: "owner/repo",
+    issue,
+    branch: "codex/issue-46",
+    workspacePath: "/tmp/workspaces/issue-46",
+    state: "addressing_review" satisfies RunState,
+    record: {
+      repeated_failure_signature_count: 2,
+      blocked_verification_retry_count: 0,
+      timeout_retry_count: 0,
+      last_failure_signature: "1 unresolved automated review thread(s) remain.",
+      last_tracked_pr_progress_summary: "no_meaningful_tracked_pr_progress",
+      last_tracked_pr_repeat_failure_decision: "retry_on_progress",
+      addressing_review_strategy: "root_cause_analysis",
+      addressing_review_strategy_reason:
+        "repeated_failure_signature_count=2; signature=1 unresolved automated review thread(s) remain.; tracked_pr_progress=no_meaningful_tracked_pr_progress; repeat_decision=retry_on_progress",
+    },
+    pr: createPullRequest({
+      number: 144,
+      headRefOid: "head-review-144",
+      reviewDecision: "CHANGES_REQUESTED",
+    }),
+    checks: [],
+    reviewThreads: [
+      createReviewThread({
+        id: "thread-repeat",
+        path: "src/review.ts",
+        line: 42,
+        comments: {
+          nodes: [
+            {
+              id: "comment-repeat",
+              body: "The same current-head repair still does not prove the root cause.",
+              createdAt: "2026-03-11T00:05:00Z",
+              url: "https://example.test/pr/144#discussion_r2",
+              author: {
+                login: "copilot-pull-request-reviewer",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+    alwaysReadFiles: [],
+    onDemandMemoryFiles: [],
+    journalPath: "/tmp/workspaces/issue-46/.codex-supervisor/issue-journal.md",
+  } satisfies AgentTurnContext);
+
+  assert.match(prompt, /Addressing-review strategy switch:/);
+  assert.match(prompt, /Triggered: root_cause_analysis/);
+  assert.match(prompt, /tracked_pr_progress=no_meaningful_tracked_pr_progress/);
+  assert.match(prompt, /Do not continue another narrow patch-only pass against the same review comment\./);
+  assert.match(prompt, /First reproduce the blocker or prove the unresolved-thread cluster from current code and tests\./);
+  assert.match(prompt, /Group the repeated comments by root cause/);
+  assert.match(prompt, /do not weaken attempt limits, merge gates, or configured review-bot requirements/);
+});
+
 test("buildCodexPrompt adds structured Codex Connector must-fix guidance only for Codex Connector addressing_review", () => {
   const pr = createPullRequest({
     number: 144,

@@ -90,6 +90,7 @@ import {
   attemptBudgetForLane,
   attemptLane,
   attemptsUsedForLane,
+  addressingReviewStrategyPatch,
   hasAttemptBudgetRemaining,
   incrementAttemptCounters,
   isVerificationBlockedMessage,
@@ -508,6 +509,7 @@ export class Supervisor {
       record = this.stateStore.touch(record, {
         state: nextState,
         ...incrementAttemptCounters(record, preRunAttemptLane),
+        ...addressingReviewStrategyPatch(record, nextState),
         last_failure_context: inferFailureContext(this.config, record, pr, checks, reviewThreads),
         blocked_reason: null,
       });

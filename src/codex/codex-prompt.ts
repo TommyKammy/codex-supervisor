@@ -4,6 +4,7 @@ import {
   FailureContext,
   GitHubIssue,
   GitHubPullRequest,
+  IssueRunRecord,
   PullRequestCheck,
   ReviewThread,
   RunState,
@@ -360,6 +361,17 @@ export interface BuildCodexStartPromptInput {
   branch: string;
   workspacePath: string;
   state: RunState;
+  record?: Partial<
+    Pick<
+      IssueRunRecord,
+      | "repeated_failure_signature_count"
+      | "last_failure_signature"
+      | "last_tracked_pr_progress_summary"
+      | "last_tracked_pr_repeat_failure_decision"
+      | "addressing_review_strategy"
+      | "addressing_review_strategy_reason"
+    >
+  > | null;
   pr: GitHubPullRequest | null;
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
@@ -376,6 +388,40 @@ export interface BuildCodexStartPromptInput {
   localReviewRepairContext?: LocalReviewRepairContext | null;
   externalReviewMissContext?: ExternalReviewMissContext | null;
   reviewProviderProfile?: ReviewProviderProfileSummary;
+}
+
+function buildAddressingReviewStrategySwitch(input: Pick<BuildCodexStartPromptInput, "state" | "record" | "failureContext">): string[] {
+  if (input.state !== "addressing_review") {
+    return [];
+  }
+
+  const record = input.record;
+  const repeatedFailureSignatureCount = record?.repeated_failure_signature_count ?? 0;
+  const strategy =
+    record?.addressing_review_strategy ??
+    (record?.last_failure_signature && repeatedFailureSignatureCount >= 2 ? "root_cause_analysis" : null);
+  if (strategy !== "root_cause_analysis") {
+    return [];
+  }
+
+  const reason =
+    record?.addressing_review_strategy_reason ??
+    [
+      `repeated_failure_signature_count=${record?.repeated_failure_signature_count ?? "unknown"}`,
+      `signature=${record?.last_failure_signature ?? input.failureContext?.signature ?? "unknown"}`,
+      `tracked_pr_progress=${record?.last_tracked_pr_progress_summary ?? "unknown"}`,
+      `repeat_decision=${record?.last_tracked_pr_repeat_failure_decision ?? "pending"}`,
+    ].join("; ");
+
+  return [
+    "Addressing-review strategy switch:",
+    `- Triggered: root_cause_analysis`,
+    `- Reason: ${reason}`,
+    "- Do not continue another narrow patch-only pass against the same review comment.",
+    "- First reproduce the blocker or prove the unresolved-thread cluster from current code and tests.",
+    "- Group the repeated comments by root cause, then make the smallest focused test update that would have caught the repeated failure.",
+    "- Only after that root-cause grouping should you patch code, and do not weaken attempt limits, merge gates, or configured review-bot requirements.",
+  ];
 }
 
 export interface BuildCodexResumePromptInput {
@@ -647,6 +693,7 @@ function buildCodexStartPrompt(input: BuildCodexStartPromptInput): string {
             : []),
         ]
       : [];
+  const addressingReviewStrategySwitch = buildAddressingReviewStrategySwitch(input);
   const journalOperatorOverrides = useCodexConnectorReviewThreadFastPath
     ? extractJournalOperatorOverrides(input.journalExcerpt)
     : [];
@@ -729,6 +776,7 @@ function buildCodexStartPrompt(input: BuildCodexStartPromptInput): string {
     "",
     "Structured failure context:",
     failureSummary,
+    ...(addressingReviewStrategySwitch.length > 0 ? ["", ...addressingReviewStrategySwitch] : []),
     ...(localReviewRepairSummary.length > 0 ? ["", ...localReviewRepairSummary] : []),
     ...(externalReviewMissSummary.length > 0 ? ["", ...externalReviewMissSummary] : []),
     ...(freshReviewCommentEvidenceExamples.length > 0 ? ["", ...freshReviewCommentEvidenceExamples] : []),
@@ -899,6 +947,7 @@ function toStartPromptInput(input: StartAgentTurnContext): BuildCodexStartPrompt
     branch: input.branch,
     workspacePath: input.workspacePath,
     state: input.state,
+    record: input.record,
     pr: input.pr,
     checks: input.checks,
     reviewThreads: input.reviewThreads,

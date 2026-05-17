@@ -162,3 +162,33 @@ test("normalizeStateForLoad defaults Codex Connector retry bookkeeping", () => {
   assert.equal(loaded.issues["1976"]?.codex_connector_review_request_comment_node_id, null);
   assert.equal(loaded.issues["1976"]?.codex_connector_review_request_comment_url, null);
 });
+
+test("normalizeStateForLoad clamps persisted addressing review strategy fields", () => {
+  const loaded = normalizeStateForLoad({
+    activeIssueNumber: null,
+    issues: {
+      "2011": {
+        ...createRecord(2011),
+        addressing_review_strategy: "root_cause_analysis",
+        addressing_review_strategy_reason: "same failure signature repeated",
+      },
+      "2012": {
+        ...createRecord(2012),
+        addressing_review_strategy: "skip_root_cause_switch",
+        addressing_review_strategy_reason: "should not survive without a valid strategy",
+      } as unknown as IssueRunRecord,
+      "2013": {
+        ...createRecord(2013),
+        addressing_review_strategy: "normal_patch",
+        addressing_review_strategy_reason: "   ",
+      },
+    },
+  } satisfies SupervisorStateFile);
+
+  assert.equal(loaded.issues["2011"]?.addressing_review_strategy, "root_cause_analysis");
+  assert.equal(loaded.issues["2011"]?.addressing_review_strategy_reason, "same failure signature repeated");
+  assert.equal(loaded.issues["2012"]?.addressing_review_strategy, null);
+  assert.equal(loaded.issues["2012"]?.addressing_review_strategy_reason, null);
+  assert.equal(loaded.issues["2013"]?.addressing_review_strategy, "normal_patch");
+  assert.equal(loaded.issues["2013"]?.addressing_review_strategy_reason, null);
+});
