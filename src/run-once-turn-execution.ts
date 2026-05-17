@@ -108,6 +108,57 @@ export interface CodexTurnResult {
 const TRUSTED_DURABLE_ARTIFACT_NORMALIZATION_COMMIT_MESSAGE =
   "Normalize trusted durable artifacts for path hygiene";
 
+const CODEX_TURN_VERIFICATION_COMMAND_NAMES = [
+  "npm",
+  "npx",
+  "pnpm",
+  "yarn",
+  "bun",
+  "node",
+  "deno",
+  "tsx",
+  "tsc",
+  "ts-node",
+  "jest",
+  "vitest",
+  "mocha",
+  "playwright",
+  "pytest",
+  "python",
+  "python3",
+  "uv",
+  "go",
+  "cargo",
+  "make",
+  "cmake",
+  "mvn",
+  "gradle",
+  "bash",
+  "sh",
+  "zsh",
+  "ruby",
+  "bundle",
+  "rspec",
+  "eslint",
+  "prettier",
+  "ruff",
+  "mypy",
+  "gh",
+  "git",
+].join("|");
+const CODEX_TURN_VERIFICATION_COMMAND_PATTERN = new RegExp(
+  `^(?:[\\\`$]\\s*)?(?:(?:${CODEX_TURN_VERIFICATION_COMMAND_NAMES})\\b|(?:\\.{0,2}/))`,
+  "i",
+);
+
+function hasExplicitCodexTurnVerificationCommandEvidence(value: string): boolean {
+  return value
+    .split(/[\n;]+/)
+    .map((candidate) => candidate.trim().replace(/^`+|`+$/g, "").trim())
+    .filter((candidate) => candidate.length > 0)
+    .some((candidate) => CODEX_TURN_VERIFICATION_COMMAND_PATTERN.test(candidate));
+}
+
 function explicitPassingCodexTurnVerificationCommand(
   tests: string | null | undefined,
 ): string | null {
@@ -119,13 +170,24 @@ function explicitPassingCodexTurnVerificationCommand(
   if (
     normalized === "not run" ||
     normalized === "none" ||
+    normalized === "n/a" ||
+    normalized === "na" ||
     normalized.includes("not run") ||
     normalized.includes("no tests") ||
     normalized.includes("failed") ||
     normalized.includes("failure") ||
+    normalized.includes("error") ||
+    normalized.includes("timeout") ||
     normalized.includes("blocked") ||
-    normalized.includes("skipped")
+    normalized.includes("skipped") ||
+    normalized.includes("stale") ||
+    normalized.includes("ambiguous") ||
+    normalized.includes("unclear") ||
+    normalized.includes("?")
   ) {
+    return null;
+  }
+  if (!hasExplicitCodexTurnVerificationCommandEvidence(value)) {
     return null;
   }
   return value;
