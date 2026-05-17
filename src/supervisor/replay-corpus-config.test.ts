@@ -16,6 +16,7 @@ test("createCheckedInReplayCorpusConfig derives replay-local paths and provider 
   assert.equal(config.stateFile, path.join(repoRoot, ".codex-supervisor", "replay", "state.json"));
   assert.equal(config.localReviewArtifactDir, path.join(repoRoot, ".codex-supervisor", "replay", "reviews"));
   assert.deepEqual(config.reviewBotLogins, [
+    "chatgpt-codex-connector",
     "copilot-pull-request-reviewer",
     "coderabbitai",
     "coderabbitai[bot]",

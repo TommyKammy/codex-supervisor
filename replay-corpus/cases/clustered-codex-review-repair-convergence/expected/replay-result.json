@@ -1,0 +1,6 @@
+{
+  "nextState": "addressing_review",
+  "shouldRunCodex": true,
+  "blockedReason": "manual_review",
+  "failureSignature": "thread-auth-boundary|thread-verifier-drift|thread-handoff-state"
+}
