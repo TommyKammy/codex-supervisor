@@ -373,23 +373,87 @@ export function buildCodexConnectorMustFixFindingDetails(args: {
   pr: Pick<GitHubPullRequest, "number" | "headRefOid"> | null;
   reviewThreads: ReviewThread[];
 }): string[] {
-  return codexConnectorMustFixReviewThreads(args.reviewThreads).map((thread, index) => {
-    const latestComment = latestReviewComment(thread);
-    const latestCodexConnectorReview = latestCodexConnectorReviewComment(thread);
-    const lineRange = thread.line == null ? "unknown" : String(thread.line);
+  return clusterConfiguredBotReviewThreads(codexConnectorMustFixReviewThreads(args.reviewThreads)).map((cluster, index) => {
+    const representativeThread = cluster.threads[0];
+    const latestComment = latestReviewComment(representativeThread);
+    const lineRange = representativeThread.line == null ? "unknown" : String(representativeThread.line);
     return [
-      `- Finding ${index + 1}`,
+      `- Root-cause repair group ${index + 1}`,
       `  Policy: Codex Connector must_fix_remaining`,
-      `  Severity: ${latestCodexConnectorReview?.severity ?? "unknown"}`,
+      `  Severity: ${cluster.severity}`,
       `  PR: ${args.pr ? `#${args.pr.number}` : "unknown"}`,
       `  Head SHA: ${args.pr?.headRefOid ?? "unknown"}`,
+      `  Thread IDs: ${cluster.threads.map((thread) => thread.id).join(", ")}`,
+      `  Affected files: ${cluster.files.join(", ")}`,
+      `  Representative source URLs: ${cluster.sourceUrls.join(", ") || "n/a"}`,
       `  Source URL: ${latestComment?.url ?? "n/a"}`,
-      `  File: ${thread.path ?? "unknown"}`,
+      `  File: ${representativeThread.path ?? "unknown"}`,
       `  Line range: ${lineRange}`,
-      `  Summary: ${extractReviewCommentSummary(latestComment?.body ?? "")}`,
-      `  Latest relevant comment: ${extractReviewCommentSummary(latestComment?.body ?? "")}`,
+      `  Summary: ${cluster.summary}`,
+      ...(cluster.threads.length === 1
+        ? [`  Latest relevant comment: ${extractReviewCommentSummary(latestComment?.body ?? "")}`]
+        : []),
+      `  Evidence: ${cluster.threads
+        .map((thread) => {
+          const comment = latestReviewComment(thread);
+          return `${thread.id} ${thread.path ?? "unknown"}:${thread.line ?? "?"} ${comment?.url ?? "n/a"}`;
+        })
+        .join("; ")}`,
     ].join("\n");
   });
+}
+
+export interface ConfiguredBotReviewThreadCluster {
+  severity: CodexConnectorPSeverity | "unknown";
+  summary: string;
+  signature: string;
+  threads: ReviewThread[];
+  files: string[];
+  sourceUrls: string[];
+}
+
+function normalizeReviewThreadSignature(summary: string): string {
+  return summary
+    .toLowerCase()
+    .replace(/https?:\/\/\S+/g, " ")
+    .replace(/`[^`]+`/g, " ")
+    .replace(/\b\d+\b/g, "#")
+    .replace(/[^a-z0-9#]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function uniqueInOrder(values: string[]): string[] {
+  return [...new Set(values)];
+}
+
+export function clusterConfiguredBotReviewThreads(reviewThreads: ReviewThread[]): ConfiguredBotReviewThreadCluster[] {
+  const clusters = new Map<string, ConfiguredBotReviewThreadCluster>();
+
+  for (const thread of reviewThreads) {
+    const latestComment = latestReviewComment(thread);
+    const severity = latestCodexConnectorPSeverity(thread) ?? "unknown";
+    const summary = extractReviewCommentSummary(latestComment?.body ?? "");
+    const signature = `${severity}:${normalizeReviewThreadSignature(summary) || thread.id}`;
+    const existing = clusters.get(signature);
+    if (existing) {
+      existing.threads.push(thread);
+      existing.files = uniqueInOrder([...existing.files, thread.path ?? "unknown"]);
+      existing.sourceUrls = uniqueInOrder([...existing.sourceUrls, latestComment?.url ?? "n/a"]);
+      continue;
+    }
+
+    clusters.set(signature, {
+      severity,
+      summary,
+      signature,
+      threads: [thread],
+      files: [thread.path ?? "unknown"],
+      sourceUrls: latestComment?.url ? [latestComment.url] : [],
+    });
+  }
+
+  return [...clusters.values()];
 }
 
 export function manualReviewThreads(config: SupervisorConfig, reviewThreads: ReviewThread[]): ReviewThread[] {

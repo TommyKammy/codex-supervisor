@@ -6,6 +6,7 @@ import {
   buildCodexConnectorP2P3PolicyDiagnostic,
   actionableBotReviewThreads,
   buildStalledBotReviewFailureContext,
+  clusterConfiguredBotReviewThreads,
   codexConnectorMustFixReviewThreads,
   configuredBotReviewFollowUpState,
   evaluateCodexConnectorConvergencePolicy,
@@ -483,6 +484,79 @@ test("buildCodexConnectorP2P3PolicyDiagnostic distinguishes actionable, softened
     p3Softened: 1,
     p3Escalated: 1,
   });
+});
+
+test("clusterConfiguredBotReviewThreads groups repeated signatures while preserving audit evidence", () => {
+  const repeatedBody =
+    "P1: Missing verifier coverage lets failed restore writes leave a half-restored durable state. Add a regression.";
+  const firstThread = createReviewThread({
+    id: "thread-restore",
+    path: "src/restore.ts",
+    line: 42,
+    comments: {
+      nodes: [
+        {
+          id: "comment-restore",
+          body: repeatedBody,
+          createdAt: "2026-03-11T00:00:00Z",
+          url: "https://example.test/pr/44#discussion_r1",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const secondThread = createReviewThread({
+    id: "thread-restore-test",
+    path: "src/restore.test.ts",
+    line: 88,
+    comments: {
+      nodes: [
+        {
+          id: "comment-restore-test",
+          body: repeatedBody,
+          createdAt: "2026-03-11T00:01:00Z",
+          url: "https://example.test/pr/44#discussion_r2",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const unrelatedThread = createReviewThread({
+    id: "thread-export",
+    path: "src/export.ts",
+    line: 12,
+    comments: {
+      nodes: [
+        {
+          id: "comment-export",
+          body: "P2: Export readiness must reject mixed-snapshot rows instead of stitching partial results together.",
+          createdAt: "2026-03-11T00:02:00Z",
+          url: "https://example.test/pr/44#discussion_r3",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  const clusters = clusterConfiguredBotReviewThreads([firstThread, secondThread, unrelatedThread]);
+
+  assert.equal(clusters.length, 2);
+  assert.deepEqual(clusters[0]?.threads.map((thread) => thread.id), ["thread-restore", "thread-restore-test"]);
+  assert.deepEqual(clusters[0]?.files, ["src/restore.ts", "src/restore.test.ts"]);
+  assert.deepEqual(clusters[0]?.sourceUrls, [
+    "https://example.test/pr/44#discussion_r1",
+    "https://example.test/pr/44#discussion_r2",
+  ]);
+  assert.deepEqual(clusters[1]?.threads.map((thread) => thread.id), ["thread-export"]);
 });
 
 test("evaluateCodexConnectorConvergencePolicy separates missing, must-fix, nitpick-only, and converged outcomes", () => {

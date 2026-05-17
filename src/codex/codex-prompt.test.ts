@@ -985,6 +985,100 @@ This stale handoff history should not be replayed into a targeted thread repair 
   assert.doesNotMatch(prompt, /On-demand durable memory files:/);
 });
 
+test("buildCodexPrompt groups repeated Codex Connector findings into root-cause repair groups", () => {
+  const pr = createPullRequest({
+    number: 144,
+    headRefOid: "head-connector-144",
+  });
+  const missingVerifierBody =
+    "P1: Missing verifier coverage lets failed restore writes leave a half-restored durable state. Add a regression that proves the restore failure rolls back every persisted record.";
+  const prompt = buildCodexPrompt({
+    kind: "start",
+    config: createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector[bot]"],
+    }),
+    repoSlug: "owner/repo",
+    issue,
+    branch: "codex/issue-46",
+    workspacePath: "/tmp/workspaces/issue-46",
+    state: "addressing_review" satisfies RunState,
+    pr,
+    checks: [],
+    reviewThreads: [
+      createReviewThread({
+        id: "thread-restore-service",
+        path: "src/restore.ts",
+        line: 42,
+        comments: {
+          nodes: [
+            {
+              id: "comment-restore-service",
+              body: missingVerifierBody,
+              createdAt: "2026-03-11T00:05:00Z",
+              url: "https://example.test/pr/144#discussion_r2",
+              author: {
+                login: "chatgpt-codex-connector[bot]",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+      createReviewThread({
+        id: "thread-restore-test",
+        path: "src/restore.test.ts",
+        line: 88,
+        comments: {
+          nodes: [
+            {
+              id: "comment-restore-test",
+              body: missingVerifierBody,
+              createdAt: "2026-03-11T00:06:00Z",
+              url: "https://example.test/pr/144#discussion_r3",
+              author: {
+                login: "chatgpt-codex-connector[bot]",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+      createReviewThread({
+        id: "thread-unrelated",
+        path: "src/export.ts",
+        line: 12,
+        comments: {
+          nodes: [
+            {
+              id: "comment-unrelated",
+              body: "P2: Export readiness must reject mixed-snapshot rows instead of stitching partial results together.",
+              createdAt: "2026-03-11T00:07:00Z",
+              url: "https://example.test/pr/144#discussion_r4",
+              author: {
+                login: "chatgpt-codex-connector[bot]",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+    alwaysReadFiles: [],
+    onDemandMemoryFiles: [],
+    journalPath: "/tmp/workspaces/issue-46/.codex-supervisor/issue-journal.md",
+  } satisfies AgentTurnContext);
+
+  assert.match(prompt, /Root-cause repair group 1/);
+  assert.match(prompt, /Thread IDs: thread-restore-service, thread-restore-test/);
+  assert.match(prompt, /Representative source URLs:/);
+  assert.match(prompt, /https:\/\/example\.test\/pr\/144#discussion_r2/);
+  assert.match(prompt, /https:\/\/example\.test\/pr\/144#discussion_r3/);
+  assert.match(prompt, /Affected files: src\/restore\.ts, src\/restore\.test\.ts/);
+  assert.match(prompt, /Root-cause repair group 2/);
+  assert.match(prompt, /Thread IDs: thread-unrelated/);
+  assert.equal((prompt.match(/Missing verifier coverage/g) ?? []).length, 1);
+});
+
 test("buildCodexPrompt keeps explicit operator overrides during addressing_review", () => {
   const prompt = buildCodexPrompt({
     repoSlug: "owner/repo",
