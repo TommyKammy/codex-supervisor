@@ -90,7 +90,23 @@ export function queuedReadyPromotionPathHygieneRepairContext(
     return {
       category: "blocked",
       summary: artifact.summary,
-      signature: record.last_failure_context?.signature ?? PATH_HYGIENE_SIGNATURE,
+      signature:
+        (
+          matchesPathHygieneSignature(record.last_observed_host_local_pr_blocker_signature)
+            ? record.last_observed_host_local_pr_blocker_signature
+            : null
+        )
+        ?? (
+          matchesPathHygieneSignature(record.last_host_local_pr_blocker_comment_signature)
+            ? record.last_host_local_pr_blocker_comment_signature
+            : null
+        )
+        ?? (
+          matchesPathHygieneSignature(record.last_failure_context?.signature)
+            ? record.last_failure_context?.signature
+            : null
+        )
+        ?? PATH_HYGIENE_SIGNATURE,
       command: artifact.command,
       details: (artifact.repair_targets ?? []).map((target) => `Actionable file: ${target}`),
       url: null,

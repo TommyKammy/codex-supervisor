@@ -22,7 +22,7 @@ import {
 import { buildIssueDefinitionFingerprint, issueDefinitionFreshnessPatch } from "./issue-definition-freshness";
 import { RecoveryEvent } from "./run-once-cycle-prelude";
 import { StateStore } from "./core/state-store";
-import { GitHubIssue, IssueRunRecord, PullRequestCheck, ReviewThread, RunState, SupervisorConfig, SupervisorStateFile } from "./core/types";
+import { GitHubIssue, GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, RunState, SupervisorConfig, SupervisorStateFile } from "./core/types";
 import { nowIso, truncate } from "./core/utils";
 import { resetTrackedPrHeadScopedStateOnAdvance } from "./tracked-pr-lifecycle-projection";
 import {
@@ -57,7 +57,7 @@ export {
 } from "./recovery-workspace-reconciliation";
 import { cleanupExpiredDoneWorkspaces as cleanupExpiredDoneWorkspacesInModule } from "./recovery-workspace-reconciliation";
 import { buildTrackedPrStaleFailureConvergencePatch } from "./recovery-tracked-pr-support";
-import { mergeConflictDetected } from "./supervisor/supervisor-status-rendering";
+import { mergeConflictDetected, summarizeChecks } from "./supervisor/supervisor-status-rendering";
 import { projectTrackedPrLifecycle } from "./tracked-pr-lifecycle-projection";
 import { hasFreshTrackedPrReadyPromotionBlockerEvidence } from "./tracked-pr-ready-promotion-blocker";
 import { queuedReadyPromotionPathHygieneRepairContext } from "./ready-promotion-path-hygiene-repair";
@@ -286,6 +286,71 @@ function shouldReconsiderGenericNoPrIssueDefinitionChange(
   }
 
   return buildIssueDefinitionFingerprint(issue) !== record.issue_definition_fingerprint;
+}
+
+function firstPassingCheckEvidence(checks: PullRequestCheck[]): string | null {
+  if (checks.length === 0) {
+    return null;
+  }
+
+  const checkSummary = summarizeChecks(checks);
+  if (!checkSummary.allPassing || checkSummary.hasPending || checkSummary.hasFailing) {
+    return null;
+  }
+
+  const firstCheckName = checks
+    .map((check) => check.name.trim())
+    .filter((name) => name.length > 0)
+    .sort()[0];
+
+  return `required_checks_green:${firstCheckName ?? "all"}`;
+}
+
+function currentHeadConfiguredBotEvidence(
+  pr: Pick<
+    GitHubPullRequest,
+    | "configuredBotCurrentHeadObservedAt"
+    | "configuredBotCurrentHeadStatusState"
+    | "configuredBotTopLevelReviewStrength"
+  >,
+): string | null {
+  if (!pr.configuredBotCurrentHeadObservedAt) {
+    return null;
+  }
+
+  const statusState = pr.configuredBotCurrentHeadStatusState?.toLowerCase() ?? null;
+  const statusPassed =
+    statusState === "success" ||
+    statusState === "pass" ||
+    statusState === "passed";
+  const topLevelPassed =
+    pr.configuredBotTopLevelReviewStrength === null ||
+    pr.configuredBotTopLevelReviewStrength === undefined ||
+    pr.configuredBotTopLevelReviewStrength === "nitpick_only";
+
+  if (!statusPassed && !topLevelPassed) {
+    return null;
+  }
+
+  return "configured_bot_current_head_passed";
+}
+
+function trackedHandoffExternalProgressEvidence(args: {
+  record: Pick<IssueRunRecord, "last_head_sha">;
+  pr: Pick<
+    GitHubPullRequest,
+    | "configuredBotCurrentHeadObservedAt"
+    | "configuredBotCurrentHeadStatusState"
+    | "configuredBotTopLevelReviewStrength"
+    | "headRefOid"
+  >;
+  checks: PullRequestCheck[];
+}): string | null {
+  if (!args.record.last_head_sha || args.record.last_head_sha === args.pr.headRefOid) {
+    return null;
+  }
+
+  return firstPassingCheckEvidence(args.checks) ?? currentHeadConfiguredBotEvidence(args.pr);
 }
 
 export function applyRecoveryEvent(
@@ -852,42 +917,100 @@ export async function reconcileRecoverableBlockedIssueStates(
         continue;
       }
 
-      if (!trackedPullRequest || trackedPullRequest.state !== "OPEN" || trackedPullRequest.mergedAt || !mergeConflictDetected(trackedPullRequest)) {
+      if (!trackedPullRequest || trackedPullRequest.state !== "OPEN" || trackedPullRequest.mergedAt) {
         continue;
       }
 
-      const recoveryEvent = buildTrackedPrResumeRecoveryEvent(
+      if (mergeConflictDetected(trackedPullRequest)) {
+        const recoveryEvent = buildTrackedPrResumeRecoveryEvent(
+          record,
+          trackedPullRequest,
+          "resolving_conflict",
+          buildRecoveryEvent,
+        );
+        const headAdvanceResetPatch = resetTrackedPrHeadScopedStateOnAdvance(record, trackedPullRequest.headRefOid);
+        const headAdvanced = Object.keys(headAdvanceResetPatch).length > 0;
+        const failureSignatureBaseRecord = headAdvanced
+          ? {
+            ...record,
+            last_failure_signature: null,
+            repeated_failure_signature_count: 0,
+          }
+          : record;
+        const updated = stateStore.touch(record, applyRecoveryEvent({
+          state: "resolving_conflict",
+          blocked_reason: null,
+          last_error: null,
+          last_failure_kind: null,
+          last_failure_context: null,
+          last_blocker_signature: null,
+          ...applyFailureSignature(failureSignatureBaseRecord, null),
+          repeated_blocker_count: 0,
+          repair_attempt_count: 0,
+          timeout_retry_count: 0,
+          blocked_verification_retry_count: 0,
+          codex_session_id: null,
+          pr_number: trackedPullRequest.number,
+          last_head_sha: trackedPullRequest.headRefOid,
+          ...headAdvanceResetPatch,
+        }, recoveryEvent));
+        state.issues[String(record.issue_number)] = updated;
+        changed = true;
+        recoveryEvents.push(recoveryEvent);
+        continue;
+      }
+
+      const checks = await github.getChecks(trackedPullRequest.number);
+      const reviewThreads = await github.getUnresolvedReviewThreads(trackedPullRequest.number);
+      const externalProgressEvidence = trackedHandoffExternalProgressEvidence({
         record,
-        trackedPullRequest,
-        "resolving_conflict",
-        buildRecoveryEvent,
+        pr: trackedPullRequest,
+        checks,
+      });
+      if (!externalProgressEvidence) {
+        continue;
+      }
+
+      const projection = projectTrackedPrLifecycle({
+        config,
+        record,
+        pr: trackedPullRequest,
+        checks,
+        reviewThreads,
+        inferStateFromPullRequest: inferStateFromPullRequestImpl,
+        blockedReasonForLifecycleState: blockedReasonForLifecycleStateImpl,
+        syncReviewWaitWindow: syncReviewWaitWindowImpl,
+        syncCopilotReviewRequestObservation: syncCopilotReviewRequestObservationImpl,
+        syncCopilotReviewTimeoutState: syncCopilotReviewTimeoutStateImpl,
+      });
+      if (projection.shouldSuppressRecovery) {
+        continue;
+      }
+
+      const nextState = projection.nextState;
+      const nextBlockedReason = projection.nextBlockedReason;
+      const failureContext =
+        nextState === "blocked"
+          ? inferFailureContextImpl(config, projection.recordForState, trackedPullRequest, checks, reviewThreads)
+          : null;
+      const patch = buildTrackedPrStaleFailureConvergencePatch({
+        record,
+        pr: trackedPullRequest,
+        nextState,
+        failureContext,
+        blockedReason: nextBlockedReason,
+        reviewWaitPatch: projection.reviewWaitPatch,
+        copilotReviewRequestObservationPatch: projection.copilotReviewRequestObservationPatch,
+        copilotReviewTimeoutPatch: projection.copilotReviewTimeoutPatch,
+      });
+      patch.codex_session_id = null;
+      patch.last_tracked_pr_progress_summary = `handoff_missing_recovered=evidence=${externalProgressEvidence}`;
+
+      const recoveryEvent = buildRecoveryEvent(
+        record.issue_number,
+        `tracked_pr_handoff_missing_external_progress: resumed issue #${record.issue_number} from blocked to ${nextState} after tracked PR #${trackedPullRequest.number} advanced from ${record.last_head_sha} to ${trackedPullRequest.headRefOid} with evidence=${externalProgressEvidence}`,
       );
-      const headAdvanceResetPatch = resetTrackedPrHeadScopedStateOnAdvance(record, trackedPullRequest.headRefOid);
-      const headAdvanced = Object.keys(headAdvanceResetPatch).length > 0;
-      const failureSignatureBaseRecord = headAdvanced
-        ? {
-          ...record,
-          last_failure_signature: null,
-          repeated_failure_signature_count: 0,
-        }
-        : record;
-      const updated = stateStore.touch(record, applyRecoveryEvent({
-        state: "resolving_conflict",
-        blocked_reason: null,
-        last_error: null,
-        last_failure_kind: null,
-        last_failure_context: null,
-        last_blocker_signature: null,
-        ...applyFailureSignature(failureSignatureBaseRecord, null),
-        repeated_blocker_count: 0,
-        repair_attempt_count: 0,
-        timeout_retry_count: 0,
-        blocked_verification_retry_count: 0,
-        codex_session_id: null,
-        pr_number: trackedPullRequest.number,
-        last_head_sha: trackedPullRequest.headRefOid,
-        ...headAdvanceResetPatch,
-      }, recoveryEvent));
+      const updated = stateStore.touch(record, applyRecoveryEvent(patch, recoveryEvent));
       state.issues[String(record.issue_number)] = updated;
       changed = true;
       recoveryEvents.push(recoveryEvent);

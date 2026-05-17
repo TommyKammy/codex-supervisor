@@ -1488,6 +1488,168 @@ test("reconcileRecoverableBlockedIssueStates clears stale tracked-PR review stat
   ]);
 });
 
+test("reconcileRecoverableBlockedIssueStates recovers tracked handoff-missing after head advance with green current-head checks", async () => {
+  const config = createConfig();
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createTrackedPrStaleReviewRecord({
+        state: "blocked",
+        blocked_reason: "handoff_missing",
+        last_error: "Codex started a turn but did not write a durable handoff.",
+        last_failure_kind: null,
+        last_failure_context: {
+          category: "blocked",
+          summary: "Codex started a turn but did not write a durable handoff.",
+          signature: "handoff-missing",
+          command: null,
+          details: ["Update the issue journal before the turn exits."],
+          url: null,
+          updated_at: "2026-03-13T00:20:00Z",
+        },
+        last_failure_signature: "handoff-missing",
+        repeated_failure_signature_count: 2,
+        codex_session_id: "session-366",
+      }),
+    ],
+  });
+  const issue = createTrackedPrRecoveryIssue({
+    title: "Recovery issue",
+  });
+  const pr = createTrackedPrRecoveryPullRequest({
+    title: "Recovery implementation",
+    headRefOid: TRACKED_PR_NEW_HEAD,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+  let saveCalls = 0;
+
+  const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => pr,
+      getIssue: async () => {
+        throw new Error("unexpected getIssue call");
+      },
+      getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    {
+      touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+        return {
+          ...current,
+          ...patch,
+          updated_at: "2026-03-13T00:25:00Z",
+        };
+      },
+      async save(): Promise<void> {
+        saveCalls += 1;
+      },
+    },
+    state,
+    config,
+    [issue],
+    {
+      shouldAutoRetryHandoffMissing,
+      inferStateFromPullRequest,
+      inferFailureContext,
+      blockedReasonForLifecycleState,
+      isOpenPullRequest,
+      syncReviewWaitWindow,
+      syncCopilotReviewRequestObservation,
+      syncCopilotReviewTimeoutState,
+    },
+  );
+
+  const updated = state.issues["366"];
+  assert.equal(updated.state, "ready_to_merge");
+  assert.equal(updated.blocked_reason, null);
+  assert.equal(updated.last_error, null);
+  assert.equal(updated.last_failure_context, null);
+  assert.equal(updated.last_failure_signature, null);
+  assert.equal(updated.repeated_failure_signature_count, 0);
+  assert.equal(updated.codex_session_id, null);
+  assert.equal(updated.last_head_sha, TRACKED_PR_NEW_HEAD);
+  assert.equal(updated.local_review_head_sha, null);
+  assert.deepEqual(updated.processed_review_thread_ids, []);
+  assert.match(
+    updated.last_recovery_reason ?? "",
+    /^tracked_pr_handoff_missing_external_progress: resumed issue #366 from blocked to ready_to_merge after tracked PR #191 advanced from head-old-191 to head-new-191 with evidence=required_checks_green:build$/,
+  );
+  assert.equal(updated.last_tracked_pr_progress_summary, "handoff_missing_recovered=evidence=required_checks_green:build");
+  assert.equal(saveCalls, 1);
+  assert.deepEqual(recoveryEvents.map((event) => event.reason), [updated.last_recovery_reason]);
+});
+
+test("reconcileRecoverableBlockedIssueStates keeps tracked handoff-missing blocked without head-advance external evidence", async () => {
+  const config = createConfig();
+  const original = createTrackedPrStaleReviewRecord({
+    state: "blocked",
+    blocked_reason: "handoff_missing",
+    last_error: "Codex started a turn but did not write a durable handoff.",
+    last_failure_context: {
+      category: "blocked",
+      summary: "Codex started a turn but did not write a durable handoff.",
+      signature: "handoff-missing",
+      command: null,
+      details: ["Update the issue journal before the turn exits."],
+      url: null,
+      updated_at: "2026-03-13T00:20:00Z",
+    },
+    last_failure_signature: "handoff-missing",
+    repeated_failure_signature_count: 2,
+    codex_session_id: "session-366",
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [original],
+  });
+  const issue = createTrackedPrRecoveryIssue();
+  const pr = createTrackedPrRecoveryPullRequest({
+    headRefOid: TRACKED_PR_NEW_HEAD,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+  let saveCalls = 0;
+
+  const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => pr,
+      getIssue: async () => {
+        throw new Error("unexpected getIssue call");
+      },
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    {
+      touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+        return {
+          ...current,
+          ...patch,
+          updated_at: "2026-03-13T00:25:00Z",
+        };
+      },
+      async save(): Promise<void> {
+        saveCalls += 1;
+      },
+    },
+    state,
+    config,
+    [issue],
+    {
+      shouldAutoRetryHandoffMissing,
+      inferStateFromPullRequest,
+      inferFailureContext,
+      blockedReasonForLifecycleState,
+      isOpenPullRequest,
+      syncReviewWaitWindow,
+      syncCopilotReviewRequestObservation,
+      syncCopilotReviewTimeoutState,
+    },
+  );
+
+  assert.equal(saveCalls, 0);
+  assert.deepEqual(recoveryEvents, []);
+  assert.deepEqual(state.issues["366"], original);
+});
+
 test("reconcileRecoverableBlockedIssueStates reopens configured-bot follow-up when last_head_sha is current but local review state is stale", async () => {
   const config = createConfig({
     localReviewEnabled: true,
