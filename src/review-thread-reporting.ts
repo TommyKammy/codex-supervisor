@@ -105,12 +105,59 @@ export type CodexConnectorConvergencePolicyOutcome =
   | "nitpick_only"
   | "converged";
 
-export interface CodexConnectorConvergencePolicyResult {
-  outcome: CodexConnectorConvergencePolicyOutcome;
+export type CodexConnectorConvergenceMergeEffect = "blocked" | "nitpick_only" | "ready";
+
+export type CodexConnectorConvergenceNextAction =
+  | "request_current_head_review"
+  | "repair_must_fix_findings"
+  | "merge_or_follow_up_nitpicks"
+  | "merge_ready";
+
+interface CodexConnectorConvergencePolicyBase {
   currentHeadObservedAt: string | null;
+  findingCount: number;
+  mergeEffect: CodexConnectorConvergenceMergeEffect;
+  highestSeverity: CodexConnectorPSeverity | "nitpick_only" | "none";
+  nextAction: CodexConnectorConvergenceNextAction;
+}
+
+export interface CodexConnectorMissingCurrentHeadReviewPolicyResult extends CodexConnectorConvergencePolicyBase {
+  outcome: "missing_current_head_review";
+  currentHeadObservedAt: null;
+  mergeEffect: "blocked";
+  nextAction: "request_current_head_review";
+}
+
+export interface CodexConnectorMustFixRemainingPolicyResult extends CodexConnectorConvergencePolicyBase {
+  outcome: "must_fix_remaining";
+  mergeEffect: "blocked";
+  nextAction: "repair_must_fix_findings";
   mustFixCount: number;
+}
+
+export interface CodexConnectorNitpickOnlyPolicyResult extends CodexConnectorConvergencePolicyBase {
+  outcome: "nitpick_only";
+  currentHeadObservedAt: string;
+  mergeEffect: "nitpick_only";
+  highestSeverity: "nitpick_only";
+  nextAction: "merge_or_follow_up_nitpicks";
   nitpickCount: number;
 }
+
+export interface CodexConnectorConvergedPolicyResult extends CodexConnectorConvergencePolicyBase {
+  outcome: "converged";
+  currentHeadObservedAt: string;
+  findingCount: 0;
+  mergeEffect: "ready";
+  highestSeverity: "none";
+  nextAction: "merge_ready";
+}
+
+export type CodexConnectorConvergencePolicyResult =
+  | CodexConnectorMissingCurrentHeadReviewPolicyResult
+  | CodexConnectorMustFixRemainingPolicyResult
+  | CodexConnectorNitpickOnlyPolicyResult
+  | CodexConnectorConvergedPolicyResult;
 
 function codexConnectorPSeverityRank(severity: CodexConnectorPSeverity): number {
   return { P0: 0, P1: 1, P2: 2, P3: 3 }[severity];
@@ -158,15 +205,20 @@ export function evaluateCodexConnectorConvergencePolicy(
     return null;
   }
 
-  const mustFixCount = codexConnectorMustFixReviewThreads(reviewThreads).length;
+  const mustFixThreads = codexConnectorMustFixReviewThreads(reviewThreads);
+  const mustFixCount = mustFixThreads.length;
   const nitpickCount = codexConnectorNitpickOnlyReviewThreads(reviewThreads).length;
   const currentHeadObservedAt = validPolicyTimestamp(pr.configuredBotCurrentHeadObservedAt);
+  const findingCount = mustFixCount + nitpickCount;
   if (mustFixCount > 0) {
     return {
       outcome: "must_fix_remaining",
       currentHeadObservedAt,
+      findingCount,
+      mergeEffect: "blocked",
+      highestSeverity: maxCodexConnectorPSeverity(mustFixThreads),
+      nextAction: "repair_must_fix_findings",
       mustFixCount,
-      nitpickCount,
     };
   }
 
@@ -174,8 +226,10 @@ export function evaluateCodexConnectorConvergencePolicy(
     return {
       outcome: "missing_current_head_review",
       currentHeadObservedAt: null,
-      mustFixCount,
-      nitpickCount,
+      findingCount,
+      mergeEffect: "blocked",
+      highestSeverity: nitpickCount > 0 ? "nitpick_only" : "none",
+      nextAction: "request_current_head_review",
     };
   }
 
@@ -183,7 +237,10 @@ export function evaluateCodexConnectorConvergencePolicy(
     return {
       outcome: "nitpick_only",
       currentHeadObservedAt,
-      mustFixCount,
+      findingCount,
+      mergeEffect: "nitpick_only",
+      highestSeverity: "nitpick_only",
+      nextAction: "merge_or_follow_up_nitpicks",
       nitpickCount,
     };
   }
@@ -191,8 +248,10 @@ export function evaluateCodexConnectorConvergencePolicy(
   return {
     outcome: "converged",
     currentHeadObservedAt,
-    mustFixCount,
-    nitpickCount,
+    findingCount: 0,
+    mergeEffect: "ready",
+    highestSeverity: "none",
+    nextAction: "merge_ready",
   };
 }
 

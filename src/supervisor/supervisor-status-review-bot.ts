@@ -10,10 +10,7 @@ import {
 import { displayLocalCiCommand } from "../core/config-parsing";
 import { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "../core/types";
 import { localReviewDegradedNeedsBlock } from "../review-handling";
-import {
-  buildCodexConnectorPolicyBlockDiagnostic,
-  evaluateCodexConnectorConvergencePolicy,
-} from "../review-thread-reporting";
+import { evaluateCodexConnectorConvergencePolicy } from "../review-thread-reporting";
 import { classifyStaleReviewBotRecoverability, recoverabilityStatusToken } from "./stale-diagnostic-recoverability";
 
 type ReviewThreadClassifier = (config: SupervisorConfig, reviewThreads: ReviewThread[]) => ReviewThread[];
@@ -469,10 +466,8 @@ export function formatCodexConnectorConvergenceDiagnostic(args: {
   const hasCurrentHeadProviderSuccess = Boolean(
     args.record.provider_success_observed_at && args.record.provider_success_head_sha === currentHeadSha,
   );
-  const findingCount = policy.mustFixCount + policy.nitpickCount;
-  const policyBlock = buildCodexConnectorPolicyBlockDiagnostic(args.config, args.reviewThreads);
-  const highestSeverity =
-    policyBlock?.severity ?? (policy.nitpickCount > 0 ? "nitpick_only" : "none");
+  const findingCount = policy.findingCount;
+  const highestSeverity = policy.highestSeverity;
 
   let status:
     | "contradictory_evidence"
@@ -484,7 +479,7 @@ export function formatCodexConnectorConvergenceDiagnostic(args: {
     | "missing_current_head_review"
     | "nitpick_only"
     | "converged";
-  let mergeEffect: "blocked" | "nitpick_only" | "ready";
+  let mergeEffect = policy.mergeEffect;
   let nextAction:
     | "fail_closed_inspect_connector_state"
     | "wait_for_current_head_signal"
@@ -496,7 +491,6 @@ export function formatCodexConnectorConvergenceDiagnostic(args: {
 
   if (hasCurrentHeadProviderSuccess && policy.outcome !== "converged" && policy.outcome !== "nitpick_only") {
     status = "contradictory_evidence";
-    mergeEffect = "blocked";
     nextAction = "fail_closed_inspect_connector_state";
   } else if (staleSignalHeadSha) {
     status = "stale_head";
@@ -504,24 +498,20 @@ export function formatCodexConnectorConvergenceDiagnostic(args: {
     nextAction = "wait_for_current_head_signal";
   } else if (policy.outcome === "must_fix_remaining") {
     status = "repairing_must_fix";
-    mergeEffect = "blocked";
-    nextAction = "repair_must_fix_findings";
+    nextAction = policy.nextAction;
   } else if (policy.outcome === "missing_current_head_review") {
     status = requestMatchesCurrentHead
       ? "re_requested_review"
       : hydratedRequestMatchesCurrentHead
         ? "same_head_request_hydrated"
         : "missing_current_head_review";
-    mergeEffect = "blocked";
     nextAction = requestMatchesCurrentHead || hydratedRequestMatchesCurrentHead ? "wait_for_requested_review" : "request_current_head_review";
   } else if (policy.outcome === "nitpick_only") {
     status = "nitpick_only";
-    mergeEffect = "nitpick_only";
-    nextAction = "merge_or_follow_up_nitpicks";
+    nextAction = policy.nextAction;
   } else {
     status = "converged";
-    mergeEffect = "ready";
-    nextAction = "merge_ready";
+    nextAction = policy.nextAction;
   }
 
   const waitWindow = configuredBotCurrentHeadSignalWaitWindow(args.config, args.pr);
