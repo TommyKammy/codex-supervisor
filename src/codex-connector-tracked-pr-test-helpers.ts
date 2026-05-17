@@ -21,6 +21,7 @@ type CodexConnectorTrackedReviewScenarioOptions = {
     summary: string;
     ranAt: string;
     command: string;
+    evidenceSource?: "latest_local_ci_result" | "codex_turn_timeline_artifact";
   };
 };
 
@@ -67,7 +68,7 @@ export function createCodexConnectorTrackedReviewResidueScenario({
       updated_at: "2026-05-15T00:20:00Z",
     },
   };
-  if (verifiedRepair) {
+  if (verifiedRepair?.evidenceSource !== "codex_turn_timeline_artifact" && verifiedRepair) {
     recordPatch.latest_local_ci_result = {
       outcome: "passed",
       summary: verifiedRepair.summary,
@@ -78,6 +79,21 @@ export function createCodexConnectorTrackedReviewResidueScenario({
       failure_class: null,
       remediation_target: null,
     };
+  } else if (verifiedRepair) {
+    recordPatch.latest_local_ci_result = null;
+    recordPatch.timeline_artifacts = [
+      {
+        type: "verification_result",
+        gate: "codex_turn",
+        command: verifiedRepair.command,
+        head_sha: headSha,
+        outcome: "passed",
+        remediation_target: null,
+        next_action: "continue",
+        summary: verifiedRepair.summary,
+        recorded_at: verifiedRepair.ranAt,
+      },
+    ];
   }
 
   return {
