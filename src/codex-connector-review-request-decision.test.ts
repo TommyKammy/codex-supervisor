@@ -103,6 +103,23 @@ test("codexConnectorReviewRequestAction selects retry after the same-head reques
   );
 });
 
+test("codexConnectorReviewRequestAction falls back to a complete PR request pair when record metadata is partial", () => {
+  assert.deepEqual(
+    decide({
+      record: {
+        codex_connector_review_requested_observed_at: null,
+        codex_connector_review_requested_head_sha: "head-old",
+      },
+      pr: {
+        codexConnectorReviewRequestedAt: "2026-05-08T03:30:00Z",
+        codexConnectorReviewRequestedHeadSha: "head-1995",
+      },
+      now: "2026-05-08T03:35:00.000Z",
+    }),
+    { kind: "none" },
+  );
+});
+
 test("codexConnectorReviewRequestAction suppresses retry after retry exhaustion", () => {
   assert.deepEqual(
     decide({

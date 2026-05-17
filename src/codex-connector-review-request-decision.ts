@@ -44,6 +44,13 @@ function addMinutes(timestamp: string, minutes: number): string | null {
   return new Date(parsed + minutes * 60_000).toISOString();
 }
 
+function completeRequestMetadataPair(
+  requestedAt: string | null,
+  headSha: string | null,
+): { requestedAt: string; headSha: string } | null {
+  return requestedAt && headSha ? { requestedAt, headSha } : null;
+}
+
 function hasProcessedReviewThreadOnNonCurrentHead(
   record: Pick<IssueRunRecord, "processed_review_thread_ids" | "processed_review_thread_fingerprints">,
   pr: Pick<GitHubPullRequest, "headRefOid">,
@@ -201,8 +208,11 @@ export function codexConnectorReviewRequestAction(
   const recordRequestHeadSha = args.record.codex_connector_review_requested_head_sha ?? null;
   const prRequestAt = args.pr.codexConnectorReviewRequestedAt ?? null;
   const prRequestHeadSha = args.pr.codexConnectorReviewRequestedHeadSha ?? null;
-  const requestAt = recordRequestAt ?? prRequestAt;
-  const requestHeadSha = recordRequestHeadSha ?? prRequestHeadSha;
+  const request =
+    completeRequestMetadataPair(recordRequestAt, recordRequestHeadSha) ??
+    completeRequestMetadataPair(prRequestAt, prRequestHeadSha);
+  const requestAt = request?.requestedAt ?? null;
+  const requestHeadSha = request?.headSha ?? null;
   const requestMatchesCurrentHead = Boolean(requestAt && requestHeadSha === args.pr.headRefOid);
 
   if (!requestMatchesCurrentHead) {
