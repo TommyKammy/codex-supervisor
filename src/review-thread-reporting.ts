@@ -439,7 +439,9 @@ export function clusterConfiguredBotReviewThreads(reviewThreads: ReviewThread[])
     if (existing) {
       existing.threads.push(thread);
       existing.files = uniqueInOrder([...existing.files, thread.path ?? "unknown"]);
-      existing.sourceUrls = uniqueInOrder([...existing.sourceUrls, latestComment?.url ?? "n/a"]);
+      if (latestComment?.url) {
+        existing.sourceUrls = uniqueInOrder([...existing.sourceUrls, latestComment.url]);
+      }
       continue;
     }
 

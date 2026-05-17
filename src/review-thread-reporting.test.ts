@@ -527,6 +527,25 @@ test("clusterConfiguredBotReviewThreads groups repeated signatures while preserv
       ],
     },
   });
+  const malformedUrlThread = createReviewThread({
+    id: "thread-restore-worker",
+    path: "src/restore-worker.ts",
+    line: 120,
+    comments: {
+      nodes: [
+        {
+          id: "comment-restore-worker",
+          body: repeatedBody,
+          createdAt: "2026-03-11T00:01:30Z",
+          url: undefined as unknown as string,
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
   const unrelatedThread = createReviewThread({
     id: "thread-export",
     path: "src/export.ts",
@@ -547,11 +566,15 @@ test("clusterConfiguredBotReviewThreads groups repeated signatures while preserv
     },
   });
 
-  const clusters = clusterConfiguredBotReviewThreads([firstThread, secondThread, unrelatedThread]);
+  const clusters = clusterConfiguredBotReviewThreads([firstThread, secondThread, malformedUrlThread, unrelatedThread]);
 
   assert.equal(clusters.length, 2);
-  assert.deepEqual(clusters[0]?.threads.map((thread) => thread.id), ["thread-restore", "thread-restore-test"]);
-  assert.deepEqual(clusters[0]?.files, ["src/restore.ts", "src/restore.test.ts"]);
+  assert.deepEqual(clusters[0]?.threads.map((thread) => thread.id), [
+    "thread-restore",
+    "thread-restore-test",
+    "thread-restore-worker",
+  ]);
+  assert.deepEqual(clusters[0]?.files, ["src/restore.ts", "src/restore.test.ts", "src/restore-worker.ts"]);
   assert.deepEqual(clusters[0]?.sourceUrls, [
     "https://example.test/pr/44#discussion_r1",
     "https://example.test/pr/44#discussion_r2",
