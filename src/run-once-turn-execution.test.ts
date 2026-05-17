@@ -230,6 +230,163 @@ test("executeCodexTurnPhase does not mark review threads processed for a refresh
   assert.deepEqual(resolvePurposes, ["action"]);
 });
 
+test("executeCodexTurnPhase persists explicit successful Codex verification for the current PR head", async () => {
+  const config = createConfig();
+  const issue: GitHubIssue = createIssue({
+    title: "Persist Codex verification evidence",
+  });
+  const pr: GitHubPullRequest = createPullRequest({
+    headRefOid: "head-verified",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "stabilizing",
+        pr_number: 116,
+        last_head_sha: "head-verified",
+      }),
+    },
+  };
+  const context = createCodexTurnContext({
+    state,
+    record: state.issues["102"]!,
+    issue,
+    pr,
+    checks: [],
+    reviewThreads: [],
+    workspaceStatus: {
+      branch: "codex/issue-102",
+      headSha: "head-verified",
+    },
+  });
+  let journalReads = 0;
+
+  const result = await executeCodexTurnPhase({
+    config,
+    stateStore: {
+      touch: (record, patch) => ({
+        ...record,
+        ...patch,
+        updated_at: record.updated_at,
+      }),
+      save: async () => undefined,
+    },
+    github: {
+      resolvePullRequestForBranch: async () => pr,
+      createPullRequest: async () => {
+        throw new Error("unexpected createPullRequest call");
+      },
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+      getExternalReviewSurface: async () => {
+        throw new Error("unexpected getExternalReviewSurface call");
+      },
+    },
+    context,
+    acquireSessionLock: async () => null,
+    classifyFailure: () => "command_error",
+    buildCodexFailureContext: (category, summary, details) => ({
+      category,
+      summary,
+      signature: `${category}:${summary}`,
+      command: null,
+      details,
+      url: null,
+      updated_at: "2026-03-13T06:20:00Z",
+    }),
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    normalizeBlockerSignature: () => null,
+    isVerificationBlockedMessage: () => false,
+    derivePullRequestLifecycleSnapshot: (record) => ({
+      recordForState: record,
+      nextState: "pr_open",
+      failureContext: null,
+      reviewWaitPatch: {},
+      copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    inferStateWithoutPullRequest: () => "stabilizing",
+    blockedReasonFromReviewState: () => null,
+    recoverUnexpectedCodexTurnFailure: async () => {
+      throw new Error("unexpected recoverUnexpectedCodexTurnFailure call");
+    },
+    getWorkspaceStatus: async () =>
+      createWorkspaceStatus({
+        branch: "codex/issue-102",
+        headSha: "head-verified",
+      }),
+    agentRunner: createSuccessfulAgentRunner(async () => ({
+      exitCode: 0,
+      sessionId: "session-102",
+      supervisorMessage: [
+        "Summary: Verified the remaining Codex Connector review fixes.",
+        "State hint: pr_open",
+        "Blocked reason: none",
+        "Tests: npx tsx --test src/run-once-turn-execution.test.ts",
+        "Failure signature: none",
+        "Next action: open PR",
+      ].join("\n"),
+      stderr: "",
+      stdout: "",
+      structuredResult: {
+        summary: "Verified the remaining Codex Connector review fixes.",
+        stateHint: "pr_open",
+        blockedReason: null,
+        failureSignature: null,
+        nextAction: "open PR",
+        tests: "npx tsx --test src/run-once-turn-execution.test.ts",
+      },
+      failureKind: null,
+      failureContext: null,
+    })),
+    readIssueJournal: async () => {
+      journalReads += 1;
+      return journalReads === 1
+        ? [
+            "## Codex Working Notes",
+            "### Current Handoff",
+            "- Hypothesis: persist successful Codex verification.",
+          ].join("\n")
+        : [
+            "## Codex Working Notes",
+            "### Current Handoff",
+            "- Hypothesis: persist successful Codex verification.",
+            "- What changed: implemented the current-head verification evidence.",
+            "- Next exact step: inspect the refreshed PR state.",
+          ].join("\n");
+    },
+  });
+
+  assert.equal(result.kind, "completed");
+  assert.deepEqual(result.record.timeline_artifacts, [
+    {
+      type: "verification_result",
+      gate: "codex_turn",
+      command: "npx tsx --test src/run-once-turn-execution.test.ts",
+      head_sha: "head-verified",
+      outcome: "passed",
+      remediation_target: null,
+      next_action: "continue",
+      summary: "Verified the remaining Codex Connector review fixes.",
+      recorded_at: result.record.timeline_artifacts?.[0]?.recorded_at ?? "",
+    },
+  ]);
+});
+
+
 test("executeCodexTurnPhase refreshes review bookkeeping after supervisor-owned journal normalization commits", async (t) => {
   const workspacePath = await createTrackedRepo();
   t.after(async () => {

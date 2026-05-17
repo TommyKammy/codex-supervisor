@@ -64,6 +64,7 @@ const LOCAL_CI_REMEDIATION_TARGETS = [
 const TIMELINE_ARTIFACT_TYPES = ["verification_result", "path_hygiene_result"] as const;
 const TIMELINE_ARTIFACT_GATES = [
   "local_ci",
+  "codex_turn",
   "workspace_preparation",
   "workstation_local_path_hygiene",
 ] as const;

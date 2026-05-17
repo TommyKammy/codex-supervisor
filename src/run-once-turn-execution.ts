@@ -69,6 +69,7 @@ import {
 } from "./interrupted-turn-marker";
 import { issueDefinitionFreshnessPatch } from "./issue-definition-freshness";
 import { applyCodexTurnPublicationGate } from "./turn-execution-publication-gate";
+import { upsertTimelineArtifact } from "./timeline-artifacts";
 
 export {
   handlePostTurnPullRequestTransitionsPhase,
@@ -106,6 +107,35 @@ export interface CodexTurnResult {
 
 const TRUSTED_DURABLE_ARTIFACT_NORMALIZATION_COMMIT_MESSAGE =
   "Normalize trusted durable artifacts for path hygiene";
+
+function explicitPassingCodexTurnVerificationCommand(
+  tests: string | null | undefined,
+): string | null {
+  const value = tests?.trim();
+  if (!value) {
+    return null;
+  }
+  const normalized = value.toLowerCase();
+  if (
+    normalized === "not run" ||
+    normalized === "none" ||
+    normalized.includes("not run") ||
+    normalized.includes("no tests") ||
+    normalized.includes("failed") ||
+    normalized.includes("failure") ||
+    normalized.includes("blocked") ||
+    normalized.includes("skipped")
+  ) {
+    return null;
+  }
+  return value;
+}
+
+function conciseCodexVerificationSummary(summary: string | null | undefined): string {
+  const value = summary?.trim();
+  return truncate(value && value.length > 0 ? value : "Codex turn verification passed.", 500) ??
+    "Codex turn verification passed.";
+}
 
 export interface CodexTurnShortCircuit {
   kind: "returned";
@@ -1070,6 +1100,43 @@ export async function executeCodexTurnPhase(
           ? postRunSnapshot.nextState
           : (hintedState ??
             args.inferStateWithoutPullRequest(record, workspaceStatus));
+        const codexVerificationCommand =
+          explicitPassingCodexTurnVerificationCommand(structuredResult?.tests);
+        const codexTurnVerificationHeadSha =
+          pr &&
+          codexVerificationCommand &&
+          workspaceStatus.headSha === pr.headRefOid &&
+          postRunState !== "blocked" &&
+          postRunState !== "failed"
+            ? pr.headRefOid
+            : null;
+        const codexTurnVerificationTimelineArtifacts =
+          pr &&
+          codexVerificationCommand &&
+          codexTurnVerificationHeadSha
+            ? upsertTimelineArtifact(
+                record,
+                {
+                  type: "verification_result",
+                  gate: "codex_turn",
+                  command: codexVerificationCommand,
+                  head_sha: codexTurnVerificationHeadSha,
+                  outcome: "passed",
+                  remediation_target: null,
+                  next_action: "continue",
+                  summary: conciseCodexVerificationSummary(
+                    structuredResult?.summary,
+                  ),
+                  recorded_at: new Date().toISOString(),
+                },
+                (candidate) =>
+                  candidate.type === "verification_result" &&
+                  candidate.gate === "codex_turn" &&
+                  candidate.outcome === "passed" &&
+                  candidate.head_sha === codexTurnVerificationHeadSha &&
+                  candidate.command === codexVerificationCommand,
+              )
+            : null;
         const preserveStaleNoPrRecoveryTracking =
           pr === null &&
           postRunSnapshot === null &&
@@ -1120,6 +1187,9 @@ export async function executeCodexTurnPhase(
                   reviewThreads,
                 )
               : null,
+          ...(codexTurnVerificationTimelineArtifacts
+            ? { timeline_artifacts: codexTurnVerificationTimelineArtifacts }
+            : {}),
           state: postRunState,
           ...(pr === null &&
           (postRunState === "blocked" || postRunState === "failed")

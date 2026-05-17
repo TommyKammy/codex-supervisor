@@ -98,6 +98,7 @@ export type TimelineArtifactOutcome =
 
 export type TimelineArtifactGate =
   | "local_ci"
+  | "codex_turn"
   | "workspace_preparation"
   | "workstation_local_path_hygiene";
 
