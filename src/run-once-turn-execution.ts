@@ -159,13 +159,7 @@ function hasExplicitCodexTurnVerificationCommandEvidence(value: string): boolean
     .some((candidate) => CODEX_TURN_VERIFICATION_COMMAND_PATTERN.test(candidate));
 }
 
-function explicitPassingCodexTurnVerificationCommand(
-  tests: string | null | undefined,
-): string | null {
-  const value = tests?.trim();
-  if (!value) {
-    return null;
-  }
+function hasExplicitNegativeCodexTurnVerificationOutcome(value: string): boolean {
   const normalized = value.toLowerCase();
   if (
     normalized === "not run" ||
@@ -174,17 +168,26 @@ function explicitPassingCodexTurnVerificationCommand(
     normalized === "na" ||
     normalized.includes("not run") ||
     normalized.includes("no tests") ||
-    normalized.includes("failed") ||
-    normalized.includes("failure") ||
-    normalized.includes("error") ||
-    normalized.includes("timeout") ||
-    normalized.includes("blocked") ||
-    normalized.includes("skipped") ||
-    normalized.includes("stale") ||
+    normalized.includes("stale head") ||
     normalized.includes("ambiguous") ||
     normalized.includes("unclear") ||
     normalized.includes("?")
   ) {
+    return true;
+  }
+  return /(?:^|\s)(?:failed|failure|error|timeout|blocked|skipped)(?=$|[\s:.,;])/i.test(
+    value,
+  );
+}
+
+function explicitPassingCodexTurnVerificationCommand(
+  tests: string | null | undefined,
+): string | null {
+  const value = tests?.trim();
+  if (!value) {
+    return null;
+  }
+  if (hasExplicitNegativeCodexTurnVerificationOutcome(value)) {
     return null;
   }
   if (!hasExplicitCodexTurnVerificationCommandEvidence(value)) {
