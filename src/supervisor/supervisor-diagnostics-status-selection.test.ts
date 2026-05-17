@@ -298,6 +298,10 @@ test("status --why distinguishes hydrated same-head Codex Connector review reque
     report.detailedStatusLines.join("\n"),
     /^codex_connector_convergence status=same_head_request_hydrated provider=codex current_head_sha=head-1958 current_head_observed_at=none latest_signal_head_sha=none highest_severity=none finding_count=0 merge_effect=blocked next_action=wait_for_requested_review$/m,
   );
+  assert.match(
+    report.detailedStatusLines.join("\n"),
+    /^codex_connector_operator_diagnostic interpretation=review_gate_waiting current_head_sha=head-1958 latest_configured_bot_review_sha=none current_head_review_signal=missing actionable_current_diff_threads=0 next_action=wait_for_requested_review$/m,
+  );
 });
 
 test("status reports effective Codex routing for inherited defaults and explicit overrides", async (t) => {
@@ -564,6 +568,10 @@ test("status reports Codex Connector P1 policy blocks with thread diagnostics", 
   assert.match(
     status,
     /^codex_connector_policy_block count=3 severity=P1 file=src\/supervisor\/policy\.ts line=42 thread_url=https:\/\/example\.test\/pr\/246#discussion_r1 next_action=fix_on_new_head_or_wait_for_github_thread_resolution_or_use_explicit_manual_operator_path$/m,
+  );
+  assert.match(
+    status,
+    /^codex_connector_operator_diagnostic interpretation=actionable_current_diff current_head_sha=head-246 latest_configured_bot_review_sha=head-246 current_head_review_signal=observed actionable_current_diff_threads=3 next_action=repair_must_fix_findings$/m,
   );
   assert.match(status, /^codex_connector_policy_review p2_actionable=1 p3_softened=1 p3_escalated=1$/m);
   assert.doesNotMatch(status, /^codex_connector_policy_block .*severity=nitpick_only/m);
@@ -980,6 +988,10 @@ test("status --why includes codex processed-residue missing-current-head review 
   assert.match(
     status,
     /^stale_review_bot_remediation issue=#398 pr=#498 reason=stale_review_bot code_ci=green current_head_sha=5de0d3844468d4a77cab512f8dcbe46171166c3a processed_on_current_head=yes classification=verified_no_source_change_pending_thread_resolution codex_current_head_review_state=missing review_thread_url=https:\/\/example\.test\/pr\/498#discussion_r398 manual_next_step=resolve_verified_configured_bot_threads_then_rerun_supervisor summary=verified_no_source_change_configured_bot_thread_resolution_pending$/m,
+  );
+  assert.match(
+    status,
+    /^codex_connector_operator_diagnostic interpretation=stale_review_residue current_head_sha=5de0d3844468d4a77cab512f8dcbe46171166c3a latest_configured_bot_review_sha=5de0d3844468d4a77cab512f8dcbe46171166c3a current_head_review_signal=missing actionable_current_diff_threads=0 next_action=resolve_verified_configured_bot_threads_then_rerun_supervisor$/m,
   );
   assert.match(status, /^operator_action action=resolve_stale_review_bot source=stale_review_bot_remediation /m);
 });
