@@ -28,6 +28,7 @@ import {
   configuredReviewStatusLabel,
   externalSignalReadinessDiagnostics,
   formatCodexConnectorConvergenceDiagnostic,
+  formatCodexConnectorOperatorDiagnostic,
   formatCodexConnectorReviewFallbackDiagnostic,
   inferReviewBotProfile,
   reviewBotDiagnostics,
@@ -46,6 +47,26 @@ import { isWorkstationLocalPathHygieneFailureSignature } from "../workstation-lo
 
 function unresolvedReviewThreads(reviewThreads: BuildDetailedStatusModelArgs["reviewThreads"]) {
   return reviewThreads.filter((thread) => !thread.isResolved && !thread.isOutdated);
+}
+
+export function formatStaleReviewResidueOperatorDiagnostic(
+  remediation: NonNullable<ReturnType<typeof buildStaleReviewBotRemediation>>,
+): string {
+  const latestConfiguredBotReviewSha =
+    remediation.processedOnCurrentHead === "yes" ? remediation.currentHeadSha : "none";
+  const actionableCurrentDiffThreads =
+    remediation.classification === "unresolved_work" || remediation.classification === "unknown_needs_operator"
+      ? "unknown"
+      : "0";
+  return [
+    "codex_connector_operator_diagnostic",
+    "interpretation=stale_review_residue",
+    `current_head_sha=${sanitizeStatusValue(remediation.currentHeadSha)}`,
+    `latest_configured_bot_review_sha=${sanitizeStatusValue(latestConfiguredBotReviewSha)}`,
+    `current_head_review_signal=${remediation.codexCurrentHeadReviewState}`,
+    `actionable_current_diff_threads=${actionableCurrentDiffThreads}`,
+    `next_action=${remediation.manualNextStep}`,
+  ].join(" ");
 }
 
 export function sanitizeStatusValue(value: string | null | undefined): string | null {
@@ -232,6 +253,7 @@ export function buildInactiveDetailedStatusLines(
   }
   if (staleReviewBotRemediation) {
     lines.push(formatStaleReviewBotRemediationLine(staleReviewBotRemediation));
+    lines.push(formatStaleReviewResidueOperatorDiagnostic(staleReviewBotRemediation));
   }
 
   if (latestRecoveryRecord?.last_recovery_reason && latestRecoveryRecord.last_recovery_at) {
@@ -335,6 +357,7 @@ export function buildActiveDetailedStatusLines(
     });
     if (staleReviewBotRemediation) {
       lines.push(formatStaleReviewBotRemediationLine(staleReviewBotRemediation));
+      lines.push(formatStaleReviewResidueOperatorDiagnostic(staleReviewBotRemediation));
     }
     const codexConnectorPolicyBlock = buildCodexConnectorPolicyBlockDiagnostic(config, reviewThreads);
     if (codexConnectorPolicyBlock) {
@@ -388,6 +411,15 @@ export function buildActiveDetailedStatusLines(
     });
     if (codexConnectorConvergence) {
       lines.push(codexConnectorConvergence);
+    }
+    const codexConnectorOperatorDiagnostic = formatCodexConnectorOperatorDiagnostic({
+      config,
+      record: activeRecord,
+      pr,
+      reviewThreads,
+    });
+    if (codexConnectorOperatorDiagnostic) {
+      lines.push(codexConnectorOperatorDiagnostic);
     }
     lines.push(`pr_hydration provenance=${pr.hydrationProvenance ?? "unknown"} head_sha=${pr.headRefOid}`);
     lines.push(

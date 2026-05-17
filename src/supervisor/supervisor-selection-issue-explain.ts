@@ -32,12 +32,14 @@ import {
   loadStatusChangedFiles,
 } from "./supervisor-status-rendering";
 import {
+  formatStaleReviewResidueOperatorDiagnostic,
   formatLatestRecoveryStatusLine,
   formatNoActiveTrackedRecordClassificationLine,
 } from "./supervisor-detailed-status-assembly";
 import {
   externalSignalReadinessDiagnostics,
   formatCodexConnectorConvergenceDiagnostic,
+  formatCodexConnectorOperatorDiagnostic,
   formatCodexConnectorReviewFallbackDiagnostic,
 } from "./supervisor-status-review-bot";
 import { inspectTrackedIssueHostDiagnostics, summarizeIssueJournalHandoff } from "../core/journal";
@@ -114,6 +116,7 @@ export interface SupervisorExplainDto {
   activityContext: SupervisorIssueActivityContextDto | null;
   staleDiagnosticSummary?: string | null;
   staleReviewBotRemediation?: StaleReviewBotRemediationDto | null;
+  codexConnectorOperatorDiagnosticSummary?: string | null;
   codexConnectorPolicyBlockSummary?: string | null;
   codexConnectorReviewFallbackSummary?: string | null;
   codexConnectorConvergenceSummary?: string | null;
@@ -487,6 +490,17 @@ export async function buildIssueExplainDto(
         reviewThreads: explainReviewThreads,
       })
       : null;
+  const codexConnectorOperatorDiagnosticSummary =
+    staleReviewBotRemediation
+      ? formatStaleReviewResidueOperatorDiagnostic(staleReviewBotRemediation)
+      : record && pr && !trackedPrHydrationFailed
+        ? formatCodexConnectorOperatorDiagnostic({
+          config,
+          record,
+          pr,
+          reviewThreads: explainReviewThreads,
+        })
+        : null;
   const noActiveTrackedRecordSummary =
     record && state.activeIssueNumber === null
       ? formatNoActiveTrackedRecordClassificationLine(config, record, staleReviewBotRemediation)
@@ -581,6 +595,7 @@ export async function buildIssueExplainDto(
       : null,
     staleDiagnosticSummary,
     staleReviewBotRemediation,
+    codexConnectorOperatorDiagnosticSummary,
     codexConnectorPolicyBlockSummary,
     codexConnectorReviewFallbackSummary,
     codexConnectorConvergenceSummary,
@@ -659,6 +674,7 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
     ...(localCiStatusLine ? [localCiStatusLine] : []),
     ...(dto.staleDiagnosticSummary ? [dto.staleDiagnosticSummary] : []),
     ...(dto.staleReviewBotRemediation ? [formatStaleReviewBotRemediationLine(dto.staleReviewBotRemediation)] : []),
+    ...(dto.codexConnectorOperatorDiagnosticSummary ? [dto.codexConnectorOperatorDiagnosticSummary] : []),
     ...(dto.codexConnectorPolicyBlockSummary ? [dto.codexConnectorPolicyBlockSummary] : []),
     ...(dto.codexConnectorReviewFallbackSummary ? [dto.codexConnectorReviewFallbackSummary] : []),
     ...(dto.codexConnectorConvergenceSummary ? [dto.codexConnectorConvergenceSummary] : []),

@@ -10,7 +10,10 @@ import {
 import { displayLocalCiCommand } from "../core/config-parsing";
 import { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "../core/types";
 import { localReviewDegradedNeedsBlock } from "../review-handling";
-import { evaluateCodexConnectorConvergencePolicy } from "../review-thread-reporting";
+import {
+  codexConnectorMustFixReviewThreads,
+  evaluateCodexConnectorConvergencePolicy,
+} from "../review-thread-reporting";
 import { classifyStaleReviewBotRecoverability, recoverabilityStatusToken } from "./stale-diagnostic-recoverability";
 
 type ReviewThreadClassifier = (config: SupervisorConfig, reviewThreads: ReviewThread[]) => ReviewThread[];
@@ -529,6 +532,68 @@ export function formatCodexConnectorConvergenceDiagnostic(args: {
     `highest_severity=${highestSeverity}`,
     `finding_count=${findingCount}`,
     `merge_effect=${mergeEffect}`,
+    `next_action=${nextAction}`,
+  ].join(" ");
+}
+
+export function formatCodexConnectorOperatorDiagnostic(args: {
+  config: SupervisorConfig;
+  record: Pick<
+    IssueRunRecord,
+    | "provider_success_head_sha"
+    | "provider_success_observed_at"
+    | "external_review_head_sha"
+    | "codex_connector_review_requested_observed_at"
+    | "codex_connector_review_requested_head_sha"
+  >;
+  pr: GitHubPullRequest;
+  reviewThreads: ReviewThread[];
+}): string | null {
+  if (!configuredReviewProviderKinds(args.config).includes("codex")) {
+    return null;
+  }
+
+  const policy = evaluateCodexConnectorConvergencePolicy(args.config, args.pr, args.reviewThreads);
+  if (!policy || (policy.outcome !== "missing_current_head_review" && policy.outcome !== "must_fix_remaining")) {
+    return null;
+  }
+
+  const currentHeadSha = args.pr.headRefOid;
+  const actionableCurrentDiffThreads = codexConnectorMustFixReviewThreads(args.reviewThreads).length;
+  const currentHeadReviewSignal =
+    policy.currentHeadObservedAt || args.record.provider_success_head_sha === currentHeadSha ? "observed" : "missing";
+  const latestConfiguredBotReviewSha =
+    currentHeadReviewSignal === "observed"
+      ? currentHeadSha
+      : args.record.provider_success_head_sha ?? args.record.external_review_head_sha ?? "none";
+  const requestMatchesCurrentHead = Boolean(
+    args.record.codex_connector_review_requested_observed_at &&
+      args.record.codex_connector_review_requested_head_sha === currentHeadSha,
+  );
+  const hydratedRequestMatchesCurrentHead = Boolean(
+    !requestMatchesCurrentHead &&
+      args.pr.codexConnectorReviewRequestedAt &&
+      args.pr.codexConnectorReviewRequestedHeadSha === currentHeadSha,
+  );
+  const waitWindow = configuredBotCurrentHeadSignalWaitWindow(args.config, args.pr);
+  const nextAction =
+    policy.outcome === "must_fix_remaining"
+      ? "repair_must_fix_findings"
+      : requestMatchesCurrentHead || hydratedRequestMatchesCurrentHead
+        ? "wait_for_requested_review"
+        : waitWindow.status === "active"
+          ? "wait_for_current_head_signal"
+          : "request_current_head_review";
+  const interpretation =
+    policy.outcome === "must_fix_remaining" ? "actionable_current_diff" : "review_gate_waiting";
+
+  return [
+    "codex_connector_operator_diagnostic",
+    `interpretation=${interpretation}`,
+    `current_head_sha=${currentHeadSha}`,
+    `latest_configured_bot_review_sha=${latestConfiguredBotReviewSha}`,
+    `current_head_review_signal=${currentHeadReviewSignal}`,
+    `actionable_current_diff_threads=${actionableCurrentDiffThreads}`,
     `next_action=${nextAction}`,
   ].join(" ");
 }

@@ -425,6 +425,10 @@ test("explain distinguishes hydrated same-head Codex Connector review requests",
     explanation,
     /^codex_connector_convergence status=same_head_request_hydrated provider=codex current_head_sha=head-1958 current_head_observed_at=none latest_signal_head_sha=none highest_severity=none finding_count=0 merge_effect=blocked next_action=wait_for_requested_review$/m,
   );
+  assert.match(
+    explanation,
+    /^codex_connector_operator_diagnostic interpretation=review_gate_waiting current_head_sha=head-1958 latest_configured_bot_review_sha=none current_head_review_signal=missing actionable_current_diff_threads=0 next_action=wait_for_requested_review$/m,
+  );
 });
 
 test("explain surfaces loop-off as an operator blocker for active tracked work", async () => {
@@ -1407,6 +1411,10 @@ test("explain classifies processed Codex must-fix residue as missing-current-hea
   assert.match(
     explanation,
     /^stale_review_bot_remediation issue=#198 pr=#398 reason=stale_review_bot code_ci=green current_head_sha=head-198 processed_on_current_head=yes classification=verified_no_source_change_pending_thread_resolution codex_current_head_review_state=missing review_thread_url=https:\/\/example\.test\/pr\/398#discussion_r398 manual_next_step=resolve_verified_configured_bot_threads_then_rerun_supervisor summary=verified_no_source_change_configured_bot_thread_resolution_pending$/m,
+  );
+  assert.match(
+    explanation,
+    /^codex_connector_operator_diagnostic interpretation=stale_review_residue current_head_sha=head-198 latest_configured_bot_review_sha=head-198 current_head_review_signal=missing actionable_current_diff_threads=0 next_action=resolve_verified_configured_bot_threads_then_rerun_supervisor$/m,
   );
 });
 
