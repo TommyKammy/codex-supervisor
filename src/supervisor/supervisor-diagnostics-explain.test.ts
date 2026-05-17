@@ -1430,6 +1430,7 @@ test("explain distinguishes Codex verified current-head repair residue from no-s
       summary: "Focused verifier passed after the repair commit.",
       ranAt: "2026-05-15T00:18:00Z",
       command: "npx tsx --test src/supervisor/supervisor-diagnostics-explain.test.ts",
+      evidenceSource: "codex_turn_timeline_artifact",
     },
   });
   const state: SupervisorStateFile = {

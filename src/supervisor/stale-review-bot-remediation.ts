@@ -147,6 +147,7 @@ function currentHeadVerificationEvidenceSummary(
   const timelineEvidence = (record.timeline_artifacts ?? []).find(
     (artifact) =>
       artifact.type === "verification_result" &&
+      artifact.gate === "codex_turn" &&
       artifact.outcome === "passed" &&
       artifact.head_sha === pr.headRefOid,
   );

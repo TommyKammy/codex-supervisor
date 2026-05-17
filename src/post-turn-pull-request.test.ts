@@ -4520,6 +4520,7 @@ test("handlePostTurnPullRequestTransitionsPhase resolves verified current-head r
       summary: "Focused verifier passed after the repair commit.",
       ranAt: "2026-05-15T00:18:00Z",
       command: "npm test -- src/post-turn-pull-request.test.ts",
+      evidenceSource: "codex_turn_timeline_artifact",
     },
   });
   const pr = createPullRequest(scenario.pullRequestPatch);
@@ -4603,6 +4604,229 @@ test("handlePostTurnPullRequestTransitionsPhase resolves verified current-head r
   assert.equal(requestComments.length, 1);
   assert.match(requestComments[0] ?? "", /@codex review/);
   assert.match(requestComments[0] ?? "", /codex-supervisor:codex-connector-review-request issue=102 pr=1988 head=head-1988/);
+});
+
+test("handlePostTurnPullRequestTransitionsPhase keeps verified repair thread resolution fail-closed without opt-in or current codex_turn evidence", async () => {
+  const cases: Array<{
+    name: string;
+    autoResolve?: boolean;
+    reviewThreadAuthor?: { login: string; typeName: "Bot" | "User" };
+    timelineArtifacts: IssueRunRecord["timeline_artifacts"];
+  }> = [
+    {
+      name: "repair opt-in disabled",
+      autoResolve: false,
+      timelineArtifacts: [
+        {
+          type: "verification_result",
+          gate: "codex_turn",
+          command: "npx tsx --test src/post-turn-pull-request.test.ts",
+          head_sha: "head-2000",
+          outcome: "passed",
+          remediation_target: null,
+          next_action: "continue",
+          summary: "Focused verifier passed after the repair commit.",
+          recorded_at: "2026-05-15T00:18:00Z",
+        },
+      ],
+    },
+    {
+      name: "missing codex_turn artifact",
+      timelineArtifacts: [],
+    },
+    {
+      name: "failed codex_turn artifact",
+      timelineArtifacts: [
+        {
+          type: "verification_result" as const,
+          gate: "codex_turn" as const,
+          command: "npx tsx --test src/post-turn-pull-request.test.ts",
+          head_sha: "head-2000",
+          outcome: "failed" as const,
+          remediation_target: null,
+          next_action: "continue",
+          summary: "Focused verifier failed after the repair commit.",
+          recorded_at: "2026-05-15T00:18:00Z",
+        },
+      ],
+    },
+    {
+      name: "stale-head codex_turn artifact",
+      timelineArtifacts: [
+        {
+          type: "verification_result" as const,
+          gate: "codex_turn" as const,
+          command: "npx tsx --test src/post-turn-pull-request.test.ts",
+          head_sha: "stale-head-2000",
+          outcome: "passed" as const,
+          remediation_target: null,
+          next_action: "continue",
+          summary: "Focused verifier passed before the repair commit.",
+          recorded_at: "2026-05-15T00:18:00Z",
+        },
+      ],
+    },
+    {
+      name: "different-head codex_turn artifact",
+      timelineArtifacts: [
+        {
+          type: "verification_result" as const,
+          gate: "codex_turn" as const,
+          command: "npx tsx --test src/post-turn-pull-request.test.ts",
+          head_sha: "head-elsewhere",
+          outcome: "passed" as const,
+          remediation_target: null,
+          next_action: "continue",
+          summary: "Focused verifier passed on another PR head.",
+          recorded_at: "2026-05-15T00:18:00Z",
+        },
+      ],
+    },
+    {
+      name: "current-head non-codex verification artifact",
+      timelineArtifacts: [
+        {
+          type: "verification_result" as const,
+          gate: "workspace_preparation" as const,
+          command: "node dist/index.js issue-lint 2000 --config <supervisor-config-path>",
+          head_sha: "head-2000",
+          outcome: "passed" as const,
+          remediation_target: null,
+          next_action: "continue",
+          summary: "Workspace preparation passed but is not repair verification.",
+          recorded_at: "2026-05-15T00:18:00Z",
+        },
+      ],
+    },
+    {
+      name: "manual review thread",
+      reviewThreadAuthor: { login: "human-reviewer", typeName: "User" },
+      timelineArtifacts: [
+        {
+          type: "verification_result",
+          gate: "codex_turn",
+          command: "npx tsx --test src/post-turn-pull-request.test.ts",
+          head_sha: "head-2000",
+          outcome: "passed",
+          remediation_target: null,
+          next_action: "continue",
+          summary: "Focused verifier passed after the repair commit.",
+          recorded_at: "2026-05-15T00:18:00Z",
+        },
+      ],
+    },
+    {
+      name: "unconfigured bot review thread",
+      reviewThreadAuthor: { login: "unconfigured-review-bot", typeName: "Bot" },
+      timelineArtifacts: [
+        {
+          type: "verification_result",
+          gate: "codex_turn",
+          command: "npx tsx --test src/post-turn-pull-request.test.ts",
+          head_sha: "head-2000",
+          outcome: "passed",
+          remediation_target: null,
+          next_action: "continue",
+          summary: "Focused verifier passed after the repair commit.",
+          recorded_at: "2026-05-15T00:18:00Z",
+        },
+      ],
+    },
+  ];
+
+  for (const testCase of cases) {
+    const config = createConfig({
+      reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+      configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+      verifiedCurrentHeadRepairReviewThreadAutoResolve: testCase.autoResolve ?? true,
+    });
+    const issue = createIssue({ title: `Keep ${testCase.name} blocked` });
+    const scenario = createCodexConnectorTrackedReviewResidueScenario({
+      issueNumber: issue.number,
+      prNumber: 2000,
+      headSha: "head-2000",
+      threadId: `thread-${testCase.name.replace(/[^a-z0-9]+/giu, "-")}`,
+      commentId: `comment-${testCase.name.replace(/[^a-z0-9]+/giu, "-")}`,
+      path: "src/review.ts",
+      line: 7,
+      commentBody: "P1: Verify the repair covers this finding before merge.",
+      discussionUrl: "https://example.test/pr/2000#discussion_r2000",
+    });
+    const pr = createPullRequest(scenario.pullRequestPatch);
+    const state: SupervisorStateFile = {
+      activeIssueNumber: 102,
+      issues: {
+        "102": createRecord({
+          ...scenario.recordPatch,
+          latest_local_ci_result: null,
+          timeline_artifacts: testCase.timelineArtifacts,
+        }),
+      },
+    };
+    const reviewThread = testCase.reviewThreadAuthor
+      ? {
+          ...scenario.reviewThread,
+          comments: {
+            nodes: scenario.reviewThread.comments.nodes.map((comment) => ({
+              ...comment,
+              author: testCase.reviewThreadAuthor!,
+            })),
+          },
+        }
+      : scenario.reviewThread;
+    const replyCalls: Array<{ threadId: string; body: string }> = [];
+    const resolveCalls: string[] = [];
+
+    const result = await handlePostTurnPullRequestTransitionsPhase({
+      config,
+      stateStore: createNoopStateStore(),
+      github: createDefaultGithub({
+        addIssueComment: async () => {
+          throw new Error("unexpected addIssueComment call");
+        },
+        replyToReviewThread: async (threadId: string, body: string) => {
+          replyCalls.push({ threadId, body });
+        },
+        resolveReviewThread: async (threadId: string) => {
+          resolveCalls.push(threadId);
+        },
+      }),
+      context: createPostTurnContext({
+        state,
+        record: state.issues["102"]!,
+        issue,
+        pr,
+        workspacePath: path.join("/tmp/workspaces", "issue-102"),
+      }),
+      derivePullRequestLifecycleSnapshot: (recordForState) =>
+        createLifecycleSnapshot(recordForState, "blocked", {
+          failureContext: scenario.staleReviewFailureContext,
+        }),
+      applyFailureSignature: (_record, failureContext) => ({
+        last_failure_signature: failureContext?.signature ?? null,
+        repeated_failure_signature_count: failureContext ? 1 : 0,
+      }),
+      blockedReasonFromReviewState: () => "stale_review_bot",
+      summarizeChecks,
+      configuredBotReviewThreads,
+      manualReviewThreads,
+      mergeConflictDetected: () => false,
+      runLocalCiCommand: async () => undefined,
+      runWorkstationLocalPathGate: async () => ({
+        ok: true,
+        failureContext: null,
+      }),
+      loadOpenPullRequestSnapshot: async () => ({
+        pr,
+        checks: scenario.passingChecks,
+        reviewThreads: [reviewThread],
+      }),
+    });
+
+    assert.equal(result.record.state, "blocked", testCase.name);
+    assert.deepEqual(replyCalls, [], testCase.name);
+    assert.deepEqual(resolveCalls, [], testCase.name);
+  }
 });
 
 test("handlePostTurnPullRequestTransitionsPhase does not resolve stale configured-bot review threads until metadata-only evidence is satisfied", async () => {

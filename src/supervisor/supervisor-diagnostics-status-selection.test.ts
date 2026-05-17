@@ -1005,6 +1005,7 @@ test("status --why distinguishes codex verified current-head repair residue from
       summary: "Focused verifier passed after the repair commit.",
       ranAt: "2026-05-13T00:18:00Z",
       command: "npm test -- src/supervisor/supervisor-diagnostics-status-selection.test.ts",
+      evidenceSource: "codex_turn_timeline_artifact",
     },
   });
   const state: SupervisorStateFile = {
@@ -1070,6 +1071,7 @@ test("status --why uses the shared stale review-bot presenter for active verifie
       summary: "Focused verifier passed after the repair commit.",
       ranAt: "2026-05-15T00:18:00Z",
       command: "npx tsx --test src/supervisor/supervisor-diagnostics-status-selection.test.ts",
+      evidenceSource: "codex_turn_timeline_artifact",
     },
   });
   const state: SupervisorStateFile = {
