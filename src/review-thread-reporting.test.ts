@@ -535,6 +535,25 @@ test("evaluateCodexConnectorConvergencePolicy separates missing, must-fix, nitpi
   assert.equal(evaluateCodexConnectorConvergencePolicy(config, currentHeadPr, [])?.outcome, "converged");
 });
 
+function assertCodexConnectorConvergencePolicyResultTypes(): void {
+  const config = createConfig({ reviewBotLogins: ["chatgpt-codex-connector"] });
+  const result = evaluateCodexConnectorConvergencePolicy(
+    config,
+    { configuredBotCurrentHeadObservedAt: "2026-03-11T00:04:00Z" },
+    [],
+  );
+  if (result?.outcome === "converged") {
+    assert.equal(result.findingCount, 0);
+    assert.equal(result.mergeEffect, "ready");
+    assert.equal(result.nextAction, "merge_ready");
+    // @ts-expect-error converged results must not expose outcome-specific must-fix counts.
+    void result.mustFixCount;
+    // @ts-expect-error converged results must not expose outcome-specific nitpick counts.
+    void result.nitpickCount;
+  }
+}
+void assertCodexConnectorConvergencePolicyResultTypes;
+
 test("actionableBotReviewThreads treats Codex Connector P2 as actionable by default", () => {
   const config = createConfig({ reviewBotLogins: ["chatgpt-codex-connector"] });
   const record = createReviewRecord();
