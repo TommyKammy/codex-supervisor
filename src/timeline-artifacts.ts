@@ -89,6 +89,16 @@ export function appendTimelineArtifact(
   return [...(record.timeline_artifacts ?? []), artifact].slice(-MAX_TIMELINE_ARTIFACTS);
 }
 
+export function upsertTimelineArtifact(
+  record: Pick<IssueRunRecord, "timeline_artifacts">,
+  artifact: TimelineArtifact,
+  matches: (candidate: TimelineArtifact) => boolean,
+): TimelineArtifact[] {
+  const existingArtifacts = record.timeline_artifacts ?? [];
+  const retainedArtifacts = existingArtifacts.filter((candidate) => !matches(candidate));
+  return [...retainedArtifacts, artifact].slice(-MAX_TIMELINE_ARTIFACTS);
+}
+
 export function nextActionForRemediationTarget(
   remediationTarget: LocalCiRemediationTarget | null,
 ): string {
@@ -210,6 +220,8 @@ function timelineEventFromArtifact(record: IssueRunRecord, artifact: TimelineArt
   const eventType: IssueRunTimelineEventType =
     artifact.gate === "workstation_local_path_hygiene"
       ? "path_hygiene"
+      : artifact.gate === "codex_turn"
+        ? "codex_turn"
       : artifact.gate === "workspace_preparation"
         ? "publication_gate"
         : "local_ci";
