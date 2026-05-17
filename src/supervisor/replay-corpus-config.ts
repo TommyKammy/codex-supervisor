@@ -4,7 +4,12 @@ import { mapConfiguredReviewProviders } from "../core/review-providers";
 import type { SupervisorConfig } from "../core/types";
 
 export function createCheckedInReplayCorpusConfig(repoRoot: string): SupervisorConfig {
-  const reviewBotLogins = ["copilot-pull-request-reviewer", "coderabbitai", "coderabbitai[bot]"];
+  const reviewBotLogins = [
+    "chatgpt-codex-connector",
+    "copilot-pull-request-reviewer",
+    "coderabbitai",
+    "coderabbitai[bot]",
+  ];
   const replayStateRoot = path.join(repoRoot, ".codex-supervisor", "replay");
 
   return {

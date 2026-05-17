@@ -1,0 +1,195 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-05-17T01:00:00Z",
+  "issue": {
+    "number": 8132,
+    "title": "Clustered Codex review repair convergence",
+    "body": "Synthetic replay case for clustered current-head review repair convergence.",
+    "url": "https://example.test/issues/8132",
+    "state": "OPEN",
+    "updatedAt": "2026-05-17T00:58:00Z"
+  },
+  "local": {
+    "record": {
+      "issue_number": 8132,
+      "state": "addressing_review",
+      "branch": "codex/issue-8132",
+      "pr_number": 9132,
+      "workspace": ".",
+      "journal_path": ".codex-supervisor/issues/8132/issue-journal.md",
+      "attempt_count": 7,
+      "implementation_attempt_count": 2,
+      "repair_attempt_count": 5,
+      "timeout_retry_count": 0,
+      "blocked_verification_retry_count": 1,
+      "repeated_blocker_count": 1,
+      "repeated_failure_signature_count": 0,
+      "blocked_reason": null,
+      "last_error": "Clustered current-head Codex review findings still need a convergence repair pass.",
+      "last_failure_kind": null,
+      "last_failure_context": null,
+      "last_failure_signature": "codex-review-cluster:head-pr1323-replay",
+      "last_head_sha": "head-pr1323-replay",
+      "review_wait_started_at": "2026-05-17T00:52:00Z",
+      "review_wait_head_sha": "head-pr1323-replay",
+      "provider_success_observed_at": "2026-05-17T00:57:30Z",
+      "provider_success_head_sha": "head-pr1323-replay",
+      "merge_readiness_last_evaluated_at": "2026-05-17T00:58:30Z",
+      "copilot_review_requested_observed_at": null,
+      "copilot_review_requested_head_sha": null,
+      "copilot_review_timed_out_at": null,
+      "copilot_review_timeout_action": null,
+      "copilot_review_timeout_reason": null,
+      "local_review_head_sha": "head-pr1323-replay",
+      "local_review_blocker_summary": "Focused verifier still reports clustered review-repair residuals.",
+      "local_review_summary_path": ".codex-supervisor/local-review/issue-8132/head-pr1323-replay.md",
+      "local_review_run_at": "2026-05-17T00:56:00Z",
+      "local_review_max_severity": "high",
+      "local_review_findings_count": 3,
+      "local_review_root_cause_count": 2,
+      "local_review_verified_max_severity": "high",
+      "local_review_verified_findings_count": 2,
+      "local_review_recommendation": "changes_requested",
+      "local_review_degraded": false,
+      "last_local_review_signature": "local-review:clustered-current-head",
+      "repeated_local_review_signature_count": 2,
+      "latest_local_ci_result": {
+        "outcome": "passed",
+        "summary": "Focused replay verifier passed on the current head.",
+        "ran_at": "2026-05-17T00:55:30Z",
+        "head_sha": "head-pr1323-replay",
+        "execution_mode": "structured",
+        "command": "npm test -- src/supervisor/replay-corpus-runner.test.ts",
+        "stderr_summary": null,
+        "failure_class": null,
+        "remediation_target": null,
+        "verifier_drift_hint": null
+      },
+      "processed_review_thread_ids": [
+        "thread-auth-boundary@head-pr1323-replay",
+        "thread-verifier-drift@head-pr1323-replay"
+      ],
+      "processed_review_thread_fingerprints": [
+        "thread-auth-boundary@head-pr1323-replay#comment-auth-v1",
+        "thread-verifier-drift@head-pr1323-replay#comment-verifier-v1"
+      ],
+      "updated_at": "2026-05-17T00:58:45Z"
+    },
+    "workspaceStatus": {
+      "branch": "codex/issue-8132",
+      "headSha": "head-pr1323-replay",
+      "hasUncommittedChanges": false,
+      "baseAhead": 3,
+      "baseBehind": 0,
+      "remoteBranchExists": true,
+      "remoteAhead": 0,
+      "remoteBehind": 0
+    }
+  },
+  "github": {
+    "pullRequest": {
+      "number": 9132,
+      "title": "Clustered Codex review repair convergence",
+      "url": "https://example.test/pull/9132",
+      "state": "OPEN",
+      "createdAt": "2026-05-17T00:30:00Z",
+      "updatedAt": "2026-05-17T00:58:30Z",
+      "isDraft": false,
+      "reviewDecision": "CHANGES_REQUESTED",
+      "mergeStateStatus": "CLEAN",
+      "mergeable": "MERGEABLE",
+      "headRefName": "codex/issue-8132",
+      "headRefOid": "head-pr1323-replay",
+      "configuredBotCurrentHeadObservedAt": "2026-05-17T00:57:30Z",
+      "currentHeadCiGreenAt": "2026-05-17T00:55:30Z",
+      "configuredBotTopLevelReviewStrength": "blocking",
+      "configuredBotTopLevelReviewSubmittedAt": "2026-05-17T00:57:30Z",
+      "mergedAt": null
+    },
+    "checks": [
+      {
+        "name": "focused replay verifier",
+        "state": "SUCCESS",
+        "bucket": "pass",
+        "workflow": "verification"
+      }
+    ],
+    "reviewThreads": [
+      {
+        "id": "thread-auth-boundary",
+        "isResolved": false,
+        "isOutdated": false,
+        "path": "src/review/convergence.ts",
+        "line": 44,
+        "comments": {
+          "nodes": [
+            {
+              "id": "comment-auth-v2",
+              "body": "P1: The repair path still trusts the old handoff summary instead of the current-head review evidence. Keep this blocked until the convergence pass consumes the current finding cluster.",
+              "createdAt": "2026-05-17T00:57:00Z",
+              "url": "https://example.test/pull/9132#discussion_r1",
+              "author": {
+                "login": "chatgpt-codex-connector",
+                "typeName": "Bot"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "thread-verifier-drift",
+        "isResolved": false,
+        "isOutdated": false,
+        "path": "src/review/verifier.ts",
+        "line": 91,
+        "comments": {
+          "nodes": [
+            {
+              "id": "comment-verifier-v2",
+              "body": "P2: The focused verifier update is present, but the repair loop has not rerun against this current-head cluster, so convergence is not proven.",
+              "createdAt": "2026-05-17T00:57:10Z",
+              "url": "https://example.test/pull/9132#discussion_r2",
+              "author": {
+                "login": "chatgpt-codex-connector",
+                "typeName": "Bot"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "thread-handoff-state",
+        "isResolved": false,
+        "isOutdated": false,
+        "path": "src/recovery/current-head.ts",
+        "line": 118,
+        "comments": {
+          "nodes": [
+            {
+              "id": "comment-handoff-v1",
+              "body": "P2: A stale local handoff_missing marker can still hide the current-head review result from the repair loop.",
+              "createdAt": "2026-05-17T00:57:20Z",
+              "url": "https://example.test/pull/9132#discussion_r3",
+              "author": {
+                "login": "chatgpt-codex-connector",
+                "typeName": "Bot"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "decision": {
+    "nextState": "addressing_review",
+    "shouldRunCodex": true,
+    "blockedReason": null,
+    "failureContext": null
+  },
+  "operatorSummary": {
+    "latestRecoverySummary": null,
+    "retrySummary": "repair_attempts=5 focused_verifier=current_head",
+    "recoveryLoopSummary": null,
+    "activityContext": null
+  }
+}

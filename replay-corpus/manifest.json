@@ -64,6 +64,14 @@
     {
       "id": "prompt-injection-combined-github-text-boundary",
       "path": "cases/prompt-injection-combined-github-text-boundary"
+    },
+    {
+      "id": "clustered-codex-review-repair-convergence",
+      "path": "cases/clustered-codex-review-repair-convergence"
+    },
+    {
+      "id": "current-head-success-clears-stale-handoff",
+      "path": "cases/current-head-success-clears-stale-handoff"
     }
   ]
 }

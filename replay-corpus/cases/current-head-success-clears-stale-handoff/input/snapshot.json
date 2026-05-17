@@ -1,0 +1,144 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-05-17T01:05:00Z",
+  "issue": {
+    "number": 8133,
+    "title": "Current-head success clears stale handoff",
+    "body": "Synthetic replay case for stale local handoff recovery after current-head review convergence.",
+    "url": "https://example.test/issues/8133",
+    "state": "OPEN",
+    "updatedAt": "2026-05-17T01:04:00Z"
+  },
+  "local": {
+    "record": {
+      "issue_number": 8133,
+      "state": "blocked",
+      "branch": "codex/issue-8133",
+      "pr_number": 9133,
+      "workspace": ".",
+      "journal_path": ".codex-supervisor/issues/8133/issue-journal.md",
+      "attempt_count": 6,
+      "implementation_attempt_count": 2,
+      "repair_attempt_count": 4,
+      "timeout_retry_count": 0,
+      "blocked_verification_retry_count": 0,
+      "repeated_blocker_count": 1,
+      "repeated_failure_signature_count": 1,
+      "blocked_reason": "handoff_missing",
+      "last_error": "A stale local handoff marker remained after the review provider converged.",
+      "last_failure_kind": null,
+      "last_failure_context": {
+        "category": "blocked",
+        "summary": "Stale local handoff marker remained after current-head review convergence.",
+        "signature": "handoff-missing:stale-local",
+        "command": null,
+        "details": [
+          "local_state=stale",
+          "current_head_review=observed"
+        ],
+        "url": null,
+        "updated_at": "2026-05-17T01:01:00Z"
+      },
+      "last_failure_signature": "handoff-missing:stale-local",
+      "last_head_sha": "head-pr1323-replay-final",
+      "review_wait_started_at": "2026-05-17T00:59:00Z",
+      "review_wait_head_sha": "head-pr1323-replay-final",
+      "provider_success_observed_at": "2026-05-17T01:03:00Z",
+      "provider_success_head_sha": "head-pr1323-replay-final",
+      "merge_readiness_last_evaluated_at": "2026-05-17T01:03:30Z",
+      "copilot_review_requested_observed_at": null,
+      "copilot_review_requested_head_sha": null,
+      "copilot_review_timed_out_at": null,
+      "copilot_review_timeout_action": null,
+      "copilot_review_timeout_reason": null,
+      "local_review_head_sha": "head-pr1323-replay-final",
+      "local_review_blocker_summary": null,
+      "local_review_summary_path": ".codex-supervisor/local-review/issue-8133/head-pr1323-replay-final.md",
+      "local_review_run_at": "2026-05-17T01:02:00Z",
+      "local_review_max_severity": "none",
+      "local_review_findings_count": 0,
+      "local_review_root_cause_count": 0,
+      "local_review_verified_max_severity": "none",
+      "local_review_verified_findings_count": 0,
+      "local_review_recommendation": "ready",
+      "local_review_degraded": false,
+      "last_local_review_signature": null,
+      "repeated_local_review_signature_count": 0,
+      "latest_local_ci_result": {
+        "outcome": "passed",
+        "summary": "Focused verifier passed after clustered review repair.",
+        "ran_at": "2026-05-17T01:02:30Z",
+        "head_sha": "head-pr1323-replay-final",
+        "execution_mode": "structured",
+        "command": "npm test -- src/review-thread-reporting.test.ts src/recovery-reconciliation.test.ts",
+        "stderr_summary": null,
+        "failure_class": null,
+        "remediation_target": null,
+        "verifier_drift_hint": null
+      },
+      "processed_review_thread_ids": [
+        "thread-auth-boundary@head-pr1323-replay-final",
+        "thread-verifier-drift@head-pr1323-replay-final",
+        "thread-handoff-state@head-pr1323-replay-final"
+      ],
+      "processed_review_thread_fingerprints": [
+        "thread-auth-boundary@head-pr1323-replay-final#comment-auth-final",
+        "thread-verifier-drift@head-pr1323-replay-final#comment-verifier-final",
+        "thread-handoff-state@head-pr1323-replay-final#comment-handoff-final"
+      ],
+      "updated_at": "2026-05-17T01:04:00Z"
+    },
+    "workspaceStatus": {
+      "branch": "codex/issue-8133",
+      "headSha": "head-pr1323-replay-final",
+      "hasUncommittedChanges": false,
+      "baseAhead": 4,
+      "baseBehind": 0,
+      "remoteBranchExists": true,
+      "remoteAhead": 0,
+      "remoteBehind": 0
+    }
+  },
+  "github": {
+    "pullRequest": {
+      "number": 9133,
+      "title": "Current-head success clears stale handoff",
+      "url": "https://example.test/pull/9133",
+      "state": "OPEN",
+      "createdAt": "2026-05-17T00:30:00Z",
+      "updatedAt": "2026-05-17T01:03:30Z",
+      "isDraft": false,
+      "reviewDecision": "APPROVED",
+      "mergeStateStatus": "CLEAN",
+      "mergeable": "MERGEABLE",
+      "headRefName": "codex/issue-8133",
+      "headRefOid": "head-pr1323-replay-final",
+      "configuredBotCurrentHeadObservedAt": "2026-05-17T01:03:00Z",
+      "currentHeadCiGreenAt": "2026-05-17T01:02:30Z",
+      "configuredBotTopLevelReviewStrength": "blocking",
+      "configuredBotTopLevelReviewSubmittedAt": "2026-05-17T01:03:00Z",
+      "mergedAt": null
+    },
+    "checks": [
+      {
+        "name": "focused replay verifier",
+        "state": "SUCCESS",
+        "bucket": "pass",
+        "workflow": "verification"
+      }
+    ],
+    "reviewThreads": []
+  },
+  "decision": {
+    "nextState": "ready_to_merge",
+    "shouldRunCodex": false,
+    "blockedReason": null,
+    "failureContext": null
+  },
+  "operatorSummary": {
+    "latestRecoverySummary": "latest_recovery issue=#8133 reason=current_head_review_convergence detail=stale handoff marker cleared by current-head PR facts",
+    "retrySummary": null,
+    "recoveryLoopSummary": null,
+    "activityContext": null
+  }
+}

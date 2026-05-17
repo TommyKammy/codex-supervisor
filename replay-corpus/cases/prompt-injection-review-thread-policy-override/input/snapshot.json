@@ -80,6 +80,7 @@
       "mergeable": "MERGEABLE",
       "headRefName": "codex/issue-180702",
       "headRefOid": "head-532",
+      "configuredBotCurrentHeadObservedAt": "2026-03-16T10:06:30Z",
       "mergedAt": null,
       "configuredBotTopLevelReviewStrength": "blocking"
     },
