@@ -313,6 +313,66 @@ test("determineTrackedPrRepeatFailureDisposition keeps upgraded tracked PR recor
   assert.match(result.progressSnapshot, /"mergeStateStatus":"CLEAN"/);
 });
 
+test("determineTrackedPrRepeatFailureDisposition treats pre-upgrade progress snapshots as a missing extended baseline", () => {
+  const record = createRecord({
+    last_failure_signature: "stalled-bot:thread-1",
+    repeated_failure_signature_count: 3,
+    last_head_sha: "head-same-366",
+    processed_review_thread_ids: ["thread-1@head-same-366"],
+    processed_review_thread_fingerprints: ["thread-1@head-same-366#comment-1"],
+    timeline_artifacts: [
+      {
+        type: "verification_result",
+        gate: "codex_turn",
+        command: "npx tsx --test src/supervisor/supervisor-lifecycle.test.ts",
+        head_sha: "head-same-366",
+        outcome: "passed",
+        remediation_target: "manual_review",
+        next_action: "continue",
+        summary: "Focused review repair regression passed.",
+        recorded_at: "2026-03-13T01:05:00Z",
+      },
+    ],
+    last_tracked_pr_progress_snapshot: JSON.stringify({
+      headRefOid: "head-same-366",
+      reviewDecision: "CHANGES_REQUESTED",
+      mergeStateStatus: "CLEAN",
+      copilotReviewState: null,
+      copilotReviewRequestedAt: null,
+      copilotReviewArrivedAt: null,
+      configuredBotCurrentHeadObservedAt: null,
+      configuredBotCurrentHeadStatusState: null,
+      currentHeadCiGreenAt: null,
+      configuredBotRateLimitedAt: null,
+      configuredBotDraftSkipAt: null,
+      configuredBotTopLevelReviewStrength: null,
+      configuredBotTopLevelReviewSubmittedAt: null,
+      checks: ["build:pass:SUCCESS:CI"],
+      unresolvedReviewThreadIds: ["thread-1"],
+      unresolvedReviewThreadFingerprints: ["thread-1#comment-1"],
+    }),
+  });
+  const pr = createPullRequest({
+    headRefOid: "head-same-366",
+    reviewDecision: "CHANGES_REQUESTED",
+    mergeStateStatus: "CLEAN",
+  });
+
+  const result = determineTrackedPrRepeatFailureDisposition({
+    record,
+    config: createConfig({ sameFailureSignatureRepeatLimit: 3 }),
+    pr,
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [createReviewThread()],
+  });
+
+  assert.equal(result.shouldStop, false);
+  assert.equal(result.decision, "retry_on_progress");
+  assert.equal(result.progressSummary, "progress_baseline_initialized");
+  assert.match(result.progressSnapshot, /"processedReviewThreadFingerprints":\["thread-1@head-same-366#comment-1"\]/);
+  assert.match(result.progressSnapshot, /"verificationProbeOutcomes":\["codex_turn:npx tsx --test src\/supervisor\/supervisor-lifecycle.test.ts:passed:manual_review"\]/);
+});
+
 test("determineTrackedPrRepeatFailureDisposition stays retryable over the repeat limit when tracked PR progress advanced", () => {
   const record = createRecord({
     last_failure_signature: "build (ubuntu-latest):fail",
@@ -334,6 +394,10 @@ test("determineTrackedPrRepeatFailureDisposition stays retryable over the repeat
       checks: ["build:fail:FAILURE:CI"],
       unresolvedReviewThreadIds: [],
       unresolvedReviewThreadFingerprints: [],
+      unresolvedReviewThreadSourceAnchors: [],
+      processedReviewThreadIds: [],
+      processedReviewThreadFingerprints: [],
+      verificationProbeOutcomes: [],
     }),
   });
   const pr = createPullRequest({

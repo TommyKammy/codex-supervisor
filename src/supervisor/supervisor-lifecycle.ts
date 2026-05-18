@@ -209,6 +209,20 @@ function parseTrackedPrProgressSnapshot(snapshot: string | null | undefined): Tr
   }
 }
 
+function hasExtendedTrackedPrProgressBaseline(snapshot: TrackedPrProgressSnapshot | null): boolean {
+  return (
+    snapshot !== null &&
+    Array.isArray(snapshot.unresolvedReviewThreadSourceAnchors) &&
+    Array.isArray(snapshot.processedReviewThreadIds) &&
+    Array.isArray(snapshot.processedReviewThreadFingerprints) &&
+    Array.isArray(snapshot.verificationProbeOutcomes)
+  );
+}
+
+function joinProgressValues(values: string[] | undefined): string | null {
+  return Array.isArray(values) && values.length > 0 ? values.join("|") : null;
+}
+
 function listChangedSignals(previous: TrackedPrProgressSnapshot | null, current: TrackedPrProgressSnapshot): string[] {
   const signals: string[] = [];
 
@@ -256,28 +270,26 @@ function listChangedSignals(previous: TrackedPrProgressSnapshot | null, current:
   ) {
     signals.push("review_thread_cluster_membership_changed");
   }
-  const previousSourceAnchors = previous?.unresolvedReviewThreadSourceAnchors?.join("|") ?? null;
-  const currentSourceAnchors = current.unresolvedReviewThreadSourceAnchors?.join("|") ?? null;
-  if (previous !== null && previousSourceAnchors !== null && currentSourceAnchors !== null && previousSourceAnchors !== currentSourceAnchors) {
+  const previousSourceAnchors = joinProgressValues(previous?.unresolvedReviewThreadSourceAnchors);
+  const currentSourceAnchors = joinProgressValues(current.unresolvedReviewThreadSourceAnchors);
+  if (currentSourceAnchors !== null && (previous === null || previousSourceAnchors === null || previousSourceAnchors !== currentSourceAnchors)) {
     signals.push("review_thread_source_anchor_changed");
   }
-  const previousProcessedFingerprints = previous?.processedReviewThreadFingerprints?.join("|") ?? null;
-  const currentProcessedFingerprints = current.processedReviewThreadFingerprints?.join("|") ?? null;
+  const previousProcessedFingerprints = joinProgressValues(previous?.processedReviewThreadFingerprints);
+  const currentProcessedFingerprints = joinProgressValues(current.processedReviewThreadFingerprints);
   if (
-    previous !== null &&
-    previousProcessedFingerprints !== null &&
     currentProcessedFingerprints !== null &&
-    previousProcessedFingerprints !== currentProcessedFingerprints
+    (previous === null ||
+      previousProcessedFingerprints === null ||
+      previousProcessedFingerprints !== currentProcessedFingerprints)
   ) {
     signals.push("processed_review_thread_fingerprints_changed");
   }
-  const previousVerificationProbes = previous?.verificationProbeOutcomes?.join("|") ?? null;
-  const currentVerificationProbes = current.verificationProbeOutcomes?.join("|") ?? null;
+  const previousVerificationProbes = joinProgressValues(previous?.verificationProbeOutcomes);
+  const currentVerificationProbes = joinProgressValues(current.verificationProbeOutcomes);
   if (
-    previous !== null &&
-    previousVerificationProbes !== null &&
     currentVerificationProbes !== null &&
-    previousVerificationProbes !== currentVerificationProbes
+    (previous === null || previousVerificationProbes === null || previousVerificationProbes !== currentVerificationProbes)
   ) {
     signals.push("verification_probe_outcome_changed");
   }
@@ -346,8 +358,9 @@ export function determineTrackedPrRepeatFailureDisposition(args: {
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
 }): TrackedPrRepeatFailureDisposition {
+  const previous = parseTrackedPrProgressSnapshot(args.record.last_tracked_pr_progress_snapshot);
   const { snapshot, summary } = summarizeTrackedPrProgress(args.record, args.pr, args.checks, args.reviewThreads);
-  const missingProgressBaseline = !args.record.last_tracked_pr_progress_snapshot;
+  const missingProgressBaseline = !hasExtendedTrackedPrProgressBaseline(previous);
   const overRepeatLimit =
     args.record.last_failure_signature !== null &&
     args.record.repeated_failure_signature_count >= args.config.sameFailureSignatureRepeatLimit;
