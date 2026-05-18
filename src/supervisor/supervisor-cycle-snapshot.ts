@@ -54,6 +54,9 @@ export interface SupervisorCycleDecisionSnapshot {
       | "last_failure_context"
       | "last_failure_signature"
       | "last_head_sha"
+      | "last_tracked_pr_progress_snapshot"
+      | "last_tracked_pr_progress_summary"
+      | "last_tracked_pr_repeat_failure_decision"
       | "review_wait_started_at"
       | "review_wait_head_sha"
       | "provider_success_observed_at"
@@ -156,6 +159,9 @@ export function buildSupervisorCycleDecisionSnapshot(args: {
         last_failure_context: record.last_failure_context,
         last_failure_signature: record.last_failure_signature,
         last_head_sha: record.last_head_sha,
+        last_tracked_pr_progress_snapshot: record.last_tracked_pr_progress_snapshot ?? null,
+        last_tracked_pr_progress_summary: record.last_tracked_pr_progress_summary ?? null,
+        last_tracked_pr_repeat_failure_decision: record.last_tracked_pr_repeat_failure_decision ?? null,
         review_wait_started_at: record.review_wait_started_at,
         review_wait_head_sha: record.review_wait_head_sha,
         provider_success_observed_at: record.provider_success_observed_at ?? null,
@@ -242,6 +248,9 @@ export function buildSupervisorCycleDecisionSnapshot(args: {
         last_failure_context: record.last_failure_context,
         last_failure_signature: record.last_failure_signature,
         last_head_sha: record.last_head_sha,
+        last_tracked_pr_progress_snapshot: record.last_tracked_pr_progress_snapshot ?? null,
+        last_tracked_pr_progress_summary: record.last_tracked_pr_progress_summary ?? null,
+        last_tracked_pr_repeat_failure_decision: record.last_tracked_pr_repeat_failure_decision ?? null,
         review_wait_started_at: record.review_wait_started_at,
         review_wait_head_sha: record.review_wait_head_sha,
         provider_success_observed_at: record.provider_success_observed_at ?? null,

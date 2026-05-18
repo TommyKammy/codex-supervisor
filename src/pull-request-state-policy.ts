@@ -983,15 +983,6 @@ export function inferStateFromPullRequest(
   }
 
   if (pr.reviewDecision === "CHANGES_REQUESTED") {
-    if (pendingBotThreads.length > 0 || (botFollowUpState === "eligible" && manualThreads.length === 0)) {
-      return "addressing_review";
-    }
-
-    const nitpickOnlyConfiguredBotReview =
-      pr.configuredBotTopLevelReviewStrength === "nitpick_only" &&
-      unresolvedBotThreads.length === 0 &&
-      manualThreads.length === 0;
-
     if (
       processedCodexConnectorMustFixThreadsExhaustedRepeatBudget({
         config,
@@ -1004,6 +995,15 @@ export function inferStateFromPullRequest(
     ) {
       return "blocked";
     }
+
+    if (pendingBotThreads.length > 0 || (botFollowUpState === "eligible" && manualThreads.length === 0)) {
+      return "addressing_review";
+    }
+
+    const nitpickOnlyConfiguredBotReview =
+      pr.configuredBotTopLevelReviewStrength === "nitpick_only" &&
+      unresolvedBotThreads.length === 0 &&
+      manualThreads.length === 0;
 
     if (unresolvedBotThreads.length > 0 || pr.configuredBotTopLevelReviewStrength === "blocking") {
       if (
