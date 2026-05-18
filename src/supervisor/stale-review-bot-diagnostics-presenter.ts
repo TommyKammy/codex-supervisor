@@ -1,6 +1,7 @@
 import {
   formatStaleReviewBotTokenValue,
   type StaleReviewBotRemediationDto,
+  type StaleReviewBotThreadDiagnosticsDto,
 } from "./stale-review-bot-remediation";
 
 export function formatStaleReviewBotRemediationLine(remediation: StaleReviewBotRemediationDto): string {
@@ -31,4 +32,21 @@ export function formatStaleReviewBotRemediationLine(remediation: StaleReviewBotR
     tokens.splice(tokens.length - 1, 0, `missing_probe_reason=${remediation.missingProbeReason}`);
   }
   return tokens.join(" ");
+}
+
+export function formatStaleReviewBotThreadDiagnosticsLine(
+  diagnostics: StaleReviewBotThreadDiagnosticsDto,
+): string {
+  return [
+    "stale_review_bot_thread_diagnostics",
+    `issue=#${diagnostics.issueNumber}`,
+    `pr=${diagnostics.prNumber === null ? "none" : `#${diagnostics.prNumber}`}`,
+    `current_head_success=${diagnostics.currentHeadSuccess}`,
+    `unresolved_current_threads=${diagnostics.unresolvedCurrentThreads}`,
+    `actionable_must_fix_threads=${diagnostics.actionableMustFixThreads}`,
+    `verified_stale_residue_threads=${diagnostics.verifiedStaleResidueThreads}`,
+    `missing_verification_evidence_threads=${diagnostics.missingVerificationEvidenceThreads}`,
+    `repeat_stop_exhausted=${diagnostics.repeatStopExhausted}`,
+    `auto_repair_suppressed_reason=${diagnostics.autoRepairSuppressedReason}`,
+  ].join(" ");
 }

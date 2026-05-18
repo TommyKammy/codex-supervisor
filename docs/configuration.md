@@ -592,6 +592,8 @@ With that setting, a timed-out current-head wait may post `@codex review` once f
 
 `status --why` and `explain <issue>` also report `codex_connector_convergence` for tracked PRs using the Codex Connector profile. The line summarizes the current PR head, latest connector signal head, highest unresolved severity, unresolved finding count, merge effect, and next expected operator or supervisor action. Common states are `waiting_review`, `re_requested_review`, `repairing_must_fix`, `nitpick_only`, `stale_head`, and `converged`. If stored success evidence contradicts the current policy result, the line reports `contradictory_evidence` and keeps merge blocked so the operator can inspect the connector state instead of treating partial evidence as convergence.
 
+When unresolved inline Codex Connector findings remain, `status --why` and `explain <issue>` also report `stale_review_bot_thread_diagnostics`. A current-head Codex success comment is not enough to bypass unresolved unverified P1/P2 inline findings: the diagnostics separate current-head success, unresolved thread counts, actionable must-fix counts, verified stale-residue counts, missing verification evidence, repeat-stop exhaustion, and the reason automatic cleanup was suppressed. The verified thread cleanup settings remain opt-in: `verifiedNoSourceChangeReviewThreadAutoResolve` only covers verifier-proven no-source-change residue, and `verifiedCurrentHeadRepairReviewThreadAutoResolve` only covers verifier-proven current-head repair residue.
+
 Use `configuredBotCurrentHeadSignalTimeoutAction: "block"` for non-mutating block-only operation, or `"continue"` only when missing Codex Connector current-head activity should be diagnosed without blocking merge progression.
 
 ### CodeRabbit waits

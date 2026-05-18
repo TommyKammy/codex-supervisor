@@ -1415,6 +1415,10 @@ test("explain fails closed for processed Codex must-fix residue without verifica
   );
   assert.match(
     explanation,
+    /^stale_review_bot_thread_diagnostics issue=#198 pr=#398 current_head_success=no unresolved_current_threads=1 actionable_must_fix_threads=1 verified_stale_residue_threads=0 missing_verification_evidence_threads=1 repeat_stop_exhausted=no auto_repair_suppressed_reason=missing_verification_probe$/m,
+  );
+  assert.match(
+    explanation,
     /^codex_connector_operator_diagnostic interpretation=stale_review_residue current_head_sha=head-198 latest_configured_bot_review_sha=head-198 current_head_review_signal=missing actionable_current_diff_threads=unknown next_action=inspect_exact_review_thread_then_resolve_or_leave_manual_note$/m,
   );
 });
