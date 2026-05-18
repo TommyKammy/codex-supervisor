@@ -459,6 +459,86 @@ test("summarizeTrackedPrProgress treats updated same-thread guidance as tracked 
   assert.match(result.summary ?? "", /same_review_thread_guidance_changed/);
 });
 
+test("summarizeTrackedPrProgress treats changed review-thread cluster membership as tracked PR progress", () => {
+  const record = createRecord({
+    last_tracked_pr_progress_snapshot: JSON.stringify({
+      headRefOid: "head123",
+      reviewDecision: "CHANGES_REQUESTED",
+      mergeStateStatus: "CLEAN",
+      copilotReviewState: null,
+      copilotReviewRequestedAt: null,
+      copilotReviewArrivedAt: null,
+      configuredBotCurrentHeadObservedAt: null,
+      configuredBotCurrentHeadStatusState: null,
+      currentHeadCiGreenAt: null,
+      configuredBotRateLimitedAt: null,
+      configuredBotDraftSkipAt: null,
+      configuredBotTopLevelReviewStrength: null,
+      configuredBotTopLevelReviewSubmittedAt: null,
+      checks: ["build:pass:SUCCESS:CI"],
+      unresolvedReviewThreadIds: ["thread-simulator-authority", "thread-simulator-fixture"],
+      unresolvedReviewThreadFingerprints: [
+        "thread-simulator-authority#comment-simulator-authority",
+        "thread-simulator-fixture#comment-simulator-fixture",
+      ],
+      unresolvedReviewThreadClusterSignatures: [
+        "P1:old-authority-only:thread-simulator-authority",
+        "P1:old-fixture-only:thread-simulator-fixture",
+      ],
+    }),
+  });
+  const pr = createPullRequest({
+    headRefOid: "head123",
+    reviewDecision: "CHANGES_REQUESTED",
+    mergeStateStatus: "CLEAN",
+  });
+  const reviewThreads: ReviewThread[] = [
+    createReviewThread({
+      id: "thread-simulator-authority",
+      path: "src/simulator/validation.ts",
+      line: 42,
+      comments: {
+        nodes: [
+          {
+            id: "comment-simulator-authority",
+            body:
+              "P1: The simulator validation path still accepts a production authority flag without proving the signed fixture.",
+            createdAt: "2026-03-13T06:20:00Z",
+            url: "https://example.test/pr/42#discussion_r1",
+            author: { login: "chatgpt-codex-connector", typeName: "Bot" },
+          },
+        ],
+      },
+    }),
+    createReviewThread({
+      id: "thread-simulator-fixture",
+      path: "src/simulator/validation.ts",
+      line: 88,
+      comments: {
+        nodes: [
+          {
+            id: "comment-simulator-fixture",
+            body:
+              "P1: Simulator validation can still pass when the signed fixture proof is missing, so production authority is inferred.",
+            createdAt: "2026-03-13T06:25:00Z",
+            url: "https://example.test/pr/42#discussion_r2",
+            author: { login: "chatgpt-codex-connector", typeName: "Bot" },
+          },
+        ],
+      },
+    }),
+  ];
+
+  const result = summarizeTrackedPrProgress(
+    record,
+    pr,
+    [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads,
+  );
+
+  assert.match(result.summary ?? "", /review_thread_cluster_membership_changed/);
+});
+
 test("derivePullRequestLifecycleSnapshot re-arms CodeRabbit waiting after ready-for-review when draft skip was the latest prior signal", () => {
   withStubbedDateNow("2026-03-13T02:30:10Z", () => {
     const config = createConfig({

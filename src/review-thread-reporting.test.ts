@@ -582,6 +582,86 @@ test("clusterConfiguredBotReviewThreads groups repeated signatures while preserv
   assert.deepEqual(clusters[1]?.threads.map((thread) => thread.id), ["thread-export"]);
 });
 
+test("clusterConfiguredBotReviewThreads groups same-path Codex Connector findings by normalized failure theme", () => {
+  const simulatorAuthorityThread = createReviewThread({
+    id: "thread-simulator-authority",
+    path: "src/simulator/validation.ts",
+    line: 42,
+    comments: {
+      nodes: [
+        {
+          id: "comment-simulator-authority",
+          body:
+            "P1: The simulator validation path still accepts a production authority flag without proving the signed fixture. Add regression coverage before merge.",
+          createdAt: "2026-03-11T00:00:00Z",
+          url: "https://example.test/pr/44#discussion_r1",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const simulatorFixtureThread = createReviewThread({
+    id: "thread-simulator-fixture",
+    path: "src/simulator/validation.ts",
+    line: 88,
+    comments: {
+      nodes: [
+        {
+          id: "comment-simulator-fixture",
+          body:
+            "P1: Simulator validation can still pass when the signed fixture proof is missing, so production authority is inferred from an unsafe fallback.",
+          createdAt: "2026-03-11T00:01:00Z",
+          url: "https://example.test/pr/44#discussion_r2",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const unrelatedThread = createReviewThread({
+    id: "thread-export-snapshot",
+    path: "src/export/readiness.ts",
+    line: 12,
+    comments: {
+      nodes: [
+        {
+          id: "comment-export-snapshot",
+          body:
+            "P1: Export readiness still stitches rows from mixed snapshots instead of rejecting the inconsistent read set.",
+          createdAt: "2026-03-11T00:02:00Z",
+          url: "https://example.test/pr/44#discussion_r3",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  const clusters = clusterConfiguredBotReviewThreads([
+    simulatorAuthorityThread,
+    simulatorFixtureThread,
+    unrelatedThread,
+  ]);
+
+  assert.equal(clusters.length, 2);
+  assert.deepEqual(clusters[0]?.threads.map((thread) => thread.id), [
+    "thread-simulator-authority",
+    "thread-simulator-fixture",
+  ]);
+  assert.deepEqual(clusters[0]?.sourceUrls, [
+    "https://example.test/pr/44#discussion_r1",
+    "https://example.test/pr/44#discussion_r2",
+  ]);
+  assert.deepEqual(clusters[1]?.threads.map((thread) => thread.id), ["thread-export-snapshot"]);
+});
+
 test("evaluateCodexConnectorConvergencePolicy separates missing, must-fix, nitpick-only, and converged outcomes", () => {
   const config = createConfig({ reviewBotLogins: ["chatgpt-codex-connector"] });
   const currentHeadPr = {

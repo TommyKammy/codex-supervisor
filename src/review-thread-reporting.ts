@@ -423,24 +423,101 @@ function normalizeReviewThreadSignature(summary: string): string {
     .trim();
 }
 
+const REVIEW_THREAD_THEME_STOP_WORDS = new Set([
+  "add",
+  "after",
+  "again",
+  "before",
+  "being",
+  "because",
+  "cannot",
+  "comment",
+  "coverage",
+  "does",
+  "from",
+  "here",
+  "into",
+  "keep",
+  "lets",
+  "merge",
+  "must",
+  "needs",
+  "only",
+  "path",
+  "please",
+  "prefer",
+  "proving",
+  "repair",
+  "review",
+  "should",
+  "still",
+  "than",
+  "that",
+  "this",
+  "thread",
+  "until",
+  "when",
+  "with",
+  "without",
+]);
+
+function normalizeFailureThemeTokens(summary: string): string[] {
+  return uniqueInOrder(
+    normalizeReviewThreadSignature(summary)
+      .split(" ")
+      .filter((token) => {
+        return token.length >= 4 && !REVIEW_THREAD_THEME_STOP_WORDS.has(token) && !/^#+$/.test(token);
+      }),
+  ).sort();
+}
+
+function hasSimilarFailureTheme(left: string[], right: string[]): boolean {
+  if (left.length < 3 || right.length < 3) {
+    return false;
+  }
+
+  const rightTokens = new Set(right);
+  const sharedCount = left.filter((token) => rightTokens.has(token)).length;
+  return sharedCount >= 4 || sharedCount / Math.min(left.length, right.length) >= 0.5;
+}
+
 function uniqueInOrder(values: string[]): string[] {
   return [...new Set(values)];
 }
 
 export function clusterConfiguredBotReviewThreads(reviewThreads: ReviewThread[]): ConfiguredBotReviewThreadCluster[] {
   const clusters = new Map<string, ConfiguredBotReviewThreadCluster>();
+  const clusterThemeTokens = new Map<string, string[]>();
 
   for (const thread of reviewThreads) {
     const latestComment = latestReviewComment(thread);
     const severity = latestCodexConnectorPSeverity(thread) ?? "unknown";
     const summary = extractReviewCommentSummary(latestComment?.body ?? "");
     const signature = `${severity}:${normalizeReviewThreadSignature(summary) || thread.id}`;
-    const existing = clusters.get(signature);
+    const themeTokens = normalizeFailureThemeTokens(summary);
+    const normalizedPath = thread.path?.replace(/\\/g, "/");
+    const existingSignature = clusters.has(signature)
+      ? signature
+      : [...clusters.entries()].find(([candidateSignature, candidate]) => {
+          return (
+            normalizedPath !== undefined &&
+            candidate.severity === severity &&
+            candidate.files.map((filePath) => filePath.replace(/\\/g, "/")).includes(normalizedPath) &&
+            hasSimilarFailureTheme(themeTokens, clusterThemeTokens.get(candidateSignature) ?? [])
+          );
+        })?.[0];
+    const existing = existingSignature ? clusters.get(existingSignature) : undefined;
     if (existing) {
       existing.threads.push(thread);
       existing.files = uniqueInOrder([...existing.files, thread.path ?? "unknown"]);
       if (latestComment?.url) {
         existing.sourceUrls = uniqueInOrder([...existing.sourceUrls, latestComment.url]);
+      }
+      if (existingSignature) {
+        clusterThemeTokens.set(
+          existingSignature,
+          uniqueInOrder([...(clusterThemeTokens.get(existingSignature) ?? []), ...themeTokens]).sort(),
+        );
       }
       continue;
     }
@@ -453,6 +530,7 @@ export function clusterConfiguredBotReviewThreads(reviewThreads: ReviewThread[])
       files: [thread.path ?? "unknown"],
       sourceUrls: latestComment?.url ? [latestComment.url] : [],
     });
+    clusterThemeTokens.set(signature, themeTokens);
   }
 
   return [...clusters.values()];
