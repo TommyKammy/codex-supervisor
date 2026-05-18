@@ -437,7 +437,7 @@ export class GitHubReviewSurfaceClient {
             : null,
         })),
       },
-    })).filter((thread) => !thread.isResolved && !thread.isOutdated);
+    })).filter((thread) => !thread.isResolved);
   }
 
   private async fetchExternalReviewSurface(prNumber: number): Promise<{

@@ -370,7 +370,7 @@ test("buildDetailedStatusModel preserves active-line ordering across PR and fail
     "checks=fail=1 pending=1",
     "failing_checks=unit",
     "pending_checks=lint",
-    "review_threads bot_pending=0 bot_unresolved=0 manual=0",
+    "review_threads bot_pending=0 bot_unresolved=0 bot_outdated_unresolved=0 manual=0",
     "failure_context category=checks summary=build failed\\nsee logs",
     "failure_details=step one | step two",
     "runtime_failure_context category=codex summary=Host loop failed while persisting diagnostics.",
