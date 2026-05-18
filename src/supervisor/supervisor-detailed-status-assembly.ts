@@ -546,6 +546,9 @@ export function buildActiveDetailedStatusLines(
       lines.push(`pending_checks=${pendingChecks}`);
     }
     const unresolvedConfiguredBotThreads = unresolvedReviewThreads(configuredBotReviewThreads(config, reviewThreads));
+    const outdatedUnresolvedConfiguredBotThreads = configuredBotReviewThreads(config, reviewThreads).filter(
+      (thread) => !thread.isResolved && thread.isOutdated,
+    );
     const reviewFollowUpState = configuredBotReviewFollowUpState(
       config,
       activeRecord,
@@ -553,7 +556,7 @@ export function buildActiveDetailedStatusLines(
       unresolvedConfiguredBotThreads,
     );
     lines.push(
-      `review_threads bot_pending=${pendingBotReviewThreads(config, activeRecord, pr, reviewThreads).length} bot_unresolved=${unresolvedConfiguredBotThreads.length} manual=${manualReviewThreads(config, reviewThreads).length}`,
+      `review_threads bot_pending=${pendingBotReviewThreads(config, activeRecord, pr, reviewThreads).length} bot_unresolved=${unresolvedConfiguredBotThreads.length} bot_outdated_unresolved=${outdatedUnresolvedConfiguredBotThreads.length} manual=${manualReviewThreads(config, reviewThreads).length}`,
     );
     const conversationResolutionBlockerLine = buildConversationResolutionBlockerStatusLine({
       config,

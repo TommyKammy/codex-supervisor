@@ -163,6 +163,31 @@ function createPersistentMergeStagePatch(headSha: string) {
   };
 }
 
+function createOutdatedConfiguredBotThreads(threadIds: string[], prNumber: number): ReviewThread[] {
+  return threadIds.map((threadId, index) =>
+    createReviewThread({
+      id: threadId,
+      isOutdated: true,
+      path: `src/hrcore/reproduction-${index + 1}.ts`,
+      line: 10 + index,
+      comments: {
+        nodes: [
+          {
+            id: `comment-${threadId}`,
+            body: "Outdated Codex Connector thread.",
+            createdAt: "2026-05-18T00:50:00Z",
+            url: `https://example.test/pr/${prNumber}#discussion_r${index + 1}`,
+            author: {
+              login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  );
+}
+
 function createInitialMergeStageObservationPatch(headSha: string) {
   return {
     provider_success_observed_at: "2026-04-11T00:00:00.000Z",
@@ -6912,6 +6937,148 @@ test("handlePostTurnPullRequestTransitionsPhase auto-resolves eligible outdated 
   assert.deepEqual(commentBodies, []);
   assert.deepEqual(replyCalls, ["thread-outdated-1"]);
   assert.deepEqual(resolveCalls, ["thread-outdated-1"]);
+  assert.equal(result.record.state, "ready_to_merge");
+});
+
+async function exerciseHrcoreOutdatedConversationResolutionCase(args: {
+  issueNumber: number;
+  prNumber: number;
+  headSha: string;
+  threadIds: string[];
+}) {
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    verifiedNoSourceChangeReviewThreadAutoResolve: true,
+  });
+  const issue = createIssue({
+    number: args.issueNumber,
+    title: "HRCore outdated configured-bot conversation residue",
+  });
+  const pr = createPullRequest({
+    title: "HRCore tracked PR conversation resolution blocker",
+    number: args.prNumber,
+    isDraft: false,
+    headRefOid: args.headSha,
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+    configuredBotCurrentHeadObservedAt: "2026-05-18T01:00:00Z",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
+    requiredConversationResolution: {
+      state: "enabled",
+      source: "branch_protection",
+      details: ["branch_protection=enabled"],
+    },
+  });
+  const resolvedPr = createPullRequest({
+    ...pr,
+    mergeStateStatus: "CLEAN",
+  });
+  const reviewThreads = createOutdatedConfiguredBotThreads(args.threadIds, args.prNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: args.issueNumber,
+    issues: {
+      [String(args.issueNumber)]: createRecord({
+        issue_number: args.issueNumber,
+        state: "pr_open",
+        pr_number: pr.number,
+        last_head_sha: pr.headRefOid,
+      }),
+    },
+  };
+  const replyCalls: string[] = [];
+  const resolveCalls: string[] = [];
+  const commentBodies: string[] = [];
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: createNoopStateStore(),
+    github: createDefaultGithub({
+      addIssueComment: async (_prNumber: number, body: string) => {
+        commentBodies.push(body);
+      },
+      replyToReviewThread: async (threadId: string) => {
+        replyCalls.push(threadId);
+      },
+      resolveReviewThread: async (threadId: string) => {
+        resolveCalls.push(threadId);
+      },
+    }),
+    context: createPostTurnContext({
+      state,
+      record: state.issues[String(args.issueNumber)]!,
+      issue,
+      pr,
+      workspacePath: path.join("/tmp/workspaces", `issue-${args.issueNumber}`),
+    }),
+    derivePullRequestLifecycleSnapshot: (recordForState, snapshotPr) =>
+      createLifecycleSnapshot(recordForState, snapshotPr.mergeStateStatus === "CLEAN" ? "ready_to_merge" : "pr_open", {
+        failureContext: null,
+        mergeLatencyVisibilityPatch: createPersistentMergeStagePatch(snapshotPr.headRefOid),
+      }),
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    blockedReasonFromReviewState: () => null,
+    summarizeChecks,
+    configuredBotReviewThreads: () => reviewThreads,
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runLocalCiCommand: async () => undefined,
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
+    loadOpenPullRequestSnapshot: async () => ({
+      pr: resolveCalls.length === args.threadIds.length ? resolvedPr : pr,
+      checks: [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      reviewThreads: resolveCalls.length === args.threadIds.length ? [] : reviewThreads,
+    }),
+  });
+
+  return { result, replyCalls, resolveCalls, commentBodies };
+}
+
+test("handlePostTurnPullRequestTransitionsPhase models HRCore PR #136 outdated configured-bot residue", async () => {
+  const threadIds = [
+    "PRRT_kwDOSfC_1M6Cy191",
+    "PRRT_kwDOSfC_1M6Cy193",
+    "PRRT_kwDOSfC_1M6Cy199",
+    "PRRT_kwDOSfC_1M6CzIlF",
+    "PRRT_kwDOSfC_1M6CzIlG",
+    "PRRT_kwDOSfC_1M6CzIlI",
+    "PRRT_kwDOSfC_1M6CzIlL",
+    "PRRT_kwDOSfC_1M6CzgEo",
+    "PRRT_kwDOSfC_1M6CzgEp",
+  ];
+
+  const { result, replyCalls, resolveCalls, commentBodies } = await exerciseHrcoreOutdatedConversationResolutionCase({
+    issueNumber: 132,
+    prNumber: 136,
+    headSha: "37c89d721e787110e651196d16f10d0747fb65a2",
+    threadIds,
+  });
+
+  assert.deepEqual(commentBodies, []);
+  assert.deepEqual(replyCalls, threadIds);
+  assert.deepEqual(resolveCalls, threadIds);
+  assert.equal(result.record.state, "ready_to_merge");
+});
+
+test("handlePostTurnPullRequestTransitionsPhase models HRCore PR #137 outdated configured-bot residue", async () => {
+  const threadIds = ["PRRT_kwDOSfC_1M6C1E02", "PRRT_kwDOSfC_1M6C1E09"];
+
+  const { result, replyCalls, resolveCalls, commentBodies } = await exerciseHrcoreOutdatedConversationResolutionCase({
+    issueNumber: 133,
+    prNumber: 137,
+    headSha: "5791f36781ed5623e8e8d50c643630e3a56e438c",
+    threadIds,
+  });
+
+  assert.deepEqual(commentBodies, []);
+  assert.deepEqual(replyCalls, threadIds);
+  assert.deepEqual(resolveCalls, threadIds);
   assert.equal(result.record.state, "ready_to_merge");
 });
 

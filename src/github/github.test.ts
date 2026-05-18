@@ -236,6 +236,82 @@ test("GitHubClient fetches the newest unresolved review thread comments", async 
   assert.equal(threads[0]?.comments.nodes.at(-1)?.author?.typeName, "Bot");
 });
 
+test("GitHubClient retains unresolved outdated review threads for conversation-resolution diagnostics", async () => {
+  const config = createConfig();
+  const client = new GitHubClient(config, async (_command, args) => {
+    if (args[0] === "api" && args[1] === "graphql") {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                reviewThreads: {
+                  nodes: [
+                    {
+                      id: "thread-outdated",
+                      isResolved: false,
+                      isOutdated: true,
+                      path: "src/github/github-review-surface.ts",
+                      line: 440,
+                      comments: {
+                        nodes: [
+                          {
+                            id: "comment-outdated",
+                            body: "Outdated configured-bot thread.",
+                            createdAt: "2026-05-18T00:50:00Z",
+                            url: "https://example.test/comments/outdated",
+                            author: {
+                              login: "chatgpt-codex-connector",
+                              __typename: "Bot",
+                            },
+                          },
+                        ],
+                      },
+                    },
+                    {
+                      id: "thread-resolved",
+                      isResolved: true,
+                      isOutdated: true,
+                      path: "src/github/github-review-surface.ts",
+                      line: 441,
+                      comments: {
+                        nodes: [
+                          {
+                            id: "comment-resolved",
+                            body: "Resolved outdated thread.",
+                            createdAt: "2026-05-18T00:51:00Z",
+                            url: "https://example.test/comments/resolved",
+                            author: {
+                              login: "chatgpt-codex-connector",
+                              __typename: "Bot",
+                            },
+                          },
+                        ],
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        }),
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  const threads = await client.getUnresolvedReviewThreads(137);
+
+  assert.deepEqual(
+    threads.map((thread) => ({ id: thread.id, isOutdated: thread.isOutdated })),
+    [{ id: "thread-outdated", isOutdated: true }],
+  );
+  assert.equal(threads[0]?.comments.nodes[0]?.author?.typeName, "Bot");
+});
+
 test("GitHubClient resolves a review thread via GraphQL mutation", async () => {
   const config = createConfig();
   let resolveMutation: string | null = null;
