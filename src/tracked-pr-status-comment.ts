@@ -2,6 +2,13 @@ import { GitHubClient } from "./github";
 import { IssueJournalSync } from "./run-once-issue-preparation";
 import { StateStore } from "./core/state-store";
 import {
+  configuredBotReviewThreads,
+  evaluateCodexConnectorConvergencePolicy,
+  latestReviewComment,
+  manualReviewThreads,
+  latestReviewCommentAuthorIsAllowedBot,
+} from "./review-thread-reporting";
+import {
   FailureContext,
   GitHubPullRequest,
   IssueComment,
@@ -33,6 +40,7 @@ const TRACKED_PR_STATUS_COMMENT_REASON_CODE_DRAFT_REVIEW_PROVIDER_SUPPRESSED = "
 const TRACKED_PR_STATUS_COMMENT_REASON_CODE_MANUAL_REVIEW = "manual_review";
 export const TRACKED_PR_STATUS_COMMENT_REASON_CODE_STALE_REVIEW_BOT = "stale_review_bot";
 const TRACKED_PR_STATUS_COMMENT_REASON_CODE_REQUIRED_CHECK_MISMATCH = "required_check_mismatch";
+const TRACKED_PR_STATUS_COMMENT_REASON_CODE_CONVERSATION_RESOLUTION_BLOCKED = "conversation_resolution_blocked";
 const TRACKED_PR_STATUS_COMMENT_REASON_CODE_TRACKED_LIFECYCLE_MISMATCH = "tracked_lifecycle_mismatch";
 const TRACKED_PR_STATUS_COMMENT_REASON_CODE_CLEARED = "cleared";
 
@@ -316,6 +324,108 @@ function buildRequiredCheckMismatchEvidence(args: {
   ];
 }
 
+interface ConversationResolutionBlocker {
+  blockerSignature: string;
+  body: string;
+  failureContext: FailureContext;
+}
+
+function buildConversationResolutionFailureContext(args: {
+  pr: GitHubPullRequest;
+  threads: ReviewThread[];
+}): FailureContext {
+  const threadIds = args.threads.map((thread) => thread.id).sort();
+  return {
+    category: "blocked",
+    summary:
+      `GitHub reports PR #${args.pr.number} as blocked after green checks; unresolved outdated configured-bot conversations remain.`,
+    signature: threadIds.map((threadId) => `stalled-bot:${threadId}`).join("|"),
+    command: null,
+    details: args.threads
+      .map((thread) => {
+        const latestComment = latestReviewComment(thread);
+        return [
+          `thread=${thread.id}`,
+          `reviewer=${latestComment?.author?.login ?? "unknown"}`,
+          `file=${thread.path ?? "unknown"}`,
+          `line=${thread.line ?? "unknown"}`,
+          "is_outdated=yes",
+          "processed_on_current_head=yes",
+        ].join(" ");
+      })
+      .sort(),
+    url: latestReviewComment(args.threads[0])?.url ?? args.pr.url,
+    updated_at: new Date(0).toISOString(),
+  };
+}
+
+function buildConversationResolutionBlocker(args: {
+  config: SupervisorConfig;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+  summarizeChecks: (checks: PullRequestCheck[]) => { hasPending: boolean; hasFailing: boolean };
+}): ConversationResolutionBlocker | null {
+  const checkSummary = args.summarizeChecks(args.checks);
+  if (
+    args.pr.mergeStateStatus !== "BLOCKED" ||
+    args.pr.mergeable !== "MERGEABLE" ||
+    !args.pr.configuredBotCurrentHeadObservedAt ||
+    args.pr.configuredBotCurrentHeadStatusState !== "SUCCESS" ||
+    checkSummary.hasPending ||
+    checkSummary.hasFailing
+  ) {
+    return null;
+  }
+
+  const unresolvedThreads = args.reviewThreads.filter((thread) => !thread.isResolved);
+  if (unresolvedThreads.length === 0 || manualReviewThreads(args.config, unresolvedThreads).length > 0) {
+    return null;
+  }
+
+  const configuredThreads = configuredBotReviewThreads(args.config, unresolvedThreads);
+  if (
+    configuredThreads.length !== unresolvedThreads.length ||
+    configuredThreads.some(
+      (thread) => !thread.isOutdated || !latestReviewCommentAuthorIsAllowedBot(args.config, thread),
+    )
+  ) {
+    return null;
+  }
+
+  const codexConnectorPolicy = evaluateCodexConnectorConvergencePolicy(args.config, args.pr, configuredThreads);
+  if (codexConnectorPolicy && codexConnectorPolicy.mergeEffect !== "ready") {
+    return null;
+  }
+
+  const failureContext = buildConversationResolutionFailureContext({
+    pr: args.pr,
+    threads: configuredThreads,
+  });
+  const threadIds = configuredThreads.map((thread) => thread.id).sort();
+  const evidence = [
+    `merge_state=${args.pr.mergeStateStatus}`,
+    `mergeable=${args.pr.mergeable}`,
+    `conversation_threads=${threadIds.join(",")}`,
+    ...buildRequiredCheckMismatchEvidence({ pr: args.pr, checks: args.checks }).filter((line) => line.startsWith("check=")),
+  ];
+
+  return {
+    blockerSignature: `conversation-resolution:${args.pr.headRefOid}:${threadIds.join(",")}`,
+    failureContext,
+    body: buildTrackedPrPersistentStatusComment({
+      pr: args.pr,
+      reasonCode: TRACKED_PR_STATUS_COMMENT_REASON_CODE_CONVERSATION_RESOLUTION_BLOCKED,
+      summary:
+        "GitHub is not merge-ready because unresolved outdated configured-bot review conversations still require resolution.",
+      evidence,
+      nextAction:
+        "Resolve the listed configured-bot review conversations, or rerun with the verified configured-bot auto-resolve opt-in enabled.",
+      automaticRetry: "no",
+    }),
+  };
+}
+
 function hasPersistentTrackedPrMergeStageSignal(args: {
   record: Pick<IssueRunRecord, "merge_readiness_last_evaluated_at" | "provider_success_head_sha" | "provider_success_observed_at">;
   pr: Pick<GitHubPullRequest, "headRefOid">;
@@ -403,6 +513,20 @@ function derivePersistentTrackedPrStatusComment(args: {
         nextAction: mismatch.guidanceLine.replace(/^recovery_guidance=/, ""),
         automaticRetry: "no",
       }),
+    };
+  }
+
+  const conversationResolutionBlocker = buildConversationResolutionBlocker({
+    config: args.config,
+    pr: args.pr,
+    checks: args.checks,
+    reviewThreads: args.reviewThreads,
+    summarizeChecks: args.summarizeChecks,
+  });
+  if (conversationResolutionBlocker) {
+    return {
+      blockerSignature: conversationResolutionBlocker.blockerSignature,
+      body: conversationResolutionBlocker.body,
     };
   }
 
@@ -690,6 +814,13 @@ export async function maybeCommentOnTrackedPrPersistentStatus(args: {
     failureContext: args.failureContext,
     summarizeChecks: args.summarizeChecks,
   });
+  const conversationResolutionBlocker = buildConversationResolutionBlocker({
+    config: args.config,
+    pr: args.pr,
+    checks: args.checks,
+    reviewThreads: args.reviewThreads,
+    summarizeChecks: args.summarizeChecks,
+  });
   const remediationRecord =
     args.record.state === "blocked" &&
     (args.record.blocked_reason === "stale_review_bot" || args.record.blocked_reason === "manual_review") &&
@@ -716,21 +847,26 @@ export async function maybeCommentOnTrackedPrPersistentStatus(args: {
   const canResolveVerifiedCurrentHeadRepairThreadResolution =
     args.config.verifiedCurrentHeadRepairReviewThreadAutoResolve === true &&
     staleReviewBotRemediation?.classification === "verified_current_head_repair_pending_thread_resolution";
+  const canResolveConversationResolutionBlocker =
+    args.config.verifiedNoSourceChangeReviewThreadAutoResolve === true &&
+    conversationResolutionBlocker !== null;
 
   const canAutoHandleStaleConfiguredBotReview =
     !args.skipAutoHandleStaleConfiguredBotReview &&
-    args.record.state === "blocked" &&
+    (args.record.state === "blocked" || canResolveConversationResolutionBlocker) &&
     (args.record.blocked_reason === "stale_review_bot" ||
+      canResolveConversationResolutionBlocker ||
       ((canResolveVerifiedNoSourceChangeThreadResolution || canResolveVerifiedCurrentHeadRepairThreadResolution) &&
         args.record.blocked_reason === "manual_review")) &&
-    comment &&
+    (comment || canResolveConversationResolutionBlocker) &&
     args.manualReviewThreadCount === 0 &&
     !args.summarizeChecks(args.checks).hasPending &&
     !args.summarizeChecks(args.checks).hasFailing &&
     (args.config.staleConfiguredBotReviewPolicy === "reply_only" ||
       args.config.staleConfiguredBotReviewPolicy === "reply_and_resolve" ||
       canResolveVerifiedNoSourceChangeThreadResolution ||
-      canResolveVerifiedCurrentHeadRepairThreadResolution);
+      canResolveVerifiedCurrentHeadRepairThreadResolution ||
+      canResolveConversationResolutionBlocker);
 
   let currentRecord = args.record;
   if (canAutoHandleStaleConfiguredBotReview && args.github.replyToReviewThread) {
@@ -743,14 +879,15 @@ export async function maybeCommentOnTrackedPrPersistentStatus(args: {
       reviewThreads: args.reviewThreads,
       syncJournal: args.syncJournal,
       config: args.config,
-      failureContext: args.failureContext,
+      failureContext: conversationResolutionBlocker?.failureContext ?? args.failureContext,
       resolveAfterReply:
+        canResolveConversationResolutionBlocker ||
         canResolveStaleConfiguredBotReview ||
         canResolveVerifiedNoSourceChangeThreadResolution ||
         canResolveVerifiedCurrentHeadRepairThreadResolution,
       reasonCode: canResolveVerifiedCurrentHeadRepairThreadResolution
         ? "verified_current_head_repair_auto_resolve"
-        : canResolveVerifiedNoSourceChangeThreadResolution
+        : canResolveVerifiedNoSourceChangeThreadResolution || canResolveConversationResolutionBlocker
         ? "verified_no_source_change_auto_resolve"
         : STALE_CONFIGURED_BOT_REVIEW_REASON_CODE,
     });
@@ -759,7 +896,9 @@ export async function maybeCommentOnTrackedPrPersistentStatus(args: {
     const replyHandled =
       repliedRecord.last_stale_review_bot_reply_head_sha === args.pr.headRefOid &&
       repliedRecord.last_stale_review_bot_reply_signature ===
-        (args.failureContext?.signature ?? STALE_CONFIGURED_BOT_REVIEW_REASON_CODE);
+        (conversationResolutionBlocker?.failureContext.signature ??
+          args.failureContext?.signature ??
+          STALE_CONFIGURED_BOT_REVIEW_REASON_CODE);
     if (replyHandled || recoveryResult.status === "replied" || recoveryResult.status === "resolved") {
       return repliedRecord;
     }

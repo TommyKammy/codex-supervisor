@@ -500,6 +500,21 @@ export function buildActiveDetailedStatusLines(
     lines.push(
       `review_threads bot_pending=${pendingBotReviewThreads(config, activeRecord, pr, reviewThreads).length} bot_unresolved=${unresolvedConfiguredBotThreads.length} manual=${manualReviewThreads(config, reviewThreads).length}`,
     );
+    const unresolvedOutdatedConfiguredBotThreads = configuredBotReviewThreads(config, reviewThreads)
+      .filter((thread) => !thread.isResolved && thread.isOutdated);
+    const checkSummary = summarizeChecks(checks);
+    if (
+      pr.mergeStateStatus === "BLOCKED" &&
+      pr.mergeable === "MERGEABLE" &&
+      !checkSummary.hasPending &&
+      !checkSummary.hasFailing &&
+      manualReviewThreads(config, reviewThreads).length === 0 &&
+      unresolvedOutdatedConfiguredBotThreads.length > 0
+    ) {
+      lines.push(
+        `conversation_resolution_blocker state=blocked outdated_configured_bot_threads=${unresolvedOutdatedConfiguredBotThreads.length} thread_ids=${unresolvedOutdatedConfiguredBotThreads.map((thread) => thread.id).sort().join(",")}`,
+      );
+    }
     lines.push(
       `review_follow_up state=${reviewFollowUpState} remaining=${activeRecord.review_follow_up_remaining ?? 0} head_sha=${activeRecord.review_follow_up_head_sha ?? "none"} actionable=${actionableBotReviewThreads(config, activeRecord, pr, reviewThreads).length}`,
     );

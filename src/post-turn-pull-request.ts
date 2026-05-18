@@ -975,13 +975,17 @@ export async function handlePostTurnPullRequestTransitionsPhase(
     summarizeChecks: args.summarizeChecks,
   });
   const staleReviewBotReplySignature =
-    effectiveFailureContext?.signature ?? trackedPrStatusComments.TRACKED_PR_STATUS_COMMENT_REASON_CODE_STALE_REVIEW_BOT;
+    record.last_stale_review_bot_reply_signature ??
+    effectiveFailureContext?.signature ??
+    trackedPrStatusComments.TRACKED_PR_STATUS_COMMENT_REASON_CODE_STALE_REVIEW_BOT;
   const shouldRefreshAfterReplyAndResolve =
     (config.staleConfiguredBotReviewPolicy === "reply_and_resolve" ||
       config.verifiedNoSourceChangeReviewThreadAutoResolve === true ||
       config.verifiedCurrentHeadRepairReviewThreadAutoResolve === true) &&
-    record.state === "blocked" &&
-    (record.blocked_reason === "stale_review_bot" || record.blocked_reason === "manual_review") &&
+    (record.state === "blocked" || record.state === "pr_open") &&
+    (record.blocked_reason === "stale_review_bot" ||
+      record.blocked_reason === "manual_review" ||
+      record.state === "pr_open") &&
     record.last_stale_review_bot_reply_head_sha === postReady.pr.headRefOid &&
     record.last_stale_review_bot_reply_signature === staleReviewBotReplySignature &&
     hasResolvedAllStaleConfiguredBotThreads({
