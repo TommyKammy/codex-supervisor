@@ -355,6 +355,122 @@ test("determineTrackedPrRepeatFailureDisposition stays retryable over the repeat
   assert.match(result.progressSnapshot, /"headRefOid":"head-new-366"/);
 });
 
+test("determineTrackedPrRepeatFailureDisposition stays retryable when stale review metadata repeats after repair verification progress", () => {
+  const record = createRecord({
+    last_failure_signature: "stalled-bot:thread-1",
+    repeated_failure_signature_count: 4,
+    last_head_sha: "head-same-366",
+    processed_review_thread_ids: ["thread-1@head-same-366"],
+    processed_review_thread_fingerprints: ["thread-1@head-same-366#comment-1"],
+    timeline_artifacts: [
+      {
+        type: "verification_result",
+        gate: "codex_turn",
+        command: "npm test -- src/supervisor/supervisor-lifecycle.test.ts",
+        head_sha: "head-same-366",
+        outcome: "passed",
+        remediation_target: null,
+        next_action: "continue",
+        summary: "Focused review repair regression passed.",
+        recorded_at: "2026-03-13T01:05:00Z",
+      },
+    ],
+    last_tracked_pr_progress_snapshot: JSON.stringify({
+      headRefOid: "head-same-366",
+      reviewDecision: "CHANGES_REQUESTED",
+      mergeStateStatus: "CLEAN",
+      copilotReviewState: null,
+      copilotReviewRequestedAt: null,
+      copilotReviewArrivedAt: null,
+      configuredBotCurrentHeadObservedAt: null,
+      configuredBotCurrentHeadStatusState: null,
+      currentHeadCiGreenAt: null,
+      configuredBotRateLimitedAt: null,
+      configuredBotDraftSkipAt: null,
+      configuredBotTopLevelReviewStrength: null,
+      configuredBotTopLevelReviewSubmittedAt: null,
+      checks: ["build:pass:SUCCESS:CI"],
+      unresolvedReviewThreadIds: ["thread-1"],
+      unresolvedReviewThreadFingerprints: ["thread-1#comment-1"],
+      unresolvedReviewThreadSourceAnchors: ["thread-1:src/file.ts:12"],
+      unresolvedReviewThreadClusterSignatures: ["unknown:please address this:thread-1"],
+      processedReviewThreadIds: [],
+      processedReviewThreadFingerprints: [],
+      verificationProbeOutcomes: [],
+    }),
+  });
+  const pr = createPullRequest({
+    headRefOid: "head-same-366",
+    reviewDecision: "CHANGES_REQUESTED",
+    mergeStateStatus: "CLEAN",
+  });
+  const reviewThreads = [createReviewThread()];
+
+  const result = determineTrackedPrRepeatFailureDisposition({
+    record,
+    config: createConfig({ sameFailureSignatureRepeatLimit: 3 }),
+    pr,
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads,
+  });
+
+  assert.equal(result.shouldStop, false);
+  assert.equal(result.decision, "retry_on_progress");
+  assert.match(result.progressSummary ?? "", /processed_review_thread_fingerprints_changed/);
+  assert.match(result.progressSummary ?? "", /verification_probe_outcome_changed/);
+});
+
+test("determineTrackedPrRepeatFailureDisposition stops progress-aware retries at a bounded extension limit", () => {
+  const record = createRecord({
+    last_failure_signature: "stalled-bot:thread-1",
+    repeated_failure_signature_count: 6,
+    last_head_sha: "head-same-366",
+    processed_review_thread_ids: ["thread-1@head-same-366"],
+    processed_review_thread_fingerprints: ["thread-1@head-same-366#comment-1"],
+    last_tracked_pr_progress_snapshot: JSON.stringify({
+      headRefOid: "head-same-366",
+      reviewDecision: "CHANGES_REQUESTED",
+      mergeStateStatus: "CLEAN",
+      copilotReviewState: null,
+      copilotReviewRequestedAt: null,
+      copilotReviewArrivedAt: null,
+      configuredBotCurrentHeadObservedAt: null,
+      configuredBotCurrentHeadStatusState: null,
+      currentHeadCiGreenAt: null,
+      configuredBotRateLimitedAt: null,
+      configuredBotDraftSkipAt: null,
+      configuredBotTopLevelReviewStrength: null,
+      configuredBotTopLevelReviewSubmittedAt: null,
+      checks: ["build:pass:SUCCESS:CI"],
+      unresolvedReviewThreadIds: ["thread-1"],
+      unresolvedReviewThreadFingerprints: ["thread-1#comment-1"],
+      unresolvedReviewThreadSourceAnchors: ["thread-1:src/file.ts:12"],
+      unresolvedReviewThreadClusterSignatures: ["unknown:please address this:thread-1"],
+      processedReviewThreadIds: [],
+      processedReviewThreadFingerprints: [],
+      verificationProbeOutcomes: [],
+    }),
+  });
+  const pr = createPullRequest({
+    headRefOid: "head-same-366",
+    reviewDecision: "CHANGES_REQUESTED",
+    mergeStateStatus: "CLEAN",
+  });
+
+  const result = determineTrackedPrRepeatFailureDisposition({
+    record,
+    config: createConfig({ sameFailureSignatureRepeatLimit: 3 }),
+    pr,
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [createReviewThread()],
+  });
+
+  assert.equal(result.shouldStop, true);
+  assert.equal(result.decision, "stop_no_progress");
+  assert.match(result.progressSummary ?? "", /progress_extension_budget_exhausted/);
+  assert.match(result.progressSummary ?? "", /processed_review_thread_fingerprints_changed/);
+});
+
 test("determineTrackedPrRepeatFailureDisposition stops over the repeat limit when tracked PR progress did not advance", () => {
   const snapshot = JSON.stringify({
     headRefOid: "head-same-366",
@@ -373,6 +489,10 @@ test("determineTrackedPrRepeatFailureDisposition stops over the repeat limit whe
     checks: ["build:pass:SUCCESS:CI"],
     unresolvedReviewThreadIds: [],
     unresolvedReviewThreadFingerprints: [],
+    unresolvedReviewThreadSourceAnchors: [],
+    processedReviewThreadIds: [],
+    processedReviewThreadFingerprints: [],
+    verificationProbeOutcomes: [],
   });
   const record = createRecord({
     last_failure_signature: "build (ubuntu-latest):fail",
