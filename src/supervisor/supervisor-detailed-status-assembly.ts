@@ -7,8 +7,10 @@ import {
   buildCodexConnectorP2P3PolicyDiagnostic,
   buildCodexConnectorPolicyBlockDiagnostic,
   configuredBotReviewFollowUpState,
+  evaluateCodexConnectorConvergencePolicy,
   formatCodexConnectorP2P3PolicyDiagnostic,
   formatCodexConnectorPolicyBlockDiagnostic,
+  latestReviewCommentAuthorIsAllowedBot,
 } from "../review-thread-reporting";
 import { formatWorkspaceRestoreStatusLine } from "../core/workspace";
 import {
@@ -51,6 +53,51 @@ import { isWorkstationLocalPathHygieneFailureSignature } from "../workstation-lo
 
 function unresolvedReviewThreads(reviewThreads: BuildDetailedStatusModelArgs["reviewThreads"]) {
   return reviewThreads.filter((thread) => !thread.isResolved && !thread.isOutdated);
+}
+
+function buildConversationResolutionBlockerStatusLine(args: Pick<
+  BuildDetailedStatusModelArgs,
+  "config" | "checks" | "reviewThreads" | "manualReviewThreads" | "configuredBotReviewThreads" | "summarizeChecks"
+> & {
+  pr: NonNullable<BuildDetailedStatusModelArgs["pr"]>;
+}): string | null {
+  const checkSummary = args.summarizeChecks(args.checks);
+  if (
+    args.pr.mergeStateStatus !== "BLOCKED" ||
+    args.pr.mergeable !== "MERGEABLE" ||
+    !args.pr.configuredBotCurrentHeadObservedAt ||
+    args.pr.configuredBotCurrentHeadStatusState !== "SUCCESS" ||
+    checkSummary.hasPending ||
+    checkSummary.hasFailing
+  ) {
+    return null;
+  }
+
+  const unresolvedThreads = args.reviewThreads.filter((thread) => !thread.isResolved);
+  if (unresolvedThreads.length === 0 || args.manualReviewThreads(args.config, unresolvedThreads).length > 0) {
+    return null;
+  }
+
+  const configuredThreads = args.configuredBotReviewThreads(args.config, unresolvedThreads);
+  if (
+    configuredThreads.length !== unresolvedThreads.length ||
+    configuredThreads.some(
+      (thread) => !thread.isOutdated || !latestReviewCommentAuthorIsAllowedBot(args.config, thread),
+    )
+  ) {
+    return null;
+  }
+
+  const codexConnectorPolicy = evaluateCodexConnectorConvergencePolicy(args.config, args.pr, configuredThreads);
+  if (codexConnectorPolicy && codexConnectorPolicy.mergeEffect !== "ready") {
+    return null;
+  }
+
+  return [
+    "conversation_resolution_blocker state=blocked",
+    `outdated_configured_bot_threads=${configuredThreads.length}`,
+    `thread_ids=${configuredThreads.map((thread) => thread.id).sort().join(",")}`,
+  ].join(" ");
 }
 
 export function formatStaleReviewResidueOperatorDiagnostic(
@@ -500,6 +547,18 @@ export function buildActiveDetailedStatusLines(
     lines.push(
       `review_threads bot_pending=${pendingBotReviewThreads(config, activeRecord, pr, reviewThreads).length} bot_unresolved=${unresolvedConfiguredBotThreads.length} manual=${manualReviewThreads(config, reviewThreads).length}`,
     );
+    const conversationResolutionBlockerLine = buildConversationResolutionBlockerStatusLine({
+      config,
+      pr,
+      checks,
+      reviewThreads,
+      manualReviewThreads,
+      configuredBotReviewThreads,
+      summarizeChecks,
+    });
+    if (conversationResolutionBlockerLine) {
+      lines.push(conversationResolutionBlockerLine);
+    }
     lines.push(
       `review_follow_up state=${reviewFollowUpState} remaining=${activeRecord.review_follow_up_remaining ?? 0} head_sha=${activeRecord.review_follow_up_head_sha ?? "none"} actionable=${actionableBotReviewThreads(config, activeRecord, pr, reviewThreads).length}`,
     );

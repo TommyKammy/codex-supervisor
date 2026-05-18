@@ -6506,6 +6506,212 @@ test("handlePostTurnPullRequestTransitionsPhase comments when merge readiness st
   assert.match(commentBodies[0] ?? "", /<!-- codex-supervisor:tracked-pr-status-comment issue=102 pr=116 kind=status -->/);
 });
 
+test("handlePostTurnPullRequestTransitionsPhase diagnoses outdated configured-bot conversations before check mismatch", async () => {
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+  });
+  const issue = createIssue({ title: "Diagnose conversation resolution blocker" });
+  const pr = createPullRequest({
+    title: "Tracked PR conversation resolution blocker",
+    number: 135,
+    isDraft: false,
+    headRefOid: "head-135",
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+    configuredBotCurrentHeadObservedAt: "2026-05-18T01:00:00Z",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
+  });
+  const reviewThreads = [
+    createReviewThread({
+      id: "thread-outdated-1",
+      isOutdated: true,
+      comments: {
+        nodes: [
+          {
+            id: "comment-outdated-1",
+            body: "Outdated Codex thread.",
+            createdAt: "2026-05-18T00:50:00Z",
+            url: "https://example.test/pr/135#discussion_r1",
+            author: {
+              login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  ];
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        issue_number: 102,
+        state: "waiting_ci",
+        pr_number: pr.number,
+        last_head_sha: pr.headRefOid,
+      }),
+    },
+  };
+  const commentBodies: string[] = [];
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: createNoopStateStore(),
+    github: createDefaultGithub({
+      addIssueComment: async (_prNumber: number, body: string) => {
+        commentBodies.push(body);
+      },
+    }),
+    context: createPostTurnContext({
+      state,
+      record: state.issues["102"]!,
+      issue,
+      pr,
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+    }),
+    derivePullRequestLifecycleSnapshot: (recordForState) =>
+      createLifecycleSnapshot(recordForState, "pr_open", {
+        failureContext: null,
+        mergeLatencyVisibilityPatch: createPersistentMergeStagePatch(pr.headRefOid),
+      }),
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    blockedReasonFromReviewState: () => null,
+    summarizeChecks,
+    configuredBotReviewThreads: () => reviewThreads,
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runLocalCiCommand: async () => undefined,
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
+    loadOpenPullRequestSnapshot: async () => ({
+      pr,
+      checks: [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      reviewThreads,
+    }),
+  });
+
+  assert.equal(result.record.state, "pr_open");
+  assert.equal(commentBodies.length, 1);
+  assert.match(commentBodies[0] ?? "", /reason code: `conversation_resolution_blocked`/i);
+  assert.match(commentBodies[0] ?? "", /conversation_threads=thread-outdated-1/i);
+  assert.doesNotMatch(commentBodies[0] ?? "", /reason code: `required_check_mismatch`/i);
+});
+
+test("handlePostTurnPullRequestTransitionsPhase auto-resolves eligible outdated configured-bot conversations", async () => {
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    verifiedNoSourceChangeReviewThreadAutoResolve: true,
+  });
+  const issue = createIssue({ title: "Auto-resolve conversation resolution blocker" });
+  const pr = createPullRequest({
+    title: "Tracked PR conversation resolution blocker",
+    number: 135,
+    isDraft: false,
+    headRefOid: "head-135",
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+    configuredBotCurrentHeadObservedAt: "2026-05-18T01:00:00Z",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
+  });
+  const resolvedPr = createPullRequest({
+    ...pr,
+    mergeStateStatus: "CLEAN",
+  });
+  const reviewThreads = [
+    createReviewThread({
+      id: "thread-outdated-1",
+      isOutdated: true,
+      comments: {
+        nodes: [
+          {
+            id: "comment-outdated-1",
+            body: "Outdated Codex thread.",
+            createdAt: "2026-05-18T00:50:00Z",
+            url: "https://example.test/pr/135#discussion_r1",
+            author: {
+              login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  ];
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        issue_number: 102,
+        state: "pr_open",
+        pr_number: pr.number,
+        last_head_sha: pr.headRefOid,
+      }),
+    },
+  };
+  const replyCalls: string[] = [];
+  const resolveCalls: string[] = [];
+  const commentBodies: string[] = [];
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: createNoopStateStore(),
+    github: createDefaultGithub({
+      addIssueComment: async (_prNumber: number, body: string) => {
+        commentBodies.push(body);
+      },
+      replyToReviewThread: async (threadId: string) => {
+        replyCalls.push(threadId);
+      },
+      resolveReviewThread: async (threadId: string) => {
+        resolveCalls.push(threadId);
+      },
+    }),
+    context: createPostTurnContext({
+      state,
+      record: state.issues["102"]!,
+      issue,
+      pr,
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+    }),
+    derivePullRequestLifecycleSnapshot: (recordForState, snapshotPr) =>
+      createLifecycleSnapshot(recordForState, snapshotPr.mergeStateStatus === "CLEAN" ? "ready_to_merge" : "pr_open", {
+        failureContext: null,
+        mergeLatencyVisibilityPatch: createPersistentMergeStagePatch(snapshotPr.headRefOid),
+      }),
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    blockedReasonFromReviewState: () => null,
+    summarizeChecks,
+    configuredBotReviewThreads: () => reviewThreads,
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runLocalCiCommand: async () => undefined,
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
+    loadOpenPullRequestSnapshot: async () => ({
+      pr: replyCalls.length > 0 && resolveCalls.length > 0 ? resolvedPr : pr,
+      checks: [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      reviewThreads: replyCalls.length > 0 && resolveCalls.length > 0 ? [] : reviewThreads,
+    }),
+  });
+
+  assert.deepEqual(commentBodies, []);
+  assert.deepEqual(replyCalls, ["thread-outdated-1"]);
+  assert.deepEqual(resolveCalls, ["thread-outdated-1"]);
+  assert.equal(result.record.state, "ready_to_merge");
+});
+
 test("handlePostTurnPullRequestTransitionsPhase skips merge-stage sticky comments on the first clean-check observation", async () => {
   const config = createConfig();
   const issue = createIssue({ title: "Suppress first-observation merge-stage blocker comment" });
