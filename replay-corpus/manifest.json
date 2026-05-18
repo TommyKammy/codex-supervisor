@@ -72,6 +72,10 @@
     {
       "id": "current-head-success-clears-stale-handoff",
       "path": "cases/current-head-success-clears-stale-handoff"
+    },
+    {
+      "id": "codex-current-head-success-unresolved-must-fix",
+      "path": "cases/codex-current-head-success-unresolved-must-fix"
     }
   ]
 }

@@ -1,0 +1,6 @@
+{
+  "nextState": "blocked",
+  "shouldRunCodex": false,
+  "blockedReason": "stale_review_bot",
+  "failureSignature": "stalled-bot:thread-simulator-denylist|stalled-bot:thread-production-workflow|stalled-bot:thread-ad-hoc-exec|stalled-bot:thread-authoritative-claims|stalled-bot:thread-production-exclusion-default"
+}

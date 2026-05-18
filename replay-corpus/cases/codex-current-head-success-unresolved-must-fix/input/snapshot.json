@@ -1,0 +1,274 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-05-17T02:00:00Z",
+  "issue": {
+    "number": 8134,
+    "title": "Codex current-head success with unresolved must-fix threads",
+    "body": "Synthetic replay case for current-head Codex Connector success with unresolved must-fix inline threads.",
+    "url": "https://example.test/issues/8134",
+    "state": "OPEN",
+    "updatedAt": "2026-05-17T01:58:00Z"
+  },
+  "local": {
+    "record": {
+      "issue_number": 8134,
+      "state": "blocked",
+      "branch": "codex/issue-8134",
+      "pr_number": 9134,
+      "workspace": ".",
+      "journal_path": ".codex-supervisor/issues/8134/issue-journal.md",
+      "attempt_count": 8,
+      "implementation_attempt_count": 2,
+      "repair_attempt_count": 6,
+      "timeout_retry_count": 0,
+      "blocked_verification_retry_count": 0,
+      "repeated_blocker_count": 2,
+      "repeated_failure_signature_count": 0,
+      "blocked_reason": "stale_review_bot",
+      "last_error": "Current-head Codex Connector must-fix threads remained unresolved after a no-progress repair stop.",
+      "last_failure_kind": null,
+      "last_failure_context": {
+        "category": "manual",
+        "summary": "5 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
+        "signature": "previous-stalled-codex-thread-cluster",
+        "command": null,
+        "details": [
+          "processed_on_current_head=yes",
+          "current_head_review=success_comment_observed",
+          "repeat_stop=no_meaningful_tracked_pr_progress"
+        ],
+        "url": "https://example.test/pull/9134#discussion_r1",
+        "updated_at": "2026-05-17T01:57:30Z"
+      },
+      "last_failure_signature": "previous-stalled-codex-thread-cluster",
+      "last_head_sha": "head-pr1328-replay-final",
+      "last_tracked_pr_progress_snapshot": "{\"headRefOid\":\"head-pr1328-replay-final\",\"reviewDecision\":\"CHANGES_REQUESTED\",\"mergeStateStatus\":\"CLEAN\",\"copilotReviewState\":null,\"copilotReviewRequestedAt\":null,\"copilotReviewArrivedAt\":null,\"configuredBotCurrentHeadObservedAt\":\"2026-05-17T01:56:00Z\",\"configuredBotCurrentHeadStatusState\":\"SUCCESS\",\"currentHeadCiGreenAt\":\"2026-05-17T01:55:30Z\",\"configuredBotRateLimitedAt\":null,\"configuredBotDraftSkipAt\":null,\"configuredBotTopLevelReviewStrength\":\"blocking\",\"configuredBotTopLevelReviewSubmittedAt\":\"2026-05-17T01:56:00Z\",\"checks\":[\"focused replay verifier:pass:SUCCESS:verification\"],\"unresolvedReviewThreadIds\":[\"thread-ad-hoc-exec\",\"thread-authoritative-claims\",\"thread-production-exclusion-default\",\"thread-production-workflow\",\"thread-simulator-denylist\"],\"unresolvedReviewThreadFingerprints\":[\"thread-ad-hoc-exec#comment-ad-hoc-v1\",\"thread-authoritative-claims#comment-authoritative-v1\",\"thread-production-exclusion-default#comment-exclusion-v1\",\"thread-production-workflow#comment-workflow-v1\",\"thread-simulator-denylist#comment-denylist-v1\"]}",
+      "last_tracked_pr_progress_summary": "no_meaningful_tracked_pr_progress",
+      "last_tracked_pr_repeat_failure_decision": "stop_no_progress",
+      "review_wait_started_at": "2026-05-17T01:50:00Z",
+      "review_wait_head_sha": "head-pr1328-replay-final",
+      "provider_success_observed_at": "2026-05-17T01:56:00Z",
+      "provider_success_head_sha": "head-pr1328-replay-final",
+      "merge_readiness_last_evaluated_at": "2026-05-17T01:57:00Z",
+      "copilot_review_requested_observed_at": null,
+      "copilot_review_requested_head_sha": null,
+      "copilot_review_timed_out_at": null,
+      "copilot_review_timeout_action": null,
+      "copilot_review_timeout_reason": null,
+      "local_review_head_sha": "head-pr1328-replay-final",
+      "local_review_blocker_summary": null,
+      "local_review_summary_path": ".codex-supervisor/local-review/issue-8134/head-pr1328-replay-final.md",
+      "local_review_run_at": "2026-05-17T01:55:00Z",
+      "local_review_max_severity": "none",
+      "local_review_findings_count": 0,
+      "local_review_root_cause_count": 0,
+      "local_review_verified_max_severity": "none",
+      "local_review_verified_findings_count": 0,
+      "local_review_recommendation": "ready",
+      "local_review_degraded": false,
+      "last_local_review_signature": null,
+      "repeated_local_review_signature_count": 0,
+      "latest_local_ci_result": {
+        "outcome": "passed",
+        "summary": "Focused verifier passed on the current head.",
+        "ran_at": "2026-05-17T01:55:30Z",
+        "head_sha": "head-pr1328-replay-final",
+        "execution_mode": "structured",
+        "command": "npm test -- src/supervisor/replay-corpus-runner.test.ts",
+        "stderr_summary": null,
+        "failure_class": null,
+        "remediation_target": null,
+        "verifier_drift_hint": null
+      },
+      "processed_review_thread_ids": [
+        "thread-simulator-denylist@head-pr1328-replay-final",
+        "thread-production-workflow@head-pr1328-replay-final",
+        "thread-ad-hoc-exec@head-pr1328-replay-final",
+        "thread-authoritative-claims@head-pr1328-replay-final",
+        "thread-production-exclusion-default@head-pr1328-replay-final"
+      ],
+      "processed_review_thread_fingerprints": [
+        "thread-simulator-denylist@head-pr1328-replay-final#comment-denylist-v1",
+        "thread-production-workflow@head-pr1328-replay-final#comment-workflow-v1",
+        "thread-ad-hoc-exec@head-pr1328-replay-final#comment-ad-hoc-v1",
+        "thread-authoritative-claims@head-pr1328-replay-final#comment-authoritative-v1",
+        "thread-production-exclusion-default@head-pr1328-replay-final#comment-exclusion-v1"
+      ],
+      "updated_at": "2026-05-17T01:58:00Z"
+    },
+    "workspaceStatus": {
+      "branch": "codex/issue-8134",
+      "headSha": "head-pr1328-replay-final",
+      "hasUncommittedChanges": false,
+      "baseAhead": 5,
+      "baseBehind": 0,
+      "remoteBranchExists": true,
+      "remoteAhead": 0,
+      "remoteBehind": 0
+    }
+  },
+  "github": {
+    "pullRequest": {
+      "number": 9134,
+      "title": "Codex current-head success with unresolved must-fix threads",
+      "url": "https://example.test/pull/9134",
+      "state": "OPEN",
+      "createdAt": "2026-05-17T01:30:00Z",
+      "updatedAt": "2026-05-17T01:57:00Z",
+      "isDraft": false,
+      "reviewDecision": "CHANGES_REQUESTED",
+      "mergeStateStatus": "CLEAN",
+      "mergeable": "MERGEABLE",
+      "headRefName": "codex/issue-8134",
+      "headRefOid": "head-pr1328-replay-final",
+      "configuredBotCurrentHeadObservedAt": "2026-05-17T01:56:00Z",
+      "configuredBotCurrentHeadObservationSource": "codex_pr_success_comment",
+      "configuredBotCurrentHeadStatusState": "SUCCESS",
+      "currentHeadCiGreenAt": "2026-05-17T01:55:30Z",
+      "configuredBotTopLevelReviewStrength": "blocking",
+      "configuredBotTopLevelReviewSubmittedAt": "2026-05-17T01:56:00Z",
+      "mergedAt": null
+    },
+    "checks": [
+      {
+        "name": "focused replay verifier",
+        "state": "SUCCESS",
+        "bucket": "pass",
+        "workflow": "verification"
+      }
+    ],
+    "reviewThreads": [
+      {
+        "id": "thread-simulator-denylist",
+        "isResolved": false,
+        "isOutdated": false,
+        "path": "aegisops/simulator_truth.py",
+        "line": 42,
+        "comments": {
+          "nodes": [
+            {
+              "id": "comment-denylist-v1",
+              "body": "P1: The simulator production-truth denylist still allows launch evidence to be treated as production fact. This must remain blocked until the current-diff thread is resolved.",
+              "createdAt": "2026-05-17T01:54:10Z",
+              "url": "https://example.test/pull/9134#discussion_r1",
+              "author": {
+                "login": "chatgpt-codex-connector",
+                "typeName": "Bot"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "thread-production-workflow",
+        "isResolved": false,
+        "isOutdated": false,
+        "path": "aegisops/production_workflow.md",
+        "line": 88,
+        "comments": {
+          "nodes": [
+            {
+              "id": "comment-workflow-v1",
+              "body": "P2: The production workflow wording still delegates launch authority to the simulator path. The current-head success comment does not resolve this inline must-fix thread.",
+              "createdAt": "2026-05-17T01:54:20Z",
+              "url": "https://example.test/pull/9134#discussion_r2",
+              "author": {
+                "login": "chatgpt-codex-connector",
+                "typeName": "Bot"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "thread-ad-hoc-exec",
+        "isResolved": false,
+        "isOutdated": false,
+        "path": "aegisops/runbook.md",
+        "line": 121,
+        "comments": {
+          "nodes": [
+            {
+              "id": "comment-ad-hoc-v1",
+              "body": "P2: Direct ad-hoc execution wording remains in the current diff and bypasses the governed launch path.",
+              "createdAt": "2026-05-17T01:54:30Z",
+              "url": "https://example.test/pull/9134#discussion_r3",
+              "author": {
+                "login": "chatgpt-codex-connector",
+                "typeName": "Bot"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "thread-authoritative-claims",
+        "isResolved": false,
+        "isOutdated": false,
+        "path": "aegisops/source_health.py",
+        "line": 156,
+        "comments": {
+          "nodes": [
+            {
+              "id": "comment-authoritative-v1",
+              "body": "P2: Standalone authoritative claims still appear without an explicit authoritative source binding.",
+              "createdAt": "2026-05-17T01:54:40Z",
+              "url": "https://example.test/pull/9134#discussion_r4",
+              "author": {
+                "login": "chatgpt-codex-connector",
+                "typeName": "Bot"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "thread-production-exclusion-default",
+        "isResolved": false,
+        "isOutdated": false,
+        "path": "aegisops/config_defaults.py",
+        "line": 203,
+        "comments": {
+          "nodes": [
+            {
+              "id": "comment-exclusion-v1",
+              "body": "P1: The production_exclusion default mismatch can still let excluded production sources pass as enabled.",
+              "createdAt": "2026-05-17T01:54:50Z",
+              "url": "https://example.test/pull/9134#discussion_r5",
+              "author": {
+                "login": "chatgpt-codex-connector",
+                "typeName": "Bot"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "decision": {
+    "nextState": "blocked",
+    "shouldRunCodex": false,
+    "blockedReason": "stale_review_bot",
+    "failureContext": {
+      "category": "manual",
+      "summary": "5 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
+      "signature": "stalled-bot:thread-simulator-denylist|stalled-bot:thread-production-workflow|stalled-bot:thread-ad-hoc-exec|stalled-bot:thread-authoritative-claims|stalled-bot:thread-production-exclusion-default",
+      "command": null,
+      "details": [
+        "reviewer=chatgpt-codex-connector file=aegisops/simulator_truth.py line=42 p_severity=P1 processed_on_current_head=yes",
+        "reviewer=chatgpt-codex-connector file=aegisops/production_workflow.md line=88 p_severity=P2 processed_on_current_head=yes",
+        "reviewer=chatgpt-codex-connector file=aegisops/runbook.md line=121 p_severity=P2 processed_on_current_head=yes",
+        "reviewer=chatgpt-codex-connector file=aegisops/source_health.py line=156 p_severity=P2 processed_on_current_head=yes",
+        "reviewer=chatgpt-codex-connector file=aegisops/config_defaults.py line=203 p_severity=P1 processed_on_current_head=yes"
+      ],
+      "url": "https://example.test/pull/9134#discussion_r1",
+      "updated_at": "2026-05-17T02:00:00.000Z"
+    }
+  },
+  "operatorSummary": {
+    "latestRecoverySummary": "latest_recovery issue=#8134 reason=stale_review_bot detail=current-head success is not merge-ready while must-fix threads remain unresolved",
+    "retrySummary": "repair_attempts=6 tracked_pr_repeat=stop_no_progress",
+    "recoveryLoopSummary": null,
+    "activityContext": null
+  }
+}

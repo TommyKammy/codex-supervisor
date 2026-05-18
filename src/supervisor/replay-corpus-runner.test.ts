@@ -390,6 +390,7 @@ test("runReplayCorpus replays the checked-in PR lifecycle safety cases without m
     "prompt-injection-combined-github-text-boundary",
     "clustered-codex-review-repair-convergence",
     "current-head-success-clears-stale-handoff",
+    "codex-current-head-success-unresolved-must-fix",
   ]);
 });
 

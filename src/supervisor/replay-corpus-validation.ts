@@ -71,6 +71,7 @@ const TIMELINE_ARTIFACT_GATES = [
 const TIMELINE_ARTIFACT_OUTCOMES = ["passed", "failed", "not_configured", "repair_queued"] as const;
 const COPILOT_REVIEW_STATES = ["not_requested", "requested", "arrived"] as const;
 const CONFIGURED_BOT_TOP_LEVEL_REVIEW_STRENGTHS = ["nitpick_only", "blocking"] as const;
+const TRACKED_PR_REPEAT_FAILURE_DECISIONS = ["retry_on_progress", "stop_no_progress"] as const;
 
 export function validationError(message: string): Error {
   return new Error(`Invalid replay corpus: ${message}`);
@@ -412,6 +413,19 @@ function validateLocalRecord(raw: unknown, context: string): ReplayCorpusInputSn
         : validateFailureContext(record.last_failure_context, `${context} last_failure_context`),
     last_failure_signature: expectNullableString(record.last_failure_signature, `${context} last_failure_signature`),
     last_head_sha: expectNullableString(record.last_head_sha, `${context} last_head_sha`),
+    last_tracked_pr_progress_snapshot: expectOptionalNullableString(
+      record.last_tracked_pr_progress_snapshot,
+      `${context} last_tracked_pr_progress_snapshot`,
+    ),
+    last_tracked_pr_progress_summary: expectOptionalNullableString(
+      record.last_tracked_pr_progress_summary,
+      `${context} last_tracked_pr_progress_summary`,
+    ),
+    last_tracked_pr_repeat_failure_decision: expectOptionalNullableEnum(
+      record.last_tracked_pr_repeat_failure_decision,
+      `${context} last_tracked_pr_repeat_failure_decision`,
+      TRACKED_PR_REPEAT_FAILURE_DECISIONS,
+    ),
     review_wait_started_at: expectNullableString(record.review_wait_started_at, `${context} review_wait_started_at`),
     review_wait_head_sha: expectNullableString(record.review_wait_head_sha, `${context} review_wait_head_sha`),
     provider_success_observed_at: expectNullableString(
@@ -636,6 +650,14 @@ function validatePullRequest(raw: unknown, context: string): ReplayCorpusInputSn
     configuredBotCurrentHeadObservedAt: expectOptionalNullableString(
       pullRequest.configuredBotCurrentHeadObservedAt,
       `${context} configuredBotCurrentHeadObservedAt`,
+    ),
+    configuredBotCurrentHeadObservationSource: expectOptionalNullableString(
+      pullRequest.configuredBotCurrentHeadObservationSource,
+      `${context} configuredBotCurrentHeadObservationSource`,
+    ),
+    configuredBotCurrentHeadStatusState: expectOptionalNullableString(
+      pullRequest.configuredBotCurrentHeadStatusState,
+      `${context} configuredBotCurrentHeadStatusState`,
     ),
     currentHeadCiGreenAt: expectOptionalNullableString(
       pullRequest.currentHeadCiGreenAt,
