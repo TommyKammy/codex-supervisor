@@ -358,6 +358,7 @@ export function applyConfiguredBotReviewSummary(
     configuredBotCurrentHeadObservedAt: summary?.currentHeadObservedAt ?? null,
     configuredBotCurrentHeadObservationSource: summary?.currentHeadObservationSource ?? null,
     configuredBotCurrentHeadStatusState: summary?.currentHeadStatusState ?? null,
+    configuredBotLatestReviewedCommitSha: summary?.latestReviewedCommitSha ?? null,
     currentHeadCiGreenAt: summary?.currentHeadCiGreenAt ?? null,
     configuredBotRateLimitedAt: summary?.rateLimitWarningAt ?? null,
     configuredBotDraftSkipAt: summary?.draftSkipAt ?? null,

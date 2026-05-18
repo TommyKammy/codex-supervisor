@@ -722,6 +722,33 @@ test("buildConfiguredBotReviewSummary records the latest configured-bot observat
   });
 });
 
+test("buildConfiguredBotReviewSummary extracts Codex Connector reviewed commit from review body", () => {
+  const facts: CopilotReviewLifecycleFacts = {
+    reviewRequests: [],
+    reviews: [
+      {
+        authorLogin: "chatgpt-codex-connector",
+        submittedAt: "2026-05-18T22:30:16Z",
+        commitOid: "github-review-commit",
+        state: "CHANGES_REQUESTED",
+        body: "Review complete.\n\nReviewed commit: 67e4cf0255342591d1b6410cae5126c4a4a40427",
+      },
+    ],
+    comments: [],
+    issueComments: [],
+    timeline: [],
+  };
+
+  const summary = buildConfiguredBotReviewSummary(
+    facts,
+    ["chatgpt-codex-connector"],
+    "c171be8a7f6e27d18eeef27cf27fd34c33371508",
+  );
+
+  assert.equal(summary.latestReviewedCommitSha, "67e4cf0255342591d1b6410cae5126c4a4a40427");
+  assert.equal(summary.currentHeadObservedAt, null);
+});
+
 test("buildConfiguredBotReviewSummary treats summary-only configured-bot reviews on the current head as observations", () => {
   const facts: CopilotReviewLifecycleFacts = {
     reviewRequests: [],

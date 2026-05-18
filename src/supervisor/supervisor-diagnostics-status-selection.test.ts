@@ -577,6 +577,127 @@ test("status reports Codex Connector P1 policy blocks with thread diagnostics", 
   assert.doesNotMatch(status, /^codex_connector_policy_block .*severity=nitpick_only/m);
 });
 
+test("status waits for current-head Codex review when non-outdated threads came from a stale review commit", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const issueNumber = 140;
+  const prNumber = 144;
+  const branch = branchName(fixture.config, issueNumber);
+  const currentHead = "c171be8a7f6e27d18eeef27cf27fd34c33371508";
+  const staleReviewHead = "67e4cf0255342591d1b6410cae5126c4a4a40427";
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        branch,
+        pr_number: prNumber,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        last_head_sha: currentHead,
+        blocked_reason: "manual_review",
+        last_error: "GitHub is blocked by configured-bot review conversations.",
+        provider_success_head_sha: staleReviewHead,
+        provider_success_observed_at: "2026-05-18T22:30:16Z",
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const pr = createPullRequest({
+    number: prNumber,
+    headRefName: branch,
+    headRefOid: currentHead,
+    isDraft: false,
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-05-18T22:40:00Z",
+    configuredBotCurrentHeadObservedAt: null,
+    configuredBotLatestReviewedCommitSha: staleReviewHead,
+    configuredBotTopLevelReviewStrength: "blocking",
+    configuredBotTopLevelReviewSubmittedAt: "2026-05-18T22:30:16Z",
+    requiredConversationResolution: {
+      state: "enabled",
+      source: "branch_protection",
+      details: ["required_conversation_resolution=true"],
+    },
+  });
+  const staleCommitThreads = [
+    {
+      id: "PRRT_kwDOSfC_1M6C-80K",
+      isResolved: false,
+      isOutdated: false,
+      path: "src/app.ts",
+      line: 120,
+      comments: {
+        nodes: [
+          {
+            id: "comment-stale-1",
+            body: "P1: Map writeback DB constraint failures to a 4xx response.",
+            createdAt: "2026-05-18T22:31:00Z",
+            url: "https://example.test/pr/144#discussion_r1",
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    },
+    {
+      id: "PRRT_kwDOSfC_1M6C-80N",
+      isResolved: false,
+      isOutdated: false,
+      path: "openapi/hrcore.openapi.json",
+      line: 400,
+      comments: {
+        nodes: [
+          {
+            id: "comment-stale-2",
+            body: "P2: Declare 400 responses for writeback validation in OpenAPI.",
+            createdAt: "2026-05-18T22:32:00Z",
+            url: "https://example.test/pr/144#discussion_r2",
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    },
+  ];
+
+  const supervisor = new Supervisor({
+    ...fixture.config,
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+  });
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [],
+    listAllIssues: async () => [],
+    getPullRequestIfExists: async () => pr,
+    resolvePullRequestForBranch: async () => pr,
+    getChecks: async () => [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => staleCommitThreads,
+  };
+
+  const status = await supervisor.status({ why: true });
+  assert.match(
+    status,
+    /^codex_connector_convergence status=stale_review_commit_residue provider=codex current_head_sha=c171be8a7f6e27d18eeef27cf27fd34c33371508 current_head_observed_at=none latest_signal_head_sha=67e4cf0255342591d1b6410cae5126c4a4a40427 highest_severity=none finding_count=0 merge_effect=blocked next_action=wait_for_current_head_signal stale_review_commit_threads=2 stale_review_commit_thread_ids=PRRT_kwDOSfC_1M6C-80K,PRRT_kwDOSfC_1M6C-80N$/m,
+  );
+  assert.match(
+    status,
+    /^codex_connector_operator_diagnostic interpretation=current_head_review_pending_with_stale_threads current_head_sha=c171be8a7f6e27d18eeef27cf27fd34c33371508 latest_configured_bot_review_sha=67e4cf0255342591d1b6410cae5126c4a4a40427 current_head_review_signal=missing actionable_current_diff_threads=0 stale_review_commit_threads=2 stale_review_commit_thread_ids=PRRT_kwDOSfC_1M6C-80K,PRRT_kwDOSfC_1M6C-80N next_action=wait_for_current_head_signal$/m,
+  );
+  assert.doesNotMatch(status, /^codex_connector_operator_diagnostic interpretation=actionable_current_diff /m);
+  assert.doesNotMatch(status, /^codex_connector_policy_block /m);
+});
+
 test("status surfaces host-migration path repair and journal rehydration from the canonical local journal", async (t) => {
   const fixture = await createSupervisorFixture();
   t.after(async () => {

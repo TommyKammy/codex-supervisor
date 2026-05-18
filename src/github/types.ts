@@ -41,6 +41,7 @@ export interface GitHubPullRequest {
   configuredBotCurrentHeadObservedAt?: string | null;
   configuredBotCurrentHeadObservationSource?: string | null;
   configuredBotCurrentHeadStatusState?: string | null;
+  configuredBotLatestReviewedCommitSha?: string | null;
   currentHeadCiGreenAt?: string | null;
   configuredBotRateLimitedAt?: string | null;
   configuredBotDraftSkipAt?: string | null;

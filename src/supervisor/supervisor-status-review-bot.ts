@@ -12,6 +12,7 @@ import { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, Supe
 import { localReviewDegradedNeedsBlock } from "../review-handling";
 import {
   codexConnectorMustFixReviewThreads,
+  codexConnectorStaleReviewCommitThreads,
   evaluateCodexConnectorConvergencePolicy,
 } from "../review-thread-reporting";
 import { classifyStaleReviewBotRecoverability, recoverabilityStatusToken } from "./stale-diagnostic-recoverability";
@@ -444,8 +445,12 @@ export function formatCodexConnectorConvergenceDiagnostic(args: {
   }
 
   const currentHeadSha = args.pr.headRefOid;
+  const staleReviewCommitThreads = codexConnectorStaleReviewCommitThreads(args.pr, args.reviewThreads);
+  const staleReviewCommitThreadIds = staleReviewCommitThreads.map((thread) => thread.id).join(",");
   const staleSignalHeadSha =
-    args.record.provider_success_head_sha && args.record.provider_success_head_sha !== currentHeadSha
+    args.pr.configuredBotLatestReviewedCommitSha && args.pr.configuredBotLatestReviewedCommitSha !== currentHeadSha
+      ? args.pr.configuredBotLatestReviewedCommitSha
+      : args.record.provider_success_head_sha && args.record.provider_success_head_sha !== currentHeadSha
       ? args.record.provider_success_head_sha
       : args.record.external_review_head_sha && args.record.external_review_head_sha !== currentHeadSha
         ? args.record.external_review_head_sha
@@ -469,11 +474,12 @@ export function formatCodexConnectorConvergenceDiagnostic(args: {
   const hasCurrentHeadProviderSuccess = Boolean(
     args.record.provider_success_observed_at && args.record.provider_success_head_sha === currentHeadSha,
   );
-  const findingCount = policy.findingCount;
-  const highestSeverity = policy.highestSeverity;
+  const findingCount = staleReviewCommitThreads.length > 0 ? 0 : policy.findingCount;
+  const highestSeverity = staleReviewCommitThreads.length > 0 ? "none" : policy.highestSeverity;
 
   let status:
     | "contradictory_evidence"
+    | "stale_review_commit_residue"
     | "stale_head"
     | "repairing_must_fix"
     | "re_requested_review"
@@ -492,7 +498,11 @@ export function formatCodexConnectorConvergenceDiagnostic(args: {
     | "merge_or_follow_up_nitpicks"
     | "merge_ready";
 
-  if (hasCurrentHeadProviderSuccess && policy.outcome !== "converged" && policy.outcome !== "nitpick_only") {
+  if (staleReviewCommitThreads.length > 0 && policy.outcome === "must_fix_remaining") {
+    status = "stale_review_commit_residue";
+    mergeEffect = "blocked";
+    nextAction = "wait_for_current_head_signal";
+  } else if (hasCurrentHeadProviderSuccess && policy.outcome !== "converged" && policy.outcome !== "nitpick_only") {
     status = "contradictory_evidence";
     nextAction = "fail_closed_inspect_connector_state";
   } else if (staleSignalHeadSha) {
@@ -533,6 +543,12 @@ export function formatCodexConnectorConvergenceDiagnostic(args: {
     `finding_count=${findingCount}`,
     `merge_effect=${mergeEffect}`,
     `next_action=${nextAction}`,
+    ...(staleReviewCommitThreads.length > 0
+      ? [
+          `stale_review_commit_threads=${staleReviewCommitThreads.length}`,
+          `stale_review_commit_thread_ids=${staleReviewCommitThreadIds}`,
+        ]
+      : []),
   ].join(" ");
 }
 
@@ -559,13 +575,16 @@ export function formatCodexConnectorOperatorDiagnostic(args: {
   }
 
   const currentHeadSha = args.pr.headRefOid;
-  const actionableCurrentDiffThreads = codexConnectorMustFixReviewThreads(args.reviewThreads).length;
+  const staleReviewCommitThreads = codexConnectorStaleReviewCommitThreads(args.pr, args.reviewThreads);
+  const staleReviewCommitThreadIds = staleReviewCommitThreads.map((thread) => thread.id).join(",");
+  const actionableCurrentDiffThreads =
+    staleReviewCommitThreads.length > 0 ? 0 : codexConnectorMustFixReviewThreads(args.reviewThreads).length;
   const currentHeadReviewSignal =
     policy.currentHeadObservedAt || args.record.provider_success_head_sha === currentHeadSha ? "observed" : "missing";
   const latestConfiguredBotReviewSha =
     currentHeadReviewSignal === "observed"
       ? currentHeadSha
-      : args.record.provider_success_head_sha ?? args.record.external_review_head_sha ?? "none";
+      : args.pr.configuredBotLatestReviewedCommitSha ?? args.record.provider_success_head_sha ?? args.record.external_review_head_sha ?? "none";
   const requestMatchesCurrentHead = Boolean(
     args.record.codex_connector_review_requested_observed_at &&
       args.record.codex_connector_review_requested_head_sha === currentHeadSha,
@@ -577,7 +596,9 @@ export function formatCodexConnectorOperatorDiagnostic(args: {
   );
   const waitWindow = configuredBotCurrentHeadSignalWaitWindow(args.config, args.pr);
   const nextAction =
-    policy.outcome === "must_fix_remaining"
+    staleReviewCommitThreads.length > 0
+      ? "wait_for_current_head_signal"
+      : policy.outcome === "must_fix_remaining"
       ? "repair_must_fix_findings"
       : requestMatchesCurrentHead || hydratedRequestMatchesCurrentHead
         ? "wait_for_requested_review"
@@ -585,7 +606,11 @@ export function formatCodexConnectorOperatorDiagnostic(args: {
           ? "wait_for_current_head_signal"
           : "request_current_head_review";
   const interpretation =
-    policy.outcome === "must_fix_remaining" ? "actionable_current_diff" : "review_gate_waiting";
+    staleReviewCommitThreads.length > 0
+      ? "current_head_review_pending_with_stale_threads"
+      : policy.outcome === "must_fix_remaining"
+        ? "actionable_current_diff"
+        : "review_gate_waiting";
 
   return [
     "codex_connector_operator_diagnostic",
@@ -594,6 +619,12 @@ export function formatCodexConnectorOperatorDiagnostic(args: {
     `latest_configured_bot_review_sha=${latestConfiguredBotReviewSha}`,
     `current_head_review_signal=${currentHeadReviewSignal}`,
     `actionable_current_diff_threads=${actionableCurrentDiffThreads}`,
+    ...(staleReviewCommitThreads.length > 0
+      ? [
+          `stale_review_commit_threads=${staleReviewCommitThreads.length}`,
+          `stale_review_commit_thread_ids=${staleReviewCommitThreadIds}`,
+        ]
+      : []),
     `next_action=${nextAction}`,
   ].join(" ");
 }

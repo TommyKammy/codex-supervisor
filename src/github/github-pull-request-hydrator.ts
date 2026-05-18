@@ -62,6 +62,7 @@ class ConfiguredBotReviewSummaryCache {
         currentHeadObservedAt: null,
         currentHeadObservationSource: null,
         currentHeadStatusState: null,
+        latestReviewedCommitSha: null,
         currentHeadCiGreenAt: null,
         rateLimitWarningAt: null,
         draftSkipAt: null,

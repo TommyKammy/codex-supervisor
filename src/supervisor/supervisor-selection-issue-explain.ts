@@ -485,7 +485,7 @@ export async function buildIssueExplainDto(
   const codexConnectorPolicyBlockSummary =
     record && pr && !trackedPrHydrationFailed
       ? (() => {
-        const diagnostic = buildCodexConnectorPolicyBlockDiagnostic(config, explainReviewThreads);
+        const diagnostic = buildCodexConnectorPolicyBlockDiagnostic(config, explainReviewThreads, pr);
         return diagnostic ? formatCodexConnectorPolicyBlockDiagnostic(diagnostic) : null;
       })()
       : null;
