@@ -932,7 +932,7 @@ test("status --why classifies current-head processed configured-bot success as s
   assert.doesNotMatch(status, /stale_review_bot_provider_signal_missing/);
 });
 
-test("status --why includes codex processed-residue missing-current-head review state", async (t) => {
+test("status --why fails closed for codex processed residue without current-head verification evidence", async (t) => {
   const fixture = await createSupervisorFixture();
   fixture.config.reviewBotLogins = [CODEX_CONNECTOR_REVIEW_BOT_LOGIN];
   const issueNumber = 398;
@@ -964,7 +964,7 @@ test("status --why includes codex processed-residue missing-current-head review 
   const trackedIssue: GitHubIssue = {
     number: issueNumber,
     title: "Status why classifies codex processed residue",
-    body: executionReadyBody("Classify Codex processed residue as missing current-head review metadata."),
+    body: executionReadyBody("Keep Codex processed residue blocked until current-head verification evidence exists."),
     createdAt: "2026-05-13T00:00:00Z",
     updatedAt: "2026-05-13T00:00:00Z",
     url: `https://example.test/issues/${issueNumber}`,
@@ -987,13 +987,14 @@ test("status --why includes codex processed-residue missing-current-head review 
 
   assert.match(
     status,
-    /^stale_review_bot_remediation issue=#398 pr=#498 reason=stale_review_bot code_ci=green current_head_sha=5de0d3844468d4a77cab512f8dcbe46171166c3a processed_on_current_head=yes classification=verified_no_source_change_pending_thread_resolution codex_current_head_review_state=missing review_thread_url=https:\/\/example\.test\/pr\/498#discussion_r398 manual_next_step=resolve_verified_configured_bot_threads_then_rerun_supervisor summary=verified_no_source_change_configured_bot_thread_resolution_pending$/m,
+    /^stale_review_bot_remediation issue=#398 pr=#498 reason=stale_review_bot code_ci=green current_head_sha=5de0d3844468d4a77cab512f8dcbe46171166c3a processed_on_current_head=yes classification=unknown_needs_operator codex_current_head_review_state=missing review_thread_url=https:\/\/example\.test\/pr\/498#discussion_r398 manual_next_step=inspect_exact_review_thread_then_resolve_or_leave_manual_note missing_probe_reason=current_head_verification_evidence_missing summary=code_or_ci_green_but_review_thread_metadata_unresolved$/m,
   );
   assert.match(
     status,
-    /^codex_connector_operator_diagnostic interpretation=stale_review_residue current_head_sha=5de0d3844468d4a77cab512f8dcbe46171166c3a latest_configured_bot_review_sha=5de0d3844468d4a77cab512f8dcbe46171166c3a current_head_review_signal=missing actionable_current_diff_threads=0 next_action=resolve_verified_configured_bot_threads_then_rerun_supervisor$/m,
+    /^codex_connector_operator_diagnostic interpretation=stale_review_residue current_head_sha=5de0d3844468d4a77cab512f8dcbe46171166c3a latest_configured_bot_review_sha=5de0d3844468d4a77cab512f8dcbe46171166c3a current_head_review_signal=missing actionable_current_diff_threads=unknown next_action=inspect_exact_review_thread_then_resolve_or_leave_manual_note$/m,
   );
-  assert.match(status, /^operator_action action=resolve_stale_review_bot source=stale_review_bot_remediation /m);
+  assert.doesNotMatch(status, /^operator_action action=resolve_stale_review_bot source=stale_review_bot_remediation /m);
+  assert.match(status, /^operator_action action=manual_review source=stale_review_bot_remediation /m);
 });
 
 test("status --why distinguishes codex verified current-head repair residue from no-source-change residue", async (t) => {

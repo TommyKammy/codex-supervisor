@@ -4398,7 +4398,7 @@ test("handlePostTurnPullRequestTransitionsPhase replies and resolves stale confi
   assert.equal(resolveCalls.length, 2);
 });
 
-test("handlePostTurnPullRequestTransitionsPhase resolves verified no-source-change Codex threads and requests current-head review when enabled", async () => {
+test("handlePostTurnPullRequestTransitionsPhase resolves verified no-source-change Codex threads after current-head success", async () => {
   const config = createConfig({
     reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
     configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
@@ -4416,11 +4416,26 @@ test("handlePostTurnPullRequestTransitionsPhase resolves verified no-source-chan
     commentBody: "P1: This finding was verified as no source change needed.",
     discussionUrl: "https://example.test/pr/1985#discussion_r1985",
   });
-  const pr = createPullRequest(scenario.pullRequestPatch);
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    configuredBotCurrentHeadObservedAt: "2026-05-15T00:17:00Z",
+  });
   const state: SupervisorStateFile = {
     activeIssueNumber: 102,
     issues: {
-      "102": createRecord(scenario.recordPatch),
+      "102": createRecord({
+        ...scenario.recordPatch,
+        latest_local_ci_result: {
+          outcome: "passed",
+          summary: "Focused verifier proved the current head no longer reproduces the finding.",
+          ran_at: "2026-05-15T00:18:00Z",
+          head_sha: "head-1985",
+          execution_mode: "shell",
+          command: "npm test -- src/post-turn-pull-request.test.ts",
+          failure_class: null,
+          remediation_target: null,
+        },
+      }),
     },
   };
   const reviewThreads = [scenario.reviewThread] satisfies ReviewThread[];
@@ -4494,9 +4509,7 @@ test("handlePostTurnPullRequestTransitionsPhase resolves verified no-source-chan
   assert.deepEqual(resolveCalls, ["thread-codex"]);
   assert.match(replyCalls[0]?.body ?? "", /reason=verified_no_source_change_auto_resolve/);
   assert.match(replyCalls[0]?.body ?? "", /issue=#102 pr=#1985 head=head-1985 thread=thread-codex/);
-  assert.equal(requestComments.length, 1);
-  assert.match(requestComments[0] ?? "", /@codex review/);
-  assert.match(requestComments[0] ?? "", /codex-supervisor:codex-connector-review-request issue=102 pr=1985 head=head-1985/);
+  assert.equal(requestComments.length, 0);
 });
 
 test("handlePostTurnPullRequestTransitionsPhase resolves verified current-head repair Codex threads only with the repair opt-in", async () => {

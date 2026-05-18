@@ -18,6 +18,7 @@ export interface StaleReviewBotRemediationDto {
   processedOnCurrentHead: "yes" | "no" | "unknown";
   codeCiState: "green" | "not_green" | "unknown";
   classification:
+    | "actionable_current_diff"
     | "metadata_only"
     | "metadata_only_missing_current_head_review"
     | "metadata_only_current_head_converged"
@@ -28,6 +29,7 @@ export interface StaleReviewBotRemediationDto {
   codexCurrentHeadReviewState: "observed" | "requested" | "missing" | "not_applicable";
   reviewThreadUrl: string | null;
   verificationEvidenceSummary: string | null;
+  missingProbeReason: string | null;
   manualNextStep: string;
   summary: string;
 }
@@ -53,6 +55,7 @@ interface StaleReviewBotClassification {
   classification: StaleReviewBotRemediationDto["classification"];
   summary: string;
   verificationEvidenceSummary?: string | null;
+  missingProbeReason?: string | null;
 }
 
 export function formatStaleReviewBotTokenValue(value: string): string {
@@ -207,22 +210,28 @@ function classifyCodexMetadataOnly(args: {
       (thread) => !hasProcessedReviewThread(args.record, args.pr, thread),
     );
     if (hasUnprocessedMustFix) {
-      return unresolvedWork;
+      return {
+        classification: "actionable_current_diff",
+        summary: STALE_REVIEW_BOT_SUMMARY,
+      };
     }
     const verificationEvidenceSummary = currentHeadVerificationEvidenceSummary(args.record, args.pr);
     if (verificationEvidenceSummary) {
       return {
-        classification: "verified_current_head_repair_pending_thread_resolution",
-        summary: VERIFIED_CURRENT_HEAD_REPAIR_SUMMARY,
+        classification: policy.currentHeadObservedAt
+          ? "verified_no_source_change_pending_thread_resolution"
+          : "verified_current_head_repair_pending_thread_resolution",
+        summary: policy.currentHeadObservedAt
+          ? VERIFIED_NO_SOURCE_CHANGE_SUMMARY
+          : VERIFIED_CURRENT_HEAD_REPAIR_SUMMARY,
         verificationEvidenceSummary,
       };
     }
-    if (!policy.currentHeadObservedAt) {
-      return {
-        classification: "verified_no_source_change_pending_thread_resolution",
-        summary: VERIFIED_NO_SOURCE_CHANGE_SUMMARY,
-      };
-    }
+    return {
+      classification: "unknown_needs_operator",
+      summary: STALE_REVIEW_BOT_SUMMARY,
+      missingProbeReason: "current_head_verification_evidence_missing",
+    };
   }
 
   if (policy.outcome === "converged" || policy.outcome === "nitpick_only") {
@@ -327,6 +336,7 @@ export function buildStaleReviewBotRemediation(args: {
     codexCurrentHeadReviewState,
     reviewThreadUrl: args.record.last_failure_context?.url ?? null,
     verificationEvidenceSummary: classification.verificationEvidenceSummary ?? null,
+    missingProbeReason: classification.missingProbeReason ?? null,
     manualNextStep:
       classification.classification === "verified_current_head_repair_pending_thread_resolution"
         ? VERIFIED_CURRENT_HEAD_REPAIR_MANUAL_NEXT_STEP
