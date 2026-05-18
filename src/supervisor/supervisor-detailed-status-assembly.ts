@@ -440,11 +440,11 @@ export function buildActiveDetailedStatusLines(
       }
       lines.push(formatStaleReviewResidueOperatorDiagnostic(staleReviewBotRemediation));
     }
-    const codexConnectorPolicyBlock = buildCodexConnectorPolicyBlockDiagnostic(config, reviewThreads);
+    const codexConnectorPolicyBlock = buildCodexConnectorPolicyBlockDiagnostic(config, reviewThreads, pr);
     if (codexConnectorPolicyBlock) {
       lines.push(formatCodexConnectorPolicyBlockDiagnostic(codexConnectorPolicyBlock));
     }
-    const codexConnectorP2P3Policy = buildCodexConnectorP2P3PolicyDiagnostic(config, reviewThreads);
+    const codexConnectorP2P3Policy = buildCodexConnectorP2P3PolicyDiagnostic(config, reviewThreads, pr);
     if (codexConnectorP2P3Policy) {
       lines.push(formatCodexConnectorP2P3PolicyDiagnostic(codexConnectorP2P3Policy));
     }

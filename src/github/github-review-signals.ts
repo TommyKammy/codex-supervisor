@@ -78,6 +78,7 @@ export interface ConfiguredBotReviewSummary {
   currentHeadObservedAt: string | null;
   currentHeadObservationSource: ConfiguredBotCurrentHeadObservationSource;
   currentHeadStatusState: string | null;
+  latestReviewedCommitSha: string | null;
   currentHeadCiGreenAt: string | null;
   rateLimitWarningAt: string | null;
   draftSkipAt: string | null;
@@ -493,6 +494,45 @@ function inferConfiguredBotTopLevelReviewSummary(
   return latestConfiguredReview;
 }
 
+function reviewedCommitFromBody(body: string | null | undefined): string | null {
+  const match = body?.match(/\bReviewed commit:\s*([0-9a-f]{7,40})\b/i);
+  return match?.[1] ?? null;
+}
+
+function inferLatestConfiguredBotReviewedCommitSha(
+  facts: CopilotReviewLifecycleFacts,
+  reviewBotLogins: string[],
+): string | null {
+  const configuredReviewBots = new Set(normalizeReviewBotLogins(reviewBotLogins));
+  if (configuredReviewBots.size === 0) {
+    return null;
+  }
+
+  let latest: { submittedAtMs: number; reviewedCommitSha: string | null } | null = null;
+  for (const review of facts.reviews) {
+    const authorLogin = normalizeLogin(review.authorLogin);
+    if (!authorLogin || !configuredReviewBots.has(authorLogin)) {
+      continue;
+    }
+
+    const submittedAtMs = parseTimestamp(review.submittedAt);
+    if (submittedAtMs === 0) {
+      continue;
+    }
+
+    const reviewedCommitSha = reviewedCommitFromBody(review.body) ?? review.commitOid?.trim() ?? null;
+    if (!reviewedCommitSha) {
+      continue;
+    }
+
+    if (!latest || submittedAtMs >= latest.submittedAtMs) {
+      latest = { submittedAtMs, reviewedCommitSha };
+    }
+  }
+
+  return latest?.reviewedCommitSha ?? null;
+}
+
 function inferConfiguredBotCurrentHeadObservation(
   facts: CopilotReviewLifecycleFacts,
   reviewBotLogins: string[],
@@ -768,7 +808,7 @@ export function buildConfiguredBotReviewSummary(
   codexConnectorReviewRequestIdentity?: CodexConnectorReviewRequestIdentity | null,
 ): ConfiguredBotReviewSummary {
   const currentHeadObservation = inferConfiguredBotCurrentHeadObservation(facts, reviewBotLogins, currentHeadOid);
-  return {
+  const summary = {
     lifecycle: inferCopilotReviewLifecycle(facts, reviewBotLogins),
     topLevelReview: inferConfiguredBotTopLevelReviewSummary(facts, reviewBotLogins),
     ...(codexConnectorReviewRequestIdentity
@@ -782,5 +822,10 @@ export function buildConfiguredBotReviewSummary(
     currentHeadCiGreenAt: inferCurrentHeadCiGreenAt(facts, currentHeadOid),
     rateLimitWarningAt: inferConfiguredBotRateLimitWarningAt(facts, reviewBotLogins),
     draftSkipAt: inferConfiguredBotDraftSkipAt(facts, reviewBotLogins),
-  };
+  } as ConfiguredBotReviewSummary;
+  Object.defineProperty(summary, "latestReviewedCommitSha", {
+    enumerable: false,
+    value: inferLatestConfiguredBotReviewedCommitSha(facts, reviewBotLogins),
+  });
+  return summary;
 }

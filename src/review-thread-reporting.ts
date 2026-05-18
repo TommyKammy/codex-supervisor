@@ -84,6 +84,41 @@ export function codexConnectorMustFixReviewThreads(reviewThreads: ReviewThread[]
   return reviewThreads.filter(isCodexConnectorMustFixReviewThread);
 }
 
+export function normalizeCommitShaForComparison(sha: string | null | undefined): string | null {
+  const normalized = sha?.trim();
+  return normalized ? normalized.toLowerCase() : null;
+}
+
+export function commitShasEqualForComparison(left: string | null | undefined, right: string | null | undefined): boolean {
+  const normalizedLeft = normalizeCommitShaForComparison(left);
+  const normalizedRight = normalizeCommitShaForComparison(right);
+  return Boolean(normalizedLeft && normalizedRight && normalizedLeft === normalizedRight);
+}
+
+export function commitShasDifferForComparison(left: string | null | undefined, right: string | null | undefined): boolean {
+  const normalizedLeft = normalizeCommitShaForComparison(left);
+  const normalizedRight = normalizeCommitShaForComparison(right);
+  return Boolean(normalizedLeft && normalizedRight && normalizedLeft !== normalizedRight);
+}
+
+export function codexConnectorStaleReviewCommitThreads(
+  pr: Pick<GitHubPullRequest, "headRefOid" | "configuredBotCurrentHeadObservedAt" | "configuredBotLatestReviewedCommitSha">,
+  reviewThreads: ReviewThread[],
+): ReviewThread[] {
+  const latestReviewedCommitSha = normalizeCommitShaForComparison(pr.configuredBotLatestReviewedCommitSha);
+  const currentHeadSha = normalizeCommitShaForComparison(pr.headRefOid);
+  if (
+    !latestReviewedCommitSha ||
+    !currentHeadSha ||
+    latestReviewedCommitSha === currentHeadSha ||
+    validPolicyTimestamp(pr.configuredBotCurrentHeadObservedAt)
+  ) {
+    return [];
+  }
+
+  return codexConnectorMustFixReviewThreads(reviewThreads);
+}
+
 export interface CodexConnectorPolicyBlockDiagnostic {
   count: number;
   severity: CodexConnectorPSeverity;
@@ -258,8 +293,12 @@ export function evaluateCodexConnectorConvergencePolicy(
 export function buildCodexConnectorPolicyBlockDiagnostic(
   config: SupervisorConfig,
   reviewThreads: ReviewThread[],
+  pr?: Pick<GitHubPullRequest, "headRefOid" | "configuredBotCurrentHeadObservedAt" | "configuredBotLatestReviewedCommitSha">,
 ): CodexConnectorPolicyBlockDiagnostic | null {
   if (!configuredReviewProviderKinds(config).includes("codex")) {
+    return null;
+  }
+  if (pr && codexConnectorStaleReviewCommitThreads(pr, reviewThreads).length > 0) {
     return null;
   }
 
@@ -285,8 +324,12 @@ export function buildCodexConnectorPolicyBlockDiagnostic(
 export function buildCodexConnectorP2P3PolicyDiagnostic(
   config: SupervisorConfig,
   reviewThreads: ReviewThread[],
+  pr?: Pick<GitHubPullRequest, "headRefOid" | "configuredBotCurrentHeadObservedAt" | "configuredBotLatestReviewedCommitSha">,
 ): CodexConnectorP2P3PolicyDiagnostic | null {
   if (!configuredReviewProviderKinds(config).includes("codex")) {
+    return null;
+  }
+  if (pr && codexConnectorStaleReviewCommitThreads(pr, reviewThreads).length > 0) {
     return null;
   }
 

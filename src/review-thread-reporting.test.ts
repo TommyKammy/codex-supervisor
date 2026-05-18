@@ -8,6 +8,7 @@ import {
   buildStalledBotReviewFailureContext,
   clusterConfiguredBotReviewThreads,
   codexConnectorMustFixReviewThreads,
+  codexConnectorStaleReviewCommitThreads,
   configuredBotReviewFollowUpState,
   evaluateCodexConnectorConvergencePolicy,
   staleConfiguredBotReviewThreads,
@@ -311,6 +312,38 @@ test("codexConnectorMustFixReviewThreads tracks unresolved P1 findings and repor
 
   assert.deepEqual(codexConnectorMustFixReviewThreads([p1Thread]), [p1Thread]);
   assert.match(buildStalledBotReviewFailureContext([p1Thread])?.details[0] ?? "", /p_severity=P1/);
+});
+
+test("codexConnectorStaleReviewCommitThreads compares current-head SHAs case-insensitively", () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+  });
+  const currentHeadSha = "c171be8a7f6e27d18eeef27cf27fd34c33371508";
+  const p1Thread = createReviewThread({
+    id: "thread-p1",
+    comments: {
+      nodes: [
+        {
+          id: "comment-p1",
+          body: "P1: Keep the current-head authorization diagnostic active.",
+          createdAt: "2026-03-11T00:00:00Z",
+          url: "https://example.test/pr/44#discussion_r1",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const pr: Pick<GitHubPullRequest, "headRefOid" | "configuredBotCurrentHeadObservedAt" | "configuredBotLatestReviewedCommitSha"> = {
+    headRefOid: currentHeadSha,
+    configuredBotCurrentHeadObservedAt: null,
+    configuredBotLatestReviewedCommitSha: currentHeadSha.toUpperCase(),
+  };
+
+  assert.deepEqual(codexConnectorStaleReviewCommitThreads(pr, [p1Thread]), []);
+  assert.equal(buildCodexConnectorPolicyBlockDiagnostic(config, [p1Thread], pr)?.count, 1);
 });
 
 test("codexConnectorMustFixReviewThreads treats P2 and escalated P3 findings as must-fix", () => {
