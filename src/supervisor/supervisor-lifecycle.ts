@@ -22,7 +22,7 @@ import {
 import { latestReviewThreadCommentFingerprint } from "../review-handling";
 import { inferFailureContext } from "./supervisor-failure-context";
 import { mergeConflictDetected, summarizeChecks } from "./supervisor-status-rendering";
-import { configuredBotReviewThreads, manualReviewThreads } from "../review-thread-reporting";
+import { clusterConfiguredBotReviewThreads, configuredBotReviewThreads, manualReviewThreads } from "../review-thread-reporting";
 import {
   FailureContext,
   GitHubPullRequest,
@@ -119,6 +119,7 @@ interface TrackedPrProgressSnapshot {
   checks: string[];
   unresolvedReviewThreadIds: string[];
   unresolvedReviewThreadFingerprints?: string[];
+  unresolvedReviewThreadClusterSignatures?: string[];
 }
 
 export interface TrackedPrRepeatFailureDisposition {
@@ -133,6 +134,10 @@ function buildTrackedPrProgressSnapshot(
   checks: PullRequestCheck[],
   reviewThreads: ReviewThread[],
 ): TrackedPrProgressSnapshot {
+  const unresolvedReviewThreads = reviewThreads.filter((thread) => !thread.isResolved);
+  const unresolvedReviewThreadClusterSignatures = clusterConfiguredBotReviewThreads(unresolvedReviewThreads)
+    .map((cluster) => `${cluster.signature}:${cluster.threads.map((thread) => thread.id).sort().join(",")}`)
+    .sort();
   return {
     headRefOid: pr.headRefOid,
     reviewDecision: pr.reviewDecision,
@@ -150,14 +155,13 @@ function buildTrackedPrProgressSnapshot(
     checks: checks
       .map((check) => `${check.name}:${check.bucket}:${check.state}:${check.workflow ?? "none"}`)
       .sort(),
-    unresolvedReviewThreadIds: reviewThreads
-      .filter((thread) => !thread.isResolved)
-      .map((thread) => thread.id)
-      .sort(),
-    unresolvedReviewThreadFingerprints: reviewThreads
-      .filter((thread) => !thread.isResolved)
+    unresolvedReviewThreadIds: unresolvedReviewThreads.map((thread) => thread.id).sort(),
+    unresolvedReviewThreadFingerprints: unresolvedReviewThreads
       .map((thread) => `${thread.id}#${latestReviewThreadCommentFingerprint(thread) ?? "no-comment"}`)
       .sort(),
+    ...(unresolvedReviewThreadClusterSignatures.length > 0
+      ? { unresolvedReviewThreadClusterSignatures }
+      : {}),
   };
 }
 
@@ -208,6 +212,8 @@ function listChangedSignals(previous: TrackedPrProgressSnapshot | null, current:
     (previous?.unresolvedReviewThreadIds.join("|") ?? null) !== current.unresolvedReviewThreadIds.join("|");
   const previousThreadFingerprints = previous?.unresolvedReviewThreadFingerprints?.join("|") ?? null;
   const currentThreadFingerprints = current.unresolvedReviewThreadFingerprints?.join("|") ?? null;
+  const previousClusterSignatures = previous?.unresolvedReviewThreadClusterSignatures?.join("|") ?? null;
+  const currentClusterSignatures = current.unresolvedReviewThreadClusterSignatures?.join("|") ?? null;
   const sameThreadIds =
     previous !== null &&
     previous.unresolvedReviewThreadIds.join("|") === current.unresolvedReviewThreadIds.join("|");
@@ -219,6 +225,14 @@ function listChangedSignals(previous: TrackedPrProgressSnapshot | null, current:
     previousThreadFingerprints !== currentThreadFingerprints;
   if (sameThreadGuidanceChanged) {
     signals.push("same_review_thread_guidance_changed");
+  }
+  if (
+    previous !== null &&
+    previousClusterSignatures !== null &&
+    currentClusterSignatures !== null &&
+    previousClusterSignatures !== currentClusterSignatures
+  ) {
+    signals.push("review_thread_cluster_membership_changed");
   }
   if (previous !== null && reviewSignalChanged) {
     signals.push("review_state_changed");
