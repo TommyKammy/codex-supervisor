@@ -84,12 +84,35 @@ export function codexConnectorMustFixReviewThreads(reviewThreads: ReviewThread[]
   return reviewThreads.filter(isCodexConnectorMustFixReviewThread);
 }
 
+export function normalizeCommitShaForComparison(sha: string | null | undefined): string | null {
+  const normalized = sha?.trim();
+  return normalized ? normalized.toLowerCase() : null;
+}
+
+export function commitShasEqualForComparison(left: string | null | undefined, right: string | null | undefined): boolean {
+  const normalizedLeft = normalizeCommitShaForComparison(left);
+  const normalizedRight = normalizeCommitShaForComparison(right);
+  return Boolean(normalizedLeft && normalizedRight && normalizedLeft === normalizedRight);
+}
+
+export function commitShasDifferForComparison(left: string | null | undefined, right: string | null | undefined): boolean {
+  const normalizedLeft = normalizeCommitShaForComparison(left);
+  const normalizedRight = normalizeCommitShaForComparison(right);
+  return Boolean(normalizedLeft && normalizedRight && normalizedLeft !== normalizedRight);
+}
+
 export function codexConnectorStaleReviewCommitThreads(
   pr: Pick<GitHubPullRequest, "headRefOid" | "configuredBotCurrentHeadObservedAt" | "configuredBotLatestReviewedCommitSha">,
   reviewThreads: ReviewThread[],
 ): ReviewThread[] {
-  const latestReviewedCommitSha = pr.configuredBotLatestReviewedCommitSha?.trim();
-  if (!latestReviewedCommitSha || latestReviewedCommitSha === pr.headRefOid || validPolicyTimestamp(pr.configuredBotCurrentHeadObservedAt)) {
+  const latestReviewedCommitSha = normalizeCommitShaForComparison(pr.configuredBotLatestReviewedCommitSha);
+  const currentHeadSha = normalizeCommitShaForComparison(pr.headRefOid);
+  if (
+    !latestReviewedCommitSha ||
+    !currentHeadSha ||
+    latestReviewedCommitSha === currentHeadSha ||
+    validPolicyTimestamp(pr.configuredBotCurrentHeadObservedAt)
+  ) {
     return [];
   }
 

@@ -13,6 +13,8 @@ import { localReviewDegradedNeedsBlock } from "../review-handling";
 import {
   codexConnectorMustFixReviewThreads,
   codexConnectorStaleReviewCommitThreads,
+  commitShasDifferForComparison,
+  commitShasEqualForComparison,
   evaluateCodexConnectorConvergencePolicy,
 } from "../review-thread-reporting";
 import { classifyStaleReviewBotRecoverability, recoverabilityStatusToken } from "./stale-diagnostic-recoverability";
@@ -448,31 +450,31 @@ export function formatCodexConnectorConvergenceDiagnostic(args: {
   const staleReviewCommitThreads = codexConnectorStaleReviewCommitThreads(args.pr, args.reviewThreads);
   const staleReviewCommitThreadIds = staleReviewCommitThreads.map((thread) => thread.id).join(",");
   const staleSignalHeadSha =
-    args.pr.configuredBotLatestReviewedCommitSha && args.pr.configuredBotLatestReviewedCommitSha !== currentHeadSha
+    args.pr.configuredBotLatestReviewedCommitSha && commitShasDifferForComparison(args.pr.configuredBotLatestReviewedCommitSha, currentHeadSha)
       ? args.pr.configuredBotLatestReviewedCommitSha
-      : args.record.provider_success_head_sha && args.record.provider_success_head_sha !== currentHeadSha
-      ? args.record.provider_success_head_sha
-      : args.record.external_review_head_sha && args.record.external_review_head_sha !== currentHeadSha
-        ? args.record.external_review_head_sha
-        : null;
+      : args.record.provider_success_head_sha && commitShasDifferForComparison(args.record.provider_success_head_sha, currentHeadSha)
+        ? args.record.provider_success_head_sha
+        : args.record.external_review_head_sha && commitShasDifferForComparison(args.record.external_review_head_sha, currentHeadSha)
+          ? args.record.external_review_head_sha
+          : null;
   const latestSignalHeadSha =
     staleSignalHeadSha ??
-    (args.record.provider_success_head_sha === currentHeadSha
+    (commitShasEqualForComparison(args.record.provider_success_head_sha, currentHeadSha)
       ? args.record.provider_success_head_sha
       : policy.currentHeadObservedAt
         ? currentHeadSha
         : "none");
   const requestMatchesCurrentHead = Boolean(
     args.record.codex_connector_review_requested_observed_at &&
-      args.record.codex_connector_review_requested_head_sha === currentHeadSha,
+      commitShasEqualForComparison(args.record.codex_connector_review_requested_head_sha, currentHeadSha),
   );
   const hydratedRequestMatchesCurrentHead = Boolean(
     !requestMatchesCurrentHead &&
       args.pr.codexConnectorReviewRequestedAt &&
-      args.pr.codexConnectorReviewRequestedHeadSha === currentHeadSha,
+      commitShasEqualForComparison(args.pr.codexConnectorReviewRequestedHeadSha, currentHeadSha),
   );
   const hasCurrentHeadProviderSuccess = Boolean(
-    args.record.provider_success_observed_at && args.record.provider_success_head_sha === currentHeadSha,
+    args.record.provider_success_observed_at && commitShasEqualForComparison(args.record.provider_success_head_sha, currentHeadSha),
   );
   const findingCount = staleReviewCommitThreads.length > 0 ? 0 : policy.findingCount;
   const highestSeverity = staleReviewCommitThreads.length > 0 ? "none" : policy.highestSeverity;
@@ -580,19 +582,21 @@ export function formatCodexConnectorOperatorDiagnostic(args: {
   const actionableCurrentDiffThreads =
     staleReviewCommitThreads.length > 0 ? 0 : codexConnectorMustFixReviewThreads(args.reviewThreads).length;
   const currentHeadReviewSignal =
-    policy.currentHeadObservedAt || args.record.provider_success_head_sha === currentHeadSha ? "observed" : "missing";
+    policy.currentHeadObservedAt || commitShasEqualForComparison(args.record.provider_success_head_sha, currentHeadSha)
+      ? "observed"
+      : "missing";
   const latestConfiguredBotReviewSha =
     currentHeadReviewSignal === "observed"
       ? currentHeadSha
       : args.pr.configuredBotLatestReviewedCommitSha ?? args.record.provider_success_head_sha ?? args.record.external_review_head_sha ?? "none";
   const requestMatchesCurrentHead = Boolean(
     args.record.codex_connector_review_requested_observed_at &&
-      args.record.codex_connector_review_requested_head_sha === currentHeadSha,
+      commitShasEqualForComparison(args.record.codex_connector_review_requested_head_sha, currentHeadSha),
   );
   const hydratedRequestMatchesCurrentHead = Boolean(
     !requestMatchesCurrentHead &&
       args.pr.codexConnectorReviewRequestedAt &&
-      args.pr.codexConnectorReviewRequestedHeadSha === currentHeadSha,
+      commitShasEqualForComparison(args.pr.codexConnectorReviewRequestedHeadSha, currentHeadSha),
   );
   const waitWindow = configuredBotCurrentHeadSignalWaitWindow(args.config, args.pr);
   const nextAction =
