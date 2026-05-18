@@ -29,6 +29,11 @@ import {
   STALE_CONFIGURED_BOT_REVIEW_REASON_CODE,
 } from "./supervisor/stale-review-bot-recovery";
 import { workspacePreparationRemediationTargetForFailureClass } from "./remediation-targets";
+import {
+  conversationResolutionEvidenceContradictsBlocker,
+  conversationResolutionEvidenceDetails,
+  conversationResolutionEvidenceToken,
+} from "./conversation-resolution-policy";
 
 export type HostLocalTrackedPrBlockerGateType =
   | "workspace_preparation"
@@ -310,7 +315,7 @@ function buildTrackedPrClearedStatusComment(args: {
 }
 
 function buildRequiredCheckMismatchEvidence(args: {
-  pr: Pick<GitHubPullRequest, "mergeStateStatus" | "mergeable">;
+  pr: Pick<GitHubPullRequest, "mergeStateStatus" | "mergeable" | "requiredConversationResolution">;
   checks: PullRequestCheck[];
 }): string[] {
   const sortedChecks = [...args.checks]
@@ -320,7 +325,9 @@ function buildRequiredCheckMismatchEvidence(args: {
   return [
     `merge_state=${args.pr.mergeStateStatus}`,
     `mergeable=${args.pr.mergeable ?? "unknown"}`,
+    conversationResolutionEvidenceToken(args.pr),
     ...sortedChecks,
+    ...conversationResolutionEvidenceDetails(args.pr).slice(1),
   ];
 }
 
@@ -402,10 +409,14 @@ function buildConversationResolutionBlocker(args: {
     pr: args.pr,
     threads: configuredThreads,
   });
+  if (conversationResolutionEvidenceContradictsBlocker(args.pr)) {
+    return null;
+  }
   const threadIds = configuredThreads.map((thread) => thread.id).sort();
   const evidence = [
     `merge_state=${args.pr.mergeStateStatus}`,
     `mergeable=${args.pr.mergeable}`,
+    ...conversationResolutionEvidenceDetails(args.pr),
     `conversation_threads=${threadIds.join(",")}`,
     ...buildRequiredCheckMismatchEvidence({ pr: args.pr, checks: args.checks }).filter((line) => line.startsWith("check=")),
   ];
@@ -535,7 +546,7 @@ function derivePersistentTrackedPrStatusComment(args: {
       pr: args.pr,
       checks: args.checks,
     });
-    const evidence = fullEvidence.slice(0, 4);
+    const evidence = fullEvidence.slice(0, 5);
     return {
       blockerSignature:
         `merge-state:${args.pr.mergeStateStatus}:${args.pr.mergeable ?? "unknown"}:${fullEvidence.join("|")}`,

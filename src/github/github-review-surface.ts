@@ -59,7 +59,7 @@ export class GitHubReviewSurfaceClient {
       "--limit",
       "1",
       "--json",
-      "number,title,url,state,createdAt,updatedAt,isDraft,reviewDecision,mergeStateStatus,mergeable,headRefName,headRefOid,mergedAt",
+      "number,title,url,state,createdAt,updatedAt,isDraft,reviewDecision,mergeStateStatus,mergeable,baseRefName,headRefName,headRefOid,mergedAt",
     ]);
     const pullRequests = parseJson<GitHubPullRequest[]>(result.stdout, `gh pr list --head ${branch}`);
     return this.hydratePullRequestForPurpose(pullRequests[0] ?? null, options.purpose ?? "status");
@@ -81,7 +81,7 @@ export class GitHubReviewSurfaceClient {
       "--limit",
       "20",
       "--json",
-      "number,title,url,state,createdAt,updatedAt,isDraft,reviewDecision,mergeStateStatus,mergeable,headRefName,headRefOid,mergedAt",
+      "number,title,url,state,createdAt,updatedAt,isDraft,reviewDecision,mergeStateStatus,mergeable,baseRefName,headRefName,headRefOid,mergedAt",
     ]);
     const pullRequests = parseJson<GitHubPullRequest[]>(result.stdout, `gh pr list --all --head ${branch}`);
     const sorted = [...pullRequests].sort((left, right) => {
@@ -100,7 +100,7 @@ export class GitHubReviewSurfaceClient {
       "--repo",
       this.config.repoSlug,
       "--json",
-      "number,title,url,state,createdAt,updatedAt,isDraft,reviewDecision,mergeStateStatus,mergeable,headRefName,headRefOid,mergedAt",
+      "number,title,url,state,createdAt,updatedAt,isDraft,reviewDecision,mergeStateStatus,mergeable,baseRefName,headRefName,headRefOid,mergedAt",
     ]);
     const pullRequest = parseJson<GitHubPullRequest>(result.stdout, `gh pr view #${prNumber}`);
     return (await this.hydratePullRequestForAction(pullRequest)) as GitHubPullRequest;
@@ -117,7 +117,7 @@ export class GitHubReviewSurfaceClient {
       "--repo",
       this.config.repoSlug,
       "--json",
-      "number,title,url,state,createdAt,updatedAt,isDraft,reviewDecision,mergeStateStatus,mergeable,headRefName,headRefOid,mergedAt",
+      "number,title,url,state,createdAt,updatedAt,isDraft,reviewDecision,mergeStateStatus,mergeable,baseRefName,headRefName,headRefOid,mergedAt",
     ], { allowExitCodes: [0, 1] });
 
     if (result.exitCode === 0) {
@@ -178,6 +178,7 @@ export class GitHubReviewSurfaceClient {
                 reviewDecision
                 mergeStateStatus
                 mergeable
+                baseRefName
                 headRefName
                 headRefOid
                 mergedAt
@@ -710,10 +711,97 @@ export class GitHubReviewSurfaceClient {
   }
 
   private async hydratePullRequestForStatus(pr: GitHubPullRequest | null): Promise<GitHubPullRequest | null> {
-    return this.pullRequestHydrator.hydrateForStatus(pr);
+    return this.hydrateConversationResolutionEvidence(await this.pullRequestHydrator.hydrateForStatus(pr));
   }
 
   private async hydratePullRequestForAction(pr: GitHubPullRequest | null): Promise<GitHubPullRequest | null> {
-    return this.pullRequestHydrator.hydrateForAction(pr);
+    return this.hydrateConversationResolutionEvidence(await this.pullRequestHydrator.hydrateForAction(pr));
+  }
+
+  private async hydrateConversationResolutionEvidence(pr: GitHubPullRequest | null): Promise<GitHubPullRequest | null> {
+    if (!pr) {
+      return null;
+    }
+
+    return {
+      ...pr,
+      requiredConversationResolution: await this.fetchConversationResolutionEvidence(pr.baseRefName ?? this.config.defaultBranch),
+    };
+  }
+
+  private async fetchConversationResolutionEvidence(branchName: string): Promise<NonNullable<GitHubPullRequest["requiredConversationResolution"]>> {
+    const branchProtection = await this.fetchBranchProtectionConversationResolution(branchName);
+    const branchRules = await this.fetchBranchRulesConversationResolution(branchName);
+    const details = [...branchProtection.details, ...branchRules.details];
+
+    if (branchProtection.state === "enabled" || branchRules.state === "enabled") {
+      return { state: "enabled", source: "github_policy", details };
+    }
+    if (branchProtection.state === "disabled" && branchRules.state === "disabled") {
+      return { state: "disabled", source: "github_policy", details };
+    }
+    if (branchProtection.state === "unavailable" || branchRules.state === "unavailable") {
+      return { state: "unavailable", source: "github_policy", details };
+    }
+    return { state: "unknown", source: "github_policy", details };
+  }
+
+  private async fetchBranchProtectionConversationResolution(branchName: string): Promise<{
+    state: "enabled" | "disabled" | "unavailable";
+    details: string[];
+  }> {
+    const { owner, repo } = this.repoOwnerAndName();
+    try {
+      const result = await this.runGhJsonCommand([
+        "api",
+        `repos/${owner}/${repo}/branches/${encodeURIComponent(branchName)}/protection`,
+      ], { allowExitCodes: [0, 1] });
+      if (result.exitCode !== 0) {
+        return { state: "unavailable", details: ["branch_protection=unavailable"] };
+      }
+      const payload = parseJson<{
+        required_conversation_resolution?: { enabled?: boolean | null } | null;
+      }>(result.stdout, `gh api branch protection ${branchName}`);
+      const enabled = payload.required_conversation_resolution?.enabled;
+      if (enabled === true) {
+        return { state: "enabled", details: ["branch_protection=enabled"] };
+      }
+      if (enabled === false) {
+        return { state: "disabled", details: ["branch_protection=disabled"] };
+      }
+      return { state: "unavailable", details: ["branch_protection=unavailable"] };
+    } catch {
+      return { state: "unavailable", details: ["branch_protection=unavailable"] };
+    }
+  }
+
+  private async fetchBranchRulesConversationResolution(branchName: string): Promise<{
+    state: "enabled" | "disabled" | "unavailable";
+    details: string[];
+  }> {
+    const { owner, repo } = this.repoOwnerAndName();
+    try {
+      const result = await this.runGhJsonCommand([
+        "api",
+        `repos/${owner}/${repo}/rules/branches/${encodeURIComponent(branchName)}`,
+      ], { allowExitCodes: [0, 1] });
+      if (result.exitCode !== 0) {
+        return { state: "unavailable", details: ["ruleset=unavailable"] };
+      }
+      const rules = parseJson<Array<{
+        type?: string | null;
+        parameters?: { required_review_thread_resolution?: boolean | null } | null;
+      }>>(result.stdout, `gh api branch rules ${branchName}`);
+      const pullRequestRules = rules.filter((rule) => rule.type === "pull_request");
+      const enabled = pullRequestRules.some(
+        (rule) => rule.parameters?.required_review_thread_resolution === true,
+      );
+      return {
+        state: enabled ? "enabled" : "disabled",
+        details: [enabled ? "ruleset=enabled" : "ruleset=disabled"],
+      };
+    } catch {
+      return { state: "unavailable", details: ["ruleset=unavailable"] };
+    }
   }
 }

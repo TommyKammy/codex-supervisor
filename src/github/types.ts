@@ -27,6 +27,7 @@ export interface GitHubPullRequest {
   reviewDecision: string | null;
   mergeStateStatus: string | null;
   mergeable?: string | null;
+  baseRefName?: string | null;
   headRefName: string;
   headRefOid: string;
   copilotReviewState?: CopilotReviewState | null;
@@ -45,6 +46,11 @@ export interface GitHubPullRequest {
   configuredBotDraftSkipAt?: string | null;
   configuredBotTopLevelReviewStrength?: "nitpick_only" | "blocking" | null;
   configuredBotTopLevelReviewSubmittedAt?: string | null;
+  requiredConversationResolution?: {
+    state: "enabled" | "disabled" | "unavailable" | "unknown";
+    source?: string | null;
+    details?: string[] | null;
+  } | null;
   hydrationProvenance?: PullRequestHydrationProvenance | null;
   mergedAt?: string | null;
 }

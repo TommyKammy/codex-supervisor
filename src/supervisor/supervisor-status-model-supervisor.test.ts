@@ -848,7 +848,75 @@ test("buildDetailedStatusModel names conversation-resolution blockers from outda
   assert.ok(lines.includes("review_threads bot_pending=0 bot_unresolved=0 manual=0"));
   assert.ok(
     lines.includes(
-      "conversation_resolution_blocker state=blocked outdated_configured_bot_threads=1 thread_ids=thread-outdated-1",
+      "conversation_resolution_blocker state=blocked required_conversation_resolution=unknown outdated_configured_bot_threads=1 thread_ids=thread-outdated-1",
+    ),
+  );
+});
+
+test("buildDetailedStatusModel includes enabled conversation-resolution policy evidence", () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+  });
+  const pr = createPullRequest({
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+    reviewDecision: null,
+    configuredBotCurrentHeadObservedAt: "2026-05-18T01:00:00Z",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
+    requiredConversationResolution: {
+      state: "enabled",
+      source: "branch_protection",
+      details: ["branch_protection=enabled"],
+    },
+  });
+  const reviewThreads: ReviewThread[] = [
+    {
+      id: "thread-outdated-1",
+      isResolved: false,
+      isOutdated: true,
+      path: "src/file.ts",
+      line: 12,
+      comments: {
+        nodes: [
+          {
+            id: "comment-outdated-1",
+            body: "Outdated Codex thread.",
+            createdAt: "2026-05-18T00:50:00Z",
+            url: "https://example.test/pr/44#discussion_r1",
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    },
+  ];
+
+  const lines = buildDetailedStatusModel({
+    config,
+    activeRecord: createRecord({
+      pr_number: 44,
+      state: "pr_open",
+      last_error: null,
+      last_failure_context: null,
+    }),
+    latestRecord: null,
+    trackedIssueCount: 1,
+    pr,
+    checks: [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads,
+    manualReviewThreads,
+    configuredBotReviewThreads,
+    pendingBotReviewThreads: () => [],
+    summarizeChecks: () => ({ allPassing: true, hasPending: false, hasFailing: false }),
+    mergeConflictDetected: (pr) => pr.mergeStateStatus === "DIRTY",
+  });
+
+  assert.ok(
+    lines.includes(
+      "conversation_resolution_blocker state=blocked required_conversation_resolution=enabled outdated_configured_bot_threads=1 thread_ids=thread-outdated-1",
     ),
   );
 });
