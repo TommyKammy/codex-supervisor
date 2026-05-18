@@ -991,6 +991,10 @@ test("status --why fails closed for codex processed residue without current-head
   );
   assert.match(
     status,
+    /^stale_review_bot_thread_diagnostics issue=#398 pr=#498 current_head_success=no unresolved_current_threads=1 actionable_must_fix_threads=1 verified_stale_residue_threads=0 missing_verification_evidence_threads=1 repeat_stop_exhausted=no auto_repair_suppressed_reason=missing_verification_probe$/m,
+  );
+  assert.match(
+    status,
     /^codex_connector_operator_diagnostic interpretation=stale_review_residue current_head_sha=5de0d3844468d4a77cab512f8dcbe46171166c3a latest_configured_bot_review_sha=5de0d3844468d4a77cab512f8dcbe46171166c3a current_head_review_signal=missing actionable_current_diff_threads=unknown next_action=inspect_exact_review_thread_then_resolve_or_leave_manual_note$/m,
   );
   assert.doesNotMatch(status, /^operator_action action=resolve_stale_review_bot source=stale_review_bot_remediation /m);

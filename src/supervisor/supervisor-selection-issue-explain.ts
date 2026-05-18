@@ -71,10 +71,15 @@ import {
   recoverabilityStatusToken,
 } from "./stale-diagnostic-recoverability";
 import {
+  buildStaleReviewBotThreadDiagnostics,
   buildStaleReviewBotRemediation,
   type StaleReviewBotRemediationDto,
+  type StaleReviewBotThreadDiagnosticsDto,
 } from "./stale-review-bot-remediation";
-import { formatStaleReviewBotRemediationLine } from "./stale-review-bot-diagnostics-presenter";
+import {
+  formatStaleReviewBotRemediationLine,
+  formatStaleReviewBotThreadDiagnosticsLine,
+} from "./stale-review-bot-diagnostics-presenter";
 import {
   buildCodexConnectorPolicyBlockDiagnostic,
   formatCodexConnectorPolicyBlockDiagnostic,
@@ -116,6 +121,7 @@ export interface SupervisorExplainDto {
   activityContext: SupervisorIssueActivityContextDto | null;
   staleDiagnosticSummary?: string | null;
   staleReviewBotRemediation?: StaleReviewBotRemediationDto | null;
+  staleReviewBotThreadDiagnostics?: StaleReviewBotThreadDiagnosticsDto | null;
   codexConnectorOperatorDiagnosticSummary?: string | null;
   codexConnectorPolicyBlockSummary?: string | null;
   codexConnectorReviewFallbackSummary?: string | null;
@@ -465,6 +471,17 @@ export async function buildIssueExplainDto(
         reviewThreads: explainReviewThreads,
       })
       : null;
+  const staleReviewBotThreadDiagnostics =
+    record && pr && !trackedPrHydrationFailed && staleReviewBotRemediation
+      ? buildStaleReviewBotThreadDiagnostics({
+        config,
+        record,
+        pr,
+        checks: explainChecks,
+        reviewThreads: explainReviewThreads,
+        remediation: staleReviewBotRemediation,
+      })
+      : null;
   const codexConnectorPolicyBlockSummary =
     record && pr && !trackedPrHydrationFailed
       ? (() => {
@@ -595,6 +612,7 @@ export async function buildIssueExplainDto(
       : null,
     staleDiagnosticSummary,
     staleReviewBotRemediation,
+    staleReviewBotThreadDiagnostics,
     codexConnectorOperatorDiagnosticSummary,
     codexConnectorPolicyBlockSummary,
     codexConnectorReviewFallbackSummary,
@@ -674,6 +692,9 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
     ...(localCiStatusLine ? [localCiStatusLine] : []),
     ...(dto.staleDiagnosticSummary ? [dto.staleDiagnosticSummary] : []),
     ...(dto.staleReviewBotRemediation ? [formatStaleReviewBotRemediationLine(dto.staleReviewBotRemediation)] : []),
+    ...(dto.staleReviewBotThreadDiagnostics
+      ? [formatStaleReviewBotThreadDiagnosticsLine(dto.staleReviewBotThreadDiagnostics)]
+      : []),
     ...(dto.codexConnectorOperatorDiagnosticSummary ? [dto.codexConnectorOperatorDiagnosticSummary] : []),
     ...(dto.codexConnectorPolicyBlockSummary ? [dto.codexConnectorPolicyBlockSummary] : []),
     ...(dto.codexConnectorReviewFallbackSummary ? [dto.codexConnectorReviewFallbackSummary] : []),

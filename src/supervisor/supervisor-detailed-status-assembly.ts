@@ -34,9 +34,13 @@ import {
   reviewBotDiagnostics,
 } from "./supervisor-status-review-bot";
 import {
+  buildStaleReviewBotThreadDiagnostics,
   buildStaleReviewBotRemediation,
 } from "./stale-review-bot-remediation";
-import { formatStaleReviewBotRemediationLine } from "./stale-review-bot-diagnostics-presenter";
+import {
+  formatStaleReviewBotRemediationLine,
+  formatStaleReviewBotThreadDiagnosticsLine,
+} from "./stale-review-bot-diagnostics-presenter";
 import { buildIssueActivityContext, formatLocalCiStatusLine } from "./supervisor-operator-activity-context";
 import type { IssueRunRecord } from "../core/types";
 import type { BuildDetailedStatusModelArgs } from "./supervisor-status-model";
@@ -251,8 +255,19 @@ export function buildInactiveDetailedStatusLines(
   if (classificationLine) {
     lines.push(classificationLine);
   }
-  if (staleReviewBotRemediation) {
+  if (latestRecord && staleReviewBotRemediation) {
     lines.push(formatStaleReviewBotRemediationLine(staleReviewBotRemediation));
+    const diagnostics = buildStaleReviewBotThreadDiagnostics({
+      config,
+      record: latestRecord,
+      pr,
+      checks,
+      reviewThreads,
+      remediation: staleReviewBotRemediation,
+    });
+    if (diagnostics) {
+      lines.push(formatStaleReviewBotThreadDiagnosticsLine(diagnostics));
+    }
     lines.push(formatStaleReviewResidueOperatorDiagnostic(staleReviewBotRemediation));
   }
 
@@ -357,6 +372,17 @@ export function buildActiveDetailedStatusLines(
     });
     if (staleReviewBotRemediation) {
       lines.push(formatStaleReviewBotRemediationLine(staleReviewBotRemediation));
+      const diagnostics = buildStaleReviewBotThreadDiagnostics({
+        config,
+        record: activeRecord,
+        pr,
+        checks,
+        reviewThreads,
+        remediation: staleReviewBotRemediation,
+      });
+      if (diagnostics) {
+        lines.push(formatStaleReviewBotThreadDiagnosticsLine(diagnostics));
+      }
       lines.push(formatStaleReviewResidueOperatorDiagnostic(staleReviewBotRemediation));
     }
     const codexConnectorPolicyBlock = buildCodexConnectorPolicyBlockDiagnostic(config, reviewThreads);

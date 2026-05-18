@@ -1,11 +1,13 @@
 import type { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "../core/types";
 import { hasProcessedReviewThread } from "../review-handling";
 import {
+  clusterConfiguredBotReviewThreads,
   configuredBotReviewFollowUpState,
   configuredBotReviewThreads,
   codexConnectorMustFixReviewThreads,
   evaluateCodexConnectorConvergencePolicy,
   manualReviewThreads,
+  nonActionableConfiguredBotReviewThreads,
   pendingBotReviewThreads,
 } from "../review-thread-reporting";
 import { configuredReviewProviderKinds } from "../core/review-providers";
@@ -32,6 +34,30 @@ export interface StaleReviewBotRemediationDto {
   missingProbeReason: string | null;
   manualNextStep: string;
   summary: string;
+}
+
+export type StaleReviewBotAutoRepairSuppressedReason =
+  | "none"
+  | "opt_in_disabled"
+  | "too_many_clusters"
+  | "missing_verification_probe"
+  | "manual_or_unconfigured_review_threads"
+  | "merge_conflict"
+  | "failing_checks"
+  | "pending_checks"
+  | "repeat_stop_exhausted"
+  | "not_verified_stale_residue";
+
+export interface StaleReviewBotThreadDiagnosticsDto {
+  issueNumber: number;
+  prNumber: number | null;
+  currentHeadSuccess: "yes" | "no" | "unknown";
+  unresolvedCurrentThreads: number;
+  actionableMustFixThreads: number;
+  verifiedStaleResidueThreads: number;
+  missingVerificationEvidenceThreads: number;
+  repeatStopExhausted: "yes" | "no";
+  autoRepairSuppressedReason: StaleReviewBotAutoRepairSuppressedReason;
 }
 
 const STALE_REVIEW_BOT_MANUAL_NEXT_STEP =
@@ -106,8 +132,88 @@ function allChecksPassing(checks: Pick<PullRequestCheck, "bucket">[]): boolean {
   return checks.length > 0 && checks.every((check) => check.bucket === "pass" || check.bucket === "skipping");
 }
 
+function hasFailingChecks(checks: Pick<PullRequestCheck, "bucket">[]): boolean {
+  return checks.some((check) => check.bucket === "fail");
+}
+
+function hasPendingChecks(checks: Pick<PullRequestCheck, "bucket">[]): boolean {
+  return checks.some((check) => check.bucket === "pending" || check.bucket === "cancel");
+}
+
 function hasCleanMergeState(pr: GitHubPullRequest): boolean {
   return pr.state === "OPEN" && !pr.isDraft && pr.mergeStateStatus === "CLEAN" && pr.mergeable === "MERGEABLE";
+}
+
+function currentHeadSuccess(pr: GitHubPullRequest | null): StaleReviewBotThreadDiagnosticsDto["currentHeadSuccess"] {
+  if (!pr) {
+    return "unknown";
+  }
+  return pr.configuredBotCurrentHeadObservedAt && pr.configuredBotCurrentHeadStatusState === "SUCCESS" ? "yes" : "no";
+}
+
+function isVerifiedStaleResidueClassification(classification: StaleReviewBotRemediationDto["classification"]): boolean {
+  return (
+    classification === "verified_no_source_change_pending_thread_resolution" ||
+    classification === "verified_current_head_repair_pending_thread_resolution"
+  );
+}
+
+function verifiedAutoResolveEnabled(
+  config: SupervisorConfig,
+  classification: StaleReviewBotRemediationDto["classification"],
+): boolean {
+  return (
+    (classification === "verified_no_source_change_pending_thread_resolution" &&
+      config.verifiedNoSourceChangeReviewThreadAutoResolve === true) ||
+    (classification === "verified_current_head_repair_pending_thread_resolution" &&
+      config.verifiedCurrentHeadRepairReviewThreadAutoResolve === true)
+  );
+}
+
+function classifyAutoRepairSuppression(args: {
+  config: SupervisorConfig | null;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest | null;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+  remediation: StaleReviewBotRemediationDto;
+  actionableMustFixThreads: ReviewThread[];
+  repeatStopExhausted: boolean;
+}): StaleReviewBotAutoRepairSuppressedReason {
+  const { config, pr, checks, remediation } = args;
+  if (!config || !pr) {
+    return "not_verified_stale_residue";
+  }
+
+  if (args.repeatStopExhausted) {
+    return "repeat_stop_exhausted";
+  }
+  if (manualReviewThreads(config, args.reviewThreads).length > 0 || nonActionableConfiguredBotReviewThreads(config, args.reviewThreads).length > 0) {
+    return "manual_or_unconfigured_review_threads";
+  }
+  if (pr.mergeStateStatus === "DIRTY" || pr.mergeable === "CONFLICTING" || !hasCleanMergeState(pr)) {
+    return "merge_conflict";
+  }
+  if (hasFailingChecks(checks)) {
+    return "failing_checks";
+  }
+  if (hasPendingChecks(checks)) {
+    return "pending_checks";
+  }
+  if (remediation.missingProbeReason) {
+    return "missing_verification_probe";
+  }
+  if (clusterConfiguredBotReviewThreads(args.actionableMustFixThreads).length > 1) {
+    return "too_many_clusters";
+  }
+  if (!isVerifiedStaleResidueClassification(remediation.classification)) {
+    return "not_verified_stale_residue";
+  }
+  if (!verifiedAutoResolveEnabled(config, remediation.classification)) {
+    return "opt_in_disabled";
+  }
+
+  return "none";
 }
 
 function codexConnectorCurrentHeadReviewState(args: {
@@ -344,5 +450,67 @@ export function buildStaleReviewBotRemediation(args: {
         ? VERIFIED_NO_SOURCE_CHANGE_MANUAL_NEXT_STEP
         : STALE_REVIEW_BOT_MANUAL_NEXT_STEP,
     summary: classification.summary,
+  };
+}
+
+export function buildStaleReviewBotThreadDiagnostics(args: {
+  config?: SupervisorConfig | null;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest | null;
+  checks: PullRequestCheck[];
+  reviewThreads?: ReviewThread[];
+  remediation?: StaleReviewBotRemediationDto | null;
+}): StaleReviewBotThreadDiagnosticsDto | null {
+  const remediation =
+    args.remediation ??
+    buildStaleReviewBotRemediation({
+      config: args.config,
+      record: args.record,
+      pr: args.pr,
+      checks: args.checks,
+      reviewThreads: args.reviewThreads,
+    });
+  if (!remediation) {
+    return null;
+  }
+
+  const config = args.config ?? null;
+  const reviewThreads = args.reviewThreads ?? [];
+  const configuredThreads = config ? configuredBotReviewThreads(config, reviewThreads) : [];
+  const unresolvedConfiguredThreads = configuredThreads.filter((thread) => !thread.isResolved && !thread.isOutdated);
+  const actionableMustFixThreads = config && configuredReviewProviderKinds(config).includes("codex")
+    ? codexConnectorMustFixReviewThreads(reviewThreads)
+    : config && args.pr
+      ? pendingBotReviewThreads(config, args.record, args.pr, configuredThreads)
+      : [];
+  const repeatStopExhausted =
+    args.record.last_tracked_pr_repeat_failure_decision === "stop_no_progress" ||
+    (config && args.pr
+      ? configuredBotReviewFollowUpState(config, args.record, args.pr, configuredThreads) === "exhausted"
+      : false);
+  const verifiedStaleResidueThreads = isVerifiedStaleResidueClassification(remediation.classification)
+    ? unresolvedConfiguredThreads.length
+    : 0;
+  const missingVerificationEvidenceThreads = remediation.missingProbeReason ? Math.max(actionableMustFixThreads.length, 1) : 0;
+
+  return {
+    issueNumber: args.record.issue_number,
+    prNumber: args.record.pr_number,
+    currentHeadSuccess: currentHeadSuccess(args.pr),
+    unresolvedCurrentThreads: unresolvedConfiguredThreads.length,
+    actionableMustFixThreads: actionableMustFixThreads.length,
+    verifiedStaleResidueThreads,
+    missingVerificationEvidenceThreads,
+    repeatStopExhausted: repeatStopExhausted ? "yes" : "no",
+    autoRepairSuppressedReason: classifyAutoRepairSuppression({
+      config,
+      record: args.record,
+      pr: args.pr,
+      checks: args.checks,
+      reviewThreads,
+      remediation,
+      actionableMustFixThreads,
+      repeatStopExhausted,
+    }),
   };
 }
