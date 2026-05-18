@@ -50,6 +50,10 @@ import { truncate } from "../core/utils";
 import { summarizePreservedPartialWork } from "./supervisor-preserved-partial-work";
 import { classifyStaleReviewBotRecoverability } from "./stale-diagnostic-recoverability";
 import { isWorkstationLocalPathHygieneFailureSignature } from "../workstation-local-path-gate";
+import {
+  conversationResolutionEvidenceContradictsBlocker,
+  conversationResolutionEvidenceToken,
+} from "../conversation-resolution-policy";
 
 function unresolvedReviewThreads(reviewThreads: BuildDetailedStatusModelArgs["reviewThreads"]) {
   return reviewThreads.filter((thread) => !thread.isResolved && !thread.isOutdated);
@@ -92,9 +96,13 @@ function buildConversationResolutionBlockerStatusLine(args: Pick<
   if (codexConnectorPolicy && codexConnectorPolicy.mergeEffect !== "ready") {
     return null;
   }
+  if (conversationResolutionEvidenceContradictsBlocker(args.pr)) {
+    return null;
+  }
 
   return [
     "conversation_resolution_blocker state=blocked",
+    conversationResolutionEvidenceToken(args.pr),
     `outdated_configured_bot_threads=${configuredThreads.length}`,
     `thread_ids=${configuredThreads.map((thread) => thread.id).sort().join(",")}`,
   ].join(" ");

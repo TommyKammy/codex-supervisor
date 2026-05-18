@@ -1832,6 +1832,154 @@ test("GitHubClient getPullRequest does not reuse cached hydration for action rea
   assert.equal(graphqlCalls, 2);
 });
 
+test("GitHubClient hydrates required conversation-resolution evidence from branch protection and rules", async () => {
+  const config = createConfig();
+  const pullRequest = createPullRequest({
+    number: 364,
+    baseRefName: "main",
+    headRefName: "codex/issue-364",
+    headRefOid: "head-364",
+  });
+
+  const client = new GitHubClient(config, async (_command, args) => {
+    if (args[0] === "pr" && args[1] === "view" && args[2] === "364") {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify(pullRequest),
+        stderr: "",
+      };
+    }
+
+    if (args[0] === "api" && args[1] === "graphql") {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                reviewRequests: { nodes: [] },
+                reviews: { nodes: [] },
+                comments: { nodes: [] },
+                reviewThreads: { nodes: [] },
+                timelineItems: { nodes: [] },
+              },
+            },
+          },
+        }),
+        stderr: "",
+      };
+    }
+
+    if (args[0] === "api" && args[1] === "repos/owner/repo/branches/main/protection") {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          required_conversation_resolution: {
+            enabled: true,
+          },
+        }),
+        stderr: "",
+      };
+    }
+
+    if (args[0] === "api" && args[1] === "repos/owner/repo/rules/branches/main") {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify([
+          {
+            type: "pull_request",
+            parameters: {
+              required_review_thread_resolution: false,
+            },
+          },
+        ]),
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  const hydrated = await client.getPullRequest(364);
+
+  assert.equal(hydrated.requiredConversationResolution?.state, "enabled");
+  assert.equal(hydrated.requiredConversationResolution?.source, "github_policy");
+  assert.deepEqual(hydrated.requiredConversationResolution?.details, [
+    "branch_protection=enabled",
+    "ruleset=disabled",
+  ]);
+});
+
+test("GitHubClient marks conversation-resolution evidence disabled only when branch protection and rules agree", async () => {
+  const config = createConfig();
+  const pullRequest = createPullRequest({
+    number: 365,
+    baseRefName: "main",
+    headRefName: "codex/issue-365",
+    headRefOid: "head-365",
+  });
+
+  const client = new GitHubClient(config, async (_command, args) => {
+    if (args[0] === "pr" && args[1] === "view" && args[2] === "365") {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify(pullRequest),
+        stderr: "",
+      };
+    }
+
+    if (args[0] === "api" && args[1] === "graphql") {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                reviewRequests: { nodes: [] },
+                reviews: { nodes: [] },
+                comments: { nodes: [] },
+                reviewThreads: { nodes: [] },
+                timelineItems: { nodes: [] },
+              },
+            },
+          },
+        }),
+        stderr: "",
+      };
+    }
+
+    if (args[0] === "api" && args[1] === "repos/owner/repo/branches/main/protection") {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          required_conversation_resolution: {
+            enabled: false,
+          },
+        }),
+        stderr: "",
+      };
+    }
+
+    if (args[0] === "api" && args[1] === "repos/owner/repo/rules/branches/main") {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify([]),
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  const hydrated = await client.getPullRequest(365);
+
+  assert.equal(hydrated.requiredConversationResolution?.state, "disabled");
+  assert.deepEqual(hydrated.requiredConversationResolution?.details, [
+    "branch_protection=disabled",
+    "ruleset=disabled",
+  ]);
+});
+
 test("GitHubClient resolvePullRequestForBranch reuses cached hydration for informational reads", async () => {
   const config = createConfig();
   const branch = "codex/issue-362";
