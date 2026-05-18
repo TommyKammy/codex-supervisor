@@ -4619,6 +4619,105 @@ test("handlePostTurnPullRequestTransitionsPhase resolves verified current-head r
   assert.match(requestComments[0] ?? "", /codex-supervisor:codex-connector-review-request issue=102 pr=1988 head=head-1988/);
 });
 
+test("handlePostTurnPullRequestTransitionsPhase resolves verified current-head repair Codex threads even when review state falls through to manual_review", async () => {
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const issue = createIssue({ title: "Resolve verified repair thread after manual_review fallthrough" });
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber: issue.number,
+    prNumber: 2034,
+    headSha: "head-2034",
+    threadId: "thread-codex-manual-fallthrough",
+    commentId: "comment-codex-manual-fallthrough",
+    path: "src/review.ts",
+    line: 300,
+    commentBody: "P2: Validate group keys before encoding projection metadata.",
+    discussionUrl: "https://example.test/pr/2034#discussion_r2034",
+    verifiedRepair: {
+      summary: "Focused verifier passed after the repair commit.",
+      ranAt: "2026-05-18T07:18:00Z",
+      command: "npm test -- --test-name-pattern \"malformed projection key|group projection\"",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    mergeable: "MERGEABLE",
+    mergeStateStatus: "CLEAN",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord(scenario.recordPatch),
+    },
+  };
+  const reviewThreads = [scenario.reviewThread] satisfies ReviewThread[];
+  const replyCalls: Array<{ threadId: string; body: string }> = [];
+  const resolveCalls: string[] = [];
+  let snapshotLoads = 0;
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: createNoopStateStore(),
+    github: createDefaultGithub({
+      addIssueComment: async () => ({
+        databaseId: 2034001,
+        nodeId: "IC_kwDO2034",
+        url: "https://example.test/pr/2034#issuecomment-2034001",
+      }),
+      replyToReviewThread: async (threadId: string, body: string) => {
+        replyCalls.push({ threadId, body });
+      },
+      resolveReviewThread: async (threadId: string) => {
+        resolveCalls.push(threadId);
+      },
+    }),
+    context: createPostTurnContext({
+      state,
+      record: state.issues["102"]!,
+      issue,
+      pr,
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+    }),
+    derivePullRequestLifecycleSnapshot: (recordForState, _pr, _checks, currentReviewThreads) =>
+      createLifecycleSnapshot(recordForState, currentReviewThreads.length === 0 ? "waiting_ci" : "blocked", {
+        failureContext: currentReviewThreads.length === 0 ? null : scenario.staleReviewFailureContext,
+      }),
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    blockedReasonFromReviewState: (_record, _pr, _checks, currentReviewThreads) =>
+      currentReviewThreads.length === 0 ? null : "manual_review",
+    summarizeChecks,
+    configuredBotReviewThreads,
+    manualReviewThreads,
+    mergeConflictDetected: () => false,
+    runLocalCiCommand: async () => undefined,
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
+    loadOpenPullRequestSnapshot: async () => {
+      snapshotLoads += 1;
+      return {
+        pr,
+        checks: scenario.passingChecks,
+        reviewThreads: snapshotLoads <= 2 ? reviewThreads : [],
+      };
+    },
+  });
+
+  assert.equal(result.record.state, "waiting_ci");
+  assert.equal(result.record.blocked_reason, null);
+  assert.deepEqual(replyCalls.map((call) => call.threadId), ["thread-codex-manual-fallthrough"]);
+  assert.deepEqual(resolveCalls, ["thread-codex-manual-fallthrough"]);
+  assert.match(replyCalls[0]?.body ?? "", /reason=verified_current_head_repair_auto_resolve/);
+});
+
 test("handlePostTurnPullRequestTransitionsPhase keeps verified repair thread resolution fail-closed without opt-in or current codex_turn evidence", async () => {
   const cases: Array<{
     name: string;

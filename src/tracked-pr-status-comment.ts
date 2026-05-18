@@ -690,11 +690,17 @@ export async function maybeCommentOnTrackedPrPersistentStatus(args: {
     failureContext: args.failureContext,
     summarizeChecks: args.summarizeChecks,
   });
+  const remediationRecord =
+    args.record.state === "blocked" &&
+    (args.record.blocked_reason === "stale_review_bot" || args.record.blocked_reason === "manual_review") &&
+    args.manualReviewThreadCount === 0
+      ? { ...args.record, blocked_reason: "stale_review_bot" as const }
+      : args.record;
   const staleReviewBotRemediation =
-    args.record.state === "blocked" && args.record.blocked_reason === "stale_review_bot"
+    remediationRecord.state === "blocked" && remediationRecord.blocked_reason === "stale_review_bot"
       ? buildStaleReviewBotRemediation({
           config: args.config,
-          record: args.record,
+          record: remediationRecord,
           pr: args.pr,
           checks: args.checks,
           reviewThreads: args.reviewThreads,
@@ -714,7 +720,9 @@ export async function maybeCommentOnTrackedPrPersistentStatus(args: {
   const canAutoHandleStaleConfiguredBotReview =
     !args.skipAutoHandleStaleConfiguredBotReview &&
     args.record.state === "blocked" &&
-    args.record.blocked_reason === "stale_review_bot" &&
+    (args.record.blocked_reason === "stale_review_bot" ||
+      ((canResolveVerifiedNoSourceChangeThreadResolution || canResolveVerifiedCurrentHeadRepairThreadResolution) &&
+        args.record.blocked_reason === "manual_review")) &&
     comment &&
     args.manualReviewThreadCount === 0 &&
     !args.summarizeChecks(args.checks).hasPending &&

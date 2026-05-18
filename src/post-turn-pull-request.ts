@@ -981,7 +981,7 @@ export async function handlePostTurnPullRequestTransitionsPhase(
       config.verifiedNoSourceChangeReviewThreadAutoResolve === true ||
       config.verifiedCurrentHeadRepairReviewThreadAutoResolve === true) &&
     record.state === "blocked" &&
-    record.blocked_reason === "stale_review_bot" &&
+    (record.blocked_reason === "stale_review_bot" || record.blocked_reason === "manual_review") &&
     record.last_stale_review_bot_reply_head_sha === postReady.pr.headRefOid &&
     record.last_stale_review_bot_reply_signature === staleReviewBotReplySignature &&
     hasResolvedAllStaleConfiguredBotThreads({
