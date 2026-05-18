@@ -120,6 +120,10 @@ interface TrackedPrProgressSnapshot {
   unresolvedReviewThreadIds: string[];
   unresolvedReviewThreadFingerprints?: string[];
   unresolvedReviewThreadClusterSignatures?: string[];
+  unresolvedReviewThreadSourceAnchors?: string[];
+  processedReviewThreadIds?: string[];
+  processedReviewThreadFingerprints?: string[];
+  verificationProbeOutcomes?: string[];
 }
 
 export interface TrackedPrRepeatFailureDisposition {
@@ -129,7 +133,13 @@ export interface TrackedPrRepeatFailureDisposition {
   decision: "retry_on_progress" | "stop_no_progress";
 }
 
+const TRACKED_PR_PROGRESS_EXTENSION_MULTIPLIER = 2;
+
 function buildTrackedPrProgressSnapshot(
+  record: Pick<
+    IssueRunRecord,
+    "processed_review_thread_ids" | "processed_review_thread_fingerprints" | "timeline_artifacts"
+  >,
   pr: GitHubPullRequest,
   checks: PullRequestCheck[],
   reviewThreads: ReviewThread[],
@@ -159,6 +169,18 @@ function buildTrackedPrProgressSnapshot(
     unresolvedReviewThreadFingerprints: unresolvedReviewThreads
       .map((thread) => `${thread.id}#${latestReviewThreadCommentFingerprint(thread) ?? "no-comment"}`)
       .sort(),
+    unresolvedReviewThreadSourceAnchors: unresolvedReviewThreads
+      .map((thread) => `${thread.id}:${thread.path ?? "unknown"}:${thread.line ?? "unknown"}`)
+      .sort(),
+    processedReviewThreadIds: [...(record.processed_review_thread_ids ?? [])].sort(),
+    processedReviewThreadFingerprints: [...(record.processed_review_thread_fingerprints ?? [])].sort(),
+    verificationProbeOutcomes: (record.timeline_artifacts ?? [])
+      .filter((artifact) => artifact.type === "verification_result" && artifact.head_sha === pr.headRefOid)
+      .map(
+        (artifact) =>
+          `${artifact.gate}:${artifact.command ?? "none"}:${artifact.outcome}:${artifact.remediation_target ?? "none"}`,
+      )
+      .sort(),
     ...(unresolvedReviewThreadClusterSignatures.length > 0
       ? { unresolvedReviewThreadClusterSignatures }
       : {}),
@@ -185,6 +207,20 @@ function parseTrackedPrProgressSnapshot(snapshot: string | null | undefined): Tr
   } catch {
     return null;
   }
+}
+
+function hasExtendedTrackedPrProgressBaseline(snapshot: TrackedPrProgressSnapshot | null): boolean {
+  return (
+    snapshot !== null &&
+    Array.isArray(snapshot.unresolvedReviewThreadSourceAnchors) &&
+    Array.isArray(snapshot.processedReviewThreadIds) &&
+    Array.isArray(snapshot.processedReviewThreadFingerprints) &&
+    Array.isArray(snapshot.verificationProbeOutcomes)
+  );
+}
+
+function joinProgressValues(values: string[] | undefined): string | null {
+  return Array.isArray(values) && values.length > 0 ? values.join("|") : null;
 }
 
 function listChangedSignals(previous: TrackedPrProgressSnapshot | null, current: TrackedPrProgressSnapshot): string[] {
@@ -234,6 +270,29 @@ function listChangedSignals(previous: TrackedPrProgressSnapshot | null, current:
   ) {
     signals.push("review_thread_cluster_membership_changed");
   }
+  const previousSourceAnchors = joinProgressValues(previous?.unresolvedReviewThreadSourceAnchors);
+  const currentSourceAnchors = joinProgressValues(current.unresolvedReviewThreadSourceAnchors);
+  if (currentSourceAnchors !== null && (previous === null || previousSourceAnchors === null || previousSourceAnchors !== currentSourceAnchors)) {
+    signals.push("review_thread_source_anchor_changed");
+  }
+  const previousProcessedFingerprints = joinProgressValues(previous?.processedReviewThreadFingerprints);
+  const currentProcessedFingerprints = joinProgressValues(current.processedReviewThreadFingerprints);
+  if (
+    currentProcessedFingerprints !== null &&
+    (previous === null ||
+      previousProcessedFingerprints === null ||
+      previousProcessedFingerprints !== currentProcessedFingerprints)
+  ) {
+    signals.push("processed_review_thread_fingerprints_changed");
+  }
+  const previousVerificationProbes = joinProgressValues(previous?.verificationProbeOutcomes);
+  const currentVerificationProbes = joinProgressValues(current.verificationProbeOutcomes);
+  if (
+    currentVerificationProbes !== null &&
+    (previous === null || previousVerificationProbes === null || previousVerificationProbes !== currentVerificationProbes)
+  ) {
+    signals.push("verification_probe_outcome_changed");
+  }
   if (previous !== null && reviewSignalChanged) {
     signals.push("review_state_changed");
   }
@@ -254,12 +313,19 @@ function listChangedSignals(previous: TrackedPrProgressSnapshot | null, current:
 }
 
 export function summarizeTrackedPrProgress(
-  record: Pick<IssueRunRecord, "last_head_sha" | "last_tracked_pr_progress_snapshot">,
+  record: Pick<
+    IssueRunRecord,
+    | "last_head_sha"
+    | "last_tracked_pr_progress_snapshot"
+    | "processed_review_thread_ids"
+    | "processed_review_thread_fingerprints"
+    | "timeline_artifacts"
+  >,
   pr: GitHubPullRequest,
   checks: PullRequestCheck[],
   reviewThreads: ReviewThread[],
 ): { snapshot: string; summary: string | null } {
-  const current = buildTrackedPrProgressSnapshot(pr, checks, reviewThreads);
+  const current = buildTrackedPrProgressSnapshot(record, pr, checks, reviewThreads);
   const previous = parseTrackedPrProgressSnapshot(record.last_tracked_pr_progress_snapshot);
   const signals = listChangedSignals(previous, current);
 
@@ -283,14 +349,18 @@ export function determineTrackedPrRepeatFailureDisposition(args: {
     | "repeated_failure_signature_count"
     | "last_head_sha"
     | "last_tracked_pr_progress_snapshot"
+    | "processed_review_thread_ids"
+    | "processed_review_thread_fingerprints"
+    | "timeline_artifacts"
   >;
   config: Pick<SupervisorConfig, "sameFailureSignatureRepeatLimit">;
   pr: GitHubPullRequest;
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
 }): TrackedPrRepeatFailureDisposition {
+  const previous = parseTrackedPrProgressSnapshot(args.record.last_tracked_pr_progress_snapshot);
   const { snapshot, summary } = summarizeTrackedPrProgress(args.record, args.pr, args.checks, args.reviewThreads);
-  const missingProgressBaseline = !args.record.last_tracked_pr_progress_snapshot;
+  const missingProgressBaseline = !hasExtendedTrackedPrProgressBaseline(previous);
   const overRepeatLimit =
     args.record.last_failure_signature !== null &&
     args.record.repeated_failure_signature_count >= args.config.sameFailureSignatureRepeatLimit;
@@ -313,11 +383,31 @@ export function determineTrackedPrRepeatFailureDisposition(args: {
     };
   }
 
+  if (summary === null) {
+    return {
+      shouldStop: true,
+      progressSnapshot: snapshot,
+      progressSummary: "no_meaningful_tracked_pr_progress",
+      decision: "stop_no_progress",
+    };
+  }
+
+  const progressExtensionLimit =
+    args.config.sameFailureSignatureRepeatLimit * TRACKED_PR_PROGRESS_EXTENSION_MULTIPLIER;
+  if (args.record.repeated_failure_signature_count >= progressExtensionLimit) {
+    return {
+      shouldStop: true,
+      progressSnapshot: snapshot,
+      progressSummary: `progress_extension_budget_exhausted latest_progress=${summary}`,
+      decision: "stop_no_progress",
+    };
+  }
+
   return {
-    shouldStop: summary === null,
+    shouldStop: false,
     progressSnapshot: snapshot,
-    progressSummary: summary ?? "no_meaningful_tracked_pr_progress",
-    decision: summary === null ? "stop_no_progress" : "retry_on_progress",
+    progressSummary: summary,
+    decision: "retry_on_progress",
   };
 }
 
