@@ -852,3 +852,73 @@ test("buildDetailedStatusModel names conversation-resolution blockers from outda
     ),
   );
 });
+
+test("buildDetailedStatusModel does not name conversation-resolution blocker when latest thread author is not configured bot", () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+  });
+  const pr = createPullRequest({
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+    reviewDecision: null,
+    configuredBotCurrentHeadObservedAt: "2026-05-18T01:00:00Z",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
+  });
+  const reviewThreads: ReviewThread[] = [
+    {
+      id: "thread-human-latest",
+      isResolved: false,
+      isOutdated: true,
+      path: "src/file.ts",
+      line: 12,
+      comments: {
+        nodes: [
+          {
+            id: "comment-bot-1",
+            body: "Outdated Codex thread.",
+            createdAt: "2026-05-18T00:50:00Z",
+            url: "https://example.test/pr/44#discussion_r1",
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+          {
+            id: "comment-human-1",
+            body: "This still needs a human decision.",
+            createdAt: "2026-05-18T00:55:00Z",
+            url: "https://example.test/pr/44#discussion_r2",
+            author: {
+              login: "octocat",
+              typeName: "User",
+            },
+          },
+        ],
+      },
+    },
+  ];
+
+  const lines = buildDetailedStatusModel({
+    config,
+    activeRecord: createRecord({
+      pr_number: 44,
+      state: "pr_open",
+      last_error: null,
+      last_failure_context: null,
+    }),
+    latestRecord: null,
+    trackedIssueCount: 1,
+    pr,
+    checks: [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads,
+    manualReviewThreads,
+    configuredBotReviewThreads,
+    pendingBotReviewThreads: () => [],
+    summarizeChecks: () => ({ allPassing: true, hasPending: false, hasFailing: false }),
+    mergeConflictDetected: (pr) => pr.mergeStateStatus === "DIRTY",
+  });
+
+  assert.ok(lines.includes("review_threads bot_pending=0 bot_unresolved=0 manual=0"));
+  assert.equal(lines.some((line) => line.startsWith("conversation_resolution_blocker ")), false);
+});
