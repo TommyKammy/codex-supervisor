@@ -27,5 +27,8 @@ export function formatStaleReviewBotRemediationLine(remediation: StaleReviewBotR
       `verification_evidence=${formatStaleReviewBotTokenValue(remediation.verificationEvidenceSummary).replace(/\s+/gu, "_")}`,
     );
   }
+  if (remediation.missingProbeReason) {
+    tokens.splice(tokens.length - 1, 0, `missing_probe_reason=${remediation.missingProbeReason}`);
+  }
   return tokens.join(" ");
 }

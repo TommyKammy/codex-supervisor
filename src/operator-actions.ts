@@ -351,6 +351,20 @@ export function selectStatusOperatorAction(args: {
       continue;
     }
 
+    if (
+      /^stale_review_bot_remediation\b/.test(line) &&
+      /\bclassification=(?:actionable_current_diff|unknown_needs_operator)\b/.test(line)
+    ) {
+      actions.push({
+        action: "manual_review",
+        source: "stale_review_bot_remediation",
+        priority: 73,
+        summary:
+          "A Codex Connector must-fix thread still lacks trusted current-head verification evidence; inspect the thread or run a focused verifier before resolving it.",
+      });
+      continue;
+    }
+
     if (/^stale_review_bot_remediation\b/.test(line)) {
       actions.push({
         action: "resolve_stale_review_bot",
