@@ -8,6 +8,7 @@ import {
 import {
   codexConnectorStaleReviewCommitThreads,
   codexConnectorMustFixReviewThreads,
+  commitShasDifferForComparison,
   configuredBotReviewFollowUpState,
   latestReviewCommentAuthorIsAllowedBot,
   staleConfiguredBotReviewThreads,
@@ -157,6 +158,11 @@ export function codexConnectorReviewRequestAction(
     staleCodexReviewState?.classification === "verified_no_source_change_pending_thread_resolution";
   const isCodexVerifiedCurrentHeadRepairThreadResolution =
     staleCodexReviewState?.classification === "verified_current_head_repair_pending_thread_resolution";
+  const isStaleHeadMissingCurrentHeadReview =
+    !isValidTimestamp(args.pr.configuredBotCurrentHeadObservedAt) &&
+    (commitShasDifferForComparison(args.pr.configuredBotLatestReviewedCommitSha, args.pr.headRefOid) ||
+      commitShasDifferForComparison(args.record.provider_success_head_sha, args.pr.headRefOid) ||
+      commitShasDifferForComparison(args.record.external_review_head_sha, args.pr.headRefOid));
   const isCodexMetadataOnly =
     staleCodexReviewState?.classification === "metadata_only" ||
     staleCodexReviewState?.classification === "metadata_only_missing_current_head_review" ||
@@ -167,6 +173,7 @@ export function codexConnectorReviewRequestAction(
   if (
     configuredReviewProviderKinds(args.config).includes("codex") &&
     !isCodexMissingCurrentHeadReview &&
+    !isStaleHeadMissingCurrentHeadReview &&
     (isCodexConvergedCurrentHeadReview ||
       isCodexVerifiedNoSourceChangeThreadResolution ||
       isCodexVerifiedCurrentHeadRepairThreadResolution ||

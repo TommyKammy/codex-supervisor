@@ -1119,6 +1119,43 @@ test("formatCodexConnectorConvergenceDiagnostic distinguishes Codex Connector re
   );
 });
 
+test("formatCodexConnectorConvergenceDiagnostic requests review for stale-head signal after timeout", () => {
+  const originalNow = Date.now;
+  Date.now = () => Date.parse("2026-05-08T03:30:00Z");
+  try {
+    const config = createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector"],
+      configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+      configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+    });
+    const pr = createPr({
+      headRefOid: "head-new",
+      currentHeadCiGreenAt: "2026-05-08T03:09:36Z",
+      configuredBotCurrentHeadObservedAt: null,
+      configuredBotLatestReviewedCommitSha: "head-old",
+    });
+
+    assert.equal(
+      formatCodexConnectorConvergenceDiagnostic({
+        config,
+        record: createRecord({
+          state: "blocked",
+          pr_number: pr.number,
+          provider_success_head_sha: "head-old",
+          provider_success_observed_at: "2026-05-08T03:00:00Z",
+          codex_connector_review_requested_observed_at: null,
+          codex_connector_review_requested_head_sha: null,
+        }),
+        pr,
+        reviewThreads: [],
+      }),
+      "codex_connector_convergence status=stale_head provider=codex current_head_sha=head-new current_head_observed_at=none latest_signal_head_sha=head-old highest_severity=none finding_count=0 merge_effect=blocked next_action=request_current_head_review",
+    );
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
 test("configuredBotInitialGraceWaitWindow reports the active CodeRabbit re-wait after a draft skip when the PR becomes ready", () => {
   const originalNow = Date.now;
   Date.now = () => Date.parse("2026-03-16T00:00:45.000Z");

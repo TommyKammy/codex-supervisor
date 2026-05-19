@@ -520,7 +520,7 @@ export function formatCodexConnectorConvergenceDiagnostic(args: {
   } else if (staleSignalHeadSha) {
     status = "stale_head";
     mergeEffect = "blocked";
-    nextAction = "wait_for_current_head_signal";
+    nextAction = staleReviewCommitNextAction;
   } else if (policy.outcome === "must_fix_remaining") {
     status = "repairing_must_fix";
     nextAction = policy.nextAction;
