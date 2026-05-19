@@ -4,12 +4,8 @@ import {
 import { configuredReviewProviderKinds } from "../core/review-providers";
 import {
   actionableBotReviewThreads,
-  buildCodexConnectorP2P3PolicyDiagnostic,
-  buildCodexConnectorPolicyBlockDiagnostic,
   configuredBotReviewFollowUpState,
   evaluateCodexConnectorConvergencePolicy,
-  formatCodexConnectorP2P3PolicyDiagnostic,
-  formatCodexConnectorPolicyBlockDiagnostic,
   latestReviewCommentAuthorIsAllowedBot,
 } from "../review-thread-reporting";
 import { formatWorkspaceRestoreStatusLine } from "../core/workspace";
@@ -21,6 +17,7 @@ import {
   summarizeCheckBuckets,
 } from "./supervisor-status-summary-helpers";
 import {
+  buildCodexConnectorDiagnosticBundle,
   configuredBotCurrentHeadSignalWaitWindow,
   configuredBotInitialGraceWaitWindow,
   configuredBotSettledWaitWindow,
@@ -29,9 +26,7 @@ import {
   configuredReviewBots,
   configuredReviewStatusLabel,
   externalSignalReadinessDiagnostics,
-  formatCodexConnectorConvergenceDiagnostic,
-  formatCodexConnectorOperatorDiagnostic,
-  formatCodexConnectorReviewFallbackDiagnostic,
+  formatStaleReviewResidueOperatorDiagnostic,
   inferReviewBotProfile,
   reviewBotDiagnostics,
 } from "./supervisor-status-review-bot";
@@ -105,26 +100,6 @@ function buildConversationResolutionBlockerStatusLine(args: Pick<
     conversationResolutionEvidenceToken(args.pr),
     `outdated_configured_bot_threads=${configuredThreads.length}`,
     `thread_ids=${configuredThreads.map((thread) => thread.id).sort().join(",")}`,
-  ].join(" ");
-}
-
-export function formatStaleReviewResidueOperatorDiagnostic(
-  remediation: NonNullable<ReturnType<typeof buildStaleReviewBotRemediation>>,
-): string {
-  const latestConfiguredBotReviewSha =
-    remediation.processedOnCurrentHead === "yes" ? remediation.currentHeadSha : "none";
-  const actionableCurrentDiffThreads =
-    remediation.classification === "unresolved_work" || remediation.classification === "unknown_needs_operator"
-      ? "unknown"
-      : "0";
-  return [
-    "codex_connector_operator_diagnostic",
-    "interpretation=stale_review_residue",
-    `current_head_sha=${sanitizeStatusValue(remediation.currentHeadSha)}`,
-    `latest_configured_bot_review_sha=${sanitizeStatusValue(latestConfiguredBotReviewSha)}`,
-    `current_head_review_signal=${remediation.codexCurrentHeadReviewState}`,
-    `actionable_current_diff_threads=${actionableCurrentDiffThreads}`,
-    `next_action=${remediation.manualNextStep}`,
   ].join(" ");
 }
 
@@ -440,13 +415,19 @@ export function buildActiveDetailedStatusLines(
       }
       lines.push(formatStaleReviewResidueOperatorDiagnostic(staleReviewBotRemediation));
     }
-    const codexConnectorPolicyBlock = buildCodexConnectorPolicyBlockDiagnostic(config, reviewThreads, pr);
-    if (codexConnectorPolicyBlock) {
-      lines.push(formatCodexConnectorPolicyBlockDiagnostic(codexConnectorPolicyBlock));
+    const codexConnectorDiagnostics = buildCodexConnectorDiagnosticBundle({
+      config,
+      record: activeRecord,
+      pr,
+      checks,
+      reviewThreads,
+      includeP2P3Policy: true,
+    });
+    if (codexConnectorDiagnostics.policyBlockSummary) {
+      lines.push(codexConnectorDiagnostics.policyBlockSummary);
     }
-    const codexConnectorP2P3Policy = buildCodexConnectorP2P3PolicyDiagnostic(config, reviewThreads, pr);
-    if (codexConnectorP2P3Policy) {
-      lines.push(formatCodexConnectorP2P3PolicyDiagnostic(codexConnectorP2P3Policy));
+    if (codexConnectorDiagnostics.p2p3PolicySummary) {
+      lines.push(codexConnectorDiagnostics.p2p3PolicySummary);
     }
     const reviewBotProfile = inferReviewBotProfile(config);
     const reviewBotStatus = reviewBotDiagnostics(config, activeRecord, pr, reviewThreads, configuredBotReviewThreads);
@@ -475,32 +456,14 @@ export function buildActiveDetailedStatusLines(
     lines.push(
       `${reviewStatusLabel} state=${copilotReviewState}${reviewersSuffix} requested_at=${pr.copilotReviewRequestedAt ?? "none"} arrived_at=${pr.copilotReviewArrivedAt ?? "none"} timed_out_at=${activeRecord.copilot_review_timed_out_at ?? "none"} timeout_action=${activeRecord.copilot_review_timeout_action ?? "none"}`,
     );
-    const codexConnectorReviewFallback = formatCodexConnectorReviewFallbackDiagnostic({
-      config,
-      record: activeRecord,
-      pr,
-      checks,
-    });
-    if (codexConnectorReviewFallback) {
-      lines.push(codexConnectorReviewFallback);
+    if (codexConnectorDiagnostics.reviewFallbackSummary) {
+      lines.push(codexConnectorDiagnostics.reviewFallbackSummary);
     }
-    const codexConnectorConvergence = formatCodexConnectorConvergenceDiagnostic({
-      config,
-      record: activeRecord,
-      pr,
-      reviewThreads,
-    });
-    if (codexConnectorConvergence) {
-      lines.push(codexConnectorConvergence);
+    if (codexConnectorDiagnostics.convergenceSummary) {
+      lines.push(codexConnectorDiagnostics.convergenceSummary);
     }
-    const codexConnectorOperatorDiagnostic = formatCodexConnectorOperatorDiagnostic({
-      config,
-      record: activeRecord,
-      pr,
-      reviewThreads,
-    });
-    if (codexConnectorOperatorDiagnostic) {
-      lines.push(codexConnectorOperatorDiagnostic);
+    if (codexConnectorDiagnostics.operatorDiagnosticSummary) {
+      lines.push(codexConnectorDiagnostics.operatorDiagnosticSummary);
     }
     lines.push(`pr_hydration provenance=${pr.hydrationProvenance ?? "unknown"} head_sha=${pr.headRefOid}`);
     lines.push(

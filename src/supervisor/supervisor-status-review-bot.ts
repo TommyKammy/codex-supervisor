@@ -11,13 +11,18 @@ import { displayLocalCiCommand } from "../core/config-parsing";
 import { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "../core/types";
 import { localReviewDegradedNeedsBlock } from "../review-handling";
 import {
+  buildCodexConnectorP2P3PolicyDiagnostic,
+  buildCodexConnectorPolicyBlockDiagnostic,
   codexConnectorMustFixReviewThreads,
   codexConnectorStaleReviewCommitThreads,
   commitShasDifferForComparison,
   commitShasEqualForComparison,
   evaluateCodexConnectorConvergencePolicy,
+  formatCodexConnectorP2P3PolicyDiagnostic,
+  formatCodexConnectorPolicyBlockDiagnostic,
 } from "../review-thread-reporting";
 import { classifyStaleReviewBotRecoverability, recoverabilityStatusToken } from "./stale-diagnostic-recoverability";
+import type { StaleReviewBotRemediationDto } from "./stale-review-bot-remediation";
 
 type ReviewThreadClassifier = (config: SupervisorConfig, reviewThreads: ReviewThread[]) => ReviewThread[];
 const DEFAULT_CONFIGURED_BOT_SETTLED_WAIT_MS = 5_000;
@@ -115,6 +120,14 @@ export interface ExternalSignalReadinessDiagnostics {
   ci: string;
   review: string;
   workflows: string;
+}
+
+export interface CodexConnectorDiagnosticBundle {
+  policyBlockSummary: string | null;
+  p2p3PolicySummary: string | null;
+  reviewFallbackSummary: string | null;
+  convergenceSummary: string | null;
+  operatorDiagnosticSummary: string | null;
 }
 
 function hasCurrentHeadProviderSuccess(activeRecord: IssueRunRecord, pr: GitHubPullRequest): boolean {
@@ -647,6 +660,63 @@ export function formatCodexConnectorOperatorDiagnostic(args: {
       : []),
     `next_action=${nextAction}`,
   ].join(" ");
+}
+
+export function formatStaleReviewResidueOperatorDiagnostic(remediation: StaleReviewBotRemediationDto): string {
+  const latestConfiguredBotReviewSha =
+    remediation.processedOnCurrentHead === "yes" ? remediation.currentHeadSha : "none";
+  const actionableCurrentDiffThreads =
+    remediation.classification === "unresolved_work" || remediation.classification === "unknown_needs_operator"
+      ? "unknown"
+      : "0";
+  return [
+    "codex_connector_operator_diagnostic",
+    "interpretation=stale_review_residue",
+    `current_head_sha=${remediation.currentHeadSha.replace(/\r?\n/g, "\\n")}`,
+    `latest_configured_bot_review_sha=${latestConfiguredBotReviewSha.replace(/\r?\n/g, "\\n")}`,
+    `current_head_review_signal=${remediation.codexCurrentHeadReviewState}`,
+    `actionable_current_diff_threads=${actionableCurrentDiffThreads}`,
+    `next_action=${remediation.manualNextStep}`,
+  ].join(" ");
+}
+
+export function buildCodexConnectorDiagnosticBundle(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+  staleReviewBotRemediation?: StaleReviewBotRemediationDto | null;
+  includeP2P3Policy?: boolean;
+}): CodexConnectorDiagnosticBundle {
+  const policyBlock = buildCodexConnectorPolicyBlockDiagnostic(args.config, args.reviewThreads, args.pr);
+  const p2p3Policy = args.includeP2P3Policy
+    ? buildCodexConnectorP2P3PolicyDiagnostic(args.config, args.reviewThreads, args.pr)
+    : null;
+  return {
+    policyBlockSummary: policyBlock ? formatCodexConnectorPolicyBlockDiagnostic(policyBlock) : null,
+    p2p3PolicySummary: p2p3Policy ? formatCodexConnectorP2P3PolicyDiagnostic(p2p3Policy) : null,
+    reviewFallbackSummary: formatCodexConnectorReviewFallbackDiagnostic({
+      config: args.config,
+      record: args.record,
+      pr: args.pr,
+      checks: args.checks,
+    }),
+    convergenceSummary: formatCodexConnectorConvergenceDiagnostic({
+      config: args.config,
+      record: args.record,
+      pr: args.pr,
+      reviewThreads: args.reviewThreads,
+    }),
+    operatorDiagnosticSummary: args.staleReviewBotRemediation
+      ? formatStaleReviewResidueOperatorDiagnostic(args.staleReviewBotRemediation)
+      : formatCodexConnectorOperatorDiagnostic({
+        config: args.config,
+        record: args.record,
+        pr: args.pr,
+        reviewThreads: args.reviewThreads,
+      }),
+  };
 }
 
 export function configuredBotInitialGraceWaitWindow(
