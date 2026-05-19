@@ -32,6 +32,7 @@ import {
   type StaleDiagnosticRecoverability,
 } from "./stale-diagnostic-recoverability";
 import { isWorkstationLocalPathHygieneFailureSignature } from "../workstation-local-path-gate";
+import { buildStaleReviewBotRemediation } from "./stale-review-bot-remediation";
 
 export interface TrackedPrMismatch {
   issueNumber: number;
@@ -454,6 +455,20 @@ export function buildTrackedPrMismatch(
   const staleLocalBlocker =
     record.blocked_reason !== null &&
     (githubState !== "blocked" || githubBlockedReason !== record.blocked_reason);
+
+  if (
+    record.state === "blocked" &&
+    record.blocked_reason === "manual_review" &&
+    buildStaleReviewBotRemediation({
+      config,
+      record,
+      pr,
+      checks,
+      reviewThreads,
+    })
+  ) {
+    return null;
+  }
 
   if (record.state === "blocked" && record.blocked_reason === "verification" && githubState === "draft_pr" && pr.isDraft) {
     const readyPromotionGate = readyPromotionGateSummary(config, record, pr, checks);
