@@ -83,6 +83,29 @@ test("codexConnectorReviewRequestAction selects an initial request without GitHu
   assert.deepEqual(decide(), { kind: "initial" });
 });
 
+test("codexConnectorReviewRequestAction requests review for stale-head configured-bot signal after timeout", () => {
+  assert.deepEqual(
+    decide({
+      record: {
+        state: "blocked",
+        blocked_reason: "stale_review_bot",
+        provider_success_head_sha: "head-old",
+        provider_success_observed_at: "2026-05-08T03:00:00Z",
+        external_review_head_sha: "head-old",
+      },
+      pr: {
+        headRefOid: "head-1995",
+        configuredBotLatestReviewedCommitSha: "head-old",
+        configuredBotCurrentHeadObservedAt: null,
+      },
+      reviewThreads: [],
+      configuredThreads: [],
+      manualThreads: [],
+    }),
+    { kind: "initial" },
+  );
+});
+
 test("codexConnectorReviewRequestAction selects retry after the same-head request wait expires", () => {
   assert.deepEqual(
     decide({
