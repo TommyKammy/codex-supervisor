@@ -352,6 +352,22 @@ export function selectStatusOperatorAction(args: {
     }
 
     if (
+      /^codex_connector_review_fallback\b/.test(line) &&
+      /\bstatus=timeout_elapsed\b/.test(line) &&
+      /\btimeout_action=request_review_comment\b/.test(line) &&
+      /\brequested_at=none\b/.test(line)
+    ) {
+      actions.push({
+        action: "provider_outage_suspected",
+        source: "codex_connector_review_fallback",
+        priority: 70,
+        summary:
+          "The configured review provider has not reported on the current head after checks turned green; wait, verify provider delivery, or escalate to manual review.",
+      });
+      continue;
+    }
+
+    if (
       /^stale_review_bot_remediation\b/.test(line) &&
       /\bclassification=(?:actionable_current_diff|unknown_needs_operator)\b/.test(line)
     ) {

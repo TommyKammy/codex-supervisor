@@ -1824,6 +1824,115 @@ test("handlePostTurnPullRequestTransitionsPhase re-requests Codex Connector revi
   }
 });
 
+test("handlePostTurnPullRequestTransitionsPhase requests Codex review for stale review commit residue after repair-head recovery", async () => {
+  const originalDateNow = Date.now;
+  Date.now = () => Date.parse("2026-05-19T09:14:00Z");
+  try {
+    const config = createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector"],
+      configuredBotInitialGraceWaitSeconds: 0,
+      configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+      configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+    });
+    const issue = createIssue({ number: 143, title: "HRCore stale Codex residue" });
+    const currentHead = "c1ac7215a12398842152b1daf42311faef297317";
+    const staleReviewHead = "98da2474c530b76dae67b5a6f43e0671b989f65a";
+    const pr = createPullRequest({
+      number: 147,
+      title: "HRCore stale Codex residue",
+      isDraft: false,
+      headRefOid: currentHead,
+      mergeStateStatus: "BLOCKED",
+      mergeable: "MERGEABLE",
+      currentHeadCiGreenAt: "2026-05-19T09:03:41Z",
+      configuredBotCurrentHeadObservedAt: null,
+      configuredBotLatestReviewedCommitSha: staleReviewHead,
+      codexConnectorReviewRequestedAt: null,
+      codexConnectorReviewRequestedHeadSha: null,
+    });
+    const staleReviewCommitThread = createReviewThread({
+      id: "PRRT_kwDOSfC_1M6DF5s7",
+      path: "src/local-sqlite.ts",
+      line: 120,
+      comments: {
+        nodes: [
+          {
+            id: "comment-stale-codex-review-commit",
+            body: "P1: Run new migrations for existing local databases.",
+            createdAt: "2026-05-19T09:01:00Z",
+            url: "https://example.test/pr/147#discussion_r147",
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    });
+    const record = createRecord({
+      issue_number: issue.number,
+      state: "addressing_review",
+      pr_number: pr.number,
+      last_head_sha: currentHead,
+      review_wait_started_at: null,
+      review_wait_head_sha: null,
+      provider_success_observed_at: "2026-05-19T09:00:00Z",
+      provider_success_head_sha: staleReviewHead,
+      copilot_review_timed_out_at: "2026-05-19T09:13:41.000Z",
+      copilot_review_timeout_action: "request_review_comment",
+      codex_connector_review_requested_observed_at: null,
+      codex_connector_review_requested_head_sha: null,
+    });
+    const state: SupervisorStateFile = {
+      activeIssueNumber: issue.number,
+      issues: { [String(issue.number)]: record },
+    };
+    const comments: Array<{ issueNumber: number; body: string }> = [];
+
+    const result = await handlePostTurnPullRequestTransitionsPhase({
+      config,
+      stateStore: createNoopStateStore(),
+      github: createDefaultGithub({
+        addIssueComment: async (issueNumber, body) => {
+          comments.push({ issueNumber, body });
+        },
+      }),
+      context: createPostTurnContext({
+        issue,
+        pr,
+        workspacePath: path.join(os.tmpdir(), "workspaces", "issue-143"),
+        state,
+        record,
+      }),
+      loadOpenPullRequestSnapshot: async () => ({
+        pr,
+        checks: [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+        reviewThreads: [staleReviewCommitThread],
+      }),
+      derivePullRequestLifecycleSnapshot: (currentRecord, currentPr, checks, reviewThreads, recordPatch) =>
+        deriveSupervisorPullRequestLifecycleSnapshot(config, currentRecord, currentPr, checks, reviewThreads, recordPatch),
+      applyFailureSignature: () => ({ last_failure_signature: null, repeated_failure_signature_count: 0 }),
+      blockedReasonFromReviewState: (currentRecord, currentPr, checks, reviewThreads) =>
+        resolveBlockedReasonFromReviewState(config, currentRecord, currentPr, checks, reviewThreads),
+      summarizeChecks,
+      configuredBotReviewThreads,
+      manualReviewThreads,
+      mergeConflictDetected: () => false,
+    });
+
+    assert.equal(comments.length, 1);
+    assert.equal(comments[0]?.issueNumber, pr.number);
+    assert.equal(
+      comments[0]?.body ?? "",
+      `@codex review\n\n<!-- codex-supervisor:codex-connector-review-request issue=${issue.number} pr=${pr.number} head=${pr.headRefOid} -->`,
+    );
+    assert.equal(result.record.codex_connector_review_requested_head_sha, currentHead);
+    assert.ok(result.record.codex_connector_review_requested_observed_at);
+  } finally {
+    Date.now = originalDateNow;
+  }
+});
+
 test("handlePostTurnPullRequestTransitionsPhase clears stale ready-promotion blockers when refreshed state is waiting_ci", async (t) => {
   const { workspacePath, headSha } = await createTrackedIssueBranchRepo();
   t.after(async () => {

@@ -6,6 +6,7 @@ import {
   latestReviewThreadCommentFingerprint,
 } from "./review-handling";
 import {
+  codexConnectorStaleReviewCommitThreads,
   codexConnectorMustFixReviewThreads,
   configuredBotReviewFollowUpState,
   latestReviewCommentAuthorIsAllowedBot,
@@ -102,6 +103,9 @@ function configuredBotThreadsAllowCodexConnectorRequest(args: {
   const staleConfiguredThreadIds = new Set(
     staleConfiguredBotReviewThreads(args.config, args.record, args.pr, args.reviewThreads).map((thread) => thread.id),
   );
+  const staleReviewCommitThreadIds = new Set(
+    codexConnectorStaleReviewCommitThreads(args.pr, args.configuredThreads).map((thread) => thread.id),
+  );
   const codexMustFixThreadIds = new Set(codexConnectorMustFixReviewThreads(args.configuredThreads).map((thread) => thread.id));
 
   if (
@@ -110,7 +114,8 @@ function configuredBotThreadsAllowCodexConnectorRequest(args: {
         codexMustFixThreadIds.has(thread.id) &&
         !staleHeadConfiguredThreadIds.has(thread.id) &&
         !currentHeadConfiguredThreadIds.has(thread.id) &&
-        !staleConfiguredThreadIds.has(thread.id),
+        !staleConfiguredThreadIds.has(thread.id) &&
+        !staleReviewCommitThreadIds.has(thread.id),
     )
   ) {
     return false;
@@ -124,6 +129,7 @@ function configuredBotThreadsAllowCodexConnectorRequest(args: {
     (thread) =>
       staleHeadConfiguredThreadIds.has(thread.id) ||
       staleConfiguredThreadIds.has(thread.id) ||
+      staleReviewCommitThreadIds.has(thread.id) ||
       (latestReviewCommentAuthorIsAllowedBot(args.config, thread) &&
         hasProcessedReviewThread(args.record, args.pr, thread)),
   );
