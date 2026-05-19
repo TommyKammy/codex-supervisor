@@ -473,6 +473,16 @@ export function formatCodexConnectorConvergenceDiagnostic(args: {
       args.pr.codexConnectorReviewRequestedAt &&
       commitShasEqualForComparison(args.pr.codexConnectorReviewRequestedHeadSha, currentHeadSha),
   );
+  const waitWindow = configuredBotCurrentHeadSignalWaitWindow(args.config, args.pr);
+  const timeoutAction = args.config.configuredBotCurrentHeadSignalTimeoutAction ?? args.config.copilotReviewTimeoutAction;
+  const staleReviewCommitNextAction =
+    requestMatchesCurrentHead || hydratedRequestMatchesCurrentHead
+      ? "wait_for_requested_review"
+      : waitWindow.status === "active"
+        ? "wait_for_current_head_signal"
+        : timeoutAction === "request_review_comment"
+          ? "request_current_head_review"
+          : "wait_for_current_head_signal";
   const hasCurrentHeadProviderSuccess = Boolean(
     args.record.provider_success_observed_at && commitShasEqualForComparison(args.record.provider_success_head_sha, currentHeadSha),
   );
@@ -503,7 +513,7 @@ export function formatCodexConnectorConvergenceDiagnostic(args: {
   if (staleReviewCommitThreads.length > 0 && policy.outcome === "must_fix_remaining") {
     status = "stale_review_commit_residue";
     mergeEffect = "blocked";
-    nextAction = "wait_for_current_head_signal";
+    nextAction = staleReviewCommitNextAction;
   } else if (hasCurrentHeadProviderSuccess && policy.outcome !== "converged" && policy.outcome !== "nitpick_only") {
     status = "contradictory_evidence";
     nextAction = "fail_closed_inspect_connector_state";
@@ -529,7 +539,6 @@ export function formatCodexConnectorConvergenceDiagnostic(args: {
     nextAction = policy.nextAction;
   }
 
-  const waitWindow = configuredBotCurrentHeadSignalWaitWindow(args.config, args.pr);
   if (status === "missing_current_head_review" && waitWindow.status === "active") {
     status = "waiting_review";
     nextAction = "wait_for_current_head_signal";
@@ -599,9 +608,16 @@ export function formatCodexConnectorOperatorDiagnostic(args: {
       commitShasEqualForComparison(args.pr.codexConnectorReviewRequestedHeadSha, currentHeadSha),
   );
   const waitWindow = configuredBotCurrentHeadSignalWaitWindow(args.config, args.pr);
+  const timeoutAction = args.config.configuredBotCurrentHeadSignalTimeoutAction ?? args.config.copilotReviewTimeoutAction;
   const nextAction =
     staleReviewCommitThreads.length > 0
-      ? "wait_for_current_head_signal"
+      ? requestMatchesCurrentHead || hydratedRequestMatchesCurrentHead
+        ? "wait_for_requested_review"
+        : waitWindow.status === "active"
+          ? "wait_for_current_head_signal"
+          : timeoutAction === "request_review_comment"
+            ? "request_current_head_review"
+            : "wait_for_current_head_signal"
       : policy.outcome === "must_fix_remaining"
       ? "repair_must_fix_findings"
       : requestMatchesCurrentHead || hydratedRequestMatchesCurrentHead

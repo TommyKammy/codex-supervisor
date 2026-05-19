@@ -159,6 +159,24 @@ test("selectStatusOperatorAction ignores rendered doctor action lines", () => {
   );
 });
 
+test("selectStatusOperatorAction flags elapsed Codex review request fallback instead of continuing", () => {
+  assert.deepEqual(
+    selectStatusOperatorAction({
+      detailedStatusLines: [
+        "codex_connector_review_fallback status=timeout_elapsed provider=codex current_head_sha=head-1 current_head_observed_at=none required_checks_green_at=2026-05-19T09:03:41Z timeout_action=request_review_comment requested_at=none requested_head_sha=none review_signal=missing note=request_comment_is_not_review_completion wait_until=2026-05-19T09:13:41.000Z",
+        "codex_connector_convergence status=stale_review_commit_residue provider=codex current_head_sha=head-1 current_head_observed_at=none latest_signal_head_sha=head-0 highest_severity=none finding_count=0 merge_effect=blocked next_action=request_current_head_review stale_review_commit_threads=1 stale_review_commit_thread_ids=thread-1",
+      ],
+    }),
+    {
+      action: "provider_outage_suspected",
+      source: "codex_connector_review_fallback",
+      priority: 70,
+      summary:
+        "The configured review provider has not reported on the current head after checks turned green; wait, verify provider delivery, or escalate to manual review.",
+    },
+  );
+});
+
 test("buildStatusOperatorCockpitViewModel carries the shared action contract and evidence", () => {
   assert.deepEqual(
     buildStatusOperatorCockpitViewModel({

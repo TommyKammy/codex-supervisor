@@ -578,29 +578,34 @@ test("status reports Codex Connector P1 policy blocks with thread diagnostics", 
 });
 
 test("status waits for current-head Codex review when non-outdated threads came from a stale review commit", async (t) => {
+  const originalDateNow = Date.now;
+  Date.now = () => Date.parse("2026-05-19T09:14:00Z");
+  t.after(() => {
+    Date.now = originalDateNow;
+  });
   const fixture = await createSupervisorFixture();
   t.after(async () => {
     await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
   });
 
-  const issueNumber = 140;
-  const prNumber = 144;
+  const issueNumber = 143;
+  const prNumber = 147;
   const branch = branchName(fixture.config, issueNumber);
-  const currentHead = "c171be8a7f6e27d18eeef27cf27fd34c33371508";
-  const staleReviewHead = "67e4cf0255342591d1b6410cae5126c4a4a40427";
+  const currentHead = "c1ac7215a12398842152b1daf42311faef297317";
+  const staleReviewHead = "98da2474c530b76dae67b5a6f43e0671b989f65a";
   const state: SupervisorStateFile = {
     activeIssueNumber: issueNumber,
     issues: {
       [String(issueNumber)]: createRecord({
         issue_number: issueNumber,
-        state: "blocked",
+        state: "addressing_review",
         branch,
         pr_number: prNumber,
         workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
         journal_path: null,
         last_head_sha: currentHead,
-        blocked_reason: "manual_review",
-        last_error: "GitHub is blocked by configured-bot review conversations.",
+        blocked_reason: null,
+        last_error: null,
         provider_success_head_sha: staleReviewHead,
         provider_success_observed_at: "2026-05-18T22:30:16Z",
       }),
@@ -615,7 +620,7 @@ test("status waits for current-head Codex review when non-outdated threads came 
     isDraft: false,
     mergeStateStatus: "BLOCKED",
     mergeable: "MERGEABLE",
-    currentHeadCiGreenAt: "2026-05-18T22:40:00Z",
+    currentHeadCiGreenAt: "2026-05-19T09:03:41Z",
     configuredBotCurrentHeadObservedAt: null,
     configuredBotLatestReviewedCommitSha: staleReviewHead,
     configuredBotTopLevelReviewStrength: "blocking",
@@ -628,18 +633,18 @@ test("status waits for current-head Codex review when non-outdated threads came 
   });
   const staleCommitThreads = [
     {
-      id: "PRRT_kwDOSfC_1M6C-80K",
+      id: "PRRT_kwDOSfC_1M6DF5s7",
       isResolved: false,
       isOutdated: false,
-      path: "src/app.ts",
+      path: "src/local-sqlite.ts",
       line: 120,
       comments: {
         nodes: [
           {
             id: "comment-stale-1",
-            body: "P1: Map writeback DB constraint failures to a 4xx response.",
+            body: "P1: Run new migrations for existing local databases.",
             createdAt: "2026-05-18T22:31:00Z",
-            url: "https://example.test/pr/144#discussion_r1",
+            url: "https://example.test/pr/147#discussion_r1",
             author: {
               login: "chatgpt-codex-connector",
               typeName: "Bot",
@@ -649,18 +654,18 @@ test("status waits for current-head Codex review when non-outdated threads came 
       },
     },
     {
-      id: "PRRT_kwDOSfC_1M6C-80N",
+      id: "PRRT_kwDOSfC_1M6DF5s0",
       isResolved: false,
-      isOutdated: false,
-      path: "openapi/hrcore.openapi.json",
+      isOutdated: true,
+      path: "src/writeback-ingest.ts",
       line: 400,
       comments: {
         nodes: [
           {
             id: "comment-stale-2",
-            body: "P2: Declare 400 responses for writeback validation in OpenAPI.",
+            body: "P2: Accept refreshes already reflected in HRCore.",
             createdAt: "2026-05-18T22:32:00Z",
-            url: "https://example.test/pr/144#discussion_r2",
+            url: "https://example.test/pr/147#discussion_r2",
             author: {
               login: "chatgpt-codex-connector",
               typeName: "Bot",
@@ -675,6 +680,7 @@ test("status waits for current-head Codex review when non-outdated threads came 
     ...fixture.config,
     reviewBotLogins: ["chatgpt-codex-connector"],
     configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
   });
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
     listCandidateIssues: async () => [],
@@ -688,12 +694,17 @@ test("status waits for current-head Codex review when non-outdated threads came 
   const status = await supervisor.status({ why: true });
   assert.match(
     status,
-    /^codex_connector_convergence status=stale_review_commit_residue provider=codex current_head_sha=c171be8a7f6e27d18eeef27cf27fd34c33371508 current_head_observed_at=none latest_signal_head_sha=67e4cf0255342591d1b6410cae5126c4a4a40427 highest_severity=none finding_count=0 merge_effect=blocked next_action=wait_for_current_head_signal stale_review_commit_threads=2 stale_review_commit_thread_ids=PRRT_kwDOSfC_1M6C-80K,PRRT_kwDOSfC_1M6C-80N$/m,
+    /^codex_connector_review_fallback status=timeout_elapsed provider=codex current_head_sha=c1ac7215a12398842152b1daf42311faef297317 current_head_observed_at=none required_checks_green_at=2026-05-19T09:03:41Z timeout_action=request_review_comment requested_at=none requested_head_sha=none review_signal=missing note=request_comment_is_not_review_completion wait_until=2026-05-19T09:13:41\.000Z$/m,
   );
   assert.match(
     status,
-    /^codex_connector_operator_diagnostic interpretation=current_head_review_pending_with_stale_threads current_head_sha=c171be8a7f6e27d18eeef27cf27fd34c33371508 latest_configured_bot_review_sha=67e4cf0255342591d1b6410cae5126c4a4a40427 current_head_review_signal=missing actionable_current_diff_threads=0 stale_review_commit_threads=2 stale_review_commit_thread_ids=PRRT_kwDOSfC_1M6C-80K,PRRT_kwDOSfC_1M6C-80N next_action=wait_for_current_head_signal$/m,
+    /^codex_connector_convergence status=stale_review_commit_residue provider=codex current_head_sha=c1ac7215a12398842152b1daf42311faef297317 current_head_observed_at=none latest_signal_head_sha=98da2474c530b76dae67b5a6f43e0671b989f65a highest_severity=none finding_count=0 merge_effect=blocked next_action=request_current_head_review stale_review_commit_threads=1 stale_review_commit_thread_ids=PRRT_kwDOSfC_1M6DF5s7$/m,
   );
+  assert.match(
+    status,
+    /^codex_connector_operator_diagnostic interpretation=current_head_review_pending_with_stale_threads current_head_sha=c1ac7215a12398842152b1daf42311faef297317 latest_configured_bot_review_sha=98da2474c530b76dae67b5a6f43e0671b989f65a current_head_review_signal=missing actionable_current_diff_threads=0 stale_review_commit_threads=1 stale_review_commit_thread_ids=PRRT_kwDOSfC_1M6DF5s7 next_action=request_current_head_review$/m,
+  );
+  assert.doesNotMatch(status, /^operator_action action=continue /m);
   assert.doesNotMatch(status, /^codex_connector_operator_diagnostic interpretation=actionable_current_diff /m);
   assert.doesNotMatch(status, /^codex_connector_policy_block /m);
 });
