@@ -144,6 +144,10 @@ function hasCleanMergeState(pr: GitHubPullRequest): boolean {
   return pr.state === "OPEN" && !pr.isDraft && pr.mergeStateStatus === "CLEAN" && pr.mergeable === "MERGEABLE";
 }
 
+function hasMergeConflictState(pr: GitHubPullRequest): boolean {
+  return pr.state !== "OPEN" || pr.isDraft || pr.mergeStateStatus === "DIRTY" || pr.mergeable === "CONFLICTING";
+}
+
 function currentHeadSuccess(pr: GitHubPullRequest | null): StaleReviewBotThreadDiagnosticsDto["currentHeadSuccess"] {
   if (!pr) {
     return "unknown";
@@ -191,7 +195,7 @@ function classifyAutoRepairSuppression(args: {
   if (manualReviewThreads(config, args.reviewThreads).length > 0 || nonActionableConfiguredBotReviewThreads(config, args.reviewThreads).length > 0) {
     return "manual_or_unconfigured_review_threads";
   }
-  if (pr.mergeStateStatus === "DIRTY" || pr.mergeable === "CONFLICTING" || !hasCleanMergeState(pr)) {
+  if (hasMergeConflictState(pr)) {
     return "merge_conflict";
   }
   if (hasFailingChecks(checks)) {
@@ -288,7 +292,7 @@ function classifyCodexMetadataOnly(args: {
     manualReviewThreads(args.config, args.reviewThreads).length > 0 ||
     args.record.last_head_sha !== args.pr.headRefOid ||
     !allChecksPassing(args.checks) ||
-    !hasCleanMergeState(args.pr) ||
+    hasMergeConflictState(args.pr) ||
     pendingBotReviewThreads(args.config, args.record, args.pr, configuredThreads).length > 0 ||
     configuredBotReviewFollowUpState(args.config, args.record, args.pr, configuredThreads) === "eligible" ||
     !configuredThreads.every((thread) => hasProcessedReviewThread(args.record, args.pr, thread))
@@ -408,7 +412,7 @@ export function buildStaleReviewBotRemediation(args: {
   checks: PullRequestCheck[];
   reviewThreads?: ReviewThread[];
 }): StaleReviewBotRemediationDto | null {
-  if (args.record.blocked_reason !== "stale_review_bot") {
+  if (args.record.blocked_reason !== "stale_review_bot" && args.record.blocked_reason !== "manual_review") {
     return null;
   }
 
@@ -417,12 +421,15 @@ export function buildStaleReviewBotRemediation(args: {
     return null;
   }
   const classification = classifyRemediation({
-    config: args.config ?? null,
-    record: args.record,
-    pr: args.pr,
-    checks: args.checks,
-    reviewThreads: args.reviewThreads ?? [],
-  });
+      config: args.config ?? null,
+      record: args.record,
+      pr: args.pr,
+      checks: args.checks,
+      reviewThreads: args.reviewThreads ?? [],
+    });
+  if (args.record.blocked_reason === "manual_review" && !isVerifiedStaleResidueClassification(classification.classification)) {
+    return null;
+  }
   const codexCurrentHeadReviewState = args.pr
     ? codexConnectorCurrentHeadReviewState({
       config: args.config ?? null,

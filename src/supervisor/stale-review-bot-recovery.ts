@@ -91,9 +91,21 @@ export function staleConfiguredBotReplyThreadIds(signature: string | null | unde
   return signature
     .split("|")
     .map((part) => part.trim())
-    .filter((part) => part.startsWith("stalled-bot:"))
-    .map((part) => part.slice("stalled-bot:".length).trim())
+    .map((part) => {
+      if (part.startsWith("stalled-bot:")) {
+        return part.slice("stalled-bot:".length).trim();
+      }
+      return part.startsWith("PRRT_") ? part : "";
+    })
     .filter((threadId) => threadId.length > 0);
+}
+
+function normalizeStaleConfiguredBotReviewSignature(signature: string): string {
+  const threadIds = staleConfiguredBotReplyThreadIds(signature);
+  if (threadIds.length === 0) {
+    return signature;
+  }
+  return threadIds.map((threadId) => `stalled-bot:${threadId}`).join("|");
 }
 
 export function staleConfiguredBotReviewProgressKey(args: {
@@ -164,7 +176,9 @@ export async function recoverStaleConfiguredBotReviewThreads(args: {
     return buildResult({ status: "skipped", record: args.record, skippedReason: "missing_resolve_api" });
   }
 
-  const blockerSignature = args.failureContext?.signature ?? STALE_CONFIGURED_BOT_REVIEW_REASON_CODE;
+  const blockerSignature = normalizeStaleConfiguredBotReviewSignature(
+    args.failureContext?.signature ?? STALE_CONFIGURED_BOT_REVIEW_REASON_CODE,
+  );
   if (
     args.record.last_stale_review_bot_reply_head_sha === args.pr.headRefOid &&
     args.record.last_stale_review_bot_reply_signature === blockerSignature

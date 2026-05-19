@@ -106,3 +106,88 @@ test("recoverStaleConfiguredBotReviewThreads returns a typed resolved result and
     "resolve:thread-1@head-116:stalled-bot:thread-1",
   ]);
 });
+
+test("recoverStaleConfiguredBotReviewThreads normalizes raw PRRT thread signatures", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    staleConfiguredBotReviewPolicy: "reply_and_resolve",
+  });
+  const pr = createPullRequest({
+    number: 147,
+    headRefOid: "68401b26947918f0ce2280a9526ab68298b1a25c",
+  });
+  const record = createRecord({
+    issue_number: 143,
+    pr_number: pr.number,
+    state: "blocked",
+    blocked_reason: "manual_review",
+    last_head_sha: pr.headRefOid,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 143,
+    issues: {
+      "143": record,
+    },
+  };
+  const failureContext = {
+    ...createFailureContext("stale Codex review commit residue"),
+    signature: "PRRT_kwDOSfC_1M6DBYp8",
+    details: ["reviewer=chatgpt-codex-connector file=src/writeback-ingest.ts line=42 processed_on_current_head=yes"],
+    url: "https://example.test/pr/147#discussion_r147",
+  };
+  const reviewThreads = [
+    createReviewThread({
+      id: "PRRT_kwDOSfC_1M6DBYp8",
+      path: "src/writeback-ingest.ts",
+      line: 42,
+      comments: {
+        nodes: [
+          {
+            id: "comment-1",
+            body: "Update the published writeback response schema.",
+            createdAt: "2026-05-18T02:05:00Z",
+            url: "https://example.test/pr/147#discussion_r147",
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  ];
+  const replies: string[] = [];
+  const resolutions: string[] = [];
+
+  const result = await recoverStaleConfiguredBotReviewThreads({
+    github: {
+      replyToReviewThread: async (threadId: string) => {
+        replies.push(threadId);
+      },
+      resolveReviewThread: async (threadId: string) => {
+        resolutions.push(threadId);
+      },
+    },
+    stateStore: createNoopStateStore(),
+    state,
+    record,
+    pr,
+    reviewThreads,
+    syncJournal: async () => undefined,
+    config,
+    failureContext,
+    resolveAfterReply: true,
+    reasonCode: "verified_current_head_repair_auto_resolve",
+  });
+
+  assert.equal(result.status, "resolved");
+  assert.equal(result.shouldRefreshPullRequest, true);
+  assert.deepEqual(replies, ["PRRT_kwDOSfC_1M6DBYp8"]);
+  assert.deepEqual(resolutions, ["PRRT_kwDOSfC_1M6DBYp8"]);
+  assert.deepEqual(result.record.stale_review_bot_reply_progress_keys, [
+    "reply:PRRT_kwDOSfC_1M6DBYp8@68401b26947918f0ce2280a9526ab68298b1a25c:stalled-bot:PRRT_kwDOSfC_1M6DBYp8",
+  ]);
+  assert.deepEqual(result.record.stale_review_bot_resolve_progress_keys, [
+    "resolve:PRRT_kwDOSfC_1M6DBYp8@68401b26947918f0ce2280a9526ab68298b1a25c:stalled-bot:PRRT_kwDOSfC_1M6DBYp8",
+  ]);
+});
