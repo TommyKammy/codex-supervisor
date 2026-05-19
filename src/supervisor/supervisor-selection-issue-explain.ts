@@ -32,15 +32,12 @@ import {
   loadStatusChangedFiles,
 } from "./supervisor-status-rendering";
 import {
-  formatStaleReviewResidueOperatorDiagnostic,
   formatLatestRecoveryStatusLine,
   formatNoActiveTrackedRecordClassificationLine,
 } from "./supervisor-detailed-status-assembly";
 import {
+  buildCodexConnectorDiagnosticBundle,
   externalSignalReadinessDiagnostics,
-  formatCodexConnectorConvergenceDiagnostic,
-  formatCodexConnectorOperatorDiagnostic,
-  formatCodexConnectorReviewFallbackDiagnostic,
 } from "./supervisor-status-review-bot";
 import { inspectTrackedIssueHostDiagnostics, summarizeIssueJournalHandoff } from "../core/journal";
 import { formatInventoryRefreshDiagnosticLines, formatInventoryRefreshStatusLine } from "../inventory-refresh-state";
@@ -80,10 +77,6 @@ import {
   formatStaleReviewBotRemediationLine,
   formatStaleReviewBotThreadDiagnosticsLine,
 } from "./stale-review-bot-diagnostics-presenter";
-import {
-  buildCodexConnectorPolicyBlockDiagnostic,
-  formatCodexConnectorPolicyBlockDiagnostic,
-} from "../review-thread-reporting";
 import { formatMergedPrConvergenceOperatorEventLine } from "./supervisor-operator-events";
 import { appendRestartRecommendationLine } from "../operator-actions";
 import {
@@ -482,42 +475,17 @@ export async function buildIssueExplainDto(
         remediation: staleReviewBotRemediation,
       })
       : null;
-  const codexConnectorPolicyBlockSummary =
+  const codexConnectorDiagnostics =
     record && pr && !trackedPrHydrationFailed
-      ? (() => {
-        const diagnostic = buildCodexConnectorPolicyBlockDiagnostic(config, explainReviewThreads, pr);
-        return diagnostic ? formatCodexConnectorPolicyBlockDiagnostic(diagnostic) : null;
-      })()
-      : null;
-  const codexConnectorReviewFallbackSummary =
-    record && pr && !trackedPrHydrationFailed
-      ? formatCodexConnectorReviewFallbackDiagnostic({
+      ? buildCodexConnectorDiagnosticBundle({
         config,
         record,
         pr,
         checks: explainChecks,
-      })
-      : null;
-  const codexConnectorConvergenceSummary =
-    record && pr && !trackedPrHydrationFailed
-      ? formatCodexConnectorConvergenceDiagnostic({
-        config,
-        record,
-        pr,
         reviewThreads: explainReviewThreads,
+        staleReviewBotRemediation,
       })
       : null;
-  const codexConnectorOperatorDiagnosticSummary =
-    staleReviewBotRemediation
-      ? formatStaleReviewResidueOperatorDiagnostic(staleReviewBotRemediation)
-      : record && pr && !trackedPrHydrationFailed
-        ? formatCodexConnectorOperatorDiagnostic({
-          config,
-          record,
-          pr,
-          reviewThreads: explainReviewThreads,
-        })
-        : null;
   const noActiveTrackedRecordSummary =
     record && state.activeIssueNumber === null
       ? formatNoActiveTrackedRecordClassificationLine(config, record, staleReviewBotRemediation)
@@ -613,10 +581,10 @@ export async function buildIssueExplainDto(
     staleDiagnosticSummary,
     staleReviewBotRemediation,
     staleReviewBotThreadDiagnostics,
-    codexConnectorOperatorDiagnosticSummary,
-    codexConnectorPolicyBlockSummary,
-    codexConnectorReviewFallbackSummary,
-    codexConnectorConvergenceSummary,
+    codexConnectorOperatorDiagnosticSummary: codexConnectorDiagnostics?.operatorDiagnosticSummary ?? null,
+    codexConnectorPolicyBlockSummary: codexConnectorDiagnostics?.policyBlockSummary ?? null,
+    codexConnectorReviewFallbackSummary: codexConnectorDiagnostics?.reviewFallbackSummary ?? null,
+    codexConnectorConvergenceSummary: codexConnectorDiagnostics?.convergenceSummary ?? null,
     noActiveTrackedRecordSummary,
     trackedPrRetryabilitySummary:
       record?.last_tracked_pr_repeat_failure_decision && record.last_tracked_pr_progress_summary

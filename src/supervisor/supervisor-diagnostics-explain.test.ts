@@ -51,6 +51,17 @@ async function writeExternalReviewDigest(args: {
   );
 }
 
+function codexConnectorDiagnosticLines(text: string): string[] {
+  return text
+    .split("\n")
+    .filter((line) =>
+      line.startsWith("codex_connector_policy_block ") ||
+      line.startsWith("codex_connector_review_fallback ") ||
+      line.startsWith("codex_connector_convergence ") ||
+      line.startsWith("codex_connector_operator_diagnostic ")
+    );
+}
+
 test("explain reports dependency blockers for a non-runnable issue", async () => {
   const fixture = await createSupervisorFixture();
   const state: SupervisorStateFile = {
@@ -123,6 +134,76 @@ Depends on: #91`,
   assert.match(explanation, /^state=untracked$/m);
   assert.match(explanation, /^runnable=no$/m);
   assert.match(explanation, /^reason_1=dependency depends on #91$/m);
+});
+
+test("status and explain share Codex Connector diagnostics for the same tracked PR", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 1961;
+  const prNumber = 2961;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "waiting_ci",
+        branch,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: prNumber,
+        last_head_sha: "head-1961",
+        codex_connector_review_requested_observed_at: "2026-05-08T03:30:00Z",
+        codex_connector_review_requested_head_sha: "head-1961",
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Codex Connector diagnostic parity",
+    body: executionReadyBody("Status and explain should report the same Codex Connector diagnostics."),
+    createdAt: "2026-05-08T03:00:00Z",
+    updatedAt: "2026-05-08T03:30:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const pullRequest = createPullRequest({
+    number: prNumber,
+    headRefName: branch,
+    headRefOid: "head-1961",
+    currentHeadCiGreenAt: "2026-05-08T03:09:36Z",
+    configuredBotCurrentHeadObservedAt: null,
+    codexConnectorReviewRequestedAt: "2026-05-08T03:30:00Z",
+    codexConnectorReviewRequestedHeadSha: "head-1961",
+  });
+  const checks = [{ name: "build", state: "SUCCESS" as const, bucket: "pass" as const, workflow: "CI" }];
+
+  const supervisor = new Supervisor({
+    ...fixture.config,
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+  });
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => trackedIssue,
+    listAllIssues: async () => [trackedIssue],
+    listCandidateIssues: async () => [trackedIssue],
+    resolvePullRequestForBranch: async () => pullRequest,
+    getChecks: async () => checks,
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const [status, explanation] = await Promise.all([
+    supervisor.statusReport({ why: true }),
+    supervisor.explain(issueNumber),
+  ]);
+
+  assert.deepEqual(
+    codexConnectorDiagnosticLines(status.detailedStatusLines.join("\n")).sort(),
+    codexConnectorDiagnosticLines(explanation).sort(),
+  );
 });
 
 test("explain reports candidate filtering for a non-candidate issue", async () => {
