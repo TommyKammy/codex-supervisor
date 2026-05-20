@@ -1021,9 +1021,12 @@ export async function reconcileRecoverableBlockedIssueStates(
         record.last_head_sha === trackedPullRequest.headRefOid &&
         projection.nextState === "waiting_ci" &&
         isCurrentHeadReviewSignalRequestTimeout(projection.copilotReviewTimeoutPatch);
+      const isReviewSignalProjectedState =
+        projection.nextState === "addressing_review" || projection.nextState === "waiting_ci";
       const sameHeadOutdatedConfiguredBotResidueRecovery =
         externalProgressEvidence === null &&
         record.last_head_sha === trackedPullRequest.headRefOid &&
+        isReviewSignalProjectedState &&
         isCurrentHeadReviewSignalRequestTimeout(projection.copilotReviewTimeoutPatch) &&
         hasOnlyOutdatedConfiguredBotResidue(config, reviewThreads);
       if (!externalProgressEvidence && !sameHeadReviewRequestRecovery && !sameHeadOutdatedConfiguredBotResidueRecovery) {

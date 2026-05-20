@@ -1876,6 +1876,103 @@ test("reconcileRecoverableBlockedIssueStates recovers same-head handoff-missing 
   }
 });
 
+test("reconcileRecoverableBlockedIssueStates does not force same-head outdated residue recovery from unrelated projected states", async () => {
+  const currentHead = "329b8e81ed535a61a2bc59ac3227ad52a58b0756";
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+  });
+  const original = createTrackedPrStaleReviewRecord({
+    state: "blocked",
+    blocked_reason: "handoff_missing",
+    last_head_sha: currentHead,
+    review_wait_started_at: "2026-05-19T09:03:41Z",
+    review_wait_head_sha: currentHead,
+    copilot_review_timed_out_at: null,
+    copilot_review_timeout_action: null,
+    copilot_review_timeout_reason: null,
+    last_failure_signature: "handoff-missing",
+    repeated_failure_signature_count: 1,
+    codex_session_id: "session-366",
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [original],
+  });
+  const issue = createTrackedPrRecoveryIssue({
+    updatedAt: "2026-05-19T09:11:00Z",
+  });
+  const pr = createTrackedPrRecoveryPullRequest({
+    headRefOid: currentHead,
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+  });
+  let saveCalls = 0;
+
+  const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => pr,
+      getIssue: async () => {
+        throw new Error("unexpected getIssue call");
+      },
+      getChecks: async () => [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getUnresolvedReviewThreads: async () => [
+        createReviewThread({
+          id: "thread-outdated-codex-1",
+          isOutdated: true,
+          comments: {
+            nodes: [
+              {
+                id: "comment-outdated-codex-1",
+                body: "P2: Stale residue that should not override an unrelated block.",
+                createdAt: "2026-05-19T09:00:00Z",
+                url: "https://example.test/pr/191#discussion_r5",
+                author: {
+                  login: "chatgpt-codex-connector",
+                  typeName: "Bot",
+                },
+              },
+            ],
+          },
+        }),
+      ],
+    },
+    {
+      touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+        return {
+          ...current,
+          ...patch,
+          updated_at: "2026-05-19T09:14:00Z",
+        };
+      },
+      async save(): Promise<void> {
+        saveCalls += 1;
+      },
+    },
+    state,
+    config,
+    [issue],
+    {
+      shouldAutoRetryHandoffMissing,
+      inferStateFromPullRequest: () => "blocked",
+      inferFailureContext,
+      blockedReasonForLifecycleState: () => "verification",
+      isOpenPullRequest,
+      syncReviewWaitWindow,
+      syncCopilotReviewRequestObservation,
+      syncCopilotReviewTimeoutState: () => ({
+        copilot_review_timed_out_at: "2026-05-19T09:13:41.000Z",
+        copilot_review_timeout_action: "request_review_comment",
+        copilot_review_timeout_reason:
+          `Requested chatgpt-codex-connector review never arrived within 10 minute(s) for head ${currentHead}.`,
+      }),
+    },
+  );
+
+  assert.equal(saveCalls, 0);
+  assert.deepEqual(recoveryEvents, []);
+  assert.deepEqual(state.issues["366"], original);
+});
+
 test("reconcileRecoverableBlockedIssueStates keeps same-head handoff-missing blocked for actionable or non-configured residue", async () => {
   const originalDateNow = Date.now;
   Date.now = () => Date.parse("2026-05-19T09:14:00Z");
