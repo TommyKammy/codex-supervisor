@@ -19,9 +19,11 @@ import {
 import {
   codexConnectorNitpickOnlyReviewThreads,
   codexConnectorMustFixReviewThreads,
+  evaluateCodexConnectorConvergencePolicy,
+} from "./codex-connector-review-policy";
+import {
   configuredBotReviewFollowUpState,
   configuredBotReviewThreads,
-  evaluateCodexConnectorConvergencePolicy,
   latestReviewCommentAuthorIsAllowedBot,
   manualReviewThreads,
   pendingBotReviewThreads,

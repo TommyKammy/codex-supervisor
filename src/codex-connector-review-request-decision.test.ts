@@ -1,6 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { codexConnectorReviewRequestAction } from "./codex-connector-review-request-decision";
+import {
+  codexConnectorPassingChecks,
+  createCodexConnectorRequestRetryScenario,
+  createCodexConnectorSameHeadRequestScenario,
+  createCodexConnectorStaleHeadRequestScenario,
+  createCodexConnectorStaleReviewCommitRequestScenario,
+  type CodexConnectorReviewRequestScenario,
+} from "./codex-connector-tracked-pr-test-helpers";
 import type { PullRequestCheck, ReviewThread, SupervisorConfig } from "./core/types";
 import { createConfig, createPullRequest, createRecord, createReviewThread } from "./turn-execution-test-helpers";
 
@@ -23,14 +31,7 @@ function summarizeChecks(checks: PullRequestCheck[]) {
   };
 }
 
-const passingChecks: PullRequestCheck[] = [
-  {
-    name: "build",
-    state: "SUCCESS",
-    bucket: "pass",
-    workflow: "CI",
-  },
-];
+const passingChecks: PullRequestCheck[] = codexConnectorPassingChecks;
 
 function decide(overrides: {
   config?: Partial<SupervisorConfig>;
@@ -79,50 +80,46 @@ function decide(overrides: {
   });
 }
 
+function decideScenario(scenario: CodexConnectorReviewRequestScenario) {
+  return decide({
+    record: scenario.recordPatch,
+    pr: scenario.pullRequestPatch,
+    checks: scenario.checks,
+    reviewThreads: scenario.reviewThreads,
+    configuredThreads: scenario.configuredThreads,
+    now: scenario.now,
+  });
+}
+
 test("codexConnectorReviewRequestAction selects an initial request without GitHub mutation inputs", () => {
   assert.deepEqual(decide(), { kind: "initial" });
 });
 
 test("codexConnectorReviewRequestAction requests review for stale-head configured-bot signal after timeout", () => {
-  assert.deepEqual(
-    decide({
-      record: {
-        state: "blocked",
-        blocked_reason: "stale_review_bot",
-        provider_success_head_sha: "head-old",
-        provider_success_observed_at: "2026-05-08T03:00:00Z",
-        external_review_head_sha: "head-old",
-      },
-      pr: {
-        headRefOid: "head-1995",
-        configuredBotLatestReviewedCommitSha: "head-old",
-        configuredBotCurrentHeadObservedAt: null,
-      },
-      reviewThreads: [],
-      configuredThreads: [],
-      manualThreads: [],
-    }),
-    { kind: "initial" },
-  );
+  assert.deepEqual(decideScenario(createCodexConnectorStaleHeadRequestScenario()), { kind: "initial" });
+});
+
+test("codexConnectorReviewRequestAction requests review for stale review commit residue after timeout", () => {
+  assert.deepEqual(decideScenario(createCodexConnectorStaleReviewCommitRequestScenario()), { kind: "initial" });
 });
 
 test("codexConnectorReviewRequestAction selects retry after the same-head request wait expires", () => {
+  assert.deepEqual(decideScenario(createCodexConnectorRequestRetryScenario()), {
+    kind: "retry",
+    retryCount: 0,
+    retryAttempt: 1,
+  });
+});
+
+test("codexConnectorReviewRequestAction suppresses request while same-head request wait is active", () => {
   assert.deepEqual(
-    decide({
-      record: {
-        codex_connector_review_requested_observed_at: "2026-05-08T03:30:00Z",
-        codex_connector_review_requested_head_sha: "head-1995",
-        codex_connector_review_request_retry_count: 0,
-        codex_connector_review_request_retry_head_sha: null,
-        codex_connector_review_request_last_retried_at: null,
-      },
-      now: "2026-05-08T03:40:00.000Z",
-    }),
-    {
-      kind: "retry",
-      retryCount: 0,
-      retryAttempt: 1,
-    },
+    decideScenario(
+      createCodexConnectorSameHeadRequestScenario({
+        requestedAt: "2026-05-08T03:30:00Z",
+        now: "2026-05-08T03:35:00.000Z",
+      }),
+    ),
+    { kind: "none" },
   );
 });
 

@@ -2,10 +2,12 @@ import type { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread,
 import { hasProcessedReviewThread } from "../review-handling";
 import {
   clusterConfiguredBotReviewThreads,
-  configuredBotReviewFollowUpState,
-  configuredBotReviewThreads,
   codexConnectorMustFixReviewThreads,
   evaluateCodexConnectorConvergencePolicy,
+} from "../codex-connector-review-policy";
+import {
+  configuredBotReviewFollowUpState,
+  configuredBotReviewThreads,
   manualReviewThreads,
   nonActionableConfiguredBotReviewThreads,
   pendingBotReviewThreads,

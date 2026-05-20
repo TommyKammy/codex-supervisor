@@ -1,9 +1,179 @@
 import type { FailureContext, GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread } from "./core/types";
 
 export const CODEX_CONNECTOR_REVIEW_BOT_LOGIN = "chatgpt-codex-connector";
+export const CODEX_CONNECTOR_DEFAULT_HEAD_SHA = "head-1995";
+export const CODEX_CONNECTOR_STALE_HEAD_SHA = "head-old";
 
 const STALE_REVIEW_BOT_SUMMARY =
   "1 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.";
+
+export const codexConnectorPassingChecks: PullRequestCheck[] = [
+  {
+    name: "build",
+    state: "SUCCESS",
+    bucket: "pass",
+    workflow: "CI",
+  },
+];
+
+type CodexConnectorRequestScenarioOptions = {
+  issueNumber?: number;
+  prNumber?: number;
+  headSha?: string;
+  staleHeadSha?: string;
+  requestedAt?: string;
+  retryCount?: number;
+  now?: string;
+};
+
+export type CodexConnectorReviewRequestScenario = {
+  recordPatch: Partial<IssueRunRecord>;
+  pullRequestPatch: Partial<GitHubPullRequest>;
+  reviewThreads: ReviewThread[];
+  configuredThreads: ReviewThread[];
+  checks: PullRequestCheck[];
+  now?: string;
+};
+
+function createCodexConnectorThread({
+  threadId,
+  commentId,
+  headSha,
+  body,
+}: {
+  threadId: string;
+  commentId: string;
+  headSha: string;
+  body: string;
+}): ReviewThread {
+  return {
+    id: threadId,
+    isResolved: false,
+    isOutdated: false,
+    path: "src/review-policy.ts",
+    line: 12,
+    comments: {
+      nodes: [
+        {
+          id: commentId,
+          body,
+          createdAt: "2026-05-08T03:20:00Z",
+          url: `https://example.test/pr/1995#discussion_${threadId}_${headSha}`,
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  };
+}
+
+export function createCodexConnectorStaleHeadRequestScenario({
+  issueNumber = 1995,
+  prNumber = 1995,
+  headSha = CODEX_CONNECTOR_DEFAULT_HEAD_SHA,
+  staleHeadSha = CODEX_CONNECTOR_STALE_HEAD_SHA,
+}: CodexConnectorRequestScenarioOptions = {}): CodexConnectorReviewRequestScenario {
+  return {
+    recordPatch: {
+      issue_number: issueNumber,
+      state: "blocked",
+      pr_number: prNumber,
+      last_head_sha: headSha,
+      blocked_reason: "stale_review_bot",
+      provider_success_head_sha: staleHeadSha,
+      external_review_head_sha: staleHeadSha,
+    },
+    pullRequestPatch: {
+      number: prNumber,
+      headRefOid: headSha,
+      configuredBotLatestReviewedCommitSha: staleHeadSha,
+      configuredBotCurrentHeadObservedAt: null,
+    },
+    reviewThreads: [],
+    configuredThreads: [],
+    checks: codexConnectorPassingChecks,
+  };
+}
+
+export function createCodexConnectorStaleReviewCommitRequestScenario({
+  issueNumber = 1995,
+  prNumber = 1995,
+  headSha = CODEX_CONNECTOR_DEFAULT_HEAD_SHA,
+  staleHeadSha = CODEX_CONNECTOR_STALE_HEAD_SHA,
+}: CodexConnectorRequestScenarioOptions = {}): CodexConnectorReviewRequestScenario {
+  const reviewThread = createCodexConnectorThread({
+    threadId: "thread-stale-review-commit",
+    commentId: "comment-stale-review-commit",
+    headSha: staleHeadSha,
+    body: "P1: Re-run the current-head review before treating this stale review commit as merge-ready.",
+  });
+
+  return {
+    recordPatch: {
+      issue_number: issueNumber,
+      state: "blocked",
+      pr_number: prNumber,
+      last_head_sha: headSha,
+      blocked_reason: "stale_review_bot",
+    },
+    pullRequestPatch: {
+      number: prNumber,
+      headRefOid: headSha,
+      configuredBotLatestReviewedCommitSha: staleHeadSha,
+      configuredBotCurrentHeadObservedAt: null,
+    },
+    reviewThreads: [reviewThread],
+    configuredThreads: [reviewThread],
+    checks: codexConnectorPassingChecks,
+  };
+}
+
+export function createCodexConnectorSameHeadRequestScenario({
+  issueNumber = 1995,
+  prNumber = 1995,
+  headSha = CODEX_CONNECTOR_DEFAULT_HEAD_SHA,
+  requestedAt = "2026-05-08T03:30:00Z",
+  now,
+}: CodexConnectorRequestScenarioOptions = {}): CodexConnectorReviewRequestScenario {
+  return {
+    recordPatch: {
+      issue_number: issueNumber,
+      pr_number: prNumber,
+      codex_connector_review_requested_observed_at: requestedAt,
+      codex_connector_review_requested_head_sha: headSha,
+    },
+    pullRequestPatch: {
+      number: prNumber,
+      headRefOid: headSha,
+      codexConnectorReviewRequestedAt: requestedAt,
+      codexConnectorReviewRequestedHeadSha: headSha,
+    },
+    reviewThreads: [],
+    configuredThreads: [],
+    checks: codexConnectorPassingChecks,
+    now,
+  };
+}
+
+export function createCodexConnectorRequestRetryScenario({
+  retryCount = 0,
+  now = "2026-05-08T03:40:00.000Z",
+  ...options
+}: CodexConnectorRequestScenarioOptions = {}): CodexConnectorReviewRequestScenario {
+  const scenario = createCodexConnectorSameHeadRequestScenario(options);
+  return {
+    ...scenario,
+    recordPatch: {
+      ...scenario.recordPatch,
+      codex_connector_review_request_retry_count: retryCount,
+      codex_connector_review_request_retry_head_sha: null,
+      codex_connector_review_request_last_retried_at: null,
+    },
+    now,
+  };
+}
 
 type CodexConnectorTrackedReviewScenarioOptions = {
   issueNumber: number;

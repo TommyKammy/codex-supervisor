@@ -6,9 +6,11 @@ import {
   latestReviewThreadCommentFingerprint,
 } from "./review-handling";
 import {
-  codexConnectorStaleReviewCommitThreads,
   codexConnectorMustFixReviewThreads,
+  codexConnectorStaleReviewCommitThreads,
   commitShasDifferForComparison,
+} from "./codex-connector-review-policy";
+import {
   configuredBotReviewFollowUpState,
   latestReviewCommentAuthorIsAllowedBot,
   staleConfiguredBotReviewThreads,
