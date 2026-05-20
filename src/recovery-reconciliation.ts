@@ -744,6 +744,19 @@ export async function reconcileStaleDoneIssueStates(
   );
 }
 
+function isCurrentHeadReviewSignalRequestTimeout(
+  patch: Pick<
+    IssueRunRecord,
+    "copilot_review_timed_out_at" | "copilot_review_timeout_action" | "copilot_review_timeout_reason"
+  >,
+): boolean {
+  return (
+    patch.copilot_review_timed_out_at !== null &&
+    patch.copilot_review_timeout_action === "request_review_comment" &&
+    patch.copilot_review_timeout_reason?.includes("current-head review signal") === true
+  );
+}
+
 export async function reconcileRecoverableBlockedIssueStates(
   github: Pick<RecoveryGitHubLike, "getPullRequestIfExists" | "getIssue" | "getChecks" | "getUnresolvedReviewThreads">
     & Partial<Pick<RecoveryGitHubLike, "getIssueComments" | "updateIssueComment">>,
@@ -962,15 +975,6 @@ export async function reconcileRecoverableBlockedIssueStates(
 
       const checks = await github.getChecks(trackedPullRequest.number);
       const reviewThreads = await github.getUnresolvedReviewThreads(trackedPullRequest.number);
-      const externalProgressEvidence = trackedHandoffExternalProgressEvidence({
-        record,
-        pr: trackedPullRequest,
-        checks,
-      });
-      if (!externalProgressEvidence) {
-        continue;
-      }
-
       const projection = projectTrackedPrLifecycle({
         config,
         record,
@@ -987,6 +991,20 @@ export async function reconcileRecoverableBlockedIssueStates(
         continue;
       }
 
+      const externalProgressEvidence = trackedHandoffExternalProgressEvidence({
+        record,
+        pr: trackedPullRequest,
+        checks,
+      });
+      const sameHeadReviewRequestRecovery =
+        externalProgressEvidence === null &&
+        record.last_head_sha === trackedPullRequest.headRefOid &&
+        projection.nextState === "waiting_ci" &&
+        isCurrentHeadReviewSignalRequestTimeout(projection.copilotReviewTimeoutPatch);
+      if (!externalProgressEvidence && !sameHeadReviewRequestRecovery) {
+        continue;
+      }
+
       const nextState = projection.nextState;
       const nextBlockedReason = projection.nextBlockedReason;
       const failureContext =
@@ -1000,16 +1018,19 @@ export async function reconcileRecoverableBlockedIssueStates(
         failureContext,
         blockedReason: nextBlockedReason,
         reviewWaitPatch: projection.reviewWaitPatch,
+        codexConnectorReviewRequestObservationPatch: projection.codexConnectorReviewRequestObservationPatch,
         copilotReviewRequestObservationPatch: projection.copilotReviewRequestObservationPatch,
         copilotReviewTimeoutPatch: projection.copilotReviewTimeoutPatch,
       });
       patch.codex_session_id = null;
-      patch.last_tracked_pr_progress_summary = `handoff_missing_recovered=evidence=${externalProgressEvidence}`;
+      patch.last_tracked_pr_progress_summary = externalProgressEvidence
+        ? `handoff_missing_recovered=evidence=${externalProgressEvidence}`
+        : `handoff_missing_recovered=same_head_projected_state=${nextState}`;
 
-      const recoveryEvent = buildRecoveryEvent(
-        record.issue_number,
-        `tracked_pr_handoff_missing_external_progress: resumed issue #${record.issue_number} from blocked to ${nextState} after tracked PR #${trackedPullRequest.number} advanced from ${record.last_head_sha} to ${trackedPullRequest.headRefOid} with evidence=${externalProgressEvidence}`,
-      );
+      const recoveryReason = externalProgressEvidence
+        ? `tracked_pr_handoff_missing_external_progress: resumed issue #${record.issue_number} from blocked to ${nextState} after tracked PR #${trackedPullRequest.number} advanced from ${record.last_head_sha} to ${trackedPullRequest.headRefOid} with evidence=${externalProgressEvidence}`
+        : `tracked_pr_handoff_missing_same_head_recovered: resumed issue #${record.issue_number} from blocked to ${nextState} using fresh tracked PR #${trackedPullRequest.number} facts at head ${trackedPullRequest.headRefOid}`;
+      const recoveryEvent = buildRecoveryEvent(record.issue_number, recoveryReason);
       const updated = stateStore.touch(record, applyRecoveryEvent(patch, recoveryEvent));
       state.issues[String(record.issue_number)] = updated;
       changed = true;
@@ -1152,6 +1173,7 @@ export async function reconcileRecoverableBlockedIssueStates(
         failureContext,
         blockedReason: nextBlockedReason,
         reviewWaitPatch: projection.reviewWaitPatch,
+        codexConnectorReviewRequestObservationPatch: projection.codexConnectorReviewRequestObservationPatch,
         copilotReviewRequestObservationPatch: projection.copilotReviewRequestObservationPatch,
         copilotReviewTimeoutPatch: projection.copilotReviewTimeoutPatch,
       });

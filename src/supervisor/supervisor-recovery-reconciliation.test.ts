@@ -1650,6 +1650,196 @@ test("reconcileRecoverableBlockedIssueStates keeps tracked handoff-missing block
   assert.deepEqual(state.issues["366"], original);
 });
 
+test("reconcileRecoverableBlockedIssueStates recovers same-head tracked handoff-missing when Codex current-head review request is due", async () => {
+  const originalDateNow = Date.now;
+  Date.now = () => Date.parse("2026-05-19T09:14:00Z");
+  try {
+    const currentHead = "329b8e81ed535a61a2bc59ac3227ad52a58b0756";
+    const config = createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector"],
+      configuredBotInitialGraceWaitSeconds: 0,
+      configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+      configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+    });
+    const original = createTrackedPrStaleReviewRecord({
+      state: "blocked",
+      blocked_reason: "handoff_missing",
+      last_head_sha: currentHead,
+      review_wait_started_at: "2026-05-19T09:03:41Z",
+      review_wait_head_sha: currentHead,
+      copilot_review_timed_out_at: null,
+      copilot_review_timeout_action: null,
+      copilot_review_timeout_reason: null,
+      codex_connector_review_requested_observed_at: null,
+      codex_connector_review_requested_head_sha: null,
+      last_error: "Codex started a turn but did not write a durable handoff.",
+      last_failure_context: {
+        category: "blocked",
+        summary: "Codex started a turn but did not write a durable handoff.",
+        signature: "handoff-missing",
+        command: null,
+        details: ["Update the issue journal before the turn exits."],
+        url: null,
+        updated_at: "2026-05-19T09:10:00Z",
+      },
+      last_failure_signature: "handoff-missing",
+      repeated_failure_signature_count: 1,
+      codex_session_id: "session-366",
+    });
+    const state: SupervisorStateFile = createSupervisorState({
+      issues: [original],
+    });
+    const issue = createTrackedPrRecoveryIssue({
+      updatedAt: "2026-05-19T09:11:00Z",
+    });
+    const pr = createTrackedPrRecoveryPullRequest({
+      headRefOid: currentHead,
+      mergeStateStatus: "BLOCKED",
+      mergeable: "MERGEABLE",
+      currentHeadCiGreenAt: "2026-05-19T09:03:41Z",
+      configuredBotCurrentHeadObservedAt: null,
+      configuredBotLatestReviewedCommitSha: "98da2474c530b76dae67b5a6f43e0671b989f65a",
+      codexConnectorReviewRequestedAt: null,
+      codexConnectorReviewRequestedHeadSha: null,
+    });
+    let saveCalls = 0;
+
+    const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
+      {
+        getPullRequestIfExists: async () => pr,
+        getIssue: async () => {
+          throw new Error("unexpected getIssue call");
+        },
+        getChecks: async () => [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+        getUnresolvedReviewThreads: async () => [],
+      },
+      {
+        touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+          return {
+            ...current,
+            ...patch,
+            updated_at: "2026-05-19T09:14:00Z",
+          };
+        },
+        async save(): Promise<void> {
+          saveCalls += 1;
+        },
+      },
+      state,
+      config,
+      [issue],
+      {
+        shouldAutoRetryHandoffMissing,
+        inferStateFromPullRequest,
+        inferFailureContext,
+        blockedReasonForLifecycleState,
+        isOpenPullRequest,
+        syncReviewWaitWindow,
+        syncCopilotReviewRequestObservation,
+        syncCopilotReviewTimeoutState,
+      },
+    );
+
+    const updated = state.issues["366"];
+    assert.equal(updated.state, "waiting_ci");
+    assert.equal(updated.blocked_reason, null);
+    assert.equal(updated.last_error, null);
+    assert.equal(updated.last_failure_context, null);
+    assert.equal(updated.last_failure_signature, null);
+    assert.equal(updated.repeated_failure_signature_count, 0);
+    assert.equal(updated.codex_session_id, null);
+    assert.equal(updated.pr_number, TRACKED_PR_NUMBER);
+    assert.equal(updated.last_head_sha, currentHead);
+    assert.equal(updated.copilot_review_timeout_action, "request_review_comment");
+    assert.equal(updated.copilot_review_timeout_reason?.includes("current-head"), true);
+    assert.equal(updated.last_tracked_pr_progress_summary, "handoff_missing_recovered=same_head_projected_state=waiting_ci");
+    assert.equal(saveCalls, 1);
+    assert.deepEqual(recoveryEvents.map((event) => event.reason), [
+      `tracked_pr_handoff_missing_same_head_recovered: resumed issue #366 from blocked to waiting_ci using fresh tracked PR #${TRACKED_PR_NUMBER} facts at head ${currentHead}`,
+    ]);
+  } finally {
+    Date.now = originalDateNow;
+  }
+});
+
+test("reconcileRecoverableBlockedIssueStates does not recover same-head handoff-missing for generic review timeouts", async () => {
+  const currentHead = "329b8e81ed535a61a2bc59ac3227ad52a58b0756";
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+  });
+  const original = createTrackedPrStaleReviewRecord({
+    state: "blocked",
+    blocked_reason: "handoff_missing",
+    last_head_sha: currentHead,
+    review_wait_started_at: "2026-05-19T09:03:41Z",
+    review_wait_head_sha: currentHead,
+    copilot_review_timed_out_at: null,
+    copilot_review_timeout_action: null,
+    copilot_review_timeout_reason: null,
+    last_failure_signature: "handoff-missing",
+    repeated_failure_signature_count: 1,
+    codex_session_id: "session-366",
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [original],
+  });
+  const issue = createTrackedPrRecoveryIssue({
+    updatedAt: "2026-05-19T09:11:00Z",
+  });
+  const pr = createTrackedPrRecoveryPullRequest({
+    headRefOid: currentHead,
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+  });
+  let saveCalls = 0;
+
+  const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => pr,
+      getIssue: async () => {
+        throw new Error("unexpected getIssue call");
+      },
+      getChecks: async () => [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    {
+      touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+        return {
+          ...current,
+          ...patch,
+          updated_at: "2026-05-19T09:14:00Z",
+        };
+      },
+      async save(): Promise<void> {
+        saveCalls += 1;
+      },
+    },
+    state,
+    config,
+    [issue],
+    {
+      shouldAutoRetryHandoffMissing,
+      inferStateFromPullRequest: () => "waiting_ci",
+      inferFailureContext,
+      blockedReasonForLifecycleState,
+      isOpenPullRequest,
+      syncReviewWaitWindow,
+      syncCopilotReviewRequestObservation,
+      syncCopilotReviewTimeoutState: () => ({
+        copilot_review_timed_out_at: "2026-05-19T09:13:41.000Z",
+        copilot_review_timeout_action: "request_review_comment",
+        copilot_review_timeout_reason:
+          `Requested chatgpt-codex-connector review never arrived within 10 minute(s) for head ${currentHead}.`,
+      }),
+    },
+  );
+
+  assert.equal(saveCalls, 0);
+  assert.deepEqual(recoveryEvents, []);
+  assert.deepEqual(state.issues["366"], original);
+});
+
 test("reconcileRecoverableBlockedIssueStates reopens configured-bot follow-up when last_head_sha is current but local review state is stale", async () => {
   const config = createConfig({
     localReviewEnabled: true,

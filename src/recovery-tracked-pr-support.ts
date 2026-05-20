@@ -10,6 +10,7 @@ export function buildTrackedPrStaleFailureConvergencePatch(args: {
   failureContext: IssueRunRecord["last_failure_context"];
   blockedReason: IssueRunRecord["blocked_reason"];
   reviewWaitPatch?: Partial<IssueRunRecord>;
+  codexConnectorReviewRequestObservationPatch?: Partial<IssueRunRecord>;
   copilotReviewRequestObservationPatch?: Partial<IssueRunRecord>;
   copilotReviewTimeoutPatch?: Partial<IssueRunRecord>;
 }): Partial<IssueRunRecord> {
@@ -20,6 +21,7 @@ export function buildTrackedPrStaleFailureConvergencePatch(args: {
     failureContext,
     blockedReason,
     reviewWaitPatch = {},
+    codexConnectorReviewRequestObservationPatch = {},
     copilotReviewRequestObservationPatch = {},
     copilotReviewTimeoutPatch = {},
   } = args;
@@ -51,6 +53,7 @@ export function buildTrackedPrStaleFailureConvergencePatch(args: {
     last_head_sha: pr.headRefOid,
     ...headAdvanceResetPatch,
     ...reviewWaitPatch,
+    ...codexConnectorReviewRequestObservationPatch,
     ...copilotReviewRequestObservationPatch,
     ...copilotReviewTimeoutPatch,
   };
