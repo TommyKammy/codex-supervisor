@@ -744,6 +744,19 @@ export async function reconcileStaleDoneIssueStates(
   );
 }
 
+function isCurrentHeadReviewSignalRequestTimeout(
+  patch: Pick<
+    IssueRunRecord,
+    "copilot_review_timed_out_at" | "copilot_review_timeout_action" | "copilot_review_timeout_reason"
+  >,
+): boolean {
+  return (
+    patch.copilot_review_timed_out_at !== null &&
+    patch.copilot_review_timeout_action === "request_review_comment" &&
+    patch.copilot_review_timeout_reason?.includes("current-head review signal") === true
+  );
+}
+
 export async function reconcileRecoverableBlockedIssueStates(
   github: Pick<RecoveryGitHubLike, "getPullRequestIfExists" | "getIssue" | "getChecks" | "getUnresolvedReviewThreads">
     & Partial<Pick<RecoveryGitHubLike, "getIssueComments" | "updateIssueComment">>,
@@ -987,7 +1000,7 @@ export async function reconcileRecoverableBlockedIssueStates(
         externalProgressEvidence === null &&
         record.last_head_sha === trackedPullRequest.headRefOid &&
         projection.nextState === "waiting_ci" &&
-        projection.copilotReviewTimeoutPatch.copilot_review_timeout_action === "request_review_comment";
+        isCurrentHeadReviewSignalRequestTimeout(projection.copilotReviewTimeoutPatch);
       if (!externalProgressEvidence && !sameHeadReviewRequestRecovery) {
         continue;
       }
