@@ -62,6 +62,10 @@ import { projectTrackedPrLifecycle } from "./tracked-pr-lifecycle-projection";
 import { hasFreshTrackedPrReadyPromotionBlockerEvidence } from "./tracked-pr-ready-promotion-blocker";
 import { queuedReadyPromotionPathHygieneRepairContext } from "./ready-promotion-path-hygiene-repair";
 import { clearRequirementsBlockerIssueComment } from "./requirements-blocker-issue-comment";
+import {
+  configuredBotReviewThreads,
+  latestReviewCommentAuthorIsAllowedBot,
+} from "./review-thread-reporting";
 
 const OPERATOR_REQUEUEABLE_STATES = new Set<RunState>(["blocked", "failed"]);
 type StaleStabilizingNoPrBranchState = "recoverable" | "already_satisfied_on_main";
@@ -757,6 +761,22 @@ function isCurrentHeadReviewSignalRequestTimeout(
   );
 }
 
+function hasOnlyOutdatedConfiguredBotResidue(
+  config: SupervisorConfig,
+  reviewThreads: ReviewThread[],
+): boolean {
+  const unresolvedThreads = reviewThreads.filter((thread) => !thread.isResolved);
+  if (unresolvedThreads.length === 0) {
+    return false;
+  }
+
+  const configuredThreads = configuredBotReviewThreads(config, unresolvedThreads);
+  return (
+    configuredThreads.length === unresolvedThreads.length &&
+    configuredThreads.every((thread) => thread.isOutdated && latestReviewCommentAuthorIsAllowedBot(config, thread))
+  );
+}
+
 export async function reconcileRecoverableBlockedIssueStates(
   github: Pick<RecoveryGitHubLike, "getPullRequestIfExists" | "getIssue" | "getChecks" | "getUnresolvedReviewThreads">
     & Partial<Pick<RecoveryGitHubLike, "getIssueComments" | "updateIssueComment">>,
@@ -1001,12 +1021,20 @@ export async function reconcileRecoverableBlockedIssueStates(
         record.last_head_sha === trackedPullRequest.headRefOid &&
         projection.nextState === "waiting_ci" &&
         isCurrentHeadReviewSignalRequestTimeout(projection.copilotReviewTimeoutPatch);
-      if (!externalProgressEvidence && !sameHeadReviewRequestRecovery) {
+      const isReviewSignalProjectedState =
+        projection.nextState === "addressing_review" || projection.nextState === "waiting_ci";
+      const sameHeadOutdatedConfiguredBotResidueRecovery =
+        externalProgressEvidence === null &&
+        record.last_head_sha === trackedPullRequest.headRefOid &&
+        isReviewSignalProjectedState &&
+        isCurrentHeadReviewSignalRequestTimeout(projection.copilotReviewTimeoutPatch) &&
+        hasOnlyOutdatedConfiguredBotResidue(config, reviewThreads);
+      if (!externalProgressEvidence && !sameHeadReviewRequestRecovery && !sameHeadOutdatedConfiguredBotResidueRecovery) {
         continue;
       }
 
-      const nextState = projection.nextState;
-      const nextBlockedReason = projection.nextBlockedReason;
+      const nextState = sameHeadOutdatedConfiguredBotResidueRecovery ? "waiting_ci" : projection.nextState;
+      const nextBlockedReason = sameHeadOutdatedConfiguredBotResidueRecovery ? null : projection.nextBlockedReason;
       const failureContext =
         nextState === "blocked"
           ? inferFailureContextImpl(config, projection.recordForState, trackedPullRequest, checks, reviewThreads)
