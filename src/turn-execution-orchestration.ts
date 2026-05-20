@@ -17,8 +17,10 @@ import {
   processedReviewThreadKey,
 } from "./review-handling";
 import {
-  actionableConfiguredBotReviewThreads,
   codexConnectorMustFixReviewThreads,
+} from "./codex-connector-review-policy";
+import {
+  actionableConfiguredBotReviewThreads,
   configuredBotReviewThreads,
   latestReviewCommentAuthorIsAllowedBot,
 } from "./review-thread-reporting";

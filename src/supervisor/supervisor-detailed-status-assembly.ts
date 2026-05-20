@@ -3,9 +3,11 @@ import {
 } from "../review-handling";
 import { configuredReviewProviderKinds } from "../core/review-providers";
 import {
+  evaluateCodexConnectorConvergencePolicy,
+} from "../codex-connector-review-policy";
+import {
   actionableBotReviewThreads,
   configuredBotReviewFollowUpState,
-  evaluateCodexConnectorConvergencePolicy,
   latestReviewCommentAuthorIsAllowedBot,
 } from "../review-thread-reporting";
 import { formatWorkspaceRestoreStatusLine } from "../core/workspace";

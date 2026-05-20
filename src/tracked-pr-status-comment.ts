@@ -2,8 +2,10 @@ import { GitHubClient } from "./github";
 import { IssueJournalSync } from "./run-once-issue-preparation";
 import { StateStore } from "./core/state-store";
 import {
-  configuredBotReviewThreads,
   evaluateCodexConnectorConvergencePolicy,
+} from "./codex-connector-review-policy";
+import {
+  configuredBotReviewThreads,
   latestReviewComment,
   manualReviewThreads,
   latestReviewCommentAuthorIsAllowedBot,

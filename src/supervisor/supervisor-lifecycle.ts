@@ -22,7 +22,8 @@ import {
 import { latestReviewThreadCommentFingerprint } from "../review-handling";
 import { inferFailureContext } from "./supervisor-failure-context";
 import { mergeConflictDetected, summarizeChecks } from "./supervisor-status-rendering";
-import { clusterConfiguredBotReviewThreads, configuredBotReviewThreads, manualReviewThreads } from "../review-thread-reporting";
+import { clusterConfiguredBotReviewThreads } from "../codex-connector-review-policy";
+import { configuredBotReviewThreads, manualReviewThreads } from "../review-thread-reporting";
 import {
   FailureContext,
   GitHubPullRequest,

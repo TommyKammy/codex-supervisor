@@ -22,7 +22,7 @@ import type {
   StartAgentTurnContext,
 } from "../supervisor/agent-runner";
 import { reviewProviderProfileFromConfig, type ReviewProviderProfileSummary } from "../core/review-providers";
-import { buildCodexConnectorMustFixFindingDetails } from "../review-thread-reporting";
+import { buildCodexConnectorMustFixFindingDetails } from "../codex-connector-review-policy";
 
 export interface LocalReviewRepairContext {
   repairIntent?: "same_pr_fix_blocked" | "same_pr_follow_up" | "same_pr_manual_review" | "high_severity_retry" | "unspecified";

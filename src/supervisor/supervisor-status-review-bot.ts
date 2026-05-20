@@ -20,7 +20,7 @@ import {
   evaluateCodexConnectorConvergencePolicy,
   formatCodexConnectorP2P3PolicyDiagnostic,
   formatCodexConnectorPolicyBlockDiagnostic,
-} from "../review-thread-reporting";
+} from "../codex-connector-review-policy";
 import { classifyStaleReviewBotRecoverability, recoverabilityStatusToken } from "./stale-diagnostic-recoverability";
 import type { StaleReviewBotRemediationDto } from "./stale-review-bot-remediation";
 
