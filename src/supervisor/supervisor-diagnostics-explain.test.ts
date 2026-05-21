@@ -512,6 +512,116 @@ test("explain distinguishes hydrated same-head Codex Connector review requests",
   );
 });
 
+test("explain reports stale review residue without implying an unposted Codex request timed out", async (t) => {
+  const originalDateNow = Date.now;
+  Date.now = () => Date.parse("2026-05-19T09:14:00Z");
+  t.after(() => {
+    Date.now = originalDateNow;
+  });
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 143;
+  const prNumber = 147;
+  const branch = branchName(fixture.config, issueNumber);
+  const currentHead = "c1ac7215a12398842152b1daf42311faef297317";
+  const staleReviewHead = "98da2474c530b76dae67b5a6f43e0671b989f65a";
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "addressing_review",
+        branch,
+        pr_number: prNumber,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        last_head_sha: currentHead,
+        provider_success_head_sha: staleReviewHead,
+        provider_success_observed_at: "2026-05-18T22:30:16Z",
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Explain Codex stale review residue",
+    body: executionReadyBody("Explain should request a current-head Codex review for stale residue."),
+    createdAt: "2026-05-19T09:00:00Z",
+    updatedAt: "2026-05-19T09:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const pr = createPullRequest({
+    number: prNumber,
+    headRefName: branch,
+    headRefOid: currentHead,
+    isDraft: false,
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-05-19T09:03:41Z",
+    configuredBotCurrentHeadObservedAt: null,
+    configuredBotLatestReviewedCommitSha: staleReviewHead,
+    configuredBotTopLevelReviewStrength: "blocking",
+    configuredBotTopLevelReviewSubmittedAt: "2026-05-18T22:30:16Z",
+    requiredConversationResolution: {
+      state: "enabled",
+      source: "branch_protection",
+      details: ["required_conversation_resolution=true"],
+    },
+  });
+  const staleCommitThreads = [
+    {
+      id: "PRRT_kwDOSfC_1M6DF5s7",
+      isResolved: false,
+      isOutdated: false,
+      path: "src/local-sqlite.ts",
+      line: 120,
+      comments: {
+        nodes: [
+          {
+            id: "comment-stale-1",
+            body: "P1: Run new migrations for existing local databases.",
+            createdAt: "2026-05-18T22:31:00Z",
+            url: "https://example.test/pr/147#discussion_r1",
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    },
+  ];
+
+  const supervisor = new Supervisor({
+    ...fixture.config,
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+  });
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => trackedIssue,
+    listAllIssues: async () => [trackedIssue],
+    listCandidateIssues: async () => [trackedIssue],
+    resolvePullRequestForBranch: async () => pr,
+    getChecks: async () => [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => staleCommitThreads,
+  };
+
+  const explanation = await supervisor.explain(issueNumber);
+
+  assert.match(
+    explanation,
+    /^codex_connector_review_fallback status=request_eligible provider=codex current_head_sha=c1ac7215a12398842152b1daf42311faef297317 current_head_observed_at=none required_checks_green_at=2026-05-19T09:03:41Z timeout_action=request_review_comment requested_at=none requested_head_sha=none review_signal=missing note=request_comment_is_not_review_completion next_action=request_current_head_review wait_until=2026-05-19T09:13:41\.000Z$/m,
+  );
+  assert.doesNotMatch(explanation, /^codex_connector_review_fallback status=timeout_elapsed\b.*\brequested_at=none\b/m);
+  assert.match(
+    explanation,
+    /^codex_connector_convergence status=stale_review_commit_residue provider=codex current_head_sha=c1ac7215a12398842152b1daf42311faef297317 current_head_observed_at=none latest_signal_head_sha=98da2474c530b76dae67b5a6f43e0671b989f65a highest_severity=none finding_count=0 merge_effect=blocked next_action=request_current_head_review stale_review_commit_threads=1 stale_review_commit_thread_ids=PRRT_kwDOSfC_1M6DF5s7$/m,
+  );
+});
+
 test("explain surfaces loop-off as an operator blocker for active tracked work", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 189;

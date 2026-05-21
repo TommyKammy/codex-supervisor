@@ -379,6 +379,7 @@ export function formatCodexConnectorReviewFallbackDiagnostic(args: {
     | "current_head_observed"
     | "waiting_current_head_signal"
     | "timeout_elapsed"
+    | "request_eligible"
     | "request_posted"
     | "already_requested"
     | "request_posted_no_current_head_signal"
@@ -396,6 +397,8 @@ export function formatCodexConnectorReviewFallbackDiagnostic(args: {
     status = "already_requested";
   } else if (waitWindow.status === "active") {
     status = "waiting_current_head_signal";
+  } else if (waitWindow.status === "expired" && retryConfigured && !requestAt) {
+    status = "request_eligible";
   } else if (waitWindow.status === "expired") {
     status = "timeout_elapsed";
   } else {
@@ -422,6 +425,7 @@ export function formatCodexConnectorReviewFallbackDiagnostic(args: {
           `next_action=${status === "request_retry_exhausted" ? "operator_manual_review" : "retry_request_review_comment"}`,
         ].join(" ")
       : "";
+  const requestEligibleSuffix = status === "request_eligible" ? " next_action=request_current_head_review" : "";
   return [
     `codex_connector_review_fallback status=${status}`,
     "provider=codex",
@@ -433,7 +437,7 @@ export function formatCodexConnectorReviewFallbackDiagnostic(args: {
     `requested_head_sha=${requestHeadSha ?? "none"}`,
     `review_signal=${reviewSignal}`,
     "note=request_comment_is_not_review_completion",
-  ].join(" ") + retryStatusSuffix + waitUntilSuffix;
+  ].join(" ") + retryStatusSuffix + requestEligibleSuffix + waitUntilSuffix;
 }
 
 export function formatCodexConnectorConvergenceDiagnostic(args: {
