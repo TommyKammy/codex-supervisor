@@ -694,8 +694,9 @@ test("status waits for current-head Codex review when non-outdated threads came 
   const status = await supervisor.status({ why: true });
   assert.match(
     status,
-    /^codex_connector_review_fallback status=timeout_elapsed provider=codex current_head_sha=c1ac7215a12398842152b1daf42311faef297317 current_head_observed_at=none required_checks_green_at=2026-05-19T09:03:41Z timeout_action=request_review_comment requested_at=none requested_head_sha=none review_signal=missing note=request_comment_is_not_review_completion wait_until=2026-05-19T09:13:41\.000Z$/m,
+    /^codex_connector_review_fallback status=request_eligible provider=codex current_head_sha=c1ac7215a12398842152b1daf42311faef297317 current_head_observed_at=none required_checks_green_at=2026-05-19T09:03:41Z timeout_action=request_review_comment requested_at=none requested_head_sha=none review_signal=missing note=request_comment_is_not_review_completion next_action=request_current_head_review wait_until=2026-05-19T09:13:41\.000Z$/m,
   );
+  assert.doesNotMatch(status, /^codex_connector_review_fallback status=timeout_elapsed\b.*\brequested_at=none\b/m);
   assert.match(
     status,
     /^codex_connector_convergence status=stale_review_commit_residue provider=codex current_head_sha=c1ac7215a12398842152b1daf42311faef297317 current_head_observed_at=none latest_signal_head_sha=98da2474c530b76dae67b5a6f43e0671b989f65a highest_severity=none finding_count=0 merge_effect=blocked next_action=request_current_head_review stale_review_commit_threads=1 stale_review_commit_thread_ids=PRRT_kwDOSfC_1M6DF5s7$/m,

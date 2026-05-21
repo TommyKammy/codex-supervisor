@@ -886,6 +886,16 @@ test("formatCodexConnectorReviewFallbackDiagnostic surfaces Codex Connector wait
       "codex_connector_review_fallback status=waiting_current_head_signal provider=codex current_head_sha=head-340 current_head_observed_at=none required_checks_green_at=2026-03-16T00:10:00.000Z timeout_action=request_review_comment requested_at=none requested_head_sha=none review_signal=missing note=request_comment_is_not_review_completion wait_until=2026-03-16T00:20:00.000Z",
     );
 
+    Date.now = () => Date.parse("2026-03-16T00:21:00.000Z");
+    assert.equal(
+      formatCodexConnectorReviewFallbackDiagnostic({
+        config,
+        record: createRecord(),
+        pr: waitingPr,
+      }),
+      "codex_connector_review_fallback status=request_eligible provider=codex current_head_sha=head-340 current_head_observed_at=none required_checks_green_at=2026-03-16T00:10:00.000Z timeout_action=request_review_comment requested_at=none requested_head_sha=none review_signal=missing note=request_comment_is_not_review_completion next_action=request_current_head_review wait_until=2026-03-16T00:20:00.000Z",
+    );
+
     assert.equal(
       formatCodexConnectorReviewFallbackDiagnostic({
         config,
