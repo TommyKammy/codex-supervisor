@@ -4692,6 +4692,135 @@ test("handlePostTurnPullRequestTransitionsPhase replies and resolves stale confi
   assert.equal(resolveCalls.length, 2);
 });
 
+test("handlePostTurnPullRequestTransitionsPhase requests current-head Codex review despite repeat-stop on outdated metadata-only residue", async () => {
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+  });
+  const issue = createIssue({ number: 168, title: "Fix stale Codex metadata-only residue" });
+  const headSha = "f3addc310b0ff8e4fc53d9f3e0ab783af70a552f";
+  const staleReviewedSha = "d0800e414f305e8ce4f4f9785fc4ee6ad2ba0c90";
+  const pr = createPullRequest({
+    number: 176,
+    title: "Tracked PR with stale metadata-only Codex residue",
+    isDraft: false,
+    headRefOid: headSha,
+    mergeable: "MERGEABLE",
+    mergeStateStatus: "BLOCKED",
+    currentHeadCiGreenAt: "2026-05-21T20:32:06Z",
+    configuredBotLatestReviewedCommitSha: staleReviewedSha,
+    configuredBotCurrentHeadObservedAt: null,
+    configuredBotCurrentHeadObservationSource: null,
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotTopLevelReviewStrength: null,
+    codexConnectorReviewRequestedAt: null,
+    codexConnectorReviewRequestedHeadSha: null,
+  });
+  const reviewThreads = createOutdatedConfiguredBotThreads(
+    ["thread-date-fields", "thread-correlation-id", "thread-email-expectation", "thread-onboarding-strings"],
+    pr.number,
+  );
+  const staleBotFailureContext = {
+    ...createFailureContext("Outdated configured-bot metadata-only residue is blocking the tracked PR."),
+    signature: reviewThreads.map((thread) => `stalled-bot:${thread.id}`).join("|"),
+    details: reviewThreads.map(
+      (thread) =>
+        `reviewer=${CODEX_CONNECTOR_REVIEW_BOT_LOGIN} file=${thread.path} line=${thread.line} processed_on_current_head=yes`,
+    ),
+    url: "https://example.test/pr/176#discussion_rmetadata",
+  };
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issue.number,
+    issues: {
+      [String(issue.number)]: createRecord({
+        issue_number: issue.number,
+        state: "blocked",
+        pr_number: pr.number,
+        last_head_sha: headSha,
+        blocked_reason: "stale_review_bot",
+        last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+        last_tracked_pr_progress_summary: "recovery_blocked=stale_review_bot_no_auto_retry",
+        repeated_failure_signature_count: 5,
+        last_failure_signature: staleBotFailureContext.signature,
+        last_failure_context: staleBotFailureContext,
+        processed_review_thread_ids: reviewThreads.map((thread) => `${thread.id}@${headSha}`),
+        processed_review_thread_fingerprints: reviewThreads.map(
+          (thread) => `${thread.id}@${headSha}#comment-${thread.id}`,
+        ),
+        codex_connector_review_requested_observed_at: null,
+        codex_connector_review_requested_head_sha: null,
+      }),
+    },
+  };
+  const requestComments: string[] = [];
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: createNoopStateStore(),
+    github: createDefaultGithub({
+      addIssueComment: async (_prNumber: number, body: string) => {
+        requestComments.push(body);
+        return {
+          databaseId: 176001,
+          nodeId: "IC_kwDO176",
+          url: "https://example.test/pr/176#issuecomment-176001",
+        };
+      },
+      replyToReviewThread: async () => {
+        throw new Error("unexpected replyToReviewThread call");
+      },
+      resolveReviewThread: async () => {
+        throw new Error("unexpected resolveReviewThread call");
+      },
+    }),
+    context: createPostTurnContext({
+      state,
+      record: state.issues[String(issue.number)]!,
+      issue,
+      pr,
+      workspacePath: path.join("/tmp/workspaces", "issue-168"),
+    }),
+    derivePullRequestLifecycleSnapshot: (recordForState) =>
+      createLifecycleSnapshot(recordForState, "blocked", {
+        failureContext: staleBotFailureContext,
+        copilotTimeoutPatch: {
+          copilot_review_timed_out_at: "2026-05-21T20:42:06Z",
+          copilot_review_timeout_action: "request_review_comment",
+          copilot_review_timeout_reason: "current_head_signal_timeout",
+        },
+      }),
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 5 : 0,
+    }),
+    blockedReasonFromReviewState: () => "stale_review_bot",
+    summarizeChecks,
+    configuredBotReviewThreads,
+    manualReviewThreads,
+    mergeConflictDetected: () => false,
+    runLocalCiCommand: async () => undefined,
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
+    loadOpenPullRequestSnapshot: async () => ({
+      pr,
+      checks: [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      reviewThreads,
+    }),
+  });
+
+  assert.equal(requestComments.length, 1);
+  assert.match(requestComments[0] ?? "", /^@codex review\b/);
+  assert.match(requestComments[0] ?? "", /codex-supervisor:codex-connector-review-request/);
+  assert.equal(result.record.state, "waiting_ci");
+  assert.equal(result.record.blocked_reason, null);
+  assert.equal(result.record.codex_connector_review_requested_head_sha, headSha);
+  assert.ok(result.record.codex_connector_review_requested_observed_at);
+  assert.equal(result.record.last_failure_context, null);
+  assert.equal(result.record.repeated_failure_signature_count, 0);
+});
+
 test("handlePostTurnPullRequestTransitionsPhase resolves verified no-source-change Codex threads after current-head success", async () => {
   const config = createConfig({
     reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],

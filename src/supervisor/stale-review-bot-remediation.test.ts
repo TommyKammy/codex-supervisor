@@ -1,11 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createConfig, createPullRequest, createRecord } from "../turn-execution-test-helpers";
+import { createConfig, createPullRequest, createRecord, createReviewThread } from "../turn-execution-test-helpers";
 import {
   CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
   createCodexConnectorTrackedReviewResidueScenario,
 } from "../codex-connector-tracked-pr-test-helpers";
-import { buildStaleReviewBotRemediation } from "./stale-review-bot-remediation";
+import { buildStaleReviewBotRemediation, buildStaleReviewBotThreadDiagnostics } from "./stale-review-bot-remediation";
 
 test("buildStaleReviewBotRemediation classifies same-head Codex no-major with covered evidence as stale metadata", () => {
   const issueNumber = 110;
@@ -138,4 +138,100 @@ test("buildStaleReviewBotRemediation fails closed when current-head no-major has
   assert.equal(remediation?.classification, "unresolved_work");
   assert.equal(remediation?.codexCurrentHeadReviewState, "observed");
   assert.equal(remediation?.missingProbeReason, null);
+});
+
+test("buildStaleReviewBotThreadDiagnostics does not report repeat-stop suppression when Codex current-head request is pending", () => {
+  const issueNumber = 168;
+  const prNumber = 176;
+  const headSha = "f3addc310b0ff8e4fc53d9f3e0ab783af70a552f";
+  const staleReviewedSha = "d0800e414f305e8ce4f4f9785fc4ee6ad2ba0c90";
+  const reviewThreads = ["thread-date-fields", "thread-correlation-id", "thread-email-expectation", "thread-onboarding-strings"].map(
+    (threadId, index) =>
+      createReviewThread({
+        id: threadId,
+        isOutdated: true,
+        path: "openapi/hrcore.openapi.json",
+        line: 40 + index,
+        comments: {
+          nodes: [
+            {
+              id: `comment-${threadId}`,
+              body: "P2: stale metadata-only schema finding.",
+              createdAt: "2026-05-21T20:00:00Z",
+              url: `https://example.test/pr/${prNumber}#discussion_${threadId}`,
+              author: {
+                login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+  );
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+  });
+  const record = createRecord({
+    issue_number: issueNumber,
+    state: "blocked",
+    pr_number: prNumber,
+    last_head_sha: headSha,
+    blocked_reason: "stale_review_bot",
+    copilot_review_timed_out_at: "2026-05-21T20:42:06Z",
+    copilot_review_timeout_action: "request_review_comment",
+    last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+    processed_review_thread_ids: reviewThreads.map((thread) => `${thread.id}@${headSha}`),
+    processed_review_thread_fingerprints: reviewThreads.map(
+      (thread) => `${thread.id}@${headSha}#comment-${thread.id}`,
+    ),
+    last_failure_context: {
+      category: "manual",
+      summary: "Outdated configured-bot metadata-only residue is blocking the tracked PR.",
+      signature: reviewThreads.map((thread) => `stalled-bot:${thread.id}`).join("|"),
+      command: null,
+      details: reviewThreads.map(
+        (thread) =>
+          `reviewer=${CODEX_CONNECTOR_REVIEW_BOT_LOGIN} file=${thread.path} line=${thread.line} processed_on_current_head=yes`,
+      ),
+      url: "https://example.test/pr/176#discussion_rmetadata",
+      updated_at: "2026-05-21T20:42:06Z",
+    },
+  });
+  const pr = createPullRequest({
+    number: prNumber,
+    headRefOid: headSha,
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-05-21T20:32:06Z",
+    configuredBotLatestReviewedCommitSha: staleReviewedSha,
+    configuredBotCurrentHeadObservedAt: null,
+    configuredBotCurrentHeadObservationSource: null,
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotTopLevelReviewStrength: null,
+    codexConnectorReviewRequestedAt: null,
+    codexConnectorReviewRequestedHeadSha: null,
+  });
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads,
+  });
+  const diagnostics = buildStaleReviewBotThreadDiagnostics({
+    config,
+    record,
+    pr,
+    checks: [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads,
+    remediation,
+  });
+
+  assert.equal(remediation?.classification, "metadata_only_missing_current_head_review");
+  assert.equal(remediation?.codexCurrentHeadReviewState, "missing");
+  assert.equal(diagnostics?.unresolvedCurrentThreads, 0);
+  assert.equal(diagnostics?.repeatStopExhausted, "no");
+  assert.equal(diagnostics?.autoRepairSuppressedReason, "not_verified_stale_residue");
 });
