@@ -673,6 +673,11 @@ export function formatStaleReviewResidueOperatorDiagnostic(remediation: StaleRev
     remediation.classification === "unresolved_work" || remediation.classification === "unknown_needs_operator"
       ? "unknown"
       : "0";
+  const nextAction =
+    remediation.classification === "metadata_only_missing_current_head_review" &&
+    remediation.codexCurrentHeadReviewState === "missing"
+      ? "request_current_head_review"
+      : remediation.manualNextStep;
   return [
     "codex_connector_operator_diagnostic",
     "interpretation=stale_review_residue",
@@ -680,7 +685,7 @@ export function formatStaleReviewResidueOperatorDiagnostic(remediation: StaleRev
     `latest_configured_bot_review_sha=${latestConfiguredBotReviewSha.replace(/\r?\n/g, "\\n")}`,
     `current_head_review_signal=${remediation.codexCurrentHeadReviewState}`,
     `actionable_current_diff_threads=${actionableCurrentDiffThreads}`,
-    `next_action=${remediation.manualNextStep}`,
+    `next_action=${nextAction}`,
   ].join(" ");
 }
 

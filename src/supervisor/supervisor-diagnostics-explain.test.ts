@@ -622,6 +622,123 @@ test("explain reports stale review residue without implying an unposted Codex re
   );
 });
 
+test("explain requests Codex current-head review for metadata-only missing review residue", async (t) => {
+  const originalDateNow = Date.now;
+  Date.now = () => Date.parse("2026-05-21T20:45:06Z");
+  t.after(() => {
+    Date.now = originalDateNow;
+  });
+  const fixture = await createSupervisorFixture();
+  fixture.config.reviewBotLogins = [CODEX_CONNECTOR_REVIEW_BOT_LOGIN];
+  fixture.config.configuredBotCurrentHeadSignalTimeoutMinutes = 10;
+  fixture.config.configuredBotCurrentHeadSignalTimeoutAction = "request_review_comment";
+  const issueNumber = 144;
+  const prNumber = 148;
+  const branch = branchName(fixture.config, issueNumber);
+  const currentHead = "f3addc310b0ff8e4fc53d9f3e0ab783af70a552f";
+  const staleReviewHead = "d0800e414f305e8ce4f4f9785fc4ee6ad2ba0c90";
+  const staleMetadataThread = {
+    id: "thread-current-head-request",
+    isResolved: false,
+    isOutdated: true,
+    path: "src/supervisor/status.ts",
+    line: 88,
+    comments: {
+      nodes: [
+        {
+          id: "comment-current-head-request",
+          body: "P2: stale metadata-only schema finding.",
+          createdAt: "2026-05-21T20:00:00Z",
+          url: "https://example.test/pr/148#discussion_current_head_request",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  };
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        branch,
+        pr_number: prNumber,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        last_head_sha: currentHead,
+        blocked_reason: "stale_review_bot",
+        copilot_review_timed_out_at: "2026-05-21T20:42:06Z",
+        copilot_review_timeout_action: "request_review_comment",
+        last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+        processed_review_thread_ids: [`${staleMetadataThread.id}@${currentHead}`],
+        processed_review_thread_fingerprints: [`${staleMetadataThread.id}@${currentHead}#${staleMetadataThread.comments.nodes[0].id}`],
+        provider_success_head_sha: staleReviewHead,
+        provider_success_observed_at: "2026-05-21T20:00:06Z",
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Explain metadata-only current-head request",
+    body: executionReadyBody("Request current-head Codex review for metadata-only residue."),
+    createdAt: "2026-05-21T20:00:00Z",
+    updatedAt: "2026-05-21T20:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const pr = createPullRequest({
+    number: prNumber,
+    headRefName: branch,
+    headRefOid: currentHead,
+    isDraft: false,
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-05-21T20:32:06Z",
+    configuredBotLatestReviewedCommitSha: staleReviewHead,
+    configuredBotCurrentHeadObservedAt: null,
+    configuredBotTopLevelReviewStrength: null,
+    codexConnectorReviewRequestedAt: null,
+    codexConnectorReviewRequestedHeadSha: null,
+    requiredConversationResolution: {
+      state: "enabled",
+      source: "branch_protection",
+      details: ["required_conversation_resolution=true"],
+    },
+  });
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => trackedIssue,
+    listAllIssues: async () => [trackedIssue],
+    listCandidateIssues: async () => [trackedIssue],
+    resolvePullRequestForBranch: async () => pr,
+    getChecks: async () => [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => [staleMetadataThread],
+  };
+
+  const explanation = await supervisor.explain(issueNumber);
+
+  assert.match(
+    explanation,
+    /^stale_review_bot_remediation issue=#144 pr=#148 reason=stale_review_bot code_ci=green current_head_sha=f3addc310b0ff8e4fc53d9f3e0ab783af70a552f processed_on_current_head=unknown classification=metadata_only_missing_current_head_review codex_current_head_review_state=missing review_thread_url=none manual_next_step=inspect_exact_review_thread_then_resolve_or_leave_manual_note summary=stale_configured_bot_thread_metadata_only_pending_current_head_review_request$/m,
+  );
+  assert.match(
+    explanation,
+    /^codex_connector_review_fallback status=request_eligible provider=codex current_head_sha=f3addc310b0ff8e4fc53d9f3e0ab783af70a552f current_head_observed_at=none required_checks_green_at=2026-05-21T20:32:06Z timeout_action=request_review_comment requested_at=none requested_head_sha=none review_signal=missing note=request_comment_is_not_review_completion next_action=request_current_head_review wait_until=/m,
+  );
+  assert.match(
+    explanation,
+    /^codex_connector_operator_diagnostic interpretation=stale_review_residue current_head_sha=f3addc310b0ff8e4fc53d9f3e0ab783af70a552f latest_configured_bot_review_sha=none current_head_review_signal=missing actionable_current_diff_threads=0 next_action=request_current_head_review$/m,
+  );
+  assert.doesNotMatch(explanation, /^codex_connector_operator_diagnostic .*next_action=inspect_exact_review_thread_then_resolve_or_leave_manual_note$/m);
+});
+
 test("explain surfaces loop-off as an operator blocker for active tracked work", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 189;
