@@ -569,11 +569,16 @@ export function buildStaleReviewBotThreadDiagnostics(args: {
     : config && args.pr
       ? pendingBotReviewThreads(config, args.record, args.pr, configuredThreads)
       : [];
+  const currentHeadReviewRequestPending =
+    remediation.classification === "metadata_only_missing_current_head_review" &&
+    remediation.codexCurrentHeadReviewState === "missing";
   const repeatStopExhausted =
-    args.record.last_tracked_pr_repeat_failure_decision === "stop_no_progress" ||
-    (config && args.pr
-      ? configuredBotReviewFollowUpState(config, args.record, args.pr, configuredThreads) === "exhausted"
-      : false);
+    currentHeadReviewRequestPending
+      ? false
+      : args.record.last_tracked_pr_repeat_failure_decision === "stop_no_progress" ||
+        (config && args.pr
+          ? configuredBotReviewFollowUpState(config, args.record, args.pr, configuredThreads) === "exhausted"
+          : false);
   const verifiedStaleResidueThreads = isVerifiedStaleResidueClassification(remediation.classification)
     ? unresolvedConfiguredThreads.length
     : 0;
