@@ -3,6 +3,7 @@ import { hasProcessedReviewThread } from "../review-handling";
 import {
   clusterConfiguredBotReviewThreads,
   codexConnectorMustFixReviewThreads,
+  commitShasEqualForComparison,
   evaluateCodexConnectorConvergencePolicy,
 } from "../codex-connector-review-policy";
 import {
@@ -273,6 +274,69 @@ function currentHeadVerificationEvidenceSummary(
   return null;
 }
 
+function hasCurrentHeadCodexTurnVerification(
+  record: Pick<IssueRunRecord, "timeline_artifacts">,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
+): boolean {
+  return (record.timeline_artifacts ?? []).some(
+    (artifact) =>
+      artifact.type === "verification_result" &&
+      artifact.gate === "codex_turn" &&
+      artifact.outcome === "passed" &&
+      artifact.head_sha === pr.headRefOid,
+  );
+}
+
+function validTimestamp(value: string | null | undefined): string | null {
+  if (!value || Number.isNaN(Date.parse(value))) {
+    return null;
+  }
+  return value;
+}
+
+function currentHeadCodexNoMajorSignalEvidence(args: {
+  record: Pick<
+    IssueRunRecord,
+    "codex_connector_review_requested_observed_at" | "codex_connector_review_requested_head_sha"
+  >;
+  pr: Pick<
+    GitHubPullRequest,
+    | "headRefOid"
+    | "codexConnectorReviewRequestedAt"
+    | "codexConnectorReviewRequestedHeadSha"
+    | "configuredBotCurrentHeadObservedAt"
+    | "configuredBotCurrentHeadObservationSource"
+    | "configuredBotCurrentHeadStatusState"
+  >;
+}): string | null {
+  if (
+    args.pr.configuredBotCurrentHeadObservationSource !== "codex_pr_success_comment" ||
+    args.pr.configuredBotCurrentHeadStatusState !== "SUCCESS"
+  ) {
+    return null;
+  }
+
+  const observedAt = validTimestamp(args.pr.configuredBotCurrentHeadObservedAt);
+  if (!observedAt) {
+    return null;
+  }
+
+  const requestedAt =
+    validTimestamp(args.record.codex_connector_review_requested_observed_at) ??
+    validTimestamp(args.pr.codexConnectorReviewRequestedAt);
+  const requestedHeadSha =
+    args.record.codex_connector_review_requested_head_sha ?? args.pr.codexConnectorReviewRequestedHeadSha;
+  if (!requestedAt || !commitShasEqualForComparison(requestedHeadSha, args.pr.headRefOid)) {
+    return null;
+  }
+
+  if (Date.parse(observedAt) < Date.parse(requestedAt)) {
+    return null;
+  }
+
+  return "codex_pr_success_comment_after_current_head_request";
+}
+
 function classifyCodexMetadataOnly(args: {
   config: SupervisorConfig;
   record: IssueRunRecord;
@@ -329,14 +393,27 @@ function classifyCodexMetadataOnly(args: {
     }
     const verificationEvidenceSummary = currentHeadVerificationEvidenceSummary(args.record, args.pr);
     if (verificationEvidenceSummary) {
+      const noMajorSignalEvidence = currentHeadCodexNoMajorSignalEvidence({
+        record: args.record,
+        pr: args.pr,
+      });
+      if (!noMajorSignalEvidence) {
+        return {
+          classification: "unknown_needs_operator",
+          summary: STALE_REVIEW_BOT_SUMMARY,
+          verificationEvidenceSummary,
+          missingProbeReason: "current_head_codex_no_major_signal_missing",
+        };
+      }
+      const verifiedCurrentHeadRepair = hasCurrentHeadCodexTurnVerification(args.record, args.pr);
       return {
-        classification: policy.currentHeadObservedAt
-          ? "verified_no_source_change_pending_thread_resolution"
-          : "verified_current_head_repair_pending_thread_resolution",
-        summary: policy.currentHeadObservedAt
-          ? VERIFIED_NO_SOURCE_CHANGE_SUMMARY
-          : VERIFIED_CURRENT_HEAD_REPAIR_SUMMARY,
-        verificationEvidenceSummary,
+        classification: verifiedCurrentHeadRepair
+          ? "verified_current_head_repair_pending_thread_resolution"
+          : "verified_no_source_change_pending_thread_resolution",
+        summary: verifiedCurrentHeadRepair
+          ? VERIFIED_CURRENT_HEAD_REPAIR_SUMMARY
+          : VERIFIED_NO_SOURCE_CHANGE_SUMMARY,
+        verificationEvidenceSummary: `${verificationEvidenceSummary};${noMajorSignalEvidence}`,
       };
     }
     return {

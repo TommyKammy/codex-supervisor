@@ -4709,6 +4709,10 @@ test("handlePostTurnPullRequestTransitionsPhase resolves verified no-source-chan
     line: 7,
     commentBody: "P1: This finding was verified as no source change needed.",
     discussionUrl: "https://example.test/pr/1985#discussion_r1985",
+    currentHeadNoMajorReview: {
+      requestedAt: "2026-05-15T00:12:00Z",
+      observedAt: "2026-05-15T00:17:00Z",
+    },
   });
   const pr = createPullRequest({
     ...scenario.pullRequestPatch,
@@ -4829,6 +4833,10 @@ test("handlePostTurnPullRequestTransitionsPhase resolves verified current-head r
       command: "npm test -- src/post-turn-pull-request.test.ts",
       evidenceSource: "codex_turn_timeline_artifact",
     },
+    currentHeadNoMajorReview: {
+      requestedAt: "2026-05-15T00:12:00Z",
+      observedAt: "2026-05-15T00:17:00Z",
+    },
   });
   const pr = createPullRequest(scenario.pullRequestPatch);
   const state: SupervisorStateFile = {
@@ -4908,9 +4916,7 @@ test("handlePostTurnPullRequestTransitionsPhase resolves verified current-head r
   assert.deepEqual(resolveCalls, ["thread-codex-repair"]);
   assert.match(replyCalls[0]?.body ?? "", /reason=verified_current_head_repair_auto_resolve/);
   assert.doesNotMatch(replyCalls[0]?.body ?? "", /verified_no_source_change_auto_resolve/);
-  assert.equal(requestComments.length, 1);
-  assert.match(requestComments[0] ?? "", /@codex review/);
-  assert.match(requestComments[0] ?? "", /codex-supervisor:codex-connector-review-request issue=102 pr=1988 head=head-1988/);
+  assert.equal(requestComments.length, 0);
 });
 
 test("handlePostTurnPullRequestTransitionsPhase resolves verified current-head repair Codex threads even when review state falls through to manual_review", async () => {
@@ -4935,6 +4941,10 @@ test("handlePostTurnPullRequestTransitionsPhase resolves verified current-head r
       ranAt: "2026-05-18T07:18:00Z",
       command: "npm test -- --test-name-pattern \"malformed projection key|group projection\"",
       evidenceSource: "codex_turn_timeline_artifact",
+    },
+    currentHeadNoMajorReview: {
+      requestedAt: "2026-05-18T07:12:00Z",
+      observedAt: "2026-05-18T07:17:00Z",
     },
   });
   const pr = createPullRequest({
