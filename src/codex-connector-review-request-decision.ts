@@ -133,6 +133,7 @@ function configuredBotThreadsAllowCodexConnectorRequest(args: {
       staleHeadConfiguredThreadIds.has(thread.id) ||
       staleConfiguredThreadIds.has(thread.id) ||
       staleReviewCommitThreadIds.has(thread.id) ||
+      (thread.isOutdated && latestReviewCommentAuthorIsAllowedBot(args.config, thread)) ||
       (latestReviewCommentAuthorIsAllowedBot(args.config, thread) &&
         hasProcessedReviewThread(args.record, args.pr, thread)),
   );
