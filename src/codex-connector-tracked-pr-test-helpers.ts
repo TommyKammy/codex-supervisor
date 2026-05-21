@@ -193,6 +193,10 @@ type CodexConnectorTrackedReviewScenarioOptions = {
     command: string;
     evidenceSource?: "latest_local_ci_result" | "codex_turn_timeline_artifact";
   };
+  currentHeadNoMajorReview?: {
+    requestedAt?: string;
+    observedAt?: string;
+  };
 };
 
 export function createCodexConnectorTrackedReviewResidueScenario({
@@ -208,6 +212,7 @@ export function createCodexConnectorTrackedReviewResidueScenario({
   discussionUrl,
   severity = "P1",
   verifiedRepair,
+  currentHeadNoMajorReview,
 }: CodexConnectorTrackedReviewScenarioOptions): {
   recordPatch: Partial<IssueRunRecord>;
   pullRequestPatch: Partial<GitHubPullRequest>;
@@ -238,6 +243,11 @@ export function createCodexConnectorTrackedReviewResidueScenario({
       updated_at: "2026-05-15T00:20:00Z",
     },
   };
+  if (currentHeadNoMajorReview) {
+    recordPatch.codex_connector_review_requested_observed_at =
+      currentHeadNoMajorReview.requestedAt ?? "2026-05-15T00:12:00Z";
+    recordPatch.codex_connector_review_requested_head_sha = headSha;
+  }
   if (verifiedRepair?.evidenceSource !== "codex_turn_timeline_artifact" && verifiedRepair) {
     recordPatch.latest_local_ci_result = {
       outcome: "passed",
@@ -280,8 +290,19 @@ export function createCodexConnectorTrackedReviewResidueScenario({
       mergeable: "MERGEABLE",
       currentHeadCiGreenAt: verifiedRepair ? "2026-05-15T00:19:00Z" : "2026-05-15T00:10:00Z",
       configuredBotCurrentHeadObservedAt: null,
+      configuredBotCurrentHeadObservationSource: null,
       configuredBotCurrentHeadStatusState: "SUCCESS",
       configuredBotTopLevelReviewStrength: null,
+      ...(currentHeadNoMajorReview
+        ? {
+            codexConnectorReviewRequestedAt:
+              currentHeadNoMajorReview.requestedAt ?? "2026-05-15T00:12:00Z",
+            codexConnectorReviewRequestedHeadSha: headSha,
+            configuredBotCurrentHeadObservedAt:
+              currentHeadNoMajorReview.observedAt ?? "2026-05-15T00:16:00Z",
+            configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+          }
+        : {}),
     },
     reviewThread: {
       id: threadId,
