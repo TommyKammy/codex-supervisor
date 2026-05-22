@@ -3,12 +3,13 @@ import {
   countExecutionOrderDeclarations,
   countMetadataLineDeclarations,
   getSingleMetadataLineValue,
+  ISSUE_METADATA_FIELDS,
+  ISSUE_METADATA_PATTERNS,
+} from "./issue-metadata-contract";
+import {
   parseExecutionOrder,
   parseIssueMetadata,
 } from "./issue-metadata-parser";
-
-const PART_OF_LINE_PATTERN = /^\s*(?:-\s+)?Part of\b.*$/im;
-const VALID_PART_OF_LINE_PATTERN = /^\s*(?:-\s+)?Part of:?\s+#([1-9]\d*)\s*$/i;
 
 function uniqueNumbers(values: number[]): number[] {
   return Array.from(new Set(values)).sort((left, right) => left - right);
@@ -28,9 +29,9 @@ export function validateIssueMetadataSyntax(issue: Pick<GitHubIssue, "number" | 
   const errors: string[] = [];
   const metadata = parseIssueMetadata(issue as GitHubIssue);
 
-  const partOfLine = issue.body.match(PART_OF_LINE_PATTERN)?.[0] ?? null;
+  const partOfLine = issue.body.match(ISSUE_METADATA_PATTERNS.partOfSyntaxLine)?.[0] ?? null;
   if (partOfLine) {
-    const validPartOf = VALID_PART_OF_LINE_PATTERN.test(partOfLine);
+    const validPartOf = ISSUE_METADATA_PATTERNS.validPartOfSyntaxLine.test(partOfLine);
     if (!validPartOf) {
       errors.push("part of must reference a single issue as #<number>");
     } else if (metadata.parentIssueNumber === issue.number) {
@@ -38,8 +39,8 @@ export function validateIssueMetadataSyntax(issue: Pick<GitHubIssue, "number" | 
     }
   }
 
-  const dependsOnDeclarationCount = countMetadataLineDeclarations(issue.body, "Depends on");
-  const dependsOnLine = getSingleMetadataLineValue(issue.body, "Depends on");
+  const dependsOnDeclarationCount = countMetadataLineDeclarations(issue.body, ISSUE_METADATA_FIELDS.dependsOn);
+  const dependsOnLine = getSingleMetadataLineValue(issue.body, ISSUE_METADATA_FIELDS.dependsOn);
   if (dependsOnDeclarationCount > 1) {
     errors.push("depends on must appear exactly once");
   } else if (dependsOnLine !== null) {
@@ -102,11 +103,14 @@ export function validateIssueMetadataSyntax(issue: Pick<GitHubIssue, "number" | 
     }
   }
 
-  const parallelizableDeclarationCount = countMetadataLineDeclarations(issue.body, "Parallelizable");
-  const parallelizableValue = getSingleMetadataLineValue(issue.body, "Parallelizable");
+  const parallelizableDeclarationCount = countMetadataLineDeclarations(issue.body, ISSUE_METADATA_FIELDS.parallelizable);
+  const parallelizableValue = getSingleMetadataLineValue(issue.body, ISSUE_METADATA_FIELDS.parallelizable);
   if (parallelizableDeclarationCount > 1) {
     errors.push("parallelizable must appear exactly once");
-  } else if (parallelizableValue !== null && !/^(?:yes|no)$/i.test(parallelizableValue)) {
+  } else if (
+    parallelizableValue !== null &&
+    !ISSUE_METADATA_PATTERNS.validParallelizableValue.test(parallelizableValue)
+  ) {
     errors.push("parallelizable must be Yes or No");
   }
 

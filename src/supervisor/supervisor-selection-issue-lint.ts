@@ -3,6 +3,9 @@ import { GitHubIssue } from "../core/types";
 import {
   findHighRiskBlockingAmbiguity,
   hasAvailableIssueLabels,
+  ISSUE_METADATA_FIELDS,
+  ISSUE_METADATA_KEYS,
+  ISSUE_METADATA_VALUES,
   LABEL_GATED_POLICY_MISSING_LABELS_MESSAGE,
   LABEL_GATED_POLICY_MISSING_LABELS_REPAIR_GUIDANCE,
   lintExecutionReadyIssueBody,
@@ -101,17 +104,17 @@ function buildIssueLintSuggestionLines(dto: SupervisorIssueLintDto): string[] {
     ];
   }
 
-  if (dto.missingRequired.includes("part of")) {
+  if (dto.missingRequired.includes(ISSUE_METADATA_KEYS.partOf)) {
     return [
       "suggestion_mode=suggest",
       "suggestion_status=needs_explicit_sequence_input",
       "suggestion_note=Sequenced-child metadata is incomplete; provide the parent issue number and confirmed order before copying a child skeleton.",
       "suggested_repair_skeleton:",
-      "Part of: #<parent-issue-number>",
-      "Depends on: none",
-      "Parallelizable: No",
+      `${ISSUE_METADATA_FIELDS.partOf}: #<parent-issue-number>`,
+      `${ISSUE_METADATA_FIELDS.dependsOn}: ${ISSUE_METADATA_VALUES.dependsOnNone}`,
+      `${ISSUE_METADATA_FIELDS.parallelizable}: ${ISSUE_METADATA_VALUES.defaultParallelizable}`,
       "",
-      "## Execution order",
+      `## ${ISSUE_METADATA_FIELDS.executionOrder}`,
       "<N> of <M>",
     ];
   }
@@ -139,11 +142,11 @@ export function buildStandaloneIssueBodyLines(): string[] {
     "## Verification",
     "- <exact command, test file, or manual check>",
     "",
-    "Depends on: none",
-    "Parallelizable: No",
+    `${ISSUE_METADATA_FIELDS.dependsOn}: ${ISSUE_METADATA_VALUES.dependsOnNone}`,
+    `${ISSUE_METADATA_FIELDS.parallelizable}: ${ISSUE_METADATA_VALUES.defaultParallelizable}`,
     "",
-    "## Execution order",
-    "1 of 1",
+    `## ${ISSUE_METADATA_FIELDS.executionOrder}`,
+    ISSUE_METADATA_VALUES.defaultExecutionOrder,
   ];
 }
 
@@ -172,18 +175,18 @@ function buildIssueLintRepairGuidance(
       case "verification":
         guidance.push("Add a `## Verification` section with the exact command, test file, or manual check to run.");
         break;
-      case "depends on":
+      case ISSUE_METADATA_KEYS.dependsOn:
         guidance.push("Add `Depends on: none` if nothing blocks this issue, or list blocking issues as `Depends on: #123, #456`.");
         break;
-      case "parallelizable":
+      case ISSUE_METADATA_KEYS.parallelizable:
         guidance.push("Add `Parallelizable: No` unless this issue is explicitly safe to run alongside related work.");
         break;
-      case "execution order":
+      case ISSUE_METADATA_KEYS.executionOrder:
         guidance.push(
           "Add a `## Execution order` section with `1 of 1` for standalone work, or `N of M` for a sequenced series.",
         );
         break;
-      case "part of":
+      case ISSUE_METADATA_KEYS.partOf:
         guidance.push("Add `Part of: #<number>` when this sequenced codex issue belongs to a parent epic or tracking issue.");
         break;
       default:
@@ -225,10 +228,10 @@ function buildIssueLintRepairGuidance(
 
   for (const missingField of readiness.missingRecommended) {
     switch (missingField) {
-      case "depends on":
+      case ISSUE_METADATA_KEYS.dependsOn:
         guidance.push("Add `Depends on: none` if nothing blocks this issue, or list blocking issues as `Depends on: #123, #456`.");
         break;
-      case "execution order":
+      case ISSUE_METADATA_KEYS.executionOrder:
         guidance.push(
           "Add a `## Execution order` section with `1 of 1` for standalone work, or `N of M` for a sequenced series.",
         );

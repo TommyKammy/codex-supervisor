@@ -2,6 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { parseIssueMetadata } from "./issue-metadata-parser";
 import { GitHubIssue } from "../core/types";
+import {
+  countExecutionOrderDeclarations,
+  countMetadataLineDeclarations,
+  getSingleMetadataLineValue,
+  ISSUE_METADATA_FIELDS,
+} from "./issue-metadata-contract";
 
 function createIssue(overrides: Partial<GitHubIssue> = {}): GitHubIssue {
   return {
@@ -64,4 +70,16 @@ Parallel group: parser-refactor`,
     parallelGroup: "parser-refactor",
     touches: [],
   });
+});
+
+test("issue metadata contract helpers define shared scheduling line parsing", () => {
+  const body = `Depends on: none
+Parallelizable: No
+
+## Execution order
+1 of 1`;
+
+  assert.equal(countMetadataLineDeclarations(body, ISSUE_METADATA_FIELDS.dependsOn), 1);
+  assert.equal(getSingleMetadataLineValue(body, ISSUE_METADATA_FIELDS.parallelizable), "No");
+  assert.equal(countExecutionOrderDeclarations(body), 1);
 });

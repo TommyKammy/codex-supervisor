@@ -1,9 +1,13 @@
 import type { GitHubIssue } from "../core/types";
 import {
   countExecutionOrderDeclarations,
+  countMetadataLineDeclarations,
   getSingleMetadataLineValue,
-  parseExecutionOrder,
-} from "./issue-metadata-parser";
+  ISSUE_METADATA_FIELDS,
+  ISSUE_METADATA_KEYS,
+  ISSUE_METADATA_PATTERNS,
+} from "./issue-metadata-contract";
+import { parseExecutionOrder } from "./issue-metadata-parser";
 import {
   detectRiskyChangeClasses,
   parseRiskyChangeApprovalList,
@@ -145,21 +149,21 @@ function hasLabel(issue: Pick<GitHubIssue, "labels">, labelName: string): boolea
 }
 
 function hasValidDependsOnMetadata(body: string): boolean {
-  const dependsOnValue = getSingleMetadataLineValue(body, "Depends on");
+  const dependsOnValue = getSingleMetadataLineValue(body, ISSUE_METADATA_FIELDS.dependsOn);
   if (dependsOnValue === null) {
     return false;
   }
 
-  return /^(?:none|#(?:[1-9]\d*)(?:\s*,\s*#(?:[1-9]\d*))*)$/i.test(dependsOnValue);
+  return ISSUE_METADATA_PATTERNS.validDependsOnValue.test(dependsOnValue);
 }
 
 function hasValidParallelizableMetadata(body: string): boolean {
-  const parallelizableValue = getSingleMetadataLineValue(body, "Parallelizable");
-  return parallelizableValue !== null && /^(?:yes|no)$/i.test(parallelizableValue);
+  const parallelizableValue = getSingleMetadataLineValue(body, ISSUE_METADATA_FIELDS.parallelizable);
+  return parallelizableValue !== null && ISSUE_METADATA_PATTERNS.validParallelizableValue.test(parallelizableValue);
 }
 
 function hasCanonicalPartOfMetadata(body: string): boolean {
-  return /^\s*(?:-\s+)?Part of:\s+#\d+\s*$/im.test(body);
+  return ISSUE_METADATA_PATTERNS.canonicalPartOfReadinessLine.test(body);
 }
 
 function parseSingleExecutionOrder(
@@ -213,21 +217,21 @@ export function lintExecutionReadyIssueBody(
     ...(isCodexLabeled
       ? [
         {
-          key: "depends on",
+          key: ISSUE_METADATA_KEYS.dependsOn,
           present: hasValidDependsOnMetadata(issue.body),
         },
         {
-          key: "parallelizable",
+          key: ISSUE_METADATA_KEYS.parallelizable,
           present: hasValidParallelizableMetadata(issue.body),
         },
         {
-          key: "execution order",
+          key: ISSUE_METADATA_KEYS.executionOrder,
           present: hasValidExecutionOrderMetadata(executionOrder),
         },
         ...(requiresPartOf
           ? [
             {
-              key: "part of",
+              key: ISSUE_METADATA_KEYS.partOf,
               present: hasCanonicalPartOfMetadata(issue.body),
             },
           ]
@@ -239,11 +243,11 @@ export function lintExecutionReadyIssueBody(
     ...(!isCodexLabeled
       ? [
         {
-          key: "depends on",
-          present: /^\s*Depends on:\s*.+$/im.test(issue.body),
+          key: ISSUE_METADATA_KEYS.dependsOn,
+          present: countMetadataLineDeclarations(issue.body, ISSUE_METADATA_FIELDS.dependsOn) > 0,
         },
         {
-          key: "execution order",
+          key: ISSUE_METADATA_KEYS.executionOrder,
           present: executionOrder !== null,
         },
       ]
