@@ -314,6 +314,41 @@ export function textResponse(body: string, statusCode = 200, contentType = "text
   };
 }
 
+type DashboardStatusFixtureArgs = Parameters<typeof createDashboardStatusFixture>[0];
+type DashboardLoopRuntimeFixture = NonNullable<NonNullable<DashboardStatusFixtureArgs>["loopRuntime"]>;
+type DashboardTrackedIssueFixture = NonNullable<NonNullable<DashboardStatusFixtureArgs>["trackedIssues"]>[number];
+
+export function createDashboardLoopRuntimeFixture(
+  overrides: Partial<DashboardLoopRuntimeFixture> = {},
+): DashboardLoopRuntimeFixture {
+  return {
+    state: "off",
+    hostMode: "unknown",
+    markerPath: "none",
+    configPath: null,
+    stateFile: "none",
+    pid: null,
+    startedAt: null,
+    ownershipConfidence: "none",
+    detail: null,
+    ...overrides,
+  };
+}
+
+export function createDashboardTrackedIssueFixture(
+  overrides: Partial<DashboardTrackedIssueFixture> = {},
+): DashboardTrackedIssueFixture {
+  const issueNumber = overrides.issueNumber ?? 58;
+  return {
+    issueNumber,
+    state: "queued",
+    branch: `codex/issue-${issueNumber}`,
+    prNumber: issueNumber,
+    blockedReason: null,
+    ...overrides,
+  };
+}
+
 function createManualTimerController(): ManualTimerController {
   let now = 0;
   let nextId = 1;

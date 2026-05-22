@@ -372,6 +372,66 @@ function createLocalReviewResult({
   };
 }
 
+function createCodexConnectorReviewRequestScenario({
+  issueNumber = 1924,
+  issueTitle = "Request Codex Connector review after timeout",
+  headSha = `head-${issueNumber}`,
+  dryRun = false,
+  configOverrides = {},
+  recordOverrides = {},
+}: {
+  issueNumber?: number;
+  issueTitle?: string;
+  headSha?: string;
+  dryRun?: boolean;
+  configOverrides?: Partial<ReturnType<typeof createConfig>>;
+  recordOverrides?: Partial<IssueRunRecord>;
+} = {}) {
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    configuredBotInitialGraceWaitSeconds: 0,
+    configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+    ...configOverrides,
+  });
+  const issue = createIssue({ number: issueNumber, title: issueTitle });
+  const pr = createPullRequest({
+    number: issueNumber,
+    title: issueTitle,
+    isDraft: false,
+    headRefOid: headSha,
+    currentHeadCiGreenAt: null,
+    configuredBotCurrentHeadObservedAt: null,
+    codexConnectorReviewRequestedAt: null,
+    codexConnectorReviewRequestedHeadSha: null,
+  });
+  const record = createRecord({
+    issue_number: issue.number,
+    state: "waiting_ci",
+    pr_number: pr.number,
+    last_head_sha: pr.headRefOid,
+    review_wait_started_at: "2026-05-08T03:09:36Z",
+    review_wait_head_sha: pr.headRefOid,
+    codex_connector_review_requested_observed_at: null,
+    codex_connector_review_requested_head_sha: null,
+    ...recordOverrides,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issue.number,
+    issues: { [String(issue.number)]: record },
+  };
+  const context = createPostTurnContext({
+    issue,
+    pr,
+    workspacePath: path.join("/tmp/workspaces", `issue-${issueNumber}`),
+    state,
+    record,
+    dryRun,
+  });
+
+  return { config, context, issue, pr, record, state };
+}
+
 test("handlePostTurnPullRequestTransitionsPhase refreshes PR state after marking ready", async (t) => {
   const { workspacePath, headSha } = await createTrackedIssueBranchRepo();
   t.after(async () => {
@@ -514,37 +574,7 @@ test("handlePostTurnPullRequestTransitionsPhase requests Codex Connector review 
   const originalDateNow = Date.now;
   Date.now = () => Date.parse("2026-05-08T03:30:00Z");
   try {
-    const config = createConfig({
-      reviewBotLogins: ["chatgpt-codex-connector"],
-      configuredBotInitialGraceWaitSeconds: 0,
-      configuredBotCurrentHeadSignalTimeoutMinutes: 10,
-      configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
-    });
-    const issue = createIssue({ title: "Request Codex Connector review after timeout" });
-    const pr = createPullRequest({
-      number: 1924,
-      title: "Request Codex Connector review after timeout",
-      isDraft: false,
-      headRefOid: "head-1924",
-      currentHeadCiGreenAt: null,
-      configuredBotCurrentHeadObservedAt: null,
-      codexConnectorReviewRequestedAt: null,
-      codexConnectorReviewRequestedHeadSha: null,
-    });
-    const record = createRecord({
-      issue_number: issue.number,
-      state: "waiting_ci",
-      pr_number: pr.number,
-      last_head_sha: pr.headRefOid,
-      review_wait_started_at: "2026-05-08T03:09:36Z",
-      review_wait_head_sha: pr.headRefOid,
-      codex_connector_review_requested_observed_at: null,
-      codex_connector_review_requested_head_sha: null,
-    });
-    const state: SupervisorStateFile = {
-      activeIssueNumber: issue.number,
-      issues: { [String(issue.number)]: record },
-    };
+    const { config, context, issue, pr, record, state } = createCodexConnectorReviewRequestScenario();
     const comments: Array<{ issueNumber: number; body: string }> = [];
 
     const result = await handlePostTurnPullRequestTransitionsPhase({
@@ -560,13 +590,7 @@ test("handlePostTurnPullRequestTransitionsPhase requests Codex Connector review 
           };
         },
       }),
-      context: createPostTurnContext({
-        issue,
-        pr,
-        workspacePath: "/tmp/workspaces/issue-1924",
-        state,
-        record,
-      }),
+      context,
       loadOpenPullRequestSnapshot: async () => ({
         pr,
         checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
@@ -668,37 +692,10 @@ test("handlePostTurnPullRequestTransitionsPhase does not request Codex Connector
   const originalDateNow = Date.now;
   Date.now = () => Date.parse("2026-05-08T03:30:00Z");
   try {
-    const config = createConfig({
-      reviewBotLogins: ["chatgpt-codex-connector"],
-      configuredBotInitialGraceWaitSeconds: 0,
-      configuredBotCurrentHeadSignalTimeoutMinutes: 10,
-      configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+    const { config, context, pr } = createCodexConnectorReviewRequestScenario({
+      issueTitle: "Dry-run Codex Connector review request",
+      dryRun: true,
     });
-    const issue = createIssue({ title: "Dry-run Codex Connector review request" });
-    const pr = createPullRequest({
-      number: 1924,
-      title: "Dry-run Codex Connector review request",
-      isDraft: false,
-      headRefOid: "head-1924",
-      currentHeadCiGreenAt: null,
-      configuredBotCurrentHeadObservedAt: null,
-      codexConnectorReviewRequestedAt: null,
-      codexConnectorReviewRequestedHeadSha: null,
-    });
-    const record = createRecord({
-      issue_number: issue.number,
-      state: "waiting_ci",
-      pr_number: pr.number,
-      last_head_sha: pr.headRefOid,
-      review_wait_started_at: "2026-05-08T03:09:36Z",
-      review_wait_head_sha: pr.headRefOid,
-      codex_connector_review_requested_observed_at: null,
-      codex_connector_review_requested_head_sha: null,
-    });
-    const state: SupervisorStateFile = {
-      activeIssueNumber: issue.number,
-      issues: { [String(issue.number)]: record },
-    };
     let addIssueCommentCalls = 0;
 
     const result = await handlePostTurnPullRequestTransitionsPhase({
@@ -710,14 +707,7 @@ test("handlePostTurnPullRequestTransitionsPhase does not request Codex Connector
           throw new Error("dry-run must not post Codex Connector review requests");
         },
       }),
-      context: createPostTurnContext({
-        issue,
-        pr,
-        workspacePath: "/tmp/workspaces/issue-1924",
-        state,
-        record,
-        dryRun: true,
-      }),
+      context,
       loadOpenPullRequestSnapshot: async () => ({
         pr,
         checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],

@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import test, { mock } from "node:test";
 import { StateStore } from "../core/state-store";
-import { GitHubIssue, SupervisorStateFile } from "../core/types";
+import { GitHubIssue, IssueRunRecord, SupervisorStateFile } from "../core/types";
 import { renderSupervisorStatusDto } from "./supervisor-status-report";
 import { Supervisor } from "./supervisor";
 import {
@@ -22,6 +22,47 @@ import {
   clearCurrentReconciliationPhase,
   writeCurrentReconciliationPhase,
 } from "./supervisor-reconciliation-phase";
+
+function createTrackedPullRequestStatusScenario(
+  fixture: Awaited<ReturnType<typeof createSupervisorFixture>>,
+  args: {
+    issueNumber: number;
+    prNumber: number;
+    state?: IssueRunRecord["state"];
+    headSha?: string;
+    recordOverrides?: Partial<IssueRunRecord>;
+  },
+) {
+  const headSha = args.headSha ?? `head-${args.issueNumber}`;
+  const branch = branchName(fixture.config, args.issueNumber);
+  const record = createRecord({
+    issue_number: args.issueNumber,
+    state: args.state ?? "waiting_ci",
+    branch,
+    pr_number: args.prNumber,
+    workspace: path.join(fixture.workspaceRoot, `issue-${args.issueNumber}`),
+    journal_path: null,
+    last_head_sha: headSha,
+    ...args.recordOverrides,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: args.issueNumber,
+    issues: {
+      [String(args.issueNumber)]: record,
+    },
+  };
+  const pr = createPullRequest({
+    number: args.prNumber,
+    headRefName: branch,
+    headRefOid: headSha,
+  });
+
+  return { branch, headSha, pr, record, state };
+}
+
+async function writeSupervisorState(fixture: Awaited<ReturnType<typeof createSupervisorFixture>>, state: SupervisorStateFile) {
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+}
 
 test("doctor uses the diagnostic-only state loader instead of StateStore.load", async (t) => {
   const fixture = await createSupervisorFixture();
@@ -186,24 +227,15 @@ test("status surfaces Codex Connector review-request fallback lifecycle for the 
 
   const issueNumber = 1925;
   const prNumber = 2925;
-  const branch = branchName(fixture.config, issueNumber);
-  const state: SupervisorStateFile = {
-    activeIssueNumber: issueNumber,
-    issues: {
-      [String(issueNumber)]: createRecord({
-        issue_number: issueNumber,
-        state: "waiting_ci",
-        branch,
-        pr_number: prNumber,
-        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
-        journal_path: null,
-        last_head_sha: "head-1925",
-        codex_connector_review_requested_observed_at: "2026-05-08T03:30:00Z",
-        codex_connector_review_requested_head_sha: "head-1925",
-      }),
+  const scenario = createTrackedPullRequestStatusScenario(fixture, {
+    issueNumber,
+    prNumber,
+    recordOverrides: {
+      codex_connector_review_requested_observed_at: "2026-05-08T03:30:00Z",
+      codex_connector_review_requested_head_sha: "head-1925",
     },
-  };
-  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  });
+  await writeSupervisorState(fixture, scenario.state);
 
   const supervisor = new Supervisor({
     ...fixture.config,
@@ -217,7 +249,7 @@ test("status surfaces Codex Connector review-request fallback lifecycle for the 
     resolvePullRequestForBranch: async () =>
       createPullRequest({
         number: prNumber,
-        headRefName: branch,
+        headRefName: scenario.branch,
         headRefOid: "head-1925",
         currentHeadCiGreenAt: "2026-05-08T03:09:36Z",
         configuredBotCurrentHeadObservedAt: null,
@@ -248,22 +280,11 @@ test("status --why distinguishes hydrated same-head Codex Connector review reque
 
   const issueNumber = 1958;
   const prNumber = 2958;
-  const branch = branchName(fixture.config, issueNumber);
-  const state: SupervisorStateFile = {
-    activeIssueNumber: issueNumber,
-    issues: {
-      [String(issueNumber)]: createRecord({
-        issue_number: issueNumber,
-        state: "waiting_ci",
-        branch,
-        pr_number: prNumber,
-        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
-        journal_path: null,
-        last_head_sha: "head-1958",
-      }),
-    },
-  };
-  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  const scenario = createTrackedPullRequestStatusScenario(fixture, {
+    issueNumber,
+    prNumber,
+  });
+  await writeSupervisorState(fixture, scenario.state);
 
   const supervisor = new Supervisor({
     ...fixture.config,
@@ -277,7 +298,7 @@ test("status --why distinguishes hydrated same-head Codex Connector review reque
     resolvePullRequestForBranch: async () =>
       createPullRequest({
         number: prNumber,
-        headRefName: branch,
+        headRefName: scenario.branch,
         headRefOid: "head-1958",
         currentHeadCiGreenAt: "2026-05-08T03:09:36Z",
         configuredBotCurrentHeadObservedAt: null,
