@@ -1304,6 +1304,17 @@ test("runOnce requests Codex Connector review before repeated stale configured-b
       },
     };
 
+    const dryRunMessage = await supervisor.runOnce({ dryRun: true });
+    assert.match(dryRunMessage, /issue #91/i);
+    assert.equal(comments.length, 0);
+    const dryRunPersisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+    const dryRunRecord = dryRunPersisted.issues[String(issueNumber)];
+    assert.equal(dryRunRecord.codex_connector_review_requested_observed_at, null);
+    assert.equal(dryRunRecord.codex_connector_review_requested_head_sha, null);
+
+    comments.length = 0;
+    await writeSupervisorState(fixture.stateFile, state);
+
     const message = await supervisor.runOnce({ dryRun: false });
     assert.doesNotMatch(message, /blocked after repeated identical review-related failure signatures/);
     assert.equal(comments.length, 1);

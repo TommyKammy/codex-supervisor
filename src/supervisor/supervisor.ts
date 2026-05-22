@@ -637,6 +637,7 @@ export class Supervisor {
         pr,
         checks,
         reviewThreads,
+        dryRun: options.dryRun,
         syncJournal,
         applyFailureSignature,
         blockedReasonFromReviewState: (phaseRecord, phasePr, phaseChecks, phaseReviewThreads) =>

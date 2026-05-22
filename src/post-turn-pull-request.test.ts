@@ -203,6 +203,7 @@ function createPostTurnContext({
   state,
   record,
   syncJournal = async () => undefined,
+  dryRun = false,
 }: {
   issue: ReturnType<typeof createIssue>;
   pr: ReturnType<typeof createPullRequest>;
@@ -210,6 +211,7 @@ function createPostTurnContext({
   state: SupervisorStateFile;
   record: IssueRunRecord;
   syncJournal?: () => Promise<void>;
+  dryRun?: boolean;
 }) {
   return {
     state,
@@ -219,7 +221,7 @@ function createPostTurnContext({
     syncJournal,
     memoryArtifacts: TEST_MEMORY_ARTIFACTS,
     pr,
-    options: { dryRun: false },
+    options: { dryRun },
   };
 }
 
@@ -657,6 +659,84 @@ test("handlePostTurnPullRequestTransitionsPhase requests Codex Connector review 
 
     assert.equal(comments.length, 1);
     assert.equal(retryResult.record.codex_connector_review_requested_head_sha, pr.headRefOid);
+  } finally {
+    Date.now = originalDateNow;
+  }
+});
+
+test("handlePostTurnPullRequestTransitionsPhase does not request Codex Connector review during dry-run", async () => {
+  const originalDateNow = Date.now;
+  Date.now = () => Date.parse("2026-05-08T03:30:00Z");
+  try {
+    const config = createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector"],
+      configuredBotInitialGraceWaitSeconds: 0,
+      configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+      configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+    });
+    const issue = createIssue({ title: "Dry-run Codex Connector review request" });
+    const pr = createPullRequest({
+      number: 1924,
+      title: "Dry-run Codex Connector review request",
+      isDraft: false,
+      headRefOid: "head-1924",
+      currentHeadCiGreenAt: null,
+      configuredBotCurrentHeadObservedAt: null,
+      codexConnectorReviewRequestedAt: null,
+      codexConnectorReviewRequestedHeadSha: null,
+    });
+    const record = createRecord({
+      issue_number: issue.number,
+      state: "waiting_ci",
+      pr_number: pr.number,
+      last_head_sha: pr.headRefOid,
+      review_wait_started_at: "2026-05-08T03:09:36Z",
+      review_wait_head_sha: pr.headRefOid,
+      codex_connector_review_requested_observed_at: null,
+      codex_connector_review_requested_head_sha: null,
+    });
+    const state: SupervisorStateFile = {
+      activeIssueNumber: issue.number,
+      issues: { [String(issue.number)]: record },
+    };
+    let addIssueCommentCalls = 0;
+
+    const result = await handlePostTurnPullRequestTransitionsPhase({
+      config,
+      stateStore: createNoopStateStore(),
+      github: createDefaultGithub({
+        addIssueComment: async () => {
+          addIssueCommentCalls += 1;
+          throw new Error("dry-run must not post Codex Connector review requests");
+        },
+      }),
+      context: createPostTurnContext({
+        issue,
+        pr,
+        workspacePath: "/tmp/workspaces/issue-1924",
+        state,
+        record,
+        dryRun: true,
+      }),
+      loadOpenPullRequestSnapshot: async () => ({
+        pr,
+        checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+        reviewThreads: [],
+      }),
+      derivePullRequestLifecycleSnapshot: (currentRecord, currentPr, checks, reviewThreads, recordPatch) =>
+        deriveSupervisorPullRequestLifecycleSnapshot(config, currentRecord, currentPr, checks, reviewThreads, recordPatch),
+      applyFailureSignature: () => ({ last_failure_signature: null, repeated_failure_signature_count: 0 }),
+      blockedReasonFromReviewState: (currentRecord, currentPr, checks, reviewThreads) =>
+        resolveBlockedReasonFromReviewState(config, currentRecord, currentPr, checks, reviewThreads),
+      summarizeChecks,
+      configuredBotReviewThreads: () => [],
+      manualReviewThreads: () => [],
+      mergeConflictDetected: () => false,
+    });
+
+    assert.equal(addIssueCommentCalls, 0);
+    assert.equal(result.record.codex_connector_review_requested_observed_at, null);
+    assert.equal(result.record.codex_connector_review_requested_head_sha, null);
   } finally {
     Date.now = originalDateNow;
   }

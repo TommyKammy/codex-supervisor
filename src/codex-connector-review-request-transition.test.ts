@@ -61,6 +61,7 @@ async function requestTransition(overrides: {
   record?: Partial<IssueRunRecord>;
   pr?: Parameters<typeof createPullRequest>[0];
   reviewThreads?: ReviewThread[];
+  dryRun?: boolean;
   addIssueComment?: (issueNumber: number, body: string) => Promise<{
     databaseId: number;
     nodeId: string;
@@ -105,6 +106,7 @@ async function requestTransition(overrides: {
       pr,
       checks: passingChecks,
       reviewThreads: overrides.reviewThreads ?? [],
+      dryRun: overrides.dryRun ?? false,
       syncJournal: async (updatedRecord) => {
         journaled.push(updatedRecord);
       },
