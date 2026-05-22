@@ -1125,6 +1125,267 @@ test("runOnce blocks tracked PR review work instead of failing after repeated id
   assert.match(record.last_failure_context?.summary ?? "", /1 unresolved automated review thread\(s\) remain\./);
 });
 
+test("runOnce requests Codex Connector review before repeated stale configured-bot signature suppression", async () => {
+  const originalDateNow = Date.now;
+  Date.now = () => Date.parse("2026-05-22T12:10:00.000Z");
+  try {
+    const fixture = await createSupervisorFixture();
+    fixture.config.sameFailureSignatureRepeatLimit = 3;
+    fixture.config.reviewBotLogins = ["chatgpt-codex-connector"];
+    fixture.config.configuredBotInitialGraceWaitSeconds = 0;
+    fixture.config.configuredBotCurrentHeadSignalTimeoutMinutes = 10;
+    fixture.config.configuredBotCurrentHeadSignalTimeoutAction = "request_review_comment";
+    const issueNumber = 91;
+    const branch = branchName(fixture.config, issueNumber);
+    const workspacePath = path.join(fixture.workspaceRoot, `issue-${issueNumber}`);
+    const journalPath = path.join(workspacePath, ".codex-supervisor/issue-journal.md");
+    const repeatedProgressSnapshot = JSON.stringify({
+      headRefOid: "head-191",
+      reviewDecision: null,
+      mergeStateStatus: "BLOCKED",
+      copilotReviewState: null,
+      copilotReviewRequestedAt: null,
+      copilotReviewArrivedAt: null,
+      configuredBotCurrentHeadObservedAt: null,
+      configuredBotCurrentHeadStatusState: null,
+      currentHeadCiGreenAt: "2026-05-22T11:58:00.000Z",
+      configuredBotRateLimitedAt: null,
+      configuredBotDraftSkipAt: null,
+      configuredBotTopLevelReviewStrength: null,
+      configuredBotTopLevelReviewSubmittedAt: null,
+      checks: ["build:pass:SUCCESS"],
+      unresolvedReviewThreadIds: ["thread-stale"],
+      unresolvedReviewThreadFingerprints: ["thread-stale#comment-stale"],
+      unresolvedReviewThreadSourceAnchors: ["thread-stale:src/file.ts:12"],
+      processedReviewThreadIds: ["thread-stale@head-191"],
+      processedReviewThreadFingerprints: ["thread-stale@head-191#comment-stale"],
+      verificationProbeOutcomes: [],
+    });
+    const initialRecord = createTrackedSupervisorRecord(fixture.config, fixture.workspaceRoot, issueNumber, {
+      state: "addressing_review",
+      workspace: workspacePath,
+      branch,
+      pr_number: 191,
+      journal_path: journalPath,
+      last_head_sha: "head-191",
+      review_wait_started_at: "2026-05-22T11:50:00.000Z",
+      review_wait_head_sha: "head-191",
+      copilot_review_timed_out_at: "2026-05-22T12:00:00.000Z",
+      copilot_review_timeout_action: "request_review_comment",
+      codex_connector_review_requested_observed_at: null,
+      codex_connector_review_requested_head_sha: null,
+      processed_review_thread_ids: ["thread-stale@head-191"],
+      processed_review_thread_fingerprints: ["thread-stale@head-191#comment-stale"],
+      last_failure_signature: "stalled-bot:thread-stale",
+      repeated_failure_signature_count: 3,
+      last_tracked_pr_progress_snapshot: repeatedProgressSnapshot,
+      last_tracked_pr_progress_summary: null,
+      last_tracked_pr_repeat_failure_decision: null,
+      last_failure_context: {
+        category: "manual",
+        summary:
+          "1 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
+        signature: "stalled-bot:thread-stale",
+        command: null,
+        details: [
+          "reviewer=chatgpt-codex-connector file=src/file.ts line=12 p_severity=P1 processed_on_current_head=yes",
+        ],
+        url: "https://example.test/pr/191#discussion_r_stale",
+        updated_at: "2026-05-22T12:00:00.000Z",
+      },
+    });
+    const state: SupervisorStateFile = createSupervisorState({
+      activeIssueNumber: issueNumber,
+      issues: [
+        initialRecord,
+      ],
+    });
+    await writeSupervisorState(fixture.stateFile, state);
+
+    const issue = createTrackedIssue(issueNumber, {
+      title: "Request Codex Connector review before repeated stale signature suppression",
+      body: executionReadyBody("Request Codex Connector review before repeated stale signature suppression."),
+      createdAt: "2026-05-22T11:40:00Z",
+      updatedAt: "2026-05-22T11:40:00Z",
+    });
+    const pr = createTrackedPullRequest(fixture.config, issueNumber, {
+      number: 191,
+      title: "Codex Connector request-eligible stale review residue",
+      isDraft: false,
+      reviewDecision: null,
+      headRefOid: "head-191",
+      mergeStateStatus: "BLOCKED",
+      mergeable: "MERGEABLE",
+      currentHeadCiGreenAt: "2026-05-22T11:58:00.000Z",
+      configuredBotLatestReviewedCommitSha: "head-old",
+      configuredBotCurrentHeadObservedAt: null,
+      configuredBotCurrentHeadObservationSource: null,
+      configuredBotTopLevelReviewStrength: null,
+      codexConnectorReviewRequestedAt: null,
+      codexConnectorReviewRequestedHeadSha: null,
+      requiredConversationResolution: {
+        state: "enabled",
+        source: "branch_protection",
+        details: ["required_conversation_resolution=true"],
+      },
+    });
+    const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+    const reviewThreads = [
+      createReviewThread({
+        id: "thread-stale",
+        isOutdated: true,
+        comments: {
+          nodes: [
+            {
+              id: "comment-stale",
+              body: "P1: This stale review residue needs a current-head Codex review.",
+              createdAt: "2026-05-22T11:45:00Z",
+              url: "https://example.test/pr/191#discussion_r_stale",
+              author: {
+                login: "chatgpt-codex-connector",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+    ];
+
+    const comments: Array<{ issueNumber: number; body: string }> = [];
+    const supervisor = new Supervisor(fixture.config);
+    (supervisor as unknown as { github: Record<string, unknown> }).github = {
+      authStatus: async () => ({ ok: true, message: null }),
+      listAllIssues: async () => [issue],
+      listCandidateIssues: async () => [issue],
+      getIssue: async () => issue,
+      resolvePullRequestForBranch: async (branchName: string, prNumber: number | null) => {
+        assert.equal(branchName, branch);
+        assert.equal(prNumber, pr.number);
+        return pr;
+      },
+      getChecks: async (prNumber: number) => {
+        assert.equal(prNumber, pr.number);
+        return checks;
+      },
+      getUnresolvedReviewThreads: async (prNumber: number) => {
+        assert.equal(prNumber, pr.number);
+        return reviewThreads;
+      },
+      getPullRequestIfExists: async (prNumber: number) => {
+        assert.equal(prNumber, pr.number);
+        return pr;
+      },
+      getPullRequest: async (prNumber: number) => {
+        assert.equal(prNumber, pr.number);
+        return pr;
+      },
+      getExternalReviewSurface: async (prNumber: number) => {
+        assert.equal(prNumber, pr.number);
+        return {
+          reviews: [],
+          issueComments: [],
+        };
+      },
+      getMergedPullRequestsClosingIssue: async () => [],
+      addIssueComment: async (issueNumberForComment: number, body: string) => {
+        comments.push({ issueNumber: issueNumberForComment, body });
+        return {
+          databaseId: 191001,
+          nodeId: "IC_kwDOissue191_request",
+          url: "https://example.test/pr/191#issuecomment-191001",
+        };
+      },
+      closeIssue: async () => {
+        throw new Error("unexpected closeIssue call");
+      },
+      createPullRequest: async () => {
+        throw new Error("unexpected createPullRequest call");
+      },
+    };
+
+    const message = await (
+      supervisor as unknown as {
+        runPreparedIssue: (context: {
+          state: SupervisorStateFile;
+          record: IssueRunRecord;
+          issue: GitHubIssue;
+          previousCodexSummary: string | null;
+          previousError: string | null;
+          workspacePath: string;
+          journalPath: string;
+          syncJournal: (record: IssueRunRecord) => Promise<void>;
+          memoryArtifacts: {
+            alwaysReadFiles: string[];
+            onDemandFiles: string[];
+            contextIndexPath: string;
+            agentsPath: string;
+          };
+          workspaceStatus: {
+            branch: string;
+            headSha: string;
+            hasUncommittedChanges: boolean;
+            baseAhead: number;
+            baseBehind: number;
+            remoteBranchExists: boolean;
+            remoteAhead: number;
+            remoteBehind: number;
+          };
+          pr: GitHubPullRequest | null;
+          checks: PullRequestCheck[];
+          reviewThreads: ReviewThread[];
+          options: { dryRun: boolean };
+          recoveryLog: string | null;
+        }) => Promise<string>;
+      }
+    ).runPreparedIssue({
+      state,
+      record: initialRecord,
+      issue,
+      previousCodexSummary: null,
+      previousError: null,
+      workspacePath,
+      journalPath,
+      syncJournal: async () => undefined,
+      memoryArtifacts: {
+        alwaysReadFiles: [],
+        onDemandFiles: [],
+        contextIndexPath: "/tmp/context-index.md",
+        agentsPath: "/tmp/AGENTS.generated.md",
+      },
+      workspaceStatus: {
+        branch,
+        headSha: "head-191",
+        hasUncommittedChanges: false,
+        baseAhead: 0,
+        baseBehind: 0,
+        remoteBranchExists: true,
+        remoteAhead: 0,
+        remoteBehind: 0,
+      },
+      pr,
+      checks,
+      reviewThreads,
+      options: { dryRun: false },
+      recoveryLog: null,
+    });
+    assert.doesNotMatch(message, /blocked after repeated identical review-related failure signatures/);
+    assert.equal(comments.length, 1);
+    assert.match(comments[0]?.body ?? "", /@codex review/);
+
+    const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+    const record = persisted.issues[String(issueNumber)];
+    assert.equal(persisted.activeIssueNumber, issueNumber);
+    assert.equal(record.state, "waiting_ci");
+    assert.equal(record.codex_connector_review_requested_head_sha, "head-191");
+    assert.match(record.codex_connector_review_requested_observed_at ?? "", /^2026-05-22T/);
+    assert.equal(record.repeated_failure_signature_count, 0);
+    assert.equal(record.last_failure_signature, null);
+    assert.equal(record.last_failure_context, null);
+  } finally {
+    Date.now = originalDateNow;
+  }
+});
+
 test("runOnce refreshes the sticky tracked PR status comment when repeated review failures block the current head", async () => {
   const fixture = await createSupervisorFixture();
   fixture.config.sameFailureSignatureRepeatLimit = 3;
