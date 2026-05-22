@@ -102,12 +102,12 @@ export function codexConnectorCurrentHeadReviewReadiness(
     return { kind: "none", reason: "current_head_already_observed" };
   }
 
-  if (!hasFallbackEligibleSignal) {
-    return { kind: "none", reason: "missing_fallback_signal" };
-  }
-
   if (args.checkSummary.hasPending || args.checkSummary.hasFailing) {
     return { kind: "none", reason: "checks_not_green" };
+  }
+
+  if (!hasFallbackEligibleSignal) {
+    return { kind: "none", reason: "missing_fallback_signal" };
   }
 
   return { kind: "eligible" };

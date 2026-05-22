@@ -147,6 +147,23 @@ test("codexConnectorCurrentHeadReviewReadiness exposes shared wait/request gatin
     }),
     { kind: "none", reason: "missing_fallback_signal" },
   );
+  const pendingChecks: PullRequestCheck[] = [{ ...passingChecks[0]!, bucket: "pending" }];
+
+  assert.deepEqual(
+    codexConnectorCurrentHeadReviewReadiness({
+      config: createCodexConfig({ localCiCommand: "npm test" }),
+      pr: createPullRequest({
+        ...pr,
+        currentHeadCiGreenAt: null,
+      }),
+      checks: pendingChecks,
+      manualThreadCount: 0,
+      configuredThreadsAreSafe: true,
+      checkSummary: summarizeChecks(pendingChecks),
+      mergeConflict: false,
+    }),
+    { kind: "none", reason: "checks_not_green" },
+  );
   assert.deepEqual(
     codexConnectorCurrentHeadReviewReadiness({
       config,
