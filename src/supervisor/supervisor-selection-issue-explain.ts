@@ -486,6 +486,12 @@ export async function buildIssueExplainDto(
         staleReviewBotRemediation,
       })
       : null;
+  const codexConnectorReviewRequestRecoveryEligible =
+    codexConnectorDiagnostics?.reviewFallbackSummary !== undefined &&
+    codexConnectorDiagnostics.reviewFallbackSummary !== null &&
+    /^codex_connector_review_fallback\b/u.test(codexConnectorDiagnostics.reviewFallbackSummary) &&
+    /\bstatus=request_eligible\b/u.test(codexConnectorDiagnostics.reviewFallbackSummary) &&
+    /\bnext_action=request_current_head_review\b/u.test(codexConnectorDiagnostics.reviewFallbackSummary);
   const noActiveTrackedRecordSummary =
     record && state.activeIssueNumber === null
       ? formatNoActiveTrackedRecordClassificationLine(config, record, staleReviewBotRemediation)
@@ -542,6 +548,7 @@ export async function buildIssueExplainDto(
   if (
     record &&
     !isEligibleForSelection(record, config) &&
+    !codexConnectorReviewRequestRecoveryEligible &&
     !(isAutonomousExecutionTrustBlockedRecord(record) && trustDecision.allowed)
   ) {
     reasons.push(...buildNonRunnableLocalStateReasons(record, config));

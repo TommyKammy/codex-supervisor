@@ -177,6 +177,34 @@ test("selectStatusOperatorAction flags elapsed Codex review request fallback ins
   );
 });
 
+test("selectStatusOperatorAction prefers selected request-eligible Codex recovery over stale manual-review mismatch", () => {
+  assert.deepEqual(
+    selectStatusOperatorAction({
+      detailedStatusLines: [
+        "codex_connector_review_fallback status=request_eligible provider=codex current_head_sha=head-1 current_head_observed_at=none required_checks_green_at=2026-05-19T09:03:41Z timeout_action=request_review_comment requested_at=none requested_head_sha=none review_signal=missing note=request_comment_is_not_review_completion next_action=request_current_head_review wait_until=2026-05-19T09:13:41.000Z",
+        "tracked_pr_mismatch issue=#169 pr=#177 recoverability=stale_but_recoverable github_state=ready_to_merge github_blocked_reason=none local_state=blocked local_blocked_reason=manual_review stale_local_blocker=yes",
+      ],
+      contextLines: ["selected_issue=#169"],
+    }),
+    {
+      action: "continue",
+      source: "status",
+      priority: 0,
+      summary: "No blocking operator action was detected; continue normal supervisor operation.",
+    },
+  );
+
+  assert.equal(
+    selectStatusOperatorAction({
+      detailedStatusLines: [
+        "tracked_pr_mismatch issue=#169 pr=#177 recoverability=stale_but_recoverable github_state=ready_to_merge github_blocked_reason=none local_state=blocked local_blocked_reason=manual_review stale_local_blocker=yes",
+      ],
+      contextLines: ["selected_issue=#169"],
+    }).action,
+    "manual_review",
+  );
+});
+
 test("buildStatusOperatorCockpitViewModel carries the shared action contract and evidence", () => {
   assert.deepEqual(
     buildStatusOperatorCockpitViewModel({
@@ -290,6 +318,29 @@ test("selectRestartRecommendation does not let safe restart outrank manual revie
         "loop_runtime_diagnostic kind=duplicate_loop_processes status=duplicate matching_processes=2 pids=4242,4243 config_path=<supervisor-config-path> state_file=<state-file> recovery=inspect_then_restart",
         "no_active_tracked_record issue=#188 classification=provider_outage_suspected state=blocked reason=review_provider_wait",
       ],
+    })).category,
+    "manual_review_before_restart",
+  );
+});
+
+test("selectRestartRecommendation suppresses stale manual-review restart advice for selected request-eligible Codex recovery", () => {
+  assert.equal(
+    selectRestartRecommendation({
+      detailedStatusLines: [
+        "codex_connector_review_fallback status=request_eligible provider=codex current_head_sha=head-1 current_head_observed_at=none required_checks_green_at=2026-05-19T09:03:41Z timeout_action=request_review_comment requested_at=none requested_head_sha=none review_signal=missing note=request_comment_is_not_review_completion next_action=request_current_head_review wait_until=2026-05-19T09:13:41.000Z",
+        "no_active_tracked_record issue=#169 classification=manual_review_required state=blocked reason=manual_review",
+      ],
+      contextLines: ["selected_issue=#169"],
+    }),
+    null,
+  );
+
+  assert.equal(
+    requireRestartRecommendation(selectRestartRecommendation({
+      detailedStatusLines: [
+        "no_active_tracked_record issue=#169 classification=manual_review_required state=blocked reason=manual_review",
+      ],
+      contextLines: ["selected_issue=#169"],
     })).category,
     "manual_review_before_restart",
   );

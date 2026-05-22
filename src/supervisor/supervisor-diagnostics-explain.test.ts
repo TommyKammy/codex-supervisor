@@ -739,6 +739,96 @@ test("explain requests Codex current-head review for metadata-only missing revie
   assert.doesNotMatch(explanation, /^codex_connector_operator_diagnostic .*next_action=inspect_exact_review_thread_then_resolve_or_leave_manual_note$/m);
 });
 
+test("explain treats request-eligible manual-review Codex recovery as selectable", async (t) => {
+  const fixture = await createSupervisorFixture();
+  fixture.config.reviewBotLogins = [CODEX_CONNECTOR_REVIEW_BOT_LOGIN];
+  fixture.config.configuredBotInitialGraceWaitSeconds = 0;
+  fixture.config.configuredBotCurrentHeadSignalTimeoutMinutes = 10;
+  fixture.config.configuredBotCurrentHeadSignalTimeoutAction = "request_review_comment";
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const issueNumber = 2072;
+  const prNumber = 177;
+  const branch = branchName(fixture.config, issueNumber);
+  const currentHead = "ad2a7f2d9c62f52f190d42884f1844c5b5da2072";
+  const staleReviewHead = "1bd7511632c6db5bf1f1bbe91f0b5c4cebad1770";
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        branch,
+        pr_number: prNumber,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        last_head_sha: currentHead,
+        blocked_reason: "manual_review",
+        review_wait_started_at: "2026-05-22T00:00:00Z",
+        review_wait_head_sha: currentHead,
+        provider_success_head_sha: staleReviewHead,
+        provider_success_observed_at: "2026-05-21T23:50:00Z",
+        copilot_review_timed_out_at: "2026-05-22T00:10:00.000Z",
+        copilot_review_timeout_action: "request_review_comment",
+        codex_connector_review_requested_observed_at: null,
+        codex_connector_review_requested_head_sha: null,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Codex Connector request eligible manual review recovery",
+    body: executionReadyBody("Request current-head Codex review when stale manual review residue is request eligible."),
+    createdAt: "2026-05-22T00:00:00Z",
+    updatedAt: "2026-05-22T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const pr = createPullRequest({
+    number: prNumber,
+    headRefName: branch,
+    headRefOid: currentHead,
+    isDraft: false,
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-05-22T00:00:00Z",
+    configuredBotLatestReviewedCommitSha: staleReviewHead,
+    configuredBotCurrentHeadObservedAt: null,
+    codexConnectorReviewRequestedAt: null,
+    codexConnectorReviewRequestedHeadSha: null,
+  });
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => trackedIssue,
+    listAllIssues: async () => [trackedIssue],
+    listCandidateIssues: async () => [trackedIssue],
+    resolvePullRequestForBranch: async () => pr,
+    getChecks: async () => [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const explanation = await supervisor.explain(issueNumber);
+
+  assert.match(explanation, /^runnable=yes$/m);
+  assert.match(explanation, /^selection_reason=ready .*retry_state=resume:blocked$/m);
+  assert.match(
+    explanation,
+    /^codex_connector_review_fallback status=request_eligible provider=codex .* next_action=request_current_head_review /m,
+  );
+  assert.match(
+    explanation,
+    /^tracked_pr_mismatch issue=#2072 pr=#177 .*local_state=blocked local_blocked_reason=manual_review /m,
+  );
+  assert.doesNotMatch(explanation, /^reason_\d+=manual_block manual_review$/m);
+  assert.doesNotMatch(explanation, /^restart_recommendation category=manual_review_before_restart /m);
+});
+
 test("explain surfaces loop-off as an operator blocker for active tracked work", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 189;

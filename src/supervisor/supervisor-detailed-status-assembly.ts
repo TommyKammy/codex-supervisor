@@ -302,6 +302,28 @@ export function buildInactiveDetailedStatusLines(
     }
     lines.push(formatStaleReviewResidueOperatorDiagnostic(staleReviewBotRemediation));
   }
+  if (latestRecord && pr) {
+    const codexConnectorDiagnostics = buildCodexConnectorDiagnosticBundle({
+      config,
+      record: latestRecord,
+      pr,
+      checks,
+      reviewThreads,
+      staleReviewBotRemediation,
+    });
+    if (codexConnectorDiagnostics.policyBlockSummary) {
+      lines.push(codexConnectorDiagnostics.policyBlockSummary);
+    }
+    if (codexConnectorDiagnostics.reviewFallbackSummary) {
+      lines.push(codexConnectorDiagnostics.reviewFallbackSummary);
+    }
+    if (codexConnectorDiagnostics.convergenceSummary) {
+      lines.push(codexConnectorDiagnostics.convergenceSummary);
+    }
+    if (codexConnectorDiagnostics.operatorDiagnosticSummary) {
+      lines.push(codexConnectorDiagnostics.operatorDiagnosticSummary);
+    }
+  }
 
   if (latestRecoveryRecord?.last_recovery_reason && latestRecoveryRecord.last_recovery_at) {
     const latestRecoveryLine = formatLatestRecoveryStatusLine(latestRecoveryRecord);
