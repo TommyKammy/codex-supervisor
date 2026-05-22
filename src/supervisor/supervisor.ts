@@ -63,6 +63,7 @@ import {
   PostTurnPullRequestResult,
   syncTrackedPrPersistentStatusComment,
 } from "../post-turn-pull-request";
+import { maybeRequestCodexConnectorReviewComment } from "../codex-connector-review-request-transition";
 import { buildChecksFailureContext, buildConflictFailureContext } from "../pull-request-failure-context";
 import {
   reserveRunnableIssueSelection,
@@ -589,7 +590,7 @@ export class Supervisor {
         lifecycle.nextState === "local_review_fix"
           ? localReviewRepairContinuationSummary(this.config, lifecycle.recordForState, pr)
           : null;
-      const effectiveFailureContext =
+      let effectiveFailureContext =
         lifecycle.failureContext ??
         (lifecycle.nextState === "local_review_fix"
           ? localReviewRepairContinuationFailureContext(this.config, lifecycle.recordForState, pr)
@@ -626,6 +627,35 @@ export class Supervisor {
         last_tracked_pr_repeat_failure_decision: null,
       });
       emitSupervisorEvent(this.onEvent, maybeBuildReviewWaitChangedEvent(context.record, record, pr.number));
+
+      record = await maybeRequestCodexConnectorReviewComment({
+        config: this.config,
+        stateStore: this.stateStore,
+        state,
+        github: this.github,
+        record,
+        pr,
+        checks,
+        reviewThreads,
+        syncJournal,
+        applyFailureSignature,
+        blockedReasonFromReviewState: (phaseRecord, phasePr, phaseChecks, phaseReviewThreads) =>
+          blockedReasonFromReviewState(this.config, phaseRecord, phasePr, phaseChecks, phaseReviewThreads),
+        summarizeChecks,
+        configuredBotReviewThreads,
+        manualReviewThreads,
+        mergeConflictDetected,
+      });
+      if (record.last_failure_context !== effectiveFailureContext) {
+        effectiveFailureContext = record.last_failure_context;
+      }
+      if (
+        record.state === "waiting_ci" &&
+        record.codex_connector_review_requested_head_sha === pr.headRefOid &&
+        record.last_failure_context === null
+      ) {
+        return prependRecoveryLog(formatStatus(record, state), recoveryLog);
+      }
 
       if (effectiveFailureContext && shouldStopForRepeatedFailureSignature(record, this.config)) {
         if (!trackedPrRepeatFailureDisposition.shouldStop) {

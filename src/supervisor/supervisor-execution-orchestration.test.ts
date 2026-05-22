@@ -1162,12 +1162,13 @@ test("runOnce requests Codex Connector review before repeated stale configured-b
       verificationProbeOutcomes: [],
     });
     const initialRecord = createTrackedSupervisorRecord(fixture.config, fixture.workspaceRoot, issueNumber, {
-      state: "addressing_review",
+      state: "blocked",
       workspace: workspacePath,
       branch,
       pr_number: 191,
       journal_path: journalPath,
       last_head_sha: "head-191",
+      blocked_reason: "manual_review",
       review_wait_started_at: "2026-05-22T11:50:00.000Z",
       review_wait_head_sha: "head-191",
       copilot_review_timed_out_at: "2026-05-22T12:00:00.000Z",
@@ -1303,71 +1304,7 @@ test("runOnce requests Codex Connector review before repeated stale configured-b
       },
     };
 
-    const message = await (
-      supervisor as unknown as {
-        runPreparedIssue: (context: {
-          state: SupervisorStateFile;
-          record: IssueRunRecord;
-          issue: GitHubIssue;
-          previousCodexSummary: string | null;
-          previousError: string | null;
-          workspacePath: string;
-          journalPath: string;
-          syncJournal: (record: IssueRunRecord) => Promise<void>;
-          memoryArtifacts: {
-            alwaysReadFiles: string[];
-            onDemandFiles: string[];
-            contextIndexPath: string;
-            agentsPath: string;
-          };
-          workspaceStatus: {
-            branch: string;
-            headSha: string;
-            hasUncommittedChanges: boolean;
-            baseAhead: number;
-            baseBehind: number;
-            remoteBranchExists: boolean;
-            remoteAhead: number;
-            remoteBehind: number;
-          };
-          pr: GitHubPullRequest | null;
-          checks: PullRequestCheck[];
-          reviewThreads: ReviewThread[];
-          options: { dryRun: boolean };
-          recoveryLog: string | null;
-        }) => Promise<string>;
-      }
-    ).runPreparedIssue({
-      state,
-      record: initialRecord,
-      issue,
-      previousCodexSummary: null,
-      previousError: null,
-      workspacePath,
-      journalPath,
-      syncJournal: async () => undefined,
-      memoryArtifacts: {
-        alwaysReadFiles: [],
-        onDemandFiles: [],
-        contextIndexPath: "/tmp/context-index.md",
-        agentsPath: "/tmp/AGENTS.generated.md",
-      },
-      workspaceStatus: {
-        branch,
-        headSha: "head-191",
-        hasUncommittedChanges: false,
-        baseAhead: 0,
-        baseBehind: 0,
-        remoteBranchExists: true,
-        remoteAhead: 0,
-        remoteBehind: 0,
-      },
-      pr,
-      checks,
-      reviewThreads,
-      options: { dryRun: false },
-      recoveryLog: null,
-    });
+    const message = await supervisor.runOnce({ dryRun: false });
     assert.doesNotMatch(message, /blocked after repeated identical review-related failure signatures/);
     assert.equal(comments.length, 1);
     assert.match(comments[0]?.body ?? "", /@codex review/);
