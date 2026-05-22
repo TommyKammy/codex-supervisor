@@ -16,8 +16,14 @@ import {
 } from "./setup-test-fixtures";
 import { MISSING_WORKSPACE_PREPARATION_CONTRACT_WARNING } from "../core/config";
 import { renderSupervisorDashboardHtml } from "./webui-dashboard";
+import { renderDashboardBrowserCommandScript } from "./webui-dashboard-browser-command-assets";
+import { renderDashboardInjectedHelperScript } from "./webui-dashboard-browser-injected-helpers";
+import { renderDashboardBrowserRenderScript } from "./webui-dashboard-browser-render-assets";
+import { renderDashboardBrowserScript } from "./webui-dashboard-browser-script";
+import { renderDashboardBrowserStateScript } from "./webui-dashboard-browser-state-assets";
 import { renderDashboardPageLayout } from "./webui-dashboard-page-layout";
 import { renderDashboardPageSections } from "./webui-dashboard-page-sections";
+import { renderDashboardPageStyles } from "./webui-dashboard-page-styles";
 import { DASHBOARD_PANEL_REGISTRY } from "./webui-dashboard-panel-layout";
 import {
   createDashboardDoctorFixture as createDoctor,
@@ -45,6 +51,10 @@ const SAMPLE_MACOS_WORKSPACE_ROOT = `/${"Users"}/example/dev/work`;
 
 const unavailableManagedRestart = createUnavailableManagedRestart();
 const dashboardServer = createDashboardServerFixture();
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
 
 function findChildByText(element: FakeElement, pattern: RegExp): FakeElement | undefined {
   return element.children.find((child) => pattern.test(child.textContent));
@@ -95,6 +105,38 @@ test("dashboard page layout helper escapes inline script closing tags", () => {
 
   assert.match(html, /window\.__dashboardSentinel = '<\\\/script><div>broken<\/div>';/u);
   assert.equal(html.match(/<\/script>/gu)?.length, 1);
+});
+
+test("dashboard page layout helper sources CSS from the dashboard style asset", () => {
+  const html = renderDashboardPageLayout({
+    repoSlugMarkup: "owner/repo",
+    detailsMenuMarkup: "<nav>details nav</nav>",
+    overviewPanelsMarkup: "<article>overview panel</article>",
+    detailPanelsMarkup: "<article>details panel</article>",
+    footerMarkup: "<footer>footer</footer>",
+    browserScript: "window.__dashboardSentinel = true;",
+  });
+
+  assert.match(html, new RegExp(`<style>${escapeRegExp(renderDashboardPageStyles().slice(0, 120))}`, "u"));
+  assert.match(renderDashboardPageStyles(), /\.focus-hero \{[\s\S]*display: grid;[\s\S]*gap: 20px;/u);
+});
+
+test("dashboard browser script is assembled from responsibility-focused assets", () => {
+  const expectedScript = [
+    renderDashboardInjectedHelperScript(),
+    renderDashboardBrowserStateScript(),
+    renderDashboardBrowserRenderScript(),
+    renderDashboardBrowserCommandScript(),
+  ].join("\n\n");
+  const script = renderDashboardBrowserScript();
+
+  assert.equal(script, expectedScript);
+  assert.match(renderDashboardInjectedHelperScript(), /function buildOverviewSummary/u);
+  assert.match(renderDashboardBrowserStateScript(), /const state = \{[\s\S]*const elements = \{/u);
+  assert.match(renderDashboardBrowserRenderScript(), /function renderStatus\(\)[\s\S]*function renderSelectedIssue\(\)/u);
+  assert.match(renderDashboardBrowserCommandScript(), /function renderCommandResult\(\)[\s\S]*void bootstrap\(\);/u);
+  assert.match(script, new RegExp(`const mutationAuthStorageKey = ${escapeRegExp(JSON.stringify(WEBUI_MUTATION_AUTH_STORAGE_KEY))};`, "u"));
+  assert.match(script, new RegExp(`const mutationAuthHeader = ${escapeRegExp(JSON.stringify(WEBUI_MUTATION_AUTH_HEADER))};`, "u"));
 });
 
 test("dashboard page section helper renders escaped setup context and panel-linked navigation", () => {
