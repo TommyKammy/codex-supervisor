@@ -48,6 +48,10 @@ import {
 import { displayLocalCiCommand } from "./core/config-parsing";
 import { nowIso } from "./core/utils";
 import { hasQueuedReadyPromotionPathHygieneRepair } from "./ready-promotion-path-hygiene-repair";
+import {
+  buildStaleReviewBotRemediation,
+  isProvenStaleReviewMetadataClassification,
+} from "./supervisor/stale-review-bot-remediation";
 
 const COPILOT_REVIEW_PROPAGATION_GRACE_MS = 5_000;
 const DEFAULT_CONFIGURED_BOT_SETTLED_WAIT_MS = 5_000;
@@ -720,6 +724,23 @@ function effectiveConfiguredBotReviewThreads(
     : effectiveThreads;
 }
 
+function hasProvenCodexConnectorStaleReviewMetadata(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+}): boolean {
+  const remediation = buildStaleReviewBotRemediation({
+    config: args.config,
+    record: args.record,
+    pr: args.pr,
+    checks: args.checks,
+    reviewThreads: args.reviewThreads,
+  });
+  return remediation ? isProvenStaleReviewMetadataClassification(remediation.classification) : false;
+}
+
 function configuredBotThreadsAllowCodexConnectorCurrentHeadWait(args: {
   config: SupervisorConfig;
   record: IssueRunRecord;
@@ -900,12 +921,23 @@ export function blockedReasonFromReviewState(
   nowMs = pullRequestStateInferenceNowMs(),
 ): Exclude<BlockedReason, null> | null {
   const manualThreads = manualReviewThreads(config, reviewThreads);
-  const unresolvedBotThreads = effectiveConfiguredBotReviewThreads(config, pr, checks, reviewThreads);
+  const provenCodexStaleReviewMetadata = hasProvenCodexConnectorStaleReviewMetadata({
+    config,
+    record,
+    pr,
+    checks,
+    reviewThreads,
+  });
+  const unresolvedBotThreads = provenCodexStaleReviewMetadata
+    ? []
+    : effectiveConfiguredBotReviewThreads(config, pr, checks, reviewThreads);
   const staleBotThreads =
-    manualThreads.length === 0 ? staleConfiguredBotReviewThreads(config, record, pr, unresolvedBotThreads) : [];
+    manualThreads.length === 0 && !provenCodexStaleReviewMetadata
+      ? staleConfiguredBotReviewThreads(config, record, pr, unresolvedBotThreads)
+      : [];
   const checkSummary = summarizeChecks(checks);
   const copilotTimeout = determineCopilotReviewTimeout(config, record, pr, nowMs);
-  if (copilotTimeout.timedOut && copilotTimeout.action === "block") {
+  if (copilotTimeout.timedOut && copilotTimeout.action === "block" && !provenCodexStaleReviewMetadata) {
     return "review_bot_timeout";
   }
 
@@ -958,7 +990,16 @@ export function inferStateFromPullRequest(
   nowMs = pullRequestStateInferenceNowMs(),
 ): RunState {
   const manualThreads = manualReviewThreads(config, reviewThreads);
-  const unresolvedBotThreads = effectiveConfiguredBotReviewThreads(config, pr, checks, reviewThreads);
+  const provenCodexStaleReviewMetadata = hasProvenCodexConnectorStaleReviewMetadata({
+    config,
+    record,
+    pr,
+    checks,
+    reviewThreads,
+  });
+  const unresolvedBotThreads = provenCodexStaleReviewMetadata
+    ? []
+    : effectiveConfiguredBotReviewThreads(config, pr, checks, reviewThreads);
   const pendingBotThreads = pendingBotReviewThreads(config, record, pr, unresolvedBotThreads);
   const botFollowUpState = configuredBotReviewFollowUpState(config, record, pr, unresolvedBotThreads);
   const codexConnectorMustFixThreads = codexConnectorMustFixReviewThreads(unresolvedBotThreads);
@@ -969,6 +1010,7 @@ export function inferStateFromPullRequest(
   }
 
   if (
+    !provenCodexStaleReviewMetadata &&
     shouldWaitForCodexConnectorCurrentHeadReview({
       config,
       record,
@@ -1165,11 +1207,15 @@ export function inferStateFromPullRequest(
   }
 
   const copilotTimeout = determineCopilotReviewTimeout(config, record, pr, nowMs);
-  if (copilotTimeout.timedOut && copilotTimeout.action === "block") {
+  if (copilotTimeout.timedOut && copilotTimeout.action === "block" && !provenCodexStaleReviewMetadata) {
     return "blocked";
   }
 
-  if (copilotTimeout.timedOut && copilotTimeout.action === "request_review_comment") {
+  if (
+    copilotTimeout.timedOut &&
+    copilotTimeout.action === "request_review_comment" &&
+    !provenCodexStaleReviewMetadata
+  ) {
     return "waiting_ci";
   }
 
@@ -1189,7 +1235,11 @@ export function inferStateFromPullRequest(
     return "waiting_ci";
   }
 
-  if (configuredBotCurrentHeadSignalPending(config, record, pr) && !copilotTimeout.timedOut) {
+  if (
+    !provenCodexStaleReviewMetadata &&
+    configuredBotCurrentHeadSignalPending(config, record, pr) &&
+    !copilotTimeout.timedOut
+  ) {
     return "waiting_ci";
   }
 

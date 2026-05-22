@@ -10,6 +10,10 @@ import {
   passingChecks,
   withStubbedDateNow,
 } from "./pull-request-state-test-helpers";
+import {
+  CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+  createCodexConnectorTrackedReviewResidueScenario,
+} from "./codex-connector-tracked-pr-test-helpers";
 
 test("inferStateFromPullRequest routes actionable high local-review retry into local_review_fix", () => {
   const config = createConfig({
@@ -410,6 +414,55 @@ test("blockedReasonFromReviewState classifies same-head configured-bot threads a
 
   assert.equal(inferStateFromPullRequest(config, record, pr, passingChecks(), reviewThreads), "blocked");
   assert.equal(blockedReasonFromReviewState(config, record, pr, passingChecks(), reviewThreads), "stale_review_bot");
+});
+
+test("inferStateFromPullRequest advances past proven Codex Connector stale metadata residue", () => {
+  const issueNumber = 2097;
+  const prNumber = 117;
+  const headSha = "76060523f803ebe25832cb2c355aaaa9530502f4";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-current-head-no-major",
+    commentId: "comment-current-head-no-major",
+    path: "src/current-head-proof.ts",
+    line: 42,
+    commentBody: "P1: This older inline finding should not outvote current-head no-major evidence.",
+    discussionUrl: "https://example.test/pr/117#discussion_r117",
+    verifiedRepair: {
+      summary: "Focused current-head verifier passed.",
+      ranAt: "2026-05-15T00:18:00Z",
+      command: "npx tsx --test src/pull-request-state-policy.test.ts",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+    currentHeadNoMajorReview: {
+      requestedAt: "2026-05-15T00:12:00Z",
+      observedAt: "2026-05-15T00:17:00Z",
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    humanReviewBlocksMerge: true,
+  });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    copilot_review_timed_out_at: null,
+    copilot_review_timeout_action: null,
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    configuredBotLatestReviewedCommitSha: "1bd7511632c6db5bf1f1bbe91f0b5c4cebad1770",
+  });
+
+  assert.equal(
+    inferStateFromPullRequest(config, record, pr, scenario.passingChecks, [scenario.reviewThread]),
+    "ready_to_merge",
+  );
+  assert.equal(
+    blockedReasonFromReviewState(config, record, pr, scenario.passingChecks, [scenario.reviewThread]),
+    null,
+  );
 });
 
 test("inferStateFromPullRequest still blocks a journal-only configured-bot thread when the PR is not otherwise green", () => {

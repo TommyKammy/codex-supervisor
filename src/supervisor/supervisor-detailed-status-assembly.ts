@@ -445,6 +445,7 @@ export function buildActiveDetailedStatusLines(
       pr,
       checks,
       reviewThreads,
+      staleReviewBotRemediation,
       includeP2P3Policy: true,
     });
     if (codexConnectorDiagnostics.policyBlockSummary) {
