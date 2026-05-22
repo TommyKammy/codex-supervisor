@@ -21,6 +21,7 @@ import {
   codexConnectorMustFixReviewThreads,
   evaluateCodexConnectorConvergencePolicy,
 } from "./codex-connector-review-policy";
+import { codexConnectorCurrentHeadReviewReadiness } from "./codex-connector-review-request-decision";
 import {
   configuredBotReviewFollowUpState,
   configuredBotReviewThreads,
@@ -760,24 +761,22 @@ function shouldWaitForCodexConnectorCurrentHeadReview(args: {
     return false;
   }
 
-  const checkSummary = summarizeChecks(args.checks);
-  if (checkSummary.hasFailing || checkSummary.hasPending) {
-    return false;
-  }
-
-  const loadedChecksAreGreen = args.checks.length > 0 && args.checks.every((check) => check.bucket === "pass");
-  const noChecksAndNoLocalCi = args.checks.length === 0 && !displayLocalCiCommand(args.config.localCiCommand);
-  if (!validTimestamp(args.pr.currentHeadCiGreenAt) && !loadedChecksAreGreen && !noChecksAndNoLocalCi) {
-    return false;
-  }
-
-  if (
-    !configuredBotThreadsAllowCodexConnectorCurrentHeadWait({
+  const configuredThreadsAreSafe = configuredBotThreadsAllowCodexConnectorCurrentHeadWait({
       config: args.config,
       record: args.record,
       pr: args.pr,
       configuredThreads: args.unresolvedBotThreads,
-    })
+  });
+  if (
+    codexConnectorCurrentHeadReviewReadiness({
+      config: args.config,
+      pr: args.pr,
+      checks: args.checks,
+      manualThreadCount: args.manualThreads.length,
+      configuredThreadsAreSafe,
+      checkSummary: summarizeChecks(args.checks),
+      mergeConflict: mergeConflictDetected(args.pr),
+    }).kind !== "eligible"
   ) {
     return false;
   }
