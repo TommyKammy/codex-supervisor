@@ -22,7 +22,10 @@ import {
   formatCodexConnectorPolicyBlockDiagnostic,
 } from "../codex-connector-review-policy";
 import { classifyStaleReviewBotRecoverability, recoverabilityStatusToken } from "./stale-diagnostic-recoverability";
-import type { StaleReviewBotRemediationDto } from "./stale-review-bot-remediation";
+import {
+  isProvenStaleReviewMetadataClassification,
+  type StaleReviewBotRemediationDto,
+} from "./stale-review-bot-remediation";
 
 type ReviewThreadClassifier = (config: SupervisorConfig, reviewThreads: ReviewThread[]) => ReviewThread[];
 const DEFAULT_CONFIGURED_BOT_SETTLED_WAIT_MS = 5_000;
@@ -466,12 +469,18 @@ export function formatCodexConnectorConvergenceDiagnostic(args: {
   const currentHeadSha = args.pr.headRefOid;
   const staleReviewCommitThreads = codexConnectorStaleReviewCommitThreads(args.pr, args.reviewThreads);
   const staleReviewCommitThreadIds = staleReviewCommitThreads.map((thread) => thread.id).join(",");
+  const hasCurrentHeadProviderSuccess = Boolean(
+    args.record.provider_success_observed_at && commitShasEqualForComparison(args.record.provider_success_head_sha, currentHeadSha),
+  );
+  const currentHeadSignalObserved = Boolean(
+    policy.currentHeadObservedAt || hasCurrentHeadProviderSuccess,
+  );
   const staleSignalHeadSha =
-    args.pr.configuredBotLatestReviewedCommitSha && commitShasDifferForComparison(args.pr.configuredBotLatestReviewedCommitSha, currentHeadSha)
+    !currentHeadSignalObserved && args.pr.configuredBotLatestReviewedCommitSha && commitShasDifferForComparison(args.pr.configuredBotLatestReviewedCommitSha, currentHeadSha)
       ? args.pr.configuredBotLatestReviewedCommitSha
-      : args.record.provider_success_head_sha && commitShasDifferForComparison(args.record.provider_success_head_sha, currentHeadSha)
+      : !currentHeadSignalObserved && args.record.provider_success_head_sha && commitShasDifferForComparison(args.record.provider_success_head_sha, currentHeadSha)
         ? args.record.provider_success_head_sha
-        : args.record.external_review_head_sha && commitShasDifferForComparison(args.record.external_review_head_sha, currentHeadSha)
+        : !currentHeadSignalObserved && args.record.external_review_head_sha && commitShasDifferForComparison(args.record.external_review_head_sha, currentHeadSha)
           ? args.record.external_review_head_sha
           : null;
   const latestSignalHeadSha =
@@ -500,9 +509,6 @@ export function formatCodexConnectorConvergenceDiagnostic(args: {
         : timeoutAction === "request_review_comment"
           ? "request_current_head_review"
           : "wait_for_current_head_signal";
-  const hasCurrentHeadProviderSuccess = Boolean(
-    args.record.provider_success_observed_at && commitShasEqualForComparison(args.record.provider_success_head_sha, currentHeadSha),
-  );
   const findingCount = staleReviewCommitThreads.length > 0 ? 0 : policy.findingCount;
   const highestSeverity = staleReviewCommitThreads.length > 0 ? "none" : policy.highestSeverity;
 
@@ -689,6 +695,36 @@ export function formatStaleReviewResidueOperatorDiagnostic(remediation: StaleRev
   ].join(" ");
 }
 
+function formatStaleReviewMetadataConvergenceDiagnostic(args: {
+  remediation: StaleReviewBotRemediationDto;
+  pr: GitHubPullRequest;
+}): string | null {
+  if (!isProvenStaleReviewMetadataClassification(args.remediation.classification)) {
+    return null;
+  }
+
+  return [
+    "codex_connector_convergence status=stale_review_metadata",
+    "provider=codex",
+    `current_head_sha=${args.remediation.currentHeadSha.replace(/\r?\n/g, "\\n")}`,
+    `current_head_observed_at=${args.pr.configuredBotCurrentHeadObservedAt ?? "none"}`,
+    `latest_signal_head_sha=${args.remediation.currentHeadSha.replace(/\r?\n/g, "\\n")}`,
+    "highest_severity=none",
+    "finding_count=0",
+    "merge_effect=ready",
+    "next_action=merge_ready",
+    `stale_review_metadata_classification=${args.remediation.classification}`,
+  ].join(" ");
+}
+
+function shouldUseStaleReviewRemediationDiagnostic(remediation: StaleReviewBotRemediationDto | null | undefined): remediation is StaleReviewBotRemediationDto {
+  return Boolean(
+    remediation &&
+      remediation.classification !== "unresolved_work" &&
+      remediation.classification !== "actionable_current_diff",
+  );
+}
+
 export function buildCodexConnectorDiagnosticBundle(args: {
   config: SupervisorConfig;
   record: IssueRunRecord;
@@ -702,6 +738,9 @@ export function buildCodexConnectorDiagnosticBundle(args: {
   const p2p3Policy = args.includeP2P3Policy
     ? buildCodexConnectorP2P3PolicyDiagnostic(args.config, args.reviewThreads, args.pr)
     : null;
+  const staleReviewBotRemediation = shouldUseStaleReviewRemediationDiagnostic(args.staleReviewBotRemediation)
+    ? args.staleReviewBotRemediation
+    : null;
   return {
     policyBlockSummary: policyBlock ? formatCodexConnectorPolicyBlockDiagnostic(policyBlock) : null,
     p2p3PolicySummary: p2p3Policy ? formatCodexConnectorP2P3PolicyDiagnostic(p2p3Policy) : null,
@@ -711,14 +750,26 @@ export function buildCodexConnectorDiagnosticBundle(args: {
       pr: args.pr,
       checks: args.checks,
     }),
-    convergenceSummary: formatCodexConnectorConvergenceDiagnostic({
-      config: args.config,
-      record: args.record,
-      pr: args.pr,
-      reviewThreads: args.reviewThreads,
-    }),
-    operatorDiagnosticSummary: args.staleReviewBotRemediation
-      ? formatStaleReviewResidueOperatorDiagnostic(args.staleReviewBotRemediation)
+    convergenceSummary:
+      staleReviewBotRemediation
+        ? formatStaleReviewMetadataConvergenceDiagnostic({
+          remediation: staleReviewBotRemediation,
+          pr: args.pr,
+        }) ??
+          formatCodexConnectorConvergenceDiagnostic({
+            config: args.config,
+            record: args.record,
+            pr: args.pr,
+            reviewThreads: args.reviewThreads,
+          })
+        : formatCodexConnectorConvergenceDiagnostic({
+          config: args.config,
+          record: args.record,
+          pr: args.pr,
+          reviewThreads: args.reviewThreads,
+        }),
+    operatorDiagnosticSummary: staleReviewBotRemediation
+      ? formatStaleReviewResidueOperatorDiagnostic(staleReviewBotRemediation)
       : formatCodexConnectorOperatorDiagnostic({
         config: args.config,
         record: args.record,
