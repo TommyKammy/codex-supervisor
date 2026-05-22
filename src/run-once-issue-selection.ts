@@ -29,6 +29,7 @@ import {
 } from "./supervisor/supervisor-trust-gate";
 import { syncRequirementsBlockerIssueComment } from "./requirements-blocker-issue-comment";
 import { StateStore } from "./core/state-store";
+import { configuredReviewProviderKinds } from "./core/review-providers";
 import {
   FailureContext,
   GitHubIssue,
@@ -45,6 +46,9 @@ import {
   type SupervisorEventSink,
 } from "./supervisor/supervisor-events";
 import { findLatestBlockedPreservedPartialWorkIncident } from "./supervisor/supervisor-preserved-partial-work";
+import { codexConnectorReviewRequestAction } from "./codex-connector-review-request-decision";
+import { configuredBotReviewThreads, manualReviewThreads } from "./review-thread-reporting";
+import { mergeConflictDetected, summarizeChecks } from "./supervisor/supervisor-reporting";
 
 export interface ReadyIssueContext {
   kind: "ready";
@@ -59,7 +63,8 @@ export interface RestartRunOnce {
 
 type IssueSelectionResult = ReadyIssueContext | RestartRunOnce | string;
 
-type IssueSelectionCandidateGitHub = Pick<GitHubClient, "listCandidateIssues">;
+type IssueSelectionCandidateGitHub = Pick<GitHubClient, "listCandidateIssues"> &
+  Partial<Pick<GitHubClient, "getPullRequestIfExists" | "getChecks" | "getUnresolvedReviewThreads">>;
 type IssueSelectionGitHub = IssueSelectionCandidateGitHub
   & Pick<GitHubClient, "getIssue">
   & Partial<Pick<GitHubClient, "addIssueComment" | "getIssueComments" | "updateIssueComment">>;
@@ -67,6 +72,53 @@ type IssueSelectionSaveStateStore = Pick<StateStore, "save">;
 type IssueSelectionStateStore = IssueSelectionSaveStateStore & Pick<StateStore, "touch">;
 
 type IssueJournalContext = Pick<IssueRunRecord, "workspace" | "journal_path">;
+
+async function shouldSelectCodexConnectorReviewRequestRecovery(
+  github: IssueSelectionCandidateGitHub,
+  config: SupervisorConfig,
+  record: IssueRunRecord | undefined,
+): Promise<boolean> {
+  if (
+    !record ||
+    record.state !== "blocked" ||
+    record.blocked_reason !== "manual_review" ||
+    record.pr_number === null ||
+    !configuredReviewProviderKinds(config).includes("codex") ||
+    config.configuredBotCurrentHeadSignalTimeoutAction !== "request_review_comment" ||
+    record.copilot_review_timeout_action !== "request_review_comment" ||
+    !record.copilot_review_timed_out_at ||
+    !github.getPullRequestIfExists ||
+    !github.getChecks ||
+    !github.getUnresolvedReviewThreads
+  ) {
+    return false;
+  }
+
+  try {
+    const pr = await github.getPullRequestIfExists(record.pr_number, { purpose: "status" });
+    if (!pr || pr.headRefName !== record.branch) {
+      return false;
+    }
+
+    const [checks, reviewThreads] = await Promise.all([
+      github.getChecks(pr.number),
+      github.getUnresolvedReviewThreads(pr.number),
+    ]);
+    return codexConnectorReviewRequestAction({
+      config,
+      record,
+      pr,
+      checks,
+      reviewThreads,
+      summarizeChecks,
+      configuredBotReviewThreads,
+      manualReviewThreads,
+      mergeConflictDetected,
+    }).kind !== "none";
+  } catch {
+    return false;
+  }
+}
 
 interface SelectedIssueRecord {
   record: IssueRunRecord;
@@ -386,6 +438,7 @@ async function selectIssueRecord(
       const trustDecision = evaluateAutonomousExecutionTrust(config, issue);
       if (
         !isEligibleForSelection(existing, config) &&
+        !(await shouldSelectCodexConnectorReviewRequestRecovery(github, config, existing)) &&
         !(isAutonomousExecutionTrustBlockedRecord(existing) && trustDecision.allowed)
       ) {
         continue;
