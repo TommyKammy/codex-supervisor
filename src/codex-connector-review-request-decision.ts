@@ -22,6 +22,32 @@ export type CodexConnectorReviewRequestAction =
   | { kind: "initial" }
   | { kind: "retry"; retryCount: number; retryAttempt: number };
 
+export type CodexConnectorCurrentHeadReviewReadiness =
+  | { kind: "eligible" }
+  | {
+      kind: "none";
+      reason:
+        | "non_codex_provider"
+        | "draft_pr"
+        | "changes_requested"
+        | "merge_conflict"
+        | "unsafe_configured_threads"
+        | "manual_review_threads"
+        | "current_head_already_observed"
+        | "missing_fallback_signal"
+        | "checks_not_green";
+    };
+
+export interface CodexConnectorCurrentHeadReviewReadinessArgs {
+  config: SupervisorConfig;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  manualThreadCount: number;
+  configuredThreadsAreSafe: boolean;
+  checkSummary: { hasPending: boolean; hasFailing: boolean };
+  mergeConflict: boolean;
+}
+
 export interface CodexConnectorReviewRequestDecisionArgs {
   config: SupervisorConfig;
   record: IssueRunRecord;
@@ -37,6 +63,54 @@ export interface CodexConnectorReviewRequestDecisionArgs {
 
 function isValidTimestamp(value: string | null | undefined): boolean {
   return typeof value === "string" && value.length > 0 && !Number.isNaN(Date.parse(value));
+}
+
+export function codexConnectorCurrentHeadReviewReadiness(
+  args: CodexConnectorCurrentHeadReviewReadinessArgs,
+): CodexConnectorCurrentHeadReviewReadiness {
+  const loadedChecksAreGreen =
+    args.checks.length > 0 && args.checks.every((check) => check.bucket === "pass");
+  const noChecksAndNoLocalCi = args.checks.length === 0 && !displayLocalCiCommand(args.config.localCiCommand);
+  const hasFallbackEligibleSignal =
+    isValidTimestamp(args.pr.currentHeadCiGreenAt) || loadedChecksAreGreen || noChecksAndNoLocalCi;
+
+  if (!configuredReviewProviderKinds(args.config).includes("codex")) {
+    return { kind: "none", reason: "non_codex_provider" };
+  }
+
+  if (args.pr.isDraft) {
+    return { kind: "none", reason: "draft_pr" };
+  }
+
+  if (args.pr.reviewDecision === "CHANGES_REQUESTED") {
+    return { kind: "none", reason: "changes_requested" };
+  }
+
+  if (args.mergeConflict) {
+    return { kind: "none", reason: "merge_conflict" };
+  }
+
+  if (!args.configuredThreadsAreSafe) {
+    return { kind: "none", reason: "unsafe_configured_threads" };
+  }
+
+  if (args.manualThreadCount > 0) {
+    return { kind: "none", reason: "manual_review_threads" };
+  }
+
+  if (isValidTimestamp(args.pr.configuredBotCurrentHeadObservedAt)) {
+    return { kind: "none", reason: "current_head_already_observed" };
+  }
+
+  if (args.checkSummary.hasPending || args.checkSummary.hasFailing) {
+    return { kind: "none", reason: "checks_not_green" };
+  }
+
+  if (!hasFallbackEligibleSignal) {
+    return { kind: "none", reason: "missing_fallback_signal" };
+  }
+
+  return { kind: "eligible" };
 }
 
 function addMinutes(timestamp: string, minutes: number): string | null {
@@ -194,29 +268,21 @@ export function codexConnectorReviewRequestAction(
     reviewThreads: args.reviewThreads,
     configuredThreads,
   });
-  const loadedChecksAreGreen =
-    args.checks.length > 0 && args.checks.every((check) => check.bucket === "pass");
-  const noChecksAndNoLocalCi = args.checks.length === 0 && !displayLocalCiCommand(args.config.localCiCommand);
-  const hasFallbackEligibleSignal =
-    isValidTimestamp(args.pr.currentHeadCiGreenAt) || loadedChecksAreGreen || noChecksAndNoLocalCi;
 
   if (
     args.config.configuredBotCurrentHeadSignalTimeoutAction !== "request_review_comment" ||
-    !configuredReviewProviderKinds(args.config).includes("codex") ||
     args.record.copilot_review_timeout_action !== "request_review_comment" ||
     !args.record.copilot_review_timed_out_at ||
-    args.pr.isDraft ||
-    args.pr.reviewDecision === "CHANGES_REQUESTED" ||
-    args.mergeConflictDetected(args.pr) ||
-    !configuredThreadsAreSafeForCodexRequest ||
-    args.manualReviewThreads(args.config, args.reviewThreads).length > 0 ||
-    isValidTimestamp(args.pr.configuredBotCurrentHeadObservedAt) ||
-    !hasFallbackEligibleSignal
+    codexConnectorCurrentHeadReviewReadiness({
+      config: args.config,
+      pr: args.pr,
+      checks: args.checks,
+      manualThreadCount: args.manualReviewThreads(args.config, args.reviewThreads).length,
+      configuredThreadsAreSafe: configuredThreadsAreSafeForCodexRequest,
+      checkSummary,
+      mergeConflict: args.mergeConflictDetected(args.pr),
+    }).kind !== "eligible"
   ) {
-    return { kind: "none" };
-  }
-
-  if (checkSummary.hasPending || checkSummary.hasFailing) {
     return { kind: "none" };
   }
 

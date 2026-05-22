@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { codexConnectorReviewRequestAction } from "./codex-connector-review-request-decision";
+import {
+  codexConnectorCurrentHeadReviewReadiness,
+  codexConnectorReviewRequestAction,
+} from "./codex-connector-review-request-decision";
 import {
   codexConnectorPassingChecks,
   createCodexConnectorRequestRetryScenario,
@@ -93,6 +96,89 @@ function decideScenario(scenario: CodexConnectorReviewRequestScenario) {
 
 test("codexConnectorReviewRequestAction selects an initial request without GitHub mutation inputs", () => {
   assert.deepEqual(decide(), { kind: "initial" });
+});
+
+test("codexConnectorCurrentHeadReviewReadiness exposes shared wait/request gating vocabulary", () => {
+  const config = createCodexConfig();
+  const pr = createPullRequest({
+    number: 1995,
+    headRefOid: "head-1995",
+    isDraft: false,
+    currentHeadCiGreenAt: "2026-05-08T03:09:36Z",
+    configuredBotCurrentHeadObservedAt: null,
+  });
+
+  assert.deepEqual(
+    codexConnectorCurrentHeadReviewReadiness({
+      config,
+      pr,
+      checks: passingChecks,
+      manualThreadCount: 0,
+      configuredThreadsAreSafe: true,
+      checkSummary: summarizeChecks(passingChecks),
+      mergeConflict: false,
+    }),
+    { kind: "eligible" },
+  );
+  assert.deepEqual(
+    codexConnectorCurrentHeadReviewReadiness({
+      config,
+      pr,
+      checks: [],
+      manualThreadCount: 0,
+      configuredThreadsAreSafe: true,
+      checkSummary: summarizeChecks([]),
+      mergeConflict: false,
+    }),
+    { kind: "eligible" },
+  );
+  assert.deepEqual(
+    codexConnectorCurrentHeadReviewReadiness({
+      config: createCodexConfig({ localCiCommand: "npm test" }),
+      pr: createPullRequest({
+        ...pr,
+        currentHeadCiGreenAt: null,
+      }),
+      checks: [],
+      manualThreadCount: 0,
+      configuredThreadsAreSafe: true,
+      checkSummary: summarizeChecks([]),
+      mergeConflict: false,
+    }),
+    { kind: "none", reason: "missing_fallback_signal" },
+  );
+  const pendingChecks: PullRequestCheck[] = [{ ...passingChecks[0]!, bucket: "pending" }];
+
+  assert.deepEqual(
+    codexConnectorCurrentHeadReviewReadiness({
+      config: createCodexConfig({ localCiCommand: "npm test" }),
+      pr: createPullRequest({
+        ...pr,
+        currentHeadCiGreenAt: null,
+      }),
+      checks: pendingChecks,
+      manualThreadCount: 0,
+      configuredThreadsAreSafe: true,
+      checkSummary: summarizeChecks(pendingChecks),
+      mergeConflict: false,
+    }),
+    { kind: "none", reason: "checks_not_green" },
+  );
+  assert.deepEqual(
+    codexConnectorCurrentHeadReviewReadiness({
+      config,
+      pr: createPullRequest({
+        ...pr,
+        configuredBotCurrentHeadObservedAt: "2026-05-08T03:24:00Z",
+      }),
+      checks: passingChecks,
+      manualThreadCount: 0,
+      configuredThreadsAreSafe: true,
+      checkSummary: summarizeChecks(passingChecks),
+      mergeConflict: false,
+    }),
+    { kind: "none", reason: "current_head_already_observed" },
+  );
 });
 
 test("codexConnectorReviewRequestAction requests review for stale-head configured-bot signal after timeout", () => {
