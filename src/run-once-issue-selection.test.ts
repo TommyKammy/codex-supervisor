@@ -7,7 +7,7 @@ import {
   formatNoRunnableIssueFoundMessage,
   resolveRunnableIssueContext,
 } from "./run-once-issue-selection";
-import { GitHubIssue, IssueRunRecord, SupervisorConfig, SupervisorStateFile } from "./core/types";
+import { GitHubIssue, GitHubPullRequest, IssueRunRecord, PullRequestCheck, SupervisorConfig, SupervisorStateFile } from "./core/types";
 import {
   buildRequirementsBlockerIssueComment,
   syncRequirementsBlockerIssueComment,
@@ -336,6 +336,102 @@ Add execution-ready gating.`,
   assert.match(addedComments[0]?.body ?? "", /Parallelizable: No/);
   assert.match(addedComments[0]?.body ?? "", /## Execution order[\s\S]*1 of 1/);
   assert.doesNotMatch(addedComments[0]?.body ?? "", /Part of: none/i);
+});
+
+test("resolveRunnableIssueContext selects manual-review tracked PR when Codex current-head review request is eligible", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    configuredBotInitialGraceWaitSeconds: 0,
+    configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+  });
+  const issueNumber = 2072;
+  const prNumber = 177;
+  const branch = "codex/issue-2072";
+  const headSha = "head-2072-current";
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Codex Connector request eligible manual review recovery",
+    body: executionReadyBody("Request current-head Codex review when stale manual review residue is request eligible."),
+    createdAt: "2026-05-22T00:00:00Z",
+    updatedAt: "2026-05-22T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const record = createRecord(issueNumber, {
+    state: "blocked",
+    branch,
+    pr_number: prNumber,
+    blocked_reason: "manual_review",
+    last_head_sha: headSha,
+    review_wait_started_at: "2026-05-22T00:00:00Z",
+    review_wait_head_sha: headSha,
+    copilot_review_timed_out_at: "2026-05-22T00:10:00.000Z",
+    copilot_review_timeout_action: "request_review_comment",
+    codex_connector_review_requested_observed_at: null,
+    codex_connector_review_requested_head_sha: null,
+    provider_success_head_sha: "head-2072-stale",
+    provider_success_observed_at: "2026-05-21T23:50:00Z",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: record,
+    },
+  };
+  const pr: GitHubPullRequest = {
+    number: prNumber,
+    title: "Tracked PR",
+    url: `https://example.test/pr/${prNumber}`,
+    state: "OPEN",
+    createdAt: "2026-05-22T00:00:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+    headRefName: branch,
+    headRefOid: headSha,
+    mergedAt: null,
+    currentHeadCiGreenAt: "2026-05-22T00:00:00Z",
+    configuredBotLatestReviewedCommitSha: "head-2072-stale",
+    configuredBotCurrentHeadObservedAt: null,
+    codexConnectorReviewRequestedAt: null,
+    codexConnectorReviewRequestedHeadSha: null,
+  };
+  const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+
+  const result = await resolveRunnableIssueContext({
+    github: {
+      listCandidateIssues: async () => [issue],
+      getIssue: async () => issue,
+      getPullRequestIfExists: async () => pr,
+      getChecks: async () => checks,
+      getUnresolvedReviewThreads: async () => [],
+    },
+    config,
+    stateStore: createTouchStateStore([]),
+    state,
+    currentRecord: null,
+    acquireIssueLock: async () => ({
+      acquired: true,
+      release: async () => {},
+    }),
+    ensureRecordJournalContext: async (selectedRecord) => ({
+      workspace: selectedRecord.workspace,
+      journal_path: "/tmp/workspaces/issue-2072/.codex-supervisor/issue-journal.md",
+    }),
+    syncIssueJournal: async () => {},
+  });
+
+  assert.notEqual(typeof result, "string");
+  if (typeof result !== "string") {
+    assert.equal(result.kind, "ready");
+    if (result.kind === "ready") {
+      assert.equal(result.record.issue_number, issueNumber);
+      await result.issueLock.release();
+    }
+  }
 });
 
 test("buildRequirementsBlockerIssueComment uses sequenced-child guidance without inventing a parent dependency", () => {

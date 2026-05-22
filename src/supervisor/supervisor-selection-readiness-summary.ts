@@ -37,15 +37,58 @@ import {
   findLatestMergedPrConvergenceRecord,
   formatMergedPrConvergenceOperatorEventLine,
 } from "./supervisor-operator-events";
+import { codexConnectorReviewRequestAction } from "../codex-connector-review-request-decision";
+import { configuredBotReviewThreads, manualReviewThreads } from "../review-thread-reporting";
+import { mergeConflictDetected, summarizeChecks } from "./supervisor-reporting";
 
 type ReadinessSummaryGitHub =
   Pick<GitHubClient, "listAllIssues" | "listCandidateIssues">
   & Partial<Pick<GitHubClient, "getCandidateDiscoveryDiagnostics">>;
-type SelectionWhyGitHub = Pick<GitHubClient, "listAllIssues" | "listCandidateIssues">;
+type SelectionWhyGitHub = Pick<GitHubClient, "listAllIssues" | "listCandidateIssues"> &
+  Partial<Pick<GitHubClient, "getPullRequestIfExists" | "getChecks" | "getUnresolvedReviewThreads">>;
 
 export interface SupervisorSelectionSummaryDto {
   selectedIssueNumber: number | null;
   selectionReason: string | null;
+}
+
+async function shouldSelectCodexConnectorReviewRequestRecovery(
+  github: SelectionWhyGitHub,
+  config: SupervisorConfig,
+  record: SupervisorStateFile["issues"][string] | undefined,
+): Promise<boolean> {
+  if (
+    !record ||
+    record.state !== "blocked" ||
+    record.blocked_reason !== "manual_review" ||
+    record.pr_number === null ||
+    !github.getPullRequestIfExists ||
+    !github.getChecks ||
+    !github.getUnresolvedReviewThreads
+  ) {
+    return false;
+  }
+
+  const pr = await github.getPullRequestIfExists(record.pr_number, { purpose: "status" });
+  if (!pr || pr.headRefName !== record.branch) {
+    return false;
+  }
+
+  const [checks, reviewThreads] = await Promise.all([
+    github.getChecks(pr.number),
+    github.getUnresolvedReviewThreads(pr.number),
+  ]);
+  return codexConnectorReviewRequestAction({
+    config,
+    record,
+    pr,
+    checks,
+    reviewThreads,
+    summarizeChecks,
+    configuredBotReviewThreads,
+    manualReviewThreads,
+    mergeConflictDetected,
+  }).kind !== "none";
 }
 
 export interface SupervisorCandidateDiscoveryDto {
@@ -367,6 +410,7 @@ export async function buildSelectionSummary(
 
     if (
       !isEligibleForSelection(existing, config) &&
+      !(await shouldSelectCodexConnectorReviewRequestRecovery(github, config, existing)) &&
       !(isAutonomousExecutionTrustBlockedRecord(existing) && trustDecision.allowed)
     ) {
       if (blockedPartialWorkIncident?.record.issue_number === issue.number) {
