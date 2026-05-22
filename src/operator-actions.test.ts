@@ -177,7 +177,7 @@ test("selectStatusOperatorAction flags elapsed Codex review request fallback ins
   );
 });
 
-test("selectStatusOperatorAction prefers selected request-eligible Codex recovery over stale manual-review mismatch", () => {
+test("selectStatusOperatorAction flags request-eligible Codex recovery instead of continuing", () => {
   assert.deepEqual(
     selectStatusOperatorAction({
       detailedStatusLines: [
@@ -187,10 +187,11 @@ test("selectStatusOperatorAction prefers selected request-eligible Codex recover
       contextLines: ["selected_issue=#169"],
     }),
     {
-      action: "continue",
-      source: "status",
-      priority: 0,
-      summary: "No blocking operator action was detected; continue normal supervisor operation.",
+      action: "provider_outage_suspected",
+      source: "codex_connector_review_fallback",
+      priority: 70,
+      summary:
+        "A current-head Codex Connector review request is eligible; run the selected supervisor cycle to post or record it.",
     },
   );
 

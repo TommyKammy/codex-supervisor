@@ -377,6 +377,21 @@ export function selectStatusOperatorAction(args: {
 
     if (
       /^codex_connector_review_fallback\b/.test(line) &&
+      /\bstatus=request_eligible\b/.test(line) &&
+      /\bnext_action=request_current_head_review\b/.test(line)
+    ) {
+      actions.push({
+        action: "provider_outage_suspected",
+        source: "codex_connector_review_fallback",
+        priority: 70,
+        summary:
+          "A current-head Codex Connector review request is eligible; run the selected supervisor cycle to post or record it.",
+      });
+      continue;
+    }
+
+    if (
+      /^codex_connector_review_fallback\b/.test(line) &&
       /\bstatus=timeout_elapsed\b/.test(line) &&
       /\btimeout_action=request_review_comment\b/.test(line) &&
       /\brequested_at=none\b/.test(line)

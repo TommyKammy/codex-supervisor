@@ -724,6 +724,8 @@ test("explain requests Codex current-head review for metadata-only missing revie
 
   const explanation = await supervisor.explain(issueNumber);
 
+  assert.match(explanation, /^runnable=yes$/m);
+  assert.match(explanation, /^selection_reason=ready .*retry_state=resume:blocked$/m);
   assert.match(
     explanation,
     /^stale_review_bot_remediation issue=#144 pr=#148 reason=stale_review_bot code_ci=green current_head_sha=f3addc310b0ff8e4fc53d9f3e0ab783af70a552f processed_on_current_head=unknown classification=metadata_only_missing_current_head_review codex_current_head_review_state=missing review_thread_url=none manual_next_step=inspect_exact_review_thread_then_resolve_or_leave_manual_note summary=stale_configured_bot_thread_metadata_only_pending_current_head_review_request$/m,
