@@ -1,0 +1,373 @@
+import { GitHubClient } from "../github";
+import { prependRecoveryLog } from "../recovery-reconciliation";
+import {
+  inferStateWithoutPullRequest,
+} from "../no-pull-request-state";
+import {
+  localReviewRepairContinuationFailureContext,
+  localReviewRepairContinuationSummary,
+} from "../review-handling";
+import { type PreparedIssueExecutionContext } from "../run-once-issue-preparation";
+import { type CodexTurnContext, type CodexTurnResult, type CodexTurnShortCircuit } from "../run-once-turn-execution";
+import {
+  type PostTurnPullRequestContext,
+  type PostTurnPullRequestResult,
+  syncTrackedPrPersistentStatusComment,
+} from "../post-turn-pull-request";
+import { maybeRequestCodexConnectorReviewComment } from "../codex-connector-review-request-transition";
+import { StateStore } from "../core/state-store";
+import {
+  type FailureContext,
+  type GitHubIssue,
+  type GitHubPullRequest,
+  type IssueRunRecord,
+  type SupervisorConfig,
+  type SupervisorStateFile,
+} from "../core/types";
+import { isTerminalState, truncate } from "../core/utils";
+import {
+  applyFailureSignature,
+} from "./supervisor-failure-helpers";
+import {
+  executionMetricsRetentionRootPath,
+  syncExecutionMetricsRunSummarySafely,
+} from "./execution-metrics-run-summary";
+import {
+  blockedReasonForLifecycleState,
+  determineTrackedPrRepeatFailureDisposition,
+  derivePullRequestLifecycleSnapshot,
+  resetNoPrLifecycleFailureTracking,
+  shouldRunCodex,
+  shouldStopForRepeatedFailureSignature,
+} from "./supervisor-lifecycle";
+import { formatInventoryRefreshStatusLine } from "../inventory-refresh-state";
+import { mergeConflictDetected, summarizeChecks } from "./supervisor-status-rendering";
+import {
+  emitSupervisorEvent,
+  maybeBuildReviewWaitChangedEvent,
+  type SupervisorEventSink,
+} from "./supervisor-events";
+import {
+  blockedReasonFromReviewState,
+} from "../pull-request-state";
+import {
+  configuredBotReviewThreads,
+  manualReviewThreads,
+} from "../review-thread-reporting";
+import { RecoveryEvent } from "../run-once-cycle-prelude";
+
+export interface PreparedIssueRunContext extends PreparedIssueExecutionContext {
+  state: SupervisorStateFile;
+  options: { dryRun: boolean };
+  recoveryEvents: RecoveryEvent[];
+  recoveryLog: string | null;
+}
+
+export interface PreparedIssueRunnerDependencies {
+  config: SupervisorConfig;
+  stateStore: StateStore;
+  github: GitHubClient;
+  onEvent?: SupervisorEventSink;
+  executeCodexTurn: (context: CodexTurnContext) => Promise<CodexTurnResult | CodexTurnShortCircuit>;
+  handlePostTurnPullRequestTransitions: (
+    context: PostTurnPullRequestContext,
+  ) => Promise<PostTurnPullRequestResult>;
+  handlePostTurnMergeAndCompletion: (
+    state: SupervisorStateFile,
+    issue: GitHubIssue,
+    record: IssueRunRecord,
+    pr: GitHubPullRequest,
+    options: { dryRun: boolean },
+    recoveryEvents: RecoveryEvent[],
+  ) => Promise<IssueRunRecord>;
+}
+
+function formatPreparedIssueStatus(record: IssueRunRecord | null, state?: SupervisorStateFile): string {
+  const inventoryRefreshStatusLine = formatInventoryRefreshStatusLine(state?.inventory_refresh_failure);
+  if (!record) {
+    return inventoryRefreshStatusLine ? `No active issue. ${inventoryRefreshStatusLine}` : "No active issue.";
+  }
+
+  return [
+    `issue=#${record.issue_number}`,
+    `state=${record.state}`,
+    `branch=${record.branch}`,
+    `pr=${record.pr_number ?? "none"}`,
+    `attempts=${record.attempt_count} impl=${record.implementation_attempt_count} repair=${record.repair_attempt_count}`,
+    `workspace=${record.workspace}`,
+    ...(inventoryRefreshStatusLine ? [inventoryRefreshStatusLine] : []),
+  ].join(" ");
+}
+
+function shouldBlockTrackedPrRepeatedFailure(args: {
+  record: Pick<IssueRunRecord, "pr_number">;
+  failureContext: FailureContext | null;
+}): boolean {
+  return (
+    args.record.pr_number !== null &&
+    (args.failureContext?.category === "review" || args.failureContext?.category === "manual")
+  );
+}
+
+export async function runPreparedIssueFlow(
+  dependencies: PreparedIssueRunnerDependencies,
+  context: PreparedIssueRunContext,
+): Promise<string> {
+  const {
+    config,
+    stateStore,
+    github,
+    onEvent,
+    executeCodexTurn,
+    handlePostTurnPullRequestTransitions,
+    handlePostTurnMergeAndCompletion,
+  } = dependencies;
+  const {
+    state,
+    issue,
+    previousCodexSummary,
+    previousError,
+    workspacePath,
+    journalPath,
+    syncJournal,
+    memoryArtifacts,
+    options,
+    recoveryLog,
+    recoveryEvents,
+  } = context;
+  let record = context.record;
+  let workspaceStatus = context.workspaceStatus;
+  let pr = context.pr;
+  let checks = context.checks;
+  let reviewThreads = context.reviewThreads;
+
+  if (pr) {
+    const lifecycle = derivePullRequestLifecycleSnapshot(config, record, pr, checks, reviewThreads);
+    const localReviewRepairSummary =
+      lifecycle.nextState === "local_review_fix"
+        ? localReviewRepairContinuationSummary(config, lifecycle.recordForState, pr)
+        : null;
+    let effectiveFailureContext =
+      lifecycle.failureContext ??
+      (lifecycle.nextState === "local_review_fix"
+        ? localReviewRepairContinuationFailureContext(config, lifecycle.recordForState, pr)
+        : null);
+    record = stateStore.touch(record, {
+      pr_number: pr.number,
+      state: lifecycle.nextState,
+      ...lifecycle.reviewWaitPatch,
+      ...lifecycle.copilotRequestObservationPatch,
+      ...lifecycle.copilotTimeoutPatch,
+      last_error:
+        lifecycle.nextState === "blocked" && effectiveFailureContext
+          ? truncate(effectiveFailureContext.summary, 1000)
+          : localReviewRepairSummary
+            ? truncate(localReviewRepairSummary, 1000)
+            : record.last_error,
+      last_failure_context: effectiveFailureContext,
+      ...applyFailureSignature(record, effectiveFailureContext),
+      blocked_reason:
+        lifecycle.nextState === "blocked"
+          ? blockedReasonForLifecycleState(config, lifecycle.recordForState, pr, checks, reviewThreads)
+          : null,
+    });
+    const trackedPrRepeatFailureDisposition = determineTrackedPrRepeatFailureDisposition({
+      record,
+      config,
+      pr,
+      checks,
+      reviewThreads,
+    });
+    record = stateStore.touch(record, {
+      last_tracked_pr_progress_snapshot: trackedPrRepeatFailureDisposition.progressSnapshot,
+      last_tracked_pr_progress_summary: trackedPrRepeatFailureDisposition.progressSummary,
+      last_tracked_pr_repeat_failure_decision: null,
+    });
+    emitSupervisorEvent(onEvent, maybeBuildReviewWaitChangedEvent(context.record, record, pr.number));
+
+    record = await maybeRequestCodexConnectorReviewComment({
+      config,
+      stateStore,
+      state,
+      github,
+      record,
+      pr,
+      checks,
+      reviewThreads,
+      dryRun: options.dryRun,
+      syncJournal,
+      applyFailureSignature,
+      blockedReasonFromReviewState: (phaseRecord, phasePr, phaseChecks, phaseReviewThreads) =>
+        blockedReasonFromReviewState(config, phaseRecord, phasePr, phaseChecks, phaseReviewThreads),
+      summarizeChecks,
+      configuredBotReviewThreads,
+      manualReviewThreads,
+      mergeConflictDetected,
+    });
+    if (record.last_failure_context !== effectiveFailureContext) {
+      effectiveFailureContext = record.last_failure_context;
+    }
+    if (
+      record.state === "waiting_ci" &&
+      record.codex_connector_review_requested_head_sha === pr.headRefOid &&
+      record.last_failure_context === null
+    ) {
+      return prependRecoveryLog(formatPreparedIssueStatus(record, state), recoveryLog);
+    }
+
+    if (effectiveFailureContext && shouldStopForRepeatedFailureSignature(record, config)) {
+      if (!trackedPrRepeatFailureDisposition.shouldStop) {
+        record = stateStore.touch(record, {
+          last_tracked_pr_progress_summary: trackedPrRepeatFailureDisposition.progressSummary,
+          last_tracked_pr_repeat_failure_decision: trackedPrRepeatFailureDisposition.decision,
+        });
+      } else if (shouldBlockTrackedPrRepeatedFailure({ record, failureContext: effectiveFailureContext })) {
+        record = stateStore.touch(record, {
+          state: "blocked",
+          last_error: truncate(effectiveFailureContext.summary, 1000),
+          last_failure_kind: null,
+          last_tracked_pr_progress_summary: trackedPrRepeatFailureDisposition.progressSummary,
+          last_tracked_pr_repeat_failure_decision: trackedPrRepeatFailureDisposition.decision,
+          blocked_reason:
+            blockedReasonForLifecycleState(config, lifecycle.recordForState, pr, checks, reviewThreads) ??
+            "manual_review",
+        });
+        state.issues[String(record.issue_number)] = record;
+        if (!options.dryRun) {
+          record = await syncTrackedPrPersistentStatusComment({
+            github,
+            stateStore,
+            state,
+            record,
+            pr,
+            checks,
+            reviewThreads,
+            syncJournal,
+            config,
+            failureContext: effectiveFailureContext,
+            summarizeChecks,
+            manualReviewThreadCount: manualReviewThreads(config, reviewThreads).length,
+            skipAutoHandleStaleConfiguredBotReview: true,
+          });
+        }
+        state.issues[String(record.issue_number)] = record;
+        state.activeIssueNumber = null;
+        await stateStore.save(state);
+        await syncExecutionMetricsRunSummarySafely({
+          previousRecord: lifecycle.recordForState,
+          nextRecord: record,
+          issue,
+          pullRequest: pr,
+          recoveryEvents,
+          retentionRootPath: executionMetricsRetentionRootPath(config.stateFile),
+          warningContext: "persisting",
+        });
+        await syncJournal(record);
+        return prependRecoveryLog(
+          `Issue #${record.issue_number} blocked after repeated identical review-related failure signatures.`,
+          recoveryLog,
+        );
+      } else {
+        record = stateStore.touch(record, {
+          state: "failed",
+          last_error:
+            `Repeated identical failure signature ${record.repeated_failure_signature_count} times: ` +
+            `${record.last_failure_signature ?? "unknown"}`,
+          last_failure_kind: "command_error",
+          last_tracked_pr_progress_summary: trackedPrRepeatFailureDisposition.progressSummary,
+          last_tracked_pr_repeat_failure_decision: trackedPrRepeatFailureDisposition.decision,
+          blocked_reason: null,
+        });
+        state.issues[String(record.issue_number)] = record;
+        state.activeIssueNumber = null;
+        await stateStore.save(state);
+        await syncExecutionMetricsRunSummarySafely({
+          previousRecord: lifecycle.recordForState,
+          nextRecord: record,
+          issue,
+          pullRequest: pr,
+          recoveryEvents,
+          retentionRootPath: executionMetricsRetentionRootPath(config.stateFile),
+          warningContext: "persisting",
+        });
+        await syncJournal(record);
+        return prependRecoveryLog(
+          `Issue #${record.issue_number} stopped after repeated identical failure signatures.`,
+          recoveryLog,
+        );
+      }
+    }
+  } else {
+    const nextState = inferStateWithoutPullRequest(record, workspaceStatus);
+    record = stateStore.touch(record, {
+      state: nextState,
+      ...resetNoPrLifecycleFailureTracking(record, nextState),
+    });
+  }
+  const shouldExecuteCodex = shouldRunCodex(record, pr, checks, reviewThreads, config);
+
+  if (shouldExecuteCodex) {
+    state.issues[String(record.issue_number)] = record;
+    await stateStore.save(state);
+    const codexTurn = await executeCodexTurn({
+      state,
+      record,
+      issue,
+      previousCodexSummary,
+      previousError,
+      workspacePath,
+      journalPath,
+      syncJournal,
+      memoryArtifacts,
+      workspaceStatus,
+      pr,
+      checks,
+      reviewThreads,
+      options,
+    });
+    if (codexTurn.kind === "returned") {
+      return prependRecoveryLog(codexTurn.message, recoveryLog);
+    }
+
+    record = codexTurn.record;
+    workspaceStatus = codexTurn.workspaceStatus;
+    pr = codexTurn.pr;
+    checks = codexTurn.checks;
+    reviewThreads = codexTurn.reviewThreads;
+  } else {
+    state.issues[String(record.issue_number)] = record;
+    await stateStore.save(state);
+    await syncJournal(record);
+  }
+
+  if (pr) {
+    const postTurn = await handlePostTurnPullRequestTransitions({
+      state,
+      record,
+      issue,
+      workspacePath,
+      syncJournal,
+      memoryArtifacts,
+      pr,
+      options,
+    });
+    record = await handlePostTurnMergeAndCompletion(
+      state,
+      issue,
+      postTurn.record,
+      postTurn.pr,
+      options,
+      recoveryEvents,
+    );
+    await syncJournal(record);
+    return prependRecoveryLog(formatPreparedIssueStatus(record, state), recoveryLog);
+  }
+
+  state.issues[String(record.issue_number)] = record;
+  if (state.activeIssueNumber === null && !isTerminalState(record.state)) {
+    state.activeIssueNumber = record.issue_number;
+  }
+  await stateStore.save(state);
+  await syncJournal(record);
+  return prependRecoveryLog(formatPreparedIssueStatus(record, state), recoveryLog);
+}
