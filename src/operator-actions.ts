@@ -155,6 +155,16 @@ function readSummaryValue(line: string): string | null {
   return match?.[1]?.trim() || null;
 }
 
+function readIssueNumberToken(line: string, key: string): number | null {
+  const value = readTokenValue(line, key);
+  if (value === null) {
+    return null;
+  }
+
+  const match = /^#?(\d+)$/u.exec(value);
+  return match === null ? null : Number.parseInt(match[1], 10);
+}
+
 export function parseOperatorActionLine(line: string): OperatorAction | null {
   if (!/^(operator_action|doctor_operator_action)\b/u.test(line)) {
     return null;
@@ -189,8 +199,11 @@ function selectRenderedOperatorAction(lines: string[]): OperatorAction | null {
 
 export function selectRestartRecommendation(args: {
   detailedStatusLines: string[];
+  contextLines?: string[];
 }): RestartRecommendation | null {
   const recommendations: RestartRecommendation[] = [];
+  const contextLines = [...args.detailedStatusLines, ...(args.contextLines ?? [])];
+  const requestEligibleRecoverySelectedIssues = selectedRequestEligibleRecoveryIssues(contextLines);
 
   for (const line of args.detailedStatusLines) {
     if (/^loop_runtime_blocker\b/.test(line)) {
@@ -245,6 +258,13 @@ export function selectRestartRecommendation(args: {
       noActiveClassification === "manual_review_required" ||
       noActiveClassification === "provider_outage_suspected"
     ) {
+      const issueNumber = readIssueNumberToken(line, "issue");
+      if (
+        issueNumber !== null &&
+        requestEligibleRecoverySelectedIssues.has(issueNumber)
+      ) {
+        continue;
+      }
       recommendations.push({
         category: "manual_review_before_restart",
         source: "no_active_tracked_record",
@@ -284,6 +304,7 @@ export function renderRestartRecommendationLine(
 export function appendRestartRecommendationLine(
   detailedStatusLines: string[],
   prefix: "restart_recommendation" | "doctor_restart_recommendation" = "restart_recommendation",
+  contextLines: string[] = [],
 ): string[] {
   if (detailedStatusLines.some((line) => line.startsWith(`${prefix} `))) {
     return detailedStatusLines;
@@ -291,13 +312,14 @@ export function appendRestartRecommendationLine(
 
   const recommendationLine = renderRestartRecommendationLine(
     prefix,
-    selectRestartRecommendation({ detailedStatusLines }),
+    selectRestartRecommendation({ detailedStatusLines, contextLines }),
   );
   return recommendationLine === null ? detailedStatusLines : [...detailedStatusLines, recommendationLine];
 }
 
 export function selectStatusOperatorAction(args: {
   detailedStatusLines: string[];
+  contextLines?: string[];
 }): OperatorAction {
   const renderedAction = selectRenderedOperatorAction(args.detailedStatusLines);
   if (renderedAction !== null) {
@@ -305,6 +327,8 @@ export function selectStatusOperatorAction(args: {
   }
 
   const actions: OperatorAction[] = [];
+  const contextLines = [...args.detailedStatusLines, ...(args.contextLines ?? [])];
+  const requestEligibleRecoverySelectedIssues = selectedRequestEligibleRecoveryIssues(contextLines);
 
   for (const line of args.detailedStatusLines) {
     if (/^loop_runtime_blocker\b/.test(line)) {
@@ -397,6 +421,13 @@ export function selectStatusOperatorAction(args: {
       /^tracked_pr_mismatch\b/.test(line) && /\blocal_blocked_reason=manual_review\b/.test(line) ||
       /^pre_merge_evaluation\b/.test(line) && /\bmanual_review=[1-9]\d*\b/.test(line)
     ) {
+      const issueNumber = readIssueNumberToken(line, "issue");
+      if (
+        issueNumber !== null &&
+        requestEligibleRecoverySelectedIssues.has(issueNumber)
+      ) {
+        continue;
+      }
       actions.push({
         action: "manual_review",
         source: line.split(/\s/u, 1)[0] ?? "status",
@@ -407,6 +438,42 @@ export function selectStatusOperatorAction(args: {
   }
 
   return chooseHighestPriority(actions, statusFallbackOperatorAction);
+}
+
+function selectedRequestEligibleRecoveryIssues(lines: string[]): ReadonlySet<number> {
+  const selectedIssues = new Set<number>();
+  for (const line of lines) {
+    const issueNumber = readIssueNumberToken(line, "selected_issue");
+    if (issueNumber !== null) {
+      selectedIssues.add(issueNumber);
+    }
+  }
+
+  const hasRequestEligibleRecovery = lines.some((line) =>
+    /^codex_connector_review_fallback\b/u.test(line) &&
+    /\bstatus=request_eligible\b/u.test(line) &&
+    /\bnext_action=request_current_head_review\b/u.test(line)
+  );
+  if (!hasRequestEligibleRecovery) {
+    return new Set<number>();
+  }
+  if (selectedIssues.size > 0) {
+    return selectedIssues;
+  }
+
+  const diagnosticIssueNumbers = new Set<number>();
+  for (const line of lines) {
+    if (
+      /^no_active_tracked_record\b/u.test(line) ||
+      /^tracked_pr_mismatch\b/u.test(line)
+    ) {
+      const issueNumber = readIssueNumberToken(line, "issue");
+      if (issueNumber !== null) {
+        diagnosticIssueNumbers.add(issueNumber);
+      }
+    }
+  }
+  return diagnosticIssueNumbers;
 }
 
 function fallbackCommandForOperatorAction(action: OperatorActionToken): string | null {
@@ -501,7 +568,10 @@ export function buildStatusOperatorCockpitViewModel(args: {
     ...args.detailedStatusLines,
     ...(args.readinessLines ?? []),
   ];
-  const action = selectStatusOperatorAction({ detailedStatusLines: args.detailedStatusLines });
+  const action = selectStatusOperatorAction({
+    detailedStatusLines: args.detailedStatusLines,
+    contextLines: [...(args.readinessLines ?? []), ...(args.whyLines ?? [])],
+  });
   const evidenceLine = firstMatchingLine(lines, action.source);
   const evidence = evidenceLine === null ? [] : [evidenceLine];
 

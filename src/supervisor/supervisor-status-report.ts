@@ -283,7 +283,10 @@ export function renderSupervisorStatusDto(dto: SupervisorStatusDto): string {
   const loopRuntimeRecoveryLine = renderLoopRuntimeRecoveryLine(dto.loopRuntime);
   const operatorActionLine = renderOperatorActionLine(
     "operator_action",
-    selectStatusOperatorAction({ detailedStatusLines: dto.detailedStatusLines }),
+    selectStatusOperatorAction({
+      detailedStatusLines: dto.detailedStatusLines,
+      contextLines: [...dto.readinessLines, ...dto.whyLines],
+    }),
   );
   const lines = [
     ...dto.detailedStatusLines,

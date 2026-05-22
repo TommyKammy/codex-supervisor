@@ -909,6 +909,16 @@ test("status --why selects manual-review tracked PR when Codex current-head revi
 
   assert.match(status, /^selected_issue=#2072$/m);
   assert.match(status, /^selection_reason=ready .*retry_state=resume:blocked$/m);
+  assert.match(
+    status,
+    /^codex_connector_review_fallback status=request_eligible provider=codex .* next_action=request_current_head_review /m,
+  );
+  assert.match(
+    status,
+    /^tracked_pr_mismatch issue=#2072 pr=#177 .*local_state=blocked local_blocked_reason=manual_review /m,
+  );
+  assert.doesNotMatch(status, /^operator_action action=manual_review /m);
+  assert.doesNotMatch(status, /^restart_recommendation category=manual_review_before_restart /m);
   assert.doesNotMatch(status, /^selected_issue=none$/m);
 });
 

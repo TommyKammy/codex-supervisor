@@ -333,7 +333,7 @@ export async function buildSupervisorStatusReport(args: {
         ...(inventorySnapshotStatusLine === null ? [] : [inventorySnapshotStatusLine]),
         ...(trackedMergedBacklogLine === null ? [] : [trackedMergedBacklogLine]),
         ...githubRateLimitStatus.githubRateLimitLines,
-      ]);
+      ], "restart_recommendation", whyLines);
 
       return {
         gsdSummary,
@@ -417,7 +417,7 @@ export async function buildSupervisorStatusReport(args: {
         ...(inventorySnapshotStatusLine === null ? [] : [inventorySnapshotStatusLine]),
         ...(trackedMergedBacklogLine === null ? [] : [trackedMergedBacklogLine]),
         ...githubRateLimitStatus.githubRateLimitLines,
-      ]);
+      ], "restart_recommendation", whyLines);
 
       return {
         gsdSummary,
