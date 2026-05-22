@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { runCommand } from "../core/command";
-import { GitHubIssue, GitHubPullRequest, IssueRunRecord, SupervisorStateFile } from "../core/types";
+import { GitHubIssue, GitHubPullRequest, IssueRunRecord, PullRequestCheck, SupervisorStateFile } from "../core/types";
 import { buildIssueDefinitionFingerprint } from "../issue-definition-freshness";
 import {
   buildTrackedPrStaleFailureConvergencePatch,
@@ -473,17 +473,22 @@ function createCodexConnectorRecoveryConfig() {
   });
 }
 
-test("reconcileTrackedMergedButOpenIssues recovers review_bot_timeout blocked tracked PR after same-head Codex Connector success", async () => {
-  const record = createReviewBotTimeoutTrackedPrRecord();
+async function runReviewBotTimeoutRecoveryScenario({
+  recordOverrides = {},
+  pullRequestOverrides = {},
+  checks = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+}: {
+  recordOverrides?: Partial<IssueRunRecord>;
+  pullRequestOverrides?: Partial<GitHubPullRequest>;
+  checks?: PullRequestCheck[];
+} = {}) {
+  const record = createReviewBotTimeoutTrackedPrRecord(recordOverrides);
   const state: SupervisorStateFile = createSupervisorState({ issues: [record] });
   let saveCalls = 0;
 
   const recoveryEvents = await reconcileTrackedMergedButOpenIssues(
     {
-      getPullRequestIfExists: async () => createTrackedPrRecoveryPullRequest({
-        configuredBotCurrentHeadObservedAt: "2026-03-13T00:13:00Z",
-        configuredBotCurrentHeadStatusState: "SUCCESS",
-      }),
+      getPullRequestIfExists: async () => createTrackedPrRecoveryPullRequest(pullRequestOverrides),
       getIssue: async () => {
         throw new Error("unexpected getIssue call");
       },
@@ -493,7 +498,7 @@ test("reconcileTrackedMergedButOpenIssues recovers review_bot_timeout blocked tr
       closePullRequest: async () => {
         throw new Error("unexpected closePullRequest call");
       },
-      getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getChecks: async () => checks,
       getMergedPullRequestsClosingIssue: async () => [],
       getUnresolvedReviewThreads: async () => [],
     },
@@ -513,6 +518,17 @@ test("reconcileTrackedMergedButOpenIssues recovers review_bot_timeout blocked tr
     createCodexConnectorRecoveryConfig(),
     [],
   );
+
+  return { recoveryEvents, saveCalls, state };
+}
+
+test("reconcileTrackedMergedButOpenIssues recovers review_bot_timeout blocked tracked PR after same-head Codex Connector success", async () => {
+  const { recoveryEvents, saveCalls, state } = await runReviewBotTimeoutRecoveryScenario({
+    pullRequestOverrides: {
+      configuredBotCurrentHeadObservedAt: "2026-03-13T00:13:00Z",
+      configuredBotCurrentHeadStatusState: "SUCCESS",
+    },
+  });
 
   assert.equal(saveCalls, 1);
   assert.equal(state.issues["366"]?.state, "ready_to_merge");
@@ -524,45 +540,13 @@ test("reconcileTrackedMergedButOpenIssues recovers review_bot_timeout blocked tr
 });
 
 test("reconcileTrackedMergedButOpenIssues recovers review_bot_timeout blocked tracked PR after late Codex Connector PR comment success", async () => {
-  const record = createReviewBotTimeoutTrackedPrRecord();
-  const state: SupervisorStateFile = createSupervisorState({ issues: [record] });
-  let saveCalls = 0;
-
-  const recoveryEvents = await reconcileTrackedMergedButOpenIssues(
-    {
-      getPullRequestIfExists: async () => createTrackedPrRecoveryPullRequest({
-        configuredBotCurrentHeadObservedAt: "2026-03-13T00:13:00Z",
-        configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
-      }),
-      getIssue: async () => {
-        throw new Error("unexpected getIssue call");
-      },
-      closeIssue: async () => {
-        throw new Error("unexpected closeIssue call");
-      },
-      closePullRequest: async () => {
-        throw new Error("unexpected closePullRequest call");
-      },
-      getChecks: async () => [],
-      getMergedPullRequestsClosingIssue: async () => [],
-      getUnresolvedReviewThreads: async () => [],
+  const { recoveryEvents, saveCalls, state } = await runReviewBotTimeoutRecoveryScenario({
+    pullRequestOverrides: {
+      configuredBotCurrentHeadObservedAt: "2026-03-13T00:13:00Z",
+      configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
     },
-    {
-      touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
-        return {
-          ...current,
-          ...patch,
-          updated_at: "2026-03-13T00:14:00Z",
-        };
-      },
-      save: async () => {
-        saveCalls += 1;
-      },
-    },
-    state,
-    createCodexConnectorRecoveryConfig(),
-    [],
-  );
+    checks: [],
+  });
 
   assert.equal(saveCalls, 1);
   assert.equal(state.issues["366"]?.state, "ready_to_merge");
@@ -638,45 +622,13 @@ test("reconcileTrackedMergedButOpenIssues does not recover Codex Connector succe
 });
 
 test("reconcileTrackedMergedButOpenIssues leaves review_bot_timeout blocked for stale Codex Connector PR comment success", async () => {
-  const record = createReviewBotTimeoutTrackedPrRecord();
-  const state: SupervisorStateFile = createSupervisorState({ issues: [record] });
-  let saveCalls = 0;
-
-  const recoveryEvents = await reconcileTrackedMergedButOpenIssues(
-    {
-      getPullRequestIfExists: async () => createTrackedPrRecoveryPullRequest({
-        configuredBotCurrentHeadObservedAt: "2026-03-12T23:59:00Z",
-        configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
-      }),
-      getIssue: async () => {
-        throw new Error("unexpected getIssue call");
-      },
-      closeIssue: async () => {
-        throw new Error("unexpected closeIssue call");
-      },
-      closePullRequest: async () => {
-        throw new Error("unexpected closePullRequest call");
-      },
-      getChecks: async () => [],
-      getMergedPullRequestsClosingIssue: async () => [],
-      getUnresolvedReviewThreads: async () => [],
+  const { recoveryEvents, saveCalls, state } = await runReviewBotTimeoutRecoveryScenario({
+    pullRequestOverrides: {
+      configuredBotCurrentHeadObservedAt: "2026-03-12T23:59:00Z",
+      configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
     },
-    {
-      touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
-        return {
-          ...current,
-          ...patch,
-          updated_at: "2026-03-13T00:14:00Z",
-        };
-      },
-      save: async () => {
-        saveCalls += 1;
-      },
-    },
-    state,
-    createCodexConnectorRecoveryConfig(),
-    [],
-  );
+    checks: [],
+  });
 
   assert.equal(saveCalls, 0);
   assert.deepEqual(recoveryEvents, []);

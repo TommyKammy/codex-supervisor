@@ -24,8 +24,10 @@ import {
   createDashboardExplainFixture as createExplain,
   createDashboardHarness,
   createDashboardIssueLintFixture as createIssueLint,
+  createDashboardLoopRuntimeFixture as createLoopRuntime,
   createDashboardServerFixture,
   createDashboardStatusFixture as createStatus,
+  createDashboardTrackedIssueFixture as createTrackedIssue,
   createDeferred,
   type FakeElement,
   FakeStorage,
@@ -489,13 +491,13 @@ test("dashboard does not claim loop mode is off while typed runtime status repor
     ...dashboardServer.page({
       status: createStatus({
         selectedIssueNumber: 42,
-        loopRuntime: {
+        loopRuntime: createLoopRuntime({
           state: "running",
           hostMode: "tmux",
           pid: 4242,
           startedAt: "2026-03-25T00:00:00.000Z",
           detail: "pid 4242",
-        },
+        }),
       }),
     }),
   ]);
@@ -517,13 +519,13 @@ test("dashboard warns when a macOS loop is reported as running directly instead 
   const harness = createDashboardHarness([
     ...dashboardServer.page({
       status: createStatus({
-        loopRuntime: {
+        loopRuntime: createLoopRuntime({
           state: "running",
           hostMode: "direct",
           pid: 4242,
           startedAt: "2026-03-25T00:00:00.000Z",
           detail: "pid 4242",
-        },
+        }),
         warning: {
           message:
             "macOS loop runtime is active outside tmux. Restart it with ./scripts/start-loop-tmux.sh and stop unsupported direct hosts before relying on steady-state automation.",
@@ -547,13 +549,13 @@ test("dashboard renders the loop-off presentation only when typed runtime status
   const harness = createDashboardHarness([
     ...dashboardServer.page({
       status: createStatus({
-        loopRuntime: {
+        loopRuntime: createLoopRuntime({
           state: "off",
           hostMode: "unknown",
           pid: null,
           startedAt: null,
           detail: null,
-        },
+        }),
       }),
     }),
   ]);
@@ -573,7 +575,7 @@ test("dashboard renders duplicate loop ownership as ambiguous instead of loop of
   const harness = createDashboardHarness([
     ...dashboardServer.page({
       status: createStatus({
-        loopRuntime: {
+        loopRuntime: createLoopRuntime({
           state: "off",
           hostMode: "unknown",
           pid: null,
@@ -592,7 +594,7 @@ test("dashboard renders duplicate loop ownership as ambiguous instead of loop of
             recoveryGuidance:
               "Safe recovery: for config /tmp/supervisor.config.json, stop the tmux-managed loop with ./scripts/stop-loop-tmux.sh, inspect the listed direct loop PIDs before stopping any process, then restart with ./scripts/start-loop-tmux.sh using the same config.",
           },
-        },
+        }),
       }),
     }),
   ]);
@@ -616,21 +618,21 @@ test("dashboard treats loop-off tracked work as an active blocker instead of idl
     ...dashboardServer.page({
       status: createStatus({
         trackedIssues: [
-          {
+          createTrackedIssue({
             issueNumber: 58,
             state: "queued",
             branch: "codex/issue-58",
             prNumber: 58,
             blockedReason: null,
-          },
+          }),
         ],
-        loopRuntime: {
+        loopRuntime: createLoopRuntime({
           state: "off",
           hostMode: "unknown",
           pid: null,
           startedAt: null,
           detail: null,
-        },
+        }),
         warning: {
           message:
             "Tracked work is active for issue #58, but the supervisor loop is off. Restart the supported loop host; expect loop_runtime state=running before issue #58 advances.",
@@ -661,21 +663,21 @@ test("dashboard does not tell the operator to restart the loop for blocked-only 
     ...dashboardServer.page({
       status: createStatus({
         trackedIssues: [
-          {
+          createTrackedIssue({
             issueNumber: 58,
             state: "blocked",
             branch: "codex/issue-58",
             prNumber: 58,
             blockedReason: "manual_review",
-          },
+          }),
         ],
-        loopRuntime: {
+        loopRuntime: createLoopRuntime({
           state: "off",
           hostMode: "unknown",
           pid: null,
           startedAt: null,
           detail: null,
-        },
+        }),
         warning: null,
       }),
     }),
