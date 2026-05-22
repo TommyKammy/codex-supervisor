@@ -15,6 +15,9 @@ import {
   summarizePostMergeAuditPatterns,
   validatePostMergeAuditPatternSummary,
 } from "./post-merge-audit-summary";
+import {
+  POST_MERGE_AUDIT_PATTERN_SUMMARY_TOP_LEVEL_KEYS as SCHEMA_POST_MERGE_AUDIT_PATTERN_SUMMARY_TOP_LEVEL_KEYS,
+} from "./post-merge-audit-summary-schema";
 
 function createLocalReviewArtifact(overrides: Partial<LocalReviewArtifact> = {}): LocalReviewArtifact {
   return {
@@ -337,6 +340,13 @@ test("summarizePostMergeAuditPatterns exposes bundle-backed release note source 
       followUpCandidateKeys: [],
     },
   ]);
+});
+
+test("post-merge audit summary keeps schema contract in the schema module", () => {
+  assert.deepEqual(
+    SCHEMA_POST_MERGE_AUDIT_PATTERN_SUMMARY_TOP_LEVEL_KEYS,
+    POST_MERGE_AUDIT_PATTERN_SUMMARY_TOP_LEVEL_KEYS,
+  );
 });
 
 test("summarizePostMergeAuditPatterns treats incomplete operator bundles as missing release-note evidence", async () => {
