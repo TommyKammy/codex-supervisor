@@ -64,6 +64,7 @@ export async function maybeRequestCodexConnectorReviewComment(args: {
   pr: GitHubPullRequest;
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
+  dryRun: boolean;
   syncJournal: IssueJournalSync;
   applyFailureSignature: (
     record: IssueRunRecord,
@@ -92,6 +93,9 @@ export async function maybeRequestCodexConnectorReviewComment(args: {
     mergeConflictDetected: args.mergeConflictDetected,
   });
   if (requestAction.kind === "none") {
+    return args.record;
+  }
+  if (args.dryRun) {
     return args.record;
   }
 
