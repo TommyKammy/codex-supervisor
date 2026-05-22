@@ -1,5 +1,6 @@
 import { GitHubClient } from "../github";
 import { DEFAULT_CANDIDATE_DISCOVERY_FETCH_WINDOW } from "../core/config";
+import { configuredReviewProviderKinds } from "../core/review-providers";
 import {
   findBlockingIssue,
   findHighRiskBlockingAmbiguity,
@@ -43,7 +44,7 @@ import { mergeConflictDetected, summarizeChecks } from "./supervisor-reporting";
 
 type ReadinessSummaryGitHub =
   Pick<GitHubClient, "listAllIssues" | "listCandidateIssues">
-  & Partial<Pick<GitHubClient, "getCandidateDiscoveryDiagnostics">>;
+  & Partial<Pick<GitHubClient, "getCandidateDiscoveryDiagnostics" | "getPullRequestIfExists" | "getChecks" | "getUnresolvedReviewThreads">>;
 type SelectionWhyGitHub = Pick<GitHubClient, "listAllIssues" | "listCandidateIssues"> &
   Partial<Pick<GitHubClient, "getPullRequestIfExists" | "getChecks" | "getUnresolvedReviewThreads">>;
 
@@ -62,6 +63,10 @@ async function shouldSelectCodexConnectorReviewRequestRecovery(
     record.state !== "blocked" ||
     record.blocked_reason !== "manual_review" ||
     record.pr_number === null ||
+    !configuredReviewProviderKinds(config).includes("codex") ||
+    config.configuredBotCurrentHeadSignalTimeoutAction !== "request_review_comment" ||
+    record.copilot_review_timeout_action !== "request_review_comment" ||
+    !record.copilot_review_timed_out_at ||
     !github.getPullRequestIfExists ||
     !github.getChecks ||
     !github.getUnresolvedReviewThreads
@@ -69,26 +74,46 @@ async function shouldSelectCodexConnectorReviewRequestRecovery(
     return false;
   }
 
-  const pr = await github.getPullRequestIfExists(record.pr_number, { purpose: "status" });
-  if (!pr || pr.headRefName !== record.branch) {
+  try {
+    const pr = await github.getPullRequestIfExists(record.pr_number, { purpose: "status" });
+    if (!pr || pr.headRefName !== record.branch) {
+      return false;
+    }
+
+    const [checks, reviewThreads] = await Promise.all([
+      github.getChecks(pr.number),
+      github.getUnresolvedReviewThreads(pr.number),
+    ]);
+    return codexConnectorReviewRequestAction({
+      config,
+      record,
+      pr,
+      checks,
+      reviewThreads,
+      summarizeChecks,
+      configuredBotReviewThreads,
+      manualReviewThreads,
+      mergeConflictDetected,
+    }).kind !== "none";
+  } catch {
     return false;
   }
+}
 
-  const [checks, reviewThreads] = await Promise.all([
-    github.getChecks(pr.number),
-    github.getUnresolvedReviewThreads(pr.number),
-  ]);
-  return codexConnectorReviewRequestAction({
-    config,
-    record,
-    pr,
-    checks,
-    reviewThreads,
-    summarizeChecks,
-    configuredBotReviewThreads,
-    manualReviewThreads,
-    mergeConflictDetected,
-  }).kind !== "none";
+async function findCodexConnectorReviewRequestRecoveryIssueNumbers(
+  github: SelectionWhyGitHub,
+  config: SupervisorConfig,
+  state: SupervisorStateFile,
+  candidateIssues: GitHubIssue[],
+): Promise<ReadonlySet<number>> {
+  const recoveryIssueNumbers = new Set<number>();
+  for (const issue of candidateIssues) {
+    if (await shouldSelectCodexConnectorReviewRequestRecovery(github, config, state.issues[String(issue.number)])) {
+      recoveryIssueNumbers.add(issue.number);
+    }
+  }
+
+  return recoveryIssueNumbers;
 }
 
 export interface SupervisorCandidateDiscoveryDto {
@@ -195,7 +220,16 @@ export async function buildReadinessSummary(
   const candidateDiscoveryWarningLine = formatCandidateDiscoveryStatusLine(diagnostics);
   const candidateIssues = await github.listCandidateIssues();
   const issues = await github.listAllIssues();
-  return buildReadinessSummaryFromIssues(config, state, candidateIssues, issues, candidateDiscoveryWarningLine);
+  const recoveryIssueNumbers = await findCodexConnectorReviewRequestRecoveryIssueNumbers(github, config, state, candidateIssues);
+  return buildReadinessSummaryFromIssues(
+    config,
+    state,
+    candidateIssues,
+    issues,
+    candidateDiscoveryWarningLine,
+    [],
+    recoveryIssueNumbers,
+  );
 }
 
 export function buildLastKnownGoodSnapshotReadinessSummary(
@@ -225,6 +259,7 @@ function buildReadinessSummaryFromIssues(
   issues: GitHubIssue[],
   candidateDiscoveryWarningLine: string | null,
   prefixedReadinessLines: string[] = [],
+  codexConnectorReviewRequestRecoveryIssueNumbers: ReadonlySet<number> = new Set(),
 ): SupervisorReadinessSummaryDto {
   const runnableIssues: SupervisorRunnableIssueDto[] = [];
   const blockedIssues: SupervisorBlockedIssueDto[] = [];
@@ -286,6 +321,7 @@ function buildReadinessSummaryFromIssues(
 
     if (
       !isEligibleForSelection(existing, config) &&
+      !codexConnectorReviewRequestRecoveryIssueNumbers.has(issue.number) &&
       !(isAutonomousExecutionTrustBlockedRecord(existing) && trustDecision.allowed)
     ) {
       blockedIssues.push({

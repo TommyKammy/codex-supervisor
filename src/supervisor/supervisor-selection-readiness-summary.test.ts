@@ -8,7 +8,7 @@ import {
   buildReadinessSummary,
   buildSelectionWhySummary,
 } from "./supervisor-selection-readiness-summary";
-import { createConfig, createRecord } from "./supervisor-test-helpers";
+import { createConfig, createPullRequest, createRecord } from "./supervisor-test-helpers";
 
 function createIssue(overrides: Partial<GitHubIssue> = {}): GitHubIssue {
   return {
@@ -330,6 +330,176 @@ Execution order: 3 of 3`,
   assert.deepEqual(lines, [
     "selected_issue=#96",
     "selection_reason=ready execution_ready=yes depends_on=91|92:done execution_order=150/3 predecessors=91|92:done retry_state=fresh",
+  ]);
+});
+
+test("buildReadinessSummary shares the Codex Connector request recovery override with selection", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    configuredBotInitialGraceWaitSeconds: 0,
+    configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+  });
+  const issueNumber = 2072;
+  const prNumber = 177;
+  const branch = "codex/issue-2072";
+  const currentHead = "ad2a7f2d9c62f52f190d42884f1844c5b5da2072";
+  const staleReviewHead = "1bd7511632c6db5bf1f1bbe91f0b5c4cebad1770";
+  const issue = createIssue({
+    number: issueNumber,
+    title: "Codex Connector request eligible manual review recovery",
+    body: `## Summary
+Request current-head Codex review when stale manual review residue is request eligible.
+
+## Scope
+- keep readiness and selection diagnostics consistent
+
+Depends on: none
+Parallelizable: No
+
+## Execution order
+1 of 1
+
+## Acceptance criteria
+- the issue is not reported as both selected and blocked
+
+## Verification
+- npx tsx --test src/supervisor/supervisor-selection-readiness-summary.test.ts`,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        branch,
+        pr_number: prNumber,
+        blocked_reason: "manual_review",
+        last_head_sha: currentHead,
+        review_wait_started_at: "2026-05-22T00:00:00Z",
+        review_wait_head_sha: currentHead,
+        provider_success_head_sha: staleReviewHead,
+        provider_success_observed_at: "2026-05-21T23:50:00Z",
+        copilot_review_timed_out_at: "2026-05-22T00:10:00.000Z",
+        copilot_review_timeout_action: "request_review_comment",
+        codex_connector_review_requested_observed_at: null,
+        codex_connector_review_requested_head_sha: null,
+      }),
+    },
+  };
+  const pr = createPullRequest({
+    number: prNumber,
+    headRefName: branch,
+    headRefOid: currentHead,
+    isDraft: false,
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-05-22T00:00:00Z",
+    configuredBotLatestReviewedCommitSha: staleReviewHead,
+    configuredBotCurrentHeadObservedAt: null,
+    codexConnectorReviewRequestedAt: null,
+    codexConnectorReviewRequestedHeadSha: null,
+  });
+  const github = {
+    listCandidateIssues: async () => [issue],
+    listAllIssues: async () => [issue],
+    getPullRequestIfExists: async () => pr,
+    getChecks: async () => [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const readinessSummary = await buildReadinessSummary(github, config, state);
+
+  assert.deepEqual(readinessSummary.blockedIssues, []);
+  assert.deepEqual(readinessSummary.runnableIssues, [
+    {
+      issueNumber,
+      title: "Codex Connector request eligible manual review recovery",
+      readiness: "execution_ready",
+    },
+  ]);
+  assert.deepEqual(readinessSummary.readinessLines, [
+    "runnable_issues=#2072 ready=execution_ready",
+    "blocked_issues=none",
+  ]);
+
+  const whyLines = await buildSelectionWhySummary(github, config, state);
+
+  assert.match(whyLines.join("\n"), /^selected_issue=#2072$/m);
+  assert.doesNotMatch(readinessSummary.readinessLines.join("\n"), /^blocked_issues=#2072 blocked_by=local_state:blocked$/m);
+});
+
+test("buildReadinessSummary keeps manual-review recovery blocked when GitHub recovery data fails", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    configuredBotInitialGraceWaitSeconds: 0,
+    configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+  });
+  const issueNumber = 2072;
+  const issue = createIssue({
+    number: issueNumber,
+    title: "Codex Connector request fetch failure",
+    body: `## Summary
+Keep recovery fail-closed when GitHub status data cannot be loaded.
+
+## Scope
+- avoid selecting uncertain recovery states
+
+Depends on: none
+Parallelizable: No
+
+## Execution order
+1 of 1
+
+## Acceptance criteria
+- the issue remains locally blocked
+
+## Verification
+- npx tsx --test src/supervisor/supervisor-selection-readiness-summary.test.ts`,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        branch: "codex/issue-2072",
+        pr_number: 177,
+        blocked_reason: "manual_review",
+        copilot_review_timed_out_at: "2026-05-22T00:10:00.000Z",
+        copilot_review_timeout_action: "request_review_comment",
+      }),
+    },
+  };
+  const github = {
+    listCandidateIssues: async () => [issue],
+    listAllIssues: async () => [issue],
+    getPullRequestIfExists: async () => {
+      throw new Error("GitHub PR fetch failed");
+    },
+    getChecks: async () => {
+      throw new Error("unexpected getChecks call");
+    },
+    getUnresolvedReviewThreads: async () => {
+      throw new Error("unexpected getUnresolvedReviewThreads call");
+    },
+  };
+
+  const readinessSummary = await buildReadinessSummary(github, config, state);
+  const whyLines = await buildSelectionWhySummary(github, config, state);
+
+  assert.deepEqual(readinessSummary.runnableIssues, []);
+  assert.deepEqual(readinessSummary.blockedIssues, [
+    {
+      issueNumber,
+      title: "Codex Connector request fetch failure",
+      blockedBy: "local_state:blocked",
+    },
+  ]);
+  assert.deepEqual(whyLines, [
+    "selected_issue=none",
+    "selection_reason=no_runnable_issue",
   ]);
 });
 

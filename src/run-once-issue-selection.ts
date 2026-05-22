@@ -29,6 +29,7 @@ import {
 } from "./supervisor/supervisor-trust-gate";
 import { syncRequirementsBlockerIssueComment } from "./requirements-blocker-issue-comment";
 import { StateStore } from "./core/state-store";
+import { configuredReviewProviderKinds } from "./core/review-providers";
 import {
   FailureContext,
   GitHubIssue,
@@ -82,6 +83,10 @@ async function shouldSelectCodexConnectorReviewRequestRecovery(
     record.state !== "blocked" ||
     record.blocked_reason !== "manual_review" ||
     record.pr_number === null ||
+    !configuredReviewProviderKinds(config).includes("codex") ||
+    config.configuredBotCurrentHeadSignalTimeoutAction !== "request_review_comment" ||
+    record.copilot_review_timeout_action !== "request_review_comment" ||
+    !record.copilot_review_timed_out_at ||
     !github.getPullRequestIfExists ||
     !github.getChecks ||
     !github.getUnresolvedReviewThreads
@@ -89,26 +94,30 @@ async function shouldSelectCodexConnectorReviewRequestRecovery(
     return false;
   }
 
-  const pr = await github.getPullRequestIfExists(record.pr_number, { purpose: "status" });
-  if (!pr || pr.headRefName !== record.branch) {
+  try {
+    const pr = await github.getPullRequestIfExists(record.pr_number, { purpose: "status" });
+    if (!pr || pr.headRefName !== record.branch) {
+      return false;
+    }
+
+    const [checks, reviewThreads] = await Promise.all([
+      github.getChecks(pr.number),
+      github.getUnresolvedReviewThreads(pr.number),
+    ]);
+    return codexConnectorReviewRequestAction({
+      config,
+      record,
+      pr,
+      checks,
+      reviewThreads,
+      summarizeChecks,
+      configuredBotReviewThreads,
+      manualReviewThreads,
+      mergeConflictDetected,
+    }).kind !== "none";
+  } catch {
     return false;
   }
-
-  const [checks, reviewThreads] = await Promise.all([
-    github.getChecks(pr.number),
-    github.getUnresolvedReviewThreads(pr.number),
-  ]);
-  return codexConnectorReviewRequestAction({
-    config,
-    record,
-    pr,
-    checks,
-    reviewThreads,
-    summarizeChecks,
-    configuredBotReviewThreads,
-    manualReviewThreads,
-    mergeConflictDetected,
-  }).kind !== "none";
 }
 
 interface SelectedIssueRecord {

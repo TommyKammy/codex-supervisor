@@ -434,6 +434,73 @@ test("resolveRunnableIssueContext selects manual-review tracked PR when Codex cu
   }
 });
 
+test("resolveRunnableIssueContext skips manual-review Codex request recovery when GitHub recovery data fails", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    configuredBotInitialGraceWaitSeconds: 0,
+    configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+  });
+  const issueNumber = 2072;
+  const prNumber = 177;
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Codex Connector request eligible manual review recovery",
+    body: executionReadyBody("Request current-head Codex review when stale manual review residue is request eligible."),
+    createdAt: "2026-05-22T00:00:00Z",
+    updatedAt: "2026-05-22T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const record = createRecord(issueNumber, {
+    state: "blocked",
+    branch: "codex/issue-2072",
+    pr_number: prNumber,
+    blocked_reason: "manual_review",
+    last_head_sha: "head-2072-current",
+    review_wait_started_at: "2026-05-22T00:00:00Z",
+    review_wait_head_sha: "head-2072-current",
+    copilot_review_timed_out_at: "2026-05-22T00:10:00.000Z",
+    copilot_review_timeout_action: "request_review_comment",
+    codex_connector_review_requested_observed_at: null,
+    codex_connector_review_requested_head_sha: null,
+    provider_success_head_sha: "head-2072-stale",
+    provider_success_observed_at: "2026-05-21T23:50:00Z",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: record,
+    },
+  };
+  const savedStates: SupervisorStateFile[] = [];
+
+  const result = await resolveRunnableIssueContext({
+    github: {
+      listCandidateIssues: async () => [issue],
+      getIssue: async () => issue,
+      getPullRequestIfExists: async () => {
+        throw new Error("GitHub PR fetch failed");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+    },
+    config,
+    stateStore: createTouchStateStore(savedStates),
+    state,
+    currentRecord: null,
+  });
+
+  assert.equal(result, "No matching open issue found.");
+  assert.equal(savedStates.length, 1);
+  assert.equal(state.activeIssueNumber, null);
+});
+
 test("buildRequirementsBlockerIssueComment uses sequenced-child guidance without inventing a parent dependency", () => {
   const issue: GitHubIssue = {
     number: 193,
