@@ -1,13 +1,14 @@
 import type { GitHubIssue } from "../core/types";
 import type { IssueMetadata } from "./issue-metadata";
 import type { RiskyChangeClass } from "./issue-metadata-risky-policy";
+import {
+  countExecutionOrderDeclarations,
+  getSingleMetadataLineValue,
+  ISSUE_METADATA_FIELDS,
+  ISSUE_METADATA_PATTERNS,
+} from "./issue-metadata-contract";
 
-const PART_OF_LINE_PATTERN = /^\s*(?:-\s+)?Part of:?\s+#(\d+)\s*$/im;
 const CHILD_ISSUE_BULLET_PATTERN = /^\s*-\s+#(\d+)\s*$/;
-
-function escapeRegExp(input: string): string {
-  return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
 
 function parseIssueNumberList(input: string): number[] {
   return Array.from(
@@ -27,32 +28,8 @@ function parseList(input: string): string[] {
 }
 
 export function parseTouchesList(body: string): string[] {
-  const touchesMatch = body.match(/^\s*Touches:\s*(.+)\s*$/im);
-  return touchesMatch ? parseList(touchesMatch[1]) : [];
-}
-
-export function countMetadataLineDeclarations(body: string, fieldName: string): number {
-  return [
-    ...body.matchAll(new RegExp(`^\\s*${escapeRegExp(fieldName)}:[^\\r\\n]*$`, "gim")),
-  ].length;
-}
-
-export function getSingleMetadataLineValue(body: string, fieldName: string): string | null {
-  const matches = [
-    ...body.matchAll(new RegExp(`^\\s*${escapeRegExp(fieldName)}:[^\\S\\r\\n]*(.*)$`, "gim")),
-  ];
-  if (matches.length !== 1) {
-    return null;
-  }
-
-  return matches[0][1].trim();
-}
-
-export function countExecutionOrderDeclarations(body: string): number {
-  return [
-    ...body.matchAll(/^\s*Execution order:[^\r\n]*$/gim),
-    ...body.matchAll(/^\s*##\s*Execution order\s*$[\r\n]+^[^\r\n]*$/gim),
-  ].length;
+  const touchesValue = getSingleMetadataLineValue(body, ISSUE_METADATA_FIELDS.touches);
+  return touchesValue ? parseList(touchesValue) : [];
 }
 
 export function parseExecutionOrder(
@@ -62,9 +39,7 @@ export function parseExecutionOrder(
     return null;
   }
 
-  const headingMatch = body.match(
-    /^\s*##\s*Execution order\s*$[\r\n]+^\s*(\d+)\s+of\s+(\d+)\s*$/im,
-  );
+  const headingMatch = body.match(ISSUE_METADATA_PATTERNS.executionOrderHeadingValue);
   if (headingMatch) {
     return {
       executionOrderIndex: Number(headingMatch[1]),
@@ -72,7 +47,7 @@ export function parseExecutionOrder(
     };
   }
 
-  const singleLineMatch = body.match(/^\s*Execution order:\s*(\d+)\s+of\s+(\d+)\s*$/im);
+  const singleLineMatch = body.match(ISSUE_METADATA_PATTERNS.executionOrderLineValue);
   if (!singleLineMatch) {
     return null;
   }
@@ -84,9 +59,9 @@ export function parseExecutionOrder(
 }
 
 export function parseIssueMetadata(issue: GitHubIssue): IssueMetadata {
-  const parentMatch = issue.body.match(PART_OF_LINE_PATTERN);
-  const dependsOnValue = getSingleMetadataLineValue(issue.body, "Depends on");
-  const parallelGroupValue = getSingleMetadataLineValue(issue.body, "Parallel group");
+  const parentMatch = issue.body.match(ISSUE_METADATA_PATTERNS.partOfParseLine);
+  const dependsOnValue = getSingleMetadataLineValue(issue.body, ISSUE_METADATA_FIELDS.dependsOn);
+  const parallelGroupValue = getSingleMetadataLineValue(issue.body, ISSUE_METADATA_FIELDS.parallelGroup);
   const executionOrder = parseExecutionOrder(issue.body);
 
   return {

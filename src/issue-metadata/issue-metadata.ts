@@ -2,6 +2,15 @@ import { GitHubIssue, IssueRunRecord, SupervisorStateFile } from "../core/types"
 import { parseCanonicalEpicChildIssueNumbers, parseIssueMetadata } from "./issue-metadata-parser";
 
 export { parseCanonicalEpicChildIssueNumbers, parseIssueMetadata } from "./issue-metadata-parser";
+export {
+  countExecutionOrderDeclarations,
+  countMetadataLineDeclarations,
+  getSingleMetadataLineValue,
+  ISSUE_METADATA_FIELDS,
+  ISSUE_METADATA_KEYS,
+  ISSUE_METADATA_PATTERNS,
+  ISSUE_METADATA_VALUES,
+} from "./issue-metadata-contract";
 export { validateIssueMetadataSyntax } from "./issue-metadata-validation";
 export {
   classifyChangedFile,
