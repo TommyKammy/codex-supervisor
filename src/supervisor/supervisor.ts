@@ -2,7 +2,7 @@ import path from "node:path";
 import { runCommand } from "../core/command";
 import { loadConfig } from "../core/config";
 import { GitHubClient } from "../github";
-import { issueJournalPath, resolveTrackedIssueHostPaths, trackedIssueJournalPath } from "../core/journal";
+import { issueJournalPath, resolveTrackedIssueHostPaths } from "../core/journal";
 import { acquireFileLock, LockHandle } from "../core/lock";
 import {
   cleanupExpiredDoneWorkspaces,
@@ -18,7 +18,6 @@ import {
 } from "../recovery-reconciliation";
 import {
   blockedReasonFromReviewState,
-  buildCopilotReviewTimeoutFailureContext,
   inferStateFromPullRequest,
   inferGitHubWaitStep,
 } from "../pull-request-state";
@@ -32,39 +31,24 @@ import {
   inferStateWithoutPullRequest,
 } from "../no-pull-request-state";
 import {
-  hasProcessedReviewThread,
-  localReviewBlocksReady,
-  localReviewHighSeverityNeedsBlock,
   localReviewRepairContinuationFailureContext,
   localReviewRepairContinuationSummary,
-  localReviewRetryLoopCandidate,
-  localReviewRetryLoopStalled,
-  localReviewStallFailureContext,
-  nextLocalReviewSignatureTracking,
-  processedReviewThreadKey,
 } from "../review-handling";
 import {
   isRestartRunOnce,
-  IssueJournalSync,
-  MemoryArtifacts,
   prepareIssueExecutionContext,
-  PreparedIssueExecutionContext,
 } from "../run-once-issue-preparation";
 import {
   CodexTurnContext,
   CodexTurnResult,
   CodexTurnShortCircuit,
   executeCodexTurnPhase,
-  loadLocalReviewRepairContext,
 } from "../run-once-turn-execution";
 import {
   handlePostTurnPullRequestTransitionsPhase,
   PostTurnPullRequestContext,
   PostTurnPullRequestResult,
-  syncTrackedPrPersistentStatusComment,
 } from "../post-turn-pull-request";
-import { maybeRequestCodexConnectorReviewComment } from "../codex-connector-review-request-transition";
-import { buildChecksFailureContext, buildConflictFailureContext } from "../pull-request-failure-context";
 import {
   reserveRunnableIssueSelection,
   resolveRunnableIssueContext as resolveIssueSelectionContext,
@@ -95,14 +79,10 @@ import {
   hasAttemptBudgetRemaining,
   incrementAttemptCounters,
   isVerificationBlockedMessage,
-  shouldAutoRecoverStaleReviewBot,
   shouldReconcileTrackedPrStaleReviewBot,
   shouldAutoRetryBlockedVerification,
   shouldAutoRetryHandoffMissing,
 } from "./supervisor-execution-policy";
-import {
-  buildCandidateDiscoverySummary,
-} from "./supervisor-selection-readiness-summary";
 import { buildIssueLintDto, type SupervisorIssueLintDto } from "./supervisor-selection-issue-lint";
 import {
   renderIssueExplainDto,
@@ -120,15 +100,11 @@ import { buildSetupConfigPreview, type SetupConfigPreviewSelectableReviewProvide
 import { updateSetupConfig, type SetupConfigChanges, type UpdateSetupConfigArgs } from "../setup-config-write";
 import {
   blockedReasonForLifecycleState,
-  determineTrackedPrRepeatFailureDisposition,
   derivePullRequestLifecycleSnapshot,
   isOpenPullRequest,
-  resetNoPrLifecycleFailureTracking,
   selectSupervisorPollIntervalMs,
-  shouldRunCodex,
-  shouldStopForRepeatedFailureSignature,
 } from "./supervisor-lifecycle";
-import { mergeConflictDetected, sanitizeStatusValue, summarizeChecks } from "./supervisor-status-rendering";
+import { mergeConflictDetected, summarizeChecks } from "./supervisor-status-rendering";
 import {
   formatInventoryRefreshStatusLine,
 } from "../inventory-refresh-state";
@@ -146,11 +122,10 @@ import {
   type SupervisorMutationRuntime,
 } from "./supervisor-mutation-runtime";
 import {
-  buildInventoryRefreshWarningMessage,
   renderSupervisorStatusDto,
   SupervisorStatusDto,
 } from "./supervisor-status-report";
-import { acquireSupervisorLoopRuntimeLock, readSupervisorLoopRuntime } from "./supervisor-loop-runtime-state";
+import { acquireSupervisorLoopRuntimeLock } from "./supervisor-loop-runtime-state";
 import {
   clearCurrentReconciliationPhase,
   readCurrentReconciliationPhase,
@@ -159,14 +134,9 @@ import {
 import {
   buildRunLockBlockedEvent,
   emitSupervisorEvent,
-  maybeBuildReviewWaitChangedEvent,
   type SupervisorEventSink,
 } from "./supervisor-events";
 import {
-  buildManualReviewFailureContext,
-  buildRequestedChangesFailureContext,
-  buildReviewFailureContext,
-  buildStalledBotReviewFailureContext,
   configuredBotReviewThreads,
   manualReviewThreads,
   pendingBotReviewThreads,
@@ -180,7 +150,10 @@ import {
   type RunOnceReturn,
 } from "./supervisor-run-once-runtime";
 import {
-  BlockedReason,
+  runPreparedIssueFlow,
+  type PreparedIssueRunContext,
+} from "./prepared-issue-runner";
+import {
   CliOptions,
   FailureContext,
   GitHubIssue,
@@ -189,16 +162,12 @@ import {
   JsonStateQuarantine,
   PullRequestCheck,
   ReviewThread,
-  RunState,
   SupervisorConfig,
   SupervisorStateFile,
-  WorkspaceStatus,
 } from "../core/types";
-import { isTerminalState, nowIso, truncate } from "../core/utils";
+import { truncate } from "../core/utils";
 import {
   ensureWorkspace,
-  getWorkspaceStatus,
-  pushBranch,
 } from "../core/workspace";
 import {
   buildSupervisorDoctorReport,
@@ -226,16 +195,6 @@ function interruptedTurnRecoveryIssueNumber(events: RecoveryEvent[]): number | n
   return event?.issueNumber ?? null;
 }
 
-function shouldBlockTrackedPrRepeatedFailure(args: {
-  record: Pick<IssueRunRecord, "pr_number">;
-  failureContext: FailureContext | null;
-}): boolean {
-  return (
-    args.record.pr_number !== null &&
-    (args.failureContext?.category === "review" || args.failureContext?.category === "manual")
-  );
-}
-
 async function ensureRecordJournalContext(
   config: SupervisorConfig,
   record: IssueRunRecord,
@@ -255,13 +214,6 @@ async function ensureRecordJournalContext(
     workspace: workspace.workspacePath,
     journal_path: issueJournalPath(workspace.workspacePath, config.issueJournalRelativePath, record.issue_number),
   };
-}
-
-interface PreparedIssueRunContext extends PreparedIssueExecutionContext {
-  state: SupervisorStateFile;
-  options: Pick<CliOptions, "dryRun">;
-  recoveryEvents: RecoveryEvent[];
-  recoveryLog: string | null;
 }
 
 function formatStatus(record: IssueRunRecord | null, state?: SupervisorStateFile): string {
@@ -565,247 +517,20 @@ export class Supervisor {
   }
 
   private async runPreparedIssue(context: PreparedIssueRunContext): Promise<string> {
-    const {
-      state,
-      issue,
-      previousCodexSummary,
-      previousError,
-      workspacePath,
-      journalPath,
-      syncJournal,
-      memoryArtifacts,
-      options,
-      recoveryLog,
-      recoveryEvents,
-    } = context;
-    let record = context.record;
-    let workspaceStatus = context.workspaceStatus;
-    let pr = context.pr;
-    let checks = context.checks;
-    let reviewThreads = context.reviewThreads;
-
-    if (pr) {
-      const lifecycle = derivePullRequestLifecycleSnapshot(this.config, record, pr, checks, reviewThreads);
-      const localReviewRepairSummary =
-        lifecycle.nextState === "local_review_fix"
-          ? localReviewRepairContinuationSummary(this.config, lifecycle.recordForState, pr)
-          : null;
-      let effectiveFailureContext =
-        lifecycle.failureContext ??
-        (lifecycle.nextState === "local_review_fix"
-          ? localReviewRepairContinuationFailureContext(this.config, lifecycle.recordForState, pr)
-          : null);
-      record = this.stateStore.touch(record, {
-        pr_number: pr.number,
-        state: lifecycle.nextState,
-        ...lifecycle.reviewWaitPatch,
-        ...lifecycle.copilotRequestObservationPatch,
-        ...lifecycle.copilotTimeoutPatch,
-        last_error:
-          lifecycle.nextState === "blocked" && effectiveFailureContext
-            ? truncate(effectiveFailureContext.summary, 1000)
-            : localReviewRepairSummary
-              ? truncate(localReviewRepairSummary, 1000)
-              : record.last_error,
-        last_failure_context: effectiveFailureContext,
-        ...applyFailureSignature(record, effectiveFailureContext),
-        blocked_reason:
-          lifecycle.nextState === "blocked"
-            ? blockedReasonForLifecycleState(this.config, lifecycle.recordForState, pr, checks, reviewThreads)
-            : null,
-      });
-      const trackedPrRepeatFailureDisposition = determineTrackedPrRepeatFailureDisposition({
-        record,
-        config: this.config,
-        pr,
-        checks,
-        reviewThreads,
-      });
-      record = this.stateStore.touch(record, {
-        last_tracked_pr_progress_snapshot: trackedPrRepeatFailureDisposition.progressSnapshot,
-        last_tracked_pr_progress_summary: trackedPrRepeatFailureDisposition.progressSummary,
-        last_tracked_pr_repeat_failure_decision: null,
-      });
-      emitSupervisorEvent(this.onEvent, maybeBuildReviewWaitChangedEvent(context.record, record, pr.number));
-
-      record = await maybeRequestCodexConnectorReviewComment({
+    return runPreparedIssueFlow(
+      {
         config: this.config,
         stateStore: this.stateStore,
-        state,
         github: this.github,
-        record,
-        pr,
-        checks,
-        reviewThreads,
-        dryRun: options.dryRun,
-        syncJournal,
-        applyFailureSignature,
-        blockedReasonFromReviewState: (phaseRecord, phasePr, phaseChecks, phaseReviewThreads) =>
-          blockedReasonFromReviewState(this.config, phaseRecord, phasePr, phaseChecks, phaseReviewThreads),
-        summarizeChecks,
-        configuredBotReviewThreads,
-        manualReviewThreads,
-        mergeConflictDetected,
-      });
-      if (record.last_failure_context !== effectiveFailureContext) {
-        effectiveFailureContext = record.last_failure_context;
-      }
-      if (
-        record.state === "waiting_ci" &&
-        record.codex_connector_review_requested_head_sha === pr.headRefOid &&
-        record.last_failure_context === null
-      ) {
-        return prependRecoveryLog(formatStatus(record, state), recoveryLog);
-      }
-
-      if (effectiveFailureContext && shouldStopForRepeatedFailureSignature(record, this.config)) {
-        if (!trackedPrRepeatFailureDisposition.shouldStop) {
-          record = this.stateStore.touch(record, {
-            last_tracked_pr_progress_summary: trackedPrRepeatFailureDisposition.progressSummary,
-            last_tracked_pr_repeat_failure_decision: trackedPrRepeatFailureDisposition.decision,
-          });
-        } else if (shouldBlockTrackedPrRepeatedFailure({ record, failureContext: effectiveFailureContext })) {
-          record = this.stateStore.touch(record, {
-            state: "blocked",
-            last_error: truncate(effectiveFailureContext.summary, 1000),
-            last_failure_kind: null,
-            last_tracked_pr_progress_summary: trackedPrRepeatFailureDisposition.progressSummary,
-            last_tracked_pr_repeat_failure_decision: trackedPrRepeatFailureDisposition.decision,
-            blocked_reason:
-              blockedReasonForLifecycleState(this.config, lifecycle.recordForState, pr, checks, reviewThreads) ??
-              "manual_review",
-          });
-          state.issues[String(record.issue_number)] = record;
-          if (!options.dryRun) {
-            record = await syncTrackedPrPersistentStatusComment({
-              github: this.github,
-              stateStore: this.stateStore,
-              state,
-              record,
-              pr,
-              checks,
-              reviewThreads,
-              syncJournal,
-              config: this.config,
-              failureContext: effectiveFailureContext,
-              summarizeChecks,
-              manualReviewThreadCount: manualReviewThreads(this.config, reviewThreads).length,
-              skipAutoHandleStaleConfiguredBotReview: true,
-            });
-          }
-          state.issues[String(record.issue_number)] = record;
-          state.activeIssueNumber = null;
-          await this.stateStore.save(state);
-          await syncExecutionMetricsRunSummarySafely({
-            previousRecord: lifecycle.recordForState,
-            nextRecord: record,
-            issue,
-            pullRequest: pr,
-            recoveryEvents,
-            retentionRootPath: executionMetricsRetentionRootPath(this.config.stateFile),
-            warningContext: "persisting",
-          });
-          await syncJournal(record);
-          return prependRecoveryLog(
-            `Issue #${record.issue_number} blocked after repeated identical review-related failure signatures.`,
-            recoveryLog,
-          );
-        } else {
-          record = this.stateStore.touch(record, {
-            state: "failed",
-            last_error:
-              `Repeated identical failure signature ${record.repeated_failure_signature_count} times: ` +
-              `${record.last_failure_signature ?? "unknown"}`,
-            last_failure_kind: "command_error",
-            last_tracked_pr_progress_summary: trackedPrRepeatFailureDisposition.progressSummary,
-            last_tracked_pr_repeat_failure_decision: trackedPrRepeatFailureDisposition.decision,
-            blocked_reason: null,
-          });
-          state.issues[String(record.issue_number)] = record;
-          state.activeIssueNumber = null;
-          await this.stateStore.save(state);
-          await syncExecutionMetricsRunSummarySafely({
-            previousRecord: lifecycle.recordForState,
-            nextRecord: record,
-            issue,
-            pullRequest: pr,
-            recoveryEvents,
-            retentionRootPath: executionMetricsRetentionRootPath(this.config.stateFile),
-            warningContext: "persisting",
-          });
-          await syncJournal(record);
-          return prependRecoveryLog(
-            `Issue #${record.issue_number} stopped after repeated identical failure signatures.`,
-            recoveryLog,
-          );
-        }
-      }
-    } else {
-      const nextState = inferStateWithoutPullRequest(record, workspaceStatus);
-      record = this.stateStore.touch(record, {
-        state: nextState,
-        ...resetNoPrLifecycleFailureTracking(record, nextState),
-      });
-    }
-    const shouldExecuteCodex = shouldRunCodex(record, pr, checks, reviewThreads, this.config);
-
-    if (shouldExecuteCodex) {
-      state.issues[String(record.issue_number)] = record;
-      await this.stateStore.save(state);
-      const codexTurn = await this.executeCodexTurn({
-        state,
-        record,
-        issue,
-        previousCodexSummary,
-        previousError,
-        workspacePath,
-        journalPath,
-        syncJournal,
-        memoryArtifacts,
-        workspaceStatus,
-        pr,
-        checks,
-        reviewThreads,
-        options,
-      });
-      if (codexTurn.kind === "returned") {
-        return prependRecoveryLog(codexTurn.message, recoveryLog);
-      }
-
-      record = codexTurn.record;
-      workspaceStatus = codexTurn.workspaceStatus;
-      pr = codexTurn.pr;
-      checks = codexTurn.checks;
-      reviewThreads = codexTurn.reviewThreads;
-    } else {
-      state.issues[String(record.issue_number)] = record;
-      await this.stateStore.save(state);
-      await syncJournal(record);
-    }
-
-    if (pr) {
-      const postTurn = await this.handlePostTurnPullRequestTransitions({
-        state,
-        record,
-        issue,
-        workspacePath,
-        syncJournal,
-        memoryArtifacts,
-        pr,
-        options,
-      });
-      record = await this.handlePostTurnMergeAndCompletion(state, issue, postTurn.record, postTurn.pr, options, recoveryEvents);
-      await syncJournal(record);
-      return prependRecoveryLog(formatStatus(record, state), recoveryLog);
-    }
-
-    state.issues[String(record.issue_number)] = record;
-    if (state.activeIssueNumber === null && !isTerminalState(record.state)) {
-      state.activeIssueNumber = record.issue_number;
-    }
-    await this.stateStore.save(state);
-    await syncJournal(record);
-    return prependRecoveryLog(formatStatus(record, state), recoveryLog);
+        onEvent: this.onEvent,
+        executeCodexTurn: (codexContext) => this.executeCodexTurn(codexContext),
+        handlePostTurnPullRequestTransitions: (postTurnContext) =>
+          this.handlePostTurnPullRequestTransitions(postTurnContext),
+        handlePostTurnMergeAndCompletion: (state, issue, record, pr, options, recoveryEvents) =>
+          this.handlePostTurnMergeAndCompletion(state, issue, record, pr, options, recoveryEvents),
+      },
+      context,
+    );
   }
 
   private async loadOpenPullRequestSnapshot(prNumber: number): Promise<{
