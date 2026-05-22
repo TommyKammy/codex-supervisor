@@ -61,7 +61,7 @@ async function shouldSelectCodexConnectorReviewRequestRecovery(
   if (
     !record ||
     record.state !== "blocked" ||
-    record.blocked_reason !== "manual_review" ||
+    (record.blocked_reason !== "manual_review" && record.blocked_reason !== "stale_review_bot") ||
     record.pr_number === null ||
     !configuredReviewProviderKinds(config).includes("codex") ||
     config.configuredBotCurrentHeadSignalTimeoutAction !== "request_review_comment" ||

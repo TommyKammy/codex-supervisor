@@ -434,6 +434,127 @@ test("resolveRunnableIssueContext selects manual-review tracked PR when Codex cu
   }
 });
 
+test("resolveRunnableIssueContext selects stale-review-bot tracked PR when Codex current-head review request is eligible", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    configuredBotInitialGraceWaitSeconds: 0,
+    configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+  });
+  const issueNumber = 2096;
+  const prNumber = 179;
+  const branch = "codex/issue-2096";
+  const headSha = "head-2096-current";
+  const threadId = "thread-stale-review-bot-current-head";
+  const commentId = "comment-stale-review-bot-current-head";
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Codex Connector request eligible stale review bot recovery",
+    body: executionReadyBody("Request current-head Codex review when stale review bot residue is request eligible."),
+    createdAt: "2026-05-22T00:00:00Z",
+    updatedAt: "2026-05-22T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const record = createRecord(issueNumber, {
+    state: "blocked",
+    branch,
+    pr_number: prNumber,
+    blocked_reason: "stale_review_bot",
+    last_head_sha: headSha,
+    copilot_review_timed_out_at: "2026-05-22T00:10:00.000Z",
+    copilot_review_timeout_action: "request_review_comment",
+    codex_connector_review_requested_observed_at: null,
+    codex_connector_review_requested_head_sha: null,
+    provider_success_head_sha: "head-2096-stale",
+    provider_success_observed_at: "2026-05-21T23:50:00Z",
+    processed_review_thread_ids: [`${threadId}@${headSha}`],
+    processed_review_thread_fingerprints: [`${threadId}@${headSha}#${commentId}`],
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: record,
+    },
+  };
+  const pr: GitHubPullRequest = {
+    number: prNumber,
+    title: "Tracked PR",
+    url: `https://example.test/pr/${prNumber}`,
+    state: "OPEN",
+    createdAt: "2026-05-22T00:00:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+    headRefName: branch,
+    headRefOid: headSha,
+    mergedAt: null,
+    currentHeadCiGreenAt: "2026-05-22T00:00:00Z",
+    configuredBotLatestReviewedCommitSha: "head-2096-stale",
+    configuredBotCurrentHeadObservedAt: null,
+    codexConnectorReviewRequestedAt: null,
+    codexConnectorReviewRequestedHeadSha: null,
+  };
+  const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+  const reviewThreads = [
+    {
+      id: threadId,
+      isResolved: false,
+      isOutdated: true,
+      path: "src/review-policy.ts",
+      line: 12,
+      comments: {
+        nodes: [
+          {
+            id: commentId,
+            body: "P2: metadata-only stale configured-bot finding.",
+            createdAt: "2026-05-21T23:55:00Z",
+            url: `https://example.test/pr/${prNumber}#discussion_${threadId}`,
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    },
+  ];
+
+  const result = await resolveRunnableIssueContext({
+    github: {
+      listCandidateIssues: async () => [issue],
+      getIssue: async () => issue,
+      getPullRequestIfExists: async () => pr,
+      getChecks: async () => checks,
+      getUnresolvedReviewThreads: async () => reviewThreads,
+    },
+    config,
+    stateStore: createTouchStateStore([]),
+    state,
+    currentRecord: null,
+    acquireIssueLock: async () => ({
+      acquired: true,
+      release: async () => {},
+    }),
+    ensureRecordJournalContext: async (selectedRecord) => ({
+      workspace: selectedRecord.workspace,
+      journal_path: "/tmp/workspaces/issue-2096/.codex-supervisor/issue-journal.md",
+    }),
+    syncIssueJournal: async () => {},
+  });
+
+  assert.notEqual(typeof result, "string");
+  if (typeof result !== "string") {
+    assert.equal(result.kind, "ready");
+    if (result.kind === "ready") {
+      assert.equal(result.record.issue_number, issueNumber);
+      await result.issueLock.release();
+    }
+  }
+});
+
 test("resolveRunnableIssueContext skips manual-review Codex request recovery when GitHub recovery data fails", async () => {
   const config = createConfig({
     reviewBotLogins: ["chatgpt-codex-connector"],
