@@ -725,6 +725,13 @@ function shouldUseStaleReviewRemediationDiagnostic(remediation: StaleReviewBotRe
   );
 }
 
+function shouldSuppressActionableCodexDiagnostics(remediation: StaleReviewBotRemediationDto): boolean {
+  return Boolean(
+    isProvenStaleReviewMetadataClassification(remediation.classification) ||
+      remediation.missingProbeReason,
+  );
+}
+
 export function buildCodexConnectorDiagnosticBundle(args: {
   config: SupervisorConfig;
   record: IssueRunRecord;
@@ -739,7 +746,7 @@ export function buildCodexConnectorDiagnosticBundle(args: {
     : null;
   const suppressActionableReviewPolicy = Boolean(
     staleReviewBotRemediation &&
-      isProvenStaleReviewMetadataClassification(staleReviewBotRemediation.classification),
+      shouldSuppressActionableCodexDiagnostics(staleReviewBotRemediation),
   );
   const policyBlock = suppressActionableReviewPolicy
     ? null
@@ -763,12 +770,14 @@ export function buildCodexConnectorDiagnosticBundle(args: {
           remediation: staleReviewBotRemediation,
           pr: args.pr,
         }) ??
-          formatCodexConnectorConvergenceDiagnostic({
-            config: args.config,
-            record: args.record,
-            pr: args.pr,
-            reviewThreads: args.reviewThreads,
-          })
+          (staleReviewBotRemediation.missingProbeReason
+            ? null
+            : formatCodexConnectorConvergenceDiagnostic({
+              config: args.config,
+              record: args.record,
+              pr: args.pr,
+              reviewThreads: args.reviewThreads,
+            }))
         : formatCodexConnectorConvergenceDiagnostic({
           config: args.config,
           record: args.record,

@@ -517,7 +517,11 @@ export function buildStaleReviewBotRemediation(args: {
       checks: args.checks,
       reviewThreads: args.reviewThreads ?? [],
     });
-  if (args.record.blocked_reason === "manual_review" && !isVerifiedStaleResidueClassification(classification.classification)) {
+  if (
+    args.record.blocked_reason === "manual_review" &&
+    !isVerifiedStaleResidueClassification(classification.classification) &&
+    !classification.missingProbeReason
+  ) {
     return null;
   }
   const codexCurrentHeadReviewState = args.pr

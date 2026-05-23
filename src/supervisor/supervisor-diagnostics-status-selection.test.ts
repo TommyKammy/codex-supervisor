@@ -1704,6 +1704,84 @@ test("status --why uses the shared stale review-bot presenter for active verifie
   assert.doesNotMatch(status, /classification=verified_no_source_change_pending_thread_resolution/);
 });
 
+test("status --why names missing verification for manual-review Codex no-major residue", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+  fixture.config.reviewBotLogins = [CODEX_CONNECTOR_REVIEW_BOT_LOGIN];
+  const issueNumber = 1701;
+  const prNumber = 1801;
+  const headSha = "12b099926c39c8b7502176339ea34750e6a807a4";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-current-head-residue",
+    commentId: "comment-current-head-residue",
+    path: "src/review-state.ts",
+    line: 42,
+    commentBody: "P1: Preserve current-head review metadata convergence.",
+    discussionUrl: "https://example.test/pr/1801#discussion_current_head_residue",
+    currentHeadNoMajorReview: {
+      requestedAt: "2026-05-23T01:09:53Z",
+      observedAt: "2026-05-23T01:14:50Z",
+    },
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        ...scenario.recordPatch,
+        state: "blocked",
+        blocked_reason: "manual_review",
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "HRCore shaped missing verification Codex residue",
+    body: executionReadyBody("Surface the missing verification predicate for current-head Codex residue."),
+    createdAt: "2026-05-23T00:00:00Z",
+    updatedAt: "2026-05-23T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const pr = createPullRequest(scenario.pullRequestPatch);
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [trackedIssue],
+    listAllIssues: async () => [trackedIssue],
+    getPullRequestIfExists: async () => pr,
+    getChecks: async () => [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => [scenario.reviewThread],
+  };
+
+  const status = await supervisor.status({ why: true });
+
+  assert.match(status, /^no_active_tracked_record issue=#1701 classification=stale_review_bot_remediation state=blocked reason=unknown_needs_operator$/m);
+  assert.match(
+    status,
+    /^stale_review_bot_remediation issue=#1701 pr=#1801 reason=stale_review_bot code_ci=green current_head_sha=12b099926c39c8b7502176339ea34750e6a807a4 processed_on_current_head=yes classification=unknown_needs_operator codex_current_head_review_state=observed review_thread_url=https:\/\/example\.test\/pr\/1801#discussion_current_head_residue manual_next_step=inspect_exact_review_thread_then_resolve_or_leave_manual_note missing_probe_reason=current_head_verification_evidence_missing summary=code_or_ci_green_but_review_thread_metadata_unresolved$/m,
+  );
+  assert.match(
+    status,
+    /^stale_review_bot_thread_diagnostics issue=#1701 pr=#1801 current_head_success=yes unresolved_current_threads=1 actionable_must_fix_threads=1 verified_stale_residue_threads=0 missing_verification_evidence_threads=1 repeat_stop_exhausted=no auto_repair_suppressed_reason=missing_verification_probe$/m,
+  );
+  assert.match(
+    status,
+    /^codex_connector_operator_diagnostic interpretation=stale_review_residue current_head_sha=12b099926c39c8b7502176339ea34750e6a807a4 latest_configured_bot_review_sha=12b099926c39c8b7502176339ea34750e6a807a4 current_head_review_signal=observed actionable_current_diff_threads=unknown next_action=inspect_exact_review_thread_then_resolve_or_leave_manual_note$/m,
+  );
+  assert.doesNotMatch(status, /^codex_connector_convergence\b/m);
+  assert.doesNotMatch(status, /^codex_connector_operator_diagnostic interpretation=actionable_current_diff /m);
+});
+
 test("status --why converges processed current-head Codex no-major review threads from stale manual review", async (t) => {
   const fixture = await createSupervisorFixture();
   t.after(async () => {
