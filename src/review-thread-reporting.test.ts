@@ -10,6 +10,7 @@ import {
   codexConnectorMustFixReviewThreads,
   codexConnectorStaleReviewCommitThreads,
   configuredBotReviewFollowUpState,
+  effectiveReviewThreadDiagnostics,
   evaluateCodexConnectorConvergencePolicy,
   staleConfiguredBotReviewThreads,
 } from "./review-thread-reporting";
@@ -140,6 +141,105 @@ test("configuredBotReviewThreads normalizes configured bot logins before classif
 
   assert.equal(configuredBotReviewThreads(config, [thread]).length, 1);
   assert.equal(manualReviewThreads(config, [thread]).length, 0);
+});
+
+test("effectiveReviewThreadDiagnostics separates raw configured-bot residue from effective blockers", () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+  });
+  const outdatedConfiguredBotThread = createReviewThread({
+    id: "thread-outdated",
+    isOutdated: true,
+    comments: {
+      nodes: [
+        {
+          id: "comment-outdated",
+          body: "P1: stale concern from an old diff.",
+          createdAt: "2026-05-15T00:05:00Z",
+          url: "https://example.test/pr/183#discussion_r1",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const currentHeadConfiguredBotThread = createReviewThread({
+    id: "thread-current",
+    comments: {
+      nodes: [
+        {
+          id: "comment-current",
+          body: "P2: current-head concern.",
+          createdAt: "2026-05-15T00:10:00Z",
+          url: "https://example.test/pr/183#discussion_r2",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const humanThread = createReviewThread({
+    id: "thread-human",
+    comments: {
+      nodes: [
+        {
+          id: "comment-human",
+          body: "Please consider this.",
+          createdAt: "2026-05-15T00:11:00Z",
+          url: "https://example.test/pr/183#discussion_r3",
+          author: {
+            login: "octocat",
+            typeName: "User",
+          },
+        },
+      ],
+    },
+  });
+  const resolvedConfiguredBotThread = createReviewThread({
+    id: "thread-resolved",
+    isResolved: true,
+    comments: {
+      nodes: [
+        {
+          id: "comment-resolved",
+          body: "P3: already resolved.",
+          createdAt: "2026-05-15T00:12:00Z",
+          url: "https://example.test/pr/183#discussion_r4",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  const diagnostics = effectiveReviewThreadDiagnostics(config, [
+    outdatedConfiguredBotThread,
+    currentHeadConfiguredBotThread,
+    humanThread,
+    resolvedConfiguredBotThread,
+  ]);
+
+  assert.equal(diagnostics.rawUnresolvedConfiguredBotThreadCount, 2);
+  assert.equal(diagnostics.effectiveUnresolvedConfiguredBotThreadCount, 1);
+  assert.deepEqual(
+    diagnostics.threads.map((thread) => ({
+      id: thread.id,
+      classification: thread.classification,
+      effective: thread.effectiveConfiguredBotBlocker,
+    })),
+    [
+      { id: "thread-outdated", classification: "configured_bot_outdated", effective: false },
+      { id: "thread-current", classification: "configured_bot_current_head", effective: true },
+      { id: "thread-human", classification: "human_unresolved", effective: false },
+      { id: "thread-resolved", classification: "configured_bot_resolved", effective: false },
+    ],
+  );
 });
 
 test("configuredBotReviewFollowUpState treats repeat-stop records as exhausted even if follow-up budget remains", () => {

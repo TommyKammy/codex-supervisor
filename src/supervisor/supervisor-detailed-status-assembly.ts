@@ -8,6 +8,8 @@ import {
 import {
   actionableBotReviewThreads,
   configuredBotReviewFollowUpState,
+  effectiveReviewThreadDiagnostics,
+  formatEffectiveReviewThreadDiagnosticsLine,
   latestReviewCommentAuthorIsAllowedBot,
 } from "../review-thread-reporting";
 import { formatWorkspaceRestoreStatusLine } from "../core/workspace";
@@ -541,8 +543,9 @@ export function buildActiveDetailedStatusLines(
       unresolvedConfiguredBotThreads,
     );
     lines.push(
-      `review_threads bot_pending=${pendingBotReviewThreads(config, activeRecord, pr, reviewThreads).length} bot_unresolved=${unresolvedConfiguredBotThreads.length} bot_outdated_unresolved=${outdatedUnresolvedConfiguredBotThreads.length} manual=${manualReviewThreads(config, reviewThreads).length}`,
+      `review_threads bot_pending=${pendingBotReviewThreads(config, activeRecord, pr, reviewThreads).length} bot_unresolved=${unresolvedConfiguredBotThreads.length} bot_effective_unresolved=${effectiveReviewThreadDiagnostics(config, reviewThreads).effectiveUnresolvedConfiguredBotThreadCount} bot_outdated_unresolved=${outdatedUnresolvedConfiguredBotThreads.length} manual=${manualReviewThreads(config, reviewThreads).length}`,
     );
+    lines.push(formatEffectiveReviewThreadDiagnosticsLine(effectiveReviewThreadDiagnostics(config, reviewThreads)));
     const conversationResolutionBlockerLine = buildConversationResolutionBlockerStatusLine({
       config,
       pr,

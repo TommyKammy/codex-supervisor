@@ -89,6 +89,10 @@ import {
   renderOperatorAuditBundleDto,
   type OperatorAuditBundleDto,
 } from "../operator-audit-bundle";
+import {
+  effectiveReviewThreadDiagnostics,
+  formatEffectiveReviewThreadDiagnosticsLine,
+} from "../review-thread-reporting";
 
 export type ExplainIssueGitHub =
   Pick<GitHubClient, "getIssue" | "listAllIssues" | "listCandidateIssues"> &
@@ -115,6 +119,7 @@ export interface SupervisorExplainDto {
   staleDiagnosticSummary?: string | null;
   staleReviewBotRemediation?: StaleReviewBotRemediationDto | null;
   staleReviewBotThreadDiagnostics?: StaleReviewBotThreadDiagnosticsDto | null;
+  effectiveReviewThreadDiagnosticsSummary?: string | null;
   codexConnectorOperatorDiagnosticSummary?: string | null;
   codexConnectorPolicyBlockSummary?: string | null;
   codexConnectorReviewFallbackSummary?: string | null;
@@ -486,6 +491,10 @@ export async function buildIssueExplainDto(
         staleReviewBotRemediation,
       })
       : null;
+  const effectiveReviewThreadDiagnosticsSummary =
+    record && pr && !trackedPrHydrationFailed
+      ? formatEffectiveReviewThreadDiagnosticsLine(effectiveReviewThreadDiagnostics(config, explainReviewThreads))
+      : null;
   const codexConnectorReviewRequestRecoveryEligible =
     codexConnectorDiagnostics?.reviewFallbackSummary !== undefined &&
     codexConnectorDiagnostics.reviewFallbackSummary !== null &&
@@ -588,6 +597,7 @@ export async function buildIssueExplainDto(
     staleDiagnosticSummary,
     staleReviewBotRemediation,
     staleReviewBotThreadDiagnostics,
+    effectiveReviewThreadDiagnosticsSummary,
     codexConnectorOperatorDiagnosticSummary: codexConnectorDiagnostics?.operatorDiagnosticSummary ?? null,
     codexConnectorPolicyBlockSummary: codexConnectorDiagnostics?.policyBlockSummary ?? null,
     codexConnectorReviewFallbackSummary: codexConnectorDiagnostics?.reviewFallbackSummary ?? null,
@@ -670,6 +680,7 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
     ...(dto.staleReviewBotThreadDiagnostics
       ? [formatStaleReviewBotThreadDiagnosticsLine(dto.staleReviewBotThreadDiagnostics)]
       : []),
+    ...(dto.effectiveReviewThreadDiagnosticsSummary ? [dto.effectiveReviewThreadDiagnosticsSummary] : []),
     ...(dto.codexConnectorOperatorDiagnosticSummary ? [dto.codexConnectorOperatorDiagnosticSummary] : []),
     ...(dto.codexConnectorPolicyBlockSummary ? [dto.codexConnectorPolicyBlockSummary] : []),
     ...(dto.codexConnectorReviewFallbackSummary ? [dto.codexConnectorReviewFallbackSummary] : []),

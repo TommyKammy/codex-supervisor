@@ -786,7 +786,7 @@ test("buildDetailedStatusModel counts only unresolved configured bot threads in 
       "configured_bot_top_level_review strength=nitpick_only submitted_at=2026-03-11T14:06:00Z effect=softened",
     ),
   );
-  assert.ok(lines.includes("review_threads bot_pending=0 bot_unresolved=0 bot_outdated_unresolved=0 manual=0"));
+  assert.ok(lines.includes("review_threads bot_pending=0 bot_unresolved=0 bot_effective_unresolved=0 bot_outdated_unresolved=0 manual=0"));
 });
 
 test("buildDetailedStatusModel names conversation-resolution blockers from outdated configured-bot threads", () => {
@@ -845,7 +845,7 @@ test("buildDetailedStatusModel names conversation-resolution blockers from outda
     mergeConflictDetected: (pr) => pr.mergeStateStatus === "DIRTY",
   });
 
-  assert.ok(lines.includes("review_threads bot_pending=0 bot_unresolved=0 bot_outdated_unresolved=1 manual=0"));
+  assert.ok(lines.includes("review_threads bot_pending=0 bot_unresolved=0 bot_effective_unresolved=0 bot_outdated_unresolved=1 manual=0"));
   assert.ok(
     lines.includes(
       "conversation_resolution_blocker state=blocked required_conversation_resolution=unknown outdated_configured_bot_threads=1 thread_ids=thread-outdated-1",
@@ -987,6 +987,6 @@ test("buildDetailedStatusModel does not name conversation-resolution blocker whe
     mergeConflictDetected: (pr) => pr.mergeStateStatus === "DIRTY",
   });
 
-  assert.ok(lines.includes("review_threads bot_pending=0 bot_unresolved=0 bot_outdated_unresolved=1 manual=0"));
+  assert.ok(lines.includes("review_threads bot_pending=0 bot_unresolved=0 bot_effective_unresolved=0 bot_outdated_unresolved=1 manual=0"));
   assert.equal(lines.some((line) => line.startsWith("conversation_resolution_blocker ")), false);
 });

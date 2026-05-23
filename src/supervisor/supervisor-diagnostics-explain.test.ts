@@ -1356,6 +1356,96 @@ Explain should keep non-actionable same-head configured-bot blockers on manual r
   assert.doesNotMatch(explanation, /^failure_details=.*processed_on_current_head=yes/m);
 });
 
+test("explain reports effective configured-bot thread diagnostics for outdated Codex residue", async () => {
+  const fixture = await createSupervisorFixture();
+  fixture.config.reviewBotLogins = [CODEX_CONNECTOR_REVIEW_BOT_LOGIN];
+  const issueNumber = 183;
+  const prNumber = 283;
+  const headSha = "5de0d3844468d4a77cab512f8dcbe46171166c3a";
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "waiting_ci",
+        branch,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: prNumber,
+        last_head_sha: headSha,
+        blocked_reason: null,
+        last_error: null,
+        last_failure_context: null,
+        last_failure_signature: null,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Explain HRCore shaped outdated Codex residue",
+    body: executionReadyBody("Report effective unresolved review-thread diagnostics."),
+    createdAt: "2026-05-15T00:00:00Z",
+    updatedAt: "2026-05-15T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const pr = createPullRequest({
+    number: prNumber,
+    headRefName: branch,
+    headRefOid: headSha,
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-05-15T00:10:00Z",
+    configuredBotCurrentHeadObservedAt: "2026-05-15T00:16:00Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
+  });
+  const outdatedThread = {
+    id: "PRRT_hrcore_183_outdated",
+    isResolved: false,
+    isOutdated: true,
+    path: "src/review-policy.ts",
+    line: 42,
+    comments: {
+      nodes: [
+        {
+          id: "PRRC_hrcore_183_outdated",
+          body: "P1: stale finding from a previous diff.",
+          createdAt: "2026-05-15T00:05:00Z",
+          url: "https://example.test/pr/283#discussion_r183",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => trackedIssue,
+    listAllIssues: async () => [trackedIssue],
+    listCandidateIssues: async () => [trackedIssue],
+    resolvePullRequestForBranch: async () => pr,
+    getPullRequestIfExists: async () => pr,
+    getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => [outdatedThread],
+  };
+
+  const explanation = await supervisor.explain(issueNumber);
+
+  assert.match(
+    explanation,
+    /^review_thread_effective_diagnostics raw_configured_bot_unresolved=1 effective_configured_bot_unresolved=0 threads=PRRT_hrcore_183_outdated:configured_bot_outdated:effective=no:path=src\/review-policy\.ts:line=42:comment=PRRC_hrcore_183_outdated:author=chatgpt-codex-connector:url=https:\/\/example\.test\/pr\/283#discussion_r183$/m,
+  );
+});
+
 test("explain surfaces same-head no-actionable configured-bot blockers as stale review blockers", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 95;

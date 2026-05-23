@@ -100,6 +100,116 @@ export function configuredBotReviewThreads(
   return reviewThreads.filter((thread) => isAllowedReviewBotThread(config, thread));
 }
 
+export type EffectiveReviewThreadClassification =
+  | "configured_bot_current_head"
+  | "configured_bot_outdated"
+  | "configured_bot_resolved"
+  | "human_unresolved"
+  | "human_resolved";
+
+export type EffectiveReviewThreadDiagnostic = {
+  id: string;
+  classification: EffectiveReviewThreadClassification;
+  effectiveConfiguredBotBlocker: boolean;
+  isConfiguredBotThread: boolean;
+  isResolved: boolean;
+  isOutdated: boolean;
+  latestCommentId: string | null;
+  latestCommentAuthor: string;
+  path: string;
+  line: string;
+  url: string | null;
+};
+
+export type EffectiveReviewThreadDiagnostics = {
+  rawUnresolvedConfiguredBotThreadCount: number;
+  effectiveUnresolvedConfiguredBotThreadCount: number;
+  threads: EffectiveReviewThreadDiagnostic[];
+};
+
+function effectiveReviewThreadClassification(
+  config: SupervisorConfig,
+  thread: ReviewThread,
+): EffectiveReviewThreadClassification {
+  const configuredBotThread = isAllowedReviewBotThread(config, thread);
+  if (!configuredBotThread) {
+    return thread.isResolved ? "human_resolved" : "human_unresolved";
+  }
+
+  if (thread.isResolved) {
+    return "configured_bot_resolved";
+  }
+
+  return thread.isOutdated ? "configured_bot_outdated" : "configured_bot_current_head";
+}
+
+export function effectiveReviewThreadDiagnostics(
+  config: SupervisorConfig,
+  reviewThreads: ReviewThread[],
+): EffectiveReviewThreadDiagnostics {
+  const threads = reviewThreads.map((thread): EffectiveReviewThreadDiagnostic => {
+    const latestComment = latestReviewComment(thread);
+    const classification = effectiveReviewThreadClassification(config, thread);
+    return {
+      id: thread.id,
+      classification,
+      effectiveConfiguredBotBlocker: classification === "configured_bot_current_head",
+      isConfiguredBotThread: isAllowedReviewBotThread(config, thread),
+      isResolved: thread.isResolved,
+      isOutdated: thread.isOutdated,
+      latestCommentId: latestComment?.id ?? null,
+      latestCommentAuthor: latestComment?.author?.login ?? "unknown",
+      path: thread.path ?? "unknown",
+      line: thread.line === null ? "?" : String(thread.line),
+      url: latestComment?.url ?? null,
+    };
+  });
+
+  return {
+    rawUnresolvedConfiguredBotThreadCount: threads.filter(
+      (thread) => thread.isConfiguredBotThread && !thread.isResolved,
+    ).length,
+    effectiveUnresolvedConfiguredBotThreadCount: threads.filter(
+      (thread) => thread.effectiveConfiguredBotBlocker,
+    ).length,
+    threads,
+  };
+}
+
+function formatReviewThreadDiagnosticToken(value: string | null): string {
+  if (!value) {
+    return "none";
+  }
+
+  return value.replace(/\s+/g, "_");
+}
+
+export function formatEffectiveReviewThreadDiagnosticsLine(
+  diagnostics: EffectiveReviewThreadDiagnostics,
+): string {
+  const threadTokens = diagnostics.threads
+    .map((thread) =>
+      [
+        formatReviewThreadDiagnosticToken(thread.id),
+        thread.classification,
+        `effective=${thread.effectiveConfiguredBotBlocker ? "yes" : "no"}`,
+        `path=${formatReviewThreadDiagnosticToken(thread.path)}`,
+        `line=${formatReviewThreadDiagnosticToken(thread.line)}`,
+        `comment=${formatReviewThreadDiagnosticToken(thread.latestCommentId)}`,
+        `author=${formatReviewThreadDiagnosticToken(thread.latestCommentAuthor)}`,
+        `url=${formatReviewThreadDiagnosticToken(thread.url)}`,
+      ].join(":"),
+    )
+    .join(",");
+
+  return [
+    "review_thread_effective_diagnostics",
+    `raw_configured_bot_unresolved=${diagnostics.rawUnresolvedConfiguredBotThreadCount}`,
+    `effective_configured_bot_unresolved=${diagnostics.effectiveUnresolvedConfiguredBotThreadCount}`,
+    `threads=${threadTokens || "none"}`,
+  ].join(" ");
+}
+
 export function actionableConfiguredBotReviewThreads(
   config: SupervisorConfig,
   reviewThreads: ReviewThread[],
