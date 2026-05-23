@@ -1704,8 +1704,11 @@ test("status --why uses the shared stale review-bot presenter for active verifie
   assert.doesNotMatch(status, /classification=verified_no_source_change_pending_thread_resolution/);
 });
 
-test("status --why converges processed current-head Codex no-major review threads from stale manual review", async () => {
+test("status --why converges processed current-head Codex no-major review threads from stale manual review", async (t) => {
   const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
   fixture.config.reviewBotLogins = [CODEX_CONNECTOR_REVIEW_BOT_LOGIN];
   const issueNumber = 171;
   const prNumber = 180;
