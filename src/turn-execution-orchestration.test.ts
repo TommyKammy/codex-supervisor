@@ -128,6 +128,170 @@ test("selectReviewThreadsForTurn re-includes processed Codex Connector must-fix 
   assert.equal(selected[0]?.id, "thread-1");
 });
 
+test("prepareCodexTurnPrompt aligns active Codex review prompt with current-head Codex diagnostics", async () => {
+  const headSha = "12b099926c39c8b7502176339ea34750e6a807a4";
+  const currentHeadThreads = [
+    createReviewThread({
+      id: "PRRT_current_p1",
+      path: "src/onboarding-transaction-request.ts",
+      line: 1481,
+      comments: {
+        nodes: [
+          {
+            id: "comment-current-p1",
+            body: "P1: Preserve the authoritative onboarding transaction guard before accepting this PR.",
+            createdAt: "2026-05-23T01:14:50Z",
+            url: "https://example.test/pr/180#discussion_current_p1",
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+    createReviewThread({
+      id: "PRRT_current_p2",
+      path: "src/onboarding-transaction-request.ts",
+      line: 1520,
+      comments: {
+        nodes: [
+          {
+            id: "comment-current-p2",
+            body: "P2: Keep failed onboarding rollback state clean after the rejected transition.",
+            createdAt: "2026-05-23T01:14:50Z",
+            url: "https://example.test/pr/180#discussion_current_p2",
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  ];
+  const outdatedThread = createReviewThread({
+    id: "PRRT_outdated_residue",
+    isOutdated: true,
+    path: "src/earlier-onboarding.ts",
+    line: 80,
+    comments: {
+      nodes: [
+        {
+          id: "comment-outdated",
+          body: "P1: Earlier-head Codex residue remains unresolved on GitHub.",
+          createdAt: "2026-05-22T22:00:00Z",
+          url: "https://example.test/pr/180#discussion_outdated",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 171,
+    issues: {
+      "171": createRecord({
+        issue_number: 171,
+        state: "addressing_review",
+        branch: "codex/issue-171",
+        pr_number: 180,
+        last_head_sha: headSha,
+        processed_review_thread_ids: currentHeadThreads.map((thread) => `${thread.id}@${headSha}`),
+        processed_review_thread_fingerprints: currentHeadThreads.map(
+          (thread) => `${thread.id}@${headSha}#${thread.comments.nodes[0]?.id}`,
+        ),
+        review_follow_up_head_sha: null,
+        review_follow_up_remaining: 0,
+        last_failure_context: {
+          ...createFailureContext("2 unresolved automated review thread(s) remain."),
+          category: "review",
+          details: [
+            "codex_connector_operator_diagnostic interpretation=actionable_current_diff actionable_current_diff_threads=2 next_action=repair_must_fix_findings",
+          ],
+        },
+      }),
+    },
+  };
+
+  const prepared = await prepareCodexTurnPrompt({
+    config: createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector"],
+    }),
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
+      save: async () => undefined,
+    },
+    state,
+    record: state.issues["171"]!,
+    issue: createIssue({
+      number: 171,
+      title: "Align active Codex review prompt with status diagnostics",
+      body: [
+        "## Summary",
+        "Fix the active addressing_review prompt.",
+        "",
+        "## Acceptance criteria",
+        "- The prompt agrees with current-head Codex Connector diagnostics.",
+        "",
+        "## Verification",
+        "- npx tsx --test src/turn-execution-orchestration.test.ts",
+      ].join("\n"),
+    }),
+    previousCodexSummary: null,
+    previousError: null,
+    workspacePath: path.join("/tmp/workspaces", "issue-171"),
+    journalPath: path.join("/tmp/workspaces", "issue-171/.codex-supervisor/issue-journal.md"),
+    journalContent: "## Codex Working Notes\n### Current Handoff\n- Hypothesis: active prompt must match status diagnostics.\n",
+    syncJournal: async () => undefined,
+    memoryArtifacts: {
+      alwaysReadFiles: [],
+      onDemandFiles: [],
+      contextIndexPath: "/tmp/context-index.md",
+      agentsPath: "/tmp/AGENTS.generated.md",
+    },
+    pr: createPullRequest({
+      number: 180,
+      headRefOid: headSha,
+      isDraft: false,
+      mergeStateStatus: "BLOCKED",
+      configuredBotCurrentHeadObservedAt: "2026-05-23T01:14:50Z",
+      configuredBotCurrentHeadStatusState: "SUCCESS",
+      configuredBotLatestReviewedCommitSha: headSha,
+      configuredBotTopLevelReviewStrength: null,
+    }),
+    checks: [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [...currentHeadThreads, outdatedThread],
+    github: {
+      getExternalReviewSurface: async () => ({
+        reviews: [],
+        issueComments: [],
+      }),
+    },
+    loadChangedFiles: async () => [],
+  });
+
+  assert.equal(prepared.turnContext.kind, "start");
+  if (prepared.turnContext.kind !== "start") {
+    throw new Error("expected a start turn context");
+  }
+  assert.deepEqual(
+    prepared.reviewThreadsToProcess.map((thread) => thread.id),
+    ["PRRT_current_p1", "PRRT_current_p2"],
+  );
+
+  const prompt = buildCodexPrompt(prepared.turnContext);
+  assert.match(prompt, /Codex Connector actionable review-thread fast path:/);
+  assert.match(prompt, /Thread IDs: PRRT_current_p1/);
+  assert.match(prompt, /Thread IDs: PRRT_current_p2/);
+  assert.match(prompt, /Summary: 2 unresolved automated review thread\(s\) remain\./);
+  assert.match(prompt, /actionable_current_diff_threads=2/);
+  assert.doesNotMatch(prompt, /No unresolved configured-bot review threads\./);
+  assert.doesNotMatch(prompt, /PRRT_outdated_residue/);
+});
+
 test("selectReviewThreadsForTurn does not reopen same-head follow-up when stale bookkeeping remains for non-actionable configured-bot threads", () => {
   const selected = selectReviewThreadsForTurn({
     config: createConfig({
