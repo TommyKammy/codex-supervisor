@@ -44,6 +44,7 @@ export type HostLocalTrackedPrBlockerGateType =
 
 const TRACKED_PR_STATUS_COMMENT_MARKER_PREFIX = "codex-supervisor:tracked-pr-status-comment";
 const TRACKED_PR_STATUS_COMMENT_REASON_CODE_DRAFT_REVIEW_PROVIDER_SUPPRESSED = "draft_review_provider_suppressed";
+const TRACKED_PR_STATUS_COMMENT_REASON_CODE_HANDOFF_MISSING = "handoff_missing";
 const TRACKED_PR_STATUS_COMMENT_REASON_CODE_MANUAL_REVIEW = "manual_review";
 export const TRACKED_PR_STATUS_COMMENT_REASON_CODE_STALE_REVIEW_BOT = "stale_review_bot";
 const TRACKED_PR_STATUS_COMMENT_REASON_CODE_REQUIRED_CHECK_MISMATCH = "required_check_mismatch";
@@ -467,6 +468,30 @@ function derivePersistentTrackedPrStatusComment(args: {
   const checkSummary = args.summarizeChecks(args.checks);
   if (checkSummary.hasPending || checkSummary.hasFailing) {
     return null;
+  }
+
+  if (args.record.state === "blocked" && args.record.blocked_reason === "handoff_missing") {
+    const evidence = compactEvidenceLines(
+      [
+        ...(args.failureContext?.details ?? []),
+        ...(args.record.last_failure_context?.details ?? []),
+      ],
+      5,
+    );
+    return {
+      blockerSignature: args.failureContext?.signature ?? TRACKED_PR_STATUS_COMMENT_REASON_CODE_HANDOFF_MISSING,
+      body: buildTrackedPrPersistentStatusComment({
+        pr: args.pr,
+        reasonCode: TRACKED_PR_STATUS_COMMENT_REASON_CODE_HANDOFF_MISSING,
+        summary:
+          args.failureContext?.summary ??
+          "Codex exited without a durable handoff, and fresh tracked PR facts still require operator review routing.",
+        evidence,
+        nextAction:
+          "Complete explicit operator review routing for the unresolved review-thread or configured-bot diagnostic, then rerun the supervisor.",
+        automaticRetry: "no",
+      }),
+    };
   }
 
   if (args.record.state === "blocked" && args.record.blocked_reason === "manual_review") {

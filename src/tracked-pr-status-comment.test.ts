@@ -5,8 +5,11 @@ import {
   buildTrackedPrStatusCommentMarker,
   parseTrackedPrStatusCommentMarker,
   selectOwnedTrackedPrStatusComment,
+  syncTrackedPrPersistentStatusComment,
   workspacePreparationRemediationTarget,
 } from "./tracked-pr-status-comment";
+import { createConfig, createPullRequest, createRecord, createSupervisorState } from "./supervisor/supervisor-test-helpers";
+import { IssueRunRecord, SupervisorStateFile } from "./core/types";
 
 test("buildTrackedPrStatusCommentMarker renders the stable sticky tracked PR marker", () => {
   assert.equal(
@@ -113,4 +116,123 @@ test("workspacePreparationRemediationTarget keeps generic preparation failures o
   assert.equal(workspacePreparationRemediationTarget("workspace_toolchain_missing"), "workspace_environment");
   assert.equal(workspacePreparationRemediationTarget("missing_command"), "config_contract");
   assert.equal(workspacePreparationRemediationTarget("worktree_helper_missing"), "config_contract");
+});
+
+test("syncTrackedPrPersistentStatusComment publishes handoff-missing operator review routing diagnostics once per head and signature", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+  });
+  const pr = createPullRequest({
+    number: 182,
+    headRefOid: "head-182",
+    isDraft: false,
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+  });
+  const record = createRecord({
+    issue_number: 173,
+    state: "blocked",
+    pr_number: pr.number,
+    blocked_reason: "handoff_missing",
+    last_head_sha: pr.headRefOid,
+    last_failure_context: {
+      category: "blocked",
+      summary: "Codex started a turn but did not write a durable handoff.",
+      signature: "handoff-missing",
+      command: null,
+      details: ["durable_progress_evidence=journal_unchanged"],
+      url: null,
+      updated_at: "2026-05-23T00:00:00Z",
+    },
+    last_failure_signature: "handoff-missing",
+  });
+  const state = createSupervisorState({
+    issues: [record],
+  });
+  const addBodies: string[] = [];
+  let saveCalls = 0;
+  const touched: Partial<IssueRunRecord>[] = [];
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      touched.push(patch);
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-05-23T00:01:00Z",
+      };
+    },
+    async save(nextState: SupervisorStateFile): Promise<void> {
+      assert.equal(nextState.issues[String(record.issue_number)]?.issue_number, record.issue_number);
+      saveCalls += 1;
+    },
+  };
+  const failureContext = {
+    category: "review" as const,
+    summary:
+      "Code and test evidence appears to cover the current-head finding, but unresolved review-thread metadata still requires explicit operator routing.",
+    signature: "codex_connector_operator_diagnostic:actionable_current_diff",
+    command: null,
+    details: [
+      "interpretation=actionable_current_diff actionable_current_diff_threads=2",
+      "next_action=repair_must_fix_findings",
+    ],
+    url: "https://example.test/pr/182",
+    updated_at: "2026-05-23T00:00:30Z",
+  };
+
+  const updated = await syncTrackedPrPersistentStatusComment({
+    github: {
+      addIssueComment: async (issueNumber: number, body: string) => {
+        assert.equal(issueNumber, pr.number);
+        addBodies.push(body);
+      },
+    },
+    stateStore,
+    state,
+    record,
+    pr,
+    checks: [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [],
+    syncJournal: async () => undefined,
+    config,
+    failureContext,
+    summarizeChecks: () => ({ hasPending: false, hasFailing: false }),
+    manualReviewThreadCount: 0,
+  });
+
+  assert.equal(addBodies.length, 1);
+  assert.match(addBodies[0] ?? "", /reason code: `handoff_missing`/);
+  assert.match(addBodies[0] ?? "", /operator review routing/);
+  assert.match(addBodies[0] ?? "", /actionable_current_diff_threads=2/);
+  assert.match(addBodies[0] ?? "", /next_action=repair_must_fix_findings/);
+  assert.match(
+    addBodies[0] ?? "",
+    /<!-- codex-supervisor:tracked-pr-status-comment issue=173 pr=182 kind=status -->/,
+  );
+  assert.equal(updated.last_host_local_pr_blocker_comment_head_sha, pr.headRefOid);
+  assert.equal(updated.last_host_local_pr_blocker_comment_signature, failureContext.signature);
+  assert.equal(saveCalls, 1);
+  assert.equal(touched.length, 1);
+
+  const repeated = await syncTrackedPrPersistentStatusComment({
+    github: {
+      addIssueComment: async () => {
+        throw new Error("unexpected duplicate tracked PR status comment");
+      },
+    },
+    stateStore,
+    state,
+    record: updated,
+    pr,
+    checks: [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [],
+    syncJournal: async () => undefined,
+    config,
+    failureContext,
+    summarizeChecks: () => ({ hasPending: false, hasFailing: false }),
+    manualReviewThreadCount: 0,
+  });
+
+  assert.equal(repeated, updated);
+  assert.equal(saveCalls, 1);
 });
