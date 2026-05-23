@@ -62,8 +62,10 @@ import { projectTrackedPrLifecycle } from "./tracked-pr-lifecycle-projection";
 import { hasFreshTrackedPrReadyPromotionBlockerEvidence } from "./tracked-pr-ready-promotion-blocker";
 import { queuedReadyPromotionPathHygieneRepairContext } from "./ready-promotion-path-hygiene-repair";
 import { clearRequirementsBlockerIssueComment } from "./requirements-blocker-issue-comment";
+import { syncTrackedPrPersistentStatusComment } from "./tracked-pr-status-comment";
 import {
   configuredBotReviewThreads,
+  manualReviewThreads,
   latestReviewCommentAuthorIsAllowedBot,
 } from "./review-thread-reporting";
 
@@ -81,7 +83,9 @@ type RecoveryGitHubLike = Pick<
   | "getMergedPullRequestsClosingIssue"
   | "getPullRequestIfExists"
   | "getUnresolvedReviewThreads"
-> & Partial<Pick<import("./github").GitHubClient, "getIssueComments" | "updateIssueComment">>;
+> & Partial<
+  Pick<import("./github").GitHubClient, "addIssueComment" | "getExternalReviewSurface" | "getIssueComments" | "updateIssueComment">
+>;
 
 async function fetchOriginDefaultBranch(
   config: Pick<SupervisorConfig, "repoPath" | "defaultBranch" | "codexExecTimeoutMinutes">,
@@ -779,7 +783,7 @@ function hasOnlyOutdatedConfiguredBotResidue(
 
 export async function reconcileRecoverableBlockedIssueStates(
   github: Pick<RecoveryGitHubLike, "getPullRequestIfExists" | "getIssue" | "getChecks" | "getUnresolvedReviewThreads">
-    & Partial<Pick<RecoveryGitHubLike, "getIssueComments" | "updateIssueComment">>,
+    & Partial<Pick<RecoveryGitHubLike, "addIssueComment" | "getExternalReviewSurface" | "getIssueComments" | "updateIssueComment">>,
   stateStore: StateStoreLike,
   state: SupervisorStateFile,
   config: SupervisorConfig,
@@ -1030,6 +1034,25 @@ export async function reconcileRecoverableBlockedIssueStates(
         isCurrentHeadReviewSignalRequestTimeout(projection.copilotReviewTimeoutPatch) &&
         hasOnlyOutdatedConfiguredBotResidue(config, reviewThreads);
       if (!externalProgressEvidence && !sameHeadReviewRequestRecovery && !sameHeadOutdatedConfiguredBotResidueRecovery) {
+        const failureContext = inferFailureContextImpl(config, projection.recordForState, trackedPullRequest, checks, reviewThreads);
+        const updated = await syncTrackedPrPersistentStatusComment({
+          github,
+          stateStore,
+          state,
+          record,
+          pr: trackedPullRequest,
+          checks,
+          reviewThreads,
+          syncJournal: async () => undefined,
+          config,
+          failureContext,
+          summarizeChecks,
+          manualReviewThreadCount: manualReviewThreads(config, reviewThreads).length,
+          skipAutoHandleStaleConfiguredBotReview: true,
+        });
+        if (updated !== record) {
+          state.issues[String(updated.issue_number)] = updated;
+        }
         continue;
       }
 
