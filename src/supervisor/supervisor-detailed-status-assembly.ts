@@ -28,7 +28,6 @@ import {
   configuredReviewBots,
   configuredReviewStatusLabel,
   externalSignalReadinessDiagnostics,
-  formatStaleReviewResidueOperatorDiagnostic,
   inferReviewBotProfile,
   reviewBotDiagnostics,
 } from "./supervisor-status-review-bot";
@@ -300,7 +299,6 @@ export function buildInactiveDetailedStatusLines(
     if (diagnostics) {
       lines.push(formatStaleReviewBotThreadDiagnosticsLine(diagnostics));
     }
-    lines.push(formatStaleReviewResidueOperatorDiagnostic(staleReviewBotRemediation));
   }
   if (latestRecord && pr) {
     const codexConnectorDiagnostics = buildCodexConnectorDiagnosticBundle({
@@ -437,7 +435,6 @@ export function buildActiveDetailedStatusLines(
       if (diagnostics) {
         lines.push(formatStaleReviewBotThreadDiagnosticsLine(diagnostics));
       }
-      lines.push(formatStaleReviewResidueOperatorDiagnostic(staleReviewBotRemediation));
     }
     const codexConnectorDiagnostics = buildCodexConnectorDiagnosticBundle({
       config,
