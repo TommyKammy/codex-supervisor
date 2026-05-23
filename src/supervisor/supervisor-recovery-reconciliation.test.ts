@@ -1560,6 +1560,7 @@ test("reconcileRecoverableBlockedIssueStates keeps tracked handoff-missing block
     mergeable: "MERGEABLE",
   });
   let saveCalls = 0;
+  const addBodies: string[] = [];
 
   const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
     {
@@ -1569,6 +1570,9 @@ test("reconcileRecoverableBlockedIssueStates keeps tracked handoff-missing block
       },
       getChecks: async () => [],
       getUnresolvedReviewThreads: async () => [],
+      addIssueComment: async (_issueNumber: number, body: string) => {
+        addBodies.push(body);
+      },
     },
     {
       touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
@@ -1597,6 +1601,7 @@ test("reconcileRecoverableBlockedIssueStates keeps tracked handoff-missing block
     },
   );
 
+  assert.deepEqual(addBodies, []);
   assert.equal(saveCalls, 0);
   assert.deepEqual(recoveryEvents, []);
   assert.deepEqual(state.issues["366"], original);

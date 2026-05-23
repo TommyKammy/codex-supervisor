@@ -452,6 +452,16 @@ function hasPersistentTrackedPrMergeStageSignal(args: {
   );
 }
 
+function hasConcreteHandoffMissingStatusEvidence(context: FailureContext | null | undefined): context is FailureContext {
+  if (!context) {
+    return false;
+  }
+
+  const genericHandoffMissingSignature =
+    context.signature === TRACKED_PR_STATUS_COMMENT_REASON_CODE_HANDOFF_MISSING || context.signature === "handoff-missing";
+  return context.category !== "blocked" || !genericHandoffMissingSignature;
+}
+
 function derivePersistentTrackedPrStatusComment(args: {
   config: SupervisorConfig;
   record: IssueRunRecord;
@@ -471,20 +481,19 @@ function derivePersistentTrackedPrStatusComment(args: {
   }
 
   if (args.record.state === "blocked" && args.record.blocked_reason === "handoff_missing") {
-    const blockerSignature =
-      args.failureContext?.signature ??
-      args.record.last_failure_context?.signature ??
-      args.record.last_failure_signature ??
-      TRACKED_PR_STATUS_COMMENT_REASON_CODE_HANDOFF_MISSING;
-    const summary =
-      args.failureContext?.summary ??
-      args.record.last_failure_context?.summary ??
-      "Codex exited without a durable handoff, and fresh tracked PR facts still require operator review routing.";
+    const handoffContext = hasConcreteHandoffMissingStatusEvidence(args.failureContext)
+      ? args.failureContext
+      : hasConcreteHandoffMissingStatusEvidence(args.record.last_failure_context)
+      ? args.record.last_failure_context
+      : null;
+    if (!handoffContext) {
+      return null;
+    }
+
+    const summary = handoffContext.summary;
+    const blockerSignature = handoffContext.signature ?? `${TRACKED_PR_STATUS_COMMENT_REASON_CODE_HANDOFF_MISSING}:${summary}`;
     const evidence = compactEvidenceLines(
-      [
-        ...(args.failureContext?.details ?? []),
-        ...(args.record.last_failure_context?.details ?? []),
-      ],
+      handoffContext.details,
       5,
     );
     return {
