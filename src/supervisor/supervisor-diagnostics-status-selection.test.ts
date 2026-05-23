@@ -1704,6 +1704,126 @@ test("status --why uses the shared stale review-bot presenter for active verifie
   assert.doesNotMatch(status, /classification=verified_no_source_change_pending_thread_resolution/);
 });
 
+test("status --why converges processed current-head Codex no-major review threads from stale manual review", async () => {
+  const fixture = await createSupervisorFixture();
+  fixture.config.reviewBotLogins = [CODEX_CONNECTOR_REVIEW_BOT_LOGIN];
+  const issueNumber = 171;
+  const prNumber = 180;
+  const headSha = "12b099926c39c8b7502176339ea34750e6a807a4";
+  const threadIds = [
+    "PRRT_kwDOSfC_1M6EPhQy",
+    "PRRT_kwDOSfC_1M6EPhQ0",
+    "PRRT_kwDOSfC_1M6EPnsm",
+    "PRRT_kwDOSfC_1M6EP0a8",
+    "PRRT_kwDOSfC_1M6EP0a_",
+    "PRRT_kwDOSfC_1M6EP0bC",
+    "PRRT_kwDOSfC_1M6EP7Ay",
+    "PRRT_kwDOSfC_1M6EP7Az",
+    "PRRT_kwDOSfC_1M6EP7A2",
+  ];
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: threadIds[0] ?? "PRRT_current_head_residue",
+    commentId: "comment-current-head-residue-0",
+    path: "src/review-state.ts",
+    line: 42,
+    commentBody: "P1: Preserve current-head review metadata convergence.",
+    discussionUrl: "https://example.test/pr/180#discussion_rcurrent_head_residue",
+    verifiedRepair: {
+      summary: "verify-pre-pr passed on the current head.",
+      ranAt: "2026-05-23T01:01:21Z",
+      command: "node dist/index.js verify-pre-pr",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+    currentHeadNoMajorReview: {
+      requestedAt: "2026-05-23T01:09:53Z",
+      observedAt: "2026-05-23T01:14:50Z",
+    },
+  });
+  const reviewThreads = threadIds.map((threadId, index) => ({
+    ...scenario.reviewThread,
+    id: threadId,
+    path: `src/review-state-${index}.ts`,
+    line: 40 + index,
+    comments: {
+      nodes: [
+        {
+          ...scenario.reviewThread.comments.nodes[0],
+          id: `comment-current-head-residue-${index}`,
+          body: `${index % 2 === 0 ? "P1" : "P2"}: Preserve current-head review metadata convergence.`,
+          url: `https://example.test/pr/180#discussion_${threadId}`,
+        },
+      ],
+    },
+  }));
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        ...scenario.recordPatch,
+        state: "blocked",
+        blocked_reason: "manual_review",
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        processed_review_thread_ids: threadIds.map((threadId) => `${threadId}@${headSha}`),
+        processed_review_thread_fingerprints: threadIds.map(
+          (threadId, index) => `${threadId}@${headSha}#comment-current-head-residue-${index}`,
+        ),
+        last_failure_context: {
+          ...scenario.staleReviewFailureContext,
+          signature: threadIds.map((threadId) => `stalled-bot:${threadId}`).join("|"),
+          details: reviewThreads.map(
+            (thread) =>
+              `reviewer=${CODEX_CONNECTOR_REVIEW_BOT_LOGIN} file=${thread.path} line=${thread.line} processed_on_current_head=yes`,
+          ),
+        },
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "HRCore shaped current-head Codex residue",
+    body: executionReadyBody("Recover processed current-head Codex metadata residue from stale manual review."),
+    createdAt: "2026-05-23T00:00:00Z",
+    updatedAt: "2026-05-23T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const pr = createPullRequest(scenario.pullRequestPatch);
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [trackedIssue],
+    listAllIssues: async () => [trackedIssue],
+    getPullRequestIfExists: async () => pr,
+    getChecks: async () => scenario.passingChecks,
+    getUnresolvedReviewThreads: async () => reviewThreads,
+  };
+
+  const status = await supervisor.status({ why: true });
+
+  assert.match(status, /^no_active_tracked_record issue=#171 classification=stale_review_bot_remediation state=blocked reason=verified_current_head_repair_pending_thread_resolution$/m);
+  assert.match(
+    status,
+    /^stale_review_bot_thread_diagnostics issue=#171 pr=#180 current_head_success=yes unresolved_current_threads=9 actionable_must_fix_threads=9 verified_stale_residue_threads=9 missing_verification_evidence_threads=0 repeat_stop_exhausted=no auto_repair_suppressed_reason=too_many_clusters$/m,
+  );
+  assert.match(
+    status,
+    /^codex_connector_convergence status=stale_review_metadata provider=codex current_head_sha=12b099926c39c8b7502176339ea34750e6a807a4 current_head_observed_at=2026-05-23T01:14:50Z latest_signal_head_sha=12b099926c39c8b7502176339ea34750e6a807a4 highest_severity=none finding_count=0 merge_effect=ready next_action=merge_ready stale_review_metadata_classification=verified_current_head_repair_pending_thread_resolution$/m,
+  );
+  assert.match(
+    status,
+    /^codex_connector_operator_diagnostic interpretation=stale_review_residue current_head_sha=12b099926c39c8b7502176339ea34750e6a807a4 latest_configured_bot_review_sha=12b099926c39c8b7502176339ea34750e6a807a4 current_head_review_signal=observed actionable_current_diff_threads=0 next_action=resolve_verified_repaired_configured_bot_threads_then_rerun_supervisor$/m,
+  );
+  assert.doesNotMatch(status, /^codex_connector_convergence status=repairing_must_fix /m);
+  assert.doesNotMatch(status, /^codex_connector_operator_diagnostic interpretation=actionable_current_diff /m);
+});
+
 test("renderSupervisorStatusDto sanitizes loop runtime host and timestamp tokens", () => {
   const status = renderSupervisorStatusDto({
     gsdSummary: null,

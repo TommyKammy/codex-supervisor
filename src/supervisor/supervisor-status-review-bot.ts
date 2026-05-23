@@ -734,13 +734,20 @@ export function buildCodexConnectorDiagnosticBundle(args: {
   staleReviewBotRemediation?: StaleReviewBotRemediationDto | null;
   includeP2P3Policy?: boolean;
 }): CodexConnectorDiagnosticBundle {
-  const policyBlock = buildCodexConnectorPolicyBlockDiagnostic(args.config, args.reviewThreads, args.pr);
-  const p2p3Policy = args.includeP2P3Policy
-    ? buildCodexConnectorP2P3PolicyDiagnostic(args.config, args.reviewThreads, args.pr)
-    : null;
   const staleReviewBotRemediation = shouldUseStaleReviewRemediationDiagnostic(args.staleReviewBotRemediation)
     ? args.staleReviewBotRemediation
     : null;
+  const suppressActionableReviewPolicy = Boolean(
+    staleReviewBotRemediation &&
+      isProvenStaleReviewMetadataClassification(staleReviewBotRemediation.classification),
+  );
+  const policyBlock = suppressActionableReviewPolicy
+    ? null
+    : buildCodexConnectorPolicyBlockDiagnostic(args.config, args.reviewThreads, args.pr);
+  const p2p3Policy =
+    args.includeP2P3Policy && !suppressActionableReviewPolicy
+      ? buildCodexConnectorP2P3PolicyDiagnostic(args.config, args.reviewThreads, args.pr)
+      : null;
   return {
     policyBlockSummary: policyBlock ? formatCodexConnectorPolicyBlockDiagnostic(policyBlock) : null,
     p2p3PolicySummary: p2p3Policy ? formatCodexConnectorP2P3PolicyDiagnostic(p2p3Policy) : null,
