@@ -1487,6 +1487,95 @@ test("status --why fails closed for codex processed residue without current-head
   assert.match(status, /^operator_action action=manual_review source=stale_review_bot_remediation /m);
 });
 
+test("status --why reports effective configured-bot thread diagnostics for outdated Codex residue", async (t) => {
+  const fixture = await createSupervisorFixture();
+  fixture.config.reviewBotLogins = [CODEX_CONNECTOR_REVIEW_BOT_LOGIN];
+  const issueNumber = 183;
+  const prNumber = 283;
+  const headSha = "5de0d3844468d4a77cab512f8dcbe46171166c3a";
+  const { branch, pr, state } = createTrackedPullRequestStatusScenario(fixture, {
+    issueNumber,
+    prNumber,
+    state: "waiting_ci",
+    headSha,
+    recordOverrides: {
+      blocked_reason: null,
+      last_error: null,
+      last_failure_context: null,
+      last_failure_signature: null,
+    },
+  });
+  await writeSupervisorState(fixture, state);
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "HRCore shaped outdated Codex residue",
+    body: executionReadyBody("Report effective unresolved review-thread diagnostics."),
+    createdAt: "2026-05-15T00:00:00Z",
+    updatedAt: "2026-05-15T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const currentHeadPr = createPullRequest({
+    ...pr,
+    headRefName: branch,
+    headRefOid: headSha,
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-05-15T00:10:00Z",
+    configuredBotCurrentHeadObservedAt: "2026-05-15T00:16:00Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
+  });
+  const outdatedThread = {
+    id: "PRRT_hrcore_183_outdated",
+    isResolved: false,
+    isOutdated: true,
+    path: "src/review-policy.ts",
+    line: 42,
+    comments: {
+      nodes: [
+        {
+          id: "PRRC_hrcore_183_outdated",
+          body: "P1: stale finding from a previous diff.",
+          createdAt: "2026-05-15T00:05:00Z",
+          url: "https://example.test/pr/283#discussion_r183",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  };
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [trackedIssue],
+    listAllIssues: async () => [trackedIssue],
+    resolvePullRequestForBranch: async () => currentHeadPr,
+    getPullRequestIfExists: async () => currentHeadPr,
+    getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => [outdatedThread],
+  };
+
+  const status = await supervisor.status({ why: true });
+
+  assert.match(
+    status,
+    /^review_threads bot_pending=1 bot_unresolved=0 bot_effective_unresolved=0 bot_outdated_unresolved=1 manual=0$/m,
+  );
+  assert.match(
+    status,
+    /^review_thread_effective_diagnostics raw_configured_bot_unresolved=1 effective_configured_bot_unresolved=0 threads=PRRT_hrcore_183_outdated:configured_bot_outdated:effective=no:path=src\/review-policy\.ts:line=42:comment=PRRC_hrcore_183_outdated:author=chatgpt-codex-connector:url=https:\/\/example\.test\/pr\/283#discussion_r183$/m,
+  );
+});
+
 test("status --why distinguishes codex verified current-head repair residue from no-source-change residue", async (t) => {
   const fixture = await createSupervisorFixture();
   fixture.config.reviewBotLogins = [CODEX_CONNECTOR_REVIEW_BOT_LOGIN];
