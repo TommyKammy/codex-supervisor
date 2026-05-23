@@ -190,14 +190,14 @@ export function classifyNoActiveTrackedRecord(
     };
   }
 
-  if (record.blocked_reason === "stale_review_bot") {
-    if (staleReviewBotRemediation) {
-      return {
-        classification: "stale_review_bot_remediation",
-        reason: staleReviewBotRemediation.classification,
-      };
-    }
+  if (staleReviewBotRemediation) {
+    return {
+      classification: "stale_review_bot_remediation",
+      reason: staleReviewBotRemediation.classification,
+    };
+  }
 
+  if (record.blocked_reason === "stale_review_bot") {
     const recoverability = classifyStaleReviewBotRecoverability(record, config);
     if (recoverability === "stale_already_handled") {
       return {
