@@ -1823,6 +1823,81 @@ test("explain fails closed for processed Codex must-fix residue without verifica
   );
 });
 
+test("explain names missing verification for manual-review Codex no-major residue", async () => {
+  const fixture = await createSupervisorFixture();
+  fixture.config.reviewBotLogins = [CODEX_CONNECTOR_REVIEW_BOT_LOGIN];
+  const issueNumber = 1702;
+  const prNumber = 1802;
+  const headSha = "12b099926c39c8b7502176339ea34750e6a807a4";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-current-head-residue",
+    commentId: "comment-current-head-residue",
+    path: "src/review-state.ts",
+    line: 42,
+    commentBody: "P2: Preserve current-head review metadata convergence.",
+    discussionUrl: "https://example.test/pr/1802#discussion_current_head_residue",
+    currentHeadNoMajorReview: {
+      requestedAt: "2026-05-23T01:09:53Z",
+      observedAt: "2026-05-23T01:14:50Z",
+    },
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        ...scenario.recordPatch,
+        state: "blocked",
+        blocked_reason: "manual_review",
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Explain HRCore shaped missing verification Codex residue",
+    body: executionReadyBody("Explain the missing verification predicate for current-head Codex residue."),
+    createdAt: "2026-05-23T00:00:00Z",
+    updatedAt: "2026-05-23T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const pr = createPullRequest(scenario.pullRequestPatch);
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => trackedIssue,
+    listAllIssues: async () => [trackedIssue],
+    listCandidateIssues: async () => [trackedIssue],
+    resolvePullRequestForBranch: async () => pr,
+    getChecks: async () => [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => [scenario.reviewThread],
+  };
+
+  const explanation = await supervisor.explain(issueNumber);
+
+  assert.match(
+    explanation,
+    /^stale_review_bot_remediation issue=#1702 pr=#1802 reason=stale_review_bot code_ci=green current_head_sha=12b099926c39c8b7502176339ea34750e6a807a4 processed_on_current_head=yes classification=unknown_needs_operator codex_current_head_review_state=observed review_thread_url=https:\/\/example\.test\/pr\/1802#discussion_current_head_residue manual_next_step=inspect_exact_review_thread_then_resolve_or_leave_manual_note missing_probe_reason=current_head_verification_evidence_missing summary=code_or_ci_green_but_review_thread_metadata_unresolved$/m,
+  );
+  assert.match(
+    explanation,
+    /^stale_review_bot_thread_diagnostics issue=#1702 pr=#1802 current_head_success=yes unresolved_current_threads=1 actionable_must_fix_threads=1 verified_stale_residue_threads=0 missing_verification_evidence_threads=1 repeat_stop_exhausted=no auto_repair_suppressed_reason=missing_verification_probe$/m,
+  );
+  assert.match(
+    explanation,
+    /^codex_connector_operator_diagnostic interpretation=stale_review_residue current_head_sha=12b099926c39c8b7502176339ea34750e6a807a4 latest_configured_bot_review_sha=12b099926c39c8b7502176339ea34750e6a807a4 current_head_review_signal=observed actionable_current_diff_threads=unknown next_action=inspect_exact_review_thread_then_resolve_or_leave_manual_note$/m,
+  );
+  assert.doesNotMatch(explanation, /^codex_connector_convergence status=repairing_must_fix /m);
+  assert.doesNotMatch(explanation, /^codex_connector_operator_diagnostic interpretation=actionable_current_diff /m);
+});
+
 test("explain distinguishes Codex verified current-head repair residue from no-source-change residue", async () => {
   const fixture = await createSupervisorFixture();
   fixture.config.reviewBotLogins = [CODEX_CONNECTOR_REVIEW_BOT_LOGIN];
