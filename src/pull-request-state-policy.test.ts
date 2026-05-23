@@ -465,6 +465,99 @@ test("inferStateFromPullRequest advances past proven Codex Connector stale metad
   );
 });
 
+test("inferStateFromPullRequest clears outdated Codex Connector blockers after current-head no-major and green checks", () => {
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    humanReviewBlocksMerge: true,
+    configuredBotInitialGraceWaitSeconds: 0,
+  });
+  const record = createRecord({
+    state: "pr_open",
+    last_head_sha: "head123",
+    review_wait_started_at: "2026-05-23T00:03:00Z",
+    review_wait_head_sha: "head123",
+  });
+  const pr = createPullRequest({
+    configuredBotCurrentHeadObservedAt: "2026-05-23T00:05:00Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
+    currentHeadCiGreenAt: "2026-05-23T00:04:00Z",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+  const reviewThreads = [
+    createReviewThread({
+      id: "thread-outdated-codex",
+      isOutdated: true,
+      comments: {
+        nodes: [
+          {
+            id: "comment-outdated-codex",
+            body: "P1: This stale inline finding should not block after the current-head no-major signal.",
+            createdAt: "2026-05-23T00:00:00Z",
+            url: "https://example.test/pr/44#discussion_r2123",
+            author: {
+              login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  ];
+
+  assert.equal(inferStateFromPullRequest(config, record, pr, passingChecks(), reviewThreads), "ready_to_merge");
+  assert.equal(blockedReasonFromReviewState(config, record, pr, passingChecks(), reviewThreads), null);
+});
+
+test("inferStateFromPullRequest keeps outdated Codex Connector blockers when required checks are not green", () => {
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    humanReviewBlocksMerge: true,
+    configuredBotInitialGraceWaitSeconds: 0,
+  });
+  const record = createRecord({
+    state: "pr_open",
+    last_head_sha: "head123",
+    review_wait_started_at: "2026-05-23T00:03:00Z",
+    review_wait_head_sha: "head123",
+  });
+  const pr = createPullRequest({
+    configuredBotCurrentHeadObservedAt: "2026-05-23T00:05:00Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
+    currentHeadCiGreenAt: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+  const reviewThreads = [
+    createReviewThread({
+      id: "thread-outdated-codex",
+      isOutdated: true,
+      comments: {
+        nodes: [
+          {
+            id: "comment-outdated-codex",
+            body: "P1: This stale inline finding still requires green checks before clearance.",
+            createdAt: "2026-05-23T00:00:00Z",
+            url: "https://example.test/pr/44#discussion_r2123",
+            author: {
+              login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  ];
+  const pendingChecks = [{ name: "build", state: "IN_PROGRESS", bucket: "pending", workflow: "CI" }] as const;
+
+  assert.equal(inferStateFromPullRequest(config, record, pr, [...pendingChecks], reviewThreads), "addressing_review");
+  assert.equal(blockedReasonFromReviewState(config, record, pr, [...pendingChecks], reviewThreads), "manual_review");
+});
+
 test("inferStateFromPullRequest still blocks a journal-only configured-bot thread when the PR is not otherwise green", () => {
   const config = createConfig({
     reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
