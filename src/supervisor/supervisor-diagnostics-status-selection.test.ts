@@ -1740,6 +1740,47 @@ test("status --why names missing verification for manual-review Codex no-major r
       observedAt: "2026-05-23T01:14:50Z",
     },
   });
+  const currentHeadThreads = Array.from({ length: 9 }, (_, index) => ({
+    ...scenario.reviewThread,
+    id: `thread-current-head-residue-${index + 1}`,
+    path: `src/review-state-${index + 1}.ts`,
+    line: 42 + index,
+    comments: {
+      nodes: [
+        {
+          ...scenario.reviewThread.comments.nodes[0],
+          id: `comment-current-head-residue-${index + 1}`,
+          body: `P${index % 2 === 0 ? "1" : "2"}: Preserve current-head review metadata convergence ${index + 1}.`,
+          url:
+            index === 0
+              ? "https://example.test/pr/180#discussion_current_head_residue"
+              : `https://example.test/pr/180#discussion_current_head_residue_${index + 1}`,
+        },
+      ],
+    },
+  }));
+  const outdatedThreadIds = [
+    "PRRT_kwDOSfC_1M6EPhQ2",
+    "PRRT_kwDOSfC_1M6EPhQ3",
+    "PRRT_kwDOSfC_1M6EPhQ5",
+    "PRRT_kwDOSfC_1M6EPnsk",
+    "PRRT_kwDOSfC_1M6EPnsl",
+    "PRRT_kwDOSfC_1M6EP0bA",
+    "PRRT_kwDOSfC_1M6EP-tV",
+    "PRRT_kwDOSfC_1M6EQH1Y",
+    "PRRT_kwDOSfC_1M6EQO1-",
+    "PRRT_kwDOSfC_1M6EQTkd",
+  ];
+  const currentHeadFailureDetails = currentHeadThreads.map((thread) => {
+    const comment = thread.comments.nodes[0];
+    return `reviewer=${CODEX_CONNECTOR_REVIEW_BOT_LOGIN} file=${thread.path} line=${thread.line} p_severity=${
+      comment.body.startsWith("P1:") ? "P1" : "P2"
+    } processed_on_current_head=yes`;
+  });
+  const outdatedFailureDetails = outdatedThreadIds.map(
+    (threadId, index) =>
+      `reviewer=${CODEX_CONNECTOR_REVIEW_BOT_LOGIN} file=src/earlier-review-state-${index}.ts line=${80 + index} p_severity=P1 processed_on_current_head=no thread_id=${threadId}`,
+  );
   const state: SupervisorStateFile = {
     activeIssueNumber: null,
     issues: {
@@ -1747,6 +1788,18 @@ test("status --why names missing verification for manual-review Codex no-major r
         ...scenario.recordPatch,
         state: "blocked",
         blocked_reason: "manual_review",
+        last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+        last_failure_signature: `stalled-bot:${outdatedThreadIds.join(",")}`,
+        last_failure_context: {
+          ...scenario.staleReviewFailureContext,
+          signature: `stalled-bot:${outdatedThreadIds.join(",")}`,
+          details: [...currentHeadFailureDetails, ...outdatedFailureDetails],
+        },
+        processed_review_thread_ids: currentHeadThreads.map((thread) => `${thread.id}@${headSha}`),
+        processed_review_thread_fingerprints: currentHeadThreads.map((thread) => {
+          const comment = thread.comments.nodes[0];
+          return `${thread.id}@${headSha}#${comment.id}`;
+        }),
         workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
         journal_path: null,
       }),
@@ -1765,11 +1818,7 @@ test("status --why names missing verification for manual-review Codex no-major r
     state: "OPEN",
   };
   const pr = createPullRequest(scenario.pullRequestPatch);
-  const outdatedThreads = [
-    "PRRT_kwDOSfC_1M6EPhQ2",
-    "PRRT_kwDOSfC_1M6EPhQ3",
-    "PRRT_kwDOSfC_1M6EPhQ5",
-  ].map((threadId, index) => ({
+  const outdatedThreads = outdatedThreadIds.map((threadId, index) => ({
     ...scenario.reviewThread,
     id: threadId,
     isOutdated: true,
@@ -1795,7 +1844,7 @@ test("status --why names missing verification for manual-review Codex no-major r
     getPullRequestIfExists: async () => pr,
     resolvePullRequestForBranch: async () => pr,
     getChecks: async () => [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
-    getUnresolvedReviewThreads: async () => [scenario.reviewThread, ...outdatedThreads],
+    getUnresolvedReviewThreads: async () => [...currentHeadThreads, ...outdatedThreads],
   };
 
   const status = await supervisor.status({ why: true });
@@ -1804,15 +1853,15 @@ test("status --why names missing verification for manual-review Codex no-major r
   assert.match(status, /^no_active_tracked_record issue=#171 classification=stale_review_bot_remediation state=blocked reason=unknown_needs_operator$/m);
   assert.match(
     status,
-    /^stale_review_bot_remediation issue=#171 pr=#180 reason=stale_review_bot code_ci=green current_head_sha=12b099926c39c8b7502176339ea34750e6a807a4 processed_on_current_head=yes classification=unknown_needs_operator codex_current_head_review_state=observed review_thread_url=https:\/\/example\.test\/pr\/180#discussion_current_head_residue manual_next_step=inspect_exact_review_thread_then_resolve_or_leave_manual_note missing_probe_reason=current_head_verification_evidence_missing summary=code_or_ci_green_but_review_thread_metadata_unresolved$/m,
+    /^stale_review_bot_remediation issue=#171 pr=#180 reason=stale_review_bot code_ci=green current_head_sha=12b099926c39c8b7502176339ea34750e6a807a4 processed_on_current_head=unknown classification=unknown_needs_operator codex_current_head_review_state=observed review_thread_url=https:\/\/example\.test\/pr\/180#discussion_current_head_residue manual_next_step=inspect_exact_review_thread_then_resolve_or_leave_manual_note missing_probe_reason=current_head_verification_evidence_missing summary=code_or_ci_green_but_review_thread_metadata_unresolved$/m,
   );
   assert.match(
     status,
-    /^stale_review_bot_thread_diagnostics issue=#171 pr=#180 current_head_success=yes unresolved_current_threads=1 actionable_must_fix_threads=1 verified_stale_residue_threads=0 missing_verification_evidence_threads=1 repeat_stop_exhausted=no auto_repair_suppressed_reason=missing_verification_probe$/m,
+    /^stale_review_bot_thread_diagnostics issue=#171 pr=#180 current_head_success=yes unresolved_current_threads=9 actionable_must_fix_threads=9 verified_stale_residue_threads=0 missing_verification_evidence_threads=9 repeat_stop_exhausted=yes auto_repair_suppressed_reason=repeat_stop_exhausted$/m,
   );
   assert.match(
     status,
-    /^codex_connector_operator_diagnostic interpretation=stale_review_residue current_head_sha=12b099926c39c8b7502176339ea34750e6a807a4 latest_configured_bot_review_sha=12b099926c39c8b7502176339ea34750e6a807a4 current_head_review_signal=observed actionable_current_diff_threads=unknown next_action=inspect_exact_review_thread_then_resolve_or_leave_manual_note$/m,
+    /^codex_connector_operator_diagnostic interpretation=stale_review_residue current_head_sha=12b099926c39c8b7502176339ea34750e6a807a4 latest_configured_bot_review_sha=none current_head_review_signal=observed actionable_current_diff_threads=unknown next_action=inspect_exact_review_thread_then_resolve_or_leave_manual_note$/m,
   );
   assert.doesNotMatch(status, /^codex_connector_convergence\b/m);
   assert.doesNotMatch(status, /^codex_connector_operator_diagnostic interpretation=actionable_current_diff /m);
