@@ -60,6 +60,18 @@ function createTrackedPullRequestStatusScenario(
   return { branch, headSha, pr, record, state };
 }
 
+function staleResidueDiagnosticLines(text: string): string[] {
+  return text
+    .split("\n")
+    .filter((line) =>
+      line.startsWith("no_active_tracked_record ") ||
+      line.startsWith("stale_review_bot_remediation ") ||
+      line.startsWith("stale_review_bot_thread_diagnostics ") ||
+      line.startsWith("codex_connector_convergence ") ||
+      line.startsWith("codex_connector_operator_diagnostic ")
+    );
+}
+
 async function writeSupervisorState(fixture: Awaited<ReturnType<typeof createSupervisorFixture>>, state: SupervisorStateFile) {
   await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
 }
@@ -1710,8 +1722,8 @@ test("status --why names missing verification for manual-review Codex no-major r
     await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
   });
   fixture.config.reviewBotLogins = [CODEX_CONNECTOR_REVIEW_BOT_LOGIN];
-  const issueNumber = 1701;
-  const prNumber = 1801;
+  const issueNumber = 171;
+  const prNumber = 180;
   const headSha = "12b099926c39c8b7502176339ea34750e6a807a4";
   const scenario = createCodexConnectorTrackedReviewResidueScenario({
     issueNumber,
@@ -1722,7 +1734,7 @@ test("status --why names missing verification for manual-review Codex no-major r
     path: "src/review-state.ts",
     line: 42,
     commentBody: "P1: Preserve current-head review metadata convergence.",
-    discussionUrl: "https://example.test/pr/1801#discussion_current_head_residue",
+    discussionUrl: "https://example.test/pr/180#discussion_current_head_residue",
     currentHeadNoMajorReview: {
       requestedAt: "2026-05-23T01:09:53Z",
       observedAt: "2026-05-23T01:14:50Z",
@@ -1769,7 +1781,7 @@ test("status --why names missing verification for manual-review Codex no-major r
           ...scenario.reviewThread.comments.nodes[0],
           id: `comment-outdated-residue-${index}`,
           body: "P1: Earlier-head Codex residue remains unresolved on GitHub.",
-          url: `https://example.test/pr/1801#discussion_${threadId}`,
+          url: `https://example.test/pr/180#discussion_${threadId}`,
         },
       ],
     },
@@ -1777,23 +1789,26 @@ test("status --why names missing verification for manual-review Codex no-major r
 
   const supervisor = new Supervisor(fixture.config);
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => trackedIssue,
     listCandidateIssues: async () => [trackedIssue],
     listAllIssues: async () => [trackedIssue],
     getPullRequestIfExists: async () => pr,
+    resolvePullRequestForBranch: async () => pr,
     getChecks: async () => [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
     getUnresolvedReviewThreads: async () => [scenario.reviewThread, ...outdatedThreads],
   };
 
   const status = await supervisor.status({ why: true });
+  const explanation = await supervisor.explain(issueNumber);
 
-  assert.match(status, /^no_active_tracked_record issue=#1701 classification=stale_review_bot_remediation state=blocked reason=unknown_needs_operator$/m);
+  assert.match(status, /^no_active_tracked_record issue=#171 classification=stale_review_bot_remediation state=blocked reason=unknown_needs_operator$/m);
   assert.match(
     status,
-    /^stale_review_bot_remediation issue=#1701 pr=#1801 reason=stale_review_bot code_ci=green current_head_sha=12b099926c39c8b7502176339ea34750e6a807a4 processed_on_current_head=yes classification=unknown_needs_operator codex_current_head_review_state=observed review_thread_url=https:\/\/example\.test\/pr\/1801#discussion_current_head_residue manual_next_step=inspect_exact_review_thread_then_resolve_or_leave_manual_note missing_probe_reason=current_head_verification_evidence_missing summary=code_or_ci_green_but_review_thread_metadata_unresolved$/m,
+    /^stale_review_bot_remediation issue=#171 pr=#180 reason=stale_review_bot code_ci=green current_head_sha=12b099926c39c8b7502176339ea34750e6a807a4 processed_on_current_head=yes classification=unknown_needs_operator codex_current_head_review_state=observed review_thread_url=https:\/\/example\.test\/pr\/180#discussion_current_head_residue manual_next_step=inspect_exact_review_thread_then_resolve_or_leave_manual_note missing_probe_reason=current_head_verification_evidence_missing summary=code_or_ci_green_but_review_thread_metadata_unresolved$/m,
   );
   assert.match(
     status,
-    /^stale_review_bot_thread_diagnostics issue=#1701 pr=#1801 current_head_success=yes unresolved_current_threads=1 actionable_must_fix_threads=1 verified_stale_residue_threads=0 missing_verification_evidence_threads=1 repeat_stop_exhausted=no auto_repair_suppressed_reason=missing_verification_probe$/m,
+    /^stale_review_bot_thread_diagnostics issue=#171 pr=#180 current_head_success=yes unresolved_current_threads=1 actionable_must_fix_threads=1 verified_stale_residue_threads=0 missing_verification_evidence_threads=1 repeat_stop_exhausted=no auto_repair_suppressed_reason=missing_verification_probe$/m,
   );
   assert.match(
     status,
@@ -1801,6 +1816,7 @@ test("status --why names missing verification for manual-review Codex no-major r
   );
   assert.doesNotMatch(status, /^codex_connector_convergence\b/m);
   assert.doesNotMatch(status, /^codex_connector_operator_diagnostic interpretation=actionable_current_diff /m);
+  assert.deepEqual(staleResidueDiagnosticLines(status).sort(), staleResidueDiagnosticLines(explanation).sort());
 });
 
 test("status --why converges processed current-head Codex no-major review threads from stale manual review", async (t) => {
