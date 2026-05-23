@@ -708,6 +708,7 @@ function allowJournalOnlyConfiguredBotThreadException(
 
 function effectiveConfiguredBotReviewThreads(
   config: SupervisorConfig,
+  record: IssueRunRecord,
   pr: GitHubPullRequest,
   checks: PullRequestCheck[],
   reviewThreads: ReviewThread[],
@@ -715,13 +716,36 @@ function effectiveConfiguredBotReviewThreads(
   const unresolvedConfiguredBotThreads = configuredBotReviewThreads(config, reviewThreads);
   const codexConnectorPolicy = evaluateCodexConnectorConvergencePolicy(config, pr, unresolvedConfiguredBotThreads);
   const codexConnectorNitpickThreads = new Set(codexConnectorNitpickOnlyReviewThreads(unresolvedConfiguredBotThreads));
+  const clearOutdatedCodexConnectorThreads = codexConnectorOutdatedThreadClearanceAllowed(config, record, pr, checks);
   const effectiveThreads =
     codexConnectorPolicy?.outcome === "nitpick_only" || codexConnectorPolicy?.outcome === "converged"
       ? unresolvedConfiguredBotThreads.filter((thread) => !codexConnectorNitpickThreads.has(thread))
       : unresolvedConfiguredBotThreads;
-  return allowJournalOnlyConfiguredBotThreadException(config, pr, checks, effectiveThreads)
-    ? effectiveThreads.filter((thread) => !isIssueJournalThreadPath(thread))
+  const threadsAfterOutdatedClearance = clearOutdatedCodexConnectorThreads
+    ? effectiveThreads.filter(
+        (thread) => !thread.isOutdated || !latestReviewCommentAuthorIsAllowedBot(config, thread),
+      )
     : effectiveThreads;
+  return allowJournalOnlyConfiguredBotThreadException(config, pr, checks, threadsAfterOutdatedClearance)
+    ? threadsAfterOutdatedClearance.filter((thread) => !isIssueJournalThreadPath(thread))
+    : threadsAfterOutdatedClearance;
+}
+
+function codexConnectorOutdatedThreadClearanceAllowed(
+  config: SupervisorConfig,
+  record: IssueRunRecord,
+  pr: GitHubPullRequest,
+  checks: PullRequestCheck[],
+): boolean {
+  return Boolean(
+    configuredReviewProviderKinds(config).includes("codex") &&
+      pr.configuredBotCurrentHeadObservationSource === "codex_pr_success_comment" &&
+      pr.configuredBotCurrentHeadStatusState === "SUCCESS" &&
+      pr.configuredBotTopLevelReviewStrength !== "blocking" &&
+      validTimestamp(pr.configuredBotCurrentHeadObservedAt) &&
+      currentHeadObservationSatisfiesActiveWait(record, pr) &&
+      summarizeChecks(checks).allPassing,
+  );
 }
 
 function hasProvenCodexConnectorStaleReviewMetadata(args: {
@@ -930,7 +954,7 @@ export function blockedReasonFromReviewState(
   });
   const unresolvedBotThreads = provenCodexStaleReviewMetadata
     ? []
-    : effectiveConfiguredBotReviewThreads(config, pr, checks, reviewThreads);
+    : effectiveConfiguredBotReviewThreads(config, record, pr, checks, reviewThreads);
   const staleBotThreads =
     manualThreads.length === 0 && !provenCodexStaleReviewMetadata
       ? staleConfiguredBotReviewThreads(config, record, pr, unresolvedBotThreads)
@@ -999,7 +1023,7 @@ export function inferStateFromPullRequest(
   });
   const unresolvedBotThreads = provenCodexStaleReviewMetadata
     ? []
-    : effectiveConfiguredBotReviewThreads(config, pr, checks, reviewThreads);
+    : effectiveConfiguredBotReviewThreads(config, record, pr, checks, reviewThreads);
   const pendingBotThreads = pendingBotReviewThreads(config, record, pr, unresolvedBotThreads);
   const botFollowUpState = configuredBotReviewFollowUpState(config, record, pr, unresolvedBotThreads);
   const codexConnectorMustFixThreads = codexConnectorMustFixReviewThreads(unresolvedBotThreads);
