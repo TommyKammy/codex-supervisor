@@ -1325,7 +1325,7 @@ test("runOnce requests Codex Connector review before repeated stale configured-b
     assert.equal(persisted.activeIssueNumber, issueNumber);
     assert.equal(record.state, "waiting_ci");
     assert.equal(record.codex_connector_review_requested_head_sha, "head-191");
-    assert.match(record.codex_connector_review_requested_observed_at ?? "", /^2026-05-22T/);
+    assert.match(record.codex_connector_review_requested_observed_at ?? "", /^\d{4}-\d{2}-\d{2}T/);
     assert.equal(record.repeated_failure_signature_count, 0);
     assert.equal(record.last_failure_signature, null);
     assert.equal(record.last_failure_context, null);
@@ -1735,6 +1735,286 @@ test("runPreparedIssue only refreshes the sticky tracked PR status comment when 
   );
   assert.equal(record.last_host_local_pr_blocker_comment_head_sha, pr.headRefOid);
   assert.equal(record.last_host_local_pr_blocker_comment_signature, "stalled-bot:thread-1");
+});
+
+test("runOnce active Codex prompt uses current-head Codex Connector must-fix threads after processed-thread bookkeeping", async () => {
+  const fixture = await createSupervisorFixture({
+    codexScriptLines: [
+      "#!/bin/sh",
+      "set -eu",
+      'out=""',
+      'prompt=""',
+      'while [ "$#" -gt 0 ]; do',
+      '  case "$1" in',
+      '    -o) out="$2"; shift 2 ;;',
+      '    *) prompt="$1"; shift ;;',
+      '  esac',
+      "done",
+      'printf "%s" "$prompt" > codex-prompt.txt',
+      'printf \'{"type":"thread.started","thread_id":"thread-2113"}\\n\'',
+      "cat <<'EOF' > \"$out\"",
+      "Summary: captured prompt for active review repair",
+      "State hint: stabilizing",
+      "Blocked reason: none",
+      "Tests: npx tsx --test src/supervisor/supervisor-execution-orchestration.test.ts",
+      "Failure signature: none",
+      "Next action: inspect captured prompt",
+      "EOF",
+      "cat <<'EOF' > .codex-supervisor/issue-journal.md",
+      "# Issue #171: Align active Codex prompt review threads",
+      "",
+      "## Codex Working Notes",
+      "### Current Handoff",
+      "- Hypothesis: active prompt should include current-head Codex Connector threads.",
+      "- What changed: captured prompt for orchestration regression.",
+      "- Current blocker: none.",
+      "- Next exact step: inspect captured prompt.",
+      "- Verification gap: focused orchestration test only.",
+      "- Files touched: codex-prompt.txt.",
+      "- Rollback concern: none.",
+      "- Last focused command: npx tsx --test src/supervisor/supervisor-execution-orchestration.test.ts",
+      "### Scratchpad",
+      "- Captured active Codex review prompt.",
+      "EOF",
+      "exit 0",
+      "",
+    ],
+  });
+  fixture.config.reviewBotLogins = ["chatgpt-codex-connector"];
+  const issueNumber = 171;
+  const prNumber = 180;
+  const headSha = "12b099926c39c8b7502176339ea34750e6a807a4";
+  const branch = branchName(fixture.config, issueNumber);
+  const { workspacePath, journalPath } = trackedIssuePaths(fixture.workspaceRoot, issueNumber);
+  const currentHeadThreads = [
+    createReviewThread({
+      id: "PRRT_current_p1",
+      path: "src/onboarding-transaction-request.ts",
+      line: 1481,
+      comments: {
+        nodes: [
+          {
+            id: "comment-current-p1",
+            body: "P1: Preserve the authoritative onboarding transaction guard before accepting this PR.",
+            createdAt: "2026-05-23T01:14:50Z",
+            url: "https://example.test/pr/180#discussion_current_p1",
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+    createReviewThread({
+      id: "PRRT_current_p2",
+      path: "src/onboarding-transaction-request.ts",
+      line: 1520,
+      comments: {
+        nodes: [
+          {
+            id: "comment-current-p2",
+            body: "P2: Keep failed onboarding rollback state clean after the rejected transition.",
+            createdAt: "2026-05-23T01:14:50Z",
+            url: "https://example.test/pr/180#discussion_current_p2",
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  ];
+  const outdatedThread = createReviewThread({
+    id: "PRRT_outdated_residue",
+    isOutdated: true,
+    path: "src/earlier-onboarding.ts",
+    line: 80,
+    comments: {
+      nodes: [
+        {
+          id: "comment-outdated",
+          body: "P1: Earlier-head Codex residue remains unresolved on GitHub.",
+          createdAt: "2026-05-22T22:00:00Z",
+          url: "https://example.test/pr/180#discussion_outdated",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const initialRecord = createTrackedSupervisorRecord(fixture.config, fixture.workspaceRoot, issueNumber, {
+    state: "addressing_review",
+    branch,
+    workspace: workspacePath,
+    journal_path: journalPath,
+    pr_number: prNumber,
+    last_head_sha: headSha,
+    codex_session_id: null,
+    processed_review_thread_ids: currentHeadThreads.map((thread) => `${thread.id}@${headSha}`),
+    processed_review_thread_fingerprints: currentHeadThreads.map(
+      (thread) => `${thread.id}@${headSha}#${thread.comments.nodes[0]?.id}`,
+    ),
+    review_follow_up_head_sha: null,
+    review_follow_up_remaining: 0,
+    last_failure_context: {
+      category: "review",
+      summary: "2 unresolved automated review thread(s) remain.",
+      signature: currentHeadThreads.map((thread) => thread.id).join("|"),
+      command: null,
+      details: [
+        "codex_connector_operator_diagnostic interpretation=actionable_current_diff actionable_current_diff_threads=2 next_action=repair_must_fix_findings",
+      ],
+      url: "https://example.test/pr/180#discussion_current_p1",
+      updated_at: "2026-05-23T01:14:50Z",
+    },
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    activeIssueNumber: issueNumber,
+    issues: [initialRecord],
+  });
+  await writeSupervisorState(fixture.stateFile, state);
+
+  const issue = createTrackedIssue(issueNumber, {
+    title: "Align active Codex prompt review threads",
+    body: executionReadyBody("Active Codex prompts should use current-head Codex Connector review threads."),
+  });
+  const pr = createTrackedPullRequest(fixture.config, issueNumber, {
+    number: prNumber,
+    title: "Review repair implementation",
+    isDraft: false,
+    reviewDecision: "CHANGES_REQUESTED",
+    headRefOid: headSha,
+    mergeStateStatus: "BLOCKED",
+    configuredBotCurrentHeadObservedAt: "2026-05-23T01:14:50Z",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotLatestReviewedCommitSha: headSha,
+    configuredBotTopLevelReviewStrength: null,
+  });
+  const checks: PullRequestCheck[] = [
+    { name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" },
+  ];
+  const reviewThreads = [...currentHeadThreads, outdatedThread];
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [issue],
+    listCandidateIssues: async () => [issue],
+    getIssue: async () => issue,
+    resolvePullRequestForBranch: async (branchNameForPr: string, requestedPrNumber: number | null) => {
+      assert.equal(branchNameForPr, branch);
+      assert.equal(requestedPrNumber, prNumber);
+      return pr;
+    },
+    getChecks: async (requestedPrNumber: number) => {
+      assert.equal(requestedPrNumber, prNumber);
+      return checks;
+    },
+    getUnresolvedReviewThreads: async (requestedPrNumber: number) => {
+      assert.equal(requestedPrNumber, prNumber);
+      return reviewThreads;
+    },
+    getPullRequestIfExists: async (requestedPrNumber: number) => {
+      assert.equal(requestedPrNumber, prNumber);
+      return pr;
+    },
+    getPullRequest: async (requestedPrNumber: number) => {
+      assert.equal(requestedPrNumber, prNumber);
+      return pr;
+    },
+    getExternalReviewSurface: async () => ({
+      reviews: [],
+      issueComments: [],
+    }),
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  await ensureWorkspace(fixture.config, issueNumber, branch);
+  const workspaceHeadSha = git(["rev-parse", "HEAD"], workspacePath);
+  const message = await (
+    supervisor as unknown as {
+      runPreparedIssue: (context: {
+        state: SupervisorStateFile;
+        record: IssueRunRecord;
+        issue: GitHubIssue;
+        previousCodexSummary: string | null;
+        previousError: string | null;
+        workspacePath: string;
+        journalPath: string;
+        syncJournal: (record: IssueRunRecord) => Promise<void>;
+        memoryArtifacts: {
+          alwaysReadFiles: string[];
+          onDemandFiles: string[];
+          contextIndexPath: string;
+          agentsPath: string;
+        };
+        workspaceStatus: {
+          branch: string;
+          headSha: string;
+          hasUncommittedChanges: boolean;
+          baseAhead: number;
+          baseBehind: number;
+          remoteBranchExists: boolean;
+          remoteAhead: number;
+          remoteBehind: number;
+        };
+        pr: GitHubPullRequest | null;
+        checks: PullRequestCheck[];
+        reviewThreads: ReviewThread[];
+        options: { dryRun: boolean };
+        recoveryLog: string | null;
+        recoveryEvents: [];
+      }) => Promise<string>;
+    }
+  ).runPreparedIssue({
+    state,
+    record: initialRecord,
+    issue,
+    previousCodexSummary: null,
+    previousError: null,
+    workspacePath,
+    journalPath,
+    syncJournal: async () => undefined,
+    memoryArtifacts: {
+      alwaysReadFiles: [],
+      onDemandFiles: [],
+      contextIndexPath: "/tmp/context-index.md",
+      agentsPath: "/tmp/AGENTS.generated.md",
+    },
+    workspaceStatus: {
+      branch,
+      headSha: workspaceHeadSha,
+      hasUncommittedChanges: false,
+      baseAhead: 0,
+      baseBehind: 0,
+      remoteBranchExists: false,
+      remoteAhead: 0,
+      remoteBehind: 0,
+    },
+    pr,
+    checks,
+    reviewThreads,
+    options: { dryRun: false },
+    recoveryLog: null,
+    recoveryEvents: [],
+  });
+  assert.match(message, /issue=#171 state=addressing_review/);
+
+  const prompt = await fs.readFile(path.join(workspacePath, "codex-prompt.txt"), "utf8");
+  assert.match(prompt, /Codex Connector actionable review-thread fast path:/);
+  assert.match(prompt, /Thread IDs: PRRT_current_p1/);
+  assert.match(prompt, /Thread IDs: PRRT_current_p2/);
+  assert.doesNotMatch(prompt, /No unresolved configured-bot review threads\./);
+  assert.doesNotMatch(prompt, /PRRT_outdated_residue/);
 });
 
 test("runOnce keeps tracked PR repair work retryable when the same failure repeats after PR head progress", async () => {
