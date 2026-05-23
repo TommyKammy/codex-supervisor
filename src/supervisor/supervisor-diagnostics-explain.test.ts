@@ -1869,6 +1869,27 @@ test("explain names missing verification for manual-review Codex no-major residu
     state: "OPEN",
   };
   const pr = createPullRequest(scenario.pullRequestPatch);
+  const outdatedThreads = [
+    "PRRT_kwDOSfC_1M6EPhQ2",
+    "PRRT_kwDOSfC_1M6EPhQ3",
+    "PRRT_kwDOSfC_1M6EPhQ5",
+  ].map((threadId, index) => ({
+    ...scenario.reviewThread,
+    id: threadId,
+    isOutdated: true,
+    path: `src/earlier-review-state-${index}.ts`,
+    line: 80 + index,
+    comments: {
+      nodes: [
+        {
+          ...scenario.reviewThread.comments.nodes[0],
+          id: `comment-outdated-residue-${index}`,
+          body: "P1: Earlier-head Codex residue remains unresolved on GitHub.",
+          url: `https://example.test/pr/1802#discussion_${threadId}`,
+        },
+      ],
+    },
+  }));
 
   const supervisor = new Supervisor(fixture.config);
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
@@ -1877,7 +1898,7 @@ test("explain names missing verification for manual-review Codex no-major residu
     listCandidateIssues: async () => [trackedIssue],
     resolvePullRequestForBranch: async () => pr,
     getChecks: async () => [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
-    getUnresolvedReviewThreads: async () => [scenario.reviewThread],
+    getUnresolvedReviewThreads: async () => [scenario.reviewThread, ...outdatedThreads],
   };
 
   const explanation = await supervisor.explain(issueNumber);

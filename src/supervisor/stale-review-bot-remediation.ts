@@ -365,14 +365,15 @@ function classifyCodexMetadataOnly(args: {
     return unresolvedWork;
   }
 
+  const currentConfiguredThreads = configuredThreads.filter((thread) => !thread.isOutdated);
   if (
     manualReviewThreads(args.config, args.reviewThreads).length > 0 ||
     args.record.last_head_sha !== args.pr.headRefOid ||
     !allChecksPassing(args.checks) ||
     hasMergeConflictState(args.pr) ||
-    pendingBotReviewThreads(args.config, args.record, args.pr, configuredThreads).length > 0 ||
-    configuredBotReviewFollowUpState(args.config, args.record, args.pr, configuredThreads) === "eligible" ||
-    !configuredThreads.every((thread) => hasProcessedReviewThread(args.record, args.pr, thread))
+    pendingBotReviewThreads(args.config, args.record, args.pr, currentConfiguredThreads).length > 0 ||
+    configuredBotReviewFollowUpState(args.config, args.record, args.pr, currentConfiguredThreads) === "eligible" ||
+    !currentConfiguredThreads.every((thread) => hasProcessedReviewThread(args.record, args.pr, thread))
   ) {
     return unresolvedWork;
   }
