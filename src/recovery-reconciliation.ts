@@ -1121,12 +1121,19 @@ export async function reconcileRecoverableBlockedIssueStates(
       if (projection.shouldSuppressRecovery) {
         continue;
       }
-      const recoverySuppression = suppressSameHeadNoProgressReviewThreadRecovery(
-        record,
-        trackedPullRequest,
-        reviewThreads,
-        nextState,
-      );
+      const staleLocalManualReviewResidueRecovery =
+        record.blocked_reason === "manual_review" &&
+        record.last_tracked_pr_repeat_failure_decision === "stop_no_progress" &&
+        nextState !== "blocked" &&
+        hasOnlyOutdatedConfiguredBotResidue(config, reviewThreads);
+      const recoverySuppression = staleLocalManualReviewResidueRecovery
+        ? { shouldSuppress: false, progressSummary: "stale_local_blocker_recovered=outdated_configured_bot_residue" }
+        : suppressSameHeadNoProgressReviewThreadRecovery(
+          record,
+          trackedPullRequest,
+          reviewThreads,
+          nextState,
+        );
       if (recoverySuppression.shouldSuppress) {
         const suppressionPatch: Partial<IssueRunRecord> = {
           last_tracked_pr_progress_summary: recoverySuppression.progressSummary,
@@ -1231,12 +1238,21 @@ export async function reconcileRecoverableBlockedIssueStates(
       if (recoverySuppression.progressSummary !== null) {
         patch.last_tracked_pr_progress_summary = recoverySuppression.progressSummary;
       }
-      const recoveryEvent = buildTrackedPrResumeRecoveryEvent(
-        record,
-        trackedPullRequest,
-        nextState,
-        buildRecoveryEvent,
-      );
+      if (staleLocalManualReviewResidueRecovery) {
+        patch.last_tracked_pr_progress_snapshot = null;
+        patch.last_tracked_pr_repeat_failure_decision = null;
+      }
+      const recoveryEvent = staleLocalManualReviewResidueRecovery
+        ? buildRecoveryEvent(
+          record.issue_number,
+          `tracked_pr_stale_local_blocker_recovered: resumed issue #${record.issue_number} from blocked to ${nextState} after stale manual-review metadata was superseded by tracked PR #${trackedPullRequest.number} facts at head ${trackedPullRequest.headRefOid}`,
+        )
+        : buildTrackedPrResumeRecoveryEvent(
+          record,
+          trackedPullRequest,
+          nextState,
+          buildRecoveryEvent,
+        );
       const updated = stateStore.touch(record, applyRecoveryEvent(patch, recoveryEvent));
       state.issues[String(record.issue_number)] = updated;
       changed = true;
