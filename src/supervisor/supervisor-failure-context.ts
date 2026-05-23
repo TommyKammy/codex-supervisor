@@ -27,6 +27,7 @@ import {
   localReviewStallFailureContext,
 } from "../review-handling";
 import { mergeConflictDetected, summarizeChecks } from "./supervisor-reporting";
+import { queuedReadyPromotionPathHygieneRepairContext } from "../ready-promotion-path-hygiene-repair";
 import {
   FailureContext,
   GitHubPullRequest,
@@ -47,6 +48,11 @@ export function inferFailureContext(
     const checksContext = buildChecksFailureContext(pr, checks);
     if (checksContext) {
       return checksContext;
+    }
+
+    const queuedReadyPromotionPathHygieneRepair = queuedReadyPromotionPathHygieneRepairContext(record, pr);
+    if (queuedReadyPromotionPathHygieneRepair) {
+      return queuedReadyPromotionPathHygieneRepair;
     }
 
     const copilotTimeoutContext = buildCopilotReviewTimeoutFailureContext(config, record, pr);

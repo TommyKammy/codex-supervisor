@@ -215,6 +215,41 @@ test("derivePullRequestLifecycleSnapshot applies review-bot lifecycle patches be
   });
 });
 
+test("derivePullRequestLifecycleSnapshot keeps queued ready-promotion path hygiene context through green-check refresh", () => {
+  const config = createConfig();
+  const pr = createPullRequest({ isDraft: true });
+  const record = createRecord({
+    state: "draft_pr",
+    pr_number: pr.number,
+    last_failure_signature: "workstation-local-path-hygiene-failed",
+    last_host_local_pr_blocker_comment_head_sha: pr.headRefOid,
+    last_host_local_pr_blocker_comment_signature: "workstation-local-path-hygiene-failed",
+    timeline_artifacts: [
+      {
+        type: "path_hygiene_result",
+        gate: "workstation_local_path_hygiene",
+        command: "npm run verify:paths",
+        head_sha: pr.headRefOid,
+        outcome: "repair_queued",
+        remediation_target: "repair_already_queued",
+        next_action: "wait_for_repair_turn",
+        summary:
+          "Ready-promotion path hygiene found actionable publishable tracked content; supervisor will retry a repair turn before marking the draft PR ready. Actionable files: docs/guide.md.",
+        recorded_at: "2026-05-23T12:00:00Z",
+        repair_targets: ["docs/guide.md"],
+      },
+    ],
+  });
+  const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+
+  const snapshot = derivePullRequestLifecycleSnapshot(config, record, pr, checks, []);
+
+  assert.equal(snapshot.nextState, "repairing_ci");
+  assert.equal(snapshot.failureContext?.signature, "workstation-local-path-hygiene-failed");
+  assert.equal(snapshot.failureContext?.command, "npm run verify:paths");
+  assert.deepEqual(snapshot.failureContext?.details, ["Actionable file: docs/guide.md"]);
+});
+
 test("derivePullRequestLifecycleSnapshot keeps CodeRabbit repos in waiting_ci during the short current-head quiet period", () => {
   withStubbedDateNow("2026-03-13T02:04:03Z", () => {
     const config = createConfig({

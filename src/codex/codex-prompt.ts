@@ -23,6 +23,7 @@ import type {
 } from "../supervisor/agent-runner";
 import { reviewProviderProfileFromConfig, type ReviewProviderProfileSummary } from "../core/review-providers";
 import { buildCodexConnectorMustFixFindingDetails } from "../codex-connector-review-policy";
+import { isWorkstationLocalPathHygieneFailureSignature } from "../workstation-local-path-gate";
 
 export interface LocalReviewRepairContext {
   repairIntent?: "same_pr_fix_blocked" | "same_pr_follow_up" | "same_pr_manual_review" | "high_severity_retry" | "unspecified";
@@ -51,7 +52,7 @@ export function shouldUseCompactResumePrompt(state: RunState): boolean {
   return COMPACT_RESUME_PROMPT_STATES.has(state);
 }
 
-function phaseGuidance(state: RunState): string[] {
+function phaseGuidance(state: RunState, failureContext?: FailureContext | null): string[] {
   if (state === "planning" || state === "reproducing") {
     return [
       "- First make the failure reproducible in a focused way before broad implementation changes.",
@@ -91,6 +92,16 @@ function phaseGuidance(state: RunState): string[] {
     return [
       "- A local advisory review is running for the current draft PR.",
       "- Do not change code in this phase unless a later implementation turn is explicitly triggered.",
+    ];
+  }
+
+  if (
+    state === "repairing_ci" &&
+    isWorkstationLocalPathHygieneFailureSignature(failureContext?.signature)
+  ) {
+    return [
+      "- Treat the workstation-local path hygiene blocker as the primary repair task.",
+      "- Use the structured failure context command/source and actionable file details before checking unrelated CI state.",
     ];
   }
 
@@ -740,7 +751,7 @@ function buildCodexStartPrompt(input: BuildCodexStartPromptInput): string {
     `Supervisor state: ${input.state}`,
     "",
     "Current phase guidance:",
-    ...phaseGuidance(input.state),
+    ...phaseGuidance(input.state, input.failureContext),
     ...(verificationPolicy
       ? [
           "",

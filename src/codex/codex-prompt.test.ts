@@ -1329,6 +1329,7 @@ test("buildCodexPrompt includes current structured path hygiene repair context d
   assert.match(prompt, /Structured failure context:/);
   assert.match(prompt, /Command\/source: npm run verify:paths/);
   assert.match(prompt, /backend\/app\/features\/auth\/bridge\.py/);
+  assert.doesNotMatch(prompt, /Treat the failing CI signal as the primary task/);
   assert.doesNotMatch(prompt, /Leave the draft PR alone and wait\./);
 });
 
