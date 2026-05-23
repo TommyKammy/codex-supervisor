@@ -1778,7 +1778,7 @@ test("status --why names missing verification for manual-review Codex no-major r
     status,
     /^codex_connector_operator_diagnostic interpretation=stale_review_residue current_head_sha=12b099926c39c8b7502176339ea34750e6a807a4 latest_configured_bot_review_sha=12b099926c39c8b7502176339ea34750e6a807a4 current_head_review_signal=observed actionable_current_diff_threads=unknown next_action=inspect_exact_review_thread_then_resolve_or_leave_manual_note$/m,
   );
-  assert.doesNotMatch(status, /^codex_connector_convergence status=repairing_must_fix /m);
+  assert.doesNotMatch(status, /^codex_connector_convergence\b/m);
   assert.doesNotMatch(status, /^codex_connector_operator_diagnostic interpretation=actionable_current_diff /m);
 });
 
