@@ -2991,6 +2991,177 @@ test("reconcileRecoverableBlockedIssueStates rehydrates tracked PR manual-review
   ]);
 });
 
+test("reconcileRecoverableBlockedIssueStates clears stale manual-review repeat stops when only outdated configured-bot residue remains", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    configuredBotRequireCurrentHeadSignal: true,
+  });
+  const previousProgressSnapshot = JSON.stringify({
+    headRefOid: "head-191",
+    reviewDecision: "CHANGES_REQUESTED",
+    mergeStateStatus: "BLOCKED",
+    copilotReviewState: null,
+    copilotReviewRequestedAt: null,
+    copilotReviewArrivedAt: null,
+    configuredBotCurrentHeadObservedAt: null,
+    configuredBotCurrentHeadStatusState: null,
+    currentHeadCiGreenAt: "2026-05-12T00:18:00Z",
+    configuredBotRateLimitedAt: null,
+    configuredBotDraftSkipAt: null,
+    configuredBotTopLevelReviewStrength: null,
+    configuredBotTopLevelReviewSubmittedAt: null,
+    checks: ["build:pass:SUCCESS:CI"],
+    unresolvedReviewThreadIds: ["PRRT_stale_1", "PRRT_stale_2"],
+    unresolvedReviewThreadFingerprints: ["PRRT_stale_1#comment-1", "PRRT_stale_2#comment-2"],
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
+        state: "blocked",
+        blocked_reason: "manual_review",
+        pr_number: 191,
+        last_head_sha: "head-191",
+        review_wait_started_at: "2026-05-12T00:19:00Z",
+        review_wait_head_sha: "head-191",
+        last_error:
+          "2 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
+        last_failure_kind: null,
+        last_failure_context: {
+          category: "manual",
+          summary:
+            "2 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
+          signature: "stalled-bot:chatgpt-codex-connector-p2",
+          command: null,
+          details: [
+            "reviewer=chatgpt-codex-connector severity=P2 processed_on_current_head=yes thread=PRRT_stale_1",
+            "reviewer=chatgpt-codex-connector severity=P2 processed_on_current_head=yes thread=PRRT_stale_2",
+          ],
+          url: "https://example.test/pr/191",
+          updated_at: "2026-05-12T00:20:00Z",
+        },
+        last_failure_signature: "stalled-bot:chatgpt-codex-connector-p2",
+        repeated_failure_signature_count: 3,
+        processed_review_thread_ids: ["PRRT_stale_1@head-191", "PRRT_stale_2@head-191"],
+        processed_review_thread_fingerprints: [
+          "PRRT_stale_1@head-191#comment-1",
+          "PRRT_stale_2@head-191#comment-2",
+        ],
+        last_tracked_pr_progress_snapshot: previousProgressSnapshot,
+        last_tracked_pr_progress_summary: "no_meaningful_tracked_pr_progress",
+        last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+      }),
+    ],
+  });
+  const issue = createIssue({
+    title: "Recovery issue",
+    updatedAt: "2026-05-12T00:21:00Z",
+  });
+  const pr = createPullRequest({
+    number: 191,
+    title: "Recovery implementation",
+    url: "https://example.test/pr/191",
+    headRefName: "codex/reopen-issue-366",
+    headRefOid: "head-191",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    reviewDecision: "APPROVED",
+    currentHeadCiGreenAt: "2026-05-12T00:18:00Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadObservedAt: "2026-05-12T00:22:00Z",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-05-12T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => pr,
+      getIssue: async () => issue,
+      getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getUnresolvedReviewThreads: async () => [
+        createReviewThread({
+          id: "PRRT_stale_1",
+          isOutdated: true,
+          comments: {
+            nodes: [
+              {
+                id: "comment-1",
+                body: "P2 stale finding 1",
+                createdAt: "2026-05-12T00:10:00Z",
+                url: "https://example.test/pr/191#discussion_r1",
+                author: { login: "chatgpt-codex-connector", typeName: "Bot" },
+              },
+            ],
+          },
+        }),
+        createReviewThread({
+          id: "PRRT_stale_2",
+          isOutdated: true,
+          comments: {
+            nodes: [
+              {
+                id: "comment-2",
+                body: "P2 stale finding 2",
+                createdAt: "2026-05-12T00:11:00Z",
+                url: "https://example.test/pr/191#discussion_r2",
+                author: { login: "chatgpt-codex-connector", typeName: "Bot" },
+              },
+            ],
+          },
+        }),
+      ],
+    },
+    stateStore,
+    state,
+    config,
+    [issue],
+    {
+      shouldAutoRetryHandoffMissing,
+      inferStateFromPullRequest,
+      inferFailureContext,
+      blockedReasonForLifecycleState,
+      isOpenPullRequest,
+      syncReviewWaitWindow,
+      syncCopilotReviewRequestObservation,
+      syncCopilotReviewTimeoutState,
+    },
+  );
+
+  const updated = state.issues["366"];
+  assert.equal(updated.state, "ready_to_merge");
+  assert.equal(updated.blocked_reason, null);
+  assert.equal(updated.last_error, null);
+  assert.equal(updated.last_failure_context, null);
+  assert.equal(updated.last_failure_signature, null);
+  assert.equal(updated.repeated_failure_signature_count, 0);
+  assert.equal(
+    updated.last_tracked_pr_progress_summary,
+    "stale_local_blocker_recovered=outdated_configured_bot_residue",
+  );
+  assert.equal(updated.last_tracked_pr_repeat_failure_decision, null);
+  assert.equal(
+    updated.last_recovery_reason,
+    "tracked_pr_stale_local_blocker_recovered: resumed issue #366 from blocked to ready_to_merge after stale manual-review metadata was superseded by tracked PR #191 facts at head head-191",
+  );
+  assert.equal(saveCalls, 1);
+  assert.deepEqual(recoveryEvents.map((event) => event.reason), [
+    "tracked_pr_stale_local_blocker_recovered: resumed issue #366 from blocked to ready_to_merge after stale manual-review metadata was superseded by tracked PR #191 facts at head head-191",
+  ]);
+});
+
 test("reconcileRecoverableBlockedIssueStates suppresses same-head tracked PR recovery after a repeated no-progress review-thread stop on the same blocker", async () => {
   const config = createConfig();
   const previousProgressSnapshot = JSON.stringify({
