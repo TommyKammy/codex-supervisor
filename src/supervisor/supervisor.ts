@@ -139,7 +139,6 @@ import {
 import {
   configuredBotReviewThreads,
   manualReviewThreads,
-  pendingBotReviewThreads,
 } from "../review-thread-reporting";
 import {
   runSupervisorRunOnce,
@@ -470,7 +469,6 @@ export class Supervisor {
       await this.stateStore.save(state);
       await syncJournal(record);
 
-      const reviewThreadsToProcess = pr ? pendingBotReviewThreads(this.config, record, pr, reviewThreads) : [];
       return executeCodexTurnPhase({
         config: this.config,
         stateStore: this.stateStore,
@@ -478,7 +476,7 @@ export class Supervisor {
         context: {
           ...context,
           record,
-          reviewThreads: reviewThreadsToProcess,
+          reviewThreads,
         },
         sessionLock,
         acquireSessionLock: async (sessionId) => acquireFileLock(
