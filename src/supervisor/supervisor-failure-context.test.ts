@@ -196,6 +196,42 @@ test("inferFailureContext prefers failing checks over later blockers", () => {
   assert.equal(context?.summary, "PR #44 has failing checks.");
 });
 
+test("inferFailureContext preserves queued ready-promotion path hygiene repair context when checks are green", () => {
+  const config = createConfig();
+  const pr = createPullRequest({ isDraft: true });
+  const record = createRecord({
+    state: "repairing_ci",
+    pr_number: pr.number,
+    last_head_sha: pr.headRefOid,
+    last_failure_signature: "workstation-local-path-hygiene-failed",
+    last_host_local_pr_blocker_comment_head_sha: pr.headRefOid,
+    last_host_local_pr_blocker_comment_signature: "workstation-local-path-hygiene-failed",
+    timeline_artifacts: [
+      {
+        type: "path_hygiene_result",
+        gate: "workstation_local_path_hygiene",
+        command: "npm run verify:paths",
+        head_sha: pr.headRefOid,
+        outcome: "repair_queued",
+        remediation_target: "repair_already_queued",
+        next_action: "wait_for_repair_turn",
+        summary:
+          "Ready-promotion path hygiene found actionable publishable tracked content; supervisor will retry a repair turn before marking the draft PR ready. Actionable files: docs/guide.md.",
+        recorded_at: "2026-05-23T12:00:00Z",
+        repair_targets: ["docs/guide.md"],
+      },
+    ],
+  });
+  const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+
+  const context = inferFailureContext(config, record, pr, checks, []);
+
+  assert.equal(context?.signature, "workstation-local-path-hygiene-failed");
+  assert.equal(context?.command, "npm run verify:paths");
+  assert.deepEqual(context?.details, ["Actionable file: docs/guide.md"]);
+  assert.match(context?.summary ?? "", /Ready-promotion path hygiene/);
+});
+
 test("inferFailureContext returns timeout context before review blockers", () => {
   const config = createConfig({
     reviewBotLogins: ["copilot-pull-request-reviewer"],
