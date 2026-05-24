@@ -3157,11 +3157,11 @@ test("reconcileRecoverableBlockedIssueStates clears stale manual-review repeat s
   assert.equal(updated.repeated_failure_signature_count, 0);
   assert.equal(updated.provider_success_head_sha, "head-191");
   assert.ok(updated.provider_success_observed_at);
-  assert.equal(
-    updated.last_tracked_pr_progress_summary,
-    "stale_local_blocker_recovered=outdated_configured_bot_residue",
-  );
+  assert.equal(updated.last_tracked_pr_progress_summary, null);
+  assert.equal(updated.last_tracked_pr_progress_snapshot, null);
   assert.equal(updated.last_tracked_pr_repeat_failure_decision, null);
+  assert.deepEqual(updated.processed_review_thread_ids, []);
+  assert.deepEqual(updated.processed_review_thread_fingerprints, []);
   assert.equal(
     updated.last_recovery_reason,
     "tracked_pr_stale_local_blocker_recovered: resumed issue #366 from blocked to pr_open after stale manual-review metadata was superseded by tracked PR #191 facts at head head-191",
