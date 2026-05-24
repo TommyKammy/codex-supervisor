@@ -18,6 +18,7 @@ import {
 } from "../recovery-reconciliation";
 import {
   blockedReasonFromReviewState,
+  effectiveConfiguredBotReviewThreadsForState,
   inferStateFromPullRequest,
   inferGitHubWaitStep,
 } from "../pull-request-state";
@@ -201,6 +202,14 @@ function buildAutoMergeRefusalContext(summary: string, details: string[], pr: Gi
   };
 }
 
+function validTimestamp(value: string | null | undefined): string | null {
+  if (typeof value !== "string" || value.length === 0) {
+    return null;
+  }
+
+  return Number.isNaN(Date.parse(value)) ? null : value;
+}
+
 function hasConfiguredLocalCiCommand(config: Pick<SupervisorConfig, "localCiCommand">): boolean {
   if (typeof config.localCiCommand === "string") {
     return config.localCiCommand.trim() !== "";
@@ -209,46 +218,119 @@ function hasConfiguredLocalCiCommand(config: Pick<SupervisorConfig, "localCiComm
   return config.localCiCommand !== undefined;
 }
 
-function finalAutoMergeRefusal(args: {
+interface FinalAutoMergeGuardResult {
+  evidence: FailureContext;
+  refusal: FailureContext | null;
+}
+
+function buildAutoMergeEvidenceContext(details: string[], pr: GitHubPullRequest): FailureContext {
+  return {
+    category: null,
+    summary: `Final auto-merge guard passed for PR #${pr.number}.`,
+    signature: `auto-merge-ready:${pr.headRefOid}`,
+    command: null,
+    details,
+    url: pr.url,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function hasCurrentHeadCodexNoMajor(record: IssueRunRecord, pr: GitHubPullRequest): boolean {
+  return Boolean(
+    record.provider_success_head_sha === pr.headRefOid &&
+      validTimestamp(record.provider_success_observed_at) &&
+      pr.configuredBotCurrentHeadObservationSource === "codex_pr_success_comment" &&
+      pr.configuredBotCurrentHeadStatusState === "SUCCESS" &&
+      pr.configuredBotTopLevelReviewStrength !== "blocking" &&
+      validTimestamp(pr.configuredBotCurrentHeadObservedAt),
+  );
+}
+
+function finalAutoMergeGuard(args: {
   config: SupervisorConfig;
   record: IssueRunRecord;
   originalPr: GitHubPullRequest;
   currentPr: GitHubPullRequest;
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
-}): FailureContext | null {
+}): FinalAutoMergeGuardResult {
   const { config, record, originalPr, currentPr, checks, reviewThreads } = args;
   const checkSummary = summarizeChecks(checks);
-  const effectiveConfiguredBotBlockers = configuredBotReviewThreads(config, reviewThreads).length;
+  const checksGreen = checks.length > 0 && checkSummary.allPassing;
+  const effectiveConfiguredBotBlockers = effectiveConfiguredBotReviewThreadsForState(
+    config,
+    record,
+    currentPr,
+    checks,
+    reviewThreads,
+  ).length;
   const effectiveHumanBlockers = config.humanReviewBlocksMerge ? manualReviewThreads(config, reviewThreads).length : 0;
-  const requiresCodexProviderSuccess = config.reviewBotLogins.includes("chatgpt-codex-connector");
+  const currentHeadCodexNoMajor = hasCurrentHeadCodexNoMajor(record, currentPr);
   const localCiResult = record.latest_local_ci_result ?? null;
   const localCiMissing =
     hasConfiguredLocalCiCommand(config) &&
     (localCiResult?.outcome !== "passed" || localCiResult?.head_sha !== currentPr.headRefOid);
+  const evidenceDetails = [
+    `head_sha=${currentPr.headRefOid}`,
+    `mergeable=${currentPr.mergeable ?? "unknown"}`,
+    `merge_state=${currentPr.mergeStateStatus ?? "unknown"}`,
+    `checks=green count=${checks.length}`,
+    `codex_current_head_no_major=${currentHeadCodexNoMajor ? "yes" : "no"}`,
+    `configured_bot_blockers=${effectiveConfiguredBotBlockers}`,
+    `human_blockers=${effectiveHumanBlockers}`,
+    hasConfiguredLocalCiCommand(config)
+      ? `local_ci=${localCiResult?.outcome ?? "missing"} head_sha=${localCiResult?.head_sha ?? "none"}`
+      : "local_ci=not_configured",
+  ];
 
   const details = [
     originalPr.headRefOid === currentPr.headRefOid ? null : `head_mismatch=${originalPr.headRefOid}->${currentPr.headRefOid}`,
     currentPr.mergeable === "MERGEABLE" ? null : `mergeable=${currentPr.mergeable ?? "unknown"}`,
     currentPr.mergeStateStatus === "CLEAN" ? null : `merge_state=${currentPr.mergeStateStatus ?? "unknown"}`,
-    checkSummary.allPassing ? null : "required_checks_not_green",
-    !requiresCodexProviderSuccess ||
-    (record.provider_success_head_sha === currentPr.headRefOid && record.provider_success_observed_at)
-      ? null
-      : "missing_current_head_configured_provider_success",
+    checks.length === 0 ? "required_checks_missing" : checksGreen ? null : "required_checks_not_green",
+    currentHeadCodexNoMajor ? null : "missing_current_head_codex_no_major",
     effectiveConfiguredBotBlockers === 0 ? null : `configured_bot_blockers=${effectiveConfiguredBotBlockers}`,
     effectiveHumanBlockers === 0 ? null : `human_blockers=${effectiveHumanBlockers}`,
     localCiMissing ? "missing_current_head_local_ci_success" : null,
   ].filter((detail): detail is string => detail !== null);
 
+  const evidence = buildAutoMergeEvidenceContext(evidenceDetails, currentPr);
+
   if (details.length === 0) {
-    return null;
+    return { evidence, refusal: null };
   }
 
-  return buildAutoMergeRefusalContext(
-    `Final auto-merge guard refused PR #${currentPr.number}.`,
-    details,
-    currentPr,
+  return {
+    evidence,
+    refusal: buildAutoMergeRefusalContext(
+      `Final auto-merge guard refused PR #${currentPr.number}.`,
+      details,
+      currentPr,
+    ),
+  };
+}
+
+async function publishFinalAutoMergeGuardComment(args: {
+  github: GitHubClient;
+  pr: GitHubPullRequest;
+  evidence: FailureContext;
+}): Promise<void> {
+  const github = args.github as unknown as {
+    addIssueComment?: (issueNumber: number, body: string) => Promise<unknown>;
+  };
+  if (!github.addIssueComment) {
+    return;
+  }
+
+  await github.addIssueComment(
+    args.pr.number,
+    [
+      `Final auto-merge guard passed for head \`${args.pr.headRefOid}\`.`,
+      "",
+      ...args.evidence.details.map((detail) => `- ${detail}`),
+      "",
+      "<!-- codex-supervisor:final-auto-merge-guard -->",
+    ].join("\n"),
   );
 }
 
@@ -698,35 +780,44 @@ export class Supervisor {
           ...lifecyclePatch,
           state: "ready_to_merge",
           blocked_reason: null,
+          last_auto_merge_guard_context: null,
           last_head_sha: currentPr.headRefOid,
         });
       } else {
-        const autoMergeRefusal = finalAutoMergeRefusal({
+        const autoMergeGuard = finalAutoMergeGuard({
           config: this.config,
-          record: nextRecord,
+          record: lifecycle.recordForState,
           originalPr: pr,
           currentPr,
           checks: refreshed.checks,
           reviewThreads: refreshed.reviewThreads,
         });
-        if (autoMergeRefusal) {
+        if (autoMergeGuard.refusal) {
           nextRecord = this.stateStore.touch(nextRecord, {
             ...lifecyclePatch,
             state: "blocked",
             blocked_reason: "verification",
-            last_error: truncate(autoMergeRefusal.summary, 1000),
-            last_failure_context: autoMergeRefusal,
-            ...applyFailureSignature(nextRecord, autoMergeRefusal),
+            last_error: truncate(autoMergeGuard.refusal.summary, 1000),
+            last_failure_context: autoMergeGuard.refusal,
+            last_auto_merge_guard_context: autoMergeGuard.evidence,
+            ...applyFailureSignature(nextRecord, autoMergeGuard.refusal),
             last_head_sha: currentPr.headRefOid,
           });
         } else {
-        await this.github.enableAutoMerge(currentPr.number, currentPr.headRefOid);
-        nextRecord = this.stateStore.touch(nextRecord, {
-          ...lifecyclePatch,
-          state: "merging",
-          blocked_reason: null,
-          last_head_sha: currentPr.headRefOid,
-        });
+          await publishFinalAutoMergeGuardComment({
+            github: this.github,
+            pr: currentPr,
+            evidence: autoMergeGuard.evidence,
+          });
+          await this.github.enableAutoMerge(currentPr.number, currentPr.headRefOid);
+          nextRecord = this.stateStore.touch(nextRecord, {
+            ...lifecyclePatch,
+            state: "merging",
+            blocked_reason: null,
+            last_failure_context: null,
+            last_auto_merge_guard_context: autoMergeGuard.evidence,
+            last_head_sha: currentPr.headRefOid,
+          });
         }
       }
       state.issues[String(nextRecord.issue_number)] = nextRecord;

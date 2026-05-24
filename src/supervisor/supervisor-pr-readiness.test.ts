@@ -23,11 +23,29 @@ Execution order: 1 of 1
 Parallelizable: No`;
 }
 
+function passingChecks(name = "build"): PullRequestCheck[] {
+  return [{ name, state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+}
+
+function withCodexConnectorSuccess(pr: GitHubPullRequest, observedAt = "2026-03-13T06:30:00Z"): GitHubPullRequest {
+  return {
+    ...pr,
+    configuredBotCurrentHeadObservedAt: observedAt,
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: pr.configuredBotTopLevelReviewStrength ?? null,
+    currentHeadCiGreenAt: observedAt,
+    copilotReviewState: "arrived",
+    copilotReviewArrivedAt: observedAt,
+  };
+}
+
 test("post-turn PR transitions promote a clean draft PR into merging", async () => {
   const fixture = await createSupervisorFixture();
   const config = createConfig({
     ...fixture.config,
     codexConnectorAutoMergeEnabled: true,
+    reviewBotLogins: ["chatgpt-codex-connector"],
   });
   const issueNumber = 92;
   const branch = branchName(config, issueNumber);
@@ -74,19 +92,24 @@ test("post-turn PR transitions promote a clean draft PR into merging", async () 
     headRefOid: "head-113",
     mergedAt: null,
   };
-  const readyPr: GitHubPullRequest = {
+  let readyPr: GitHubPullRequest = withCodexConnectorSuccess({
     ...draftPr,
     isDraft: false,
-  };
+  });
   await ensureWorkspace(config, issueNumber, branch);
   const localHeadSha = git(["-C", path.join(fixture.workspaceRoot, `issue-${issueNumber}`), "rev-parse", "HEAD"]);
   state.issues[String(issueNumber)] = {
     ...state.issues[String(issueNumber)]!,
     last_head_sha: localHeadSha,
     local_review_head_sha: localHeadSha,
+    review_wait_started_at: "2026-03-13T06:20:00Z",
+    review_wait_head_sha: localHeadSha,
   };
   draftPr.headRefOid = localHeadSha;
-  readyPr.headRefOid = localHeadSha;
+  readyPr = withCodexConnectorSuccess({
+    ...readyPr,
+    headRefOid: localHeadSha,
+  });
   await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
   await fs.mkdir(path.join(fixture.workspaceRoot, `issue-${issueNumber}`, ".codex-supervisor"), { recursive: true });
   await fs.writeFile(
@@ -98,6 +121,7 @@ test("post-turn PR transitions promote a clean draft PR into merging", async () 
   let readyCalls = 0;
   let snapshotLoads = 0;
   let autoMergeCalls = 0;
+  const comments: Array<{ issueNumber: number; body: string }> = [];
   const supervisor = new Supervisor(config);
   (supervisor as unknown as { loadOpenPullRequestSnapshot: (prNumber: number) => Promise<unknown> }).loadOpenPullRequestSnapshot = async (
     prNumber: number,
@@ -105,16 +129,19 @@ test("post-turn PR transitions promote a clean draft PR into merging", async () 
     assert.equal(prNumber, 113);
     snapshotLoads += 1;
     return snapshotLoads === 1
-      ? { pr: draftPr, checks: [], reviewThreads: [] }
-      : { pr: readyPr, checks: [], reviewThreads: [] };
+      ? { pr: draftPr, checks: passingChecks(), reviewThreads: [] }
+      : { pr: readyPr, checks: passingChecks(), reviewThreads: [] };
   };
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
     getPullRequest: async (prNumber: number) => {
       assert.equal(prNumber, 113);
       return readyPr;
     },
-    getChecks: async () => [],
+    getChecks: async () => passingChecks(),
     getUnresolvedReviewThreads: async () => [],
+    addIssueComment: async (issueNumber: number, body: string) => {
+      comments.push({ issueNumber, body });
+    },
     markPullRequestReady: async (prNumber: number) => {
       assert.equal(prNumber, 113);
       readyCalls += 1;
@@ -184,6 +211,9 @@ test("post-turn PR transitions promote a clean draft PR into merging", async () 
   assert.equal(readyCalls, 1);
   assert.equal(autoMergeCalls, 1);
   assert.equal(snapshotLoads, 3);
+  assert.equal(comments.length, 1);
+  assert.equal(comments[0]?.issueNumber, 113);
+  assert.match(comments[0]?.body ?? "", /Final auto-merge guard passed for head/);
 });
 
 test("handlePostTurnPullRequestTransitions waits for Copilot propagation after marking a draft PR ready", async () => {
@@ -717,6 +747,7 @@ test("handlePostTurnMergeAndCompletion blocks auto-merge when final mergeable ev
   const config = createConfig({
     ...fixture.config,
     codexConnectorAutoMergeEnabled: true,
+    reviewBotLogins: ["chatgpt-codex-connector"],
   });
   const issueNumber = 121;
   const state: SupervisorStateFile = {
@@ -728,6 +759,8 @@ test("handlePostTurnMergeAndCompletion blocks auto-merge when final mergeable ev
         last_head_sha: "head-121",
         provider_success_observed_at: "2026-03-13T06:30:00Z",
         provider_success_head_sha: "head-121",
+        review_wait_started_at: "2026-03-13T06:20:00Z",
+        review_wait_head_sha: "head-121",
       }),
     },
   };
@@ -740,7 +773,7 @@ test("handlePostTurnMergeAndCompletion blocks auto-merge when final mergeable ev
     url: `https://example.test/issues/${issueNumber}`,
     state: "OPEN",
   };
-  const pr: GitHubPullRequest = {
+  const pr: GitHubPullRequest = withCodexConnectorSuccess({
     number: 121,
     title: "Missing mergeable evidence",
     url: "https://example.test/pr/121",
@@ -753,7 +786,7 @@ test("handlePostTurnMergeAndCompletion blocks auto-merge when final mergeable ev
     headRefName: "codex/issue-121",
     headRefOid: "head-121",
     mergedAt: null,
-  };
+  });
 
   let autoMergeCalls = 0;
   const supervisor = new Supervisor(config);
@@ -764,7 +797,7 @@ test("handlePostTurnMergeAndCompletion blocks auto-merge when final mergeable ev
     },
     getChecks: async (prNumber: number) => {
       assert.equal(prNumber, 121);
-      return [];
+      return passingChecks();
     },
     getUnresolvedReviewThreads: async (prNumber: number) => {
       assert.equal(prNumber, 121);
@@ -790,6 +823,275 @@ test("handlePostTurnMergeAndCompletion blocks auto-merge when final mergeable ev
   assert.equal(result.state, "blocked");
   assert.equal(result.blocked_reason, "verification");
   assert.equal(result.last_failure_context?.signature, "auto-merge-refused:head-121:mergeable=UNKNOWN");
+  assert.equal(autoMergeCalls, 0);
+});
+
+test("handlePostTurnMergeAndCompletion blocks auto-merge when required check evidence is missing", async () => {
+  const fixture = await createSupervisorFixture();
+  const config = createConfig({
+    ...fixture.config,
+    codexConnectorAutoMergeEnabled: true,
+    reviewBotLogins: ["chatgpt-codex-connector"],
+  });
+  const issueNumber = 122;
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "ready_to_merge",
+        last_head_sha: "head-122",
+        provider_success_observed_at: "2026-03-13T06:30:00Z",
+        provider_success_head_sha: "head-122",
+        review_wait_started_at: "2026-03-13T06:20:00Z",
+        review_wait_head_sha: "head-122",
+      }),
+    },
+  };
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Require final check surface",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+  const pr = withCodexConnectorSuccess({
+    number: 122,
+    title: "Missing required checks",
+    url: "https://example.test/pr/122",
+    state: "OPEN",
+    createdAt: "2026-03-13T06:20:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-122",
+    headRefOid: "head-122",
+    mergedAt: null,
+  });
+
+  let autoMergeCalls = 0;
+  const supervisor = new Supervisor(config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getPullRequest: async (prNumber: number) => {
+      assert.equal(prNumber, 122);
+      return pr;
+    },
+    getChecks: async (prNumber: number) => {
+      assert.equal(prNumber, 122);
+      return [];
+    },
+    getUnresolvedReviewThreads: async (prNumber: number) => {
+      assert.equal(prNumber, 122);
+      return [];
+    },
+    enableAutoMerge: async () => {
+      autoMergeCalls += 1;
+    },
+  };
+
+  const result = await (
+    supervisor as unknown as {
+      handlePostTurnMergeAndCompletion: (
+        state: SupervisorStateFile,
+        issue: GitHubIssue,
+        record: ReturnType<typeof createRecord>,
+        pr: GitHubPullRequest,
+        options: { dryRun: boolean },
+      ) => Promise<ReturnType<typeof createRecord>>;
+    }
+  ).handlePostTurnMergeAndCompletion(state, issue, state.issues[String(issueNumber)]!, pr, { dryRun: false });
+
+  assert.equal(result.state, "blocked");
+  assert.equal(result.blocked_reason, "verification");
+  assert.equal(result.last_failure_context?.signature, "auto-merge-refused:head-122:required_checks_missing");
+  assert.equal(autoMergeCalls, 0);
+});
+
+test("handlePostTurnMergeAndCompletion uses effective Codex thread blockers at the final guard", async () => {
+  const fixture = await createSupervisorFixture();
+  const config = createConfig({
+    ...fixture.config,
+    codexConnectorAutoMergeEnabled: true,
+    reviewBotLogins: ["chatgpt-codex-connector"],
+  });
+  const issueNumber = 124;
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "ready_to_merge",
+        last_head_sha: "head-124",
+        review_wait_started_at: "2026-03-13T06:20:00Z",
+        review_wait_head_sha: "head-124",
+      }),
+    },
+  };
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Honor effective Codex blockers",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+  const pr = withCodexConnectorSuccess({
+    number: 124,
+    title: "Nitpick-only Codex thread is non-blocking",
+    url: "https://example.test/pr/124",
+    state: "OPEN",
+    createdAt: "2026-03-13T06:20:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-124",
+    headRefOid: "head-124",
+    mergedAt: null,
+    configuredBotTopLevelReviewStrength: "nitpick_only",
+  });
+  const nitpickCodexThread: ReviewThread = {
+    id: "thread-nitpick-codex",
+    isResolved: false,
+    isOutdated: false,
+    path: "src/file.ts",
+    line: 12,
+    comments: {
+      nodes: [
+        {
+          id: "comment-nitpick-codex",
+          body: "P3: Nitpick: prefer a shorter helper name for readability.",
+          createdAt: "2026-03-13T06:22:00Z",
+          url: "https://example.test/pr/124#discussion_r1",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  };
+
+  let autoMergeCalls = 0;
+  const supervisor = new Supervisor(config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getPullRequest: async (prNumber: number) => {
+      assert.equal(prNumber, 124);
+      return pr;
+    },
+    getChecks: async (prNumber: number) => {
+      assert.equal(prNumber, 124);
+      return passingChecks();
+    },
+    getUnresolvedReviewThreads: async (prNumber: number) => {
+      assert.equal(prNumber, 124);
+      return [nitpickCodexThread];
+    },
+    enableAutoMerge: async (prNumber: number, headSha: string) => {
+      assert.equal(prNumber, 124);
+      assert.equal(headSha, "head-124");
+      autoMergeCalls += 1;
+    },
+  };
+
+  const result = await (
+    supervisor as unknown as {
+      handlePostTurnMergeAndCompletion: (
+        state: SupervisorStateFile,
+        issue: GitHubIssue,
+        record: ReturnType<typeof createRecord>,
+        pr: GitHubPullRequest,
+        options: { dryRun: boolean },
+      ) => Promise<ReturnType<typeof createRecord>>;
+    }
+  ).handlePostTurnMergeAndCompletion(state, issue, state.issues[String(issueNumber)]!, pr, { dryRun: false });
+
+  assert.equal(result.state, "merging");
+  assert.equal(result.last_auto_merge_guard_context?.details.includes("configured_bot_blockers=0"), true);
+  assert.equal(autoMergeCalls, 1);
+});
+
+test("handlePostTurnMergeAndCompletion blocks Codex auto-merge without current-head Codex success", async () => {
+  const fixture = await createSupervisorFixture();
+  const config = createConfig({
+    ...fixture.config,
+    codexConnectorAutoMergeEnabled: true,
+    reviewBotLogins: [],
+  });
+  const issueNumber = 123;
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "ready_to_merge",
+        last_head_sha: "head-123",
+      }),
+    },
+  };
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Require current-head Codex success",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+  const pr: GitHubPullRequest = {
+    number: 123,
+    title: "Missing Codex success",
+    url: "https://example.test/pr/123",
+    state: "OPEN",
+    createdAt: "2026-03-13T06:20:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-123",
+    headRefOid: "head-123",
+    mergedAt: null,
+  };
+
+  let autoMergeCalls = 0;
+  const supervisor = new Supervisor(config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getPullRequest: async (prNumber: number) => {
+      assert.equal(prNumber, 123);
+      return pr;
+    },
+    getChecks: async (prNumber: number) => {
+      assert.equal(prNumber, 123);
+      return passingChecks();
+    },
+    getUnresolvedReviewThreads: async (prNumber: number) => {
+      assert.equal(prNumber, 123);
+      return [];
+    },
+    enableAutoMerge: async () => {
+      autoMergeCalls += 1;
+    },
+  };
+
+  const result = await (
+    supervisor as unknown as {
+      handlePostTurnMergeAndCompletion: (
+        state: SupervisorStateFile,
+        issue: GitHubIssue,
+        record: ReturnType<typeof createRecord>,
+        pr: GitHubPullRequest,
+        options: { dryRun: boolean },
+      ) => Promise<ReturnType<typeof createRecord>>;
+    }
+  ).handlePostTurnMergeAndCompletion(state, issue, state.issues[String(issueNumber)]!, pr, { dryRun: false });
+
+  assert.equal(result.state, "blocked");
+  assert.equal(result.blocked_reason, "verification");
+  assert.equal(result.last_failure_context?.signature, "auto-merge-refused:head-123:missing_current_head_codex_no_major");
   assert.equal(autoMergeCalls, 0);
 });
 

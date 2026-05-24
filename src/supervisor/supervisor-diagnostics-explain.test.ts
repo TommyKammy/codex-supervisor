@@ -3010,6 +3010,73 @@ Explain should stop reporting stale stale_review_bot blockers after fresh tracke
   assert.doesNotMatch(explanation, /^tracked_pr_mismatch /m);
 });
 
+test("explain surfaces final auto-merge guard evidence", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 174;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "merging",
+        branch,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        pr_number: 274,
+        last_head_sha: "head-274",
+        last_auto_merge_guard_context: {
+          category: null,
+          summary: "Final auto-merge guard passed for PR #274.",
+          signature: "auto-merge-ready:head-274",
+          command: null,
+          details: ["head_sha=head-274", "checks=green count=1", "configured_bot_blockers=0"],
+          url: "https://example.test/pr/274",
+          updated_at: "2026-03-13T06:30:00Z",
+        },
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const trackedIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Explain final auto-merge guard evidence",
+    body: executionReadyBody("Explain final auto-merge guard evidence."),
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const pr = createPullRequest({
+    number: 274,
+    headRefName: branch,
+    headRefOid: "head-274",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    getIssue: async () => trackedIssue,
+    listAllIssues: async () => [trackedIssue],
+    listCandidateIssues: async () => [trackedIssue],
+    resolvePullRequestForBranch: async () => pr,
+    getPullRequest: async () => pr,
+    getPullRequestIfExists: async () => pr,
+    getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => [],
+    getMergedPullRequestsClosingIssue: async () => [],
+  };
+
+  const explanation = await supervisor.explain(issueNumber);
+
+  assert.match(explanation, /^auto_merge_guard=Final auto-merge guard passed for PR #274\.$/m);
+  assert.match(explanation, /^auto_merge_guard_details=head_sha=head-274 \| checks=green count=1 \| configured_bot_blockers=0$/m);
+});
+
 test("explain reuses normalized change-risk policy for risky ambiguity blockers", async () => {
   const fixture = await createSupervisorFixture();
   const state: SupervisorStateFile = {

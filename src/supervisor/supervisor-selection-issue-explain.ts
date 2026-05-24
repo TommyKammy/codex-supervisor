@@ -135,6 +135,8 @@ export interface SupervisorExplainDto {
   selectionReason: string | null;
   reasons: string[];
   lastError: string | null;
+  autoMergeGuardSummary?: string | null;
+  autoMergeGuardDetails?: string[] | null;
   failureSummary: string | null;
   preservedPartialWorkSummary: string | null;
   runtimeFailureKind?: IssueRunRecord["last_runtime_failure_kind"] | null;
@@ -619,6 +621,8 @@ export async function buildIssueExplainDto(
     selectionReason,
     reasons,
     lastError: record?.last_error ?? null,
+    autoMergeGuardSummary: record?.last_auto_merge_guard_context?.summary ?? null,
+    autoMergeGuardDetails: record?.last_auto_merge_guard_context?.details ?? null,
     failureSummary: record?.last_failure_context?.summary ?? null,
     preservedPartialWorkSummary: summarizePreservedPartialWork(record?.last_failure_context),
     runtimeFailureKind: record?.last_runtime_failure_kind ?? null,
@@ -710,6 +714,12 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
 
   if (dto.lastError) {
     lines.push(`last_error=${dto.lastError}`);
+  }
+  if (dto.autoMergeGuardSummary) {
+    lines.push(`auto_merge_guard=${dto.autoMergeGuardSummary}`);
+  }
+  if (dto.autoMergeGuardDetails && dto.autoMergeGuardDetails.length > 0) {
+    lines.push(`auto_merge_guard_details=${dto.autoMergeGuardDetails.join(" | ")}`);
   }
   if (dto.failureSummary) {
     lines.push(`failure_summary=${dto.failureSummary}`);
