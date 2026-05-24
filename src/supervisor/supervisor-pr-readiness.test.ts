@@ -1015,6 +1015,90 @@ test("handlePostTurnMergeAndCompletion uses effective Codex thread blockers at t
   assert.equal(autoMergeCalls, 1);
 });
 
+test("handlePostTurnMergeAndCompletion blocks Codex auto-merge on aggregate human review decisions", async () => {
+  const fixture = await createSupervisorFixture();
+  const config = createConfig({
+    ...fixture.config,
+    codexConnectorAutoMergeEnabled: true,
+    reviewBotLogins: ["chatgpt-codex-connector"],
+  });
+  const issueNumber = 125;
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "ready_to_merge",
+        last_head_sha: "head-125",
+        review_wait_started_at: "2026-03-13T06:20:00Z",
+        review_wait_head_sha: "head-125",
+      }),
+    },
+  };
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Do not auto-merge aggregate human review blocks",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+  const pr = withCodexConnectorSuccess({
+    number: 125,
+    title: "Aggregate review decision remains blocking",
+    url: "https://example.test/pr/125",
+    state: "OPEN",
+    createdAt: "2026-03-13T06:20:00Z",
+    isDraft: false,
+    reviewDecision: "CHANGES_REQUESTED",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-125",
+    headRefOid: "head-125",
+    mergedAt: null,
+    configuredBotTopLevelReviewStrength: "nitpick_only",
+  });
+
+  let autoMergeCalls = 0;
+  const supervisor = new Supervisor(config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getPullRequest: async (prNumber: number) => {
+      assert.equal(prNumber, 125);
+      return pr;
+    },
+    getChecks: async (prNumber: number) => {
+      assert.equal(prNumber, 125);
+      return passingChecks();
+    },
+    getUnresolvedReviewThreads: async (prNumber: number) => {
+      assert.equal(prNumber, 125);
+      return [];
+    },
+    enableAutoMerge: async () => {
+      autoMergeCalls += 1;
+    },
+  };
+
+  const result = await (
+    supervisor as unknown as {
+      handlePostTurnMergeAndCompletion: (
+        state: SupervisorStateFile,
+        issue: GitHubIssue,
+        record: ReturnType<typeof createRecord>,
+        pr: GitHubPullRequest,
+        options: { dryRun: boolean },
+      ) => Promise<ReturnType<typeof createRecord>>;
+    }
+  ).handlePostTurnMergeAndCompletion(state, issue, state.issues[String(issueNumber)]!, pr, { dryRun: false });
+
+  assert.equal(result.state, "blocked");
+  assert.equal(result.blocked_reason, "verification");
+  assert.equal(result.last_failure_context?.signature, "auto-merge-refused:head-125:human_review_decision=CHANGES_REQUESTED");
+  assert.equal(result.last_auto_merge_guard_context?.details.includes("review_decision=CHANGES_REQUESTED"), true);
+  assert.equal(autoMergeCalls, 0);
+});
+
 test("handlePostTurnMergeAndCompletion blocks Codex auto-merge without current-head Codex success", async () => {
   const fixture = await createSupervisorFixture();
   const config = createConfig({

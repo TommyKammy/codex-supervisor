@@ -265,6 +265,11 @@ function finalAutoMergeGuard(args: {
     reviewThreads,
   ).length;
   const effectiveHumanBlockers = config.humanReviewBlocksMerge ? manualReviewThreads(config, reviewThreads).length : 0;
+  const aggregateHumanReviewBlocker =
+    config.humanReviewBlocksMerge &&
+    (currentPr.reviewDecision === "CHANGES_REQUESTED" || currentPr.reviewDecision === "REVIEW_REQUIRED")
+      ? currentPr.reviewDecision
+      : null;
   const currentHeadCodexNoMajor = hasCurrentHeadCodexNoMajor(record, currentPr);
   const localCiResult = record.latest_local_ci_result ?? null;
   const localCiMissing =
@@ -278,6 +283,7 @@ function finalAutoMergeGuard(args: {
     `codex_current_head_no_major=${currentHeadCodexNoMajor ? "yes" : "no"}`,
     `configured_bot_blockers=${effectiveConfiguredBotBlockers}`,
     `human_blockers=${effectiveHumanBlockers}`,
+    `review_decision=${currentPr.reviewDecision ?? "none"}`,
     hasConfiguredLocalCiCommand(config)
       ? `local_ci=${localCiResult?.outcome ?? "missing"} head_sha=${localCiResult?.head_sha ?? "none"}`
       : "local_ci=not_configured",
@@ -291,6 +297,7 @@ function finalAutoMergeGuard(args: {
     currentHeadCodexNoMajor ? null : "missing_current_head_codex_no_major",
     effectiveConfiguredBotBlockers === 0 ? null : `configured_bot_blockers=${effectiveConfiguredBotBlockers}`,
     effectiveHumanBlockers === 0 ? null : `human_blockers=${effectiveHumanBlockers}`,
+    aggregateHumanReviewBlocker ? `human_review_decision=${aggregateHumanReviewBlocker}` : null,
     localCiMissing ? "missing_current_head_local_ci_success" : null,
   ].filter((detail): detail is string => detail !== null);
 

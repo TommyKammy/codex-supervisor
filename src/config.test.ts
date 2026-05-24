@@ -1858,28 +1858,44 @@ test("shipped config profiles declare the intended review bot logins", async () 
 
 test("shipped Codex Connector profile opts into aggressive cleanup and auto-merge only for Codex", async () => {
   const rootDir = path.resolve(__dirname, "..");
-  const codex = JSON.parse(await fs.readFile(path.join(rootDir, "supervisor.config.codex.json"), "utf8")) as {
+  type AggressiveProfileFlags = {
     staleConfiguredBotReviewPolicy?: unknown;
     verifiedNoSourceChangeReviewThreadAutoResolve?: unknown;
     verifiedCurrentHeadRepairReviewThreadAutoResolve?: unknown;
     codexConnectorAutoMergeEnabled?: unknown;
   };
-  const coderabbit = JSON.parse(await fs.readFile(path.join(rootDir, "supervisor.config.coderabbit.json"), "utf8")) as {
-    staleConfiguredBotReviewPolicy?: unknown;
-    verifiedNoSourceChangeReviewThreadAutoResolve?: unknown;
-    verifiedCurrentHeadRepairReviewThreadAutoResolve?: unknown;
-    codexConnectorAutoMergeEnabled?: unknown;
-  };
+  const readProfile = async (relativePath: string): Promise<AggressiveProfileFlags> =>
+    JSON.parse(await fs.readFile(path.join(rootDir, relativePath), "utf8")) as AggressiveProfileFlags;
+  const codex = await readProfile("supervisor.config.codex.json");
 
   assert.equal(codex.staleConfiguredBotReviewPolicy, "reply_and_resolve");
   assert.equal(codex.verifiedNoSourceChangeReviewThreadAutoResolve, true);
   assert.equal(codex.verifiedCurrentHeadRepairReviewThreadAutoResolve, true);
   assert.equal(codex.codexConnectorAutoMergeEnabled, true);
 
-  assert.notEqual(coderabbit.staleConfiguredBotReviewPolicy, "reply_and_resolve");
-  assert.notEqual(coderabbit.verifiedNoSourceChangeReviewThreadAutoResolve, true);
-  assert.notEqual(coderabbit.verifiedCurrentHeadRepairReviewThreadAutoResolve, true);
-  assert.notEqual(coderabbit.codexConnectorAutoMergeEnabled, true);
+  const nonCodexProfiles = [
+    "supervisor.config.example.json",
+    "supervisor.config.copilot.json",
+    "supervisor.config.coderabbit.json",
+    "supervisor.config.typescript-node.json",
+    "supervisor.config.nextjs.json",
+    "supervisor.config.python-cli.json",
+  ];
+  for (const relativePath of nonCodexProfiles) {
+    const profile = await readProfile(relativePath);
+    assert.notEqual(profile.staleConfiguredBotReviewPolicy, "reply_and_resolve", `${relativePath} must not auto-resolve stale bot threads`);
+    assert.notEqual(
+      profile.verifiedNoSourceChangeReviewThreadAutoResolve,
+      true,
+      `${relativePath} must not auto-resolve verified no-source-change threads`,
+    );
+    assert.notEqual(
+      profile.verifiedCurrentHeadRepairReviewThreadAutoResolve,
+      true,
+      `${relativePath} must not auto-resolve verified current-head repair threads`,
+    );
+    assert.notEqual(profile.codexConnectorAutoMergeEnabled, true, `${relativePath} must not enable Codex Connector auto-merge`);
+  }
 });
 
 test("shipped CodeRabbit starter profile uses a fail-fast repoSlug placeholder", async () => {

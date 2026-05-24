@@ -3074,7 +3074,12 @@ test("explain surfaces final auto-merge guard evidence", async () => {
   const explanation = await supervisor.explain(issueNumber);
 
   assert.match(explanation, /^auto_merge_guard=Final auto-merge guard passed for PR #274\.$/m);
-  assert.match(explanation, /^auto_merge_guard_details=head_sha=head-274 \| checks=green count=1 \| configured_bot_blockers=0$/m);
+  const detailsLine = explanation.split("\n").find((line) => line.startsWith("auto_merge_guard_details="));
+  assert.ok(detailsLine);
+  const detailTokens = detailsLine.slice("auto_merge_guard_details=".length).split(" | ");
+  assert.ok(detailTokens.includes("head_sha=head-274"));
+  assert.ok(detailTokens.includes("checks=green count=1"));
+  assert.ok(detailTokens.includes("configured_bot_blockers=0"));
 });
 
 test("explain reuses normalized change-risk policy for risky ambiguity blockers", async () => {
