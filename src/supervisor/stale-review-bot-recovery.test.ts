@@ -8,7 +8,10 @@ import {
   createRecord,
   createReviewThread,
 } from "../turn-execution-test-helpers";
-import { recoverStaleConfiguredBotReviewThreads } from "./stale-review-bot-recovery";
+import {
+  recoverStaleConfiguredBotReviewThreads,
+  staleConfiguredBotReviewProgressKey,
+} from "./stale-review-bot-recovery";
 
 function createNoopStateStore() {
   return {
@@ -105,6 +108,119 @@ test("recoverStaleConfiguredBotReviewThreads returns a typed resolved result and
   assert.deepEqual(result.record.stale_review_bot_resolve_progress_keys, [
     "resolve:thread-1@head-116:stalled-bot:thread-1",
   ]);
+});
+
+test("recoverStaleConfiguredBotReviewThreads clears stale residue when resolve progress is partially preexisting", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    staleConfiguredBotReviewPolicy: "reply_and_resolve",
+  });
+  const pr = createPullRequest({
+    number: 183,
+    headRefOid: "head-183",
+  });
+  const threadIds = ["thread-1", "thread-2"];
+  const signature = threadIds.map((threadId) => `stalled-bot:${threadId}`).join("|");
+  const preexistingReplyKey = staleConfiguredBotReviewProgressKey({
+    headSha: pr.headRefOid,
+    signature,
+    threadId: threadIds[0],
+    phase: "reply",
+  });
+  const preexistingResolveKey = staleConfiguredBotReviewProgressKey({
+    headSha: pr.headRefOid,
+    signature,
+    threadId: threadIds[0],
+    phase: "resolve",
+  });
+  const record = createRecord({
+    issue_number: 102,
+    pr_number: pr.number,
+    state: "addressing_review",
+    blocked_reason: null,
+    last_head_sha: pr.headRefOid,
+    last_failure_context: createFailureContext("stale configured-bot review thread"),
+    last_failure_signature: signature,
+    repeated_failure_signature_count: 4,
+    last_tracked_pr_progress_snapshot: "{\"stale\":true}",
+    last_tracked_pr_progress_summary: "processed_review_thread_fingerprints_changed",
+    last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+    processed_review_thread_ids: [`${threadIds[0]}@${pr.headRefOid}`],
+    processed_review_thread_fingerprints: [`${threadIds[0]}@${pr.headRefOid}#comment-1`],
+    stale_review_bot_reply_progress_keys: [preexistingReplyKey],
+    stale_review_bot_resolve_progress_keys: [preexistingResolveKey],
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": record,
+    },
+  };
+  const failureContext = {
+    ...createFailureContext("stale configured-bot review thread"),
+    signature,
+    details: threadIds.map(
+      (threadId) =>
+        `reviewer=chatgpt-codex-connector thread=${threadId} file=src/review.ts line=42 processed_on_current_head=yes`,
+    ),
+    url: "https://example.test/review/183",
+  };
+  const reviewThreads = threadIds.map((threadId) =>
+    createReviewThread({
+      id: threadId,
+      path: "src/review.ts",
+      line: 42,
+      comments: {
+        nodes: [
+          {
+            id: `comment-${threadId}`,
+            body: "This finding is stale on the current head.",
+            createdAt: "2026-05-24T02:05:00Z",
+            url: `https://example.test/pr/183#discussion_${threadId}`,
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  );
+  const replies: string[] = [];
+  const resolutions: string[] = [];
+
+  const result = await recoverStaleConfiguredBotReviewThreads({
+    github: {
+      replyToReviewThread: async (threadId: string) => {
+        replies.push(threadId);
+      },
+      resolveReviewThread: async (threadId: string) => {
+        resolutions.push(threadId);
+      },
+    },
+    stateStore: createNoopStateStore(),
+    state,
+    record,
+    pr,
+    reviewThreads,
+    syncJournal: async () => undefined,
+    config,
+    failureContext,
+    resolveAfterReply: true,
+  });
+
+  assert.equal(result.status, "resolved");
+  assert.deepEqual(replies, [threadIds[1]]);
+  assert.deepEqual(resolutions, [threadIds[1]]);
+  assert.equal(result.shouldRefreshPullRequest, true);
+  assert.equal(result.record.last_failure_context, null);
+  assert.equal(result.record.last_failure_signature, null);
+  assert.equal(result.record.repeated_failure_signature_count, 0);
+  assert.equal(result.record.last_tracked_pr_progress_snapshot, null);
+  assert.equal(result.record.last_tracked_pr_progress_summary, null);
+  assert.equal(result.record.last_tracked_pr_repeat_failure_decision, null);
+  assert.deepEqual(result.record.processed_review_thread_ids, []);
+  assert.deepEqual(result.record.processed_review_thread_fingerprints, []);
 });
 
 test("recoverStaleConfiguredBotReviewThreads normalizes raw PRRT thread signatures", async () => {

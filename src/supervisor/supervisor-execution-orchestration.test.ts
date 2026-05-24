@@ -1750,11 +1750,12 @@ test("runPreparedIssue auto-handles stale Codex Connector conversation residue b
   const branch = branchName(fixture.config, issueNumber);
   const { workspacePath, journalPath } = trackedIssuePaths(fixture.workspaceRoot, issueNumber);
   const threadIds = Array.from({ length: 7 }, (_value, index) => `PRRT_hrcore_183_${index + 1}`);
+  const staleSignature = threadIds.map((threadId) => `stalled-bot:${threadId}`).join("|");
   const staleFailureContext = {
     category: "manual" as const,
     summary:
       "7 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
-    signature: threadIds.map((threadId) => `stalled-bot:${threadId}`).join("|"),
+    signature: staleSignature,
     command: null,
     details: threadIds.map(
       (threadId) =>
@@ -1975,11 +1976,19 @@ test("runPreparedIssue marks active stale Codex Connector residue successful bef
   const branch = branchName(fixture.config, issueNumber);
   const { workspacePath, journalPath } = trackedIssuePaths(fixture.workspaceRoot, issueNumber);
   const threadIds = Array.from({ length: 7 }, (_value, index) => `PRRT_hrcore_183_${index + 1}`);
+  const staleSignature = threadIds.map((threadId) => `stalled-bot:${threadId}`).join("|");
+  const preexistingResolvedThreadIds = [threadIds[0]];
+  const preexistingReplyProgressKeys = preexistingResolvedThreadIds.map(
+    (threadId) => `reply:${threadId}@${headSha}:${staleSignature}`,
+  );
+  const preexistingResolveProgressKeys = preexistingResolvedThreadIds.map(
+    (threadId) => `resolve:${threadId}@${headSha}:${staleSignature}`,
+  );
   const staleFailureContext = {
     category: "manual" as const,
     summary:
       "7 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
-    signature: threadIds.map((threadId) => `stalled-bot:${threadId}`).join("|"),
+    signature: staleSignature,
     command: null,
     details: threadIds.map(
       (threadId) =>
@@ -2027,6 +2036,8 @@ test("runPreparedIssue marks active stale Codex Connector residue successful bef
     }),
     processed_review_thread_ids: [`${threadIds[0]}@${headSha}`],
     processed_review_thread_fingerprints: [`${threadIds[0]}@${headSha}#comment-${threadIds[0]}`],
+    stale_review_bot_reply_progress_keys: preexistingReplyProgressKeys,
+    stale_review_bot_resolve_progress_keys: preexistingResolveProgressKeys,
     review_follow_up_head_sha: headSha,
     review_follow_up_remaining: 0,
   });
@@ -2099,9 +2110,11 @@ test("runPreparedIssue marks active stale Codex Connector residue successful bef
     getIssue: async () => issue,
     resolvePullRequestForBranch: async () => pr,
     getChecks: async () => checks,
-    getUnresolvedReviewThreads: async () => (resolveCalls.length === threadIds.length ? [] : reviewThreads),
+    getUnresolvedReviewThreads: async () =>
+      resolveCalls.length + preexistingResolvedThreadIds.length === threadIds.length ? [] : reviewThreads,
     getPullRequestIfExists: async () => pr,
-    getPullRequest: async () => (resolveCalls.length === threadIds.length ? resolvedPr : pr),
+    getPullRequest: async () =>
+      resolveCalls.length + preexistingResolvedThreadIds.length === threadIds.length ? resolvedPr : pr,
     getExternalReviewSurface: async () => ({ reviews: [], issueComments: [] }),
     addIssueComment: async (_issueNumberForComment: number, body: string) => {
       addedComments.push(body);
@@ -2190,8 +2203,8 @@ test("runPreparedIssue marks active stale Codex Connector residue successful bef
   });
 
   assert.doesNotMatch(message, /blocked after repeated identical review-related failure signatures/);
-  assert.deepEqual(replyCalls, threadIds);
-  assert.deepEqual(resolveCalls, threadIds);
+  assert.deepEqual(replyCalls, threadIds.slice(1));
+  assert.deepEqual(resolveCalls, threadIds.slice(1));
   assert.equal(addedComments.some((body) => /@codex review/.test(body)), false);
   const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
   const record = persisted.issues[String(issueNumber)];

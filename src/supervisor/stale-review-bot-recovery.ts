@@ -290,7 +290,11 @@ export async function recoverStaleConfiguredBotReviewThreads(args: {
   }
 
   const staleResidueClearedPatch =
-    args.resolveAfterReply && resolveCount === replyThreads.length
+    args.resolveAfterReply && hasResolvedAllStaleConfiguredBotThreads({
+      record,
+      headSha: args.pr.headRefOid,
+      signature: blockerSignature,
+    })
       ? {
           last_failure_context: null,
           last_failure_signature: null,
