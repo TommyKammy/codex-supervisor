@@ -721,7 +721,13 @@ function effectiveConfiguredBotReviewThreads(
   const unresolvedConfiguredBotThreads = configuredBotReviewThreads(config, reviewThreads);
   const codexConnectorPolicy = evaluateCodexConnectorConvergencePolicy(config, pr, unresolvedConfiguredBotThreads);
   const codexConnectorNitpickThreads = new Set(codexConnectorNitpickOnlyReviewThreads(unresolvedConfiguredBotThreads));
-  const clearOutdatedCodexConnectorThreads = codexConnectorOutdatedThreadClearanceAllowed(config, record, pr, checks);
+  const clearOutdatedCodexConnectorThreads = codexConnectorOutdatedThreadClearanceAllowed(
+    config,
+    record,
+    pr,
+    checks,
+    reviewThreads,
+  );
   const effectiveThreads =
     codexConnectorPolicy?.outcome === "nitpick_only" || codexConnectorPolicy?.outcome === "converged"
       ? unresolvedConfiguredBotThreads.filter((thread) => !codexConnectorNitpickThreads.has(thread))
@@ -759,6 +765,7 @@ function codexConnectorOutdatedThreadClearanceAllowed(
   record: IssueRunRecord,
   pr: GitHubPullRequest,
   checks: PullRequestCheck[],
+  reviewThreads: ReviewThread[],
 ): boolean {
   return Boolean(
     configuredReviewProviderKinds(config).includes("codex") &&
@@ -766,8 +773,50 @@ function codexConnectorOutdatedThreadClearanceAllowed(
       pr.configuredBotCurrentHeadStatusState === "SUCCESS" &&
       pr.configuredBotTopLevelReviewStrength !== "blocking" &&
       validTimestamp(pr.configuredBotCurrentHeadObservedAt) &&
-      currentHeadObservationSatisfiesActiveWait(record, pr) &&
+      (currentHeadObservationSatisfiesActiveWait(record, pr) ||
+        staleSameHeadCodexWaitHasOnlyOutdatedResidue(config, record, pr, checks, reviewThreads)) &&
       summarizeChecks(checks).allPassing,
+  );
+}
+
+function staleSameHeadCodexWaitHasOnlyOutdatedResidue(
+  config: SupervisorConfig,
+  record: IssueRunRecord,
+  pr: GitHubPullRequest,
+  checks: PullRequestCheck[],
+  reviewThreads: ReviewThread[],
+): boolean {
+  if (
+    !configuredReviewProviderKinds(config).includes("codex") ||
+    pr.configuredBotCurrentHeadObservationSource !== "codex_pr_success_comment" ||
+    pr.configuredBotCurrentHeadStatusState !== "SUCCESS" ||
+    pr.configuredBotTopLevelReviewStrength === "blocking"
+  ) {
+    return false;
+  }
+
+  const observedAt = validTimestamp(pr.configuredBotCurrentHeadObservedAt);
+  const waitStartedAt = validTimestamp(record.review_wait_started_at);
+  if (!observedAt || !waitStartedAt || record.review_wait_head_sha !== pr.headRefOid) {
+    return false;
+  }
+
+  if (Date.parse(observedAt) >= Date.parse(waitStartedAt)) {
+    return false;
+  }
+
+  if (!pullRequestHeadMatchesRecord(record, pr) || mergeConflictDetected(pr) || !summarizeChecks(checks).allPassing) {
+    return false;
+  }
+
+  if (manualReviewThreads(config, reviewThreads).length > 0) {
+    return false;
+  }
+
+  const configuredThreads = configuredBotReviewThreads(config, reviewThreads);
+  return (
+    configuredThreads.length > 0 &&
+    configuredThreads.every((thread) => thread.isOutdated && latestReviewCommentAuthorIsAllowedBot(config, thread))
   );
 }
 
@@ -909,7 +958,13 @@ function hasConfiguredProviderSuccess(
     return false;
   }
 
-  const clearOutdatedCodexConnectorThreads = codexConnectorOutdatedThreadClearanceAllowed(config, record, pr, checks);
+  const clearOutdatedCodexConnectorThreads = codexConnectorOutdatedThreadClearanceAllowed(
+    config,
+    record,
+    pr,
+    checks,
+    reviewThreads,
+  );
   const configuredBotThreads = configuredBotReviewThreads(config, reviewThreads).filter(
     (thread) =>
       !clearOutdatedCodexConnectorThreads ||
@@ -990,8 +1045,20 @@ export function blockedReasonFromReviewState(
       ? staleConfiguredBotReviewThreads(config, record, pr, unresolvedBotThreads)
       : [];
   const checkSummary = summarizeChecks(checks);
+  const staleCodexWaitHasOnlyOutdatedResidue = staleSameHeadCodexWaitHasOnlyOutdatedResidue(
+    config,
+    record,
+    pr,
+    checks,
+    reviewThreads,
+  );
   const copilotTimeout = determineCopilotReviewTimeout(config, record, pr, nowMs);
-  if (copilotTimeout.timedOut && copilotTimeout.action === "block" && !provenCodexStaleReviewMetadata) {
+  if (
+    copilotTimeout.timedOut &&
+    copilotTimeout.action === "block" &&
+    !provenCodexStaleReviewMetadata &&
+    !staleCodexWaitHasOnlyOutdatedResidue
+  ) {
     return "review_bot_timeout";
   }
 
@@ -1056,6 +1123,13 @@ export function inferStateFromPullRequest(
   const botFollowUpState = configuredBotReviewFollowUpState(config, record, pr, unresolvedBotThreads);
   const codexConnectorMustFixThreads = codexConnectorMustFixReviewThreads(unresolvedBotThreads);
   const checkSummary = summarizeChecks(checks);
+  const staleCodexWaitHasOnlyOutdatedResidue = staleSameHeadCodexWaitHasOnlyOutdatedResidue(
+    config,
+    record,
+    pr,
+    checks,
+    reviewThreads,
+  );
 
   if (pr.mergedAt || pr.state === "MERGED") {
     return "done";
@@ -1259,14 +1333,20 @@ export function inferStateFromPullRequest(
   }
 
   const copilotTimeout = determineCopilotReviewTimeout(config, record, pr, nowMs);
-  if (copilotTimeout.timedOut && copilotTimeout.action === "block" && !provenCodexStaleReviewMetadata) {
+  if (
+    copilotTimeout.timedOut &&
+    copilotTimeout.action === "block" &&
+    !provenCodexStaleReviewMetadata &&
+    !staleCodexWaitHasOnlyOutdatedResidue
+  ) {
     return "blocked";
   }
 
   if (
     copilotTimeout.timedOut &&
     copilotTimeout.action === "request_review_comment" &&
-    !provenCodexStaleReviewMetadata
+    !provenCodexStaleReviewMetadata &&
+    !staleCodexWaitHasOnlyOutdatedResidue
   ) {
     return "waiting_ci";
   }
@@ -1289,6 +1369,7 @@ export function inferStateFromPullRequest(
 
   if (
     !provenCodexStaleReviewMetadata &&
+    !staleCodexWaitHasOnlyOutdatedResidue &&
     configuredBotCurrentHeadSignalPending(config, record, pr) &&
     !copilotTimeout.timedOut
   ) {
