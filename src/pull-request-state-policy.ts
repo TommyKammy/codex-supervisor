@@ -731,6 +731,24 @@ function effectiveConfiguredBotReviewThreads(
     : threadsAfterOutdatedClearance;
 }
 
+export function effectiveConfiguredBotReviewThreadsForState(
+  config: SupervisorConfig,
+  record: IssueRunRecord,
+  pr: GitHubPullRequest,
+  checks: PullRequestCheck[],
+  reviewThreads: ReviewThread[],
+): ReviewThread[] {
+  return hasProvenCodexConnectorStaleReviewMetadata({
+    config,
+    record,
+    pr,
+    checks,
+    reviewThreads,
+  })
+    ? []
+    : effectiveConfiguredBotReviewThreads(config, record, pr, checks, reviewThreads);
+}
+
 function codexConnectorOutdatedThreadClearanceAllowed(
   config: SupervisorConfig,
   record: IssueRunRecord,
@@ -952,9 +970,7 @@ export function blockedReasonFromReviewState(
     checks,
     reviewThreads,
   });
-  const unresolvedBotThreads = provenCodexStaleReviewMetadata
-    ? []
-    : effectiveConfiguredBotReviewThreads(config, record, pr, checks, reviewThreads);
+  const unresolvedBotThreads = effectiveConfiguredBotReviewThreadsForState(config, record, pr, checks, reviewThreads);
   const staleBotThreads =
     manualThreads.length === 0 && !provenCodexStaleReviewMetadata
       ? staleConfiguredBotReviewThreads(config, record, pr, unresolvedBotThreads)
@@ -1021,9 +1037,7 @@ export function inferStateFromPullRequest(
     checks,
     reviewThreads,
   });
-  const unresolvedBotThreads = provenCodexStaleReviewMetadata
-    ? []
-    : effectiveConfiguredBotReviewThreads(config, record, pr, checks, reviewThreads);
+  const unresolvedBotThreads = effectiveConfiguredBotReviewThreadsForState(config, record, pr, checks, reviewThreads);
   const pendingBotThreads = pendingBotReviewThreads(config, record, pr, unresolvedBotThreads);
   const botFollowUpState = configuredBotReviewFollowUpState(config, record, pr, unresolvedBotThreads);
   const codexConnectorMustFixThreads = codexConnectorMustFixReviewThreads(unresolvedBotThreads);

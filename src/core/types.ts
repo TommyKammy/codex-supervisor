@@ -223,6 +223,7 @@ export interface IssueRunRecord {
   provider_success_observed_at?: string | null;
   provider_success_head_sha?: string | null;
   merge_readiness_last_evaluated_at?: string | null;
+  last_auto_merge_guard_context?: FailureContext | null;
   copilot_review_requested_observed_at: string | null;
   copilot_review_requested_head_sha: string | null;
   codex_connector_review_requested_observed_at?: string | null;

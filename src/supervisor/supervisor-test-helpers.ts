@@ -64,6 +64,7 @@ export function createConfig(overrides: Partial<SupervisorConfig> = {}): Supervi
     pollIntervalSeconds: 60,
     copilotReviewWaitMinutes: 10,
     copilotReviewTimeoutAction: "continue",
+    codexConnectorAutoMergeEnabled: false,
     codexExecTimeoutMinutes: 30,
     maxCodexAttemptsPerIssue: 5,
     maxImplementationAttemptsPerIssue: 5,

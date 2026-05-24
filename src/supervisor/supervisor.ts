@@ -18,6 +18,7 @@ import {
 } from "../recovery-reconciliation";
 import {
   blockedReasonFromReviewState,
+  effectiveConfiguredBotReviewThreadsForState,
   inferStateFromPullRequest,
   inferGitHubWaitStep,
 } from "../pull-request-state";
@@ -187,6 +188,157 @@ const FULL_ISSUE_INVENTORY_REUSE_TTL_MS = 5 * 60 * 1000;
 interface CachedFullIssueInventory {
   issues: GitHubIssue[];
   fetchedAtMs: number;
+}
+
+function buildAutoMergeRefusalContext(summary: string, details: string[], pr: GitHubPullRequest): FailureContext {
+  return {
+    category: "blocked",
+    summary,
+    signature: `auto-merge-refused:${pr.headRefOid}:${details.join("|")}`,
+    command: null,
+    details,
+    url: pr.url,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function validTimestamp(value: string | null | undefined): string | null {
+  if (typeof value !== "string" || value.length === 0) {
+    return null;
+  }
+
+  return Number.isNaN(Date.parse(value)) ? null : value;
+}
+
+function hasConfiguredLocalCiCommand(config: Pick<SupervisorConfig, "localCiCommand">): boolean {
+  if (typeof config.localCiCommand === "string") {
+    return config.localCiCommand.trim() !== "";
+  }
+
+  return config.localCiCommand !== undefined;
+}
+
+interface FinalAutoMergeGuardResult {
+  evidence: FailureContext;
+  refusal: FailureContext | null;
+}
+
+function buildAutoMergeEvidenceContext(details: string[], pr: GitHubPullRequest): FailureContext {
+  return {
+    category: null,
+    summary: `Final auto-merge guard passed for PR #${pr.number}.`,
+    signature: `auto-merge-ready:${pr.headRefOid}`,
+    command: null,
+    details,
+    url: pr.url,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function hasCurrentHeadCodexNoMajor(record: IssueRunRecord, pr: GitHubPullRequest): boolean {
+  return Boolean(
+    record.provider_success_head_sha === pr.headRefOid &&
+      validTimestamp(record.provider_success_observed_at) &&
+      pr.configuredBotCurrentHeadObservationSource === "codex_pr_success_comment" &&
+      pr.configuredBotCurrentHeadStatusState === "SUCCESS" &&
+      pr.configuredBotTopLevelReviewStrength !== "blocking" &&
+      validTimestamp(pr.configuredBotCurrentHeadObservedAt),
+  );
+}
+
+function finalAutoMergeGuard(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  originalPr: GitHubPullRequest;
+  currentPr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+}): FinalAutoMergeGuardResult {
+  const { config, record, originalPr, currentPr, checks, reviewThreads } = args;
+  const checkSummary = summarizeChecks(checks);
+  const checksGreen = checks.length > 0 && checkSummary.allPassing;
+  const effectiveConfiguredBotBlockers = effectiveConfiguredBotReviewThreadsForState(
+    config,
+    record,
+    currentPr,
+    checks,
+    reviewThreads,
+  ).length;
+  const effectiveHumanBlockers = config.humanReviewBlocksMerge ? manualReviewThreads(config, reviewThreads).length : 0;
+  const aggregateHumanReviewBlocker =
+    config.humanReviewBlocksMerge &&
+    (currentPr.reviewDecision === "CHANGES_REQUESTED" || currentPr.reviewDecision === "REVIEW_REQUIRED")
+      ? currentPr.reviewDecision
+      : null;
+  const currentHeadCodexNoMajor = hasCurrentHeadCodexNoMajor(record, currentPr);
+  const localCiResult = record.latest_local_ci_result ?? null;
+  const localCiMissing =
+    hasConfiguredLocalCiCommand(config) &&
+    (localCiResult?.outcome !== "passed" || localCiResult?.head_sha !== currentPr.headRefOid);
+  const evidenceDetails = [
+    `head_sha=${currentPr.headRefOid}`,
+    `mergeable=${currentPr.mergeable ?? "unknown"}`,
+    `merge_state=${currentPr.mergeStateStatus ?? "unknown"}`,
+    `checks=green count=${checks.length}`,
+    `codex_current_head_no_major=${currentHeadCodexNoMajor ? "yes" : "no"}`,
+    `configured_bot_blockers=${effectiveConfiguredBotBlockers}`,
+    `human_blockers=${effectiveHumanBlockers}`,
+    `review_decision=${currentPr.reviewDecision ?? "none"}`,
+    hasConfiguredLocalCiCommand(config)
+      ? `local_ci=${localCiResult?.outcome ?? "missing"} head_sha=${localCiResult?.head_sha ?? "none"}`
+      : "local_ci=not_configured",
+  ];
+
+  const details = [
+    originalPr.headRefOid === currentPr.headRefOid ? null : `head_mismatch=${originalPr.headRefOid}->${currentPr.headRefOid}`,
+    currentPr.mergeable === "MERGEABLE" ? null : `mergeable=${currentPr.mergeable ?? "unknown"}`,
+    currentPr.mergeStateStatus === "CLEAN" ? null : `merge_state=${currentPr.mergeStateStatus ?? "unknown"}`,
+    checks.length === 0 ? "required_checks_missing" : checksGreen ? null : "required_checks_not_green",
+    currentHeadCodexNoMajor ? null : "missing_current_head_codex_no_major",
+    effectiveConfiguredBotBlockers === 0 ? null : `configured_bot_blockers=${effectiveConfiguredBotBlockers}`,
+    effectiveHumanBlockers === 0 ? null : `human_blockers=${effectiveHumanBlockers}`,
+    aggregateHumanReviewBlocker ? `human_review_decision=${aggregateHumanReviewBlocker}` : null,
+    localCiMissing ? "missing_current_head_local_ci_success" : null,
+  ].filter((detail): detail is string => detail !== null);
+
+  const evidence = buildAutoMergeEvidenceContext(evidenceDetails, currentPr);
+
+  if (details.length === 0) {
+    return { evidence, refusal: null };
+  }
+
+  return {
+    evidence,
+    refusal: buildAutoMergeRefusalContext(
+      `Final auto-merge guard refused PR #${currentPr.number}.`,
+      details,
+      currentPr,
+    ),
+  };
+}
+
+async function publishFinalAutoMergeGuardComment(args: {
+  github: GitHubClient;
+  pr: GitHubPullRequest;
+  evidence: FailureContext;
+}): Promise<void> {
+  const github = args.github as unknown as {
+    addIssueComment?: (issueNumber: number, body: string) => Promise<unknown>;
+  };
+  if (!github.addIssueComment) {
+    return;
+  }
+
+  await github.addIssueComment(
+    args.pr.number,
+    [
+      `Final auto-merge guard passed for head \`${args.pr.headRefOid}\`.`,
+      "",
+      ...args.evidence.details.map((detail) => `- ${detail}`),
+      "",
+      "<!-- codex-supervisor:final-auto-merge-guard -->",
+    ].join("\n"),
+  );
 }
 
 function interruptedTurnRecoveryIssueNumber(events: RecoveryEvent[]): number | null {
@@ -630,14 +782,50 @@ export class Supervisor {
               : null,
           last_head_sha: currentPr.headRefOid,
         });
-      } else {
-        await this.github.enableAutoMerge(currentPr.number, currentPr.headRefOid);
+      } else if (this.config.codexConnectorAutoMergeEnabled !== true) {
         nextRecord = this.stateStore.touch(nextRecord, {
           ...lifecyclePatch,
-          state: "merging",
+          state: "ready_to_merge",
           blocked_reason: null,
+          last_auto_merge_guard_context: null,
           last_head_sha: currentPr.headRefOid,
         });
+      } else {
+        const autoMergeGuard = finalAutoMergeGuard({
+          config: this.config,
+          record: lifecycle.recordForState,
+          originalPr: pr,
+          currentPr,
+          checks: refreshed.checks,
+          reviewThreads: refreshed.reviewThreads,
+        });
+        if (autoMergeGuard.refusal) {
+          nextRecord = this.stateStore.touch(nextRecord, {
+            ...lifecyclePatch,
+            state: "blocked",
+            blocked_reason: "verification",
+            last_error: truncate(autoMergeGuard.refusal.summary, 1000),
+            last_failure_context: autoMergeGuard.refusal,
+            last_auto_merge_guard_context: autoMergeGuard.evidence,
+            ...applyFailureSignature(nextRecord, autoMergeGuard.refusal),
+            last_head_sha: currentPr.headRefOid,
+          });
+        } else {
+          await publishFinalAutoMergeGuardComment({
+            github: this.github,
+            pr: currentPr,
+            evidence: autoMergeGuard.evidence,
+          });
+          await this.github.enableAutoMerge(currentPr.number, currentPr.headRefOid);
+          nextRecord = this.stateStore.touch(nextRecord, {
+            ...lifecyclePatch,
+            state: "merging",
+            blocked_reason: null,
+            last_failure_context: null,
+            last_auto_merge_guard_context: autoMergeGuard.evidence,
+            last_head_sha: currentPr.headRefOid,
+          });
+        }
       }
       state.issues[String(nextRecord.issue_number)] = nextRecord;
     }

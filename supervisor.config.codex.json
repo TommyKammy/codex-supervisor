@@ -69,6 +69,10 @@
   "reviewBotLogins": [
     "chatgpt-codex-connector"
   ],
+  "staleConfiguredBotReviewPolicy": "reply_and_resolve",
+  "verifiedNoSourceChangeReviewThreadAutoResolve": true,
+  "verifiedCurrentHeadRepairReviewThreadAutoResolve": true,
+  "codexConnectorAutoMergeEnabled": true,
   "humanReviewBlocksMerge": true,
   "issueJournalRelativePath": ".codex-supervisor/issues/{issueNumber}/issue-journal.md",
   "issueJournalMaxChars": 6000,

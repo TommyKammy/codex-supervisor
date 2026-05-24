@@ -152,6 +152,7 @@ test("config field posture metadata classifies setup and automation-expanding fi
       "staleConfiguredBotReviewPolicy",
       "verifiedNoSourceChangeReviewThreadAutoResolve",
       "verifiedCurrentHeadRepairReviewThreadAutoResolve",
+      "codexConnectorAutoMergeEnabled",
       "approvedTrackedTopLevelEntries",
     ].map((field) => [field, getConfigFieldPostureMetadata(field)?.tier]),
     [
@@ -162,6 +163,7 @@ test("config field posture metadata classifies setup and automation-expanding fi
       ["staleConfiguredBotReviewPolicy", "dangerous_explicit_opt_in"],
       ["verifiedNoSourceChangeReviewThreadAutoResolve", "dangerous_explicit_opt_in"],
       ["verifiedCurrentHeadRepairReviewThreadAutoResolve", "dangerous_explicit_opt_in"],
+      ["codexConnectorAutoMergeEnabled", "dangerous_explicit_opt_in"],
       ["approvedTrackedTopLevelEntries", "dangerous_explicit_opt_in"],
     ],
   );
@@ -356,6 +358,7 @@ test("loadConfig keeps local review disabled by default while using the opiniona
   assert.equal(config.staleConfiguredBotReviewPolicy, "diagnose_only");
   assert.equal(config.verifiedNoSourceChangeReviewThreadAutoResolve, false);
   assert.equal(config.verifiedCurrentHeadRepairReviewThreadAutoResolve, false);
+  assert.equal(config.codexConnectorAutoMergeEnabled, false);
 });
 
 test("loadConfig keeps release readiness advisory by default", async (t) => {
@@ -1850,6 +1853,48 @@ test("shipped config profiles declare the intended review bot logins", async () 
       expectedReviewBotLogins,
       `${relativePath} should declare the expected reviewBotLogins`,
     );
+  }
+});
+
+test("shipped Codex Connector profile opts into aggressive cleanup and auto-merge only for Codex", async () => {
+  const rootDir = path.resolve(__dirname, "..");
+  type AggressiveProfileFlags = {
+    staleConfiguredBotReviewPolicy?: unknown;
+    verifiedNoSourceChangeReviewThreadAutoResolve?: unknown;
+    verifiedCurrentHeadRepairReviewThreadAutoResolve?: unknown;
+    codexConnectorAutoMergeEnabled?: unknown;
+  };
+  const readProfile = async (relativePath: string): Promise<AggressiveProfileFlags> =>
+    JSON.parse(await fs.readFile(path.join(rootDir, relativePath), "utf8")) as AggressiveProfileFlags;
+  const codex = await readProfile("supervisor.config.codex.json");
+
+  assert.equal(codex.staleConfiguredBotReviewPolicy, "reply_and_resolve");
+  assert.equal(codex.verifiedNoSourceChangeReviewThreadAutoResolve, true);
+  assert.equal(codex.verifiedCurrentHeadRepairReviewThreadAutoResolve, true);
+  assert.equal(codex.codexConnectorAutoMergeEnabled, true);
+
+  const nonCodexProfiles = [
+    "supervisor.config.example.json",
+    "supervisor.config.copilot.json",
+    "supervisor.config.coderabbit.json",
+    "supervisor.config.typescript-node.json",
+    "supervisor.config.nextjs.json",
+    "supervisor.config.python-cli.json",
+  ];
+  for (const relativePath of nonCodexProfiles) {
+    const profile = await readProfile(relativePath);
+    assert.notEqual(profile.staleConfiguredBotReviewPolicy, "reply_and_resolve", `${relativePath} must not auto-resolve stale bot threads`);
+    assert.notEqual(
+      profile.verifiedNoSourceChangeReviewThreadAutoResolve,
+      true,
+      `${relativePath} must not auto-resolve verified no-source-change threads`,
+    );
+    assert.notEqual(
+      profile.verifiedCurrentHeadRepairReviewThreadAutoResolve,
+      true,
+      `${relativePath} must not auto-resolve verified current-head repair threads`,
+    );
+    assert.notEqual(profile.codexConnectorAutoMergeEnabled, true, `${relativePath} must not enable Codex Connector auto-merge`);
   }
 });
 

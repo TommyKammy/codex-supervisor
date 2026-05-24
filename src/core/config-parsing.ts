@@ -655,6 +655,10 @@ export function parseSupervisorConfigDocument(raw: Record<string, unknown>, reso
       VALID_CODEX_CONNECTOR_REVIEW_REQUEST_RETRY_MODES.has(raw.codexConnectorReviewRequestRetryMode as CodexConnectorReviewRequestRetryMode)
         ? (raw.codexConnectorReviewRequestRetryMode as CodexConnectorReviewRequestRetryMode)
         : "plain",
+    codexConnectorAutoMergeEnabled:
+      typeof raw.codexConnectorAutoMergeEnabled === "boolean"
+        ? raw.codexConnectorAutoMergeEnabled
+        : false,
     codexExecTimeoutMinutes:
       typeof raw.codexExecTimeoutMinutes === "number" && raw.codexExecTimeoutMinutes > 0
         ? raw.codexExecTimeoutMinutes

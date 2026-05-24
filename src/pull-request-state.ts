@@ -2,6 +2,7 @@ export type { GitHubWaitStep } from "./pull-request-state-policy";
 export {
   blockedReasonFromReviewState,
   buildCopilotReviewTimeoutFailureContext,
+  effectiveConfiguredBotReviewThreadsForState,
   inferGitHubWaitStep,
   inferStateFromPullRequest,
   syncMergeLatencyVisibility,

@@ -665,6 +665,37 @@ test("formatDetailedStatus surfaces configured bot review timeout outcome with g
   );
 });
 
+test("formatDetailedStatus surfaces final auto-merge guard evidence", () => {
+  const status = formatDetailedStatus({
+    config: createConfig(),
+    activeRecord: createRecord({
+      pr_number: 44,
+      state: "merging",
+      last_auto_merge_guard_context: {
+        category: null,
+        summary: "Final auto-merge guard passed for PR #44.",
+        signature: "auto-merge-ready:head-44",
+        command: null,
+        details: ["head_sha=head-44", "checks=green count=1", "configured_bot_blockers=0"],
+        url: "https://example.test/pr/44",
+        updated_at: "2026-03-13T06:30:00Z",
+      },
+    }),
+    latestRecord: null,
+    trackedIssueCount: 1,
+    pr: createPullRequest({
+      number: 44,
+      headRefName: "codex/issue-38",
+      headRefOid: "head-44",
+    }),
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [],
+  });
+
+  assert.match(status, /auto_merge_guard summary=Final auto-merge guard passed for PR #44\./);
+  assert.match(status, /auto_merge_guard_details=head_sha=head-44 \| checks=green count=1 \| configured_bot_blockers=0/);
+});
+
 test("formatDetailedStatus explains softened nitpick-only configured-bot top-level reviews", () => {
   const config = createConfig({
     reviewBotLogins: ["coderabbitai[bot]"],

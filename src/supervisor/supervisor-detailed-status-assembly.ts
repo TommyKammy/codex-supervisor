@@ -411,6 +411,17 @@ export function buildActiveDetailedStatusLines(
     lines.push(`last_error=${truncate(sanitizeStatusValue(activeRecord.last_error), 300)}`);
   }
 
+  if (activeRecord.last_auto_merge_guard_context) {
+    lines.push(
+      `auto_merge_guard summary=${truncate(sanitizeStatusValue(activeRecord.last_auto_merge_guard_context.summary), 200) ?? "none"}`,
+    );
+    if (activeRecord.last_auto_merge_guard_context.details.length > 0) {
+      lines.push(
+        `auto_merge_guard_details=${truncate(sanitizeStatusValue(activeRecord.last_auto_merge_guard_context.details.join(" | ")), 300) ?? "none"}`,
+      );
+    }
+  }
+
   if (activeRecord.last_runtime_error) {
     lines.push(`last_runtime_error=${truncate(sanitizeStatusValue(activeRecord.last_runtime_error), 300)}`);
     lines.push(`last_runtime_failure_kind=${activeRecord.last_runtime_failure_kind ?? "none"}`);
