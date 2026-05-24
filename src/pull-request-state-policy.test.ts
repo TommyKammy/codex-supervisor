@@ -570,6 +570,7 @@ test("inferStateFromPullRequest ignores stale same-head Codex review wait when o
   const checks = passingChecks();
 
   assert.equal(inferStateFromPullRequest(config, record, pr, checks, reviewThreads), "ready_to_merge");
+  assert.equal(inferGitHubWaitStep(config, record, pr, checks, reviewThreads), null);
   assert.equal(blockedReasonFromReviewState(config, record, pr, checks, reviewThreads), null);
   assert.equal(syncMergeLatencyVisibility(config, record, pr, checks, reviewThreads).provider_success_head_sha, "head123");
 });
@@ -731,6 +732,60 @@ test("inferStateFromPullRequest does not apply Codex stale-residue bypass to Cod
 
   assert.notEqual(inferStateFromPullRequest(config, record, pr, passingChecks(), reviewThreads), "ready_to_merge");
   assert.equal(syncMergeLatencyVisibility(config, record, pr, passingChecks(), reviewThreads).provider_success_head_sha, null);
+});
+
+test("inferStateFromPullRequest keeps stale Codex residue guarded while another provider wait is active", () => {
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN, "copilot-pull-request-reviewer"],
+    humanReviewBlocksMerge: true,
+    configuredBotInitialGraceWaitSeconds: 0,
+  });
+  const record = createRecord({
+    state: "addressing_review",
+    last_head_sha: "head123",
+    review_wait_started_at: "2026-05-23T00:10:00Z",
+    review_wait_head_sha: "head123",
+  });
+  const pr = createPullRequest({
+    headRefOid: "head123",
+    configuredBotCurrentHeadObservedAt: "2026-05-23T00:05:00Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
+    copilotReviewState: "requested",
+    copilotReviewRequestedAt: "2026-05-23T00:09:00Z",
+    currentHeadCiGreenAt: "2026-05-23T00:04:00Z",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+  const reviewThreads = [
+    createReviewThread({
+      id: "thread-outdated-codex",
+      isOutdated: true,
+      comments: {
+        nodes: [
+          {
+            id: "comment-outdated-codex",
+            body: "P1: This stale inline finding should not bypass another provider wait.",
+            createdAt: "2026-05-23T00:00:00Z",
+            url: "https://example.test/pr/44#discussion_r2126",
+            author: {
+              login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  ];
+  const checks = passingChecks();
+
+  assert.notEqual(inferStateFromPullRequest(config, record, pr, checks, reviewThreads), "ready_to_merge");
+  assert.equal(
+    inferGitHubWaitStep(config, record, pr, checks, reviewThreads, Date.parse("2026-05-23T00:10:30Z")),
+    "configured_bot_current_head_signal_wait",
+  );
+  assert.equal(syncMergeLatencyVisibility(config, record, pr, checks, reviewThreads).provider_success_head_sha, null);
 });
 
 test("inferStateFromPullRequest keeps outdated Codex Connector blockers when required checks are not green", () => {

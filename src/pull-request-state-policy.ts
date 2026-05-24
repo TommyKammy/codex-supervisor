@@ -786,12 +786,18 @@ function staleSameHeadCodexWaitHasOnlyOutdatedResidue(
   checks: PullRequestCheck[],
   reviewThreads: ReviewThread[],
 ): boolean {
+  const providerKinds = configuredReviewProviderKinds(config);
   if (
-    !configuredReviewProviderKinds(config).includes("codex") ||
+    !providerKinds.includes("codex") ||
+    providerKinds.some((kind) => kind !== "codex") ||
     pr.configuredBotCurrentHeadObservationSource !== "codex_pr_success_comment" ||
     pr.configuredBotCurrentHeadStatusState !== "SUCCESS" ||
     pr.configuredBotTopLevelReviewStrength === "blocking"
   ) {
+    return false;
+  }
+
+  if (copilotReviewPending(config, record, pr)) {
     return false;
   }
 
@@ -1404,8 +1410,14 @@ export function inferGitHubWaitStep(
   record: IssueRunRecord,
   pr: GitHubPullRequest,
   checks: PullRequestCheck[],
-  nowMs = pullRequestStateInferenceNowMs(),
+  reviewThreadsOrNowMs: ReviewThread[] | number = pullRequestStateInferenceNowMs(),
+  maybeNowMs?: number,
 ): GitHubWaitStep | null {
+  const reviewThreads = Array.isArray(reviewThreadsOrNowMs) ? reviewThreadsOrNowMs : [];
+  const nowMs =
+    typeof reviewThreadsOrNowMs === "number"
+      ? reviewThreadsOrNowMs
+      : maybeNowMs ?? pullRequestStateInferenceNowMs();
   const configuredBotRateLimitWait = determineConfiguredBotRateLimitWait(config, pr, nowMs);
   if (configuredBotRateLimitWait.active) {
     return "configured_bot_rate_limit_wait";
@@ -1428,7 +1440,13 @@ export function inferGitHubWaitStep(
   }
 
   const copilotTimeout = determineCopilotReviewTimeout(config, record, pr, nowMs);
-  if (configuredBotCurrentHeadSignalPending(config, record, pr) && !copilotTimeout.timedOut) {
+  const staleCodexWaitHasOnlyOutdatedResidue =
+    reviewThreads.length > 0 && staleSameHeadCodexWaitHasOnlyOutdatedResidue(config, record, pr, checks, reviewThreads);
+  if (
+    !staleCodexWaitHasOnlyOutdatedResidue &&
+    configuredBotCurrentHeadSignalPending(config, record, pr) &&
+    !copilotTimeout.timedOut
+  ) {
     return "configured_bot_current_head_signal_wait";
   }
 
