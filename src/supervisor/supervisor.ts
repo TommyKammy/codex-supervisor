@@ -189,6 +189,69 @@ interface CachedFullIssueInventory {
   fetchedAtMs: number;
 }
 
+function buildAutoMergeRefusalContext(summary: string, details: string[], pr: GitHubPullRequest): FailureContext {
+  return {
+    category: "blocked",
+    summary,
+    signature: `auto-merge-refused:${pr.headRefOid}:${details.join("|")}`,
+    command: null,
+    details,
+    url: pr.url,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function hasConfiguredLocalCiCommand(config: Pick<SupervisorConfig, "localCiCommand">): boolean {
+  if (typeof config.localCiCommand === "string") {
+    return config.localCiCommand.trim() !== "";
+  }
+
+  return config.localCiCommand !== undefined;
+}
+
+function finalAutoMergeRefusal(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  originalPr: GitHubPullRequest;
+  currentPr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+}): FailureContext | null {
+  const { config, record, originalPr, currentPr, checks, reviewThreads } = args;
+  const checkSummary = summarizeChecks(checks);
+  const effectiveConfiguredBotBlockers = configuredBotReviewThreads(config, reviewThreads).length;
+  const effectiveHumanBlockers = config.humanReviewBlocksMerge ? manualReviewThreads(config, reviewThreads).length : 0;
+  const requiresCodexProviderSuccess = config.reviewBotLogins.includes("chatgpt-codex-connector");
+  const localCiResult = record.latest_local_ci_result ?? null;
+  const localCiMissing =
+    hasConfiguredLocalCiCommand(config) &&
+    (localCiResult?.outcome !== "passed" || localCiResult?.head_sha !== currentPr.headRefOid);
+
+  const details = [
+    originalPr.headRefOid === currentPr.headRefOid ? null : `head_mismatch=${originalPr.headRefOid}->${currentPr.headRefOid}`,
+    currentPr.mergeable === "MERGEABLE" ? null : `mergeable=${currentPr.mergeable ?? "unknown"}`,
+    currentPr.mergeStateStatus === "CLEAN" ? null : `merge_state=${currentPr.mergeStateStatus ?? "unknown"}`,
+    checkSummary.allPassing ? null : "required_checks_not_green",
+    !requiresCodexProviderSuccess ||
+    (record.provider_success_head_sha === currentPr.headRefOid && record.provider_success_observed_at)
+      ? null
+      : "missing_current_head_configured_provider_success",
+    effectiveConfiguredBotBlockers === 0 ? null : `configured_bot_blockers=${effectiveConfiguredBotBlockers}`,
+    effectiveHumanBlockers === 0 ? null : `human_blockers=${effectiveHumanBlockers}`,
+    localCiMissing ? "missing_current_head_local_ci_success" : null,
+  ].filter((detail): detail is string => detail !== null);
+
+  if (details.length === 0) {
+    return null;
+  }
+
+  return buildAutoMergeRefusalContext(
+    `Final auto-merge guard refused PR #${currentPr.number}.`,
+    details,
+    currentPr,
+  );
+}
+
 function interruptedTurnRecoveryIssueNumber(events: RecoveryEvent[]): number | null {
   const event = events.find((candidate) => candidate.reason.startsWith("interrupted_turn_recovery:"));
   return event?.issueNumber ?? null;
@@ -630,7 +693,33 @@ export class Supervisor {
               : null,
           last_head_sha: currentPr.headRefOid,
         });
+      } else if (this.config.codexConnectorAutoMergeEnabled !== true) {
+        nextRecord = this.stateStore.touch(nextRecord, {
+          ...lifecyclePatch,
+          state: "ready_to_merge",
+          blocked_reason: null,
+          last_head_sha: currentPr.headRefOid,
+        });
       } else {
+        const autoMergeRefusal = finalAutoMergeRefusal({
+          config: this.config,
+          record: nextRecord,
+          originalPr: pr,
+          currentPr,
+          checks: refreshed.checks,
+          reviewThreads: refreshed.reviewThreads,
+        });
+        if (autoMergeRefusal) {
+          nextRecord = this.stateStore.touch(nextRecord, {
+            ...lifecyclePatch,
+            state: "blocked",
+            blocked_reason: "verification",
+            last_error: truncate(autoMergeRefusal.summary, 1000),
+            last_failure_context: autoMergeRefusal,
+            ...applyFailureSignature(nextRecord, autoMergeRefusal),
+            last_head_sha: currentPr.headRefOid,
+          });
+        } else {
         await this.github.enableAutoMerge(currentPr.number, currentPr.headRefOid);
         nextRecord = this.stateStore.touch(nextRecord, {
           ...lifecyclePatch,
@@ -638,6 +727,7 @@ export class Supervisor {
           blocked_reason: null,
           last_head_sha: currentPr.headRefOid,
         });
+        }
       }
       state.issues[String(nextRecord.issue_number)] = nextRecord;
     }

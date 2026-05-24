@@ -25,8 +25,12 @@ Parallelizable: No`;
 
 test("post-turn PR transitions promote a clean draft PR into merging", async () => {
   const fixture = await createSupervisorFixture();
+  const config = createConfig({
+    ...fixture.config,
+    codexConnectorAutoMergeEnabled: true,
+  });
   const issueNumber = 92;
-  const branch = branchName(fixture.config, issueNumber);
+  const branch = branchName(config, issueNumber);
   const state: SupervisorStateFile = {
     activeIssueNumber: issueNumber,
     issues: {
@@ -74,7 +78,7 @@ test("post-turn PR transitions promote a clean draft PR into merging", async () 
     ...draftPr,
     isDraft: false,
   };
-  await ensureWorkspace(fixture.config, issueNumber, branch);
+  await ensureWorkspace(config, issueNumber, branch);
   const localHeadSha = git(["-C", path.join(fixture.workspaceRoot, `issue-${issueNumber}`), "rev-parse", "HEAD"]);
   state.issues[String(issueNumber)] = {
     ...state.issues[String(issueNumber)]!,
@@ -94,7 +98,7 @@ test("post-turn PR transitions promote a clean draft PR into merging", async () 
   let readyCalls = 0;
   let snapshotLoads = 0;
   let autoMergeCalls = 0;
-  const supervisor = new Supervisor(fixture.config);
+  const supervisor = new Supervisor(config);
   (supervisor as unknown as { loadOpenPullRequestSnapshot: (prNumber: number) => Promise<unknown> }).loadOpenPullRequestSnapshot = async (
     prNumber: number,
   ) => {
@@ -628,6 +632,164 @@ test("handlePostTurnMergeAndCompletion reverts to stabilizing when the refreshed
   assert.equal(result.state, "stabilizing");
   assert.equal(result.last_head_sha, "head-fresh-117");
   assert.equal(getPullRequestCalls, 1);
+  assert.equal(autoMergeCalls, 0);
+});
+
+test("handlePostTurnMergeAndCompletion leaves ready PRs unmerged without auto-merge opt-in", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 120;
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "ready_to_merge",
+        last_head_sha: "head-120",
+        provider_success_observed_at: "2026-03-13T06:30:00Z",
+        provider_success_head_sha: "head-120",
+      }),
+    },
+  };
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Require explicit auto-merge opt-in",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+  const pr: GitHubPullRequest = {
+    number: 120,
+    title: "Ready but not auto-merge enabled",
+    url: "https://example.test/pr/120",
+    state: "OPEN",
+    createdAt: "2026-03-13T06:20:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-120",
+    headRefOid: "head-120",
+    mergedAt: null,
+  };
+
+  let autoMergeCalls = 0;
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getPullRequest: async (prNumber: number) => {
+      assert.equal(prNumber, 120);
+      return pr;
+    },
+    getChecks: async (prNumber: number) => {
+      assert.equal(prNumber, 120);
+      return [];
+    },
+    getUnresolvedReviewThreads: async (prNumber: number) => {
+      assert.equal(prNumber, 120);
+      return [];
+    },
+    enableAutoMerge: async () => {
+      autoMergeCalls += 1;
+    },
+  };
+
+  const result = await (
+    supervisor as unknown as {
+      handlePostTurnMergeAndCompletion: (
+        state: SupervisorStateFile,
+        issue: GitHubIssue,
+        record: ReturnType<typeof createRecord>,
+        pr: GitHubPullRequest,
+        options: { dryRun: boolean },
+      ) => Promise<ReturnType<typeof createRecord>>;
+    }
+  ).handlePostTurnMergeAndCompletion(state, issue, state.issues[String(issueNumber)]!, pr, { dryRun: false });
+
+  assert.equal(result.state, "ready_to_merge");
+  assert.equal(result.last_head_sha, "head-120");
+  assert.equal(result.blocked_reason, null);
+  assert.equal(autoMergeCalls, 0);
+});
+
+test("handlePostTurnMergeAndCompletion blocks auto-merge when final mergeable evidence is missing", async () => {
+  const fixture = await createSupervisorFixture();
+  const config = createConfig({
+    ...fixture.config,
+    codexConnectorAutoMergeEnabled: true,
+  });
+  const issueNumber = 121;
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "ready_to_merge",
+        last_head_sha: "head-121",
+        provider_success_observed_at: "2026-03-13T06:30:00Z",
+        provider_success_head_sha: "head-121",
+      }),
+    },
+  };
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Require final mergeable evidence",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+  const pr: GitHubPullRequest = {
+    number: 121,
+    title: "Missing mergeable evidence",
+    url: "https://example.test/pr/121",
+    state: "OPEN",
+    createdAt: "2026-03-13T06:20:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "UNKNOWN",
+    headRefName: "codex/issue-121",
+    headRefOid: "head-121",
+    mergedAt: null,
+  };
+
+  let autoMergeCalls = 0;
+  const supervisor = new Supervisor(config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getPullRequest: async (prNumber: number) => {
+      assert.equal(prNumber, 121);
+      return pr;
+    },
+    getChecks: async (prNumber: number) => {
+      assert.equal(prNumber, 121);
+      return [];
+    },
+    getUnresolvedReviewThreads: async (prNumber: number) => {
+      assert.equal(prNumber, 121);
+      return [];
+    },
+    enableAutoMerge: async () => {
+      autoMergeCalls += 1;
+    },
+  };
+
+  const result = await (
+    supervisor as unknown as {
+      handlePostTurnMergeAndCompletion: (
+        state: SupervisorStateFile,
+        issue: GitHubIssue,
+        record: ReturnType<typeof createRecord>,
+        pr: GitHubPullRequest,
+        options: { dryRun: boolean },
+      ) => Promise<ReturnType<typeof createRecord>>;
+    }
+  ).handlePostTurnMergeAndCompletion(state, issue, state.issues[String(issueNumber)]!, pr, { dryRun: false });
+
+  assert.equal(result.state, "blocked");
+  assert.equal(result.blocked_reason, "verification");
+  assert.equal(result.last_failure_context?.signature, "auto-merge-refused:head-121:mergeable=UNKNOWN");
   assert.equal(autoMergeCalls, 0);
 });
 

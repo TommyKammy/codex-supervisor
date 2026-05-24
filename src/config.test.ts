@@ -152,6 +152,7 @@ test("config field posture metadata classifies setup and automation-expanding fi
       "staleConfiguredBotReviewPolicy",
       "verifiedNoSourceChangeReviewThreadAutoResolve",
       "verifiedCurrentHeadRepairReviewThreadAutoResolve",
+      "codexConnectorAutoMergeEnabled",
       "approvedTrackedTopLevelEntries",
     ].map((field) => [field, getConfigFieldPostureMetadata(field)?.tier]),
     [
@@ -162,6 +163,7 @@ test("config field posture metadata classifies setup and automation-expanding fi
       ["staleConfiguredBotReviewPolicy", "dangerous_explicit_opt_in"],
       ["verifiedNoSourceChangeReviewThreadAutoResolve", "dangerous_explicit_opt_in"],
       ["verifiedCurrentHeadRepairReviewThreadAutoResolve", "dangerous_explicit_opt_in"],
+      ["codexConnectorAutoMergeEnabled", "dangerous_explicit_opt_in"],
       ["approvedTrackedTopLevelEntries", "dangerous_explicit_opt_in"],
     ],
   );
@@ -356,6 +358,7 @@ test("loadConfig keeps local review disabled by default while using the opiniona
   assert.equal(config.staleConfiguredBotReviewPolicy, "diagnose_only");
   assert.equal(config.verifiedNoSourceChangeReviewThreadAutoResolve, false);
   assert.equal(config.verifiedCurrentHeadRepairReviewThreadAutoResolve, false);
+  assert.equal(config.codexConnectorAutoMergeEnabled, false);
 });
 
 test("loadConfig keeps release readiness advisory by default", async (t) => {
@@ -1851,6 +1854,32 @@ test("shipped config profiles declare the intended review bot logins", async () 
       `${relativePath} should declare the expected reviewBotLogins`,
     );
   }
+});
+
+test("shipped Codex Connector profile opts into aggressive cleanup and auto-merge only for Codex", async () => {
+  const rootDir = path.resolve(__dirname, "..");
+  const codex = JSON.parse(await fs.readFile(path.join(rootDir, "supervisor.config.codex.json"), "utf8")) as {
+    staleConfiguredBotReviewPolicy?: unknown;
+    verifiedNoSourceChangeReviewThreadAutoResolve?: unknown;
+    verifiedCurrentHeadRepairReviewThreadAutoResolve?: unknown;
+    codexConnectorAutoMergeEnabled?: unknown;
+  };
+  const coderabbit = JSON.parse(await fs.readFile(path.join(rootDir, "supervisor.config.coderabbit.json"), "utf8")) as {
+    staleConfiguredBotReviewPolicy?: unknown;
+    verifiedNoSourceChangeReviewThreadAutoResolve?: unknown;
+    verifiedCurrentHeadRepairReviewThreadAutoResolve?: unknown;
+    codexConnectorAutoMergeEnabled?: unknown;
+  };
+
+  assert.equal(codex.staleConfiguredBotReviewPolicy, "reply_and_resolve");
+  assert.equal(codex.verifiedNoSourceChangeReviewThreadAutoResolve, true);
+  assert.equal(codex.verifiedCurrentHeadRepairReviewThreadAutoResolve, true);
+  assert.equal(codex.codexConnectorAutoMergeEnabled, true);
+
+  assert.notEqual(coderabbit.staleConfiguredBotReviewPolicy, "reply_and_resolve");
+  assert.notEqual(coderabbit.verifiedNoSourceChangeReviewThreadAutoResolve, true);
+  assert.notEqual(coderabbit.verifiedCurrentHeadRepairReviewThreadAutoResolve, true);
+  assert.notEqual(coderabbit.codexConnectorAutoMergeEnabled, true);
 });
 
 test("shipped CodeRabbit starter profile uses a fail-fast repoSlug placeholder", async () => {
