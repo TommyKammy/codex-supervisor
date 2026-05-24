@@ -13,6 +13,7 @@ export function buildTrackedPrStaleFailureConvergencePatch(args: {
   codexConnectorReviewRequestObservationPatch?: Partial<IssueRunRecord>;
   copilotReviewRequestObservationPatch?: Partial<IssueRunRecord>;
   copilotReviewTimeoutPatch?: Partial<IssueRunRecord>;
+  mergeLatencyVisibilityPatch?: Partial<IssueRunRecord>;
 }): Partial<IssueRunRecord> {
   const {
     record,
@@ -24,6 +25,7 @@ export function buildTrackedPrStaleFailureConvergencePatch(args: {
     codexConnectorReviewRequestObservationPatch = {},
     copilotReviewRequestObservationPatch = {},
     copilotReviewTimeoutPatch = {},
+    mergeLatencyVisibilityPatch = {},
   } = args;
   const headAdvanceResetPatch = resetTrackedPrHeadScopedStateOnAdvance(record, pr.headRefOid);
   // Same-head cleanup can still emit a non-empty patch; only reset repeat-failure
@@ -56,5 +58,6 @@ export function buildTrackedPrStaleFailureConvergencePatch(args: {
     ...codexConnectorReviewRequestObservationPatch,
     ...copilotReviewRequestObservationPatch,
     ...copilotReviewTimeoutPatch,
+    ...mergeLatencyVisibilityPatch,
   };
 }

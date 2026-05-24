@@ -9,6 +9,7 @@ import type {
 } from "./core/types";
 import {
   inferStateFromPullRequest,
+  syncMergeLatencyVisibility,
 } from "./pull-request-state";
 import {
   syncCodexConnectorReviewRequestObservation,
@@ -30,6 +31,7 @@ interface ProjectTrackedPrLifecycleArgs {
   syncCodexConnectorReviewRequestObservation?: typeof syncCodexConnectorReviewRequestObservation;
   syncCopilotReviewRequestObservation?: typeof syncCopilotReviewRequestObservation;
   syncCopilotReviewTimeoutState?: typeof syncCopilotReviewTimeoutState;
+  syncMergeLatencyVisibility?: typeof syncMergeLatencyVisibility;
 }
 
 export interface TrackedPrLifecycleProjection {
@@ -43,6 +45,10 @@ export interface TrackedPrLifecycleProjection {
   copilotReviewTimeoutPatch: Pick<
     IssueRunRecord,
     "copilot_review_timed_out_at" | "copilot_review_timeout_action" | "copilot_review_timeout_reason"
+  >;
+  mergeLatencyVisibilityPatch: Pick<
+    IssueRunRecord,
+    "provider_success_observed_at" | "provider_success_head_sha" | "merge_readiness_last_evaluated_at"
   >;
   nextState: RunState;
   nextBlockedReason: BlockedReason | null;
@@ -268,6 +274,8 @@ export function projectTrackedPrLifecycle(args: ProjectTrackedPrLifecycleArgs): 
     args.syncCopilotReviewRequestObservation ?? syncCopilotReviewRequestObservation;
   const syncCopilotReviewTimeoutStateImpl =
     args.syncCopilotReviewTimeoutState ?? syncCopilotReviewTimeoutState;
+  const syncMergeLatencyVisibilityImpl =
+    args.syncMergeLatencyVisibility ?? syncMergeLatencyVisibility;
   const headAdvanceResetPatch = resetTrackedPrHeadScopedStateOnAdvance(args.record, args.pr.headRefOid);
 
   const projectionSeedRecord: IssueRunRecord = {
@@ -287,12 +295,23 @@ export function projectTrackedPrLifecycle(args: ProjectTrackedPrLifecycleArgs): 
     args.pr,
   );
   const copilotReviewTimeoutPatch = syncCopilotReviewTimeoutStateImpl(args.config, projectionSeedRecord, args.pr);
-  const recordForState: IssueRunRecord = {
+  const recordForVisibility: IssueRunRecord = {
     ...projectionSeedRecord,
     ...reviewWaitPatch,
     ...codexConnectorReviewRequestObservationPatch,
     ...copilotReviewRequestObservationPatch,
     ...copilotReviewTimeoutPatch,
+  };
+  const mergeLatencyVisibilityPatch = syncMergeLatencyVisibilityImpl(
+    args.config,
+    recordForVisibility,
+    args.pr,
+    args.checks,
+    args.reviewThreads,
+  );
+  const recordForState: IssueRunRecord = {
+    ...recordForVisibility,
+    ...mergeLatencyVisibilityPatch,
   };
   const nextState = inferStateFromPullRequestImpl(
     args.config,
@@ -308,10 +327,11 @@ export function projectTrackedPrLifecycle(args: ProjectTrackedPrLifecycleArgs): 
     copilotReviewRequestObservationPatch,
     codexConnectorReviewRequestObservationPatch,
     copilotReviewTimeoutPatch,
+    mergeLatencyVisibilityPatch,
     nextState,
     nextBlockedReason:
       nextState === "blocked"
-        ? blockedReasonForLifecycleStateImpl(args.config, recordForState, args.pr, args.checks, args.reviewThreads)
+        ? blockedReasonForLifecycleStateImpl(args.config, recordForVisibility, args.pr, args.checks, args.reviewThreads)
         : null,
     shouldSuppressRecovery: nextState === "failed",
   };

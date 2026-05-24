@@ -156,8 +156,10 @@ export async function runPreparedIssueFlow(
       pr_number: pr.number,
       state: lifecycle.nextState,
       ...lifecycle.reviewWaitPatch,
+      ...lifecycle.codexConnectorRequestObservationPatch,
       ...lifecycle.copilotRequestObservationPatch,
       ...lifecycle.copilotTimeoutPatch,
+      ...lifecycle.mergeLatencyVisibilityPatch,
       last_error:
         lifecycle.nextState === "blocked" && effectiveFailureContext
           ? truncate(effectiveFailureContext.summary, 1000)

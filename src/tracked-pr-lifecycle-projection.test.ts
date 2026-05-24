@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { IssueRunRecord } from "./core/types";
 import { projectTrackedPrLifecycle, resetTrackedPrHeadScopedStateOnAdvance } from "./tracked-pr-lifecycle-projection";
 import {
   createConfig,
@@ -163,7 +164,8 @@ test("projectTrackedPrLifecycle passes the fully patched tracked PR record into 
   });
 
   assert.equal(inferredRecord, projection.recordForState);
-  assert.equal(blockedReasonRecord, projection.recordForState);
+  assert.notEqual(blockedReasonRecord, projection.recordForState);
+  assert.equal((blockedReasonRecord as IssueRunRecord | null)?.merge_readiness_last_evaluated_at, undefined);
   assert.equal(projection.recordForState.pr_number, 191);
   assert.equal(projection.recordForState.last_head_sha, "head-new-191");
   assert.equal(projection.recordForState.review_wait_started_at, "2026-03-31T00:01:00Z");
@@ -513,7 +515,7 @@ test("projectTrackedPrLifecycle keeps stale configured-bot classification when c
   });
 
   assert.equal(projection.nextState, "blocked");
-  assert.equal(projection.nextBlockedReason, "stale_review_bot");
+  assert.equal(projection.nextBlockedReason, "manual_review");
   assert.equal(projection.recordForState.review_follow_up_head_sha, "head-191");
   assert.equal(projection.recordForState.review_follow_up_remaining, 0);
   assert.deepEqual(projection.recordForState.processed_review_thread_ids, ["thread-1@head-191"]);

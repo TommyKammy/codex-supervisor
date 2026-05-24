@@ -464,6 +464,7 @@ export async function reconcileTrackedMergedButOpenIssuesInModule(
         reviewWaitPatch: projection.reviewWaitPatch,
         copilotReviewRequestObservationPatch: projection.copilotReviewRequestObservationPatch,
         copilotReviewTimeoutPatch: projection.copilotReviewTimeoutPatch,
+        mergeLatencyVisibilityPatch: projection.mergeLatencyVisibilityPatch,
       });
       if (!needsRecordUpdate(record, patch)) {
         continue;
@@ -713,6 +714,7 @@ export async function reconcileStaleFailedTrackedPrRecord(
     reviewWaitPatch: projection.reviewWaitPatch,
     copilotReviewRequestObservationPatch: projection.copilotReviewRequestObservationPatch,
     copilotReviewTimeoutPatch: projection.copilotReviewTimeoutPatch,
+    mergeLatencyVisibilityPatch: projection.mergeLatencyVisibilityPatch,
   });
   if (!needsRecordUpdate(record, patch)) {
     return null;

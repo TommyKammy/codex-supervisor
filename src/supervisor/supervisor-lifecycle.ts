@@ -7,7 +7,6 @@ import type { PullRequestLifecycleSnapshot } from "../post-turn-pull-request";
 import {
   blockedReasonFromReviewState,
   inferStateFromPullRequest,
-  syncMergeLatencyVisibility,
 } from "../pull-request-state";
 import {
   syncCopilotReviewRequestObservation,
@@ -458,16 +457,9 @@ export function derivePullRequestLifecycleSnapshot(
     checks,
     reviewThreads,
   });
-  const mergeLatencyVisibilityPatch = syncMergeLatencyVisibility(
-    config,
-    trackedPrProjection.recordForState,
-    pr,
-    checks,
-    reviewThreads,
-  );
+  const mergeLatencyVisibilityPatch = trackedPrProjection.mergeLatencyVisibilityPatch;
   const finalizedRecordForState = {
     ...trackedPrProjection.recordForState,
-    ...mergeLatencyVisibilityPatch,
   };
 
   return {
