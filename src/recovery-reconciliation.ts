@@ -1237,12 +1237,15 @@ export async function reconcileRecoverableBlockedIssueStates(
         copilotReviewTimeoutPatch: projection.copilotReviewTimeoutPatch,
         mergeLatencyVisibilityPatch: projection.mergeLatencyVisibilityPatch,
       });
-      if (recoverySuppression.progressSummary !== null) {
+      if (!staleLocalManualReviewResidueRecovery && recoverySuppression.progressSummary !== null) {
         patch.last_tracked_pr_progress_summary = recoverySuppression.progressSummary;
       }
       if (staleLocalManualReviewResidueRecovery) {
         patch.last_tracked_pr_progress_snapshot = null;
+        patch.last_tracked_pr_progress_summary = null;
         patch.last_tracked_pr_repeat_failure_decision = null;
+        patch.processed_review_thread_ids = [];
+        patch.processed_review_thread_fingerprints = [];
       }
       const recoveryEvent = staleLocalManualReviewResidueRecovery
         ? buildRecoveryEvent(
