@@ -70,6 +70,7 @@ import {
 import {
   buildStaleReviewBotThreadDiagnostics,
   buildStaleReviewBotRemediation,
+  isProvenStaleReviewMetadataClassification,
   type StaleReviewBotRemediationDto,
   type StaleReviewBotThreadDiagnosticsDto,
 } from "./stale-review-bot-remediation";
@@ -522,6 +523,11 @@ export async function buildIssueExplainDto(
         : ["stale_diagnostic", "kind=stale_review_bot", recoverabilityStatusToken(recoverability)].join(" ");
     })()
     : null;
+  const suppressStaleReviewFailureContext = Boolean(
+    record?.last_failure_context &&
+      staleReviewBotRemediation &&
+      isProvenStaleReviewMetadataClassification(staleReviewBotRemediation.classification),
+  );
 
   if (matchingSkipPrefix) {
     reasons.push(`skip_title_prefix ${matchingSkipPrefix}`);
@@ -623,8 +629,10 @@ export async function buildIssueExplainDto(
     lastError: record?.last_error ?? null,
     autoMergeGuardSummary: record?.last_auto_merge_guard_context?.summary ?? null,
     autoMergeGuardDetails: record?.last_auto_merge_guard_context?.details ?? null,
-    failureSummary: record?.last_failure_context?.summary ?? null,
-    preservedPartialWorkSummary: summarizePreservedPartialWork(record?.last_failure_context),
+    failureSummary: suppressStaleReviewFailureContext ? null : record?.last_failure_context?.summary ?? null,
+    preservedPartialWorkSummary: suppressStaleReviewFailureContext
+      ? null
+      : summarizePreservedPartialWork(record?.last_failure_context),
     runtimeFailureKind: record?.last_runtime_failure_kind ?? null,
     runtimeFailureSummary: record?.last_runtime_failure_context?.summary ?? null,
     timeline: record ? buildIssueRunTimelineExport({ issue, record, pr, checks: explainChecks }) : null,

@@ -1782,6 +1782,7 @@ test("status --why uses the shared stale review-bot presenter for active verifie
 
   const supervisor = new Supervisor(fixture.config);
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => trackedIssue,
     listCandidateIssues: async () => [trackedIssue],
     listAllIssues: async () => [trackedIssue],
     getPullRequestIfExists: async () => pr,
@@ -1791,6 +1792,7 @@ test("status --why uses the shared stale review-bot presenter for active verifie
   };
 
   const status = await supervisor.status({ why: true });
+  const explanation = await supervisor.explain(issueNumber);
 
   assert.match(
     status,
@@ -1802,6 +1804,8 @@ test("status --why uses the shared stale review-bot presenter for active verifie
   );
   assert.doesNotMatch(status, /^codex_connector_convergence status=stale_head /m);
   assert.doesNotMatch(status, /^codex_connector_operator_diagnostic interpretation=actionable_current_diff /m);
+  assert.doesNotMatch(status, /^failure_context category=manual summary=1 configured bot review thread\(s\) remain/m);
+  assert.doesNotMatch(explanation, /^failure_summary=1 configured bot review thread\(s\) remain/m);
   assert.doesNotMatch(status, /classification=verified_no_source_change_pending_thread_resolution/);
 });
 

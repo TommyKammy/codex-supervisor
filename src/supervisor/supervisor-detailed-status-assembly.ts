@@ -36,6 +36,7 @@ import {
 import {
   buildStaleReviewBotThreadDiagnostics,
   buildStaleReviewBotRemediation,
+  isProvenStaleReviewMetadataClassification,
 } from "./stale-review-bot-remediation";
 import {
   formatStaleReviewBotRemediationLine,
@@ -427,14 +428,18 @@ export function buildActiveDetailedStatusLines(
     lines.push(`last_runtime_failure_kind=${activeRecord.last_runtime_failure_kind ?? "none"}`);
   }
 
-  if (pr) {
-    const staleReviewBotRemediation = buildStaleReviewBotRemediation({
+  const activeStaleReviewBotRemediation = pr
+    ? buildStaleReviewBotRemediation({
       config,
       record: activeRecord,
       pr,
       checks,
       reviewThreads,
-    });
+    })
+    : null;
+
+  if (pr) {
+    const staleReviewBotRemediation = activeStaleReviewBotRemediation;
     if (staleReviewBotRemediation) {
       lines.push(formatStaleReviewBotRemediationLine(staleReviewBotRemediation));
       const diagnostics = buildStaleReviewBotThreadDiagnostics({
@@ -574,7 +579,13 @@ export function buildActiveDetailedStatusLines(
     );
   }
 
-  if (activeRecord.last_failure_context) {
+  const suppressStaleReviewFailureContext = Boolean(
+    activeRecord.last_failure_context &&
+      activeStaleReviewBotRemediation &&
+      isProvenStaleReviewMetadataClassification(activeStaleReviewBotRemediation.classification),
+  );
+
+  if (activeRecord.last_failure_context && !suppressStaleReviewFailureContext) {
     lines.push(
       `failure_context category=${activeRecord.last_failure_context.category ?? "none"} summary=${truncate(sanitizeStatusValue(activeRecord.last_failure_context.summary), 200) ?? "none"}`,
     );
