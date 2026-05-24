@@ -1072,6 +1072,7 @@ export async function reconcileRecoverableBlockedIssueStates(
         codexConnectorReviewRequestObservationPatch: projection.codexConnectorReviewRequestObservationPatch,
         copilotReviewRequestObservationPatch: projection.copilotReviewRequestObservationPatch,
         copilotReviewTimeoutPatch: projection.copilotReviewTimeoutPatch,
+        mergeLatencyVisibilityPatch: projection.mergeLatencyVisibilityPatch,
       });
       patch.codex_session_id = null;
       patch.last_tracked_pr_progress_summary = externalProgressEvidence
@@ -1234,6 +1235,7 @@ export async function reconcileRecoverableBlockedIssueStates(
         codexConnectorReviewRequestObservationPatch: projection.codexConnectorReviewRequestObservationPatch,
         copilotReviewRequestObservationPatch: projection.copilotReviewRequestObservationPatch,
         copilotReviewTimeoutPatch: projection.copilotReviewTimeoutPatch,
+        mergeLatencyVisibilityPatch: projection.mergeLatencyVisibilityPatch,
       });
       if (recoverySuppression.progressSummary !== null) {
         patch.last_tracked_pr_progress_summary = recoverySuppression.progressSummary;

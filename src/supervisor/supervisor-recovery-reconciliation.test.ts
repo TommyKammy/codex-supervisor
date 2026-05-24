@@ -2995,6 +2995,7 @@ test("reconcileRecoverableBlockedIssueStates clears stale manual-review repeat s
   const config = createConfig({
     reviewBotLogins: ["chatgpt-codex-connector"],
     configuredBotRequireCurrentHeadSignal: true,
+    verifiedNoSourceChangeReviewThreadAutoResolve: true,
   });
   const previousProgressSnapshot = JSON.stringify({
     headRefOid: "head-191",
@@ -3041,10 +3042,11 @@ test("reconcileRecoverableBlockedIssueStates clears stale manual-review repeat s
         },
         last_failure_signature: "stalled-bot:chatgpt-codex-connector-p2",
         repeated_failure_signature_count: 3,
-        processed_review_thread_ids: ["PRRT_stale_1@head-191", "PRRT_stale_2@head-191"],
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        processed_review_thread_ids: ["PRRT_stale_1@head-191"],
         processed_review_thread_fingerprints: [
           "PRRT_stale_1@head-191#comment-1",
-          "PRRT_stale_2@head-191#comment-2",
         ],
         last_tracked_pr_progress_snapshot: previousProgressSnapshot,
         last_tracked_pr_progress_summary: "no_meaningful_tracked_pr_progress",
@@ -3062,14 +3064,20 @@ test("reconcileRecoverableBlockedIssueStates clears stale manual-review repeat s
     url: "https://example.test/pr/191",
     headRefName: "codex/reopen-issue-366",
     headRefOid: "head-191",
-    mergeStateStatus: "CLEAN",
+    mergeStateStatus: "BLOCKED",
     mergeable: "MERGEABLE",
-    reviewDecision: "APPROVED",
+    reviewDecision: null,
     currentHeadCiGreenAt: "2026-05-12T00:18:00Z",
     configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
     configuredBotCurrentHeadObservedAt: "2026-05-12T00:22:00Z",
     configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotLatestReviewedCommitSha: "head-191",
     configuredBotTopLevelReviewStrength: null,
+    requiredConversationResolution: {
+      state: "enabled",
+      source: "branch_protection",
+      details: ["required_conversation_resolution=true"],
+    },
   });
 
   let saveCalls = 0;
@@ -3141,12 +3149,14 @@ test("reconcileRecoverableBlockedIssueStates clears stale manual-review repeat s
   );
 
   const updated = state.issues["366"];
-  assert.equal(updated.state, "ready_to_merge");
+  assert.equal(updated.state, "pr_open");
   assert.equal(updated.blocked_reason, null);
   assert.equal(updated.last_error, null);
   assert.equal(updated.last_failure_context, null);
   assert.equal(updated.last_failure_signature, null);
   assert.equal(updated.repeated_failure_signature_count, 0);
+  assert.equal(updated.provider_success_head_sha, "head-191");
+  assert.ok(updated.provider_success_observed_at);
   assert.equal(
     updated.last_tracked_pr_progress_summary,
     "stale_local_blocker_recovered=outdated_configured_bot_residue",
@@ -3154,11 +3164,11 @@ test("reconcileRecoverableBlockedIssueStates clears stale manual-review repeat s
   assert.equal(updated.last_tracked_pr_repeat_failure_decision, null);
   assert.equal(
     updated.last_recovery_reason,
-    "tracked_pr_stale_local_blocker_recovered: resumed issue #366 from blocked to ready_to_merge after stale manual-review metadata was superseded by tracked PR #191 facts at head head-191",
+    "tracked_pr_stale_local_blocker_recovered: resumed issue #366 from blocked to pr_open after stale manual-review metadata was superseded by tracked PR #191 facts at head head-191",
   );
   assert.equal(saveCalls, 1);
   assert.deepEqual(recoveryEvents.map((event) => event.reason), [
-    "tracked_pr_stale_local_blocker_recovered: resumed issue #366 from blocked to ready_to_merge after stale manual-review metadata was superseded by tracked PR #191 facts at head head-191",
+    "tracked_pr_stale_local_blocker_recovered: resumed issue #366 from blocked to pr_open after stale manual-review metadata was superseded by tracked PR #191 facts at head head-191",
   ]);
 });
 
