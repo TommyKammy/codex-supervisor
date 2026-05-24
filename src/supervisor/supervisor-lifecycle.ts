@@ -462,6 +462,7 @@ export function derivePullRequestLifecycleSnapshot(
     config,
     trackedPrProjection.recordForState,
     pr,
+    checks,
     reviewThreads,
   );
   const finalizedRecordForState = {

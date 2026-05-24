@@ -11,6 +11,13 @@ export function syncReviewWaitWindow(record: IssueRunRecord, pr: GitHubPullReque
     };
   }
 
+  if (pr.configuredBotCurrentHeadObservedAt && !record.review_wait_started_at) {
+    return {
+      review_wait_started_at: null,
+      review_wait_head_sha: null,
+    };
+  }
+
   if (!record.review_wait_started_at || record.review_wait_head_sha !== pr.headRefOid) {
     return {
       review_wait_started_at: nowIso(),

@@ -294,6 +294,7 @@ function shouldWaitForCopilotReviewPropagation(
     !policy.shouldWaitForRequestPropagation ||
     config.copilotReviewWaitMinutes <= 0 ||
     pr.isDraft ||
+    pr.configuredBotCurrentHeadObservedAt ||
     pr.headRefOid !== record.review_wait_head_sha
   ) {
     return false;
@@ -354,8 +355,12 @@ function currentHeadObservationSatisfiesActiveWait(
 
   const observedAt = validTimestamp(pr.configuredBotCurrentHeadObservedAt);
   const waitStartedAt = validTimestamp(record.review_wait_started_at);
-  if (!observedAt || !waitStartedAt || record.review_wait_head_sha !== pr.headRefOid) {
+  if (!observedAt) {
     return false;
+  }
+
+  if (!waitStartedAt || record.review_wait_head_sha !== pr.headRefOid) {
+    return true;
   }
 
   return Date.parse(observedAt) >= Date.parse(waitStartedAt);
@@ -890,7 +895,9 @@ function isMergeCriticalPullRequest(pr: GitHubPullRequest): boolean {
 
 function hasConfiguredProviderSuccess(
   config: SupervisorConfig,
+  record: IssueRunRecord,
   pr: GitHubPullRequest,
+  checks: PullRequestCheck[],
   reviewThreads: ReviewThread[],
 ): boolean {
   if (!repoExpectsConfiguredBotReview(config) || !isMergeCriticalPullRequest(pr)) {
@@ -902,7 +909,13 @@ function hasConfiguredProviderSuccess(
     return false;
   }
 
-  const configuredBotThreads = configuredBotReviewThreads(config, reviewThreads);
+  const clearOutdatedCodexConnectorThreads = codexConnectorOutdatedThreadClearanceAllowed(config, record, pr, checks);
+  const configuredBotThreads = configuredBotReviewThreads(config, reviewThreads).filter(
+    (thread) =>
+      !clearOutdatedCodexConnectorThreads ||
+      !thread.isOutdated ||
+      !latestReviewCommentAuthorIsAllowedBot(config, thread),
+  );
   const codexConnectorNitpickThreads = new Set(codexConnectorNitpickOnlyReviewThreads(configuredBotThreads));
   if (configuredBotThreads.filter((thread) => !codexConnectorNitpickThreads.has(thread)).length > 0) {
     return false;
@@ -923,6 +936,7 @@ export function syncMergeLatencyVisibility(
   config: SupervisorConfig,
   record: IssueRunRecord,
   pr: GitHubPullRequest,
+  checks: PullRequestCheck[],
   reviewThreads: ReviewThread[],
 ): Pick<
   IssueRunRecord,
@@ -931,7 +945,7 @@ export function syncMergeLatencyVisibility(
   const observedNow = nowIso();
   const mergeReadinessLastEvaluatedAt = isMergeCriticalPullRequest(pr) ? observedNow : null;
 
-  if (!hasConfiguredProviderSuccess(config, pr, reviewThreads)) {
+  if (!hasConfiguredProviderSuccess(config, record, pr, checks, reviewThreads)) {
     return {
       provider_success_observed_at: null,
       provider_success_head_sha: null,
