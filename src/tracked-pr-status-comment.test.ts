@@ -339,3 +339,109 @@ test("syncTrackedPrPersistentStatusComment keeps handoff-missing signature stabl
   assert.equal(repeated, updated);
   assert.equal(saveCalls, 1);
 });
+
+test("syncTrackedPrPersistentStatusComment supersedes draft suppression when current-head local review blocks manually", async () => {
+  const artifactRoot = "runtime-artifacts/local-review";
+  const summaryPath = `${artifactRoot}/owner-repo/issue-173/head-182.md`;
+  const config = createConfig({
+    localReviewArtifactDir: artifactRoot,
+    reviewBotLogins: ["chatgpt-codex-connector"],
+  });
+  const pr = createPullRequest({
+    number: 182,
+    headRefOid: "head-182",
+    isDraft: true,
+    mergeStateStatus: "UNKNOWN",
+    mergeable: "UNKNOWN",
+  });
+  const record = createRecord({
+    issue_number: 173,
+    state: "blocked",
+    pr_number: pr.number,
+    blocked_reason: "manual_review",
+    last_head_sha: pr.headRefOid,
+    local_review_head_sha: pr.headRefOid,
+    local_review_summary_path: summaryPath,
+    pre_merge_evaluation_outcome: "manual_review_blocked",
+    pre_merge_manual_review_count: 1,
+    last_host_local_pr_blocker_comment_head_sha: pr.headRefOid,
+    last_host_local_pr_blocker_comment_signature: "draft_review_provider_suppressed",
+  });
+  const state = createSupervisorState({
+    issues: [record],
+  });
+  const updateCalls: Array<{ commentId: number; body: string }> = [];
+  let addCalls = 0;
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-05-24T00:01:00Z",
+      };
+    },
+    async save(nextState: SupervisorStateFile): Promise<void> {
+      assert.equal(nextState.issues[String(record.issue_number)]?.issue_number, record.issue_number);
+      saveCalls += 1;
+    },
+  };
+
+  const updated = await syncTrackedPrPersistentStatusComment({
+    github: {
+      addIssueComment: async () => {
+        addCalls += 1;
+      },
+      getExternalReviewSurface: async () => ({
+        reviews: [],
+        issueComments: [
+          {
+            id: "comment-42",
+            databaseId: 42,
+            body: [
+              "Tracked PR head `head-182` is still draft because provider review is intentionally suppressed.",
+              "",
+              "- reason code: `draft_review_provider_suppressed`",
+              "- automatic retry: yes",
+              "",
+              "<!-- codex-supervisor:tracked-pr-status-comment issue=173 pr=182 kind=status -->",
+            ].join("\n"),
+            createdAt: "2026-05-24T00:00:00Z",
+            url: "https://example.test/comments/42",
+            viewerDidAuthor: true,
+            author: null,
+          },
+        ],
+      }),
+      updateIssueComment: async (commentId: number, body: string) => {
+        updateCalls.push({ commentId, body });
+      },
+    },
+    stateStore,
+    state,
+    record,
+    pr,
+    checks: [],
+    reviewThreads: [],
+    syncJournal: async () => undefined,
+    config,
+    failureContext: null,
+    summarizeChecks: () => ({ hasPending: false, hasFailing: false }),
+    manualReviewThreadCount: 0,
+  });
+
+  assert.equal(addCalls, 0);
+  assert.equal(updateCalls.length, 1);
+  assert.equal(updateCalls[0]?.commentId, 42);
+  assert.match(updateCalls[0]?.body ?? "", /reason code: `manual_review`/);
+  assert.match(updateCalls[0]?.body ?? "", /local-review outcome: `manual_review_blocked`/);
+  assert.match(updateCalls[0]?.body ?? "", /local-review summary path: `owner-repo\/issue-173\/head-182\.md`/);
+  assert.match(updateCalls[0]?.body ?? "", /automatic retry: no/);
+  assert.doesNotMatch(updateCalls[0]?.body ?? "", /automatic retry: yes/);
+  assert.equal(updated.last_host_local_pr_blocker_comment_head_sha, pr.headRefOid);
+  assert.equal(
+    updated.last_host_local_pr_blocker_comment_signature,
+    "manual_review:head-182:manual_review_blocked:1:owner-repo/issue-173/head-182.md",
+  );
+  assert.equal(saveCalls, 1);
+});

@@ -36,6 +36,7 @@ import {
   conversationResolutionEvidenceDetails,
   conversationResolutionEvidenceToken,
 } from "./conversation-resolution-policy";
+import { displayRelativeArtifactPath } from "./supervisor/supervisor-status-summary-helpers";
 
 export type HostLocalTrackedPrBlockerGateType =
   | "workspace_preparation"
@@ -286,6 +287,71 @@ function buildTrackedPrPersistentStatusComment(args: {
   ].join("\n");
 }
 
+function buildTrackedPrManualReviewStatusComment(args: {
+  pr: Pick<GitHubPullRequest, "headRefOid">;
+  summary: string;
+  evidence: string[];
+  localReviewOutcome: string | null;
+  localReviewSummaryPath: string | null;
+}): string {
+  return [
+    `Tracked PR head \`${args.pr.headRefOid}\` is blocked by terminal local review and now requires operator manual review.`,
+    "",
+    `- current head SHA: \`${args.pr.headRefOid}\``,
+    `- reason code: \`${TRACKED_PR_STATUS_COMMENT_REASON_CODE_MANUAL_REVIEW}\``,
+    `- local-review outcome: \`${args.localReviewOutcome ?? "unknown"}\``,
+    `- blocker summary: ${args.summary}`,
+    ...(args.localReviewSummaryPath ? [`- local-review summary path: \`${args.localReviewSummaryPath}\``] : []),
+    ...args.evidence.map((detail) => `- evidence: ${detail}`),
+    "- automatic retry: no",
+    "- next action: complete the required operator/manual review, then rerun the supervisor so progress can resume.",
+  ].join("\n");
+}
+
+function currentHeadManualReviewStatusComment(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  failureContext: FailureContext | null;
+}): { blockerSignature: string; body: string } | null {
+  if (args.record.state !== "blocked" || args.record.blocked_reason !== "manual_review") {
+    return null;
+  }
+  if (
+    args.record.pre_merge_evaluation_outcome !== "manual_review_blocked" ||
+    args.record.local_review_head_sha !== args.pr.headRefOid
+  ) {
+    return null;
+  }
+
+  const summary =
+    args.failureContext?.summary ?? "Current-head local review reported manual-review residuals requiring human judgment.";
+  const displayedSummaryPath = args.record.local_review_summary_path
+    ? displayRelativeArtifactPath(args.config, args.record.local_review_summary_path)
+    : null;
+  const localReviewOutcome = args.record.pre_merge_evaluation_outcome;
+  const manualReviewCount = args.record.pre_merge_manual_review_count ?? "unknown";
+  const blockerIdentity = args.failureContext?.signature ?? String(manualReviewCount);
+  const blockerSignature = [
+    TRACKED_PR_STATUS_COMMENT_REASON_CODE_MANUAL_REVIEW,
+    args.pr.headRefOid,
+    localReviewOutcome,
+    blockerIdentity,
+    displayedSummaryPath ?? "summary=none",
+  ].join(":");
+
+  return {
+    blockerSignature,
+    body: buildTrackedPrManualReviewStatusComment({
+      pr: args.pr,
+      summary,
+      evidence: compactEvidenceLines(args.failureContext?.details),
+      localReviewOutcome,
+      localReviewSummaryPath: displayedSummaryPath,
+    }),
+  };
+}
+
 function isTrackedPrActiveStatusState(state: RunState): boolean {
   switch (state) {
     case "local_review":
@@ -471,6 +537,16 @@ function derivePersistentTrackedPrStatusComment(args: {
   failureContext: FailureContext | null;
   summarizeChecks: (checks: PullRequestCheck[]) => { hasPending: boolean; hasFailing: boolean };
 }): { blockerSignature: string; body: string } | null {
+  const currentHeadManualReviewComment = currentHeadManualReviewStatusComment({
+    config: args.config,
+    record: args.record,
+    pr: args.pr,
+    failureContext: args.failureContext,
+  });
+  if (currentHeadManualReviewComment) {
+    return currentHeadManualReviewComment;
+  }
+
   if (args.pr.isDraft) {
     return null;
   }
