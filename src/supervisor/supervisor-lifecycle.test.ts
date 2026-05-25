@@ -1040,6 +1040,7 @@ test("shouldRunCodex does not dispatch on converged Codex residue with no effect
   const headSha = "d5a9957506c697dc13f5431bb460cfe95257bcae";
   const record = createRecord({
     state: "addressing_review",
+    pr_number: 183,
     last_head_sha: headSha,
     review_wait_started_at: "2026-05-25T03:43:48.716Z",
     review_wait_head_sha: headSha,
