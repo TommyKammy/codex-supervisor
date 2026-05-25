@@ -10,6 +10,7 @@ import {
   FailureContext,
   GitHubPullRequest,
   IssueRunRecord,
+  LatestLocalCiResult,
   SupervisorConfig,
   SupervisorStateFile,
 } from "./core/types";
@@ -21,6 +22,23 @@ import {
   appendTimelineArtifact,
   buildLocalCiTimelineArtifact,
 } from "./timeline-artifacts";
+
+function buildLocalCiResultRecordPatch(args: {
+  record: Pick<IssueRunRecord, "timeline_artifacts">;
+  latestResult: LatestLocalCiResult | null | undefined;
+  headSha: string | null;
+}): Pick<IssueRunRecord, "latest_local_ci_result" | "timeline_artifacts"> {
+  return {
+    latest_local_ci_result: args.latestResult ?? null,
+    timeline_artifacts: args.latestResult
+      ? appendTimelineArtifact(args.record, buildLocalCiTimelineArtifact({
+        gate: "local_ci",
+        result: args.latestResult,
+        headSha: args.headSha,
+      }))
+      : args.record.timeline_artifacts,
+  };
+}
 
 export interface TrackedPrReadyLocalCiPublicationGateResult {
   ok: boolean;
@@ -136,14 +154,11 @@ export async function runTrackedPrReadyLocalCiPublicationGate(args: {
       pr: args.pr,
       failureContext,
       recordPatch: {
-        latest_local_ci_result: localCiGate.latestResult ?? null,
-        timeline_artifacts: localCiGate.latestResult
-          ? appendTimelineArtifact(args.record, buildLocalCiTimelineArtifact({
-            gate: "local_ci",
-            result: localCiGate.latestResult,
-            headSha: args.pr.headRefOid ?? null,
-          }))
-          : args.record.timeline_artifacts,
+        ...buildLocalCiResultRecordPatch({
+          record: args.record,
+          latestResult: localCiGate.latestResult,
+          headSha: args.pr.headRefOid ?? null,
+        }),
       },
       syncJournal: args.syncJournal,
       applyFailureSignature: args.applyFailureSignature,
@@ -166,14 +181,11 @@ export async function runTrackedPrReadyLocalCiPublicationGate(args: {
   }
 
   const record = args.stateStore.touch(args.record, {
-    latest_local_ci_result: localCiGate.latestResult ?? null,
-    timeline_artifacts: localCiGate.latestResult
-      ? appendTimelineArtifact(args.record, buildLocalCiTimelineArtifact({
-        gate: "local_ci",
-        result: localCiGate.latestResult,
-        headSha: args.pr.headRefOid ?? null,
-      }))
-      : args.record.timeline_artifacts,
+    ...buildLocalCiResultRecordPatch({
+      record: args.record,
+      latestResult: localCiGate.latestResult,
+      headSha: args.pr.headRefOid ?? null,
+    }),
     last_observed_host_local_pr_blocker_signature: null,
     last_observed_host_local_pr_blocker_head_sha: null,
   });
