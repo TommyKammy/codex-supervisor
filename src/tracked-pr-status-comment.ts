@@ -3,6 +3,7 @@ import { IssueJournalSync } from "./run-once-issue-preparation";
 import { StateStore } from "./core/state-store";
 import {
   evaluateCodexConnectorConvergencePolicy,
+  hasCodexConnectorPrSuccessCurrentHeadObservation,
 } from "./codex-connector-review-policy";
 import {
   configuredBotReviewThreads,
@@ -446,8 +447,10 @@ function buildConversationResolutionBlocker(args: {
   if (
     args.pr.mergeStateStatus !== "BLOCKED" ||
     args.pr.mergeable !== "MERGEABLE" ||
-    !args.pr.configuredBotCurrentHeadObservedAt ||
-    args.pr.configuredBotCurrentHeadStatusState !== "SUCCESS" ||
+    !(
+      args.pr.configuredBotCurrentHeadStatusState === "SUCCESS" ||
+      hasCodexConnectorPrSuccessCurrentHeadObservation(args.pr)
+    ) ||
     checkSummary.hasPending ||
     checkSummary.hasFailing
   ) {

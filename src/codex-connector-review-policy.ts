@@ -72,6 +72,29 @@ export function commitShasDifferForComparison(left: string | null | undefined, r
   return Boolean(normalizedLeft && normalizedRight && normalizedLeft !== normalizedRight);
 }
 
+function validPolicyTimestamp(value: string | null | undefined): string | null {
+  if (!value || Number.isNaN(Date.parse(value))) {
+    return null;
+  }
+
+  return value;
+}
+
+export function hasCodexConnectorPrSuccessCurrentHeadObservation(
+  pr: Pick<
+    GitHubPullRequest,
+    | "configuredBotCurrentHeadObservedAt"
+    | "configuredBotCurrentHeadObservationSource"
+    | "configuredBotTopLevelReviewStrength"
+  >,
+): boolean {
+  return Boolean(
+    pr.configuredBotCurrentHeadObservationSource === "codex_pr_success_comment" &&
+      pr.configuredBotTopLevelReviewStrength !== "blocking" &&
+      validPolicyTimestamp(pr.configuredBotCurrentHeadObservedAt),
+  );
+}
+
 export function codexConnectorStaleReviewCommitThreads(
   pr: Pick<GitHubPullRequest, "headRefOid" | "configuredBotCurrentHeadObservedAt" | "configuredBotLatestReviewedCommitSha">,
   reviewThreads: ReviewThread[],
@@ -196,14 +219,6 @@ export function codexConnectorNitpickOnlyReviewThreads(reviewThreads: ReviewThre
 
 function formatDiagnosticToken(value: string): string {
   return value.replace(/\s+/g, "_");
-}
-
-function validPolicyTimestamp(value: string | null | undefined): string | null {
-  if (!value || Number.isNaN(Date.parse(value))) {
-    return null;
-  }
-
-  return value;
 }
 
 export function evaluateCodexConnectorConvergencePolicy(
