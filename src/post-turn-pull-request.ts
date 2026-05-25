@@ -50,7 +50,10 @@ import {
   derivePostTurnLocalReviewDecision,
   derivePostTurnLocalReviewFailurePatch,
 } from "./post-turn-pull-request-policy";
-import { runTrackedPrCurrentHeadLocalCiGate } from "./tracked-pr-local-ci-publication-gate";
+import {
+  persistTrackedPrHostLocalBlocker,
+  runTrackedPrCurrentHeadLocalCiGate,
+} from "./tracked-pr-local-ci-publication-gate";
 import { currentHeadLocalCiMissing, hasConfiguredLocalCiCommand } from "./local-ci-policy";
 import * as trackedPrStatusComments from "./tracked-pr-status-comment";
 import { buildStaleReviewBotRemediation } from "./supervisor/stale-review-bot-remediation";
@@ -593,21 +596,15 @@ export async function handlePostTurnPullRequestTransitionsPhase(
             `durable artifact normalization persistence failed for ${presentRewrittenTrackedPaths.join(", ")}: ${message}`,
           ],
         });
-        record = stateStore.touch(record, {
-          state: "blocked",
-          last_error: truncate(failureContext.summary, 1000),
-          last_failure_kind: null,
-          last_failure_context: failureContext,
-          ...args.applyFailureSignature(record, failureContext),
-          blocked_reason: "verification",
-          ...trackedPrStatusComments.observedTrackedPrHostLocalBlockerPatch({
-            pr: refreshed.pr,
-            blockerSignature: failureContext.signature,
-          }),
+        record = await persistTrackedPrHostLocalBlocker({
+          stateStore,
+          state,
+          record,
+          pr: refreshed.pr,
+          failureContext,
+          syncJournal,
+          applyFailureSignature: args.applyFailureSignature,
         });
-        state.issues[String(record.issue_number)] = record;
-        await stateStore.save(state);
-        await syncJournal(record);
         return {
           record,
           pr: refreshed.pr,
@@ -622,21 +619,15 @@ export async function handlePostTurnPullRequestTransitionsPhase(
             `durable artifact normalization reported rewritten paths for ${presentRewrittenTrackedPaths.join(", ")} but did not create a commit to publish.`,
           ],
         });
-        record = stateStore.touch(record, {
-          state: "blocked",
-          last_error: truncate(failureContext.summary, 1000),
-          last_failure_kind: null,
-          last_failure_context: failureContext,
-          ...args.applyFailureSignature(record, failureContext),
-          blocked_reason: "verification",
-          ...trackedPrStatusComments.observedTrackedPrHostLocalBlockerPatch({
-            pr: refreshed.pr,
-            blockerSignature: failureContext.signature,
-          }),
+        record = await persistTrackedPrHostLocalBlocker({
+          stateStore,
+          state,
+          record,
+          pr: refreshed.pr,
+          failureContext,
+          syncJournal,
+          applyFailureSignature: args.applyFailureSignature,
         });
-        state.issues[String(record.issue_number)] = record;
-        await stateStore.save(state);
-        await syncJournal(record);
         return {
           record,
           pr: refreshed.pr,
