@@ -1750,11 +1750,12 @@ test("runPreparedIssue auto-handles stale Codex Connector conversation residue b
   const branch = branchName(fixture.config, issueNumber);
   const { workspacePath, journalPath } = trackedIssuePaths(fixture.workspaceRoot, issueNumber);
   const threadIds = Array.from({ length: 7 }, (_value, index) => `PRRT_hrcore_183_${index + 1}`);
+  const staleSignature = threadIds.map((threadId) => `stalled-bot:${threadId}`).join("|");
   const staleFailureContext = {
     category: "manual" as const,
     summary:
       "7 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
-    signature: threadIds.map((threadId) => `stalled-bot:${threadId}`).join("|"),
+    signature: staleSignature,
     command: null,
     details: threadIds.map(
       (threadId) =>
@@ -1951,6 +1952,272 @@ test("runPreparedIssue auto-handles stale Codex Connector conversation residue b
   assert.equal(record.state, "ready_to_merge");
   assert.equal(record.last_failure_context, null);
   assert.equal(record.repeated_failure_signature_count, 0);
+  assert.equal(record.provider_success_head_sha, headSha);
+  assert.ok(record.provider_success_observed_at);
+});
+
+test("runPreparedIssue marks active stale Codex Connector residue successful before repeat-stop with partial processed-thread bookkeeping", async () => {
+  const fixture = await createSupervisorFixture({
+    codexScriptLines: [
+      "#!/bin/sh",
+      "echo unexpected Codex dispatch >&2",
+      "exit 97",
+      "",
+    ],
+  });
+  fixture.config.sameFailureSignatureRepeatLimit = 3;
+  fixture.config.reviewBotLogins = ["chatgpt-codex-connector"];
+  fixture.config.verifiedNoSourceChangeReviewThreadAutoResolve = true;
+  fixture.config.configuredBotInitialGraceWaitSeconds = 0;
+  fixture.config.configuredBotSettledWaitSeconds = 0;
+  const issueNumber = 183;
+  const prNumber = 183;
+  const headSha = "d5a9957506c697dc13f5431bb460cfe95257bcae";
+  const branch = branchName(fixture.config, issueNumber);
+  const { workspacePath, journalPath } = trackedIssuePaths(fixture.workspaceRoot, issueNumber);
+  const threadIds = Array.from({ length: 7 }, (_value, index) => `PRRT_hrcore_183_${index + 1}`);
+  const staleSignature = threadIds.map((threadId) => `stalled-bot:${threadId}`).join("|");
+  const preexistingResolvedThreadIds = [threadIds[0]];
+  const preexistingReplyProgressKeys = preexistingResolvedThreadIds.map(
+    (threadId) => `reply:${threadId}@${headSha}:${staleSignature}`,
+  );
+  const preexistingResolveProgressKeys = preexistingResolvedThreadIds.map(
+    (threadId) => `resolve:${threadId}@${headSha}:${staleSignature}`,
+  );
+  const staleFailureContext = {
+    category: "manual" as const,
+    summary:
+      "7 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
+    signature: staleSignature,
+    command: null,
+    details: threadIds.map(
+      (threadId) =>
+        `reviewer=chatgpt-codex-connector thread=${threadId} file=src/stale-residue.ts line=none processed_on_current_head=yes`,
+    ),
+    url: "https://example.test/pr/183#discussion_r1",
+    updated_at: "2026-05-24T01:00:00Z",
+  };
+  const initialRecord = createTrackedSupervisorRecord(fixture.config, fixture.workspaceRoot, issueNumber, {
+    state: "addressing_review",
+    workspace: workspacePath,
+    branch,
+    pr_number: prNumber,
+    journal_path: journalPath,
+    last_head_sha: headSha,
+    provider_success_observed_at: null,
+    provider_success_head_sha: null,
+    last_error: staleFailureContext.summary,
+    last_failure_signature: staleFailureContext.signature,
+    repeated_failure_signature_count: 4,
+    last_failure_context: staleFailureContext,
+    last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+    last_tracked_pr_progress_summary: "review_thread_source_anchor_changed | processed_review_thread_fingerprints_changed",
+    last_tracked_pr_progress_snapshot: JSON.stringify({
+      headRefOid: headSha,
+      reviewDecision: null,
+      mergeStateStatus: "BLOCKED",
+      copilotReviewState: null,
+      copilotReviewRequestedAt: null,
+      copilotReviewArrivedAt: null,
+      configuredBotCurrentHeadObservedAt: "2026-05-24T00:55:00Z",
+      configuredBotCurrentHeadStatusState: "SUCCESS",
+      currentHeadCiGreenAt: "2026-05-24T00:50:00Z",
+      configuredBotRateLimitedAt: null,
+      configuredBotDraftSkipAt: null,
+      configuredBotTopLevelReviewStrength: null,
+      configuredBotTopLevelReviewSubmittedAt: null,
+      checks: ["verify-pre-pr:pass:SUCCESS:CI"],
+      unresolvedReviewThreadIds: threadIds,
+      unresolvedReviewThreadFingerprints: threadIds.map((threadId) => `${threadId}#comment-${threadId}`),
+      unresolvedReviewThreadSourceAnchors: threadIds.map((threadId) => `${threadId}:src/stale-residue.ts:unknown`),
+      processedReviewThreadIds: [`${threadIds[0]}@${headSha}`],
+      processedReviewThreadFingerprints: [`${threadIds[0]}@${headSha}#comment-${threadIds[0]}`],
+      verificationProbeOutcomes: [],
+    }),
+    processed_review_thread_ids: [`${threadIds[0]}@${headSha}`],
+    processed_review_thread_fingerprints: [`${threadIds[0]}@${headSha}#comment-${threadIds[0]}`],
+    stale_review_bot_reply_progress_keys: preexistingReplyProgressKeys,
+    stale_review_bot_resolve_progress_keys: preexistingResolveProgressKeys,
+    review_follow_up_head_sha: headSha,
+    review_follow_up_remaining: 0,
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    activeIssueNumber: issueNumber,
+    issues: [initialRecord],
+  });
+  await writeSupervisorState(fixture.stateFile, state);
+
+  const issue = createTrackedIssue(issueNumber, {
+    title: "Recover active stale Codex Connector residue",
+    body: executionReadyBody("Recover active stale Codex Connector residue without another Codex turn."),
+  });
+  const pr = createTrackedPullRequest(fixture.config, issueNumber, {
+    number: prNumber,
+    title: "HRCore stale Codex Connector residue",
+    isDraft: false,
+    reviewDecision: null,
+    headRefOid: headSha,
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-05-24T00:50:00Z",
+    configuredBotCurrentHeadObservedAt: "2026-05-24T00:55:00Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotLatestReviewedCommitSha: headSha,
+    configuredBotTopLevelReviewStrength: null,
+    requiredConversationResolution: {
+      state: "enabled",
+      source: "branch_protection",
+      details: ["required_conversation_resolution=true"],
+    },
+  });
+  const checks: PullRequestCheck[] = [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+  const reviewThreads = threadIds.map((threadId) =>
+    createReviewThread({
+      id: threadId,
+      isOutdated: true,
+      path: "src/stale-residue.ts",
+      line: null,
+      comments: {
+        nodes: [
+          {
+            id: `comment-${threadId}`,
+            body: "Outdated Codex Connector residue.",
+            createdAt: "2026-05-24T00:40:00Z",
+            url: `https://example.test/pr/183#discussion_${threadId}`,
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  );
+  const resolvedPr = createTrackedPullRequest(fixture.config, issueNumber, {
+    ...pr,
+    mergeStateStatus: "CLEAN",
+  });
+  const replyCalls: string[] = [];
+  const resolveCalls: string[] = [];
+  const addedComments: string[] = [];
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [issue],
+    listCandidateIssues: async () => [issue],
+    getIssue: async () => issue,
+    resolvePullRequestForBranch: async () => pr,
+    getChecks: async () => checks,
+    getUnresolvedReviewThreads: async () =>
+      resolveCalls.length + preexistingResolvedThreadIds.length === threadIds.length ? [] : reviewThreads,
+    getPullRequestIfExists: async () => pr,
+    getPullRequest: async () =>
+      resolveCalls.length + preexistingResolvedThreadIds.length === threadIds.length ? resolvedPr : pr,
+    getExternalReviewSurface: async () => ({ reviews: [], issueComments: [] }),
+    addIssueComment: async (_issueNumberForComment: number, body: string) => {
+      addedComments.push(body);
+    },
+    replyToReviewThread: async (threadId: string) => {
+      replyCalls.push(threadId);
+    },
+    resolveReviewThread: async (threadId: string) => {
+      resolveCalls.push(threadId);
+    },
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await (
+    supervisor as unknown as {
+      runPreparedIssue: (context: {
+        state: SupervisorStateFile;
+        record: IssueRunRecord;
+        issue: GitHubIssue;
+        previousCodexSummary: string | null;
+        previousError: string | null;
+        workspacePath: string;
+        journalPath: string;
+        syncJournal: (record: IssueRunRecord) => Promise<void>;
+        memoryArtifacts: {
+          alwaysReadFiles: string[];
+          onDemandFiles: string[];
+          contextIndexPath: string;
+          agentsPath: string;
+        };
+        workspaceStatus: {
+          branch: string;
+          headSha: string;
+          hasUncommittedChanges: boolean;
+          baseAhead: number;
+          baseBehind: number;
+          remoteBranchExists: boolean;
+          remoteAhead: number;
+          remoteBehind: number;
+        };
+        pr: GitHubPullRequest | null;
+        checks: PullRequestCheck[];
+        reviewThreads: ReviewThread[];
+        options: { dryRun: boolean };
+        recoveryLog: string | null;
+        recoveryEvents: [];
+      }) => Promise<string>;
+    }
+  ).runPreparedIssue({
+    state,
+    record: initialRecord,
+    issue,
+    previousCodexSummary: null,
+    previousError: null,
+    workspacePath,
+    journalPath,
+    syncJournal: async () => undefined,
+    memoryArtifacts: {
+      alwaysReadFiles: [],
+      onDemandFiles: [],
+      contextIndexPath: path.join(fixture.workspaceRoot, "context-index.md"),
+      agentsPath: path.join(fixture.workspaceRoot, "AGENTS.generated.md"),
+    },
+    workspaceStatus: {
+      branch,
+      headSha,
+      hasUncommittedChanges: false,
+      baseAhead: 0,
+      baseBehind: 0,
+      remoteBranchExists: true,
+      remoteAhead: 0,
+      remoteBehind: 0,
+    },
+    pr,
+    checks,
+    reviewThreads,
+    options: { dryRun: false },
+    recoveryLog: null,
+    recoveryEvents: [],
+  });
+
+  assert.doesNotMatch(message, /blocked after repeated identical review-related failure signatures/);
+  assert.deepEqual(replyCalls, threadIds.slice(1));
+  assert.deepEqual(resolveCalls, threadIds.slice(1));
+  assert.equal(addedComments.some((body) => /@codex review/.test(body)), false);
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  const record = persisted.issues[String(issueNumber)];
+  assert.equal(record.state, "ready_to_merge");
+  assert.equal(record.blocked_reason, null);
+  assert.equal(record.last_failure_context, null);
+  assert.equal(record.last_failure_signature, null);
+  assert.equal(record.repeated_failure_signature_count, 0);
+  assert.equal(record.last_tracked_pr_progress_summary, null);
+  assert.equal(record.last_tracked_pr_progress_snapshot, null);
+  assert.equal(record.last_tracked_pr_repeat_failure_decision, null);
+  assert.deepEqual(record.processed_review_thread_ids, []);
+  assert.deepEqual(record.processed_review_thread_fingerprints, []);
   assert.equal(record.provider_success_head_sha, headSha);
   assert.ok(record.provider_success_observed_at);
 });

@@ -289,7 +289,25 @@ export async function recoverStaleConfiguredBotReviewThreads(args: {
     });
   }
 
+  const staleResidueClearedPatch =
+    args.resolveAfterReply && hasResolvedAllStaleConfiguredBotThreads({
+      record,
+      headSha: args.pr.headRefOid,
+      signature: blockerSignature,
+    })
+      ? {
+          last_failure_context: null,
+          last_failure_signature: null,
+          repeated_failure_signature_count: 0,
+          last_tracked_pr_progress_snapshot: null,
+          last_tracked_pr_progress_summary: null,
+          last_tracked_pr_repeat_failure_decision: null,
+          processed_review_thread_ids: [],
+          processed_review_thread_fingerprints: [],
+        }
+      : {};
   const updatedRecord = args.stateStore.touch(record, {
+    ...staleResidueClearedPatch,
     last_stale_review_bot_reply_head_sha: args.pr.headRefOid,
     last_stale_review_bot_reply_signature: blockerSignature,
   });
