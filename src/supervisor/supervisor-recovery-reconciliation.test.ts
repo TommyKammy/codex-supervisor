@@ -1910,7 +1910,12 @@ test("reconcileRecoverableBlockedIssueStates records provider success for same-h
                   ? [
                       {
                         id: `comment-operator-${threadId}`,
-                        body: "Supervisor confirmed this stale Codex Connector finding is covered by the current-head success signal.",
+                        body: [
+                          `The supervisor reprocessed this configured-bot finding on the current head \`${currentHead}\` and classified it as stale.`,
+                          `Audit: issue=#366 pr=#${TRACKED_PR_NUMBER} head=${currentHead} thread=${threadId} reason=verified_no_source_change_auto_resolve.`,
+                          "Evidence: location=src/mvp-a-onboarding-traceability.ts:? processed_on_current_head=yes. Source: https://example.test/pr/183#discussion_r1",
+                          "Under the configured verified no-source-change auto-resolve opt-in, the supervisor is auto-resolving this thread now.",
+                        ].join("\n\n"),
                         createdAt: "2026-05-25T04:16:47Z",
                         url: `https://example.test/pr/183#discussion_r${index + 1}`,
                         author: {
