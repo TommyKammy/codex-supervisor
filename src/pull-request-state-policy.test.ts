@@ -4,6 +4,7 @@ import {
   blockedReasonFromReviewState,
   inferGitHubWaitStep,
   inferStateFromPullRequest,
+  syncCopilotReviewTimeoutState,
   syncMergeLatencyVisibility,
 } from "./pull-request-state";
 import { GitHubPullRequest, IssueRunRecord, SupervisorConfig } from "./core/types";
@@ -192,6 +193,50 @@ test("inferStateFromPullRequest keeps waiting for a required current-head signal
   withStubbedDateNow("2026-03-16T00:02:00Z", () => {
     assert.equal(inferStateFromPullRequest(config, record, pr, passingChecks(), []), "waiting_ci");
     assert.equal(inferGitHubWaitStep(config, record, pr, passingChecks()), "configured_bot_current_head_signal_wait");
+  });
+});
+
+test("inferStateFromPullRequest clears stale Codex request-comment timeout after provider success", () => {
+  const headSha = "d5a9957506c697dc13f5431bb460cfe95257bcae";
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    configuredBotRequireCurrentHeadSignal: true,
+    configuredBotInitialGraceWaitSeconds: 0,
+    configuredBotSettledWaitSeconds: 0,
+    configuredBotCurrentHeadSignalTimeoutMinutes: 1,
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+  });
+  const record = createRecord({
+    state: "waiting_ci",
+    last_head_sha: headSha,
+    review_wait_started_at: "2026-05-23T16:04:34.342Z",
+    review_wait_head_sha: headSha,
+    provider_success_observed_at: "2026-05-25T10:04:37.026Z",
+    provider_success_head_sha: headSha,
+    copilot_review_timed_out_at: "2026-05-23T16:07:04.342Z",
+    copilot_review_timeout_action: "request_review_comment",
+    copilot_review_timeout_reason: "current_head_signal_wait_timed_out",
+  });
+  const pr = createPullRequest({
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-05-23T16:02:36Z",
+    configuredBotCurrentHeadObservedAt: "2026-05-23T14:33:41Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotLatestReviewedCommitSha: "7327afdab32fb9c7ffb741d6158add4616bb3115",
+    configuredBotTopLevelReviewStrength: null,
+  });
+
+  withStubbedDateNow("2026-05-25T10:10:02.845Z", () => {
+    assert.equal(inferStateFromPullRequest(config, record, pr, passingChecks(), []), "ready_to_merge");
+    assert.equal(inferGitHubWaitStep(config, record, pr, passingChecks(), []), null);
+    assert.deepEqual(syncCopilotReviewTimeoutState(config, record, pr), {
+      copilot_review_timed_out_at: null,
+      copilot_review_timeout_action: null,
+      copilot_review_timeout_reason: null,
+    });
   });
 });
 

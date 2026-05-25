@@ -347,6 +347,16 @@ function validTimestamp(value: string | null | undefined): string | null {
   return Number.isNaN(Date.parse(value)) ? null : value;
 }
 
+function hasCurrentHeadProviderSuccess(
+  record: Pick<IssueRunRecord, "provider_success_head_sha" | "provider_success_observed_at">,
+  pr: GitHubPullRequest,
+): boolean {
+  return (
+    record.provider_success_head_sha === pr.headRefOid &&
+    validTimestamp(record.provider_success_observed_at) !== null
+  );
+}
+
 function currentHeadObservationSatisfiesActiveWait(
   record: Pick<IssueRunRecord, "review_wait_started_at" | "review_wait_head_sha">,
   pr: GitHubPullRequest,
@@ -552,6 +562,7 @@ function configuredBotCurrentHeadSignalWaitStartAt(
   if (
     !requiresConfiguredBotCurrentHeadSignal(config) ||
     pr.isDraft ||
+    hasCurrentHeadProviderSuccess(record, pr) ||
     (validTimestamp(pr.configuredBotCurrentHeadObservedAt) && currentHeadObservationSatisfiesActiveWait(record, pr))
   ) {
     return null;
