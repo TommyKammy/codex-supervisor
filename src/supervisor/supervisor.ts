@@ -1,6 +1,7 @@
 import path from "node:path";
 import { runCommand } from "../core/command";
 import { loadConfig } from "../core/config";
+import { currentHeadLocalCiMissing, hasConfiguredLocalCiCommand } from "../local-ci-policy";
 import { GitHubClient } from "../github";
 import { issueJournalPath, resolveTrackedIssueHostPaths } from "../core/journal";
 import { acquireFileLock, LockHandle } from "../core/lock";
@@ -212,14 +213,6 @@ function validTimestamp(value: string | null | undefined): string | null {
   return Number.isNaN(Date.parse(value)) ? null : value;
 }
 
-function hasConfiguredLocalCiCommand(config: Pick<SupervisorConfig, "localCiCommand">): boolean {
-  if (typeof config.localCiCommand === "string") {
-    return config.localCiCommand.trim() !== "";
-  }
-
-  return config.localCiCommand !== undefined;
-}
-
 interface FinalAutoMergeGuardResult {
   evidence: FailureContext;
   refusal: FailureContext | null;
@@ -284,9 +277,8 @@ function finalAutoMergeGuard(args: {
       ? currentPr.reviewDecision
       : null;
   const localCiResult = record.latest_local_ci_result ?? null;
-  const localCiMissing =
-    hasConfiguredLocalCiCommand(config) &&
-    (localCiResult?.outcome !== "passed" || localCiResult?.head_sha !== currentPr.headRefOid);
+  const localCiConfigured = hasConfiguredLocalCiCommand(config);
+  const localCiMissing = localCiConfigured && currentHeadLocalCiMissing(record, currentPr);
   const evidenceDetails = [
     `auto_merge_path=${autoMergePath}`,
     `head_sha=${currentPr.headRefOid}`,
@@ -299,7 +291,7 @@ function finalAutoMergeGuard(args: {
     `configured_bot_blockers=${effectiveConfiguredBotBlockers}`,
     `human_blockers=${effectiveHumanBlockers}`,
     `review_decision=${currentPr.reviewDecision ?? "none"}`,
-    hasConfiguredLocalCiCommand(config)
+    localCiConfigured
       ? `local_ci=${localCiResult?.outcome ?? "missing"} head_sha=${localCiResult?.head_sha ?? "none"}`
       : "local_ci=not_configured",
   ];
