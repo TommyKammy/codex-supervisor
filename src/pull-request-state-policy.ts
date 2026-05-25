@@ -767,15 +767,36 @@ function codexConnectorOutdatedThreadClearanceAllowed(
   checks: PullRequestCheck[],
   reviewThreads: ReviewThread[],
 ): boolean {
+  const providerKinds = configuredReviewProviderKinds(config);
+  const checkSummary = summarizeChecks(checks);
+  const configuredThreads = configuredBotReviewThreads(config, reviewThreads);
+  const onlyOutdatedCodexConnectorThreads =
+    configuredThreads.length > 0 &&
+    configuredThreads.every((thread) => thread.isOutdated && latestReviewCommentAuthorIsAllowedBot(config, thread));
+  const codexConnectorPolicy = evaluateCodexConnectorConvergencePolicy(config, pr, configuredThreads);
+  const currentHeadCodexSuccess =
+    pr.configuredBotCurrentHeadObservationSource === "codex_pr_success_comment" &&
+    pr.configuredBotCurrentHeadStatusState === "SUCCESS" &&
+    pr.configuredBotTopLevelReviewStrength !== "blocking" &&
+    validTimestamp(pr.configuredBotCurrentHeadObservedAt);
+  const convergedOutdatedResidueCanClear =
+    providerKinds.includes("codex") &&
+    providerKinds.every((kind) => kind === "codex") &&
+    currentHeadCodexSuccess &&
+    pullRequestHeadMatchesRecord(record, pr) &&
+    checkSummary.allPassing &&
+    manualReviewThreads(config, reviewThreads).length === 0 &&
+    !mergeConflictDetected(pr) &&
+    onlyOutdatedCodexConnectorThreads &&
+    (codexConnectorPolicy?.outcome === "converged" || codexConnectorPolicy?.outcome === "nitpick_only");
+
   return Boolean(
-    configuredReviewProviderKinds(config).includes("codex") &&
-      pr.configuredBotCurrentHeadObservationSource === "codex_pr_success_comment" &&
-      pr.configuredBotCurrentHeadStatusState === "SUCCESS" &&
-      pr.configuredBotTopLevelReviewStrength !== "blocking" &&
-      validTimestamp(pr.configuredBotCurrentHeadObservedAt) &&
+    providerKinds.includes("codex") &&
+      currentHeadCodexSuccess &&
       (currentHeadObservationSatisfiesActiveWait(record, pr) ||
-        staleSameHeadCodexWaitHasOnlyOutdatedResidue(config, record, pr, checks, reviewThreads)) &&
-      summarizeChecks(checks).allPassing,
+        staleSameHeadCodexWaitHasOnlyOutdatedResidue(config, record, pr, checks, reviewThreads) ||
+        convergedOutdatedResidueCanClear) &&
+      checkSummary.allPassing,
   );
 }
 
