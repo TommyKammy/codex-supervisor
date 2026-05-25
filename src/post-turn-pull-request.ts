@@ -7,14 +7,8 @@ import {
 } from "./local-review";
 import {
   localReviewBlocksReady,
-  localReviewFailureContext,
-  localReviewHighSeverityNeedsBlock,
-  localReviewRepairContinuationFailureContext,
-  localReviewRepairContinuationSummary,
   localReviewRequiresManualReview,
   localReviewRetryLoopCandidate,
-  localReviewRetryLoopStalled,
-  localReviewStallFailureContext,
 } from "./review-handling";
 import { IssueJournalSync, MemoryArtifacts } from "./run-once-issue-preparation";
 import { StateStore } from "./core/state-store";
@@ -31,13 +25,7 @@ import {
 } from "./core/types";
 import { truncate } from "./core/utils";
 import { type LocalCiCommandRunner } from "./local-ci";
-import {
-  buildWorkstationLocalPathFailureContext,
-  listReadyPromotionChangedFilePaths,
-  runWorkstationLocalPathGate,
-  type WorkstationLocalPathGateResult,
-} from "./workstation-local-path-gate";
-import { deriveReadyPromotionPathHygieneDecision } from "./ready-promotion-gate";
+import { type WorkstationLocalPathGateResult } from "./workstation-local-path-gate";
 import {
   emitSupervisorEvent,
   maybeBuildReviewWaitChangedEvent,
@@ -45,20 +33,19 @@ import {
 } from "./supervisor/supervisor-events";
 import { reviewBotDiagnostics } from "./supervisor/supervisor-status-review-bot";
 import { parseIssueMetadata } from "./issue-metadata";
-import { commitAndPushTrackedFiles, filterPresentTrackedFilePaths } from "./core/workspace";
 import {
   derivePostTurnLocalReviewDecision,
   derivePostTurnLocalReviewFailurePatch,
 } from "./post-turn-pull-request-policy";
 import {
-  persistTrackedPrHostLocalBlocker,
   runTrackedPrCurrentHeadLocalCiGate,
 } from "./tracked-pr-local-ci-publication-gate";
 import { currentHeadLocalCiMissing, hasConfiguredLocalCiCommand } from "./local-ci-policy";
 import * as trackedPrStatusComments from "./tracked-pr-status-comment";
-import { buildStaleReviewBotRemediation } from "./supervisor/stale-review-bot-remediation";
 import { maybeRequestCodexConnectorReviewComment } from "./codex-connector-review-request-transition";
 import { hasResolvedAllStaleConfiguredBotThreads } from "./supervisor/stale-review-bot-recovery";
+import { applyTrackedPrLifecycleState } from "./post-turn-pull-request-lifecycle";
+import { maybePromoteDraftPullRequestToReady } from "./post-turn-ready-promotion";
 
 export { syncTrackedPrPersistentStatusComment } from "./tracked-pr-status-comment";
 
@@ -101,8 +88,6 @@ export interface PullRequestLifecycleSnapshot {
     "copilot_review_timed_out_at" | "copilot_review_timeout_action" | "copilot_review_timeout_reason"
   >;
 }
-
-const TRUSTED_DURABLE_ARTIFACT_NORMALIZATION_COMMIT_MESSAGE = "Normalize trusted durable artifacts for path hygiene";
 
 function escapeRegExp(input: string): string {
   return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -317,118 +302,12 @@ async function loadOpenPullRequestSnapshot(
   return { pr, checks, reviewThreads };
 }
 
-async function applyTrackedPrLifecycleState(args: {
-  config: SupervisorConfig;
-  stateStore: Pick<StateStore, "touch" | "save">;
-  state: SupervisorStateFile;
-  syncJournal: IssueJournalSync;
-  record: IssueRunRecord;
-  pr: GitHubPullRequest;
-  checks: PullRequestCheck[];
-  reviewThreads: ReviewThread[];
-  repeatedLocalReviewSignatureCount: number;
-  derivePullRequestLifecycleSnapshot: HandlePostTurnPullRequestTransitionsArgs["derivePullRequestLifecycleSnapshot"];
-  applyFailureSignature: HandlePostTurnPullRequestTransitionsArgs["applyFailureSignature"];
-  blockedReasonFromReviewState: HandlePostTurnPullRequestTransitionsArgs["blockedReasonFromReviewState"];
-  summarizeChecks: HandlePostTurnPullRequestTransitionsArgs["summarizeChecks"];
-  manualReviewThreads: HandlePostTurnPullRequestTransitionsArgs["manualReviewThreads"];
-  configuredBotReviewThreads: HandlePostTurnPullRequestTransitionsArgs["configuredBotReviewThreads"];
-  mergeConflictDetected: HandlePostTurnPullRequestTransitionsArgs["mergeConflictDetected"];
-}): Promise<{ record: IssueRunRecord; effectiveFailureContext: FailureContext | null }> {
-  const refreshedLifecycle = args.derivePullRequestLifecycleSnapshot(
-    args.record,
-    args.pr,
-    args.checks,
-    args.reviewThreads,
-    { repeated_local_review_signature_count: args.repeatedLocalReviewSignatureCount },
-  );
-  const localReviewRepairSummary =
-    refreshedLifecycle.nextState === "local_review_fix"
-      ? localReviewRepairContinuationSummary(args.config, refreshedLifecycle.recordForState, args.pr)
-      : null;
-  const postReadyLocalReviewFailureContext =
-    refreshedLifecycle.nextState === "blocked" &&
-    localReviewRetryLoopStalled(
-      args.config,
-      refreshedLifecycle.recordForState,
-      args.pr,
-      args.checks,
-      args.reviewThreads,
-      args.manualReviewThreads,
-      args.configuredBotReviewThreads,
-      args.summarizeChecks,
-      args.mergeConflictDetected,
-    )
-      ? localReviewStallFailureContext(refreshedLifecycle.recordForState)
-      : refreshedLifecycle.nextState === "blocked" &&
-          localReviewHighSeverityNeedsBlock(args.config, refreshedLifecycle.recordForState, args.pr)
-        ? localReviewFailureContext(refreshedLifecycle.recordForState)
-        : refreshedLifecycle.nextState === "local_review_fix"
-          ? localReviewRepairContinuationFailureContext(args.config, refreshedLifecycle.recordForState, args.pr)
-          : null;
-  const effectiveFailureContext = refreshedLifecycle.failureContext ?? postReadyLocalReviewFailureContext;
-  const updatedRecord = args.stateStore.touch(args.record, {
-    pr_number: args.pr.number,
-    ...refreshedLifecycle.reviewWaitPatch,
-    ...refreshedLifecycle.codexConnectorRequestObservationPatch,
-    ...refreshedLifecycle.copilotRequestObservationPatch,
-    merge_readiness_last_evaluated_at: refreshedLifecycle.mergeLatencyVisibilityPatch.merge_readiness_last_evaluated_at,
-    provider_success_head_sha: refreshedLifecycle.mergeLatencyVisibilityPatch.provider_success_head_sha,
-    provider_success_observed_at: refreshedLifecycle.mergeLatencyVisibilityPatch.provider_success_observed_at,
-    ...refreshedLifecycle.copilotTimeoutPatch,
-    state: refreshedLifecycle.nextState,
-    last_head_sha: args.pr.headRefOid,
-    repeated_local_review_signature_count: args.repeatedLocalReviewSignatureCount,
-    last_error:
-      refreshedLifecycle.nextState === "blocked" && effectiveFailureContext
-        ? truncate(effectiveFailureContext.summary, 1000)
-        : localReviewRepairSummary
-          ? truncate(localReviewRepairSummary, 1000)
-          : refreshedLifecycle.nextState === "blocked"
-            ? args.record.last_error
-            : null,
-    last_failure_context: effectiveFailureContext,
-    ...args.applyFailureSignature(args.record, effectiveFailureContext),
-    blocked_reason:
-      refreshedLifecycle.nextState === "blocked"
-        ? args.blockedReasonFromReviewState(
-            refreshedLifecycle.recordForState,
-            args.pr,
-            args.checks,
-            args.reviewThreads,
-          ) ??
-          ((localReviewRetryLoopStalled(
-            args.config,
-            refreshedLifecycle.recordForState,
-            args.pr,
-            args.checks,
-            args.reviewThreads,
-            args.manualReviewThreads,
-            args.configuredBotReviewThreads,
-            args.summarizeChecks,
-            args.mergeConflictDetected,
-          ) ||
-            localReviewHighSeverityNeedsBlock(args.config, refreshedLifecycle.recordForState, args.pr))
-            ? "verification"
-            : null)
-        : null,
-  });
-  args.state.issues[String(updatedRecord.issue_number)] = updatedRecord;
-  await args.stateStore.save(args.state);
-  await args.syncJournal(updatedRecord);
-  return {
-    record: updatedRecord,
-    effectiveFailureContext,
-  };
-}
-
 export async function handlePostTurnPullRequestTransitionsPhase(
   args: HandlePostTurnPullRequestTransitionsArgs,
 ): Promise<PostTurnPullRequestResult> {
   const runLocalReviewImpl = args.runLocalReviewImpl ?? runLocalReview;
   const loadOpenPullRequestSnapshotImpl =
     args.loadOpenPullRequestSnapshot ?? ((prNumber: number) => loadOpenPullRequestSnapshot(args.github, prNumber));
-  const runWorkstationLocalPathGateImpl = args.runWorkstationLocalPathGate ?? runWorkstationLocalPathGate;
   const { config, stateStore, github } = args;
   const { state, issue, workspacePath, syncJournal, memoryArtifacts, options } = args.context;
   let { record, pr } = args.context;
@@ -514,178 +393,27 @@ export async function handlePostTurnPullRequestTransitionsPhase(
     !localReviewBlocksReady(config, record, refreshed.pr) &&
     !options.dryRun
   ) {
-    const readyPromotionChangedFilePaths =
-      listReadyPromotionChangedFilePaths({
-        workspacePath,
-        baseRef: `origin/${config.defaultBranch}`,
-        headRef: refreshed.pr.headRefName,
-      }) ??
-      listReadyPromotionChangedFilePaths({
-        workspacePath,
-        baseRef: config.defaultBranch,
-        headRef: refreshed.pr.headRefName,
-      }) ??
-      undefined;
-    const pathHygieneGate = await runWorkstationLocalPathGateImpl({
-      workspacePath,
-      gateLabel: `before marking PR #${refreshed.pr.number} ready`,
-      publishablePathAllowlistMarkers: config.publishablePathAllowlistMarkers,
-      readyPromotionChangedFilePaths,
-    });
-    const pathHygieneDecision = deriveReadyPromotionPathHygieneDecision({
-      record,
-      pr: refreshed.pr,
-      gate: pathHygieneGate,
-      fallbackSummary: `Tracked durable artifacts failed workstation-local path hygiene before marking PR #${refreshed.pr.number} ready.`,
-      applyFailureSignature: args.applyFailureSignature,
-    });
-    if (pathHygieneDecision.kind === "repair" || pathHygieneDecision.kind === "manual_review") {
-      record = stateStore.touch(record, pathHygieneDecision.recordPatch);
-      state.issues[String(record.issue_number)] = record;
-      await stateStore.save(state);
-      await syncJournal(record);
-      record = await trackedPrStatusComments.maybeCommentOnTrackedPrHostLocalBlocker({
-        github,
-        stateStore,
-        state,
-        record,
-        pr: refreshed.pr,
-        syncJournal,
-        ...pathHygieneDecision.comment,
-      });
-      return {
-        record,
-        pr: refreshed.pr,
-        checks: refreshed.checks,
-        reviewThreads: refreshed.reviewThreads,
-      };
-    }
-
-    if (
-      pathHygieneDecision.maintenanceFindingDetails.length > 0 ||
-      (record.ready_promotion_maintenance_finding_details?.length ?? 0) > 0
-    ) {
-      record = stateStore.touch(record, {
-        ready_promotion_maintenance_finding_details: pathHygieneDecision.maintenanceFindingDetails,
-        ready_promotion_maintenance_head_sha: refreshed.pr.headRefOid ?? null,
-      });
-      state.issues[String(record.issue_number)] = record;
-      await stateStore.save(state);
-      await syncJournal(record);
-    }
-
-    const presentRewrittenTrackedPaths = await filterPresentTrackedFilePaths(
-      workspacePath,
-      pathHygieneDecision.rewrittenTrackedPaths,
-    );
-    if (presentRewrittenTrackedPaths.length > 0) {
-      let persistedNormalizationCommit = false;
-      try {
-        persistedNormalizationCommit = await commitAndPushTrackedFiles({
-          workspacePath,
-          branch: refreshed.pr.headRefName,
-          remoteBranchExists: true,
-          filePaths: presentRewrittenTrackedPaths,
-          commitMessage: TRUSTED_DURABLE_ARTIFACT_NORMALIZATION_COMMIT_MESSAGE,
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        const failureContext = buildWorkstationLocalPathFailureContext({
-          gateLabel: `before marking PR #${refreshed.pr.number} ready`,
-          details: [
-            `durable artifact normalization persistence failed for ${presentRewrittenTrackedPaths.join(", ")}: ${message}`,
-          ],
-        });
-        record = await persistTrackedPrHostLocalBlocker({
-          stateStore,
-          state,
-          record,
-          pr: refreshed.pr,
-          failureContext,
-          syncJournal,
-          applyFailureSignature: args.applyFailureSignature,
-        });
-        return {
-          record,
-          pr: refreshed.pr,
-          checks: refreshed.checks,
-          reviewThreads: refreshed.reviewThreads,
-        };
-      }
-      if (!persistedNormalizationCommit) {
-        const failureContext = buildWorkstationLocalPathFailureContext({
-          gateLabel: `before marking PR #${refreshed.pr.number} ready`,
-          details: [
-            `durable artifact normalization reported rewritten paths for ${presentRewrittenTrackedPaths.join(", ")} but did not create a commit to publish.`,
-          ],
-        });
-        record = await persistTrackedPrHostLocalBlocker({
-          stateStore,
-          state,
-          record,
-          pr: refreshed.pr,
-          failureContext,
-          syncJournal,
-          applyFailureSignature: args.applyFailureSignature,
-        });
-        return {
-          record,
-          pr: refreshed.pr,
-          checks: refreshed.checks,
-          reviewThreads: refreshed.reviewThreads,
-        };
-      }
-
-      const persisted = await loadOpenPullRequestSnapshotImpl(refreshed.pr.number);
-      record = stateStore.touch(record, {
-        state: "draft_pr",
-        pr_number: persisted.pr.number,
-        last_head_sha: persisted.pr.headRefOid,
-        blocked_reason: null,
-        last_error: null,
-        last_failure_kind: null,
-        last_failure_context: null,
-        last_failure_signature: null,
-        repeated_failure_signature_count: 0,
-      });
-      state.issues[String(record.issue_number)] = record;
-      await stateStore.save(state);
-      await syncJournal(record);
-      return {
-        record,
-        pr: persisted.pr,
-        checks: persisted.checks,
-        reviewThreads: persisted.reviewThreads,
-      };
-    }
-
-    const currentHeadLocalCiGate = await runTrackedPrCurrentHeadLocalCiGate({
+    const readyPromotion = await maybePromoteDraftPullRequestToReady({
       config,
       stateStore,
       state,
+      github,
       record,
       pr: refreshed.pr,
+      checks: refreshed.checks,
+      reviewThreads: refreshed.reviewThreads,
       workspacePath,
-      gateLabel: `before marking PR #${refreshed.pr.number} ready`,
-      workspaceHeadMismatchDetail: (localHeadSha, prHeadSha) =>
-        `local workspace HEAD ${localHeadSha} does not match PR head ${prHeadSha}; the ready gate is failing closed until the local commit is published.`,
-      publishWorkspaceHeadMismatchComment: true,
-      github,
       syncJournal,
       applyFailureSignature: args.applyFailureSignature,
       runWorkspacePreparationCommand: args.runWorkspacePreparationCommand,
       runLocalCiCommand: args.runLocalCiCommand,
+      runWorkstationLocalPathGate: args.runWorkstationLocalPathGate,
+      loadOpenPullRequestSnapshot: loadOpenPullRequestSnapshotImpl,
     });
-    record = currentHeadLocalCiGate.record;
-    if (!currentHeadLocalCiGate.ok) {
-      return {
-        record,
-        pr: refreshed.pr,
-        checks: refreshed.checks,
-        reviewThreads: refreshed.reviewThreads,
-      };
+    if (readyPromotion.handled) {
+      return readyPromotion.result;
     }
-    await github.markPullRequestReady(refreshed.pr.number);
+    record = readyPromotion.record;
   }
 
   let postReady = await loadOpenPullRequestSnapshotImpl(pr.number);
