@@ -3,6 +3,7 @@ import { IssueJournalSync } from "./run-once-issue-preparation";
 import { StateStore } from "./core/state-store";
 import {
   evaluateCodexConnectorConvergencePolicy,
+  hasCodexConnectorFindingReviewComment,
   hasCodexConnectorPrSuccessCurrentHeadObservation,
 } from "./codex-connector-review-policy";
 import {
@@ -465,9 +466,7 @@ function buildConversationResolutionBlocker(args: {
   const configuredThreads = configuredBotReviewThreads(args.config, unresolvedThreads);
   if (
     configuredThreads.length !== unresolvedThreads.length ||
-    configuredThreads.some(
-      (thread) => !thread.isOutdated || !latestReviewCommentAuthorIsAllowedBot(args.config, thread),
-    )
+    configuredThreads.some((thread) => !isClearableConversationResolutionResidueThread(args.config, args.pr, thread))
   ) {
     return null;
   }
@@ -507,6 +506,22 @@ function buildConversationResolutionBlocker(args: {
       automaticRetry: "no",
     }),
   };
+}
+
+function isClearableConversationResolutionResidueThread(
+  config: SupervisorConfig,
+  pr: GitHubPullRequest,
+  thread: ReviewThread,
+): boolean {
+  if (!thread.isOutdated) {
+    return false;
+  }
+
+  if (latestReviewCommentAuthorIsAllowedBot(config, thread)) {
+    return true;
+  }
+
+  return hasCodexConnectorPrSuccessCurrentHeadObservation(pr) && hasCodexConnectorFindingReviewComment(thread);
 }
 
 function hasPersistentTrackedPrMergeStageSignal(args: {

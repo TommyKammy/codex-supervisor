@@ -2558,6 +2558,16 @@ test("runPreparedIssue records provider success for HRCore stale residue before 
               typeName: "Bot",
             },
           },
+          {
+            id: `comment-operator-${threadId}`,
+            body: "Supervisor confirmed this stale Codex Connector finding is covered by the current-head success signal.",
+            createdAt: "2026-05-25T04:16:47Z",
+            url: `https://example.test/pr/183#discussion_${threadId}`,
+            author: {
+              login: "TommyKammy",
+              typeName: "User",
+            },
+          },
         ],
       },
     }),
