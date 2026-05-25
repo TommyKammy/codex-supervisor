@@ -2,9 +2,85 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { runLocalCiGate } from "./local-ci";
-import { runTrackedPrReadyLocalCiPublicationGate } from "./tracked-pr-local-ci-publication-gate";
+import {
+  runTrackedPrCurrentHeadLocalCiGate,
+  runTrackedPrReadyLocalCiPublicationGate,
+} from "./tracked-pr-local-ci-publication-gate";
 import { createConfig, createPullRequest, createRecord } from "./turn-execution-test-helpers";
 import type { SupervisorStateFile } from "./core/types";
+
+test("runTrackedPrCurrentHeadLocalCiGate stamps the local CI result only after workspace HEAD matches the PR", async () => {
+  const pr = createPullRequest({
+    number: 116,
+    isDraft: false,
+    headRefOid: "head-116",
+  });
+  const record = createRecord({
+    state: "ready_to_merge",
+    pr_number: pr.number,
+    branch: "codex/issue-102",
+    latest_local_ci_result: null,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: record.issue_number,
+    issues: { [String(record.issue_number)]: record },
+  };
+  let localCiCalls = 0;
+  let saveCalls = 0;
+  let syncJournalCalls = 0;
+
+  const result = await runTrackedPrCurrentHeadLocalCiGate({
+    config: createConfig({ localCiCommand: "npm run ci:local" }),
+    stateStore: {
+      touch: (currentRecord, patch) => ({
+        ...currentRecord,
+        ...patch,
+        updated_at: currentRecord.updated_at,
+      }),
+      save: async () => {
+        saveCalls += 1;
+      },
+    },
+    state,
+    record,
+    pr,
+    workspacePath: path.join("workspace", "issue-102"),
+    gateLabel: "before auto-merging PR #116",
+    workspaceHeadMismatchDetail: (localHeadSha, prHeadSha) =>
+      `local workspace HEAD ${localHeadSha} does not match PR head ${prHeadSha}; the auto-merge gate is failing closed until the local commit is published.`,
+    publishWorkspaceHeadMismatchComment: false,
+    github: {},
+    syncJournal: async () => {
+      syncJournalCalls += 1;
+    },
+    applyFailureSignature: (_currentRecord, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    runLocalCiCommand: async () => {
+      localCiCalls += 1;
+    },
+    getWorkspaceStatus: async () => ({
+      branch: "codex/issue-102",
+      headSha: "head-116",
+      hasUncommittedChanges: false,
+      baseAhead: 1,
+      baseBehind: 0,
+      remoteBranchExists: true,
+      remoteAhead: 0,
+      remoteBehind: 0,
+    }),
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.failureContext, null);
+  assert.equal(result.record.latest_local_ci_result?.outcome, "passed");
+  assert.equal(result.record.latest_local_ci_result?.summary, "Configured local CI command passed before auto-merging PR #116.");
+  assert.equal(result.record.latest_local_ci_result?.head_sha, "head-116");
+  assert.equal(localCiCalls, 1);
+  assert.equal(saveCalls, 2);
+  assert.equal(syncJournalCalls, 2);
+});
 
 test("runTrackedPrReadyLocalCiPublicationGate reports workspace failures with the shared remediation target", async () => {
   const pr = createPullRequest({

@@ -14,6 +14,8 @@ import {
   SupervisorStateFile,
 } from "./core/types";
 import { truncate } from "./core/utils";
+import { getWorkspaceStatus as getWorkspaceStatusImpl } from "./core/workspace";
+import { buildWorkstationLocalPathFailureContext } from "./workstation-local-path-gate";
 import * as trackedPrStatusComments from "./tracked-pr-status-comment";
 import {
   appendTimelineArtifact,
@@ -23,6 +25,12 @@ import {
 export interface TrackedPrReadyLocalCiPublicationGateResult {
   ok: boolean;
   record: IssueRunRecord;
+}
+
+export interface TrackedPrCurrentHeadLocalCiGateResult {
+  ok: boolean;
+  record: IssueRunRecord;
+  failureContext: FailureContext | null;
 }
 
 export async function runTrackedPrReadyLocalCiPublicationGate(args: {
@@ -149,4 +157,105 @@ export async function runTrackedPrReadyLocalCiPublicationGate(args: {
   await args.stateStore.save(args.state);
   await args.syncJournal(record);
   return { ok: true, record };
+}
+
+export async function runTrackedPrCurrentHeadLocalCiGate(args: {
+  config: Pick<SupervisorConfig, "defaultBranch" | "repoPath" | "workspacePreparationCommand" | "localCiCommand">;
+  stateStore: Pick<StateStore, "touch" | "save">;
+  state: SupervisorStateFile;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  workspacePath: string;
+  gateLabel: string;
+  workspaceHeadMismatchDetail: (localHeadSha: string, prHeadSha: string) => string;
+  publishWorkspaceHeadMismatchComment: boolean;
+  github: Partial<Pick<GitHubClient, "addIssueComment" | "updateIssueComment">>;
+  syncJournal: IssueJournalSync;
+  applyFailureSignature: (
+    record: IssueRunRecord,
+    failureContext: FailureContext | null,
+  ) => Pick<IssueRunRecord, "last_failure_signature" | "repeated_failure_signature_count">;
+  runWorkspacePreparationCommand?: LocalCiCommandRunner;
+  runLocalCiCommand?: LocalCiCommandRunner;
+  getWorkspaceStatus?: typeof getWorkspaceStatusImpl;
+}): Promise<TrackedPrCurrentHeadLocalCiGateResult> {
+  const localCiPublicationGate = await runTrackedPrReadyLocalCiPublicationGate({
+    config: args.config,
+    stateStore: args.stateStore,
+    state: args.state,
+    record: args.record,
+    pr: args.pr,
+    workspacePath: args.workspacePath,
+    gateLabel: args.gateLabel,
+    github: args.github,
+    syncJournal: args.syncJournal,
+    applyFailureSignature: args.applyFailureSignature,
+    runWorkspacePreparationCommand: args.runWorkspacePreparationCommand,
+    runLocalCiCommand: args.runLocalCiCommand,
+  });
+  let record = localCiPublicationGate.record;
+  if (!localCiPublicationGate.ok) {
+    return { ok: false, record, failureContext: record.last_failure_context ?? null };
+  }
+
+  const getWorkspaceStatus = args.getWorkspaceStatus ?? getWorkspaceStatusImpl;
+  const localWorkspaceStatus = await getWorkspaceStatus(args.workspacePath, record.branch, args.config.defaultBranch);
+  if (localWorkspaceStatus.headSha !== args.pr.headRefOid) {
+    const failureContext = buildWorkstationLocalPathFailureContext({
+      gateLabel: args.gateLabel,
+      details: [
+        args.workspaceHeadMismatchDetail(localWorkspaceStatus.headSha, args.pr.headRefOid),
+      ],
+    });
+    record = args.stateStore.touch(record, {
+      state: "blocked",
+      last_error: truncate(failureContext.summary, 1000),
+      last_failure_kind: null,
+      last_failure_context: failureContext,
+      ...args.applyFailureSignature(record, failureContext),
+      blocked_reason: "verification",
+      ...trackedPrStatusComments.observedTrackedPrHostLocalBlockerPatch({
+        pr: args.pr,
+        blockerSignature: failureContext.signature,
+      }),
+    });
+    args.state.issues[String(record.issue_number)] = record;
+    await args.stateStore.save(args.state);
+    await args.syncJournal(record);
+    if (args.publishWorkspaceHeadMismatchComment) {
+      record = await trackedPrStatusComments.maybeCommentOnTrackedPrHostLocalBlocker({
+        github: args.github,
+        stateStore: args.stateStore,
+        state: args.state,
+        record,
+        pr: args.pr,
+        syncJournal: args.syncJournal,
+        gateType: "workstation_local_path_hygiene",
+        blockerSignature: failureContext.signature,
+        failureClass: failureContext.signature,
+        remediationTarget: "tracked_publishable_content",
+        summary: failureContext.summary,
+        details: failureContext.details,
+      });
+    }
+    return { ok: false, record, failureContext };
+  }
+
+  if (
+    record.latest_local_ci_result !== null &&
+    record.latest_local_ci_result !== undefined &&
+    record.latest_local_ci_result.head_sha !== args.pr.headRefOid
+  ) {
+    record = args.stateStore.touch(record, {
+      latest_local_ci_result: {
+        ...record.latest_local_ci_result,
+        head_sha: args.pr.headRefOid,
+      },
+    });
+    args.state.issues[String(record.issue_number)] = record;
+    await args.stateStore.save(args.state);
+    await args.syncJournal(record);
+  }
+
+  return { ok: true, record, failureContext: null };
 }
