@@ -33,6 +33,40 @@ export interface TrackedPrCurrentHeadLocalCiGateResult {
   failureContext: FailureContext | null;
 }
 
+export async function persistTrackedPrHostLocalBlocker(args: {
+  stateStore: Pick<StateStore, "touch" | "save">;
+  state: SupervisorStateFile;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  failureContext: FailureContext | null;
+  recordPatch?: Partial<IssueRunRecord>;
+  blockedReason?: IssueRunRecord["blocked_reason"];
+  syncJournal: IssueJournalSync;
+  applyFailureSignature: (
+    record: IssueRunRecord,
+    failureContext: FailureContext | null,
+  ) => Pick<IssueRunRecord, "last_failure_signature" | "repeated_failure_signature_count">;
+}): Promise<IssueRunRecord> {
+  const recordPatch = args.recordPatch ?? {};
+  const record = args.stateStore.touch(args.record, {
+    ...recordPatch,
+    state: recordPatch.state ?? "blocked",
+    last_error: recordPatch.last_error ?? truncate(args.failureContext?.summary, 1000),
+    last_failure_kind: null,
+    last_failure_context: args.failureContext,
+    ...args.applyFailureSignature(args.record, args.failureContext),
+    blocked_reason: recordPatch.blocked_reason ?? args.blockedReason ?? "verification",
+    ...trackedPrStatusComments.observedTrackedPrHostLocalBlockerPatch({
+      pr: args.pr,
+      blockerSignature: args.failureContext?.signature ?? null,
+    }),
+  });
+  args.state.issues[String(record.issue_number)] = record;
+  await args.stateStore.save(args.state);
+  await args.syncJournal(record);
+  return record;
+}
+
 export async function runTrackedPrReadyLocalCiPublicationGate(args: {
   config: Pick<SupervisorConfig, "repoPath" | "workspacePreparationCommand" | "localCiCommand">;
   stateStore: Pick<StateStore, "touch" | "save">;
@@ -59,21 +93,15 @@ export async function runTrackedPrReadyLocalCiPublicationGate(args: {
   });
   if (!workspacePreparationGate.ok) {
     const failureContext = workspacePreparationGate.failureContext;
-    let record = args.stateStore.touch(args.record, {
-      state: "blocked",
-      last_error: truncate(failureContext?.summary, 1000),
-      last_failure_kind: null,
-      last_failure_context: failureContext,
-      ...args.applyFailureSignature(args.record, failureContext),
-      blocked_reason: "verification",
-      ...trackedPrStatusComments.observedTrackedPrHostLocalBlockerPatch({
-        pr: args.pr,
-        blockerSignature: failureContext?.signature ?? null,
-      }),
+    let record = await persistTrackedPrHostLocalBlocker({
+      stateStore: args.stateStore,
+      state: args.state,
+      record: args.record,
+      pr: args.pr,
+      failureContext,
+      syncJournal: args.syncJournal,
+      applyFailureSignature: args.applyFailureSignature,
     });
-    args.state.issues[String(record.issue_number)] = record;
-    await args.stateStore.save(args.state);
-    await args.syncJournal(record);
     record = await trackedPrStatusComments.maybeCommentOnTrackedPrHostLocalBlocker({
       github: args.github,
       stateStore: args.stateStore,
@@ -101,29 +129,25 @@ export async function runTrackedPrReadyLocalCiPublicationGate(args: {
   });
   if (!localCiGate.ok) {
     const failureContext = localCiGate.failureContext;
-    let record = args.stateStore.touch(args.record, {
-      state: "blocked",
-      latest_local_ci_result: localCiGate.latestResult ?? null,
-      timeline_artifacts: localCiGate.latestResult
-        ? appendTimelineArtifact(args.record, buildLocalCiTimelineArtifact({
-          gate: "local_ci",
-          result: localCiGate.latestResult,
-          headSha: args.pr.headRefOid ?? null,
-        }))
-        : args.record.timeline_artifacts,
-      last_error: truncate(failureContext?.summary, 1000),
-      last_failure_kind: null,
-      last_failure_context: failureContext,
-      ...args.applyFailureSignature(args.record, failureContext),
-      blocked_reason: "verification",
-      ...trackedPrStatusComments.observedTrackedPrHostLocalBlockerPatch({
-        pr: args.pr,
-        blockerSignature: failureContext?.signature ?? null,
-      }),
+    let record = await persistTrackedPrHostLocalBlocker({
+      stateStore: args.stateStore,
+      state: args.state,
+      record: args.record,
+      pr: args.pr,
+      failureContext,
+      recordPatch: {
+        latest_local_ci_result: localCiGate.latestResult ?? null,
+        timeline_artifacts: localCiGate.latestResult
+          ? appendTimelineArtifact(args.record, buildLocalCiTimelineArtifact({
+            gate: "local_ci",
+            result: localCiGate.latestResult,
+            headSha: args.pr.headRefOid ?? null,
+          }))
+          : args.record.timeline_artifacts,
+      },
+      syncJournal: args.syncJournal,
+      applyFailureSignature: args.applyFailureSignature,
     });
-    args.state.issues[String(record.issue_number)] = record;
-    await args.stateStore.save(args.state);
-    await args.syncJournal(record);
     record = await trackedPrStatusComments.maybeCommentOnTrackedPrHostLocalBlocker({
       github: args.github,
       stateStore: args.stateStore,
@@ -207,21 +231,15 @@ export async function runTrackedPrCurrentHeadLocalCiGate(args: {
         args.workspaceHeadMismatchDetail(localWorkspaceStatus.headSha, args.pr.headRefOid),
       ],
     });
-    record = args.stateStore.touch(record, {
-      state: "blocked",
-      last_error: truncate(failureContext.summary, 1000),
-      last_failure_kind: null,
-      last_failure_context: failureContext,
-      ...args.applyFailureSignature(record, failureContext),
-      blocked_reason: "verification",
-      ...trackedPrStatusComments.observedTrackedPrHostLocalBlockerPatch({
-        pr: args.pr,
-        blockerSignature: failureContext.signature,
-      }),
+    record = await persistTrackedPrHostLocalBlocker({
+      stateStore: args.stateStore,
+      state: args.state,
+      record,
+      pr: args.pr,
+      failureContext,
+      syncJournal: args.syncJournal,
+      applyFailureSignature: args.applyFailureSignature,
     });
-    args.state.issues[String(record.issue_number)] = record;
-    await args.stateStore.save(args.state);
-    await args.syncJournal(record);
     if (args.publishWorkspaceHeadMismatchComment) {
       record = await trackedPrStatusComments.maybeCommentOnTrackedPrHostLocalBlocker({
         github: args.github,
