@@ -575,6 +575,139 @@ test("inferStateFromPullRequest ignores stale same-head Codex review wait when o
   assert.equal(syncMergeLatencyVisibility(config, record, pr, checks, reviewThreads).provider_success_head_sha, "head123");
 });
 
+test("inferStateFromPullRequest records provider success for converged outdated Codex residue before another repair turn", () => {
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    humanReviewBlocksMerge: true,
+    configuredBotInitialGraceWaitSeconds: 0,
+    configuredBotSettledWaitSeconds: 0,
+  });
+  const record = createRecord({
+    state: "addressing_review",
+    last_head_sha: "head123",
+    review_wait_started_at: "2026-05-23T16:07:04Z",
+    review_wait_head_sha: "head123",
+    last_failure_context: {
+      category: "review",
+      summary: "7 unresolved automated review thread(s) remain.",
+      signature: "thread-outdated-codex",
+      command: null,
+      details: [
+        "src/mvp-a-onboarding-traceability.ts:? p_severity=P1 summary=stale Codex Connector residue",
+      ],
+      url: "https://example.test/pr/44#discussion_r2123",
+      updated_at: "2026-05-23T16:07:04Z",
+    },
+    last_failure_signature: "thread-outdated-codex",
+    repeated_failure_signature_count: 3,
+  });
+  const pr = createPullRequest({
+    headRefOid: "head123",
+    configuredBotCurrentHeadObservedAt: "2026-05-23T14:33:41Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
+    currentHeadCiGreenAt: "2026-05-23T16:02:36Z",
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+  });
+  const reviewThreads = [
+    createReviewThread({
+      id: "thread-outdated-codex",
+      isOutdated: true,
+      comments: {
+        nodes: [
+          {
+            id: "comment-outdated-codex",
+            body: "P1: Earlier Codex Connector finding that is obsolete after the current-head no-major signal.",
+            createdAt: "2026-05-23T14:16:47Z",
+            url: "https://example.test/pr/44#discussion_r2123",
+            author: {
+              login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  ];
+  const checks = passingChecks();
+
+  assert.equal(inferStateFromPullRequest(config, record, pr, checks, reviewThreads), "pr_open");
+  assert.equal(blockedReasonFromReviewState(config, record, pr, checks, reviewThreads), null);
+  assert.equal(syncMergeLatencyVisibility(config, record, pr, checks, reviewThreads).provider_success_head_sha, "head123");
+});
+
+test("inferStateFromPullRequest records provider success when outdated Codex residue is mixed with nitpicks", () => {
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    humanReviewBlocksMerge: true,
+    configuredBotInitialGraceWaitSeconds: 0,
+    configuredBotSettledWaitSeconds: 0,
+  });
+  const record = createRecord({
+    state: "addressing_review",
+    last_head_sha: "head123",
+    review_wait_started_at: "2026-05-23T16:07:04Z",
+    review_wait_head_sha: "head123",
+    last_failure_signature: "thread-outdated-codex",
+    repeated_failure_signature_count: 3,
+  });
+  const pr = createPullRequest({
+    headRefOid: "head123",
+    configuredBotCurrentHeadObservedAt: "2026-05-23T14:33:41Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: "nitpick_only",
+    currentHeadCiGreenAt: "2026-05-23T16:02:36Z",
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+  });
+  const reviewThreads = [
+    createReviewThread({
+      id: "thread-outdated-codex",
+      isOutdated: true,
+      comments: {
+        nodes: [
+          {
+            id: "comment-outdated-codex",
+            body: "P1: Earlier Codex Connector finding that is obsolete after the current-head nitpick-only signal.",
+            createdAt: "2026-05-23T14:16:47Z",
+            url: "https://example.test/pr/44#discussion_r2123",
+            author: {
+              login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+    createReviewThread({
+      id: "thread-current-nitpick",
+      isOutdated: false,
+      comments: {
+        nodes: [
+          {
+            id: "comment-current-nitpick",
+            body: "P3: Consider renaming this helper for clarity.",
+            createdAt: "2026-05-23T14:34:00Z",
+            url: "https://example.test/pr/44#discussion_r2124",
+            author: {
+              login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  ];
+  const checks = passingChecks();
+
+  assert.equal(inferStateFromPullRequest(config, record, pr, checks, reviewThreads), "pr_open");
+  assert.equal(blockedReasonFromReviewState(config, record, pr, checks, reviewThreads), null);
+  assert.equal(syncMergeLatencyVisibility(config, record, pr, checks, reviewThreads).provider_success_head_sha, "head123");
+});
+
 test("inferStateFromPullRequest keeps stale Codex review waits guarded when safe-shape gates are missing", () => {
   const config = createConfig({
     reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],

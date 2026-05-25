@@ -719,8 +719,6 @@ function effectiveConfiguredBotReviewThreads(
   reviewThreads: ReviewThread[],
 ): ReviewThread[] {
   const unresolvedConfiguredBotThreads = configuredBotReviewThreads(config, reviewThreads);
-  const codexConnectorPolicy = evaluateCodexConnectorConvergencePolicy(config, pr, unresolvedConfiguredBotThreads);
-  const codexConnectorNitpickThreads = new Set(codexConnectorNitpickOnlyReviewThreads(unresolvedConfiguredBotThreads));
   const clearOutdatedCodexConnectorThreads = codexConnectorOutdatedThreadClearanceAllowed(
     config,
     record,
@@ -728,10 +726,7 @@ function effectiveConfiguredBotReviewThreads(
     checks,
     reviewThreads,
   );
-  const effectiveThreads =
-    codexConnectorPolicy?.outcome === "nitpick_only" || codexConnectorPolicy?.outcome === "converged"
-      ? unresolvedConfiguredBotThreads.filter((thread) => !codexConnectorNitpickThreads.has(thread))
-      : unresolvedConfiguredBotThreads;
+  const effectiveThreads = codexConnectorThreadsAfterConvergencePolicy(config, pr, unresolvedConfiguredBotThreads);
   const threadsAfterOutdatedClearance = clearOutdatedCodexConnectorThreads
     ? effectiveThreads.filter(
         (thread) => !thread.isOutdated || !latestReviewCommentAuthorIsAllowedBot(config, thread),
@@ -740,6 +735,20 @@ function effectiveConfiguredBotReviewThreads(
   return allowJournalOnlyConfiguredBotThreadException(config, pr, checks, threadsAfterOutdatedClearance)
     ? threadsAfterOutdatedClearance.filter((thread) => !isIssueJournalThreadPath(thread))
     : threadsAfterOutdatedClearance;
+}
+
+function codexConnectorThreadsAfterConvergencePolicy(
+  config: SupervisorConfig,
+  pr: GitHubPullRequest,
+  configuredThreads: ReviewThread[],
+): ReviewThread[] {
+  const codexConnectorPolicy = evaluateCodexConnectorConvergencePolicy(config, pr, configuredThreads);
+  if (codexConnectorPolicy?.outcome !== "nitpick_only" && codexConnectorPolicy?.outcome !== "converged") {
+    return configuredThreads;
+  }
+
+  const codexConnectorNitpickThreads = new Set(codexConnectorNitpickOnlyReviewThreads(configuredThreads));
+  return configuredThreads.filter((thread) => !codexConnectorNitpickThreads.has(thread));
 }
 
 export function effectiveConfiguredBotReviewThreadsForState(
@@ -767,15 +776,39 @@ function codexConnectorOutdatedThreadClearanceAllowed(
   checks: PullRequestCheck[],
   reviewThreads: ReviewThread[],
 ): boolean {
+  const providerKinds = configuredReviewProviderKinds(config);
+  const checkSummary = summarizeChecks(checks);
+  const configuredThreads = configuredBotReviewThreads(config, reviewThreads);
+  const codexConnectorPolicy = evaluateCodexConnectorConvergencePolicy(config, pr, configuredThreads);
+  const threadsAfterConvergencePolicy = codexConnectorThreadsAfterConvergencePolicy(config, pr, configuredThreads);
+  const onlyOutdatedCodexConnectorThreads =
+    threadsAfterConvergencePolicy.length > 0 &&
+    threadsAfterConvergencePolicy.every(
+      (thread) => thread.isOutdated && latestReviewCommentAuthorIsAllowedBot(config, thread),
+    );
+  const currentHeadCodexSuccess =
+    pr.configuredBotCurrentHeadObservationSource === "codex_pr_success_comment" &&
+    pr.configuredBotCurrentHeadStatusState === "SUCCESS" &&
+    pr.configuredBotTopLevelReviewStrength !== "blocking" &&
+    validTimestamp(pr.configuredBotCurrentHeadObservedAt);
+  const convergedOutdatedResidueCanClear =
+    providerKinds.includes("codex") &&
+    providerKinds.every((kind) => kind === "codex") &&
+    currentHeadCodexSuccess &&
+    pullRequestHeadMatchesRecord(record, pr) &&
+    checkSummary.allPassing &&
+    manualReviewThreads(config, reviewThreads).length === 0 &&
+    !mergeConflictDetected(pr) &&
+    onlyOutdatedCodexConnectorThreads &&
+    (codexConnectorPolicy?.outcome === "converged" || codexConnectorPolicy?.outcome === "nitpick_only");
+
   return Boolean(
-    configuredReviewProviderKinds(config).includes("codex") &&
-      pr.configuredBotCurrentHeadObservationSource === "codex_pr_success_comment" &&
-      pr.configuredBotCurrentHeadStatusState === "SUCCESS" &&
-      pr.configuredBotTopLevelReviewStrength !== "blocking" &&
-      validTimestamp(pr.configuredBotCurrentHeadObservedAt) &&
+    providerKinds.includes("codex") &&
+      currentHeadCodexSuccess &&
       (currentHeadObservationSatisfiesActiveWait(record, pr) ||
-        staleSameHeadCodexWaitHasOnlyOutdatedResidue(config, record, pr, checks, reviewThreads)) &&
-      summarizeChecks(checks).allPassing,
+        staleSameHeadCodexWaitHasOnlyOutdatedResidue(config, record, pr, checks, reviewThreads) ||
+        convergedOutdatedResidueCanClear) &&
+      checkSummary.allPassing,
   );
 }
 
@@ -820,9 +853,12 @@ function staleSameHeadCodexWaitHasOnlyOutdatedResidue(
   }
 
   const configuredThreads = configuredBotReviewThreads(config, reviewThreads);
+  const threadsAfterConvergencePolicy = codexConnectorThreadsAfterConvergencePolicy(config, pr, configuredThreads);
   return (
-    configuredThreads.length > 0 &&
-    configuredThreads.every((thread) => thread.isOutdated && latestReviewCommentAuthorIsAllowedBot(config, thread))
+    threadsAfterConvergencePolicy.length > 0 &&
+    threadsAfterConvergencePolicy.every(
+      (thread) => thread.isOutdated && latestReviewCommentAuthorIsAllowedBot(config, thread),
+    )
   );
 }
 
