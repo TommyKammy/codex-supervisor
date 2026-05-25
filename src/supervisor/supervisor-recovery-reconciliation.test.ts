@@ -85,6 +85,12 @@ const TRACKED_PR_OLD_HEAD = "head-old-191";
 const TRACKED_PR_NEW_HEAD = "head-new-191";
 const TRACKED_PR_HEAD_BRANCH = "codex/reopen-issue-366";
 const TRACKED_PR_URL = "https://example.test/pr/191";
+const STALE_NO_PR_MANUAL_STOP_REASON =
+  "Issue #366 re-entered stale stabilizing recovery without a tracked PR 3 times; manual intervention is required.";
+const STALE_NO_PR_MANUAL_STOP_RECOVERY_REASON =
+  "stale_state_manual_stop: blocked issue #366 after repeated stale stabilizing recovery without a tracked PR";
+const PARENT_EPIC_AUTO_CLOSED_REASON =
+  "parent_epic_auto_closed: auto-closed parent epic #123 because child issues #201, #202 are closed";
 
 function createTrackedPrRecoveryIssue(overrides: Partial<GitHubIssue> = {}): GitHubIssue {
   return createIssue({
@@ -161,6 +167,167 @@ test("createTrackedPrStaleReviewRecord seeds the reusable stale tracked-PR revie
   assert.deepEqual(record.processed_review_thread_ids, ["thread-1", `thread-1@${TRACKED_PR_OLD_HEAD}`]);
   assert.deepEqual(record.processed_review_thread_fingerprints, [`thread-1@${TRACKED_PR_OLD_HEAD}#comment-1`]);
 });
+
+function createCountingStateStore(updatedAt: string) {
+  let saveCalls = 0;
+  let savedState: SupervisorStateFile | null = null;
+  let touchCalls = 0;
+  let touchedRecord: IssueRunRecord | null = null;
+
+  return {
+    stateStore: {
+      touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+        touchCalls += 1;
+        touchedRecord = {
+          ...current,
+          ...patch,
+          updated_at: updatedAt,
+        };
+        return touchedRecord;
+      },
+      async save(nextState?: SupervisorStateFile): Promise<void> {
+        saveCalls += 1;
+        savedState = nextState ? structuredClone(nextState) : null;
+      },
+    },
+    get saveCalls(): number {
+      return saveCalls;
+    },
+    get savedState(): SupervisorStateFile | null {
+      return savedState;
+    },
+    get touchCalls(): number {
+      return touchCalls;
+    },
+    get touchedRecord(): IssueRunRecord | null {
+      return touchedRecord;
+    },
+  };
+}
+
+function createUnexpectedRecoveryGithub() {
+  return {
+    getPullRequestIfExists: async () => {
+      throw new Error("unexpected getPullRequestIfExists call");
+    },
+    getIssue: async () => {
+      throw new Error("unexpected getIssue call");
+    },
+    getChecks: async () => {
+      throw new Error("unexpected getChecks call");
+    },
+    getUnresolvedReviewThreads: async () => {
+      throw new Error("unexpected getUnresolvedReviewThreads call");
+    },
+  };
+}
+
+function createStaleNoPrManualReviewRecord(config = createConfig()): IssueRunRecord {
+  return createRecord({
+    issue_number: 366,
+    state: "blocked",
+    blocked_reason: "manual_review",
+    pr_number: null,
+    codex_session_id: null,
+    last_error: STALE_NO_PR_MANUAL_STOP_REASON,
+    last_failure_kind: null,
+    last_failure_context: {
+      category: "blocked",
+      summary: STALE_NO_PR_MANUAL_STOP_REASON,
+      signature: "stale-stabilizing-no-pr-recovery-loop",
+      command: null,
+      details: [
+        "state=stabilizing",
+        "tracked_pr=none",
+        "branch_state=recoverable",
+        "repeat_count=3/3",
+      ],
+      url: null,
+      updated_at: "2026-03-13T00:20:00Z",
+    },
+    last_failure_signature: "stale-stabilizing-no-pr-recovery-loop",
+    repeated_failure_signature_count: 0,
+    stale_stabilizing_no_pr_recovery_count: config.sameFailureSignatureRepeatLimit,
+    last_recovery_reason: STALE_NO_PR_MANUAL_STOP_RECOVERY_REASON,
+    last_recovery_at: "2026-03-13T00:20:00Z",
+    updated_at: "2026-03-13T00:20:00Z",
+  });
+}
+
+function createStaleDoneNoPrRecord(): IssueRunRecord {
+  return createRecord({
+    issue_number: 366,
+    state: "done",
+    pr_number: null,
+    codex_session_id: null,
+    blocked_reason: null,
+    last_error: null,
+    last_failure_kind: null,
+    last_failure_context: null,
+    last_failure_signature: null,
+    last_blocker_signature: null,
+    repeated_failure_signature_count: 0,
+    last_recovery_reason: null,
+  });
+}
+
+function createParentEpicClosureIssues(): GitHubIssue[] {
+  return [
+    createIssue({
+      number: 123,
+      title: "Parent issue",
+      body: "",
+      updatedAt: "2026-03-13T00:00:00Z",
+    }),
+    createIssue({
+      number: 201,
+      title: "Child one",
+      body: "Part of #123",
+      updatedAt: "2026-03-13T00:00:00Z",
+      state: "CLOSED",
+    }),
+    createIssue({
+      number: 202,
+      title: "Child two",
+      body: "- Part of: #123",
+      updatedAt: "2026-03-13T00:00:00Z",
+      state: "CLOSED",
+    }),
+  ];
+}
+
+function createParentEpicRecord(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
+  return createRecord({
+    issue_number: 123,
+    state: "reproducing",
+    pr_number: null,
+    blocked_reason: null,
+    last_error: null,
+    last_failure_kind: null,
+    last_failure_context: null,
+    last_blocker_signature: null,
+    last_failure_signature: null,
+    last_recovery_reason: null,
+    last_recovery_at: null,
+    ...overrides,
+  });
+}
+
+function createParentEpicClosureGithub() {
+  return {
+    closeIssue: async () => {},
+    closePullRequest: async () => {
+      throw new Error("unexpected closePullRequest call");
+    },
+    getChecks: async () => [],
+    getIssue: async () => {
+      throw new Error("unexpected getIssue call");
+    },
+    getMergedPullRequestsClosingIssue: async () => [],
+    getPullRequestIfExists: async () => null,
+    getUnresolvedReviewThreads: async () => [],
+  };
+}
 
 test("requeueIssueForOperator requeues a blocked issue with no tracked PR", async () => {
   const original = createRecord({
@@ -517,6 +684,8 @@ async function runReviewBotTimeoutRecoveryScenario({
     state,
     createCodexConnectorRecoveryConfig(),
     [],
+    null,
+    { onlyIssueNumber: 366 },
   );
 
   return { recoveryEvents, saveCalls, state };
@@ -2532,76 +2701,17 @@ test("reconcileRecoverableBlockedIssueStates reopens configured-bot follow-up wh
 test("reconcileRecoverableBlockedIssueStates requeues stale no-PR manual-review stops after fresh GitHub issue updates", async () => {
   const config = createConfig();
   const state: SupervisorStateFile = createSupervisorState({
-    issues: [
-      createRecord({
-        issue_number: 366,
-        state: "blocked",
-        blocked_reason: "manual_review",
-        pr_number: null,
-        codex_session_id: null,
-        last_error:
-          "Issue #366 re-entered stale stabilizing recovery without a tracked PR 3 times; manual intervention is required.",
-        last_failure_kind: null,
-        last_failure_context: {
-          category: "blocked",
-          summary:
-            "Issue #366 re-entered stale stabilizing recovery without a tracked PR 3 times; manual intervention is required.",
-          signature: "stale-stabilizing-no-pr-recovery-loop",
-          command: null,
-          details: [
-            "state=stabilizing",
-            "tracked_pr=none",
-            "branch_state=recoverable",
-            "repeat_count=3/3",
-          ],
-          url: null,
-          updated_at: "2026-03-13T00:20:00Z",
-        },
-        last_failure_signature: "stale-stabilizing-no-pr-recovery-loop",
-        repeated_failure_signature_count: 0,
-        stale_stabilizing_no_pr_recovery_count: config.sameFailureSignatureRepeatLimit,
-        last_recovery_reason:
-          "stale_state_manual_stop: blocked issue #366 after repeated stale stabilizing recovery without a tracked PR",
-        last_recovery_at: "2026-03-13T00:20:00Z",
-        updated_at: "2026-03-13T00:20:00Z",
-      }),
-    ],
+    issues: [createStaleNoPrManualReviewRecord(config)],
   });
   const issue = createIssue({
     number: 366,
     updatedAt: "2026-03-13T00:21:00Z",
   });
-
-  let saveCalls = 0;
-  const stateStore = {
-    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
-      return {
-        ...current,
-        ...patch,
-        updated_at: "2026-03-13T00:25:00Z",
-      };
-    },
-    async save(): Promise<void> {
-      saveCalls += 1;
-    },
-  };
+  const stateStore = createCountingStateStore("2026-03-13T00:25:00Z");
 
   const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
-    {
-      getPullRequestIfExists: async () => {
-        throw new Error("unexpected getPullRequestIfExists call");
-      },
-      getIssue: async () => {
-        throw new Error("unexpected getIssue call");
-      },
-      getChecks: async () => {
-        throw new Error("unexpected getChecks call");
-      },
-      getUnresolvedReviewThreads: async () => {
-        throw new Error("unexpected getUnresolvedReviewThreads call");
-      },
-    },
-    stateStore,
+    createUnexpectedRecoveryGithub(),
+    stateStore.stateStore,
     state,
     config,
     [issue],
@@ -2623,7 +2733,7 @@ test("reconcileRecoverableBlockedIssueStates requeues stale no-PR manual-review 
     "github_issue_reconsidered: requeued issue #366 after GitHub issue updates arrived following a stale no-PR manual stop",
   );
   assert.ok(updated.last_recovery_at);
-  assert.equal(saveCalls, 1);
+  assert.equal(stateStore.saveCalls, 1);
   assert.deepEqual(recoveryEvents.map((event) => event.reason), [
     "github_issue_reconsidered: requeued issue #366 after GitHub issue updates arrived following a stale no-PR manual stop",
   ]);
@@ -2631,38 +2741,7 @@ test("reconcileRecoverableBlockedIssueStates requeues stale no-PR manual-review 
 
 test("reconcileRecoverableBlockedIssueStates keeps stale no-PR manual-review stops blocked when GitHub issue context is unchanged", async () => {
   const config = createConfig();
-  const original = createRecord({
-    issue_number: 366,
-    state: "blocked",
-    blocked_reason: "manual_review",
-    pr_number: null,
-    codex_session_id: null,
-    last_error:
-      "Issue #366 re-entered stale stabilizing recovery without a tracked PR 3 times; manual intervention is required.",
-    last_failure_kind: null,
-    last_failure_context: {
-      category: "blocked",
-      summary:
-        "Issue #366 re-entered stale stabilizing recovery without a tracked PR 3 times; manual intervention is required.",
-      signature: "stale-stabilizing-no-pr-recovery-loop",
-      command: null,
-      details: [
-        "state=stabilizing",
-        "tracked_pr=none",
-        "branch_state=recoverable",
-        "repeat_count=3/3",
-      ],
-      url: null,
-      updated_at: "2026-03-13T00:20:00Z",
-    },
-    last_failure_signature: "stale-stabilizing-no-pr-recovery-loop",
-    repeated_failure_signature_count: 0,
-    stale_stabilizing_no_pr_recovery_count: config.sameFailureSignatureRepeatLimit,
-    last_recovery_reason:
-      "stale_state_manual_stop: blocked issue #366 after repeated stale stabilizing recovery without a tracked PR",
-    last_recovery_at: "2026-03-13T00:20:00Z",
-    updated_at: "2026-03-13T00:20:00Z",
-  });
+  const original = createStaleNoPrManualReviewRecord(config);
   const state: SupervisorStateFile = createSupervisorState({
     issues: [original],
   });
@@ -2670,37 +2749,11 @@ test("reconcileRecoverableBlockedIssueStates keeps stale no-PR manual-review sto
     number: 366,
     updatedAt: "2026-03-13T00:20:00Z",
   });
-
-  let saveCalls = 0;
-  const stateStore = {
-    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
-      return {
-        ...current,
-        ...patch,
-        updated_at: "2026-03-13T00:25:00Z",
-      };
-    },
-    async save(): Promise<void> {
-      saveCalls += 1;
-    },
-  };
+  const stateStore = createCountingStateStore("2026-03-13T00:25:00Z");
 
   const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
-    {
-      getPullRequestIfExists: async () => {
-        throw new Error("unexpected getPullRequestIfExists call");
-      },
-      getIssue: async () => {
-        throw new Error("unexpected getIssue call");
-      },
-      getChecks: async () => {
-        throw new Error("unexpected getChecks call");
-      },
-      getUnresolvedReviewThreads: async () => {
-        throw new Error("unexpected getUnresolvedReviewThreads call");
-      },
-    },
-    stateStore,
+    createUnexpectedRecoveryGithub(),
+    stateStore.stateStore,
     state,
     config,
     [issue],
@@ -2709,7 +2762,7 @@ test("reconcileRecoverableBlockedIssueStates keeps stale no-PR manual-review sto
     },
   );
 
-  assert.equal(saveCalls, 0);
+  assert.equal(stateStore.saveCalls, 0);
   assert.deepEqual(recoveryEvents, []);
   assert.deepEqual(state.issues["366"], original);
 });
@@ -2902,20 +2955,7 @@ test("reconcileRecoverableBlockedIssueStates ignores cosmetic-only issue edits f
 });
 
 test("reconcileStaleDoneIssueStates downgrades stale open no-PR done records to manual review", async () => {
-  const record = createRecord({
-    issue_number: 366,
-    state: "done",
-    pr_number: null,
-    codex_session_id: null,
-    blocked_reason: null,
-    last_error: null,
-    last_failure_kind: null,
-    last_failure_context: null,
-    last_failure_signature: null,
-    last_blocker_signature: null,
-    repeated_failure_signature_count: 0,
-    last_recovery_reason: null,
-  });
+  const record = createStaleDoneNoPrRecord();
   const state: SupervisorStateFile = createSupervisorState({
     issues: [record],
   });
@@ -2926,20 +2966,7 @@ test("reconcileStaleDoneIssueStates downgrades stale open no-PR done records to 
       state: "OPEN",
     }),
   ];
-
-  let saveCalls = 0;
-  const stateStore = {
-    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
-      return {
-        ...current,
-        ...patch,
-        updated_at: "2026-03-13T00:22:00Z",
-      };
-    },
-    async save(): Promise<void> {
-      saveCalls += 1;
-    },
-  };
+  const stateStore = createCountingStateStore("2026-03-13T00:22:00Z");
 
   const recoveryEvents = await reconcileStaleDoneIssueStates(
     {
@@ -2948,12 +2975,12 @@ test("reconcileStaleDoneIssueStates downgrades stale open no-PR done records to 
         return issues[0]!;
       },
     },
-    stateStore,
+    stateStore.stateStore,
     state,
     issues,
   );
 
-  assert.equal(saveCalls, 1);
+  assert.equal(stateStore.saveCalls, 1);
   assert.equal(state.issues["366"]?.state, "blocked");
   assert.equal(state.issues["366"]?.blocked_reason, "manual_review");
   assert.match(state.issues["366"]?.last_error ?? "", /locally marked done without authoritative completion evidence/);
@@ -2972,37 +2999,11 @@ test("reconcileStaleDoneIssueStates downgrades stale open no-PR done records to 
 });
 
 test("reconcileStaleDoneIssueStates downgrades suspicious no-PR done records when GitHub revalidation fails", async () => {
-  const record = createRecord({
-    issue_number: 366,
-    state: "done",
-    pr_number: null,
-    codex_session_id: null,
-    blocked_reason: null,
-    last_error: null,
-    last_failure_kind: null,
-    last_failure_context: null,
-    last_failure_signature: null,
-    last_blocker_signature: null,
-    repeated_failure_signature_count: 0,
-    last_recovery_reason: null,
-  });
+  const record = createStaleDoneNoPrRecord();
   const state: SupervisorStateFile = createSupervisorState({
     issues: [record],
   });
-
-  let saveCalls = 0;
-  const stateStore = {
-    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
-      return {
-        ...current,
-        ...patch,
-        updated_at: "2026-03-13T00:22:00Z",
-      };
-    },
-    async save(): Promise<void> {
-      saveCalls += 1;
-    },
-  };
+  const stateStore = createCountingStateStore("2026-03-13T00:22:00Z");
 
   const recoveryEvents = await reconcileStaleDoneIssueStates(
     {
@@ -3011,12 +3012,12 @@ test("reconcileStaleDoneIssueStates downgrades suspicious no-PR done records whe
         throw new Error("GitHub unavailable");
       },
     },
-    stateStore,
+    stateStore.stateStore,
     state,
     [],
   );
 
-  assert.equal(saveCalls, 1);
+  assert.equal(stateStore.saveCalls, 1);
   assert.equal(state.issues["366"]?.state, "blocked");
   assert.equal(state.issues["366"]?.blocked_reason, "manual_review");
   assert.match(state.issues["366"]?.last_error ?? "", /GitHub revalidation could not confirm the current issue state/);
@@ -6598,180 +6599,64 @@ test("reconcileParentEpicClosures clears a stale active issue pointer even when 
       "123": original,
     },
   };
-  const issues: GitHubIssue[] = [
-    {
-      number: 123,
-      title: "Parent issue",
-      body: "",
-      createdAt: "2026-03-13T00:00:00Z",
-      updatedAt: "2026-03-13T00:00:00Z",
-      url: "https://example.test/issues/123",
-      state: "OPEN",
-    },
-    {
-      number: 201,
-      title: "Child one",
-      body: "Part of #123",
-      createdAt: "2026-03-13T00:00:00Z",
-      updatedAt: "2026-03-13T00:00:00Z",
-      url: "https://example.test/issues/201",
-      state: "CLOSED",
-    },
-    {
-      number: 202,
-      title: "Child two",
-      body: "- Part of: #123",
-      createdAt: "2026-03-13T00:00:00Z",
-      updatedAt: "2026-03-13T00:00:00Z",
-      url: "https://example.test/issues/202",
-      state: "CLOSED",
-    },
-  ];
+  const issues = createParentEpicClosureIssues();
 
-  let touchCalls = 0;
-  let saveCalls = 0;
   let closeIssueCalls = 0;
-  let touchedRecord: IssueRunRecord | null = null;
-  const stateStore = {
-    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
-      touchCalls += 1;
-      touchedRecord = { ...current, ...patch };
-      return touchedRecord;
-    },
-    async save(): Promise<void> {
-      saveCalls += 1;
-    },
-  };
+  const stateStore = createCountingStateStore("2026-03-13T00:01:00Z");
 
   await reconcileParentEpicClosures(
     {
+      ...createParentEpicClosureGithub(),
       closeIssue: async () => {
         closeIssueCalls += 1;
       },
-      closePullRequest: async () => {
-        throw new Error("unexpected closePullRequest call");
-      },
-      getChecks: async () => [],
-      getIssue: async () => {
-        throw new Error("unexpected getIssue call");
-      },
-      getMergedPullRequestsClosingIssue: async () => [],
-      getPullRequestIfExists: async () => null,
-      getUnresolvedReviewThreads: async () => [],
     },
-    stateStore,
+    stateStore.stateStore,
     state,
     issues,
   );
 
   assert.equal(closeIssueCalls, 1);
-  assert.equal(touchCalls, 1);
-  assert.equal(saveCalls, 1);
+  assert.equal(stateStore.touchCalls, 1);
+  assert.equal(stateStore.saveCalls, 1);
   assert.equal(state.activeIssueNumber, null);
   assert.equal(
     state.issues["123"]?.last_recovery_reason,
-    "parent_epic_auto_closed: auto-closed parent epic #123 because child issues #201, #202 are closed",
+    PARENT_EPIC_AUTO_CLOSED_REASON,
   );
   assert.ok(state.issues["123"]?.last_recovery_at);
   assert.equal(state.issues["123"]?.state, "done");
-  assert.deepEqual(state.issues["123"], touchedRecord);
+  assert.deepEqual(state.issues["123"], stateStore.touchedRecord);
 });
 
 test("reconcileParentEpicClosures returns an explicit recovery event and persists it on the parent record", async () => {
-  const original = createRecord({
-    issue_number: 123,
-    state: "reproducing",
-    pr_number: null,
-    blocked_reason: null,
-    last_error: null,
-    last_failure_kind: null,
-    last_failure_context: null,
-    last_blocker_signature: null,
-    last_failure_signature: null,
-    last_recovery_reason: null,
-    last_recovery_at: null,
-  });
+  const original = createParentEpicRecord();
   const state: SupervisorStateFile = {
     activeIssueNumber: null,
     issues: {
       "123": original,
     },
   };
-  const issues: GitHubIssue[] = [
-    {
-      number: 123,
-      title: "Parent issue",
-      body: "",
-      createdAt: "2026-03-13T00:00:00Z",
-      updatedAt: "2026-03-13T00:00:00Z",
-      url: "https://example.test/issues/123",
-      state: "OPEN",
-    },
-    {
-      number: 201,
-      title: "Child one",
-      body: "Part of #123",
-      createdAt: "2026-03-13T00:00:00Z",
-      updatedAt: "2026-03-13T00:00:00Z",
-      url: "https://example.test/issues/201",
-      state: "CLOSED",
-    },
-    {
-      number: 202,
-      title: "Child two",
-      body: "- Part of: #123",
-      createdAt: "2026-03-13T00:00:00Z",
-      updatedAt: "2026-03-13T00:00:00Z",
-      url: "https://example.test/issues/202",
-      state: "CLOSED",
-    },
-  ];
-
-  let savedState: SupervisorStateFile | null = null;
-  const stateStore = {
-    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
-      return { ...current, ...patch };
-    },
-    async save(nextState: SupervisorStateFile): Promise<void> {
-      savedState = structuredClone(nextState);
-    },
-  };
+  const issues = createParentEpicClosureIssues();
+  const stateStore = createCountingStateStore("2026-03-13T00:01:00Z");
 
   const recoveryEvents = await reconcileParentEpicClosures(
-    {
-      closeIssue: async () => {},
-      closePullRequest: async () => {
-        throw new Error("unexpected closePullRequest call");
-      },
-      getChecks: async () => [],
-      getIssue: async () => {
-        throw new Error("unexpected getIssue call");
-      },
-      getMergedPullRequestsClosingIssue: async () => [],
-      getPullRequestIfExists: async () => null,
-      getUnresolvedReviewThreads: async () => [],
-    },
-    stateStore,
+    createParentEpicClosureGithub(),
+    stateStore.stateStore,
     state,
     issues,
   );
 
   assert.equal(recoveryEvents.length, 1);
   assert.equal(recoveryEvents[0]?.issueNumber, 123);
-  assert.equal(
-    recoveryEvents[0]?.reason,
-    "parent_epic_auto_closed: auto-closed parent epic #123 because child issues #201, #202 are closed",
-  );
+  assert.equal(recoveryEvents[0]?.reason, PARENT_EPIC_AUTO_CLOSED_REASON);
   assert.equal(state.issues["123"]?.state, "done");
-  assert.equal(
-    state.issues["123"]?.last_recovery_reason,
-    "parent_epic_auto_closed: auto-closed parent epic #123 because child issues #201, #202 are closed",
-  );
+  assert.equal(state.issues["123"]?.last_recovery_reason, PARENT_EPIC_AUTO_CLOSED_REASON);
   assert.ok(state.issues["123"]?.last_recovery_at);
-  if (savedState === null) {
+  if (stateStore.savedState === null) {
     throw new Error("expected state to be saved");
   }
-  const persistedState: SupervisorStateFile = savedState;
+  const persistedState: SupervisorStateFile = stateStore.savedState;
   assert.deepEqual(persistedState.issues["123"], state.issues["123"]);
 });
 
@@ -6780,68 +6665,17 @@ test("reconcileParentEpicClosures persists recovery metadata for an untracked pa
     activeIssueNumber: null,
     issues: {},
   };
-  const issues: GitHubIssue[] = [
-    {
-      number: 123,
-      title: "Parent issue",
-      body: "",
-      createdAt: "2026-03-13T00:00:00Z",
-      updatedAt: "2026-03-13T00:00:00Z",
-      url: "https://example.test/issues/123",
-      state: "OPEN",
-    },
-    {
-      number: 201,
-      title: "Child one",
-      body: "Part of #123",
-      createdAt: "2026-03-13T00:00:00Z",
-      updatedAt: "2026-03-13T00:00:00Z",
-      url: "https://example.test/issues/201",
-      state: "CLOSED",
-    },
-    {
-      number: 202,
-      title: "Child two",
-      body: "- Part of: #123",
-      createdAt: "2026-03-13T00:00:00Z",
-      updatedAt: "2026-03-13T00:00:00Z",
-      url: "https://example.test/issues/202",
-      state: "CLOSED",
-    },
-  ];
-
-  let savedState: SupervisorStateFile | null = null;
-  let touchCalls = 0;
-  const stateStore = {
-    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
-      touchCalls += 1;
-      return { ...current, ...patch };
-    },
-    async save(nextState: SupervisorStateFile): Promise<void> {
-      savedState = structuredClone(nextState);
-    },
-  };
+  const issues = createParentEpicClosureIssues();
+  const stateStore = createCountingStateStore("2026-03-13T00:01:00Z");
 
   const recoveryEvents = await reconcileParentEpicClosures(
-    {
-      closeIssue: async () => {},
-      closePullRequest: async () => {
-        throw new Error("unexpected closePullRequest call");
-      },
-      getChecks: async () => [],
-      getIssue: async () => {
-        throw new Error("unexpected getIssue call");
-      },
-      getMergedPullRequestsClosingIssue: async () => [],
-      getPullRequestIfExists: async () => null,
-      getUnresolvedReviewThreads: async () => [],
-    },
-    stateStore,
+    createParentEpicClosureGithub(),
+    stateStore.stateStore,
     state,
     issues,
   );
 
-  assert.equal(touchCalls, 1);
+  assert.equal(stateStore.touchCalls, 1);
   assert.equal(recoveryEvents.length, 1);
   assert.equal(recoveryEvents[0]?.issueNumber, 123);
   assert.equal(state.activeIssueNumber, null);
@@ -6850,15 +6684,12 @@ test("reconcileParentEpicClosures persists recovery metadata for an untracked pa
   assert.equal(state.issues["123"]?.pr_number, null);
   assert.equal(state.issues["123"]?.blocked_reason, null);
   assert.equal(state.issues["123"]?.codex_session_id, null);
-  assert.equal(
-    state.issues["123"]?.last_recovery_reason,
-    "parent_epic_auto_closed: auto-closed parent epic #123 because child issues #201, #202 are closed",
-  );
+  assert.equal(state.issues["123"]?.last_recovery_reason, PARENT_EPIC_AUTO_CLOSED_REASON);
   assert.ok(state.issues["123"]?.last_recovery_at);
-  if (savedState === null) {
+  if (stateStore.savedState === null) {
     throw new Error("expected state to be saved");
   }
-  const persistedState: SupervisorStateFile = savedState;
+  const persistedState: SupervisorStateFile = stateStore.savedState;
   assert.deepEqual(persistedState.issues["123"], state.issues["123"]);
 });
 

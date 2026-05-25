@@ -378,8 +378,19 @@ export function hasConfiguredProviderSuccess(
     return false;
   }
 
+  const hasConfiguredBotCurrentHeadObservation = validTimestamp(pr.configuredBotCurrentHeadObservedAt) !== null;
+  const isStaleCodexPrSuccessComment =
+    pr.configuredBotCurrentHeadObservationSource === "codex_pr_success_comment" &&
+    !currentHeadObservationSatisfiesActiveWait(record, pr);
+  const hasCurrentHeadObservation =
+    hasConfiguredBotCurrentHeadObservation &&
+    (!isStaleCodexPrSuccessComment ||
+      clearOutdatedCodexConnectorThreads ||
+      pr.configuredBotCurrentHeadStatusState === "SUCCESS" ||
+      pr.configuredBotTopLevelReviewStrength === "nitpick_only");
+
   return Boolean(
-    validTimestamp(pr.configuredBotCurrentHeadObservedAt) ||
+    hasCurrentHeadObservation ||
       validTimestamp(pr.copilotReviewArrivedAt) ||
       (pr.configuredBotTopLevelReviewStrength === "nitpick_only" && validTimestamp(pr.configuredBotTopLevelReviewSubmittedAt)),
   );
