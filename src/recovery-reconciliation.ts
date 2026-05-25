@@ -66,8 +66,10 @@ import { syncTrackedPrPersistentStatusComment } from "./tracked-pr-status-commen
 import {
   configuredBotReviewThreads,
   manualReviewThreads,
+  latestReviewComment,
   latestReviewCommentAuthorIsAllowedBot,
 } from "./review-thread-reporting";
+import { hasCodexConnectorFindingReviewComment } from "./codex-connector-review-policy";
 
 const OPERATOR_REQUEUEABLE_STATES = new Set<RunState>(["blocked", "failed"]);
 type StaleStabilizingNoPrBranchState = "recoverable" | "already_satisfied_on_main";
@@ -777,7 +779,29 @@ function hasOnlyOutdatedConfiguredBotResidue(
   const configuredThreads = configuredBotReviewThreads(config, unresolvedThreads);
   return (
     configuredThreads.length === unresolvedThreads.length &&
-    configuredThreads.every((thread) => thread.isOutdated && latestReviewCommentAuthorIsAllowedBot(config, thread))
+    configuredThreads.every(
+      (thread) =>
+        thread.isOutdated &&
+        (latestReviewCommentAuthorIsAllowedBot(config, thread) || operatorAcknowledgedCodexResidue(thread)),
+    )
+  );
+}
+
+function operatorAcknowledgedCodexResidue(thread: ReviewThread): boolean {
+  if (!hasCodexConnectorFindingReviewComment(thread)) {
+    return false;
+  }
+
+  const latestComment = latestReviewComment(thread);
+  if (!latestComment || latestComment.author?.typeName === "Bot") {
+    return false;
+  }
+
+  const normalizedBody = latestComment.body.replace(/\s+/g, " ").trim().toLowerCase();
+  return (
+    /\bresidue acknowledged\b/.test(normalizedBody) ||
+    /\bstale codex connector (?:finding|residue)\b/.test(normalizedBody) ||
+    /\bcovered by the current-head success signal\b/.test(normalizedBody)
   );
 }
 
@@ -1033,7 +1057,19 @@ export async function reconcileRecoverableBlockedIssueStates(
         isReviewSignalProjectedState &&
         isCurrentHeadReviewSignalRequestTimeout(projection.copilotReviewTimeoutPatch) &&
         hasOnlyOutdatedConfiguredBotResidue(config, reviewThreads);
-      if (!externalProgressEvidence && !sameHeadReviewRequestRecovery && !sameHeadOutdatedConfiguredBotResidueRecovery) {
+      const sameHeadProviderSuccessRecovery =
+        externalProgressEvidence === null &&
+        record.last_head_sha === trackedPullRequest.headRefOid &&
+        projection.nextState !== "blocked" &&
+        projection.mergeLatencyVisibilityPatch.provider_success_head_sha === trackedPullRequest.headRefOid &&
+        (reviewThreads.filter((thread) => !thread.isResolved).length === 0 ||
+          hasOnlyOutdatedConfiguredBotResidue(config, reviewThreads));
+      if (
+        !externalProgressEvidence &&
+        !sameHeadReviewRequestRecovery &&
+        !sameHeadOutdatedConfiguredBotResidueRecovery &&
+        !sameHeadProviderSuccessRecovery
+      ) {
         const failureContext = inferFailureContextImpl(config, projection.recordForState, trackedPullRequest, checks, reviewThreads);
         const updated = await syncTrackedPrPersistentStatusComment({
           github,
@@ -1056,8 +1092,14 @@ export async function reconcileRecoverableBlockedIssueStates(
         continue;
       }
 
-      const nextState = sameHeadOutdatedConfiguredBotResidueRecovery ? "waiting_ci" : projection.nextState;
-      const nextBlockedReason = sameHeadOutdatedConfiguredBotResidueRecovery ? null : projection.nextBlockedReason;
+      const nextState =
+        sameHeadOutdatedConfiguredBotResidueRecovery && !sameHeadProviderSuccessRecovery
+          ? "waiting_ci"
+          : projection.nextState;
+      const nextBlockedReason =
+        sameHeadOutdatedConfiguredBotResidueRecovery && !sameHeadProviderSuccessRecovery
+          ? null
+          : projection.nextBlockedReason;
       const failureContext =
         nextState === "blocked"
           ? inferFailureContextImpl(config, projection.recordForState, trackedPullRequest, checks, reviewThreads)
