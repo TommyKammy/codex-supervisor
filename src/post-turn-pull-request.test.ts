@@ -2275,6 +2275,108 @@ test("handlePostTurnPullRequestTransitionsPhase clears stale ready-promotion blo
   assert.equal(snapshotLoads, 2);
 });
 
+test("handlePostTurnPullRequestTransitionsPhase runs current-head local CI before final auto-merge", async (t) => {
+  const { workspacePath, headSha } = await createTrackedIssueBranchRepo();
+  t.after(async () => {
+    await fs.rm(workspacePath, { recursive: true, force: true });
+  });
+  const config = createConfig({ localCiCommand: "npm run ci:local" });
+  const issue = createIssue({ title: "Run local CI before auto-merge" });
+  const pr = createPullRequest({
+    title: "Run local CI before auto-merge",
+    headRefName: "codex/issue-102",
+    headRefOid: headSha,
+  });
+  const passingChecks = [{ name: "verify", state: "SUCCESS", bucket: "pass", workflow: "CI" }] satisfies PullRequestCheck[];
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "ready_to_merge",
+        pr_number: pr.number,
+        branch: "codex/issue-102",
+        last_head_sha: headSha,
+        latest_local_ci_result: null,
+      }),
+    },
+  };
+
+  let localCiCalls = 0;
+  let readyCalls = 0;
+  let snapshotLoads = 0;
+  let syncJournalCalls = 0;
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: createNoopStateStore(),
+    github: createDefaultGithub({
+      markPullRequestReady: async () => {
+        readyCalls += 1;
+      },
+    }),
+    context: {
+      state,
+      record: state.issues["102"]!,
+      issue,
+      workspacePath,
+      syncJournal: async () => {
+        syncJournalCalls += 1;
+      },
+      memoryArtifacts: TEST_MEMORY_ARTIFACTS,
+      pr,
+      options: { dryRun: false },
+    },
+    derivePullRequestLifecycleSnapshot: (record) => ({
+      recordForState: record,
+      nextState: "ready_to_merge",
+      failureContext: null,
+      reviewWaitPatch: {},
+      copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: "2026-05-25T10:04:37.026Z",
+        provider_success_head_sha: headSha,
+        merge_readiness_last_evaluated_at: "2026-05-25T11:44:09.822Z",
+      },
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    blockedReasonFromReviewState: () => null,
+    summarizeChecks: (checks) => ({
+      hasPending: checks.some((check) => check.bucket === "pending"),
+      hasFailing: checks.some((check) => check.bucket === "fail"),
+    }),
+    configuredBotReviewThreads: () => [],
+    manualReviewThreads: () => [],
+    mergeConflictDetected: () => false,
+    runLocalCiCommand: async (command, cwd) => {
+      assert.equal(command.displayCommand, "npm run ci:local");
+      assert.equal(cwd, workspacePath);
+      localCiCalls += 1;
+    },
+    loadOpenPullRequestSnapshot: async () => {
+      snapshotLoads += 1;
+      return { pr, checks: passingChecks, reviewThreads: [] satisfies ReviewThread[] };
+    },
+  });
+
+  assert.equal(result.record.state, "ready_to_merge");
+  assert.equal(result.record.blocked_reason, null);
+  assert.equal(result.record.latest_local_ci_result?.outcome, "passed");
+  assert.equal(result.record.latest_local_ci_result?.summary, "Configured local CI command passed before auto-merging PR #116.");
+  assert.equal(result.record.latest_local_ci_result?.head_sha, headSha);
+  assert.equal(result.record.latest_local_ci_result?.command, "npm run ci:local");
+  assert.equal(localCiCalls, 1);
+  assert.equal(readyCalls, 0);
+  assert.equal(snapshotLoads, 2);
+  assert.equal(syncJournalCalls, 3);
+});
+
 test("handlePostTurnPullRequestTransitionsPhase blocks draft-to-ready promotion when configured local CI fails", async () => {
   const config = createConfig({ localCiCommand: "npm run ci:local" });
   const issue = createIssue({ title: "Gate draft promotion on local CI" });
