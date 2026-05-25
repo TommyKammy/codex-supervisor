@@ -742,6 +742,209 @@ test("handlePostTurnMergeAndCompletion leaves ready PRs unmerged without auto-me
   assert.equal(autoMergeCalls, 0);
 });
 
+test("handlePostTurnMergeAndCompletion auto-merges CodeRabbit nitpick-only PRs without Codex auto-merge opt-in", async () => {
+  const fixture = await createSupervisorFixture();
+  const config = createConfig({
+    ...fixture.config,
+    reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
+    localCiCommand: "npm run verify:pre-pr",
+  });
+  const issueNumber = 126;
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "ready_to_merge",
+        last_head_sha: "head-126",
+        latest_local_ci_result: {
+          outcome: "passed",
+          summary: "Configured local CI command passed before marking PR #126 ready.",
+          ran_at: "2026-03-13T06:32:00Z",
+          head_sha: "head-126",
+          execution_mode: "shell",
+          command: "npm run verify:pre-pr",
+          failure_class: null,
+          remediation_target: null,
+        },
+      }),
+    },
+  };
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Auto-merge CodeRabbit nitpick-only review",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+  const pr: GitHubPullRequest = {
+    number: 126,
+    title: "CodeRabbit nitpick-only ready PR",
+    url: "https://example.test/pr/126",
+    state: "OPEN",
+    createdAt: "2026-03-13T06:20:00Z",
+    isDraft: false,
+    reviewDecision: "CHANGES_REQUESTED",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-126",
+    headRefOid: "head-126",
+    mergedAt: null,
+    configuredBotCurrentHeadObservedAt: "2026-03-13T06:30:00Z",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: "nitpick_only",
+    configuredBotTopLevelReviewSubmittedAt: "2026-03-13T06:30:00Z",
+    currentHeadCiGreenAt: "2026-03-13T06:31:00Z",
+  };
+
+  let autoMergeCalls = 0;
+  const comments: Array<{ issueNumber: number; body: string }> = [];
+  const supervisor = new Supervisor(config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getPullRequest: async (prNumber: number) => {
+      assert.equal(prNumber, 126);
+      return pr;
+    },
+    getChecks: async (prNumber: number) => {
+      assert.equal(prNumber, 126);
+      return passingChecks();
+    },
+    getUnresolvedReviewThreads: async (prNumber: number) => {
+      assert.equal(prNumber, 126);
+      return [];
+    },
+    addIssueComment: async (issueNumber: number, body: string) => {
+      comments.push({ issueNumber, body });
+    },
+    enableAutoMerge: async (prNumber: number, headSha: string) => {
+      assert.equal(prNumber, 126);
+      assert.equal(headSha, "head-126");
+      autoMergeCalls += 1;
+    },
+  };
+
+  const result = await (
+    supervisor as unknown as {
+      handlePostTurnMergeAndCompletion: (
+        state: SupervisorStateFile,
+        issue: GitHubIssue,
+        record: ReturnType<typeof createRecord>,
+        pr: GitHubPullRequest,
+        options: { dryRun: boolean },
+      ) => Promise<ReturnType<typeof createRecord>>;
+    }
+  ).handlePostTurnMergeAndCompletion(state, issue, state.issues[String(issueNumber)]!, pr, { dryRun: false });
+
+  assert.equal(result.state, "merging");
+  assert.equal(result.blocked_reason, null);
+  assert.equal(result.last_failure_context, null);
+  assert.equal(result.last_auto_merge_guard_context?.details.includes("auto_merge_path=configured_bot_provider"), true);
+  assert.equal(result.last_auto_merge_guard_context?.details.includes("codex_current_head_no_major=not_required"), true);
+  assert.equal(result.last_auto_merge_guard_context?.details.includes("local_ci=passed head_sha=head-126"), true);
+  assert.equal(autoMergeCalls, 1);
+  assert.equal(comments.length, 1);
+});
+
+test("handlePostTurnMergeAndCompletion blocks CodeRabbit auto-merge on stale local CI without Codex no-major refusal", async () => {
+  const fixture = await createSupervisorFixture();
+  const config = createConfig({
+    ...fixture.config,
+    reviewBotLogins: ["coderabbitai"],
+    localCiCommand: "npm run verify:pre-pr",
+  });
+  const issueNumber = 127;
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "ready_to_merge",
+        last_head_sha: "head-127",
+        latest_local_ci_result: {
+          outcome: "passed",
+          summary: "Configured local CI command passed before marking PR #127 ready.",
+          ran_at: "2026-03-13T06:32:00Z",
+          head_sha: "old-head-127",
+          execution_mode: "shell",
+          command: "npm run verify:pre-pr",
+          failure_class: null,
+          remediation_target: null,
+        },
+      }),
+    },
+  };
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Block CodeRabbit auto-merge on stale local CI",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+  const pr: GitHubPullRequest = {
+    number: 127,
+    title: "CodeRabbit ready PR with stale local CI",
+    url: "https://example.test/pr/127",
+    state: "OPEN",
+    createdAt: "2026-03-13T06:20:00Z",
+    isDraft: false,
+    reviewDecision: "CHANGES_REQUESTED",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-127",
+    headRefOid: "head-127",
+    mergedAt: null,
+    configuredBotCurrentHeadObservedAt: "2026-03-13T06:30:00Z",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: "nitpick_only",
+    configuredBotTopLevelReviewSubmittedAt: "2026-03-13T06:30:00Z",
+    currentHeadCiGreenAt: "2026-03-13T06:31:00Z",
+  };
+
+  let autoMergeCalls = 0;
+  const supervisor = new Supervisor(config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getPullRequest: async (prNumber: number) => {
+      assert.equal(prNumber, 127);
+      return pr;
+    },
+    getChecks: async (prNumber: number) => {
+      assert.equal(prNumber, 127);
+      return passingChecks();
+    },
+    getUnresolvedReviewThreads: async (prNumber: number) => {
+      assert.equal(prNumber, 127);
+      return [];
+    },
+    enableAutoMerge: async () => {
+      autoMergeCalls += 1;
+    },
+  };
+
+  const result = await (
+    supervisor as unknown as {
+      handlePostTurnMergeAndCompletion: (
+        state: SupervisorStateFile,
+        issue: GitHubIssue,
+        record: ReturnType<typeof createRecord>,
+        pr: GitHubPullRequest,
+        options: { dryRun: boolean },
+      ) => Promise<ReturnType<typeof createRecord>>;
+    }
+  ).handlePostTurnMergeAndCompletion(state, issue, state.issues[String(issueNumber)]!, pr, { dryRun: false });
+
+  assert.equal(result.state, "blocked");
+  assert.equal(result.blocked_reason, "verification");
+  assert.equal(result.last_failure_context?.signature, "auto-merge-refused:head-127:missing_current_head_local_ci_success");
+  assert.equal(result.last_failure_context?.details.includes("missing_current_head_codex_no_major"), false);
+  assert.equal(result.last_auto_merge_guard_context?.details.includes("auto_merge_path=configured_bot_provider"), true);
+  assert.equal(result.last_auto_merge_guard_context?.details.includes("codex_current_head_no_major=not_required"), true);
+  assert.equal(autoMergeCalls, 0);
+});
+
 test("handlePostTurnMergeAndCompletion blocks auto-merge when final mergeable evidence is missing", async () => {
   const fixture = await createSupervisorFixture();
   const config = createConfig({

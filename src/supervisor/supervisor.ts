@@ -95,6 +95,7 @@ import {
   isIgnoredSupervisorArtifactPath,
   parseGitStatusPorcelainV1Paths,
 } from "../core/git-workspace-helpers";
+import { configuredReviewProviderKinds } from "../core/review-providers";
 import { StateStore } from "../core/state-store";
 import { renderDoctorReport } from "../doctor";
 import { buildSetupConfigPreview, type SetupConfigPreviewSelectableReviewProviderProfile } from "../setup-config-preview";
@@ -246,6 +247,15 @@ function hasCurrentHeadCodexNoMajor(record: IssueRunRecord, pr: GitHubPullReques
   );
 }
 
+function autoMergePathForConfig(config: SupervisorConfig): "codex_connector_no_major" | "configured_bot_provider" | null {
+  const providerKinds = configuredReviewProviderKinds(config);
+  if (providerKinds.length > 0 && !providerKinds.includes("codex")) {
+    return "configured_bot_provider";
+  }
+
+  return config.codexConnectorAutoMergeEnabled === true ? "codex_connector_no_major" : null;
+}
+
 function finalAutoMergeGuard(args: {
   config: SupervisorConfig;
   record: IssueRunRecord;
@@ -253,8 +263,9 @@ function finalAutoMergeGuard(args: {
   currentPr: GitHubPullRequest;
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
+  autoMergePath: "codex_connector_no_major" | "configured_bot_provider";
 }): FinalAutoMergeGuardResult {
-  const { config, record, originalPr, currentPr, checks, reviewThreads } = args;
+  const { config, record, originalPr, currentPr, checks, reviewThreads, autoMergePath } = args;
   const checkSummary = summarizeChecks(checks);
   const checksGreen = checks.length > 0 && checkSummary.allPassing;
   const effectiveConfiguredBotBlockers = effectiveConfiguredBotReviewThreadsForState(
@@ -265,22 +276,28 @@ function finalAutoMergeGuard(args: {
     reviewThreads,
   ).length;
   const effectiveHumanBlockers = config.humanReviewBlocksMerge ? manualReviewThreads(config, reviewThreads).length : 0;
+  const currentHeadCodexNoMajor = hasCurrentHeadCodexNoMajor(record, currentPr);
+  const requiresCodexNoMajor = autoMergePath === "codex_connector_no_major";
   const aggregateHumanReviewBlocker =
     config.humanReviewBlocksMerge &&
-    (currentPr.reviewDecision === "CHANGES_REQUESTED" || currentPr.reviewDecision === "REVIEW_REQUIRED")
+    (currentPr.reviewDecision === "REVIEW_REQUIRED" ||
+      (currentPr.reviewDecision === "CHANGES_REQUESTED" &&
+        (requiresCodexNoMajor || currentPr.configuredBotTopLevelReviewStrength !== "nitpick_only")))
       ? currentPr.reviewDecision
       : null;
-  const currentHeadCodexNoMajor = hasCurrentHeadCodexNoMajor(record, currentPr);
   const localCiResult = record.latest_local_ci_result ?? null;
   const localCiMissing =
     hasConfiguredLocalCiCommand(config) &&
     (localCiResult?.outcome !== "passed" || localCiResult?.head_sha !== currentPr.headRefOid);
   const evidenceDetails = [
+    `auto_merge_path=${autoMergePath}`,
     `head_sha=${currentPr.headRefOid}`,
     `mergeable=${currentPr.mergeable ?? "unknown"}`,
     `merge_state=${currentPr.mergeStateStatus ?? "unknown"}`,
     `checks=green count=${checks.length}`,
-    `codex_current_head_no_major=${currentHeadCodexNoMajor ? "yes" : "no"}`,
+    requiresCodexNoMajor
+      ? `codex_current_head_no_major=${currentHeadCodexNoMajor ? "yes" : "no"}`
+      : "codex_current_head_no_major=not_required",
     `configured_bot_blockers=${effectiveConfiguredBotBlockers}`,
     `human_blockers=${effectiveHumanBlockers}`,
     `review_decision=${currentPr.reviewDecision ?? "none"}`,
@@ -294,7 +311,7 @@ function finalAutoMergeGuard(args: {
     currentPr.mergeable === "MERGEABLE" ? null : `mergeable=${currentPr.mergeable ?? "unknown"}`,
     currentPr.mergeStateStatus === "CLEAN" ? null : `merge_state=${currentPr.mergeStateStatus ?? "unknown"}`,
     checks.length === 0 ? "required_checks_missing" : checksGreen ? null : "required_checks_not_green",
-    currentHeadCodexNoMajor ? null : "missing_current_head_codex_no_major",
+    requiresCodexNoMajor && !currentHeadCodexNoMajor ? "missing_current_head_codex_no_major" : null,
     effectiveConfiguredBotBlockers === 0 ? null : `configured_bot_blockers=${effectiveConfiguredBotBlockers}`,
     effectiveHumanBlockers === 0 ? null : `human_blockers=${effectiveHumanBlockers}`,
     aggregateHumanReviewBlocker ? `human_review_decision=${aggregateHumanReviewBlocker}` : null,
@@ -782,49 +799,53 @@ export class Supervisor {
               : null,
           last_head_sha: currentPr.headRefOid,
         });
-      } else if (this.config.codexConnectorAutoMergeEnabled !== true) {
-        nextRecord = this.stateStore.touch(nextRecord, {
-          ...lifecyclePatch,
-          state: "ready_to_merge",
-          blocked_reason: null,
-          last_auto_merge_guard_context: null,
-          last_head_sha: currentPr.headRefOid,
-        });
       } else {
-        const autoMergeGuard = finalAutoMergeGuard({
-          config: this.config,
-          record: lifecycle.recordForState,
-          originalPr: pr,
-          currentPr,
-          checks: refreshed.checks,
-          reviewThreads: refreshed.reviewThreads,
-        });
-        if (autoMergeGuard.refusal) {
+        const autoMergePath = autoMergePathForConfig(this.config);
+        if (autoMergePath === null) {
           nextRecord = this.stateStore.touch(nextRecord, {
             ...lifecyclePatch,
-            state: "blocked",
-            blocked_reason: "verification",
-            last_error: truncate(autoMergeGuard.refusal.summary, 1000),
-            last_failure_context: autoMergeGuard.refusal,
-            last_auto_merge_guard_context: autoMergeGuard.evidence,
-            ...applyFailureSignature(nextRecord, autoMergeGuard.refusal),
+            state: "ready_to_merge",
+            blocked_reason: null,
+            last_auto_merge_guard_context: null,
             last_head_sha: currentPr.headRefOid,
           });
         } else {
-          await publishFinalAutoMergeGuardComment({
-            github: this.github,
-            pr: currentPr,
-            evidence: autoMergeGuard.evidence,
+          const autoMergeGuard = finalAutoMergeGuard({
+            config: this.config,
+            record: lifecycle.recordForState,
+            originalPr: pr,
+            currentPr,
+            checks: refreshed.checks,
+            reviewThreads: refreshed.reviewThreads,
+            autoMergePath,
           });
-          await this.github.enableAutoMerge(currentPr.number, currentPr.headRefOid);
-          nextRecord = this.stateStore.touch(nextRecord, {
-            ...lifecyclePatch,
-            state: "merging",
-            blocked_reason: null,
-            last_failure_context: null,
-            last_auto_merge_guard_context: autoMergeGuard.evidence,
-            last_head_sha: currentPr.headRefOid,
-          });
+          if (autoMergeGuard.refusal) {
+            nextRecord = this.stateStore.touch(nextRecord, {
+              ...lifecyclePatch,
+              state: "blocked",
+              blocked_reason: "verification",
+              last_error: truncate(autoMergeGuard.refusal.summary, 1000),
+              last_failure_context: autoMergeGuard.refusal,
+              last_auto_merge_guard_context: autoMergeGuard.evidence,
+              ...applyFailureSignature(nextRecord, autoMergeGuard.refusal),
+              last_head_sha: currentPr.headRefOid,
+            });
+          } else {
+            await publishFinalAutoMergeGuardComment({
+              github: this.github,
+              pr: currentPr,
+              evidence: autoMergeGuard.evidence,
+            });
+            await this.github.enableAutoMerge(currentPr.number, currentPr.headRefOid);
+            nextRecord = this.stateStore.touch(nextRecord, {
+              ...lifecyclePatch,
+              state: "merging",
+              blocked_reason: null,
+              last_failure_context: null,
+              last_auto_merge_guard_context: autoMergeGuard.evidence,
+              last_head_sha: currentPr.headRefOid,
+            });
+          }
         }
       }
       state.issues[String(nextRecord.issue_number)] = nextRecord;
