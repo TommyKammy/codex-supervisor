@@ -801,7 +801,17 @@ function operatorAcknowledgedCodexResidue(thread: ReviewThread): boolean {
   return (
     /\bresidue acknowledged\b/.test(normalizedBody) ||
     /\bstale codex connector (?:finding|residue)\b/.test(normalizedBody) ||
-    /\bcovered by the current-head success signal\b/.test(normalizedBody)
+    /\bcovered by the current-head success signal\b/.test(normalizedBody) ||
+    hasSupervisorVerifiedNoSourceChangeStaleAcknowledgement(normalizedBody)
+  );
+}
+
+function hasSupervisorVerifiedNoSourceChangeStaleAcknowledgement(normalizedBody: string): boolean {
+  return (
+    normalizedBody.includes("the supervisor reprocessed this configured-bot finding") &&
+    normalizedBody.includes("classified it as stale") &&
+    normalizedBody.includes("reason=verified_no_source_change_auto_resolve") &&
+    normalizedBody.includes("processed_on_current_head=yes")
   );
 }
 
