@@ -32,6 +32,7 @@ export async function runTrackedPrReadyLocalCiPublicationGate(args: {
   record: IssueRunRecord;
   pr: GitHubPullRequest;
   workspacePath: string;
+  gateLabel?: string;
   github: Partial<Pick<GitHubClient, "addIssueComment" | "updateIssueComment">>;
   syncJournal: IssueJournalSync;
   applyFailureSignature: (
@@ -41,10 +42,11 @@ export async function runTrackedPrReadyLocalCiPublicationGate(args: {
   runWorkspacePreparationCommand?: LocalCiCommandRunner;
   runLocalCiCommand?: LocalCiCommandRunner;
 }): Promise<TrackedPrReadyLocalCiPublicationGateResult> {
+  const gateLabel = args.gateLabel ?? `before marking PR #${args.pr.number} ready`;
   const workspacePreparationGate = await runWorkspacePreparationGate({
     config: args.config,
     workspacePath: args.workspacePath,
-    gateLabel: `before marking PR #${args.pr.number} ready`,
+    gateLabel,
     runWorkspacePreparationCommand: args.runWorkspacePreparationCommand,
   });
   if (!workspacePreparationGate.ok) {
@@ -86,7 +88,7 @@ export async function runTrackedPrReadyLocalCiPublicationGate(args: {
   const localCiGate = await runLocalCiGate({
     config: args.config,
     workspacePath: args.workspacePath,
-    gateLabel: `before marking PR #${args.pr.number} ready`,
+    gateLabel,
     runLocalCiCommand: args.runLocalCiCommand,
   });
   if (!localCiGate.ok) {

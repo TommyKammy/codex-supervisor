@@ -100,6 +100,15 @@ export interface PullRequestLifecycleSnapshot {
 
 const TRUSTED_DURABLE_ARTIFACT_NORMALIZATION_COMMIT_MESSAGE = "Normalize trusted durable artifacts for path hygiene";
 
+function hasConfiguredLocalCiCommand(config: Pick<SupervisorConfig, "localCiCommand">): boolean {
+  return config.localCiCommand !== null && config.localCiCommand !== undefined;
+}
+
+function currentHeadLocalCiMissing(record: IssueRunRecord, pr: GitHubPullRequest): boolean {
+  const latestLocalCi = record.latest_local_ci_result ?? null;
+  return latestLocalCi?.outcome !== "passed" || latestLocalCi.head_sha !== pr.headRefOid;
+}
+
 function escapeRegExp(input: string): string {
   return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -813,6 +822,72 @@ export async function handlePostTurnPullRequestTransitionsPhase(
   });
   if (record.state === "blocked" && record.last_failure_context?.signature?.startsWith("codex-connector-review-request-failed:")) {
     effectiveFailureContext = record.last_failure_context;
+  }
+  if (
+    record.state === "ready_to_merge" &&
+    !postReady.pr.isDraft &&
+    hasConfiguredLocalCiCommand(config) &&
+    currentHeadLocalCiMissing(record, postReady.pr) &&
+    !options.dryRun
+  ) {
+    const localCiPublicationGate = await runTrackedPrReadyLocalCiPublicationGate({
+      config,
+      stateStore,
+      state,
+      record,
+      pr: postReady.pr,
+      workspacePath,
+      gateLabel: `before auto-merging PR #${postReady.pr.number}`,
+      github,
+      syncJournal,
+      applyFailureSignature: args.applyFailureSignature,
+      runWorkspacePreparationCommand: args.runWorkspacePreparationCommand,
+      runLocalCiCommand: args.runLocalCiCommand,
+    });
+    record = localCiPublicationGate.record;
+    if (!localCiPublicationGate.ok) {
+      effectiveFailureContext = record.last_failure_context;
+    } else {
+      const localWorkspaceStatus = await getWorkspaceStatus(workspacePath, record.branch, config.defaultBranch);
+      if (localWorkspaceStatus.headSha !== postReady.pr.headRefOid) {
+        const failureContext = buildWorkstationLocalPathFailureContext({
+          gateLabel: `before auto-merging PR #${postReady.pr.number}`,
+          details: [
+            `local workspace HEAD ${localWorkspaceStatus.headSha} does not match PR head ${postReady.pr.headRefOid}; the auto-merge gate is failing closed until the local commit is published.`,
+          ],
+        });
+        record = stateStore.touch(record, {
+          state: "blocked",
+          last_error: truncate(failureContext.summary, 1000),
+          last_failure_kind: null,
+          last_failure_context: failureContext,
+          ...args.applyFailureSignature(record, failureContext),
+          blocked_reason: "verification",
+          ...trackedPrStatusComments.observedTrackedPrHostLocalBlockerPatch({
+            pr: postReady.pr,
+            blockerSignature: failureContext.signature,
+          }),
+        });
+        state.issues[String(record.issue_number)] = record;
+        await stateStore.save(state);
+        await syncJournal(record);
+        effectiveFailureContext = failureContext;
+      } else if (
+        record.latest_local_ci_result !== null &&
+        record.latest_local_ci_result !== undefined &&
+        record.latest_local_ci_result.head_sha !== postReady.pr.headRefOid
+      ) {
+        record = stateStore.touch(record, {
+          latest_local_ci_result: {
+            ...record.latest_local_ci_result,
+            head_sha: postReady.pr.headRefOid,
+          },
+        });
+        state.issues[String(record.issue_number)] = record;
+        await stateStore.save(state);
+        await syncJournal(record);
+      }
+    }
   }
   record = await trackedPrStatusComments.maybeCommentOnTrackedPrPersistentStatus({
     github,
