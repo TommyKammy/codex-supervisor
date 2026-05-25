@@ -77,6 +77,19 @@ test("runTrackedPrCurrentHeadLocalCiGate stamps the local CI result only after w
   assert.equal(result.record.latest_local_ci_result?.outcome, "passed");
   assert.equal(result.record.latest_local_ci_result?.summary, "Configured local CI command passed before auto-merging PR #116.");
   assert.equal(result.record.latest_local_ci_result?.head_sha, "head-116");
+  assert.deepEqual(result.record.timeline_artifacts, [
+    {
+      type: "verification_result",
+      gate: "local_ci",
+      command: "npm run ci:local",
+      head_sha: "head-116",
+      outcome: "passed",
+      remediation_target: null,
+      next_action: "continue",
+      summary: "Configured local CI command passed before auto-merging PR #116.",
+      recorded_at: result.record.timeline_artifacts?.[0]?.recorded_at ?? "",
+    },
+  ]);
   assert.equal(localCiCalls, 1);
   assert.equal(saveCalls, 2);
   assert.equal(syncJournalCalls, 2);
