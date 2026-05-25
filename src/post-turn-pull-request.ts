@@ -45,12 +45,12 @@ import {
 } from "./supervisor/supervisor-events";
 import { reviewBotDiagnostics } from "./supervisor/supervisor-status-review-bot";
 import { parseIssueMetadata } from "./issue-metadata";
-import { commitAndPushTrackedFiles, filterPresentTrackedFilePaths, getWorkspaceStatus } from "./core/workspace";
+import { commitAndPushTrackedFiles, filterPresentTrackedFilePaths } from "./core/workspace";
 import {
   derivePostTurnLocalReviewDecision,
   derivePostTurnLocalReviewFailurePatch,
 } from "./post-turn-pull-request-policy";
-import { runTrackedPrReadyLocalCiPublicationGate } from "./tracked-pr-local-ci-publication-gate";
+import { runTrackedPrCurrentHeadLocalCiGate } from "./tracked-pr-local-ci-publication-gate";
 import * as trackedPrStatusComments from "./tracked-pr-status-comment";
 import { buildStaleReviewBotRemediation } from "./supervisor/stale-review-bot-remediation";
 import { maybeRequestCodexConnectorReviewComment } from "./codex-connector-review-request-transition";
@@ -676,86 +676,31 @@ export async function handlePostTurnPullRequestTransitionsPhase(
       };
     }
 
-    const localCiPublicationGate = await runTrackedPrReadyLocalCiPublicationGate({
+    const currentHeadLocalCiGate = await runTrackedPrCurrentHeadLocalCiGate({
       config,
       stateStore,
       state,
       record,
       pr: refreshed.pr,
       workspacePath,
+      gateLabel: `before marking PR #${refreshed.pr.number} ready`,
+      workspaceHeadMismatchDetail: (localHeadSha, prHeadSha) =>
+        `local workspace HEAD ${localHeadSha} does not match PR head ${prHeadSha}; the ready gate is failing closed until the local commit is published.`,
+      publishWorkspaceHeadMismatchComment: true,
       github,
       syncJournal,
       applyFailureSignature: args.applyFailureSignature,
       runWorkspacePreparationCommand: args.runWorkspacePreparationCommand,
       runLocalCiCommand: args.runLocalCiCommand,
     });
-    record = localCiPublicationGate.record;
-    if (!localCiPublicationGate.ok) {
+    record = currentHeadLocalCiGate.record;
+    if (!currentHeadLocalCiGate.ok) {
       return {
         record,
         pr: refreshed.pr,
         checks: refreshed.checks,
         reviewThreads: refreshed.reviewThreads,
       };
-    }
-    const localWorkspaceStatus = await getWorkspaceStatus(workspacePath, record.branch, config.defaultBranch);
-    if (localWorkspaceStatus.headSha !== refreshed.pr.headRefOid) {
-      const failureContext = buildWorkstationLocalPathFailureContext({
-        gateLabel: `before marking PR #${refreshed.pr.number} ready`,
-        details: [
-          `local workspace HEAD ${localWorkspaceStatus.headSha} does not match PR head ${refreshed.pr.headRefOid}; the ready gate is failing closed until the local commit is published.`,
-        ],
-      });
-      record = stateStore.touch(record, {
-        state: "blocked",
-        last_error: truncate(failureContext.summary, 1000),
-        last_failure_kind: null,
-        last_failure_context: failureContext,
-        ...args.applyFailureSignature(record, failureContext),
-        blocked_reason: "verification",
-        ...trackedPrStatusComments.observedTrackedPrHostLocalBlockerPatch({
-          pr: refreshed.pr,
-          blockerSignature: failureContext.signature,
-        }),
-      });
-      state.issues[String(record.issue_number)] = record;
-      await stateStore.save(state);
-      await syncJournal(record);
-      record = await trackedPrStatusComments.maybeCommentOnTrackedPrHostLocalBlocker({
-        github,
-        stateStore,
-        state,
-        record,
-        pr: refreshed.pr,
-        syncJournal,
-        gateType: "workstation_local_path_hygiene",
-        blockerSignature: failureContext.signature,
-        failureClass: failureContext.signature,
-        remediationTarget: "tracked_publishable_content",
-        summary: failureContext.summary,
-        details: failureContext.details,
-      });
-      return {
-        record,
-        pr: refreshed.pr,
-        checks: refreshed.checks,
-        reviewThreads: refreshed.reviewThreads,
-      };
-    }
-    if (
-      record.latest_local_ci_result !== null &&
-      record.latest_local_ci_result !== undefined &&
-      record.latest_local_ci_result.head_sha !== refreshed.pr.headRefOid
-    ) {
-      record = stateStore.touch(record, {
-        latest_local_ci_result: {
-          ...record.latest_local_ci_result,
-          head_sha: refreshed.pr.headRefOid,
-        },
-      });
-      state.issues[String(record.issue_number)] = record;
-      await stateStore.save(state);
-      await syncJournal(record);
     }
     await github.markPullRequestReady(refreshed.pr.number);
   }
@@ -830,7 +775,7 @@ export async function handlePostTurnPullRequestTransitionsPhase(
     currentHeadLocalCiMissing(record, postReady.pr) &&
     !options.dryRun
   ) {
-    const localCiPublicationGate = await runTrackedPrReadyLocalCiPublicationGate({
+    const currentHeadLocalCiGate = await runTrackedPrCurrentHeadLocalCiGate({
       config,
       stateStore,
       state,
@@ -838,55 +783,18 @@ export async function handlePostTurnPullRequestTransitionsPhase(
       pr: postReady.pr,
       workspacePath,
       gateLabel: `before auto-merging PR #${postReady.pr.number}`,
+      workspaceHeadMismatchDetail: (localHeadSha, prHeadSha) =>
+        `local workspace HEAD ${localHeadSha} does not match PR head ${prHeadSha}; the auto-merge gate is failing closed until the local commit is published.`,
+      publishWorkspaceHeadMismatchComment: false,
       github,
       syncJournal,
       applyFailureSignature: args.applyFailureSignature,
       runWorkspacePreparationCommand: args.runWorkspacePreparationCommand,
       runLocalCiCommand: args.runLocalCiCommand,
     });
-    record = localCiPublicationGate.record;
-    if (!localCiPublicationGate.ok) {
-      effectiveFailureContext = record.last_failure_context;
-    } else {
-      const localWorkspaceStatus = await getWorkspaceStatus(workspacePath, record.branch, config.defaultBranch);
-      if (localWorkspaceStatus.headSha !== postReady.pr.headRefOid) {
-        const failureContext = buildWorkstationLocalPathFailureContext({
-          gateLabel: `before auto-merging PR #${postReady.pr.number}`,
-          details: [
-            `local workspace HEAD ${localWorkspaceStatus.headSha} does not match PR head ${postReady.pr.headRefOid}; the auto-merge gate is failing closed until the local commit is published.`,
-          ],
-        });
-        record = stateStore.touch(record, {
-          state: "blocked",
-          last_error: truncate(failureContext.summary, 1000),
-          last_failure_kind: null,
-          last_failure_context: failureContext,
-          ...args.applyFailureSignature(record, failureContext),
-          blocked_reason: "verification",
-          ...trackedPrStatusComments.observedTrackedPrHostLocalBlockerPatch({
-            pr: postReady.pr,
-            blockerSignature: failureContext.signature,
-          }),
-        });
-        state.issues[String(record.issue_number)] = record;
-        await stateStore.save(state);
-        await syncJournal(record);
-        effectiveFailureContext = failureContext;
-      } else if (
-        record.latest_local_ci_result !== null &&
-        record.latest_local_ci_result !== undefined &&
-        record.latest_local_ci_result.head_sha !== postReady.pr.headRefOid
-      ) {
-        record = stateStore.touch(record, {
-          latest_local_ci_result: {
-            ...record.latest_local_ci_result,
-            head_sha: postReady.pr.headRefOid,
-          },
-        });
-        state.issues[String(record.issue_number)] = record;
-        await stateStore.save(state);
-        await syncJournal(record);
-      }
+    record = currentHeadLocalCiGate.record;
+    if (!currentHeadLocalCiGate.ok) {
+      effectiveFailureContext = currentHeadLocalCiGate.failureContext;
     }
   }
   record = await trackedPrStatusComments.maybeCommentOnTrackedPrPersistentStatus({
