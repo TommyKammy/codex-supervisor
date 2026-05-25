@@ -25,6 +25,8 @@ import {
   createReviewThread,
 } from "./turn-execution-test-helpers";
 
+type PostTurnTransitionArgs = Parameters<typeof handlePostTurnPullRequestTransitionsPhase>[0];
+
 const SAMPLE_UNIX_WORKSTATION_PATH = `/${"home"}/alice/dev/private-repo`;
 const SAMPLE_MACOS_WORKSTATION_PATH = `/${"Users"}/alice/Dev/private-repo`;
 
@@ -432,6 +434,162 @@ function createCodexConnectorReviewRequestScenario({
   return { config, context, issue, pr, record, state };
 }
 
+function createOpenPullRequestSnapshotLoader({
+  pr,
+  checks = [],
+  reviewThreads = [],
+}: {
+  pr: ReturnType<typeof createPullRequest>;
+  checks?: PullRequestCheck[];
+  reviewThreads?: ReviewThread[];
+}): PostTurnTransitionArgs["loadOpenPullRequestSnapshot"] {
+  return async () => ({ pr, checks, reviewThreads });
+}
+
+function createPostTurnTransitionArgs({
+  config,
+  context,
+  ...overrides
+}: Pick<PostTurnTransitionArgs, "config" | "context"> &
+  Partial<Omit<PostTurnTransitionArgs, "config" | "context">>): PostTurnTransitionArgs {
+  return {
+    config,
+    context,
+    stateStore: createNoopStateStore(),
+    github: createDefaultGithub(),
+    derivePullRequestLifecycleSnapshot: (record, pr, checks, reviewThreads, recordPatch) =>
+      deriveSupervisorPullRequestLifecycleSnapshot(config, record, pr, checks, reviewThreads, recordPatch),
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    blockedReasonFromReviewState: (record, pr, checks, reviewThreads) =>
+      resolveBlockedReasonFromReviewState(config, record, pr, checks, reviewThreads),
+    summarizeChecks,
+    configuredBotReviewThreads,
+    manualReviewThreads,
+    mergeConflictDetected: () => false,
+    ...overrides,
+  };
+}
+
+async function runPostTurnTransitionScenario(
+  args: Pick<PostTurnTransitionArgs, "config" | "context"> &
+    Partial<Omit<PostTurnTransitionArgs, "config" | "context">>,
+) {
+  return handlePostTurnPullRequestTransitionsPhase(createPostTurnTransitionArgs(args));
+}
+
+function createDraftReadyPromotionScenario({
+  issueTitle,
+  prTitle = issueTitle,
+  config = createConfig({ localCiCommand: "npm run ci:local" }),
+  workspacePath = path.join("/tmp/workspaces", "issue-102"),
+  headSha = "head-116",
+  recordOverrides = {},
+}: {
+  issueTitle: string;
+  prTitle?: string;
+  config?: ReturnType<typeof createConfig>;
+  workspacePath?: string;
+  headSha?: string;
+  recordOverrides?: Partial<IssueRunRecord>;
+}) {
+  const fixture = createTrackedPullRequestFixture({
+    issueTitle,
+    prTitle,
+    isDraft: true,
+    workspacePath,
+    headSha,
+    recordOverrides,
+  });
+
+  return {
+    config,
+    ...fixture,
+    context: createPostTurnContext({
+      issue: fixture.issue,
+      pr: fixture.pr,
+      workspacePath: fixture.workspacePath,
+      state: fixture.state,
+      record: fixture.state.issues["102"]!,
+    }),
+  };
+}
+
+function createTrackedHostLocalBlockerScenario({
+  issueTitle,
+  prTitle = issueTitle,
+  config = createConfig({ localCiCommand: "npm run ci:local" }),
+  recordOverrides = {},
+}: {
+  issueTitle: string;
+  prTitle?: string;
+  config?: ReturnType<typeof createConfig>;
+  recordOverrides?: Partial<IssueRunRecord>;
+}) {
+  return createDraftReadyPromotionScenario({
+    issueTitle,
+    prTitle,
+    config,
+    recordOverrides,
+  });
+}
+
+function createStaleConfiguredBotBlockerScenario({
+  policy,
+}: {
+  policy?: ReturnType<typeof createConfig>["staleConfiguredBotReviewPolicy"];
+} = {}) {
+  const config = createConfig({
+    reviewBotLogins: ["copilot-pull-request-reviewer"],
+    ...(policy ? { staleConfiguredBotReviewPolicy: policy } : {}),
+  });
+  const issue = createIssue({ title: "Tracked PR stale configured-bot blocker" });
+  const pr = createPullRequest({
+    title: "Tracked PR stale configured-bot blocker",
+    number: 116,
+    isDraft: false,
+    headRefOid: "head-116",
+    mergeStateStatus: "CLEAN",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        issue_number: 102,
+        state: "blocked",
+        pr_number: pr.number,
+        last_head_sha: pr.headRefOid,
+        blocked_reason: "stale_review_bot",
+      }),
+    },
+  };
+  const failureContext = {
+    ...createFailureContext(
+      "1 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
+    ),
+    signature: "stalled-bot:thread-1",
+    details: ["reviewer=copilot-pull-request-reviewer file=src/review.ts line=42 processed_on_current_head=yes"],
+    url: "https://example.test/review/1",
+  };
+
+  return {
+    config,
+    issue,
+    pr,
+    state,
+    failureContext,
+    context: createPostTurnContext({
+      state,
+      record: state.issues["102"]!,
+      issue,
+      pr,
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+    }),
+  };
+}
+
 test("handlePostTurnPullRequestTransitionsPhase refreshes PR state after marking ready", async (t) => {
   const { workspacePath, headSha } = await createTrackedIssueBranchRepo();
   t.after(async () => {
@@ -577,9 +735,8 @@ test("handlePostTurnPullRequestTransitionsPhase requests Codex Connector review 
     const { config, context, issue, pr, record, state } = createCodexConnectorReviewRequestScenario();
     const comments: Array<{ issueNumber: number; body: string }> = [];
 
-    const result = await handlePostTurnPullRequestTransitionsPhase({
+    const result = await runPostTurnTransitionScenario({
       config,
-      stateStore: createNoopStateStore(),
       github: createDefaultGithub({
         addIssueComment: async (issueNumber, body) => {
           comments.push({ issueNumber, body });
@@ -591,20 +748,11 @@ test("handlePostTurnPullRequestTransitionsPhase requests Codex Connector review 
         },
       }),
       context,
-      loadOpenPullRequestSnapshot: async () => ({
+      loadOpenPullRequestSnapshot: createOpenPullRequestSnapshotLoader({
         pr,
         checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
-        reviewThreads: [],
       }),
-      derivePullRequestLifecycleSnapshot: (currentRecord, currentPr, checks, reviewThreads, recordPatch) =>
-        deriveSupervisorPullRequestLifecycleSnapshot(config, currentRecord, currentPr, checks, reviewThreads, recordPatch),
       applyFailureSignature: () => ({ last_failure_signature: null, repeated_failure_signature_count: 0 }),
-      blockedReasonFromReviewState: (currentRecord, currentPr, checks, reviewThreads) =>
-        resolveBlockedReasonFromReviewState(config, currentRecord, currentPr, checks, reviewThreads),
-      summarizeChecks,
-      configuredBotReviewThreads: () => [],
-      manualReviewThreads: () => [],
-      mergeConflictDetected: () => false,
     });
 
     assert.equal(comments.length, 1);
@@ -645,9 +793,8 @@ test("handlePostTurnPullRequestTransitionsPhase requests Codex Connector review 
     );
     assert.equal(result.record.blocked_reason, null);
 
-    const retryResult = await handlePostTurnPullRequestTransitionsPhase({
+    const retryResult = await runPostTurnTransitionScenario({
       config,
-      stateStore: createNoopStateStore(),
       github: createDefaultGithub({
         addIssueComment: async (issueNumber, body) => {
           comments.push({ issueNumber, body });
@@ -665,20 +812,11 @@ test("handlePostTurnPullRequestTransitionsPhase requests Codex Connector review 
         state,
         record: result.record,
       }),
-      loadOpenPullRequestSnapshot: async () => ({
+      loadOpenPullRequestSnapshot: createOpenPullRequestSnapshotLoader({
         pr,
         checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
-        reviewThreads: [],
       }),
-      derivePullRequestLifecycleSnapshot: (currentRecord, currentPr, checks, reviewThreads, recordPatch) =>
-        deriveSupervisorPullRequestLifecycleSnapshot(config, currentRecord, currentPr, checks, reviewThreads, recordPatch),
       applyFailureSignature: () => ({ last_failure_signature: null, repeated_failure_signature_count: 0 }),
-      blockedReasonFromReviewState: (currentRecord, currentPr, checks, reviewThreads) =>
-        resolveBlockedReasonFromReviewState(config, currentRecord, currentPr, checks, reviewThreads),
-      summarizeChecks,
-      configuredBotReviewThreads: () => [],
-      manualReviewThreads: () => [],
-      mergeConflictDetected: () => false,
     });
 
     assert.equal(comments.length, 1);
@@ -698,9 +836,8 @@ test("handlePostTurnPullRequestTransitionsPhase does not request Codex Connector
     });
     let addIssueCommentCalls = 0;
 
-    const result = await handlePostTurnPullRequestTransitionsPhase({
+    const result = await runPostTurnTransitionScenario({
       config,
-      stateStore: createNoopStateStore(),
       github: createDefaultGithub({
         addIssueComment: async () => {
           addIssueCommentCalls += 1;
@@ -708,20 +845,11 @@ test("handlePostTurnPullRequestTransitionsPhase does not request Codex Connector
         },
       }),
       context,
-      loadOpenPullRequestSnapshot: async () => ({
+      loadOpenPullRequestSnapshot: createOpenPullRequestSnapshotLoader({
         pr,
         checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
-        reviewThreads: [],
       }),
-      derivePullRequestLifecycleSnapshot: (currentRecord, currentPr, checks, reviewThreads, recordPatch) =>
-        deriveSupervisorPullRequestLifecycleSnapshot(config, currentRecord, currentPr, checks, reviewThreads, recordPatch),
       applyFailureSignature: () => ({ last_failure_signature: null, repeated_failure_signature_count: 0 }),
-      blockedReasonFromReviewState: (currentRecord, currentPr, checks, reviewThreads) =>
-        resolveBlockedReasonFromReviewState(config, currentRecord, currentPr, checks, reviewThreads),
-      summarizeChecks,
-      configuredBotReviewThreads: () => [],
-      manualReviewThreads: () => [],
-      mergeConflictDetected: () => false,
     });
 
     assert.equal(addIssueCommentCalls, 0);
@@ -2212,9 +2340,8 @@ test("handlePostTurnPullRequestTransitionsPhase clears stale ready-promotion blo
 
   let readyCalls = 0;
   let snapshotLoads = 0;
-  const result = await handlePostTurnPullRequestTransitionsPhase({
+  const result = await runPostTurnTransitionScenario({
     config,
-    stateStore: createNoopStateStore(),
     github: createDefaultGithub({
       markPullRequestReady: async (prNumber: number) => {
         assert.equal(prNumber, draftPr.number);
@@ -2231,21 +2358,6 @@ test("handlePostTurnPullRequestTransitionsPhase clears stale ready-promotion blo
       pr: draftPr,
       options: { dryRun: false },
     },
-    derivePullRequestLifecycleSnapshot: (record, pr, checks, reviewThreads) =>
-      deriveSupervisorPullRequestLifecycleSnapshot(config, record, pr, checks, reviewThreads),
-    applyFailureSignature: (_record, failureContext) => ({
-      last_failure_signature: failureContext?.signature ?? null,
-      repeated_failure_signature_count: failureContext ? 1 : 0,
-    }),
-    blockedReasonFromReviewState: (record, pr, checks, reviewThreads) =>
-      resolveBlockedReasonFromReviewState(config, record, pr, checks, reviewThreads),
-    summarizeChecks: (checks) => ({
-      hasPending: checks.some((check) => check.bucket === "pending"),
-      hasFailing: checks.some((check) => check.bucket === "fail"),
-    }),
-    configuredBotReviewThreads: () => [],
-    manualReviewThreads: () => [],
-    mergeConflictDetected: () => false,
     runLocalCiCommand: async () => undefined,
     runWorkstationLocalPathGate: async () => ({
       ok: true,
@@ -2305,9 +2417,8 @@ test("handlePostTurnPullRequestTransitionsPhase runs current-head local CI befor
   let readyCalls = 0;
   let snapshotLoads = 0;
   let syncJournalCalls = 0;
-  const result = await handlePostTurnPullRequestTransitionsPhase({
+  const result = await runPostTurnTransitionScenario({
     config,
-    stateStore: createNoopStateStore(),
     github: createDefaultGithub({
       markPullRequestReady: async () => {
         readyCalls += 1;
@@ -2342,18 +2453,7 @@ test("handlePostTurnPullRequestTransitionsPhase runs current-head local CI befor
         copilot_review_timeout_reason: null,
       },
     }),
-    applyFailureSignature: (_record, failureContext) => ({
-      last_failure_signature: failureContext?.signature ?? null,
-      repeated_failure_signature_count: failureContext ? 1 : 0,
-    }),
     blockedReasonFromReviewState: () => null,
-    summarizeChecks: (checks) => ({
-      hasPending: checks.some((check) => check.bucket === "pending"),
-      hasFailing: checks.some((check) => check.bucket === "fail"),
-    }),
-    configuredBotReviewThreads: () => [],
-    manualReviewThreads: () => [],
-    mergeConflictDetected: () => false,
     runLocalCiCommand: async (command, cwd) => {
       assert.equal(command.displayCommand, "npm run ci:local");
       assert.equal(cwd, workspacePath);
@@ -2378,52 +2478,26 @@ test("handlePostTurnPullRequestTransitionsPhase runs current-head local CI befor
 });
 
 test("handlePostTurnPullRequestTransitionsPhase blocks draft-to-ready promotion when configured local CI fails", async () => {
-  const config = createConfig({ localCiCommand: "npm run ci:local" });
-  const issue = createIssue({ title: "Gate draft promotion on local CI" });
-  const draftPr = createPullRequest({ title: "Gate ready promotion", isDraft: true });
-  const state: SupervisorStateFile = {
-    activeIssueNumber: 102,
-    issues: { "102": createRecord({ state: "draft_pr", pr_number: draftPr.number, last_failure_kind: "timeout" }) },
-  };
+  const { config, context, pr: draftPr } = createDraftReadyPromotionScenario({
+    issueTitle: "Gate draft promotion on local CI",
+    prTitle: "Gate ready promotion",
+    recordOverrides: { last_failure_kind: "timeout" },
+  });
 
   let readyCalls = 0;
   let syncJournalCalls = 0;
-  const result = await handlePostTurnPullRequestTransitionsPhase({
+  const result = await runPostTurnTransitionScenario({
     config,
-    stateStore: {
-      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
-      save: async () => undefined,
-    },
-    github: {
-      getPullRequest: async () => {
-        throw new Error("unexpected getPullRequest call");
-      },
-      getChecks: async () => {
-        throw new Error("unexpected getChecks call");
-      },
-      getUnresolvedReviewThreads: async () => {
-        throw new Error("unexpected getUnresolvedReviewThreads call");
-      },
+    github: createDefaultGithub({
       markPullRequestReady: async () => {
         readyCalls += 1;
       },
-    },
+    }),
     context: {
-      state,
-      record: state.issues["102"]!,
-      issue,
-      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+      ...context,
       syncJournal: async () => {
         syncJournalCalls += 1;
       },
-      memoryArtifacts: {
-        alwaysReadFiles: [],
-        onDemandFiles: [],
-        contextIndexPath: "/tmp/context-index.md",
-        agentsPath: "/tmp/AGENTS.generated.md",
-      },
-      pr: draftPr,
-      options: { dryRun: false },
     },
     derivePullRequestLifecycleSnapshot: (record) => ({
       recordForState: record,
@@ -2442,18 +2516,11 @@ test("handlePostTurnPullRequestTransitionsPhase blocks draft-to-ready promotion 
         copilot_review_timeout_reason: null,
       },
     }),
-    applyFailureSignature: (_record, failureContext) => ({
-      last_failure_signature: failureContext?.signature ?? null,
-      repeated_failure_signature_count: failureContext ? 1 : 0,
-    }),
     blockedReasonFromReviewState: () => null,
     summarizeChecks: () => ({
       hasPending: false,
       hasFailing: false,
     }),
-    configuredBotReviewThreads: () => [],
-    manualReviewThreads: () => [],
-    mergeConflictDetected: () => false,
     runLocalCiCommand: async () => {
       throw new Error("Command failed: sh -lc +1 args\nexitCode=1\nlocal ci failed");
     },
@@ -2461,10 +2528,9 @@ test("handlePostTurnPullRequestTransitionsPhase blocks draft-to-ready promotion 
       ok: true,
       failureContext: null,
     }),
-    loadOpenPullRequestSnapshot: async () => ({
+    loadOpenPullRequestSnapshot: createOpenPullRequestSnapshotLoader({
       pr: draftPr,
       checks: [],
-      reviewThreads: [] satisfies ReviewThread[],
     }),
   });
 
@@ -2810,52 +2876,21 @@ test("handlePostTurnPullRequestTransitionsPhase comments once when workspace pre
     workspacePreparationCommand: "npm ci",
     localCiCommand: "npm run ci:local",
   });
-  const issue = createIssue({ title: "Comment on tracked PR host-local blockers" });
-  const draftPr = createPullRequest({ title: "Tracked PR host-local blocker", isDraft: true });
-  const state: SupervisorStateFile = {
-    activeIssueNumber: 102,
-    issues: { "102": createRecord({ state: "draft_pr", pr_number: draftPr.number }) },
-  };
+  const { context, pr: draftPr } = createTrackedHostLocalBlockerScenario({
+    issueTitle: "Comment on tracked PR host-local blockers",
+    prTitle: "Tracked PR host-local blocker",
+    config,
+  });
   const comments: Array<{ prNumber: number; body: string }> = [];
 
-  const result = await handlePostTurnPullRequestTransitionsPhase({
+  const result = await runPostTurnTransitionScenario({
     config,
-    stateStore: {
-      touch: (record, patch) => ({ ...record, ...patch, updated_at: record.updated_at }),
-      save: async () => undefined,
-    },
-    github: {
-      getPullRequest: async () => {
-        throw new Error("unexpected getPullRequest call");
-      },
-      getChecks: async () => {
-        throw new Error("unexpected getChecks call");
-      },
-      getUnresolvedReviewThreads: async () => {
-        throw new Error("unexpected getUnresolvedReviewThreads call");
-      },
-      markPullRequestReady: async () => {
-        throw new Error("unexpected markPullRequestReady call");
-      },
+    github: createDefaultGithub({
       addIssueComment: async (prNumber: number, body: string) => {
         comments.push({ prNumber, body });
       },
-    },
-    context: {
-      state,
-      record: state.issues["102"]!,
-      issue,
-      workspacePath: path.join("/tmp/workspaces", "issue-102"),
-      syncJournal: async () => undefined,
-      memoryArtifacts: {
-        alwaysReadFiles: [],
-        onDemandFiles: [],
-        contextIndexPath: "/tmp/context-index.md",
-        agentsPath: "/tmp/AGENTS.generated.md",
-      },
-      pr: draftPr,
-      options: { dryRun: false },
-    },
+    }),
+    context,
     derivePullRequestLifecycleSnapshot: (record) => ({
       recordForState: record,
       nextState: "draft_pr",
@@ -2870,21 +2905,14 @@ test("handlePostTurnPullRequestTransitionsPhase comments once when workspace pre
       copilotTimeoutPatch: {
         copilot_review_timed_out_at: null,
         copilot_review_timeout_action: null,
-        copilot_review_timeout_reason: null,
+      copilot_review_timeout_reason: null,
       },
-    }),
-    applyFailureSignature: (_record, failureContext) => ({
-      last_failure_signature: failureContext?.signature ?? null,
-      repeated_failure_signature_count: failureContext ? 1 : 0,
     }),
     blockedReasonFromReviewState: () => null,
     summarizeChecks: () => ({
       hasPending: false,
       hasFailing: false,
     }),
-    configuredBotReviewThreads: () => [],
-    manualReviewThreads: () => [],
-    mergeConflictDetected: () => false,
     runWorkspacePreparationCommand: async () => {
       throw Object.assign(new Error("workspace toolchain is not installed in this workspace"), {
         stderr: "workspace toolchain is not installed in this workspace",
@@ -2897,10 +2925,9 @@ test("handlePostTurnPullRequestTransitionsPhase comments once when workspace pre
       ok: true,
       failureContext: null,
     }),
-    loadOpenPullRequestSnapshot: async () => ({
+    loadOpenPullRequestSnapshot: createOpenPullRequestSnapshotLoader({
       pr: draftPr,
       checks: [],
-      reviewThreads: [] satisfies ReviewThread[],
     }),
   });
 
@@ -4404,76 +4431,30 @@ test("handlePostTurnPullRequestTransitionsPhase comments when a tracked PR stays
 });
 
 test("handlePostTurnPullRequestTransitionsPhase comments when a tracked PR stays blocked on stale configured-bot review state near merge", async () => {
-  const config = createConfig({
-    reviewBotLogins: ["copilot-pull-request-reviewer"],
-  });
-  const issue = createIssue({ title: "Comment on persistent stale configured-bot blockers" });
-  const pr = createPullRequest({
-    title: "Tracked PR stale configured-bot blocker",
-    number: 116,
-    isDraft: false,
-    headRefOid: "head-116",
-    mergeStateStatus: "CLEAN",
-  });
-  const state: SupervisorStateFile = {
-    activeIssueNumber: 102,
-    issues: {
-      "102": createRecord({
-        issue_number: 102,
-        state: "blocked",
-        pr_number: pr.number,
-        last_head_sha: pr.headRefOid,
-        blocked_reason: "stale_review_bot",
-      }),
-    },
-  };
+  const { config, context, pr, failureContext } = createStaleConfiguredBotBlockerScenario();
   const commentBodies: string[] = [];
-  const staleBotFailureContext = {
-    ...createFailureContext(
-      "1 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
-    ),
-    signature: "stalled-bot:thread-1",
-    details: ["reviewer=copilot-pull-request-reviewer file=src/review.ts line=42 processed_on_current_head=yes"],
-    url: "https://example.test/review/1",
-  };
 
-  const result = await handlePostTurnPullRequestTransitionsPhase({
+  const result = await runPostTurnTransitionScenario({
     config,
-    stateStore: createNoopStateStore(),
     github: createDefaultGithub({
       addIssueComment: async (_prNumber: number, body: string) => {
         commentBodies.push(body);
       },
     }),
-    context: createPostTurnContext({
-      state,
-      record: state.issues["102"]!,
-      issue,
-      pr,
-      workspacePath: path.join("/tmp/workspaces", "issue-102"),
-    }),
+    context,
     derivePullRequestLifecycleSnapshot: (recordForState) =>
       createLifecycleSnapshot(recordForState, "blocked", {
-        failureContext: staleBotFailureContext,
+        failureContext,
       }),
-    applyFailureSignature: (_record, failureContext) => ({
-      last_failure_signature: failureContext?.signature ?? null,
-      repeated_failure_signature_count: failureContext ? 1 : 0,
-    }),
     blockedReasonFromReviewState: () => "stale_review_bot",
-    summarizeChecks,
-    configuredBotReviewThreads: () => [],
-    manualReviewThreads: () => [],
-    mergeConflictDetected: () => false,
     runLocalCiCommand: async () => undefined,
     runWorkstationLocalPathGate: async () => ({
       ok: true,
       failureContext: null,
     }),
-    loadOpenPullRequestSnapshot: async () => ({
+    loadOpenPullRequestSnapshot: createOpenPullRequestSnapshotLoader({
       pr,
       checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
-      reviewThreads: [] satisfies ReviewThread[],
     }),
   });
 
