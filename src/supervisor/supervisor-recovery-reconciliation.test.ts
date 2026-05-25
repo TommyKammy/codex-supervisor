@@ -6960,6 +6960,16 @@ test("reconcileTrackedMergedButOpenIssues records provider success from Codex su
               typeName: "Bot",
             },
           },
+          {
+            id: `comment-operator-hrcore-${index + 1}`,
+            body: "Supervisor confirmed this stale Codex Connector finding is covered by the current-head success signal.",
+            createdAt: "2026-05-25T04:16:47Z",
+            url: `https://example.test/pr/183#discussion_r${index + 1}`,
+            author: {
+              login: "TommyKammy",
+              typeName: "User",
+            },
+          },
         ],
       },
     }),

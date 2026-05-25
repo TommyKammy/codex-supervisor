@@ -34,6 +34,10 @@ export function latestCodexConnectorPSeverity(thread: ReviewThread): CodexConnec
   return latestCodexConnectorReviewComment(thread)?.severity ?? null;
 }
 
+export function hasCodexConnectorFindingReviewComment(thread: ReviewThread): boolean {
+  return latestCodexConnectorReviewComment(thread) !== null;
+}
+
 function isCodexConnectorMustFixReviewThread(thread: ReviewThread): boolean {
   const latestCodexConnectorReview = latestCodexConnectorReviewComment(thread);
   if (!latestCodexConnectorReview || thread.isResolved || thread.isOutdated) {
