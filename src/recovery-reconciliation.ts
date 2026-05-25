@@ -66,6 +66,7 @@ import { syncTrackedPrPersistentStatusComment } from "./tracked-pr-status-commen
 import {
   configuredBotReviewThreads,
   manualReviewThreads,
+  latestReviewComment,
   latestReviewCommentAuthorIsAllowedBot,
 } from "./review-thread-reporting";
 import { hasCodexConnectorFindingReviewComment } from "./codex-connector-review-policy";
@@ -781,8 +782,26 @@ function hasOnlyOutdatedConfiguredBotResidue(
     configuredThreads.every(
       (thread) =>
         thread.isOutdated &&
-        (latestReviewCommentAuthorIsAllowedBot(config, thread) || hasCodexConnectorFindingReviewComment(thread)),
+        (latestReviewCommentAuthorIsAllowedBot(config, thread) || operatorAcknowledgedCodexResidue(thread)),
     )
+  );
+}
+
+function operatorAcknowledgedCodexResidue(thread: ReviewThread): boolean {
+  if (!hasCodexConnectorFindingReviewComment(thread)) {
+    return false;
+  }
+
+  const latestComment = latestReviewComment(thread);
+  if (!latestComment || latestComment.author?.typeName === "Bot") {
+    return false;
+  }
+
+  const normalizedBody = latestComment.body.replace(/\s+/g, " ").trim().toLowerCase();
+  return (
+    /\bresidue acknowledged\b/.test(normalizedBody) ||
+    /\bstale codex connector (?:finding|residue)\b/.test(normalizedBody) ||
+    /\bcovered by the current-head success signal\b/.test(normalizedBody)
   );
 }
 
@@ -1042,7 +1061,9 @@ export async function reconcileRecoverableBlockedIssueStates(
         externalProgressEvidence === null &&
         record.last_head_sha === trackedPullRequest.headRefOid &&
         projection.nextState !== "blocked" &&
-        projection.mergeLatencyVisibilityPatch.provider_success_head_sha === trackedPullRequest.headRefOid;
+        projection.mergeLatencyVisibilityPatch.provider_success_head_sha === trackedPullRequest.headRefOid &&
+        (reviewThreads.filter((thread) => !thread.isResolved).length === 0 ||
+          hasOnlyOutdatedConfiguredBotResidue(config, reviewThreads));
       if (
         !externalProgressEvidence &&
         !sameHeadReviewRequestRecovery &&

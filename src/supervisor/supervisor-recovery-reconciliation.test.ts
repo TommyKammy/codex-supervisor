@@ -1969,6 +1969,116 @@ test("reconcileRecoverableBlockedIssueStates records provider success for same-h
   ]);
 });
 
+test("reconcileRecoverableBlockedIssueStates keeps same-head handoff-missing blocked for unacknowledged human Codex residue replies", async () => {
+  const currentHead = "d5a9957506c697dc13f5431bb460cfe95257bcae";
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    configuredBotInitialGraceWaitSeconds: 0,
+    configuredBotSettledWaitSeconds: 0,
+    configuredBotCurrentHeadSignalTimeoutMinutes: 1,
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+  });
+  const original = createTrackedPrStaleReviewRecord({
+    state: "blocked",
+    blocked_reason: "handoff_missing",
+    last_head_sha: currentHead,
+    review_wait_started_at: "2026-05-23T16:04:34.342Z",
+    review_wait_head_sha: currentHead,
+    provider_success_head_sha: null,
+    provider_success_observed_at: null,
+    last_failure_signature: "handoff-missing",
+    repeated_failure_signature_count: 1,
+    codex_session_id: "session-366",
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [original],
+  });
+  const issue = createTrackedPrRecoveryIssue({
+    updatedAt: "2026-05-25T06:05:00Z",
+  });
+  const pr = createTrackedPrRecoveryPullRequest({
+    headRefOid: currentHead,
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+    reviewDecision: null,
+    currentHeadCiGreenAt: "2026-05-23T16:02:36Z",
+    configuredBotCurrentHeadObservedAt: "2026-05-23T14:33:41Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotLatestReviewedCommitSha: "7327afdab32fb9c7ffb741d6158add4616bb3115",
+    configuredBotTopLevelReviewStrength: null,
+  });
+  let saveCalls = 0;
+
+  const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => pr,
+      getIssue: async () => issue,
+      getChecks: async () => [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getUnresolvedReviewThreads: async () => [
+        createReviewThread({
+          id: "PRRT_hrcore_183_human_followup",
+          isOutdated: true,
+          line: null,
+          comments: {
+            nodes: [
+              {
+                id: "comment-codex-human-followup",
+                body: "P1: Earlier Codex Connector finding.",
+                createdAt: "2026-05-23T14:16:47Z",
+                url: "https://example.test/pr/183#discussion_r1",
+                author: {
+                  login: "chatgpt-codex-connector",
+                  typeName: "Bot",
+                },
+              },
+              {
+                id: "comment-human-followup",
+                body: "This still looks actionable; please inspect the audit correlation path before merging.",
+                createdAt: "2026-05-25T04:16:47Z",
+                url: "https://example.test/pr/183#discussion_r1",
+                author: {
+                  login: "reviewer-user",
+                  typeName: "User",
+                },
+              },
+            ],
+          },
+        }),
+      ],
+    },
+    {
+      touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+        return {
+          ...current,
+          ...patch,
+          updated_at: "2026-05-25T06:06:00Z",
+        };
+      },
+      async save(): Promise<void> {
+        saveCalls += 1;
+      },
+    },
+    state,
+    config,
+    [issue],
+    {
+      shouldAutoRetryHandoffMissing,
+      inferStateFromPullRequest,
+      inferFailureContext,
+      blockedReasonForLifecycleState,
+      isOpenPullRequest,
+      syncReviewWaitWindow,
+      syncCopilotReviewRequestObservation,
+      syncCopilotReviewTimeoutState,
+    },
+  );
+
+  assert.equal(saveCalls, 0);
+  assert.deepEqual(recoveryEvents, []);
+  assert.deepEqual(state.issues["366"], original);
+});
+
 test("reconcileRecoverableBlockedIssueStates does not force same-head outdated residue recovery from unrelated projected states", async () => {
   const currentHead = "329b8e81ed535a61a2bc59ac3227ad52a58b0756";
   const config = createConfig({
