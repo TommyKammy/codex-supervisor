@@ -22,6 +22,7 @@ import {
   inferStateFromPullRequest,
   inferGitHubWaitStep,
 } from "../pull-request-state";
+import { hasCodexConnectorPrSuccessCurrentHeadObservation } from "../codex-connector-review-policy";
 import {
   syncCopilotReviewRequestObservation,
   syncCopilotReviewTimeoutState,
@@ -240,10 +241,7 @@ function hasCurrentHeadCodexNoMajor(record: IssueRunRecord, pr: GitHubPullReques
   return Boolean(
     record.provider_success_head_sha === pr.headRefOid &&
       validTimestamp(record.provider_success_observed_at) &&
-      pr.configuredBotCurrentHeadObservationSource === "codex_pr_success_comment" &&
-      pr.configuredBotCurrentHeadStatusState === "SUCCESS" &&
-      pr.configuredBotTopLevelReviewStrength !== "blocking" &&
-      validTimestamp(pr.configuredBotCurrentHeadObservedAt),
+      hasCodexConnectorPrSuccessCurrentHeadObservation(pr),
   );
 }
 

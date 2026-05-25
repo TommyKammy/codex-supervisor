@@ -6884,6 +6884,135 @@ test("reconcileTrackedMergedButOpenIssues reports the inferred wait step when op
   }
 });
 
+test("reconcileTrackedMergedButOpenIssues records provider success from Codex success comments without status context", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    configuredBotInitialGraceWaitSeconds: 0,
+    configuredBotSettledWaitSeconds: 0,
+    configuredBotRequireCurrentHeadSignal: true,
+    configuredBotCurrentHeadSignalTimeoutMinutes: 1,
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+  });
+  const headSha = "d5a9957506c697dc13f5431bb460cfe95257bcae";
+  const record = createRecord({
+    issue_number: 174,
+    state: "waiting_ci",
+    pr_number: 183,
+    last_head_sha: headSha,
+    branch: "codex/issue-174",
+    review_wait_started_at: "2026-05-23T16:04:34.342Z",
+    review_wait_head_sha: headSha,
+    copilot_review_timed_out_at: "2026-05-23T16:07:04.342Z",
+    copilot_review_timeout_action: "request_review_comment",
+    copilot_review_timeout_reason: "current_head_signal_wait_timed_out",
+    last_failure_context: {
+      category: "review",
+      summary: "7 unresolved automated review thread(s) remain.",
+      signature: "PRRT_hrcore_183_1",
+      command: null,
+      details: ["src/mvp-a-onboarding-traceability.ts:? p_severity=P1 summary=stale Codex Connector residue"],
+      url: "https://example.test/pr/183#discussion_r1",
+      updated_at: "2026-05-25T03:43:48.716Z",
+    },
+    last_failure_signature: "PRRT_hrcore_183_1",
+    repeated_failure_signature_count: 1,
+    provider_success_head_sha: null,
+    provider_success_observed_at: null,
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [record],
+  });
+  const pr = createPullRequest({
+    number: 183,
+    title: "HRCore stale Codex Connector residue",
+    url: "https://example.test/pr/183",
+    headRefName: "codex/issue-174",
+    headRefOid: headSha,
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+    reviewDecision: null,
+    currentHeadCiGreenAt: "2026-05-23T16:02:36Z",
+    configuredBotCurrentHeadObservedAt: "2026-05-23T14:33:41Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotLatestReviewedCommitSha: "7327afdab32fb9c7ffb741d6158add4616bb3115",
+    configuredBotTopLevelReviewStrength: null,
+    requiredConversationResolution: {
+      state: "enabled",
+      source: "branch_protection",
+      details: ["required_conversation_resolution=true"],
+    },
+  });
+  const reviewThreads = Array.from({ length: 7 }, (_value, index) =>
+    createReviewThread({
+      id: `PRRT_hrcore_183_${index + 1}`,
+      isOutdated: true,
+      line: null,
+      comments: {
+        nodes: [
+          {
+            id: `comment-hrcore-${index + 1}`,
+            body: "P1: Earlier Codex Connector finding that is obsolete after the current-head no-major signal.",
+            createdAt: "2026-05-23T14:16:47Z",
+            url: `https://example.test/pr/183#discussion_r${index + 1}`,
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  );
+  let saveCalls = 0;
+
+  const recoveryEvents = await reconcileTrackedMergedButOpenIssues(
+    {
+      getPullRequestIfExists: async () => pr,
+      getIssue: async () => {
+        throw new Error("unexpected getIssue call");
+      },
+      closeIssue: async () => {
+        throw new Error("unexpected closeIssue call");
+      },
+      closePullRequest: async () => {
+        throw new Error("unexpected closePullRequest call");
+      },
+      getChecks: async () => [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getMergedPullRequestsClosingIssue: async () => [],
+      getUnresolvedReviewThreads: async () => reviewThreads,
+    },
+    {
+      touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+        return {
+          ...current,
+          ...patch,
+          updated_at: "2026-05-25T03:55:00Z",
+        };
+      },
+      async save(): Promise<void> {
+        saveCalls += 1;
+      },
+    },
+    state,
+    config,
+    [createIssue({ number: 174, title: "HRCore stale residue", updatedAt: "2026-05-25T03:54:00Z" })],
+  );
+
+  const updated = state.issues["174"];
+  assert.equal(updated.state, "pr_open");
+  assert.equal(updated.blocked_reason, null);
+  assert.equal(updated.last_failure_context, null);
+  assert.equal(updated.last_failure_signature, null);
+  assert.equal(updated.repeated_failure_signature_count, 0);
+  assert.equal(updated.provider_success_head_sha, headSha);
+  assert.ok(updated.provider_success_observed_at);
+  assert.equal(saveCalls, 1);
+  assert.deepEqual(recoveryEvents.map((event) => event.reason), [
+    `tracked_pr_lifecycle_recovered: resumed issue #174 from waiting_ci to pr_open using fresh tracked PR #183 facts at head ${headSha}`,
+  ]);
+});
+
 test("reconcileTrackedMergedButOpenIssues can restrict convergence to the active merging issue", async () => {
   const activeRecord = createRecord({
     issue_number: 366,

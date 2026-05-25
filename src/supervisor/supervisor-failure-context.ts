@@ -4,7 +4,10 @@ import {
   buildCurrentHeadLocalReviewPendingFailureContext,
 } from "../pull-request-failure-context";
 import { shouldRunLocalReview } from "../local-review";
-import { buildCopilotReviewTimeoutFailureContext } from "../pull-request-state";
+import {
+  buildCopilotReviewTimeoutFailureContext,
+  effectiveConfiguredBotReviewThreadsForState,
+} from "../pull-request-state";
 import {
   configuredBotReviewFollowUpState,
   configuredBotReviewThreads,
@@ -60,6 +63,14 @@ export function inferFailureContext(
       return copilotTimeoutContext;
     }
 
+    const effectiveConfiguredBotThreads = effectiveConfiguredBotReviewThreadsForState(
+      config,
+      record,
+      pr,
+      checks,
+      reviewThreads,
+    );
+
     if (pr.reviewDecision === "CHANGES_REQUESTED") {
       const manualReviewContext =
         config.humanReviewBlocksMerge ? buildManualReviewFailureContext(manualReviewThreads(config, reviewThreads)) : null;
@@ -67,14 +78,14 @@ export function inferFailureContext(
         return manualReviewContext;
       }
 
-      const reviewContext = buildReviewFailureContext(pendingBotReviewThreads(config, record, pr, reviewThreads));
+      const reviewContext = buildReviewFailureContext(pendingBotReviewThreads(config, record, pr, effectiveConfiguredBotThreads));
       if (reviewContext) {
         return reviewContext;
       }
 
       const stalledBotReviewContext = buildStalledBotReviewFailureContext(
-        staleConfiguredBotReviewThreads(config, record, pr, reviewThreads),
-        configuredBotReviewFollowUpState(config, record, pr, configuredBotReviewThreads(config, reviewThreads)) === "exhausted"
+        staleConfiguredBotReviewThreads(config, record, pr, effectiveConfiguredBotThreads),
+        configuredBotReviewFollowUpState(config, record, pr, effectiveConfiguredBotThreads) === "exhausted"
           ? "exhausted_follow_up"
           : "no_progress",
       );
@@ -83,7 +94,7 @@ export function inferFailureContext(
       }
 
       const nonActionableConfiguredBotContext = buildNonActionableConfiguredBotReviewFailureContext(
-        nonActionableConfiguredBotReviewThreads(config, reviewThreads),
+        nonActionableConfiguredBotReviewThreads(config, effectiveConfiguredBotThreads),
       );
       if (nonActionableConfiguredBotContext) {
         return nonActionableConfiguredBotContext;
@@ -116,14 +127,14 @@ export function inferFailureContext(
       return manualReviewContext;
     }
 
-    const reviewContext = buildReviewFailureContext(pendingBotReviewThreads(config, record, pr, reviewThreads));
+    const reviewContext = buildReviewFailureContext(pendingBotReviewThreads(config, record, pr, effectiveConfiguredBotThreads));
     if (reviewContext) {
       return reviewContext;
     }
 
     const stalledBotReviewContext = buildStalledBotReviewFailureContext(
-      staleConfiguredBotReviewThreads(config, record, pr, reviewThreads),
-      configuredBotReviewFollowUpState(config, record, pr, configuredBotReviewThreads(config, reviewThreads)) === "exhausted"
+      staleConfiguredBotReviewThreads(config, record, pr, effectiveConfiguredBotThreads),
+      configuredBotReviewFollowUpState(config, record, pr, effectiveConfiguredBotThreads) === "exhausted"
         ? "exhausted_follow_up"
         : "no_progress",
     );
@@ -132,7 +143,7 @@ export function inferFailureContext(
     }
 
     const nonActionableConfiguredBotContext = buildNonActionableConfiguredBotReviewFailureContext(
-      nonActionableConfiguredBotReviewThreads(config, reviewThreads),
+      nonActionableConfiguredBotReviewThreads(config, effectiveConfiguredBotThreads),
     );
     if (nonActionableConfiguredBotContext) {
       return nonActionableConfiguredBotContext;

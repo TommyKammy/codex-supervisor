@@ -1028,6 +1028,71 @@ test("shouldRunCodex only returns true for actionable supervisor states", () => 
   );
 });
 
+test("shouldRunCodex does not dispatch on converged Codex residue with no effective blockers", () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    configuredBotInitialGraceWaitSeconds: 0,
+    configuredBotSettledWaitSeconds: 0,
+    configuredBotRequireCurrentHeadSignal: true,
+    configuredBotCurrentHeadSignalTimeoutMinutes: 1,
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+  });
+  const headSha = "d5a9957506c697dc13f5431bb460cfe95257bcae";
+  const record = createRecord({
+    state: "addressing_review",
+    pr_number: 183,
+    last_head_sha: headSha,
+    review_wait_started_at: "2026-05-25T03:43:48.716Z",
+    review_wait_head_sha: headSha,
+    provider_success_head_sha: null,
+    provider_success_observed_at: null,
+    last_failure_context: {
+      category: "review",
+      summary: "7 unresolved automated review thread(s) remain.",
+      signature: "thread-1|thread-2",
+      command: null,
+      details: ["stale Codex Connector residue"],
+      url: "https://example.test/pr/183#discussion_r1",
+      updated_at: "2026-05-25T03:43:48.716Z",
+    },
+    last_failure_signature: "thread-1|thread-2",
+    repeated_failure_signature_count: 2,
+  });
+  const pr = createPullRequest({
+    number: 183,
+    headRefOid: headSha,
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-05-23T16:02:36Z",
+    configuredBotCurrentHeadObservedAt: "2026-05-23T14:33:41Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotLatestReviewedCommitSha: "7327afdab32fb9c7ffb741d6158add4616bb3115",
+    configuredBotTopLevelReviewStrength: null,
+  });
+  const checks: PullRequestCheck[] = [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+  const reviewThreads = ["thread-1", "thread-2"].map((threadId) =>
+    createReviewThread({
+      id: threadId,
+      isOutdated: true,
+      line: null,
+      comments: {
+        nodes: [
+          {
+            id: `comment-${threadId}`,
+            body: "P1: Earlier Codex Connector finding that is obsolete after the current-head no-major signal.",
+            createdAt: "2026-05-23T14:16:47Z",
+            url: `https://example.test/pr/183#discussion_${threadId}`,
+            author: { login: "chatgpt-codex-connector", typeName: "Bot" },
+          },
+        ],
+      },
+    }),
+  );
+
+  assert.equal(shouldRunCodex(record, pr, checks, reviewThreads, config), false);
+});
+
 test("queuedReadyPromotionPathHygieneRepairContext prefers the newest current-head artifact over cached context", () => {
   const context = queuedReadyPromotionPathHygieneRepairContext(
     createRecord({

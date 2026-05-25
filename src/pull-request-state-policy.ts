@@ -20,6 +20,7 @@ import {
   codexConnectorNitpickOnlyReviewThreads,
   codexConnectorMustFixReviewThreads,
   evaluateCodexConnectorConvergencePolicy,
+  hasCodexConnectorPrSuccessCurrentHeadObservation,
 } from "./codex-connector-review-policy";
 import { codexConnectorCurrentHeadReviewReadiness } from "./codex-connector-review-request-decision";
 import {
@@ -786,11 +787,7 @@ function codexConnectorOutdatedThreadClearanceAllowed(
     threadsAfterConvergencePolicy.every(
       (thread) => thread.isOutdated && latestReviewCommentAuthorIsAllowedBot(config, thread),
     );
-  const currentHeadCodexSuccess =
-    pr.configuredBotCurrentHeadObservationSource === "codex_pr_success_comment" &&
-    pr.configuredBotCurrentHeadStatusState === "SUCCESS" &&
-    pr.configuredBotTopLevelReviewStrength !== "blocking" &&
-    validTimestamp(pr.configuredBotCurrentHeadObservedAt);
+  const currentHeadCodexSuccess = hasCodexConnectorPrSuccessCurrentHeadObservation(pr);
   const convergedOutdatedResidueCanClear =
     providerKinds.includes("codex") &&
     providerKinds.every((kind) => kind === "codex") &&
@@ -823,9 +820,7 @@ function staleSameHeadCodexWaitHasOnlyOutdatedResidue(
   if (
     !providerKinds.includes("codex") ||
     providerKinds.some((kind) => kind !== "codex") ||
-    pr.configuredBotCurrentHeadObservationSource !== "codex_pr_success_comment" ||
-    pr.configuredBotCurrentHeadStatusState !== "SUCCESS" ||
-    pr.configuredBotTopLevelReviewStrength === "blocking"
+    !hasCodexConnectorPrSuccessCurrentHeadObservation(pr)
   ) {
     return false;
   }
