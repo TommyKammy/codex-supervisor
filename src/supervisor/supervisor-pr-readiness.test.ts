@@ -847,6 +847,95 @@ test("handlePostTurnMergeAndCompletion auto-merges CodeRabbit nitpick-only PRs w
   assert.equal(comments.length, 1);
 });
 
+test("handlePostTurnMergeAndCompletion treats null local CI config as unconfigured before auto-merge", async () => {
+  const fixture = await createSupervisorFixture();
+  const config = createConfig({
+    ...fixture.config,
+    reviewBotLogins: ["coderabbitai"],
+    localCiCommand: null as unknown as undefined,
+  });
+  const issueNumber = 128;
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "ready_to_merge",
+        last_head_sha: "head-128",
+        latest_local_ci_result: null,
+      }),
+    },
+  };
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Auto-merge without configured local CI",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+  const pr: GitHubPullRequest = {
+    number: 128,
+    title: "CodeRabbit ready PR without local CI",
+    url: "https://example.test/pr/128",
+    state: "OPEN",
+    createdAt: "2026-03-13T06:20:00Z",
+    isDraft: false,
+    reviewDecision: "CHANGES_REQUESTED",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-128",
+    headRefOid: "head-128",
+    mergedAt: null,
+    configuredBotCurrentHeadObservedAt: "2026-03-13T06:30:00Z",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: "nitpick_only",
+    configuredBotTopLevelReviewSubmittedAt: "2026-03-13T06:30:00Z",
+    currentHeadCiGreenAt: "2026-03-13T06:31:00Z",
+  };
+
+  let autoMergeCalls = 0;
+  const supervisor = new Supervisor(config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getPullRequest: async (prNumber: number) => {
+      assert.equal(prNumber, 128);
+      return pr;
+    },
+    getChecks: async (prNumber: number) => {
+      assert.equal(prNumber, 128);
+      return passingChecks();
+    },
+    getUnresolvedReviewThreads: async (prNumber: number) => {
+      assert.equal(prNumber, 128);
+      return [];
+    },
+    addIssueComment: async () => {},
+    enableAutoMerge: async (prNumber: number, headSha: string) => {
+      assert.equal(prNumber, 128);
+      assert.equal(headSha, "head-128");
+      autoMergeCalls += 1;
+    },
+  };
+
+  const result = await (
+    supervisor as unknown as {
+      handlePostTurnMergeAndCompletion: (
+        state: SupervisorStateFile,
+        issue: GitHubIssue,
+        record: ReturnType<typeof createRecord>,
+        pr: GitHubPullRequest,
+        options: { dryRun: boolean },
+      ) => Promise<ReturnType<typeof createRecord>>;
+    }
+  ).handlePostTurnMergeAndCompletion(state, issue, state.issues[String(issueNumber)]!, pr, { dryRun: false });
+
+  assert.equal(result.state, "merging");
+  assert.equal(result.last_auto_merge_guard_context?.details.includes("local_ci=not_configured"), true);
+  assert.equal(result.last_failure_context, null);
+  assert.equal(autoMergeCalls, 1);
+});
+
 test("handlePostTurnMergeAndCompletion blocks CodeRabbit auto-merge on stale local CI without Codex no-major refusal", async () => {
   const fixture = await createSupervisorFixture();
   const config = createConfig({

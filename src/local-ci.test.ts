@@ -5,6 +5,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { executeLocalCiCommand, runLocalCiGate, runWorkspacePreparationGate } from "./local-ci";
+import {
+  currentHeadLocalCiMissing,
+  hasConfiguredLocalCiCommand,
+  hasCurrentHeadLocalCiSuccess,
+} from "./local-ci-policy";
 import { runTrackedPrReadyLocalCiPublicationGate } from "./tracked-pr-local-ci-publication-gate";
 import { REPO_OWNED_SUBPROCESS_TIMEOUT_MS, resolveExecutablePath } from "./subprocess-test-helpers";
 import {
@@ -23,6 +28,41 @@ function git(cwd: string, ...args: string[]): string {
     timeout: REPO_OWNED_SUBPROCESS_TIMEOUT_MS,
   });
 }
+
+test("shared local CI policy matches configured command and current-head success semantics", () => {
+  const pr = createPullRequest({ headRefOid: "head-116" });
+  const currentRecord = createRecord({
+    latest_local_ci_result: {
+      outcome: "passed",
+      summary: "Configured local CI command passed before auto-merging PR #116.",
+      ran_at: "2026-03-13T06:32:00Z",
+      head_sha: "head-116",
+      execution_mode: "shell",
+      command: "npm run ci:local",
+      failure_class: null,
+      remediation_target: null,
+    },
+  });
+  const staleRecord = createRecord({
+    latest_local_ci_result: {
+      ...currentRecord.latest_local_ci_result!,
+      head_sha: "old-head-116",
+    },
+  });
+
+  assert.equal(hasConfiguredLocalCiCommand(createConfig({ localCiCommand: " npm run ci:local " })), true);
+  assert.equal(
+    hasConfiguredLocalCiCommand(createConfig({ localCiCommand: { mode: "structured", executable: "npm", args: ["test"] } })),
+    true,
+  );
+  assert.equal(hasConfiguredLocalCiCommand(createConfig({ localCiCommand: "" })), false);
+  assert.equal(hasConfiguredLocalCiCommand(createConfig({ localCiCommand: null as unknown as undefined })), false);
+  assert.equal(hasConfiguredLocalCiCommand(createConfig({ localCiCommand: undefined })), false);
+  assert.equal(hasCurrentHeadLocalCiSuccess(currentRecord, pr), true);
+  assert.equal(currentHeadLocalCiMissing(currentRecord, pr), false);
+  assert.equal(hasCurrentHeadLocalCiSuccess(staleRecord, pr), false);
+  assert.equal(currentHeadLocalCiMissing(staleRecord, pr), true);
+});
 
 test("runTrackedPrReadyLocalCiPublicationGate blocks ready promotion on local CI failure", async () => {
   const pr = createPullRequest({

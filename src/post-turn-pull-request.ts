@@ -51,6 +51,7 @@ import {
   derivePostTurnLocalReviewFailurePatch,
 } from "./post-turn-pull-request-policy";
 import { runTrackedPrCurrentHeadLocalCiGate } from "./tracked-pr-local-ci-publication-gate";
+import { currentHeadLocalCiMissing, hasConfiguredLocalCiCommand } from "./local-ci-policy";
 import * as trackedPrStatusComments from "./tracked-pr-status-comment";
 import { buildStaleReviewBotRemediation } from "./supervisor/stale-review-bot-remediation";
 import { maybeRequestCodexConnectorReviewComment } from "./codex-connector-review-request-transition";
@@ -99,15 +100,6 @@ export interface PullRequestLifecycleSnapshot {
 }
 
 const TRUSTED_DURABLE_ARTIFACT_NORMALIZATION_COMMIT_MESSAGE = "Normalize trusted durable artifacts for path hygiene";
-
-function hasConfiguredLocalCiCommand(config: Pick<SupervisorConfig, "localCiCommand">): boolean {
-  return config.localCiCommand !== null && config.localCiCommand !== undefined;
-}
-
-function currentHeadLocalCiMissing(record: IssueRunRecord, pr: GitHubPullRequest): boolean {
-  const latestLocalCi = record.latest_local_ci_result ?? null;
-  return latestLocalCi?.outcome !== "passed" || latestLocalCi.head_sha !== pr.headRefOid;
-}
 
 function escapeRegExp(input: string): string {
   return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
