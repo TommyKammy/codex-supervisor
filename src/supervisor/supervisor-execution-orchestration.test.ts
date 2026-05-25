@@ -3198,6 +3198,164 @@ test("runOnce blocks an interrupted active turn before selecting the next runnab
   await assert.rejects(fs.access(interruptedTurnMarkerPath(interruptedWorkspace)));
 });
 
+test("runOnce recovers interrupted active tracked PR when Codex success already converged", async () => {
+  const fixture = await createSupervisorFixture();
+  fixture.config.reviewBotLogins = ["chatgpt-codex-connector"];
+  fixture.config.configuredBotInitialGraceWaitSeconds = 0;
+  fixture.config.configuredBotSettledWaitSeconds = 0;
+  fixture.config.configuredBotCurrentHeadSignalTimeoutMinutes = 1;
+  fixture.config.configuredBotCurrentHeadSignalTimeoutAction = "request_review_comment";
+  const interruptedIssueNumber = 174;
+  const prNumber = 183;
+  const currentHead = "d5a9957506c697dc13f5431bb460cfe95257bcae";
+  const interruptedBranch = branchName(fixture.config, interruptedIssueNumber);
+  const { workspacePath: interruptedWorkspace, journalPath: interruptedJournalPath } = trackedIssuePaths(
+    fixture.workspaceRoot,
+    interruptedIssueNumber,
+  );
+  const state: SupervisorStateFile = createSupervisorState({
+    activeIssueNumber: interruptedIssueNumber,
+    issues: [
+      createTrackedSupervisorRecord(fixture.config, fixture.workspaceRoot, interruptedIssueNumber, {
+        state: "addressing_review",
+        branch: interruptedBranch,
+        pr_number: prNumber,
+        last_head_sha: currentHead,
+        review_wait_started_at: "2026-05-23T16:04:34.342Z",
+        review_wait_head_sha: currentHead,
+        copilot_review_timed_out_at: "2026-05-23T16:07:04.342Z",
+        copilot_review_timeout_action: "request_review_comment",
+        copilot_review_timeout_reason: "current_head_signal_wait_timed_out",
+        provider_success_head_sha: null,
+        provider_success_observed_at: null,
+        codex_session_id: "stale-session",
+        blocked_reason: null,
+        last_error: null,
+        last_failure_context: null,
+        last_failure_signature: null,
+        repeated_failure_signature_count: 0,
+        updated_at: "2026-05-25T05:39:34.111Z",
+      }),
+    ],
+  });
+  await writeSupervisorState(fixture.stateFile, state);
+  await fs.mkdir(path.dirname(interruptedJournalPath), { recursive: true });
+  await fs.writeFile(interruptedJournalPath, "# issue journal\n", "utf8");
+  const initialJournalFingerprint = await captureIssueJournalFingerprint(interruptedJournalPath);
+  await fs.writeFile(
+    interruptedTurnMarkerPath(interruptedWorkspace),
+    `${JSON.stringify(
+      {
+        issueNumber: interruptedIssueNumber,
+        state: "addressing_review",
+        startedAt: "2026-05-25T05:39:34.135Z",
+        journalFingerprint: initialJournalFingerprint,
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+
+  const issue = createTrackedIssue(interruptedIssueNumber, {
+    title: "HRCore stale Codex Connector residue",
+    body: executionReadyBody("Recover HRCore stale Codex Connector residue without another Codex turn."),
+  });
+  const pr = createTrackedPullRequest(fixture.config, interruptedIssueNumber, {
+    number: prNumber,
+    title: "HRCore stale Codex Connector residue",
+    isDraft: false,
+    reviewDecision: null,
+    headRefOid: currentHead,
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-05-23T16:02:36Z",
+    configuredBotCurrentHeadObservedAt: "2026-05-23T14:33:41Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotLatestReviewedCommitSha: "7327afdab32fb9c7ffb741d6158add4616bb3115",
+    configuredBotTopLevelReviewStrength: null,
+    requiredConversationResolution: {
+      state: "enabled",
+      source: "branch_protection",
+      details: ["required_conversation_resolution=true"],
+    },
+  });
+  const checks: PullRequestCheck[] = [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+  const reviewThreads = ["PRRT_hrcore_183_operator", "PRRT_hrcore_183_bot_1", "PRRT_hrcore_183_bot_2"].map(
+    (threadId, index) =>
+      createReviewThread({
+        id: threadId,
+        isOutdated: true,
+        line: null,
+        comments: {
+          nodes: [
+            {
+              id: `comment-codex-${threadId}`,
+              body: "P1: Earlier Codex Connector finding that is obsolete after the current-head no-major signal.",
+              createdAt: "2026-05-23T14:16:47Z",
+              url: `https://example.test/pr/183#discussion_r${index + 1}`,
+              author: {
+                login: "chatgpt-codex-connector",
+                typeName: "Bot",
+              },
+            },
+            ...(index === 0
+              ? [
+                  {
+                    id: `comment-operator-${threadId}`,
+                    body: "Supervisor confirmed this stale Codex Connector finding is covered by the current-head success signal.",
+                    createdAt: "2026-05-25T04:16:47Z",
+                    url: `https://example.test/pr/183#discussion_r${index + 1}`,
+                    author: {
+                      login: "TommyKammy",
+                      typeName: "User",
+                    },
+                  },
+                ]
+              : []),
+          ],
+        },
+      }),
+  );
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [issue],
+    listCandidateIssues: async () => {
+      throw new Error("unexpected listCandidateIssues call");
+    },
+    getIssue: async () => issue,
+    resolvePullRequestForBranch: async () => pr,
+    getChecks: async () => checks,
+    getUnresolvedReviewThreads: async () => reviewThreads,
+    getPullRequestIfExists: async () => pr,
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: true });
+  assert.match(message, /tracked_pr_handoff_missing_same_head_recovered/);
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  const interruptedRecord = persisted.issues[String(interruptedIssueNumber)]!;
+  assert.equal(persisted.activeIssueNumber, null);
+  assert.equal(interruptedRecord.state, "pr_open");
+  assert.equal(interruptedRecord.blocked_reason, null);
+  assert.equal(interruptedRecord.codex_session_id, null);
+  assert.equal(interruptedRecord.last_failure_context, null);
+  assert.equal(interruptedRecord.last_failure_signature, null);
+  assert.equal(interruptedRecord.provider_success_head_sha, currentHead);
+  assert.ok(interruptedRecord.provider_success_observed_at);
+  await assert.rejects(fs.access(interruptedTurnMarkerPath(interruptedWorkspace)));
+});
+
 test("runOnce clears a stale interrupted-turn marker when the journal changed after the turn began", async () => {
   const fixture = await createSupervisorFixture();
   const interruptedIssueNumber = 91;

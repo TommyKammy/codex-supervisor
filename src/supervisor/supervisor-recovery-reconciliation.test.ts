@@ -1833,6 +1833,142 @@ test("reconcileRecoverableBlockedIssueStates recovers same-head handoff-missing 
   }
 });
 
+test("reconcileRecoverableBlockedIssueStates records provider success for same-head handoff-missing with operator-replied Codex residue", async () => {
+  const currentHead = "d5a9957506c697dc13f5431bb460cfe95257bcae";
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    configuredBotInitialGraceWaitSeconds: 0,
+    configuredBotSettledWaitSeconds: 0,
+    configuredBotCurrentHeadSignalTimeoutMinutes: 1,
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+  });
+  const original = createTrackedPrStaleReviewRecord({
+    state: "blocked",
+    blocked_reason: "handoff_missing",
+    last_head_sha: currentHead,
+    review_wait_started_at: "2026-05-23T16:04:34.342Z",
+    review_wait_head_sha: currentHead,
+    copilot_review_timed_out_at: "2026-05-23T16:07:04.342Z",
+    copilot_review_timeout_action: "request_review_comment",
+    copilot_review_timeout_reason: "current_head_signal_wait_timed_out",
+    provider_success_head_sha: null,
+    provider_success_observed_at: null,
+    last_failure_signature: "handoff-missing",
+    repeated_failure_signature_count: 1,
+    codex_session_id: "session-366",
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [original],
+  });
+  const issue = createTrackedPrRecoveryIssue({
+    updatedAt: "2026-05-25T06:05:00Z",
+  });
+  const pr = createTrackedPrRecoveryPullRequest({
+    headRefOid: currentHead,
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+    reviewDecision: null,
+    currentHeadCiGreenAt: "2026-05-23T16:02:36Z",
+    configuredBotCurrentHeadObservedAt: "2026-05-23T14:33:41Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotLatestReviewedCommitSha: "7327afdab32fb9c7ffb741d6158add4616bb3115",
+    configuredBotTopLevelReviewStrength: null,
+    requiredConversationResolution: {
+      state: "enabled",
+      source: "branch_protection",
+      details: ["required_conversation_resolution=true"],
+    },
+  });
+  const threadIds = ["PRRT_hrcore_183_operator", "PRRT_hrcore_183_bot_1", "PRRT_hrcore_183_bot_2"];
+  let saveCalls = 0;
+
+  const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => pr,
+      getIssue: async () => issue,
+      getChecks: async () => [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getUnresolvedReviewThreads: async () =>
+        threadIds.map((threadId, index) =>
+          createReviewThread({
+            id: threadId,
+            isOutdated: true,
+            line: null,
+            comments: {
+              nodes: [
+                {
+                  id: `comment-codex-${threadId}`,
+                  body: "P1: Earlier Codex Connector finding that is obsolete after the current-head no-major signal.",
+                  createdAt: "2026-05-23T14:16:47Z",
+                  url: `https://example.test/pr/183#discussion_r${index + 1}`,
+                  author: {
+                    login: "chatgpt-codex-connector",
+                    typeName: "Bot",
+                  },
+                },
+                ...(index === 0
+                  ? [
+                      {
+                        id: `comment-operator-${threadId}`,
+                        body: "Supervisor confirmed this stale Codex Connector finding is covered by the current-head success signal.",
+                        createdAt: "2026-05-25T04:16:47Z",
+                        url: `https://example.test/pr/183#discussion_r${index + 1}`,
+                        author: {
+                          login: "TommyKammy",
+                          typeName: "User",
+                        },
+                      },
+                    ]
+                  : []),
+              ],
+            },
+          }),
+        ),
+    },
+    {
+      touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+        return {
+          ...current,
+          ...patch,
+          updated_at: "2026-05-25T06:06:00Z",
+        };
+      },
+      async save(): Promise<void> {
+        saveCalls += 1;
+      },
+    },
+    state,
+    config,
+    [issue],
+    {
+      shouldAutoRetryHandoffMissing,
+      inferStateFromPullRequest,
+      inferFailureContext,
+      blockedReasonForLifecycleState,
+      isOpenPullRequest,
+      syncReviewWaitWindow,
+      syncCopilotReviewRequestObservation,
+      syncCopilotReviewTimeoutState,
+    },
+  );
+
+  const updated = state.issues["366"];
+  assert.equal(updated.state, "pr_open");
+  assert.equal(updated.blocked_reason, null);
+  assert.equal(updated.last_error, null);
+  assert.equal(updated.last_failure_context, null);
+  assert.equal(updated.last_failure_signature, null);
+  assert.equal(updated.repeated_failure_signature_count, 0);
+  assert.equal(updated.codex_session_id, null);
+  assert.equal(updated.provider_success_head_sha, currentHead);
+  assert.ok(updated.provider_success_observed_at);
+  assert.equal(updated.last_tracked_pr_progress_summary, "handoff_missing_recovered=same_head_projected_state=pr_open");
+  assert.equal(saveCalls, 1);
+  assert.deepEqual(recoveryEvents.map((event) => event.reason), [
+    `tracked_pr_handoff_missing_same_head_recovered: resumed issue #366 from blocked to pr_open using fresh tracked PR #${TRACKED_PR_NUMBER} facts at head ${currentHead}`,
+  ]);
+});
+
 test("reconcileRecoverableBlockedIssueStates does not force same-head outdated residue recovery from unrelated projected states", async () => {
   const currentHead = "329b8e81ed535a61a2bc59ac3227ad52a58b0756";
   const config = createConfig({
