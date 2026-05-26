@@ -6,7 +6,15 @@ import test from "node:test";
 import { formatDetailedStatus, summarizeChecks } from "./supervisor-status-rendering";
 import { buildDetailedStatusSummaryLines } from "./supervisor-status-model";
 import { buildReadinessSummary } from "./supervisor-selection-readiness-summary";
-import { GitHubIssue, GitHubPullRequest, IssueRunRecord, PullRequestCheck, SupervisorConfig, SupervisorStateFile } from "../core/types";
+import {
+  GitHubIssue,
+  GitHubPullRequest,
+  IssueRunRecord,
+  PullRequestCheck,
+  ReviewThread,
+  SupervisorConfig,
+  SupervisorStateFile,
+} from "../core/types";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
   return {
@@ -256,6 +264,31 @@ function createPullRequest(overrides: Partial<GitHubPullRequest> = {}): GitHubPu
   };
 }
 
+function createReviewThread(overrides: Partial<ReviewThread> = {}): ReviewThread {
+  return {
+    id: "thread-1",
+    isResolved: false,
+    isOutdated: false,
+    path: "src/file.ts",
+    line: 12,
+    comments: {
+      nodes: [
+        {
+          id: "comment-1",
+          body: "Please address this.",
+          createdAt: "2026-03-11T00:00:00Z",
+          url: "https://example.test/pr/42#discussion_r1",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+    ...overrides,
+  };
+}
+
 function withStubbedDateNow<T>(nowIso: string, run: () => T): T {
   const realDateNow = Date.now;
   Date.now = () => Date.parse(nowIso);
@@ -272,6 +305,47 @@ test("summarizeChecks treats cancelled runs as waiting, not failing", () => {
   assert.equal(summary.allPassing, false);
   assert.equal(summary.hasPending, true);
   assert.equal(summary.hasFailing, false);
+});
+
+test("formatDetailedStatus preserves conversation-resolution blocker status line tokens", () => {
+  const status = formatDetailedStatus({
+    config: createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector"],
+    }),
+    activeRecord: createRecord({
+      pr_number: 42,
+      state: "pr_open",
+    }),
+    latestRecord: null,
+    trackedIssueCount: 1,
+    pr: createPullRequest({
+      mergeStateStatus: "BLOCKED",
+      mergeable: "MERGEABLE",
+      configuredBotCurrentHeadObservedAt: "2026-05-26T00:00:00Z",
+      configuredBotCurrentHeadStatusState: "SUCCESS",
+      requiredConversationResolution: {
+        state: "enabled",
+        source: "branch_protection",
+        details: ["required_conversation_resolution=enabled"],
+      },
+    }),
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [
+      createReviewThread({
+        id: "thread-2",
+        isOutdated: true,
+      }),
+      createReviewThread({
+        id: "thread-1",
+        isOutdated: true,
+      }),
+    ],
+  });
+
+  assert.match(
+    status,
+    /^conversation_resolution_blocker state=blocked required_conversation_resolution=enabled outdated_configured_bot_threads=2 thread_ids=thread-1,thread-2$/m,
+  );
 });
 
 test("formatDetailedStatus shows blocking local review status for current PR head", () => {

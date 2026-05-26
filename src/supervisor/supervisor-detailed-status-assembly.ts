@@ -3,14 +3,10 @@ import {
 } from "../review-handling";
 import { configuredReviewProviderKinds } from "../core/review-providers";
 import {
-  evaluateCodexConnectorConvergencePolicy,
-} from "../codex-connector-review-policy";
-import {
   actionableBotReviewThreads,
   configuredBotReviewFollowUpState,
   effectiveReviewThreadDiagnostics,
   formatEffectiveReviewThreadDiagnosticsLine,
-  latestReviewCommentAuthorIsAllowedBot,
 } from "../review-thread-reporting";
 import { formatWorkspaceRestoreStatusLine } from "../core/workspace";
 import {
@@ -49,62 +45,10 @@ import { truncate } from "../core/utils";
 import { summarizePreservedPartialWork } from "./supervisor-preserved-partial-work";
 import { classifyStaleReviewBotRecoverability } from "./stale-diagnostic-recoverability";
 import { isWorkstationLocalPathHygieneFailureSignature } from "../workstation-local-path-gate";
-import {
-  conversationResolutionEvidenceContradictsBlocker,
-  conversationResolutionEvidenceToken,
-} from "../conversation-resolution-policy";
+import { buildConversationResolutionBlockerDiagnostic } from "../conversation-resolution-blocker-diagnostics";
 
 function unresolvedReviewThreads(reviewThreads: BuildDetailedStatusModelArgs["reviewThreads"]) {
   return reviewThreads.filter((thread) => !thread.isResolved && !thread.isOutdated);
-}
-
-function buildConversationResolutionBlockerStatusLine(args: Pick<
-  BuildDetailedStatusModelArgs,
-  "config" | "checks" | "reviewThreads" | "manualReviewThreads" | "configuredBotReviewThreads" | "summarizeChecks"
-> & {
-  pr: NonNullable<BuildDetailedStatusModelArgs["pr"]>;
-}): string | null {
-  const checkSummary = args.summarizeChecks(args.checks);
-  if (
-    args.pr.mergeStateStatus !== "BLOCKED" ||
-    args.pr.mergeable !== "MERGEABLE" ||
-    !args.pr.configuredBotCurrentHeadObservedAt ||
-    args.pr.configuredBotCurrentHeadStatusState !== "SUCCESS" ||
-    checkSummary.hasPending ||
-    checkSummary.hasFailing
-  ) {
-    return null;
-  }
-
-  const unresolvedThreads = args.reviewThreads.filter((thread) => !thread.isResolved);
-  if (unresolvedThreads.length === 0 || args.manualReviewThreads(args.config, unresolvedThreads).length > 0) {
-    return null;
-  }
-
-  const configuredThreads = args.configuredBotReviewThreads(args.config, unresolvedThreads);
-  if (
-    configuredThreads.length !== unresolvedThreads.length ||
-    configuredThreads.some(
-      (thread) => !thread.isOutdated || !latestReviewCommentAuthorIsAllowedBot(args.config, thread),
-    )
-  ) {
-    return null;
-  }
-
-  const codexConnectorPolicy = evaluateCodexConnectorConvergencePolicy(args.config, args.pr, configuredThreads);
-  if (codexConnectorPolicy && codexConnectorPolicy.mergeEffect !== "ready") {
-    return null;
-  }
-  if (conversationResolutionEvidenceContradictsBlocker(args.pr)) {
-    return null;
-  }
-
-  return [
-    "conversation_resolution_blocker state=blocked",
-    conversationResolutionEvidenceToken(args.pr),
-    `outdated_configured_bot_threads=${configuredThreads.length}`,
-    `thread_ids=${configuredThreads.map((thread) => thread.id).sort().join(",")}`,
-  ].join(" ");
 }
 
 export function sanitizeStatusValue(value: string | null | undefined): string | null {
@@ -562,15 +506,13 @@ export function buildActiveDetailedStatusLines(
       `review_threads bot_pending=${pendingBotReviewThreads(config, activeRecord, pr, reviewThreads).length} bot_unresolved=${unresolvedConfiguredBotThreads.length} bot_effective_unresolved=${effectiveReviewThreadDiagnostics(config, reviewThreads).effectiveUnresolvedConfiguredBotThreadCount} bot_outdated_unresolved=${outdatedUnresolvedConfiguredBotThreads.length} manual=${manualReviewThreads(config, reviewThreads).length}`,
     );
     lines.push(formatEffectiveReviewThreadDiagnosticsLine(effectiveReviewThreadDiagnostics(config, reviewThreads)));
-    const conversationResolutionBlockerLine = buildConversationResolutionBlockerStatusLine({
+    const conversationResolutionBlockerLine = buildConversationResolutionBlockerDiagnostic({
       config,
       pr,
       checks,
       reviewThreads,
-      manualReviewThreads,
-      configuredBotReviewThreads,
       summarizeChecks,
-    });
+    })?.statusLine;
     if (conversationResolutionBlockerLine) {
       lines.push(conversationResolutionBlockerLine);
     }

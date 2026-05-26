@@ -260,6 +260,109 @@ test("handleStaleConfiguredBotReviewRemediation owns reply_only recovery decisio
   assert.equal(saveCalls, 2);
 });
 
+test("syncTrackedPrPersistentStatusComment preserves conversation-resolution blocker comment body", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+  });
+  const pr = createPullRequest({
+    number: 116,
+    headRefOid: "head-116",
+    isDraft: false,
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+    configuredBotCurrentHeadObservedAt: "2026-05-26T00:00:00Z",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    requiredConversationResolution: {
+      state: "enabled",
+      source: "branch_protection",
+      details: ["required_conversation_resolution=enabled"],
+    },
+  });
+  const record = createRecord({
+    issue_number: 102,
+    pr_number: pr.number,
+    state: "pr_open",
+    last_head_sha: pr.headRefOid,
+    provider_success_head_sha: pr.headRefOid,
+    provider_success_observed_at: "2026-05-26T00:00:00Z",
+    merge_readiness_last_evaluated_at: "2026-05-26T00:01:00Z",
+  });
+  const state = createSupervisorState({ issues: [record] });
+  const addBodies: string[] = [];
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-05-26T00:02:00Z",
+      };
+    },
+    async save(nextState: SupervisorStateFile): Promise<void> {
+      assert.equal(nextState.issues[String(record.issue_number)]?.issue_number, record.issue_number);
+    },
+  };
+
+  const updated = await syncTrackedPrPersistentStatusComment({
+    github: {
+      addIssueComment: async (issueNumber: number, body: string) => {
+        assert.equal(issueNumber, pr.number);
+        addBodies.push(body);
+      },
+    },
+    stateStore,
+    state,
+    record,
+    pr,
+    checks: [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [
+      createReviewThread({
+        id: "thread-1",
+        isOutdated: true,
+        comments: {
+          nodes: [
+            {
+              id: "comment-1",
+              body: "Finding is stale on the current head.",
+              createdAt: "2026-05-26T00:00:00Z",
+              url: "https://example.test/pr/116#discussion_r1",
+              author: {
+                login: "chatgpt-codex-connector",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+    syncJournal: async () => undefined,
+    config,
+    failureContext: null,
+    summarizeChecks: () => ({ hasPending: false, hasFailing: false }),
+    manualReviewThreadCount: 0,
+  });
+
+  assert.deepEqual(addBodies, [
+    [
+      "Tracked PR head `head-116` remains stopped near merge.",
+      "",
+      "- reason code: `conversation_resolution_blocked`",
+      "- summary: GitHub is not merge-ready because unresolved outdated configured-bot review conversations still require resolution.",
+      "- evidence: merge_state=BLOCKED",
+      "- evidence: mergeable=MERGEABLE",
+      "- evidence: required_conversation_resolution=enabled",
+      "- evidence: required_conversation_resolution_source=branch_protection",
+      "- evidence: conversation_threads=thread-1",
+      "- evidence: check=verify-pre-pr:pass:SUCCESS",
+      "- automatic retry: no",
+      "- next action: Resolve the listed configured-bot review conversations, or rerun with the verified configured-bot auto-resolve opt-in enabled.",
+      "",
+      "<!-- codex-supervisor:tracked-pr-status-comment issue=102 pr=116 kind=status -->",
+    ].join("\n"),
+  ]);
+  assert.equal(updated.last_host_local_pr_blocker_comment_head_sha, pr.headRefOid);
+  assert.equal(updated.last_host_local_pr_blocker_comment_signature, "conversation-resolution:head-116:thread-1");
+});
+
 test("publishTrackedPrStatusComment updates the newest owned editable marker before adding", async () => {
   const pr = createPullRequest({
     number: 116,
