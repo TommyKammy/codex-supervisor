@@ -67,12 +67,33 @@ export function observedTrackedPrHostLocalBlockerPatch(args: {
   };
 }
 
+type CheckSummary = { hasPending: boolean; hasFailing: boolean };
+
+interface PersistentTrackedPrStatusComment {
+  blockerSignature: string;
+  body: string;
+}
+
+interface PersistentTrackedPrStatusCommentContext {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+  failureContext: FailureContext | null;
+  summarizeChecks: (checks: PullRequestCheck[]) => CheckSummary;
+}
+
+type PersistentTrackedPrStatusCommentStrategy = (
+  args: PersistentTrackedPrStatusCommentContext,
+) => PersistentTrackedPrStatusComment | null;
+
 function currentHeadManualReviewStatusComment(args: {
   config: SupervisorConfig;
   record: IssueRunRecord;
   pr: GitHubPullRequest;
   failureContext: FailureContext | null;
-}): { blockerSignature: string; body: string } | null {
+}): PersistentTrackedPrStatusComment | null {
   if (args.record.state !== "blocked" || args.record.blocked_reason !== "manual_review") {
     return null;
   }
@@ -167,99 +188,92 @@ function hasConcreteHandoffMissingStatusEvidence(context: FailureContext | null 
   return context.category !== "blocked" || !genericHandoffMissingSignature;
 }
 
-function derivePersistentTrackedPrStatusComment(args: {
-  config: SupervisorConfig;
-  record: IssueRunRecord;
-  pr: GitHubPullRequest;
-  checks: PullRequestCheck[];
-  reviewThreads: ReviewThread[];
-  failureContext: FailureContext | null;
-  summarizeChecks: (checks: PullRequestCheck[]) => { hasPending: boolean; hasFailing: boolean };
-}): { blockerSignature: string; body: string } | null {
-  const currentHeadManualReviewComment = currentHeadManualReviewStatusComment({
-    config: args.config,
-    record: args.record,
-    pr: args.pr,
-    failureContext: args.failureContext,
-  });
-  if (currentHeadManualReviewComment) {
-    return currentHeadManualReviewComment;
-  }
-
-  if (args.pr.isDraft) {
+function handoffMissingStatusComment(
+  args: PersistentTrackedPrStatusCommentContext,
+): PersistentTrackedPrStatusComment | null {
+  if (args.record.state !== "blocked" || args.record.blocked_reason !== "handoff_missing") {
     return null;
   }
 
-  const checkSummary = args.summarizeChecks(args.checks);
-  if (checkSummary.hasPending || checkSummary.hasFailing) {
+  const handoffContext = hasConcreteHandoffMissingStatusEvidence(args.failureContext)
+    ? args.failureContext
+    : hasConcreteHandoffMissingStatusEvidence(args.record.last_failure_context)
+    ? args.record.last_failure_context
+    : null;
+  if (!handoffContext) {
     return null;
   }
 
-  if (args.record.state === "blocked" && args.record.blocked_reason === "handoff_missing") {
-    const handoffContext = hasConcreteHandoffMissingStatusEvidence(args.failureContext)
-      ? args.failureContext
-      : hasConcreteHandoffMissingStatusEvidence(args.record.last_failure_context)
-      ? args.record.last_failure_context
-      : null;
-    if (!handoffContext) {
-      return null;
-    }
+  const summary = handoffContext.summary;
+  const blockerSignature = handoffContext.signature ?? `${TRACKED_PR_STATUS_COMMENT_REASON_CODE_HANDOFF_MISSING}:${summary}`;
+  const evidence = compactEvidenceLines(
+    handoffContext.details,
+    5,
+  );
+  return {
+    blockerSignature,
+    body: buildTrackedPrPersistentStatusComment({
+      pr: args.pr,
+      reasonCode: TRACKED_PR_STATUS_COMMENT_REASON_CODE_HANDOFF_MISSING,
+      summary,
+      evidence,
+      nextAction:
+        "Complete explicit operator review routing for the unresolved review-thread or configured-bot diagnostic, then rerun the supervisor.",
+      automaticRetry: "no",
+    }),
+  };
+}
 
-    const summary = handoffContext.summary;
-    const blockerSignature = handoffContext.signature ?? `${TRACKED_PR_STATUS_COMMENT_REASON_CODE_HANDOFF_MISSING}:${summary}`;
-    const evidence = compactEvidenceLines(
-      handoffContext.details,
-      5,
-    );
-    return {
-      blockerSignature,
-      body: buildTrackedPrPersistentStatusComment({
-        pr: args.pr,
-        reasonCode: TRACKED_PR_STATUS_COMMENT_REASON_CODE_HANDOFF_MISSING,
-        summary,
-        evidence,
-        nextAction:
-          "Complete explicit operator review routing for the unresolved review-thread or configured-bot diagnostic, then rerun the supervisor.",
-        automaticRetry: "no",
-      }),
-    };
+function manualReviewStatusComment(
+  args: PersistentTrackedPrStatusCommentContext,
+): PersistentTrackedPrStatusComment | null {
+  if (args.record.state !== "blocked" || args.record.blocked_reason !== "manual_review") {
+    return null;
   }
 
-  if (args.record.state === "blocked" && args.record.blocked_reason === "manual_review") {
-    const summary =
-      args.failureContext?.summary ?? "Unresolved manual or unconfigured review feedback still requires human attention.";
-    return {
-      blockerSignature: args.failureContext?.signature ?? TRACKED_PR_STATUS_COMMENT_REASON_CODE_MANUAL_REVIEW,
-      body: buildTrackedPrPersistentStatusComment({
-        pr: args.pr,
-        reasonCode: TRACKED_PR_STATUS_COMMENT_REASON_CODE_MANUAL_REVIEW,
-        summary,
-        evidence: compactEvidenceLines(args.failureContext?.details),
-        nextAction:
-          "Resolve the remaining manual review blocker or complete the required manual verification, then rerun the supervisor.",
-        automaticRetry: "no",
-      }),
-    };
+  const summary =
+    args.failureContext?.summary ?? "Unresolved manual or unconfigured review feedback still requires human attention.";
+  return {
+    blockerSignature: args.failureContext?.signature ?? TRACKED_PR_STATUS_COMMENT_REASON_CODE_MANUAL_REVIEW,
+    body: buildTrackedPrPersistentStatusComment({
+      pr: args.pr,
+      reasonCode: TRACKED_PR_STATUS_COMMENT_REASON_CODE_MANUAL_REVIEW,
+      summary,
+      evidence: compactEvidenceLines(args.failureContext?.details),
+      nextAction:
+        "Resolve the remaining manual review blocker or complete the required manual verification, then rerun the supervisor.",
+      automaticRetry: "no",
+    }),
+  };
+}
+
+function staleReviewBotStatusComment(
+  args: PersistentTrackedPrStatusCommentContext,
+): PersistentTrackedPrStatusComment | null {
+  if (args.record.state !== "blocked" || args.record.blocked_reason !== "stale_review_bot") {
+    return null;
   }
 
-  if (args.record.state === "blocked" && args.record.blocked_reason === "stale_review_bot") {
-    const summary =
-      args.failureContext?.summary
-      ?? "Configured bot review state is stale on the current head and now requires manual attention.";
-    return {
-      blockerSignature: args.failureContext?.signature ?? TRACKED_PR_STATUS_COMMENT_REASON_CODE_STALE_REVIEW_BOT,
-      body: buildTrackedPrPersistentStatusComment({
-        pr: args.pr,
-        reasonCode: TRACKED_PR_STATUS_COMMENT_REASON_CODE_STALE_REVIEW_BOT,
-        summary,
-        evidence: compactEvidenceLines(args.failureContext?.details),
-        nextAction:
-          "Inspect the stale configured-bot review state on the current head, then rerun the supervisor after the blocker is cleared or explicitly resolved.",
-        automaticRetry: "no",
-      }),
-    };
-  }
+  const summary =
+    args.failureContext?.summary
+    ?? "Configured bot review state is stale on the current head and now requires manual attention.";
+  return {
+    blockerSignature: args.failureContext?.signature ?? TRACKED_PR_STATUS_COMMENT_REASON_CODE_STALE_REVIEW_BOT,
+    body: buildTrackedPrPersistentStatusComment({
+      pr: args.pr,
+      reasonCode: TRACKED_PR_STATUS_COMMENT_REASON_CODE_STALE_REVIEW_BOT,
+      summary,
+      evidence: compactEvidenceLines(args.failureContext?.details),
+      nextAction:
+        "Inspect the stale configured-bot review state on the current head, then rerun the supervisor after the blocker is cleared or explicitly resolved.",
+      automaticRetry: "no",
+    }),
+  };
+}
 
+function trackedLifecycleMismatchStatusComment(
+  args: PersistentTrackedPrStatusCommentContext,
+): PersistentTrackedPrStatusComment | null {
   if (!hasPersistentTrackedPrMergeStageSignal({ record: args.record, pr: args.pr })) {
     return null;
   }
@@ -285,20 +299,39 @@ function derivePersistentTrackedPrStatusComment(args: {
     };
   }
 
-  const conversationResolutionBlocker = buildConversationResolutionBlocker({
+  return null;
+}
+
+function conversationResolutionStatusComment(
+  args: PersistentTrackedPrStatusCommentContext,
+): PersistentTrackedPrStatusComment | null {
+  if (!hasPersistentTrackedPrMergeStageSignal({ record: args.record, pr: args.pr })) {
+    return null;
+  }
+
+  const blocker = buildConversationResolutionBlocker({
     config: args.config,
     pr: args.pr,
     checks: args.checks,
     reviewThreads: args.reviewThreads,
     summarizeChecks: args.summarizeChecks,
   });
-  if (conversationResolutionBlocker) {
-    return {
-      blockerSignature: conversationResolutionBlocker.blockerSignature,
-      body: conversationResolutionBlocker.body,
-    };
+  if (!blocker) {
+    return null;
   }
 
+  return {
+    blockerSignature: blocker.blockerSignature,
+    body: blocker.body,
+  };
+}
+
+function requiredCheckMismatchStatusComment(
+  args: PersistentTrackedPrStatusCommentContext,
+): PersistentTrackedPrStatusComment | null {
+  if (!hasPersistentTrackedPrMergeStageSignal({ record: args.record, pr: args.pr })) {
+    return null;
+  }
   if (args.pr.mergeStateStatus === "BLOCKED") {
     const fullEvidence = buildRequiredCheckMismatchEvidence({
       pr: args.pr,
@@ -319,6 +352,47 @@ function derivePersistentTrackedPrStatusComment(args: {
         automaticRetry: "no",
       }),
     };
+  }
+
+  return null;
+}
+
+const persistentTrackedPrStatusCommentStrategies: PersistentTrackedPrStatusCommentStrategy[] = [
+  handoffMissingStatusComment,
+  manualReviewStatusComment,
+  staleReviewBotStatusComment,
+  trackedLifecycleMismatchStatusComment,
+  conversationResolutionStatusComment,
+  requiredCheckMismatchStatusComment,
+];
+
+function derivePersistentTrackedPrStatusComment(
+  args: PersistentTrackedPrStatusCommentContext,
+): PersistentTrackedPrStatusComment | null {
+  const currentHeadManualReviewComment = currentHeadManualReviewStatusComment({
+    config: args.config,
+    record: args.record,
+    pr: args.pr,
+    failureContext: args.failureContext,
+  });
+  if (currentHeadManualReviewComment) {
+    return currentHeadManualReviewComment;
+  }
+
+  if (args.pr.isDraft) {
+    return null;
+  }
+
+  const checkSummary = args.summarizeChecks(args.checks);
+  if (checkSummary.hasPending || checkSummary.hasFailing) {
+    return null;
+  }
+
+  for (const strategy of persistentTrackedPrStatusCommentStrategies) {
+    const comment = strategy(args);
+    if (comment) {
+      return comment;
+    }
   }
 
   return null;
