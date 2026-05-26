@@ -23,11 +23,7 @@ import {
 } from "./core/types";
 import { truncate } from "./core/utils";
 import { buildTrackedPrMismatch } from "./supervisor/tracked-pr-mismatch";
-import { buildStaleReviewBotRemediation } from "./supervisor/stale-review-bot-remediation";
-import {
-  recoverStaleConfiguredBotReviewThreads,
-  STALE_CONFIGURED_BOT_REVIEW_REASON_CODE,
-} from "./supervisor/stale-review-bot-recovery";
+import { handleStaleConfiguredBotReviewRemediation } from "./stale-configured-bot-auto-handle";
 import {
   conversationResolutionEvidenceContradictsBlocker,
   conversationResolutionEvidenceDetails,
@@ -602,87 +598,27 @@ export async function maybeCommentOnTrackedPrPersistentStatus(args: {
     reviewThreads: args.reviewThreads,
     summarizeChecks: args.summarizeChecks,
   });
-  const remediationRecord =
-    args.record.state === "blocked" &&
-    (args.record.blocked_reason === "stale_review_bot" || args.record.blocked_reason === "manual_review") &&
-    args.manualReviewThreadCount === 0
-      ? { ...args.record, blocked_reason: "stale_review_bot" as const }
-      : args.record;
-  const staleReviewBotRemediation =
-    remediationRecord.state === "blocked" && remediationRecord.blocked_reason === "stale_review_bot"
-      ? buildStaleReviewBotRemediation({
-          config: args.config,
-          record: remediationRecord,
-          pr: args.pr,
-          checks: args.checks,
-          reviewThreads: args.reviewThreads,
-        })
-      : null;
-  const canResolveStaleConfiguredBotReview =
-    args.config.staleConfiguredBotReviewPolicy === "reply_and_resolve" &&
-    (staleReviewBotRemediation?.classification === "metadata_only" ||
-      staleReviewBotRemediation?.classification === "metadata_only_current_head_converged");
-  const canResolveVerifiedNoSourceChangeThreadResolution =
-    args.config.verifiedNoSourceChangeReviewThreadAutoResolve === true &&
-    staleReviewBotRemediation?.classification === "verified_no_source_change_pending_thread_resolution";
-  const canResolveVerifiedCurrentHeadRepairThreadResolution =
-    args.config.verifiedCurrentHeadRepairReviewThreadAutoResolve === true &&
-    staleReviewBotRemediation?.classification === "verified_current_head_repair_pending_thread_resolution";
-  const canResolveConversationResolutionBlocker =
-    args.config.verifiedNoSourceChangeReviewThreadAutoResolve === true &&
-    conversationResolutionBlocker !== null;
-
-  const canAutoHandleStaleConfiguredBotReview =
-    !args.skipAutoHandleStaleConfiguredBotReview &&
-    (args.record.state === "blocked" || canResolveConversationResolutionBlocker) &&
-    (args.record.blocked_reason === "stale_review_bot" ||
-      canResolveConversationResolutionBlocker ||
-      ((canResolveVerifiedNoSourceChangeThreadResolution || canResolveVerifiedCurrentHeadRepairThreadResolution) &&
-        args.record.blocked_reason === "manual_review")) &&
-    (comment || canResolveConversationResolutionBlocker) &&
-    args.manualReviewThreadCount === 0 &&
-    !args.summarizeChecks(args.checks).hasPending &&
-    !args.summarizeChecks(args.checks).hasFailing &&
-    (args.config.staleConfiguredBotReviewPolicy === "reply_only" ||
-      args.config.staleConfiguredBotReviewPolicy === "reply_and_resolve" ||
-      canResolveVerifiedNoSourceChangeThreadResolution ||
-      canResolveVerifiedCurrentHeadRepairThreadResolution ||
-      canResolveConversationResolutionBlocker);
-
   let currentRecord = args.record;
-  if (canAutoHandleStaleConfiguredBotReview && args.github.replyToReviewThread) {
-    const recoveryResult = await recoverStaleConfiguredBotReviewThreads({
+  const staleReviewBotRemediationResult = await handleStaleConfiguredBotReviewRemediation({
       github: args.github,
       stateStore: args.stateStore,
       state: args.state,
       record: args.record,
       pr: args.pr,
+      checks: args.checks,
       reviewThreads: args.reviewThreads,
+      manualReviewThreadCount: args.manualReviewThreadCount,
       syncJournal: args.syncJournal,
       config: args.config,
-      failureContext: conversationResolutionBlocker?.failureContext ?? args.failureContext,
-      resolveAfterReply:
-        canResolveConversationResolutionBlocker ||
-        canResolveStaleConfiguredBotReview ||
-        canResolveVerifiedNoSourceChangeThreadResolution ||
-        canResolveVerifiedCurrentHeadRepairThreadResolution,
-      reasonCode: canResolveVerifiedCurrentHeadRepairThreadResolution
-        ? "verified_current_head_repair_auto_resolve"
-        : canResolveVerifiedNoSourceChangeThreadResolution || canResolveConversationResolutionBlocker
-        ? "verified_no_source_change_auto_resolve"
-        : STALE_CONFIGURED_BOT_REVIEW_REASON_CODE,
+      failureContext: args.failureContext,
+      summarizeChecks: args.summarizeChecks,
+      statusCommentAvailable: comment !== null,
+      conversationResolutionBlocker,
+      skipAutoHandleStaleConfiguredBotReview: args.skipAutoHandleStaleConfiguredBotReview,
     });
-    const repliedRecord = recoveryResult.record;
-    currentRecord = recoveryResult.record;
-    const replyHandled =
-      repliedRecord.last_stale_review_bot_reply_head_sha === args.pr.headRefOid &&
-      repliedRecord.last_stale_review_bot_reply_signature ===
-        (conversationResolutionBlocker?.failureContext.signature ??
-          args.failureContext?.signature ??
-          STALE_CONFIGURED_BOT_REVIEW_REASON_CODE);
-    if (replyHandled || recoveryResult.status === "replied" || recoveryResult.status === "resolved") {
-      return repliedRecord;
-    }
+  currentRecord = staleReviewBotRemediationResult.record;
+  if (staleReviewBotRemediationResult.handled) {
+    return currentRecord;
   }
 
   if (!args.github.addIssueComment) {
