@@ -23,6 +23,10 @@ import {
   writeSupervisorState,
 } from "./supervisor-diagnostics-status-scenarios";
 import {
+  formatStaleReviewMetadataConvergenceDiagnostic,
+  formatStaleReviewResidueOperatorDiagnostic,
+} from "./stale-review-bot-diagnostics-presenter";
+import {
   clearCurrentReconciliationPhase,
   writeCurrentReconciliationPhase,
 } from "./supervisor-reconciliation-phase";
@@ -61,6 +65,43 @@ test("renderSupervisorStatusDto maps stale configured-bot remediation to the roo
   assert.match(
     status,
     /^operator_action action=resolve_stale_review_bot source=stale_review_bot_remediation priority=72 summary=Code or CI is green but configured-bot review thread metadata is still unresolved; inspect the exact thread and resolve it or leave a manual note without changing merge policy\.$/m,
+  );
+});
+
+test("stale review-bot presenter keeps residue and metadata diagnostic lines stable", () => {
+  const remediation = {
+    issueNumber: 366,
+    prNumber: 44,
+    reasonCode: "stale_review_bot" as const,
+    currentHeadSha: "deadbeef",
+    processedOnCurrentHead: "yes" as const,
+    codeCiState: "green" as const,
+    classification: "metadata_only_missing_current_head_review" as const,
+    codexCurrentHeadReviewState: "missing" as const,
+    reviewThreadUrl: "https://example.test/pr/44#discussion_r44",
+    verificationEvidenceSummary: null,
+    missingProbeReason: null,
+    manualNextStep: "inspect_exact_review_thread_then_resolve_or_leave_manual_note",
+    summary: "code_or_ci_green_but_review_thread_metadata_unresolved",
+  };
+
+  assert.equal(
+    formatStaleReviewResidueOperatorDiagnostic(remediation),
+    "codex_connector_operator_diagnostic interpretation=stale_review_residue current_head_sha=deadbeef latest_configured_bot_review_sha=deadbeef current_head_review_signal=missing actionable_current_diff_threads=0 next_action=request_current_head_review",
+  );
+  assert.equal(
+    formatStaleReviewMetadataConvergenceDiagnostic({
+      remediation: {
+        ...remediation,
+        classification: "metadata_only" as const,
+        codexCurrentHeadReviewState: "observed" as const,
+      },
+      pr: createPullRequest({
+        headRefOid: "deadbeef",
+        configuredBotCurrentHeadObservedAt: "2026-05-15T00:17:00Z",
+      }),
+    }),
+    "codex_connector_convergence status=stale_review_metadata provider=codex current_head_sha=deadbeef current_head_observed_at=2026-05-15T00:17:00Z latest_signal_head_sha=deadbeef highest_severity=none finding_count=0 merge_effect=ready next_action=merge_ready stale_review_metadata_classification=metadata_only",
   );
 });
 
