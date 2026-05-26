@@ -24,8 +24,8 @@ import {
 } from "./supervisor-diagnostics-status-scenarios";
 import {
   formatStaleReviewMetadataConvergenceDiagnostic,
-  formatStaleReviewResidueOperatorDiagnostic,
 } from "./stale-review-bot-diagnostics-presenter";
+import { formatStaleReviewResidueOperatorDiagnostic } from "./supervisor-status-review-bot";
 import {
   clearCurrentReconciliationPhase,
   writeCurrentReconciliationPhase,

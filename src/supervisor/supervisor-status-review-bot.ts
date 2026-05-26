@@ -39,6 +39,7 @@ export {
   formatCodexConnectorReviewFallbackDiagnostic,
 } from "./codex-connector-diagnostics-presenter";
 export type { CodexConnectorDiagnosticBundle } from "./codex-connector-diagnostics-presenter";
+export { formatStaleReviewResidueOperatorDiagnostic } from "./stale-review-bot-diagnostics-presenter";
 
 export interface ReviewBotDiagnostics {
   status: string;
