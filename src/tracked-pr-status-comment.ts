@@ -15,15 +15,11 @@ import {
 import {
   FailureContext,
   GitHubPullRequest,
-  IssueComment,
   IssueRunRecord,
   PullRequestCheck,
   ReviewThread,
-  RunState,
   SupervisorConfig,
   SupervisorStateFile,
-  LatestLocalCiResult,
-  LocalCiRemediationTarget,
 } from "./core/types";
 import { truncate } from "./core/utils";
 import { buildTrackedPrMismatch } from "./supervisor/tracked-pr-mismatch";
@@ -32,94 +28,50 @@ import {
   recoverStaleConfiguredBotReviewThreads,
   STALE_CONFIGURED_BOT_REVIEW_REASON_CODE,
 } from "./supervisor/stale-review-bot-recovery";
-import { workspacePreparationRemediationTargetForFailureClass } from "./remediation-targets";
 import {
   conversationResolutionEvidenceContradictsBlocker,
   conversationResolutionEvidenceDetails,
   conversationResolutionEvidenceToken,
 } from "./conversation-resolution-policy";
 import { displayRelativeArtifactPath } from "./supervisor/supervisor-status-summary-helpers";
+import { publishTrackedPrStatusComment } from "./tracked-pr-status-comment-publisher";
+import {
+  buildTrackedPrClearedStatusComment,
+  buildTrackedPrDraftReviewSuppressedComment,
+  buildTrackedPrHostLocalBlockerComment,
+  buildTrackedPrManualReviewStatusComment,
+  buildTrackedPrPersistentStatusComment,
+  compactEvidenceLines,
+  HostLocalTrackedPrBlockerGateType,
+  isTrackedPrActiveStatusState,
+  TRACKED_PR_STATUS_COMMENT_REASON_CODE_DRAFT_REVIEW_PROVIDER_SUPPRESSED,
+  TRACKED_PR_STATUS_COMMENT_REASON_CODE_CLEARED,
+  TRACKED_PR_STATUS_COMMENT_REASON_CODE_CONVERSATION_RESOLUTION_BLOCKED,
+  TRACKED_PR_STATUS_COMMENT_REASON_CODE_HANDOFF_MISSING,
+  TRACKED_PR_STATUS_COMMENT_REASON_CODE_MANUAL_REVIEW,
+  TRACKED_PR_STATUS_COMMENT_REASON_CODE_REQUIRED_CHECK_MISMATCH,
+  TRACKED_PR_STATUS_COMMENT_REASON_CODE_STALE_REVIEW_BOT,
+  TRACKED_PR_STATUS_COMMENT_REASON_CODE_TRACKED_LIFECYCLE_MISMATCH,
+  trackedPrHostLocalBlockerCommentSignature,
+  workspacePreparationFailureClass,
+  workspacePreparationRemediationTarget,
+} from "./tracked-pr-status-comment-rendering";
 
-export type HostLocalTrackedPrBlockerGateType =
-  | "workspace_preparation"
-  | "local_ci"
-  | "workstation_local_path_hygiene";
-
-const TRACKED_PR_STATUS_COMMENT_MARKER_PREFIX = "codex-supervisor:tracked-pr-status-comment";
-const TRACKED_PR_STATUS_COMMENT_REASON_CODE_DRAFT_REVIEW_PROVIDER_SUPPRESSED = "draft_review_provider_suppressed";
-const TRACKED_PR_STATUS_COMMENT_REASON_CODE_HANDOFF_MISSING = "handoff_missing";
-const TRACKED_PR_STATUS_COMMENT_REASON_CODE_MANUAL_REVIEW = "manual_review";
-export const TRACKED_PR_STATUS_COMMENT_REASON_CODE_STALE_REVIEW_BOT = "stale_review_bot";
-const TRACKED_PR_STATUS_COMMENT_REASON_CODE_REQUIRED_CHECK_MISMATCH = "required_check_mismatch";
-const TRACKED_PR_STATUS_COMMENT_REASON_CODE_CONVERSATION_RESOLUTION_BLOCKED = "conversation_resolution_blocked";
-const TRACKED_PR_STATUS_COMMENT_REASON_CODE_TRACKED_LIFECYCLE_MISMATCH = "tracked_lifecycle_mismatch";
-const TRACKED_PR_STATUS_COMMENT_REASON_CODE_CLEARED = "cleared";
-
-export type TrackedPrStatusCommentKind = "status" | "host-local-blocker";
-export interface TrackedPrStatusCommentMarker {
-  issueNumber: number;
-  prNumber: number;
-  kind: TrackedPrStatusCommentKind;
-}
-
-export function workspacePreparationFailureClass(
-  signature: string | null | undefined,
-): Exclude<LatestLocalCiResult["failure_class"], "unset_contract"> | null {
-  if (!signature?.startsWith("workspace-preparation-gate-")) {
-    return null;
-  }
-
-  const failureClass = signature.slice("workspace-preparation-gate-".length);
-  switch (failureClass) {
-    case "missing_command":
-    case "workspace_toolchain_missing":
-    case "worktree_helper_missing":
-    case "non_zero_exit":
-      return failureClass;
-    default:
-      return null;
-  }
-}
-
-export function workspacePreparationRemediationTarget(
-  failureClass: Exclude<LatestLocalCiResult["failure_class"], "unset_contract"> | null,
-): LocalCiRemediationTarget {
-  return workspacePreparationRemediationTargetForFailureClass(failureClass);
-}
-
-function buildTrackedPrHostLocalBlockerComment(args: {
-  pr: Pick<GitHubPullRequest, "headRefOid">;
-  gateType: HostLocalTrackedPrBlockerGateType;
-  blockerSignature: string;
-  failureClass: string | null;
-  remediationTarget: string | null;
-  summary: string;
-  details?: string[] | null;
-  localHeadSha?: string | null;
-  remoteHeadSha?: string | null;
-}): string {
-  if (args.gateType === "workstation_local_path_hygiene") {
-    return buildTrackedPrReadyPromotionPathHygieneComment(args);
-  }
-
-  return [
-    `Tracked PR head \`${args.pr.headRefOid}\` is still draft because ready-for-review promotion is blocked locally.`,
-    "",
-    ...(args.localHeadSha === undefined || args.localHeadSha === null ? [] : [`- local head SHA: \`${args.localHeadSha}\``]),
-    ...(args.remoteHeadSha === undefined || args.remoteHeadSha === null ? [] : [`- remote PR head SHA: \`${args.remoteHeadSha}\``]),
-    `- reason code: \`${trackedPrReadyPromotionBlockedReasonCode(args.gateType)}\``,
-    `- gate type: \`${args.gateType}\``,
-    `- blocker signature: \`${args.blockerSignature}\``,
-    `- failure class: \`${args.failureClass ?? "unknown"}\``,
-    `- remediation target: \`${args.remediationTarget ?? "unknown"}\``,
-    `- summary: ${args.summary}`,
-    ...appendEvidenceLines(args.details),
-    "- automatic retry: no",
-    "- next action: fix the tracked workspace blocker, then rerun the supervisor to retry ready-for-review promotion.",
-    "",
-    "GitHub checks may still be green because this blocker is host-local to the supervisor workspace.",
-  ].join("\n");
-}
+export {
+  buildTrackedPrStatusCommentBody,
+  buildTrackedPrStatusCommentMarker,
+  editableTrackedPrStatusCommentMarkers,
+  parseTrackedPrStatusCommentMarker,
+  selectOwnedTrackedPrStatusComment,
+  TrackedPrStatusCommentKind,
+  TrackedPrStatusCommentMarker,
+} from "./tracked-pr-status-comment-marker";
+export {
+  HostLocalTrackedPrBlockerGateType,
+  TRACKED_PR_STATUS_COMMENT_REASON_CODE_STALE_REVIEW_BOT,
+  workspacePreparationFailureClass,
+  workspacePreparationRemediationTarget,
+} from "./tracked-pr-status-comment-rendering";
 
 export function observedTrackedPrHostLocalBlockerPatch(args: {
   pr: Pick<GitHubPullRequest, "headRefOid">;
@@ -129,185 +81,6 @@ export function observedTrackedPrHostLocalBlockerPatch(args: {
     last_observed_host_local_pr_blocker_head_sha: args.pr.headRefOid,
     last_observed_host_local_pr_blocker_signature: args.blockerSignature,
   };
-}
-
-function summarizeWorkstationLocalPathFirstFix(details: string[] | null | undefined): string | null {
-  if (!details || details.length === 0) {
-    return null;
-  }
-
-  const countsByFile = new Map<string, number>();
-  for (const detail of details) {
-    if (
-      detail.includes(".codex-supervisor/issues/") &&
-      detail.includes("issue-journal.md")
-    ) {
-      continue;
-    }
-
-    const match = detail.match(/^-?\s*([^:\s][^:]*)\:\d+\s+matched\b/);
-    if (!match) {
-      continue;
-    }
-    const filePath = match[1]?.trim();
-    if (!filePath) {
-      continue;
-    }
-    countsByFile.set(filePath, (countsByFile.get(filePath) ?? 0) + 1);
-  }
-
-  if (countsByFile.size === 0) {
-    return null;
-  }
-
-  const sortedFiles = [...countsByFile.entries()].sort((left, right) => {
-    if (right[1] !== left[1]) {
-      return right[1] - left[1];
-    }
-    return left[0].localeCompare(right[0]);
-  });
-  const visibleFiles = sortedFiles
-    .slice(0, 3)
-    .map(([filePath, count]) => `${filePath} (${count} match${count === 1 ? "" : "es"})`);
-  const remainingCount = sortedFiles.length - visibleFiles.length;
-  const tail = remainingCount > 0 ? `; +${remainingCount} more file${remainingCount === 1 ? "" : "s"}` : "";
-  return `First fix: ${visibleFiles.join("; ")}${tail}.`;
-}
-
-function sanitizePathHygieneEvidenceLine(line: string): string {
-  return line
-    .replace(/\/(?:home|Users)(?:\/[^\s"'`<>:;,\)\]\}]*)?/g, "/<redacted-user-home>")
-    .replace(/C:\\Users\\[^\s"'`<>:;,\)\]\}]+/g, "C:\\<redacted-user-home>");
-}
-
-function appendEvidenceLines(details: string[] | null | undefined, limit = 3): string[] {
-  return compactEvidenceLines(
-    (details ?? [])
-      .filter(
-        (detail) =>
-          !detail.includes(".codex-supervisor/issues/") ||
-          !detail.includes("issue-journal.md"),
-      )
-      .map((detail) => sanitizePathHygieneEvidenceLine(detail)),
-    limit,
-  ).map((detail) => `- evidence: ${detail}`);
-}
-
-function buildTrackedPrReadyPromotionPathHygieneComment(args: {
-  pr: Pick<GitHubPullRequest, "headRefOid">;
-  blockerSignature: string;
-  remediationTarget: string | null;
-  summary: string;
-  details?: string[] | null;
-  localHeadSha?: string | null;
-  remoteHeadSha?: string | null;
-}): string {
-  const firstFix = summarizeWorkstationLocalPathFirstFix(args.details);
-  const conciseSummary = args.summary.replace(/\s+First fix:.*$/i, "").trim();
-  const repairable = args.remediationTarget === "repair_already_queued";
-  return [
-    `Tracked PR head \`${args.pr.headRefOid}\` is still draft because ready-for-review promotion is blocked locally.`,
-    "",
-    ...(args.localHeadSha === undefined || args.localHeadSha === null ? [] : [`- local head SHA: \`${args.localHeadSha}\``]),
-    ...(args.remoteHeadSha === undefined || args.remoteHeadSha === null ? [] : [`- remote PR head SHA: \`${args.remoteHeadSha}\``]),
-    `- reason code: \`${trackedPrReadyPromotionBlockedReasonCode("workstation_local_path_hygiene")}\``,
-    `- gate name: \`workstation_local_path_hygiene\``,
-    `- blocker signature: \`${args.blockerSignature}\``,
-    ...appendEvidenceLines(args.details),
-    `- what failed: ${conciseSummary}`,
-    ...(firstFix ? [`- ${firstFix}`] : []),
-    `- remediation target: \`${args.remediationTarget ?? "manual_review"}\``,
-    `- automatic retry: ${repairable ? "yes" : "no"}`,
-    repairable
-      ? "- next action: supervisor will retry a repair turn with these actionable publishable files, then re-run ready-for-review promotion."
-      : "- rerunning the supervisor alone will not help yet; fix the tracked workspace artifacts first, then rerun promotion.",
-    "",
-    "GitHub checks may still be green because this blocker is host-local to the supervisor workspace.",
-  ].join("\n");
-}
-
-function trackedPrReadyPromotionBlockedReasonCode(gateType: HostLocalTrackedPrBlockerGateType): string {
-  return `ready_promotion_blocked_${gateType}`;
-}
-
-function trackedPrHostLocalBlockerCommentSignature(args: {
-  gateType: HostLocalTrackedPrBlockerGateType;
-  blockerSignature: string;
-  failureClass: string;
-  remediationTarget: string;
-}): string {
-  return [
-    args.blockerSignature,
-    `gate=${args.gateType}`,
-    `failure=${args.failureClass}`,
-    `target=${args.remediationTarget}`,
-  ].join("|");
-}
-
-function buildTrackedPrDraftReviewSuppressedComment(args: {
-  pr: Pick<GitHubPullRequest, "headRefOid" | "number">;
-}): string {
-  return [
-    `Tracked PR head \`${args.pr.headRefOid}\` is still draft because provider review is intentionally suppressed.`,
-    "",
-    `- reason code: \`${TRACKED_PR_STATUS_COMMENT_REASON_CODE_DRAFT_REVIEW_PROVIDER_SUPPRESSED}\``,
-    "- what is happening: configured provider review stays suppressed until this PR is ready for review.",
-    "- automatic retry: yes",
-    `- next action: keep the tracked workspace moving toward ready-for-review promotion for PR #${args.pr.number}; the supervisor will retry automatically on later cycles.`,
-    "",
-    "GitHub checks may still be pending because external review-provider work does not start while the PR remains draft.",
-  ].join("\n");
-}
-
-function compactEvidenceLines(details: string[] | null | undefined, limit = 3): string[] {
-  if (!details || details.length === 0) {
-    return [];
-  }
-
-  return details
-    .map((detail) => detail.replace(/\s+/g, " ").trim())
-    .filter((detail) => detail.length > 0)
-    .slice(0, limit);
-}
-
-function buildTrackedPrPersistentStatusComment(args: {
-  pr: Pick<GitHubPullRequest, "headRefOid" | "number">;
-  reasonCode: string;
-  summary: string;
-  evidence: string[];
-  nextAction: string;
-  automaticRetry: "yes" | "no";
-}): string {
-  return [
-    `Tracked PR head \`${args.pr.headRefOid}\` remains stopped near merge.`,
-    "",
-    `- reason code: \`${args.reasonCode}\``,
-    `- summary: ${args.summary}`,
-    ...args.evidence.map((detail) => `- evidence: ${detail}`),
-    `- automatic retry: ${args.automaticRetry}`,
-    `- next action: ${args.nextAction}`,
-  ].join("\n");
-}
-
-function buildTrackedPrManualReviewStatusComment(args: {
-  pr: Pick<GitHubPullRequest, "headRefOid">;
-  summary: string;
-  evidence: string[];
-  localReviewOutcome: string | null;
-  localReviewSummaryPath: string | null;
-}): string {
-  return [
-    `Tracked PR head \`${args.pr.headRefOid}\` is blocked by terminal local review and now requires operator manual review.`,
-    "",
-    `- current head SHA: \`${args.pr.headRefOid}\``,
-    `- reason code: \`${TRACKED_PR_STATUS_COMMENT_REASON_CODE_MANUAL_REVIEW}\``,
-    `- local-review outcome: \`${args.localReviewOutcome ?? "unknown"}\``,
-    `- blocker summary: ${args.summary}`,
-    ...(args.localReviewSummaryPath ? [`- local-review summary path: \`${args.localReviewSummaryPath}\``] : []),
-    ...args.evidence.map((detail) => `- evidence: ${detail}`),
-    "- automatic retry: no",
-    "- next action: complete the required operator/manual review, then rerun the supervisor so progress can resume.",
-  ].join("\n");
 }
 
 function currentHeadManualReviewStatusComment(args: {
@@ -352,37 +125,6 @@ function currentHeadManualReviewStatusComment(args: {
       localReviewSummaryPath: displayedSummaryPath,
     }),
   };
-}
-
-function isTrackedPrActiveStatusState(state: RunState): boolean {
-  switch (state) {
-    case "local_review":
-    case "local_review_fix":
-    case "stabilizing":
-    case "pr_open":
-    case "repairing_ci":
-    case "resolving_conflict":
-    case "waiting_ci":
-    case "addressing_review":
-    case "ready_to_merge":
-      return true;
-    default:
-      return false;
-  }
-}
-
-function buildTrackedPrClearedStatusComment(args: {
-  pr: Pick<GitHubPullRequest, "headRefOid" | "number">;
-  state: RunState;
-}): string {
-  return [
-    `Tracked PR head \`${args.pr.headRefOid}\` blocker cleared; progress has resumed.`,
-    "",
-    `- reason code: \`${TRACKED_PR_STATUS_COMMENT_REASON_CODE_CLEARED}\``,
-    `- current supervisor state: \`${args.state}\``,
-    "- automatic retry: yes",
-    `- next action: continue the tracked PR workflow for PR #${args.pr.number} from the current active state.`,
-  ].join("\n");
 }
 
 function buildRequiredCheckMismatchEvidence(args: {
@@ -701,115 +443,6 @@ function derivePersistentTrackedPrStatusComment(args: {
   }
 
   return null;
-}
-
-export function buildTrackedPrStatusCommentMarker(args: TrackedPrStatusCommentMarker): string {
-  return `<!-- ${TRACKED_PR_STATUS_COMMENT_MARKER_PREFIX} issue=${args.issueNumber} pr=${args.prNumber} kind=${args.kind} -->`;
-}
-
-export function parseTrackedPrStatusCommentMarker(input: string): TrackedPrStatusCommentMarker | null {
-  const match = input.match(
-    /<!--\s*codex-supervisor:tracked-pr-status-comment\s+issue=(\d+)\s+pr=(\d+)\s+kind=([a-z-]+)\s*-->/,
-  );
-  if (!match) {
-    return null;
-  }
-
-  const issueNumber = Number(match[1]);
-  const prNumber = Number(match[2]);
-  const kind = match[3];
-  if (
-    !Number.isSafeInteger(issueNumber) ||
-    issueNumber <= 0 ||
-    !Number.isSafeInteger(prNumber) ||
-    prNumber <= 0 ||
-    (kind !== "status" && kind !== "host-local-blocker")
-  ) {
-    return null;
-  }
-
-  return {
-    issueNumber,
-    prNumber,
-    kind,
-  };
-}
-
-export function buildTrackedPrStatusCommentBody(args: {
-  body: string;
-  marker: TrackedPrStatusCommentMarker;
-}): string {
-  return `${args.body}\n\n${buildTrackedPrStatusCommentMarker(args.marker)}`;
-}
-
-export function editableTrackedPrStatusCommentMarkers(args: TrackedPrStatusCommentMarker): string[] {
-  return [
-    buildTrackedPrStatusCommentMarker(args),
-    buildTrackedPrStatusCommentMarker({
-      ...args,
-      kind: args.kind === "status" ? "host-local-blocker" : "status",
-    }),
-  ];
-}
-
-export function selectOwnedTrackedPrStatusComment(args: {
-  issueComments: IssueComment[];
-  markers: string[];
-}): IssueComment | null {
-  const matchingComments = args.issueComments.filter(
-    (comment) =>
-      args.markers.some((marker) => comment.body.includes(marker)) &&
-      comment.viewerDidAuthor === true &&
-      typeof comment.databaseId === "number",
-  );
-  if (matchingComments.length === 0) {
-    return null;
-  }
-
-  matchingComments.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
-  return matchingComments[0] ?? null;
-}
-
-async function publishTrackedPrStatusComment(args: {
-  github: Partial<Pick<GitHubClient, "addIssueComment" | "getExternalReviewSurface" | "updateIssueComment">>;
-  issueNumber: number;
-  pr: GitHubPullRequest;
-  kind: TrackedPrStatusCommentKind;
-  body: string;
-}): Promise<void> {
-  if (!args.github.addIssueComment) {
-    return;
-  }
-
-  const marker: TrackedPrStatusCommentMarker = {
-    issueNumber: args.issueNumber,
-    prNumber: args.pr.number,
-    kind: args.kind,
-  };
-  const bodyWithMarker = buildTrackedPrStatusCommentBody({
-    body: args.body,
-    marker,
-  });
-  const editableMarkers = editableTrackedPrStatusCommentMarkers(marker);
-
-  if (args.github.getExternalReviewSurface && args.github.updateIssueComment) {
-    const surface = await args.github.getExternalReviewSurface(args.pr.number, {
-      purpose: "action",
-      headSha: args.pr.headRefOid,
-      reviewSurfaceVersion: args.pr.updatedAt,
-    });
-    const existingComment = selectOwnedTrackedPrStatusComment({
-      issueComments: surface.issueComments,
-      markers: editableMarkers,
-    });
-    const existingCommentDatabaseId = existingComment?.databaseId;
-    if (typeof existingCommentDatabaseId === "number") {
-      await args.github.updateIssueComment(existingCommentDatabaseId, bodyWithMarker);
-      return;
-    }
-  }
-
-  await args.github.addIssueComment(args.pr.number, bodyWithMarker);
 }
 
 export async function maybeCommentOnTrackedPrHostLocalBlocker(args: {
