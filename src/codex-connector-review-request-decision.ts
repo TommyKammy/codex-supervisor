@@ -235,6 +235,9 @@ export function codexConnectorReviewRequestAction(
     staleCodexReviewState?.classification === "verified_no_source_change_pending_thread_resolution";
   const isCodexVerifiedCurrentHeadRepairThreadResolution =
     staleCodexReviewState?.classification === "verified_current_head_repair_pending_thread_resolution";
+  const staleReviewCommitThreadIds = new Set(
+    codexConnectorStaleReviewCommitThreads(args.pr, configuredThreads).map((thread) => thread.id),
+  );
   const isStaleHeadMissingCurrentHeadReview =
     !isValidTimestamp(args.pr.configuredBotCurrentHeadObservedAt) &&
     (commitShasDifferForComparison(args.pr.configuredBotLatestReviewedCommitSha, args.pr.headRefOid) ||
@@ -268,11 +271,17 @@ export function codexConnectorReviewRequestAction(
     reviewThreads: args.reviewThreads,
     configuredThreads,
   });
+  const hasCurrentHeadRequestTrigger =
+    args.record.copilot_review_timeout_action === "request_review_comment" &&
+    Boolean(args.record.copilot_review_timed_out_at);
+  const hasRecoverableStaleReviewCommitResidue =
+    configuredReviewProviderKinds(args.config).includes("codex") &&
+    staleReviewCommitThreadIds.size > 0 &&
+    isStaleHeadMissingCurrentHeadReview;
 
   if (
     args.config.configuredBotCurrentHeadSignalTimeoutAction !== "request_review_comment" ||
-    args.record.copilot_review_timeout_action !== "request_review_comment" ||
-    !args.record.copilot_review_timed_out_at ||
+    (!hasCurrentHeadRequestTrigger && !hasRecoverableStaleReviewCommitResidue) ||
     codexConnectorCurrentHeadReviewReadiness({
       config: args.config,
       pr: args.pr,
