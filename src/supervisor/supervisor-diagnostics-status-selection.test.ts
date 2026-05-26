@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import test, { mock } from "node:test";
 import { StateStore } from "../core/state-store";
-import { GitHubIssue, IssueRunRecord, SupervisorStateFile } from "../core/types";
+import { GitHubIssue, SupervisorStateFile } from "../core/types";
 import { renderSupervisorStatusDto } from "./supervisor-status-report";
 import { Supervisor } from "./supervisor";
 import {
@@ -17,64 +17,15 @@ import {
 import {
   CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
   createCodexConnectorTrackedReviewResidueScenario,
-} from "../codex-connector-tracked-pr-test-helpers";
+  createTrackedPullRequestStatusScenario,
+  createTrackedStatusIssue,
+  staleResidueDiagnosticLines,
+  writeSupervisorState,
+} from "./supervisor-diagnostics-status-scenarios";
 import {
   clearCurrentReconciliationPhase,
   writeCurrentReconciliationPhase,
 } from "./supervisor-reconciliation-phase";
-
-function createTrackedPullRequestStatusScenario(
-  fixture: Awaited<ReturnType<typeof createSupervisorFixture>>,
-  args: {
-    issueNumber: number;
-    prNumber: number;
-    state?: IssueRunRecord["state"];
-    headSha?: string;
-    recordOverrides?: Partial<IssueRunRecord>;
-  },
-) {
-  const headSha = args.headSha ?? `head-${args.issueNumber}`;
-  const branch = branchName(fixture.config, args.issueNumber);
-  const record = createRecord({
-    issue_number: args.issueNumber,
-    state: args.state ?? "waiting_ci",
-    branch,
-    pr_number: args.prNumber,
-    workspace: path.join(fixture.workspaceRoot, `issue-${args.issueNumber}`),
-    journal_path: null,
-    last_head_sha: headSha,
-    ...args.recordOverrides,
-  });
-  const state: SupervisorStateFile = {
-    activeIssueNumber: args.issueNumber,
-    issues: {
-      [String(args.issueNumber)]: record,
-    },
-  };
-  const pr = createPullRequest({
-    number: args.prNumber,
-    headRefName: branch,
-    headRefOid: headSha,
-  });
-
-  return { branch, headSha, pr, record, state };
-}
-
-function staleResidueDiagnosticLines(text: string): string[] {
-  return text
-    .split("\n")
-    .filter((line) =>
-      line.startsWith("no_active_tracked_record ") ||
-      line.startsWith("stale_review_bot_remediation ") ||
-      line.startsWith("stale_review_bot_thread_diagnostics ") ||
-      line.startsWith("codex_connector_convergence ") ||
-      line.startsWith("codex_connector_operator_diagnostic ")
-    );
-}
-
-async function writeSupervisorState(fixture: Awaited<ReturnType<typeof createSupervisorFixture>>, state: SupervisorStateFile) {
-  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
-}
 
 test("doctor uses the diagnostic-only state loader instead of StateStore.load", async (t) => {
   const fixture = await createSupervisorFixture();
@@ -1447,16 +1398,12 @@ test("status --why fails closed for codex processed residue without current-head
   };
   await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
 
-  const trackedIssue: GitHubIssue = {
-    number: issueNumber,
+  const trackedIssue = createTrackedStatusIssue({
+    issueNumber,
     title: "Status why classifies codex processed residue",
-    body: executionReadyBody("Keep Codex processed residue blocked until current-head verification evidence exists."),
+    summary: "Keep Codex processed residue blocked until current-head verification evidence exists.",
     createdAt: "2026-05-13T00:00:00Z",
-    updatedAt: "2026-05-13T00:00:00Z",
-    url: `https://example.test/issues/${issueNumber}`,
-    labels: [],
-    state: "OPEN",
-  };
+  });
   const pr = createPullRequest(scenario.pullRequestPatch);
   const staleMetadataThread = scenario.reviewThread;
 
@@ -1510,16 +1457,11 @@ test("status --why reports effective configured-bot thread diagnostics for outda
     await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
   });
 
-  const trackedIssue: GitHubIssue = {
-    number: issueNumber,
+  const trackedIssue = createTrackedStatusIssue({
+    issueNumber,
     title: "HRCore shaped outdated Codex residue",
-    body: executionReadyBody("Report effective unresolved review-thread diagnostics."),
-    createdAt: "2026-05-15T00:00:00Z",
-    updatedAt: "2026-05-15T00:00:00Z",
-    url: `https://example.test/issues/${issueNumber}`,
-    labels: [],
-    state: "OPEN",
-  };
+    summary: "Report effective unresolved review-thread diagnostics.",
+  });
   const currentHeadPr = createPullRequest({
     ...pr,
     headRefName: branch,
@@ -1616,16 +1558,12 @@ test("status --why distinguishes codex verified current-head repair residue from
   };
   await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
 
-  const trackedIssue: GitHubIssue = {
-    number: issueNumber,
+  const trackedIssue = createTrackedStatusIssue({
+    issueNumber,
     title: "Status why classifies Codex verified repair residue",
-    body: executionReadyBody("Classify verified Codex repair residue separately from no-source-change residue."),
+    summary: "Classify verified Codex repair residue separately from no-source-change residue.",
     createdAt: "2026-05-13T00:00:00Z",
-    updatedAt: "2026-05-13T00:00:00Z",
-    url: `https://example.test/issues/${issueNumber}`,
-    labels: [],
-    state: "OPEN",
-  };
+  });
   const pr = createPullRequest({
     ...scenario.pullRequestPatch,
     configuredBotLatestReviewedCommitSha: "1bd7511632c6db5bf1f1bbe91f0b5c4cebad1770",
@@ -1694,16 +1632,12 @@ test("status --why surfaces verified Codex residue remediation for manual_review
   };
   await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
 
-  const trackedIssue: GitHubIssue = {
-    number: issueNumber,
+  const trackedIssue = createTrackedStatusIssue({
+    issueNumber,
     title: "Tracked PR manual_review bypasses verified Codex residue remediation",
-    body: executionReadyBody("Resolve verified stale Codex review residue after manual review fallthrough."),
+    summary: "Resolve verified stale Codex review residue after manual review fallthrough.",
     createdAt: "2026-05-18T00:00:00Z",
-    updatedAt: "2026-05-18T00:00:00Z",
-    url: `https://example.test/issues/${issueNumber}`,
-    labels: [],
-    state: "OPEN",
-  };
+  });
   const pr = createPullRequest({
     ...scenario.pullRequestPatch,
     mergeStateStatus: "BLOCKED",
@@ -1768,16 +1702,11 @@ test("status --why uses the shared stale review-bot presenter for active verifie
   };
   await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
 
-  const trackedIssue: GitHubIssue = {
-    number: issueNumber,
+  const trackedIssue = createTrackedStatusIssue({
+    issueNumber,
     title: "Status why active Codex verified repair residue",
-    body: executionReadyBody("Status should classify active verified Codex repair residue distinctly."),
-    createdAt: "2026-05-15T00:00:00Z",
-    updatedAt: "2026-05-15T00:00:00Z",
-    url: `https://example.test/issues/${issueNumber}`,
-    labels: [],
-    state: "OPEN",
-  };
+    summary: "Status should classify active verified Codex repair residue distinctly.",
+  });
   const pr = createPullRequest(scenario.pullRequestPatch);
 
   const supervisor = new Supervisor(fixture.config);
