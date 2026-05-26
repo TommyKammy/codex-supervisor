@@ -6,11 +6,13 @@ import path from "node:path";
 import {
   configuredBotTopLevelReviewEffect,
   externalSignalReadinessDiagnostics,
-  formatCodexConnectorConvergenceDiagnostic,
-  formatCodexConnectorReviewFallbackDiagnostic,
   configuredReviewStatusLabel,
   reviewBotDiagnostics,
 } from "./supervisor-status-review-bot";
+import {
+  formatCodexConnectorConvergenceDiagnostic,
+  formatCodexConnectorReviewFallbackDiagnostic,
+} from "./codex-connector-diagnostics-presenter";
 import {
   configuredBotInitialGraceWaitWindow,
   configuredBotCurrentHeadSignalWaitWindow,
