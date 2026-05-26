@@ -8,6 +8,8 @@ import {
   syncTrackedPrPersistentStatusComment,
   workspacePreparationRemediationTarget,
 } from "./tracked-pr-status-comment";
+import { publishTrackedPrStatusComment } from "./tracked-pr-status-comment-publisher";
+import { buildTrackedPrHostLocalBlockerComment } from "./tracked-pr-status-comment-rendering";
 import { createConfig, createPullRequest, createRecord, createSupervisorState } from "./supervisor/supervisor-test-helpers";
 import { IssueRunRecord, SupervisorStateFile } from "./core/types";
 
@@ -116,6 +118,101 @@ test("workspacePreparationRemediationTarget keeps generic preparation failures o
   assert.equal(workspacePreparationRemediationTarget("workspace_toolchain_missing"), "workspace_environment");
   assert.equal(workspacePreparationRemediationTarget("missing_command"), "config_contract");
   assert.equal(workspacePreparationRemediationTarget("worktree_helper_missing"), "config_contract");
+});
+
+test("buildTrackedPrHostLocalBlockerComment renders status text without marker transport concerns", () => {
+  const body = buildTrackedPrHostLocalBlockerComment({
+    pr: { headRefOid: "head-116" },
+    gateType: "local_ci",
+    blockerSignature: "verify-pre-pr:failed",
+    failureClass: "non_zero_exit",
+    remediationTarget: "workspace_environment",
+    summary: "verify-pre-pr failed",
+    details: [" npm run build   failed ", ".codex-supervisor/issues/116/issue-journal.md:1 matched"],
+    localHeadSha: "local-head",
+    remoteHeadSha: "head-116",
+  });
+
+  assert.equal(
+    body,
+    [
+      "Tracked PR head `head-116` is still draft because ready-for-review promotion is blocked locally.",
+      "",
+      "- local head SHA: `local-head`",
+      "- remote PR head SHA: `head-116`",
+      "- reason code: `ready_promotion_blocked_local_ci`",
+      "- gate type: `local_ci`",
+      "- blocker signature: `verify-pre-pr:failed`",
+      "- failure class: `non_zero_exit`",
+      "- remediation target: `workspace_environment`",
+      "- summary: verify-pre-pr failed",
+      "- evidence: npm run build failed",
+      "- automatic retry: no",
+      "- next action: fix the tracked workspace blocker, then rerun the supervisor to retry ready-for-review promotion.",
+      "",
+      "GitHub checks may still be green because this blocker is host-local to the supervisor workspace.",
+    ].join("\n"),
+  );
+  assert.doesNotMatch(body, /codex-supervisor:tracked-pr-status-comment/);
+});
+
+test("publishTrackedPrStatusComment updates the newest owned editable marker before adding", async () => {
+  const pr = createPullRequest({
+    number: 116,
+    headRefOid: "head-116",
+    updatedAt: "2026-03-16T03:00:00Z",
+  });
+  const updateCalls: Array<{ commentId: number; body: string }> = [];
+  let addCalls = 0;
+
+  await publishTrackedPrStatusComment({
+    github: {
+      addIssueComment: async () => {
+        addCalls += 1;
+      },
+      getExternalReviewSurface: async (prNumber, options) => {
+        assert.equal(prNumber, 116);
+        assert.deepEqual(options, {
+          purpose: "action",
+          headSha: "head-116",
+          reviewSurfaceVersion: "2026-03-16T03:00:00Z",
+        });
+        return {
+          reviews: [],
+          issueComments: [
+            {
+              id: "comment-41",
+              databaseId: 41,
+              body: "<!-- codex-supervisor:tracked-pr-status-comment issue=102 pr=116 kind=host-local-blocker -->",
+              createdAt: "2026-03-16T02:00:00Z",
+              url: "https://example.test/comments/41",
+              viewerDidAuthor: true,
+              author: null,
+            },
+          ],
+        };
+      },
+      updateIssueComment: async (commentId, body) => {
+        updateCalls.push({ commentId, body });
+      },
+    },
+    issueNumber: 102,
+    pr,
+    kind: "status",
+    body: "Tracked PR head `head-116` remains stopped near merge.",
+  });
+
+  assert.equal(addCalls, 0);
+  assert.deepEqual(updateCalls, [
+    {
+      commentId: 41,
+      body: [
+        "Tracked PR head `head-116` remains stopped near merge.",
+        "",
+        "<!-- codex-supervisor:tracked-pr-status-comment issue=102 pr=116 kind=status -->",
+      ].join("\n"),
+    },
+  ]);
 });
 
 test("syncTrackedPrPersistentStatusComment publishes handoff-missing operator review routing diagnostics once per head and signature", async () => {
