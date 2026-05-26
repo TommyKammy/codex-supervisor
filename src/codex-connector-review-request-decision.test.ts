@@ -189,6 +189,40 @@ test("codexConnectorReviewRequestAction requests review for stale review commit 
   assert.deepEqual(decideScenario(createCodexConnectorStaleReviewCommitRequestScenario()), { kind: "initial" });
 });
 
+test("codexConnectorReviewRequestAction waits for scheduler timeout before recovering stale review commit residue without timeout metadata", () => {
+  const scenario = createCodexConnectorStaleReviewCommitRequestScenario();
+  const record = {
+    ...scenario.recordPatch,
+    review_wait_started_at: "2026-05-08T03:09:36Z",
+    review_wait_head_sha: "head-1995",
+    copilot_review_timed_out_at: null,
+    copilot_review_timeout_action: null,
+  };
+
+  assert.deepEqual(
+    decide({
+      record,
+      pr: scenario.pullRequestPatch,
+      checks: scenario.checks,
+      reviewThreads: scenario.reviewThreads,
+      configuredThreads: scenario.configuredThreads,
+      now: "2026-05-08T03:19:35.999Z",
+    }),
+    { kind: "none" },
+  );
+  assert.deepEqual(
+    decide({
+      record,
+      pr: scenario.pullRequestPatch,
+      checks: scenario.checks,
+      reviewThreads: scenario.reviewThreads,
+      configuredThreads: scenario.configuredThreads,
+      now: "2026-05-08T03:19:36.000Z",
+    }),
+    { kind: "initial" },
+  );
+});
+
 test("codexConnectorReviewRequestAction selects retry after the same-head request wait expires", () => {
   assert.deepEqual(decideScenario(createCodexConnectorRequestRetryScenario()), {
     kind: "retry",

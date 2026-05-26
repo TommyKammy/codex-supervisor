@@ -1454,7 +1454,7 @@ test("handlePostTurnPullRequestTransitionsPhase requests Codex review for stale 
 
 test("handlePostTurnPullRequestTransitionsPhase requests current-head Codex review for stale review-commit residue before manual review stop", async () => {
   const originalDateNow = Date.now;
-  Date.now = () => Date.parse("2026-05-26T04:00:00Z");
+  Date.now = () => Date.parse("2026-05-26T04:06:00Z");
   try {
     const config = createConfig({
       reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
