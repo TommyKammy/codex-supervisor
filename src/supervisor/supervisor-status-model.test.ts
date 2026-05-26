@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildDetailedStatusModel, buildDetailedStatusSummaryLines } from "./supervisor-status-model";
+import {
+  buildActiveFailureSummaryLines,
+  buildActivePullRequestCheckThreadLines,
+  buildActiveRecordBaselineLines,
+  buildActiveReviewStatusLines,
+} from "./supervisor-active-detailed-status-presenters";
 import { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "../core/types";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
@@ -146,6 +152,57 @@ const summarizeChecks = (checks: PullRequestCheck[]) => ({
   allPassing: checks.every((check) => check.bucket === "pass"),
   hasPending: checks.some((check) => check.bucket === "pending" || check.bucket === "cancel"),
   hasFailing: checks.some((check) => check.bucket === "fail"),
+});
+
+test("active detailed status presenters keep diagnostic families focused", () => {
+  const config = createConfig();
+  const activeRecord = createRecord({
+    external_review_head_sha: "cafebabe",
+    last_error: "build failed\nsee logs",
+  });
+  const pr = createPullRequest();
+  const checks: PullRequestCheck[] = [
+    { name: "unit", state: "FAILURE", bucket: "fail", workflow: "CI" },
+  ];
+
+  assert.deepEqual(buildActiveRecordBaselineLines({ activeRecord }).slice(0, 4), [
+    "issue=#58",
+    "state=blocked",
+    "branch=codex/issue-58",
+    "pr=58",
+  ]);
+
+  assert.deepEqual(
+    buildActiveReviewStatusLines({
+      config,
+      activeRecord,
+      pr,
+      checks,
+      reviewThreads: [],
+      manualReviewThreads: noReviewThreads,
+      configuredBotReviewThreads: noReviewThreads,
+      summarizeChecks,
+      mergeConflictDetected: () => false,
+    }).map((line) => line.split(" ")[0]),
+    ["local_review", "external_review"],
+  );
+
+  assert.deepEqual(buildActiveFailureSummaryLines({ activeRecord }), ["last_error=build failed\\nsee logs"]);
+
+  assert.deepEqual(
+    buildActivePullRequestCheckThreadLines({
+      config,
+      activeRecord,
+      pr,
+      checks,
+      reviewThreads: [],
+      manualReviewThreads: noReviewThreads,
+      configuredBotReviewThreads: noReviewThreads,
+      pendingBotReviewThreads: noPendingReviewThreads,
+      summarizeChecks,
+    }).map((line) => line.split(" ")[0]),
+    ["pr_state=OPEN", "checks=fail=1", "failing_checks=unit", "review_threads", "review_thread_effective_diagnostics", "review_follow_up"],
+  );
 });
 
 test("buildDetailedStatusModel preserves check summaries and local-review drift wording", () => {
