@@ -3,14 +3,17 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { type IssueRunRecord, type SupervisorStateFile } from "./core/types";
+import { type GitHubIssue, type IssueRunRecord, type SupervisorStateFile } from "./core/types";
 import { reconcileStaleActiveIssueReservationInModule } from "./recovery-active-reconciliation";
+import { reconcileRecoverableBlockedIssueStatesInModule } from "./recovery-blocked-issue-reconciliation";
 import { reconcileStaleDoneIssueStatesInModule } from "./recovery-historical-reconciliation";
 import { reconcileParentEpicClosuresInModule } from "./recovery-parent-epic-reconciliation";
 import { normalizeRecoveryEntrypointResult } from "./recovery-entrypoint-result";
 import { type RecoveryEvent } from "./run-once-cycle-prelude";
 import {
   createIssue,
+  createConfig,
+  executionReadyBody,
   createPullRequest,
   createRecord,
   createSupervisorState,
@@ -133,6 +136,66 @@ test("active stabilizing recovery resolves tracked PRs with action-grade hydrati
   assert.equal(state.activeIssueNumber, null);
   assert.equal(state.issues["367"]?.pr_number, 467);
   assert.equal(recoveryEvents[0]?.reason, "stale_state_cleanup: cleared stale active reservation after issue lock was missing");
+});
+
+test("blocked recovery boundary requeues requirements blockers without aggregate reconciliation", async () => {
+  const record = createRecord({
+    issue_number: 366,
+    state: "blocked",
+    blocked_reason: "requirements",
+    last_error: "Issue #366 is missing execution-ready metadata.",
+    last_failure_signature: "requirements:metadata",
+    repeated_failure_signature_count: 2,
+  });
+  const state = createSupervisorState({
+    issues: [record],
+  });
+  const issues: GitHubIssue[] = [
+    createIssue({
+      number: 366,
+      body: executionReadyBody("Add focused regression coverage."),
+      state: "OPEN",
+    }),
+  ];
+  let saveCalls = 0;
+
+  const recoveryEvents = await reconcileRecoverableBlockedIssueStatesInModule(
+    {
+      getPullRequestIfExists: async () => {
+        throw new Error("unexpected getPullRequestIfExists call");
+      },
+      getIssue: async () => {
+        throw new Error("unexpected getIssue call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+    },
+    {
+      touch,
+      async save(): Promise<void> {
+        saveCalls += 1;
+      },
+    },
+    state,
+    createConfig(),
+    issues,
+    {
+      shouldAutoRetryHandoffMissing: () => false,
+    },
+  );
+
+  assert.equal(saveCalls, 1);
+  assert.equal(state.issues["366"]?.state, "queued");
+  assert.equal(state.issues["366"]?.blocked_reason, null);
+  assert.equal(state.issues["366"]?.last_failure_signature, null);
+  assert.equal(state.issues["366"]?.repeated_failure_signature_count, 0);
+  assert.deepEqual(recoveryEvents.map((event) => event.reason), [
+    "requirements_recovered: requeued issue #366 after execution-ready metadata was added",
+  ]);
 });
 
 test("historical recovery boundary downgrades stale no-PR done records", async () => {
