@@ -10,7 +10,14 @@ import {
 } from "./tracked-pr-status-comment";
 import { publishTrackedPrStatusComment } from "./tracked-pr-status-comment-publisher";
 import { buildTrackedPrHostLocalBlockerComment } from "./tracked-pr-status-comment-rendering";
-import { createConfig, createPullRequest, createRecord, createSupervisorState } from "./supervisor/supervisor-test-helpers";
+import { handleStaleConfiguredBotReviewRemediation } from "./stale-configured-bot-auto-handle";
+import {
+  createConfig,
+  createPullRequest,
+  createRecord,
+  createReviewThread,
+  createSupervisorState,
+} from "./supervisor/supervisor-test-helpers";
 import { IssueRunRecord, SupervisorStateFile } from "./core/types";
 
 test("buildTrackedPrStatusCommentMarker renders the stable sticky tracked PR marker", () => {
@@ -154,6 +161,103 @@ test("buildTrackedPrHostLocalBlockerComment renders status text without marker t
     ].join("\n"),
   );
   assert.doesNotMatch(body, /codex-supervisor:tracked-pr-status-comment/);
+});
+
+test("handleStaleConfiguredBotReviewRemediation owns reply_only recovery decisions outside status publishing", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    staleConfiguredBotReviewPolicy: "reply_only",
+  });
+  const pr = createPullRequest({
+    number: 116,
+    headRefOid: "head-116",
+    isDraft: false,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+  const failureContext = {
+    category: "blocked" as const,
+    summary: "Configured bot thread is stale.",
+    signature: "stalled-bot:thread-1",
+    command: null,
+    details: ["file=src/file.ts line=12 processed_on_current_head=yes"],
+    url: "https://example.test/pr/116#discussion_r1",
+    updated_at: "2026-05-26T00:00:00Z",
+  };
+  const record = createRecord({
+    issue_number: 102,
+    pr_number: pr.number,
+    state: "blocked",
+    blocked_reason: "stale_review_bot",
+    last_head_sha: pr.headRefOid,
+    last_failure_context: failureContext,
+    last_failure_signature: failureContext.signature,
+  });
+  const state = createSupervisorState({ issues: [record] });
+  const replyCalls: Array<{ threadId: string; body: string }> = [];
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-05-26T00:01:00Z",
+      };
+    },
+    async save(nextState: SupervisorStateFile): Promise<void> {
+      assert.equal(nextState.issues[String(record.issue_number)]?.issue_number, record.issue_number);
+      saveCalls += 1;
+    },
+  };
+
+  const result = await handleStaleConfiguredBotReviewRemediation({
+    github: {
+      replyToReviewThread: async (threadId: string, body: string) => {
+        replyCalls.push({ threadId, body });
+      },
+    },
+    stateStore,
+    state,
+    record,
+    pr,
+    checks: [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [
+      createReviewThread({
+        id: "thread-1",
+        isOutdated: true,
+        comments: {
+          nodes: [
+            {
+              id: "comment-1",
+              body: "This finding is stale on the current head.",
+              createdAt: "2026-05-26T00:00:00Z",
+              url: "https://example.test/pr/116#discussion_r1",
+              author: {
+                login: "chatgpt-codex-connector",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+    syncJournal: async () => undefined,
+    config,
+    failureContext,
+    manualReviewThreadCount: 0,
+    statusCommentAvailable: true,
+    summarizeChecks: () => ({ hasPending: false, hasFailing: false }),
+    skipAutoHandleStaleConfiguredBotReview: false,
+    conversationResolutionBlocker: null,
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(result.record.last_stale_review_bot_reply_head_sha, pr.headRefOid);
+  assert.equal(result.record.last_stale_review_bot_reply_signature, failureContext.signature);
+  assert.equal(replyCalls.length, 1);
+  assert.equal(replyCalls[0]?.threadId, "thread-1");
+  assert.match(replyCalls[0]?.body ?? "", /Leaving thread resolution to a human operator/);
+  assert.equal(saveCalls, 2);
 });
 
 test("publishTrackedPrStatusComment updates the newest owned editable marker before adding", async () => {
