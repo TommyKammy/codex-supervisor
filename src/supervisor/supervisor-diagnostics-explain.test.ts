@@ -17,50 +17,13 @@ import {
   CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
   createCodexConnectorTrackedReviewResidueScenario,
 } from "../codex-connector-tracked-pr-test-helpers";
-
-async function writeExternalReviewDigest(args: {
-  artifactPath: string;
-  headStatus: "current-head" | "stale-head";
-  missedFindings: number;
-  sections: string[];
-}): Promise<void> {
-  const missAnalysisHeadSha = "deadbeefcafebabe";
-  const activePrHeadSha =
-    args.headStatus === "current-head" ? missAnalysisHeadSha : "feedfacecafef00d";
-
-  await fs.mkdir(path.dirname(args.artifactPath), { recursive: true });
-  await fs.writeFile(args.artifactPath, "{}\n", "utf8");
-  await fs.writeFile(
-    args.artifactPath.replace(/\.json$/u, ".md"),
-    [
-      "# External Review Miss Follow-up Digest",
-      "",
-      `- Miss artifact: ${args.artifactPath}`,
-      "- Local review summary: none",
-      "- Generated at: 2026-03-18T00:00:00.000Z",
-      `- Miss analysis head SHA: ${missAnalysisHeadSha}`,
-      `- Active PR head SHA: ${activePrHeadSha}`,
-      "- Local review artifact head SHA: deadbeefcafebabe",
-      `- Head status: ${args.headStatus} (${args.headStatus === "current-head" ? "digest matches the active PR head" : "digest does not match the active PR head"})`,
-      `- Missed findings: ${args.missedFindings}`,
-      "",
-      ...args.sections,
-      "",
-    ].join("\n"),
-    "utf8",
-  );
-}
-
-function codexConnectorDiagnosticLines(text: string): string[] {
-  return text
-    .split("\n")
-    .filter((line) =>
-      line.startsWith("codex_connector_policy_block ") ||
-      line.startsWith("codex_connector_review_fallback ") ||
-      line.startsWith("codex_connector_convergence ") ||
-      line.startsWith("codex_connector_operator_diagnostic ")
-    );
-}
+import {
+  codexConnectorDiagnosticLines,
+  createConfiguredBotReviewThread,
+  createTrackedPullRequestExplainScenario,
+  writeExternalReviewDigest,
+  writeSupervisorState,
+} from "./supervisor-diagnostics-explain-scenarios";
 
 test("explain reports dependency blockers for a non-runnable issue", async () => {
   const fixture = await createSupervisorFixture();
@@ -138,47 +101,27 @@ Depends on: #91`,
 
 test("status and explain share Codex Connector diagnostics for the same tracked PR", async () => {
   const fixture = await createSupervisorFixture();
-  const issueNumber = 1961;
-  const prNumber = 2961;
-  const branch = branchName(fixture.config, issueNumber);
-  const state: SupervisorStateFile = {
-    activeIssueNumber: issueNumber,
-    issues: {
-      [String(issueNumber)]: createRecord({
-        issue_number: issueNumber,
-        state: "waiting_ci",
-        branch,
-        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
-        journal_path: null,
-        pr_number: prNumber,
-        last_head_sha: "head-1961",
-        codex_connector_review_requested_observed_at: "2026-05-08T03:30:00Z",
-        codex_connector_review_requested_head_sha: "head-1961",
-      }),
-    },
-  };
-  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
-
-  const trackedIssue: GitHubIssue = {
-    number: issueNumber,
+  const scenario = createTrackedPullRequestExplainScenario(fixture, {
+    issueNumber: 1961,
+    prNumber: 2961,
+    headSha: "head-1961",
     title: "Codex Connector diagnostic parity",
-    body: executionReadyBody("Status and explain should report the same Codex Connector diagnostics."),
-    createdAt: "2026-05-08T03:00:00Z",
-    updatedAt: "2026-05-08T03:30:00Z",
-    url: `https://example.test/issues/${issueNumber}`,
-    labels: [],
-    state: "OPEN",
-  };
-  const pullRequest = createPullRequest({
-    number: prNumber,
-    headRefName: branch,
-    headRefOid: "head-1961",
-    currentHeadCiGreenAt: "2026-05-08T03:09:36Z",
-    configuredBotCurrentHeadObservedAt: null,
-    codexConnectorReviewRequestedAt: "2026-05-08T03:30:00Z",
-    codexConnectorReviewRequestedHeadSha: "head-1961",
+    summary: "Status and explain should report the same Codex Connector diagnostics.",
+    issueCreatedAt: "2026-05-08T03:00:00Z",
+    issueUpdatedAt: "2026-05-08T03:30:00Z",
+    recordOverrides: {
+      codex_connector_review_requested_observed_at: "2026-05-08T03:30:00Z",
+      codex_connector_review_requested_head_sha: "head-1961",
+    },
+    pullRequestOverrides: {
+      currentHeadCiGreenAt: "2026-05-08T03:09:36Z",
+      configuredBotCurrentHeadObservedAt: null,
+      codexConnectorReviewRequestedAt: "2026-05-08T03:30:00Z",
+      codexConnectorReviewRequestedHeadSha: "head-1961",
+    },
+    checks: [{ name: "build", state: "SUCCESS" as const, bucket: "pass" as const, workflow: "CI" }],
   });
-  const checks = [{ name: "build", state: "SUCCESS" as const, bucket: "pass" as const, workflow: "CI" }];
+  await writeSupervisorState(fixture, scenario.state);
 
   const supervisor = new Supervisor({
     ...fixture.config,
@@ -187,17 +130,17 @@ test("status and explain share Codex Connector diagnostics for the same tracked 
     configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
   });
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
-    getIssue: async () => trackedIssue,
-    listAllIssues: async () => [trackedIssue],
-    listCandidateIssues: async () => [trackedIssue],
-    resolvePullRequestForBranch: async () => pullRequest,
-    getChecks: async () => checks,
+    getIssue: async () => scenario.issue,
+    listAllIssues: async () => [scenario.issue],
+    listCandidateIssues: async () => [scenario.issue],
+    resolvePullRequestForBranch: async () => scenario.pr,
+    getChecks: async () => scenario.checks,
     getUnresolvedReviewThreads: async () => [],
   };
 
   const [status, explanation] = await Promise.all([
     supervisor.statusReport({ why: true }),
-    supervisor.explain(issueNumber),
+    supervisor.explain(scenario.issueNumber),
   ]);
 
   assert.deepEqual(
@@ -1359,86 +1302,50 @@ Explain should keep non-actionable same-head configured-bot blockers on manual r
 test("explain reports effective configured-bot thread diagnostics for outdated Codex residue", async () => {
   const fixture = await createSupervisorFixture();
   fixture.config.reviewBotLogins = [CODEX_CONNECTOR_REVIEW_BOT_LOGIN];
-  const issueNumber = 183;
-  const prNumber = 283;
-  const headSha = "5de0d3844468d4a77cab512f8dcbe46171166c3a";
-  const branch = branchName(fixture.config, issueNumber);
-  const state: SupervisorStateFile = {
-    activeIssueNumber: issueNumber,
-    issues: {
-      [String(issueNumber)]: createRecord({
-        issue_number: issueNumber,
-        state: "waiting_ci",
-        branch,
-        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
-        journal_path: null,
-        pr_number: prNumber,
-        last_head_sha: headSha,
-        blocked_reason: null,
-        last_error: null,
-        last_failure_context: null,
-        last_failure_signature: null,
-      }),
-    },
-  };
-  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
-
-  const trackedIssue: GitHubIssue = {
-    number: issueNumber,
+  const scenario = createTrackedPullRequestExplainScenario(fixture, {
+    issueNumber: 183,
+    prNumber: 283,
+    headSha: "5de0d3844468d4a77cab512f8dcbe46171166c3a",
     title: "Explain HRCore shaped outdated Codex residue",
-    body: executionReadyBody("Report effective unresolved review-thread diagnostics."),
-    createdAt: "2026-05-15T00:00:00Z",
-    updatedAt: "2026-05-15T00:00:00Z",
-    url: `https://example.test/issues/${issueNumber}`,
-    labels: [],
-    state: "OPEN",
-  };
-  const pr = createPullRequest({
-    number: prNumber,
-    headRefName: branch,
-    headRefOid: headSha,
-    mergeStateStatus: "BLOCKED",
-    mergeable: "MERGEABLE",
-    currentHeadCiGreenAt: "2026-05-15T00:10:00Z",
-    configuredBotCurrentHeadObservedAt: "2026-05-15T00:16:00Z",
-    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
-    configuredBotCurrentHeadStatusState: "SUCCESS",
-    configuredBotTopLevelReviewStrength: null,
+    summary: "Report effective unresolved review-thread diagnostics.",
+    issueCreatedAt: "2026-05-15T00:00:00Z",
+    issueUpdatedAt: "2026-05-15T00:00:00Z",
+    pullRequestOverrides: {
+      mergeStateStatus: "BLOCKED",
+      mergeable: "MERGEABLE",
+      currentHeadCiGreenAt: "2026-05-15T00:10:00Z",
+      configuredBotCurrentHeadObservedAt: "2026-05-15T00:16:00Z",
+      configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+      configuredBotCurrentHeadStatusState: "SUCCESS",
+      configuredBotTopLevelReviewStrength: null,
+    },
+    checks: [{ name: "build", state: "SUCCESS" as const, bucket: "pass" as const, workflow: "CI" }],
   });
-  const outdatedThread = {
-    id: "PRRT_hrcore_183_outdated",
-    isResolved: false,
+  await writeSupervisorState(fixture, scenario.state);
+
+  const outdatedThread = createConfiguredBotReviewThread({
+    threadId: "PRRT_hrcore_183_outdated",
+    commentId: "PRRC_hrcore_183_outdated",
     isOutdated: true,
     path: "src/review-policy.ts",
     line: 42,
-    comments: {
-      nodes: [
-        {
-          id: "PRRC_hrcore_183_outdated",
-          body: "P1: stale finding from a previous diff.",
-          createdAt: "2026-05-15T00:05:00Z",
-          url: "https://example.test/pr/283#discussion_r183",
-          author: {
-            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
-            typeName: "Bot",
-          },
-        },
-      ],
-    },
-  };
+    body: "P1: stale finding from a previous diff.",
+    createdAt: "2026-05-15T00:05:00Z",
+    url: "https://example.test/pr/283#discussion_r183",
+  });
 
   const supervisor = new Supervisor(fixture.config);
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
-    getIssue: async () => trackedIssue,
-    listAllIssues: async () => [trackedIssue],
-    listCandidateIssues: async () => [trackedIssue],
-    resolvePullRequestForBranch: async () => pr,
-    getPullRequestIfExists: async () => pr,
-    getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getIssue: async () => scenario.issue,
+    listAllIssues: async () => [scenario.issue],
+    listCandidateIssues: async () => [scenario.issue],
+    resolvePullRequestForBranch: async () => scenario.pr,
+    getPullRequestIfExists: async () => scenario.pr,
+    getChecks: async () => scenario.checks,
     getUnresolvedReviewThreads: async () => [outdatedThread],
   };
 
-  const explanation = await supervisor.explain(issueNumber);
+  const explanation = await supervisor.explain(scenario.issueNumber);
 
   assert.match(
     explanation,
