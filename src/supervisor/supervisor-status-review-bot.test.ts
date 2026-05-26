@@ -4,18 +4,20 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
-  configuredBotInitialGraceWaitWindow,
-  configuredBotCurrentHeadSignalWaitWindow,
-  configuredBotSettledWaitWindow,
-  configuredBotRateLimitWaitWindow,
   configuredBotTopLevelReviewEffect,
   externalSignalReadinessDiagnostics,
   formatCodexConnectorConvergenceDiagnostic,
   formatCodexConnectorReviewFallbackDiagnostic,
   configuredReviewStatusLabel,
-  inferReviewBotProfile,
   reviewBotDiagnostics,
 } from "./supervisor-status-review-bot";
+import {
+  configuredBotInitialGraceWaitWindow,
+  configuredBotCurrentHeadSignalWaitWindow,
+  configuredBotSettledWaitWindow,
+  configuredBotRateLimitWaitWindow,
+} from "./review-bot-wait-windows";
+import { inferReviewBotProfile } from "./review-bot-profile";
 import { GitHubPullRequest, IssueRunRecord, ReviewThread, SupervisorConfig } from "../core/types";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
