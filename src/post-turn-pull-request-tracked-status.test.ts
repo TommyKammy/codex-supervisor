@@ -3051,9 +3051,13 @@ test("handlePostTurnPullRequestTransitionsPhase republishes merge-readiness bloc
   );
   assert.match(commentBodies[0] ?? "", /check=build:pass:SUCCESS/);
   assert.match(commentBodies[0] ?? "", /check=lint:pass:SUCCESS/);
+  assert.match(commentBodies[0] ?? "", /reason code: `required_check_mismatch`/);
+  assert.doesNotMatch(commentBodies[0] ?? "", /reason code: `conversation_resolution_blocked`/);
   assert.doesNotMatch(commentBodies[0] ?? "", /check=unit:pass:SUCCESS/);
   assert.match(commentBodies[1] ?? "", /check=build:pass:SUCCESS/);
   assert.match(commentBodies[1] ?? "", /check=typecheck:pass:SUCCESS/);
+  assert.match(commentBodies[1] ?? "", /reason code: `required_check_mismatch`/);
+  assert.doesNotMatch(commentBodies[1] ?? "", /reason code: `conversation_resolution_blocked`/);
   assert.doesNotMatch(commentBodies[1] ?? "", /check=unit:pass:SUCCESS/);
 });
 
