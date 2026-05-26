@@ -299,6 +299,17 @@ test("CI workflow runs the focused malformed-inventory regression suite on Ubunt
   );
 });
 
+test("CI malformed-inventory regression suite includes split diagnostics explain files", async () => {
+  const packageJson = JSON.parse(await fs.readFile(path.resolve(__dirname, "..", "package.json"), "utf8")) as {
+    scripts?: Record<string, string>;
+  };
+
+  assert.match(
+    packageJson.scripts?.["test:malformed-inventory-regressions"] ?? "",
+    /"src\/supervisor\/supervisor-diagnostics-explain\*\.test\.ts"/,
+  );
+});
+
 test("CI workflow runs the focused managed-restart regression suite on Ubuntu pull request jobs", async () => {
   const workflow = parseWorkflow(await fs.readFile(workflowPath, "utf8"));
 
