@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   GitHubIssue,
+  ReviewThread,
   SupervisorStateFile,
 } from "../core/types";
 import {
@@ -427,6 +428,114 @@ Parallelizable: No
 
   assert.match(whyLines.join("\n"), /^selected_issue=#2072$/m);
   assert.doesNotMatch(readinessSummary.readinessLines.join("\n"), /^blocked_issues=#2072 blocked_by=local_state:blocked$/m);
+});
+
+test("buildReadinessSummary selects stale review-commit residue recovery without timeout metadata", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    configuredBotInitialGraceWaitSeconds: 0,
+    configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+  });
+  const issueNumber = 2199;
+  const prNumber = 2200;
+  const branch = "codex/issue-2199";
+  const currentHead = "7d2a6e42f0a28a176463bda1c2cff4001e6aeb5a";
+  const staleReviewHead = "707f0eb2b95722c1c60bc3773a17a272957d775c";
+  const issue = createIssue({
+    number: issueNumber,
+    title: "Recover stale Codex review residue",
+    body: `## Summary
+Request current-head Codex review for stale review-commit residue.
+
+## Scope
+- keep recovery selectable before timeout metadata is recorded
+
+Depends on: none
+Parallelizable: No
+
+## Execution order
+1 of 1
+
+## Acceptance criteria
+- stale review residue can re-enter the request lane
+
+## Verification
+- npx tsx --test src/supervisor/supervisor-selection-readiness-summary.test.ts`,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        branch,
+        pr_number: prNumber,
+        blocked_reason: "manual_review",
+        last_head_sha: currentHead,
+        review_wait_started_at: "2026-05-26T22:00:00Z",
+        review_wait_head_sha: currentHead,
+        codex_connector_review_requested_observed_at: null,
+        codex_connector_review_requested_head_sha: null,
+      }),
+    },
+  };
+  const pr = createPullRequest({
+    number: prNumber,
+    headRefName: branch,
+    headRefOid: currentHead,
+    isDraft: false,
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-05-26T22:00:00Z",
+    configuredBotLatestReviewedCommitSha: staleReviewHead,
+    configuredBotCurrentHeadObservedAt: null,
+    codexConnectorReviewRequestedAt: null,
+    codexConnectorReviewRequestedHeadSha: null,
+  });
+  const reviewThreads: ReviewThread[] = [
+    {
+      id: "thread-stale-review-commit",
+      isResolved: false,
+      isOutdated: false,
+      path: "src/codex-connector-review-request-decision.ts",
+      line: 284,
+      comments: {
+        nodes: [
+          {
+            id: "comment-stale-review-commit",
+            body: "P1: Verify the repair on the current head.",
+            createdAt: "2026-05-26T21:55:00Z",
+            url: `https://example.test/pr/${prNumber}#discussion_r2199`,
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    },
+  ];
+  const github = {
+    listCandidateIssues: async () => [issue],
+    listAllIssues: async () => [issue],
+    getPullRequestIfExists: async () => pr,
+    getChecks: async () => [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => reviewThreads,
+  };
+
+  const readinessSummary = await buildReadinessSummary(github, config, state);
+  const whyLines = await buildSelectionWhySummary(github, config, state);
+
+  assert.deepEqual(readinessSummary.blockedIssues, []);
+  assert.deepEqual(readinessSummary.runnableIssues, [
+    {
+      issueNumber,
+      title: "Recover stale Codex review residue",
+      readiness: "execution_ready",
+    },
+  ]);
+  assert.match(whyLines.join("\n"), /^selected_issue=#2199$/m);
 });
 
 test("buildReadinessSummary keeps manual-review recovery blocked when GitHub recovery data fails", async () => {

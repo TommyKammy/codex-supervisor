@@ -7,7 +7,15 @@ import {
   formatNoRunnableIssueFoundMessage,
   resolveRunnableIssueContext,
 } from "./run-once-issue-selection";
-import { GitHubIssue, GitHubPullRequest, IssueRunRecord, PullRequestCheck, SupervisorConfig, SupervisorStateFile } from "./core/types";
+import {
+  GitHubIssue,
+  GitHubPullRequest,
+  IssueRunRecord,
+  PullRequestCheck,
+  ReviewThread,
+  SupervisorConfig,
+  SupervisorStateFile,
+} from "./core/types";
 import {
   buildRequirementsBlockerIssueComment,
   syncRequirementsBlockerIssueComment,
@@ -541,6 +549,122 @@ test("resolveRunnableIssueContext selects stale-review-bot tracked PR when Codex
     ensureRecordJournalContext: async (selectedRecord) => ({
       workspace: selectedRecord.workspace,
       journal_path: "/tmp/workspaces/issue-2096/.codex-supervisor/issue-journal.md",
+    }),
+    syncIssueJournal: async () => {},
+  });
+
+  assert.notEqual(typeof result, "string");
+  if (typeof result !== "string") {
+    assert.equal(result.kind, "ready");
+    if (result.kind === "ready") {
+      assert.equal(result.record.issue_number, issueNumber);
+      await result.issueLock.release();
+    }
+  }
+});
+
+test("resolveRunnableIssueContext selects stale review-commit residue without timeout metadata", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    configuredBotInitialGraceWaitSeconds: 0,
+    configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+  });
+  const issueNumber = 2199;
+  const prNumber = 2200;
+  const branch = "codex/issue-2199";
+  const headSha = "7d2a6e42f0a28a176463bda1c2cff4001e6aeb5a";
+  const staleReviewHead = "707f0eb2b95722c1c60bc3773a17a272957d775c";
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Recover stale Codex review residue",
+    body: executionReadyBody("Request current-head Codex review for stale review-commit residue."),
+    createdAt: "2026-05-26T22:00:00Z",
+    updatedAt: "2026-05-26T22:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const record = createRecord(issueNumber, {
+    state: "blocked",
+    branch,
+    pr_number: prNumber,
+    blocked_reason: "manual_review",
+    last_head_sha: headSha,
+    review_wait_started_at: "2026-05-26T22:00:00Z",
+    review_wait_head_sha: headSha,
+    codex_connector_review_requested_observed_at: null,
+    codex_connector_review_requested_head_sha: null,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: record,
+    },
+  };
+  const pr: GitHubPullRequest = {
+    number: prNumber,
+    title: "Tracked PR",
+    url: `https://example.test/pr/${prNumber}`,
+    state: "OPEN",
+    createdAt: "2026-05-26T22:00:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+    headRefName: branch,
+    headRefOid: headSha,
+    mergedAt: null,
+    currentHeadCiGreenAt: "2026-05-26T22:00:00Z",
+    configuredBotLatestReviewedCommitSha: staleReviewHead,
+    configuredBotCurrentHeadObservedAt: null,
+    codexConnectorReviewRequestedAt: null,
+    codexConnectorReviewRequestedHeadSha: null,
+  };
+  const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+  const reviewThreads: ReviewThread[] = [
+    {
+      id: "thread-stale-review-commit",
+      isResolved: false,
+      isOutdated: false,
+      path: "src/codex-connector-review-request-decision.ts",
+      line: 284,
+      comments: {
+        nodes: [
+          {
+            id: "comment-stale-review-commit",
+            body: "P1: Verify the repair on the current head.",
+            createdAt: "2026-05-26T21:55:00Z",
+            url: `https://example.test/pr/${prNumber}#discussion_r2199`,
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    },
+  ];
+
+  const result = await resolveRunnableIssueContext({
+    github: {
+      listCandidateIssues: async () => [issue],
+      getIssue: async () => issue,
+      getPullRequestIfExists: async () => pr,
+      getChecks: async () => checks,
+      getUnresolvedReviewThreads: async () => reviewThreads,
+    },
+    config,
+    stateStore: createTouchStateStore([]),
+    state,
+    currentRecord: null,
+    acquireIssueLock: async () => ({
+      acquired: true,
+      release: async () => {},
+    }),
+    ensureRecordJournalContext: async (selectedRecord) => ({
+      workspace: selectedRecord.workspace,
+      journal_path: "/tmp/workspaces/issue-2199/.codex-supervisor/issue-journal.md",
     }),
     syncIssueJournal: async () => {},
   });

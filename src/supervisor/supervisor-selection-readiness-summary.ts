@@ -65,8 +65,6 @@ async function shouldSelectCodexConnectorReviewRequestRecovery(
     record.pr_number === null ||
     !configuredReviewProviderKinds(config).includes("codex") ||
     config.configuredBotCurrentHeadSignalTimeoutAction !== "request_review_comment" ||
-    record.copilot_review_timeout_action !== "request_review_comment" ||
-    !record.copilot_review_timed_out_at ||
     !github.getPullRequestIfExists ||
     !github.getChecks ||
     !github.getUnresolvedReviewThreads

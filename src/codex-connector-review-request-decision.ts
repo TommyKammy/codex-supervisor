@@ -16,6 +16,7 @@ import {
   staleConfiguredBotReviewThreads,
 } from "./review-thread-reporting";
 import { buildStaleReviewBotRemediation } from "./supervisor/stale-review-bot-remediation";
+import { determineCopilotReviewTimeout } from "./pull-request-state-current-head-policy";
 
 export type CodexConnectorReviewRequestAction =
   | { kind: "none" }
@@ -216,6 +217,7 @@ function configuredBotThreadsAllowCodexConnectorRequest(args: {
 export function codexConnectorReviewRequestAction(
   args: CodexConnectorReviewRequestDecisionArgs,
 ): CodexConnectorReviewRequestAction {
+  const nowMs = args.nowMs?.() ?? Date.now();
   const checkSummary = args.summarizeChecks(args.checks);
   const configuredThreads = args.configuredBotReviewThreads(args.config, args.reviewThreads);
   const staleCodexReviewState = configuredReviewProviderKinds(args.config).includes("codex")
@@ -235,6 +237,9 @@ export function codexConnectorReviewRequestAction(
     staleCodexReviewState?.classification === "verified_no_source_change_pending_thread_resolution";
   const isCodexVerifiedCurrentHeadRepairThreadResolution =
     staleCodexReviewState?.classification === "verified_current_head_repair_pending_thread_resolution";
+  const staleReviewCommitThreadIds = new Set(
+    codexConnectorStaleReviewCommitThreads(args.pr, configuredThreads).map((thread) => thread.id),
+  );
   const isStaleHeadMissingCurrentHeadReview =
     !isValidTimestamp(args.pr.configuredBotCurrentHeadObservedAt) &&
     (commitShasDifferForComparison(args.pr.configuredBotLatestReviewedCommitSha, args.pr.headRefOid) ||
@@ -268,11 +273,23 @@ export function codexConnectorReviewRequestAction(
     reviewThreads: args.reviewThreads,
     configuredThreads,
   });
+  const hasCurrentHeadRequestTrigger =
+    args.record.copilot_review_timeout_action === "request_review_comment" &&
+    Boolean(args.record.copilot_review_timed_out_at);
+  const currentHeadReviewTimeout = determineCopilotReviewTimeout(args.config, args.record, args.pr, nowMs);
+  const currentHeadReviewRequestTimedOut =
+    currentHeadReviewTimeout.kind === "current_head_signal" &&
+    currentHeadReviewTimeout.timedOut &&
+    currentHeadReviewTimeout.action === "request_review_comment";
+  const hasRecoverableStaleReviewCommitResidue =
+    configuredReviewProviderKinds(args.config).includes("codex") &&
+    staleReviewCommitThreadIds.size > 0 &&
+    isStaleHeadMissingCurrentHeadReview &&
+    currentHeadReviewRequestTimedOut;
 
   if (
     args.config.configuredBotCurrentHeadSignalTimeoutAction !== "request_review_comment" ||
-    args.record.copilot_review_timeout_action !== "request_review_comment" ||
-    !args.record.copilot_review_timed_out_at ||
+    (!hasCurrentHeadRequestTrigger && !hasRecoverableStaleReviewCommitResidue) ||
     codexConnectorCurrentHeadReviewReadiness({
       config: args.config,
       pr: args.pr,
@@ -322,7 +339,7 @@ export function codexConnectorReviewRequestAction(
   const waitUntil = retryAnchorAt
     ? addMinutes(retryAnchorAt, args.config.codexConnectorReviewRequestNoResponseMinutes ?? 10)
     : null;
-  if (!waitUntil || (args.nowMs ?? Date.now)() < Date.parse(waitUntil)) {
+  if (!waitUntil || nowMs < Date.parse(waitUntil)) {
     return { kind: "none" };
   }
 
