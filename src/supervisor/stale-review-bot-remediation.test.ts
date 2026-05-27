@@ -7,7 +7,7 @@ import {
 } from "../codex-connector-tracked-pr-test-helpers";
 import { buildStaleReviewBotRemediation, buildStaleReviewBotThreadDiagnostics } from "./stale-review-bot-remediation";
 
-test("buildStaleReviewBotRemediation classifies same-head Codex no-major with covered evidence as stale metadata", () => {
+test("buildStaleReviewBotRemediation classifies same-head Codex no-major comment despite stale blocking review strength", () => {
   const issueNumber = 110;
   const prNumber = 115;
   const headSha = "c184c41883b831ab6b85bf3467a66a5c01fd49fa";
@@ -34,7 +34,11 @@ test("buildStaleReviewBotRemediation classifies same-head Codex no-major with co
   });
   const config = createConfig({ reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN] });
   const record = createRecord(scenario.recordPatch);
-  const pr = createPullRequest(scenario.pullRequestPatch);
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotTopLevelReviewStrength: "blocking",
+  });
 
   const remediation = buildStaleReviewBotRemediation({
     config,
@@ -42,6 +46,14 @@ test("buildStaleReviewBotRemediation classifies same-head Codex no-major with co
     pr,
     checks: scenario.passingChecks,
     reviewThreads: [scenario.reviewThread],
+  });
+  const diagnostics = buildStaleReviewBotThreadDiagnostics({
+    config,
+    record,
+    pr,
+    checks: scenario.passingChecks,
+    reviewThreads: [scenario.reviewThread],
+    remediation,
   });
 
   assert.equal(remediation?.classification, "verified_current_head_repair_pending_thread_resolution");
@@ -54,6 +66,7 @@ test("buildStaleReviewBotRemediation classifies same-head Codex no-major with co
     remediation?.verificationEvidenceSummary ?? "",
     /Focused mutation lock verifier passed on the current head.;codex_pr_success_comment_after_current_head_request/,
   );
+  assert.equal(diagnostics?.currentHeadSuccess, "yes");
 });
 
 test("buildStaleReviewBotRemediation fails closed when covered evidence lacks current-head Codex no-major signal", () => {

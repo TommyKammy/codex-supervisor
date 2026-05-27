@@ -155,7 +155,7 @@ function currentHeadSuccess(pr: GitHubPullRequest | null): StaleReviewBotThreadD
   if (!pr) {
     return "unknown";
   }
-  return pr.configuredBotCurrentHeadObservedAt && pr.configuredBotCurrentHeadStatusState === "SUCCESS" ? "yes" : "no";
+  return hasCurrentHeadSuccessSignal(pr) ? "yes" : "no";
 }
 
 export function isProvenStaleReviewMetadataClassification(
@@ -305,6 +305,24 @@ function validTimestamp(value: string | null | undefined): string | null {
   return value;
 }
 
+function hasCurrentHeadSuccessSignal(
+  pr: Pick<
+    GitHubPullRequest,
+    | "configuredBotCurrentHeadObservedAt"
+    | "configuredBotCurrentHeadObservationSource"
+    | "configuredBotCurrentHeadStatusState"
+  >,
+): boolean {
+  if (pr.configuredBotCurrentHeadStatusState === "SUCCESS" && validTimestamp(pr.configuredBotCurrentHeadObservedAt)) {
+    return true;
+  }
+
+  return Boolean(
+    pr.configuredBotCurrentHeadObservationSource === "codex_pr_success_comment" &&
+      validTimestamp(pr.configuredBotCurrentHeadObservedAt),
+  );
+}
+
 function currentHeadCodexNoMajorSignalEvidence(args: {
   record: Pick<
     IssueRunRecord,
@@ -322,7 +340,7 @@ function currentHeadCodexNoMajorSignalEvidence(args: {
 }): string | null {
   if (
     args.pr.configuredBotCurrentHeadObservationSource !== "codex_pr_success_comment" ||
-    args.pr.configuredBotCurrentHeadStatusState !== "SUCCESS"
+    !hasCurrentHeadSuccessSignal(args.pr)
   ) {
     return null;
   }
