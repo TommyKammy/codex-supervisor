@@ -69,6 +69,86 @@ test("buildStaleReviewBotRemediation classifies same-head Codex no-major comment
   assert.equal(diagnostics?.currentHeadSuccess, "yes");
 });
 
+test("buildStaleReviewBotRemediation accepts green current-head checks as verified repair evidence after no-major", () => {
+  const issueNumber = 187;
+  const prNumber = 194;
+  const headSha = "69b6043b941527645dd5df24535cd095cd627a0a";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "PRRT_current_head_repaired_residue",
+    commentId: "PRRC_current_head_repaired_residue",
+    path: "src/app.ts",
+    line: 76,
+    severity: "P2",
+    commentBody: "P2: Earlier current-diff finding is repaired on the latest head.",
+    discussionUrl: "https://example.test/pr/194#discussion_r3316522484",
+    currentHeadNoMajorReview: {
+      requestedAt: "2026-05-28T09:31:32Z",
+      observedAt: "2026-05-28T09:35:46Z",
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    latest_local_ci_result: null,
+    timeline_artifacts: [
+      {
+        type: "verification_result",
+        gate: "codex_turn",
+        command: "npm run verify:pre-pr",
+        head_sha: "older-repair-head",
+        outcome: "passed",
+        remediation_target: null,
+        next_action: "continue",
+        summary: "A previous repair head passed before the latest cleanup commit.",
+        recorded_at: "2026-05-28T09:02:10Z",
+      },
+    ],
+    repair_attempt_count: 2,
+    last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    currentHeadCiGreenAt: "2026-05-28T09:22:05Z",
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotTopLevelReviewStrength: "blocking",
+  });
+  const checks = [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass" as const, workflow: "CI" }];
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks,
+    reviewThreads: [scenario.reviewThread],
+  });
+  const diagnostics = buildStaleReviewBotThreadDiagnostics({
+    config,
+    record,
+    pr,
+    checks,
+    reviewThreads: [scenario.reviewThread],
+    remediation,
+  });
+
+  assert.equal(remediation?.classification, "verified_current_head_repair_pending_thread_resolution");
+  assert.equal(remediation?.codexCurrentHeadReviewState, "observed");
+  assert.equal(remediation?.missingProbeReason, null);
+  assert.match(
+    remediation?.verificationEvidenceSummary ?? "",
+    /current_head_checks_passed:verify-pre-pr;codex_pr_success_comment_after_current_head_request/,
+  );
+  assert.equal(diagnostics?.verifiedStaleResidueThreads, 1);
+  assert.equal(diagnostics?.missingVerificationEvidenceThreads, 0);
+  assert.equal(diagnostics?.repeatStopExhausted, "no");
+  assert.equal(diagnostics?.autoRepairSuppressedReason, "none");
+});
+
 test("buildStaleReviewBotRemediation fails closed when covered evidence lacks current-head Codex no-major signal", () => {
   const issueNumber = 110;
   const prNumber = 115;

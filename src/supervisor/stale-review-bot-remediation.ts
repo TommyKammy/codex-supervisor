@@ -221,10 +221,10 @@ function classifyAutoRepairSuppression(args: {
   if (remediation.missingProbeReason) {
     return "missing_verification_probe";
   }
-  if (clusterConfiguredBotReviewThreads(args.actionableMustFixThreads).length > 1) {
-    return "too_many_clusters";
-  }
   if (!isVerifiedStaleResidueClassification(remediation.classification)) {
+    if (clusterConfiguredBotReviewThreads(args.actionableMustFixThreads).length > 1) {
+      return "too_many_clusters";
+    }
     return "not_verified_stale_residue";
   }
   if (!verifiedAutoResolveEnabled(config, remediation.classification)) {
@@ -265,6 +265,8 @@ function codexConnectorCurrentHeadReviewState(args: {
 function currentHeadVerificationEvidenceSummary(
   record: Pick<IssueRunRecord, "latest_local_ci_result" | "timeline_artifacts">,
   pr: Pick<GitHubPullRequest, "headRefOid">,
+  checks: Pick<PullRequestCheck, "bucket" | "name">[],
+  allowCheckEvidence: boolean,
 ): string | null {
   const latestLocalCi = record.latest_local_ci_result;
   if (latestLocalCi?.outcome === "passed" && latestLocalCi.head_sha === pr.headRefOid) {
@@ -280,6 +282,15 @@ function currentHeadVerificationEvidenceSummary(
   );
   if (timelineEvidence) {
     return timelineEvidence.summary || timelineEvidence.command || "current_head_verification_passed";
+  }
+
+  if (allowCheckEvidence && allChecksPassing(checks)) {
+    const checkNames = checks
+      .map((check) => check.name?.trim())
+      .filter((name): name is string => Boolean(name))
+      .slice(0, 3)
+      .join(",");
+    return checkNames ? `current_head_checks_passed:${checkNames}` : "current_head_checks_passed";
   }
 
   return null;
@@ -421,7 +432,13 @@ function classifyCodexMetadataOnly(args: {
         summary: STALE_REVIEW_BOT_SUMMARY,
       };
     }
-    const verificationEvidenceSummary = currentHeadVerificationEvidenceSummary(args.record, args.pr);
+    const checkEvidenceCanProveRepair = args.record.repair_attempt_count > 0;
+    const verificationEvidenceSummary = currentHeadVerificationEvidenceSummary(
+      args.record,
+      args.pr,
+      args.checks,
+      checkEvidenceCanProveRepair,
+    );
     if (verificationEvidenceSummary) {
       const noMajorSignalEvidence = currentHeadCodexNoMajorSignalEvidence({
         record: args.record,
@@ -435,7 +452,8 @@ function classifyCodexMetadataOnly(args: {
           missingProbeReason: "current_head_codex_no_major_signal_missing",
         };
       }
-      const verifiedCurrentHeadRepair = hasCurrentHeadCodexTurnVerification(args.record, args.pr);
+      const verifiedCurrentHeadRepair =
+        hasCurrentHeadCodexTurnVerification(args.record, args.pr) || args.record.repair_attempt_count > 0;
       return {
         classification: verifiedCurrentHeadRepair
           ? "verified_current_head_repair_pending_thread_resolution"
@@ -606,14 +624,15 @@ export function buildStaleReviewBotThreadDiagnostics(args: {
   const currentHeadReviewRequestPending =
     remediation.classification === "metadata_only_missing_current_head_review" &&
     remediation.codexCurrentHeadReviewState === "missing";
+  const isVerifiedResidue = isVerifiedStaleResidueClassification(remediation.classification);
   const repeatStopExhausted =
-    currentHeadReviewRequestPending
+    currentHeadReviewRequestPending || isVerifiedResidue
       ? false
       : args.record.last_tracked_pr_repeat_failure_decision === "stop_no_progress" ||
         (config && args.pr
           ? configuredBotReviewFollowUpState(config, args.record, args.pr, configuredThreads) === "exhausted"
           : false);
-  const verifiedStaleResidueThreads = isVerifiedStaleResidueClassification(remediation.classification)
+  const verifiedStaleResidueThreads = isVerifiedResidue
     ? unresolvedConfiguredThreads.length
     : 0;
   const missingVerificationEvidenceThreads = remediation.missingProbeReason ? Math.max(actionableMustFixThreads.length, 1) : 0;
