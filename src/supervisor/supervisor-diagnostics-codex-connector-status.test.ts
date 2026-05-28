@@ -1170,7 +1170,11 @@ test("status --why names missing verification for manual-review Codex no-major r
     labels: [],
     state: "OPEN",
   };
-  const pr = createPullRequest(scenario.pullRequestPatch);
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotTopLevelReviewStrength: "blocking",
+  });
   const outdatedThreads = outdatedThreadIds.map((threadId, index) => ({
     ...scenario.reviewThread,
     id: threadId,
@@ -1314,7 +1318,11 @@ test("status --why converges processed current-head Codex no-major review thread
     labels: [],
     state: "OPEN",
   };
-  const pr = createPullRequest(scenario.pullRequestPatch);
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotTopLevelReviewStrength: "blocking",
+  });
 
   const supervisor = new Supervisor(fixture.config);
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
@@ -1330,7 +1338,7 @@ test("status --why converges processed current-head Codex no-major review thread
   assert.match(status, /^no_active_tracked_record issue=#171 classification=stale_review_bot_remediation state=blocked reason=verified_current_head_repair_pending_thread_resolution$/m);
   assert.match(
     status,
-    /^stale_review_bot_thread_diagnostics issue=#171 pr=#180 current_head_success=yes unresolved_current_threads=9 actionable_must_fix_threads=9 verified_stale_residue_threads=9 missing_verification_evidence_threads=0 repeat_stop_exhausted=no auto_repair_suppressed_reason=too_many_clusters$/m,
+    /^stale_review_bot_thread_diagnostics issue=#171 pr=#180 current_head_success=yes unresolved_current_threads=9 actionable_must_fix_threads=9 verified_stale_residue_threads=9 missing_verification_evidence_threads=0 repeat_stop_exhausted=no auto_repair_suppressed_reason=opt_in_disabled$/m,
   );
   assert.match(
     status,

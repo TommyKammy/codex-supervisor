@@ -13,7 +13,11 @@ import {
   nonActionableConfiguredBotReviewThreads,
   pendingBotReviewThreads,
 } from "../review-thread-reporting";
-import { configuredReviewProviderKinds } from "../core/review-providers";
+import {
+  configuredReviewBotLogins,
+  configuredReviewProviderKinds,
+  normalizeReviewProviderLogin,
+} from "../core/review-providers";
 
 export interface StaleReviewBotRemediationDto {
   issueNumber: number;
@@ -135,6 +139,45 @@ function allChecksPassing(checks: Pick<PullRequestCheck, "bucket">[]): boolean {
   return checks.length > 0 && checks.every((check) => check.bucket === "pass" || check.bucket === "skipping");
 }
 
+function isConfiguredReviewBotCheck(
+  config: Pick<SupervisorConfig, "reviewBotLogins" | "configuredReviewProviders">,
+  check: Pick<PullRequestCheck, "name" | "workflow">,
+): boolean {
+  const configuredBotLogins = configuredReviewBotLogins(config);
+  const configuredProviderKinds = configuredReviewProviderKinds(config);
+  const labels = [check.name, check.workflow].flatMap((label) => {
+    const normalized = label?.trim().toLowerCase();
+    return normalized ? [normalized] : [];
+  });
+
+  return labels.some((label) => {
+    const login = normalizeReviewProviderLogin(label);
+    if (login && configuredBotLogins.includes(login)) {
+      return true;
+    }
+    if (configuredBotLogins.some((configuredLogin) => label.includes(configuredLogin))) {
+      return true;
+    }
+    if (configuredProviderKinds.includes("codex") && label.includes("codex") && (label.includes("connector") || label.includes("review"))) {
+      return true;
+    }
+    if (configuredProviderKinds.includes("coderabbit") && label.includes("coderabbit")) {
+      return true;
+    }
+    return configuredProviderKinds.includes("copilot") && label.includes("copilot") && label.includes("review");
+  });
+}
+
+function currentHeadPassingNonReviewChecks(
+  config: Pick<SupervisorConfig, "reviewBotLogins" | "configuredReviewProviders">,
+  checks: Pick<PullRequestCheck, "bucket" | "name" | "workflow">[],
+): Pick<PullRequestCheck, "bucket" | "name" | "workflow">[] {
+  if (!allChecksPassing(checks)) {
+    return [];
+  }
+  return checks.filter((check) => check.bucket === "pass" && !isConfiguredReviewBotCheck(config, check));
+}
+
 function hasFailingChecks(checks: Pick<PullRequestCheck, "bucket">[]): boolean {
   return checks.some((check) => check.bucket === "fail");
 }
@@ -221,10 +264,10 @@ function classifyAutoRepairSuppression(args: {
   if (remediation.missingProbeReason) {
     return "missing_verification_probe";
   }
-  if (clusterConfiguredBotReviewThreads(args.actionableMustFixThreads).length > 1) {
-    return "too_many_clusters";
-  }
   if (!isVerifiedStaleResidueClassification(remediation.classification)) {
+    if (clusterConfiguredBotReviewThreads(args.actionableMustFixThreads).length > 1) {
+      return "too_many_clusters";
+    }
     return "not_verified_stale_residue";
   }
   if (!verifiedAutoResolveEnabled(config, remediation.classification)) {
@@ -263,8 +306,11 @@ function codexConnectorCurrentHeadReviewState(args: {
 }
 
 function currentHeadVerificationEvidenceSummary(
+  config: Pick<SupervisorConfig, "reviewBotLogins" | "configuredReviewProviders">,
   record: Pick<IssueRunRecord, "latest_local_ci_result" | "timeline_artifacts">,
   pr: Pick<GitHubPullRequest, "headRefOid">,
+  checks: Pick<PullRequestCheck, "bucket" | "name" | "workflow">[],
+  allowCheckEvidence: boolean,
 ): string | null {
   const latestLocalCi = record.latest_local_ci_result;
   if (latestLocalCi?.outcome === "passed" && latestLocalCi.head_sha === pr.headRefOid) {
@@ -280,6 +326,16 @@ function currentHeadVerificationEvidenceSummary(
   );
   if (timelineEvidence) {
     return timelineEvidence.summary || timelineEvidence.command || "current_head_verification_passed";
+  }
+
+  const nonReviewChecks = currentHeadPassingNonReviewChecks(config, checks);
+  if (allowCheckEvidence && nonReviewChecks.length > 0) {
+    const checkNames = nonReviewChecks
+      .map((check) => check.name?.trim())
+      .filter((name): name is string => Boolean(name))
+      .slice(0, 3)
+      .join(",");
+    return checkNames ? `current_head_checks_passed:${checkNames}` : "current_head_checks_passed";
   }
 
   return null;
@@ -421,7 +477,14 @@ function classifyCodexMetadataOnly(args: {
         summary: STALE_REVIEW_BOT_SUMMARY,
       };
     }
-    const verificationEvidenceSummary = currentHeadVerificationEvidenceSummary(args.record, args.pr);
+    const checkEvidenceCanProveRepair = args.record.repair_attempt_count > 0;
+    const verificationEvidenceSummary = currentHeadVerificationEvidenceSummary(
+      args.config,
+      args.record,
+      args.pr,
+      args.checks,
+      checkEvidenceCanProveRepair,
+    );
     if (verificationEvidenceSummary) {
       const noMajorSignalEvidence = currentHeadCodexNoMajorSignalEvidence({
         record: args.record,
@@ -435,7 +498,8 @@ function classifyCodexMetadataOnly(args: {
           missingProbeReason: "current_head_codex_no_major_signal_missing",
         };
       }
-      const verifiedCurrentHeadRepair = hasCurrentHeadCodexTurnVerification(args.record, args.pr);
+      const verifiedCurrentHeadRepair =
+        hasCurrentHeadCodexTurnVerification(args.record, args.pr) || args.record.repair_attempt_count > 0;
       return {
         classification: verifiedCurrentHeadRepair
           ? "verified_current_head_repair_pending_thread_resolution"
@@ -606,14 +670,15 @@ export function buildStaleReviewBotThreadDiagnostics(args: {
   const currentHeadReviewRequestPending =
     remediation.classification === "metadata_only_missing_current_head_review" &&
     remediation.codexCurrentHeadReviewState === "missing";
+  const isVerifiedResidue = isVerifiedStaleResidueClassification(remediation.classification);
   const repeatStopExhausted =
-    currentHeadReviewRequestPending
+    currentHeadReviewRequestPending || isVerifiedResidue
       ? false
       : args.record.last_tracked_pr_repeat_failure_decision === "stop_no_progress" ||
         (config && args.pr
           ? configuredBotReviewFollowUpState(config, args.record, args.pr, configuredThreads) === "exhausted"
           : false);
-  const verifiedStaleResidueThreads = isVerifiedStaleResidueClassification(remediation.classification)
+  const verifiedStaleResidueThreads = isVerifiedResidue
     ? unresolvedConfiguredThreads.length
     : 0;
   const missingVerificationEvidenceThreads = remediation.missingProbeReason ? Math.max(actionableMustFixThreads.length, 1) : 0;

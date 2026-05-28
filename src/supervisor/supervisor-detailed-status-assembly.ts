@@ -161,8 +161,10 @@ export function buildInactiveDetailedStatusLines(
     latestRecord &&
     pr &&
     latestRecord.last_head_sha === pr.headRefOid &&
-    (pr.configuredBotCurrentHeadObservedAt || configTargetsCodex) &&
-    pr.configuredBotCurrentHeadStatusState === "SUCCESS"
+    (pr.configuredBotCurrentHeadStatusState === "SUCCESS" ||
+      (configTargetsCodex &&
+        pr.configuredBotCurrentHeadObservationSource === "codex_pr_success_comment" &&
+        Boolean(pr.configuredBotCurrentHeadObservedAt)))
   ) {
     staleReviewBotRemediation = buildStaleReviewBotRemediation({
       config,
