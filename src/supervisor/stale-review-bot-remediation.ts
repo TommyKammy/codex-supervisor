@@ -13,7 +13,11 @@ import {
   nonActionableConfiguredBotReviewThreads,
   pendingBotReviewThreads,
 } from "../review-thread-reporting";
-import { configuredReviewProviderKinds } from "../core/review-providers";
+import {
+  configuredReviewBotLogins,
+  configuredReviewProviderKinds,
+  normalizeReviewProviderLogin,
+} from "../core/review-providers";
 
 export interface StaleReviewBotRemediationDto {
   issueNumber: number;
@@ -133,6 +137,45 @@ function codeCiState(
 
 function allChecksPassing(checks: Pick<PullRequestCheck, "bucket">[]): boolean {
   return checks.length > 0 && checks.every((check) => check.bucket === "pass" || check.bucket === "skipping");
+}
+
+function isConfiguredReviewBotCheck(
+  config: Pick<SupervisorConfig, "reviewBotLogins" | "configuredReviewProviders">,
+  check: Pick<PullRequestCheck, "name" | "workflow">,
+): boolean {
+  const configuredBotLogins = configuredReviewBotLogins(config);
+  const configuredProviderKinds = configuredReviewProviderKinds(config);
+  const labels = [check.name, check.workflow].flatMap((label) => {
+    const normalized = label?.trim().toLowerCase();
+    return normalized ? [normalized] : [];
+  });
+
+  return labels.some((label) => {
+    const login = normalizeReviewProviderLogin(label);
+    if (login && configuredBotLogins.includes(login)) {
+      return true;
+    }
+    if (configuredBotLogins.some((configuredLogin) => label.includes(configuredLogin))) {
+      return true;
+    }
+    if (configuredProviderKinds.includes("codex") && label.includes("codex") && (label.includes("connector") || label.includes("review"))) {
+      return true;
+    }
+    if (configuredProviderKinds.includes("coderabbit") && label.includes("coderabbit")) {
+      return true;
+    }
+    return configuredProviderKinds.includes("copilot") && label.includes("copilot") && label.includes("review");
+  });
+}
+
+function currentHeadPassingNonReviewChecks(
+  config: Pick<SupervisorConfig, "reviewBotLogins" | "configuredReviewProviders">,
+  checks: Pick<PullRequestCheck, "bucket" | "name" | "workflow">[],
+): Pick<PullRequestCheck, "bucket" | "name" | "workflow">[] {
+  if (!allChecksPassing(checks)) {
+    return [];
+  }
+  return checks.filter((check) => check.bucket === "pass" && !isConfiguredReviewBotCheck(config, check));
 }
 
 function hasFailingChecks(checks: Pick<PullRequestCheck, "bucket">[]): boolean {
@@ -263,9 +306,10 @@ function codexConnectorCurrentHeadReviewState(args: {
 }
 
 function currentHeadVerificationEvidenceSummary(
+  config: Pick<SupervisorConfig, "reviewBotLogins" | "configuredReviewProviders">,
   record: Pick<IssueRunRecord, "latest_local_ci_result" | "timeline_artifacts">,
   pr: Pick<GitHubPullRequest, "headRefOid">,
-  checks: Pick<PullRequestCheck, "bucket" | "name">[],
+  checks: Pick<PullRequestCheck, "bucket" | "name" | "workflow">[],
   allowCheckEvidence: boolean,
 ): string | null {
   const latestLocalCi = record.latest_local_ci_result;
@@ -284,8 +328,9 @@ function currentHeadVerificationEvidenceSummary(
     return timelineEvidence.summary || timelineEvidence.command || "current_head_verification_passed";
   }
 
-  if (allowCheckEvidence && allChecksPassing(checks)) {
-    const checkNames = checks
+  const nonReviewChecks = currentHeadPassingNonReviewChecks(config, checks);
+  if (allowCheckEvidence && nonReviewChecks.length > 0) {
+    const checkNames = nonReviewChecks
       .map((check) => check.name?.trim())
       .filter((name): name is string => Boolean(name))
       .slice(0, 3)
@@ -434,6 +479,7 @@ function classifyCodexMetadataOnly(args: {
     }
     const checkEvidenceCanProveRepair = args.record.repair_attempt_count > 0;
     const verificationEvidenceSummary = currentHeadVerificationEvidenceSummary(
+      args.config,
       args.record,
       args.pr,
       args.checks,
