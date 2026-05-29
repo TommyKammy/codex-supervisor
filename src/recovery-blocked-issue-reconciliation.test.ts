@@ -2272,6 +2272,113 @@ test("reconcileRecoverableBlockedIssueStates rehydrates tracked PR manual-review
   ]);
 });
 
+test("reconcileRecoverableBlockedIssueStates rehydrates unknown tracked PR blocks once GitHub facts are merge-ready", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    configuredBotRequireCurrentHeadSignal: true,
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
+        state: "blocked",
+        blocked_reason: "unknown",
+        pr_number: 191,
+        last_head_sha: "head-191",
+        last_error: "GitHub CLI authentication is unavailable.",
+        last_failure_kind: "command_error",
+        last_failure_context: {
+          category: "manual",
+          summary: "GitHub CLI authentication is unavailable.",
+          signature: "gh-auth-unavailable",
+          command: "gh auth status --hostname github.com",
+          details: ["gh auth unavailable"],
+          url: null,
+          updated_at: "2026-03-13T00:20:00Z",
+        },
+        last_failure_signature: "gh-auth-unavailable",
+        repeated_failure_signature_count: 4,
+        last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+        last_tracked_pr_progress_snapshot: JSON.stringify({
+          headRefOid: "head-191",
+          unresolvedReviewThreadIds: ["thread-1", "thread-2"],
+          unresolvedReviewThreadFingerprints: ["thread-1#comment-1", "thread-2#comment-2"],
+        }),
+        last_tracked_pr_progress_summary: "recovery_blocked=stale_review_bot_no_auto_retry",
+      }),
+    ],
+  });
+  const issue = createIssue({
+    title: "Recovery issue",
+    updatedAt: "2026-03-13T00:21:00Z",
+  });
+  const pr = createPullRequest({
+    number: 191,
+    title: "Recovery implementation",
+    url: "https://example.test/pr/191",
+    headRefName: "codex/reopen-issue-366",
+    headRefOid: "head-191",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-03-13T00:22:00Z",
+    configuredBotCurrentHeadObservedAt: "2026-03-13T00:23:00Z",
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => pr,
+      getIssue: async () => issue,
+      getChecks: async () => [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    stateStore,
+    state,
+    config,
+    [issue],
+    {
+      shouldAutoRetryHandoffMissing,
+      inferStateFromPullRequest,
+      inferFailureContext,
+      blockedReasonForLifecycleState,
+      isOpenPullRequest,
+      syncReviewWaitWindow,
+      syncCopilotReviewRequestObservation,
+      syncCopilotReviewTimeoutState,
+    },
+  );
+
+  const updated = state.issues["366"];
+  assert.equal(updated.state, "ready_to_merge");
+  assert.equal(updated.blocked_reason, null);
+  assert.equal(updated.last_error, null);
+  assert.equal(updated.last_failure_context, null);
+  assert.equal(updated.last_failure_signature, null);
+  assert.equal(updated.repeated_failure_signature_count, 0);
+  assert.equal(updated.pr_number, 191);
+  assert.equal(updated.last_head_sha, "head-191");
+  assert.equal(
+    updated.last_recovery_reason,
+    "tracked_pr_lifecycle_recovered: resumed issue #366 from blocked to ready_to_merge using fresh tracked PR #191 facts at head head-191",
+  );
+  assert.equal(saveCalls, 1);
+  assert.deepEqual(recoveryEvents.map((event) => event.reason), [
+    "tracked_pr_lifecycle_recovered: resumed issue #366 from blocked to ready_to_merge using fresh tracked PR #191 facts at head head-191",
+  ]);
+});
+
 test("reconcileRecoverableBlockedIssueStates clears stale manual-review repeat stops when only outdated configured-bot residue remains", async () => {
   const config = createConfig({
     reviewBotLogins: ["chatgpt-codex-connector"],

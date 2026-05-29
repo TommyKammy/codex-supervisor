@@ -1924,7 +1924,7 @@ test("runOnceCyclePrelude rehydrates an active stale failed tracked PR during de
   assert.equal(result.state.issues["77"]?.repeated_failure_signature_count, 0);
 });
 
-test("runOnceCyclePrelude rehydrates blocked tracked PRs during degraded inventory refresh", async () => {
+test("runOnceCyclePrelude rehydrates unknown blocked tracked PRs during degraded inventory refresh", async () => {
   const state: SupervisorStateFile = {
     activeIssueNumber: null,
     issues: {
@@ -1932,9 +1932,9 @@ test("runOnceCyclePrelude rehydrates blocked tracked PRs during degraded invento
         issue_number: 77,
         state: "blocked",
         pr_number: 170,
-        blocked_reason: "manual_review",
+        blocked_reason: "unknown",
         last_head_sha: "head-170",
-        last_failure_signature: "manual-review:thread-1",
+        last_failure_signature: "gh-auth-unavailable",
       }),
     },
   };

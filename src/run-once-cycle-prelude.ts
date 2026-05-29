@@ -234,6 +234,7 @@ export async function runOnceCyclePrelude(
           record.blocked_reason === null ||
           record.blocked_reason === "manual_review" ||
           record.blocked_reason === "verification" ||
+          record.blocked_reason === "unknown" ||
           args.shouldReconcileTrackedBlockedRecordDuringDegradedContinuation?.(record) === true
         ),
       );
