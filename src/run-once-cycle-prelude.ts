@@ -13,6 +13,7 @@ import {
   type SupervisorEventSink,
 } from "./supervisor/supervisor-events";
 import type { ReconciliationProgressUpdate } from "./supervisor/supervisor-reconciliation-phase";
+import { shouldReconcileTrackedPrUnknownAuthBlocker } from "./supervisor/supervisor-execution-policy";
 import {
   normalizeRecoveryEntrypointResult,
   type RecoveryEntrypointResult,
@@ -234,7 +235,7 @@ export async function runOnceCyclePrelude(
           record.blocked_reason === null ||
           record.blocked_reason === "manual_review" ||
           record.blocked_reason === "verification" ||
-          record.blocked_reason === "unknown" ||
+          shouldReconcileTrackedPrUnknownAuthBlocker(record) ||
           args.shouldReconcileTrackedBlockedRecordDuringDegradedContinuation?.(record) === true
         ),
       );

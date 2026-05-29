@@ -2379,6 +2379,90 @@ test("reconcileRecoverableBlockedIssueStates rehydrates unknown tracked PR block
   ]);
 });
 
+test("reconcileRecoverableBlockedIssueStates keeps agent-reported unknown blockers out of automatic PR recovery", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    configuredBotRequireCurrentHeadSignal: true,
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
+        state: "blocked",
+        blocked_reason: "unknown",
+        pr_number: 191,
+        last_head_sha: "head-191",
+        last_error: "Codex reported blocked without a structured reason.",
+        last_failure_kind: null,
+        last_failure_context: {
+          category: "blocked",
+          summary: "Codex reported blocked for issue #366.",
+          signature: "codex-reported-unknown-blocker",
+          command: null,
+          details: ["The agent did not provide a structured blockedReason."],
+          url: null,
+          updated_at: "2026-03-13T00:20:00Z",
+        },
+        last_failure_signature: "codex-reported-unknown-blocker",
+        repeated_failure_signature_count: 2,
+      }),
+    ],
+  });
+  const issue = createIssue({
+    title: "Recovery issue",
+    updatedAt: "2026-03-13T00:21:00Z",
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-03-13T00:25:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => {
+        throw new Error("unexpected getPullRequestIfExists call");
+      },
+      getIssue: async () => issue,
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+    },
+    stateStore,
+    state,
+    config,
+    [issue],
+    {
+      shouldAutoRetryHandoffMissing,
+      inferStateFromPullRequest,
+      inferFailureContext,
+      blockedReasonForLifecycleState,
+      isOpenPullRequest,
+      syncReviewWaitWindow,
+      syncCopilotReviewRequestObservation,
+      syncCopilotReviewTimeoutState,
+    },
+  );
+
+  const updated = state.issues["366"];
+  assert.equal(updated.state, "blocked");
+  assert.equal(updated.blocked_reason, "unknown");
+  assert.equal(updated.last_failure_signature, "codex-reported-unknown-blocker");
+  assert.equal(saveCalls, 0);
+  assert.deepEqual(recoveryEvents, []);
+});
+
 test("reconcileRecoverableBlockedIssueStates clears stale manual-review repeat stops when only outdated configured-bot residue remains", async () => {
   const config = createConfig({
     reviewBotLogins: ["chatgpt-codex-connector"],
