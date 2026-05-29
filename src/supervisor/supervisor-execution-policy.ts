@@ -125,6 +125,29 @@ export function shouldReconcileTrackedPrStaleReviewBot(record: IssueRunRecord, c
   return isTrackedPrStaleReviewBot(record);
 }
 
+export function shouldReconcileTrackedPrUnknownAuthBlocker(
+  record: Pick<
+    IssueRunRecord,
+    | "state"
+    | "blocked_reason"
+    | "pr_number"
+    | "last_failure_kind"
+    | "last_failure_signature"
+    | "last_failure_context"
+  >,
+): boolean {
+  return (
+    record.state === "blocked" &&
+    record.blocked_reason === "unknown" &&
+    record.pr_number !== null &&
+    record.last_failure_kind === "command_error" &&
+    record.last_failure_signature === "gh-auth-unavailable" &&
+    record.last_failure_context?.category === "manual" &&
+    record.last_failure_context?.signature === "gh-auth-unavailable" &&
+    record.last_failure_context?.command === "gh auth status --hostname github.com"
+  );
+}
+
 export function shouldEnforceExecutionReady(
   record: Pick<IssueRunRecord, "attempt_count" | "pr_number"> | undefined | null,
 ): boolean {
