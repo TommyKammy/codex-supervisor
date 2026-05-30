@@ -21,6 +21,8 @@ import {
   type GitHubIssue,
   type GitHubPullRequest,
   type IssueRunRecord,
+  type PullRequestCheck,
+  type ReviewThread,
   type SupervisorConfig,
   type SupervisorStateFile,
 } from "../core/types";
@@ -55,6 +57,8 @@ import {
   manualReviewThreads,
 } from "../review-thread-reporting";
 import { RecoveryEvent } from "../run-once-cycle-prelude";
+import { buildStaleReviewBotRemediation } from "./stale-review-bot-remediation";
+import { hasResolvedAllStaleConfiguredBotThreads } from "./stale-review-bot-recovery";
 
 export interface PreparedIssueRunContext extends PreparedIssueExecutionContext {
   state: SupervisorStateFile;
@@ -109,6 +113,68 @@ function shouldBlockTrackedPrRepeatedFailure(args: {
   );
 }
 
+function shouldTryVerifiedStaleConfiguredBotAutoResolveBeforeRepeatStop(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+}): boolean {
+  if (args.record.state !== "blocked" || args.record.blocked_reason !== "stale_review_bot") {
+    return false;
+  }
+  const checkSummary = summarizeChecks(args.checks);
+  if (
+    checkSummary.hasPending ||
+    checkSummary.hasFailing ||
+    manualReviewThreads(args.config, args.reviewThreads).length > 0
+  ) {
+    return false;
+  }
+
+  const remediation = buildStaleReviewBotRemediation({
+    config: args.config,
+    record: args.record,
+    pr: args.pr,
+    checks: args.checks,
+    reviewThreads: args.reviewThreads,
+  });
+  if (!remediation) {
+    return false;
+  }
+  return (
+    (remediation.classification === "verified_no_source_change_pending_thread_resolution" &&
+      args.config.verifiedNoSourceChangeReviewThreadAutoResolve === true) ||
+    (remediation.classification === "verified_current_head_repair_pending_thread_resolution" &&
+      args.config.verifiedCurrentHeadRepairReviewThreadAutoResolve === true)
+  );
+}
+
+function didAutoResolveStaleConfiguredBotBeforeRepeatStop(args: {
+  before: IssueRunRecord;
+  after: IssueRunRecord;
+  pr: GitHubPullRequest;
+}): boolean {
+  const replyProgressBefore = args.before.stale_review_bot_reply_progress_keys?.length ?? 0;
+  const replyProgressAfter = args.after.stale_review_bot_reply_progress_keys?.length ?? 0;
+  const resolveProgressBefore = args.before.stale_review_bot_resolve_progress_keys?.length ?? 0;
+  const resolveProgressAfter = args.after.stale_review_bot_resolve_progress_keys?.length ?? 0;
+  const progressAdvanced = replyProgressAfter > replyProgressBefore || resolveProgressAfter > resolveProgressBefore;
+  const signature = args.after.last_stale_review_bot_reply_signature;
+  if (args.after.last_stale_review_bot_reply_head_sha !== args.pr.headRefOid || !signature) {
+    return false;
+  }
+
+  return (
+    progressAdvanced ||
+    hasResolvedAllStaleConfiguredBotThreads({
+      record: args.after,
+      headSha: args.pr.headRefOid,
+      signature,
+    })
+  );
+}
+
 export async function runPreparedIssueFlow(
   dependencies: PreparedIssueRunnerDependencies,
   context: PreparedIssueRunContext,
@@ -140,6 +206,7 @@ export async function runPreparedIssueFlow(
   let pr = context.pr;
   let checks = context.checks;
   let reviewThreads = context.reviewThreads;
+  let skipCodexAfterPreStopStaleConfiguredBotAutoResolve = false;
 
   if (pr) {
     const lifecycle = derivePullRequestLifecycleSnapshot(config, record, pr, checks, reviewThreads);
@@ -218,12 +285,61 @@ export async function runPreparedIssueFlow(
     }
 
     if (effectiveFailureContext && shouldStopForRepeatedFailureSignature(record, config)) {
-      if (!trackedPrRepeatFailureDisposition.shouldStop) {
+      let handledStaleConfiguredBotResidueBeforeRepeatStop = false;
+      if (
+        !options.dryRun &&
+        trackedPrRepeatFailureDisposition.shouldStop &&
+        shouldBlockTrackedPrRepeatedFailure({ record, failureContext: effectiveFailureContext }) &&
+        shouldTryVerifiedStaleConfiguredBotAutoResolveBeforeRepeatStop({
+          config,
+          record,
+          pr,
+          checks,
+          reviewThreads,
+        })
+      ) {
+        const recordBeforeAutoResolve = record;
+        record = await syncTrackedPrPersistentStatusComment({
+          github,
+          stateStore,
+          state,
+          record,
+          pr,
+          checks,
+          reviewThreads,
+          syncJournal,
+          config,
+          failureContext: effectiveFailureContext,
+          summarizeChecks,
+          manualReviewThreadCount: manualReviewThreads(config, reviewThreads).length,
+        });
+        handledStaleConfiguredBotResidueBeforeRepeatStop = didAutoResolveStaleConfiguredBotBeforeRepeatStop({
+          before: recordBeforeAutoResolve,
+          after: record,
+          pr,
+        });
+        if (handledStaleConfiguredBotResidueBeforeRepeatStop) {
+          record = stateStore.touch(record, {
+            state: "pr_open",
+            blocked_reason: null,
+            last_error: null,
+            last_failure_kind: null,
+          });
+          effectiveFailureContext = record.last_failure_context;
+          skipCodexAfterPreStopStaleConfiguredBotAutoResolve = true;
+        }
+      }
+
+      if (!handledStaleConfiguredBotResidueBeforeRepeatStop && !trackedPrRepeatFailureDisposition.shouldStop) {
         record = stateStore.touch(record, {
           last_tracked_pr_progress_summary: trackedPrRepeatFailureDisposition.progressSummary,
           last_tracked_pr_repeat_failure_decision: trackedPrRepeatFailureDisposition.decision,
         });
-      } else if (shouldBlockTrackedPrRepeatedFailure({ record, failureContext: effectiveFailureContext })) {
+      } else if (
+        !handledStaleConfiguredBotResidueBeforeRepeatStop &&
+        effectiveFailureContext !== null &&
+        shouldBlockTrackedPrRepeatedFailure({ record, failureContext: effectiveFailureContext })
+      ) {
         record = stateStore.touch(record, {
           state: "blocked",
           last_error: truncate(effectiveFailureContext.summary, 1000),
@@ -269,7 +385,7 @@ export async function runPreparedIssueFlow(
           `Issue #${record.issue_number} blocked after repeated identical review-related failure signatures.`,
           recoveryLog,
         );
-      } else {
+      } else if (!handledStaleConfiguredBotResidueBeforeRepeatStop) {
         record = stateStore.touch(record, {
           state: "failed",
           last_error:
@@ -306,7 +422,8 @@ export async function runPreparedIssueFlow(
       ...resetNoPrLifecycleFailureTracking(record, nextState),
     });
   }
-  const shouldExecuteCodex = shouldRunCodex(record, pr, checks, reviewThreads, config);
+  const shouldExecuteCodex =
+    !skipCodexAfterPreStopStaleConfiguredBotAutoResolve && shouldRunCodex(record, pr, checks, reviewThreads, config);
 
   if (shouldExecuteCodex) {
     state.issues[String(record.issue_number)] = record;
