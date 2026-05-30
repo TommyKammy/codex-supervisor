@@ -113,6 +113,38 @@ function shouldBlockTrackedPrRepeatedFailure(args: {
   );
 }
 
+function staleConfiguredBotRepeatStopRecoveryRecord(args: {
+  record: IssueRunRecord;
+  failureContext: FailureContext | null;
+}): IssueRunRecord | null {
+  if (args.record.state !== "blocked" && args.record.state !== "addressing_review") {
+    return null;
+  }
+  if (args.record.blocked_reason === "stale_review_bot") {
+    return {
+      ...args.record,
+      state: "blocked",
+    };
+  }
+  if (args.record.blocked_reason !== null) {
+    return null;
+  }
+
+  const signature = args.failureContext?.signature ?? args.record.last_failure_signature;
+  if (
+    (args.failureContext?.category !== "review" && args.failureContext?.category !== "manual") ||
+    !signature?.split("|").some((part) => part.trim().startsWith("stalled-bot:"))
+  ) {
+    return null;
+  }
+
+  return {
+    ...args.record,
+    state: "blocked",
+    blocked_reason: "stale_review_bot",
+  };
+}
+
 function shouldTryVerifiedStaleConfiguredBotAutoResolveBeforeRepeatStop(args: {
   config: SupervisorConfig;
   record: IssueRunRecord;
@@ -286,13 +318,18 @@ export async function runPreparedIssueFlow(
 
     if (effectiveFailureContext && shouldStopForRepeatedFailureSignature(record, config)) {
       let handledStaleConfiguredBotResidueBeforeRepeatStop = false;
+      const staleConfiguredBotRecoveryRecord = staleConfiguredBotRepeatStopRecoveryRecord({
+        record,
+        failureContext: effectiveFailureContext,
+      });
       if (
         !options.dryRun &&
         trackedPrRepeatFailureDisposition.shouldStop &&
         shouldBlockTrackedPrRepeatedFailure({ record, failureContext: effectiveFailureContext }) &&
+        staleConfiguredBotRecoveryRecord !== null &&
         shouldTryVerifiedStaleConfiguredBotAutoResolveBeforeRepeatStop({
           config,
-          record,
+          record: staleConfiguredBotRecoveryRecord,
           pr,
           checks,
           reviewThreads,
@@ -303,7 +340,7 @@ export async function runPreparedIssueFlow(
           github,
           stateStore,
           state,
-          record,
+          record: staleConfiguredBotRecoveryRecord,
           pr,
           checks,
           reviewThreads,
