@@ -87,6 +87,8 @@ Then choose the review provider profile that matches your PR review flow. The ac
 
 Either copy one of those files over `supervisor.config.json` as a starting point, copy it to a separate profile such as `supervisor.config.local.json`, or copy only its `reviewBotLogins` into your active config.
 
+The Codex Connector profile is a stronger dogfood profile, not just a reviewer-login preset. Copying `supervisor.config.codex.json` also opts into verified configured-bot thread auto-resolution and Codex no-major-current-head auto-merge. If you want conservative Codex waits only, copy the `reviewBotLogins` and current-head wait fields instead, then leave the dangerous opt-ins unset; the exact fields are documented in the [Codex Connector waits and opt-ins](./configuration.md#codex-connector-waits-and-opt-ins) section.
+
 At minimum, set these first-run fields before the first run:
 
 - `repoPath`

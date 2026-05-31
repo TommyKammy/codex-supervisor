@@ -281,6 +281,8 @@ Choose the review provider profile that matches how PR feedback arrives in your 
 
 Each profile is a starting point. Copy the review provider profile you want, then adjust the rest of `supervisor.config.json` for your repo before you run the supervisor.
 
+The Codex Connector profile is intentionally more than a wait-profile. It opts into verified configured-bot thread replies and resolution, and it enables the Codex no-major-current-head auto-merge path. Use it only when `chatgpt-codex-connector` is installed for the target repo and you explicitly want those Codex-specific automation behaviors; otherwise copy only the `reviewBotLogins` and wait settings into a more conservative config. The [Configuration guide](./docs/configuration.md#codex-connector-waits-and-opt-ins) lists the exact opt-in fields and conservative alternative.
+
 The active config is whichever file you pass with `--config`. If you keep several profiles side by side, verify the intended one with:
 
 ```bash

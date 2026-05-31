@@ -88,6 +88,8 @@ cp supervisor.config.example.json supervisor.config.json
 
 選んだ profile を `supervisor.config.json` に starting point として丸ごとコピーしてもよいですし、`reviewBotLogins` だけを手元の active config に移しても構いません。
 
+Codex Connector profile は reviewer login だけの preset ではなく、強めの dogfood profile です。`supervisor.config.codex.json` を丸ごとコピーすると、verified configured-bot thread の auto-resolution と Codex no-major-current-head auto-merge も opt-in されます。保守的に Codex review を待つだけにしたい場合は、`reviewBotLogins` と current-head wait 系の設定だけをコピーし、dangerous opt-in は unset のままにしてください。正確な field は [Codex Connector waits and opt-ins](./configuration.md#codex-connector-waits-and-opt-ins) を参照してください。
+
 初回起動前に最低限設定する値:
 
 - `repoPath`

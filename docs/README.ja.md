@@ -67,6 +67,8 @@ Not a fit:
    - [supervisor.config.codex.json](../supervisor.config.codex.json)
    - [supervisor.config.coderabbit.json](../supervisor.config.coderabbit.json)
 
+   `supervisor.config.codex.json` は Codex Connector 向けの強めの dogfood profile で、verified thread auto-resolution と Codex no-major-current-head auto-merge も opt-in します。保守的な Codex wait のみが必要な場合は、[Configuration reference](./configuration.md#codex-connector-waits-and-opt-ins) を見て必要な field だけをコピーしてください。
+
 4. `repoPath`、`repoSlug`、`workspaceRoot`、`codexBinary` などを初回実行前に設定します。`supervisor.config.coderabbit.json` は、customize を必須にするため `repoSlug` に無効な placeholder を入れています。
 5. まず `run-once` と `status` で挙動を確認します。
 

@@ -92,6 +92,13 @@ These fields control how the supervisor waits on CI, review bots, human review, 
 - `configuredBotRequireCurrentHeadSignal`
 - `configuredBotCurrentHeadSignalTimeoutMinutes`
 - `configuredBotCurrentHeadSignalTimeoutAction` (`continue`, `block`, or Codex Connector-only `request_review_comment`)
+- `codexConnectorReviewRequestNoResponseMinutes`
+- `codexConnectorReviewRequestRetryLimit`
+- `codexConnectorReviewRequestRetryMode`
+- `staleConfiguredBotReviewPolicy`
+- `verifiedNoSourceChangeReviewThreadAutoResolve`
+- `verifiedCurrentHeadRepairReviewThreadAutoResolve`
+- `codexConnectorAutoMergeEnabled`
 - `localReviewEnabled`
 - `localReviewPolicy`
 - `trackedPrCurrentHeadLocalReviewRequired`
@@ -474,6 +481,13 @@ Default note:
 - `configuredBotRequireCurrentHeadSignal`
 - `configuredBotCurrentHeadSignalTimeoutMinutes`
 - `configuredBotCurrentHeadSignalTimeoutAction` (`continue`, `block`, or Codex Connector-only `request_review_comment`)
+- `codexConnectorReviewRequestNoResponseMinutes`
+- `codexConnectorReviewRequestRetryLimit`
+- `codexConnectorReviewRequestRetryMode`
+- `staleConfiguredBotReviewPolicy`
+- `verifiedNoSourceChangeReviewThreadAutoResolve`
+- `verifiedCurrentHeadRepairReviewThreadAutoResolve`
+- `codexConnectorAutoMergeEnabled`
 - `localReviewEnabled`
 - `localReviewPosture`
 - `localReviewAutoDetect`
@@ -568,13 +582,13 @@ Operational notes:
 
 ## Provider-Specific Notes
 
-### Codex Connector waits
+### Codex Connector waits and opt-ins
 
-The default Codex Connector profile waits for review, comment, thread, status, or current-head observation from `chatgpt-codex-connector`. If that current-head signal does not arrive within the configured Codex-profile timeout, `configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment"` posts a one-shot `@codex review` fallback request while keeping the PR out of `ready_to_merge` until Codex responds.
+The Codex Connector profile waits for review, comment, thread, status, or current-head observation from `chatgpt-codex-connector`. If that current-head signal does not arrive within the configured Codex-profile timeout, `configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment"` posts a one-shot `@codex review` fallback request while keeping the PR out of `ready_to_merge` until Codex responds.
 
 The shipped profile is still fail-closed for merge readiness: empty checks, empty reviews, empty review requests, and no PR comments are not enough to satisfy the connector review contract. The fallback request only asks Codex Connector to review; it is not treated as a successful review signal or review completion by itself.
 
-The default Codex Connector profile uses:
+The conservative wait-only Codex Connector shape is:
 
 ```json
 {
@@ -585,6 +599,26 @@ The default Codex Connector profile uses:
   "configuredBotCurrentHeadSignalTimeoutAction": "request_review_comment"
 }
 ```
+
+The shipped [supervisor.config.codex.json](../supervisor.config.codex.json) profile also opts into Codex-specific cleanup and merge automation:
+
+```json
+{
+  "staleConfiguredBotReviewPolicy": "reply_and_resolve",
+  "verifiedNoSourceChangeReviewThreadAutoResolve": true,
+  "verifiedCurrentHeadRepairReviewThreadAutoResolve": true,
+  "codexConnectorAutoMergeEnabled": true
+}
+```
+
+Those fields are dangerous explicit opt-ins. They are intentionally present in the Codex Connector dogfood profile and intentionally absent from the other shipped profiles. If you only want to wait for Codex Connector review without automated thread resolution or auto-merge, copy the conservative wait-only fields instead of copying the whole Codex profile.
+
+The opt-ins mean:
+
+- `staleConfiguredBotReviewPolicy: "reply_and_resolve"` allows verified metadata-only configured-bot stale review threads to receive a supervisor reply and be resolved after the supervisor proves the current head is converged.
+- `verifiedNoSourceChangeReviewThreadAutoResolve: true` allows verifier-proven no-source-change stale thread residue to be resolved automatically.
+- `verifiedCurrentHeadRepairReviewThreadAutoResolve: true` allows verifier-proven current-head repair residue to be resolved automatically.
+- `codexConnectorAutoMergeEnabled: true` allows the final Codex Connector no-major-current-head path to auto-merge only after fresh PR facts, required checks, branch protection, and the final auto-merge guard all pass.
 
 These cadence overrides are specific to `supervisor.config.codex.json`; global parser defaults and the other shipped profiles keep their existing wait behavior. `mergeCriticalRecheckSeconds` lets merge-critical Codex Connector waits recheck faster than the general poll interval, while the current-head timeout keeps fallback review requests responsive without treating the request itself as approval.
 

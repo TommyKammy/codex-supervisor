@@ -91,6 +91,9 @@ test("published trust posture config schema captures the portable contract field
     "localReviewFollowUpIssueCreationEnabled",
     "localReviewHighSeverityAction: retry",
     "staleConfiguredBotReviewPolicy: reply_only|reply_and_resolve",
+    "verifiedNoSourceChangeReviewThreadAutoResolve",
+    "verifiedCurrentHeadRepairReviewThreadAutoResolve",
+    "codexConnectorAutoMergeEnabled",
     "approvedTrackedTopLevelEntries",
     "releaseReadinessGate: block_release_publication",
   ]);

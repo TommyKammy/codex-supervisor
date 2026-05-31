@@ -145,6 +145,30 @@
       "dangerousOptIn": true
     },
     {
+      "field": "verifiedNoSourceChangeReviewThreadAutoResolve",
+      "default": false,
+      "requiredBySetupReadiness": false,
+      "operatorAuthorityBoundary": "Operator explicitly allows verifier-proven no-source-change configured-bot review-thread residue to be resolved automatically.",
+      "setupReadinessSurface": "configPostureGroups.dangerous_explicit_opt_in",
+      "dangerousOptIn": true
+    },
+    {
+      "field": "verifiedCurrentHeadRepairReviewThreadAutoResolve",
+      "default": false,
+      "requiredBySetupReadiness": false,
+      "operatorAuthorityBoundary": "Operator explicitly allows verifier-proven current-head repair residue in configured-bot review threads to be resolved automatically.",
+      "setupReadinessSurface": "configPostureGroups.dangerous_explicit_opt_in",
+      "dangerousOptIn": true
+    },
+    {
+      "field": "codexConnectorAutoMergeEnabled",
+      "default": false,
+      "requiredBySetupReadiness": false,
+      "operatorAuthorityBoundary": "Operator explicitly allows the Codex Connector no-major-current-head path to auto-merge after all final PR guards pass.",
+      "setupReadinessSurface": "configPostureGroups.dangerous_explicit_opt_in",
+      "dangerousOptIn": true
+    },
+    {
       "field": "approvedTrackedTopLevelEntries",
       "default": null,
       "requiredBySetupReadiness": false,
@@ -204,6 +228,9 @@
     "localReviewFollowUpIssueCreationEnabled",
     "localReviewHighSeverityAction: retry",
     "staleConfiguredBotReviewPolicy: reply_only|reply_and_resolve",
+    "verifiedNoSourceChangeReviewThreadAutoResolve",
+    "verifiedCurrentHeadRepairReviewThreadAutoResolve",
+    "codexConnectorAutoMergeEnabled",
     "approvedTrackedTopLevelEntries",
     "releaseReadinessGate: block_release_publication"
   ],
