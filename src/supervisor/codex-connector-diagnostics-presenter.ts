@@ -4,6 +4,7 @@ import { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, Supe
 import {
   buildCodexConnectorP2P3PolicyDiagnostic,
   buildCodexConnectorPolicyBlockDiagnostic,
+  buildCodexConnectorReviewChurnDiagnostic,
   codexConnectorMustFixReviewThreads,
   codexConnectorStaleReviewCommitThreads,
   commitShasDifferForComparison,
@@ -11,6 +12,7 @@ import {
   evaluateCodexConnectorConvergencePolicy,
   formatCodexConnectorP2P3PolicyDiagnostic,
   formatCodexConnectorPolicyBlockDiagnostic,
+  formatCodexConnectorReviewChurnDiagnostic,
 } from "../codex-connector-review-policy";
 import { configuredBotCurrentHeadSignalWaitWindow } from "./review-bot-wait-windows";
 import {
@@ -33,6 +35,7 @@ function addMinutes(timestamp: string, minutes: number): string | null {
 export interface CodexConnectorDiagnosticBundle {
   policyBlockSummary: string | null;
   p2p3PolicySummary: string | null;
+  reviewChurnSummary: string | null;
   reviewFallbackSummary: string | null;
   convergenceSummary: string | null;
   operatorDiagnosticSummary: string | null;
@@ -418,9 +421,13 @@ export function buildCodexConnectorDiagnosticBundle(args: {
     args.includeP2P3Policy && !suppressActionableReviewPolicy
       ? buildCodexConnectorP2P3PolicyDiagnostic(args.config, args.reviewThreads, args.pr)
       : null;
+  const reviewChurn = suppressActionableReviewPolicy
+    ? null
+    : buildCodexConnectorReviewChurnDiagnostic(args.config, args.reviewThreads, args.pr);
   return {
     policyBlockSummary: policyBlock ? formatCodexConnectorPolicyBlockDiagnostic(policyBlock) : null,
     p2p3PolicySummary: p2p3Policy ? formatCodexConnectorP2P3PolicyDiagnostic(p2p3Policy) : null,
+    reviewChurnSummary: reviewChurn ? formatCodexConnectorReviewChurnDiagnostic(reviewChurn) : null,
     reviewFallbackSummary: formatCodexConnectorReviewFallbackDiagnostic({
       config: args.config,
       record: args.record,

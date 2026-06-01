@@ -78,7 +78,11 @@ export function inferFailureContext(
         return manualReviewContext;
       }
 
-      const reviewContext = buildReviewFailureContext(pendingBotReviewThreads(config, record, pr, effectiveConfiguredBotThreads));
+      const reviewContext = buildReviewFailureContext(
+        pendingBotReviewThreads(config, record, pr, effectiveConfiguredBotThreads),
+        config,
+        pr,
+      );
       if (reviewContext) {
         return reviewContext;
       }
@@ -88,6 +92,8 @@ export function inferFailureContext(
         configuredBotReviewFollowUpState(config, record, pr, effectiveConfiguredBotThreads) === "exhausted"
           ? "exhausted_follow_up"
           : "no_progress",
+        config,
+        pr,
       );
       if (stalledBotReviewContext) {
         return stalledBotReviewContext;
@@ -127,7 +133,11 @@ export function inferFailureContext(
       return manualReviewContext;
     }
 
-    const reviewContext = buildReviewFailureContext(pendingBotReviewThreads(config, record, pr, effectiveConfiguredBotThreads));
+    const reviewContext = buildReviewFailureContext(
+      pendingBotReviewThreads(config, record, pr, effectiveConfiguredBotThreads),
+      config,
+      pr,
+    );
     if (reviewContext) {
       return reviewContext;
     }
@@ -137,6 +147,8 @@ export function inferFailureContext(
       configuredBotReviewFollowUpState(config, record, pr, effectiveConfiguredBotThreads) === "exhausted"
         ? "exhausted_follow_up"
         : "no_progress",
+      config,
+      pr,
     );
     if (stalledBotReviewContext) {
       return stalledBotReviewContext;

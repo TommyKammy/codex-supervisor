@@ -95,6 +95,8 @@ These fields control how the supervisor waits on CI, review bots, human review, 
 - `codexConnectorReviewRequestNoResponseMinutes`
 - `codexConnectorReviewRequestRetryLimit`
 - `codexConnectorReviewRequestRetryMode`
+- `codexConnectorReviewChurnMustFixThreshold`
+- `codexConnectorReviewChurnFileConcentrationPercent`
 - `staleConfiguredBotReviewPolicy`
 - `verifiedNoSourceChangeReviewThreadAutoResolve`
 - `verifiedCurrentHeadRepairReviewThreadAutoResolve`
@@ -484,6 +486,8 @@ Default note:
 - `codexConnectorReviewRequestNoResponseMinutes`
 - `codexConnectorReviewRequestRetryLimit`
 - `codexConnectorReviewRequestRetryMode`
+- `codexConnectorReviewChurnMustFixThreshold`
+- `codexConnectorReviewChurnFileConcentrationPercent`
 - `staleConfiguredBotReviewPolicy`
 - `verifiedNoSourceChangeReviewThreadAutoResolve`
 - `verifiedCurrentHeadRepairReviewThreadAutoResolve`
@@ -625,6 +629,8 @@ These cadence overrides are specific to `supervisor.config.codex.json`; global p
 With that setting, a timed-out current-head wait may post `@codex review` once for the current PR head. This fallback also applies when the tracked PR has no reported checks and `localCiCommand` is unset: the request is the explicit next action for a no-checks repository, but it still does not count as review completion. `status --why` and `explain <issue>` report `codex_connector_review_fallback` with the current PR head, the configured timeout action, whether the supervisor is still waiting, already requested review for that head, or has a real current-head connector signal, and `required_checks_green_at=no_checks_local_ci_unset` for the no-checks/no-local-CI fallback path.
 
 `status --why` and `explain <issue>` also report `codex_connector_convergence` for tracked PRs using the Codex Connector profile. The line summarizes the current PR head, latest connector signal head, highest unresolved severity, unresolved finding count, merge effect, and next expected operator or supervisor action. Common states are `waiting_review`, `re_requested_review`, `repairing_must_fix`, `nitpick_only`, `stale_head`, and `converged`. If stored success evidence contradicts the current policy result, the line reports `contradictory_evidence` and keeps merge blocked so the operator can inspect the connector state instead of treating partial evidence as convergence.
+
+When current-head Codex Connector P1/P2-style must-fix findings cascade across the same file or review theme, the supervisor can switch the next `addressing_review` turn toward clustered root-cause repair instead of another narrow per-thread pass. `codexConnectorReviewChurnMustFixThreshold` defaults to `8`, and `codexConnectorReviewChurnFileConcentrationPercent` defaults to `70`. When both thresholds are met, `status --why` reports `codex_connector_review_churn` with the dominant file, normalized categories, representative threads, and a normalized signature. This does not make the PR merge-ready and does not auto-resolve any current-head P1/P2 findings; it only changes the repair strategy and diagnostics.
 
 When unresolved inline Codex Connector findings remain, `status --why` and `explain <issue>` also report `stale_review_bot_thread_diagnostics`. A current-head Codex success comment is not enough to bypass unresolved unverified P1/P2 inline findings: the diagnostics separate current-head success, unresolved thread counts, actionable must-fix counts, verified stale-residue counts, missing verification evidence, repeat-stop exhaustion, and the reason automatic cleanup was suppressed. The verified thread cleanup settings remain opt-in: `verifiedNoSourceChangeReviewThreadAutoResolve` only covers verifier-proven no-source-change residue, and `verifiedCurrentHeadRepairReviewThreadAutoResolve` only covers verifier-proven current-head repair residue.
 

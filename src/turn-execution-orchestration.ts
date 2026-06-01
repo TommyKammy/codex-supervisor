@@ -17,6 +17,7 @@ import {
   processedReviewThreadKey,
 } from "./review-handling";
 import {
+  buildCodexConnectorReviewChurnDiagnostic,
   codexConnectorMustFixReviewThreads,
 } from "./codex-connector-review-policy";
 import {
@@ -40,6 +41,10 @@ import type { AgentTurnContext } from "./supervisor/agent-runner";
 import { truncate } from "./core/utils";
 import { loadStatusChangedFiles } from "./supervisor/supervisor-status-rendering";
 
+function uniqueReviewThreadsInOrder(reviewThreads: ReviewThread[], includeIds: Set<string>): ReviewThread[] {
+  return reviewThreads.filter((thread) => includeIds.has(thread.id));
+}
+
 function shouldLoadExternalReviewContext(args: {
   preRunState: IssueRunRecord["state"];
   pr: GitHubPullRequest | null;
@@ -61,7 +66,13 @@ function shouldLoadExternalReviewContext(args: {
 }
 
 export function selectReviewThreadsForTurn(args: {
-  config: Pick<SupervisorConfig, "reviewBotLogins" | "configuredReviewProviders">;
+  config: Pick<
+    SupervisorConfig,
+    | "reviewBotLogins"
+    | "configuredReviewProviders"
+    | "codexConnectorReviewChurnMustFixThreshold"
+    | "codexConnectorReviewChurnFileConcentrationPercent"
+  >;
   preRunState: IssueRunRecord["state"];
   record: Pick<
     IssueRunRecord,
@@ -83,14 +94,29 @@ export function selectReviewThreadsForTurn(args: {
     args.config as SupervisorConfig,
     args.reviewThreads,
   ).filter((thread) => !thread.isResolved && !thread.isOutdated);
+  const activeConfiguredBotThreads = configuredBotReviewThreads(args.config as SupervisorConfig, args.reviewThreads).filter(
+    (thread) => !thread.isResolved && !thread.isOutdated,
+  );
   const pendingThreads = actionableFollowUpThreads.filter(
     (thread) => !hasProcessedReviewThread(args.record, currentPr, thread),
   );
+  const codexConnectorMustFixThreads = codexConnectorMustFixReviewThreads(activeConfiguredBotThreads);
+  const codexConnectorReviewChurnDiagnostic = buildCodexConnectorReviewChurnDiagnostic(
+    args.config,
+    activeConfiguredBotThreads,
+    currentPr,
+  );
+  if (codexConnectorReviewChurnDiagnostic && codexConnectorMustFixThreads.length > 0) {
+    return uniqueReviewThreadsInOrder(
+      activeConfiguredBotThreads,
+      new Set([...pendingThreads, ...codexConnectorMustFixThreads].map((thread) => thread.id)),
+    );
+  }
+
   if (pendingThreads.length > 0) {
     return pendingThreads;
   }
 
-  const codexConnectorMustFixThreads = codexConnectorMustFixReviewThreads(actionableFollowUpThreads);
   if (codexConnectorMustFixThreads.length > 0) {
     return codexConnectorMustFixThreads;
   }
@@ -253,6 +279,7 @@ export async function prepareCodexTurnPrompt(args: {
           pr: args.pr,
           checks: args.checks,
           reviewThreads: reviewThreadsToProcess,
+          activeReviewThreads: args.reviewThreads,
           changeClasses,
           alwaysReadFiles: args.memoryArtifacts.alwaysReadFiles,
           onDemandMemoryFiles: args.memoryArtifacts.onDemandFiles,

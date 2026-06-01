@@ -1046,6 +1046,195 @@ This stale handoff history should not be replayed into a targeted thread repair 
   assert.doesNotMatch(prompt, /On-demand durable memory files:/);
 });
 
+test("buildCodexPrompt routes concentrated Codex Connector P2 cascades to root-cause repair", () => {
+  const pr = createPullRequest({
+    number: 1388,
+    headRefOid: "head-connector-1388",
+  });
+  const threads = [
+    ["thread-authority", "P2: Reject release-bundle authority claims before RC/GA readiness assertions."],
+    ["thread-truth", "P2: Block inventory truth-source assertions that present the bundle as authoritative."],
+    ["thread-scope", "P2: Detect excluded scope claims for subordinate release-bundle sources."],
+    ["thread-regex", "P2: Generalize the forbidden claim regex instead of adding another readiness variant."],
+  ].map(([id, body], index) =>
+    createReviewThread({
+      id,
+      path: "scripts/verify-phase-release-bundle-inventory.sh",
+      line: 100 + index,
+      comments: {
+        nodes: [
+          {
+            id: `${id}-comment`,
+            body,
+            createdAt: "2026-03-11T00:05:00Z",
+            url: `https://example.test/pr/1388#discussion_${id}`,
+            author: {
+              login: "chatgpt-codex-connector[bot]",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  );
+
+  const prompt = buildCodexPrompt({
+    kind: "start",
+    config: createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector[bot]"],
+      codexConnectorReviewChurnMustFixThreshold: 4,
+      codexConnectorReviewChurnFileConcentrationPercent: 75,
+    }),
+    repoSlug: "owner/repo",
+    issue,
+    branch: "codex/issue-2217",
+    workspacePath: "/tmp/workspaces/issue-2217",
+    state: "addressing_review" satisfies RunState,
+    pr,
+    checks: [],
+    reviewThreads: threads,
+    alwaysReadFiles: [],
+    onDemandMemoryFiles: [],
+    journalPath: "/tmp/workspaces/issue-2217/.codex-supervisor/issue-journal.md",
+  } satisfies AgentTurnContext);
+
+  assert.match(prompt, /Codex Connector clustered root-cause repair:/);
+  assert.match(prompt, /Triggered: review_churn must_fix=4 threshold=4/);
+  assert.match(prompt, /Normalized categories: .*truth_source/);
+  assert.match(prompt, /identify the common subject, verb, scope, and truth-category failure/);
+  assert.match(prompt, /Prefer a generalized parser, table-driven verifier, or category-based guard/);
+  assert.match(prompt, /P0\/P1\/P2 and escalated P3 Codex Connector findings are supervisor-enforced must-fix findings/);
+});
+
+test("buildCodexPrompt detects Codex Connector churn from all active threads when repair selection is narrow", () => {
+  const pr = createPullRequest({
+    number: 1388,
+    headRefOid: "head-connector-1388",
+  });
+  const activeThreads = Array.from({ length: 8 }, (_, index) =>
+    createReviewThread({
+      id: `thread-active-${index}`,
+      path: `scripts/verify-${index % 4}.sh`,
+      line: 100 + index,
+      comments: {
+        nodes: [
+          {
+            id: `comment-active-${index}`,
+            body:
+              "P2: Missing verifier coverage lets release-bundle readiness claims bypass the authority guard. Add generalized regression coverage.",
+            createdAt: "2026-03-11T00:05:00Z",
+            url: `https://example.test/pr/1388#discussion_active_${index}`,
+            author: {
+              login: "chatgpt-codex-connector[bot]",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  );
+
+  const prompt = buildCodexPrompt({
+    kind: "start",
+    config: createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector[bot]"],
+      codexConnectorReviewChurnMustFixThreshold: 8,
+      codexConnectorReviewChurnFileConcentrationPercent: 70,
+    }),
+    repoSlug: "owner/repo",
+    issue,
+    branch: "codex/issue-2217",
+    workspacePath: "/tmp/workspaces/issue-2217",
+    state: "addressing_review" satisfies RunState,
+    pr,
+    checks: [],
+    reviewThreads: [activeThreads[7]!],
+    activeReviewThreads: activeThreads,
+    alwaysReadFiles: [],
+    onDemandMemoryFiles: [],
+    journalPath: "/tmp/workspaces/issue-2217/.codex-supervisor/issue-journal.md",
+  } satisfies AgentTurnContext);
+
+  assert.match(prompt, /Codex Connector clustered root-cause repair:/);
+  assert.match(prompt, /Triggered: review_churn must_fix=8 threshold=8/);
+  assert.match(prompt, /concentration_basis=theme/);
+});
+
+test("buildCodexPrompt emits Codex churn guidance when Codex is one of several reviewers", () => {
+  const pr = createPullRequest({
+    number: 1388,
+    headRefOid: "head-connector-1388",
+  });
+  const threads = Array.from({ length: 8 }, (_, index) =>
+    createReviewThread({
+      id: `thread-mixed-provider-${index}`,
+      path: `scripts/verify-${index % 4}.sh`,
+      line: 100 + index,
+      comments: {
+        nodes: [
+          {
+            id: `comment-mixed-provider-${index}`,
+            body:
+              "P2: Missing verifier coverage lets release-bundle readiness claims bypass the authority guard. Add generalized regression coverage.",
+            createdAt: "2026-03-11T00:05:00Z",
+            url: `https://example.test/pr/1388#discussion_mixed_${index}`,
+            author: {
+              login: "chatgpt-codex-connector[bot]",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  );
+  const copilotThread = createReviewThread({
+    id: "thread-mixed-provider-copilot",
+    path: "src/copilot.ts",
+    line: 44,
+    comments: {
+      nodes: [
+        {
+          id: "comment-mixed-provider-copilot",
+          body: "This configured-bot blocker still needs a non-Codex guard fix.",
+          createdAt: "2026-03-11T00:06:00Z",
+          url: "https://example.test/pr/1388#discussion_mixed_copilot",
+          author: {
+            login: "copilot-pull-request-reviewer",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  const prompt = buildCodexPrompt({
+    kind: "start",
+    config: createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector[bot]", "copilot-pull-request-reviewer"],
+      codexConnectorReviewChurnMustFixThreshold: 8,
+      codexConnectorReviewChurnFileConcentrationPercent: 70,
+    }),
+    repoSlug: "owner/repo",
+    issue,
+    branch: "codex/issue-2217",
+    workspacePath: "/tmp/workspaces/issue-2217",
+    state: "addressing_review" satisfies RunState,
+    pr,
+    checks: [],
+    reviewThreads: [...threads, copilotThread],
+    activeReviewThreads: [...threads, copilotThread],
+    alwaysReadFiles: [],
+    onDemandMemoryFiles: [],
+    journalPath: "/tmp/workspaces/issue-2217/.codex-supervisor/issue-journal.md",
+  } satisfies AgentTurnContext);
+
+  assert.match(prompt, /Codex Connector review handling:/);
+  assert.match(prompt, /Codex Connector clustered root-cause repair:/);
+  assert.match(prompt, /Additional selected configured-bot review threads:/);
+  assert.match(prompt, /Thread thread-mixed-provider-copilot/);
+  assert.match(prompt, /Reviewer: copilot-pull-request-reviewer/);
+});
+
 test("buildCodexPrompt promotes review comment examples into fresh regression-probe evidence", () => {
   const pr = createPullRequest({
     number: 144,

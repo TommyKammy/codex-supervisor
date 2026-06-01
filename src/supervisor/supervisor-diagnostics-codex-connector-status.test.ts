@@ -406,6 +406,93 @@ test("status reports Codex Connector P1 policy blocks with thread diagnostics", 
   assert.doesNotMatch(status, /^codex_connector_policy_block .*severity=nitpick_only/m);
 });
 
+test("status --why reports Codex Connector review churn for concentrated P2 cascades", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const issueNumber = 2217;
+  const prNumber = 1388;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "addressing_review",
+        branch,
+        pr_number: prNumber,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const pr = createPullRequest({
+    number: prNumber,
+    headRefName: branch,
+    headRefOid: "head-1388",
+    isDraft: false,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    configuredBotCurrentHeadObservedAt: "2026-06-01T06:09:54Z",
+  });
+  const reviewThreads = [
+    ["thread-authority", 109, "P2: Reject release-bundle authority claims before RC/GA readiness assertions."],
+    ["thread-truth", 243, "P2: Block inventory truth-source assertions that present the bundle as authoritative."],
+    ["thread-scope", 304, "P2: Detect excluded scope claims for subordinate release-bundle sources."],
+    ["thread-regex", 326, "P2: Generalize the forbidden claim regex instead of adding another readiness variant."],
+  ].map(([id, line, body]) => ({
+    id,
+    isResolved: false,
+    isOutdated: false,
+    path: "scripts/verify-phase-65-1-release-bundle-inventory.sh",
+    line,
+    comments: {
+      nodes: [
+        {
+          id: `${id}-comment`,
+          body,
+          createdAt: "2026-06-01T06:10:00Z",
+          url: `https://example.test/pr/1388#discussion_${id}`,
+          author: {
+            login: "chatgpt-codex-connector[bot]",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  }));
+
+  const supervisor = new Supervisor({
+    ...fixture.config,
+    reviewBotLogins: ["chatgpt-codex-connector[bot]"],
+    codexConnectorReviewChurnMustFixThreshold: 4,
+    codexConnectorReviewChurnFileConcentrationPercent: 75,
+  });
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [],
+    listAllIssues: async () => [],
+    getPullRequestIfExists: async () => pr,
+    resolvePullRequestForBranch: async () => pr,
+    getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => reviewThreads,
+  };
+
+  const status = await supervisor.status({ why: true });
+
+  assert.match(
+    status,
+    /^codex_connector_review_churn status=clustered_root_cause_repair must_fix=4 threshold=4 highest_severity=P2 concentration_basis=file dominant_file=scripts\/verify-phase-65-1-release-bundle-inventory\.sh dominant_file_threads=4 dominant_file_percent=100 file_concentration_threshold_percent=75 clusters=\d+ largest_cluster=\d+ largest_cluster_percent=\d+ categories=.*truth_source.* representative_threads=thread-authority,thread-truth,thread-scope,thread-regex signature=codex-review-churn:P2:scripts\/verify-phase-65-1-release-bundle-inventory\.sh:.* next_action=cluster_root_cause_repair$/m,
+  );
+  assert.match(
+    status,
+    /^codex_connector_operator_diagnostic interpretation=actionable_current_diff current_head_sha=head-1388 latest_configured_bot_review_sha=head-1388 current_head_review_signal=observed actionable_current_diff_threads=4 next_action=repair_must_fix_findings$/m,
+  );
+});
+
 test("status waits for current-head Codex review when non-outdated threads came from a stale review commit", async (t) => {
   const originalDateNow = Date.now;
   Date.now = () => Date.parse("2026-05-19T09:14:00Z");

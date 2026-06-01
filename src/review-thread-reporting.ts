@@ -3,6 +3,7 @@ import { configuredReviewBotLogins, normalizeReviewProviderLogin } from "./core/
 import { FailureContext, GitHubPullRequest, IssueRunRecord, ReviewThread, SupervisorConfig } from "./core/types";
 import { nowIso } from "./core/utils";
 import {
+  buildCodexConnectorReviewChurnDiagnostic,
   codexConnectorMustFixReviewThreads,
   isSoftenedCodexConnectorP3Thread,
   latestCodexConnectorPSeverity,
@@ -12,6 +13,7 @@ export {
   buildCodexConnectorMustFixFindingDetails,
   buildCodexConnectorP2P3PolicyDiagnostic,
   buildCodexConnectorPolicyBlockDiagnostic,
+  buildCodexConnectorReviewChurnDiagnostic,
   clusterConfiguredBotReviewThreads,
   codexConnectorMustFixReviewThreads,
   codexConnectorNitpickOnlyReviewThreads,
@@ -21,6 +23,7 @@ export {
   evaluateCodexConnectorConvergencePolicy,
   formatCodexConnectorP2P3PolicyDiagnostic,
   formatCodexConnectorPolicyBlockDiagnostic,
+  formatCodexConnectorReviewChurnDiagnostic,
   latestCodexConnectorReviewComment,
   normalizeCommitShaForComparison,
   type CodexConnectorConvergenceMergeEffect,
@@ -33,6 +36,7 @@ export {
   type CodexConnectorNitpickOnlyPolicyResult,
   type CodexConnectorP2P3PolicyDiagnostic,
   type CodexConnectorPolicyBlockDiagnostic,
+  type CodexConnectorReviewChurnDiagnostic,
   type ConfiguredBotReviewThreadCluster,
 } from "./codex-connector-review-policy";
 
@@ -344,19 +348,29 @@ export function nonActionableConfiguredBotReviewThreads(
   );
 }
 
-export function buildReviewFailureContext(reviewThreads: ReviewThread[]): FailureContext | null {
+export function buildReviewFailureContext(
+  reviewThreads: ReviewThread[],
+  config?: SupervisorConfig,
+  pr?: Pick<GitHubPullRequest, "headRefOid" | "configuredBotCurrentHeadObservedAt" | "configuredBotLatestReviewedCommitSha"> | null,
+): FailureContext | null {
   if (reviewThreads.length === 0) {
     return null;
   }
 
   const details = reviewThreads.slice(0, 5).map((thread) => renderReviewThreadDetail(thread));
+  const churnDiagnostic = config ? buildCodexConnectorReviewChurnDiagnostic(config, reviewThreads, pr) : null;
+  const churnDetails = churnDiagnostic
+    ? [
+        `codex_connector_review_churn signature=${churnDiagnostic.signature} dominant_file=${churnDiagnostic.dominantFile} categories=${churnDiagnostic.normalizedCategories.join("|")} next_action=${churnDiagnostic.nextAction}`,
+      ]
+    : [];
 
   return {
     category: "review",
     summary: `${reviewThreads.length} unresolved automated review thread(s) remain.`,
-    signature: reviewThreads.map((thread) => thread.id).join("|"),
+    signature: churnDiagnostic?.signature ?? reviewThreads.map((thread) => thread.id).join("|"),
     command: null,
-    details,
+    details: [...churnDetails, ...details],
     url: reviewThreads[0]?.comments.nodes[0]?.url ?? null,
     updated_at: nowIso(),
   };
@@ -397,11 +411,14 @@ export function buildRequestedChangesFailureContext(
 export function buildStalledBotReviewFailureContext(
   reviewThreads: ReviewThread[],
   mode: "no_progress" | "exhausted_follow_up" = "no_progress",
+  config?: SupervisorConfig,
+  pr?: Pick<GitHubPullRequest, "headRefOid" | "configuredBotCurrentHeadObservedAt" | "configuredBotLatestReviewedCommitSha"> | null,
 ): FailureContext | null {
   if (reviewThreads.length === 0) {
     return null;
   }
 
+  const churnDiagnostic = config ? buildCodexConnectorReviewChurnDiagnostic(config, reviewThreads, pr) : null;
   const details = reviewThreads.slice(0, 5).map((thread) => {
     const latestComment = latestReviewComment(thread);
     const author = latestComment?.author?.login ?? "unknown";
@@ -409,6 +426,11 @@ export function buildStalledBotReviewFailureContext(
     const severity = pSeverity ? ` p_severity=${pSeverity}` : "";
     return `reviewer=${author} file=${thread.path ?? "unknown"} line=${thread.line ?? "?"}${severity} processed_on_current_head=yes`;
   });
+  const churnDetails = churnDiagnostic
+    ? [
+        `codex_connector_review_churn signature=${churnDiagnostic.signature} dominant_file=${churnDiagnostic.dominantFile} categories=${churnDiagnostic.normalizedCategories.join("|")} next_action=${churnDiagnostic.nextAction}`,
+      ]
+    : [];
 
   return {
     category: "manual",
@@ -418,7 +440,7 @@ export function buildStalledBotReviewFailureContext(
         : `${reviewThreads.length} configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.`,
     signature: reviewThreads.map((thread) => `stalled-bot:${thread.id}`).join("|"),
     command: null,
-    details,
+    details: [...churnDetails, ...details],
     url: reviewThreads[0]?.comments.nodes[0]?.url ?? null,
     updated_at: nowIso(),
   };
