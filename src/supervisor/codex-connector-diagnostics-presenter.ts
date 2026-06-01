@@ -15,6 +15,7 @@ import {
   formatCodexConnectorReviewChurnDiagnostic,
 } from "../codex-connector-review-policy";
 import { configuredBotCurrentHeadSignalWaitWindow } from "./review-bot-wait-windows";
+import { hasCodexConnectorReviewRequestCommentIdentity } from "../codex-connector-review-request-identity";
 import {
   formatStaleReviewMetadataConvergenceDiagnostic,
   formatStaleReviewResidueOperatorDiagnostic,
@@ -86,10 +87,14 @@ export function formatCodexConnectorReviewFallbackDiagnostic(args: {
     : null;
   const timeoutAction = args.config.configuredBotCurrentHeadSignalTimeoutAction ?? args.config.copilotReviewTimeoutAction;
   const retryConfigured = timeoutAction === "request_review_comment";
+  const existingRequestCommentIdentity = requestMatchesCurrentHead
+    ? hasCodexConnectorReviewRequestCommentIdentity({ record: args.record, pr: args.pr })
+    : false;
   const requestNoResponseElapsed = Boolean(
     retryConfigured &&
     requestMatchesCurrentHead &&
     !currentHeadObservedAt &&
+    !existingRequestCommentIdentity &&
     retryWaitUntil &&
     Date.now() >= Date.parse(retryWaitUntil),
   );

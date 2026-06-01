@@ -23,6 +23,7 @@ import {
   hasCodexConnectorStrongRiskWording,
   isCodexConnectorReviewer,
 } from "./external-review/external-review-normalization";
+import { hasCodexConnectorReviewRequestCommentIdentity } from "./codex-connector-review-request-identity";
 
 export type CodexConnectorReviewRequestAction =
   | { kind: "none" }
@@ -345,6 +346,10 @@ export function codexConnectorReviewRequestAction(
 
   if (!requestMatchesCurrentHead) {
     return { kind: "initial" };
+  }
+
+  if (hasCodexConnectorReviewRequestCommentIdentity({ record: args.record, pr: args.pr })) {
+    return { kind: "none" };
   }
 
   const retryLimit = args.config.codexConnectorReviewRequestRetryLimit ?? 1;

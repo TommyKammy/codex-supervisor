@@ -439,6 +439,73 @@ test("codexConnectorReviewRequestAction selects retry after the same-head reques
   });
 });
 
+test("codexConnectorReviewRequestAction suppresses retry when the same-head request comment is still tracked", () => {
+  const scenario = createCodexConnectorRequestRetryScenario();
+
+  assert.deepEqual(
+    decide({
+      record: {
+        ...scenario.recordPatch,
+        codex_connector_review_request_comment_identity_status: "available",
+        codex_connector_review_request_comment_database_id: 1995001,
+        codex_connector_review_request_comment_node_id: "IC_head_1995",
+        codex_connector_review_request_comment_url:
+          "https://github.com/owner/repo/issues/1995#issuecomment-1995001",
+      },
+      pr: scenario.pullRequestPatch,
+      checks: scenario.checks,
+      reviewThreads: scenario.reviewThreads,
+      configuredThreads: scenario.configuredThreads,
+      now: scenario.now,
+    }),
+    { kind: "none" },
+  );
+});
+
+test("codexConnectorReviewRequestAction suppresses retry when the same-head request comment is hydrated from GitHub", () => {
+  const scenario = createCodexConnectorRequestRetryScenario();
+
+  assert.deepEqual(
+    decide({
+      record: scenario.recordPatch,
+      pr: {
+        ...scenario.pullRequestPatch,
+        codexConnectorReviewRequestCommentDatabaseId: 1995001,
+      },
+      checks: scenario.checks,
+      reviewThreads: scenario.reviewThreads,
+      configuredThreads: scenario.configuredThreads,
+      now: scenario.now,
+    }),
+    { kind: "none" },
+  );
+});
+
+test("codexConnectorReviewRequestAction ignores stale request comment identity when retrying the current head", () => {
+  const scenario = createCodexConnectorRequestRetryScenario();
+
+  assert.deepEqual(
+    decide({
+      record: {
+        ...scenario.recordPatch,
+        codex_connector_review_requested_observed_at: null,
+        codex_connector_review_requested_head_sha: "head-old",
+        codex_connector_review_request_comment_identity_status: "available",
+        codex_connector_review_request_comment_database_id: 1994001,
+      },
+      pr: {
+        ...scenario.pullRequestPatch,
+        codexConnectorReviewRequestCommentDatabaseId: null,
+      },
+      checks: scenario.checks,
+      reviewThreads: scenario.reviewThreads,
+      configuredThreads: scenario.configuredThreads,
+      now: scenario.now,
+    }),
+    { kind: "retry", retryCount: 0, retryAttempt: 1 },
+  );
+});
+
 test("codexConnectorReviewRequestAction suppresses request while same-head request wait is active", () => {
   assert.deepEqual(
     decideScenario(
