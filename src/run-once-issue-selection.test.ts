@@ -559,7 +559,7 @@ Parallelizable: No
   }
 });
 
-test("resolveRunnableIssueContext reuses omitted stale tracked PR recovery in active dependency checks", async () => {
+test("resolveRunnableIssueContext keeps omitted non-actionable tracked PR blocker in active dependency checks", async () => {
   const config = createConfig({
     reviewBotLogins: ["chatgpt-codex-connector"],
     configuredBotInitialGraceWaitSeconds: 0,
@@ -635,13 +635,13 @@ Parallelizable: No
     headRefName: branch,
     headRefOid: headSha,
     mergedAt: null,
-    currentHeadCiGreenAt: "2026-05-22T00:00:00Z",
+    currentHeadCiGreenAt: null,
     configuredBotLatestReviewedCommitSha: "head-281-stale",
     configuredBotCurrentHeadObservedAt: null,
     codexConnectorReviewRequestedAt: null,
     codexConnectorReviewRequestedHeadSha: null,
   };
-  const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+  const checks: PullRequestCheck[] = [{ name: "build", state: "PENDING", bucket: "pending", workflow: "CI" }];
   const savedStates: SupervisorStateFile[] = [];
 
   const result = await resolveRunnableIssueContext({
@@ -672,6 +672,211 @@ Parallelizable: No
   assert.equal(state.activeIssueNumber, null);
   assert.match(state.issues[String(downstreamIssueNumber)]?.last_error ?? "", /depends on #281/);
   assert.equal(savedStates.length, 1);
+});
+
+test("resolveRunnableIssueContext normalizes label filters for direct stale tracked PR recovery", async () => {
+  const config = createConfig({
+    issueLabel: "codex",
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    configuredBotInitialGraceWaitSeconds: 0,
+    configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+  });
+  const issueNumber = 281;
+  const prNumber = 289;
+  const branch = "codex/issue-281";
+  const headSha = "head-281-current";
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Case-varied label stale tracked PR",
+    body: executionReadyBody("Recover when GitHub label casing differs from config casing."),
+    createdAt: "2026-05-22T00:00:00Z",
+    updatedAt: "2026-05-22T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [{ name: "Codex" }],
+    state: "OPEN",
+  };
+  const record = createRecord(issueNumber, {
+    state: "blocked",
+    branch,
+    pr_number: prNumber,
+    blocked_reason: "manual_review",
+    last_head_sha: headSha,
+    review_wait_started_at: "2026-05-22T00:00:00Z",
+    review_wait_head_sha: headSha,
+    copilot_review_timed_out_at: "2026-05-22T00:10:00.000Z",
+    copilot_review_timeout_action: "request_review_comment",
+    codex_connector_review_requested_observed_at: null,
+    codex_connector_review_requested_head_sha: null,
+    provider_success_head_sha: "head-281-stale",
+    provider_success_observed_at: "2026-05-21T23:50:00Z",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: record,
+    },
+  };
+  const pr: GitHubPullRequest = {
+    number: prNumber,
+    title: "Tracked PR",
+    url: `https://example.test/pr/${prNumber}`,
+    state: "OPEN",
+    createdAt: "2026-05-22T00:00:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+    headRefName: branch,
+    headRefOid: headSha,
+    mergedAt: null,
+    currentHeadCiGreenAt: "2026-05-22T00:00:00Z",
+    configuredBotLatestReviewedCommitSha: "head-281-stale",
+    configuredBotCurrentHeadObservedAt: null,
+    codexConnectorReviewRequestedAt: null,
+    codexConnectorReviewRequestedHeadSha: null,
+  };
+  const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+
+  const result = await resolveRunnableIssueContext({
+    github: {
+      listCandidateIssues: async () => [],
+      getIssue: async () => issue,
+      getPullRequestIfExists: async () => pr,
+      getChecks: async () => checks,
+      getUnresolvedReviewThreads: async () => [],
+    },
+    config,
+    stateStore: createTouchStateStore([]),
+    state,
+    currentRecord: null,
+    acquireIssueLock: async () => ({
+      acquired: true,
+      release: async () => {},
+    }),
+    ensureRecordJournalContext: async (selectedRecord) => ({
+      workspace: selectedRecord.workspace,
+      journal_path: `/tmp/workspaces/issue-${selectedRecord.issue_number}/.codex-supervisor/issue-journal.md`,
+    }),
+    syncIssueJournal: async () => {},
+  });
+
+  assert.notEqual(typeof result, "string");
+  if (typeof result !== "string") {
+    assert.equal(result.kind, "ready");
+    if (result.kind === "ready") {
+      assert.equal(result.record.issue_number, issueNumber);
+      await result.issueLock.release();
+    }
+  }
+});
+
+test("resolveRunnableIssueContext orders recovered stale tracked PRs with normal candidates", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    configuredBotInitialGraceWaitSeconds: 0,
+    configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+  });
+  const issueNumber = 281;
+  const laterIssueNumber = 400;
+  const prNumber = 289;
+  const branch = "codex/issue-281";
+  const headSha = "head-281-current";
+  const staleIssue: GitHubIssue = {
+    number: issueNumber,
+    title: "Older stale tracked PR",
+    body: executionReadyBody("Recover before later normal candidates."),
+    createdAt: "2026-05-22T00:00:00Z",
+    updatedAt: "2026-05-22T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const laterIssue: GitHubIssue = {
+    number: laterIssueNumber,
+    title: "Later normal candidate",
+    body: executionReadyBody("A normal candidate that should keep candidate ordering."),
+    createdAt: "2026-05-22T00:05:00Z",
+    updatedAt: "2026-05-22T00:05:00Z",
+    url: `https://example.test/issues/${laterIssueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const staleRecord = createRecord(issueNumber, {
+    state: "blocked",
+    branch,
+    pr_number: prNumber,
+    blocked_reason: "manual_review",
+    last_head_sha: headSha,
+    review_wait_started_at: "2026-05-22T00:00:00Z",
+    review_wait_head_sha: headSha,
+    copilot_review_timed_out_at: "2026-05-22T00:10:00.000Z",
+    copilot_review_timeout_action: "request_review_comment",
+    codex_connector_review_requested_observed_at: null,
+    codex_connector_review_requested_head_sha: null,
+    provider_success_head_sha: "head-281-stale",
+    provider_success_observed_at: "2026-05-21T23:50:00Z",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: staleRecord,
+    },
+  };
+  const pr: GitHubPullRequest = {
+    number: prNumber,
+    title: "Tracked PR",
+    url: `https://example.test/pr/${prNumber}`,
+    state: "OPEN",
+    createdAt: "2026-05-22T00:00:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+    headRefName: branch,
+    headRefOid: headSha,
+    mergedAt: null,
+    currentHeadCiGreenAt: "2026-05-22T00:00:00Z",
+    configuredBotLatestReviewedCommitSha: "head-281-stale",
+    configuredBotCurrentHeadObservedAt: null,
+    codexConnectorReviewRequestedAt: null,
+    codexConnectorReviewRequestedHeadSha: null,
+  };
+  const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+
+  const result = await resolveRunnableIssueContext({
+    github: {
+      listCandidateIssues: async () => [laterIssue],
+      getIssue: async (selectedIssueNumber) =>
+        selectedIssueNumber === issueNumber ? staleIssue : laterIssue,
+      getPullRequestIfExists: async () => pr,
+      getChecks: async () => checks,
+      getUnresolvedReviewThreads: async () => [],
+    },
+    config,
+    stateStore: createTouchStateStore([]),
+    state,
+    currentRecord: null,
+    acquireIssueLock: async () => ({
+      acquired: true,
+      release: async () => {},
+    }),
+    ensureRecordJournalContext: async (selectedRecord) => ({
+      workspace: selectedRecord.workspace,
+      journal_path: `/tmp/workspaces/issue-${selectedRecord.issue_number}/.codex-supervisor/issue-journal.md`,
+    }),
+    syncIssueJournal: async () => {},
+  });
+
+  assert.notEqual(typeof result, "string");
+  if (typeof result !== "string") {
+    assert.equal(result.kind, "ready");
+    if (result.kind === "ready") {
+      assert.equal(result.record.issue_number, issueNumber);
+      await result.issueLock.release();
+    }
+  }
 });
 
 test("resolveRunnableIssueContext skips direct stale tracked PR recovery when filters cannot be verified", async () => {

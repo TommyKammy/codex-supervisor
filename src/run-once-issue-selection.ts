@@ -119,7 +119,8 @@ async function shouldSelectCodexConnectorReviewRequestRecovery(
 }
 
 function issueHasLabel(issue: GitHubIssue, label: string): boolean {
-  return (issue.labels ?? []).some((candidate) => candidate.name === label);
+  const normalizedLabel = label.trim().toLowerCase();
+  return (issue.labels ?? []).some((candidate) => candidate.name.trim().toLowerCase() === normalizedLabel);
 }
 
 function issueMatchesDirectRecoverySelectionFilters(config: SupervisorConfig, issue: GitHubIssue): boolean {
@@ -130,7 +131,31 @@ function issueMatchesDirectRecoverySelectionFilters(config: SupervisorConfig, is
   return !config.issueSearch || config.issueSearch.trim() === "";
 }
 
-async function discoverCodexConnectorReviewRequestRecoveryIssues(
+function shouldFetchDirectTrackedPrRecoveryIssue(
+  config: SupervisorConfig,
+  record: IssueRunRecord,
+): boolean {
+  return (
+    record.state === "blocked" &&
+    (record.blocked_reason === "manual_review" || record.blocked_reason === "stale_review_bot") &&
+    record.pr_number !== null &&
+    configuredReviewProviderKinds(config).includes("codex") &&
+    config.configuredBotCurrentHeadSignalTimeoutAction === "request_review_comment"
+  );
+}
+
+function sortIssuesForSelection(issues: GitHubIssue[]): GitHubIssue[] {
+  return [...issues].sort((left, right) => {
+    const createdAtOrder = left.createdAt.localeCompare(right.createdAt);
+    if (createdAtOrder !== 0) {
+      return createdAtOrder;
+    }
+
+    return left.number - right.number;
+  });
+}
+
+async function discoverTrackedPrRecoveryInventoryIssues(
   github: IssueSelectionCandidateGitHub,
   config: SupervisorConfig,
   state: SupervisorStateFile,
@@ -147,7 +172,7 @@ async function discoverCodexConnectorReviewRequestRecoveryIssues(
     .sort((left, right) => left.issue_number - right.issue_number);
 
   for (const record of records) {
-    if (!(await shouldSelectCodexConnectorReviewRequestRecovery(github, config, record))) {
+    if (!shouldFetchDirectTrackedPrRecoveryIssue(config, record)) {
       continue;
     }
 
@@ -170,8 +195,8 @@ async function listSelectableIssuesWithRecoveredBlockers(
   state: SupervisorStateFile,
 ): Promise<GitHubIssue[]> {
   const issues = await github.listCandidateIssues();
-  const recoveryIssues = await discoverCodexConnectorReviewRequestRecoveryIssues(github, config, state, issues);
-  return [...issues, ...recoveryIssues];
+  const recoveryIssues = await discoverTrackedPrRecoveryInventoryIssues(github, config, state, issues);
+  return sortIssuesForSelection([...issues, ...recoveryIssues]);
 }
 
 interface SelectedIssueRecord {
