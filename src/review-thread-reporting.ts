@@ -438,9 +438,7 @@ export function buildStalledBotReviewFailureContext(
       mode === "exhausted_follow_up"
         ? `${reviewThreads.length} configured bot review thread(s) remain unresolved after exhausting the one allowed same-head follow-up repair turn and now require manual attention.`
         : `${reviewThreads.length} configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.`,
-    signature: churnDiagnostic?.signature
-      ? `stalled-bot:${churnDiagnostic.signature}`
-      : reviewThreads.map((thread) => `stalled-bot:${thread.id}`).join("|"),
+    signature: reviewThreads.map((thread) => `stalled-bot:${thread.id}`).join("|"),
     command: null,
     details: [...churnDetails, ...details],
     url: reviewThreads[0]?.comments.nodes[0]?.url ?? null,

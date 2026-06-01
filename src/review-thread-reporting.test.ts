@@ -834,8 +834,9 @@ test("review failure contexts use normalized Codex Connector churn signatures", 
 
   assert.match(reviewContext?.signature ?? "", /^codex-review-churn:P2:scripts\/verify-release-inventory\.sh:/);
   assert.notEqual(reviewContext?.signature, "thread-authority|thread-truth|thread-scope");
-  assert.match(stalledContext?.signature ?? "", /^stalled-bot:codex-review-churn:P2:/);
+  assert.equal(stalledContext?.signature, "stalled-bot:thread-authority|stalled-bot:thread-truth|stalled-bot:thread-scope");
   assert.match(reviewContext?.details[0] ?? "", /next_action=cluster_root_cause_repair/);
+  assert.match(stalledContext?.details[0] ?? "", /codex_connector_review_churn/);
 });
 
 test("review failure contexts suppress Codex churn for stale reviewed commits", () => {

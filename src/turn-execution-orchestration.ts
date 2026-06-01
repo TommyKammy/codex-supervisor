@@ -94,18 +94,21 @@ export function selectReviewThreadsForTurn(args: {
     args.config as SupervisorConfig,
     args.reviewThreads,
   ).filter((thread) => !thread.isResolved && !thread.isOutdated);
+  const activeConfiguredBotThreads = configuredBotReviewThreads(args.config as SupervisorConfig, args.reviewThreads).filter(
+    (thread) => !thread.isResolved && !thread.isOutdated,
+  );
   const pendingThreads = actionableFollowUpThreads.filter(
     (thread) => !hasProcessedReviewThread(args.record, currentPr, thread),
   );
-  const codexConnectorMustFixThreads = codexConnectorMustFixReviewThreads(actionableFollowUpThreads);
+  const codexConnectorMustFixThreads = codexConnectorMustFixReviewThreads(activeConfiguredBotThreads);
   const codexConnectorReviewChurnDiagnostic = buildCodexConnectorReviewChurnDiagnostic(
     args.config,
-    actionableFollowUpThreads,
+    activeConfiguredBotThreads,
     currentPr,
   );
   if (codexConnectorReviewChurnDiagnostic && codexConnectorMustFixThreads.length > 0) {
     return uniqueReviewThreadsInOrder(
-      actionableFollowUpThreads,
+      activeConfiguredBotThreads,
       new Set([...pendingThreads, ...codexConnectorMustFixThreads].map((thread) => thread.id)),
     );
   }
