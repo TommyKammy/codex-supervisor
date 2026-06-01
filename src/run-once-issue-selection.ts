@@ -64,7 +64,7 @@ export interface RestartRunOnce {
 type IssueSelectionResult = ReadyIssueContext | RestartRunOnce | string;
 
 type IssueSelectionCandidateGitHub = Pick<GitHubClient, "listCandidateIssues"> &
-  Partial<Pick<GitHubClient, "getPullRequestIfExists" | "getChecks" | "getUnresolvedReviewThreads">>;
+  Partial<Pick<GitHubClient, "getIssue" | "getPullRequestIfExists" | "getChecks" | "getUnresolvedReviewThreads">>;
 type IssueSelectionGitHub = IssueSelectionCandidateGitHub
   & Pick<GitHubClient, "getIssue">
   & Partial<Pick<GitHubClient, "addIssueComment" | "getIssueComments" | "updateIssueComment">>;
@@ -116,6 +116,91 @@ async function shouldSelectCodexConnectorReviewRequestRecovery(
   } catch {
     return false;
   }
+}
+
+function issueHasLabel(issue: GitHubIssue, label: string): boolean {
+  const normalizedLabel = label.trim().toLowerCase();
+  return (issue.labels ?? []).some((candidate) => candidate.name.trim().toLowerCase() === normalizedLabel);
+}
+
+function issueMatchesDirectRecoverySelectionFilters(config: SupervisorConfig, issue: GitHubIssue): boolean {
+  if (config.issueLabel && !issueHasLabel(issue, config.issueLabel)) {
+    return false;
+  }
+
+  return !config.issueSearch || config.issueSearch.trim() === "";
+}
+
+function shouldFetchDirectTrackedPrRecoveryIssue(
+  config: SupervisorConfig,
+  record: IssueRunRecord,
+): boolean {
+  return (
+    record.state === "blocked" &&
+    (record.blocked_reason === "manual_review" || record.blocked_reason === "stale_review_bot") &&
+    record.pr_number !== null &&
+    configuredReviewProviderKinds(config).includes("codex") &&
+    config.configuredBotCurrentHeadSignalTimeoutAction === "request_review_comment"
+  );
+}
+
+function sortIssuesForSelection(issues: GitHubIssue[]): GitHubIssue[] {
+  return [...issues].sort((left, right) => {
+    const createdAtOrder = left.createdAt.localeCompare(right.createdAt);
+    if (createdAtOrder !== 0) {
+      return createdAtOrder;
+    }
+
+    return left.number - right.number;
+  });
+}
+
+async function discoverTrackedPrRecoveryInventoryIssues(
+  github: IssueSelectionCandidateGitHub,
+  config: SupervisorConfig,
+  state: SupervisorStateFile,
+  existingIssues: GitHubIssue[],
+): Promise<GitHubIssue[]> {
+  if (!github.getIssue) {
+    return [];
+  }
+
+  const existingIssueNumbers = new Set(existingIssues.map((issue) => issue.number));
+  const recoveryIssues: GitHubIssue[] = [];
+  const records = Object.values(state.issues)
+    .filter((record) => !existingIssueNumbers.has(record.issue_number))
+    .sort((left, right) => left.issue_number - right.issue_number);
+
+  for (const record of records) {
+    if (!shouldFetchDirectTrackedPrRecoveryIssue(config, record)) {
+      continue;
+    }
+
+    try {
+      const issue = await github.getIssue(record.issue_number);
+      if (issue.state === "OPEN" && issueMatchesDirectRecoverySelectionFilters(config, issue)) {
+        recoveryIssues.push(issue);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `Failed to fetch recoverable tracked PR issue #${record.issue_number}; refusing to treat it as absent: ${message}`,
+        { cause: error },
+      );
+    }
+  }
+
+  return recoveryIssues;
+}
+
+async function listSelectableIssuesWithRecoveredBlockers(
+  github: IssueSelectionCandidateGitHub,
+  config: SupervisorConfig,
+  state: SupervisorStateFile,
+): Promise<GitHubIssue[]> {
+  const issues = await github.listCandidateIssues();
+  const recoveryIssues = await discoverTrackedPrRecoveryInventoryIssues(github, config, state, issues);
+  return sortIssuesForSelection([...issues, ...recoveryIssues]);
 }
 
 interface SelectedIssueRecord {
@@ -421,14 +506,14 @@ async function selectIssueRecord(
   }
 
   if (!record || !isEligibleForSelection(record, config)) {
-    const issues = await github.listCandidateIssues();
+    const selectableIssues = await listSelectableIssuesWithRecoveredBlockers(github, config, state);
     record = null;
-    for (const issue of issues) {
+    for (const issue of selectableIssues) {
       if (config.skipTitlePrefixes.some((prefix) => issue.title.startsWith(prefix))) {
         continue;
       }
 
-      if (findBlockingIssue(issue, issues, state)) {
+      if (findBlockingIssue(issue, selectableIssues, state)) {
         continue;
       }
 
@@ -767,8 +852,8 @@ export async function resolveRunnableIssueContext(
         return { kind: "restart" };
       }
     } else {
-      const candidateIssues = await github.listCandidateIssues();
-      const blockingIssue = findBlockingIssue(issue, candidateIssues, state);
+      const selectableIssues = await listSelectableIssuesWithRecoveredBlockers(github, config, state);
+      const blockingIssue = findBlockingIssue(issue, selectableIssues, state);
       if (blockingIssue) {
         record = stateStore.touch(record, {
           state: "queued",
