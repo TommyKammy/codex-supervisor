@@ -7,10 +7,7 @@ import {
   isCodexConnectorReviewer,
 } from "./external-review/external-review-normalization";
 
-export function latestCodexConnectorReviewComment(thread: ReviewThread): {
-  severity: CodexConnectorPSeverity;
-  body: string;
-} | null {
+function latestCodexConnectorReviewCommentNode(thread: ReviewThread): ReviewThread["comments"]["nodes"][number] | null {
   for (let index = thread.comments.nodes.length - 1; index >= 0; index -= 1) {
     const comment = thread.comments.nodes[index];
     const login = comment.author?.login;
@@ -20,14 +17,29 @@ export function latestCodexConnectorReviewComment(thread: ReviewThread): {
 
     const pSeverity = extractCodexConnectorPSeverity(comment.body);
     if (pSeverity) {
-      return {
-        severity: pSeverity,
-        body: comment.body,
-      };
+      return comment;
     }
   }
 
   return null;
+}
+
+export function latestCodexConnectorReviewComment(thread: ReviewThread): {
+  severity: CodexConnectorPSeverity;
+  body: string;
+} | null {
+  const comment = latestCodexConnectorReviewCommentNode(thread);
+  if (!comment) {
+    return null;
+  }
+
+  const pSeverity = extractCodexConnectorPSeverity(comment.body);
+  return pSeverity
+    ? {
+        severity: pSeverity,
+        body: comment.body,
+      }
+    : null;
 }
 
 export function latestCodexConnectorPSeverity(thread: ReviewThread): CodexConnectorPSeverity | null {
@@ -432,7 +444,7 @@ export function buildCodexConnectorMustFixFindingDetails(args: {
 }): string[] {
   return clusterConfiguredBotReviewThreads(codexConnectorMustFixReviewThreads(args.reviewThreads)).map((cluster, index) => {
     const representativeThread = cluster.threads[0];
-    const latestComment = latestReviewComment(representativeThread);
+    const latestComment = latestCodexConnectorReviewCommentNode(representativeThread) ?? latestReviewComment(representativeThread);
     const lineRange = representativeThread.line == null ? "unknown" : String(representativeThread.line);
     return [
       `- Root-cause repair group ${index + 1}`,
@@ -452,7 +464,7 @@ export function buildCodexConnectorMustFixFindingDetails(args: {
         : []),
       `  Evidence: ${cluster.threads
         .map((thread) => {
-          const comment = latestReviewComment(thread);
+          const comment = latestCodexConnectorReviewCommentNode(thread) ?? latestReviewComment(thread);
           return `${thread.id} ${thread.path ?? "unknown"}:${thread.line ?? "?"} ${comment?.url ?? "n/a"}`;
         })
         .join("; ")}`,
@@ -554,7 +566,7 @@ const CODEX_CONNECTOR_REVIEW_CATEGORY_PATTERNS: Array<{ category: string; patter
 ];
 
 function reviewThreadCategoryTokens(thread: ReviewThread): string[] {
-  const body = latestCodexConnectorReviewComment(thread)?.body ?? latestReviewComment(thread)?.body ?? "";
+  const body = (latestCodexConnectorReviewCommentNode(thread) ?? latestReviewComment(thread))?.body ?? "";
   const haystack = `${thread.path ?? ""} ${body}`;
   return CODEX_CONNECTOR_REVIEW_CATEGORY_PATTERNS
     .filter(({ pattern }) => pattern.test(haystack))
@@ -570,7 +582,7 @@ export function clusterConfiguredBotReviewThreads(reviewThreads: ReviewThread[])
   const clusterThemeTokens = new Map<string, string[]>();
 
   for (const thread of reviewThreads) {
-    const latestComment = latestReviewComment(thread);
+    const latestComment = latestCodexConnectorReviewCommentNode(thread) ?? latestReviewComment(thread);
     const severity = latestCodexConnectorPSeverity(thread) ?? "unknown";
     const summary = extractReviewCommentSummary(latestComment?.body ?? "");
     const signature = `${severity}:${normalizeReviewThreadSignature(summary) || thread.id}`;
@@ -658,7 +670,10 @@ export function buildCodexConnectorReviewChurnDiagnostic(
   const fileConcentrationThresholdPercent = codexConnectorReviewChurnFileConcentrationPercent(config);
 
   const clusters = clusterConfiguredBotReviewThreads(mustFixThreads);
-  const largestClusterSize = Math.max(...clusters.map((cluster) => cluster.threads.length), 0);
+  const largestCluster = [...clusters].sort(
+    (left, right) => right.threads.length - left.threads.length || left.signature.localeCompare(right.signature),
+  )[0];
+  const largestClusterSize = largestCluster?.threads.length ?? 0;
   const largestClusterRatio = (largestClusterSize / mustFixThreads.length) * 100;
   const largestClusterPercent = Math.round(largestClusterRatio);
   const meetsFileConcentration = dominantFileRatio >= fileConcentrationThresholdPercent;
@@ -669,10 +684,14 @@ export function buildCodexConnectorReviewChurnDiagnostic(
 
   const normalizedCategories = uniqueInOrder(mustFixThreads.flatMap(reviewThreadCategoryTokens)).sort();
   const categorySignature = normalizedCategories.length > 0 ? normalizedCategories.join("+") : "general_must_fix";
-  const representativeThreads = mustFixThreads.filter((thread) => (thread.path ?? "unknown") === dominantFile).slice(0, 5);
+  const concentrationBasis = meetsFileConcentration ? "file" : "theme";
+  const representativeThreads =
+    concentrationBasis === "theme" && largestCluster
+      ? largestCluster.threads.slice(0, 5)
+      : mustFixThreads.filter((thread) => (thread.path ?? "unknown") === dominantFile).slice(0, 5);
   const representativeSourceUrls = uniqueInOrder(
     representativeThreads.flatMap((thread) => {
-      const url = latestReviewComment(thread)?.url;
+      const url = (latestCodexConnectorReviewCommentNode(thread) ?? latestReviewComment(thread))?.url;
       return url ? [url] : [];
     }),
   );
@@ -690,7 +709,7 @@ export function buildCodexConnectorReviewChurnDiagnostic(
     mustFixCount: mustFixThreads.length,
     threshold,
     highestSeverity,
-    concentrationBasis: meetsFileConcentration ? "file" : "theme",
+    concentrationBasis,
     dominantFile,
     dominantFileThreadCount,
     dominantFilePercent,

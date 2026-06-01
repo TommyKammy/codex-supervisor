@@ -11,6 +11,7 @@ import {
   selectReviewThreadsForTurn,
   shouldResumeAgentTurn,
 } from "./turn-execution-orchestration";
+import { processedReviewThreadFingerprintKey, processedReviewThreadKey } from "./review-handling";
 import { SupervisorStateFile } from "./core/types";
 import {
   createConfig,
@@ -126,6 +127,57 @@ test("selectReviewThreadsForTurn re-includes processed Codex Connector must-fix 
 
   assert.equal(selected.length, 1);
   assert.equal(selected[0]?.id, "thread-1");
+});
+
+test("selectReviewThreadsForTurn switches churned Codex reviews from pending-only to root-cause repair", () => {
+  const reviewThreads = Array.from({ length: 8 }, (_, index) =>
+    createReviewThread({
+      id: `thread-churn-${index}`,
+      path: `src/churn-${index % 4}.ts`,
+      comments: {
+        nodes: [
+          {
+            id: `comment-churn-${index}`,
+            body:
+              "P2: Missing verifier coverage lets release-bundle readiness claims bypass the authority guard. Add generalized regression coverage.",
+            createdAt: "2026-03-11T00:00:00Z",
+            url: `https://example.test/pr/44#discussion_r${index}`,
+            author: {
+              login: "chatgpt-codex-connector[bot]",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  );
+
+  const selected = selectReviewThreadsForTurn({
+    config: createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector[bot]"],
+      codexConnectorReviewChurnMustFixThreshold: 8,
+      codexConnectorReviewChurnFileConcentrationPercent: 70,
+    }),
+    preRunState: "addressing_review",
+    record: {
+      processed_review_thread_ids: reviewThreads
+        .slice(0, 7)
+        .map((thread) => processedReviewThreadKey(thread.id, "head-a")),
+      processed_review_thread_fingerprints: reviewThreads
+        .slice(0, 7)
+        .map((thread, index) => processedReviewThreadFingerprintKey(thread.id, "head-a", `comment-churn-${index}`)),
+      last_head_sha: "head-a",
+      review_follow_up_head_sha: null,
+      review_follow_up_remaining: 0,
+    },
+    pr: createPullRequest({ headRefOid: "head-a" }),
+    reviewThreads,
+  });
+
+  assert.deepEqual(
+    selected.map((thread) => thread.id),
+    reviewThreads.map((thread) => thread.id),
+  );
 });
 
 test("prepareCodexTurnPrompt aligns active Codex review prompt with current-head Codex diagnostics", async () => {

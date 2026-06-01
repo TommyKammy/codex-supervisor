@@ -128,6 +128,49 @@ test("Codex Connector policy clusters repeated configured-bot findings", () => {
   assert.deepEqual(clusters[1]?.threads.map((thread) => thread.id), ["thread-export"]);
 });
 
+test("Codex Connector policy clusters Codex findings instead of later replies", () => {
+  const threads = Array.from({ length: 2 }, (_, index) =>
+    createReviewThread({
+      id: `thread-replied-${index}`,
+      path: `src/replied-${index}.ts`,
+      comments: {
+        nodes: [
+          {
+            id: `comment-codex-${index}`,
+            body:
+              "P2: Missing verifier coverage lets release-bundle readiness claims bypass the authority guard. Add generalized regression coverage.",
+            createdAt: "2026-03-11T00:00:00Z",
+            url: `https://example.test/pr/44#discussion_codex_${index}`,
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+          {
+            id: `comment-human-${index}`,
+            body: `Thanks, local follow-up note ${index}.`,
+            createdAt: "2026-03-11T00:01:00Z",
+            url: `https://example.test/pr/44#discussion_human_${index}`,
+            author: {
+              login: "maintainer",
+              typeName: "User",
+            },
+          },
+        ],
+      },
+    }),
+  );
+
+  const clusters = clusterConfiguredBotReviewThreads(threads);
+
+  assert.equal(clusters.length, 1);
+  assert.deepEqual(clusters[0]?.threads.map((thread) => thread.id), ["thread-replied-0", "thread-replied-1"]);
+  assert.deepEqual(clusters[0]?.sourceUrls, [
+    "https://example.test/pr/44#discussion_codex_0",
+    "https://example.test/pr/44#discussion_codex_1",
+  ]);
+});
+
 test("Codex Connector policy detects concentrated must-fix review churn", () => {
   const config = createConfig({
     reviewBotLogins: ["chatgpt-codex-connector"],
@@ -255,6 +298,13 @@ test("Codex Connector churn honors concentrated review themes across files", () 
   assert.equal(diagnostic?.dominantFilePercent, 25);
   assert.equal(diagnostic?.largestClusterSize, 8);
   assert.equal(diagnostic?.largestClusterPercent, 100);
+  assert.deepEqual(diagnostic?.representativeThreadIds, [
+    "thread-theme-0",
+    "thread-theme-1",
+    "thread-theme-2",
+    "thread-theme-3",
+    "thread-theme-4",
+  ]);
   assert.match(formatCodexConnectorReviewChurnDiagnostic(diagnostic!), /concentration_basis=theme/);
 });
 

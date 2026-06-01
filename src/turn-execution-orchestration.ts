@@ -17,6 +17,7 @@ import {
   processedReviewThreadKey,
 } from "./review-handling";
 import {
+  buildCodexConnectorReviewChurnDiagnostic,
   codexConnectorMustFixReviewThreads,
 } from "./codex-connector-review-policy";
 import {
@@ -61,7 +62,13 @@ function shouldLoadExternalReviewContext(args: {
 }
 
 export function selectReviewThreadsForTurn(args: {
-  config: Pick<SupervisorConfig, "reviewBotLogins" | "configuredReviewProviders">;
+  config: Pick<
+    SupervisorConfig,
+    | "reviewBotLogins"
+    | "configuredReviewProviders"
+    | "codexConnectorReviewChurnMustFixThreshold"
+    | "codexConnectorReviewChurnFileConcentrationPercent"
+  >;
   preRunState: IssueRunRecord["state"];
   record: Pick<
     IssueRunRecord,
@@ -86,11 +93,20 @@ export function selectReviewThreadsForTurn(args: {
   const pendingThreads = actionableFollowUpThreads.filter(
     (thread) => !hasProcessedReviewThread(args.record, currentPr, thread),
   );
+  const codexConnectorMustFixThreads = codexConnectorMustFixReviewThreads(actionableFollowUpThreads);
+  const codexConnectorReviewChurnDiagnostic = buildCodexConnectorReviewChurnDiagnostic(
+    args.config,
+    actionableFollowUpThreads,
+    currentPr,
+  );
+  if (codexConnectorReviewChurnDiagnostic && codexConnectorMustFixThreads.length > 0) {
+    return codexConnectorMustFixThreads;
+  }
+
   if (pendingThreads.length > 0) {
     return pendingThreads;
   }
 
-  const codexConnectorMustFixThreads = codexConnectorMustFixReviewThreads(actionableFollowUpThreads);
   if (codexConnectorMustFixThreads.length > 0) {
     return codexConnectorMustFixThreads;
   }
