@@ -1229,6 +1229,8 @@ test("resolveRunnableIssueContext selects stale review-commit residue without ti
     review_wait_head_sha: headSha,
     codex_connector_review_requested_observed_at: null,
     codex_connector_review_requested_head_sha: null,
+    last_tracked_pr_progress_summary: "suppressed_same_head_same_review_thread_blocker",
+    last_tracked_pr_repeat_failure_decision: "stop_no_progress",
   });
   const state: SupervisorStateFile = {
     activeIssueNumber: null,
@@ -1270,6 +1272,27 @@ test("resolveRunnableIssueContext selects stale review-commit residue without ti
             body: "P1: Verify the repair on the current head.",
             createdAt: "2026-05-26T21:55:00Z",
             url: `https://example.test/pr/${prNumber}#discussion_r2199`,
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    },
+    {
+      id: "thread-soft-p3",
+      isResolved: false,
+      isOutdated: false,
+      path: "src/codex-connector-review-request-decision.ts",
+      line: 294,
+      comments: {
+        nodes: [
+          {
+            id: "comment-soft-p3",
+            body: "P3: Consider clarifying this retry note in a follow-up.",
+            createdAt: "2026-05-26T21:56:00Z",
+            url: `https://example.test/pr/${prNumber}#discussion_soft_p3`,
             author: {
               login: "chatgpt-codex-connector",
               typeName: "Bot",

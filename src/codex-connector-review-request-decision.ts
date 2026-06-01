@@ -12,11 +12,17 @@ import {
 } from "./codex-connector-review-policy";
 import {
   configuredBotReviewFollowUpState,
+  latestReviewComment,
   latestReviewCommentAuthorIsAllowedBot,
   staleConfiguredBotReviewThreads,
 } from "./review-thread-reporting";
 import { buildStaleReviewBotRemediation } from "./supervisor/stale-review-bot-remediation";
 import { determineCopilotReviewTimeout } from "./pull-request-state-current-head-policy";
+import {
+  extractCodexConnectorPSeverity,
+  hasCodexConnectorStrongRiskWording,
+  isCodexConnectorReviewer,
+} from "./external-review/external-review-normalization";
 
 export type CodexConnectorReviewRequestAction =
   | { kind: "none" }
@@ -153,6 +159,23 @@ function hasProcessedReviewThreadOnNonCurrentHead(
   });
 }
 
+function latestCommentIsSoftenedCodexP3Thread(thread: ReviewThread): boolean {
+  const latestComment = latestReviewComment(thread);
+  const latestLogin = latestComment?.author?.login;
+  const allCommentsAreCodexConnector = thread.comments.nodes.every((comment) => {
+    const login = comment.author?.login;
+    return Boolean(login && isCodexConnectorReviewer(login));
+  });
+  return Boolean(
+    allCommentsAreCodexConnector &&
+    latestLogin &&
+      latestComment &&
+      isCodexConnectorReviewer(latestLogin) &&
+      extractCodexConnectorPSeverity(latestComment.body) === "P3" &&
+      !hasCodexConnectorStrongRiskWording(latestComment.body),
+  );
+}
+
 function configuredBotThreadsAllowCodexConnectorRequest(args: {
   config: SupervisorConfig;
   record: IssueRunRecord;
@@ -185,6 +208,11 @@ function configuredBotThreadsAllowCodexConnectorRequest(args: {
     codexConnectorStaleReviewCommitThreads(args.pr, args.configuredThreads).map((thread) => thread.id),
   );
   const codexMustFixThreadIds = new Set(codexConnectorMustFixReviewThreads(args.configuredThreads).map((thread) => thread.id));
+  const pureCodexSoftP3ThreadIds = new Set(
+    args.configuredThreads
+      .filter((thread) => latestCommentIsSoftenedCodexP3Thread(thread))
+      .map((thread) => thread.id),
+  );
 
   if (
     args.configuredThreads.some(
@@ -205,6 +233,7 @@ function configuredBotThreadsAllowCodexConnectorRequest(args: {
 
   return args.configuredThreads.every(
     (thread) =>
+      pureCodexSoftP3ThreadIds.has(thread.id) ||
       staleHeadConfiguredThreadIds.has(thread.id) ||
       staleConfiguredThreadIds.has(thread.id) ||
       staleReviewCommitThreadIds.has(thread.id) ||
