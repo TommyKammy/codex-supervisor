@@ -442,6 +442,123 @@ test("resolveRunnableIssueContext selects manual-review tracked PR when Codex cu
   }
 });
 
+test("resolveRunnableIssueContext discovers omitted stale tracked PR recovery and keeps downstream work blocked", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    configuredBotInitialGraceWaitSeconds: 0,
+    configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+  });
+  const staleIssueNumber = 281;
+  const downstreamIssueNumber = 282;
+  const prNumber = 289;
+  const branch = "codex/issue-281";
+  const headSha = "head-281-current";
+  const staleIssue: GitHubIssue = {
+    number: staleIssueNumber,
+    title: "Recover stale tracked PR",
+    body: executionReadyBody("Request current-head Codex review for a stale tracked PR blocker."),
+    createdAt: "2026-05-22T00:00:00Z",
+    updatedAt: "2026-05-22T00:00:00Z",
+    url: `https://example.test/issues/${staleIssueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const downstreamIssue: GitHubIssue = {
+    number: downstreamIssueNumber,
+    title: "Downstream candidate",
+    body: `${executionReadyBody("Wait for the stale tracked PR recovery root before continuing.")}
+
+Depends on: #${staleIssueNumber}
+Parallelizable: No
+
+## Execution order
+1 of 1`,
+    createdAt: "2026-05-22T00:00:00Z",
+    updatedAt: "2026-05-22T00:00:00Z",
+    url: `https://example.test/issues/${downstreamIssueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const staleRecord = createRecord(staleIssueNumber, {
+    state: "blocked",
+    branch,
+    pr_number: prNumber,
+    blocked_reason: "manual_review",
+    last_head_sha: headSha,
+    review_wait_started_at: "2026-05-22T00:00:00Z",
+    review_wait_head_sha: headSha,
+    copilot_review_timed_out_at: "2026-05-22T00:10:00.000Z",
+    copilot_review_timeout_action: "request_review_comment",
+    codex_connector_review_requested_observed_at: null,
+    codex_connector_review_requested_head_sha: null,
+    provider_success_head_sha: "head-281-stale",
+    provider_success_observed_at: "2026-05-21T23:50:00Z",
+  });
+  const downstreamRecord = createRecord(downstreamIssueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(staleIssueNumber)]: staleRecord,
+      [String(downstreamIssueNumber)]: downstreamRecord,
+    },
+  };
+  const pr: GitHubPullRequest = {
+    number: prNumber,
+    title: "Tracked PR",
+    url: `https://example.test/pr/${prNumber}`,
+    state: "OPEN",
+    createdAt: "2026-05-22T00:00:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+    headRefName: branch,
+    headRefOid: headSha,
+    mergedAt: null,
+    currentHeadCiGreenAt: "2026-05-22T00:00:00Z",
+    configuredBotLatestReviewedCommitSha: "head-281-stale",
+    configuredBotCurrentHeadObservedAt: null,
+    codexConnectorReviewRequestedAt: null,
+    codexConnectorReviewRequestedHeadSha: null,
+  };
+  const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+
+  const result = await resolveRunnableIssueContext({
+    github: {
+      listCandidateIssues: async () => [downstreamIssue],
+      getIssue: async (issueNumber) =>
+        issueNumber === staleIssueNumber ? staleIssue : downstreamIssue,
+      getPullRequestIfExists: async () => pr,
+      getChecks: async () => checks,
+      getUnresolvedReviewThreads: async () => [],
+    },
+    config,
+    stateStore: createTouchStateStore([]),
+    state,
+    currentRecord: null,
+    acquireIssueLock: async () => ({
+      acquired: true,
+      release: async () => {},
+    }),
+    ensureRecordJournalContext: async (selectedRecord) => ({
+      workspace: selectedRecord.workspace,
+      journal_path: `/tmp/workspaces/issue-${selectedRecord.issue_number}/.codex-supervisor/issue-journal.md`,
+    }),
+    syncIssueJournal: async () => {},
+  });
+
+  assert.notEqual(typeof result, "string");
+  if (typeof result !== "string") {
+    assert.equal(result.kind, "ready");
+    if (result.kind === "ready") {
+      assert.equal(result.record.issue_number, staleIssueNumber);
+      assert.equal(state.activeIssueNumber, staleIssueNumber);
+      await result.issueLock.release();
+    }
+  }
+});
+
 test("resolveRunnableIssueContext selects stale-review-bot tracked PR when Codex current-head review request is eligible", async () => {
   const config = createConfig({
     reviewBotLogins: ["chatgpt-codex-connector"],

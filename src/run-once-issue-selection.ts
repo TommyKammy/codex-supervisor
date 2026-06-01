@@ -64,7 +64,7 @@ export interface RestartRunOnce {
 type IssueSelectionResult = ReadyIssueContext | RestartRunOnce | string;
 
 type IssueSelectionCandidateGitHub = Pick<GitHubClient, "listCandidateIssues"> &
-  Partial<Pick<GitHubClient, "getPullRequestIfExists" | "getChecks" | "getUnresolvedReviewThreads">>;
+  Partial<Pick<GitHubClient, "getIssue" | "getPullRequestIfExists" | "getChecks" | "getUnresolvedReviewThreads">>;
 type IssueSelectionGitHub = IssueSelectionCandidateGitHub
   & Pick<GitHubClient, "getIssue">
   & Partial<Pick<GitHubClient, "addIssueComment" | "getIssueComments" | "updateIssueComment">>;
@@ -116,6 +116,40 @@ async function shouldSelectCodexConnectorReviewRequestRecovery(
   } catch {
     return false;
   }
+}
+
+async function discoverCodexConnectorReviewRequestRecoveryIssues(
+  github: IssueSelectionCandidateGitHub,
+  config: SupervisorConfig,
+  state: SupervisorStateFile,
+  existingIssues: GitHubIssue[],
+): Promise<GitHubIssue[]> {
+  if (!github.getIssue) {
+    return [];
+  }
+
+  const existingIssueNumbers = new Set(existingIssues.map((issue) => issue.number));
+  const recoveryIssues: GitHubIssue[] = [];
+  const records = Object.values(state.issues)
+    .filter((record) => !existingIssueNumbers.has(record.issue_number))
+    .sort((left, right) => left.issue_number - right.issue_number);
+
+  for (const record of records) {
+    if (!(await shouldSelectCodexConnectorReviewRequestRecovery(github, config, record))) {
+      continue;
+    }
+
+    try {
+      const issue = await github.getIssue(record.issue_number);
+      if (issue.state === "OPEN") {
+        recoveryIssues.push(issue);
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return recoveryIssues;
 }
 
 interface SelectedIssueRecord {
@@ -422,13 +456,15 @@ async function selectIssueRecord(
 
   if (!record || !isEligibleForSelection(record, config)) {
     const issues = await github.listCandidateIssues();
+    const recoveryIssues = await discoverCodexConnectorReviewRequestRecoveryIssues(github, config, state, issues);
+    const selectableIssues = [...issues, ...recoveryIssues];
     record = null;
-    for (const issue of issues) {
+    for (const issue of selectableIssues) {
       if (config.skipTitlePrefixes.some((prefix) => issue.title.startsWith(prefix))) {
         continue;
       }
 
-      if (findBlockingIssue(issue, issues, state)) {
+      if (findBlockingIssue(issue, selectableIssues, state)) {
         continue;
       }
 
