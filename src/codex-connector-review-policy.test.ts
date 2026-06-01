@@ -3,10 +3,12 @@ import test from "node:test";
 import {
   buildCodexConnectorP2P3PolicyDiagnostic,
   buildCodexConnectorPolicyBlockDiagnostic,
+  buildCodexConnectorReviewChurnDiagnostic,
   clusterConfiguredBotReviewThreads,
   codexConnectorMustFixReviewThreads,
   codexConnectorStaleReviewCommitThreads,
   evaluateCodexConnectorConvergencePolicy,
+  formatCodexConnectorReviewChurnDiagnostic,
 } from "./codex-connector-review-policy";
 import type { GitHubPullRequest, ReviewThread } from "./core/types";
 import { createConfig, createReviewThread } from "./turn-execution-test-helpers";
@@ -124,4 +126,55 @@ test("Codex Connector policy clusters repeated configured-bot findings", () => {
   assert.equal(clusters.length, 2);
   assert.deepEqual(clusters[0]?.threads.map((thread) => thread.id), ["thread-restore", "thread-restore-test"]);
   assert.deepEqual(clusters[1]?.threads.map((thread) => thread.id), ["thread-export"]);
+});
+
+test("Codex Connector policy detects concentrated must-fix review churn", () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    codexConnectorReviewChurnMustFixThreshold: 4,
+    codexConnectorReviewChurnFileConcentrationPercent: 75,
+  });
+  const threads = [
+    codexThread({
+      id: "thread-authority",
+      path: "scripts/verify-release-inventory.sh",
+      line: 101,
+      body: "P2: Reject release-bundle authority claims before they become RC/GA readiness assertions.",
+    }),
+    codexThread({
+      id: "thread-truth",
+      path: "scripts/verify-release-inventory.sh",
+      line: 144,
+      body: "P2: Block truth-source assertions that describe the inventory as authoritative.",
+    }),
+    codexThread({
+      id: "thread-scope",
+      path: "scripts/verify-release-inventory.sh",
+      line: 188,
+      body: "P2: Detect excluded scope claims when the bundle says subordinate sources are covered.",
+    }),
+    codexThread({
+      id: "thread-regex",
+      path: "scripts/verify-release-inventory.sh",
+      line: 233,
+      body: "P2: Generalize the forbidden claim regex instead of allowing another readiness claim variant.",
+    }),
+  ];
+
+  const diagnostic = buildCodexConnectorReviewChurnDiagnostic(config, threads);
+
+  assert.equal(diagnostic?.mustFixCount, 4);
+  assert.equal(diagnostic?.dominantFile, "scripts/verify-release-inventory.sh");
+  assert.equal(diagnostic?.dominantFilePercent, 100);
+  assert.equal(diagnostic?.nextAction, "cluster_root_cause_repair");
+  assert.match(diagnostic?.signature ?? "", /^codex-review-churn:P2:scripts\/verify-release-inventory\.sh:/);
+  assert.deepEqual(diagnostic?.representativeThreadIds, [
+    "thread-authority",
+    "thread-truth",
+    "thread-scope",
+    "thread-regex",
+  ]);
+  assert.match(formatCodexConnectorReviewChurnDiagnostic(diagnostic!), /^codex_connector_review_churn /);
+  assert.match(formatCodexConnectorReviewChurnDiagnostic(diagnostic!), /categories=.*truth_source/);
+  assert.match(formatCodexConnectorReviewChurnDiagnostic(diagnostic!), /next_action=cluster_root_cause_repair$/);
 });

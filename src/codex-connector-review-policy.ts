@@ -132,6 +132,23 @@ export interface CodexConnectorP2P3PolicyDiagnostic {
   p3Escalated: number;
 }
 
+export interface CodexConnectorReviewChurnDiagnostic {
+  mustFixCount: number;
+  threshold: number;
+  highestSeverity: CodexConnectorPSeverity;
+  dominantFile: string;
+  dominantFileThreadCount: number;
+  dominantFilePercent: number;
+  fileConcentrationThresholdPercent: number;
+  clusterCount: number;
+  largestClusterSize: number;
+  normalizedCategories: string[];
+  representativeThreadIds: string[];
+  representativeSourceUrls: string[];
+  signature: string;
+  nextAction: "cluster_root_cause_repair";
+}
+
 export type CodexConnectorConvergencePolicyOutcome =
   | "missing_current_head_review"
   | "must_fix_remaining"
@@ -376,6 +393,18 @@ export function formatCodexConnectorP2P3PolicyDiagnostic(diagnostic: CodexConnec
   ].join(" ");
 }
 
+function codexConnectorReviewChurnMustFixThreshold(
+  config: Pick<SupervisorConfig, "codexConnectorReviewChurnMustFixThreshold">,
+): number {
+  return config.codexConnectorReviewChurnMustFixThreshold ?? 8;
+}
+
+function codexConnectorReviewChurnFileConcentrationPercent(
+  config: Pick<SupervisorConfig, "codexConnectorReviewChurnFileConcentrationPercent">,
+): number {
+  return config.codexConnectorReviewChurnFileConcentrationPercent ?? 70;
+}
+
 function normalizeReviewCommentWhitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
@@ -511,6 +540,30 @@ function uniqueInOrder(values: string[]): string[] {
   return [...new Set(values)];
 }
 
+const CODEX_CONNECTOR_REVIEW_CATEGORY_PATTERNS: Array<{ category: string; pattern: RegExp }> = [
+  { category: "rc_ga_readiness", pattern: /\b(?:rc|ga|release[- ]candidate|commercial[- ]ready|production[- ]ready|ready)\b/i },
+  { category: "readiness_claim", pattern: /\b(?:readiness|ready|gate[- ]pass|mergeable|release)\b/i },
+  { category: "truth_source", pattern: /\b(?:truth|source[- ]of[- ]truth|authoritative|authority|claim|assertion)\b/i },
+  { category: "excluded_scope", pattern: /\b(?:excluded|out[- ]of[- ]scope|scope|subordinate|non[- ]goal)\b/i },
+  { category: "verifier_or_issue_lint", pattern: /\b(?:verifier|verify|issue[- ]lint|guard|check)\b/i },
+  { category: "inventory_or_bundle", pattern: /\b(?:inventory|bundle|baseline|release[- ]bundle)\b/i },
+  { category: "path_scope", pattern: /\b(?:path|root|local|encoded|directory)\b/i },
+  { category: "claim_detection", pattern: /\b(?:regex|detect|scan|reject|block|allow|forbidden|assert)\b/i },
+];
+
+function reviewThreadCategoryTokens(thread: ReviewThread): string[] {
+  const latestComment = latestReviewComment(thread);
+  const body = latestComment?.body ?? "";
+  const haystack = `${thread.path ?? ""} ${body}`;
+  return CODEX_CONNECTOR_REVIEW_CATEGORY_PATTERNS
+    .filter(({ pattern }) => pattern.test(haystack))
+    .map(({ category }) => category);
+}
+
+function formatSignaturePart(value: string): string {
+  return formatDiagnosticToken(value.toLowerCase().replace(/[^a-z0-9._/-]+/g, "_"));
+}
+
 export function clusterConfiguredBotReviewThreads(reviewThreads: ReviewThread[]): ConfiguredBotReviewThreadCluster[] {
   const clusters = new Map<string, ConfiguredBotReviewThreadCluster>();
   const clusterThemeTokens = new Map<string, string[]>();
@@ -560,4 +613,108 @@ export function clusterConfiguredBotReviewThreads(reviewThreads: ReviewThread[])
   }
 
   return [...clusters.values()];
+}
+
+export function buildCodexConnectorReviewChurnDiagnostic(
+  config: Pick<
+    SupervisorConfig,
+    | "configuredReviewProviders"
+    | "reviewBotLogins"
+    | "codexConnectorReviewChurnMustFixThreshold"
+    | "codexConnectorReviewChurnFileConcentrationPercent"
+  >,
+  reviewThreads: ReviewThread[],
+  pr?: Pick<GitHubPullRequest, "headRefOid" | "configuredBotCurrentHeadObservedAt" | "configuredBotLatestReviewedCommitSha"> | null,
+): CodexConnectorReviewChurnDiagnostic | null {
+  if (!configuredReviewProviderKinds(config as SupervisorConfig).includes("codex")) {
+    return null;
+  }
+  if (pr && codexConnectorStaleReviewCommitThreads(pr, reviewThreads).length > 0) {
+    return null;
+  }
+
+  const mustFixThreads = codexConnectorMustFixReviewThreads(reviewThreads);
+  const threshold = codexConnectorReviewChurnMustFixThreshold(config);
+  if (mustFixThreads.length < threshold) {
+    return null;
+  }
+
+  const fileCounts = new Map<string, number>();
+  for (const thread of mustFixThreads) {
+    const file = thread.path ?? "unknown";
+    fileCounts.set(file, (fileCounts.get(file) ?? 0) + 1);
+  }
+  const dominantFileEntry = [...fileCounts.entries()].sort(
+    (left, right) => right[1] - left[1] || left[0].localeCompare(right[0]),
+  )[0];
+  if (!dominantFileEntry) {
+    return null;
+  }
+
+  const [dominantFile, dominantFileThreadCount] = dominantFileEntry;
+  const dominantFilePercent = Math.round((dominantFileThreadCount / mustFixThreads.length) * 100);
+  const fileConcentrationThresholdPercent = codexConnectorReviewChurnFileConcentrationPercent(config);
+  if (dominantFilePercent < fileConcentrationThresholdPercent) {
+    return null;
+  }
+
+  const clusters = clusterConfiguredBotReviewThreads(mustFixThreads);
+  const largestClusterSize = Math.max(...clusters.map((cluster) => cluster.threads.length), 0);
+  const normalizedCategories = uniqueInOrder(mustFixThreads.flatMap(reviewThreadCategoryTokens)).sort();
+  const categorySignature = normalizedCategories.length > 0 ? normalizedCategories.join("+") : "general_must_fix";
+  const representativeThreads = mustFixThreads.filter((thread) => (thread.path ?? "unknown") === dominantFile).slice(0, 5);
+  const representativeSourceUrls = uniqueInOrder(
+    representativeThreads.flatMap((thread) => {
+      const url = latestReviewComment(thread)?.url;
+      return url ? [url] : [];
+    }),
+  );
+  const highestSeverity = maxCodexConnectorPSeverity(mustFixThreads);
+  const signature = [
+    "codex-review-churn",
+    highestSeverity,
+    formatSignaturePart(dominantFile),
+    formatSignaturePart(categorySignature),
+    `clusters-${clusters.length}`,
+    `threshold-${threshold}`,
+  ].join(":");
+
+  return {
+    mustFixCount: mustFixThreads.length,
+    threshold,
+    highestSeverity,
+    dominantFile,
+    dominantFileThreadCount,
+    dominantFilePercent,
+    fileConcentrationThresholdPercent,
+    clusterCount: clusters.length,
+    largestClusterSize,
+    normalizedCategories: normalizedCategories.length > 0 ? normalizedCategories : ["general_must_fix"],
+    representativeThreadIds: representativeThreads.map((thread) => thread.id),
+    representativeSourceUrls,
+    signature,
+    nextAction: "cluster_root_cause_repair",
+  };
+}
+
+export function formatCodexConnectorReviewChurnDiagnostic(
+  diagnostic: CodexConnectorReviewChurnDiagnostic,
+): string {
+  return [
+    "codex_connector_review_churn",
+    "status=clustered_root_cause_repair",
+    `must_fix=${diagnostic.mustFixCount}`,
+    `threshold=${diagnostic.threshold}`,
+    `highest_severity=${diagnostic.highestSeverity}`,
+    `dominant_file=${formatDiagnosticToken(diagnostic.dominantFile)}`,
+    `dominant_file_threads=${diagnostic.dominantFileThreadCount}`,
+    `dominant_file_percent=${diagnostic.dominantFilePercent}`,
+    `file_concentration_threshold_percent=${diagnostic.fileConcentrationThresholdPercent}`,
+    `clusters=${diagnostic.clusterCount}`,
+    `largest_cluster=${diagnostic.largestClusterSize}`,
+    `categories=${diagnostic.normalizedCategories.map(formatDiagnosticToken).join("|")}`,
+    `representative_threads=${diagnostic.representativeThreadIds.map(formatDiagnosticToken).join(",") || "none"}`,
+    `signature=${formatDiagnosticToken(diagnostic.signature)}`,
+    `next_action=${diagnostic.nextAction}`,
+  ].join(" ");
 }

@@ -358,6 +358,8 @@ test("loadConfig keeps local review disabled by default while using the opiniona
   assert.equal(config.staleConfiguredBotReviewPolicy, "diagnose_only");
   assert.equal(config.verifiedNoSourceChangeReviewThreadAutoResolve, false);
   assert.equal(config.verifiedCurrentHeadRepairReviewThreadAutoResolve, false);
+  assert.equal(config.codexConnectorReviewChurnMustFixThreshold, 8);
+  assert.equal(config.codexConnectorReviewChurnFileConcentrationPercent, 70);
   assert.equal(config.codexConnectorAutoMergeEnabled, false);
 });
 
@@ -1380,6 +1382,36 @@ test("loadConfig accepts bounded Codex Connector review request retry settings",
   assert.equal(config.codexConnectorReviewRequestNoResponseMinutes, 7);
   assert.equal(config.codexConnectorReviewRequestRetryLimit, 2);
   assert.equal(config.codexConnectorReviewRequestRetryMode, "supervisor_marker");
+});
+
+test("loadConfig accepts Codex Connector review churn thresholds", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  const configPath = path.join(tempDir, "supervisor.config.json");
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "./.local/worktrees",
+      stateBackend: "json",
+      stateFile: "./.local/state.json",
+      codexBinary: "codex",
+      branchPrefix: "codex/issue-",
+      reviewBotLogins: ["chatgpt-codex-connector"],
+      codexConnectorReviewChurnMustFixThreshold: 6,
+      codexConnectorReviewChurnFileConcentrationPercent: 80,
+    }),
+    "utf8",
+  );
+
+  const config = loadConfig(configPath);
+  assert.equal(config.codexConnectorReviewChurnMustFixThreshold, 6);
+  assert.equal(config.codexConnectorReviewChurnFileConcentrationPercent, 80);
 });
 
 test("loadConfig accepts explicit stale configured-bot reply_only policy", async (t) => {

@@ -1046,6 +1046,66 @@ This stale handoff history should not be replayed into a targeted thread repair 
   assert.doesNotMatch(prompt, /On-demand durable memory files:/);
 });
 
+test("buildCodexPrompt routes concentrated Codex Connector P2 cascades to root-cause repair", () => {
+  const pr = createPullRequest({
+    number: 1388,
+    headRefOid: "head-connector-1388",
+  });
+  const threads = [
+    ["thread-authority", "P2: Reject release-bundle authority claims before RC/GA readiness assertions."],
+    ["thread-truth", "P2: Block inventory truth-source assertions that present the bundle as authoritative."],
+    ["thread-scope", "P2: Detect excluded scope claims for subordinate release-bundle sources."],
+    ["thread-regex", "P2: Generalize the forbidden claim regex instead of adding another readiness variant."],
+  ].map(([id, body], index) =>
+    createReviewThread({
+      id,
+      path: "scripts/verify-phase-release-bundle-inventory.sh",
+      line: 100 + index,
+      comments: {
+        nodes: [
+          {
+            id: `${id}-comment`,
+            body,
+            createdAt: "2026-03-11T00:05:00Z",
+            url: `https://example.test/pr/1388#discussion_${id}`,
+            author: {
+              login: "chatgpt-codex-connector[bot]",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  );
+
+  const prompt = buildCodexPrompt({
+    kind: "start",
+    config: createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector[bot]"],
+      codexConnectorReviewChurnMustFixThreshold: 4,
+      codexConnectorReviewChurnFileConcentrationPercent: 75,
+    }),
+    repoSlug: "owner/repo",
+    issue,
+    branch: "codex/issue-2217",
+    workspacePath: "/tmp/workspaces/issue-2217",
+    state: "addressing_review" satisfies RunState,
+    pr,
+    checks: [],
+    reviewThreads: threads,
+    alwaysReadFiles: [],
+    onDemandMemoryFiles: [],
+    journalPath: "/tmp/workspaces/issue-2217/.codex-supervisor/issue-journal.md",
+  } satisfies AgentTurnContext);
+
+  assert.match(prompt, /Codex Connector clustered root-cause repair:/);
+  assert.match(prompt, /Triggered: review_churn must_fix=4 threshold=4/);
+  assert.match(prompt, /Normalized categories: .*truth_source/);
+  assert.match(prompt, /identify the common subject, verb, scope, and truth-category failure/);
+  assert.match(prompt, /Prefer a generalized parser, table-driven verifier, or category-based guard/);
+  assert.match(prompt, /P0\/P1\/P2 and escalated P3 Codex Connector findings are supervisor-enforced must-fix findings/);
+});
+
 test("buildCodexPrompt promotes review comment examples into fresh regression-probe evidence", () => {
   const pr = createPullRequest({
     number: 144,

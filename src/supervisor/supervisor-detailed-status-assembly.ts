@@ -204,6 +204,9 @@ export function buildInactiveDetailedStatusLines(
     if (codexConnectorDiagnostics.policyBlockSummary) {
       lines.push(codexConnectorDiagnostics.policyBlockSummary);
     }
+    if (codexConnectorDiagnostics.reviewChurnSummary) {
+      lines.push(codexConnectorDiagnostics.reviewChurnSummary);
+    }
     if (codexConnectorDiagnostics.reviewFallbackSummary) {
       lines.push(codexConnectorDiagnostics.reviewFallbackSummary);
     }

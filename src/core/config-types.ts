@@ -218,6 +218,8 @@ export interface SupervisorConfig {
   codexConnectorReviewRequestNoResponseMinutes?: number;
   codexConnectorReviewRequestRetryLimit?: number;
   codexConnectorReviewRequestRetryMode?: CodexConnectorReviewRequestRetryMode;
+  codexConnectorReviewChurnMustFixThreshold?: number;
+  codexConnectorReviewChurnFileConcentrationPercent?: number;
   codexConnectorAutoMergeEnabled?: boolean;
   codexExecTimeoutMinutes: number;
   maxCodexAttemptsPerIssue: number;

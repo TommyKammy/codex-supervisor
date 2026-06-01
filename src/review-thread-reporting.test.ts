@@ -4,6 +4,7 @@ import { configuredBotReviewThreads, manualReviewThreads } from "./supervisor/su
 import {
   buildCodexConnectorPolicyBlockDiagnostic,
   buildCodexConnectorP2P3PolicyDiagnostic,
+  buildReviewFailureContext,
   actionableBotReviewThreads,
   buildStalledBotReviewFailureContext,
   clusterConfiguredBotReviewThreads,
@@ -793,6 +794,48 @@ test("clusterConfiguredBotReviewThreads groups same-path Codex Connector finding
     "https://example.test/pr/44#discussion_r2",
   ]);
   assert.deepEqual(clusters[1]?.threads.map((thread) => thread.id), ["thread-export-snapshot"]);
+});
+
+test("review failure contexts use normalized Codex Connector churn signatures", () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    codexConnectorReviewChurnMustFixThreshold: 3,
+    codexConnectorReviewChurnFileConcentrationPercent: 100,
+  });
+  const threads = ["authority", "truth", "scope"].map((topic, index) =>
+    createReviewThread({
+      id: `thread-${topic}`,
+      path: "scripts/verify-release-inventory.sh",
+      line: 100 + index,
+      comments: {
+        nodes: [
+          {
+            id: `comment-${topic}`,
+            body:
+              topic === "authority"
+                ? "P2: Reject release-bundle authority claims before RC/GA readiness."
+                : topic === "truth"
+                  ? "P2: Block inventory truth-source assertions in release notes."
+                  : "P2: Detect excluded scope claims for subordinate bundle sources.",
+            createdAt: "2026-03-11T00:00:00Z",
+            url: `https://example.test/pr/44#discussion_${topic}`,
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  );
+
+  const reviewContext = buildReviewFailureContext(threads, config);
+  const stalledContext = buildStalledBotReviewFailureContext(threads, "no_progress", config);
+
+  assert.match(reviewContext?.signature ?? "", /^codex-review-churn:P2:scripts\/verify-release-inventory\.sh:/);
+  assert.notEqual(reviewContext?.signature, "thread-authority|thread-truth|thread-scope");
+  assert.match(stalledContext?.signature ?? "", /^stalled-bot:codex-review-churn:P2:/);
+  assert.match(reviewContext?.details[0] ?? "", /next_action=cluster_root_cause_repair/);
 });
 
 test("evaluateCodexConnectorConvergencePolicy separates missing, must-fix, nitpick-only, and converged outcomes", () => {

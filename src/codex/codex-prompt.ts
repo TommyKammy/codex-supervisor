@@ -8,6 +8,7 @@ import {
   PullRequestCheck,
   ReviewThread,
   RunState,
+  SupervisorConfig,
 } from "../core/types";
 import { truncate } from "../core/utils";
 import { type VerifierGuardrailRule } from "../verifier-guardrails";
@@ -22,7 +23,10 @@ import type {
   StartAgentTurnContext,
 } from "../supervisor/agent-runner";
 import { reviewProviderProfileFromConfig, type ReviewProviderProfileSummary } from "../core/review-providers";
-import { buildCodexConnectorMustFixFindingDetails } from "../codex-connector-review-policy";
+import {
+  buildCodexConnectorMustFixFindingDetails,
+  buildCodexConnectorReviewChurnDiagnostic,
+} from "../codex-connector-review-policy";
 import { isWorkstationLocalPathHygieneFailureSignature } from "../workstation-local-path-gate";
 
 export interface LocalReviewRepairContext {
@@ -367,6 +371,7 @@ function buildFreshReviewCommentEvidenceExamples(reviewThreads: ReviewThread[]):
 }
 
 export interface BuildCodexStartPromptInput {
+  config?: SupervisorConfig;
   repoSlug: string;
   issue: GitHubIssue;
   branch: string;
@@ -494,6 +499,10 @@ function buildCodexStartPrompt(input: BuildCodexStartPromptInput): string {
           reviewThreads: input.reviewThreads,
         })
       : [];
+  const codexConnectorReviewChurn =
+    input.config && input.state === "addressing_review" && input.reviewProviderProfile?.profile === "codex"
+      ? buildCodexConnectorReviewChurnDiagnostic(input.config, input.reviewThreads, input.pr)
+      : null;
   const useCodexConnectorReviewThreadFastPath = codexConnectorMustFixFindingDetails.length > 0;
   const journalExcerpt = useCodexConnectorReviewThreadFastPath
     ? null
@@ -696,6 +705,18 @@ function buildCodexStartPrompt(input: BuildCodexStartPromptInput): string {
           "- P3 nitpick-only findings are not enough by themselves to require a same-PR repair pass.",
           "- If the finding is valid, make the smallest valid code fix and push a new PR head.",
           "- If a must-fix finding conflicts with issue scope or appears unsafe to apply, route it to the existing manual/operator review path instead of self-dismissing it.",
+          ...(codexConnectorReviewChurn
+            ? [
+                "Codex Connector clustered root-cause repair:",
+                `- Triggered: review_churn must_fix=${codexConnectorReviewChurn.mustFixCount} threshold=${codexConnectorReviewChurn.threshold} dominant_file=${codexConnectorReviewChurn.dominantFile} dominant_file_percent=${codexConnectorReviewChurn.dominantFilePercent}`,
+                `- Cluster signature: ${codexConnectorReviewChurn.signature}`,
+                `- Normalized categories: ${codexConnectorReviewChurn.normalizedCategories.join(", ")}`,
+                `- Representative threads: ${codexConnectorReviewChurn.representativeThreadIds.join(", ") || "none"}`,
+                "- Treat the comments as one review family before editing; identify the common subject, verb, scope, and truth-category failure that explains the variants.",
+                "- Prefer a generalized parser, table-driven verifier, or category-based guard over adding one literal regex or wording patch per thread.",
+                "- Use representative examples from the cluster as regression probes, then verify that the broader category is covered without weakening the fail-closed policy.",
+              ]
+            : []),
           ...(codexConnectorMustFixFindingDetails.length > 0 && !useCodexConnectorReviewThreadFastPath
             ? [
                 "Codex Connector must-fix findings:",
@@ -953,6 +974,7 @@ function toResumePromptInput(input: ResumeAgentTurnContext): BuildCodexResumePro
 
 function toStartPromptInput(input: StartAgentTurnContext): BuildCodexStartPromptInput {
   return {
+    config: input.config,
     repoSlug: input.repoSlug,
     issue: input.issue,
     branch: input.branch,

@@ -655,6 +655,20 @@ export function parseSupervisorConfigDocument(raw: Record<string, unknown>, reso
       VALID_CODEX_CONNECTOR_REVIEW_REQUEST_RETRY_MODES.has(raw.codexConnectorReviewRequestRetryMode as CodexConnectorReviewRequestRetryMode)
         ? (raw.codexConnectorReviewRequestRetryMode as CodexConnectorReviewRequestRetryMode)
         : "plain",
+    codexConnectorReviewChurnMustFixThreshold:
+      typeof raw.codexConnectorReviewChurnMustFixThreshold === "number" &&
+      Number.isFinite(raw.codexConnectorReviewChurnMustFixThreshold) &&
+      Number.isInteger(raw.codexConnectorReviewChurnMustFixThreshold) &&
+      raw.codexConnectorReviewChurnMustFixThreshold > 0
+        ? raw.codexConnectorReviewChurnMustFixThreshold
+        : 8,
+    codexConnectorReviewChurnFileConcentrationPercent:
+      typeof raw.codexConnectorReviewChurnFileConcentrationPercent === "number" &&
+      Number.isFinite(raw.codexConnectorReviewChurnFileConcentrationPercent) &&
+      raw.codexConnectorReviewChurnFileConcentrationPercent >= 0 &&
+      raw.codexConnectorReviewChurnFileConcentrationPercent <= 100
+        ? raw.codexConnectorReviewChurnFileConcentrationPercent
+        : 70,
     codexConnectorAutoMergeEnabled:
       typeof raw.codexConnectorAutoMergeEnabled === "boolean"
         ? raw.codexConnectorAutoMergeEnabled
