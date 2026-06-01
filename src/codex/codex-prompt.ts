@@ -22,7 +22,11 @@ import type {
   ResumeAgentTurnContext,
   StartAgentTurnContext,
 } from "../supervisor/agent-runner";
-import { reviewProviderProfileFromConfig, type ReviewProviderProfileSummary } from "../core/review-providers";
+import {
+  configuredReviewProviderKinds,
+  reviewProviderProfileFromConfig,
+  type ReviewProviderProfileSummary,
+} from "../core/review-providers";
 import {
   buildCodexConnectorMustFixFindingDetails,
   buildCodexConnectorReviewChurnDiagnostic,
@@ -494,15 +498,19 @@ function describeVerificationPolicy(
 
 function buildCodexStartPrompt(input: BuildCodexStartPromptInput): string {
   const codexConnectorChurnReviewThreads = input.activeReviewThreads ?? input.reviewThreads;
+  const usesCodexConnectorReviewProvider =
+    input.state === "addressing_review" &&
+    (input.reviewProviderProfile?.profile === "codex" ||
+      (input.config ? configuredReviewProviderKinds(input.config).includes("codex") : false));
   const codexConnectorMustFixFindingDetails =
-    input.state === "addressing_review" && input.reviewProviderProfile?.profile === "codex"
+    usesCodexConnectorReviewProvider
       ? buildCodexConnectorMustFixFindingDetails({
           pr: input.pr,
           reviewThreads: input.reviewThreads,
         })
       : [];
   const codexConnectorReviewChurn =
-    input.config && input.state === "addressing_review" && input.reviewProviderProfile?.profile === "codex"
+    input.config && usesCodexConnectorReviewProvider
       ? buildCodexConnectorReviewChurnDiagnostic(input.config, codexConnectorChurnReviewThreads, input.pr)
       : null;
   const useCodexConnectorReviewThreadFastPath = codexConnectorMustFixFindingDetails.length > 0;
@@ -699,7 +707,7 @@ function buildCodexStartPrompt(input: BuildCodexStartPromptInput): string {
   const freshReviewCommentEvidenceExamples =
     input.state === "addressing_review" ? buildFreshReviewCommentEvidenceExamples(input.reviewThreads) : [];
   const codexConnectorReviewGuidance =
-    input.state === "addressing_review" && input.reviewProviderProfile?.profile === "codex"
+    usesCodexConnectorReviewProvider
       ? [
           "Codex Connector review handling:",
           "- P0/P1/P2 and escalated P3 Codex Connector findings are supervisor-enforced must-fix findings.",

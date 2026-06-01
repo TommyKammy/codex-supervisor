@@ -81,6 +81,7 @@ export function inferFailureContext(
       const reviewContext = buildReviewFailureContext(
         pendingBotReviewThreads(config, record, pr, effectiveConfiguredBotThreads),
         config,
+        pr,
       );
       if (reviewContext) {
         return reviewContext;
@@ -92,6 +93,7 @@ export function inferFailureContext(
           ? "exhausted_follow_up"
           : "no_progress",
         config,
+        pr,
       );
       if (stalledBotReviewContext) {
         return stalledBotReviewContext;
@@ -134,6 +136,7 @@ export function inferFailureContext(
     const reviewContext = buildReviewFailureContext(
       pendingBotReviewThreads(config, record, pr, effectiveConfiguredBotThreads),
       config,
+      pr,
     );
     if (reviewContext) {
       return reviewContext;
@@ -145,6 +148,7 @@ export function inferFailureContext(
         ? "exhausted_follow_up"
         : "no_progress",
       config,
+      pr,
     );
     if (stalledBotReviewContext) {
       return stalledBotReviewContext;

@@ -587,14 +587,11 @@ export function clusterConfiguredBotReviewThreads(reviewThreads: ReviewThread[])
     const summary = extractReviewCommentSummary(latestComment?.body ?? "");
     const signature = `${severity}:${normalizeReviewThreadSignature(summary) || thread.id}`;
     const themeTokens = normalizeFailureThemeTokens(summary);
-    const normalizedPath = thread.path?.replace(/\\/g, "/");
     const existingSignature = clusters.has(signature)
       ? signature
       : [...clusters.entries()].find(([candidateSignature, candidate]) => {
           return (
-            normalizedPath !== undefined &&
             candidate.severity === severity &&
-            candidate.files.map((filePath) => filePath.replace(/\\/g, "/")).includes(normalizedPath) &&
             hasSimilarFailureTheme(themeTokens, clusterThemeTokens.get(candidateSignature) ?? [])
           );
         })?.[0];

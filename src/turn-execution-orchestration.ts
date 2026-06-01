@@ -41,6 +41,10 @@ import type { AgentTurnContext } from "./supervisor/agent-runner";
 import { truncate } from "./core/utils";
 import { loadStatusChangedFiles } from "./supervisor/supervisor-status-rendering";
 
+function uniqueReviewThreadsInOrder(reviewThreads: ReviewThread[], includeIds: Set<string>): ReviewThread[] {
+  return reviewThreads.filter((thread) => includeIds.has(thread.id));
+}
+
 function shouldLoadExternalReviewContext(args: {
   preRunState: IssueRunRecord["state"];
   pr: GitHubPullRequest | null;
@@ -100,7 +104,10 @@ export function selectReviewThreadsForTurn(args: {
     currentPr,
   );
   if (codexConnectorReviewChurnDiagnostic && codexConnectorMustFixThreads.length > 0) {
-    return codexConnectorMustFixThreads;
+    return uniqueReviewThreadsInOrder(
+      actionableFollowUpThreads,
+      new Set([...pendingThreads, ...codexConnectorMustFixThreads].map((thread) => thread.id)),
+    );
   }
 
   if (pendingThreads.length > 0) {

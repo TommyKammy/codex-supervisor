@@ -838,6 +838,54 @@ test("review failure contexts use normalized Codex Connector churn signatures", 
   assert.match(reviewContext?.details[0] ?? "", /next_action=cluster_root_cause_repair/);
 });
 
+test("review failure contexts suppress Codex churn for stale reviewed commits", () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    codexConnectorReviewChurnMustFixThreshold: 3,
+    codexConnectorReviewChurnFileConcentrationPercent: 100,
+  });
+  const threads = ["authority", "truth", "scope"].map((topic, index) =>
+    createReviewThread({
+      id: `thread-stale-${topic}`,
+      path: "scripts/verify-release-inventory.sh",
+      line: 100 + index,
+      comments: {
+        nodes: [
+          {
+            id: `comment-stale-${topic}`,
+            body: `P2: Reject ${topic} release-bundle readiness claims before they become authoritative.`,
+            createdAt: "2026-03-11T00:00:00Z",
+            url: `https://example.test/pr/44#discussion_stale_${topic}`,
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  );
+  const pr: Pick<
+    GitHubPullRequest,
+    "headRefOid" | "configuredBotCurrentHeadObservedAt" | "configuredBotLatestReviewedCommitSha"
+  > = {
+    headRefOid: "new-head",
+    configuredBotCurrentHeadObservedAt: null,
+    configuredBotLatestReviewedCommitSha: "old-head",
+  };
+
+  const reviewContext = buildReviewFailureContext(threads, config, pr);
+  const stalledContext = buildStalledBotReviewFailureContext(threads, "no_progress", config, pr);
+
+  assert.equal(reviewContext?.signature, "thread-stale-authority|thread-stale-truth|thread-stale-scope");
+  assert.doesNotMatch(reviewContext?.details[0] ?? "", /codex_connector_review_churn/);
+  assert.equal(
+    stalledContext?.signature,
+    "stalled-bot:thread-stale-authority|stalled-bot:thread-stale-truth|stalled-bot:thread-stale-scope",
+  );
+  assert.doesNotMatch(stalledContext?.details[0] ?? "", /codex_connector_review_churn/);
+});
+
 test("evaluateCodexConnectorConvergencePolicy separates missing, must-fix, nitpick-only, and converged outcomes", () => {
   const config = createConfig({ reviewBotLogins: ["chatgpt-codex-connector"] });
   const currentHeadPr = {

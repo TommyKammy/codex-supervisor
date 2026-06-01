@@ -351,13 +351,14 @@ export function nonActionableConfiguredBotReviewThreads(
 export function buildReviewFailureContext(
   reviewThreads: ReviewThread[],
   config?: SupervisorConfig,
+  pr?: Pick<GitHubPullRequest, "headRefOid" | "configuredBotCurrentHeadObservedAt" | "configuredBotLatestReviewedCommitSha"> | null,
 ): FailureContext | null {
   if (reviewThreads.length === 0) {
     return null;
   }
 
   const details = reviewThreads.slice(0, 5).map((thread) => renderReviewThreadDetail(thread));
-  const churnDiagnostic = config ? buildCodexConnectorReviewChurnDiagnostic(config, reviewThreads) : null;
+  const churnDiagnostic = config ? buildCodexConnectorReviewChurnDiagnostic(config, reviewThreads, pr) : null;
   const churnDetails = churnDiagnostic
     ? [
         `codex_connector_review_churn signature=${churnDiagnostic.signature} dominant_file=${churnDiagnostic.dominantFile} categories=${churnDiagnostic.normalizedCategories.join("|")} next_action=${churnDiagnostic.nextAction}`,
@@ -411,12 +412,13 @@ export function buildStalledBotReviewFailureContext(
   reviewThreads: ReviewThread[],
   mode: "no_progress" | "exhausted_follow_up" = "no_progress",
   config?: SupervisorConfig,
+  pr?: Pick<GitHubPullRequest, "headRefOid" | "configuredBotCurrentHeadObservedAt" | "configuredBotLatestReviewedCommitSha"> | null,
 ): FailureContext | null {
   if (reviewThreads.length === 0) {
     return null;
   }
 
-  const churnDiagnostic = config ? buildCodexConnectorReviewChurnDiagnostic(config, reviewThreads) : null;
+  const churnDiagnostic = config ? buildCodexConnectorReviewChurnDiagnostic(config, reviewThreads, pr) : null;
   const details = reviewThreads.slice(0, 5).map((thread) => {
     const latestComment = latestReviewComment(thread);
     const author = latestComment?.author?.login ?? "unknown";

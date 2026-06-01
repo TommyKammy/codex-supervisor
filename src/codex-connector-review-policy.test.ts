@@ -171,6 +171,25 @@ test("Codex Connector policy clusters Codex findings instead of later replies", 
   ]);
 });
 
+test("Codex Connector policy clusters same-theme variants across files", () => {
+  const threads = Array.from({ length: 8 }, (_, index) =>
+    codexThread({
+      id: `thread-cross-file-${index}`,
+      path: `src/release-${index}.ts`,
+      line: 30 + index,
+      body:
+        index % 2 === 0
+          ? `P2: Missing verifier coverage lets release bundle readiness claim ${index} bypass the authority guard.`
+          : `P2: The authority guard still lets release bundle readiness claim ${index} bypass verifier coverage.`,
+    }),
+  );
+
+  const clusters = clusterConfiguredBotReviewThreads(threads);
+
+  assert.equal(clusters.length, 1);
+  assert.equal(clusters[0]?.threads.length, 8);
+});
+
 test("Codex Connector policy detects concentrated must-fix review churn", () => {
   const config = createConfig({
     reviewBotLogins: ["chatgpt-codex-connector"],

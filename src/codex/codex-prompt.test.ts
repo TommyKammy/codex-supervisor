@@ -1160,6 +1160,59 @@ test("buildCodexPrompt detects Codex Connector churn from all active threads whe
   assert.match(prompt, /concentration_basis=theme/);
 });
 
+test("buildCodexPrompt emits Codex churn guidance when Codex is one of several reviewers", () => {
+  const pr = createPullRequest({
+    number: 1388,
+    headRefOid: "head-connector-1388",
+  });
+  const threads = Array.from({ length: 8 }, (_, index) =>
+    createReviewThread({
+      id: `thread-mixed-provider-${index}`,
+      path: `scripts/verify-${index % 4}.sh`,
+      line: 100 + index,
+      comments: {
+        nodes: [
+          {
+            id: `comment-mixed-provider-${index}`,
+            body:
+              "P2: Missing verifier coverage lets release-bundle readiness claims bypass the authority guard. Add generalized regression coverage.",
+            createdAt: "2026-03-11T00:05:00Z",
+            url: `https://example.test/pr/1388#discussion_mixed_${index}`,
+            author: {
+              login: "chatgpt-codex-connector[bot]",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  );
+
+  const prompt = buildCodexPrompt({
+    kind: "start",
+    config: createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector[bot]", "copilot-pull-request-reviewer"],
+      codexConnectorReviewChurnMustFixThreshold: 8,
+      codexConnectorReviewChurnFileConcentrationPercent: 70,
+    }),
+    repoSlug: "owner/repo",
+    issue,
+    branch: "codex/issue-2217",
+    workspacePath: "/tmp/workspaces/issue-2217",
+    state: "addressing_review" satisfies RunState,
+    pr,
+    checks: [],
+    reviewThreads: threads,
+    activeReviewThreads: threads,
+    alwaysReadFiles: [],
+    onDemandMemoryFiles: [],
+    journalPath: "/tmp/workspaces/issue-2217/.codex-supervisor/issue-journal.md",
+  } satisfies AgentTurnContext);
+
+  assert.match(prompt, /Codex Connector review handling:/);
+  assert.match(prompt, /Codex Connector clustered root-cause repair:/);
+});
+
 test("buildCodexPrompt promotes review comment examples into fresh regression-probe evidence", () => {
   const pr = createPullRequest({
     number: 144,
