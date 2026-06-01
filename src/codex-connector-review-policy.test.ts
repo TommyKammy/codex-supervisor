@@ -164,6 +164,7 @@ test("Codex Connector policy detects concentrated must-fix review churn", () => 
   const diagnostic = buildCodexConnectorReviewChurnDiagnostic(config, threads);
 
   assert.equal(diagnostic?.mustFixCount, 4);
+  assert.equal(diagnostic?.concentrationBasis, "file");
   assert.equal(diagnostic?.dominantFile, "scripts/verify-release-inventory.sh");
   assert.equal(diagnostic?.dominantFilePercent, 100);
   assert.equal(diagnostic?.nextAction, "cluster_root_cause_repair");
@@ -177,4 +178,125 @@ test("Codex Connector policy detects concentrated must-fix review churn", () => 
   assert.match(formatCodexConnectorReviewChurnDiagnostic(diagnostic!), /^codex_connector_review_churn /);
   assert.match(formatCodexConnectorReviewChurnDiagnostic(diagnostic!), /categories=.*truth_source/);
   assert.match(formatCodexConnectorReviewChurnDiagnostic(diagnostic!), /next_action=cluster_root_cause_repair$/);
+});
+
+test("Codex Connector churn compares unrounded file concentration", () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    codexConnectorReviewChurnMustFixThreshold: 8,
+    codexConnectorReviewChurnFileConcentrationPercent: 70,
+  });
+  const uniqueTokens = [
+    "alpha",
+    "bravo",
+    "charlie",
+    "delta",
+    "echoes",
+    "foxtrot",
+    "golfing",
+    "hotel",
+    "indigo",
+    "juliet",
+    "kiloed",
+    "limaaa",
+    "monaco",
+    "november",
+    "oscar",
+    "papaya",
+    "quartz",
+    "romeos",
+    "sierra",
+    "tango",
+    "umbrae",
+    "violet",
+    "whisky",
+    "xenial",
+    "yellow",
+    "zephyr",
+    "aurora",
+    "boreal",
+    "cosmos",
+    "dynamo",
+    "ember",
+    "fresco",
+    "galaxy",
+  ];
+  const threads = uniqueTokens.map((token, index) =>
+    codexThread({
+      id: `thread-${token}`,
+      path: index < 23 ? "scripts/dominant.sh" : `scripts/other-${index}.sh`,
+      line: index + 1,
+      body: `P2: ${token} ${token} ${token} ${token}.`,
+    }),
+  );
+
+  assert.equal(buildCodexConnectorReviewChurnDiagnostic(config, threads), null);
+});
+
+test("Codex Connector churn honors concentrated review themes across files", () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    codexConnectorReviewChurnMustFixThreshold: 8,
+    codexConnectorReviewChurnFileConcentrationPercent: 70,
+  });
+  const threads = Array.from({ length: 8 }, (_, index) =>
+    codexThread({
+      id: `thread-theme-${index}`,
+      path: `src/theme-${index % 4}.ts`,
+      line: 20 + index,
+      body:
+        "P2: Missing verifier coverage lets release-bundle readiness claims bypass the authority guard. Add generalized regression coverage.",
+    }),
+  );
+
+  const diagnostic = buildCodexConnectorReviewChurnDiagnostic(config, threads);
+
+  assert.equal(diagnostic?.concentrationBasis, "theme");
+  assert.equal(diagnostic?.dominantFilePercent, 25);
+  assert.equal(diagnostic?.largestClusterSize, 8);
+  assert.equal(diagnostic?.largestClusterPercent, 100);
+  assert.match(formatCodexConnectorReviewChurnDiagnostic(diagnostic!), /concentration_basis=theme/);
+});
+
+test("Codex Connector churn categories use the Codex finding instead of later replies", () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    codexConnectorReviewChurnMustFixThreshold: 1,
+    codexConnectorReviewChurnFileConcentrationPercent: 70,
+  });
+  const thread = createReviewThread({
+    id: "thread-later-human-reply",
+    path: "src/churn.ts",
+    line: 42,
+    comments: {
+      nodes: [
+        {
+          id: "comment-codex",
+          body: "P2: Block truth-source authority claims before release readiness is inferred.",
+          createdAt: "2026-03-11T00:00:00Z",
+          url: "https://example.test/pr/44#discussion_r1",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+        {
+          id: "comment-human",
+          body: "Thanks, I will take a look.",
+          createdAt: "2026-03-11T00:01:00Z",
+          url: "https://example.test/pr/44#discussion_r2",
+          author: {
+            login: "maintainer",
+            typeName: "User",
+          },
+        },
+      ],
+    },
+  });
+
+  const diagnostic = buildCodexConnectorReviewChurnDiagnostic(config, [thread]);
+
+  assert.ok(diagnostic?.normalizedCategories.includes("truth_source"));
+  assert.ok(diagnostic?.normalizedCategories.includes("readiness_claim"));
+  assert.notDeepEqual(diagnostic?.normalizedCategories, ["general_must_fix"]);
 });

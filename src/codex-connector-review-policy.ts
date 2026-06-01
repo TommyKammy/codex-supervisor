@@ -136,12 +136,14 @@ export interface CodexConnectorReviewChurnDiagnostic {
   mustFixCount: number;
   threshold: number;
   highestSeverity: CodexConnectorPSeverity;
+  concentrationBasis: "file" | "theme";
   dominantFile: string;
   dominantFileThreadCount: number;
   dominantFilePercent: number;
   fileConcentrationThresholdPercent: number;
   clusterCount: number;
   largestClusterSize: number;
+  largestClusterPercent: number;
   normalizedCategories: string[];
   representativeThreadIds: string[];
   representativeSourceUrls: string[];
@@ -552,8 +554,7 @@ const CODEX_CONNECTOR_REVIEW_CATEGORY_PATTERNS: Array<{ category: string; patter
 ];
 
 function reviewThreadCategoryTokens(thread: ReviewThread): string[] {
-  const latestComment = latestReviewComment(thread);
-  const body = latestComment?.body ?? "";
+  const body = latestCodexConnectorReviewComment(thread)?.body ?? latestReviewComment(thread)?.body ?? "";
   const haystack = `${thread.path ?? ""} ${body}`;
   return CODEX_CONNECTOR_REVIEW_CATEGORY_PATTERNS
     .filter(({ pattern }) => pattern.test(haystack))
@@ -652,14 +653,20 @@ export function buildCodexConnectorReviewChurnDiagnostic(
   }
 
   const [dominantFile, dominantFileThreadCount] = dominantFileEntry;
-  const dominantFilePercent = Math.round((dominantFileThreadCount / mustFixThreads.length) * 100);
+  const dominantFileRatio = (dominantFileThreadCount / mustFixThreads.length) * 100;
+  const dominantFilePercent = Math.round(dominantFileRatio);
   const fileConcentrationThresholdPercent = codexConnectorReviewChurnFileConcentrationPercent(config);
-  if (dominantFilePercent < fileConcentrationThresholdPercent) {
-    return null;
-  }
 
   const clusters = clusterConfiguredBotReviewThreads(mustFixThreads);
   const largestClusterSize = Math.max(...clusters.map((cluster) => cluster.threads.length), 0);
+  const largestClusterRatio = (largestClusterSize / mustFixThreads.length) * 100;
+  const largestClusterPercent = Math.round(largestClusterRatio);
+  const meetsFileConcentration = dominantFileRatio >= fileConcentrationThresholdPercent;
+  const meetsThemeConcentration = largestClusterRatio >= fileConcentrationThresholdPercent;
+  if (!meetsFileConcentration && !meetsThemeConcentration) {
+    return null;
+  }
+
   const normalizedCategories = uniqueInOrder(mustFixThreads.flatMap(reviewThreadCategoryTokens)).sort();
   const categorySignature = normalizedCategories.length > 0 ? normalizedCategories.join("+") : "general_must_fix";
   const representativeThreads = mustFixThreads.filter((thread) => (thread.path ?? "unknown") === dominantFile).slice(0, 5);
@@ -683,12 +690,14 @@ export function buildCodexConnectorReviewChurnDiagnostic(
     mustFixCount: mustFixThreads.length,
     threshold,
     highestSeverity,
+    concentrationBasis: meetsFileConcentration ? "file" : "theme",
     dominantFile,
     dominantFileThreadCount,
     dominantFilePercent,
     fileConcentrationThresholdPercent,
     clusterCount: clusters.length,
     largestClusterSize,
+    largestClusterPercent,
     normalizedCategories: normalizedCategories.length > 0 ? normalizedCategories : ["general_must_fix"],
     representativeThreadIds: representativeThreads.map((thread) => thread.id),
     representativeSourceUrls,
@@ -706,12 +715,14 @@ export function formatCodexConnectorReviewChurnDiagnostic(
     `must_fix=${diagnostic.mustFixCount}`,
     `threshold=${diagnostic.threshold}`,
     `highest_severity=${diagnostic.highestSeverity}`,
+    `concentration_basis=${diagnostic.concentrationBasis}`,
     `dominant_file=${formatDiagnosticToken(diagnostic.dominantFile)}`,
     `dominant_file_threads=${diagnostic.dominantFileThreadCount}`,
     `dominant_file_percent=${diagnostic.dominantFilePercent}`,
     `file_concentration_threshold_percent=${diagnostic.fileConcentrationThresholdPercent}`,
     `clusters=${diagnostic.clusterCount}`,
     `largest_cluster=${diagnostic.largestClusterSize}`,
+    `largest_cluster_percent=${diagnostic.largestClusterPercent}`,
     `categories=${diagnostic.normalizedCategories.map(formatDiagnosticToken).join("|")}`,
     `representative_threads=${diagnostic.representativeThreadIds.map(formatDiagnosticToken).join(",") || "none"}`,
     `signature=${formatDiagnosticToken(diagnostic.signature)}`,

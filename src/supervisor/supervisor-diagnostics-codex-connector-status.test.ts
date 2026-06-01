@@ -485,7 +485,7 @@ test("status --why reports Codex Connector review churn for concentrated P2 casc
 
   assert.match(
     status,
-    /^codex_connector_review_churn status=clustered_root_cause_repair must_fix=4 threshold=4 highest_severity=P2 dominant_file=scripts\/verify-phase-65-1-release-bundle-inventory\.sh dominant_file_threads=4 dominant_file_percent=100 file_concentration_threshold_percent=75 clusters=\d+ largest_cluster=\d+ categories=.*truth_source.* representative_threads=thread-authority,thread-truth,thread-scope,thread-regex signature=codex-review-churn:P2:scripts\/verify-phase-65-1-release-bundle-inventory\.sh:.* next_action=cluster_root_cause_repair$/m,
+    /^codex_connector_review_churn status=clustered_root_cause_repair must_fix=4 threshold=4 highest_severity=P2 concentration_basis=file dominant_file=scripts\/verify-phase-65-1-release-bundle-inventory\.sh dominant_file_threads=4 dominant_file_percent=100 file_concentration_threshold_percent=75 clusters=\d+ largest_cluster=\d+ largest_cluster_percent=\d+ categories=.*truth_source.* representative_threads=thread-authority,thread-truth,thread-scope,thread-regex signature=codex-review-churn:P2:scripts\/verify-phase-65-1-release-bundle-inventory\.sh:.* next_action=cluster_root_cause_repair$/m,
   );
   assert.match(
     status,
