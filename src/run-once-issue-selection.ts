@@ -118,6 +118,18 @@ async function shouldSelectCodexConnectorReviewRequestRecovery(
   }
 }
 
+function issueHasLabel(issue: GitHubIssue, label: string): boolean {
+  return (issue.labels ?? []).some((candidate) => candidate.name === label);
+}
+
+function issueMatchesDirectRecoverySelectionFilters(config: SupervisorConfig, issue: GitHubIssue): boolean {
+  if (config.issueLabel && !issueHasLabel(issue, config.issueLabel)) {
+    return false;
+  }
+
+  return !config.issueSearch || config.issueSearch.trim() === "";
+}
+
 async function discoverCodexConnectorReviewRequestRecoveryIssues(
   github: IssueSelectionCandidateGitHub,
   config: SupervisorConfig,
@@ -141,7 +153,7 @@ async function discoverCodexConnectorReviewRequestRecoveryIssues(
 
     try {
       const issue = await github.getIssue(record.issue_number);
-      if (issue.state === "OPEN") {
+      if (issue.state === "OPEN" && issueMatchesDirectRecoverySelectionFilters(config, issue)) {
         recoveryIssues.push(issue);
       }
     } catch {
@@ -150,6 +162,16 @@ async function discoverCodexConnectorReviewRequestRecoveryIssues(
   }
 
   return recoveryIssues;
+}
+
+async function listSelectableIssuesWithRecoveredBlockers(
+  github: IssueSelectionCandidateGitHub,
+  config: SupervisorConfig,
+  state: SupervisorStateFile,
+): Promise<GitHubIssue[]> {
+  const issues = await github.listCandidateIssues();
+  const recoveryIssues = await discoverCodexConnectorReviewRequestRecoveryIssues(github, config, state, issues);
+  return [...issues, ...recoveryIssues];
 }
 
 interface SelectedIssueRecord {
@@ -455,9 +477,7 @@ async function selectIssueRecord(
   }
 
   if (!record || !isEligibleForSelection(record, config)) {
-    const issues = await github.listCandidateIssues();
-    const recoveryIssues = await discoverCodexConnectorReviewRequestRecoveryIssues(github, config, state, issues);
-    const selectableIssues = [...issues, ...recoveryIssues];
+    const selectableIssues = await listSelectableIssuesWithRecoveredBlockers(github, config, state);
     record = null;
     for (const issue of selectableIssues) {
       if (config.skipTitlePrefixes.some((prefix) => issue.title.startsWith(prefix))) {
@@ -803,8 +823,8 @@ export async function resolveRunnableIssueContext(
         return { kind: "restart" };
       }
     } else {
-      const candidateIssues = await github.listCandidateIssues();
-      const blockingIssue = findBlockingIssue(issue, candidateIssues, state);
+      const selectableIssues = await listSelectableIssuesWithRecoveredBlockers(github, config, state);
+      const blockingIssue = findBlockingIssue(issue, selectableIssues, state);
       if (blockingIssue) {
         record = stateStore.touch(record, {
           state: "queued",
