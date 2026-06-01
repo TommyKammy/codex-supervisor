@@ -674,6 +674,98 @@ Parallelizable: No
   assert.equal(savedStates.length, 1);
 });
 
+test("resolveRunnableIssueContext fails closed when omitted tracked PR blocker fetch fails", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    configuredBotInitialGraceWaitSeconds: 0,
+    configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+  });
+  const staleIssueNumber = 281;
+  const downstreamIssueNumber = 282;
+  const prNumber = 289;
+  const branch = "codex/issue-281";
+  const downstreamIssue: GitHubIssue = {
+    number: downstreamIssueNumber,
+    title: "Active downstream candidate",
+    body: `${executionReadyBody("Do not run before the stale tracked PR recovery root.")}
+
+Depends on: #${staleIssueNumber}
+Parallelizable: No
+
+## Execution order
+1 of 1`,
+    createdAt: "2026-05-22T00:05:00Z",
+    updatedAt: "2026-05-22T00:05:00Z",
+    url: `https://example.test/issues/${downstreamIssueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const staleRecord = createRecord(staleIssueNumber, {
+    state: "blocked",
+    branch,
+    pr_number: prNumber,
+    blocked_reason: "manual_review",
+    last_head_sha: "head-281-current",
+    review_wait_started_at: "2026-05-22T00:00:00Z",
+    review_wait_head_sha: "head-281-current",
+    copilot_review_timed_out_at: "2026-05-22T00:10:00.000Z",
+    copilot_review_timeout_action: "request_review_comment",
+  });
+  const downstreamRecord = createRecord(downstreamIssueNumber, {
+    state: "queued",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: downstreamIssueNumber,
+    issues: {
+      [String(staleIssueNumber)]: staleRecord,
+      [String(downstreamIssueNumber)]: downstreamRecord,
+    },
+  };
+  let lockAcquired = false;
+
+  await assert.rejects(
+    resolveRunnableIssueContext({
+      github: {
+        listCandidateIssues: async () => [downstreamIssue],
+        getIssue: async (issueNumber) => {
+          if (issueNumber === staleIssueNumber) {
+            throw new Error("GitHub rate limit");
+          }
+          return downstreamIssue;
+        },
+        getPullRequestIfExists: async () => {
+          throw new Error("unexpected PR fetch");
+        },
+        getChecks: async () => {
+          throw new Error("unexpected checks fetch");
+        },
+        getUnresolvedReviewThreads: async () => {
+          throw new Error("unexpected review thread fetch");
+        },
+      },
+      config,
+      stateStore: createTouchStateStore([]),
+      state,
+      currentRecord: downstreamRecord,
+      acquireIssueLock: async () => {
+        lockAcquired = true;
+        return {
+          acquired: true,
+          release: async () => {},
+        };
+      },
+      ensureRecordJournalContext: async (selectedRecord) => ({
+        workspace: selectedRecord.workspace,
+        journal_path: `/tmp/workspaces/issue-${selectedRecord.issue_number}/.codex-supervisor/issue-journal.md`,
+      }),
+      syncIssueJournal: async () => {},
+    }),
+    /Failed to fetch recoverable tracked PR issue #281/,
+  );
+  assert.equal(lockAcquired, true);
+});
+
 test("resolveRunnableIssueContext normalizes label filters for direct stale tracked PR recovery", async () => {
   const config = createConfig({
     issueLabel: "codex",

@@ -181,8 +181,12 @@ async function discoverTrackedPrRecoveryInventoryIssues(
       if (issue.state === "OPEN" && issueMatchesDirectRecoverySelectionFilters(config, issue)) {
         recoveryIssues.push(issue);
       }
-    } catch {
-      continue;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `Failed to fetch recoverable tracked PR issue #${record.issue_number}; refusing to treat it as absent: ${message}`,
+        { cause: error },
+      );
     }
   }
 
