@@ -189,6 +189,214 @@ test("codexConnectorReviewRequestAction requests review for stale review commit 
   assert.deepEqual(decideScenario(createCodexConnectorStaleReviewCommitRequestScenario()), { kind: "initial" });
 });
 
+test("codexConnectorReviewRequestAction ignores non-actionable Codex P3 nitpicks when requesting stale review commit recovery", () => {
+  const scenario = createCodexConnectorStaleReviewCommitRequestScenario();
+  const softP3Thread = createReviewThread({
+    id: "thread-soft-p3",
+    comments: {
+      nodes: [
+        {
+          id: "comment-soft-p3",
+          body: "P3: Consider clarifying this retry note in a follow-up.",
+          createdAt: "2026-05-08T03:20:00Z",
+          url: "https://example.test/pr/1995#discussion_soft_p3",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(
+    decide({
+      record: scenario.recordPatch,
+      pr: scenario.pullRequestPatch,
+      checks: scenario.checks,
+      reviewThreads: [...scenario.reviewThreads, softP3Thread],
+      configuredThreads: [...scenario.configuredThreads, softP3Thread],
+      now: scenario.now,
+    }),
+    { kind: "initial" },
+  );
+});
+
+test("codexConnectorReviewRequestAction keeps human-updated bot threads blocking recovery requests", () => {
+  const scenario = createCodexConnectorStaleReviewCommitRequestScenario();
+  const humanUpdatedThread = createReviewThread({
+    id: "thread-human-updated",
+    comments: {
+      nodes: [
+        {
+          id: "comment-soft-p3",
+          body: "P3: Consider clarifying this retry note in a follow-up.",
+          createdAt: "2026-05-08T03:20:00Z",
+          url: "https://example.test/pr/1995#discussion_human_updated",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+        {
+          id: "comment-human-follow-up",
+          body: "This still needs operator attention before another bot review.",
+          createdAt: "2026-05-08T03:25:00Z",
+          url: "https://example.test/pr/1995#discussion_human_updated_follow_up",
+          author: {
+            login: "reviewer",
+            typeName: "User",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(
+    decide({
+      record: scenario.recordPatch,
+      pr: scenario.pullRequestPatch,
+      checks: scenario.checks,
+      reviewThreads: [...scenario.reviewThreads, humanUpdatedThread],
+      configuredThreads: [...scenario.configuredThreads, humanUpdatedThread],
+      now: scenario.now,
+    }),
+    { kind: "none" },
+  );
+});
+
+test("codexConnectorReviewRequestAction keeps other-bot updated Codex P3 threads blocking recovery requests", () => {
+  const scenario = createCodexConnectorStaleReviewCommitRequestScenario();
+  const otherBotUpdatedThread = createReviewThread({
+    id: "thread-other-bot-updated",
+    comments: {
+      nodes: [
+        {
+          id: "comment-soft-p3",
+          body: "P3: Consider clarifying this retry note in a follow-up.",
+          createdAt: "2026-05-08T03:20:00Z",
+          url: "https://example.test/pr/1995#discussion_other_bot_updated",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+        {
+          id: "comment-coderabbit-follow-up",
+          body: "Please keep this blocked until the latest configured-bot feedback is handled.",
+          createdAt: "2026-05-08T03:25:00Z",
+          url: "https://example.test/pr/1995#discussion_other_bot_updated_follow_up",
+          author: {
+            login: "coderabbitai",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(
+    decide({
+      config: {
+        reviewBotLogins: ["chatgpt-codex-connector", "coderabbitai"],
+      },
+      record: scenario.recordPatch,
+      pr: scenario.pullRequestPatch,
+      checks: scenario.checks,
+      reviewThreads: [...scenario.reviewThreads, otherBotUpdatedThread],
+      configuredThreads: [...scenario.configuredThreads, otherBotUpdatedThread],
+      now: scenario.now,
+    }),
+    { kind: "none" },
+  );
+});
+
+test("codexConnectorReviewRequestAction keeps newer unlabeled Codex comments blocking recovery requests", () => {
+  const scenario = createCodexConnectorStaleReviewCommitRequestScenario();
+  const codexUpdatedThread = createReviewThread({
+    id: "thread-codex-unlabeled-update",
+    comments: {
+      nodes: [
+        {
+          id: "comment-soft-p3",
+          body: "P3: Consider clarifying this retry note in a follow-up.",
+          createdAt: "2026-05-08T03:20:00Z",
+          url: "https://example.test/pr/1995#discussion_codex_unlabeled_update",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+        {
+          id: "comment-codex-unlabeled-follow-up",
+          body: "Please inspect the latest review state before requesting another review.",
+          createdAt: "2026-05-08T03:25:00Z",
+          url: "https://example.test/pr/1995#discussion_codex_unlabeled_update_follow_up",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(
+    decide({
+      record: scenario.recordPatch,
+      pr: scenario.pullRequestPatch,
+      checks: scenario.checks,
+      reviewThreads: [...scenario.reviewThreads, codexUpdatedThread],
+      configuredThreads: [...scenario.configuredThreads, codexUpdatedThread],
+      now: scenario.now,
+    }),
+    { kind: "none" },
+  );
+});
+
+test("codexConnectorReviewRequestAction keeps mixed human then Codex P3 threads blocking recovery requests", () => {
+  const scenario = createCodexConnectorStaleReviewCommitRequestScenario();
+  const mixedHumanCodexThread = createReviewThread({
+    id: "thread-human-then-codex-p3",
+    comments: {
+      nodes: [
+        {
+          id: "comment-human-manual",
+          body: "Manual follow-up is still required before another bot review.",
+          createdAt: "2026-05-08T03:20:00Z",
+          url: "https://example.test/pr/1995#discussion_human_then_codex_p3",
+          author: {
+            login: "reviewer",
+            typeName: "User",
+          },
+        },
+        {
+          id: "comment-soft-p3",
+          body: "P3: Consider clarifying this retry note in a follow-up.",
+          createdAt: "2026-05-08T03:25:00Z",
+          url: "https://example.test/pr/1995#discussion_human_then_codex_p3_follow_up",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(
+    decide({
+      record: scenario.recordPatch,
+      pr: scenario.pullRequestPatch,
+      checks: scenario.checks,
+      reviewThreads: [...scenario.reviewThreads, mixedHumanCodexThread],
+      configuredThreads: [...scenario.configuredThreads, mixedHumanCodexThread],
+      now: scenario.now,
+    }),
+    { kind: "none" },
+  );
+});
+
 test("codexConnectorReviewRequestAction waits for scheduler timeout before recovering stale review commit residue without timeout metadata", () => {
   const scenario = createCodexConnectorStaleReviewCommitRequestScenario();
   const record = {
