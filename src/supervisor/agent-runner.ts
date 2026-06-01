@@ -64,6 +64,7 @@ export interface StartAgentTurnContext extends AgentRunnerBaseRequest {
   pr: GitHubPullRequest | null;
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
+  activeReviewThreads?: ReviewThread[];
   changeClasses?: DeterministicChangeClass[];
   alwaysReadFiles: string[];
   onDemandMemoryFiles: string[];

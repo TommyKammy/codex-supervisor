@@ -269,6 +269,7 @@ export async function prepareCodexTurnPrompt(args: {
           pr: args.pr,
           checks: args.checks,
           reviewThreads: reviewThreadsToProcess,
+          activeReviewThreads: args.reviewThreads,
           changeClasses,
           alwaysReadFiles: args.memoryArtifacts.alwaysReadFiles,
           onDemandMemoryFiles: args.memoryArtifacts.onDemandFiles,

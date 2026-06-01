@@ -391,6 +391,7 @@ export interface BuildCodexStartPromptInput {
   pr: GitHubPullRequest | null;
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
+  activeReviewThreads?: ReviewThread[];
   changeClasses?: DeterministicChangeClass[];
   alwaysReadFiles: string[];
   onDemandMemoryFiles: string[];
@@ -492,6 +493,7 @@ function describeVerificationPolicy(
 }
 
 function buildCodexStartPrompt(input: BuildCodexStartPromptInput): string {
+  const codexConnectorChurnReviewThreads = input.activeReviewThreads ?? input.reviewThreads;
   const codexConnectorMustFixFindingDetails =
     input.state === "addressing_review" && input.reviewProviderProfile?.profile === "codex"
       ? buildCodexConnectorMustFixFindingDetails({
@@ -501,7 +503,7 @@ function buildCodexStartPrompt(input: BuildCodexStartPromptInput): string {
       : [];
   const codexConnectorReviewChurn =
     input.config && input.state === "addressing_review" && input.reviewProviderProfile?.profile === "codex"
-      ? buildCodexConnectorReviewChurnDiagnostic(input.config, input.reviewThreads, input.pr)
+      ? buildCodexConnectorReviewChurnDiagnostic(input.config, codexConnectorChurnReviewThreads, input.pr)
       : null;
   const useCodexConnectorReviewThreadFastPath = codexConnectorMustFixFindingDetails.length > 0;
   const journalExcerpt = useCodexConnectorReviewThreadFastPath
@@ -708,7 +710,7 @@ function buildCodexStartPrompt(input: BuildCodexStartPromptInput): string {
           ...(codexConnectorReviewChurn
             ? [
                 "Codex Connector clustered root-cause repair:",
-                `- Triggered: review_churn must_fix=${codexConnectorReviewChurn.mustFixCount} threshold=${codexConnectorReviewChurn.threshold} dominant_file=${codexConnectorReviewChurn.dominantFile} dominant_file_percent=${codexConnectorReviewChurn.dominantFilePercent}`,
+                `- Triggered: review_churn must_fix=${codexConnectorReviewChurn.mustFixCount} threshold=${codexConnectorReviewChurn.threshold} concentration_basis=${codexConnectorReviewChurn.concentrationBasis} dominant_file=${codexConnectorReviewChurn.dominantFile} dominant_file_percent=${codexConnectorReviewChurn.dominantFilePercent}`,
                 `- Cluster signature: ${codexConnectorReviewChurn.signature}`,
                 `- Normalized categories: ${codexConnectorReviewChurn.normalizedCategories.join(", ")}`,
                 `- Representative threads: ${codexConnectorReviewChurn.representativeThreadIds.join(", ") || "none"}`,
@@ -984,6 +986,7 @@ function toStartPromptInput(input: StartAgentTurnContext): BuildCodexStartPrompt
     pr: input.pr,
     checks: input.checks,
     reviewThreads: input.reviewThreads,
+    activeReviewThreads: input.activeReviewThreads,
     changeClasses: input.changeClasses,
     alwaysReadFiles: input.alwaysReadFiles,
     onDemandMemoryFiles: input.onDemandMemoryFiles,

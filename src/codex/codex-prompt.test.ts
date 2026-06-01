@@ -1106,6 +1106,60 @@ test("buildCodexPrompt routes concentrated Codex Connector P2 cascades to root-c
   assert.match(prompt, /P0\/P1\/P2 and escalated P3 Codex Connector findings are supervisor-enforced must-fix findings/);
 });
 
+test("buildCodexPrompt detects Codex Connector churn from all active threads when repair selection is narrow", () => {
+  const pr = createPullRequest({
+    number: 1388,
+    headRefOid: "head-connector-1388",
+  });
+  const activeThreads = Array.from({ length: 8 }, (_, index) =>
+    createReviewThread({
+      id: `thread-active-${index}`,
+      path: `scripts/verify-${index % 4}.sh`,
+      line: 100 + index,
+      comments: {
+        nodes: [
+          {
+            id: `comment-active-${index}`,
+            body:
+              "P2: Missing verifier coverage lets release-bundle readiness claims bypass the authority guard. Add generalized regression coverage.",
+            createdAt: "2026-03-11T00:05:00Z",
+            url: `https://example.test/pr/1388#discussion_active_${index}`,
+            author: {
+              login: "chatgpt-codex-connector[bot]",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  );
+
+  const prompt = buildCodexPrompt({
+    kind: "start",
+    config: createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector[bot]"],
+      codexConnectorReviewChurnMustFixThreshold: 8,
+      codexConnectorReviewChurnFileConcentrationPercent: 70,
+    }),
+    repoSlug: "owner/repo",
+    issue,
+    branch: "codex/issue-2217",
+    workspacePath: "/tmp/workspaces/issue-2217",
+    state: "addressing_review" satisfies RunState,
+    pr,
+    checks: [],
+    reviewThreads: [activeThreads[7]!],
+    activeReviewThreads: activeThreads,
+    alwaysReadFiles: [],
+    onDemandMemoryFiles: [],
+    journalPath: "/tmp/workspaces/issue-2217/.codex-supervisor/issue-journal.md",
+  } satisfies AgentTurnContext);
+
+  assert.match(prompt, /Codex Connector clustered root-cause repair:/);
+  assert.match(prompt, /Triggered: review_churn must_fix=8 threshold=8/);
+  assert.match(prompt, /concentration_basis=theme/);
+});
+
 test("buildCodexPrompt promotes review comment examples into fresh regression-probe evidence", () => {
   const pr = createPullRequest({
     number: 144,
