@@ -1187,6 +1187,25 @@ test("buildCodexPrompt emits Codex churn guidance when Codex is one of several r
       },
     }),
   );
+  const copilotThread = createReviewThread({
+    id: "thread-mixed-provider-copilot",
+    path: "src/copilot.ts",
+    line: 44,
+    comments: {
+      nodes: [
+        {
+          id: "comment-mixed-provider-copilot",
+          body: "This configured-bot blocker still needs a non-Codex guard fix.",
+          createdAt: "2026-03-11T00:06:00Z",
+          url: "https://example.test/pr/1388#discussion_mixed_copilot",
+          author: {
+            login: "copilot-pull-request-reviewer",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
 
   const prompt = buildCodexPrompt({
     kind: "start",
@@ -1202,8 +1221,8 @@ test("buildCodexPrompt emits Codex churn guidance when Codex is one of several r
     state: "addressing_review" satisfies RunState,
     pr,
     checks: [],
-    reviewThreads: threads,
-    activeReviewThreads: threads,
+    reviewThreads: [...threads, copilotThread],
+    activeReviewThreads: [...threads, copilotThread],
     alwaysReadFiles: [],
     onDemandMemoryFiles: [],
     journalPath: "/tmp/workspaces/issue-2217/.codex-supervisor/issue-journal.md",
@@ -1211,6 +1230,9 @@ test("buildCodexPrompt emits Codex churn guidance when Codex is one of several r
 
   assert.match(prompt, /Codex Connector review handling:/);
   assert.match(prompt, /Codex Connector clustered root-cause repair:/);
+  assert.match(prompt, /Additional selected configured-bot review threads:/);
+  assert.match(prompt, /Thread thread-mixed-provider-copilot/);
+  assert.match(prompt, /Reviewer: copilot-pull-request-reviewer/);
 });
 
 test("buildCodexPrompt promotes review comment examples into fresh regression-probe evidence", () => {
