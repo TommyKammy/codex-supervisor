@@ -203,7 +203,7 @@ test("explain reports effective configured-bot thread diagnostics for outdated C
 
   assert.match(
     explanation,
-    /^review_thread_effective_diagnostics raw_configured_bot_unresolved=1 effective_configured_bot_unresolved=0 threads=PRRT_hrcore_183_outdated:configured_bot_outdated:effective=no:path=src\/review-policy\.ts:line=42:comment=PRRC_hrcore_183_outdated:author=chatgpt-codex-connector:url=https:\/\/example\.test\/pr\/283#discussion_r183$/m,
+    /^review_thread_effective_diagnostics raw_configured_bot_unresolved=1 effective_configured_bot_unresolved=0 current_configured_bot_threads=0 outdated_configured_bot_residue=1 current_thread_ids=none threads=PRRT_hrcore_183_outdated:configured_bot_outdated:effective=no:path=src\/review-policy\.ts:line=42:comment=PRRC_hrcore_183_outdated:author=chatgpt-codex-connector:url=https:\/\/example\.test\/pr\/283#discussion_r183$/m,
   );
 });
 

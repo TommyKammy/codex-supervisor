@@ -15,6 +15,7 @@ import {
   formatCodexConnectorP2P3PolicyDiagnostic,
   formatCodexConnectorPolicyBlockDiagnostic,
   formatCodexConnectorReviewChurnDiagnostic,
+  latestCodexConnectorReviewComment,
   type CodexConnectorReviewChurnProgressSummary,
 } from "../codex-connector-review-policy";
 import { configuredBotCurrentHeadSignalWaitWindow } from "./review-bot-wait-windows";
@@ -44,6 +45,7 @@ export interface CodexConnectorDiagnosticBundle {
   policyBlockSummary: string | null;
   p2p3PolicySummary: string | null;
   reviewChurnSummary: string | null;
+  currentClusterSummary: string | null;
   reviewChurnProgressSummary: string | null;
   reviewFallbackSummary: string | null;
   convergenceSummary: string | null;
@@ -107,6 +109,31 @@ function formatCodexConnectorReviewChurnProgressDiagnostic(args: {
     `cluster_category_signature=${formatDiagnosticToken(args.current.clusterCategorySignature)}`,
     `previous_cluster_category_signature=${formatDiagnosticToken(args.previous.clusterCategorySignature)}`,
     `representative_threads=${args.current.representativeThreadIds.map(formatDiagnosticToken).join(",") || "none"}`,
+  ].join(" ");
+}
+
+function countOutdatedUnresolvedCodexConnectorResidue(reviewThreads: ReviewThread[]): number {
+  return reviewThreads.filter((thread) => {
+    return !thread.isResolved && thread.isOutdated && latestCodexConnectorReviewComment(thread) !== null;
+  }).length;
+}
+
+function formatCodexConnectorCurrentClusterDiagnostic(args: {
+  reviewChurn: NonNullable<ReturnType<typeof buildCodexConnectorReviewChurnDiagnostic>>;
+  outdatedUnresolvedResidueCount: number;
+}): string {
+  return [
+    "codex_connector_current_clusters",
+    `current_effective_must_fix=${args.reviewChurn.mustFixCount}`,
+    `dominant_file=${formatDiagnosticToken(args.reviewChurn.dominantFile)}`,
+    `dominant_file_threads=${args.reviewChurn.dominantFileThreadCount}`,
+    `dominant_file_percent=${args.reviewChurn.dominantFilePercent}`,
+    `clusters=${args.reviewChurn.clusterCount}`,
+    `categories=${args.reviewChurn.normalizedCategories.map(formatDiagnosticToken).join("|")}`,
+    `representative_threads=${args.reviewChurn.representativeThreadIds.map(formatDiagnosticToken).join(",") || "none"}`,
+    `representative_urls=${args.reviewChurn.representativeSourceUrls.map(formatDiagnosticToken).join(",") || "none"}`,
+    `outdated_unresolved_residue=${args.outdatedUnresolvedResidueCount}`,
+    "next_action=repair_must_fix_findings",
   ].join(" ");
 }
 
@@ -507,6 +534,12 @@ export function buildCodexConnectorDiagnosticBundle(args: {
     policyBlockSummary: policyBlock ? formatCodexConnectorPolicyBlockDiagnostic(policyBlock) : null,
     p2p3PolicySummary: p2p3Policy ? formatCodexConnectorP2P3PolicyDiagnostic(p2p3Policy) : null,
     reviewChurnSummary: reviewChurn ? formatCodexConnectorReviewChurnDiagnostic(reviewChurn) : null,
+    currentClusterSummary: reviewChurn
+      ? formatCodexConnectorCurrentClusterDiagnostic({
+          reviewChurn,
+          outdatedUnresolvedResidueCount: countOutdatedUnresolvedCodexConnectorResidue(args.reviewThreads),
+        })
+      : null,
     reviewChurnProgressSummary:
       currentReviewChurnProgress && previousReviewChurnProgress
         ? formatCodexConnectorReviewChurnProgressDiagnostic({

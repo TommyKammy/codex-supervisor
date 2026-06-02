@@ -228,6 +228,9 @@ export function buildActiveReviewBotProviderLines(
   if (codexConnectorDiagnostics.reviewChurnSummary) {
     lines.push(codexConnectorDiagnostics.reviewChurnSummary);
   }
+  if (codexConnectorDiagnostics.currentClusterSummary) {
+    lines.push(codexConnectorDiagnostics.currentClusterSummary);
+  }
   if (codexConnectorDiagnostics.reviewChurnProgressSummary) {
     lines.push(codexConnectorDiagnostics.reviewChurnProgressSummary);
   }

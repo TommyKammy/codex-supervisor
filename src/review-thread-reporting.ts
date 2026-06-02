@@ -190,27 +190,44 @@ function formatReviewThreadDiagnosticToken(value: string | null): string {
 
 export function formatEffectiveReviewThreadDiagnosticsLine(
   diagnostics: EffectiveReviewThreadDiagnostics,
+  options: { includeThreadDetails?: boolean } = {},
 ): string {
-  const threadTokens = diagnostics.threads
-    .map((thread) =>
-      [
-        formatReviewThreadDiagnosticToken(thread.id),
-        thread.classification,
-        `effective=${thread.effectiveConfiguredBotBlocker ? "yes" : "no"}`,
-        `path=${formatReviewThreadDiagnosticToken(thread.path)}`,
-        `line=${formatReviewThreadDiagnosticToken(thread.line)}`,
-        `comment=${formatReviewThreadDiagnosticToken(thread.latestCommentId)}`,
-        `author=${formatReviewThreadDiagnosticToken(thread.latestCommentAuthor)}`,
-        `url=${formatReviewThreadDiagnosticToken(thread.url)}`,
-      ].join(":"),
-    )
-    .join(",");
+  const currentConfiguredBotThreads = diagnostics.threads.filter(
+    (thread) => thread.classification === "configured_bot_current_head",
+  );
+  const outdatedConfiguredBotThreads = diagnostics.threads.filter(
+    (thread) => thread.classification === "configured_bot_outdated",
+  );
 
-  return [
+  const baseTokens = [
     "review_thread_effective_diagnostics",
     `raw_configured_bot_unresolved=${diagnostics.rawUnresolvedConfiguredBotThreadCount}`,
     `effective_configured_bot_unresolved=${diagnostics.effectiveUnresolvedConfiguredBotThreadCount}`,
-    `threads=${threadTokens || "none"}`,
+    `current_configured_bot_threads=${currentConfiguredBotThreads.length}`,
+    `outdated_configured_bot_residue=${outdatedConfiguredBotThreads.length}`,
+    `current_thread_ids=${currentConfiguredBotThreads.map((thread) => formatReviewThreadDiagnosticToken(thread.id)).join(",") || "none"}`,
+  ];
+
+  if (!options.includeThreadDetails) {
+    return baseTokens.join(" ");
+  }
+
+  return [
+    ...baseTokens,
+    `threads=${diagnostics.threads
+      .map((thread) =>
+        [
+          formatReviewThreadDiagnosticToken(thread.id),
+          thread.classification,
+          `effective=${thread.effectiveConfiguredBotBlocker ? "yes" : "no"}`,
+          `path=${formatReviewThreadDiagnosticToken(thread.path)}`,
+          `line=${formatReviewThreadDiagnosticToken(thread.line)}`,
+          `comment=${formatReviewThreadDiagnosticToken(thread.latestCommentId)}`,
+          `author=${formatReviewThreadDiagnosticToken(thread.latestCommentAuthor)}`,
+          `url=${formatReviewThreadDiagnosticToken(thread.url)}`,
+        ].join(":"),
+      )
+      .join(",") || "none"}`,
   ].join(" ");
 }
 
