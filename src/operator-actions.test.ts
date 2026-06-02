@@ -459,3 +459,32 @@ test("clustered Codex churn does not suppress selected request-eligible Codex re
     },
   );
 });
+
+test("unanchored clustered Codex churn does not override selected request-eligible recovery", () => {
+  const lines = [
+    "codex_connector_review_fallback status=request_eligible provider=codex current_head_sha=head-1 current_head_observed_at=none required_checks_green_at=2026-05-19T09:03:41Z timeout_action=request_review_comment requested_at=none requested_head_sha=none review_signal=missing note=request_comment_is_not_review_completion next_action=request_current_head_review wait_until=2026-05-19T09:13:41.000Z",
+    "codex_connector_review_churn_progress classification=unchanged current_head_sha=head-1 previous_head_sha=head-0 current_effective_must_fix=8 previous_effective_must_fix=8 effective_must_fix_delta=0 dominant_file=src/release-readiness.ts dominant_file_percent=100 cluster_category_signature=truth_source representative_threads=thread-authority,thread-truth",
+    "no_active_tracked_record issue=#170 classification=manual_review_required state=blocked reason=manual_review",
+  ];
+
+  assert.equal(
+    requireRestartRecommendation(selectRestartRecommendation({
+      detailedStatusLines: lines,
+      contextLines: ["selected_issue=#169"],
+    })).source,
+    "no_active_tracked_record",
+  );
+  assert.deepEqual(
+    selectStatusOperatorAction({
+      detailedStatusLines: lines,
+      contextLines: ["selected_issue=#169"],
+    }),
+    {
+      action: "provider_outage_suspected",
+      source: "codex_connector_review_fallback",
+      priority: 70,
+      summary:
+        "A current-head Codex Connector review request is eligible; run the selected supervisor cycle to post or record it.",
+    },
+  );
+});

@@ -184,31 +184,19 @@ function clusteredCodexChurnManualReviewSummary(line: string): string | null {
   return `Clustered Codex Connector churn made no progress; inspect dominant file ${dominantFile} with current effective must-fix count ${currentEffectiveMustFix} before restarting the loop.`;
 }
 
-function gateIssueNumber(line: string): number | null {
-  return readIssueNumberToken(line, "issue") ?? readIssueNumberToken(line, "first_issue");
-}
-
-function isRequestEligibleRecoveryGate(
-  line: string,
-  requestEligibleRecoveryIssues: ReadonlySet<number>,
-): boolean {
-  if (requestEligibleRecoveryIssues.size === 0) {
-    return false;
-  }
-
-  const issueNumber = gateIssueNumber(line);
-  return issueNumber === null || requestEligibleRecoveryIssues.has(issueNumber);
-}
-
 function hasStoppedClusteredCodexChurnManualReviewGate(
   lines: string[],
   requestEligibleRecoveryIssues: ReadonlySet<number>,
 ): boolean {
+  if (requestEligibleRecoveryIssues.size > 0) {
+    return false;
+  }
+
   return lines.some((line) => {
-    const isStoppedGate =
+    return (
       /^loop_runtime_blocker\b/u.test(line) ||
-      /^no_active_tracked_record\b/u.test(line) && /\bclassification=manual_review_required\b/u.test(line);
-    return isStoppedGate && !isRequestEligibleRecoveryGate(line, requestEligibleRecoveryIssues);
+      /^no_active_tracked_record\b/u.test(line) && /\bclassification=manual_review_required\b/u.test(line)
+    );
   });
 }
 
