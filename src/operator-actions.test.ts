@@ -560,6 +560,10 @@ test("clustered Codex churn needs stable cluster identity before manual review",
       clusterCategorySignature: "readiness_claim",
       previousClusterCategorySignature: "truth_source",
     }),
+    codexConnectorChurnProgressLine({
+      clusterCategorySignature: "readiness_claim+truth_source",
+      previousClusterCategorySignature: "truth_source",
+    }),
   ]) {
     const lines = [
       "loop_runtime_blocker state=off active_tracked_issues=1 first_issue=#188 first_state=blocked first_pr=#288 action=restart_loop restart_reason=recoverable_active_tracked_work_waiting_for_loop expected_outcome=loop_runtime_state_running_then_tracked_issue_advances fallback=if_blocker_remains_run_status_why_and_doctor_then_inspect_runtime_marker_and_config",

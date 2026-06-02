@@ -165,16 +165,6 @@ function readIssueNumberToken(line: string, key: string): number | null {
   return match === null ? null : Number.parseInt(match[1], 10);
 }
 
-function categorySignatureTokens(signature: string): Set<string> {
-  return new Set(signature.split("+").filter((token) => token.length > 0));
-}
-
-function categorySignatureIncludesAll(current: string, previous: string): boolean {
-  const currentTokens = categorySignatureTokens(current);
-  const previousTokens = categorySignatureTokens(previous);
-  return previousTokens.size > 0 && [...previousTokens].every((token) => currentTokens.has(token));
-}
-
 function clusteredCodexChurnManualReviewSummary(line: string): string | null {
   if (!/^codex_connector_review_churn_progress\b/u.test(line)) {
     return null;
@@ -202,7 +192,7 @@ function clusteredCodexChurnManualReviewSummary(line: string): string | null {
 
   if (
     dominantFile !== previousDominantFile ||
-    !categorySignatureIncludesAll(clusterCategorySignature, previousClusterCategorySignature)
+    clusterCategorySignature !== previousClusterCategorySignature
   ) {
     return null;
   }
