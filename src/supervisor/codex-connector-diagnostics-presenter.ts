@@ -5,14 +5,17 @@ import {
   buildCodexConnectorP2P3PolicyDiagnostic,
   buildCodexConnectorPolicyBlockDiagnostic,
   buildCodexConnectorReviewChurnDiagnostic,
+  buildCodexConnectorReviewChurnProgressSummary,
   codexConnectorMustFixReviewThreads,
   codexConnectorStaleReviewCommitThreads,
   commitShasDifferForComparison,
   commitShasEqualForComparison,
+  compareCodexConnectorReviewChurnProgress,
   evaluateCodexConnectorConvergencePolicy,
   formatCodexConnectorP2P3PolicyDiagnostic,
   formatCodexConnectorPolicyBlockDiagnostic,
   formatCodexConnectorReviewChurnDiagnostic,
+  type CodexConnectorReviewChurnProgressSummary,
 } from "../codex-connector-review-policy";
 import { configuredBotCurrentHeadSignalWaitWindow } from "./review-bot-wait-windows";
 import { hasCodexConnectorReviewRequestCommentIdentity } from "../codex-connector-review-request-identity";
@@ -33,13 +36,76 @@ function addMinutes(timestamp: string, minutes: number): string | null {
   return new Date(parsed + minutes * 60_000).toISOString();
 }
 
+function formatDiagnosticToken(value: string): string {
+  return value.replace(/\s+/g, "_");
+}
+
 export interface CodexConnectorDiagnosticBundle {
   policyBlockSummary: string | null;
   p2p3PolicySummary: string | null;
   reviewChurnSummary: string | null;
+  reviewChurnProgressSummary: string | null;
   reviewFallbackSummary: string | null;
   convergenceSummary: string | null;
   operatorDiagnosticSummary: string | null;
+}
+
+function isCodexConnectorReviewChurnProgressSummary(
+  value: unknown,
+): value is CodexConnectorReviewChurnProgressSummary {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Partial<CodexConnectorReviewChurnProgressSummary>;
+  return (
+    typeof candidate.currentHeadSha === "string" &&
+    typeof candidate.currentEffectiveMustFixCount === "number" &&
+    Number.isFinite(candidate.currentEffectiveMustFixCount) &&
+    typeof candidate.dominantFile === "string" &&
+    typeof candidate.dominantFilePercent === "number" &&
+    Number.isFinite(candidate.dominantFilePercent) &&
+    typeof candidate.clusterCategorySignature === "string" &&
+    Array.isArray(candidate.representativeThreadIds) &&
+    candidate.representativeThreadIds.every((threadId) => typeof threadId === "string")
+  );
+}
+
+function parsePreviousCodexConnectorReviewChurnProgress(
+  snapshot: string | null | undefined,
+): CodexConnectorReviewChurnProgressSummary | null {
+  if (!snapshot) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(snapshot) as { codexConnectorReviewChurnProgress?: unknown };
+    return isCodexConnectorReviewChurnProgressSummary(parsed.codexConnectorReviewChurnProgress)
+      ? parsed.codexConnectorReviewChurnProgress
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function formatCodexConnectorReviewChurnProgressDiagnostic(args: {
+  current: CodexConnectorReviewChurnProgressSummary;
+  previous: CodexConnectorReviewChurnProgressSummary;
+}): string {
+  const comparison = compareCodexConnectorReviewChurnProgress(args.current, args.previous);
+  return [
+    "codex_connector_review_churn_progress",
+    `classification=${comparison.classification}`,
+    `current_head_sha=${formatDiagnosticToken(comparison.currentHeadSha)}`,
+    `previous_head_sha=${formatDiagnosticToken(comparison.previousHeadSha)}`,
+    `current_effective_must_fix=${comparison.currentEffectiveMustFixCount}`,
+    `previous_effective_must_fix=${comparison.previousEffectiveMustFixCount}`,
+    `effective_must_fix_delta=${comparison.effectiveMustFixDelta}`,
+    `dominant_file=${formatDiagnosticToken(args.current.dominantFile)}`,
+    `dominant_file_percent=${args.current.dominantFilePercent}`,
+    `cluster_category_signature=${formatDiagnosticToken(args.current.clusterCategorySignature)}`,
+    `representative_threads=${args.current.representativeThreadIds.map(formatDiagnosticToken).join(",") || "none"}`,
+  ].join(" ");
 }
 
 export function formatCodexConnectorReviewFallbackDiagnostic(args: {
@@ -429,10 +495,23 @@ export function buildCodexConnectorDiagnosticBundle(args: {
   const reviewChurn = suppressActionableReviewPolicy
     ? null
     : buildCodexConnectorReviewChurnDiagnostic(args.config, args.reviewThreads, args.pr);
+  const currentReviewChurnProgress = reviewChurn
+    ? buildCodexConnectorReviewChurnProgressSummary(reviewChurn, args.pr.headRefOid)
+    : null;
+  const previousReviewChurnProgress = parsePreviousCodexConnectorReviewChurnProgress(
+    args.record.last_tracked_pr_progress_snapshot,
+  );
   return {
     policyBlockSummary: policyBlock ? formatCodexConnectorPolicyBlockDiagnostic(policyBlock) : null,
     p2p3PolicySummary: p2p3Policy ? formatCodexConnectorP2P3PolicyDiagnostic(p2p3Policy) : null,
     reviewChurnSummary: reviewChurn ? formatCodexConnectorReviewChurnDiagnostic(reviewChurn) : null,
+    reviewChurnProgressSummary:
+      currentReviewChurnProgress && previousReviewChurnProgress
+        ? formatCodexConnectorReviewChurnProgressDiagnostic({
+            current: currentReviewChurnProgress,
+            previous: previousReviewChurnProgress,
+          })
+        : null,
     reviewFallbackSummary: formatCodexConnectorReviewFallbackDiagnostic({
       config: args.config,
       record: args.record,
