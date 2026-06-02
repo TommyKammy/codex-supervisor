@@ -165,6 +165,25 @@ function readIssueNumberToken(line: string, key: string): number | null {
   return match === null ? null : Number.parseInt(match[1], 10);
 }
 
+function clusteredCodexChurnManualReviewSummary(line: string): string | null {
+  if (!/^codex_connector_review_churn_progress\b/u.test(line)) {
+    return null;
+  }
+
+  const classification = readTokenValue(line, "classification");
+  if (classification !== "unchanged" && classification !== "worse") {
+    return null;
+  }
+
+  const currentEffectiveMustFix = readTokenValue(line, "current_effective_must_fix");
+  const dominantFile = readTokenValue(line, "dominant_file");
+  if (currentEffectiveMustFix === null || dominantFile === null) {
+    return null;
+  }
+
+  return `Clustered Codex Connector churn made no progress; inspect dominant file ${dominantFile} with current effective must-fix count ${currentEffectiveMustFix} before restarting the loop.`;
+}
+
 export function parseOperatorActionLine(line: string): OperatorAction | null {
   if (!/^(operator_action|doctor_operator_action)\b/u.test(line)) {
     return null;
@@ -206,6 +225,17 @@ export function selectRestartRecommendation(args: {
   const requestEligibleRecoverySelectedIssues = selectedRequestEligibleRecoveryIssues(contextLines);
 
   for (const line of args.detailedStatusLines) {
+    const clusteredChurnManualReviewSummary = clusteredCodexChurnManualReviewSummary(line);
+    if (clusteredChurnManualReviewSummary !== null) {
+      recommendations.push({
+        category: "manual_review_before_restart",
+        source: "codex_connector_review_churn_progress",
+        priority: 95,
+        summary: clusteredChurnManualReviewSummary,
+      });
+      continue;
+    }
+
     if (/^loop_runtime_blocker\b/.test(line)) {
       recommendations.push({
         category: "restart_required_for_convergence",
@@ -331,6 +361,17 @@ export function selectStatusOperatorAction(args: {
   const requestEligibleRecoverySelectedIssues = selectedRequestEligibleRecoveryIssues(contextLines);
 
   for (const line of args.detailedStatusLines) {
+    const clusteredChurnManualReviewSummary = clusteredCodexChurnManualReviewSummary(line);
+    if (clusteredChurnManualReviewSummary !== null) {
+      actions.push({
+        action: "manual_review",
+        source: "codex_connector_review_churn_progress",
+        priority: 95,
+        summary: clusteredChurnManualReviewSummary,
+      });
+      continue;
+    }
+
     if (/^loop_runtime_blocker\b/.test(line)) {
       actions.push({
         action: "restart_loop",
