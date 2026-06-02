@@ -493,6 +493,131 @@ test("status --why reports Codex Connector review churn for concentrated P2 casc
   );
 });
 
+test("status compares Codex Connector churn progress against the previous tracked PR snapshot", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const issueNumber = 1391;
+  const prNumber = 2391;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "addressing_review",
+        branch,
+        pr_number: prNumber,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        last_head_sha: "head-current-1391",
+        last_tracked_pr_progress_snapshot: JSON.stringify({
+          headRefOid: "head-previous-1391",
+          reviewDecision: null,
+          mergeStateStatus: "BLOCKED",
+          copilotReviewState: null,
+          copilotReviewRequestedAt: null,
+          copilotReviewArrivedAt: null,
+          configuredBotCurrentHeadObservedAt: "2026-06-01T06:09:54Z",
+          configuredBotCurrentHeadStatusState: null,
+          currentHeadCiGreenAt: "2026-06-01T06:08:00Z",
+          configuredBotRateLimitedAt: null,
+          configuredBotDraftSkipAt: null,
+          configuredBotTopLevelReviewStrength: "blocking",
+          configuredBotTopLevelReviewSubmittedAt: "2026-06-01T06:09:54Z",
+          checks: ["build:pass:SUCCESS:CI"],
+          unresolvedReviewThreadIds: ["thread-previous-0", "thread-previous-1", "thread-previous-2", "thread-previous-3"],
+          codexConnectorReviewChurnProgress: {
+            currentHeadSha: "head-previous-1391",
+            currentEffectiveMustFixCount: 4,
+            dominantFile: "src/release-readiness.ts",
+            dominantFilePercent: 100,
+            clusterCategorySignature: "readiness_claim+truth_source",
+            representativeThreadIds: ["thread-previous-0", "thread-previous-1", "thread-previous-2", "thread-previous-3"],
+          },
+        }),
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const pr = createPullRequest({
+    number: prNumber,
+    headRefName: branch,
+    headRefOid: "head-current-1391",
+    isDraft: false,
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+    configuredBotCurrentHeadObservedAt: "2026-06-01T06:20:00Z",
+  });
+  const activeThreads = Array.from({ length: 2 }, (_, index) => ({
+    id: `thread-current-${index}`,
+    isResolved: false,
+    isOutdated: false,
+    path: "src/release-readiness.ts",
+    line: 120 + index,
+    comments: {
+      nodes: [
+        {
+          id: `thread-current-${index}-comment`,
+          body: "P2: Block release readiness truth-source claims until the verifier proves the authoritative source.",
+          createdAt: "2026-06-01T06:20:00Z",
+          url: `https://example.test/pr/1391#discussion_current_${index}`,
+          author: {
+            login: "chatgpt-codex-connector[bot]",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  }));
+  const outdatedThreads = Array.from({ length: 3 }, (_, index) => ({
+    id: `thread-outdated-${index}`,
+    isResolved: false,
+    isOutdated: true,
+    path: "src/release-readiness.ts",
+    line: 140 + index,
+    comments: {
+      nodes: [
+        {
+          id: `thread-outdated-${index}-comment`,
+          body: "P2: Old unresolved outdated thread that must not count against current-head progress.",
+          createdAt: "2026-06-01T06:10:00Z",
+          url: `https://example.test/pr/1391#discussion_outdated_${index}`,
+          author: {
+            login: "chatgpt-codex-connector[bot]",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  }));
+
+  const supervisor = new Supervisor({
+    ...fixture.config,
+    reviewBotLogins: ["chatgpt-codex-connector[bot]"],
+    codexConnectorReviewChurnMustFixThreshold: 2,
+    codexConnectorReviewChurnFileConcentrationPercent: 75,
+  });
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [],
+    listAllIssues: async () => [],
+    getPullRequestIfExists: async () => pr,
+    resolvePullRequestForBranch: async () => pr,
+    getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => [...activeThreads, ...outdatedThreads],
+  };
+
+  const status = await supervisor.status({ why: true });
+
+  assert.match(
+    status,
+    /^codex_connector_review_churn_progress classification=improving current_head_sha=head-current-1391 previous_head_sha=head-previous-1391 current_effective_must_fix=2 previous_effective_must_fix=4 effective_must_fix_delta=-2 dominant_file=src\/release-readiness\.ts dominant_file_percent=100 cluster_category_signature=.*truth_source.* representative_threads=thread-current-0,thread-current-1$/m,
+  );
+});
+
 test("status waits for current-head Codex review when non-outdated threads came from a stale review commit", async (t) => {
   const originalDateNow = Date.now;
   Date.now = () => Date.parse("2026-05-19T09:14:00Z");

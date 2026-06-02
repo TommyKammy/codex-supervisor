@@ -21,7 +21,12 @@ import {
 import { latestReviewThreadCommentFingerprint } from "../review-handling";
 import { inferFailureContext } from "./supervisor-failure-context";
 import { mergeConflictDetected, summarizeChecks } from "./supervisor-status-rendering";
-import { clusterConfiguredBotReviewThreads } from "../codex-connector-review-policy";
+import {
+  buildCodexConnectorReviewChurnDiagnostic,
+  buildCodexConnectorReviewChurnProgressSummary,
+  clusterConfiguredBotReviewThreads,
+  type CodexConnectorReviewChurnProgressSummary,
+} from "../codex-connector-review-policy";
 import { configuredBotReviewThreads, manualReviewThreads } from "../review-thread-reporting";
 import {
   FailureContext,
@@ -124,6 +129,7 @@ interface TrackedPrProgressSnapshot {
   processedReviewThreadIds?: string[];
   processedReviewThreadFingerprints?: string[];
   verificationProbeOutcomes?: string[];
+  codexConnectorReviewChurnProgress?: CodexConnectorReviewChurnProgressSummary;
 }
 
 export interface TrackedPrRepeatFailureDisposition {
@@ -140,6 +146,13 @@ function buildTrackedPrProgressSnapshot(
     IssueRunRecord,
     "processed_review_thread_ids" | "processed_review_thread_fingerprints" | "timeline_artifacts"
   >,
+  config: Pick<
+    SupervisorConfig,
+    | "configuredReviewProviders"
+    | "reviewBotLogins"
+    | "codexConnectorReviewChurnMustFixThreshold"
+    | "codexConnectorReviewChurnFileConcentrationPercent"
+  >,
   pr: GitHubPullRequest,
   checks: PullRequestCheck[],
   reviewThreads: ReviewThread[],
@@ -148,6 +161,7 @@ function buildTrackedPrProgressSnapshot(
   const unresolvedReviewThreadClusterSignatures = clusterConfiguredBotReviewThreads(unresolvedReviewThreads)
     .map((cluster) => `${cluster.signature}:${cluster.threads.map((thread) => thread.id).sort().join(",")}`)
     .sort();
+  const codexConnectorReviewChurn = buildCodexConnectorReviewChurnDiagnostic(config, reviewThreads, pr);
   return {
     headRefOid: pr.headRefOid,
     reviewDecision: pr.reviewDecision,
@@ -183,6 +197,14 @@ function buildTrackedPrProgressSnapshot(
       .sort(),
     ...(unresolvedReviewThreadClusterSignatures.length > 0
       ? { unresolvedReviewThreadClusterSignatures }
+      : {}),
+    ...(codexConnectorReviewChurn
+      ? {
+          codexConnectorReviewChurnProgress: buildCodexConnectorReviewChurnProgressSummary(
+            codexConnectorReviewChurn,
+            pr.headRefOid,
+          ),
+        }
       : {}),
   };
 }
@@ -324,8 +346,20 @@ export function summarizeTrackedPrProgress(
   pr: GitHubPullRequest,
   checks: PullRequestCheck[],
   reviewThreads: ReviewThread[],
+  config: Pick<
+    SupervisorConfig,
+    | "configuredReviewProviders"
+    | "reviewBotLogins"
+    | "codexConnectorReviewChurnMustFixThreshold"
+    | "codexConnectorReviewChurnFileConcentrationPercent"
+  > = {
+    configuredReviewProviders: [],
+    reviewBotLogins: [],
+    codexConnectorReviewChurnMustFixThreshold: undefined,
+    codexConnectorReviewChurnFileConcentrationPercent: undefined,
+  },
 ): { snapshot: string; summary: string | null } {
-  const current = buildTrackedPrProgressSnapshot(record, pr, checks, reviewThreads);
+  const current = buildTrackedPrProgressSnapshot(record, config, pr, checks, reviewThreads);
   const previous = parseTrackedPrProgressSnapshot(record.last_tracked_pr_progress_snapshot);
   const signals = listChangedSignals(previous, current);
 
@@ -353,13 +387,26 @@ export function determineTrackedPrRepeatFailureDisposition(args: {
     | "processed_review_thread_fingerprints"
     | "timeline_artifacts"
   >;
-  config: Pick<SupervisorConfig, "sameFailureSignatureRepeatLimit">;
+  config: Pick<
+    SupervisorConfig,
+    | "sameFailureSignatureRepeatLimit"
+    | "configuredReviewProviders"
+    | "reviewBotLogins"
+    | "codexConnectorReviewChurnMustFixThreshold"
+    | "codexConnectorReviewChurnFileConcentrationPercent"
+  >;
   pr: GitHubPullRequest;
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
 }): TrackedPrRepeatFailureDisposition {
   const previous = parseTrackedPrProgressSnapshot(args.record.last_tracked_pr_progress_snapshot);
-  const { snapshot, summary } = summarizeTrackedPrProgress(args.record, args.pr, args.checks, args.reviewThreads);
+  const { snapshot, summary } = summarizeTrackedPrProgress(
+    args.record,
+    args.pr,
+    args.checks,
+    args.reviewThreads,
+    args.config,
+  );
   const missingProgressBaseline = !hasExtendedTrackedPrProgressBaseline(previous);
   const overRepeatLimit =
     args.record.last_failure_signature !== null &&

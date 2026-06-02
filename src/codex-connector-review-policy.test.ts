@@ -4,7 +4,9 @@ import {
   buildCodexConnectorP2P3PolicyDiagnostic,
   buildCodexConnectorPolicyBlockDiagnostic,
   buildCodexConnectorReviewChurnDiagnostic,
+  buildCodexConnectorReviewChurnProgressSummary,
   clusterConfiguredBotReviewThreads,
+  compareCodexConnectorReviewChurnProgress,
   codexConnectorMustFixReviewThreads,
   codexConnectorStaleReviewCommitThreads,
   evaluateCodexConnectorConvergencePolicy,
@@ -368,4 +370,52 @@ test("Codex Connector churn categories use the Codex finding instead of later re
   assert.ok(diagnostic?.normalizedCategories.includes("truth_source"));
   assert.ok(diagnostic?.normalizedCategories.includes("readiness_claim"));
   assert.notDeepEqual(diagnostic?.normalizedCategories, ["general_must_fix"]);
+});
+
+test("Codex Connector churn progress compares effective must-fix summaries across heads", () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    codexConnectorReviewChurnMustFixThreshold: 2,
+    codexConnectorReviewChurnFileConcentrationPercent: 70,
+  });
+  const previousThreads = Array.from({ length: 4 }, (_, index) =>
+    codexThread({
+      id: `thread-previous-${index}`,
+      path: "src/release-readiness.ts",
+      line: 100 + index,
+      body: "P2: Block release readiness truth-source claims until the verifier proves the authoritative source.",
+    }),
+  );
+  const currentThreads = [
+    ...Array.from({ length: 2 }, (_, index) =>
+      codexThread({
+        id: `thread-current-${index}`,
+        path: "src/release-readiness.ts",
+        line: 120 + index,
+        body: "P2: Block release readiness truth-source claims until the verifier proves the authoritative source.",
+      }),
+    ),
+    ...Array.from({ length: 3 }, (_, index) =>
+      codexThread({
+        id: `thread-outdated-${index}`,
+        isOutdated: true,
+        path: "src/release-readiness.ts",
+        line: 140 + index,
+        body: "P2: Old unresolved outdated thread that must not count against current-head progress.",
+      }),
+    ),
+  ];
+  const previousDiagnostic = buildCodexConnectorReviewChurnDiagnostic(config, previousThreads);
+  const currentDiagnostic = buildCodexConnectorReviewChurnDiagnostic(config, currentThreads);
+
+  const previous = buildCodexConnectorReviewChurnProgressSummary(previousDiagnostic!, "head-before");
+  const current = buildCodexConnectorReviewChurnProgressSummary(currentDiagnostic!, "head-after");
+  const comparison = compareCodexConnectorReviewChurnProgress(current, previous);
+
+  assert.equal(previous.currentEffectiveMustFixCount, 4);
+  assert.equal(current.currentEffectiveMustFixCount, 2);
+  assert.equal(comparison.classification, "improving");
+  assert.equal(comparison.effectiveMustFixDelta, -2);
+  assert.equal(comparison.previousHeadSha, "head-before");
+  assert.equal(comparison.currentHeadSha, "head-after");
 });

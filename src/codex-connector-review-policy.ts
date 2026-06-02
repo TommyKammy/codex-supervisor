@@ -163,6 +163,26 @@ export interface CodexConnectorReviewChurnDiagnostic {
   nextAction: "cluster_root_cause_repair";
 }
 
+export interface CodexConnectorReviewChurnProgressSummary {
+  currentHeadSha: string;
+  currentEffectiveMustFixCount: number;
+  dominantFile: string;
+  dominantFilePercent: number;
+  clusterCategorySignature: string;
+  representativeThreadIds: string[];
+}
+
+export type CodexConnectorReviewChurnProgressClassification = "improving" | "unchanged" | "worse";
+
+export interface CodexConnectorReviewChurnProgressComparison {
+  classification: CodexConnectorReviewChurnProgressClassification;
+  currentHeadSha: string;
+  previousHeadSha: string;
+  currentEffectiveMustFixCount: number;
+  previousEffectiveMustFixCount: number;
+  effectiveMustFixDelta: number;
+}
+
 export type CodexConnectorConvergencePolicyOutcome =
   | "missing_current_head_review"
   | "must_fix_remaining"
@@ -719,6 +739,38 @@ export function buildCodexConnectorReviewChurnDiagnostic(
     representativeSourceUrls,
     signature,
     nextAction: "cluster_root_cause_repair",
+  };
+}
+
+export function buildCodexConnectorReviewChurnProgressSummary(
+  diagnostic: CodexConnectorReviewChurnDiagnostic,
+  currentHeadSha: string | null | undefined,
+): CodexConnectorReviewChurnProgressSummary {
+  return {
+    currentHeadSha: currentHeadSha?.trim() || "unknown",
+    currentEffectiveMustFixCount: diagnostic.mustFixCount,
+    dominantFile: diagnostic.dominantFile,
+    dominantFilePercent: diagnostic.dominantFilePercent,
+    clusterCategorySignature: diagnostic.normalizedCategories.join("+"),
+    representativeThreadIds: diagnostic.representativeThreadIds,
+  };
+}
+
+export function compareCodexConnectorReviewChurnProgress(
+  current: CodexConnectorReviewChurnProgressSummary,
+  previous: CodexConnectorReviewChurnProgressSummary,
+): CodexConnectorReviewChurnProgressComparison {
+  const effectiveMustFixDelta =
+    current.currentEffectiveMustFixCount - previous.currentEffectiveMustFixCount;
+  const classification =
+    effectiveMustFixDelta < 0 ? "improving" : effectiveMustFixDelta > 0 ? "worse" : "unchanged";
+  return {
+    classification,
+    currentHeadSha: current.currentHeadSha,
+    previousHeadSha: previous.currentHeadSha,
+    currentEffectiveMustFixCount: current.currentEffectiveMustFixCount,
+    previousEffectiveMustFixCount: previous.currentEffectiveMustFixCount,
+    effectiveMustFixDelta,
   };
 }
 
