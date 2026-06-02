@@ -214,15 +214,23 @@ function hasStoppedClusteredCodexChurnManualReviewGate(
   lines: string[],
   requestEligibleRecoveryIssues: ReadonlySet<number>,
 ): boolean {
-  if (requestEligibleRecoveryIssues.size > 0) {
-    return false;
-  }
-
   return lines.some((line) => {
-    return (
-      /^loop_runtime_blocker\b/u.test(line) ||
-      /^no_active_tracked_record\b/u.test(line) && /\bclassification=manual_review_required\b/u.test(line)
-    );
+    const isLoopRuntimeBlocker = /^loop_runtime_blocker\b/u.test(line);
+    const isNoActiveManualReview =
+      /^no_active_tracked_record\b/u.test(line) && /\bclassification=manual_review_required\b/u.test(line);
+    if (!isLoopRuntimeBlocker && !isNoActiveManualReview) {
+      return false;
+    }
+
+    const gateIssueNumber = isLoopRuntimeBlocker
+      ? readIssueNumberToken(line, "first_issue")
+      : readIssueNumberToken(line, "issue");
+
+    if (gateIssueNumber === null) {
+      return requestEligibleRecoveryIssues.size === 0;
+    }
+
+    return !requestEligibleRecoveryIssues.has(gateIssueNumber);
   });
 }
 

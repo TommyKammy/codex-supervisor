@@ -523,31 +523,30 @@ test("clustered Codex churn preserves first-issue request-eligible recovery", ()
   );
 });
 
-test("unanchored clustered Codex churn does not override selected request-eligible recovery", () => {
+test("unrelated stopped clustered Codex churn still overrides selected request-eligible recovery", () => {
   const lines = [
     "codex_connector_review_fallback status=request_eligible provider=codex current_head_sha=head-1 current_head_observed_at=none required_checks_green_at=2026-05-19T09:03:41Z timeout_action=request_review_comment requested_at=none requested_head_sha=none review_signal=missing note=request_comment_is_not_review_completion next_action=request_current_head_review wait_until=2026-05-19T09:13:41.000Z",
+    "loop_runtime_blocker state=off active_tracked_issues=1 first_issue=#188 first_state=blocked first_pr=#288 action=restart_loop restart_reason=recoverable_active_tracked_work_waiting_for_loop expected_outcome=loop_runtime_state_running_then_tracked_issue_advances fallback=inspect_runtime",
     codexConnectorChurnProgressLine(),
-    "no_active_tracked_record issue=#170 classification=manual_review_required state=blocked reason=manual_review",
   ];
 
-  assert.equal(
-    requireRestartRecommendation(selectRestartRecommendation({
-      detailedStatusLines: lines,
-      contextLines: ["selected_issue=#169"],
-    })).source,
-    "no_active_tracked_record",
-  );
+  const recommendation = requireRestartRecommendation(selectRestartRecommendation({
+    detailedStatusLines: lines,
+    contextLines: ["selected_issue=#169"],
+  }));
+  assert.equal(recommendation.category, "manual_review_before_restart");
+  assert.equal(recommendation.source, "codex_connector_review_churn_progress");
   assert.deepEqual(
     selectStatusOperatorAction({
       detailedStatusLines: lines,
       contextLines: ["selected_issue=#169"],
     }),
     {
-      action: "provider_outage_suspected",
-      source: "codex_connector_review_fallback",
-      priority: 70,
+      action: "manual_review",
+      source: "codex_connector_review_churn_progress",
+      priority: 95,
       summary:
-        "A current-head Codex Connector review request is eligible; run the selected supervisor cycle to post or record it.",
+        "Clustered Codex Connector churn made no progress; inspect dominant file src/release-readiness.ts with current effective must-fix count 8 before restarting the loop.",
     },
   );
 });
