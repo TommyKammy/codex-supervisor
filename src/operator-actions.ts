@@ -165,6 +165,65 @@ function readIssueNumberToken(line: string, key: string): number | null {
   return match === null ? null : Number.parseInt(match[1], 10);
 }
 
+function clusteredCodexChurnManualReviewSummary(line: string): string | null {
+  if (!/^codex_connector_review_churn_progress\b/u.test(line)) {
+    return null;
+  }
+
+  const classification = readTokenValue(line, "classification");
+  if (classification !== "unchanged" && classification !== "worse") {
+    return null;
+  }
+
+  const currentEffectiveMustFix = readTokenValue(line, "current_effective_must_fix");
+  const dominantFile = readTokenValue(line, "dominant_file");
+  const previousDominantFile = readTokenValue(line, "previous_dominant_file");
+  const clusterCategorySignature = readTokenValue(line, "cluster_category_signature");
+  const previousClusterCategorySignature = readTokenValue(line, "previous_cluster_category_signature");
+  if (
+    currentEffectiveMustFix === null ||
+    dominantFile === null ||
+    previousDominantFile === null ||
+    clusterCategorySignature === null ||
+    previousClusterCategorySignature === null
+  ) {
+    return null;
+  }
+
+  if (
+    dominantFile !== previousDominantFile ||
+    clusterCategorySignature !== previousClusterCategorySignature
+  ) {
+    return null;
+  }
+
+  return `Clustered Codex Connector churn made no progress; inspect dominant file ${dominantFile} with current effective must-fix count ${currentEffectiveMustFix} before restarting the loop.`;
+}
+
+function hasStoppedClusteredCodexChurnManualReviewGate(
+  lines: string[],
+  requestEligibleRecoveryIssues: ReadonlySet<number>,
+): boolean {
+  return lines.some((line) => {
+    const isLoopRuntimeBlocker = /^loop_runtime_blocker\b/u.test(line);
+    const isNoActiveManualReview =
+      /^no_active_tracked_record\b/u.test(line) && /\bclassification=manual_review_required\b/u.test(line);
+    if (!isLoopRuntimeBlocker && !isNoActiveManualReview) {
+      return false;
+    }
+
+    const gateIssueNumber = isLoopRuntimeBlocker
+      ? readIssueNumberToken(line, "first_issue")
+      : readIssueNumberToken(line, "issue");
+
+    if (gateIssueNumber === null) {
+      return requestEligibleRecoveryIssues.size === 0;
+    }
+
+    return !requestEligibleRecoveryIssues.has(gateIssueNumber);
+  });
+}
+
 export function parseOperatorActionLine(line: string): OperatorAction | null {
   if (!/^(operator_action|doctor_operator_action)\b/u.test(line)) {
     return null;
@@ -204,8 +263,23 @@ export function selectRestartRecommendation(args: {
   const recommendations: RestartRecommendation[] = [];
   const contextLines = [...args.detailedStatusLines, ...(args.contextLines ?? [])];
   const requestEligibleRecoverySelectedIssues = selectedRequestEligibleRecoveryIssues(contextLines);
+  const allowClusteredChurnManualReview = hasStoppedClusteredCodexChurnManualReviewGate(
+    contextLines,
+    requestEligibleRecoverySelectedIssues,
+  );
 
   for (const line of args.detailedStatusLines) {
+    const clusteredChurnManualReviewSummary = clusteredCodexChurnManualReviewSummary(line);
+    if (clusteredChurnManualReviewSummary !== null && allowClusteredChurnManualReview) {
+      recommendations.push({
+        category: "manual_review_before_restart",
+        source: "codex_connector_review_churn_progress",
+        priority: 95,
+        summary: clusteredChurnManualReviewSummary,
+      });
+      continue;
+    }
+
     if (/^loop_runtime_blocker\b/.test(line)) {
       recommendations.push({
         category: "restart_required_for_convergence",
@@ -329,8 +403,23 @@ export function selectStatusOperatorAction(args: {
   const actions: OperatorAction[] = [];
   const contextLines = [...args.detailedStatusLines, ...(args.contextLines ?? [])];
   const requestEligibleRecoverySelectedIssues = selectedRequestEligibleRecoveryIssues(contextLines);
+  const allowClusteredChurnManualReview = hasStoppedClusteredCodexChurnManualReviewGate(
+    contextLines,
+    requestEligibleRecoverySelectedIssues,
+  );
 
   for (const line of args.detailedStatusLines) {
+    const clusteredChurnManualReviewSummary = clusteredCodexChurnManualReviewSummary(line);
+    if (clusteredChurnManualReviewSummary !== null && allowClusteredChurnManualReview) {
+      actions.push({
+        action: "manual_review",
+        source: "codex_connector_review_churn_progress",
+        priority: 95,
+        summary: clusteredChurnManualReviewSummary,
+      });
+      continue;
+    }
+
     if (/^loop_runtime_blocker\b/.test(line)) {
       actions.push({
         action: "restart_loop",
@@ -483,6 +572,12 @@ function selectedRequestEligibleRecoveryIssues(lines: string[]): ReadonlySet<num
       /^tracked_pr_mismatch\b/u.test(line)
     ) {
       const issueNumber = readIssueNumberToken(line, "issue");
+      if (issueNumber !== null) {
+        diagnosticIssueNumbers.add(issueNumber);
+      }
+    }
+    if (/^loop_runtime_blocker\b/u.test(line)) {
+      const issueNumber = readIssueNumberToken(line, "first_issue");
       if (issueNumber !== null) {
         diagnosticIssueNumbers.add(issueNumber);
       }

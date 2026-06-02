@@ -245,15 +245,6 @@ function joinProgressValues(values: string[] | undefined): string | null {
   return Array.isArray(values) && values.length > 0 ? values.join("|") : null;
 }
 
-function categorySignatureTokens(signature: string): Set<string> {
-  return new Set(signature.split("+").filter((token) => token.length > 0));
-}
-
-function categorySignatureIncludesAll(current: string, previous: string): boolean {
-  const currentTokens = categorySignatureTokens(current);
-  return [...categorySignatureTokens(previous)].every((token) => currentTokens.has(token));
-}
-
 function clusteredCodexChurnMadeNoProgress(
   previous: TrackedPrProgressSnapshot | null,
   current: TrackedPrProgressSnapshot,
@@ -267,10 +258,7 @@ function clusteredCodexChurnMadeNoProgress(
   return (
     currentChurn.dominantFile === previousChurn.dominantFile &&
     currentChurn.currentEffectiveMustFixCount >= previousChurn.currentEffectiveMustFixCount &&
-    categorySignatureIncludesAll(
-      currentChurn.clusterCategorySignature,
-      previousChurn.clusterCategorySignature,
-    )
+    currentChurn.clusterCategorySignature === previousChurn.clusterCategorySignature
   );
 }
 
@@ -313,6 +301,19 @@ function listChangedSignals(previous: TrackedPrProgressSnapshot | null, current:
     previousThreadFingerprints !== currentThreadFingerprints;
   if (sameThreadGuidanceChanged) {
     signals.push("same_review_thread_guidance_changed");
+  }
+  if (
+    !noProgressClusteredCodexChurn &&
+    previous?.codexConnectorReviewChurnProgress &&
+    current.codexConnectorReviewChurnProgress &&
+    (
+      previous.codexConnectorReviewChurnProgress.dominantFile !==
+        current.codexConnectorReviewChurnProgress.dominantFile ||
+      previous.codexConnectorReviewChurnProgress.clusterCategorySignature !==
+        current.codexConnectorReviewChurnProgress.clusterCategorySignature
+    )
+  ) {
+    signals.push("review_thread_cluster_identity_changed");
   }
   if (
     !noProgressClusteredCodexChurn &&
