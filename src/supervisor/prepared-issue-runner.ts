@@ -377,9 +377,15 @@ export async function runPreparedIssueFlow(
         effectiveFailureContext !== null &&
         shouldBlockTrackedPrRepeatedFailure({ record, failureContext: effectiveFailureContext })
       ) {
+        const clusteredCodexChurnStop = trackedPrRepeatFailureDisposition.progressSummary?.match(
+          /^no_progress_clustered_codex_churn current_effective_must_fix=(\S+)/,
+        );
+        const repeatStopLastError = clusteredCodexChurnStop
+          ? `Stopped automatic repair for clustered Codex Connector churn with current effective must-fix count ${clusteredCodexChurnStop[1]}.`
+          : effectiveFailureContext.summary;
         record = stateStore.touch(record, {
           state: "blocked",
-          last_error: truncate(effectiveFailureContext.summary, 1000),
+          last_error: truncate(repeatStopLastError, 1000),
           last_failure_kind: null,
           last_tracked_pr_progress_summary: trackedPrRepeatFailureDisposition.progressSummary,
           last_tracked_pr_repeat_failure_decision: trackedPrRepeatFailureDisposition.decision,

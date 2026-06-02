@@ -245,10 +245,40 @@ function joinProgressValues(values: string[] | undefined): string | null {
   return Array.isArray(values) && values.length > 0 ? values.join("|") : null;
 }
 
+function categorySignatureTokens(signature: string): Set<string> {
+  return new Set(signature.split("+").filter((token) => token.length > 0));
+}
+
+function categorySignatureIncludesAll(current: string, previous: string): boolean {
+  const currentTokens = categorySignatureTokens(current);
+  return [...categorySignatureTokens(previous)].every((token) => currentTokens.has(token));
+}
+
+function clusteredCodexChurnMadeNoProgress(
+  previous: TrackedPrProgressSnapshot | null,
+  current: TrackedPrProgressSnapshot,
+): boolean {
+  const previousChurn = previous?.codexConnectorReviewChurnProgress;
+  const currentChurn = current.codexConnectorReviewChurnProgress;
+  if (!previousChurn || !currentChurn) {
+    return false;
+  }
+
+  return (
+    currentChurn.dominantFile === previousChurn.dominantFile &&
+    currentChurn.currentEffectiveMustFixCount >= previousChurn.currentEffectiveMustFixCount &&
+    categorySignatureIncludesAll(
+      currentChurn.clusterCategorySignature,
+      previousChurn.clusterCategorySignature,
+    )
+  );
+}
+
 function listChangedSignals(previous: TrackedPrProgressSnapshot | null, current: TrackedPrProgressSnapshot): string[] {
   const signals: string[] = [];
+  const noProgressClusteredCodexChurn = clusteredCodexChurnMadeNoProgress(previous, current);
 
-  if (previous?.headRefOid && previous.headRefOid !== current.headRefOid) {
+  if (!noProgressClusteredCodexChurn && previous?.headRefOid && previous.headRefOid !== current.headRefOid) {
     signals.push(`head_advanced ${previous.headRefOid}->${current.headRefOid}`);
   }
 
@@ -285,6 +315,7 @@ function listChangedSignals(previous: TrackedPrProgressSnapshot | null, current:
     signals.push("same_review_thread_guidance_changed");
   }
   if (
+    !noProgressClusteredCodexChurn &&
     previous !== null &&
     previousClusterSignatures !== null &&
     currentClusterSignatures !== null &&
@@ -294,7 +325,11 @@ function listChangedSignals(previous: TrackedPrProgressSnapshot | null, current:
   }
   const previousSourceAnchors = joinProgressValues(previous?.unresolvedReviewThreadSourceAnchors);
   const currentSourceAnchors = joinProgressValues(current.unresolvedReviewThreadSourceAnchors);
-  if (currentSourceAnchors !== null && (previous === null || previousSourceAnchors === null || previousSourceAnchors !== currentSourceAnchors)) {
+  if (
+    !noProgressClusteredCodexChurn &&
+    currentSourceAnchors !== null &&
+    (previous === null || previousSourceAnchors === null || previousSourceAnchors !== currentSourceAnchors)
+  ) {
     signals.push("review_thread_source_anchor_changed");
   }
   const previousProcessedFingerprints = joinProgressValues(previous?.processedReviewThreadFingerprints);
@@ -315,7 +350,7 @@ function listChangedSignals(previous: TrackedPrProgressSnapshot | null, current:
   ) {
     signals.push("verification_probe_outcome_changed");
   }
-  if (previous !== null && reviewSignalChanged) {
+  if (!noProgressClusteredCodexChurn && previous !== null && reviewSignalChanged) {
     signals.push("review_state_changed");
   }
 
@@ -327,7 +362,7 @@ function listChangedSignals(previous: TrackedPrProgressSnapshot | null, current:
     (previous?.configuredBotDraftSkipAt ?? null) !== current.configuredBotDraftSkipAt ||
     (previous?.copilotReviewRequestedAt ?? null) !== current.copilotReviewRequestedAt ||
     (previous?.copilotReviewArrivedAt ?? null) !== current.copilotReviewArrivedAt;
-  if (previous !== null && botLifecycleChanged && !signals.includes("ci_state_changed")) {
+  if (previous !== null && !noProgressClusteredCodexChurn && botLifecycleChanged && !signals.includes("ci_state_changed")) {
     signals.push("ci_state_changed");
   }
 
@@ -407,6 +442,7 @@ export function determineTrackedPrRepeatFailureDisposition(args: {
     args.reviewThreads,
     args.config,
   );
+  const current = parseTrackedPrProgressSnapshot(snapshot);
   const missingProgressBaseline = !hasExtendedTrackedPrProgressBaseline(previous);
   const overRepeatLimit =
     args.record.last_failure_signature !== null &&
@@ -427,6 +463,15 @@ export function determineTrackedPrRepeatFailureDisposition(args: {
       progressSnapshot: snapshot,
       progressSummary: "progress_baseline_initialized",
       decision: "retry_on_progress",
+    };
+  }
+
+  if (current && clusteredCodexChurnMadeNoProgress(previous, current)) {
+    return {
+      shouldStop: true,
+      progressSnapshot: snapshot,
+      progressSummary: `no_progress_clustered_codex_churn current_effective_must_fix=${current.codexConnectorReviewChurnProgress?.currentEffectiveMustFixCount ?? "unknown"}`,
+      decision: "stop_no_progress",
     };
   }
 
