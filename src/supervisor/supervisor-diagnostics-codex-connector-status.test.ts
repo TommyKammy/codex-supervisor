@@ -614,7 +614,7 @@ test("status compares Codex Connector churn progress against the previous tracke
 
   assert.match(
     status,
-    /^codex_connector_review_churn_progress classification=improving current_head_sha=head-current-1391 previous_head_sha=head-previous-1391 current_effective_must_fix=2 previous_effective_must_fix=4 effective_must_fix_delta=-2 dominant_file=src\/release-readiness\.ts dominant_file_percent=100 cluster_category_signature=.*truth_source.* representative_threads=thread-current-0,thread-current-1$/m,
+    /^codex_connector_review_churn_progress classification=improving current_head_sha=head-current-1391 previous_head_sha=head-previous-1391 current_effective_must_fix=2 previous_effective_must_fix=4 effective_must_fix_delta=-2 dominant_file=src\/release-readiness\.ts previous_dominant_file=src\/release-readiness\.ts dominant_file_percent=100 cluster_category_signature=.*truth_source.* previous_cluster_category_signature=.*readiness_claim.*truth_source.* representative_threads=thread-current-0,thread-current-1$/m,
   );
 });
 

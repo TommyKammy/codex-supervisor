@@ -41,6 +41,39 @@ function requireRestartRecommendation(recommendation: RestartRecommendation | nu
   return recommendation;
 }
 
+function codexConnectorChurnProgressLine(args: {
+  classification?: "improving" | "unchanged" | "worse";
+  currentEffectiveMustFix?: number;
+  previousEffectiveMustFix?: number;
+  dominantFile?: string;
+  previousDominantFile?: string;
+  clusterCategorySignature?: string;
+  previousClusterCategorySignature?: string;
+} = {}): string {
+  const classification = args.classification ?? "unchanged";
+  const currentEffectiveMustFix = args.currentEffectiveMustFix ?? 8;
+  const previousEffectiveMustFix = args.previousEffectiveMustFix ?? 8;
+  const dominantFile = args.dominantFile ?? "src/release-readiness.ts";
+  const previousDominantFile = args.previousDominantFile ?? dominantFile;
+  const clusterCategorySignature = args.clusterCategorySignature ?? "truth_source";
+  const previousClusterCategorySignature = args.previousClusterCategorySignature ?? clusterCategorySignature;
+  return [
+    "codex_connector_review_churn_progress",
+    `classification=${classification}`,
+    "current_head_sha=head-current-188",
+    "previous_head_sha=head-previous-188",
+    `current_effective_must_fix=${currentEffectiveMustFix}`,
+    `previous_effective_must_fix=${previousEffectiveMustFix}`,
+    `effective_must_fix_delta=${currentEffectiveMustFix - previousEffectiveMustFix}`,
+    `dominant_file=${dominantFile}`,
+    `previous_dominant_file=${previousDominantFile}`,
+    "dominant_file_percent=100",
+    `cluster_category_signature=${clusterCategorySignature}`,
+    `previous_cluster_category_signature=${previousClusterCategorySignature}`,
+    "representative_threads=thread-authority,thread-truth",
+  ].join(" ");
+}
+
 test("selectRestartRecommendation classifies every restart recommendation category from shared status lines", () => {
   assert.equal(
     requireRestartRecommendation(selectRestartRecommendation({
@@ -326,12 +359,12 @@ test("selectRestartRecommendation does not let safe restart outrank manual revie
 
 test("selectRestartRecommendation prioritizes manual review for stopped clustered Codex churn", () => {
   const recommendation = requireRestartRecommendation(selectRestartRecommendation({
-    detailedStatusLines: [
-      "loop_runtime_blocker state=off active_tracked_issues=1 first_issue=#188 first_state=blocked first_pr=#288 action=restart_loop restart_reason=recoverable_active_tracked_work_waiting_for_loop expected_outcome=loop_runtime_state_running_then_tracked_issue_advances fallback=if_blocker_remains_run_status_why_and_doctor_then_inspect_runtime_marker_and_config",
-      "codex_connector_review_churn_progress classification=unchanged current_head_sha=head-current-188 previous_head_sha=head-previous-188 current_effective_must_fix=8 previous_effective_must_fix=8 effective_must_fix_delta=0 dominant_file=src/release-readiness.ts dominant_file_percent=100 cluster_category_signature=truth_source representative_threads=thread-authority,thread-truth",
-      "no_active_tracked_record issue=#188 classification=manual_review_required state=blocked reason=manual_review",
-    ],
-  }));
+      detailedStatusLines: [
+        "loop_runtime_blocker state=off active_tracked_issues=1 first_issue=#188 first_state=blocked first_pr=#288 action=restart_loop restart_reason=recoverable_active_tracked_work_waiting_for_loop expected_outcome=loop_runtime_state_running_then_tracked_issue_advances fallback=if_blocker_remains_run_status_why_and_doctor_then_inspect_runtime_marker_and_config",
+        codexConnectorChurnProgressLine(),
+        "no_active_tracked_record issue=#188 classification=manual_review_required state=blocked reason=manual_review",
+      ],
+    }));
 
   assert.equal(recommendation.category, "manual_review_before_restart");
   assert.equal(recommendation.source, "codex_connector_review_churn_progress");
@@ -344,7 +377,7 @@ test("selectStatusOperatorAction prioritizes manual review for stopped clustered
     selectStatusOperatorAction({
       detailedStatusLines: [
         "loop_runtime_blocker state=off active_tracked_issues=1 first_issue=#188 first_state=blocked first_pr=#288 action=restart_loop restart_reason=recoverable_active_tracked_work_waiting_for_loop expected_outcome=loop_runtime_state_running_then_tracked_issue_advances fallback=if_blocker_remains_run_status_why_and_doctor_then_inspect_runtime_marker_and_config",
-        "codex_connector_review_churn_progress classification=unchanged current_head_sha=head-current-188 previous_head_sha=head-previous-188 current_effective_must_fix=8 previous_effective_must_fix=8 effective_must_fix_delta=0 dominant_file=src/release-readiness.ts dominant_file_percent=100 cluster_category_signature=truth_source representative_threads=thread-authority,thread-truth",
+        codexConnectorChurnProgressLine(),
       ],
     }),
     {
@@ -394,7 +427,10 @@ test("selectStatusOperatorAction accepts no-active manual review as a clustered 
   assert.deepEqual(
     selectStatusOperatorAction({
       detailedStatusLines: [
-        "codex_connector_review_churn_progress classification=worse current_head_sha=head-current-188 previous_head_sha=head-previous-188 current_effective_must_fix=9 previous_effective_must_fix=8 effective_must_fix_delta=1 dominant_file=src/release-readiness.ts dominant_file_percent=100 cluster_category_signature=truth_source representative_threads=thread-authority,thread-truth",
+        codexConnectorChurnProgressLine({
+          classification: "worse",
+          currentEffectiveMustFix: 9,
+        }),
         "no_active_tracked_record issue=#188 classification=manual_review_required state=blocked reason=manual_review",
       ],
     }),
@@ -434,7 +470,7 @@ test("selectRestartRecommendation suppresses stale manual-review restart advice 
 test("clustered Codex churn does not suppress selected request-eligible Codex recovery", () => {
   const lines = [
     "codex_connector_review_fallback status=request_eligible provider=codex current_head_sha=head-1 current_head_observed_at=none required_checks_green_at=2026-05-19T09:03:41Z timeout_action=request_review_comment requested_at=none requested_head_sha=none review_signal=missing note=request_comment_is_not_review_completion next_action=request_current_head_review wait_until=2026-05-19T09:13:41.000Z",
-    "codex_connector_review_churn_progress classification=unchanged current_head_sha=head-1 previous_head_sha=head-0 current_effective_must_fix=8 previous_effective_must_fix=8 effective_must_fix_delta=0 dominant_file=src/release-readiness.ts dominant_file_percent=100 cluster_category_signature=truth_source representative_threads=thread-authority,thread-truth",
+    codexConnectorChurnProgressLine(),
     "no_active_tracked_record issue=#169 classification=manual_review_required state=blocked reason=manual_review",
   ];
 
@@ -460,10 +496,37 @@ test("clustered Codex churn does not suppress selected request-eligible Codex re
   );
 });
 
+test("clustered Codex churn preserves first-issue request-eligible recovery", () => {
+  const lines = [
+    "codex_connector_review_fallback status=request_eligible provider=codex current_head_sha=head-1 current_head_observed_at=none required_checks_green_at=2026-05-19T09:03:41Z timeout_action=request_review_comment requested_at=none requested_head_sha=none review_signal=missing note=request_comment_is_not_review_completion next_action=request_current_head_review wait_until=2026-05-19T09:13:41.000Z",
+    "loop_runtime_blocker state=off active_tracked_issues=1 first_issue=#169 first_state=addressing_review first_pr=#177 action=restart_loop restart_reason=recoverable_active_tracked_work_waiting_for_loop expected_outcome=loop_runtime_state_running_then_tracked_issue_advances fallback=inspect_runtime",
+    codexConnectorChurnProgressLine(),
+  ];
+
+  assert.equal(
+    requireRestartRecommendation(selectRestartRecommendation({
+      detailedStatusLines: lines,
+    })).source,
+    "loop_runtime_blocker",
+  );
+  assert.deepEqual(
+    selectStatusOperatorAction({
+      detailedStatusLines: lines,
+    }),
+    {
+      action: "restart_loop",
+      source: "loop_runtime_blocker",
+      priority: 90,
+      summary:
+        "Tracked work is active but the supervisor loop is off; restart the supported loop host so the runtime reports running and tracked work can advance.",
+    },
+  );
+});
+
 test("unanchored clustered Codex churn does not override selected request-eligible recovery", () => {
   const lines = [
     "codex_connector_review_fallback status=request_eligible provider=codex current_head_sha=head-1 current_head_observed_at=none required_checks_green_at=2026-05-19T09:03:41Z timeout_action=request_review_comment requested_at=none requested_head_sha=none review_signal=missing note=request_comment_is_not_review_completion next_action=request_current_head_review wait_until=2026-05-19T09:13:41.000Z",
-    "codex_connector_review_churn_progress classification=unchanged current_head_sha=head-1 previous_head_sha=head-0 current_effective_must_fix=8 previous_effective_must_fix=8 effective_must_fix_delta=0 dominant_file=src/release-readiness.ts dominant_file_percent=100 cluster_category_signature=truth_source representative_threads=thread-authority,thread-truth",
+    codexConnectorChurnProgressLine(),
     "no_active_tracked_record issue=#170 classification=manual_review_required state=blocked reason=manual_review",
   ];
 
@@ -487,4 +550,40 @@ test("unanchored clustered Codex churn does not override selected request-eligib
         "A current-head Codex Connector review request is eligible; run the selected supervisor cycle to post or record it.",
     },
   );
+});
+
+test("clustered Codex churn needs stable cluster identity before manual review", () => {
+  for (const churnLine of [
+    codexConnectorChurnProgressLine({
+      previousDominantFile: "src/old-release-readiness.ts",
+    }),
+    codexConnectorChurnProgressLine({
+      clusterCategorySignature: "readiness_claim",
+      previousClusterCategorySignature: "truth_source",
+    }),
+  ]) {
+    const lines = [
+      "loop_runtime_blocker state=off active_tracked_issues=1 first_issue=#188 first_state=blocked first_pr=#288 action=restart_loop restart_reason=recoverable_active_tracked_work_waiting_for_loop expected_outcome=loop_runtime_state_running_then_tracked_issue_advances fallback=if_blocker_remains_run_status_why_and_doctor_then_inspect_runtime_marker_and_config",
+      churnLine,
+    ];
+
+    assert.equal(
+      requireRestartRecommendation(selectRestartRecommendation({
+        detailedStatusLines: lines,
+      })).source,
+      "loop_runtime_blocker",
+    );
+    assert.deepEqual(
+      selectStatusOperatorAction({
+        detailedStatusLines: lines,
+      }),
+      {
+        action: "restart_loop",
+        source: "loop_runtime_blocker",
+        priority: 90,
+        summary:
+          "Tracked work is active but the supervisor loop is off; restart the supported loop host so the runtime reports running and tracked work can advance.",
+      },
+    );
+  }
 });

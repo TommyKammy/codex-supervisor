@@ -165,6 +165,16 @@ function readIssueNumberToken(line: string, key: string): number | null {
   return match === null ? null : Number.parseInt(match[1], 10);
 }
 
+function categorySignatureTokens(signature: string): Set<string> {
+  return new Set(signature.split("+").filter((token) => token.length > 0));
+}
+
+function categorySignatureIncludesAll(current: string, previous: string): boolean {
+  const currentTokens = categorySignatureTokens(current);
+  const previousTokens = categorySignatureTokens(previous);
+  return previousTokens.size > 0 && [...previousTokens].every((token) => currentTokens.has(token));
+}
+
 function clusteredCodexChurnManualReviewSummary(line: string): string | null {
   if (!/^codex_connector_review_churn_progress\b/u.test(line)) {
     return null;
@@ -177,7 +187,23 @@ function clusteredCodexChurnManualReviewSummary(line: string): string | null {
 
   const currentEffectiveMustFix = readTokenValue(line, "current_effective_must_fix");
   const dominantFile = readTokenValue(line, "dominant_file");
-  if (currentEffectiveMustFix === null || dominantFile === null) {
+  const previousDominantFile = readTokenValue(line, "previous_dominant_file");
+  const clusterCategorySignature = readTokenValue(line, "cluster_category_signature");
+  const previousClusterCategorySignature = readTokenValue(line, "previous_cluster_category_signature");
+  if (
+    currentEffectiveMustFix === null ||
+    dominantFile === null ||
+    previousDominantFile === null ||
+    clusterCategorySignature === null ||
+    previousClusterCategorySignature === null
+  ) {
+    return null;
+  }
+
+  if (
+    dominantFile !== previousDominantFile ||
+    !categorySignatureIncludesAll(clusterCategorySignature, previousClusterCategorySignature)
+  ) {
     return null;
   }
 
@@ -548,6 +574,12 @@ function selectedRequestEligibleRecoveryIssues(lines: string[]): ReadonlySet<num
       /^tracked_pr_mismatch\b/u.test(line)
     ) {
       const issueNumber = readIssueNumberToken(line, "issue");
+      if (issueNumber !== null) {
+        diagnosticIssueNumbers.add(issueNumber);
+      }
+    }
+    if (/^loop_runtime_blocker\b/u.test(line)) {
+      const issueNumber = readIssueNumberToken(line, "first_issue");
       if (issueNumber !== null) {
         diagnosticIssueNumbers.add(issueNumber);
       }

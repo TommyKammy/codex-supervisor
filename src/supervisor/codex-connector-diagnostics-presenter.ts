@@ -102,8 +102,10 @@ function formatCodexConnectorReviewChurnProgressDiagnostic(args: {
     `previous_effective_must_fix=${comparison.previousEffectiveMustFixCount}`,
     `effective_must_fix_delta=${comparison.effectiveMustFixDelta}`,
     `dominant_file=${formatDiagnosticToken(args.current.dominantFile)}`,
+    `previous_dominant_file=${formatDiagnosticToken(args.previous.dominantFile)}`,
     `dominant_file_percent=${args.current.dominantFilePercent}`,
     `cluster_category_signature=${formatDiagnosticToken(args.current.clusterCategorySignature)}`,
+    `previous_cluster_category_signature=${formatDiagnosticToken(args.previous.clusterCategorySignature)}`,
     `representative_threads=${args.current.representativeThreadIds.map(formatDiagnosticToken).join(",") || "none"}`,
   ].join(" ");
 }
