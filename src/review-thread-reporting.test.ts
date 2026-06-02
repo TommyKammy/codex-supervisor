@@ -13,6 +13,7 @@ import {
   configuredBotReviewFollowUpState,
   effectiveReviewThreadDiagnostics,
   evaluateCodexConnectorConvergencePolicy,
+  formatEffectiveReviewThreadDiagnosticsLine,
   staleConfiguredBotReviewThreads,
 } from "./review-thread-reporting";
 import { GitHubPullRequest, IssueRunRecord, ReviewThread, SupervisorConfig } from "./core/types";
@@ -240,6 +241,15 @@ test("effectiveReviewThreadDiagnostics separates raw configured-bot residue from
       { id: "thread-human", classification: "human_unresolved", effective: false },
       { id: "thread-resolved", classification: "configured_bot_resolved", effective: false },
     ],
+  );
+
+  assert.equal(
+    formatEffectiveReviewThreadDiagnosticsLine(diagnostics),
+    "review_thread_effective_diagnostics raw_configured_bot_unresolved=2 effective_configured_bot_unresolved=1 current_configured_bot_threads=1 outdated_configured_bot_residue=1 current_thread_ids=thread-current",
+  );
+  assert.match(
+    formatEffectiveReviewThreadDiagnosticsLine(diagnostics, { includeThreadDetails: true }),
+    /^review_thread_effective_diagnostics .* threads=thread-outdated:configured_bot_outdated:effective=no:path=src\/file\.ts:line=12:comment=comment-outdated:author=chatgpt-codex-connector:url=https:\/\/example\.test\/pr\/183#discussion_r1,thread-current:configured_bot_current_head:effective=yes:/,
   );
 });
 

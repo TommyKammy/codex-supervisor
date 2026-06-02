@@ -575,6 +575,7 @@ function uniqueInOrder(values: string[]): string[] {
 }
 
 const CODEX_CONNECTOR_REVIEW_CATEGORY_PATTERNS: Array<{ category: string; pattern: RegExp }> = [
+  { category: "auth_context", pattern: /\b(?:auth|authentication|authorization|credential|identity)\b/i },
   { category: "rc_ga_readiness", pattern: /\b(?:rc|ga|release[- ]candidate|commercial[- ]ready|production[- ]ready|ready)\b/i },
   { category: "readiness_claim", pattern: /\b(?:readiness|ready|gate[- ]pass|mergeable|release)\b/i },
   { category: "truth_source", pattern: /\b(?:truth|source[- ]of[- ]truth|authoritative|authority|claim|assertion)\b/i },

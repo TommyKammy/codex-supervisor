@@ -496,7 +496,9 @@ export async function buildIssueExplainDto(
       : null;
   const effectiveReviewThreadDiagnosticsSummary =
     record && pr && !trackedPrHydrationFailed
-      ? formatEffectiveReviewThreadDiagnosticsLine(effectiveReviewThreadDiagnostics(config, explainReviewThreads))
+      ? formatEffectiveReviewThreadDiagnosticsLine(effectiveReviewThreadDiagnostics(config, explainReviewThreads), {
+          includeThreadDetails: true,
+        })
       : null;
   const codexConnectorReviewRequestRecoveryEligible =
     codexConnectorDiagnostics?.reviewFallbackSummary !== undefined &&

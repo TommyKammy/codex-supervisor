@@ -493,6 +493,110 @@ test("status --why reports Codex Connector review churn for concentrated P2 casc
   );
 });
 
+test("status --why compacts Codex Connector churn around current clusters before outdated residue", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const issueNumber = 2227;
+  const prNumber = 3227;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "addressing_review",
+        branch,
+        pr_number: prNumber,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const pr = createPullRequest({
+    number: prNumber,
+    headRefName: branch,
+    headRefOid: "head-2227",
+    isDraft: false,
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+    configuredBotCurrentHeadObservedAt: "2026-06-02T05:00:00Z",
+  });
+  const currentThreads = [
+    ["thread-current-auth", 41, "P2: Require the auth context before accepting Connector churn state."],
+    ["thread-current-auth-2", 44, "P2: Require the auth context before accepting Connector churn state in the retry path."],
+    ["thread-current-scope", 88, "P2: Keep repository scope explicitly bound before selecting current clusters."],
+  ].map(([id, line, body]) => ({
+    id,
+    isResolved: false,
+    isOutdated: false,
+    path: "src/supervisor/codex-connector-diagnostics-presenter.ts",
+    line,
+    comments: {
+      nodes: [
+        {
+          id: `${id}-comment`,
+          body,
+          createdAt: "2026-06-02T05:01:00Z",
+          url: `https://example.test/pr/3227#discussion_${id}`,
+          author: {
+            login: "chatgpt-codex-connector[bot]",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  }));
+  const outdatedThreads = Array.from({ length: 12 }, (_, index) => ({
+    id: `thread-outdated-${index}`,
+    isResolved: false,
+    isOutdated: true,
+    path: "src/supervisor/old-diagnostic.ts",
+    line: 100 + index,
+    comments: {
+      nodes: [
+        {
+          id: `thread-outdated-${index}-comment`,
+          body: "P2: Old outdated Connector residue from an earlier head.",
+          createdAt: "2026-06-02T04:00:00Z",
+          url: `https://example.test/pr/3227#discussion_outdated_${index}`,
+          author: {
+            login: "chatgpt-codex-connector[bot]",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  }));
+
+  const supervisor = new Supervisor({
+    ...fixture.config,
+    reviewBotLogins: ["chatgpt-codex-connector[bot]"],
+    codexConnectorReviewChurnMustFixThreshold: 3,
+    codexConnectorReviewChurnFileConcentrationPercent: 75,
+  });
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [],
+    listAllIssues: async () => [],
+    getPullRequestIfExists: async () => pr,
+    resolvePullRequestForBranch: async () => pr,
+    getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => [...outdatedThreads, ...currentThreads],
+  };
+
+  const status = await supervisor.status({ why: true });
+
+  assert.match(
+    status,
+    /^codex_connector_current_clusters current_effective_must_fix=3 dominant_file=src\/supervisor\/codex-connector-diagnostics-presenter\.ts dominant_file_threads=3 dominant_file_percent=100 clusters=2 categories=.*auth.*scope.* representative_threads=thread-current-auth,thread-current-auth-2,thread-current-scope representative_urls=https:\/\/example\.test\/pr\/3227#discussion_thread-current-auth,https:\/\/example\.test\/pr\/3227#discussion_thread-current-auth-2,https:\/\/example\.test\/pr\/3227#discussion_thread-current-scope outdated_unresolved_residue=12 next_action=repair_must_fix_findings$/m,
+  );
+  assert.doesNotMatch(status, /^codex_connector_current_clusters .*thread-outdated-/m);
+});
+
 test("status compares Codex Connector churn progress against the previous tracked PR snapshot", async (t) => {
   const fixture = await createSupervisorFixture();
   t.after(async () => {
