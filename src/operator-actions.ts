@@ -184,11 +184,32 @@ function clusteredCodexChurnManualReviewSummary(line: string): string | null {
   return `Clustered Codex Connector churn made no progress; inspect dominant file ${dominantFile} with current effective must-fix count ${currentEffectiveMustFix} before restarting the loop.`;
 }
 
-function hasStoppedClusteredCodexChurnManualReviewGate(lines: string[]): boolean {
-  return lines.some((line) =>
-    /^loop_runtime_blocker\b/u.test(line) ||
-    /^no_active_tracked_record\b/u.test(line) && /\bclassification=manual_review_required\b/u.test(line)
-  );
+function gateIssueNumber(line: string): number | null {
+  return readIssueNumberToken(line, "issue") ?? readIssueNumberToken(line, "first_issue");
+}
+
+function isRequestEligibleRecoveryGate(
+  line: string,
+  requestEligibleRecoveryIssues: ReadonlySet<number>,
+): boolean {
+  if (requestEligibleRecoveryIssues.size === 0) {
+    return false;
+  }
+
+  const issueNumber = gateIssueNumber(line);
+  return issueNumber === null || requestEligibleRecoveryIssues.has(issueNumber);
+}
+
+function hasStoppedClusteredCodexChurnManualReviewGate(
+  lines: string[],
+  requestEligibleRecoveryIssues: ReadonlySet<number>,
+): boolean {
+  return lines.some((line) => {
+    const isStoppedGate =
+      /^loop_runtime_blocker\b/u.test(line) ||
+      /^no_active_tracked_record\b/u.test(line) && /\bclassification=manual_review_required\b/u.test(line);
+    return isStoppedGate && !isRequestEligibleRecoveryGate(line, requestEligibleRecoveryIssues);
+  });
 }
 
 export function parseOperatorActionLine(line: string): OperatorAction | null {
@@ -230,7 +251,10 @@ export function selectRestartRecommendation(args: {
   const recommendations: RestartRecommendation[] = [];
   const contextLines = [...args.detailedStatusLines, ...(args.contextLines ?? [])];
   const requestEligibleRecoverySelectedIssues = selectedRequestEligibleRecoveryIssues(contextLines);
-  const allowClusteredChurnManualReview = hasStoppedClusteredCodexChurnManualReviewGate(contextLines);
+  const allowClusteredChurnManualReview = hasStoppedClusteredCodexChurnManualReviewGate(
+    contextLines,
+    requestEligibleRecoverySelectedIssues,
+  );
 
   for (const line of args.detailedStatusLines) {
     const clusteredChurnManualReviewSummary = clusteredCodexChurnManualReviewSummary(line);
@@ -367,7 +391,10 @@ export function selectStatusOperatorAction(args: {
   const actions: OperatorAction[] = [];
   const contextLines = [...args.detailedStatusLines, ...(args.contextLines ?? [])];
   const requestEligibleRecoverySelectedIssues = selectedRequestEligibleRecoveryIssues(contextLines);
-  const allowClusteredChurnManualReview = hasStoppedClusteredCodexChurnManualReviewGate(contextLines);
+  const allowClusteredChurnManualReview = hasStoppedClusteredCodexChurnManualReviewGate(
+    contextLines,
+    requestEligibleRecoverySelectedIssues,
+  );
 
   for (const line of args.detailedStatusLines) {
     const clusteredChurnManualReviewSummary = clusteredCodexChurnManualReviewSummary(line);
