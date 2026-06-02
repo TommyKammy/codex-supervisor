@@ -184,6 +184,13 @@ function clusteredCodexChurnManualReviewSummary(line: string): string | null {
   return `Clustered Codex Connector churn made no progress; inspect dominant file ${dominantFile} with current effective must-fix count ${currentEffectiveMustFix} before restarting the loop.`;
 }
 
+function hasStoppedClusteredCodexChurnManualReviewGate(lines: string[]): boolean {
+  return lines.some((line) =>
+    /^loop_runtime_blocker\b/u.test(line) ||
+    /^no_active_tracked_record\b/u.test(line) && /\bclassification=manual_review_required\b/u.test(line)
+  );
+}
+
 export function parseOperatorActionLine(line: string): OperatorAction | null {
   if (!/^(operator_action|doctor_operator_action)\b/u.test(line)) {
     return null;
@@ -223,10 +230,11 @@ export function selectRestartRecommendation(args: {
   const recommendations: RestartRecommendation[] = [];
   const contextLines = [...args.detailedStatusLines, ...(args.contextLines ?? [])];
   const requestEligibleRecoverySelectedIssues = selectedRequestEligibleRecoveryIssues(contextLines);
+  const allowClusteredChurnManualReview = hasStoppedClusteredCodexChurnManualReviewGate(contextLines);
 
   for (const line of args.detailedStatusLines) {
     const clusteredChurnManualReviewSummary = clusteredCodexChurnManualReviewSummary(line);
-    if (clusteredChurnManualReviewSummary !== null) {
+    if (clusteredChurnManualReviewSummary !== null && allowClusteredChurnManualReview) {
       recommendations.push({
         category: "manual_review_before_restart",
         source: "codex_connector_review_churn_progress",
@@ -359,10 +367,11 @@ export function selectStatusOperatorAction(args: {
   const actions: OperatorAction[] = [];
   const contextLines = [...args.detailedStatusLines, ...(args.contextLines ?? [])];
   const requestEligibleRecoverySelectedIssues = selectedRequestEligibleRecoveryIssues(contextLines);
+  const allowClusteredChurnManualReview = hasStoppedClusteredCodexChurnManualReviewGate(contextLines);
 
   for (const line of args.detailedStatusLines) {
     const clusteredChurnManualReviewSummary = clusteredCodexChurnManualReviewSummary(line);
-    if (clusteredChurnManualReviewSummary !== null) {
+    if (clusteredChurnManualReviewSummary !== null && allowClusteredChurnManualReview) {
       actions.push({
         action: "manual_review",
         source: "codex_connector_review_churn_progress",

@@ -200,3 +200,32 @@ test("buildRuntimeRecoverySummary recommends manual review before restarting clu
     },
   );
 });
+
+test("buildRuntimeRecoverySummary ignores historical clustered Codex churn while the loop is active", () => {
+  assert.equal(
+    buildRuntimeRecoverySummary({
+      loopRuntime: {
+        ...baseLoopRuntime,
+        state: "running",
+        hostMode: "tmux",
+        pid: 4242,
+        ownershipConfidence: "live_lock",
+        detail: "running",
+      },
+      trackedIssues: [
+        {
+          issueNumber: 188,
+          state: "addressing_review",
+          branch: "codex/issue-188",
+          prNumber: 288,
+          blockedReason: null,
+        },
+      ],
+      detailedStatusLines: [
+        "loop_runtime state=running host_mode=tmux run_mode=supervisor marker_path=<loop-marker> config_path=<supervisor-config-path> state_file=<state-file> pid=4242 started_at=2026-06-01T06:20:00Z ownership_confidence=live_lock detail=running",
+        "codex_connector_review_churn_progress classification=unchanged current_head_sha=head-current-188 previous_head_sha=head-previous-188 current_effective_must_fix=8 previous_effective_must_fix=8 effective_must_fix_delta=0 dominant_file=src/release-readiness.ts dominant_file_percent=100 cluster_category_signature=truth_source representative_threads=thread-authority,thread-truth",
+      ],
+    }),
+    null,
+  );
+});

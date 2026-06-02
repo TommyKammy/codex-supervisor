@@ -357,6 +357,57 @@ test("selectStatusOperatorAction prioritizes manual review for stopped clustered
   );
 });
 
+test("clustered Codex churn progress does not force manual review without a stopped gate", () => {
+  const activeChurnProgress =
+    "codex_connector_review_churn_progress classification=unchanged current_head_sha=head-current-188 previous_head_sha=head-previous-188 current_effective_must_fix=8 previous_effective_must_fix=8 effective_must_fix_delta=0 dominant_file=src/release-readiness.ts dominant_file_percent=100 cluster_category_signature=truth_source representative_threads=thread-authority,thread-truth";
+
+  assert.equal(
+    selectRestartRecommendation({
+      detailedStatusLines: [
+        "issue=#188",
+        "state=addressing_review",
+        "loop_runtime state=running host_mode=tmux run_mode=supervisor marker_path=<loop-marker> config_path=<supervisor-config-path> state_file=<state-file> pid=4242 started_at=2026-06-01T06:20:00Z ownership_confidence=live_lock detail=running",
+        activeChurnProgress,
+      ],
+    }),
+    null,
+  );
+  assert.deepEqual(
+    selectStatusOperatorAction({
+      detailedStatusLines: [
+        "issue=#188",
+        "state=addressing_review",
+        "loop_runtime state=running host_mode=tmux run_mode=supervisor marker_path=<loop-marker> config_path=<supervisor-config-path> state_file=<state-file> pid=4242 started_at=2026-06-01T06:20:00Z ownership_confidence=live_lock detail=running",
+        activeChurnProgress,
+      ],
+    }),
+    {
+      action: "continue",
+      source: "status",
+      priority: 0,
+      summary: "No blocking operator action was detected; continue normal supervisor operation.",
+    },
+  );
+});
+
+test("selectStatusOperatorAction accepts no-active manual review as a clustered churn stop gate", () => {
+  assert.deepEqual(
+    selectStatusOperatorAction({
+      detailedStatusLines: [
+        "codex_connector_review_churn_progress classification=worse current_head_sha=head-current-188 previous_head_sha=head-previous-188 current_effective_must_fix=9 previous_effective_must_fix=8 effective_must_fix_delta=1 dominant_file=src/release-readiness.ts dominant_file_percent=100 cluster_category_signature=truth_source representative_threads=thread-authority,thread-truth",
+        "no_active_tracked_record issue=#188 classification=manual_review_required state=blocked reason=manual_review",
+      ],
+    }),
+    {
+      action: "manual_review",
+      source: "codex_connector_review_churn_progress",
+      priority: 95,
+      summary:
+        "Clustered Codex Connector churn made no progress; inspect dominant file src/release-readiness.ts with current effective must-fix count 9 before restarting the loop.",
+    },
+  );
+});
+
 test("selectRestartRecommendation suppresses stale manual-review restart advice for selected request-eligible Codex recovery", () => {
   assert.equal(
     selectRestartRecommendation({
