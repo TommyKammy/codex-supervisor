@@ -210,6 +210,9 @@ export function buildInactiveDetailedStatusLines(
     if (codexConnectorDiagnostics.currentClusterSummary) {
       lines.push(codexConnectorDiagnostics.currentClusterSummary);
     }
+    if (codexConnectorDiagnostics.pendingHeadChurnSummary) {
+      lines.push(codexConnectorDiagnostics.pendingHeadChurnSummary);
+    }
     if (codexConnectorDiagnostics.reviewChurnProgressSummary) {
       lines.push(codexConnectorDiagnostics.reviewChurnProgressSummary);
     }

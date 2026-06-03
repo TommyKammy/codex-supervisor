@@ -855,6 +855,111 @@ test("status waits for current-head Codex review when non-outdated threads came 
   assert.doesNotMatch(status, /^codex_connector_policy_block /m);
 });
 
+test("status reports pending-head Codex Connector churn risk from latest reviewed head", async (t) => {
+  const originalDateNow = Date.now;
+  Date.now = () => Date.parse("2026-06-03T05:30:00Z");
+  t.after(() => {
+    Date.now = originalDateNow;
+  });
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const issueNumber = 2234;
+  const prNumber = 3234;
+  const branch = branchName(fixture.config, issueNumber);
+  const currentHead = "head-current-2234";
+  const latestReviewedHead = "head-reviewed-2234";
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "addressing_review",
+        branch,
+        pr_number: prNumber,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        last_head_sha: currentHead,
+        provider_success_head_sha: latestReviewedHead,
+        provider_success_observed_at: "2026-06-03T05:00:00Z",
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const pr = createPullRequest({
+    number: prNumber,
+    headRefName: branch,
+    headRefOid: currentHead,
+    isDraft: false,
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-06-03T05:10:00Z",
+    configuredBotCurrentHeadObservedAt: null,
+    configuredBotLatestReviewedCommitSha: latestReviewedHead,
+    configuredBotTopLevelReviewStrength: "blocking",
+    configuredBotTopLevelReviewSubmittedAt: "2026-06-03T05:00:00Z",
+  });
+  const staleClusterThreads = [
+    ["thread-pending-auth", 40, "P2: Require the auth context before accepting pending-head churn evidence."],
+    ["thread-pending-auth-retry", 44, "P2: Keep auth context validation fail-closed during retry routing."],
+    ["thread-pending-scope", 72, "P2: Bind the repository scope before summarizing pending-head churn evidence."],
+    ["thread-pending-scope-retry", 78, "P2: Reject scope inference when pending-head Connector evidence is stale."],
+  ].map(([id, line, body]) => ({
+    id,
+    isResolved: false,
+    isOutdated: false,
+    path: "src/supervisor/codex-connector-diagnostics-presenter.ts",
+    line,
+    comments: {
+      nodes: [
+        {
+          id: `${id}-comment`,
+          body,
+          createdAt: "2026-06-03T05:01:00Z",
+          url: `https://example.test/pr/3234#discussion_${id}`,
+          author: {
+            login: "chatgpt-codex-connector[bot]",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  }));
+
+  const supervisor = new Supervisor({
+    ...fixture.config,
+    reviewBotLogins: ["chatgpt-codex-connector[bot]"],
+    configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+    codexConnectorReviewChurnMustFixThreshold: 4,
+    codexConnectorReviewChurnFileConcentrationPercent: 75,
+  });
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [],
+    listAllIssues: async () => [],
+    getPullRequestIfExists: async () => pr,
+    resolvePullRequestForBranch: async () => pr,
+    getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => staleClusterThreads,
+  };
+
+  const status = await supervisor.status({ why: true });
+
+  assert.match(
+    status,
+    /^codex_connector_pending_head_churn status=pending_current_head_review current_head_sha=head-current-2234 latest_reviewed_head_sha=head-reviewed-2234 current_head_review_signal=missing current_effective_must_fix=4 threshold=4 highest_severity=P2 dominant_file=src\/supervisor\/codex-connector-diagnostics-presenter\.ts dominant_file_threads=4 dominant_file_percent=100 categories=.*auth_context.*excluded_scope.* representative_threads=thread-pending-auth,thread-pending-auth-retry,thread-pending-scope,thread-pending-scope-retry representative_urls=https:\/\/example\.test\/pr\/3234#discussion_thread-pending-auth,https:\/\/example\.test\/pr\/3234#discussion_thread-pending-auth-retry,https:\/\/example\.test\/pr\/3234#discussion_thread-pending-scope,https:\/\/example\.test\/pr\/3234#discussion_thread-pending-scope-retry stale_review_commit_threads=4 next_action=request_current_head_review$/m,
+  );
+  assert.match(
+    status,
+    /^codex_connector_convergence status=stale_review_commit_residue provider=codex current_head_sha=head-current-2234 current_head_observed_at=none latest_signal_head_sha=head-reviewed-2234 highest_severity=none finding_count=0 merge_effect=blocked next_action=request_current_head_review stale_review_commit_threads=4 stale_review_commit_thread_ids=thread-pending-auth,thread-pending-auth-retry,thread-pending-scope,thread-pending-scope-retry$/m,
+  );
+  assert.match(status, /^codex_connector_operator_diagnostic .*current_head_review_signal=missing .*next_action=request_current_head_review$/m);
+  assert.doesNotMatch(status, /^codex_connector_operator_diagnostic interpretation=actionable_current_diff /m);
+});
+
 test("status --why requests Codex current-head review for metadata-only missing review residue", async (t) => {
   const originalDateNow = Date.now;
   Date.now = () => Date.parse("2026-05-21T20:45:06Z");

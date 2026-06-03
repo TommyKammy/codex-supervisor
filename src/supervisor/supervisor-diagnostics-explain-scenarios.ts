@@ -55,6 +55,7 @@ export function codexConnectorDiagnosticLines(text: string): string[] {
     .split("\n")
     .filter((line) =>
       line.startsWith("codex_connector_policy_block ") ||
+      line.startsWith("codex_connector_pending_head_churn ") ||
       line.startsWith("codex_connector_review_fallback ") ||
       line.startsWith("codex_connector_convergence ") ||
       line.startsWith("codex_connector_operator_diagnostic ")
