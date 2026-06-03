@@ -406,6 +406,44 @@ test("selectStatusOperatorAction does not continue after preserved manual-review
   );
 });
 
+test("selectStatusOperatorAction ignores stale manual-review execution metrics while active work is rerunning", () => {
+  assert.deepEqual(
+    selectStatusOperatorAction({
+      detailedStatusLines: [
+        "issue=#188",
+        "state=implementing",
+        "branch=codex/issue-188",
+        "pr=#288",
+        "blocked_reason=none",
+        "execution_metrics terminal_state=blocked outcome=blocked reason=manual_review run_duration_ms=3600000 issue_lead_time_ms=4200000 issue_to_pr_created_ms=1200000 pr_open_duration_ms=none",
+      ],
+    }),
+    {
+      action: "continue",
+      source: "status",
+      priority: 0,
+      summary: "No blocking operator action was detected; continue normal supervisor operation.",
+    },
+  );
+});
+
+test("selectStatusOperatorAction keeps manual-review execution metrics when active-state evidence is missing", () => {
+  assert.deepEqual(
+    selectStatusOperatorAction({
+      detailedStatusLines: [
+        "blocked_reason=none",
+        "execution_metrics terminal_state=blocked outcome=blocked reason=manual_review run_duration_ms=3600000 issue_lead_time_ms=4200000 issue_to_pr_created_ms=1200000 pr_open_duration_ms=none",
+      ],
+    }),
+    {
+      action: "manual_review",
+      source: "execution_metrics",
+      priority: 65,
+      summary: "A tracked issue requires manual review before the supervisor should continue that path.",
+    },
+  );
+});
+
 test("selectRestartRecommendation does not treat manual-review execution metrics as a stopped gate", () => {
   assert.equal(
     selectRestartRecommendation({
