@@ -494,6 +494,13 @@ function buildPreservedCodexConnectorChurnProgressSnapshot(args: {
       .sort(),
     processedReviewThreadIds: [...(args.record.processed_review_thread_ids ?? [])].sort(),
     processedReviewThreadFingerprints: [...(args.record.processed_review_thread_fingerprints ?? [])].sort(),
+    verificationProbeOutcomes: (args.record.timeline_artifacts ?? [])
+      .filter((artifact) => artifact.type === "verification_result" && artifact.head_sha === args.pr.headRefOid)
+      .map(
+        (artifact) =>
+          `${artifact.gate}:${artifact.command ?? "none"}:${artifact.outcome}:${artifact.remediation_target ?? "none"}`,
+      )
+      .sort(),
     codexConnectorReviewChurnProgress: churnDiagnostic
       ? buildCodexConnectorReviewChurnProgressSummary(churnDiagnostic, args.pr.headRefOid)
       : {

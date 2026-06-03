@@ -2849,6 +2849,30 @@ test("reconcileRecoverableBlockedIssueStates preserves Codex Connector manual-re
         review_follow_up_remaining: 1,
         processed_review_thread_ids: ["thread-authority"],
         processed_review_thread_fingerprints: ["thread-authority#comment-authority"],
+        timeline_artifacts: [
+          {
+            type: "verification_result",
+            gate: "codex_turn",
+            command: "npx tsx --test src/recovery-blocked-issue-reconciliation.test.ts",
+            head_sha: "head-current-366",
+            outcome: "passed",
+            remediation_target: "manual_review",
+            next_action: "continue",
+            summary: "Focused churn preservation regression passed.",
+            recorded_at: "2026-06-01T06:12:45Z",
+          },
+          {
+            type: "verification_result",
+            gate: "local_ci",
+            command: "npm run build",
+            head_sha: "head-previous-366",
+            outcome: "failed",
+            remediation_target: "tracked_publishable_content",
+            next_action: "retry",
+            summary: "Previous head build failed.",
+            recorded_at: "2026-06-01T06:05:00Z",
+          },
+        ],
         codex_connector_review_requested_observed_at: "2026-06-01T06:00:00Z",
         codex_connector_review_requested_head_sha: "head-previous-366",
         last_tracked_pr_progress_snapshot: previousProgressSnapshot,
@@ -2984,6 +3008,9 @@ test("reconcileRecoverableBlockedIssueStates preserves Codex Connector manual-re
     "thread-scope",
     "thread-snapshot",
     "thread-truth",
+  ]);
+  assert.deepEqual(updatedProgressSnapshot.verificationProbeOutcomes, [
+    "codex_turn:npx tsx --test src/recovery-blocked-issue-reconciliation.test.ts:passed:manual_review",
   ]);
   assert.equal(
     updated.last_tracked_pr_progress_summary,
