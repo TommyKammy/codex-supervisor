@@ -590,6 +590,136 @@ test("syncTrackedPrPersistentStatusComment skips clustered Codex churn comments 
   assert.equal(result.last_host_local_pr_blocker_comment_signature, null);
 });
 
+test("syncTrackedPrPersistentStatusComment rejects clustered Codex churn snapshots with mixed heads", async () => {
+  const config = createConfig({
+    configuredReviewProviders: [
+      {
+        kind: "codex",
+        reviewerLogins: ["chatgpt-codex-connector[bot]"],
+        signalSource: "review_threads",
+      },
+    ],
+    reviewBotLogins: ["chatgpt-codex-connector[bot]"],
+  });
+  const pr = createPullRequest({
+    number: 116,
+    title: "Clustered Connector churn repair",
+    isDraft: false,
+    headRefOid: "head-current-1390",
+    mergeStateStatus: "CLEAN",
+  });
+  const reviewThreads = [
+    createReviewThread({
+      id: "thread-current-0",
+      path: "src/release-readiness.ts",
+      line: 130,
+      comments: {
+        nodes: [
+          {
+            id: "comment-current-0",
+            body: "P2: Block release readiness truth-source claims until the verifier proves the authoritative scope.",
+            createdAt: "2026-03-10T23:20:00Z",
+            url: "https://example.test/pr/1390#discussion_current_0",
+            author: { login: "chatgpt-codex-connector[bot]", typeName: "Bot" },
+          },
+        ],
+      },
+    }),
+  ];
+
+  for (const scenario of [
+    {
+      name: "stale snapshot head with current progress head",
+      snapshotHeadSha: "head-previous-1390",
+      progressHeadSha: pr.headRefOid,
+    },
+    {
+      name: "current snapshot head with stale progress head",
+      snapshotHeadSha: pr.headRefOid,
+      progressHeadSha: "head-previous-1390",
+    },
+    {
+      name: "missing persisted heads",
+      snapshotHeadSha: null,
+      progressHeadSha: null,
+    },
+  ]) {
+    const snapshot: Record<string, unknown> = {
+      reviewDecision: "CHANGES_REQUESTED",
+      mergeStateStatus: "CLEAN",
+      checks: ["build:pass:SUCCESS:CI"],
+      codexConnectorReviewChurnProgress: {
+        currentEffectiveMustFixCount: 5,
+        dominantFile: "src/release-readiness.ts",
+        dominantFilePercent: 100,
+        clusterCategorySignature: "readiness_claim+truth_source+verifier_or_issue_lint",
+        representativeThreadIds: ["thread-current-0"],
+      },
+      codexConnectorReviewChurnComparison: {
+        classification: "unchanged",
+        previousHeadSha: "head-previous-1389",
+        currentEffectiveMustFixCount: 5,
+        previousEffectiveMustFixCount: 5,
+        effectiveMustFixDelta: 0,
+      },
+    };
+    if (scenario.snapshotHeadSha) {
+      snapshot.headRefOid = scenario.snapshotHeadSha;
+    }
+    if (scenario.progressHeadSha) {
+      (snapshot.codexConnectorReviewChurnProgress as Record<string, unknown>).currentHeadSha = scenario.progressHeadSha;
+      (snapshot.codexConnectorReviewChurnComparison as Record<string, unknown>).currentHeadSha = scenario.progressHeadSha;
+    }
+    const record = createRecord({
+      issue_number: 102,
+      state: "blocked",
+      blocked_reason: "manual_review",
+      pr_number: pr.number,
+      last_head_sha: pr.headRefOid,
+      last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+      last_tracked_pr_progress_summary: "no_progress_clustered_codex_churn current_effective_must_fix=5",
+      last_tracked_pr_progress_snapshot: JSON.stringify(snapshot),
+    });
+    const state: SupervisorStateFile = {
+      activeIssueNumber: null,
+      issues: { "102": record },
+    };
+    const commentBodies: string[] = [];
+
+    const result = await syncTrackedPrPersistentStatusComment({
+      github: createDefaultGithub({
+        addIssueComment: async (_prNumber: number, body: string) => {
+          commentBodies.push(body);
+        },
+      }),
+      stateStore: createNoopStateStore(),
+      state,
+      record,
+      pr,
+      checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      reviewThreads,
+      syncJournal: async () => undefined,
+      config,
+      failureContext: {
+        category: "review",
+        summary: `Clustered Codex Connector churn made no progress: ${scenario.name}.`,
+        signature: "codex-review-churn:P2:src/release-readiness.ts",
+        command: null,
+        details: ["mixed or missing churn snapshot heads should not publish current-head evidence"],
+        url: null,
+        updated_at: "2026-03-10T23:20:00Z",
+      },
+      summarizeChecks,
+      manualReviewThreadCount: 0,
+      skipAutoHandleStaleConfiguredBotReview: true,
+    });
+
+    assert.deepEqual(commentBodies, [], scenario.name);
+    assert.equal(result.last_host_local_pr_blocker_comment_head_sha, null, scenario.name);
+    assert.equal(result.last_host_local_pr_blocker_comment_signature, null, scenario.name);
+  }
+});
+
 test("handlePostTurnPullRequestTransitionsPhase comments when a tracked PR stays blocked on stale configured-bot review state near merge", async () => {
   const { config, context, pr, failureContext } = createStaleConfiguredBotBlockerScenario();
   const commentBodies: string[] = [];
