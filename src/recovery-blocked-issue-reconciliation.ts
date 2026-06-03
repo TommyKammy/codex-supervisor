@@ -34,8 +34,8 @@ import { hasFreshTrackedPrReadyPromotionBlockerEvidence } from "./tracked-pr-rea
 import { queuedReadyPromotionPathHygieneRepairContext } from "./ready-promotion-path-hygiene-repair";
 import { clearRequirementsBlockerIssueComment } from "./requirements-blocker-issue-comment";
 import { syncTrackedPrPersistentStatusComment } from "./tracked-pr-status-comment";
-import { latestReviewThreadCommentFingerprint } from "./review-handling";
 import {
+  buildReviewFailureContext,
   configuredBotReviewThreads,
   manualReviewThreads,
   latestReviewComment,
@@ -44,7 +44,9 @@ import {
 import {
   buildCodexConnectorReviewChurnDiagnostic,
   buildCodexConnectorReviewChurnProgressSummary,
+  codexConnectorMustFixReviewThreads,
   hasCodexConnectorFindingReviewComment,
+  latestCodexConnectorReviewCommentFingerprint,
 } from "./codex-connector-review-policy";
 
 type StateStoreLike = Pick<StateStore, "touch" | "save">;
@@ -382,7 +384,7 @@ function unresolvedEffectiveReviewThreadIds(reviewThreads: ReviewThread[]): stri
 function unresolvedEffectiveReviewThreadFingerprints(reviewThreads: ReviewThread[]): string[] {
   return reviewThreads
     .filter((thread) => !thread.isResolved)
-    .map((thread) => `${thread.id}#${latestReviewThreadCommentFingerprint(thread) ?? "no-comment"}`)
+    .map((thread) => `${thread.id}#${latestCodexConnectorReviewCommentFingerprint(thread) ?? "no-comment"}`)
     .sort();
 }
 
@@ -439,20 +441,20 @@ function sameHeadCodexConnectorChurnBlockerUnchanged(
   );
 }
 
-function effectiveCurrentConfiguredBotBlockers(args: {
+function effectiveCurrentCodexConnectorMustFixBlockers(args: {
   config: SupervisorConfig;
   record: IssueRunRecord;
   pr: GitHubPullRequest;
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
 }): ReviewThread[] {
-  return effectiveConfiguredBotReviewThreadsForState(
+  return codexConnectorMustFixReviewThreads(effectiveConfiguredBotReviewThreadsForState(
     args.config,
     args.record,
     args.pr,
     args.checks,
     args.reviewThreads,
-  ).filter((thread) =>
+  )).filter((thread) =>
     !thread.isResolved &&
     !thread.isOutdated
   );
@@ -915,7 +917,7 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
           reviewThreads,
           nextState,
         );
-      const effectiveCurrentConfiguredBotReviewThreads = effectiveCurrentConfiguredBotBlockers({
+      const effectiveCurrentCodexConnectorReviewThreads = effectiveCurrentCodexConnectorMustFixBlockers({
         config,
         record: projection.recordForState,
         pr: trackedPullRequest,
@@ -926,13 +928,13 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
         !staleLocalManualReviewResidueRecovery &&
         shouldKeepCodexConnectorManualReviewChurnBlockQuiescent({
           record,
-          effectiveReviewThreads: effectiveCurrentConfiguredBotReviewThreads,
+          effectiveReviewThreads: effectiveCurrentCodexConnectorReviewThreads,
           nextHeadSha: trackedPullRequest.headRefOid,
           nextState,
         });
       const unchangedSameHeadCodexConnectorChurnBlocker =
         shouldKeepCodexConnectorChurnBlockQuiescent &&
-        sameHeadCodexConnectorChurnBlockerUnchanged(record, effectiveCurrentConfiguredBotReviewThreads);
+        sameHeadCodexConnectorChurnBlockerUnchanged(record, effectiveCurrentCodexConnectorReviewThreads);
       const effectiveRecoverySuppression =
         shouldKeepCodexConnectorChurnBlockQuiescent && !unchangedSameHeadCodexConnectorChurnBlocker
           ? { shouldSuppress: false, progressSummary: "same_review_thread_guidance_changed" }
@@ -944,7 +946,7 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
         !staleLocalManualReviewResidueRecovery &&
         shouldPreserveCodexConnectorManualReviewChurnBlock({
           record,
-          effectiveReviewThreads: effectiveCurrentConfiguredBotReviewThreads,
+          effectiveReviewThreads: effectiveCurrentCodexConnectorReviewThreads,
           nextHeadSha: trackedPullRequest.headRefOid,
           nextState,
         })
@@ -955,9 +957,24 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
           `tracked_pr_manual_review_preserved: preserved issue #${record.issue_number} manual-review block after tracked PR #${trackedPullRequest.number} advanced from ${previousHead} to ${trackedPullRequest.headRefOid} because unresolved configured-bot review evidence still exists`,
         );
         const headAdvanceResetPatch = resetTrackedPrHeadScopedStateOnAdvance(record, trackedPullRequest.headRefOid);
+        const preservedFailureContext = buildReviewFailureContext(
+          effectiveCurrentCodexConnectorReviewThreads,
+          config,
+          trackedPullRequest,
+        );
+        const preservedFailureSignaturePatch = applyFailureSignature({
+          ...record,
+          last_failure_signature: null,
+          repeated_failure_signature_count: 0,
+        }, preservedFailureContext);
         const preservePatch = applyRecoveryEvent({
           state: "blocked",
           blocked_reason: "manual_review",
+          last_error: preservedFailureContext ? truncate(preservedFailureContext.summary, 1000) : null,
+          last_failure_kind: null,
+          last_failure_context: preservedFailureContext,
+          last_blocker_signature: null,
+          ...preservedFailureSignaturePatch,
           pr_number: trackedPullRequest.number,
           ...headAdvanceResetPatch,
           last_head_sha: trackedPullRequest.headRefOid,
@@ -966,7 +983,7 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
             record: projection.recordForState,
             pr: trackedPullRequest,
             checks,
-            effectiveReviewThreads: effectiveCurrentConfiguredBotReviewThreads,
+            effectiveReviewThreads: effectiveCurrentCodexConnectorReviewThreads,
           }),
           last_tracked_pr_progress_summary: preservedCodexConnectorChurnProgressSummary(record),
           ...projection.reviewWaitPatch,
