@@ -2849,6 +2849,8 @@ test("reconcileRecoverableBlockedIssueStates preserves Codex Connector manual-re
         review_follow_up_remaining: 1,
         processed_review_thread_ids: ["thread-authority"],
         processed_review_thread_fingerprints: ["thread-authority#comment-authority"],
+        codex_connector_review_requested_observed_at: "2026-06-01T06:00:00Z",
+        codex_connector_review_requested_head_sha: "head-previous-366",
         last_tracked_pr_progress_snapshot: previousProgressSnapshot,
         last_tracked_pr_progress_summary: "no_progress_clustered_codex_churn current_effective_must_fix=4",
         last_tracked_pr_repeat_failure_decision: "stop_no_progress",
@@ -2870,6 +2872,8 @@ test("reconcileRecoverableBlockedIssueStates preserves Codex Connector manual-re
     reviewDecision: "CHANGES_REQUESTED",
     configuredBotTopLevelReviewStrength: "blocking",
     configuredBotTopLevelReviewSubmittedAt: "2026-06-01T06:12:00Z",
+    codexConnectorReviewRequestedAt: "2026-06-01T06:12:30Z",
+    codexConnectorReviewRequestedHeadSha: "head-current-366",
   });
 
   let saveCalls = 0;
@@ -2971,6 +2975,8 @@ test("reconcileRecoverableBlockedIssueStates preserves Codex Connector manual-re
   assert.equal(updated.review_follow_up_remaining, 0);
   assert.deepEqual(updated.processed_review_thread_ids, []);
   assert.deepEqual(updated.processed_review_thread_fingerprints, []);
+  assert.equal(updated.codex_connector_review_requested_observed_at, "2026-06-01T06:12:30Z");
+  assert.equal(updated.codex_connector_review_requested_head_sha, "head-current-366");
   assert.equal(
     updated.last_tracked_pr_progress_summary,
     "manual_review_preserved=codex_connector_churn_unresolved_configured_bot_threads",
@@ -3536,13 +3542,22 @@ test("reconcileRecoverableBlockedIssueStates retains summary-only churn markers 
         createReviewThread({
           id: "thread-authority",
           comments: {
-            nodes: [{
-              id: "comment-authority",
-              body: "P2 authority finding",
-              createdAt: "2026-06-01T06:12:00Z",
-              url: "https://example.test/pr/191#discussion_authority",
-              author: { login: "chatgpt-codex-connector", typeName: "Bot" },
-            }],
+            nodes: [
+              {
+                id: "comment-authority",
+                body: "P2 authority finding",
+                createdAt: "2026-06-01T06:12:00Z",
+                url: "https://example.test/pr/191#discussion_authority",
+                author: { login: "chatgpt-codex-connector", typeName: "Bot" },
+              },
+              {
+                id: "comment-human-reply",
+                body: "I will inspect this manually.",
+                createdAt: "2026-06-01T06:12:30Z",
+                url: "https://example.test/pr/191#discussion_human_reply",
+                author: { login: "reviewer", typeName: "User" },
+              },
+            ],
           },
         }),
       ],

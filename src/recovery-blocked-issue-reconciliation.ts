@@ -449,8 +449,7 @@ function hasEffectiveCurrentConfiguredBotBlocker(args: {
     args.reviewThreads,
   ).some((thread) =>
     !thread.isResolved &&
-    !thread.isOutdated &&
-    latestReviewCommentAuthorIsAllowedBot(args.config, thread)
+    !thread.isOutdated
   );
 }
 
@@ -924,6 +923,7 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
           last_head_sha: trackedPullRequest.headRefOid,
           last_tracked_pr_progress_summary: preservedCodexConnectorChurnProgressSummary(record),
           ...projection.reviewWaitPatch,
+          ...projection.codexConnectorReviewRequestObservationPatch,
           ...projection.copilotReviewRequestObservationPatch,
           ...projection.copilotReviewTimeoutPatch,
         }, recoveryEvent);
