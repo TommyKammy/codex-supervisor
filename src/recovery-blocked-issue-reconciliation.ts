@@ -1,4 +1,4 @@
-import { inferStateFromPullRequest } from "./pull-request-state";
+import { effectiveConfiguredBotReviewThreadsForState, inferStateFromPullRequest } from "./pull-request-state";
 import {
   syncCopilotReviewRequestObservation,
   syncCopilotReviewTimeoutState,
@@ -34,6 +34,7 @@ import { hasFreshTrackedPrReadyPromotionBlockerEvidence } from "./tracked-pr-rea
 import { queuedReadyPromotionPathHygieneRepairContext } from "./ready-promotion-path-hygiene-repair";
 import { clearRequirementsBlockerIssueComment } from "./requirements-blocker-issue-comment";
 import { syncTrackedPrPersistentStatusComment } from "./tracked-pr-status-comment";
+import { latestReviewThreadCommentFingerprint } from "./review-handling";
 import {
   configuredBotReviewThreads,
   manualReviewThreads,
@@ -322,33 +323,143 @@ function hasCodexConnectorChurnStopEvidence(
     | "state"
   >,
 ): boolean {
+  return codexConnectorChurnStopEvidenceSource(record) !== null;
+}
+
+function codexConnectorChurnStopEvidenceSource(
+  record: Pick<
+    IssueRunRecord,
+    | "blocked_reason"
+    | "last_tracked_pr_progress_snapshot"
+    | "last_tracked_pr_progress_summary"
+    | "last_tracked_pr_repeat_failure_decision"
+    | "state"
+  >,
+): "snapshot" | "summary" | null {
   if (
     record.state !== "blocked" ||
     record.blocked_reason !== "manual_review" ||
     record.last_tracked_pr_repeat_failure_decision !== "stop_no_progress"
   ) {
-    return false;
+    return null;
+  }
+
+  if (record.last_tracked_pr_progress_snapshot) {
+    try {
+      const parsed = JSON.parse(record.last_tracked_pr_progress_snapshot);
+      if (parsed?.codexConnectorReviewChurnProgress !== undefined) {
+        return "snapshot";
+      }
+    } catch {
+      // Fall through to the summary marker check for older or partial records.
+    }
   }
 
   if (record.last_tracked_pr_progress_summary?.startsWith("no_progress_clustered_codex_churn ") === true) {
-    return true;
+    return "summary";
   }
 
-  if (!record.last_tracked_pr_progress_snapshot) {
-    return false;
+  return null;
+}
+
+function preservedCodexConnectorChurnProgressSummary(record: IssueRunRecord): string {
+  return codexConnectorChurnStopEvidenceSource(record) === "summary" && record.last_tracked_pr_progress_summary
+    ? record.last_tracked_pr_progress_summary
+    : "manual_review_preserved=codex_connector_churn_unresolved_configured_bot_threads";
+}
+
+function unresolvedReviewThreadIds(reviewThreads: ReviewThread[]): string[] {
+  return reviewThreads
+    .filter((thread) => !thread.isResolved)
+    .map((thread) => thread.id)
+    .sort();
+}
+
+function unresolvedReviewThreadFingerprints(reviewThreads: ReviewThread[]): string[] {
+  return reviewThreads
+    .filter((thread) => !thread.isResolved)
+    .map((thread) => `${thread.id}#${latestReviewThreadCommentFingerprint(thread) ?? "no-comment"}`)
+    .sort();
+}
+
+function parseProgressSnapshotStringArray(
+  snapshot: string | null | undefined,
+  key: "unresolvedReviewThreadIds" | "unresolvedReviewThreadFingerprints",
+): string[] | null {
+  if (!snapshot) {
+    return null;
   }
 
   try {
-    const parsed = JSON.parse(record.last_tracked_pr_progress_snapshot);
-    return parsed?.codexConnectorReviewChurnProgress !== undefined;
+    const parsed = JSON.parse(snapshot);
+    return Array.isArray(parsed?.[key])
+      ? parsed[key]
+        .filter((value: unknown): value is string => typeof value === "string")
+        .sort()
+      : null;
   } catch {
+    return null;
+  }
+}
+
+function sameHeadCodexConnectorChurnBlockerUnchanged(record: IssueRunRecord, reviewThreads: ReviewThread[]): boolean {
+  const previousThreadIds = parseProgressSnapshotStringArray(
+    record.last_tracked_pr_progress_snapshot,
+    "unresolvedReviewThreadIds",
+  );
+  const currentThreadIds = unresolvedReviewThreadIds(reviewThreads);
+  const sameThreadIds =
+    previousThreadIds === null ||
+    (
+      previousThreadIds.length > 0 &&
+      previousThreadIds.length === currentThreadIds.length &&
+      previousThreadIds.every((threadId, index) => threadId === currentThreadIds[index])
+    );
+  if (!sameThreadIds) {
     return false;
   }
+
+  const previousThreadFingerprints = parseProgressSnapshotStringArray(
+    record.last_tracked_pr_progress_snapshot,
+    "unresolvedReviewThreadFingerprints",
+  );
+  if (previousThreadFingerprints === null || previousThreadFingerprints.length === 0) {
+    return true;
+  }
+
+  const currentThreadFingerprints = unresolvedReviewThreadFingerprints(reviewThreads);
+  return (
+    previousThreadFingerprints.length === currentThreadFingerprints.length &&
+    previousThreadFingerprints.every((fingerprint, index) => fingerprint === currentThreadFingerprints[index])
+  );
+}
+
+function hasEffectiveCurrentConfiguredBotBlocker(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+}): boolean {
+  return effectiveConfiguredBotReviewThreadsForState(
+    args.config,
+    args.record,
+    args.pr,
+    args.checks,
+    args.reviewThreads,
+  ).some((thread) =>
+    !thread.isResolved &&
+    !thread.isOutdated &&
+    latestReviewCommentAuthorIsAllowedBot(args.config, thread)
+  );
 }
 
 function shouldPreserveCodexConnectorManualReviewChurnBlock(args: {
   config: SupervisorConfig;
   record: IssueRunRecord;
+  effectiveRecord: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
   nextHeadSha: string;
   nextState: IssueRunRecord["state"];
@@ -357,17 +468,22 @@ function shouldPreserveCodexConnectorManualReviewChurnBlock(args: {
     args.nextState !== "blocked" &&
     args.record.last_head_sha !== args.nextHeadSha &&
     hasCodexConnectorChurnStopEvidence(args.record) &&
-    configuredBotReviewThreads(args.config, args.reviewThreads).some((thread) =>
-      !thread.isResolved &&
-      !thread.isOutdated &&
-      latestReviewCommentAuthorIsAllowedBot(args.config, thread)
-    )
+    hasEffectiveCurrentConfiguredBotBlocker({
+      config: args.config,
+      record: args.effectiveRecord,
+      pr: args.pr,
+      checks: args.checks,
+      reviewThreads: args.reviewThreads,
+    })
   );
 }
 
 function shouldKeepCodexConnectorManualReviewChurnBlockQuiescent(args: {
   config: SupervisorConfig;
   record: IssueRunRecord;
+  effectiveRecord: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
   nextHeadSha: string;
   nextState: IssueRunRecord["state"];
@@ -376,11 +492,13 @@ function shouldKeepCodexConnectorManualReviewChurnBlockQuiescent(args: {
     args.nextState !== "blocked" &&
     args.record.last_head_sha === args.nextHeadSha &&
     hasCodexConnectorChurnStopEvidence(args.record) &&
-    configuredBotReviewThreads(args.config, args.reviewThreads).some((thread) =>
-      !thread.isResolved &&
-      !thread.isOutdated &&
-      latestReviewCommentAuthorIsAllowedBot(args.config, thread)
-    )
+    hasEffectiveCurrentConfiguredBotBlocker({
+      config: args.config,
+      record: args.effectiveRecord,
+      pr: args.pr,
+      checks: args.checks,
+      reviewThreads: args.reviewThreads,
+    })
   );
 }
 
@@ -749,16 +867,34 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
         record.last_tracked_pr_repeat_failure_decision === "stop_no_progress" &&
         nextState !== "blocked" &&
         hasOnlyOutdatedConfiguredBotResidue(config, reviewThreads);
-      if (
+      const recoverySuppression = staleLocalManualReviewResidueRecovery
+        ? { shouldSuppress: false, progressSummary: "stale_local_blocker_recovered=outdated_configured_bot_residue" }
+        : suppressSameHeadNoProgressReviewThreadRecovery(
+          record,
+          trackedPullRequest,
+          reviewThreads,
+          nextState,
+        );
+      const shouldKeepCodexConnectorChurnBlockQuiescent =
         !staleLocalManualReviewResidueRecovery &&
         shouldKeepCodexConnectorManualReviewChurnBlockQuiescent({
           config,
           record,
+          effectiveRecord: projection.recordForState,
+          pr: trackedPullRequest,
+          checks,
           reviewThreads,
           nextHeadSha: trackedPullRequest.headRefOid,
           nextState,
-        })
-      ) {
+        });
+      const unchangedSameHeadCodexConnectorChurnBlocker =
+        shouldKeepCodexConnectorChurnBlockQuiescent &&
+        sameHeadCodexConnectorChurnBlockerUnchanged(record, reviewThreads);
+      const effectiveRecoverySuppression =
+        shouldKeepCodexConnectorChurnBlockQuiescent && !unchangedSameHeadCodexConnectorChurnBlocker
+          ? { shouldSuppress: false, progressSummary: "same_review_thread_guidance_changed" }
+          : recoverySuppression;
+      if (unchangedSameHeadCodexConnectorChurnBlocker) {
         continue;
       }
       if (
@@ -766,6 +902,9 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
         shouldPreserveCodexConnectorManualReviewChurnBlock({
           config,
           record,
+          effectiveRecord: projection.recordForState,
+          pr: trackedPullRequest,
+          checks,
           reviewThreads,
           nextHeadSha: trackedPullRequest.headRefOid,
           nextState,
@@ -783,8 +922,7 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
           pr_number: trackedPullRequest.number,
           ...headAdvanceResetPatch,
           last_head_sha: trackedPullRequest.headRefOid,
-          last_tracked_pr_progress_summary:
-            "manual_review_preserved=codex_connector_churn_unresolved_configured_bot_threads",
+          last_tracked_pr_progress_summary: preservedCodexConnectorChurnProgressSummary(record),
           ...projection.reviewWaitPatch,
           ...projection.copilotReviewRequestObservationPatch,
           ...projection.copilotReviewTimeoutPatch,
@@ -797,17 +935,9 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
         recoveryEvents.push(recoveryEvent);
         continue;
       }
-      const recoverySuppression = staleLocalManualReviewResidueRecovery
-        ? { shouldSuppress: false, progressSummary: "stale_local_blocker_recovered=outdated_configured_bot_residue" }
-        : suppressSameHeadNoProgressReviewThreadRecovery(
-          record,
-          trackedPullRequest,
-          reviewThreads,
-          nextState,
-        );
-      if (recoverySuppression.shouldSuppress) {
+      if (effectiveRecoverySuppression.shouldSuppress) {
         const suppressionPatch: Partial<IssueRunRecord> = {
-          last_tracked_pr_progress_summary: recoverySuppression.progressSummary,
+          last_tracked_pr_progress_summary: effectiveRecoverySuppression.progressSummary,
         };
         if (needsRecordUpdate(record, suppressionPatch)) {
           const updated = stateStore.touch(record, suppressionPatch);
@@ -907,8 +1037,8 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
         copilotReviewTimeoutPatch: projection.copilotReviewTimeoutPatch,
         mergeLatencyVisibilityPatch: projection.mergeLatencyVisibilityPatch,
       });
-      if (!staleLocalManualReviewResidueRecovery && recoverySuppression.progressSummary !== null) {
-        patch.last_tracked_pr_progress_summary = recoverySuppression.progressSummary;
+      if (!staleLocalManualReviewResidueRecovery && effectiveRecoverySuppression.progressSummary !== null) {
+        patch.last_tracked_pr_progress_summary = effectiveRecoverySuppression.progressSummary;
       }
       if (staleLocalManualReviewResidueRecovery) {
         patch.last_tracked_pr_progress_snapshot = null;
