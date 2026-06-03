@@ -91,6 +91,7 @@ type PersistentTrackedPrStatusCommentStrategy = (
 ) => PersistentTrackedPrStatusComment | null;
 
 interface TrackedPrCodexConnectorChurnProgress {
+  currentHeadSha?: string;
   currentEffectiveMustFixCount: number;
   dominantFile: string;
   clusterCategorySignature: string;
@@ -104,6 +105,8 @@ interface TrackedPrCodexConnectorChurnComparison {
 function parseTrackedPrCodexConnectorChurnSnapshot(
   snapshot: string | null | undefined,
 ): {
+  snapshotHeadSha: string | null;
+  progressHeadSha: string | null;
   progress: TrackedPrCodexConnectorChurnProgress;
   comparison: TrackedPrCodexConnectorChurnComparison | null;
 } | null {
@@ -113,6 +116,7 @@ function parseTrackedPrCodexConnectorChurnSnapshot(
 
   try {
     const parsed = JSON.parse(snapshot) as {
+      headRefOid?: unknown;
       codexConnectorReviewChurnProgress?: Partial<TrackedPrCodexConnectorChurnProgress>;
       codexConnectorReviewChurnComparison?: Partial<TrackedPrCodexConnectorChurnComparison>;
     };
@@ -128,13 +132,22 @@ function parseTrackedPrCodexConnectorChurnSnapshot(
       return null;
     }
 
+    const snapshotHeadSha =
+      typeof parsed.headRefOid === "string" && parsed.headRefOid.length > 0 ? parsed.headRefOid : null;
+    const progressHeadSha =
+      typeof progress.currentHeadSha === "string" && progress.currentHeadSha.length > 0
+        ? progress.currentHeadSha
+        : null;
     const comparison =
       parsed.codexConnectorReviewChurnComparison?.classification === "unchanged" ||
       parsed.codexConnectorReviewChurnComparison?.classification === "worse"
         ? { classification: parsed.codexConnectorReviewChurnComparison.classification }
         : null;
     return {
+      snapshotHeadSha,
+      progressHeadSha,
       progress: {
+        ...(progressHeadSha ? { currentHeadSha: progressHeadSha } : {}),
         currentEffectiveMustFixCount: progress.currentEffectiveMustFixCount,
         dominantFile: progress.dominantFile,
         clusterCategorySignature: progress.clusterCategorySignature,
@@ -145,6 +158,26 @@ function parseTrackedPrCodexConnectorChurnSnapshot(
   } catch {
     return null;
   }
+}
+
+function isCodexConnectorChurnStopRecord(record: IssueRunRecord): boolean {
+  return (
+    record.last_tracked_pr_repeat_failure_decision === "stop_no_progress" &&
+    record.last_tracked_pr_progress_summary?.startsWith("no_progress_clustered_codex_churn ") === true
+  );
+}
+
+function codexConnectorChurnSnapshotMatchesHead(
+  snapshot: {
+    snapshotHeadSha: string | null;
+    progressHeadSha: string | null;
+  },
+  headRefOid: string,
+): boolean {
+  const observedHeadShas = [snapshot.snapshotHeadSha, snapshot.progressHeadSha].filter(
+    (headSha): headSha is string => headSha !== null,
+  );
+  return observedHeadShas.length > 0 && observedHeadShas.every((headSha) => headSha === headRefOid);
 }
 
 function latestReviewThreadUrl(thread: ReviewThread): string | null {
@@ -309,6 +342,9 @@ function manualReviewStatusComment(
   if (args.record.state !== "blocked" || args.record.blocked_reason !== "manual_review") {
     return null;
   }
+  if (isCodexConnectorChurnStopRecord(args.record)) {
+    return null;
+  }
 
   const summary =
     args.failureContext?.summary ?? "Unresolved manual or unconfigured review feedback still requires human attention.";
@@ -332,15 +368,12 @@ function codexConnectorChurnStatusComment(
   if (args.record.state !== "blocked" || args.record.blocked_reason !== "manual_review") {
     return null;
   }
-  if (
-    args.record.last_tracked_pr_repeat_failure_decision !== "stop_no_progress" ||
-    !args.record.last_tracked_pr_progress_summary?.startsWith("no_progress_clustered_codex_churn ")
-  ) {
+  if (!isCodexConnectorChurnStopRecord(args.record)) {
     return null;
   }
 
   const churnSnapshot = parseTrackedPrCodexConnectorChurnSnapshot(args.record.last_tracked_pr_progress_snapshot);
-  if (!churnSnapshot) {
+  if (!churnSnapshot || !codexConnectorChurnSnapshotMatchesHead(churnSnapshot, args.pr.headRefOid)) {
     return null;
   }
 
