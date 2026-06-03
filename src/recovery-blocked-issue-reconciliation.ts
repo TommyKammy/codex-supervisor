@@ -312,6 +312,53 @@ function hasSupervisorVerifiedNoSourceChangeStaleAcknowledgement(normalizedBody:
   );
 }
 
+function hasCodexConnectorChurnStopEvidence(
+  record: Pick<
+    IssueRunRecord,
+    | "blocked_reason"
+    | "last_tracked_pr_progress_snapshot"
+    | "last_tracked_pr_progress_summary"
+    | "last_tracked_pr_repeat_failure_decision"
+    | "state"
+  >,
+): boolean {
+  if (
+    record.state !== "blocked" ||
+    record.blocked_reason !== "manual_review" ||
+    record.last_tracked_pr_repeat_failure_decision !== "stop_no_progress"
+  ) {
+    return false;
+  }
+
+  if (record.last_tracked_pr_progress_summary?.startsWith("no_progress_clustered_codex_churn ") === true) {
+    return true;
+  }
+
+  if (!record.last_tracked_pr_progress_snapshot) {
+    return false;
+  }
+
+  try {
+    const parsed = JSON.parse(record.last_tracked_pr_progress_snapshot);
+    return parsed?.codexConnectorReviewChurnProgress !== undefined;
+  } catch {
+    return false;
+  }
+}
+
+function shouldPreserveCodexConnectorManualReviewChurnBlock(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  reviewThreads: ReviewThread[];
+  nextState: IssueRunRecord["state"];
+}): boolean {
+  return (
+    args.nextState !== "blocked" &&
+    hasCodexConnectorChurnStopEvidence(args.record) &&
+    configuredBotReviewThreads(args.config, args.reviewThreads.filter((thread) => !thread.isResolved)).length > 0
+  );
+}
+
 export async function reconcileRecoverableBlockedIssueStatesInModule(
   github: Pick<RecoveryGitHubLike, "getPullRequestIfExists" | "getIssue" | "getChecks" | "getUnresolvedReviewThreads">
     & Partial<Pick<RecoveryGitHubLike, "addIssueComment" | "getExternalReviewSurface" | "getIssueComments" | "updateIssueComment">>,
@@ -677,6 +724,39 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
         record.last_tracked_pr_repeat_failure_decision === "stop_no_progress" &&
         nextState !== "blocked" &&
         hasOnlyOutdatedConfiguredBotResidue(config, reviewThreads);
+      if (
+        !staleLocalManualReviewResidueRecovery &&
+        shouldPreserveCodexConnectorManualReviewChurnBlock({
+          config,
+          record,
+          reviewThreads,
+          nextState,
+        })
+      ) {
+        const previousHead = record.last_head_sha ?? "unknown";
+        const recoveryEvent = buildRecoveryEvent(
+          record.issue_number,
+          `tracked_pr_manual_review_preserved: preserved issue #${record.issue_number} manual-review block after tracked PR #${trackedPullRequest.number} advanced from ${previousHead} to ${trackedPullRequest.headRefOid} because unresolved configured-bot review evidence still exists`,
+        );
+        const preservePatch = applyRecoveryEvent({
+          state: "blocked",
+          blocked_reason: "manual_review",
+          pr_number: trackedPullRequest.number,
+          last_head_sha: trackedPullRequest.headRefOid,
+          last_tracked_pr_progress_summary:
+            "manual_review_preserved=codex_connector_churn_unresolved_configured_bot_threads",
+          ...projection.reviewWaitPatch,
+          ...projection.copilotReviewRequestObservationPatch,
+          ...projection.copilotReviewTimeoutPatch,
+        }, recoveryEvent);
+        if (needsRecordUpdate(record, preservePatch)) {
+          const updated = stateStore.touch(record, preservePatch);
+          state.issues[String(record.issue_number)] = updated;
+          changed = true;
+        }
+        recoveryEvents.push(recoveryEvent);
+        continue;
+      }
       const recoverySuppression = staleLocalManualReviewResidueRecovery
         ? { shouldSuppress: false, progressSummary: "stale_local_blocker_recovered=outdated_configured_bot_residue" }
         : suppressSameHeadNoProgressReviewThreadRecovery(

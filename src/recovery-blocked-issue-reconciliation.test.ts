@@ -2771,6 +2771,205 @@ test("reconcileRecoverableBlockedIssueStates suppresses same-head tracked PR rec
   assert.deepEqual(recoveryEvents, []);
 });
 
+test("reconcileRecoverableBlockedIssueStates preserves Codex Connector manual-review churn blocks after PR head advance", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    staleConfiguredBotReviewPolicy: "reply_only",
+  });
+  const previousProgressSnapshot = JSON.stringify({
+    headRefOid: "head-previous-366",
+    reviewDecision: "CHANGES_REQUESTED",
+    mergeStateStatus: "BLOCKED",
+    copilotReviewState: null,
+    copilotReviewRequestedAt: null,
+    copilotReviewArrivedAt: null,
+    configuredBotCurrentHeadObservedAt: "2026-06-01T06:09:54Z",
+    configuredBotCurrentHeadStatusState: null,
+    currentHeadCiGreenAt: "2026-06-01T06:08:00Z",
+    configuredBotRateLimitedAt: null,
+    configuredBotDraftSkipAt: null,
+    configuredBotTopLevelReviewStrength: "blocking",
+    configuredBotTopLevelReviewSubmittedAt: "2026-06-01T06:09:54Z",
+    checks: ["build:pass:SUCCESS:CI"],
+    unresolvedReviewThreadIds: ["thread-authority", "thread-truth", "thread-scope", "thread-snapshot"],
+    unresolvedReviewThreadFingerprints: [
+      "thread-authority#comment-authority",
+      "thread-truth#comment-truth",
+      "thread-scope#comment-scope",
+      "thread-snapshot#comment-snapshot",
+    ],
+    unresolvedReviewThreadSourceAnchors: [
+      "thread-authority:src/release-readiness.ts:120",
+      "thread-truth:src/release-readiness.ts:121",
+      "thread-scope:src/release-readiness.ts:122",
+      "thread-snapshot:src/release-readiness.ts:123",
+    ],
+    processedReviewThreadIds: [],
+    processedReviewThreadFingerprints: [],
+    verificationProbeOutcomes: [],
+    codexConnectorReviewChurnProgress: {
+      currentHeadSha: "head-previous-366",
+      currentEffectiveMustFixCount: 4,
+      dominantFile: "src/release-readiness.ts",
+      dominantFilePercent: 100,
+      clusterCategorySignature: "truth_source",
+      representativeThreadIds: ["thread-authority", "thread-truth", "thread-scope", "thread-snapshot"],
+    },
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createRecord({
+        state: "blocked",
+        blocked_reason: "manual_review",
+        pr_number: 191,
+        last_head_sha: "head-previous-366",
+        last_error:
+          "Clustered Codex Connector churn made no progress; inspect dominant file src/release-readiness.ts with current effective must-fix count 4 before restarting the loop.",
+        last_failure_kind: null,
+        last_failure_context: {
+          category: "manual",
+          summary:
+            "Clustered Codex Connector churn made no progress; inspect dominant file src/release-readiness.ts with current effective must-fix count 4 before restarting the loop.",
+          signature: "codex-review-churn:P2:src/release-readiness.ts",
+          command: null,
+          details: [
+            "dominant_file=src/release-readiness.ts",
+            "current_effective_must_fix=4",
+            "representative_threads=thread-authority,thread-truth,thread-scope,thread-snapshot",
+          ],
+          url: "https://example.test/pr/191",
+          updated_at: "2026-06-01T06:10:00Z",
+        },
+        last_failure_signature: "codex-review-churn:P2:src/release-readiness.ts",
+        repeated_failure_signature_count: 3,
+        last_tracked_pr_progress_snapshot: previousProgressSnapshot,
+        last_tracked_pr_progress_summary: "no_progress_clustered_codex_churn current_effective_must_fix=4",
+        last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+      }),
+    ],
+  });
+  const issue = createIssue({
+    title: "Recovery issue",
+    updatedAt: "2026-06-01T06:11:00Z",
+  });
+  const pr = createPullRequest({
+    number: 191,
+    title: "Recovery implementation",
+    url: "https://example.test/pr/191",
+    headRefName: "codex/reopen-issue-366",
+    headRefOid: "head-current-366",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    reviewDecision: "CHANGES_REQUESTED",
+    configuredBotTopLevelReviewStrength: "blocking",
+    configuredBotTopLevelReviewSubmittedAt: "2026-06-01T06:12:00Z",
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-06-01T06:13:00Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => pr,
+      getIssue: async () => issue,
+      getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getUnresolvedReviewThreads: async () => [
+        createReviewThread({
+          id: "thread-authority",
+          comments: {
+            nodes: [{
+              id: "comment-authority",
+              body: "P2 authority finding",
+              createdAt: "2026-06-01T06:12:00Z",
+              url: "https://example.test/pr/191#discussion_authority",
+              author: { login: "chatgpt-codex-connector", typeName: "Bot" },
+            }],
+          },
+        }),
+        createReviewThread({
+          id: "thread-truth",
+          comments: {
+            nodes: [{
+              id: "comment-truth",
+              body: "P2 truth-source finding",
+              createdAt: "2026-06-01T06:12:01Z",
+              url: "https://example.test/pr/191#discussion_truth",
+              author: { login: "chatgpt-codex-connector", typeName: "Bot" },
+            }],
+          },
+        }),
+        createReviewThread({
+          id: "thread-scope",
+          comments: {
+            nodes: [{
+              id: "comment-scope",
+              body: "P2 scope finding",
+              createdAt: "2026-06-01T06:12:02Z",
+              url: "https://example.test/pr/191#discussion_scope",
+              author: { login: "chatgpt-codex-connector", typeName: "Bot" },
+            }],
+          },
+        }),
+        createReviewThread({
+          id: "thread-snapshot",
+          comments: {
+            nodes: [{
+              id: "comment-snapshot",
+              body: "P2 snapshot finding",
+              createdAt: "2026-06-01T06:12:03Z",
+              url: "https://example.test/pr/191#discussion_snapshot",
+              author: { login: "chatgpt-codex-connector", typeName: "Bot" },
+            }],
+          },
+        }),
+      ],
+    },
+    stateStore,
+    state,
+    config,
+    [issue],
+    {
+      shouldAutoRetryHandoffMissing,
+      inferStateFromPullRequest: () => "addressing_review",
+      inferFailureContext,
+      blockedReasonForLifecycleState,
+      isOpenPullRequest,
+      syncReviewWaitWindow,
+      syncCopilotReviewRequestObservation,
+      syncCopilotReviewTimeoutState,
+    },
+  );
+
+  const updated = state.issues["366"];
+  assert.equal(updated.state, "blocked");
+  assert.equal(updated.blocked_reason, "manual_review");
+  assert.equal(updated.last_failure_signature, "codex-review-churn:P2:src/release-readiness.ts");
+  assert.equal(updated.last_tracked_pr_repeat_failure_decision, "stop_no_progress");
+  assert.equal(
+    updated.last_tracked_pr_progress_summary,
+    "manual_review_preserved=codex_connector_churn_unresolved_configured_bot_threads",
+  );
+  assert.equal(
+    updated.last_recovery_reason,
+    "tracked_pr_manual_review_preserved: preserved issue #366 manual-review block after tracked PR #191 advanced from head-previous-366 to head-current-366 because unresolved configured-bot review evidence still exists",
+  );
+  assert.equal(saveCalls, 1);
+  assert.deepEqual(recoveryEvents.map((event) => event.reason), [
+    "tracked_pr_manual_review_preserved: preserved issue #366 manual-review block after tracked PR #191 advanced from head-previous-366 to head-current-366 because unresolved configured-bot review evidence still exists",
+  ]);
+});
+
 test("reconcileRecoverableBlockedIssueStates keeps stopped stale_review_bot records blocked when no-auto retry saw no same-head progress", async () => {
   const config = createConfig({
     reviewBotLogins: ["codex-connector"],
