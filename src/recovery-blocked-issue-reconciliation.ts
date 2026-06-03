@@ -372,14 +372,14 @@ function preservedCodexConnectorChurnProgressSummary(record: IssueRunRecord): st
     : "manual_review_preserved=codex_connector_churn_unresolved_configured_bot_threads";
 }
 
-function unresolvedReviewThreadIds(reviewThreads: ReviewThread[]): string[] {
+function unresolvedEffectiveReviewThreadIds(reviewThreads: ReviewThread[]): string[] {
   return reviewThreads
     .filter((thread) => !thread.isResolved)
     .map((thread) => thread.id)
     .sort();
 }
 
-function unresolvedReviewThreadFingerprints(reviewThreads: ReviewThread[]): string[] {
+function unresolvedEffectiveReviewThreadFingerprints(reviewThreads: ReviewThread[]): string[] {
   return reviewThreads
     .filter((thread) => !thread.isResolved)
     .map((thread) => `${thread.id}#${latestReviewThreadCommentFingerprint(thread) ?? "no-comment"}`)
@@ -406,12 +406,15 @@ function parseProgressSnapshotStringArray(
   }
 }
 
-function sameHeadCodexConnectorChurnBlockerUnchanged(record: IssueRunRecord, reviewThreads: ReviewThread[]): boolean {
+function sameHeadCodexConnectorChurnBlockerUnchanged(
+  record: IssueRunRecord,
+  effectiveReviewThreads: ReviewThread[],
+): boolean {
   const previousThreadIds = parseProgressSnapshotStringArray(
     record.last_tracked_pr_progress_snapshot,
     "unresolvedReviewThreadIds",
   );
-  const currentThreadIds = unresolvedReviewThreadIds(reviewThreads);
+  const currentThreadIds = unresolvedEffectiveReviewThreadIds(effectiveReviewThreads);
   const sameThreadIds =
     previousThreadIds !== null &&
     previousThreadIds.length > 0 &&
@@ -429,7 +432,7 @@ function sameHeadCodexConnectorChurnBlockerUnchanged(record: IssueRunRecord, rev
     return true;
   }
 
-  const currentThreadFingerprints = unresolvedReviewThreadFingerprints(reviewThreads);
+  const currentThreadFingerprints = unresolvedEffectiveReviewThreadFingerprints(effectiveReviewThreads);
   return (
     previousThreadFingerprints.length === currentThreadFingerprints.length &&
     previousThreadFingerprints.every((fingerprint, index) => fingerprint === currentThreadFingerprints[index])
@@ -484,8 +487,8 @@ function buildPreservedCodexConnectorChurnProgressSnapshot(args: {
     checks: args.checks
       .map((check) => `${check.name}:${check.bucket}:${check.state}:${check.workflow ?? "none"}`)
       .sort(),
-    unresolvedReviewThreadIds: unresolvedReviewThreadIds(args.effectiveReviewThreads),
-    unresolvedReviewThreadFingerprints: unresolvedReviewThreadFingerprints(args.effectiveReviewThreads),
+    unresolvedReviewThreadIds: unresolvedEffectiveReviewThreadIds(args.effectiveReviewThreads),
+    unresolvedReviewThreadFingerprints: unresolvedEffectiveReviewThreadFingerprints(args.effectiveReviewThreads),
     unresolvedReviewThreadSourceAnchors: args.effectiveReviewThreads
       .map((thread) => `${thread.id}:${thread.path ?? "unknown"}:${thread.line ?? "unknown"}`)
       .sort(),
