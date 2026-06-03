@@ -21,6 +21,7 @@ import { displayRelativeArtifactPath } from "./supervisor/supervisor-status-summ
 import { publishTrackedPrStatusComment } from "./tracked-pr-status-comment-publisher";
 import {
   buildTrackedPrClearedStatusComment,
+  buildTrackedPrCodexConnectorChurnStatusComment,
   buildTrackedPrDraftReviewSuppressedComment,
   buildTrackedPrHostLocalBlockerComment,
   buildTrackedPrManualReviewStatusComment,
@@ -30,6 +31,7 @@ import {
   isTrackedPrActiveStatusState,
   TRACKED_PR_STATUS_COMMENT_REASON_CODE_DRAFT_REVIEW_PROVIDER_SUPPRESSED,
   TRACKED_PR_STATUS_COMMENT_REASON_CODE_CLEARED,
+  TRACKED_PR_STATUS_COMMENT_REASON_CODE_CODEX_CONNECTOR_CHURN,
   TRACKED_PR_STATUS_COMMENT_REASON_CODE_CONVERSATION_RESOLUTION_BLOCKED,
   TRACKED_PR_STATUS_COMMENT_REASON_CODE_HANDOFF_MISSING,
   TRACKED_PR_STATUS_COMMENT_REASON_CODE_MANUAL_REVIEW,
@@ -87,6 +89,83 @@ interface PersistentTrackedPrStatusCommentContext {
 type PersistentTrackedPrStatusCommentStrategy = (
   args: PersistentTrackedPrStatusCommentContext,
 ) => PersistentTrackedPrStatusComment | null;
+
+interface TrackedPrCodexConnectorChurnProgress {
+  currentEffectiveMustFixCount: number;
+  dominantFile: string;
+  clusterCategorySignature: string;
+  representativeThreadIds: string[];
+}
+
+interface TrackedPrCodexConnectorChurnComparison {
+  classification: "improving" | "unchanged" | "worse";
+}
+
+function parseTrackedPrCodexConnectorChurnSnapshot(
+  snapshot: string | null | undefined,
+): {
+  progress: TrackedPrCodexConnectorChurnProgress;
+  comparison: TrackedPrCodexConnectorChurnComparison | null;
+} | null {
+  if (!snapshot) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(snapshot) as {
+      codexConnectorReviewChurnProgress?: Partial<TrackedPrCodexConnectorChurnProgress>;
+      codexConnectorReviewChurnComparison?: Partial<TrackedPrCodexConnectorChurnComparison>;
+    };
+    const progress = parsed.codexConnectorReviewChurnProgress;
+    if (
+      !progress ||
+      typeof progress.currentEffectiveMustFixCount !== "number" ||
+      typeof progress.dominantFile !== "string" ||
+      typeof progress.clusterCategorySignature !== "string" ||
+      !Array.isArray(progress.representativeThreadIds) ||
+      !progress.representativeThreadIds.every((id) => typeof id === "string")
+    ) {
+      return null;
+    }
+
+    const comparison =
+      parsed.codexConnectorReviewChurnComparison?.classification === "unchanged" ||
+      parsed.codexConnectorReviewChurnComparison?.classification === "worse"
+        ? { classification: parsed.codexConnectorReviewChurnComparison.classification }
+        : null;
+    return {
+      progress: {
+        currentEffectiveMustFixCount: progress.currentEffectiveMustFixCount,
+        dominantFile: progress.dominantFile,
+        clusterCategorySignature: progress.clusterCategorySignature,
+        representativeThreadIds: progress.representativeThreadIds,
+      },
+      comparison,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function latestReviewThreadUrl(thread: ReviewThread): string | null {
+  const latestComment = thread.comments.nodes.at(-1);
+  return typeof latestComment?.url === "string" && latestComment.url.length > 0 ? latestComment.url : null;
+}
+
+function representativeReviewThreadUrls(reviewThreads: ReviewThread[], representativeThreadIds: string[]): string[] {
+  const urls: string[] = [];
+  const ids = new Set(representativeThreadIds);
+  for (const thread of reviewThreads) {
+    if (!ids.has(thread.id)) {
+      continue;
+    }
+    const url = latestReviewThreadUrl(thread);
+    if (url && !urls.includes(url)) {
+      urls.push(url);
+    }
+  }
+  return urls;
+}
 
 function currentHeadManualReviewStatusComment(args: {
   config: SupervisorConfig;
@@ -247,6 +326,52 @@ function manualReviewStatusComment(
   };
 }
 
+function codexConnectorChurnStatusComment(
+  args: PersistentTrackedPrStatusCommentContext,
+): PersistentTrackedPrStatusComment | null {
+  if (args.record.state !== "blocked" || args.record.blocked_reason !== "manual_review") {
+    return null;
+  }
+  if (
+    args.record.last_tracked_pr_repeat_failure_decision !== "stop_no_progress" ||
+    !args.record.last_tracked_pr_progress_summary?.startsWith("no_progress_clustered_codex_churn ")
+  ) {
+    return null;
+  }
+
+  const churnSnapshot = parseTrackedPrCodexConnectorChurnSnapshot(args.record.last_tracked_pr_progress_snapshot);
+  if (!churnSnapshot) {
+    return null;
+  }
+
+  const representativeThreadUrls = representativeReviewThreadUrls(
+    args.reviewThreads,
+    churnSnapshot.progress.representativeThreadIds,
+  );
+  const countTrend = churnSnapshot.comparison?.classification ?? "unchanged_or_increased";
+  const blockerSignature = [
+    TRACKED_PR_STATUS_COMMENT_REASON_CODE_CODEX_CONNECTOR_CHURN,
+    args.pr.headRefOid,
+    churnSnapshot.progress.dominantFile,
+    churnSnapshot.progress.currentEffectiveMustFixCount,
+    countTrend,
+    churnSnapshot.progress.clusterCategorySignature,
+    churnSnapshot.progress.representativeThreadIds.join(","),
+  ].join(":");
+
+  return {
+    blockerSignature,
+    body: buildTrackedPrCodexConnectorChurnStatusComment({
+      pr: args.pr,
+      dominantFile: churnSnapshot.progress.dominantFile,
+      currentEffectiveMustFixCount: churnSnapshot.progress.currentEffectiveMustFixCount,
+      countTrend,
+      clusterCategorySignature: churnSnapshot.progress.clusterCategorySignature,
+      representativeThreadUrls,
+    }),
+  };
+}
+
 function staleReviewBotStatusComment(
   args: PersistentTrackedPrStatusCommentContext,
 ): PersistentTrackedPrStatusComment | null {
@@ -359,6 +484,7 @@ function requiredCheckMismatchStatusComment(
 
 const persistentTrackedPrStatusCommentStrategies: PersistentTrackedPrStatusCommentStrategy[] = [
   handoffMissingStatusComment,
+  codexConnectorChurnStatusComment,
   manualReviewStatusComment,
   staleReviewBotStatusComment,
   trackedLifecycleMismatchStatusComment,

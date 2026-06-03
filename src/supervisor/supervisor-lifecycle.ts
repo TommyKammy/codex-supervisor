@@ -25,6 +25,8 @@ import {
   buildCodexConnectorReviewChurnDiagnostic,
   buildCodexConnectorReviewChurnProgressSummary,
   clusterConfiguredBotReviewThreads,
+  compareCodexConnectorReviewChurnProgress,
+  type CodexConnectorReviewChurnProgressComparison,
   type CodexConnectorReviewChurnProgressSummary,
 } from "../codex-connector-review-policy";
 import { configuredBotReviewThreads, manualReviewThreads } from "../review-thread-reporting";
@@ -130,6 +132,7 @@ interface TrackedPrProgressSnapshot {
   processedReviewThreadFingerprints?: string[];
   verificationProbeOutcomes?: string[];
   codexConnectorReviewChurnProgress?: CodexConnectorReviewChurnProgressSummary;
+  codexConnectorReviewChurnComparison?: CodexConnectorReviewChurnProgressComparison;
 }
 
 export interface TrackedPrRepeatFailureDisposition {
@@ -410,9 +413,22 @@ export function summarizeTrackedPrProgress(
   const current = buildTrackedPrProgressSnapshot(record, config, pr, checks, reviewThreads);
   const previous = parseTrackedPrProgressSnapshot(record.last_tracked_pr_progress_snapshot);
   const signals = listChangedSignals(previous, current);
+  const churnComparison =
+    current.codexConnectorReviewChurnProgress && previous?.codexConnectorReviewChurnProgress
+      ? compareCodexConnectorReviewChurnProgress(
+          current.codexConnectorReviewChurnProgress,
+          previous.codexConnectorReviewChurnProgress,
+        )
+      : null;
+  const snapshot = churnComparison
+    ? JSON.stringify({
+        ...current,
+        codexConnectorReviewChurnComparison: churnComparison,
+      })
+    : JSON.stringify(current);
 
   return {
-    snapshot: JSON.stringify(current),
+    snapshot,
     summary: signals.length > 0 ? signals.join(" | ") : null,
   };
 }

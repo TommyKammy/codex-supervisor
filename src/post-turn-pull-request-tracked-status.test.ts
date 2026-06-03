@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { handlePostTurnPullRequestTransitionsPhase, type PullRequestLifecycleSnapshot } from "./post-turn-pull-request";
+import { syncTrackedPrPersistentStatusComment } from "./tracked-pr-status-comment";
 import { IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorStateFile } from "./core/types";
 import { blockedReasonFromReviewState as resolveBlockedReasonFromReviewState, inferStateFromPullRequest } from "./pull-request-state";
 import { derivePullRequestLifecycleSnapshot as deriveSupervisorPullRequestLifecycleSnapshot } from "./supervisor/supervisor-lifecycle";
@@ -338,6 +339,149 @@ test("handlePostTurnPullRequestTransitionsPhase comments when a tracked PR stays
   assert.match(commentBodies[0] ?? "", /reason code: `manual_review`/i);
   assert.match(commentBodies[0] ?? "", /require human attention/i);
   assert.match(commentBodies[0] ?? "", /<!-- codex-supervisor:tracked-pr-status-comment issue=102 pr=116 kind=status -->/);
+});
+
+test("syncTrackedPrPersistentStatusComment comments with clustered Codex churn evidence when manual-review stop fires", async () => {
+  const config = createConfig({
+    configuredReviewProviders: [
+      {
+        kind: "codex",
+        reviewerLogins: ["chatgpt-codex-connector[bot]"],
+        signalSource: "review_threads",
+      },
+    ],
+    reviewBotLogins: ["chatgpt-codex-connector[bot]"],
+  });
+  const pr = createPullRequest({
+    number: 116,
+    title: "Clustered Connector churn repair",
+    isDraft: false,
+    headRefOid: "head-current-1390",
+    mergeStateStatus: "CLEAN",
+  });
+  const reviewThreads = Array.from({ length: 2 }, (_, index) =>
+    createReviewThread({
+      id: `thread-current-${index}`,
+      path: "src/release-readiness.ts",
+      line: 130 + index,
+      comments: {
+        nodes: [
+          {
+            id: `comment-current-${index}`,
+            body: "P2: Block release readiness truth-source claims until the verifier proves the authoritative scope.",
+            createdAt: "2026-03-10T23:20:00Z",
+            url: `https://example.test/pr/1390#discussion_current_${index}`,
+            author: { login: "chatgpt-codex-connector[bot]", typeName: "Bot" },
+          },
+        ],
+      },
+    }),
+  );
+  const record = createRecord({
+    issue_number: 102,
+    state: "blocked",
+    blocked_reason: "manual_review",
+    pr_number: pr.number,
+    last_head_sha: pr.headRefOid,
+    last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+    last_tracked_pr_progress_summary: "no_progress_clustered_codex_churn current_effective_must_fix=5",
+    last_tracked_pr_progress_snapshot: JSON.stringify({
+      headRefOid: pr.headRefOid,
+      reviewDecision: "CHANGES_REQUESTED",
+      mergeStateStatus: "CLEAN",
+      copilotReviewState: null,
+      copilotReviewRequestedAt: null,
+      copilotReviewArrivedAt: null,
+      configuredBotCurrentHeadObservedAt: "2026-03-10T23:20:00Z",
+      configuredBotCurrentHeadStatusState: null,
+      currentHeadCiGreenAt: "2026-03-10T23:18:00Z",
+      configuredBotRateLimitedAt: null,
+      configuredBotDraftSkipAt: null,
+      configuredBotTopLevelReviewStrength: "blocking",
+      configuredBotTopLevelReviewSubmittedAt: "2026-03-10T23:20:00Z",
+      checks: ["build:pass:SUCCESS:CI"],
+      unresolvedReviewThreadIds: ["thread-current-0", "thread-current-1"],
+      unresolvedReviewThreadFingerprints: ["thread-current-0#comment-current-0", "thread-current-1#comment-current-1"],
+      unresolvedReviewThreadSourceAnchors: [
+        "thread-current-0:src/release-readiness.ts:130",
+        "thread-current-1:src/release-readiness.ts:131",
+      ],
+      processedReviewThreadIds: [],
+      processedReviewThreadFingerprints: [],
+      verificationProbeOutcomes: [],
+      codexConnectorReviewChurnProgress: {
+        currentHeadSha: pr.headRefOid,
+        currentEffectiveMustFixCount: 5,
+        dominantFile: "src/release-readiness.ts",
+        dominantFilePercent: 100,
+        clusterCategorySignature: "readiness_claim+truth_source+verifier_or_issue_lint",
+        representativeThreadIds: ["thread-current-0", "thread-current-1"],
+      },
+      codexConnectorReviewChurnComparison: {
+        classification: "worse",
+        currentHeadSha: pr.headRefOid,
+        previousHeadSha: "head-previous-1390",
+        currentEffectiveMustFixCount: 5,
+        previousEffectiveMustFixCount: 4,
+        effectiveMustFixDelta: 1,
+      },
+    }),
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: { "102": record },
+  };
+  const commentBodies: string[] = [];
+
+  const result = await syncTrackedPrPersistentStatusComment({
+    github: createDefaultGithub({
+      addIssueComment: async (_prNumber: number, body: string) => {
+        commentBodies.push(body);
+      },
+    }),
+    stateStore: createNoopStateStore(),
+    state,
+    record,
+    pr,
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads,
+    syncJournal: async () => undefined,
+    config,
+    failureContext: {
+      category: "review",
+      summary: "Clustered Codex Connector churn made no progress.",
+      signature: "codex-review-churn:P2:src/release-readiness.ts",
+      command: null,
+      details: [],
+      url: null,
+      updated_at: "2026-03-10T23:20:00Z",
+    },
+    summarizeChecks,
+    manualReviewThreadCount: 0,
+    skipAutoHandleStaleConfiguredBotReview: true,
+  });
+
+  assert.equal(commentBodies.length, 1);
+  assert.match(commentBodies[0] ?? "", /reason code: `codex_connector_churn`/);
+  assert.match(commentBodies[0] ?? "", /current PR head: `head-current-1390`/);
+  assert.match(commentBodies[0] ?? "", /dominant file: `src\/release-readiness\.ts`/);
+  assert.match(commentBodies[0] ?? "", /effective must-fix count: `5`/);
+  assert.match(commentBodies[0] ?? "", /count trend: `worse`/);
+  assert.match(
+    commentBodies[0] ?? "",
+    /normalized category signature: `readiness_claim\+truth_source\+verifier_or_issue_lint`/,
+  );
+  assert.match(commentBodies[0] ?? "", /https:\/\/example\.test\/pr\/1390#discussion_current_0/);
+  assert.match(commentBodies[0] ?? "", /manual.*before restarting the supervisor/i);
+  assert.match(
+    commentBodies[0] ?? "",
+    /<!-- codex-supervisor:tracked-pr-status-comment issue=102 pr=116 kind=status -->/,
+  );
+  assert.equal(result.last_host_local_pr_blocker_comment_head_sha, pr.headRefOid);
+  assert.equal(
+    result.last_host_local_pr_blocker_comment_signature,
+    "codex_connector_churn:head-current-1390:src/release-readiness.ts:5:worse:readiness_claim+truth_source+verifier_or_issue_lint:thread-current-0,thread-current-1",
+  );
 });
 
 test("handlePostTurnPullRequestTransitionsPhase comments when a tracked PR stays blocked on stale configured-bot review state near merge", async () => {
