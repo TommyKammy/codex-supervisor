@@ -350,12 +350,37 @@ function shouldPreserveCodexConnectorManualReviewChurnBlock(args: {
   config: SupervisorConfig;
   record: IssueRunRecord;
   reviewThreads: ReviewThread[];
+  nextHeadSha: string;
   nextState: IssueRunRecord["state"];
 }): boolean {
   return (
     args.nextState !== "blocked" &&
+    args.record.last_head_sha !== args.nextHeadSha &&
     hasCodexConnectorChurnStopEvidence(args.record) &&
-    configuredBotReviewThreads(args.config, args.reviewThreads.filter((thread) => !thread.isResolved)).length > 0
+    configuredBotReviewThreads(args.config, args.reviewThreads).some((thread) =>
+      !thread.isResolved &&
+      !thread.isOutdated &&
+      latestReviewCommentAuthorIsAllowedBot(args.config, thread)
+    )
+  );
+}
+
+function shouldKeepCodexConnectorManualReviewChurnBlockQuiescent(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  reviewThreads: ReviewThread[];
+  nextHeadSha: string;
+  nextState: IssueRunRecord["state"];
+}): boolean {
+  return (
+    args.nextState !== "blocked" &&
+    args.record.last_head_sha === args.nextHeadSha &&
+    hasCodexConnectorChurnStopEvidence(args.record) &&
+    configuredBotReviewThreads(args.config, args.reviewThreads).some((thread) =>
+      !thread.isResolved &&
+      !thread.isOutdated &&
+      latestReviewCommentAuthorIsAllowedBot(args.config, thread)
+    )
   );
 }
 
@@ -726,10 +751,23 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
         hasOnlyOutdatedConfiguredBotResidue(config, reviewThreads);
       if (
         !staleLocalManualReviewResidueRecovery &&
+        shouldKeepCodexConnectorManualReviewChurnBlockQuiescent({
+          config,
+          record,
+          reviewThreads,
+          nextHeadSha: trackedPullRequest.headRefOid,
+          nextState,
+        })
+      ) {
+        continue;
+      }
+      if (
+        !staleLocalManualReviewResidueRecovery &&
         shouldPreserveCodexConnectorManualReviewChurnBlock({
           config,
           record,
           reviewThreads,
+          nextHeadSha: trackedPullRequest.headRefOid,
           nextState,
         })
       ) {
@@ -738,11 +776,13 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
           record.issue_number,
           `tracked_pr_manual_review_preserved: preserved issue #${record.issue_number} manual-review block after tracked PR #${trackedPullRequest.number} advanced from ${previousHead} to ${trackedPullRequest.headRefOid} because unresolved configured-bot review evidence still exists`,
         );
+        const headAdvanceResetPatch = resetTrackedPrHeadScopedStateOnAdvance(record, trackedPullRequest.headRefOid);
         const preservePatch = applyRecoveryEvent({
           state: "blocked",
           blocked_reason: "manual_review",
           pr_number: trackedPullRequest.number,
           last_head_sha: trackedPullRequest.headRefOid,
+          ...headAdvanceResetPatch,
           last_tracked_pr_progress_summary:
             "manual_review_preserved=codex_connector_churn_unresolved_configured_bot_threads",
           ...projection.reviewWaitPatch,
