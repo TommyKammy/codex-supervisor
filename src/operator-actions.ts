@@ -224,6 +224,17 @@ function hasStoppedClusteredCodexChurnManualReviewGate(
   });
 }
 
+function hasUnblockedActiveIssueState(lines: string[]): boolean {
+  const state = lines
+    .map((line) => /^state=([^\s]+)$/u.exec(line)?.[1] ?? null)
+    .find((value): value is string => value !== null);
+  if (state === undefined || state === "blocked" || state === "done" || state === "failed") {
+    return false;
+  }
+
+  return lines.some((line) => /^blocked_reason=none$/u.test(line));
+}
+
 export function parseOperatorActionLine(line: string): OperatorAction | null {
   if (!/^(operator_action|doctor_operator_action)\b/u.test(line)) {
     return null;
@@ -407,6 +418,7 @@ export function selectStatusOperatorAction(args: {
     contextLines,
     requestEligibleRecoverySelectedIssues,
   );
+  const ignoreStaleManualReviewExecutionMetrics = hasUnblockedActiveIssueState(contextLines);
 
   for (const line of args.detailedStatusLines) {
     const clusteredChurnManualReviewSummary = clusteredCodexChurnManualReviewSummary(line);
@@ -520,11 +532,20 @@ export function selectStatusOperatorAction(args: {
       continue;
     }
 
+    const isManualReviewExecutionMetrics =
+      /^execution_metrics\b/.test(line) &&
+      /\bterminal_state=blocked\b/.test(line) &&
+      /\boutcome=blocked\b/.test(line) &&
+      /\breason=manual_review\b/.test(line);
     if (
       /^blocked_partial_work\b/.test(line) ||
       /^tracked_pr_mismatch\b/.test(line) && /\blocal_blocked_reason=manual_review\b/.test(line) ||
-      /^pre_merge_evaluation\b/.test(line) && /\bmanual_review=[1-9]\d*\b/.test(line)
+      /^pre_merge_evaluation\b/.test(line) && /\bmanual_review=[1-9]\d*\b/.test(line) ||
+      isManualReviewExecutionMetrics
     ) {
+      if (isManualReviewExecutionMetrics && ignoreStaleManualReviewExecutionMetrics) {
+        continue;
+      }
       const issueNumber = readIssueNumberToken(line, "issue");
       if (
         issueNumber !== null &&

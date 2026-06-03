@@ -46,6 +46,7 @@ import { maybeRequestCodexConnectorReviewComment } from "./codex-connector-revie
 import { hasResolvedAllStaleConfiguredBotThreads } from "./supervisor/stale-review-bot-recovery";
 import { applyTrackedPrLifecycleState } from "./post-turn-pull-request-lifecycle";
 import { maybePromoteDraftPullRequestToReady } from "./post-turn-ready-promotion";
+import { effectiveConfiguredBotReviewThreadsForState } from "./pull-request-state-codex-residue-policy";
 
 export { syncTrackedPrPersistentStatusComment } from "./tracked-pr-status-comment";
 
@@ -302,6 +303,22 @@ async function loadOpenPullRequestSnapshot(
   return { pr, checks, reviewThreads };
 }
 
+function hasEffectiveConfiguredBotReviewBlockers(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+}): boolean {
+  return effectiveConfiguredBotReviewThreadsForState(
+    args.config,
+    args.record,
+    args.pr,
+    args.checks,
+    args.reviewThreads,
+  ).length > 0;
+}
+
 export async function handlePostTurnPullRequestTransitionsPhase(
   args: HandlePostTurnPullRequestTransitionsArgs,
 ): Promise<PostTurnPullRequestResult> {
@@ -335,7 +352,13 @@ export async function handlePostTurnPullRequestTransitionsPhase(
     (shouldRunLocalReview(config, record, refreshed.pr) || shouldRefreshSameHeadRepairLocalReview) &&
     !refreshedCheckSummary.hasPending &&
     !refreshedCheckSummary.hasFailing &&
-    args.configuredBotReviewThreads(config, refreshed.reviewThreads).length === 0 &&
+    !hasEffectiveConfiguredBotReviewBlockers({
+      config,
+      record,
+      pr: refreshed.pr,
+      checks: refreshed.checks,
+      reviewThreads: refreshed.reviewThreads,
+    }) &&
     (!config.humanReviewBlocksMerge || args.manualReviewThreads(config, refreshed.reviewThreads).length === 0) &&
     !args.mergeConflictDetected(refreshed.pr) &&
     !options.dryRun
@@ -386,7 +409,13 @@ export async function handlePostTurnPullRequestTransitionsPhase(
     refreshed.pr.isDraft &&
     !refreshedCheckSummary.hasPending &&
     !refreshedCheckSummary.hasFailing &&
-    args.configuredBotReviewThreads(config, refreshed.reviewThreads).length === 0 &&
+    !hasEffectiveConfiguredBotReviewBlockers({
+      config,
+      record,
+      pr: refreshed.pr,
+      checks: refreshed.checks,
+      reviewThreads: refreshed.reviewThreads,
+    }) &&
     (!config.humanReviewBlocksMerge || args.manualReviewThreads(config, refreshed.reviewThreads).length === 0) &&
     !args.mergeConflictDetected(refreshed.pr) &&
     !localReviewRequiresManualReview(config, record, refreshed.pr) &&
