@@ -2961,6 +2961,7 @@ test("reconcileRecoverableBlockedIssueStates preserves Codex Connector manual-re
   const updated = state.issues["366"];
   assert.equal(updated.state, "blocked");
   assert.equal(updated.blocked_reason, "manual_review");
+  assert.equal(updated.last_head_sha, "head-current-366");
   assert.equal(updated.last_failure_signature, "codex-review-churn:P2:src/release-readiness.ts");
   assert.equal(updated.last_tracked_pr_repeat_failure_decision, "stop_no_progress");
   assert.equal(updated.local_review_head_sha, null);

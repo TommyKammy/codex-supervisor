@@ -781,8 +781,8 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
           state: "blocked",
           blocked_reason: "manual_review",
           pr_number: trackedPullRequest.number,
-          last_head_sha: trackedPullRequest.headRefOid,
           ...headAdvanceResetPatch,
+          last_head_sha: trackedPullRequest.headRefOid,
           last_tracked_pr_progress_summary:
             "manual_review_preserved=codex_connector_churn_unresolved_configured_bot_threads",
           ...projection.reviewWaitPatch,
