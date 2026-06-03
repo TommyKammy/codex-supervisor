@@ -1125,6 +1125,146 @@ test("runOnce blocks tracked PR review work instead of failing after repeated id
   assert.match(record.last_failure_context?.summary ?? "", /1 unresolved automated review thread\(s\) remain\./);
 });
 
+test("runOnce blocks non-decreasing reviewed Codex Connector churn before another repair turn", async () => {
+  const fixture = await createSupervisorFixture();
+  fixture.config.sameFailureSignatureRepeatLimit = 3;
+  fixture.config.reviewBotLogins = ["chatgpt-codex-connector[bot]"];
+  fixture.config.codexConnectorReviewChurnMustFixThreshold = 4;
+  fixture.config.codexConnectorReviewChurnFileConcentrationPercent = 75;
+  const issueNumber = 91;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [
+      createTrackedSupervisorRecord(fixture.config, fixture.workspaceRoot, issueNumber, {
+        state: "addressing_review",
+        pr_number: 191,
+        journal_path: null,
+        last_head_sha: "head-current-1390",
+        last_failure_signature: "codex-review-churn:P2:src/release-readiness.ts",
+        repeated_failure_signature_count: 1,
+        last_tracked_pr_progress_snapshot: JSON.stringify({
+          headRefOid: "head-previous-1390",
+          reviewDecision: "CHANGES_REQUESTED",
+          mergeStateStatus: "BLOCKED",
+          copilotReviewState: null,
+          copilotReviewRequestedAt: null,
+          copilotReviewArrivedAt: null,
+          configuredBotCurrentHeadObservedAt: "2026-03-10T23:09:54Z",
+          configuredBotCurrentHeadStatusState: null,
+          currentHeadCiGreenAt: "2026-03-10T23:08:00Z",
+          configuredBotRateLimitedAt: null,
+          configuredBotDraftSkipAt: null,
+          configuredBotTopLevelReviewStrength: "blocking",
+          configuredBotTopLevelReviewSubmittedAt: "2026-03-10T23:09:54Z",
+          checks: ["build:pass:SUCCESS:CI"],
+          unresolvedReviewThreadIds: ["thread-previous-0", "thread-previous-1", "thread-previous-2", "thread-previous-3"],
+          unresolvedReviewThreadFingerprints: [
+            "thread-previous-0#comment-previous-0",
+            "thread-previous-1#comment-previous-1",
+            "thread-previous-2#comment-previous-2",
+            "thread-previous-3#comment-previous-3",
+          ],
+          unresolvedReviewThreadSourceAnchors: [
+            "thread-previous-0:src/release-readiness.ts:120",
+            "thread-previous-1:src/release-readiness.ts:121",
+            "thread-previous-2:src/release-readiness.ts:122",
+            "thread-previous-3:src/release-readiness.ts:123",
+          ],
+          processedReviewThreadIds: [],
+          processedReviewThreadFingerprints: [],
+          verificationProbeOutcomes: [],
+          codexConnectorReviewChurnProgress: {
+            currentHeadSha: "head-previous-1390",
+            currentEffectiveMustFixCount: 4,
+            dominantFile: "src/release-readiness.ts",
+            dominantFilePercent: 100,
+            clusterCategorySignature: "claim_detection+excluded_scope+readiness_claim+truth_source+verifier_or_issue_lint",
+            representativeThreadIds: ["thread-previous-0", "thread-previous-1", "thread-previous-2", "thread-previous-3"],
+          },
+        }),
+      }),
+    ],
+  });
+  await writeSupervisorState(fixture.stateFile, state);
+
+  const issue = createTrackedIssue(issueNumber, {
+    title: "Stop non-decreasing clustered Codex Connector churn",
+    body: executionReadyBody("Stop non-decreasing clustered Codex Connector churn."),
+    createdAt: "2026-03-10T23:00:00Z",
+    updatedAt: "2026-03-10T23:00:00Z",
+  });
+  const pr = createTrackedPullRequest(fixture.config, issueNumber, {
+    number: 191,
+    title: "Clustered Connector churn repair",
+    isDraft: false,
+    reviewDecision: "CHANGES_REQUESTED",
+    headRefOid: "head-current-1390",
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-03-10T23:18:00Z",
+    configuredBotCurrentHeadObservedAt: "2026-03-10T23:20:00Z",
+    configuredBotTopLevelReviewStrength: "blocking",
+    configuredBotTopLevelReviewSubmittedAt: "2026-03-10T23:20:00Z",
+  });
+  const reviewThreads = Array.from({ length: 4 }, (_, index) =>
+    createReviewThread({
+      id: `thread-current-${index}`,
+      path: "src/release-readiness.ts",
+      line: 130 + index,
+      comments: {
+        nodes: [
+          {
+            id: `comment-current-${index}`,
+            body:
+              "P2: Block release readiness truth-source claims until the verifier proves the authoritative scope.",
+            createdAt: "2026-03-10T23:20:00Z",
+            url: `https://example.test/pr/1390#discussion_current_${index}`,
+            author: { login: "chatgpt-codex-connector[bot]", typeName: "Bot" },
+          },
+        ],
+      },
+    }),
+  );
+
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    authStatus: async () => ({ ok: true, message: null }),
+    listAllIssues: async () => [issue],
+    listCandidateIssues: async () => [issue],
+    getIssue: async () => issue,
+    resolvePullRequestForBranch: async (branchName: string, prNumber: number | null) => {
+      assert.equal(branchName, branch);
+      assert.equal(prNumber, pr.number);
+      return pr;
+    },
+    getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => reviewThreads,
+    getPullRequestIfExists: async () => pr,
+    getPullRequest: async () => pr,
+    getExternalReviewSurface: async () => ({ reviews: [], issueComments: [] }),
+    getMergedPullRequestsClosingIssue: async () => [],
+    closeIssue: async () => {
+      throw new Error("unexpected closeIssue call");
+    },
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await supervisor.runOnce({ dryRun: true });
+  assert.match(message, /blocked for manual review after non-decreasing clustered Codex Connector churn/);
+  assert.doesNotMatch(message, /would invoke Codex/);
+
+  const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
+  const record = persisted.issues[String(issueNumber)];
+  assert.equal(persisted.activeIssueNumber, null);
+  assert.equal(record.state, "blocked");
+  assert.equal(record.blocked_reason, "manual_review");
+  assert.equal(record.last_tracked_pr_repeat_failure_decision, "stop_no_progress");
+  assert.equal(record.last_tracked_pr_progress_summary, "no_progress_clustered_codex_churn current_effective_must_fix=4");
+  assert.match(record.last_error ?? "", /current effective must-fix count 4/);
+});
+
 test("runOnce requests Codex Connector review before repeated stale configured-bot signature suppression", async () => {
   const originalDateNow = Date.now;
   Date.now = () => Date.parse("2026-05-22T12:10:00.000Z");
