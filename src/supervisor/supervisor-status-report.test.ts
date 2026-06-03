@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildSupervisorDashboardWorkflowSteps } from "./supervisor-dashboard-workflow";
-import { buildRuntimeRecoverySummary } from "./supervisor-status-report";
+import { buildRuntimeRecoverySummary, renderSupervisorStatusDto } from "./supervisor-status-report";
 
 const baseLoopRuntime = {
   state: "off" as const,
@@ -199,6 +199,45 @@ test("buildRuntimeRecoverySummary recommends manual review before restarting clu
         "Clustered Codex Connector churn made no progress; inspect dominant file src/release-readiness.ts with current effective must-fix count 8 before restarting the loop.",
     },
   );
+});
+
+test("renderSupervisorStatusDto keeps stopped clustered Codex churn on manual review", () => {
+  const status = renderSupervisorStatusDto({
+    gsdSummary: null,
+    candidateDiscovery: null,
+    candidateDiscoverySummary: null,
+    loopRuntime: baseLoopRuntime,
+    activeIssue: null,
+    selectionSummary: null,
+    trackedIssues: [
+      {
+        issueNumber: 188,
+        state: "blocked",
+        branch: "codex/issue-188",
+        prNumber: 288,
+        blockedReason: "manual_review",
+      },
+    ],
+    runnableIssues: [],
+    blockedIssues: [],
+    detailedStatusLines: [
+      "execution_metrics terminal_state=blocked outcome=blocked reason=manual_review run_duration_ms=3600000 issue_lead_time_ms=4200000 issue_to_pr_created_ms=1200000 pr_open_duration_ms=none",
+      "codex_connector_review_churn_progress classification=unchanged current_head_sha=head-current-188 previous_head_sha=head-previous-188 current_effective_must_fix=8 previous_effective_must_fix=8 effective_must_fix_delta=0 dominant_file=src/release-readiness.ts previous_dominant_file=src/release-readiness.ts dominant_file_percent=100 cluster_category_signature=truth_source previous_cluster_category_signature=truth_source representative_threads=thread-authority,thread-truth",
+    ],
+    reconciliationPhase: null,
+    reconciliationWarning: null,
+    readinessLines: [],
+    whyLines: [
+      "loop_runtime_blocker state=off active_tracked_issues=1 first_issue=#188 first_state=blocked first_pr=#288 action=restart_loop restart_reason=recoverable_active_tracked_work_waiting_for_loop expected_outcome=loop_runtime_state_running_then_tracked_issue_advances fallback=if_blocker_remains_run_status_why_and_doctor_then_inspect_runtime_marker_and_config",
+    ],
+    warning: null,
+  });
+
+  assert.match(
+    status,
+    /^operator_action action=manual_review source=codex_connector_review_churn_progress priority=95 /m,
+  );
+  assert.doesNotMatch(status, /^operator_action action=continue /m);
 });
 
 test("buildRuntimeRecoverySummary ignores historical clustered Codex churn while the loop is active", () => {

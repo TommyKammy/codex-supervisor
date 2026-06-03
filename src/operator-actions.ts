@@ -208,8 +208,16 @@ function hasStoppedClusteredCodexChurnManualReviewGate(
     const isLoopRuntimeBlocker = /^loop_runtime_blocker\b/u.test(line);
     const isNoActiveManualReview =
       /^no_active_tracked_record\b/u.test(line) && /\bclassification=manual_review_required\b/u.test(line);
-    if (!isLoopRuntimeBlocker && !isNoActiveManualReview) {
+    const isManualReviewExecutionMetric =
+      /^execution_metrics\b/u.test(line) &&
+      /\bterminal_state=blocked\b/u.test(line) &&
+      /\boutcome=blocked\b/u.test(line) &&
+      /\breason=manual_review\b/u.test(line);
+    if (!isLoopRuntimeBlocker && !isNoActiveManualReview && !isManualReviewExecutionMetric) {
       return false;
+    }
+    if (isManualReviewExecutionMetric) {
+      return true;
     }
 
     const gateIssueNumber = isLoopRuntimeBlocker
@@ -523,7 +531,11 @@ export function selectStatusOperatorAction(args: {
     if (
       /^blocked_partial_work\b/.test(line) ||
       /^tracked_pr_mismatch\b/.test(line) && /\blocal_blocked_reason=manual_review\b/.test(line) ||
-      /^pre_merge_evaluation\b/.test(line) && /\bmanual_review=[1-9]\d*\b/.test(line)
+      /^pre_merge_evaluation\b/.test(line) && /\bmanual_review=[1-9]\d*\b/.test(line) ||
+      /^execution_metrics\b/.test(line) &&
+        /\bterminal_state=blocked\b/.test(line) &&
+        /\boutcome=blocked\b/.test(line) &&
+        /\breason=manual_review\b/.test(line)
     ) {
       const issueNumber = readIssueNumberToken(line, "issue");
       if (

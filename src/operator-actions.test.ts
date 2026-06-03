@@ -390,6 +390,34 @@ test("selectStatusOperatorAction prioritizes manual review for stopped clustered
   );
 });
 
+test("selectStatusOperatorAction does not continue after preserved manual-review execution metrics", () => {
+  assert.deepEqual(
+    selectStatusOperatorAction({
+      detailedStatusLines: [
+        "execution_metrics terminal_state=blocked outcome=blocked reason=manual_review run_duration_ms=3600000 issue_lead_time_ms=4200000 issue_to_pr_created_ms=1200000 pr_open_duration_ms=none",
+      ],
+    }),
+    {
+      action: "manual_review",
+      source: "execution_metrics",
+      priority: 65,
+      summary: "A tracked issue requires manual review before the supervisor should continue that path.",
+    },
+  );
+});
+
+test("selectRestartRecommendation treats manual-review execution metrics as a clustered churn stop gate", () => {
+  const recommendation = requireRestartRecommendation(selectRestartRecommendation({
+    detailedStatusLines: [
+      "execution_metrics terminal_state=blocked outcome=blocked reason=manual_review run_duration_ms=3600000 issue_lead_time_ms=4200000 issue_to_pr_created_ms=1200000 pr_open_duration_ms=none",
+      codexConnectorChurnProgressLine(),
+    ],
+  }));
+
+  assert.equal(recommendation.category, "manual_review_before_restart");
+  assert.equal(recommendation.source, "codex_connector_review_churn_progress");
+});
+
 test("clustered Codex churn progress does not force manual review without a stopped gate", () => {
   const activeChurnProgress =
     "codex_connector_review_churn_progress classification=unchanged current_head_sha=head-current-188 previous_head_sha=head-previous-188 current_effective_must_fix=8 previous_effective_must_fix=8 effective_must_fix_delta=0 dominant_file=src/release-readiness.ts dominant_file_percent=100 cluster_category_signature=truth_source representative_threads=thread-authority,thread-truth";
