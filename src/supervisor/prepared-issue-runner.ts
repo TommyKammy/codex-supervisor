@@ -316,7 +316,13 @@ export async function runPreparedIssueFlow(
       return prependRecoveryLog(formatPreparedIssueStatus(record, state), recoveryLog);
     }
 
-    if (effectiveFailureContext && shouldStopForRepeatedFailureSignature(record, config)) {
+    const repeatedFailureSignatureStop = shouldStopForRepeatedFailureSignature(record, config);
+    const trackedPrReviewFailureStop = Boolean(
+      effectiveFailureContext &&
+        trackedPrRepeatFailureDisposition.shouldStop &&
+        shouldBlockTrackedPrRepeatedFailure({ record, failureContext: effectiveFailureContext }),
+    );
+    if (effectiveFailureContext && (repeatedFailureSignatureStop || trackedPrReviewFailureStop)) {
       let handledStaleConfiguredBotResidueBeforeRepeatStop = false;
       const staleConfiguredBotRecoveryRecord = staleConfiguredBotRepeatStopRecoveryRecord({
         record,
@@ -325,7 +331,7 @@ export async function runPreparedIssueFlow(
       if (
         !options.dryRun &&
         trackedPrRepeatFailureDisposition.shouldStop &&
-        shouldBlockTrackedPrRepeatedFailure({ record, failureContext: effectiveFailureContext }) &&
+        trackedPrReviewFailureStop &&
         staleConfiguredBotRecoveryRecord !== null &&
         shouldTryVerifiedStaleConfiguredBotAutoResolveBeforeRepeatStop({
           config,
@@ -367,7 +373,7 @@ export async function runPreparedIssueFlow(
         }
       }
 
-      if (!handledStaleConfiguredBotResidueBeforeRepeatStop && !trackedPrRepeatFailureDisposition.shouldStop) {
+      if (!handledStaleConfiguredBotResidueBeforeRepeatStop && repeatedFailureSignatureStop && !trackedPrRepeatFailureDisposition.shouldStop) {
         record = stateStore.touch(record, {
           last_tracked_pr_progress_summary: trackedPrRepeatFailureDisposition.progressSummary,
           last_tracked_pr_repeat_failure_decision: trackedPrRepeatFailureDisposition.decision,
@@ -375,7 +381,7 @@ export async function runPreparedIssueFlow(
       } else if (
         !handledStaleConfiguredBotResidueBeforeRepeatStop &&
         effectiveFailureContext !== null &&
-        shouldBlockTrackedPrRepeatedFailure({ record, failureContext: effectiveFailureContext })
+        (trackedPrReviewFailureStop || shouldBlockTrackedPrRepeatedFailure({ record, failureContext: effectiveFailureContext }))
       ) {
         const clusteredCodexChurnStop = trackedPrRepeatFailureDisposition.progressSummary?.match(
           /^no_progress_clustered_codex_churn current_effective_must_fix=(\S+)/,
@@ -425,7 +431,9 @@ export async function runPreparedIssueFlow(
         });
         await syncJournal(record);
         return prependRecoveryLog(
-          `Issue #${record.issue_number} blocked after repeated identical review-related failure signatures.`,
+          clusteredCodexChurnStop
+            ? `Issue #${record.issue_number} blocked for manual review after non-decreasing clustered Codex Connector churn.`
+            : `Issue #${record.issue_number} blocked after repeated identical review-related failure signatures.`,
           recoveryLog,
         );
       } else if (!handledStaleConfiguredBotResidueBeforeRepeatStop) {

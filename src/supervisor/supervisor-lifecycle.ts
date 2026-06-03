@@ -262,6 +262,18 @@ function clusteredCodexChurnMadeNoProgress(
   );
 }
 
+function hasReviewedClusteredCodexChurnStopSignal(
+  previous: TrackedPrProgressSnapshot | null,
+  current: TrackedPrProgressSnapshot,
+): boolean {
+  return Boolean(
+    clusteredCodexChurnMadeNoProgress(previous, current) &&
+      previous?.configuredBotCurrentHeadObservedAt &&
+      current.configuredBotCurrentHeadObservedAt &&
+      current.currentHeadCiGreenAt,
+  );
+}
+
 function listChangedSignals(previous: TrackedPrProgressSnapshot | null, current: TrackedPrProgressSnapshot): string[] {
   const signals: string[] = [];
   const noProgressClusteredCodexChurn = clusteredCodexChurnMadeNoProgress(previous, current);
@@ -449,20 +461,29 @@ export function determineTrackedPrRepeatFailureDisposition(args: {
     args.record.last_failure_signature !== null &&
     args.record.repeated_failure_signature_count >= args.config.sameFailureSignatureRepeatLimit;
 
-  if (!overRepeatLimit) {
-    return {
-      shouldStop: false,
-      progressSnapshot: snapshot,
-      progressSummary: summary,
-      decision: "retry_on_progress",
-    };
-  }
-
   if (missingProgressBaseline) {
     return {
       shouldStop: false,
       progressSnapshot: snapshot,
       progressSummary: "progress_baseline_initialized",
+      decision: "retry_on_progress",
+    };
+  }
+
+  if (current && hasReviewedClusteredCodexChurnStopSignal(previous, current)) {
+    return {
+      shouldStop: true,
+      progressSnapshot: snapshot,
+      progressSummary: `no_progress_clustered_codex_churn current_effective_must_fix=${current.codexConnectorReviewChurnProgress?.currentEffectiveMustFixCount ?? "unknown"}`,
+      decision: "stop_no_progress",
+    };
+  }
+
+  if (!overRepeatLimit) {
+    return {
+      shouldStop: false,
+      progressSnapshot: snapshot,
+      progressSummary: summary,
       decision: "retry_on_progress",
     };
   }
