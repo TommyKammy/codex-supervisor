@@ -1664,6 +1664,113 @@ test("handlePostTurnPullRequestTransitionsPhase reruns local review on a later c
   assert.equal(second.record.pre_merge_evaluation_outcome, "mergeable");
 });
 
+test("handlePostTurnPullRequestTransitionsPhase runs missing local review when only outdated Codex Connector residue remains", async () => {
+  const headSha = "8d811a5efee0f6051c71aa3a256e858821095d2d";
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    humanReviewBlocksMerge: true,
+  });
+  const issue = createIssue({
+    number: 2235,
+    title: "Align operator actions with preserved Codex Connector churn blocks",
+  });
+  const readyPr = createPullRequest({
+    number: 2238,
+    title: "Fix manual-review operator action for preserved churn blocks",
+    isDraft: false,
+    headRefName: "codex/issue-2235",
+    headRefOid: headSha,
+    configuredBotCurrentHeadObservedAt: "2026-06-03T06:18:29Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotTopLevelReviewStrength: null,
+    configuredBotLatestReviewedCommitSha: "58d233bb79c3acb73c7217376a3dfc61a1826224",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+  const checks: PullRequestCheck[] = [
+    { name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" },
+  ];
+  const outdatedCodexThreads = createOutdatedConfiguredBotThreads(
+    ["PRRT_kwDORgvdZ86GpQJi", "PRRT_kwDORgvdZ86GpQJm", "PRRT_kwDORgvdZ86GpWfQ"],
+    readyPr.number,
+  );
+  const record = createRecord({
+    issue_number: issue.number,
+    state: "local_review",
+    branch: "codex/issue-2235",
+    pr_number: readyPr.number,
+    last_head_sha: headSha,
+    local_review_head_sha: null,
+    local_review_run_at: null,
+    last_failure_signature: `local-review-missing:${headSha}`,
+    repeated_failure_signature_count: 2,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issue.number,
+    issues: { [String(issue.number)]: record },
+  };
+  let localReviewCalls = 0;
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: createNoopStateStore(),
+    github: createDefaultGithub(),
+    context: createPostTurnContext({ state, record, issue, workspacePath: "/tmp/workspaces/issue-2235", pr: readyPr }),
+    derivePullRequestLifecycleSnapshot: (currentRecord, pr, currentChecks, reviewThreads) =>
+      createLifecycleSnapshot(
+        currentRecord,
+        inferStateFromPullRequest(config, currentRecord, pr, currentChecks, reviewThreads),
+      ),
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    blockedReasonFromReviewState: (currentRecord, pr, currentChecks, reviewThreads) =>
+      resolveBlockedReasonFromReviewState(config, currentRecord, pr, currentChecks, reviewThreads),
+    summarizeChecks,
+    configuredBotReviewThreads,
+    manualReviewThreads,
+    mergeConflictDetected: () => false,
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
+    runLocalReviewImpl: async () => {
+      localReviewCalls += 1;
+      return createLocalReviewResult({
+        issueNumber: issue.number,
+        headSha,
+        summary: "Local review found no blocking findings.",
+        blockerSummary: "",
+        maxSeverity: "none",
+        recommendation: "ready",
+        finalEvaluation: {
+          outcome: "mergeable",
+          residualFindings: [],
+          mustFixCount: 0,
+          manualReviewCount: 0,
+          followUpCount: 0,
+        },
+      });
+    },
+    loadOpenPullRequestSnapshot: async () => ({
+      pr: readyPr,
+      checks,
+      reviewThreads: outdatedCodexThreads,
+    }),
+  });
+
+  assert.equal(localReviewCalls, 1);
+  assert.equal(result.record.state, "ready_to_merge");
+  assert.equal(result.record.local_review_head_sha, headSha);
+  assert.equal(result.record.pre_merge_evaluation_outcome, "mergeable");
+  assert.equal(result.record.last_failure_signature, null);
+  assert.equal(result.record.repeated_failure_signature_count, 0);
+});
+
 test("handlePostTurnPullRequestTransitionsPhase blocks draft PRs when local review requires manual verification", async () => {
   const config = createConfig({
     localReviewEnabled: true,
