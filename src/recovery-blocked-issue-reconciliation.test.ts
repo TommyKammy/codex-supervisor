@@ -2977,6 +2977,14 @@ test("reconcileRecoverableBlockedIssueStates preserves Codex Connector manual-re
   assert.deepEqual(updated.processed_review_thread_fingerprints, []);
   assert.equal(updated.codex_connector_review_requested_observed_at, "2026-06-01T06:12:30Z");
   assert.equal(updated.codex_connector_review_requested_head_sha, "head-current-366");
+  const updatedProgressSnapshot = JSON.parse(updated.last_tracked_pr_progress_snapshot ?? "{}");
+  assert.equal(updatedProgressSnapshot.headRefOid, "head-current-366");
+  assert.deepEqual(updatedProgressSnapshot.unresolvedReviewThreadIds, [
+    "thread-authority",
+    "thread-scope",
+    "thread-snapshot",
+    "thread-truth",
+  ]);
   assert.equal(
     updated.last_tracked_pr_progress_summary,
     "manual_review_preserved=codex_connector_churn_unresolved_configured_bot_threads",
@@ -3080,6 +3088,19 @@ test("reconcileRecoverableBlockedIssueStates leaves already-preserved same-head 
               body: "P2 authority finding",
               createdAt: "2026-06-01T06:12:00Z",
               url: "https://example.test/pr/191#discussion_authority",
+              author: { login: "chatgpt-codex-connector", typeName: "Bot" },
+            }],
+          },
+        }),
+        createReviewThread({
+          id: "thread-outdated-residue",
+          isOutdated: true,
+          comments: {
+            nodes: [{
+              id: "comment-outdated-residue",
+              body: "P2 stale residue",
+              createdAt: "2026-06-01T06:11:00Z",
+              url: "https://example.test/pr/191#discussion_outdated_residue",
               author: { login: "chatgpt-codex-connector", typeName: "Bot" },
             }],
           },
@@ -3586,6 +3607,9 @@ test("reconcileRecoverableBlockedIssueStates retains summary-only churn markers 
     updated.last_tracked_pr_progress_summary,
     "no_progress_clustered_codex_churn current_effective_must_fix=1",
   );
+  const updatedProgressSnapshot = JSON.parse(updated.last_tracked_pr_progress_snapshot ?? "{}");
+  assert.equal(updatedProgressSnapshot.headRefOid, "head-current-366");
+  assert.deepEqual(updatedProgressSnapshot.unresolvedReviewThreadIds, ["thread-authority"]);
   assert.equal(
     updated.last_recovery_reason,
     "tracked_pr_manual_review_preserved: preserved issue #366 manual-review block after tracked PR #191 advanced from head-previous-366 to head-current-366 because unresolved configured-bot review evidence still exists",

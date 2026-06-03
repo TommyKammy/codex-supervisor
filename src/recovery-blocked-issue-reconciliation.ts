@@ -41,7 +41,11 @@ import {
   latestReviewComment,
   latestReviewCommentAuthorIsAllowedBot,
 } from "./review-thread-reporting";
-import { hasCodexConnectorFindingReviewComment } from "./codex-connector-review-policy";
+import {
+  buildCodexConnectorReviewChurnDiagnostic,
+  buildCodexConnectorReviewChurnProgressSummary,
+  hasCodexConnectorFindingReviewComment,
+} from "./codex-connector-review-policy";
 
 type StateStoreLike = Pick<StateStore, "touch" | "save">;
 
@@ -409,12 +413,10 @@ function sameHeadCodexConnectorChurnBlockerUnchanged(record: IssueRunRecord, rev
   );
   const currentThreadIds = unresolvedReviewThreadIds(reviewThreads);
   const sameThreadIds =
-    previousThreadIds === null ||
-    (
-      previousThreadIds.length > 0 &&
-      previousThreadIds.length === currentThreadIds.length &&
-      previousThreadIds.every((threadId, index) => threadId === currentThreadIds[index])
-    );
+    previousThreadIds !== null &&
+    previousThreadIds.length > 0 &&
+    previousThreadIds.length === currentThreadIds.length &&
+    previousThreadIds.every((threadId, index) => threadId === currentThreadIds[index]);
   if (!sameThreadIds) {
     return false;
   }
@@ -434,32 +436,77 @@ function sameHeadCodexConnectorChurnBlockerUnchanged(record: IssueRunRecord, rev
   );
 }
 
-function hasEffectiveCurrentConfiguredBotBlocker(args: {
+function effectiveCurrentConfiguredBotBlockers(args: {
   config: SupervisorConfig;
   record: IssueRunRecord;
   pr: GitHubPullRequest;
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
-}): boolean {
+}): ReviewThread[] {
   return effectiveConfiguredBotReviewThreadsForState(
     args.config,
     args.record,
     args.pr,
     args.checks,
     args.reviewThreads,
-  ).some((thread) =>
+  ).filter((thread) =>
     !thread.isResolved &&
     !thread.isOutdated
   );
 }
 
-function shouldPreserveCodexConnectorManualReviewChurnBlock(args: {
+function buildPreservedCodexConnectorChurnProgressSnapshot(args: {
   config: SupervisorConfig;
   record: IssueRunRecord;
-  effectiveRecord: IssueRunRecord;
   pr: GitHubPullRequest;
   checks: PullRequestCheck[];
-  reviewThreads: ReviewThread[];
+  effectiveReviewThreads: ReviewThread[];
+}): string {
+  const churnDiagnostic = buildCodexConnectorReviewChurnDiagnostic(
+    args.config,
+    args.effectiveReviewThreads,
+    args.pr,
+  );
+  return JSON.stringify({
+    headRefOid: args.pr.headRefOid,
+    reviewDecision: args.pr.reviewDecision,
+    mergeStateStatus: args.pr.mergeStateStatus,
+    copilotReviewState: args.pr.copilotReviewState ?? null,
+    copilotReviewRequestedAt: args.pr.copilotReviewRequestedAt ?? null,
+    copilotReviewArrivedAt: args.pr.copilotReviewArrivedAt ?? null,
+    configuredBotCurrentHeadObservedAt: args.pr.configuredBotCurrentHeadObservedAt ?? null,
+    configuredBotCurrentHeadStatusState: args.pr.configuredBotCurrentHeadStatusState ?? null,
+    currentHeadCiGreenAt: args.pr.currentHeadCiGreenAt ?? null,
+    configuredBotRateLimitedAt: args.pr.configuredBotRateLimitedAt ?? null,
+    configuredBotDraftSkipAt: args.pr.configuredBotDraftSkipAt ?? null,
+    configuredBotTopLevelReviewStrength: args.pr.configuredBotTopLevelReviewStrength ?? null,
+    configuredBotTopLevelReviewSubmittedAt: args.pr.configuredBotTopLevelReviewSubmittedAt ?? null,
+    checks: args.checks
+      .map((check) => `${check.name}:${check.bucket}:${check.state}:${check.workflow ?? "none"}`)
+      .sort(),
+    unresolvedReviewThreadIds: unresolvedReviewThreadIds(args.effectiveReviewThreads),
+    unresolvedReviewThreadFingerprints: unresolvedReviewThreadFingerprints(args.effectiveReviewThreads),
+    unresolvedReviewThreadSourceAnchors: args.effectiveReviewThreads
+      .map((thread) => `${thread.id}:${thread.path ?? "unknown"}:${thread.line ?? "unknown"}`)
+      .sort(),
+    processedReviewThreadIds: [...(args.record.processed_review_thread_ids ?? [])].sort(),
+    processedReviewThreadFingerprints: [...(args.record.processed_review_thread_fingerprints ?? [])].sort(),
+    codexConnectorReviewChurnProgress: churnDiagnostic
+      ? buildCodexConnectorReviewChurnProgressSummary(churnDiagnostic, args.pr.headRefOid)
+      : {
+          currentHeadSha: args.pr.headRefOid,
+          currentEffectiveMustFixCount: args.effectiveReviewThreads.length,
+          dominantFile: args.effectiveReviewThreads[0]?.path ?? "unknown",
+          dominantFilePercent: 100,
+          clusterCategorySignature: "preserved_manual_review",
+          representativeThreadIds: args.effectiveReviewThreads.map((thread) => thread.id).sort(),
+        },
+  });
+}
+
+function shouldPreserveCodexConnectorManualReviewChurnBlock(args: {
+  record: IssueRunRecord;
+  effectiveReviewThreads: ReviewThread[];
   nextHeadSha: string;
   nextState: IssueRunRecord["state"];
 }): boolean {
@@ -467,23 +514,13 @@ function shouldPreserveCodexConnectorManualReviewChurnBlock(args: {
     args.nextState !== "blocked" &&
     args.record.last_head_sha !== args.nextHeadSha &&
     hasCodexConnectorChurnStopEvidence(args.record) &&
-    hasEffectiveCurrentConfiguredBotBlocker({
-      config: args.config,
-      record: args.effectiveRecord,
-      pr: args.pr,
-      checks: args.checks,
-      reviewThreads: args.reviewThreads,
-    })
+    args.effectiveReviewThreads.length > 0
   );
 }
 
 function shouldKeepCodexConnectorManualReviewChurnBlockQuiescent(args: {
-  config: SupervisorConfig;
   record: IssueRunRecord;
-  effectiveRecord: IssueRunRecord;
-  pr: GitHubPullRequest;
-  checks: PullRequestCheck[];
-  reviewThreads: ReviewThread[];
+  effectiveReviewThreads: ReviewThread[];
   nextHeadSha: string;
   nextState: IssueRunRecord["state"];
 }): boolean {
@@ -491,13 +528,7 @@ function shouldKeepCodexConnectorManualReviewChurnBlockQuiescent(args: {
     args.nextState !== "blocked" &&
     args.record.last_head_sha === args.nextHeadSha &&
     hasCodexConnectorChurnStopEvidence(args.record) &&
-    hasEffectiveCurrentConfiguredBotBlocker({
-      config: args.config,
-      record: args.effectiveRecord,
-      pr: args.pr,
-      checks: args.checks,
-      reviewThreads: args.reviewThreads,
-    })
+    args.effectiveReviewThreads.length > 0
   );
 }
 
@@ -874,21 +905,24 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
           reviewThreads,
           nextState,
         );
+      const effectiveCurrentConfiguredBotReviewThreads = effectiveCurrentConfiguredBotBlockers({
+        config,
+        record: projection.recordForState,
+        pr: trackedPullRequest,
+        checks,
+        reviewThreads,
+      });
       const shouldKeepCodexConnectorChurnBlockQuiescent =
         !staleLocalManualReviewResidueRecovery &&
         shouldKeepCodexConnectorManualReviewChurnBlockQuiescent({
-          config,
           record,
-          effectiveRecord: projection.recordForState,
-          pr: trackedPullRequest,
-          checks,
-          reviewThreads,
+          effectiveReviewThreads: effectiveCurrentConfiguredBotReviewThreads,
           nextHeadSha: trackedPullRequest.headRefOid,
           nextState,
         });
       const unchangedSameHeadCodexConnectorChurnBlocker =
         shouldKeepCodexConnectorChurnBlockQuiescent &&
-        sameHeadCodexConnectorChurnBlockerUnchanged(record, reviewThreads);
+        sameHeadCodexConnectorChurnBlockerUnchanged(record, effectiveCurrentConfiguredBotReviewThreads);
       const effectiveRecoverySuppression =
         shouldKeepCodexConnectorChurnBlockQuiescent && !unchangedSameHeadCodexConnectorChurnBlocker
           ? { shouldSuppress: false, progressSummary: "same_review_thread_guidance_changed" }
@@ -899,12 +933,8 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
       if (
         !staleLocalManualReviewResidueRecovery &&
         shouldPreserveCodexConnectorManualReviewChurnBlock({
-          config,
           record,
-          effectiveRecord: projection.recordForState,
-          pr: trackedPullRequest,
-          checks,
-          reviewThreads,
+          effectiveReviewThreads: effectiveCurrentConfiguredBotReviewThreads,
           nextHeadSha: trackedPullRequest.headRefOid,
           nextState,
         })
@@ -921,6 +951,13 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
           pr_number: trackedPullRequest.number,
           ...headAdvanceResetPatch,
           last_head_sha: trackedPullRequest.headRefOid,
+          last_tracked_pr_progress_snapshot: buildPreservedCodexConnectorChurnProgressSnapshot({
+            config,
+            record: projection.recordForState,
+            pr: trackedPullRequest,
+            checks,
+            effectiveReviewThreads: effectiveCurrentConfiguredBotReviewThreads,
+          }),
           last_tracked_pr_progress_summary: preservedCodexConnectorChurnProgressSummary(record),
           ...projection.reviewWaitPatch,
           ...projection.codexConnectorReviewRequestObservationPatch,
