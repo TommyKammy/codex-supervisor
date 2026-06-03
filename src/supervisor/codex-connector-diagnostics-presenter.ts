@@ -46,6 +46,7 @@ export interface CodexConnectorDiagnosticBundle {
   p2p3PolicySummary: string | null;
   reviewChurnSummary: string | null;
   currentClusterSummary: string | null;
+  pendingHeadChurnSummary: string | null;
   reviewChurnProgressSummary: string | null;
   reviewFallbackSummary: string | null;
   convergenceSummary: string | null;
@@ -134,6 +135,68 @@ function formatCodexConnectorCurrentClusterDiagnostic(args: {
     `representative_urls=${args.reviewChurn.representativeSourceUrls.map(formatDiagnosticToken).join(",") || "none"}`,
     `outdated_unresolved_residue=${args.outdatedUnresolvedResidueCount}`,
     "next_action=repair_must_fix_findings",
+  ].join(" ");
+}
+
+function formatCodexConnectorPendingHeadChurnDiagnostic(args: {
+  config: SupervisorConfig;
+  record: Pick<
+    IssueRunRecord,
+    | "codex_connector_review_requested_observed_at"
+    | "codex_connector_review_requested_head_sha"
+  >;
+  pr: GitHubPullRequest;
+  reviewThreads: ReviewThread[];
+}): string | null {
+  const staleReviewCommitThreads = codexConnectorStaleReviewCommitThreads(args.pr, args.reviewThreads);
+  if (staleReviewCommitThreads.length === 0 || args.pr.configuredBotCurrentHeadObservedAt) {
+    return null;
+  }
+
+  const reviewChurn = buildCodexConnectorReviewChurnDiagnostic(args.config, staleReviewCommitThreads, null);
+  if (!reviewChurn) {
+    return null;
+  }
+
+  const currentHeadSha = args.pr.headRefOid;
+  const latestReviewedHeadSha = args.pr.configuredBotLatestReviewedCommitSha ?? "none";
+  const requestMatchesCurrentHead = Boolean(
+    args.record.codex_connector_review_requested_observed_at &&
+      commitShasEqualForComparison(args.record.codex_connector_review_requested_head_sha, currentHeadSha),
+  );
+  const hydratedRequestMatchesCurrentHead = Boolean(
+    !requestMatchesCurrentHead &&
+      args.pr.codexConnectorReviewRequestedAt &&
+      commitShasEqualForComparison(args.pr.codexConnectorReviewRequestedHeadSha, currentHeadSha),
+  );
+  const waitWindow = configuredBotCurrentHeadSignalWaitWindow(args.config, args.pr);
+  const timeoutAction = args.config.configuredBotCurrentHeadSignalTimeoutAction ?? args.config.copilotReviewTimeoutAction;
+  const nextAction =
+    requestMatchesCurrentHead || hydratedRequestMatchesCurrentHead
+      ? "wait_for_requested_review"
+      : waitWindow.status === "active"
+        ? "wait_for_current_head_signal"
+        : timeoutAction === "request_review_comment"
+          ? "request_current_head_review"
+          : "wait_for_current_head_signal";
+
+  return [
+    "codex_connector_pending_head_churn",
+    "status=pending_current_head_review",
+    `current_head_sha=${formatDiagnosticToken(currentHeadSha)}`,
+    `latest_reviewed_head_sha=${formatDiagnosticToken(latestReviewedHeadSha)}`,
+    "current_head_review_signal=missing",
+    `current_effective_must_fix=${reviewChurn.mustFixCount}`,
+    `threshold=${reviewChurn.threshold}`,
+    `highest_severity=${reviewChurn.highestSeverity}`,
+    `dominant_file=${formatDiagnosticToken(reviewChurn.dominantFile)}`,
+    `dominant_file_threads=${reviewChurn.dominantFileThreadCount}`,
+    `dominant_file_percent=${reviewChurn.dominantFilePercent}`,
+    `categories=${reviewChurn.normalizedCategories.map(formatDiagnosticToken).join("|")}`,
+    `representative_threads=${reviewChurn.representativeThreadIds.map(formatDiagnosticToken).join(",") || "none"}`,
+    `representative_urls=${reviewChurn.representativeSourceUrls.map(formatDiagnosticToken).join(",") || "none"}`,
+    `stale_review_commit_threads=${staleReviewCommitThreads.length}`,
+    `next_action=${nextAction}`,
   ].join(" ");
 }
 
@@ -540,6 +603,14 @@ export function buildCodexConnectorDiagnosticBundle(args: {
           outdatedUnresolvedResidueCount: countOutdatedUnresolvedCodexConnectorResidue(args.reviewThreads),
         })
       : null,
+    pendingHeadChurnSummary: suppressActionableReviewPolicy
+      ? null
+      : formatCodexConnectorPendingHeadChurnDiagnostic({
+          config: args.config,
+          record: args.record,
+          pr: args.pr,
+          reviewThreads: args.reviewThreads,
+        }),
     reviewChurnProgressSummary:
       currentReviewChurnProgress && previousReviewChurnProgress
         ? formatCodexConnectorReviewChurnProgressDiagnostic({

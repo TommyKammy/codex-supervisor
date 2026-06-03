@@ -123,6 +123,7 @@ export interface SupervisorExplainDto {
   effectiveReviewThreadDiagnosticsSummary?: string | null;
   codexConnectorOperatorDiagnosticSummary?: string | null;
   codexConnectorPolicyBlockSummary?: string | null;
+  codexConnectorPendingHeadChurnSummary?: string | null;
   codexConnectorReviewFallbackSummary?: string | null;
   codexConnectorConvergenceSummary?: string | null;
   noActiveTrackedRecordSummary?: string | null;
@@ -610,6 +611,7 @@ export async function buildIssueExplainDto(
     effectiveReviewThreadDiagnosticsSummary,
     codexConnectorOperatorDiagnosticSummary: codexConnectorDiagnostics?.operatorDiagnosticSummary ?? null,
     codexConnectorPolicyBlockSummary: codexConnectorDiagnostics?.policyBlockSummary ?? null,
+    codexConnectorPendingHeadChurnSummary: codexConnectorDiagnostics?.pendingHeadChurnSummary ?? null,
     codexConnectorReviewFallbackSummary: codexConnectorDiagnostics?.reviewFallbackSummary ?? null,
     codexConnectorConvergenceSummary: codexConnectorDiagnostics?.convergenceSummary ?? null,
     noActiveTrackedRecordSummary,
@@ -697,6 +699,7 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
     ...(dto.effectiveReviewThreadDiagnosticsSummary ? [dto.effectiveReviewThreadDiagnosticsSummary] : []),
     ...(dto.codexConnectorOperatorDiagnosticSummary ? [dto.codexConnectorOperatorDiagnosticSummary] : []),
     ...(dto.codexConnectorPolicyBlockSummary ? [dto.codexConnectorPolicyBlockSummary] : []),
+    ...(dto.codexConnectorPendingHeadChurnSummary ? [dto.codexConnectorPendingHeadChurnSummary] : []),
     ...(dto.codexConnectorReviewFallbackSummary ? [dto.codexConnectorReviewFallbackSummary] : []),
     ...(dto.codexConnectorConvergenceSummary ? [dto.codexConnectorConvergenceSummary] : []),
     ...(dto.noActiveTrackedRecordSummary ? [dto.noActiveTrackedRecordSummary] : []),
