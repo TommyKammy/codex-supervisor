@@ -406,16 +406,16 @@ test("selectStatusOperatorAction does not continue after preserved manual-review
   );
 });
 
-test("selectRestartRecommendation treats manual-review execution metrics as a clustered churn stop gate", () => {
-  const recommendation = requireRestartRecommendation(selectRestartRecommendation({
-    detailedStatusLines: [
-      "execution_metrics terminal_state=blocked outcome=blocked reason=manual_review run_duration_ms=3600000 issue_lead_time_ms=4200000 issue_to_pr_created_ms=1200000 pr_open_duration_ms=none",
-      codexConnectorChurnProgressLine(),
-    ],
-  }));
-
-  assert.equal(recommendation.category, "manual_review_before_restart");
-  assert.equal(recommendation.source, "codex_connector_review_churn_progress");
+test("selectRestartRecommendation does not treat manual-review execution metrics as a stopped gate", () => {
+  assert.equal(
+    selectRestartRecommendation({
+      detailedStatusLines: [
+        "execution_metrics terminal_state=blocked outcome=blocked reason=manual_review run_duration_ms=3600000 issue_lead_time_ms=4200000 issue_to_pr_created_ms=1200000 pr_open_duration_ms=none",
+        codexConnectorChurnProgressLine(),
+      ],
+    }),
+    null,
+  );
 });
 
 test("clustered Codex churn progress does not force manual review without a stopped gate", () => {
@@ -498,6 +498,36 @@ test("selectRestartRecommendation suppresses stale manual-review restart advice 
 test("clustered Codex churn does not suppress selected request-eligible Codex recovery", () => {
   const lines = [
     "codex_connector_review_fallback status=request_eligible provider=codex current_head_sha=head-1 current_head_observed_at=none required_checks_green_at=2026-05-19T09:03:41Z timeout_action=request_review_comment requested_at=none requested_head_sha=none review_signal=missing note=request_comment_is_not_review_completion next_action=request_current_head_review wait_until=2026-05-19T09:13:41.000Z",
+    codexConnectorChurnProgressLine(),
+    "no_active_tracked_record issue=#169 classification=manual_review_required state=blocked reason=manual_review",
+  ];
+
+  assert.equal(
+    selectRestartRecommendation({
+      detailedStatusLines: lines,
+      contextLines: ["selected_issue=#169"],
+    }),
+    null,
+  );
+  assert.deepEqual(
+    selectStatusOperatorAction({
+      detailedStatusLines: lines,
+      contextLines: ["selected_issue=#169"],
+    }),
+    {
+      action: "provider_outage_suspected",
+      source: "codex_connector_review_fallback",
+      priority: 70,
+      summary:
+        "A current-head Codex Connector review request is eligible; run the selected supervisor cycle to post or record it.",
+    },
+  );
+});
+
+test("stale manual-review execution metrics do not suppress selected request-eligible Codex recovery", () => {
+  const lines = [
+    "codex_connector_review_fallback status=request_eligible provider=codex current_head_sha=head-1 current_head_observed_at=none required_checks_green_at=2026-05-19T09:03:41Z timeout_action=request_review_comment requested_at=none requested_head_sha=none review_signal=missing note=request_comment_is_not_review_completion next_action=request_current_head_review wait_until=2026-05-19T09:13:41.000Z",
+    "execution_metrics terminal_state=blocked outcome=blocked reason=manual_review run_duration_ms=3600000 issue_lead_time_ms=4200000 issue_to_pr_created_ms=1200000 pr_open_duration_ms=none",
     codexConnectorChurnProgressLine(),
     "no_active_tracked_record issue=#169 classification=manual_review_required state=blocked reason=manual_review",
   ];

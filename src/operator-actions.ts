@@ -208,16 +208,8 @@ function hasStoppedClusteredCodexChurnManualReviewGate(
     const isLoopRuntimeBlocker = /^loop_runtime_blocker\b/u.test(line);
     const isNoActiveManualReview =
       /^no_active_tracked_record\b/u.test(line) && /\bclassification=manual_review_required\b/u.test(line);
-    const isManualReviewExecutionMetric =
-      /^execution_metrics\b/u.test(line) &&
-      /\bterminal_state=blocked\b/u.test(line) &&
-      /\boutcome=blocked\b/u.test(line) &&
-      /\breason=manual_review\b/u.test(line);
-    if (!isLoopRuntimeBlocker && !isNoActiveManualReview && !isManualReviewExecutionMetric) {
+    if (!isLoopRuntimeBlocker && !isNoActiveManualReview) {
       return false;
-    }
-    if (isManualReviewExecutionMetric) {
-      return true;
     }
 
     const gateIssueNumber = isLoopRuntimeBlocker
