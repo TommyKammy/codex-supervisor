@@ -50,6 +50,11 @@ export function hasCodexConnectorFindingReviewComment(thread: ReviewThread): boo
   return latestCodexConnectorReviewComment(thread) !== null;
 }
 
+export function latestCodexConnectorReviewCommentFingerprint(thread: ReviewThread): string | null {
+  const comment = latestCodexConnectorReviewCommentNode(thread);
+  return comment?.id || comment?.createdAt || null;
+}
+
 function isCodexConnectorMustFixReviewThread(thread: ReviewThread): boolean {
   const latestCodexConnectorReview = latestCodexConnectorReviewComment(thread);
   if (!latestCodexConnectorReview || thread.isResolved || thread.isOutdated) {
