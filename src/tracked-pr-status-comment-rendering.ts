@@ -248,6 +248,7 @@ export function buildTrackedPrCodexConnectorChurnStatusComment(args: {
   currentEffectiveMustFixCount: number | string;
   countTrend: string;
   clusterCategorySignature: string;
+  dossierAttemptMarker?: string | null;
   representativeThreadUrls: string[];
 }): string {
   return [
@@ -259,6 +260,7 @@ export function buildTrackedPrCodexConnectorChurnStatusComment(args: {
     `- effective must-fix count: \`${args.currentEffectiveMustFixCount}\``,
     `- count trend: \`${args.countTrend}\``,
     `- normalized category signature: \`${args.clusterCategorySignature}\``,
+    ...(args.dossierAttemptMarker ? [`- dossier attempt marker: \`${args.dossierAttemptMarker}\``] : []),
     ...args.representativeThreadUrls.map((url) => `- representative thread: ${url}`),
     "- automatic retry: no",
     "- next action: manually inspect the dominant file and representative Codex Connector threads before restarting the supervisor.",
