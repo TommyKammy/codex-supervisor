@@ -23,11 +23,15 @@ import { inferFailureContext } from "./supervisor-failure-context";
 import { mergeConflictDetected, summarizeChecks } from "./supervisor-status-rendering";
 import {
   buildCodexConnectorReviewChurnDiagnostic,
+  buildCodexConnectorReviewChurnHistory,
   buildCodexConnectorReviewChurnProgressSummary,
   clusterConfiguredBotReviewThreads,
   compareCodexConnectorReviewChurnProgress,
+  detectStableSameFileCodexConnectorChurn,
+  type CodexConnectorReviewChurnHistoryEntry,
   type CodexConnectorReviewChurnProgressComparison,
   type CodexConnectorReviewChurnProgressSummary,
+  type CodexConnectorStableSameFileChurn,
 } from "../codex-connector-review-policy";
 import { configuredBotReviewThreads, manualReviewThreads } from "../review-thread-reporting";
 import {
@@ -133,6 +137,8 @@ interface TrackedPrProgressSnapshot {
   verificationProbeOutcomes?: string[];
   codexConnectorReviewChurnProgress?: CodexConnectorReviewChurnProgressSummary;
   codexConnectorReviewChurnComparison?: CodexConnectorReviewChurnProgressComparison;
+  codexConnectorReviewChurnHistory?: CodexConnectorReviewChurnHistoryEntry[];
+  codexConnectorStableSameFileChurn?: CodexConnectorStableSameFileChurn;
 }
 
 export interface TrackedPrRepeatFailureDisposition {
@@ -147,7 +153,10 @@ const TRACKED_PR_PROGRESS_EXTENSION_MULTIPLIER = 2;
 function buildTrackedPrProgressSnapshot(
   record: Pick<
     IssueRunRecord,
-    "processed_review_thread_ids" | "processed_review_thread_fingerprints" | "timeline_artifacts"
+    | "last_tracked_pr_progress_snapshot"
+    | "processed_review_thread_ids"
+    | "processed_review_thread_fingerprints"
+    | "timeline_artifacts"
   >,
   config: Pick<
     SupervisorConfig,
@@ -164,7 +173,24 @@ function buildTrackedPrProgressSnapshot(
   const unresolvedReviewThreadClusterSignatures = clusterConfiguredBotReviewThreads(unresolvedReviewThreads)
     .map((cluster) => `${cluster.signature}:${cluster.threads.map((thread) => thread.id).sort().join(",")}`)
     .sort();
+  const previous = parseTrackedPrProgressSnapshot(record.last_tracked_pr_progress_snapshot);
   const codexConnectorReviewChurn = buildCodexConnectorReviewChurnDiagnostic(config, reviewThreads, pr);
+  const codexConnectorReviewChurnProgress = codexConnectorReviewChurn
+    ? buildCodexConnectorReviewChurnProgressSummary(
+        codexConnectorReviewChurn,
+        pr.headRefOid,
+      )
+    : null;
+  const codexConnectorReviewChurnHistory = codexConnectorReviewChurnProgress
+    ? buildCodexConnectorReviewChurnHistory({
+        current: codexConnectorReviewChurnProgress,
+        previousProgress: previous?.codexConnectorReviewChurnProgress ?? null,
+        previousHistory: previous?.codexConnectorReviewChurnHistory ?? null,
+      })
+    : null;
+  const codexConnectorStableSameFileChurn = detectStableSameFileCodexConnectorChurn(
+    codexConnectorReviewChurnHistory,
+  );
   return {
     headRefOid: pr.headRefOid,
     reviewDecision: pr.reviewDecision,
@@ -201,12 +227,15 @@ function buildTrackedPrProgressSnapshot(
     ...(unresolvedReviewThreadClusterSignatures.length > 0
       ? { unresolvedReviewThreadClusterSignatures }
       : {}),
-    ...(codexConnectorReviewChurn
+    ...(codexConnectorReviewChurnProgress
       ? {
-          codexConnectorReviewChurnProgress: buildCodexConnectorReviewChurnProgressSummary(
-            codexConnectorReviewChurn,
-            pr.headRefOid,
-          ),
+          codexConnectorReviewChurnProgress,
+          ...(codexConnectorReviewChurnHistory
+            ? { codexConnectorReviewChurnHistory }
+            : {}),
+          ...(codexConnectorStableSameFileChurn
+            ? { codexConnectorStableSameFileChurn }
+            : {}),
         }
       : {}),
   };

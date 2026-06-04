@@ -935,7 +935,7 @@ test("determineTrackedPrRepeatFailureDisposition keeps improving clustered Codex
         currentEffectiveMustFixCount: 4,
         dominantFile: "src/release-readiness.ts",
         dominantFilePercent: 100,
-        clusterCategorySignature: "readiness_claim+truth_source",
+        clusterCategorySignature: "claim_detection+excluded_scope+readiness_claim+truth_source+verifier_or_issue_lint",
         representativeThreadIds: ["thread-previous-0", "thread-previous-1", "thread-previous-2", "thread-previous-3"],
       },
     }),
@@ -985,6 +985,237 @@ test("determineTrackedPrRepeatFailureDisposition keeps improving clustered Codex
   assert.equal(result.shouldStop, false);
   assert.equal(result.decision, "retry_on_progress");
   assert.notEqual(result.progressSummary, "no_progress_clustered_codex_churn current_effective_must_fix=2");
+});
+
+test("summarizeTrackedPrProgress records stable same-file Codex Connector churn history across repair heads", () => {
+  const record = createRecord({
+    last_tracked_pr_progress_snapshot: JSON.stringify({
+      headRefOid: "head-middle-366",
+      reviewDecision: "CHANGES_REQUESTED",
+      mergeStateStatus: "BLOCKED",
+      copilotReviewState: null,
+      copilotReviewRequestedAt: null,
+      copilotReviewArrivedAt: null,
+      configuredBotCurrentHeadObservedAt: "2026-06-01T06:19:54Z",
+      configuredBotCurrentHeadStatusState: null,
+      currentHeadCiGreenAt: "2026-06-01T06:18:00Z",
+      configuredBotRateLimitedAt: null,
+      configuredBotDraftSkipAt: null,
+      configuredBotTopLevelReviewStrength: "blocking",
+      configuredBotTopLevelReviewSubmittedAt: "2026-06-01T06:19:54Z",
+      checks: ["build:pass:SUCCESS:CI"],
+      unresolvedReviewThreadIds: ["thread-middle-0", "thread-middle-1", "thread-middle-2", "thread-middle-3"],
+      unresolvedReviewThreadFingerprints: [
+        "thread-middle-0#comment-middle-0",
+        "thread-middle-1#comment-middle-1",
+        "thread-middle-2#comment-middle-2",
+        "thread-middle-3#comment-middle-3",
+      ],
+      unresolvedReviewThreadSourceAnchors: [
+        "thread-middle-0:src/release-readiness.ts:120",
+        "thread-middle-1:src/release-readiness.ts:121",
+        "thread-middle-2:src/release-readiness.ts:122",
+        "thread-middle-3:src/release-readiness.ts:123",
+      ],
+      processedReviewThreadIds: [],
+      processedReviewThreadFingerprints: [],
+      verificationProbeOutcomes: [],
+      codexConnectorReviewChurnProgress: {
+        currentHeadSha: "head-middle-366",
+        currentEffectiveMustFixCount: 4,
+        dominantFile: "src/release-readiness.ts",
+        dominantFilePercent: 100,
+        clusterCategorySignature: "claim_detection+excluded_scope+readiness_claim+truth_source+verifier_or_issue_lint",
+        representativeThreadIds: ["thread-middle-0", "thread-middle-1", "thread-middle-2", "thread-middle-3"],
+      },
+      codexConnectorReviewChurnHistory: [
+        {
+          reviewedHeadSha: "head-previous-366",
+          effectiveMustFixCount: 4,
+          dominantFile: "src/release-readiness.ts",
+          clusterCategorySignature: "claim_detection+excluded_scope+readiness_claim+truth_source+verifier_or_issue_lint",
+          representativeThreadIds: ["thread-previous-0", "thread-previous-1", "thread-previous-2", "thread-previous-3"],
+        },
+        {
+          reviewedHeadSha: "head-middle-366",
+          effectiveMustFixCount: 4,
+          dominantFile: "src/release-readiness.ts",
+          clusterCategorySignature: "claim_detection+excluded_scope+readiness_claim+truth_source+verifier_or_issue_lint",
+          representativeThreadIds: ["thread-middle-0", "thread-middle-1", "thread-middle-2", "thread-middle-3"],
+        },
+      ],
+    }),
+  });
+  const pr = createPullRequest({
+    headRefOid: "head-current-366",
+    reviewDecision: "CHANGES_REQUESTED",
+    mergeStateStatus: "BLOCKED",
+    configuredBotCurrentHeadObservedAt: "2026-06-01T06:30:00Z",
+    configuredBotTopLevelReviewStrength: "blocking",
+    configuredBotTopLevelReviewSubmittedAt: "2026-06-01T06:30:00Z",
+    currentHeadCiGreenAt: "2026-06-01T06:28:00Z",
+  });
+  const reviewThreads = Array.from({ length: 4 }, (_, index) =>
+    createReviewThread({
+      id: `thread-current-${index}`,
+      path: "src/release-readiness.ts",
+      line: 130 + index,
+      comments: {
+        nodes: [
+          {
+            id: `comment-current-${index}`,
+            body:
+              "P2: Block release readiness truth-source claims until the verifier proves the authoritative scope.",
+            createdAt: "2026-06-01T06:30:00Z",
+            url: `https://example.test/pr/366#discussion_current_${index}`,
+            author: { login: "chatgpt-codex-connector[bot]", typeName: "Bot" },
+          },
+        ],
+      },
+    }),
+  );
+
+  const result = summarizeTrackedPrProgress(
+    record,
+    pr,
+    [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads,
+    createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector[bot]"],
+      codexConnectorReviewChurnMustFixThreshold: 4,
+      codexConnectorReviewChurnFileConcentrationPercent: 75,
+    }),
+  );
+  const snapshot = JSON.parse(result.snapshot);
+
+  assert.deepEqual(
+    snapshot.codexConnectorReviewChurnHistory.map((entry: { reviewedHeadSha: string }) => entry.reviewedHeadSha),
+    ["head-previous-366", "head-middle-366", "head-current-366"],
+  );
+  assert.equal(snapshot.codexConnectorStableSameFileChurn.streak, 3);
+  assert.equal(snapshot.codexConnectorStableSameFileChurn.dominantFile, "src/release-readiness.ts");
+  assert.equal(
+    snapshot.codexConnectorStableSameFileChurn.clusterCategorySignature,
+    "claim_detection+excluded_scope+readiness_claim+truth_source+verifier_or_issue_lint",
+  );
+  assert.equal(snapshot.codexConnectorStableSameFileChurn.currentEffectiveMustFixCount, 4);
+});
+
+test("summarizeTrackedPrProgress resets same-file Codex Connector churn history on file, category, or count improvement", () => {
+  const baselineRecord = createRecord({
+    last_tracked_pr_progress_snapshot: JSON.stringify({
+      headRefOid: "head-previous-366",
+      reviewDecision: "CHANGES_REQUESTED",
+      mergeStateStatus: "BLOCKED",
+      copilotReviewState: null,
+      copilotReviewRequestedAt: null,
+      copilotReviewArrivedAt: null,
+      configuredBotCurrentHeadObservedAt: "2026-06-01T06:09:54Z",
+      configuredBotCurrentHeadStatusState: null,
+      currentHeadCiGreenAt: "2026-06-01T06:08:00Z",
+      configuredBotRateLimitedAt: null,
+      configuredBotDraftSkipAt: null,
+      configuredBotTopLevelReviewStrength: "blocking",
+      configuredBotTopLevelReviewSubmittedAt: "2026-06-01T06:09:54Z",
+      checks: ["build:pass:SUCCESS:CI"],
+      unresolvedReviewThreadIds: ["thread-previous-0", "thread-previous-1", "thread-previous-2", "thread-previous-3"],
+      unresolvedReviewThreadFingerprints: [
+        "thread-previous-0#comment-previous-0",
+        "thread-previous-1#comment-previous-1",
+        "thread-previous-2#comment-previous-2",
+        "thread-previous-3#comment-previous-3",
+      ],
+      unresolvedReviewThreadSourceAnchors: [
+        "thread-previous-0:src/release-readiness.ts:120",
+        "thread-previous-1:src/release-readiness.ts:121",
+        "thread-previous-2:src/release-readiness.ts:122",
+        "thread-previous-3:src/release-readiness.ts:123",
+      ],
+      processedReviewThreadIds: [],
+      processedReviewThreadFingerprints: [],
+      verificationProbeOutcomes: [],
+      codexConnectorReviewChurnProgress: {
+        currentHeadSha: "head-previous-366",
+        currentEffectiveMustFixCount: 4,
+        dominantFile: "src/release-readiness.ts",
+        dominantFilePercent: 100,
+        clusterCategorySignature: "readiness_claim+truth_source",
+        representativeThreadIds: ["thread-previous-0", "thread-previous-1", "thread-previous-2", "thread-previous-3"],
+      },
+      codexConnectorReviewChurnHistory: [
+        {
+          reviewedHeadSha: "head-previous-366",
+          effectiveMustFixCount: 4,
+          dominantFile: "src/release-readiness.ts",
+          clusterCategorySignature: "claim_detection+excluded_scope+readiness_claim+truth_source+verifier_or_issue_lint",
+          representativeThreadIds: ["thread-previous-0", "thread-previous-1", "thread-previous-2", "thread-previous-3"],
+        },
+      ],
+    }),
+  });
+  const pr = createPullRequest({
+    headRefOid: "head-current-366",
+    reviewDecision: "CHANGES_REQUESTED",
+    mergeStateStatus: "BLOCKED",
+    configuredBotCurrentHeadObservedAt: "2026-06-01T06:20:00Z",
+    configuredBotTopLevelReviewStrength: "blocking",
+    configuredBotTopLevelReviewSubmittedAt: "2026-06-01T06:20:00Z",
+    currentHeadCiGreenAt: "2026-06-01T06:18:00Z",
+  });
+  const summarize = (threads: ReviewThread[]) =>
+    JSON.parse(
+      summarizeTrackedPrProgress(
+        baselineRecord,
+        pr,
+        [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+        threads,
+        createConfig({
+          reviewBotLogins: ["chatgpt-codex-connector[bot]"],
+          codexConnectorReviewChurnMustFixThreshold: 2,
+          codexConnectorReviewChurnFileConcentrationPercent: 75,
+        }),
+      ).snapshot,
+    );
+  const makeThread = (id: string, file: string, body: string) =>
+    createReviewThread({
+      id,
+      path: file,
+      comments: {
+        nodes: [
+          {
+            id: `${id}-comment`,
+            body,
+            createdAt: "2026-06-01T06:20:00Z",
+            url: `https://example.test/pr/366#discussion_${id}`,
+            author: { login: "chatgpt-codex-connector[bot]", typeName: "Bot" },
+          },
+        ],
+      },
+    });
+
+  const changedFile = summarize([
+    makeThread("thread-file-0", "src/runtime-readiness.ts", "P2: Block release readiness truth-source claims."),
+    makeThread("thread-file-1", "src/runtime-readiness.ts", "P2: Block release readiness truth-source claims."),
+    makeThread("thread-file-2", "src/runtime-readiness.ts", "P2: Block release readiness truth-source claims."),
+    makeThread("thread-file-3", "src/runtime-readiness.ts", "P2: Block release readiness truth-source claims."),
+  ]);
+  const changedCategory = summarize([
+    makeThread("thread-category-0", "src/release-readiness.ts", "P2: Block auth context until tenant scope is proven."),
+    makeThread("thread-category-1", "src/release-readiness.ts", "P2: Block auth context until tenant scope is proven."),
+    makeThread("thread-category-2", "src/release-readiness.ts", "P2: Block auth context until tenant scope is proven."),
+    makeThread("thread-category-3", "src/release-readiness.ts", "P2: Block auth context until tenant scope is proven."),
+  ]);
+  const improvedCount = summarize([
+    makeThread("thread-improved-0", "src/release-readiness.ts", "P2: Block release readiness truth-source claims."),
+    makeThread("thread-improved-1", "src/release-readiness.ts", "P2: Block release readiness truth-source claims."),
+  ]);
+
+  assert.equal(changedFile.codexConnectorReviewChurnHistory.length, 1);
+  assert.equal(changedFile.codexConnectorStableSameFileChurn, undefined);
+  assert.equal(changedCategory.codexConnectorReviewChurnHistory.length, 1);
+  assert.equal(changedCategory.codexConnectorStableSameFileChurn, undefined);
+  assert.equal(improvedCount.codexConnectorReviewChurnHistory.length, 1);
+  assert.equal(improvedCount.codexConnectorStableSameFileChurn, undefined);
 });
 
 test("summarizeTrackedPrProgress treats updated same-thread guidance as tracked PR progress", () => {

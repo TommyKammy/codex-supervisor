@@ -722,6 +722,133 @@ test("status compares Codex Connector churn progress against the previous tracke
   );
 });
 
+test("status reports stable same-file Codex Connector churn history", async (t) => {
+  const fixture = await createSupervisorFixture();
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const issueNumber = 2249;
+  const prNumber = 3249;
+  const branch = branchName(fixture.config, issueNumber);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "addressing_review",
+        branch,
+        pr_number: prNumber,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        last_head_sha: "head-middle-2249",
+        last_tracked_pr_progress_snapshot: JSON.stringify({
+          headRefOid: "head-middle-2249",
+          reviewDecision: "CHANGES_REQUESTED",
+          mergeStateStatus: "BLOCKED",
+          copilotReviewState: null,
+          copilotReviewRequestedAt: null,
+          copilotReviewArrivedAt: null,
+          configuredBotCurrentHeadObservedAt: "2026-06-04T06:19:54Z",
+          configuredBotCurrentHeadStatusState: null,
+          currentHeadCiGreenAt: "2026-06-04T06:18:00Z",
+          configuredBotRateLimitedAt: null,
+          configuredBotDraftSkipAt: null,
+          configuredBotTopLevelReviewStrength: "blocking",
+          configuredBotTopLevelReviewSubmittedAt: "2026-06-04T06:19:54Z",
+          checks: ["build:pass:SUCCESS:CI"],
+          unresolvedReviewThreadIds: ["thread-middle-0", "thread-middle-1", "thread-middle-2", "thread-middle-3"],
+          codexConnectorReviewChurnProgress: {
+            currentHeadSha: "head-middle-2249",
+            currentEffectiveMustFixCount: 4,
+            dominantFile: "src/release-readiness.ts",
+            dominantFilePercent: 100,
+            clusterCategorySignature: "claim_detection+excluded_scope+readiness_claim+truth_source+verifier_or_issue_lint",
+            representativeThreadIds: ["thread-middle-0", "thread-middle-1", "thread-middle-2", "thread-middle-3"],
+          },
+          codexConnectorReviewChurnHistory: [
+            {
+              reviewedHeadSha: "head-previous-2249",
+              effectiveMustFixCount: 4,
+              dominantFile: "src/release-readiness.ts",
+              clusterCategorySignature:
+                "claim_detection+excluded_scope+readiness_claim+truth_source+verifier_or_issue_lint",
+              representativeThreadIds: ["thread-previous-0", "thread-previous-1", "thread-previous-2", "thread-previous-3"],
+            },
+            {
+              reviewedHeadSha: "head-middle-2249",
+              effectiveMustFixCount: 4,
+              dominantFile: "src/release-readiness.ts",
+              clusterCategorySignature:
+                "claim_detection+excluded_scope+readiness_claim+truth_source+verifier_or_issue_lint",
+              representativeThreadIds: ["thread-middle-0", "thread-middle-1", "thread-middle-2", "thread-middle-3"],
+            },
+          ],
+        }),
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+  const pr = createPullRequest({
+    number: prNumber,
+    headRefName: branch,
+    headRefOid: "head-current-2249",
+    isDraft: false,
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-06-04T06:28:00Z",
+    configuredBotCurrentHeadObservedAt: "2026-06-04T06:30:00Z",
+    configuredBotTopLevelReviewStrength: "blocking",
+    configuredBotTopLevelReviewSubmittedAt: "2026-06-04T06:30:00Z",
+  });
+  const reviewThreads = Array.from({ length: 4 }, (_, index) => ({
+    id: `thread-current-${index}`,
+    isResolved: false,
+    isOutdated: false,
+    path: "src/release-readiness.ts",
+    line: 130 + index,
+    comments: {
+      nodes: [
+        {
+          id: `thread-current-${index}-comment`,
+          body:
+            "P2: Block release readiness truth-source claims until the verifier proves the authoritative scope.",
+          createdAt: "2026-06-04T06:30:00Z",
+          url: `https://example.test/pr/2249#discussion_current_${index}`,
+          author: {
+            login: "chatgpt-codex-connector[bot]",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  }));
+
+  const supervisor = new Supervisor({
+    ...fixture.config,
+    reviewBotLogins: ["chatgpt-codex-connector[bot]"],
+    codexConnectorReviewChurnMustFixThreshold: 4,
+    codexConnectorReviewChurnFileConcentrationPercent: 75,
+  });
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    listCandidateIssues: async () => [],
+    listAllIssues: async () => [],
+    getPullRequestIfExists: async () => pr,
+    resolvePullRequestForBranch: async () => pr,
+    getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => reviewThreads,
+  };
+
+  const status = await supervisor.status({ why: true });
+
+  assert.match(
+    status,
+    /^codex_connector_same_file_churn_history status=stable_same_file_churn streak=3 current_head_sha=head-current-2249 dominant_file=src\/release-readiness\.ts cluster_category_signature=claim_detection\+excluded_scope\+readiness_claim\+truth_source\+verifier_or_issue_lint current_effective_must_fix=4 reviewed_heads=head-previous-2249,head-middle-2249,head-current-2249 representative_threads=thread-current-0,thread-current-1,thread-current-2,thread-current-3 next_action=manual_review_same_file_churn_history$/m,
+  );
+  assert.match(status, /^codex_connector_review_churn status=clustered_root_cause_repair\b/m);
+});
+
 test("status waits for current-head Codex review when non-outdated threads came from a stale review commit", async (t) => {
   const originalDateNow = Date.now;
   Date.now = () => Date.parse("2026-05-19T09:14:00Z");
