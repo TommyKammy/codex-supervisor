@@ -4030,6 +4030,12 @@ test("runOnce clears a stale interrupted-turn marker when the journal changed af
     },
   };
   await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  const preparedInterruptedWorkspace = await ensureWorkspace(
+    fixture.config,
+    interruptedIssueNumber,
+    interruptedBranch,
+  );
+  assert.equal(preparedInterruptedWorkspace.workspacePath, interruptedWorkspace);
   await fs.mkdir(path.dirname(interruptedJournalPath), { recursive: true });
   await fs.writeFile(interruptedJournalPath, "# issue journal\n", "utf8");
   const initialJournalFingerprint = await captureIssueJournalFingerprint(interruptedJournalPath);
@@ -4086,7 +4092,7 @@ test("runOnce clears a stale interrupted-turn marker when the journal changed af
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
     authStatus: async () => ({ ok: true, message: null }),
     listAllIssues: async () => [nextIssue, interruptedIssue],
-    listCandidateIssues: async () => [nextIssue, interruptedIssue],
+    listCandidateIssues: async () => [nextIssue],
     getIssue: async (issueNumber: number) => (issueNumber === nextIssueNumber ? nextIssue : interruptedIssue),
     resolvePullRequestForBranch: async (branchName: string, prNumber: number | null) => {
       assert.equal(branchName, nextBranch);
