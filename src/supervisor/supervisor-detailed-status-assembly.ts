@@ -216,6 +216,9 @@ export function buildInactiveDetailedStatusLines(
     if (codexConnectorDiagnostics.reviewChurnProgressSummary) {
       lines.push(codexConnectorDiagnostics.reviewChurnProgressSummary);
     }
+    if (codexConnectorDiagnostics.stableSameFileChurnSummary) {
+      lines.push(codexConnectorDiagnostics.stableSameFileChurnSummary);
+    }
     if (codexConnectorDiagnostics.reviewFallbackSummary) {
       lines.push(codexConnectorDiagnostics.reviewFallbackSummary);
     }

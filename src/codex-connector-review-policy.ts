@@ -177,6 +177,23 @@ export interface CodexConnectorReviewChurnProgressSummary {
   representativeThreadIds: string[];
 }
 
+export interface CodexConnectorReviewChurnHistoryEntry {
+  reviewedHeadSha: string;
+  effectiveMustFixCount: number;
+  dominantFile: string;
+  clusterCategorySignature: string;
+  representativeThreadIds: string[];
+}
+
+export interface CodexConnectorStableSameFileChurn {
+  streak: number;
+  dominantFile: string;
+  clusterCategorySignature: string;
+  currentEffectiveMustFixCount: number;
+  reviewedHeadShas: string[];
+  representativeThreadIds: string[];
+}
+
 export type CodexConnectorReviewChurnProgressClassification = "improving" | "unchanged" | "worse";
 
 export interface CodexConnectorReviewChurnProgressComparison {
@@ -777,6 +794,99 @@ export function compareCodexConnectorReviewChurnProgress(
     currentEffectiveMustFixCount: current.currentEffectiveMustFixCount,
     previousEffectiveMustFixCount: previous.currentEffectiveMustFixCount,
     effectiveMustFixDelta,
+  };
+}
+
+const CODEX_CONNECTOR_REVIEW_CHURN_HISTORY_LIMIT = 5;
+const CODEX_CONNECTOR_STABLE_SAME_FILE_CHURN_MIN_STREAK = 3;
+
+function codexConnectorReviewChurnHistoryEntry(
+  progress: CodexConnectorReviewChurnProgressSummary,
+): CodexConnectorReviewChurnHistoryEntry {
+  return {
+    reviewedHeadSha: progress.currentHeadSha,
+    effectiveMustFixCount: progress.currentEffectiveMustFixCount,
+    dominantFile: progress.dominantFile,
+    clusterCategorySignature: progress.clusterCategorySignature,
+    representativeThreadIds: progress.representativeThreadIds,
+  };
+}
+
+function sameFileCategoryAndFlatOrWorse(
+  previous: CodexConnectorReviewChurnHistoryEntry,
+  current: CodexConnectorReviewChurnHistoryEntry,
+): boolean {
+  return (
+    previous.dominantFile === current.dominantFile &&
+    previous.clusterCategorySignature === current.clusterCategorySignature &&
+    current.effectiveMustFixCount >= previous.effectiveMustFixCount
+  );
+}
+
+function compactCodexConnectorReviewChurnHistory(
+  entries: CodexConnectorReviewChurnHistoryEntry[],
+): CodexConnectorReviewChurnHistoryEntry[] {
+  const compacted: CodexConnectorReviewChurnHistoryEntry[] = [];
+  for (const entry of entries) {
+    const previous = compacted[compacted.length - 1];
+    if (previous?.reviewedHeadSha === entry.reviewedHeadSha) {
+      compacted[compacted.length - 1] = entry;
+    } else {
+      compacted.push(entry);
+    }
+  }
+  return compacted.slice(-CODEX_CONNECTOR_REVIEW_CHURN_HISTORY_LIMIT);
+}
+
+export function buildCodexConnectorReviewChurnHistory(args: {
+  current: CodexConnectorReviewChurnProgressSummary;
+  previousProgress?: CodexConnectorReviewChurnProgressSummary | null;
+  previousHistory?: CodexConnectorReviewChurnHistoryEntry[] | null;
+}): CodexConnectorReviewChurnHistoryEntry[] {
+  const currentEntry = codexConnectorReviewChurnHistoryEntry(args.current);
+  const previousEntries =
+    args.previousHistory && args.previousHistory.length > 0
+      ? args.previousHistory
+      : args.previousProgress
+        ? [codexConnectorReviewChurnHistoryEntry(args.previousProgress)]
+        : [];
+  const previousEntry = previousEntries[previousEntries.length - 1] ?? null;
+  if (!previousEntry || !sameFileCategoryAndFlatOrWorse(previousEntry, currentEntry)) {
+    return [currentEntry];
+  }
+
+  return compactCodexConnectorReviewChurnHistory([...previousEntries, currentEntry]);
+}
+
+export function detectStableSameFileCodexConnectorChurn(
+  history: CodexConnectorReviewChurnHistoryEntry[] | null | undefined,
+): CodexConnectorStableSameFileChurn | null {
+  if (!history || history.length < CODEX_CONNECTOR_STABLE_SAME_FILE_CHURN_MIN_STREAK) {
+    return null;
+  }
+
+  const latest = history[history.length - 1];
+  const stableEntries = [latest];
+  for (let index = history.length - 2; index >= 0; index -= 1) {
+    const entry = history[index];
+    const newer = stableEntries[0];
+    if (!sameFileCategoryAndFlatOrWorse(entry, newer)) {
+      break;
+    }
+    stableEntries.unshift(entry);
+  }
+
+  if (stableEntries.length < CODEX_CONNECTOR_STABLE_SAME_FILE_CHURN_MIN_STREAK) {
+    return null;
+  }
+
+  return {
+    streak: stableEntries.length,
+    dominantFile: latest.dominantFile,
+    clusterCategorySignature: latest.clusterCategorySignature,
+    currentEffectiveMustFixCount: latest.effectiveMustFixCount,
+    reviewedHeadShas: stableEntries.map((entry) => entry.reviewedHeadSha),
+    representativeThreadIds: latest.representativeThreadIds,
   };
 }
 

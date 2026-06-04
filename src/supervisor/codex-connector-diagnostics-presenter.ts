@@ -5,18 +5,22 @@ import {
   buildCodexConnectorP2P3PolicyDiagnostic,
   buildCodexConnectorPolicyBlockDiagnostic,
   buildCodexConnectorReviewChurnDiagnostic,
+  buildCodexConnectorReviewChurnHistory,
   buildCodexConnectorReviewChurnProgressSummary,
   codexConnectorMustFixReviewThreads,
   codexConnectorStaleReviewCommitThreads,
   commitShasDifferForComparison,
   commitShasEqualForComparison,
   compareCodexConnectorReviewChurnProgress,
+  detectStableSameFileCodexConnectorChurn,
   evaluateCodexConnectorConvergencePolicy,
   formatCodexConnectorP2P3PolicyDiagnostic,
   formatCodexConnectorPolicyBlockDiagnostic,
   formatCodexConnectorReviewChurnDiagnostic,
   latestCodexConnectorReviewComment,
+  type CodexConnectorReviewChurnHistoryEntry,
   type CodexConnectorReviewChurnProgressSummary,
+  type CodexConnectorStableSameFileChurn,
 } from "../codex-connector-review-policy";
 import { configuredBotCurrentHeadSignalWaitWindow } from "./review-bot-wait-windows";
 import { hasCodexConnectorReviewRequestCommentIdentity } from "../codex-connector-review-request-identity";
@@ -48,6 +52,7 @@ export interface CodexConnectorDiagnosticBundle {
   currentClusterSummary: string | null;
   pendingHeadChurnSummary: string | null;
   reviewChurnProgressSummary: string | null;
+  stableSameFileChurnSummary: string | null;
   reviewFallbackSummary: string | null;
   convergenceSummary: string | null;
   operatorDiagnosticSummary: string | null;
@@ -91,6 +96,43 @@ function parsePreviousCodexConnectorReviewChurnProgress(
   }
 }
 
+function isCodexConnectorReviewChurnHistoryEntry(
+  value: unknown,
+): value is CodexConnectorReviewChurnHistoryEntry {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Partial<CodexConnectorReviewChurnHistoryEntry>;
+  return (
+    typeof candidate.reviewedHeadSha === "string" &&
+    typeof candidate.effectiveMustFixCount === "number" &&
+    Number.isFinite(candidate.effectiveMustFixCount) &&
+    typeof candidate.dominantFile === "string" &&
+    typeof candidate.clusterCategorySignature === "string" &&
+    Array.isArray(candidate.representativeThreadIds) &&
+    candidate.representativeThreadIds.every((threadId) => typeof threadId === "string")
+  );
+}
+
+function parsePreviousCodexConnectorReviewChurnHistory(
+  snapshot: string | null | undefined,
+): CodexConnectorReviewChurnHistoryEntry[] | null {
+  if (!snapshot) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(snapshot) as { codexConnectorReviewChurnHistory?: unknown };
+    return Array.isArray(parsed.codexConnectorReviewChurnHistory) &&
+      parsed.codexConnectorReviewChurnHistory.every(isCodexConnectorReviewChurnHistoryEntry)
+      ? parsed.codexConnectorReviewChurnHistory
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 function formatCodexConnectorReviewChurnProgressDiagnostic(args: {
   current: CodexConnectorReviewChurnProgressSummary;
   previous: CodexConnectorReviewChurnProgressSummary;
@@ -110,6 +152,23 @@ function formatCodexConnectorReviewChurnProgressDiagnostic(args: {
     `cluster_category_signature=${formatDiagnosticToken(args.current.clusterCategorySignature)}`,
     `previous_cluster_category_signature=${formatDiagnosticToken(args.previous.clusterCategorySignature)}`,
     `representative_threads=${args.current.representativeThreadIds.map(formatDiagnosticToken).join(",") || "none"}`,
+  ].join(" ");
+}
+
+function formatCodexConnectorStableSameFileChurnDiagnostic(
+  stableChurn: CodexConnectorStableSameFileChurn,
+): string {
+  return [
+    "codex_connector_same_file_churn_history",
+    "status=stable_same_file_churn",
+    `streak=${stableChurn.streak}`,
+    `current_head_sha=${formatDiagnosticToken(stableChurn.reviewedHeadShas[stableChurn.reviewedHeadShas.length - 1] ?? "unknown")}`,
+    `dominant_file=${formatDiagnosticToken(stableChurn.dominantFile)}`,
+    `cluster_category_signature=${formatDiagnosticToken(stableChurn.clusterCategorySignature)}`,
+    `current_effective_must_fix=${stableChurn.currentEffectiveMustFixCount}`,
+    `reviewed_heads=${stableChurn.reviewedHeadShas.map(formatDiagnosticToken).join(",") || "none"}`,
+    `representative_threads=${stableChurn.representativeThreadIds.map(formatDiagnosticToken).join(",") || "none"}`,
+    "next_action=manual_review_same_file_churn_history",
   ].join(" ");
 }
 
@@ -593,6 +652,17 @@ export function buildCodexConnectorDiagnosticBundle(args: {
   const previousReviewChurnProgress = parsePreviousCodexConnectorReviewChurnProgress(
     args.record.last_tracked_pr_progress_snapshot,
   );
+  const previousReviewChurnHistory = parsePreviousCodexConnectorReviewChurnHistory(
+    args.record.last_tracked_pr_progress_snapshot,
+  );
+  const reviewChurnHistory = currentReviewChurnProgress
+    ? buildCodexConnectorReviewChurnHistory({
+        current: currentReviewChurnProgress,
+        previousProgress: previousReviewChurnProgress,
+        previousHistory: previousReviewChurnHistory,
+      })
+    : null;
+  const stableSameFileChurn = detectStableSameFileCodexConnectorChurn(reviewChurnHistory);
   return {
     policyBlockSummary: policyBlock ? formatCodexConnectorPolicyBlockDiagnostic(policyBlock) : null,
     p2p3PolicySummary: p2p3Policy ? formatCodexConnectorP2P3PolicyDiagnostic(p2p3Policy) : null,
@@ -618,6 +688,9 @@ export function buildCodexConnectorDiagnosticBundle(args: {
             previous: previousReviewChurnProgress,
           })
         : null,
+    stableSameFileChurnSummary: stableSameFileChurn
+      ? formatCodexConnectorStableSameFileChurnDiagnostic(stableSameFileChurn)
+      : null,
     reviewFallbackSummary: formatCodexConnectorReviewFallbackDiagnostic({
       config: args.config,
       record: args.record,

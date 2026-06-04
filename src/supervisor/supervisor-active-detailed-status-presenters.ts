@@ -237,6 +237,9 @@ export function buildActiveReviewBotProviderLines(
   if (codexConnectorDiagnostics.reviewChurnProgressSummary) {
     lines.push(codexConnectorDiagnostics.reviewChurnProgressSummary);
   }
+  if (codexConnectorDiagnostics.stableSameFileChurnSummary) {
+    lines.push(codexConnectorDiagnostics.stableSameFileChurnSummary);
+  }
   const reviewBotProfile = inferReviewBotProfile(config);
   const reviewBotStatus = reviewBotDiagnostics(config, activeRecord, pr, reviewThreads, configuredBotReviewThreads);
   const copilotReviewState = pr.copilotReviewState === null ? "unknown" : (pr.copilotReviewState ?? "not_requested");
