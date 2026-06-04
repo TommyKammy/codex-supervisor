@@ -14,6 +14,7 @@ export const TRACKED_PR_STATUS_COMMENT_REASON_CODE_REQUIRED_CHECK_MISMATCH = "re
 export const TRACKED_PR_STATUS_COMMENT_REASON_CODE_CONVERSATION_RESOLUTION_BLOCKED =
   "conversation_resolution_blocked";
 export const TRACKED_PR_STATUS_COMMENT_REASON_CODE_TRACKED_LIFECYCLE_MISMATCH = "tracked_lifecycle_mismatch";
+export const TRACKED_PR_STATUS_COMMENT_REASON_CODE_CODEX_CONNECTOR_CHURN = "codex_connector_churn";
 export const TRACKED_PR_STATUS_COMMENT_REASON_CODE_CLEARED = "cleared";
 
 export function workspacePreparationFailureClass(
@@ -238,6 +239,29 @@ export function buildTrackedPrPersistentStatusComment(args: {
     ...args.evidence.map((detail) => `- evidence: ${detail}`),
     `- automatic retry: ${args.automaticRetry}`,
     `- next action: ${args.nextAction}`,
+  ].join("\n");
+}
+
+export function buildTrackedPrCodexConnectorChurnStatusComment(args: {
+  pr: Pick<GitHubPullRequest, "headRefOid">;
+  dominantFile: string;
+  currentEffectiveMustFixCount: number | string;
+  countTrend: string;
+  clusterCategorySignature: string;
+  representativeThreadUrls: string[];
+}): string {
+  return [
+    `Tracked PR head \`${args.pr.headRefOid}\` stopped because clustered Codex Connector review churn did not converge.`,
+    "",
+    `- current PR head: \`${args.pr.headRefOid}\``,
+    `- reason code: \`${TRACKED_PR_STATUS_COMMENT_REASON_CODE_CODEX_CONNECTOR_CHURN}\``,
+    `- dominant file: \`${args.dominantFile}\``,
+    `- effective must-fix count: \`${args.currentEffectiveMustFixCount}\``,
+    `- count trend: \`${args.countTrend}\``,
+    `- normalized category signature: \`${args.clusterCategorySignature}\``,
+    ...args.representativeThreadUrls.map((url) => `- representative thread: ${url}`),
+    "- automatic retry: no",
+    "- next action: manually inspect the dominant file and representative Codex Connector threads before restarting the supervisor.",
   ].join("\n");
 }
 
