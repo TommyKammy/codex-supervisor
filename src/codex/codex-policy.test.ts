@@ -116,3 +116,65 @@ test("resolveCodexExecutionPolicy routes bounded repair states to the explicit m
     reasoningEffort: "high",
   });
 });
+
+test("resolveCodexExecutionPolicy escalates only an unconsumed stable Codex Connector churn dossier repair turn", () => {
+  const config = createConfig({
+    boundedRepairModelStrategy: "alias",
+    boundedRepairModel: "gpt-5.4-mini",
+  });
+  const stableSnapshot = JSON.stringify({
+    headRefOid: "head-current-2250",
+    checks: [],
+    unresolvedReviewThreadIds: [],
+    codexConnectorStableSameFileChurn: {
+      streak: 3,
+      dominantFile: "src/release-readiness.ts",
+      clusterCategorySignature: "claim_detection+truth_source",
+      currentEffectiveMustFixCount: 4,
+      reviewedHeadShas: ["head-previous-2250", "head-middle-2250", "head-current-2250"],
+      representativeThreadIds: ["thread-current-0", "thread-current-1"],
+    },
+  });
+  const consumedSignature =
+    "codex-connector-stable-same-file-churn:src/release-readiness.ts:claim_detection_truth_source:head-previous-2250_head-middle-2250_head-current-2250";
+
+  assert.deepEqual(
+    resolveCodexExecutionPolicy(config, "addressing_review", {
+      repeated_failure_signature_count: 0,
+      blocked_verification_retry_count: 0,
+      timeout_retry_count: 0,
+      last_tracked_pr_progress_snapshot: stableSnapshot,
+      codex_connector_stable_churn_dossier_consumed_signature: null,
+    }),
+    {
+      model: "gpt-5.4-mini",
+      reasoningEffort: "xhigh",
+    },
+  );
+  assert.deepEqual(
+    resolveCodexExecutionPolicy(config, "addressing_review", {
+      repeated_failure_signature_count: 0,
+      blocked_verification_retry_count: 0,
+      timeout_retry_count: 0,
+      last_tracked_pr_progress_snapshot: stableSnapshot,
+      codex_connector_stable_churn_dossier_consumed_signature: consumedSignature,
+    }),
+    {
+      model: "gpt-5.4-mini",
+      reasoningEffort: "medium",
+    },
+  );
+  assert.deepEqual(
+    resolveCodexExecutionPolicy(config, "repairing_ci", {
+      repeated_failure_signature_count: 0,
+      blocked_verification_retry_count: 0,
+      timeout_retry_count: 0,
+      last_tracked_pr_progress_snapshot: stableSnapshot,
+      codex_connector_stable_churn_dossier_consumed_signature: null,
+    }),
+    {
+      model: "gpt-5.4-mini",
+      reasoningEffort: "medium",
+    },
+  );
+});

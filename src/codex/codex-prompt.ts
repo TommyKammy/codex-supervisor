@@ -30,7 +30,9 @@ import {
 import {
   buildCodexConnectorMustFixFindingDetails,
   buildCodexConnectorReviewChurnDiagnostic,
+  codexConnectorStableSameFileChurnSignature,
   codexConnectorMustFixReviewThreads,
+  isCodexConnectorStableSameFileChurn,
 } from "../codex-connector-review-policy";
 import { isWorkstationLocalPathHygieneFailureSignature } from "../workstation-local-path-gate";
 
@@ -388,9 +390,11 @@ export interface BuildCodexStartPromptInput {
       | "repeated_failure_signature_count"
       | "last_failure_signature"
       | "last_tracked_pr_progress_summary"
+      | "last_tracked_pr_progress_snapshot"
       | "last_tracked_pr_repeat_failure_decision"
       | "addressing_review_strategy"
       | "addressing_review_strategy_reason"
+      | "codex_connector_stable_churn_dossier_consumed_signature"
     >
   > | null;
   pr: GitHubPullRequest | null;
@@ -443,6 +447,78 @@ function buildAddressingReviewStrategySwitch(input: Pick<BuildCodexStartPromptIn
     "- First reproduce the blocker or prove the unresolved-thread cluster from current code and tests.",
     "- Group the repeated comments by root cause, then make the smallest focused test update that would have caught the repeated failure.",
     "- Only after that root-cause grouping should you patch code, and do not weaken attempt limits, merge gates, or configured review-bot requirements.",
+  ];
+}
+
+function buildStableSameFileChurnDossier(input: Pick<BuildCodexStartPromptInput, "state" | "record" | "pr" | "reviewThreads">): string[] {
+  if (input.state !== "addressing_review" || !input.record?.last_tracked_pr_progress_snapshot) {
+    return [];
+  }
+
+  let snapshot: {
+    codexConnectorReviewChurnHistory?: Array<{
+      reviewedHeadSha: string;
+      effectiveMustFixCount: number;
+      clusterCategorySignature: string;
+    }>;
+    codexConnectorStableSameFileChurn?: {
+      streak: number;
+      dominantFile: string;
+      clusterCategorySignature: string;
+      currentEffectiveMustFixCount: number;
+      reviewedHeadShas: string[];
+      representativeThreadIds: string[];
+    };
+  };
+  try {
+    snapshot = JSON.parse(input.record.last_tracked_pr_progress_snapshot);
+  } catch {
+    return [];
+  }
+
+  const stable = snapshot.codexConnectorStableSameFileChurn;
+  if (!isCodexConnectorStableSameFileChurn(stable)) {
+    return [];
+  }
+
+  const signature = codexConnectorStableSameFileChurnSignature(stable);
+  if (signature === input.record.codex_connector_stable_churn_dossier_consumed_signature) {
+    return [];
+  }
+
+  const history = (snapshot.codexConnectorReviewChurnHistory ?? []).filter((entry) =>
+    stable.reviewedHeadShas.includes(entry.reviewedHeadSha),
+  );
+  const representativeSourceUrls = uniqueNonEmpty(
+    input.reviewThreads
+      .filter((thread) => stable.representativeThreadIds.includes(thread.id))
+      .flatMap((thread) => {
+        const url = latestReviewComment(thread)?.url;
+        return url ? [url] : [];
+      }),
+  );
+
+  return [
+    "Codex Connector stable churn dossier:",
+    `- Signature: ${signature}`,
+    `- Active PR head: ${input.pr?.headRefOid ?? stable.reviewedHeadShas[stable.reviewedHeadShas.length - 1] ?? "unknown"}`,
+    `- Recent repair heads: ${stable.reviewedHeadShas.join(", ")}`,
+    `- Must-fix count trend: ${
+      history.length > 0
+        ? history.map((entry) => `${entry.reviewedHeadSha}:${entry.effectiveMustFixCount}`).join(" -> ")
+        : String(stable.currentEffectiveMustFixCount)
+    }`,
+    `- Category signature trend: ${
+      history.length > 0
+        ? history.map((entry) => `${entry.reviewedHeadSha}:${entry.clusterCategorySignature}`).join(" -> ")
+        : stable.clusterCategorySignature
+    }`,
+    `- Dominant file: ${stable.dominantFile}`,
+    `- Current effective must-fix count: ${stable.currentEffectiveMustFixCount}`,
+    `- Representative thread ids: ${stable.representativeThreadIds.join(", ") || "none"}`,
+    `- Representative URLs: ${representativeSourceUrls.join(", ") || "none"}`,
+    "- Route this as one root-cause repair dossier, not per-thread patching.",
+    `- Read ${stable.dominantFile} as a whole before editing so the repair addresses the shared enforcement boundary.`,
   ];
 }
 
@@ -750,6 +826,7 @@ function buildCodexStartPrompt(input: BuildCodexStartPromptInput): string {
         ]
       : [];
   const addressingReviewStrategySwitch = buildAddressingReviewStrategySwitch(input);
+  const stableSameFileChurnDossier = buildStableSameFileChurnDossier(input);
   const journalOperatorOverrides = useCodexConnectorReviewThreadFastPath
     ? extractJournalOperatorOverrides(input.journalExcerpt)
     : [];
@@ -821,6 +898,7 @@ function buildCodexStartPrompt(input: BuildCodexStartPromptInput): string {
     "",
     ...authoritativeStateHeuristics,
     "",
+    ...(stableSameFileChurnDossier.length > 0 ? [...stableSameFileChurnDossier, ""] : []),
     ...githubIssueBodySection,
     "",
     prSummary,

@@ -62,6 +62,7 @@ import {
   executionMetricsRetentionRootPath,
   syncExecutionMetricsRunSummarySafely,
 } from "./supervisor/execution-metrics-run-summary";
+import { stableSameFileCodexConnectorChurnDossierConsumptionPatch } from "./supervisor/supervisor-lifecycle";
 import {
   captureIssueJournalFingerprint,
   clearInterruptedTurnMarker,
@@ -494,6 +495,14 @@ export async function executeCodexTurnPhase(
         });
         record = preparedTurn.record;
         const { turnContext, reviewThreadsToProcess } = preparedTurn;
+        if (record.state === "addressing_review") {
+          const dossierConsumptionPatch = stableSameFileCodexConnectorChurnDossierConsumptionPatch(record);
+          if (Object.keys(dossierConsumptionPatch).length > 0) {
+            record = stateStore.touch(record, dossierConsumptionPatch);
+            state.issues[String(record.issue_number)] = record;
+            await stateStore.save(state);
+          }
+        }
         const preRunJournalFingerprint =
           await captureIssueJournalFingerprint(journalPath);
         await writeInterruptedTurnMarker({

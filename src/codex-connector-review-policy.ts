@@ -194,6 +194,35 @@ export interface CodexConnectorStableSameFileChurn {
   representativeThreadIds: string[];
 }
 
+export function isCodexConnectorStableSameFileChurn(value: unknown): value is CodexConnectorStableSameFileChurn {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const stable = value as Partial<CodexConnectorStableSameFileChurn>;
+  return (
+    typeof stable.streak === "number" &&
+    Number.isFinite(stable.streak) &&
+    typeof stable.dominantFile === "string" &&
+    typeof stable.clusterCategorySignature === "string" &&
+    typeof stable.currentEffectiveMustFixCount === "number" &&
+    Number.isFinite(stable.currentEffectiveMustFixCount) &&
+    Array.isArray(stable.reviewedHeadShas) &&
+    stable.reviewedHeadShas.every((headSha) => typeof headSha === "string") &&
+    Array.isArray(stable.representativeThreadIds) &&
+    stable.representativeThreadIds.every((threadId) => typeof threadId === "string")
+  );
+}
+
+export function codexConnectorStableSameFileChurnSignature(stable: CodexConnectorStableSameFileChurn): string {
+  return [
+    "codex-connector-stable-same-file-churn",
+    formatSignaturePart(stable.dominantFile),
+    formatSignaturePart(stable.clusterCategorySignature),
+    formatSignaturePart(stable.reviewedHeadShas.join("+")),
+  ].join(":");
+}
+
 export type CodexConnectorReviewChurnProgressClassification = "improving" | "unchanged" | "worse";
 
 export interface CodexConnectorReviewChurnProgressComparison {
