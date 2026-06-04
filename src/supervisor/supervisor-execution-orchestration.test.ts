@@ -4006,7 +4006,6 @@ test("runOnce clears a stale interrupted-turn marker when the journal changed af
   const interruptedIssueNumber = 91;
   const nextIssueNumber = 92;
   const interruptedBranch = branchName(fixture.config, interruptedIssueNumber);
-  const nextBranch = branchName(fixture.config, nextIssueNumber);
   const interruptedWorkspace = path.join(fixture.workspaceRoot, `issue-${interruptedIssueNumber}`);
   const interruptedJournalPath = path.join(interruptedWorkspace, ".codex-supervisor", "issue-journal.md");
   const state: SupervisorStateFile = {
@@ -4030,6 +4029,12 @@ test("runOnce clears a stale interrupted-turn marker when the journal changed af
     },
   };
   await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  const preparedInterruptedWorkspace = await ensureWorkspace(
+    fixture.config,
+    interruptedIssueNumber,
+    interruptedBranch,
+  );
+  assert.equal(preparedInterruptedWorkspace.workspacePath, interruptedWorkspace);
   await fs.mkdir(path.dirname(interruptedJournalPath), { recursive: true });
   await fs.writeFile(interruptedJournalPath, "# issue journal\n", "utf8");
   const initialJournalFingerprint = await captureIssueJournalFingerprint(interruptedJournalPath);
@@ -4089,7 +4094,7 @@ test("runOnce clears a stale interrupted-turn marker when the journal changed af
     listCandidateIssues: async () => [nextIssue, interruptedIssue],
     getIssue: async (issueNumber: number) => (issueNumber === nextIssueNumber ? nextIssue : interruptedIssue),
     resolvePullRequestForBranch: async (branchName: string, prNumber: number | null) => {
-      assert.equal(branchName, nextBranch);
+      assert.equal(branchName, interruptedBranch);
       assert.equal(prNumber, null);
       return null;
     },
@@ -4111,12 +4116,13 @@ test("runOnce clears a stale interrupted-turn marker when the journal changed af
     /recovery issue=#91 reason=stale_state_cleanup: cleared stale active reservation after issue lock and session lock were missing/,
   );
   assert.doesNotMatch(message, /interrupted_turn_recovery/);
-  assert.match(message, /Dry run: would invoke Codex for issue #92\./);
+  assert.match(message, /Dry run: would invoke Codex for issue #91\./);
+  assert.doesNotMatch(message, /Dry run: would invoke Codex for issue #92\./);
 
   const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
   const interruptedRecord = persisted.issues[String(interruptedIssueNumber)]!;
-  assert.equal(persisted.activeIssueNumber, nextIssueNumber);
-  assert.equal(interruptedRecord.state, "implementing");
+  assert.equal(persisted.activeIssueNumber, interruptedIssueNumber);
+  assert.equal(interruptedRecord.state, "stabilizing");
   assert.equal(interruptedRecord.codex_session_id, null);
   assert.equal(interruptedRecord.blocked_reason, null);
   assert.equal(interruptedRecord.last_error, null);
