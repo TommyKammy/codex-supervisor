@@ -325,9 +325,14 @@ function clusteredCodexChurnMadeNoProgress(
 function hasReviewedClusteredCodexChurnStopSignal(
   previous: TrackedPrProgressSnapshot | null,
   current: TrackedPrProgressSnapshot,
+  record: Pick<IssueRunRecord, "codex_connector_stable_churn_dossier_consumed_signature">,
 ): boolean {
+  const stable = previous?.codexConnectorStableSameFileChurn;
   return Boolean(
     clusteredCodexChurnMadeNoProgress(previous, current) &&
+      isCodexConnectorStableSameFileChurn(stable) &&
+      codexConnectorStableSameFileChurnSignature(stable) ===
+        record.codex_connector_stable_churn_dossier_consumed_signature &&
       previous?.configuredBotCurrentHeadObservedAt &&
       current.configuredBotCurrentHeadObservedAt &&
       current.currentHeadCiGreenAt,
@@ -507,6 +512,7 @@ export function determineTrackedPrRepeatFailureDisposition(args: {
     | "processed_review_thread_ids"
     | "processed_review_thread_fingerprints"
     | "timeline_artifacts"
+    | "codex_connector_stable_churn_dossier_consumed_signature"
   >;
   config: Pick<
     SupervisorConfig,
@@ -543,11 +549,11 @@ export function determineTrackedPrRepeatFailureDisposition(args: {
     };
   }
 
-  if (current && hasReviewedClusteredCodexChurnStopSignal(previous, current)) {
+  if (current && hasReviewedClusteredCodexChurnStopSignal(previous, current, args.record)) {
     return {
       shouldStop: true,
       progressSnapshot: snapshot,
-      progressSummary: `no_progress_clustered_codex_churn current_effective_must_fix=${current.codexConnectorReviewChurnProgress?.currentEffectiveMustFixCount ?? "unknown"}`,
+      progressSummary: `no_progress_clustered_codex_churn current_effective_must_fix=${current.codexConnectorReviewChurnProgress?.currentEffectiveMustFixCount ?? "unknown"} dossier_attempt=consumed`,
       decision: "stop_no_progress",
     };
   }

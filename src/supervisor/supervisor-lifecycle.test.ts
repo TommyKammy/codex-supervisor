@@ -712,10 +712,13 @@ test("determineTrackedPrRepeatFailureDisposition stops no-progress clustered Cod
   assert.equal(result.progressSummary, "no_progress_clustered_codex_churn current_effective_must_fix=4");
 });
 
-test("determineTrackedPrRepeatFailureDisposition stops non-decreasing reviewed Codex churn before the generic repeat limit", () => {
+test("determineTrackedPrRepeatFailureDisposition stops non-decreasing reviewed Codex churn after dossier consumption", () => {
+  const consumedSignature =
+    "codex-connector-stable-same-file-churn:src/release-readiness.ts:claim_detection_excluded_scope_readiness_claim_truth_source_verifier_or_issue_lint:head-before-1390_head-previous-1390";
   const record = createRecord({
     last_failure_signature: "codex-review-churn:P2:src/release-readiness.ts",
     repeated_failure_signature_count: 1,
+    codex_connector_stable_churn_dossier_consumed_signature: consumedSignature,
     last_tracked_pr_progress_snapshot: JSON.stringify({
       headRefOid: "head-previous-1390",
       reviewDecision: "CHANGES_REQUESTED",
@@ -753,6 +756,14 @@ test("determineTrackedPrRepeatFailureDisposition stops non-decreasing reviewed C
         dominantFile: "src/release-readiness.ts",
         dominantFilePercent: 100,
         clusterCategorySignature: "claim_detection+excluded_scope+readiness_claim+truth_source+verifier_or_issue_lint",
+        representativeThreadIds: ["thread-previous-0", "thread-previous-1", "thread-previous-2", "thread-previous-3"],
+      },
+      codexConnectorStableSameFileChurn: {
+        streak: 2,
+        dominantFile: "src/release-readiness.ts",
+        clusterCategorySignature: "claim_detection+excluded_scope+readiness_claim+truth_source+verifier_or_issue_lint",
+        currentEffectiveMustFixCount: 4,
+        reviewedHeadShas: ["head-before-1390", "head-previous-1390"],
         representativeThreadIds: ["thread-previous-0", "thread-previous-1", "thread-previous-2", "thread-previous-3"],
       },
     }),
@@ -801,7 +812,114 @@ test("determineTrackedPrRepeatFailureDisposition stops non-decreasing reviewed C
 
   assert.equal(result.shouldStop, true);
   assert.equal(result.decision, "stop_no_progress");
-  assert.equal(result.progressSummary, "no_progress_clustered_codex_churn current_effective_must_fix=4");
+  assert.equal(
+    result.progressSummary,
+    "no_progress_clustered_codex_churn current_effective_must_fix=4 dossier_attempt=consumed",
+  );
+});
+
+test("determineTrackedPrRepeatFailureDisposition keeps same reviewed Codex churn retryable before dossier consumption", () => {
+  const record = createRecord({
+    last_failure_signature: "codex-review-churn:P2:src/release-readiness.ts",
+    repeated_failure_signature_count: 1,
+    codex_connector_stable_churn_dossier_consumed_signature: null,
+    last_tracked_pr_progress_snapshot: JSON.stringify({
+      headRefOid: "head-previous-1391",
+      reviewDecision: "CHANGES_REQUESTED",
+      mergeStateStatus: "BLOCKED",
+      copilotReviewState: null,
+      copilotReviewRequestedAt: null,
+      copilotReviewArrivedAt: null,
+      configuredBotCurrentHeadObservedAt: "2026-06-01T06:09:54Z",
+      configuredBotCurrentHeadStatusState: null,
+      currentHeadCiGreenAt: "2026-06-01T06:08:00Z",
+      configuredBotRateLimitedAt: null,
+      configuredBotDraftSkipAt: null,
+      configuredBotTopLevelReviewStrength: "blocking",
+      configuredBotTopLevelReviewSubmittedAt: "2026-06-01T06:09:54Z",
+      checks: ["build:pass:SUCCESS:CI"],
+      unresolvedReviewThreadIds: ["thread-previous-0", "thread-previous-1", "thread-previous-2", "thread-previous-3"],
+      unresolvedReviewThreadFingerprints: [
+        "thread-previous-0#comment-previous-0",
+        "thread-previous-1#comment-previous-1",
+        "thread-previous-2#comment-previous-2",
+        "thread-previous-3#comment-previous-3",
+      ],
+      unresolvedReviewThreadSourceAnchors: [
+        "thread-previous-0:src/release-readiness.ts:120",
+        "thread-previous-1:src/release-readiness.ts:121",
+        "thread-previous-2:src/release-readiness.ts:122",
+        "thread-previous-3:src/release-readiness.ts:123",
+      ],
+      processedReviewThreadIds: [],
+      processedReviewThreadFingerprints: [],
+      verificationProbeOutcomes: [],
+      codexConnectorReviewChurnProgress: {
+        currentHeadSha: "head-previous-1391",
+        currentEffectiveMustFixCount: 4,
+        dominantFile: "src/release-readiness.ts",
+        dominantFilePercent: 100,
+        clusterCategorySignature: "claim_detection+excluded_scope+readiness_claim+truth_source+verifier_or_issue_lint",
+        representativeThreadIds: ["thread-previous-0", "thread-previous-1", "thread-previous-2", "thread-previous-3"],
+      },
+      codexConnectorStableSameFileChurn: {
+        streak: 2,
+        dominantFile: "src/release-readiness.ts",
+        clusterCategorySignature: "claim_detection+excluded_scope+readiness_claim+truth_source+verifier_or_issue_lint",
+        currentEffectiveMustFixCount: 4,
+        reviewedHeadShas: ["head-before-1391", "head-previous-1391"],
+        representativeThreadIds: ["thread-previous-0", "thread-previous-1", "thread-previous-2", "thread-previous-3"],
+      },
+    }),
+  });
+  const pr = createPullRequest({
+    headRefOid: "head-current-1391",
+    reviewDecision: "CHANGES_REQUESTED",
+    mergeStateStatus: "BLOCKED",
+    configuredBotCurrentHeadObservedAt: "2026-06-01T06:20:00Z",
+    configuredBotTopLevelReviewStrength: "blocking",
+    configuredBotTopLevelReviewSubmittedAt: "2026-06-01T06:20:00Z",
+    currentHeadCiGreenAt: "2026-06-01T06:18:00Z",
+  });
+  const reviewThreads: ReviewThread[] = Array.from({ length: 4 }, (_, index) =>
+    createReviewThread({
+      id: `thread-current-${index}`,
+      path: "src/release-readiness.ts",
+      line: 130 + index,
+      comments: {
+        nodes: [
+          {
+            id: `comment-current-${index}`,
+            body:
+              "P2: Block release readiness truth-source claims until the verifier proves the authoritative scope.",
+            createdAt: "2026-06-01T06:20:00Z",
+            url: `https://example.test/pr/1391#discussion_current_${index}`,
+            author: { login: "chatgpt-codex-connector[bot]", typeName: "Bot" },
+          },
+        ],
+      },
+    }),
+  );
+
+  const result = determineTrackedPrRepeatFailureDisposition({
+    record,
+    config: createConfig({
+      sameFailureSignatureRepeatLimit: 3,
+      reviewBotLogins: ["chatgpt-codex-connector[bot]"],
+      codexConnectorReviewChurnMustFixThreshold: 4,
+      codexConnectorReviewChurnFileConcentrationPercent: 75,
+    }),
+    pr,
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads,
+  });
+
+  assert.equal(result.shouldStop, false);
+  assert.equal(result.decision, "retry_on_progress");
+  assert.notEqual(
+    result.progressSummary,
+    "no_progress_clustered_codex_churn current_effective_must_fix=4 dossier_attempt=consumed",
+  );
 });
 
 test("determineTrackedPrRepeatFailureDisposition keeps changed clustered Codex categories retryable", () => {

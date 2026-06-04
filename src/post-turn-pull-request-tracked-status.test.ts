@@ -383,8 +383,11 @@ test("syncTrackedPrPersistentStatusComment comments with clustered Codex churn e
     blocked_reason: "manual_review",
     pr_number: pr.number,
     last_head_sha: pr.headRefOid,
+    codex_connector_stable_churn_dossier_consumed_signature:
+      "codex-connector-stable-same-file-churn:src/release-readiness.ts:readiness_claim_truth_source_verifier_or_issue_lint:head-previous-1390_head-current-1390",
     last_tracked_pr_repeat_failure_decision: "stop_no_progress",
-    last_tracked_pr_progress_summary: "no_progress_clustered_codex_churn current_effective_must_fix=5",
+    last_tracked_pr_progress_summary:
+      "no_progress_clustered_codex_churn current_effective_must_fix=5 dossier_attempt=consumed",
     last_tracked_pr_progress_snapshot: JSON.stringify({
       headRefOid: pr.headRefOid,
       reviewDecision: "CHANGES_REQUESTED",
@@ -471,6 +474,7 @@ test("syncTrackedPrPersistentStatusComment comments with clustered Codex churn e
     commentBodies[0] ?? "",
     /normalized category signature: `readiness_claim\+truth_source\+verifier_or_issue_lint`/,
   );
+  assert.match(commentBodies[0] ?? "", /dossier attempt marker: `codex-connector-stable-same-file-churn:/);
   assert.match(commentBodies[0] ?? "", /https:\/\/example\.test\/pr\/1390#discussion_current_0/);
   assert.match(commentBodies[0] ?? "", /manual.*before restarting the supervisor/i);
   assert.match(

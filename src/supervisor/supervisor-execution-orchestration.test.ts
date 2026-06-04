@@ -1133,6 +1133,8 @@ test("runOnce blocks non-decreasing reviewed Codex Connector churn before anothe
   fixture.config.codexConnectorReviewChurnFileConcentrationPercent = 75;
   const issueNumber = 91;
   const branch = branchName(fixture.config, issueNumber);
+  const consumedSignature =
+    "codex-connector-stable-same-file-churn:src/release-readiness.ts:claim_detection_excluded_scope_readiness_claim_truth_source_verifier_or_issue_lint:head-before-1390_head-previous-1390";
   const state: SupervisorStateFile = createSupervisorState({
     issues: [
       createTrackedSupervisorRecord(fixture.config, fixture.workspaceRoot, issueNumber, {
@@ -1142,6 +1144,7 @@ test("runOnce blocks non-decreasing reviewed Codex Connector churn before anothe
         last_head_sha: "head-current-1390",
         last_failure_signature: "codex-review-churn:P2:src/release-readiness.ts",
         repeated_failure_signature_count: 1,
+        codex_connector_stable_churn_dossier_consumed_signature: consumedSignature,
         last_tracked_pr_progress_snapshot: JSON.stringify({
           headRefOid: "head-previous-1390",
           reviewDecision: "CHANGES_REQUESTED",
@@ -1179,6 +1182,15 @@ test("runOnce blocks non-decreasing reviewed Codex Connector churn before anothe
             dominantFile: "src/release-readiness.ts",
             dominantFilePercent: 100,
             clusterCategorySignature: "claim_detection+excluded_scope+readiness_claim+truth_source+verifier_or_issue_lint",
+            representativeThreadIds: ["thread-previous-0", "thread-previous-1", "thread-previous-2", "thread-previous-3"],
+          },
+          codexConnectorStableSameFileChurn: {
+            streak: 2,
+            dominantFile: "src/release-readiness.ts",
+            clusterCategorySignature:
+              "claim_detection+excluded_scope+readiness_claim+truth_source+verifier_or_issue_lint",
+            currentEffectiveMustFixCount: 4,
+            reviewedHeadShas: ["head-before-1390", "head-previous-1390"],
             representativeThreadIds: ["thread-previous-0", "thread-previous-1", "thread-previous-2", "thread-previous-3"],
           },
         }),
@@ -1252,7 +1264,7 @@ test("runOnce blocks non-decreasing reviewed Codex Connector churn before anothe
   };
 
   const message = await supervisor.runOnce({ dryRun: true });
-  assert.match(message, /blocked for manual review after non-decreasing clustered Codex Connector churn/);
+  assert.match(message, /blocked for manual review after a consumed Codex Connector churn dossier did not improve/);
   assert.doesNotMatch(message, /would invoke Codex/);
 
   const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
@@ -1261,8 +1273,12 @@ test("runOnce blocks non-decreasing reviewed Codex Connector churn before anothe
   assert.equal(record.state, "blocked");
   assert.equal(record.blocked_reason, "manual_review");
   assert.equal(record.last_tracked_pr_repeat_failure_decision, "stop_no_progress");
-  assert.equal(record.last_tracked_pr_progress_summary, "no_progress_clustered_codex_churn current_effective_must_fix=4");
-  assert.match(record.last_error ?? "", /current effective must-fix count 4/);
+  assert.equal(
+    record.last_tracked_pr_progress_summary,
+    "no_progress_clustered_codex_churn current_effective_must_fix=4 dossier_attempt=consumed",
+  );
+  assert.match(record.last_error ?? "", /stable Codex Connector churn dossier was already attempted/);
+  assert.match(record.last_error ?? "", /current effective must-fix count is 4/);
 });
 
 test("runOnce requests Codex Connector review before repeated stale configured-bot signature suppression", async () => {

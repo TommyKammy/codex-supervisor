@@ -400,6 +400,7 @@ function codexConnectorChurnStatusComment(
       currentEffectiveMustFixCount: churnSnapshot.progress.currentEffectiveMustFixCount,
       countTrend,
       clusterCategorySignature: churnSnapshot.progress.clusterCategorySignature,
+      dossierAttemptMarker: args.record.codex_connector_stable_churn_dossier_consumed_signature,
       representativeThreadUrls,
     }),
   };

@@ -386,8 +386,12 @@ export async function runPreparedIssueFlow(
         const clusteredCodexChurnStop = trackedPrRepeatFailureDisposition.progressSummary?.match(
           /^no_progress_clustered_codex_churn current_effective_must_fix=(\S+)/,
         );
+        const stoppedAfterConsumedDossier =
+          trackedPrRepeatFailureDisposition.progressSummary?.includes("dossier_attempt=consumed") === true;
         const repeatStopLastError = clusteredCodexChurnStop
-          ? `Stopped automatic repair for clustered Codex Connector churn with current effective must-fix count ${clusteredCodexChurnStop[1]}.`
+          ? stoppedAfterConsumedDossier
+            ? `Stopped automatic repair because the stable Codex Connector churn dossier was already attempted and the current effective must-fix count is ${clusteredCodexChurnStop[1]}.`
+            : `Stopped automatic repair for clustered Codex Connector churn with current effective must-fix count ${clusteredCodexChurnStop[1]}.`
           : effectiveFailureContext.summary;
         record = stateStore.touch(record, {
           state: "blocked",
@@ -432,7 +436,9 @@ export async function runPreparedIssueFlow(
         await syncJournal(record);
         return prependRecoveryLog(
           clusteredCodexChurnStop
-            ? `Issue #${record.issue_number} blocked for manual review after non-decreasing clustered Codex Connector churn.`
+            ? stoppedAfterConsumedDossier
+              ? `Issue #${record.issue_number} blocked for manual review after a consumed Codex Connector churn dossier did not improve.`
+              : `Issue #${record.issue_number} blocked for manual review after non-decreasing clustered Codex Connector churn.`
             : `Issue #${record.issue_number} blocked after repeated identical review-related failure signatures.`,
           recoveryLog,
         );
