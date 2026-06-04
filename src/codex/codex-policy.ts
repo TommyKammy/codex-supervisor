@@ -1,4 +1,8 @@
 import { CodexExecutionTarget, IssueRunRecord, ReasoningEffort, RunState, SupervisorConfig } from "../core/types";
+import {
+  codexConnectorStableSameFileChurnSignature,
+  isCodexConnectorStableSameFileChurn,
+} from "../codex-connector-review-policy";
 
 const REASONING_ORDER: ReasoningEffort[] = ["none", "low", "medium", "high", "xhigh"];
 
@@ -40,6 +44,32 @@ type CodexExecutionPolicyConfig = Pick<
   | "codexReasoningEscalateOnRepeatedFailure"
 >;
 
+function activeStableSameFileChurnDossierSignature(
+  record?: Pick<
+    IssueRunRecord,
+    "last_tracked_pr_progress_snapshot" | "codex_connector_stable_churn_dossier_consumed_signature"
+  > | null,
+): string | null {
+  if (!record?.last_tracked_pr_progress_snapshot) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(record.last_tracked_pr_progress_snapshot) as {
+      codexConnectorStableSameFileChurn?: unknown;
+    };
+    const stable = parsed.codexConnectorStableSameFileChurn;
+    if (!isCodexConnectorStableSameFileChurn(stable)) {
+      return null;
+    }
+
+    const signature = codexConnectorStableSameFileChurnSignature(stable);
+    return signature === record.codex_connector_stable_churn_dossier_consumed_signature ? null : signature;
+  } catch {
+    return null;
+  }
+}
+
 function bumpReasoningEffort(effort: ReasoningEffort, steps = 1): ReasoningEffort {
   const index = REASONING_ORDER.indexOf(effort);
   const nextIndex = Math.min(REASONING_ORDER.length - 1, Math.max(0, index) + steps);
@@ -71,10 +101,21 @@ function clampReasoningEffortForModel(model: string | null, effort: ReasoningEff
 function resolveRequestedReasoningEffort(
   config: Pick<SupervisorConfig, "codexReasoningEffortByState" | "codexReasoningEscalateOnRepeatedFailure">,
   state: RunState,
-  record?: Pick<IssueRunRecord, "repeated_failure_signature_count" | "blocked_verification_retry_count" | "timeout_retry_count"> | null,
+  record?: Pick<
+    IssueRunRecord,
+    | "repeated_failure_signature_count"
+    | "blocked_verification_retry_count"
+    | "timeout_retry_count"
+    | "last_tracked_pr_progress_snapshot"
+    | "codex_connector_stable_churn_dossier_consumed_signature"
+  > | null,
 ): ReasoningEffort {
   const configured = config.codexReasoningEffortByState[state];
   let effort = configured ?? DEFAULT_REASONING_BY_STATE[state];
+
+  if (state === "addressing_review" && activeStableSameFileChurnDossierSignature(record)) {
+    return "xhigh";
+  }
 
   if (
     config.codexReasoningEscalateOnRepeatedFailure &&
@@ -132,7 +173,14 @@ function resolveConfiguredModel(
 export function resolveCodexExecutionPolicy(
   config: CodexExecutionPolicyConfig,
   state: RunState,
-  record?: Pick<IssueRunRecord, "repeated_failure_signature_count" | "blocked_verification_retry_count" | "timeout_retry_count"> | null,
+  record?: Pick<
+    IssueRunRecord,
+    | "repeated_failure_signature_count"
+    | "blocked_verification_retry_count"
+    | "timeout_retry_count"
+    | "last_tracked_pr_progress_snapshot"
+    | "codex_connector_stable_churn_dossier_consumed_signature"
+  > | null,
   target: CodexExecutionTarget = "supervisor",
 ): CodexExecutionPolicy {
   const model = resolveConfiguredModel(config, state, target);

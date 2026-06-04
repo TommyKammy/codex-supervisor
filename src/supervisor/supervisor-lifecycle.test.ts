@@ -6,7 +6,9 @@ import {
   resetNoPrLifecycleFailureTracking,
   selectSupervisorPollIntervalMs,
   shouldRunCodex,
+  stableSameFileCodexConnectorChurnDossierConsumptionPatch,
   summarizeTrackedPrProgress,
+  unconsumedStableSameFileCodexConnectorChurnDossierSignature,
 } from "./supervisor-lifecycle";
 import { queuedReadyPromotionPathHygieneRepairContext } from "../ready-promotion-path-hygiene-repair";
 import { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "../core/types";
@@ -1099,6 +1101,67 @@ test("summarizeTrackedPrProgress records stable same-file Codex Connector churn 
     "claim_detection+excluded_scope+readiness_claim+truth_source+verifier_or_issue_lint",
   );
   assert.equal(snapshot.codexConnectorStableSameFileChurn.currentEffectiveMustFixCount, 4);
+});
+
+test("stable same-file Codex Connector churn dossier consumption is once per signature", () => {
+  const record = createRecord({
+    last_tracked_pr_progress_snapshot: JSON.stringify({
+      headRefOid: "head-current-2250",
+      reviewDecision: "CHANGES_REQUESTED",
+      mergeStateStatus: "BLOCKED",
+      checks: [],
+      unresolvedReviewThreadIds: ["thread-current-0", "thread-current-1"],
+      codexConnectorStableSameFileChurn: {
+        streak: 3,
+        dominantFile: "src/release-readiness.ts",
+        clusterCategorySignature: "claim_detection+truth_source",
+        currentEffectiveMustFixCount: 4,
+        reviewedHeadShas: ["head-previous-2250", "head-middle-2250", "head-current-2250"],
+        representativeThreadIds: ["thread-current-0", "thread-current-1"],
+      },
+    }),
+    codex_connector_stable_churn_dossier_consumed_signature: null,
+  });
+
+  const firstSignature = unconsumedStableSameFileCodexConnectorChurnDossierSignature(record);
+  assert.equal(
+    firstSignature,
+    "codex-connector-stable-same-file-churn:src/release-readiness.ts:claim_detection_truth_source:head-previous-2250_head-middle-2250_head-current-2250",
+  );
+  assert.deepEqual(stableSameFileCodexConnectorChurnDossierConsumptionPatch(record), {
+    codex_connector_stable_churn_dossier_consumed_signature: firstSignature,
+  });
+  assert.deepEqual(
+    stableSameFileCodexConnectorChurnDossierConsumptionPatch({
+      ...record,
+      codex_connector_stable_churn_dossier_consumed_signature: firstSignature,
+    }),
+    {},
+  );
+
+  const changedSignature = unconsumedStableSameFileCodexConnectorChurnDossierSignature({
+    ...record,
+    codex_connector_stable_churn_dossier_consumed_signature: firstSignature,
+    last_tracked_pr_progress_snapshot: JSON.stringify({
+      headRefOid: "head-next-2250",
+      reviewDecision: "CHANGES_REQUESTED",
+      mergeStateStatus: "BLOCKED",
+      checks: [],
+      unresolvedReviewThreadIds: ["thread-next-0", "thread-next-1"],
+      codexConnectorStableSameFileChurn: {
+        streak: 3,
+        dominantFile: "src/release-readiness.ts",
+        clusterCategorySignature: "claim_detection+truth_source",
+        currentEffectiveMustFixCount: 4,
+        reviewedHeadShas: ["head-middle-2250", "head-current-2250", "head-next-2250"],
+        representativeThreadIds: ["thread-next-0", "thread-next-1"],
+      },
+    }),
+  });
+  assert.equal(
+    changedSignature,
+    "codex-connector-stable-same-file-churn:src/release-readiness.ts:claim_detection_truth_source:head-middle-2250_head-current-2250_head-next-2250",
+  );
 });
 
 test("summarizeTrackedPrProgress resets same-file Codex Connector churn history on file, category, or count improvement", () => {

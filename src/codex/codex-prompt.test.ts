@@ -1106,6 +1106,107 @@ test("buildCodexPrompt routes concentrated Codex Connector P2 cascades to root-c
   assert.match(prompt, /P0\/P1\/P2 and escalated P3 Codex Connector findings are supervisor-enforced must-fix findings/);
 });
 
+test("buildCodexPrompt adds a stable same-file Codex Connector churn repair dossier", () => {
+  const pr = createPullRequest({
+    number: 2250,
+    headRefOid: "head-current-2250",
+  });
+  const threads = ["thread-current-0", "thread-current-1"].map((id, index) =>
+    createReviewThread({
+      id,
+      path: "src/release-readiness.ts",
+      line: 120 + index,
+      comments: {
+        nodes: [
+          {
+            id: `${id}-comment`,
+            body: "P2: Keep release readiness truth-source claims blocked until the verifier proves the authoritative scope.",
+            createdAt: "2026-06-01T06:30:00Z",
+            url: `https://example.test/pr/2250#discussion_${id}`,
+            author: {
+              login: "chatgpt-codex-connector[bot]",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  );
+
+  const prompt = buildCodexPrompt({
+    kind: "start",
+    config: createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector[bot]"],
+    }),
+    repoSlug: "owner/repo",
+    issue,
+    branch: "codex/issue-2250",
+    workspacePath: "/tmp/workspaces/issue-2250",
+    state: "addressing_review" satisfies RunState,
+    record: {
+      repeated_failure_signature_count: 0,
+      blocked_verification_retry_count: 0,
+      timeout_retry_count: 0,
+      last_tracked_pr_progress_snapshot: JSON.stringify({
+        headRefOid: "head-current-2250",
+        reviewDecision: "CHANGES_REQUESTED",
+        mergeStateStatus: "BLOCKED",
+        checks: [],
+        unresolvedReviewThreadIds: threads.map((thread) => thread.id),
+        codexConnectorReviewChurnHistory: [
+          {
+            reviewedHeadSha: "head-previous-2250",
+            effectiveMustFixCount: 4,
+            dominantFile: "src/release-readiness.ts",
+            clusterCategorySignature: "claim_detection+truth_source",
+            representativeThreadIds: ["thread-previous-0", "thread-previous-1"],
+          },
+          {
+            reviewedHeadSha: "head-middle-2250",
+            effectiveMustFixCount: 4,
+            dominantFile: "src/release-readiness.ts",
+            clusterCategorySignature: "claim_detection+truth_source",
+            representativeThreadIds: ["thread-middle-0", "thread-middle-1"],
+          },
+          {
+            reviewedHeadSha: "head-current-2250",
+            effectiveMustFixCount: 5,
+            dominantFile: "src/release-readiness.ts",
+            clusterCategorySignature: "claim_detection+truth_source",
+            representativeThreadIds: ["thread-current-0", "thread-current-1"],
+          },
+        ],
+        codexConnectorStableSameFileChurn: {
+          streak: 3,
+          dominantFile: "src/release-readiness.ts",
+          clusterCategorySignature: "claim_detection+truth_source",
+          currentEffectiveMustFixCount: 5,
+          reviewedHeadShas: ["head-previous-2250", "head-middle-2250", "head-current-2250"],
+          representativeThreadIds: ["thread-current-0", "thread-current-1"],
+        },
+      }),
+      codex_connector_stable_churn_dossier_consumed_signature: null,
+    },
+    pr,
+    checks: [],
+    reviewThreads: threads,
+    alwaysReadFiles: [],
+    onDemandMemoryFiles: [],
+    journalPath: "/tmp/workspaces/issue-2250/.codex-supervisor/issue-journal.md",
+  } satisfies AgentTurnContext);
+
+  assert.match(prompt, /Codex Connector stable churn dossier:/);
+  assert.match(prompt, /Active PR head: head-current-2250/);
+  assert.match(prompt, /Recent repair heads: head-previous-2250, head-middle-2250, head-current-2250/);
+  assert.match(prompt, /Must-fix count trend: head-previous-2250:4 -> head-middle-2250:4 -> head-current-2250:5/);
+  assert.match(prompt, /Category signature trend: head-previous-2250:claim_detection\+truth_source -> head-middle-2250:claim_detection\+truth_source -> head-current-2250:claim_detection\+truth_source/);
+  assert.match(prompt, /Dominant file: src\/release-readiness\.ts/);
+  assert.match(prompt, /Representative thread ids: thread-current-0, thread-current-1/);
+  assert.match(prompt, /Representative URLs: https:\/\/example\.test\/pr\/2250#discussion_thread-current-0, https:\/\/example\.test\/pr\/2250#discussion_thread-current-1/);
+  assert.match(prompt, /Route this as one root-cause repair dossier, not per-thread patching/);
+  assert.match(prompt, /Read src\/release-readiness\.ts as a whole before editing/);
+});
+
 test("buildCodexPrompt detects Codex Connector churn from all active threads when repair selection is narrow", () => {
   const pr = createPullRequest({
     number: 1388,

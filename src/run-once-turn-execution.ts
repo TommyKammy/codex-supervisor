@@ -62,6 +62,7 @@ import {
   executionMetricsRetentionRootPath,
   syncExecutionMetricsRunSummarySafely,
 } from "./supervisor/execution-metrics-run-summary";
+import { stableSameFileCodexConnectorChurnDossierConsumptionPatch } from "./supervisor/supervisor-lifecycle";
 import {
   captureIssueJournalFingerprint,
   clearInterruptedTurnMarker,
@@ -504,6 +505,14 @@ export async function executeCodexTurnPhase(
         });
         turnMarkerWritten = true;
         const turnResult = await agentRunner.runTurn(turnContext);
+        const codexSessionStarted =
+          turnContext.kind === "start" &&
+          typeof turnResult.sessionId === "string" &&
+          turnResult.sessionId.trim().length > 0;
+        const dossierConsumptionPatch =
+          record.state === "addressing_review" && codexSessionStarted
+            ? stableSameFileCodexConnectorChurnDossierConsumptionPatch(record)
+            : {};
         const structuredResult = agentRunner.capabilities
           .supportsStructuredResult
           ? turnResult.structuredResult
@@ -528,6 +537,7 @@ export async function executeCodexTurnPhase(
         const effectiveJournalAfterRun =
           normalizedJournalAfterRun ?? journalAfterRun;
         record = stateStore.touch(record, {
+          ...dossierConsumptionPatch,
           codex_session_id: turnResult.sessionId,
           last_codex_summary: truncate(turnResult.supervisorMessage),
           last_failure_kind: turnResult.failureKind,

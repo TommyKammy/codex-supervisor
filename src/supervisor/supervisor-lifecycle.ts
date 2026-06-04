@@ -27,7 +27,9 @@ import {
   buildCodexConnectorReviewChurnProgressSummary,
   clusterConfiguredBotReviewThreads,
   compareCodexConnectorReviewChurnProgress,
+  codexConnectorStableSameFileChurnSignature,
   detectStableSameFileCodexConnectorChurn,
+  isCodexConnectorStableSameFileChurn,
   type CodexConnectorReviewChurnHistoryEntry,
   type CodexConnectorReviewChurnProgressComparison,
   type CodexConnectorReviewChurnProgressSummary,
@@ -149,6 +151,32 @@ export interface TrackedPrRepeatFailureDisposition {
 }
 
 const TRACKED_PR_PROGRESS_EXTENSION_MULTIPLIER = 2;
+
+export function unconsumedStableSameFileCodexConnectorChurnDossierSignature(
+  record: Pick<
+    IssueRunRecord,
+    "last_tracked_pr_progress_snapshot" | "codex_connector_stable_churn_dossier_consumed_signature"
+  >,
+): string | null {
+  const snapshot = parseTrackedPrProgressSnapshot(record.last_tracked_pr_progress_snapshot);
+  const stable = snapshot?.codexConnectorStableSameFileChurn;
+  if (!isCodexConnectorStableSameFileChurn(stable)) {
+    return null;
+  }
+
+  const signature = codexConnectorStableSameFileChurnSignature(stable);
+  return signature === record.codex_connector_stable_churn_dossier_consumed_signature ? null : signature;
+}
+
+export function stableSameFileCodexConnectorChurnDossierConsumptionPatch(
+  record: Pick<
+    IssueRunRecord,
+    "last_tracked_pr_progress_snapshot" | "codex_connector_stable_churn_dossier_consumed_signature"
+  >,
+): Pick<IssueRunRecord, "codex_connector_stable_churn_dossier_consumed_signature"> | Record<string, never> {
+  const signature = unconsumedStableSameFileCodexConnectorChurnDossierSignature(record);
+  return signature ? { codex_connector_stable_churn_dossier_consumed_signature: signature } : {};
+}
 
 function buildTrackedPrProgressSnapshot(
   record: Pick<

@@ -44,9 +44,11 @@ interface AgentRunnerBaseRequest {
         IssueRunRecord,
         | "last_failure_signature"
         | "last_tracked_pr_progress_summary"
+        | "last_tracked_pr_progress_snapshot"
         | "last_tracked_pr_repeat_failure_decision"
         | "addressing_review_strategy"
         | "addressing_review_strategy_reason"
+        | "codex_connector_stable_churn_dossier_consumed_signature"
       >
     > | null;
   repoSlug: string;
