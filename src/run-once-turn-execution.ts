@@ -505,8 +505,12 @@ export async function executeCodexTurnPhase(
         });
         turnMarkerWritten = true;
         const turnResult = await agentRunner.runTurn(turnContext);
+        const codexSessionStarted =
+          turnContext.kind === "start" &&
+          typeof turnResult.sessionId === "string" &&
+          turnResult.sessionId.trim().length > 0;
         const dossierConsumptionPatch =
-          record.state === "addressing_review"
+          record.state === "addressing_review" && codexSessionStarted
             ? stableSameFileCodexConnectorChurnDossierConsumptionPatch(record)
             : {};
         const structuredResult = agentRunner.capabilities
