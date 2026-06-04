@@ -495,14 +495,6 @@ export async function executeCodexTurnPhase(
         });
         record = preparedTurn.record;
         const { turnContext, reviewThreadsToProcess } = preparedTurn;
-        if (record.state === "addressing_review") {
-          const dossierConsumptionPatch = stableSameFileCodexConnectorChurnDossierConsumptionPatch(record);
-          if (Object.keys(dossierConsumptionPatch).length > 0) {
-            record = stateStore.touch(record, dossierConsumptionPatch);
-            state.issues[String(record.issue_number)] = record;
-            await stateStore.save(state);
-          }
-        }
         const preRunJournalFingerprint =
           await captureIssueJournalFingerprint(journalPath);
         await writeInterruptedTurnMarker({
@@ -513,6 +505,10 @@ export async function executeCodexTurnPhase(
         });
         turnMarkerWritten = true;
         const turnResult = await agentRunner.runTurn(turnContext);
+        const dossierConsumptionPatch =
+          record.state === "addressing_review"
+            ? stableSameFileCodexConnectorChurnDossierConsumptionPatch(record)
+            : {};
         const structuredResult = agentRunner.capabilities
           .supportsStructuredResult
           ? turnResult.structuredResult
@@ -537,6 +533,7 @@ export async function executeCodexTurnPhase(
         const effectiveJournalAfterRun =
           normalizedJournalAfterRun ?? journalAfterRun;
         record = stateStore.touch(record, {
+          ...dossierConsumptionPatch,
           codex_session_id: turnResult.sessionId,
           last_codex_summary: truncate(turnResult.supervisorMessage),
           last_failure_kind: turnResult.failureKind,

@@ -24,6 +24,7 @@ import {
   createReviewThread,
 } from "./turn-execution-test-helpers";
 import { AgentRunner, AgentTurnRequest } from "./supervisor/agent-runner";
+import { stableSameFileCodexConnectorChurnDossierConsumptionPatch } from "./supervisor/supervisor-lifecycle";
 import { interruptedTurnMarkerPath } from "./interrupted-turn-marker";
 import type { GitHubClient } from "./github";
 import { WORKSTATION_LOCAL_PATH_HYGIENE_REPAIRABLE_PUBLICATION_SIGNATURE } from "./workstation-local-path-gate";
@@ -3151,6 +3152,142 @@ test("executeCodexTurnPhase writes a durable interrupted-turn marker before runT
     assert.equal(result.kind, "completed");
     assert.equal(markerSeenDuringRun, true);
     await assert.rejects(fs.access(markerPath), { code: "ENOENT" });
+  });
+});
+
+test("executeCodexTurnPhase does not consume a stable churn dossier before runTurn returns", async () => {
+  await withTempWorkspace("codex-churn-dossier-dispatch-", async (workspacePath) => {
+    const signature =
+      "codex-connector-stable-same-file-churn:src/release-readiness.ts:claim_detection_truth_source:head-a_head-b_head-c";
+    const journalPath = path.join(
+      workspacePath,
+      ".codex-supervisor",
+      "issue-journal.md",
+    );
+    const record = createRecord({
+      state: "addressing_review",
+      workspace: workspacePath,
+      journal_path: journalPath,
+      last_tracked_pr_progress_snapshot: JSON.stringify({
+        headRefOid: "head-c",
+        reviewDecision: "CHANGES_REQUESTED",
+        mergeStateStatus: "BLOCKED",
+        checks: [],
+        unresolvedReviewThreadIds: ["thread-current-0"],
+        codexConnectorStableSameFileChurn: {
+          streak: 3,
+          dominantFile: "src/release-readiness.ts",
+          clusterCategorySignature: "claim_detection+truth_source",
+          currentEffectiveMustFixCount: 4,
+          reviewedHeadShas: ["head-a", "head-b", "head-c"],
+          representativeThreadIds: ["thread-current-0"],
+        },
+      }),
+      codex_connector_stable_churn_dossier_consumed_signature: null,
+    });
+    const state: SupervisorStateFile = {
+      activeIssueNumber: 102,
+      issues: {
+        "102": record,
+      },
+    };
+    let saveCalls = 0;
+    let recoveredRecord: IssueRunRecord | null = null;
+
+    const result = await executeCodexTurnPhase({
+      config: createConfig(),
+      stateStore: {
+        touch: (currentRecord, patch) => ({
+          ...currentRecord,
+          ...patch,
+          updated_at: "2026-03-26T01:00:01.000Z",
+        }),
+        save: async () => {
+          saveCalls += 1;
+        },
+      },
+      github: {
+        resolvePullRequestForBranch: async () => null,
+        createPullRequest: async () => {
+          throw new Error("unexpected createPullRequest call");
+        },
+        getChecks: async () => [],
+        getUnresolvedReviewThreads: async () => [],
+        getExternalReviewSurface: async () => {
+          throw new Error("unexpected getExternalReviewSurface call");
+        },
+      },
+      context: createCodexTurnContext({
+        state,
+        record,
+        workspacePath,
+        journalPath,
+        pr: null,
+        workspaceStatus: {
+          branch: "codex/issue-102",
+          headSha: "head-c",
+        },
+      }),
+      acquireSessionLock: async () => null,
+      classifyFailure: () => "command_error",
+      buildCodexFailureContext: (category, summary, details) => ({
+        category,
+        summary,
+        signature: `${category}:${summary}`,
+        command: null,
+        details,
+        url: null,
+        updated_at: "2026-03-26T01:00:01.000Z",
+      }),
+      applyFailureSignature: () => ({
+        last_failure_signature: null,
+        repeated_failure_signature_count: 0,
+      }),
+      normalizeBlockerSignature: () => null,
+      isVerificationBlockedMessage: () => false,
+      derivePullRequestLifecycleSnapshot: () => {
+        throw new Error("unexpected derivePullRequestLifecycleSnapshot call");
+      },
+      inferStateWithoutPullRequest: () => "stabilizing",
+      blockedReasonFromReviewState: () => null,
+      recoverUnexpectedCodexTurnFailure: async ({ record: recordAtFailure }) => {
+        recoveredRecord = recordAtFailure;
+        return recordAtFailure;
+      },
+      getWorkspaceStatus: async () =>
+        createWorkspaceStatus({
+          branch: "codex/issue-102",
+          headSha: "head-c",
+        }),
+      pushBranch: async () => {
+        throw new Error("unexpected pushBranch call");
+      },
+      readIssueJournal: async () =>
+        "## Codex Working Notes\n### Current Handoff\n- Hypothesis: repair stable churn.\n",
+      agentRunner: createSuccessfulAgentRunner(async (request) => {
+        assert.equal(
+          request.record?.codex_connector_stable_churn_dossier_consumed_signature,
+          null,
+        );
+        throw new Error("dispatch failed after marker");
+      }),
+    });
+
+    const recordAtRecovery = recoveredRecord as IssueRunRecord | null;
+    assert.deepEqual(result, {
+      kind: "returned",
+      message: "Recovered from unexpected Codex turn failure for issue #102.",
+    });
+    assert.equal(saveCalls, 0);
+    assert.equal(
+      recordAtRecovery?.codex_connector_stable_churn_dossier_consumed_signature,
+      null,
+    );
+    assert.equal(
+      stableSameFileCodexConnectorChurnDossierConsumptionPatch(recordAtRecovery ?? record)
+        .codex_connector_stable_churn_dossier_consumed_signature,
+      signature,
+    );
   });
 });
 
