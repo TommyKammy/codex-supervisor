@@ -345,7 +345,9 @@ async function currentHeadWorkspacePathForStaleReviewRepairProbe(args: {
 
   try {
     const workspaceStatus = await getWorkspaceStatus(args.workspacePath, args.record.branch, args.config.defaultBranch);
-    return workspaceStatus.headSha === args.pr.headRefOid ? args.workspacePath : undefined;
+    return workspaceStatus.headSha === args.pr.headRefOid && !workspaceStatus.hasUncommittedChanges
+      ? args.workspacePath
+      : undefined;
   } catch {
     return undefined;
   }

@@ -29,6 +29,7 @@ export async function createTrackedRepo(): Promise<string> {
   git(repoPath, "config", "user.name", "Codex Supervisor");
   git(repoPath, "config", "user.email", "codex@example.test");
   git(repoPath, "init", "--bare", "origin.git");
+  await fs.appendFile(path.join(repoPath, ".git", "info", "exclude"), "\n/origin.git/\n", "utf8");
   await fs.writeFile(path.join(repoPath, "README.md"), "# fixture\n", "utf8");
   git(repoPath, "add", "README.md");
   git(repoPath, "commit", "-m", "seed");

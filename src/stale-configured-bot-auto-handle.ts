@@ -51,7 +51,7 @@ async function loadReviewThreadFileContents(args: {
 
   try {
     const workspaceStatus = await getWorkspaceStatus(args.workspacePath, args.branch, args.defaultBranch);
-    if (workspaceStatus.headSha !== args.expectedHeadSha) {
+    if (workspaceStatus.headSha !== args.expectedHeadSha || workspaceStatus.hasUncommittedChanges) {
       return undefined;
     }
   } catch {
