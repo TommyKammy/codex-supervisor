@@ -47,6 +47,7 @@ import { hasResolvedAllStaleConfiguredBotThreads } from "./supervisor/stale-revi
 import { applyTrackedPrLifecycleState } from "./post-turn-pull-request-lifecycle";
 import { maybePromoteDraftPullRequestToReady } from "./post-turn-ready-promotion";
 import { effectiveConfiguredBotReviewThreadsForState } from "./pull-request-state-codex-residue-policy";
+import { getWorkspaceStatus } from "./core/workspace";
 
 export { syncTrackedPrPersistentStatusComment } from "./tracked-pr-status-comment";
 
@@ -319,6 +320,39 @@ function hasEffectiveConfiguredBotReviewBlockers(args: {
   ).length > 0;
 }
 
+function staleReviewRepairProbeMayReadWorkspace(args: {
+  config: Pick<SupervisorConfig, "verifiedCurrentHeadRepairReviewThreadAutoResolve">;
+  record: Pick<IssueRunRecord, "blocked_reason" | "state">;
+}): boolean {
+  return (
+    args.config.verifiedCurrentHeadRepairReviewThreadAutoResolve === true &&
+    (args.record.state === "blocked" || args.record.state === "pr_open") &&
+    (args.record.blocked_reason === "stale_review_bot" ||
+      args.record.blocked_reason === "manual_review" ||
+      args.record.state === "pr_open")
+  );
+}
+
+async function currentHeadWorkspacePathForStaleReviewRepairProbe(args: {
+  config: Pick<SupervisorConfig, "defaultBranch" | "verifiedCurrentHeadRepairReviewThreadAutoResolve">;
+  record: Pick<IssueRunRecord, "blocked_reason" | "branch" | "state">;
+  pr: Pick<GitHubPullRequest, "headRefOid">;
+  workspacePath: string;
+}): Promise<string | undefined> {
+  if (!staleReviewRepairProbeMayReadWorkspace(args)) {
+    return undefined;
+  }
+
+  try {
+    const workspaceStatus = await getWorkspaceStatus(args.workspacePath, args.record.branch, args.config.defaultBranch);
+    return workspaceStatus.headSha === args.pr.headRefOid && !workspaceStatus.hasUncommittedChanges
+      ? args.workspacePath
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function handlePostTurnPullRequestTransitionsPhase(
   args: HandlePostTurnPullRequestTransitionsArgs,
 ): Promise<PostTurnPullRequestResult> {
@@ -537,6 +571,12 @@ export async function handlePostTurnPullRequestTransitionsPhase(
       effectiveFailureContext = currentHeadLocalCiGate.failureContext;
     }
   }
+  const currentHeadWorkspacePath = await currentHeadWorkspacePathForStaleReviewRepairProbe({
+    config,
+    record,
+    pr: postReady.pr,
+    workspacePath,
+  });
   record = await trackedPrStatusComments.maybeCommentOnTrackedPrPersistentStatus({
     github,
     stateStore,
@@ -550,6 +590,7 @@ export async function handlePostTurnPullRequestTransitionsPhase(
     config,
     failureContext: effectiveFailureContext,
     summarizeChecks: args.summarizeChecks,
+    workspacePath: currentHeadWorkspacePath,
   });
   const staleReviewBotReplySignature =
     record.last_stale_review_bot_reply_signature ??
@@ -615,6 +656,7 @@ export async function handlePostTurnPullRequestTransitionsPhase(
           failureContext: effectiveFailureContext,
           summarizeChecks: args.summarizeChecks,
           skipAutoHandleStaleConfiguredBotReview: true,
+          workspacePath,
         });
       }
       record = await maybeRequestCodexConnectorReviewComment({

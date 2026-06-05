@@ -314,6 +314,693 @@ test("buildStaleReviewBotRemediation fails closed when covered evidence lacks cu
   assert.equal(remediation?.missingProbeReason, "current_head_codex_no_major_signal_missing");
 });
 
+test("buildStaleReviewBotRemediation verifies concrete P2 path-list repair without no-major signal", () => {
+  const issueNumber = 2258;
+  const prNumber = 3258;
+  const headSha = "a74dcf7f47e4282b0f944ab0f1a43b53fa9c87de";
+  const policyPath = "src/mvp-a-onboarding-traceability.ts";
+  const documentPath = "docs/mvp-a/policy/onboarding-traceability.md";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-hrcore-path-list-residue",
+    commentId: "comment-hrcore-path-list-residue",
+    path: policyPath,
+    line: 42,
+    severity: "P2",
+    commentBody:
+      `P2: Add \`${documentPath}\` to both the loader path list and the policy scan path list.`,
+    discussionUrl: "https://example.test/pr/3258#discussion_r2258",
+    verifiedRepair: {
+      summary: "Focused traceability verifier passed after the repair commit.",
+      ranAt: "2026-06-05T21:10:00Z",
+      command: "npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    repair_attempt_count: 1,
+    last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    currentHeadCiGreenAt: "2026-06-05T21:12:00Z",
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotTopLevelReviewStrength: "blocking",
+  });
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: scenario.passingChecks,
+    reviewThreads: [scenario.reviewThread],
+    repositoryFileContents: {
+      [policyPath]: [
+        "const LOADER_PATHS = [",
+        `  "${documentPath}",`,
+        "];",
+        "const POLICY_SCAN_PATHS = [",
+        `  "${documentPath}",`,
+        "];",
+      ].join("\n"),
+    },
+  });
+  const diagnostics = buildStaleReviewBotThreadDiagnostics({
+    config,
+    record,
+    pr,
+    checks: scenario.passingChecks,
+    reviewThreads: [scenario.reviewThread],
+    remediation,
+  });
+
+  assert.equal(remediation?.classification, "verified_current_head_repair_pending_thread_resolution");
+  assert.equal(remediation?.codexCurrentHeadReviewState, "missing");
+  assert.equal(remediation?.missingProbeReason, null);
+  assert.match(
+    remediation?.verificationEvidenceSummary ?? "",
+    /deterministic_repair_probe:path_present_in_requested_live_lists:docs\/mvp-a\/policy\/onboarding-traceability\.md:loader,policy_scan/,
+  );
+  assert.equal(diagnostics?.verifiedStaleResidueThreads, 1);
+  assert.equal(diagnostics?.repeatStopExhausted, "no");
+  assert.equal(diagnostics?.autoRepairSuppressedReason, "none");
+});
+
+test("buildStaleReviewBotRemediation probes the Codex finding when a supervisor reply is newest", () => {
+  const issueNumber = 2258;
+  const prNumber = 3258;
+  const headSha = "c6437ebc0252efc8d09a28e20d8339f5957afd98";
+  const policyPath = "src/mvp-a-onboarding-traceability.ts";
+  const documentPath = "docs/mvp-a/policy/onboarding-traceability.md";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-hrcore-path-list-reply-residue",
+    commentId: "comment-hrcore-path-list-reply-residue",
+    path: policyPath,
+    line: 42,
+    severity: "P2",
+    commentBody: `P2: Add \`${documentPath}\` to both the loader path list and the policy scan path list.`,
+    discussionUrl: "https://example.test/pr/3258#discussion_r2258_reply",
+    verifiedRepair: {
+      summary: "Focused traceability verifier passed after the repair commit.",
+      ranAt: "2026-06-05T21:10:00Z",
+      command: "npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    repair_attempt_count: 1,
+    last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+    processed_review_thread_fingerprints: [`${scenario.reviewThread.id}@${headSha}#comment-supervisor-reply`],
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    currentHeadCiGreenAt: "2026-06-05T21:12:00Z",
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotTopLevelReviewStrength: "blocking",
+  });
+  const reviewThread = {
+    ...scenario.reviewThread,
+    comments: {
+      nodes: [
+        ...scenario.reviewThread.comments.nodes,
+        {
+          id: "comment-supervisor-reply",
+          body: "Supervisor reply: verified the repair and attempting thread resolution.",
+          createdAt: "2026-06-05T21:12:30Z",
+          url: "https://example.test/pr/3258#discussion_r2258_reply_followup",
+          author: {
+            login: "github-actions[bot]",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  };
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: scenario.passingChecks,
+    reviewThreads: [reviewThread],
+    repositoryFileContents: {
+      [policyPath]: [
+        "const LOADER_PATHS = [",
+        `  "${documentPath}",`,
+        "];",
+        "const POLICY_SCAN_PATHS = [",
+        `  "${documentPath}",`,
+        "];",
+      ].join("\n"),
+    },
+  });
+
+  assert.equal(remediation?.classification, "verified_current_head_repair_pending_thread_resolution");
+  assert.equal(remediation?.missingProbeReason, null);
+  assert.match(
+    remediation?.verificationEvidenceSummary ?? "",
+    /deterministic_repair_probe:path_present_in_requested_live_lists:docs\/mvp-a\/policy\/onboarding-traceability\.md:loader,policy_scan/,
+  );
+});
+
+test("buildStaleReviewBotRemediation requires live path-list membership during repair probes", () => {
+  const issueNumber = 2258;
+  const prNumber = 3258;
+  const headSha = "0cc6dbde508f41a64c314c50d46d31d859cf2258";
+  const policyPath = "src/mvp-a-onboarding-traceability.ts";
+  const documentPath = "docs/page.md";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-hrcore-live-list-residue",
+    commentId: "comment-hrcore-live-list-residue",
+    path: policyPath,
+    line: 42,
+    severity: "P2",
+    commentBody: `P2: Add \`${documentPath}\` to both the loader path list and the policy scan path list.`,
+    discussionUrl: "https://example.test/pr/3258#discussion_r2258_live_list",
+    verifiedRepair: {
+      summary: "Focused traceability verifier passed after the repair commit.",
+      ranAt: "2026-06-05T21:10:00Z",
+      command: "npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    repair_attempt_count: 1,
+    last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    currentHeadCiGreenAt: "2026-06-05T21:12:00Z",
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotTopLevelReviewStrength: "blocking",
+  });
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: scenario.passingChecks,
+    reviewThreads: [scenario.reviewThread],
+    repositoryFileContents: {
+      [policyPath]: [
+        "const LOADER_PATHS = [",
+        `  // "${documentPath}",`,
+        "];",
+        "const POLICY_SCAN_PATHS = [];",
+        `const repairNote = "The requested ${documentPath} path is mentioned twice: ${documentPath}.";`,
+      ].join("\n"),
+    },
+  });
+
+  assert.equal(remediation?.classification, "unknown_needs_operator");
+  assert.equal(remediation?.missingProbeReason, "current_head_codex_no_major_signal_missing");
+  assert.doesNotMatch(remediation?.verificationEvidenceSummary ?? "", /deterministic_repair_probe/);
+});
+
+test("buildStaleReviewBotRemediation ignores unrelated arrays during path-list repair probes", () => {
+  const issueNumber = 2258;
+  const prNumber = 3258;
+  const headSha = "7e4c599e0cb94657b22589293314ebf06a52d258";
+  const policyPath = "src/mvp-a-onboarding-traceability.ts";
+  const documentPath = "docs/page.md";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-hrcore-unrelated-arrays-residue",
+    commentId: "comment-hrcore-unrelated-arrays-residue",
+    path: policyPath,
+    line: 42,
+    severity: "P2",
+    commentBody: `P2: Add \`${documentPath}\` to the policy scan path list.`,
+    discussionUrl: "https://example.test/pr/3258#discussion_r2258_unrelated_arrays",
+    verifiedRepair: {
+      summary: "Focused traceability verifier passed after the repair commit.",
+      ranAt: "2026-06-05T21:10:00Z",
+      command: "npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    repair_attempt_count: 1,
+    last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    currentHeadCiGreenAt: "2026-06-05T21:12:00Z",
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotTopLevelReviewStrength: "blocking",
+  });
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: scenario.passingChecks,
+    reviewThreads: [scenario.reviewThread],
+    repositoryFileContents: {
+      [policyPath]: [
+        "const EXPECTED_POLICY_SCAN_PATHS = [",
+        `  "${documentPath}",`,
+        "];",
+        "const FIXTURE_POLICY_SCAN_PATHS = [",
+        `  "${documentPath}",`,
+        "];",
+        "const POLICY_SCAN_PATHS = [];",
+      ].join("\n"),
+    },
+  });
+
+  assert.equal(remediation?.classification, "unknown_needs_operator");
+  assert.equal(remediation?.missingProbeReason, "current_head_codex_no_major_signal_missing");
+  assert.doesNotMatch(remediation?.verificationEvidenceSummary ?? "", /deterministic_repair_probe/);
+});
+
+test("buildStaleReviewBotRemediation rejects inverse path-list arrays during repair probes", () => {
+  const issueNumber = 2258;
+  const prNumber = 3258;
+  const headSha = "a9ac8914f2679f0d9f273776f352c9e4efc2258";
+  const policyPath = "src/mvp-a-onboarding-traceability.ts";
+  const documentPath = "docs/page.md";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-hrcore-inverse-path-list-residue",
+    commentId: "comment-hrcore-inverse-path-list-residue",
+    path: policyPath,
+    line: 42,
+    severity: "P2",
+    commentBody: `P2: Add \`${documentPath}\` to the policy scan path list.`,
+    discussionUrl: "https://example.test/pr/3258#discussion_r2258_inverse_path_list",
+    verifiedRepair: {
+      summary: "Focused traceability verifier passed after the repair commit.",
+      ranAt: "2026-06-05T21:10:00Z",
+      command: "npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    repair_attempt_count: 1,
+    last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    currentHeadCiGreenAt: "2026-06-05T21:12:00Z",
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotTopLevelReviewStrength: "blocking",
+  });
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: scenario.passingChecks,
+    reviewThreads: [scenario.reviewThread],
+    repositoryFileContents: {
+      [policyPath]: [
+        "const excludedPolicyScanPaths = [",
+        `  "${documentPath}",`,
+        "];",
+        "const disabledPolicyScanPaths = [",
+        `  "${documentPath}",`,
+        "];",
+        "const POLICY_SCAN_PATHS = [];",
+      ].join("\n"),
+    },
+  });
+
+  assert.equal(remediation?.classification, "unknown_needs_operator");
+  assert.equal(remediation?.missingProbeReason, "current_head_codex_no_major_signal_missing");
+  assert.doesNotMatch(remediation?.verificationEvidenceSummary ?? "", /deterministic_repair_probe/);
+});
+
+test("buildStaleReviewBotRemediation rejects non-additive path-list findings", () => {
+  const issueNumber = 2258;
+  const prNumber = 3258;
+  const headSha = "42b76077b9db2fcac4b9d1c7c05c5d03a1f0f12a";
+  const policyPath = "src/mvp-a-onboarding-traceability.ts";
+  const documentPath = "docs/mvp-a/policy/onboarding-traceability.md";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-hrcore-path-list-deduplicate-residue",
+    commentId: "comment-hrcore-path-list-deduplicate-residue",
+    path: policyPath,
+    line: 42,
+    severity: "P2",
+    commentBody: `P2: Deduplicate \`${documentPath}\` from the loader path list.`,
+    discussionUrl: "https://example.test/pr/3258#discussion_r2258_deduplicate",
+    verifiedRepair: {
+      summary: "Focused traceability verifier passed after the repair commit.",
+      ranAt: "2026-06-05T21:10:00Z",
+      command: "npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    repair_attempt_count: 1,
+    last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    currentHeadCiGreenAt: "2026-06-05T21:12:00Z",
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotTopLevelReviewStrength: "blocking",
+  });
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: scenario.passingChecks,
+    reviewThreads: [scenario.reviewThread],
+    repositoryFileContents: {
+      [policyPath]: [
+        "const LOADER_PATHS = [",
+        `  "${documentPath}",`,
+        `  "${documentPath}",`,
+        "];",
+      ].join("\n"),
+    },
+  });
+
+  assert.equal(remediation?.classification, "unknown_needs_operator");
+  assert.equal(remediation?.missingProbeReason, "current_head_codex_no_major_signal_missing");
+  assert.doesNotMatch(remediation?.verificationEvidenceSummary ?? "", /deterministic_repair_probe/);
+});
+
+test("buildStaleReviewBotRemediation rejects missing-validation path-list findings", () => {
+  const issueNumber = 2258;
+  const prNumber = 3258;
+  const headSha = "a9bb7f424b43657f0e17722c6a4769ad1b3c2258";
+  const policyPath = "src/mvp-a-onboarding-traceability.ts";
+  const documentPath = "docs/page.md";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-hrcore-path-list-missing-validation-residue",
+    commentId: "comment-hrcore-path-list-missing-validation-residue",
+    path: policyPath,
+    line: 42,
+    severity: "P2",
+    commentBody: `P2: The policy scan path list is missing validation for \`${documentPath}\`.`,
+    discussionUrl: "https://example.test/pr/3258#discussion_r2258_missing_validation",
+    verifiedRepair: {
+      summary: "Focused traceability verifier passed after the repair commit.",
+      ranAt: "2026-06-05T21:10:00Z",
+      command: "npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    repair_attempt_count: 1,
+    last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    currentHeadCiGreenAt: "2026-06-05T21:12:00Z",
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotTopLevelReviewStrength: "blocking",
+  });
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: scenario.passingChecks,
+    reviewThreads: [scenario.reviewThread],
+    repositoryFileContents: {
+      [policyPath]: [
+        "const POLICY_SCAN_PATHS = [",
+        `  "${documentPath}",`,
+        "];",
+      ].join("\n"),
+    },
+  });
+
+  assert.equal(remediation?.classification, "unknown_needs_operator");
+  assert.equal(remediation?.missingProbeReason, "current_head_codex_no_major_signal_missing");
+  assert.doesNotMatch(remediation?.verificationEvidenceSummary ?? "", /deterministic_repair_probe/);
+});
+
+test("buildStaleReviewBotRemediation does not truncate longer path extensions during repair probes", () => {
+  const issueNumber = 2258;
+  const prNumber = 3258;
+  const headSha = "ac62cb8f11f71737ccd02f93f9c81c917797d6b3";
+  const policyPath = "src/mvp-a-onboarding-traceability.ts";
+  const componentPath = "src/view.tsx";
+  const documentPath = "docs/page.mdx";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-hrcore-long-extension-residue",
+    commentId: "comment-hrcore-long-extension-residue",
+    path: policyPath,
+    line: 42,
+    severity: "P2",
+    commentBody: `P2: Add \`${componentPath}\` and \`${documentPath}\` to the policy scan path list.`,
+    discussionUrl: "https://example.test/pr/3258#discussion_r2258_extensions",
+    verifiedRepair: {
+      summary: "Focused traceability verifier passed after the repair commit.",
+      ranAt: "2026-06-05T21:10:00Z",
+      command: "npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    repair_attempt_count: 1,
+    last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    currentHeadCiGreenAt: "2026-06-05T21:12:00Z",
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotTopLevelReviewStrength: "blocking",
+  });
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: scenario.passingChecks,
+    reviewThreads: [scenario.reviewThread],
+    repositoryFileContents: {
+      [policyPath]: [
+        "const POLICY_SCAN_PATHS = [",
+        "  \"src/view.ts\",",
+        "  \"src/view.ts\",",
+        "  \"docs/page.md\",",
+        "  \"docs/page.md\",",
+        "];",
+      ].join("\n"),
+    },
+  });
+
+  assert.equal(remediation?.classification, "unknown_needs_operator");
+  assert.equal(remediation?.missingProbeReason, "current_head_codex_no_major_signal_missing");
+  assert.doesNotMatch(remediation?.verificationEvidenceSummary ?? "", /deterministic_repair_probe/);
+});
+
+test("buildStaleReviewBotRemediation requires exact path token matches during repair probes", () => {
+  const issueNumber = 2258;
+  const prNumber = 3258;
+  const headSha = "3d3b78d7ddc0ee8a31382bd131998c13226b5d63";
+  const policyPath = "src/mvp-a-onboarding-traceability.ts";
+  const requestedDocumentPath = "docs/page.md";
+  const siblingDocumentPath = "docs/page.mdx";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-hrcore-exact-path-residue",
+    commentId: "comment-hrcore-exact-path-residue",
+    path: policyPath,
+    line: 42,
+    severity: "P2",
+    commentBody: `P2: Add \`${requestedDocumentPath}\` to the policy scan path list.`,
+    discussionUrl: "https://example.test/pr/3258#discussion_r2258_exact",
+    verifiedRepair: {
+      summary: "Focused traceability verifier passed after the repair commit.",
+      ranAt: "2026-06-05T21:10:00Z",
+      command: "npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    repair_attempt_count: 1,
+    last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    currentHeadCiGreenAt: "2026-06-05T21:12:00Z",
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotTopLevelReviewStrength: "blocking",
+  });
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: scenario.passingChecks,
+    reviewThreads: [scenario.reviewThread],
+    repositoryFileContents: {
+      [policyPath]: [
+        "const POLICY_SCAN_PATHS = [",
+        `  "${siblingDocumentPath}",`,
+        `  "${siblingDocumentPath}",`,
+        "];",
+      ].join("\n"),
+    },
+  });
+
+  assert.equal(remediation?.classification, "unknown_needs_operator");
+  assert.equal(remediation?.missingProbeReason, "current_head_codex_no_major_signal_missing");
+  assert.doesNotMatch(remediation?.verificationEvidenceSummary ?? "", /deterministic_repair_probe/);
+});
+
+test("buildStaleReviewBotRemediation requires every requested path before proving repair residue", () => {
+  const issueNumber = 2258;
+  const prNumber = 3258;
+  const headSha = "93cd2756e7a4721e3c6e1fc0f9fe3259b6f7e8f0";
+  const policyPath = "src/mvp-a-onboarding-traceability.ts";
+  const componentPath = "src/view.tsx";
+  const documentPath = "docs/page.mdx";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-hrcore-every-path-residue",
+    commentId: "comment-hrcore-every-path-residue",
+    path: policyPath,
+    line: 42,
+    severity: "P2",
+    commentBody: `P2: Add \`${componentPath}\` and \`${documentPath}\` to the policy scan path list.`,
+    discussionUrl: "https://example.test/pr/3258#discussion_r2258_every",
+    verifiedRepair: {
+      summary: "Focused traceability verifier passed after the repair commit.",
+      ranAt: "2026-06-05T21:10:00Z",
+      command: "npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    repair_attempt_count: 1,
+    last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    currentHeadCiGreenAt: "2026-06-05T21:12:00Z",
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotTopLevelReviewStrength: "blocking",
+  });
+
+  const missingDocumentRemediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: scenario.passingChecks,
+    reviewThreads: [scenario.reviewThread],
+    repositoryFileContents: {
+      [policyPath]: [
+        "const POLICY_SCAN_PATHS = [",
+        `  "${componentPath}",`,
+        `  "${componentPath}",`,
+        "];",
+      ].join("\n"),
+    },
+  });
+  const completeRemediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: scenario.passingChecks,
+    reviewThreads: [scenario.reviewThread],
+    repositoryFileContents: {
+      [policyPath]: [
+        "const POLICY_SCAN_PATHS = [",
+        `  "${componentPath}",`,
+        `  "${documentPath}",`,
+        "];",
+      ].join("\n"),
+    },
+  });
+
+  assert.equal(missingDocumentRemediation?.classification, "unknown_needs_operator");
+  assert.equal(missingDocumentRemediation?.missingProbeReason, "current_head_codex_no_major_signal_missing");
+  assert.doesNotMatch(missingDocumentRemediation?.verificationEvidenceSummary ?? "", /deterministic_repair_probe/);
+  assert.equal(completeRemediation?.classification, "verified_current_head_repair_pending_thread_resolution");
+  assert.match(
+    completeRemediation?.verificationEvidenceSummary ?? "",
+    /deterministic_repair_probe:path_present_in_requested_live_lists:src\/view\.tsx:policy_scan/,
+  );
+  assert.match(
+    completeRemediation?.verificationEvidenceSummary ?? "",
+    /deterministic_repair_probe:path_present_in_requested_live_lists:docs\/page\.mdx:policy_scan/,
+  );
+});
+
 test("buildStaleReviewBotRemediation fails closed when current-head no-major has unprocessed must-fix threads", () => {
   const issueNumber = 110;
   const prNumber = 115;

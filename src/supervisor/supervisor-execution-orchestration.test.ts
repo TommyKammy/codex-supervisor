@@ -2378,9 +2378,24 @@ test("runPreparedIssue preserves prepared stale-review residue eligibility befor
   fixture.config.configuredBotRequireCurrentHeadSignal = true;
   const issueNumber = 2215;
   const prNumber = 3215;
-  const headSha = "head-2215";
   const branch = branchName(fixture.config, issueNumber);
   const { workspacePath, journalPath } = trackedIssuePaths(fixture.workspaceRoot, issueNumber);
+  const policyPath = "src/current-repair.ts";
+  const documentPath = "docs/page.md";
+  git(["-C", fixture.repoPath, "worktree", "add", "-b", branch, workspacePath, "main"]);
+  await fs.mkdir(path.join(workspacePath, "src"), { recursive: true });
+  await fs.writeFile(
+    path.join(workspacePath, policyPath),
+    [
+      "const POLICY_SCAN_PATHS = [",
+      `  "${documentPath}",`,
+      "];",
+    ].join("\n"),
+    "utf8",
+  );
+  git(["add", policyPath], workspacePath);
+  git(["commit", "-m", "register policy scan path"], workspacePath);
+  const headSha = git(["rev-parse", "HEAD"], workspacePath);
   const threadIds = ["PRRT_prepared_repair_1", "PRRT_prepared_repair_2"];
   const staleSignature = threadIds.map((threadId) => `stalled-bot:${threadId}`).join("|");
   const staleFailureContext = {
@@ -2391,7 +2406,7 @@ test("runPreparedIssue preserves prepared stale-review residue eligibility befor
     command: null,
     details: threadIds.map(
       (threadId, index) =>
-        `reviewer=chatgpt-codex-connector thread=${threadId} file=src/current-repair.ts line=${20 + index} processed_on_current_head=yes`,
+        `reviewer=chatgpt-codex-connector thread=${threadId} file=${policyPath} line=${20 + index} processed_on_current_head=yes`,
     ),
     url: "https://example.test/pr/3215#discussion_r1",
     updated_at: "2026-05-30T01:00:00Z",
@@ -2441,7 +2456,7 @@ test("runPreparedIssue preserves prepared stale-review residue eligibility befor
       unresolvedReviewThreadIds: threadIds,
       unresolvedReviewThreadFingerprints: threadIds.map((threadId) => `${threadId}#comment-${threadId}`),
       unresolvedReviewThreadSourceAnchors: threadIds.map(
-        (threadId, index) => `${threadId}:src/current-repair.ts:${20 + index}`,
+        (threadId, index) => `${threadId}:${policyPath}:${20 + index}`,
       ),
       processedReviewThreadIds: threadIds.map((threadId) => `${threadId}@${headSha}`),
       processedReviewThreadFingerprints: threadIds.map((threadId) => `${threadId}@${headSha}#comment-${threadId}`),
@@ -2472,9 +2487,9 @@ test("runPreparedIssue preserves prepared stale-review residue eligibility befor
     currentHeadCiGreenAt: "2026-05-30T01:03:00Z",
     codexConnectorReviewRequestedAt: "2026-05-30T00:58:00Z",
     codexConnectorReviewRequestedHeadSha: headSha,
-    configuredBotCurrentHeadObservedAt: "2026-05-30T01:04:00Z",
-    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
-    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotCurrentHeadObservedAt: null,
+    configuredBotCurrentHeadObservationSource: null,
+    configuredBotCurrentHeadStatusState: null,
     configuredBotLatestReviewedCommitSha: headSha,
     configuredBotTopLevelReviewStrength: null,
   });
@@ -2483,13 +2498,13 @@ test("runPreparedIssue preserves prepared stale-review residue eligibility befor
     createReviewThread({
       id: threadId,
       isOutdated: false,
-      path: "src/current-repair.ts",
+      path: policyPath,
       line: 20 + index,
       comments: {
         nodes: [
           {
             id: `comment-${threadId}`,
-            body: "P2: Reject unsafe input before continuing.",
+            body: `P2: Add \`${documentPath}\` to the policy scan path list.`,
             createdAt: "2026-05-30T00:40:00Z",
             url: `https://example.test/pr/3215#discussion_${threadId}`,
             author: {
@@ -2609,7 +2624,7 @@ test("runPreparedIssue preserves prepared stale-review residue eligibility befor
   assert.deepEqual(resolveCalls, threadIds);
   const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
   const record = persisted.issues[String(issueNumber)];
-  assert.equal(record.state, "ready_to_merge");
+  assert.equal(record.state, "waiting_ci");
   assert.equal(record.blocked_reason, null);
   assert.equal(record.last_failure_context, null);
   assert.equal(record.last_failure_signature, null);

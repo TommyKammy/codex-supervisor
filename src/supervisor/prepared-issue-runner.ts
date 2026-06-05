@@ -178,6 +178,9 @@ function shouldTryVerifiedStaleConfiguredBotAutoResolveBeforeRepeatStop(args: {
     (remediation.classification === "verified_no_source_change_pending_thread_resolution" &&
       args.config.verifiedNoSourceChangeReviewThreadAutoResolve === true) ||
     (remediation.classification === "verified_current_head_repair_pending_thread_resolution" &&
+      args.config.verifiedCurrentHeadRepairReviewThreadAutoResolve === true) ||
+    (remediation.classification === "unknown_needs_operator" &&
+      remediation.missingProbeReason === "current_head_codex_no_major_signal_missing" &&
       args.config.verifiedCurrentHeadRepairReviewThreadAutoResolve === true)
   );
 }
@@ -355,6 +358,7 @@ export async function runPreparedIssueFlow(
           failureContext: effectiveFailureContext,
           summarizeChecks,
           manualReviewThreadCount: manualReviewThreads(config, reviewThreads).length,
+          workspacePath,
         });
         handledStaleConfiguredBotResidueBeforeRepeatStop = didAutoResolveStaleConfiguredBotBeforeRepeatStop({
           before: recordBeforeAutoResolve,
