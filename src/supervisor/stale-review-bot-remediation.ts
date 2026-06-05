@@ -6,6 +6,7 @@ import {
   commitShasEqualForComparison,
   evaluateCodexConnectorConvergencePolicy,
   latestCodexConnectorPSeverity,
+  latestCodexConnectorReviewComment,
 } from "../codex-connector-review-policy";
 import {
   configuredBotReviewFollowUpState,
@@ -361,11 +362,6 @@ function allCodexConnectorRepairResidueThreadsAreP2(reviewThreads: ReviewThread[
   return reviewThreads.length > 0 && reviewThreads.every((thread) => latestCodexConnectorPSeverity(thread) === "P2");
 }
 
-function latestReviewThreadBody(thread: ReviewThread): string {
-  const comments = thread.comments?.nodes ?? [];
-  return comments[comments.length - 1]?.body ?? "";
-}
-
 function normalizeRepositoryPath(value: string): string {
   return value.trim().replace(/^\.\/+/u, "").replace(/\\/gu, "/");
 }
@@ -384,7 +380,7 @@ function repositoryFileContent(
 function extractConcreteRepoPaths(body: string): string[] {
   const paths = new Set<string>();
   const pathPattern =
-    /(?:`([^`\r\n]+\.(?:md|mdx|txt|ts|tsx|js|jsx|json|ya?ml|py|rb|go|rs|java|kt|cs|php|sh|sql|toml|ini|cfg|conf|csv|tsv|html|css|scss))`)|((?:[\w.-]+\/)+[\w.-]+\.(?:md|mdx|txt|ts|tsx|js|jsx|json|ya?ml|py|rb|go|rs|java|kt|cs|php|sh|sql|toml|ini|cfg|conf|csv|tsv|html|css|scss))/giu;
+    /(?:`([^`\r\n]+\.(?:tsx|jsx|mdx|ya?ml|toml|json|scss|html|conf|txt|ts|js|md|py|rb|go|rs|java|kt|cs|php|sh|sql|ini|cfg|csv|tsv|css))(?![\w.-])`)|((?:[\w.-]+\/)+[\w.-]+\.(?:tsx|jsx|mdx|ya?ml|toml|json|scss|html|conf|txt|ts|js|md|py|rb|go|rs|java|kt|cs|php|sh|sql|ini|cfg|csv|tsv|css))(?![\w.-])/giu;
   for (const match of body.matchAll(pathPattern)) {
     const path = normalizeRepositoryPath(match[1] ?? match[2] ?? "");
     if (path && !path.startsWith("/") && !/^[a-z]:\//iu.test(path) && path.includes("/")) {
@@ -392,6 +388,21 @@ function extractConcreteRepoPaths(body: string): string[] {
     }
   }
   return [...paths].sort((left, right) => left.localeCompare(right));
+}
+
+function hasAdditivePathListRepairIntent(body: string): boolean {
+  if (
+    /\b(?:remove|delete|drop|exclude|avoid|deduplicat(?:e|ed|es|ing|ion)|de-duplicat(?:e|ed|es|ing|ion))\b/iu.test(
+      body,
+    )
+  ) {
+    return false;
+  }
+
+  return (
+    /\b(?:add|include|insert|append|restore|register|wire|missing|omitted)\b/iu.test(body) &&
+    /\b(?:path|paths|list|lists|array|arrays|loader|loaders|scan|scans|coverage|expectation|expectations)\b/iu.test(body)
+  );
 }
 
 function countOccurrences(haystack: string, needle: string): number {
@@ -427,7 +438,11 @@ function deterministicRepairProbeEvidence(args: {
       return null;
     }
 
-    const concretePaths = extractConcreteRepoPaths(latestReviewThreadBody(thread));
+    const codexFindingBody = latestCodexConnectorReviewComment(thread)?.body ?? "";
+    if (!hasAdditivePathListRepairIntent(codexFindingBody)) {
+      return null;
+    }
+    const concretePaths = extractConcreteRepoPaths(codexFindingBody);
     const matchedPath = concretePaths.find((path) => countOccurrences(source, path) >= 2);
     if (!matchedPath) {
       return null;

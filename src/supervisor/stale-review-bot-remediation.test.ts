@@ -393,6 +393,216 @@ test("buildStaleReviewBotRemediation verifies concrete P2 path-list repair witho
   assert.equal(diagnostics?.autoRepairSuppressedReason, "none");
 });
 
+test("buildStaleReviewBotRemediation probes the Codex finding when a supervisor reply is newest", () => {
+  const issueNumber = 2258;
+  const prNumber = 3258;
+  const headSha = "c6437ebc0252efc8d09a28e20d8339f5957afd98";
+  const policyPath = "src/mvp-a-onboarding-traceability.ts";
+  const documentPath = "docs/mvp-a/policy/onboarding-traceability.md";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-hrcore-path-list-reply-residue",
+    commentId: "comment-hrcore-path-list-reply-residue",
+    path: policyPath,
+    line: 42,
+    severity: "P2",
+    commentBody: `P2: Add \`${documentPath}\` to both the loader path list and the policy scan path list.`,
+    discussionUrl: "https://example.test/pr/3258#discussion_r2258_reply",
+    verifiedRepair: {
+      summary: "Focused traceability verifier passed after the repair commit.",
+      ranAt: "2026-06-05T21:10:00Z",
+      command: "npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    repair_attempt_count: 1,
+    last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+    processed_review_thread_fingerprints: [`${scenario.reviewThread.id}@${headSha}#comment-supervisor-reply`],
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    currentHeadCiGreenAt: "2026-06-05T21:12:00Z",
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotTopLevelReviewStrength: "blocking",
+  });
+  const reviewThread = {
+    ...scenario.reviewThread,
+    comments: {
+      nodes: [
+        ...scenario.reviewThread.comments.nodes,
+        {
+          id: "comment-supervisor-reply",
+          body: "Supervisor reply: verified the repair and attempting thread resolution.",
+          createdAt: "2026-06-05T21:12:30Z",
+          url: "https://example.test/pr/3258#discussion_r2258_reply_followup",
+          author: {
+            login: "github-actions[bot]",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  };
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: scenario.passingChecks,
+    reviewThreads: [reviewThread],
+    repositoryFileContents: {
+      [policyPath]: [
+        "const LOADER_PATHS = [",
+        `  "${documentPath}",`,
+        "];",
+        "const POLICY_SCAN_PATHS = [",
+        `  "${documentPath}",`,
+        "];",
+      ].join("\n"),
+    },
+  });
+
+  assert.equal(remediation?.classification, "verified_current_head_repair_pending_thread_resolution");
+  assert.equal(remediation?.missingProbeReason, null);
+  assert.match(
+    remediation?.verificationEvidenceSummary ?? "",
+    /deterministic_repair_probe:path_present_in_reviewed_file:docs\/mvp-a\/policy\/onboarding-traceability\.md:2/,
+  );
+});
+
+test("buildStaleReviewBotRemediation rejects non-additive path-list findings", () => {
+  const issueNumber = 2258;
+  const prNumber = 3258;
+  const headSha = "42b76077b9db2fcac4b9d1c7c05c5d03a1f0f12a";
+  const policyPath = "src/mvp-a-onboarding-traceability.ts";
+  const documentPath = "docs/mvp-a/policy/onboarding-traceability.md";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-hrcore-path-list-deduplicate-residue",
+    commentId: "comment-hrcore-path-list-deduplicate-residue",
+    path: policyPath,
+    line: 42,
+    severity: "P2",
+    commentBody: `P2: Deduplicate \`${documentPath}\` from the loader path list.`,
+    discussionUrl: "https://example.test/pr/3258#discussion_r2258_deduplicate",
+    verifiedRepair: {
+      summary: "Focused traceability verifier passed after the repair commit.",
+      ranAt: "2026-06-05T21:10:00Z",
+      command: "npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    repair_attempt_count: 1,
+    last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    currentHeadCiGreenAt: "2026-06-05T21:12:00Z",
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotTopLevelReviewStrength: "blocking",
+  });
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: scenario.passingChecks,
+    reviewThreads: [scenario.reviewThread],
+    repositoryFileContents: {
+      [policyPath]: [
+        "const LOADER_PATHS = [",
+        `  "${documentPath}",`,
+        `  "${documentPath}",`,
+        "];",
+      ].join("\n"),
+    },
+  });
+
+  assert.equal(remediation?.classification, "unknown_needs_operator");
+  assert.equal(remediation?.missingProbeReason, "current_head_codex_no_major_signal_missing");
+  assert.doesNotMatch(remediation?.verificationEvidenceSummary ?? "", /deterministic_repair_probe/);
+});
+
+test("buildStaleReviewBotRemediation does not truncate longer path extensions during repair probes", () => {
+  const issueNumber = 2258;
+  const prNumber = 3258;
+  const headSha = "ac62cb8f11f71737ccd02f93f9c81c917797d6b3";
+  const policyPath = "src/mvp-a-onboarding-traceability.ts";
+  const componentPath = "src/view.tsx";
+  const documentPath = "docs/page.mdx";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-hrcore-long-extension-residue",
+    commentId: "comment-hrcore-long-extension-residue",
+    path: policyPath,
+    line: 42,
+    severity: "P2",
+    commentBody: `P2: Add \`${componentPath}\` and \`${documentPath}\` to the policy scan path list.`,
+    discussionUrl: "https://example.test/pr/3258#discussion_r2258_extensions",
+    verifiedRepair: {
+      summary: "Focused traceability verifier passed after the repair commit.",
+      ranAt: "2026-06-05T21:10:00Z",
+      command: "npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    repair_attempt_count: 1,
+    last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    currentHeadCiGreenAt: "2026-06-05T21:12:00Z",
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotTopLevelReviewStrength: "blocking",
+  });
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: scenario.passingChecks,
+    reviewThreads: [scenario.reviewThread],
+    repositoryFileContents: {
+      [policyPath]: [
+        "const POLICY_SCAN_PATHS = [",
+        "  \"src/view.ts\",",
+        "  \"src/view.ts\",",
+        "  \"docs/page.md\",",
+        "  \"docs/page.md\",",
+        "];",
+      ].join("\n"),
+    },
+  });
+
+  assert.equal(remediation?.classification, "unknown_needs_operator");
+  assert.equal(remediation?.missingProbeReason, "current_head_codex_no_major_signal_missing");
+  assert.doesNotMatch(remediation?.verificationEvidenceSummary ?? "", /deterministic_repair_probe/);
+});
+
 test("buildStaleReviewBotRemediation fails closed when current-head no-major has unprocessed must-fix threads", () => {
   const issueNumber = 110;
   const prNumber = 115;
