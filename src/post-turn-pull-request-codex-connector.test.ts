@@ -2457,6 +2457,134 @@ test("handlePostTurnPullRequestTransitionsPhase does not probe files from dirty 
   assert.match(requestComments[0] ?? "", /reason code: `stale_review_bot`/);
 });
 
+test("handlePostTurnPullRequestTransitionsPhase does not probe symlink targets as committed repair evidence", async () => {
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const issue = createIssue({ title: "Reject symlink repair probe target" });
+  const policyPath = "src/mvp-a-onboarding-traceability.ts";
+  const documentPath = "docs/mvp-a/policy/onboarding-traceability.md";
+  const { workspacePath } = await createTrackedIssueBranchRepo("codex/issue-2258-symlink");
+  const externalTargetDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-symlink-target-"));
+  const externalTargetPath = path.join(externalTargetDir, "policy-source.ts");
+  await fs.mkdir(path.join(workspacePath, "src"), { recursive: true });
+  await fs.writeFile(
+    externalTargetPath,
+    [
+      "const LOADER_PATHS = [",
+      `  "${documentPath}",`,
+      "];",
+      "const POLICY_SCAN_PATHS = [",
+      `  "${documentPath}",`,
+      "];",
+    ].join("\n"),
+    "utf8",
+  );
+  await fs.symlink(externalTargetPath, path.join(workspacePath, policyPath));
+  git(workspacePath, "add", policyPath);
+  git(workspacePath, "commit", "-m", "add symlink policy source");
+  git(workspacePath, "push");
+  const headSha = git(workspacePath, "rev-parse", "HEAD").trim();
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber: issue.number,
+    prNumber: 2261,
+    headSha,
+    threadId: "thread-codex-symlink-workspace-repair",
+    commentId: "comment-codex-symlink-workspace-repair",
+    path: policyPath,
+    line: 7,
+    severity: "P2",
+    commentBody:
+      `P2: Add \`${documentPath}\` to both the loader path list and the policy scan path list.`,
+    discussionUrl: "https://example.test/pr/2261#discussion_r2261",
+    verifiedRepair: {
+      summary: "Focused traceability verifier passed after the repair commit.",
+      ranAt: "2026-06-05T21:18:00Z",
+      command: "npx tsx --test src/post-turn-pull-request-codex-connector.test.ts",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotTopLevelReviewStrength: "blocking",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        ...scenario.recordPatch,
+        repair_attempt_count: 1,
+        last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+      }),
+    },
+  };
+  const reviewThreads = [scenario.reviewThread] satisfies ReviewThread[];
+  const replyCalls: Array<{ threadId: string; body: string }> = [];
+  const resolveCalls: string[] = [];
+  const requestComments: string[] = [];
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: createNoopStateStore(),
+    github: createDefaultGithub({
+      addIssueComment: async (_prNumber: number, body: string) => {
+        requestComments.push(body);
+        return {
+          databaseId: 2261001,
+          nodeId: "IC_kwDO2261",
+          url: "https://example.test/pr/2261#issuecomment-2261001",
+        };
+      },
+      replyToReviewThread: async (threadId: string, body: string) => {
+        replyCalls.push({ threadId, body });
+      },
+      resolveReviewThread: async (threadId: string) => {
+        resolveCalls.push(threadId);
+      },
+    }),
+    context: createPostTurnContext({
+      state,
+      record: state.issues["102"]!,
+      issue,
+      pr,
+      workspacePath,
+    }),
+    derivePullRequestLifecycleSnapshot: (recordForState, _pr, _checks, currentReviewThreads) =>
+      createLifecycleSnapshot(recordForState, currentReviewThreads.length === 0 ? "waiting_ci" : "blocked", {
+        failureContext: currentReviewThreads.length === 0 ? null : scenario.staleReviewFailureContext,
+      }),
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    blockedReasonFromReviewState: (_record, _pr, _checks, currentReviewThreads) =>
+      currentReviewThreads.length === 0 ? null : "stale_review_bot",
+    summarizeChecks,
+    configuredBotReviewThreads,
+    manualReviewThreads,
+    mergeConflictDetected: () => false,
+    runLocalCiCommand: async () => undefined,
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
+    loadOpenPullRequestSnapshot: async () => ({
+      pr,
+      checks: scenario.passingChecks,
+      reviewThreads,
+    }),
+  });
+
+  assert.equal(result.record.state, "blocked");
+  assert.deepEqual(replyCalls, []);
+  assert.deepEqual(resolveCalls, []);
+  assert.equal(requestComments.length, 1);
+  assert.match(requestComments[0] ?? "", /reason code: `stale_review_bot`/);
+});
+
 test("handlePostTurnPullRequestTransitionsPhase resolves verified current-head repair Codex threads even when review state falls through to manual_review", async () => {
   const config = createConfig({
     reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],

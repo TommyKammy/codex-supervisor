@@ -415,6 +415,160 @@ function countExactRepoPathOccurrences(haystack: string, repoPath: string): numb
   return Array.from(haystack.matchAll(pattern)).length;
 }
 
+function maskComments(source: string): string {
+  let masked = "";
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+    const next = source[index + 1];
+    if (char === "\"" || char === "'" || char === "`") {
+      const literal = readStringLiteral(source, index);
+      if (!literal) {
+        masked += char;
+        continue;
+      }
+      masked += source.slice(index, literal.next);
+      index = literal.next - 1;
+      continue;
+    }
+    if (char === "/" && next === "/") {
+      masked += "  ";
+      index += 2;
+      while (index < source.length && source[index] !== "\n") {
+        masked += " ";
+        index += 1;
+      }
+      if (source[index] === "\n") {
+        masked += "\n";
+      }
+      continue;
+    }
+    if (char === "/" && next === "*") {
+      masked += "  ";
+      index += 2;
+      while (index < source.length && !(source[index] === "*" && source[index + 1] === "/")) {
+        masked += source[index] === "\n" ? "\n" : " ";
+        index += 1;
+      }
+      if (index < source.length) {
+        masked += "  ";
+        index += 1;
+      }
+      continue;
+    }
+    masked += char;
+  }
+  return masked;
+}
+
+function readStringLiteral(source: string, start: number): { value: string; next: number } | null {
+  const quote = source[start];
+  if (quote !== "\"" && quote !== "'" && quote !== "`") {
+    return null;
+  }
+
+  let value = "";
+  for (let index = start + 1; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === "\\") {
+      const escaped = source[index + 1];
+      if (escaped !== undefined) {
+        value += escaped;
+        index += 1;
+      }
+      continue;
+    }
+    if (char === quote) {
+      return { value, next: index + 1 };
+    }
+    value += char;
+  }
+
+  return null;
+}
+
+function matchingArrayEnd(source: string, start: number): number | null {
+  let depth = 0;
+  for (let index = start; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === "\"" || char === "'" || char === "`") {
+      const literal = readStringLiteral(source, index);
+      if (!literal) {
+        return null;
+      }
+      index = literal.next - 1;
+      continue;
+    }
+    if (char === "[") {
+      depth += 1;
+    } else if (char === "]") {
+      depth -= 1;
+      if (depth === 0) {
+        return index;
+      }
+    }
+  }
+  return null;
+}
+
+function directStringValuesInArray(source: string, start: number, end: number): Set<string> {
+  const values = new Set<string>();
+  let nestingDepth = 0;
+  for (let index = start + 1; index < end; index += 1) {
+    const char = source[index];
+    if (char === "\"" || char === "'" || char === "`") {
+      const literal = readStringLiteral(source, index);
+      if (!literal) {
+        return values;
+      }
+      if (nestingDepth === 0) {
+        values.add(literal.value);
+      }
+      index = literal.next - 1;
+      continue;
+    }
+    if (char === "[" || char === "{" || char === "(") {
+      nestingDepth += 1;
+    } else if ((char === "]" || char === "}" || char === ")") && nestingDepth > 0) {
+      nestingDepth -= 1;
+    }
+  }
+  return values;
+}
+
+function countLiveRepoPathArrayMemberships(source: string, repoPath: string): number {
+  if (countExactRepoPathOccurrences(source, repoPath) === 0) {
+    return 0;
+  }
+
+  const uncommentedSource = maskComments(source);
+  let membershipCount = 0;
+  for (let index = 0; index < uncommentedSource.length; index += 1) {
+    const char = uncommentedSource[index];
+    if (char === "\"" || char === "'" || char === "`") {
+      const literal = readStringLiteral(uncommentedSource, index);
+      if (!literal) {
+        continue;
+      }
+      index = literal.next - 1;
+      continue;
+    }
+    if (char !== "[") {
+      continue;
+    }
+
+    const end = matchingArrayEnd(uncommentedSource, index);
+    if (end === null) {
+      continue;
+    }
+    if (directStringValuesInArray(uncommentedSource, index, end).has(repoPath)) {
+      membershipCount += 1;
+    }
+    index = end;
+  }
+
+  return membershipCount;
+}
+
 function deterministicRepairProbeEvidence(args: {
   reviewThreads: ReviewThread[];
   repositoryFileContents?: RepositoryFileContents;
@@ -441,12 +595,12 @@ function deterministicRepairProbeEvidence(args: {
     }
     const pathEvidence: string[] = [];
     for (const concretePath of concretePaths) {
-      const exactCount = countExactRepoPathOccurrences(source, concretePath);
-      if (exactCount < 2) {
+      const liveListMemberships = countLiveRepoPathArrayMemberships(source, concretePath);
+      if (liveListMemberships < 2) {
         return null;
       }
       pathEvidence.push(
-        `deterministic_repair_probe:path_present_in_reviewed_file:${concretePath}:${exactCount}`,
+        `deterministic_repair_probe:path_present_in_live_list:${concretePath}:${liveListMemberships}`,
       );
     }
     evidence.push(...pathEvidence);
