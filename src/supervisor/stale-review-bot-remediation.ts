@@ -535,13 +535,96 @@ function directStringValuesInArray(source: string, start: number, end: number): 
   return values;
 }
 
-function countLiveRepoPathArrayMemberships(source: string, repoPath: string): number {
+interface RequestedPathListSelector {
+  label: string;
+  requiredTokens: string[];
+  allowExpectationTokens: boolean;
+}
+
+function requestedPathListSelectors(body: string): RequestedPathListSelector[] {
+  const selectors: RequestedPathListSelector[] = [];
+  const normalizedBody = body.toLowerCase();
+  const addSelector = (selector: RequestedPathListSelector) => {
+    if (!selectors.some((candidate) => candidate.label === selector.label)) {
+      selectors.push(selector);
+    }
+  };
+
+  if (/\bload(?:er|ers|ing)?\b/iu.test(body)) {
+    addSelector({ label: "loader", requiredTokens: ["loader"], allowExpectationTokens: false });
+  }
+  if (/\bpolicy\s+scans?\b/iu.test(body)) {
+    addSelector({ label: "policy_scan", requiredTokens: ["policy", "scan"], allowExpectationTokens: false });
+  } else if (/\bscans?\b/iu.test(body)) {
+    addSelector({ label: "scan", requiredTokens: ["scan"], allowExpectationTokens: false });
+  }
+  if (/\bcoverage\b/iu.test(body) && /\bexpect(?:ation|ations|ed)?\b/iu.test(body)) {
+    addSelector({
+      label: "coverage_expectation",
+      requiredTokens: ["coverage", "expect"],
+      allowExpectationTokens: true,
+    });
+  }
+
+  return normalizedBody.includes("list") || normalizedBody.includes("array") ? selectors : [];
+}
+
+function identifierTokens(value: string): string[] {
+  return value
+    .replace(/([a-z0-9])([A-Z])/gu, "$1 $2")
+    .split(/[^A-Za-z0-9]+/u)
+    .map((token) => token.toLowerCase())
+    .filter(Boolean)
+    .map((token) => {
+      const singular = token.replace(/s$/u, "");
+      return singular.startsWith("expect") ? "expect" : singular;
+    });
+}
+
+function arrayIdentifierContextTokens(source: string, arrayStart: number): string[] {
+  const prefix = source.slice(Math.max(0, arrayStart - 160), arrayStart);
+  const candidates = [
+    ...prefix.matchAll(/\b([A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)?)\s*(?::\s*[^=:\r\n]+)?=\s*$/gu),
+    ...prefix.matchAll(/\b([A-Za-z_$][\w$]*)\s*:\s*$/gu),
+  ];
+  const context = candidates[candidates.length - 1]?.[1] ?? "";
+  return identifierTokens(context);
+}
+
+function arrayMatchesRequestedSelector(tokens: string[], selector: RequestedPathListSelector): boolean {
+  if (tokens.length === 0 || !selector.requiredTokens.every((token) => tokens.includes(token))) {
+    return false;
+  }
+
+  if (!selector.allowExpectationTokens && tokens.some((token) => (
+    token === "expect" ||
+    token === "expected" ||
+    token === "expectation" ||
+    token === "fixture" ||
+    token === "mock" ||
+    token === "sample" ||
+    token === "test"
+  ))) {
+    return false;
+  }
+
+  return true;
+}
+
+function requestedLiveRepoPathArrayMemberships(
+  source: string,
+  repoPath: string,
+  selectors: RequestedPathListSelector[],
+): string[] | null {
   if (countExactRepoPathOccurrences(source, repoPath) === 0) {
-    return 0;
+    return null;
+  }
+  if (selectors.length === 0) {
+    return null;
   }
 
   const uncommentedSource = maskComments(source);
-  let membershipCount = 0;
+  const matchedSelectors = new Set<string>();
   for (let index = 0; index < uncommentedSource.length; index += 1) {
     const char = uncommentedSource[index];
     if (char === "\"" || char === "'" || char === "`") {
@@ -560,13 +643,23 @@ function countLiveRepoPathArrayMemberships(source: string, repoPath: string): nu
     if (end === null) {
       continue;
     }
-    if (directStringValuesInArray(uncommentedSource, index, end).has(repoPath)) {
-      membershipCount += 1;
+    if (!directStringValuesInArray(uncommentedSource, index, end).has(repoPath)) {
+      index = end;
+      continue;
+    }
+
+    const contextTokens = arrayIdentifierContextTokens(uncommentedSource, index);
+    for (const selector of selectors) {
+      if (arrayMatchesRequestedSelector(contextTokens, selector)) {
+        matchedSelectors.add(selector.label);
+      }
     }
     index = end;
   }
 
-  return membershipCount;
+  return selectors.every((selector) => matchedSelectors.has(selector.label))
+    ? selectors.map((selector) => selector.label)
+    : null;
 }
 
 function deterministicRepairProbeEvidence(args: {
@@ -589,18 +682,22 @@ function deterministicRepairProbeEvidence(args: {
     if (!hasAdditivePathListRepairIntent(codexFindingBody)) {
       return null;
     }
+    const requestedPathLists = requestedPathListSelectors(codexFindingBody);
+    if (requestedPathLists.length === 0) {
+      return null;
+    }
     const concretePaths = extractConcreteRepoPaths(codexFindingBody);
     if (concretePaths.length === 0) {
       return null;
     }
     const pathEvidence: string[] = [];
     for (const concretePath of concretePaths) {
-      const liveListMemberships = countLiveRepoPathArrayMemberships(source, concretePath);
-      if (liveListMemberships < 2) {
+      const liveListMemberships = requestedLiveRepoPathArrayMemberships(source, concretePath, requestedPathLists);
+      if (!liveListMemberships) {
         return null;
       }
       pathEvidence.push(
-        `deterministic_repair_probe:path_present_in_live_list:${concretePath}:${liveListMemberships}`,
+        `deterministic_repair_probe:path_present_in_requested_live_lists:${concretePath}:${liveListMemberships.join(",")}`,
       );
     }
     evidence.push(...pathEvidence);
