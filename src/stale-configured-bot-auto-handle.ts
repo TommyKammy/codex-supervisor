@@ -12,6 +12,7 @@ import type {
   SupervisorConfig,
   SupervisorStateFile,
 } from "./core/types";
+import { getWorkspaceStatus } from "./core/workspace";
 import { buildStaleReviewBotRemediation } from "./supervisor/stale-review-bot-remediation";
 import {
   recoverStaleConfiguredBotReviewThreads,
@@ -38,10 +39,22 @@ function normalizeReviewThreadPath(value: string | null | undefined): string | n
 }
 
 async function loadReviewThreadFileContents(args: {
+  defaultBranch: string;
+  expectedHeadSha: string;
+  branch: string;
   workspacePath?: string;
   reviewThreads: ReviewThread[];
 }): Promise<RepositoryFileContents | undefined> {
   if (!args.workspacePath) {
+    return undefined;
+  }
+
+  try {
+    const workspaceStatus = await getWorkspaceStatus(args.workspacePath, args.branch, args.defaultBranch);
+    if (workspaceStatus.headSha !== args.expectedHeadSha) {
+      return undefined;
+    }
+  } catch {
     return undefined;
   }
 
@@ -106,6 +119,9 @@ export async function handleStaleConfiguredBotReviewRemediation(args: {
           checks: args.checks,
           reviewThreads: args.reviewThreads,
           repositoryFileContents: await loadReviewThreadFileContents({
+            defaultBranch: args.config.defaultBranch,
+            expectedHeadSha: args.pr.headRefOid,
+            branch: remediationRecord.branch,
             workspacePath: args.workspacePath,
             reviewThreads: args.reviewThreads,
           }),

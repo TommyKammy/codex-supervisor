@@ -405,21 +405,14 @@ function hasAdditivePathListRepairIntent(body: string): boolean {
   );
 }
 
-function countOccurrences(haystack: string, needle: string): number {
-  if (!needle) {
-    return 0;
-  }
-  let count = 0;
-  let cursor = 0;
-  while (cursor < haystack.length) {
-    const index = haystack.indexOf(needle, cursor);
-    if (index === -1) {
-      break;
-    }
-    count += 1;
-    cursor = index + needle.length;
-  }
-  return count;
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+function countExactRepoPathOccurrences(haystack: string, repoPath: string): number {
+  const pathTokenBoundary = "[A-Za-z0-9._/-]";
+  const pattern = new RegExp(`(?<!${pathTokenBoundary})${escapeRegExp(repoPath)}(?!${pathTokenBoundary})`, "gu");
+  return Array.from(haystack.matchAll(pattern)).length;
 }
 
 function deterministicRepairProbeEvidence(args: {
@@ -443,13 +436,20 @@ function deterministicRepairProbeEvidence(args: {
       return null;
     }
     const concretePaths = extractConcreteRepoPaths(codexFindingBody);
-    const matchedPath = concretePaths.find((path) => countOccurrences(source, path) >= 2);
-    if (!matchedPath) {
+    if (concretePaths.length === 0) {
       return null;
     }
-    evidence.push(
-      `deterministic_repair_probe:path_present_in_reviewed_file:${matchedPath}:${countOccurrences(source, matchedPath)}`,
-    );
+    const pathEvidence: string[] = [];
+    for (const concretePath of concretePaths) {
+      const exactCount = countExactRepoPathOccurrences(source, concretePath);
+      if (exactCount < 2) {
+        return null;
+      }
+      pathEvidence.push(
+        `deterministic_repair_probe:path_present_in_reviewed_file:${concretePath}:${exactCount}`,
+      );
+    }
+    evidence.push(...pathEvidence);
   }
 
   return evidence.length > 0 ? evidence.join(";") : null;
