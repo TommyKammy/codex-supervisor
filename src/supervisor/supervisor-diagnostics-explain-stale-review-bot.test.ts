@@ -784,7 +784,8 @@ test("explain distinguishes Codex verified current-head repair residue from no-s
     commentId: "comment-199",
     path: "src/repair.ts",
     line: 42,
-    commentBody: "P1: Verify the repaired authorization guard before merge.",
+    severity: "P2",
+    commentBody: "P2: Verify the repaired authorization guard before merge.",
     discussionUrl: "https://example.test/pr/399#discussion_r399",
     verifiedRepair: {
       summary: "Focused verifier passed after the repair commit.",

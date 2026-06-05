@@ -5,6 +5,7 @@ import {
   codexConnectorMustFixReviewThreads,
   commitShasEqualForComparison,
   evaluateCodexConnectorConvergencePolicy,
+  latestCodexConnectorPSeverity,
 } from "../codex-connector-review-policy";
 import {
   configuredBotReviewFollowUpState,
@@ -354,6 +355,10 @@ function hasCurrentHeadCodexTurnVerification(
   );
 }
 
+function allCodexConnectorRepairResidueThreadsAreP2(reviewThreads: ReviewThread[]): boolean {
+  return reviewThreads.length > 0 && reviewThreads.every((thread) => latestCodexConnectorPSeverity(thread) === "P2");
+}
+
 function validTimestamp(value: string | null | undefined): string | null {
   if (!value || Number.isNaN(Date.parse(value))) {
     return null;
@@ -500,6 +505,16 @@ function classifyCodexMetadataOnly(args: {
       }
       const verifiedCurrentHeadRepair =
         hasCurrentHeadCodexTurnVerification(args.record, args.pr) || args.record.repair_attempt_count > 0;
+      if (
+        verifiedCurrentHeadRepair &&
+        !allCodexConnectorRepairResidueThreadsAreP2(codexConnectorMustFixReviewThreads(args.reviewThreads))
+      ) {
+        return {
+          classification: "unresolved_work",
+          summary: STALE_REVIEW_BOT_SUMMARY,
+          verificationEvidenceSummary,
+        };
+      }
       return {
         classification: verifiedCurrentHeadRepair
           ? "verified_current_head_repair_pending_thread_resolution"

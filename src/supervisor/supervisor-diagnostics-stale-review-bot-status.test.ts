@@ -310,7 +310,8 @@ test("status --why uses the shared stale review-bot presenter for active verifie
     commentId: "comment-400",
     path: "src/auth-boundary.ts",
     line: 91,
-    commentBody: "P1: Prove the repaired auth boundary is covered before merge.",
+    severity: "P2",
+    commentBody: "P2: Prove the repaired auth boundary is covered before merge.",
     discussionUrl: "https://example.test/pr/500#discussion_r400",
     verifiedRepair: {
       summary: "Focused verifier passed after the repair commit.",

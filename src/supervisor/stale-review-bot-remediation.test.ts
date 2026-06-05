@@ -19,7 +19,8 @@ test("buildStaleReviewBotRemediation classifies same-head Codex no-major comment
     commentId: "comment-mutation-lock-stale-recovery",
     path: "src/mutation-lock.ts",
     line: 42,
-    commentBody: "P1: Verify stale mutation lock recovery only releases the acquired lock instance.",
+    severity: "P2",
+    commentBody: "P2: Verify stale mutation lock recovery only releases the acquired lock instance.",
     discussionUrl: "https://example.test/pr/115#discussion_r115",
     verifiedRepair: {
       summary: "Focused mutation lock verifier passed on the current head.",
@@ -150,6 +151,65 @@ test("buildStaleReviewBotRemediation accepts green current-head checks as verifi
   assert.equal(diagnostics?.missingVerificationEvidenceThreads, 0);
   assert.equal(diagnostics?.repeatStopExhausted, "no");
   assert.equal(diagnostics?.autoRepairSuppressedReason, "none");
+});
+
+test("buildStaleReviewBotRemediation keeps P1 current-head repair residue blocked after no-major", () => {
+  const issueNumber = 188;
+  const prNumber = 195;
+  const headSha = "f2b1be31eaf78a3d1c7f1ccd28e730bb38e00b1d";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "PRRT_current_head_repaired_p1_residue",
+    commentId: "PRRC_current_head_repaired_p1_residue",
+    path: "src/app.ts",
+    line: 88,
+    severity: "P1",
+    commentBody: "P1: Do not auto-resolve higher-severity current-head repair residue.",
+    discussionUrl: "https://example.test/pr/195#discussion_r3316522485",
+    verifiedRepair: {
+      summary: "Focused verifier passed after the repair commit.",
+      ranAt: "2026-05-28T09:38:46Z",
+      command: "npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+    currentHeadNoMajorReview: {
+      requestedAt: "2026-05-28T09:31:32Z",
+      observedAt: "2026-05-28T09:35:46Z",
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const record = createRecord(scenario.recordPatch);
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotTopLevelReviewStrength: "blocking",
+  });
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: scenario.passingChecks,
+    reviewThreads: [scenario.reviewThread],
+  });
+  const diagnostics = buildStaleReviewBotThreadDiagnostics({
+    config,
+    record,
+    pr,
+    checks: scenario.passingChecks,
+    reviewThreads: [scenario.reviewThread],
+    remediation,
+  });
+
+  assert.equal(remediation?.classification, "unresolved_work");
+  assert.equal(remediation?.codexCurrentHeadReviewState, "observed");
+  assert.equal(diagnostics?.verifiedStaleResidueThreads, 0);
+  assert.equal(diagnostics?.autoRepairSuppressedReason, "not_verified_stale_residue");
 });
 
 test("buildStaleReviewBotRemediation rejects review-bot-only checks as verified repair evidence", () => {
