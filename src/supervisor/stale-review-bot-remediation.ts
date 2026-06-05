@@ -596,6 +596,22 @@ function arrayMatchesRequestedSelector(tokens: string[], selector: RequestedPath
     return false;
   }
 
+  if (tokens.some((token) => (
+    token === "disable" ||
+    token === "disabled" ||
+    token === "exclude" ||
+    token === "excluded" ||
+    token === "exclusion" ||
+    token === "ignore" ||
+    token === "ignored" ||
+    token === "omit" ||
+    token === "omitted" ||
+    token === "skip" ||
+    token === "skipped"
+  ))) {
+    return false;
+  }
+
   if (!selector.allowExpectationTokens && tokens.some((token) => (
     token === "expect" ||
     token === "expected" ||
