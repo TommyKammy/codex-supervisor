@@ -92,6 +92,8 @@ interface StaleReviewBotClassification {
   missingProbeReason?: string | null;
 }
 
+type RepositoryFileContents = Record<string, string | null | undefined>;
+
 export function formatStaleReviewBotTokenValue(value: string): string {
   return value.replace(/\r?\n/gu, "\\n");
 }
@@ -359,6 +361,85 @@ function allCodexConnectorRepairResidueThreadsAreP2(reviewThreads: ReviewThread[
   return reviewThreads.length > 0 && reviewThreads.every((thread) => latestCodexConnectorPSeverity(thread) === "P2");
 }
 
+function latestReviewThreadBody(thread: ReviewThread): string {
+  const comments = thread.comments?.nodes ?? [];
+  return comments[comments.length - 1]?.body ?? "";
+}
+
+function normalizeRepositoryPath(value: string): string {
+  return value.trim().replace(/^\.\/+/u, "").replace(/\\/gu, "/");
+}
+
+function repositoryFileContent(
+  contents: RepositoryFileContents | undefined,
+  path: string | null | undefined,
+): string | null {
+  if (!contents || !path) {
+    return null;
+  }
+  const normalizedPath = normalizeRepositoryPath(path);
+  return contents[normalizedPath] ?? contents[path] ?? null;
+}
+
+function extractConcreteRepoPaths(body: string): string[] {
+  const paths = new Set<string>();
+  const pathPattern =
+    /(?:`([^`\r\n]+\.(?:md|mdx|txt|ts|tsx|js|jsx|json|ya?ml|py|rb|go|rs|java|kt|cs|php|sh|sql|toml|ini|cfg|conf|csv|tsv|html|css|scss))`)|((?:[\w.-]+\/)+[\w.-]+\.(?:md|mdx|txt|ts|tsx|js|jsx|json|ya?ml|py|rb|go|rs|java|kt|cs|php|sh|sql|toml|ini|cfg|conf|csv|tsv|html|css|scss))/giu;
+  for (const match of body.matchAll(pathPattern)) {
+    const path = normalizeRepositoryPath(match[1] ?? match[2] ?? "");
+    if (path && !path.startsWith("/") && !/^[a-z]:\//iu.test(path) && path.includes("/")) {
+      paths.add(path);
+    }
+  }
+  return [...paths].sort((left, right) => left.localeCompare(right));
+}
+
+function countOccurrences(haystack: string, needle: string): number {
+  if (!needle) {
+    return 0;
+  }
+  let count = 0;
+  let cursor = 0;
+  while (cursor < haystack.length) {
+    const index = haystack.indexOf(needle, cursor);
+    if (index === -1) {
+      break;
+    }
+    count += 1;
+    cursor = index + needle.length;
+  }
+  return count;
+}
+
+function deterministicRepairProbeEvidence(args: {
+  reviewThreads: ReviewThread[];
+  repositoryFileContents?: RepositoryFileContents;
+}): string | null {
+  const mustFixThreads = codexConnectorMustFixReviewThreads(args.reviewThreads);
+  if (!allCodexConnectorRepairResidueThreadsAreP2(mustFixThreads)) {
+    return null;
+  }
+
+  const evidence: string[] = [];
+  for (const thread of mustFixThreads) {
+    const source = repositoryFileContent(args.repositoryFileContents, thread.path);
+    if (!source) {
+      return null;
+    }
+
+    const concretePaths = extractConcreteRepoPaths(latestReviewThreadBody(thread));
+    const matchedPath = concretePaths.find((path) => countOccurrences(source, path) >= 2);
+    if (!matchedPath) {
+      return null;
+    }
+    evidence.push(
+      `deterministic_repair_probe:path_present_in_reviewed_file:${matchedPath}:${countOccurrences(source, matchedPath)}`,
+    );
+  }
+
+  return evidence.length > 0 ? evidence.join(";") : null;
+}
+
 function validTimestamp(value: string | null | undefined): string | null {
   if (!value || Number.isNaN(Date.parse(value))) {
     return null;
@@ -433,6 +514,7 @@ function classifyCodexMetadataOnly(args: {
   pr: GitHubPullRequest;
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
+  repositoryFileContents?: RepositoryFileContents;
 }): StaleReviewBotClassification {
   const unresolvedWork = {
     classification: "unresolved_work" as const,
@@ -496,6 +578,17 @@ function classifyCodexMetadataOnly(args: {
         pr: args.pr,
       });
       if (!noMajorSignalEvidence) {
+        const deterministicProbeEvidence = deterministicRepairProbeEvidence({
+          reviewThreads: args.reviewThreads,
+          repositoryFileContents: args.repositoryFileContents,
+        });
+        if (deterministicProbeEvidence) {
+          return {
+            classification: "verified_current_head_repair_pending_thread_resolution",
+            summary: VERIFIED_CURRENT_HEAD_REPAIR_SUMMARY,
+            verificationEvidenceSummary: `${verificationEvidenceSummary};${deterministicProbeEvidence}`,
+          };
+        }
         return {
           classification: "unknown_needs_operator",
           summary: STALE_REVIEW_BOT_SUMMARY,
@@ -551,6 +644,7 @@ function classifyRemediation(args: {
   pr: GitHubPullRequest | null;
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
+  repositoryFileContents?: RepositoryFileContents;
 }): StaleReviewBotClassification {
   const unresolvedWork = {
     classification: "unresolved_work" as const,
@@ -569,6 +663,7 @@ function classifyRemediation(args: {
       pr,
       checks,
       reviewThreads,
+      repositoryFileContents: args.repositoryFileContents,
     });
   }
 
@@ -599,6 +694,7 @@ export function buildStaleReviewBotRemediation(args: {
   pr: GitHubPullRequest | null;
   checks: PullRequestCheck[];
   reviewThreads?: ReviewThread[];
+  repositoryFileContents?: RepositoryFileContents;
 }): StaleReviewBotRemediationDto | null {
   if (args.record.blocked_reason !== "stale_review_bot" && args.record.blocked_reason !== "manual_review") {
     return null;
@@ -614,6 +710,7 @@ export function buildStaleReviewBotRemediation(args: {
       pr: args.pr,
       checks: args.checks,
       reviewThreads: args.reviewThreads ?? [],
+      repositoryFileContents: args.repositoryFileContents,
     });
   if (
     args.record.blocked_reason === "manual_review" &&
@@ -659,6 +756,7 @@ export function buildStaleReviewBotThreadDiagnostics(args: {
   checks: PullRequestCheck[];
   reviewThreads?: ReviewThread[];
   remediation?: StaleReviewBotRemediationDto | null;
+  repositoryFileContents?: RepositoryFileContents;
 }): StaleReviewBotThreadDiagnosticsDto | null {
   const remediation =
     args.remediation ??
@@ -668,6 +766,7 @@ export function buildStaleReviewBotThreadDiagnostics(args: {
       pr: args.pr,
       checks: args.checks,
       reviewThreads: args.reviewThreads,
+      repositoryFileContents: args.repositoryFileContents,
     });
   if (!remediation) {
     return null;

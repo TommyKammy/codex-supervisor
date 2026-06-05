@@ -84,6 +84,7 @@ interface PersistentTrackedPrStatusCommentContext {
   reviewThreads: ReviewThread[];
   failureContext: FailureContext | null;
   summarizeChecks: (checks: PullRequestCheck[]) => CheckSummary;
+  workspacePath?: string;
 }
 
 type PersistentTrackedPrStatusCommentStrategy = (
@@ -698,6 +699,7 @@ export async function maybeCommentOnTrackedPrPersistentStatus(args: {
   failureContext: FailureContext | null;
   summarizeChecks: (checks: PullRequestCheck[]) => { hasPending: boolean; hasFailing: boolean };
   skipAutoHandleStaleConfiguredBotReview?: boolean;
+  workspacePath?: string;
 }): Promise<IssueRunRecord> {
   const comment = derivePersistentTrackedPrStatusComment({
     config: args.config,
@@ -707,6 +709,7 @@ export async function maybeCommentOnTrackedPrPersistentStatus(args: {
     reviewThreads: args.reviewThreads,
     failureContext: args.failureContext,
     summarizeChecks: args.summarizeChecks,
+    workspacePath: args.workspacePath,
   });
   const conversationResolutionBlocker = buildConversationResolutionBlocker({
     config: args.config,
@@ -732,6 +735,7 @@ export async function maybeCommentOnTrackedPrPersistentStatus(args: {
       statusCommentAvailable: comment !== null,
       conversationResolutionBlocker,
       skipAutoHandleStaleConfiguredBotReview: args.skipAutoHandleStaleConfiguredBotReview,
+      workspacePath: args.workspacePath,
     });
   currentRecord = staleReviewBotRemediationResult.record;
   if (staleReviewBotRemediationResult.handled) {
@@ -836,6 +840,7 @@ export async function syncTrackedPrPersistentStatusComment(args: {
   summarizeChecks: (checks: PullRequestCheck[]) => { hasPending: boolean; hasFailing: boolean };
   manualReviewThreadCount: number;
   skipAutoHandleStaleConfiguredBotReview?: boolean;
+  workspacePath?: string;
 }): Promise<IssueRunRecord> {
   return maybeCommentOnTrackedPrPersistentStatus(args);
 }

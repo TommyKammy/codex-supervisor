@@ -1,3 +1,5 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import type { GitHubClient } from "./github";
 import type { IssueJournalSync } from "./run-once-issue-preparation";
 import type { StateStore } from "./core/state-store";
@@ -25,6 +27,52 @@ export interface StaleConfiguredBotReviewRemediationResult {
   record: IssueRunRecord;
 }
 
+type RepositoryFileContents = Record<string, string | null | undefined>;
+
+function normalizeReviewThreadPath(value: string | null | undefined): string | null {
+  const normalized = value?.trim().replace(/\\/g, "/").replace(/^\.\/+/u, "");
+  if (!normalized || normalized.startsWith("/") || normalized.includes("\0") || normalized.split("/").includes("..")) {
+    return null;
+  }
+  return normalized;
+}
+
+async function loadReviewThreadFileContents(args: {
+  workspacePath?: string;
+  reviewThreads: ReviewThread[];
+}): Promise<RepositoryFileContents | undefined> {
+  if (!args.workspacePath) {
+    return undefined;
+  }
+
+  const workspaceRoot = path.resolve(args.workspacePath);
+  const contents: RepositoryFileContents = {};
+  const paths = Array.from(
+    new Set(args.reviewThreads.flatMap((thread) => {
+      const normalized = normalizeReviewThreadPath(thread.path);
+      return normalized ? [normalized] : [];
+    })),
+  ).slice(0, 20);
+
+  for (const relativePath of paths) {
+    const absolutePath = path.resolve(workspaceRoot, relativePath);
+    if (absolutePath !== workspaceRoot && !absolutePath.startsWith(`${workspaceRoot}${path.sep}`)) {
+      continue;
+    }
+    try {
+      const stat = await fs.stat(absolutePath);
+      if (!stat.isFile() || stat.size > 512_000) {
+        continue;
+      }
+      contents[relativePath] = await fs.readFile(absolutePath, "utf8");
+    } catch {
+      contents[relativePath] = null;
+    }
+  }
+
+  return Object.keys(contents).length > 0 ? contents : undefined;
+}
+
 export async function handleStaleConfiguredBotReviewRemediation(args: {
   github: Partial<Pick<GitHubClient, "replyToReviewThread" | "resolveReviewThread">>;
   stateStore: Pick<StateStore, "touch" | "save">;
@@ -41,6 +89,7 @@ export async function handleStaleConfiguredBotReviewRemediation(args: {
   statusCommentAvailable: boolean;
   conversationResolutionBlocker: StaleConfiguredBotConversationResolutionBlocker | null;
   skipAutoHandleStaleConfiguredBotReview?: boolean;
+  workspacePath?: string;
 }): Promise<StaleConfiguredBotReviewRemediationResult> {
   const remediationRecord =
     args.record.state === "blocked" &&
@@ -56,6 +105,10 @@ export async function handleStaleConfiguredBotReviewRemediation(args: {
           pr: args.pr,
           checks: args.checks,
           reviewThreads: args.reviewThreads,
+          repositoryFileContents: await loadReviewThreadFileContents({
+            workspacePath: args.workspacePath,
+            reviewThreads: args.reviewThreads,
+          }),
         })
       : null;
   const canResolveStaleConfiguredBotReview =

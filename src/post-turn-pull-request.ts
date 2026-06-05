@@ -550,6 +550,7 @@ export async function handlePostTurnPullRequestTransitionsPhase(
     config,
     failureContext: effectiveFailureContext,
     summarizeChecks: args.summarizeChecks,
+    workspacePath,
   });
   const staleReviewBotReplySignature =
     record.last_stale_review_bot_reply_signature ??
@@ -615,6 +616,7 @@ export async function handlePostTurnPullRequestTransitionsPhase(
           failureContext: effectiveFailureContext,
           summarizeChecks: args.summarizeChecks,
           skipAutoHandleStaleConfiguredBotReview: true,
+          workspacePath,
         });
       }
       record = await maybeRequestCodexConnectorReviewComment({
