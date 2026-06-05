@@ -1988,7 +1988,8 @@ test("handlePostTurnPullRequestTransitionsPhase resolves verified current-head r
     commentId: "comment-codex-repair",
     path: "src/review.ts",
     line: 7,
-    commentBody: "P1: Verify the repair covers this finding before merge.",
+    severity: "P2",
+    commentBody: "P2: Verify the repair covers this finding before merge.",
     discussionUrl: "https://example.test/pr/1988#discussion_r1988",
     verifiedRepair: {
       summary: "Focused verifier passed after the repair commit.",
@@ -2406,4 +2407,99 @@ test("handlePostTurnPullRequestTransitionsPhase keeps verified repair thread res
     assert.deepEqual(replyCalls, [], testCase.name);
     assert.deepEqual(resolveCalls, [], testCase.name);
   }
+});
+
+test("handlePostTurnPullRequestTransitionsPhase keeps P1 verified current-head repair residue blocked", async () => {
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const issue = createIssue({ title: "Do not auto-resolve P1 verified current-head repair residue" });
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber: issue.number,
+    prNumber: 2035,
+    headSha: "head-2035",
+    threadId: "thread-codex-p1-repair",
+    commentId: "comment-codex-p1-repair",
+    path: "src/review.ts",
+    line: 301,
+    severity: "P1",
+    commentBody: "P1: Keep higher-severity current-head repair residue blocked for operator review.",
+    discussionUrl: "https://example.test/pr/2035#discussion_r2035",
+    verifiedRepair: {
+      summary: "Focused verifier passed after the repair commit.",
+      ranAt: "2026-05-18T07:18:00Z",
+      command: "npx tsx --test src/post-turn-pull-request-codex-connector.test.ts",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+    currentHeadNoMajorReview: {
+      requestedAt: "2026-05-18T07:12:00Z",
+      observedAt: "2026-05-18T07:17:00Z",
+    },
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    mergeable: "MERGEABLE",
+    mergeStateStatus: "CLEAN",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord(scenario.recordPatch),
+    },
+  };
+  const reviewThreads = [scenario.reviewThread] satisfies ReviewThread[];
+  const replyCalls: Array<{ threadId: string; body: string }> = [];
+  const resolveCalls: string[] = [];
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: createNoopStateStore(),
+    github: createDefaultGithub({
+      addIssueComment: async () => {
+        throw new Error("unexpected addIssueComment call");
+      },
+      replyToReviewThread: async (threadId: string, body: string) => {
+        replyCalls.push({ threadId, body });
+      },
+      resolveReviewThread: async (threadId: string) => {
+        resolveCalls.push(threadId);
+      },
+    }),
+    context: createPostTurnContext({
+      state,
+      record: state.issues["102"]!,
+      issue,
+      pr,
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+    }),
+    derivePullRequestLifecycleSnapshot: (recordForState) =>
+      createLifecycleSnapshot(recordForState, "blocked", {
+        failureContext: scenario.staleReviewFailureContext,
+      }),
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    blockedReasonFromReviewState: () => "stale_review_bot",
+    summarizeChecks,
+    configuredBotReviewThreads,
+    manualReviewThreads,
+    mergeConflictDetected: () => false,
+    runLocalCiCommand: async () => undefined,
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
+    loadOpenPullRequestSnapshot: async () => ({
+      pr,
+      checks: scenario.passingChecks,
+      reviewThreads,
+    }),
+  });
+
+  assert.equal(result.record.state, "blocked");
+  assert.deepEqual(replyCalls, []);
+  assert.deepEqual(resolveCalls, []);
 });
