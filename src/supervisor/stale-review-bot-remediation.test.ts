@@ -665,6 +665,66 @@ test("buildStaleReviewBotRemediation rejects non-additive path-list findings", (
   assert.doesNotMatch(remediation?.verificationEvidenceSummary ?? "", /deterministic_repair_probe/);
 });
 
+test("buildStaleReviewBotRemediation rejects missing-validation path-list findings", () => {
+  const issueNumber = 2258;
+  const prNumber = 3258;
+  const headSha = "a9bb7f424b43657f0e17722c6a4769ad1b3c2258";
+  const policyPath = "src/mvp-a-onboarding-traceability.ts";
+  const documentPath = "docs/page.md";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-hrcore-path-list-missing-validation-residue",
+    commentId: "comment-hrcore-path-list-missing-validation-residue",
+    path: policyPath,
+    line: 42,
+    severity: "P2",
+    commentBody: `P2: The policy scan path list is missing validation for \`${documentPath}\`.`,
+    discussionUrl: "https://example.test/pr/3258#discussion_r2258_missing_validation",
+    verifiedRepair: {
+      summary: "Focused traceability verifier passed after the repair commit.",
+      ranAt: "2026-06-05T21:10:00Z",
+      command: "npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    repair_attempt_count: 1,
+    last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    currentHeadCiGreenAt: "2026-06-05T21:12:00Z",
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotTopLevelReviewStrength: "blocking",
+  });
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: scenario.passingChecks,
+    reviewThreads: [scenario.reviewThread],
+    repositoryFileContents: {
+      [policyPath]: [
+        "const POLICY_SCAN_PATHS = [",
+        `  "${documentPath}",`,
+        "];",
+      ].join("\n"),
+    },
+  });
+
+  assert.equal(remediation?.classification, "unknown_needs_operator");
+  assert.equal(remediation?.missingProbeReason, "current_head_codex_no_major_signal_missing");
+  assert.doesNotMatch(remediation?.verificationEvidenceSummary ?? "", /deterministic_repair_probe/);
+});
+
 test("buildStaleReviewBotRemediation does not truncate longer path extensions during repair probes", () => {
   const issueNumber = 2258;
   const prNumber = 3258;

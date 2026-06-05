@@ -400,7 +400,7 @@ function hasAdditivePathListRepairIntent(body: string): boolean {
   }
 
   return (
-    /\b(?:add|include|insert|append|restore|register|wire|missing|omitted)\b/iu.test(body) &&
+    /\b(?:add|include|insert|append|restore|register|wire)\b/iu.test(body) &&
     /\b(?:path|paths|list|lists|array|arrays|loader|loaders|scan|scans|coverage|expectation|expectations)\b/iu.test(body)
   );
 }
