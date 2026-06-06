@@ -1855,7 +1855,7 @@ test("handlePostTurnPullRequestTransitionsPhase requests current-head Codex revi
   assert.equal(result.record.repeated_failure_signature_count, 0);
 });
 
-test("handlePostTurnPullRequestTransitionsPhase resolves verified no-source-change Codex threads after current-head success", async () => {
+test("handlePostTurnPullRequestTransitionsPhase resolves verified P2 no-source-change Codex threads after current-head success", async () => {
   const config = createConfig({
     reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
     configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
@@ -1870,7 +1870,8 @@ test("handlePostTurnPullRequestTransitionsPhase resolves verified no-source-chan
     commentId: "comment-codex",
     path: "src/review.ts",
     line: 7,
-    commentBody: "P1: This finding was verified as no source change needed.",
+    commentBody: "P2: This finding was verified as no source change needed.",
+    severity: "P2",
     discussionUrl: "https://example.test/pr/1985#discussion_r1985",
     currentHeadNoMajorReview: {
       requestedAt: "2026-05-15T00:12:00Z",
@@ -1896,6 +1897,22 @@ test("handlePostTurnPullRequestTransitionsPhase resolves verified no-source-chan
           failure_class: null,
           remediation_target: null,
         },
+        timeline_artifacts: [
+          {
+            type: "verification_result",
+            gate: "codex_turn",
+            command: "npx tsx --test src/post-turn-pull-request-codex-connector.test.ts",
+            head_sha: "head-1985",
+            outcome: "passed",
+            remediation_target: null,
+            next_action: "continue",
+            summary: "Revalidated the current code against the live P2 thread with no source changes.",
+            recorded_at: "2026-05-15T00:18:00Z",
+            repair_targets: ["verified_no_source_change_review_thread_residue"],
+            processed_review_thread_ids: ["thread-codex@head-1985"],
+            processed_review_thread_fingerprints: ["thread-codex@head-1985#comment-codex"],
+          },
+        ],
       }),
     },
   };
@@ -1971,6 +1988,136 @@ test("handlePostTurnPullRequestTransitionsPhase resolves verified no-source-chan
   assert.match(replyCalls[0]?.body ?? "", /reason=verified_no_source_change_auto_resolve/);
   assert.match(replyCalls[0]?.body ?? "", /issue=#102 pr=#1985 head=head-1985 thread=thread-codex/);
   assert.equal(requestComments.length, 0);
+});
+
+test("handlePostTurnPullRequestTransitionsPhase keeps verified P1 no-source-change Codex residue blocked", async () => {
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+    verifiedNoSourceChangeReviewThreadAutoResolve: true,
+  });
+  const issue = createIssue({ title: "Do not auto-resolve P1 no-source-change Codex thread residue" });
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber: issue.number,
+    prNumber: 1986,
+    headSha: "head-1986",
+    threadId: "thread-codex-p1",
+    commentId: "comment-codex-p1",
+    path: "src/review.ts",
+    line: 11,
+    commentBody: "P1: This finding was verified as no source change needed.",
+    severity: "P1",
+    discussionUrl: "https://example.test/pr/1986#discussion_r1986",
+    currentHeadNoMajorReview: {
+      requestedAt: "2026-05-15T00:12:00Z",
+      observedAt: "2026-05-15T00:17:00Z",
+    },
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    configuredBotCurrentHeadObservedAt: "2026-05-15T00:17:00Z",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 103,
+    issues: {
+      "103": createRecord({
+        ...scenario.recordPatch,
+        latest_local_ci_result: {
+          outcome: "passed",
+          summary: "Focused verifier proved the current head no longer reproduces the finding.",
+          ran_at: "2026-05-15T00:18:00Z",
+          head_sha: "head-1986",
+          execution_mode: "shell",
+          command: "npm test -- src/post-turn-pull-request.test.ts",
+          failure_class: null,
+          remediation_target: null,
+        },
+        timeline_artifacts: [
+          {
+            type: "verification_result",
+            gate: "codex_turn",
+            command: "npx tsx --test src/post-turn-pull-request-codex-connector.test.ts",
+            head_sha: "head-1986",
+            outcome: "passed",
+            remediation_target: null,
+            next_action: "continue",
+            summary: "Revalidated the current code against the live P1 thread with no source changes.",
+            recorded_at: "2026-05-15T00:18:00Z",
+            repair_targets: ["verified_no_source_change_review_thread_residue"],
+            processed_review_thread_ids: ["thread-codex-p1@head-1986"],
+            processed_review_thread_fingerprints: ["thread-codex-p1@head-1986#comment-codex-p1"],
+          },
+        ],
+      }),
+    },
+  };
+  const reviewThreads = [scenario.reviewThread] satisfies ReviewThread[];
+  const replyCalls: Array<{ threadId: string; body: string }> = [];
+  const resolveCalls: string[] = [];
+  const requestComments: string[] = [];
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: createNoopStateStore(),
+    github: createDefaultGithub({
+      addIssueComment: async (_prNumber: number, body: string) => {
+        requestComments.push(body);
+        return {
+          databaseId: 1986001,
+          nodeId: "IC_kwDO1986",
+          url: "https://example.test/pr/1986#issuecomment-1986001",
+        };
+      },
+      replyToReviewThread: async (threadId: string, body: string) => {
+        replyCalls.push({ threadId, body });
+      },
+      resolveReviewThread: async (threadId: string) => {
+        resolveCalls.push(threadId);
+      },
+    }),
+    context: createPostTurnContext({
+      state,
+      record: state.issues["103"]!,
+      issue,
+      pr,
+      workspacePath: path.join("/tmp/workspaces", "issue-103"),
+    }),
+    derivePullRequestLifecycleSnapshot: (recordForState, _pr, _checks, currentReviewThreads) =>
+      createLifecycleSnapshot(recordForState, currentReviewThreads.length === 0 ? "waiting_ci" : "blocked", {
+        failureContext: currentReviewThreads.length === 0 ? null : scenario.staleReviewFailureContext,
+        copilotTimeoutPatch: {
+          copilot_review_timed_out_at: "2026-05-15T00:20:00Z",
+          copilot_review_timeout_action: "request_review_comment",
+          copilot_review_timeout_reason: "current_head_signal_timeout",
+        },
+      }),
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    blockedReasonFromReviewState: (_record, _pr, _checks, currentReviewThreads) =>
+      currentReviewThreads.length === 0 ? null : "stale_review_bot",
+    summarizeChecks,
+    configuredBotReviewThreads,
+    manualReviewThreads,
+    mergeConflictDetected: () => false,
+    runLocalCiCommand: async () => undefined,
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
+    loadOpenPullRequestSnapshot: async () => ({
+      pr,
+      checks: scenario.passingChecks,
+      reviewThreads,
+    }),
+  });
+
+  assert.equal(result.record.state, "blocked");
+  assert.equal(result.record.blocked_reason, "stale_review_bot");
+  assert.deepEqual(replyCalls, []);
+  assert.deepEqual(resolveCalls, []);
+  assert.equal(requestComments.filter((body) => /^@codex review\b/.test(body)).length, 0);
 });
 
 test("handlePostTurnPullRequestTransitionsPhase resolves verified current-head repair Codex threads only with the repair opt-in", async () => {
