@@ -168,8 +168,10 @@ test("selectVerifiedNoSourceChangeReviewThreads requires configured-bot exact fi
       actionableFindings: [
         {
           title: "Preserve query workflow shell state",
+          body: "The no-change revalidation covered review thread PRRT_verified.",
           file: "src/query-workflow.ts",
           lines: "42",
+          evidence: "Verified thread PRRT_verified at https://example.test/pr/498#discussion_verified.",
         },
       ],
       rootCauses: [
@@ -185,7 +187,7 @@ test("selectVerifiedNoSourceChangeReviewThreads requires configured-bot exact fi
     },
     reviewThreads: [
       createReviewThread({
-        id: "thread-verified",
+        id: "PRRT_verified",
         path: "src/query-workflow.ts",
         line: 42,
         comments: {
@@ -195,6 +197,25 @@ test("selectVerifiedNoSourceChangeReviewThreads requires configured-bot exact fi
               body: "P2: Preserve query workflow shell state.",
               createdAt: "2026-06-05T17:55:00Z",
               url: "https://example.test/pr/498#discussion_verified",
+              author: {
+                login: "chatgpt-codex-connector",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+      createReviewThread({
+        id: "PRRT_same_line_without_evidence",
+        path: "src/query-workflow.ts",
+        line: 42,
+        comments: {
+          nodes: [
+            {
+              id: "comment-same-line-without-evidence",
+              body: "P2: A separate current-head finding on the same line still needs work.",
+              createdAt: "2026-06-05T17:55:30Z",
+              url: "https://example.test/pr/498#discussion_same_line_without_evidence",
               author: {
                 login: "chatgpt-codex-connector",
                 typeName: "Bot",
@@ -244,7 +265,55 @@ test("selectVerifiedNoSourceChangeReviewThreads requires configured-bot exact fi
     ],
   });
 
-  assert.deepEqual(selected.map((thread) => thread.id), ["thread-verified"]);
+  assert.deepEqual(selected.map((thread) => thread.id), ["PRRT_verified"]);
+});
+
+test("selectVerifiedNoSourceChangeReviewThreads fails closed without exact thread evidence", () => {
+  const selected = selectVerifiedNoSourceChangeReviewThreads({
+    config: createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector"],
+    }),
+    localReviewRepairContext: {
+      summaryPath: "reviews/issue-492/head-7a77d998.md",
+      findingsPath: "reviews/issue-492/head-7a77d998.json",
+      relevantFiles: ["src/query-workflow.ts"],
+      actionableFindings: [
+        {
+          title: "Preserve query workflow shell state",
+          body: "Focused tests already cover the review finding, but no source thread is cited.",
+          file: "src/query-workflow.ts",
+          lines: "42",
+          evidence: "The same-line behavior is covered by the focused test suite.",
+        },
+      ],
+      rootCauses: [],
+      priorMissPatterns: [],
+      verifierGuardrails: [],
+    },
+    reviewThreads: [
+      createReviewThread({
+        id: "PRRT_current_same_line",
+        path: "src/query-workflow.ts",
+        line: 42,
+        comments: {
+          nodes: [
+            {
+              id: "comment-current-same-line",
+              body: "P2: Preserve query workflow shell state.",
+              createdAt: "2026-06-05T17:55:00Z",
+              url: "https://example.test/pr/498#discussion_same_line",
+              author: {
+                login: "chatgpt-codex-connector",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+  });
+
+  assert.deepEqual(selected, []);
 });
 
 test("nextProcessedReviewThreadPatch fails closed for local-review current-head threads without no-change verification", () => {

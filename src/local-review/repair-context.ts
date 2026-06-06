@@ -34,6 +34,15 @@ function normalizeRepairContextFilePath(file: unknown): string | null {
   return trimmed === "" ? null : trimmed;
 }
 
+function normalizeRepairContextText(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed;
+}
+
 function readArtifactArray(
   artifact: Record<string, unknown>,
   key: "rootCauseSummaries" | "actionableFindings",
@@ -114,6 +123,7 @@ export async function loadLocalReviewRepairContext(
       const end = typeof finding.end === "number" ? finding.end : start;
       return {
         title: finding.title.trim(),
+        body: normalizeRepairContextText(finding.body),
         file: normalizeRepairContextFilePath(finding.file),
         lines:
           start == null
@@ -121,6 +131,7 @@ export async function loadLocalReviewRepairContext(
             : end != null && end !== start
               ? `${start}-${end}`
               : `${start}`,
+        evidence: normalizeRepairContextText(finding.evidence),
       };
     });
   const relevantFiles = [...new Set([
@@ -156,7 +167,7 @@ export async function loadLocalReviewRepairContext(
     summaryPath,
     findingsPath,
     relevantFiles,
-    actionableFindings: actionableReviewFindings,
+    ...(actionableReviewFindings.length > 0 ? { actionableFindings: actionableReviewFindings } : {}),
     rootCauses,
     priorMissPatterns,
     verifierGuardrails,

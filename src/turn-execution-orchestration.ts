@@ -89,9 +89,16 @@ export function selectVerifiedNoSourceChangeReviewThreads(args: {
   const findingAnchors = (args.localReviewRepairContext?.actionableFindings ?? [])
     .map((finding) => {
       const range = parseLineRange(finding.lines);
-      return finding.file && range ? { file: finding.file, ...range } : null;
+      const sourceEvidence = [finding.title, finding.body, finding.evidence]
+        .filter((value): value is string => typeof value === "string" && value.trim() !== "")
+        .join("\n");
+      return finding.file && range && sourceEvidence.trim() !== ""
+        ? { file: finding.file, sourceEvidence, ...range }
+        : null;
     })
-    .filter((anchor): anchor is { file: string; start: number; end: number } => anchor !== null);
+    .filter(
+      (anchor): anchor is { file: string; start: number; end: number; sourceEvidence: string } => anchor !== null,
+    );
   if (findingAnchors.length === 0) {
     return [];
   }
@@ -107,9 +114,18 @@ export function selectVerifiedNoSourceChangeReviewThreads(args: {
       return false;
     }
 
-    return findingAnchors.some(
-      (anchor) => anchor.file === thread.path && thread.line! >= anchor.start && thread.line! <= anchor.end,
+    const latestComment = thread.comments.nodes[thread.comments.nodes.length - 1] ?? null;
+    const commentEvidenceTokens = [thread.id, latestComment?.id, latestComment?.url].filter(
+      (value): value is string => typeof value === "string" && value.trim() !== "",
     );
+
+    return findingAnchors.some((anchor) => {
+      if (anchor.file !== thread.path || thread.line! < anchor.start || thread.line! > anchor.end) {
+        return false;
+      }
+
+      return commentEvidenceTokens.some((token) => anchor.sourceEvidence.includes(token));
+    });
   });
 }
 
