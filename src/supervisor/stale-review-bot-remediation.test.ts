@@ -265,6 +265,84 @@ test("buildStaleReviewBotRemediation keeps P1 current-head repair residue blocke
   assert.equal(diagnostics?.autoRepairSuppressedReason, "not_verified_stale_residue");
 });
 
+test("buildStaleReviewBotRemediation keeps mixed no-source and repair evidence on the repair safety path", () => {
+  const issueNumber = 2259;
+  const prNumber = 2261;
+  const headSha = "d7fdcf2f9ae36d48cd4eb6dc7d35de103d34856f";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "PRRT_mixed_evidence_p1_residue",
+    commentId: "PRRC_mixed_evidence_p1_residue",
+    path: "src/supervisor/stale-review-bot-remediation.ts",
+    line: 902,
+    severity: "P1",
+    commentBody: "P1: Do not let no-source residue evidence mask current-head repair safety checks.",
+    discussionUrl: "https://example.test/pr/2261#discussion_r3366308417",
+    verifiedRepair: {
+      summary: "Focused remediation verifier passed on the repaired current head.",
+      ranAt: "2026-06-06T02:05:00Z",
+      command: "npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+    currentHeadNoMajorReview: {
+      requestedAt: "2026-06-06T01:48:00Z",
+      observedAt: "2026-06-06T01:54:00Z",
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    verifiedNoSourceChangeReviewThreadAutoResolve: true,
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    timeline_artifacts: [
+      ...(scenario.recordPatch.timeline_artifacts ?? []),
+      {
+        type: "verification_result",
+        gate: "codex_turn",
+        command: "npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
+        head_sha: headSha,
+        outcome: "passed",
+        remediation_target: null,
+        next_action: "continue",
+        summary: "No-source review residue revalidation also passed on this head.",
+        recorded_at: "2026-06-06T02:06:00Z",
+        repair_targets: ["verified_no_source_change_review_thread_residue"],
+      },
+    ],
+    repair_attempt_count: 2,
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotTopLevelReviewStrength: "blocking",
+  });
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: scenario.passingChecks,
+    reviewThreads: [scenario.reviewThread],
+  });
+  const diagnostics = buildStaleReviewBotThreadDiagnostics({
+    config,
+    record,
+    pr,
+    checks: scenario.passingChecks,
+    reviewThreads: [scenario.reviewThread],
+    remediation,
+  });
+
+  assert.equal(remediation?.classification, "unresolved_work");
+  assert.equal(remediation?.codexCurrentHeadReviewState, "observed");
+  assert.equal(diagnostics?.verifiedStaleResidueThreads, 0);
+  assert.equal(diagnostics?.autoRepairSuppressedReason, "not_verified_stale_residue");
+});
+
 test("buildStaleReviewBotRemediation rejects review-bot-only checks as verified repair evidence", () => {
   const issueNumber = 187;
   const prNumber = 194;

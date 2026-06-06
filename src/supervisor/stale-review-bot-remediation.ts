@@ -359,6 +359,13 @@ function hasCurrentHeadCodexTurnVerification(
   );
 }
 
+function hasCurrentHeadLocalCiVerification(
+  record: Pick<IssueRunRecord, "latest_local_ci_result">,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
+): boolean {
+  return record.latest_local_ci_result?.outcome === "passed" && record.latest_local_ci_result.head_sha === pr.headRefOid;
+}
+
 function hasCurrentHeadNoSourceChangeCodexTurnVerification(
   record: Pick<IssueRunRecord, "timeline_artifacts">,
   pr: Pick<GitHubPullRequest, "headRefOid">,
@@ -897,9 +904,11 @@ function classifyCodexMetadataOnly(args: {
         args.record,
         args.pr,
       );
+      const hasExplicitCurrentHeadRepairVerification =
+        hasCurrentHeadCodexTurnVerification(args.record, args.pr) ||
+        hasCurrentHeadLocalCiVerification(args.record, args.pr);
       const verifiedCurrentHeadRepair =
-        !verifiedNoSourceChangeRepair &&
-        (hasCurrentHeadCodexTurnVerification(args.record, args.pr) || args.record.repair_attempt_count > 0);
+        hasExplicitCurrentHeadRepairVerification || (!verifiedNoSourceChangeRepair && args.record.repair_attempt_count > 0);
       if (
         verifiedCurrentHeadRepair &&
         !allCodexConnectorRepairResidueThreadsAreP2(codexConnectorMustFixReviewThreads(args.reviewThreads))
