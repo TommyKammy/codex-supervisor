@@ -387,7 +387,7 @@ test("executeCodexTurnPhase persists explicit successful Codex verification for 
   ]);
 });
 
-test("executeCodexTurnPhase persists no-change current-head Codex thread evidence after local review repair", async (t) => {
+test("executeCodexTurnPhase persists no-change current-head Codex thread and verification evidence after local review repair", async (t) => {
   const config = createConfig({
     reviewBotLogins: ["chatgpt-codex-connector"],
   });
@@ -587,8 +587,16 @@ test("executeCodexTurnPhase persists no-change current-head Codex thread evidenc
     isVerificationBlockedMessage: () => false,
     derivePullRequestLifecycleSnapshot: (recordForState) => ({
       recordForState,
-      nextState: "pr_open",
-      failureContext: null,
+      nextState: "blocked",
+      failureContext: {
+        category: "review",
+        summary: "Verified no-change Codex residue is still awaiting thread resolution.",
+        signature: "unresolved-thread:PRRT_kwDOSHIe7c6HbSbo|PRRT_kwDOSHIe7c6HbjhR",
+        command: null,
+        details: [],
+        url: "https://example.test/pr/498#discussion_shell",
+        updated_at: "2026-06-05T18:00:00Z",
+      },
       reviewWaitPatch: {},
       copilotRequestObservationPatch: {},
       mergeLatencyVisibilityPatch: {
@@ -603,7 +611,7 @@ test("executeCodexTurnPhase persists no-change current-head Codex thread evidenc
       },
     }),
     inferStateWithoutPullRequest: () => "stabilizing",
-    blockedReasonFromReviewState: () => null,
+    blockedReasonFromReviewState: () => "manual_review",
     recoverUnexpectedCodexTurnFailure: async () => {
       throw new Error("unexpected recoverUnexpectedCodexTurnFailure call");
     },
@@ -662,6 +670,19 @@ test("executeCodexTurnPhase persists no-change current-head Codex thread evidenc
   assert.deepEqual(state.issues["492"]?.processed_review_thread_fingerprints, [
     `PRRT_kwDOSHIe7c6HbSbo@${headSha}#comment-safequery-shell`,
     `PRRT_kwDOSHIe7c6HbjhR@${headSha}#comment-safequery-export`,
+  ]);
+  assert.deepEqual(state.issues["492"]?.timeline_artifacts, [
+    {
+      type: "verification_result",
+      gate: "codex_turn",
+      command: "npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
+      head_sha: headSha,
+      outcome: "passed",
+      remediation_target: null,
+      next_action: "continue",
+      summary: "Revalidated the current code against both live P2 threads with no source changes.",
+      recorded_at: state.issues["492"]?.timeline_artifacts?.[0]?.recorded_at ?? "",
+    },
   ]);
 });
 

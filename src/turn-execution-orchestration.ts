@@ -105,7 +105,12 @@ export function selectVerifiedNoSourceChangeReviewThreads(args: {
 
   const configuredThreadIds = new Set(
     configuredBotReviewThreads(args.config as SupervisorConfig, args.reviewThreads)
-      .filter((thread) => !thread.isResolved && !thread.isOutdated)
+      .filter(
+        (thread) =>
+          !thread.isResolved &&
+          !thread.isOutdated &&
+          latestReviewCommentAuthorIsAllowedBot(args.config as SupervisorConfig, thread),
+      )
       .map((thread) => thread.id),
   );
 

@@ -225,6 +225,35 @@ test("selectVerifiedNoSourceChangeReviewThreads requires configured-bot exact fi
         },
       }),
       createReviewThread({
+        id: "PRRT_human_latest",
+        path: "src/query-workflow.ts",
+        line: 42,
+        comments: {
+          nodes: [
+            {
+              id: "comment-human-latest-bot",
+              body: "P2: Preserve query workflow shell state.",
+              createdAt: "2026-06-05T17:55:00Z",
+              url: "https://example.test/pr/498#discussion_human_latest_bot",
+              author: {
+                login: "chatgpt-codex-connector",
+                typeName: "Bot",
+              },
+            },
+            {
+              id: "comment-human-latest",
+              body: "A maintainer follow-up should keep this out of no-change auto evidence.",
+              createdAt: "2026-06-05T17:56:00Z",
+              url: "https://example.test/pr/498#discussion_human_latest",
+              author: {
+                login: "maintainer",
+                typeName: "User",
+              },
+            },
+          ],
+        },
+      }),
+      createReviewThread({
         id: "thread-in-root-cause-range-only",
         path: "src/query-workflow.ts",
         line: 60,

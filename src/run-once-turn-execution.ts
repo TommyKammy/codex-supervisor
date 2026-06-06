@@ -1198,12 +1198,19 @@ export async function executeCodexTurnPhase(
           ? postRunSnapshot.nextState
           : (hintedState ??
             args.inferStateWithoutPullRequest(record, workspaceStatus));
+        const currentPrHeadSha = pr?.headRefOid ?? null;
+        const hasVerifiedNoSourceChangeReviewThreadEvidence =
+          preRunState === "local_review_fix" &&
+          currentPrHeadSha !== null &&
+          processedReviewThreadPatch.processed_review_thread_ids?.some((key) =>
+            key.endsWith(`@${currentPrHeadSha}`),
+          ) === true;
         const codexTurnVerificationHeadSha =
           pr &&
           codexVerificationCommand &&
           workspaceStatus.headSha === pr.headRefOid &&
-          postRunState !== "blocked" &&
-          postRunState !== "failed"
+          postRunState !== "failed" &&
+          (postRunState !== "blocked" || hasVerifiedNoSourceChangeReviewThreadEvidence)
             ? pr.headRefOid
             : null;
         const codexTurnVerificationTimelineArtifacts =
