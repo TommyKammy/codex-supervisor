@@ -298,9 +298,13 @@ export function nextProcessedReviewThreadPatch(args: {
   currentPr: Pick<GitHubPullRequest, "headRefOid"> | null;
   evaluatedReviewHeadSha: string;
   reviewThreadsToProcess: ReviewThread[];
+  persistVerifiedNoSourceChangeCurrentHead?: boolean;
 }): Pick<IssueRunRecord, "processed_review_thread_ids" | "processed_review_thread_fingerprints"> {
+  const shouldPersistCurrentHeadThreadEvidence =
+    args.preRunState === "addressing_review" ||
+    (args.preRunState === "local_review_fix" && args.persistVerifiedNoSourceChangeCurrentHead === true);
   const processedReviewThreadKeysForCurrentHead =
-    args.preRunState === "addressing_review" &&
+    shouldPersistCurrentHeadThreadEvidence &&
     args.currentPr &&
     args.currentPr.headRefOid === args.evaluatedReviewHeadSha
       ? args.reviewThreadsToProcess.map((thread) =>
@@ -308,7 +312,7 @@ export function nextProcessedReviewThreadPatch(args: {
         )
       : [];
   const processedReviewThreadFingerprintKeysForCurrentHead =
-    args.preRunState === "addressing_review" &&
+    shouldPersistCurrentHeadThreadEvidence &&
     args.currentPr &&
     args.currentPr.headRefOid === args.evaluatedReviewHeadSha
       ? args.reviewThreadsToProcess.flatMap((thread) => {

@@ -1143,12 +1143,17 @@ export async function executeCodexTurnPhase(
           };
         }
 
+        const codexVerificationCommand =
+          explicitPassingCodexTurnVerificationCommand(structuredResult?.tests);
         const processedReviewThreadPatch = nextProcessedReviewThreadPatch({
           preRunState,
           record,
           currentPr: pr,
           evaluatedReviewHeadSha,
           reviewThreadsToProcess,
+          persistVerifiedNoSourceChangeCurrentHead:
+            Boolean(codexVerificationCommand) &&
+            changedFilesInCurrentTurn.length === 0,
         });
         const reviewFollowUpPatch = nextReviewFollowUpPatch({
           config,
@@ -1175,8 +1180,6 @@ export async function executeCodexTurnPhase(
           ? postRunSnapshot.nextState
           : (hintedState ??
             args.inferStateWithoutPullRequest(record, workspaceStatus));
-        const codexVerificationCommand =
-          explicitPassingCodexTurnVerificationCommand(structuredResult?.tests);
         const codexTurnVerificationHeadSha =
           pr &&
           codexVerificationCommand &&

@@ -69,6 +69,86 @@ test("nextProcessedReviewThreadPatch refreshes reprocessed same-head ids to the 
   );
 });
 
+test("nextProcessedReviewThreadPatch persists local-review no-change current-head verification evidence", () => {
+  const headSha = "7a77d998712882166f79c3710dd4c567da6da779";
+  const reviewThreads = [
+    createReviewThread({
+      id: "PRRT_kwDOSHIe7c6HbSbo",
+      comments: {
+        nodes: [
+          {
+            id: "comment-safequery-shell",
+            body: "P2: Preserve query workflow shell state after the current-head revalidation.",
+            createdAt: "2026-06-05T17:55:00Z",
+            url: "https://example.test/pr/498#discussion_shell",
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+    createReviewThread({
+      id: "PRRT_kwDOSHIe7c6HbjhR",
+      comments: {
+        nodes: [
+          {
+            id: "comment-safequery-export",
+            body: "P2: Keep query export flow covered by focused verification.",
+            createdAt: "2026-06-05T17:55:01Z",
+            url: "https://example.test/pr/498#discussion_export",
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  ];
+
+  const patch = nextProcessedReviewThreadPatch({
+    preRunState: "local_review_fix",
+    record: {
+      processed_review_thread_ids: [],
+      processed_review_thread_fingerprints: [],
+    },
+    currentPr: { headRefOid: headSha },
+    evaluatedReviewHeadSha: headSha,
+    reviewThreadsToProcess: reviewThreads,
+    persistVerifiedNoSourceChangeCurrentHead: true,
+  });
+
+  assert.deepEqual(
+    patch.processed_review_thread_ids,
+    reviewThreads.map((thread) => `${thread.id}@${headSha}`),
+  );
+  assert.deepEqual(
+    patch.processed_review_thread_fingerprints,
+    [
+      `PRRT_kwDOSHIe7c6HbSbo@${headSha}#comment-safequery-shell`,
+      `PRRT_kwDOSHIe7c6HbjhR@${headSha}#comment-safequery-export`,
+    ],
+  );
+});
+
+test("nextProcessedReviewThreadPatch fails closed for local-review current-head threads without no-change verification", () => {
+  const patch = nextProcessedReviewThreadPatch({
+    preRunState: "local_review_fix",
+    record: {
+      processed_review_thread_ids: [],
+      processed_review_thread_fingerprints: [],
+    },
+    currentPr: { headRefOid: "head-a" },
+    evaluatedReviewHeadSha: "head-a",
+    reviewThreadsToProcess: [createReviewThread({ id: "thread-1" })],
+  });
+
+  assert.deepEqual(patch.processed_review_thread_ids, []);
+  assert.deepEqual(patch.processed_review_thread_fingerprints, []);
+});
+
 test("selectReviewThreadsForTurn re-includes same-head configured-bot threads when the follow-up allowance is active", () => {
   const selected = selectReviewThreadsForTurn({
     config: createConfig({

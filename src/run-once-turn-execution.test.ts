@@ -387,6 +387,200 @@ test("executeCodexTurnPhase persists explicit successful Codex verification for 
   ]);
 });
 
+test("executeCodexTurnPhase persists no-change current-head Codex thread evidence after local review repair", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+  });
+  const headSha = "7a77d998712882166f79c3710dd4c567da6da779";
+  const issue: GitHubIssue = createIssue({
+    title: "Persist verified no-change Codex thread evidence",
+  });
+  const pr: GitHubPullRequest = createPullRequest({
+    number: 498,
+    headRefOid: headSha,
+  });
+  const reviewThreads = [
+    createReviewThread({
+      id: "PRRT_kwDOSHIe7c6HbSbo",
+      comments: {
+        nodes: [
+          {
+            id: "comment-safequery-shell",
+            body: "P2: Preserve query workflow shell state after the current-head revalidation.",
+            createdAt: "2026-06-05T17:55:00Z",
+            url: "https://example.test/pr/498#discussion_shell",
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+    createReviewThread({
+      id: "PRRT_kwDOSHIe7c6HbjhR",
+      comments: {
+        nodes: [
+          {
+            id: "comment-safequery-export",
+            body: "P2: Keep query export flow covered by focused verification.",
+            createdAt: "2026-06-05T17:55:01Z",
+            url: "https://example.test/pr/498#discussion_export",
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  ];
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 492,
+    issues: {
+      "492": createRecord({
+        issue_number: 492,
+        state: "local_review_fix",
+        pr_number: 498,
+        last_head_sha: headSha,
+        processed_review_thread_ids: [],
+        processed_review_thread_fingerprints: [],
+      }),
+    },
+  };
+  const context = createCodexTurnContext({
+    state,
+    record: state.issues["492"]!,
+    issue,
+    pr,
+    checks: [],
+    reviewThreads,
+    workspaceStatus: {
+      branch: "codex/issue-492",
+      headSha,
+    },
+  });
+  let journalReads = 0;
+
+  const result = await executeCodexTurnPhase({
+    config,
+    stateStore: {
+      touch: (record, patch) => ({
+        ...record,
+        ...patch,
+        updated_at: record.updated_at,
+      }),
+      save: async () => undefined,
+    },
+    github: {
+      resolvePullRequestForBranch: async () => pr,
+      createPullRequest: async () => {
+        throw new Error("unexpected createPullRequest call");
+      },
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => reviewThreads,
+      getExternalReviewSurface: async () => {
+        throw new Error("unexpected getExternalReviewSurface call");
+      },
+    },
+    context,
+    acquireSessionLock: async () => null,
+    classifyFailure: () => "command_error",
+    buildCodexFailureContext: (category, summary, details) => ({
+      category,
+      summary: `${category}:${summary}`,
+      signature: `${category}:${summary}`,
+      command: null,
+      details,
+      url: null,
+      updated_at: "2026-06-05T18:00:00Z",
+    }),
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    normalizeBlockerSignature: () => null,
+    isVerificationBlockedMessage: () => false,
+    derivePullRequestLifecycleSnapshot: (recordForState) => ({
+      recordForState,
+      nextState: "pr_open",
+      failureContext: null,
+      reviewWaitPatch: {},
+      copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    inferStateWithoutPullRequest: () => "stabilizing",
+    blockedReasonFromReviewState: () => null,
+    recoverUnexpectedCodexTurnFailure: async () => {
+      throw new Error("unexpected recoverUnexpectedCodexTurnFailure call");
+    },
+    getWorkspaceStatus: async () =>
+      createWorkspaceStatus({
+        branch: "codex/issue-492",
+        headSha,
+      }),
+    agentRunner: createSuccessfulAgentRunner(async () => ({
+      exitCode: 0,
+      sessionId: "session-492",
+      supervisorMessage: [
+        "Summary: Revalidated the current code against both live P2 threads with no source changes.",
+        "State hint: pr_open",
+        "Blocked reason: none",
+        "Tests: npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
+        "Failure signature: none",
+        "Next action: resolve verified Codex residue",
+      ].join("\n"),
+      stderr: "",
+      stdout: "",
+      structuredResult: {
+        summary: "Revalidated the current code against both live P2 threads with no source changes.",
+        stateHint: "pr_open",
+        blockedReason: null,
+        failureSignature: null,
+        nextAction: "resolve verified Codex residue",
+        tests: "npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
+      },
+      failureKind: null,
+      failureContext: null,
+    })),
+    readIssueJournal: async () => {
+      journalReads += 1;
+      return journalReads === 1
+        ? [
+            "## Codex Working Notes",
+            "### Current Handoff",
+            "- Hypothesis: no source change revalidation should persist Codex thread evidence.",
+          ].join("\n")
+        : [
+            "## Codex Working Notes",
+            "### Current Handoff",
+            "- Hypothesis: no source change revalidation should persist Codex thread evidence.",
+            "- What changed: revalidated both current-head Codex P2 threads with focused tests and no source changes.",
+            "- Next exact step: resolve verified Codex residue.",
+          ].join("\n");
+    },
+  });
+
+  assert.equal(result.kind, "completed");
+  assert.deepEqual(state.issues["492"]?.processed_review_thread_ids, [
+    `PRRT_kwDOSHIe7c6HbSbo@${headSha}`,
+    `PRRT_kwDOSHIe7c6HbjhR@${headSha}`,
+  ]);
+  assert.deepEqual(state.issues["492"]?.processed_review_thread_fingerprints, [
+    `PRRT_kwDOSHIe7c6HbSbo@${headSha}#comment-safequery-shell`,
+    `PRRT_kwDOSHIe7c6HbjhR@${headSha}#comment-safequery-export`,
+  ]);
+});
+
 test("executeCodexTurnPhase accepts command-backed Codex verification with failure-adjacent path tokens", async () => {
   const commands = [
     "npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
