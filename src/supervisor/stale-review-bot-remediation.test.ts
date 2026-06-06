@@ -70,6 +70,59 @@ test("buildStaleReviewBotRemediation classifies same-head Codex no-major comment
   assert.equal(diagnostics?.currentHeadSuccess, "yes");
 });
 
+test("buildStaleReviewBotRemediation classifies marked codex_turn evidence as no-source residue", () => {
+  const issueNumber = 492;
+  const prNumber = 498;
+  const headSha = "7a77d998712882166f79c3710dd4c567da6da779";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "PRRT_kwDOSHIe7c6HbSbo",
+    commentId: "PRRC_kwDOSHIe7c6HbSbo",
+    path: "src/query-shell.ts",
+    line: 40,
+    severity: "P2",
+    commentBody: "P2: Preserve query workflow shell state after no-source revalidation.",
+    discussionUrl: "https://example.test/pr/498#discussion_r398",
+    verifiedRepair: {
+      summary: "Revalidated the current code against the live P2 thread with no source changes.",
+      ranAt: "2026-06-05T18:00:00Z",
+      command: "npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+    currentHeadNoMajorReview: {
+      requestedAt: "2026-06-05T17:55:00Z",
+      observedAt: "2026-06-05T17:59:00Z",
+    },
+  });
+  const config = createConfig({ reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN] });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    timeline_artifacts: scenario.recordPatch.timeline_artifacts?.map((artifact) => ({
+      ...artifact,
+      repair_targets: ["verified_no_source_change_review_thread_residue"],
+    })),
+    repair_attempt_count: 2,
+  });
+  const pr = createPullRequest(scenario.pullRequestPatch);
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: scenario.passingChecks,
+    reviewThreads: [scenario.reviewThread],
+  });
+
+  assert.equal(remediation?.classification, "verified_no_source_change_pending_thread_resolution");
+  assert.equal(remediation?.codexCurrentHeadReviewState, "observed");
+  assert.match(
+    remediation?.verificationEvidenceSummary ?? "",
+    /Revalidated the current code against the live P2 thread with no source changes.;codex_pr_success_comment_after_current_head_request/,
+  );
+});
+
 test("buildStaleReviewBotRemediation accepts green current-head checks as verified repair evidence after no-major", () => {
   const issueNumber = 187;
   const prNumber = 194;

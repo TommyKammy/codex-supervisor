@@ -682,6 +682,7 @@ test("executeCodexTurnPhase persists no-change current-head Codex thread and ver
       next_action: "continue",
       summary: "Revalidated the current code against both live P2 threads with no source changes.",
       recorded_at: state.issues["492"]?.timeline_artifacts?.[0]?.recorded_at ?? "",
+      repair_targets: ["verified_no_source_change_review_thread_residue"],
     },
   ]);
 });

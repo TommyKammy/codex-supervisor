@@ -32,6 +32,7 @@ import {
 } from "./no-pull-request-state";
 import * as trackedPrStatusComments from "./tracked-pr-status-comment";
 import {
+  hasCurrentTurnVerifiedNoSourceChangeReviewThreadEvidence,
   nextProcessedReviewThreadPatch,
   nextReviewFollowUpPatch,
   prepareCodexTurnPrompt,
@@ -1154,6 +1155,18 @@ export async function executeCodexTurnPhase(
                 turnStartHeadSha,
                 workspaceStatus.headSha,
               );
+        const verifiedNoSourceChangeReviewThreads =
+          preRunState === "local_review_fix"
+            ? selectVerifiedNoSourceChangeReviewThreads({
+                config,
+                localReviewRepairContext,
+                reviewThreads: reviewThreadsToProcess,
+              })
+            : [];
+        const canPersistVerifiedNoSourceChangeCurrentHead =
+          Boolean(codexVerificationCommand) &&
+          !workspaceStatus.hasUncommittedChanges &&
+          changedFilesAfterPublication.length === 0;
         const processedReviewThreadPatch = nextProcessedReviewThreadPatch({
           preRunState,
           record,
@@ -1162,16 +1175,9 @@ export async function executeCodexTurnPhase(
           reviewThreadsToProcess,
           verifiedNoSourceChangeReviewThreads:
             preRunState === "local_review_fix"
-              ? selectVerifiedNoSourceChangeReviewThreads({
-                  config,
-                  localReviewRepairContext,
-                  reviewThreads: reviewThreadsToProcess,
-                })
+              ? verifiedNoSourceChangeReviewThreads
               : undefined,
-          persistVerifiedNoSourceChangeCurrentHead:
-            Boolean(codexVerificationCommand) &&
-            !workspaceStatus.hasUncommittedChanges &&
-            changedFilesAfterPublication.length === 0,
+          persistVerifiedNoSourceChangeCurrentHead: canPersistVerifiedNoSourceChangeCurrentHead,
         });
         const reviewFollowUpPatch = nextReviewFollowUpPatch({
           config,
@@ -1200,11 +1206,13 @@ export async function executeCodexTurnPhase(
             args.inferStateWithoutPullRequest(record, workspaceStatus));
         const currentPrHeadSha = pr?.headRefOid ?? null;
         const hasVerifiedNoSourceChangeReviewThreadEvidence =
-          preRunState === "local_review_fix" &&
-          currentPrHeadSha !== null &&
-          processedReviewThreadPatch.processed_review_thread_ids?.some((key) =>
-            key.endsWith(`@${currentPrHeadSha}`),
-          ) === true;
+          hasCurrentTurnVerifiedNoSourceChangeReviewThreadEvidence({
+            preRunState,
+            currentPrHeadSha,
+            canPersistVerifiedNoSourceChangeCurrentHead,
+            verifiedNoSourceChangeReviewThreads,
+            processedReviewThreadIds: processedReviewThreadPatch.processed_review_thread_ids,
+          });
         const codexTurnVerificationHeadSha =
           pr &&
           codexVerificationCommand &&
@@ -1231,6 +1239,13 @@ export async function executeCodexTurnPhase(
                     structuredResult?.summary,
                   ),
                   recorded_at: new Date().toISOString(),
+                  ...(hasVerifiedNoSourceChangeReviewThreadEvidence
+                    ? {
+                        repair_targets: [
+                          "verified_no_source_change_review_thread_residue",
+                        ],
+                      }
+                    : {}),
                 },
                 (candidate) =>
                   candidate.type === "verification_result" &&

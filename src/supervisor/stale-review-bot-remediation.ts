@@ -354,7 +354,22 @@ function hasCurrentHeadCodexTurnVerification(
       artifact.type === "verification_result" &&
       artifact.gate === "codex_turn" &&
       artifact.outcome === "passed" &&
-      artifact.head_sha === pr.headRefOid,
+      artifact.head_sha === pr.headRefOid &&
+      !artifact.repair_targets?.includes("verified_no_source_change_review_thread_residue"),
+  );
+}
+
+function hasCurrentHeadNoSourceChangeCodexTurnVerification(
+  record: Pick<IssueRunRecord, "timeline_artifacts">,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
+): boolean {
+  return (record.timeline_artifacts ?? []).some(
+    (artifact) =>
+      artifact.type === "verification_result" &&
+      artifact.gate === "codex_turn" &&
+      artifact.outcome === "passed" &&
+      artifact.head_sha === pr.headRefOid &&
+      artifact.repair_targets?.includes("verified_no_source_change_review_thread_residue") === true,
   );
 }
 
@@ -878,8 +893,13 @@ function classifyCodexMetadataOnly(args: {
           missingProbeReason: "current_head_codex_no_major_signal_missing",
         };
       }
+      const verifiedNoSourceChangeRepair = hasCurrentHeadNoSourceChangeCodexTurnVerification(
+        args.record,
+        args.pr,
+      );
       const verifiedCurrentHeadRepair =
-        hasCurrentHeadCodexTurnVerification(args.record, args.pr) || args.record.repair_attempt_count > 0;
+        !verifiedNoSourceChangeRepair &&
+        (hasCurrentHeadCodexTurnVerification(args.record, args.pr) || args.record.repair_attempt_count > 0);
       if (
         verifiedCurrentHeadRepair &&
         !allCodexConnectorRepairResidueThreadsAreP2(codexConnectorMustFixReviewThreads(args.reviewThreads))

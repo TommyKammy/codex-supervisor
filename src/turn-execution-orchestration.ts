@@ -81,6 +81,22 @@ function parseLineRange(lines: string | null): { start: number; end: number } | 
   return { start, end };
 }
 
+function extractReviewEvidenceTokens(value: string): Set<string> {
+  const tokens = new Set<string>();
+  const patterns = [
+    /\bPRRT_[A-Za-z0-9_-]+\b/gu,
+    /\bPRRC_[A-Za-z0-9_-]+\b/gu,
+    /https?:\/\/[^\s<>)\]]+#discussion_[A-Za-z0-9_-]+/gu,
+    /#discussion_[A-Za-z0-9_-]+/gu,
+  ];
+  for (const pattern of patterns) {
+    for (const match of value.matchAll(pattern)) {
+      tokens.add(match[0]);
+    }
+  }
+  return tokens;
+}
+
 export function selectVerifiedNoSourceChangeReviewThreads(args: {
   config: Pick<SupervisorConfig, "reviewBotLogins" | "configuredReviewProviders">;
   localReviewRepairContext: LocalReviewRepairContext | null;
@@ -92,12 +108,14 @@ export function selectVerifiedNoSourceChangeReviewThreads(args: {
       const sourceEvidence = [finding.title, finding.body, finding.evidence]
         .filter((value): value is string => typeof value === "string" && value.trim() !== "")
         .join("\n");
-      return finding.file && range && sourceEvidence.trim() !== ""
-        ? { file: finding.file, sourceEvidence, ...range }
+      const sourceEvidenceTokens = extractReviewEvidenceTokens(sourceEvidence);
+      return finding.file && range && sourceEvidenceTokens.size > 0
+        ? { file: finding.file, sourceEvidenceTokens, ...range }
         : null;
     })
     .filter(
-      (anchor): anchor is { file: string; start: number; end: number; sourceEvidence: string } => anchor !== null,
+      (anchor): anchor is { file: string; start: number; end: number; sourceEvidenceTokens: Set<string> } =>
+        anchor !== null,
     );
   if (findingAnchors.length === 0) {
     return [];
@@ -120,16 +138,22 @@ export function selectVerifiedNoSourceChangeReviewThreads(args: {
     }
 
     const latestComment = thread.comments.nodes[thread.comments.nodes.length - 1] ?? null;
-    const commentEvidenceTokens = [thread.id, latestComment?.id, latestComment?.url].filter(
-      (value): value is string => typeof value === "string" && value.trim() !== "",
-    );
+    const commentEvidenceTokens = new Set<string>([thread.id]);
+    if (latestComment?.id) {
+      commentEvidenceTokens.add(latestComment.id);
+    }
+    if (latestComment?.url) {
+      for (const token of extractReviewEvidenceTokens(latestComment.url)) {
+        commentEvidenceTokens.add(token);
+      }
+    }
 
     return findingAnchors.some((anchor) => {
       if (anchor.file !== thread.path || thread.line! < anchor.start || thread.line! > anchor.end) {
         return false;
       }
 
-      return commentEvidenceTokens.some((token) => anchor.sourceEvidence.includes(token));
+      return Array.from(commentEvidenceTokens).some((token) => anchor.sourceEvidenceTokens.has(token));
     });
   });
 }
@@ -428,6 +452,26 @@ export function nextProcessedReviewThreadPatch(args: {
           ).slice(-200)
         : args.record.processed_review_thread_fingerprints,
   };
+}
+
+export function hasCurrentTurnVerifiedNoSourceChangeReviewThreadEvidence(args: {
+  preRunState: IssueRunRecord["state"];
+  currentPrHeadSha: string | null;
+  canPersistVerifiedNoSourceChangeCurrentHead: boolean;
+  verifiedNoSourceChangeReviewThreads: ReviewThread[];
+  processedReviewThreadIds: string[] | null | undefined;
+}): boolean {
+  return (
+    args.preRunState === "local_review_fix" &&
+    args.currentPrHeadSha !== null &&
+    args.canPersistVerifiedNoSourceChangeCurrentHead &&
+    args.verifiedNoSourceChangeReviewThreads.length > 0 &&
+    args.verifiedNoSourceChangeReviewThreads.every((thread) =>
+      args.processedReviewThreadIds?.includes(
+        processedReviewThreadKey(thread.id, args.currentPrHeadSha!),
+      ),
+    )
+  );
 }
 
 export function nextReviewFollowUpPatch(args: {

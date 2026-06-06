@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { buildCodexPrompt } from "./codex";
 import {
+  hasCurrentTurnVerifiedNoSourceChangeReviewThreadEvidence,
   nextProcessedReviewThreadPatch,
   nextReviewFollowUpPatch,
   prepareCodexTurnPrompt,
@@ -156,6 +157,48 @@ test("nextProcessedReviewThreadPatch scopes local-review no-change evidence to v
   assert.deepEqual(patch.processed_review_thread_fingerprints, [`thread-verified@${headSha}#comment-1`]);
 });
 
+test("hasCurrentTurnVerifiedNoSourceChangeReviewThreadEvidence requires newly verified threads", () => {
+  const headSha = "head-a";
+  const verifiedThread = createReviewThread({
+    id: "thread-verified",
+    comments: {
+      nodes: [
+        {
+          id: "comment-1",
+          body: "P2: verified.",
+          createdAt: "2026-03-13T06:20:00Z",
+          url: "https://example.test/pr/44#discussion_r1",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.equal(
+    hasCurrentTurnVerifiedNoSourceChangeReviewThreadEvidence({
+      preRunState: "local_review_fix",
+      currentPrHeadSha: headSha,
+      canPersistVerifiedNoSourceChangeCurrentHead: true,
+      verifiedNoSourceChangeReviewThreads: [verifiedThread],
+      processedReviewThreadIds: [`thread-verified@${headSha}`],
+    }),
+    true,
+  );
+  assert.equal(
+    hasCurrentTurnVerifiedNoSourceChangeReviewThreadEvidence({
+      preRunState: "local_review_fix",
+      currentPrHeadSha: headSha,
+      canPersistVerifiedNoSourceChangeCurrentHead: true,
+      verifiedNoSourceChangeReviewThreads: [],
+      processedReviewThreadIds: [`thread-verified@${headSha}`],
+    }),
+    false,
+  );
+});
+
 test("selectVerifiedNoSourceChangeReviewThreads requires configured-bot exact finding anchors", () => {
   const selected = selectVerifiedNoSourceChangeReviewThreads({
     config: createConfig({
@@ -295,6 +338,73 @@ test("selectVerifiedNoSourceChangeReviewThreads requires configured-bot exact fi
   });
 
   assert.deepEqual(selected.map((thread) => thread.id), ["PRRT_verified"]);
+});
+
+test("selectVerifiedNoSourceChangeReviewThreads does not match prefixed discussion tokens", () => {
+  const selected = selectVerifiedNoSourceChangeReviewThreads({
+    config: createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector"],
+    }),
+    localReviewRepairContext: {
+      summaryPath: "reviews/issue-492/head-7a77d998.md",
+      findingsPath: "reviews/issue-492/head-7a77d998.json",
+      relevantFiles: ["src/query-workflow.ts"],
+      actionableFindings: [
+        {
+          title: "Preserve query workflow shell state",
+          body: "Focused verification covered the longer cited discussion.",
+          file: "src/query-workflow.ts",
+          lines: "42",
+          evidence: "Verified https://example.test/pr/498#discussion_r1234.",
+        },
+      ],
+      rootCauses: [],
+      priorMissPatterns: [],
+      verifierGuardrails: [],
+    },
+    reviewThreads: [
+      createReviewThread({
+        id: "PRRT_short_discussion",
+        path: "src/query-workflow.ts",
+        line: 42,
+        comments: {
+          nodes: [
+            {
+              id: "comment-short-discussion",
+              body: "P2: Shorter same-line discussion must not be selected.",
+              createdAt: "2026-06-05T17:55:00Z",
+              url: "https://example.test/pr/498#discussion_r123",
+              author: {
+                login: "chatgpt-codex-connector",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+      createReviewThread({
+        id: "PRRT_long_discussion",
+        path: "src/query-workflow.ts",
+        line: 42,
+        comments: {
+          nodes: [
+            {
+              id: "comment-long-discussion",
+              body: "P2: Longer cited discussion was verified.",
+              createdAt: "2026-06-05T17:55:30Z",
+              url: "https://example.test/pr/498#discussion_r1234",
+              author: {
+                login: "chatgpt-codex-connector",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+  });
+
+  assert.deepEqual(selected.map((thread) => thread.id), ["PRRT_long_discussion"]);
 });
 
 test("selectVerifiedNoSourceChangeReviewThreads fails closed without exact thread evidence", () => {
