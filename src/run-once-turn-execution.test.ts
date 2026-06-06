@@ -529,6 +529,19 @@ test("executeCodexTurnPhase persists no-change current-head Codex thread and ver
         local_review_summary_path: localReviewSummaryPath,
         processed_review_thread_ids: [],
         processed_review_thread_fingerprints: [],
+        timeline_artifacts: [
+          {
+            type: "verification_result",
+            gate: "codex_turn",
+            command: "npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
+            head_sha: headSha,
+            outcome: "passed",
+            remediation_target: null,
+            next_action: "continue",
+            summary: "Earlier source-changing repair verification passed on this head.",
+            recorded_at: "2026-06-05T17:45:00Z",
+          },
+        ],
       }),
     },
   };
@@ -680,9 +693,28 @@ test("executeCodexTurnPhase persists no-change current-head Codex thread and ver
       outcome: "passed",
       remediation_target: null,
       next_action: "continue",
+      summary: "Earlier source-changing repair verification passed on this head.",
+      recorded_at: "2026-06-05T17:45:00Z",
+    },
+    {
+      type: "verification_result",
+      gate: "codex_turn",
+      command: "npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
+      head_sha: headSha,
+      outcome: "passed",
+      remediation_target: null,
+      next_action: "continue",
       summary: "Revalidated the current code against both live P2 threads with no source changes.",
-      recorded_at: state.issues["492"]?.timeline_artifacts?.[0]?.recorded_at ?? "",
+      recorded_at: state.issues["492"]?.timeline_artifacts?.[1]?.recorded_at ?? "",
       repair_targets: ["verified_no_source_change_review_thread_residue"],
+      processed_review_thread_ids: [
+        `PRRT_kwDOSHIe7c6HbSbo@${headSha}`,
+        `PRRT_kwDOSHIe7c6HbjhR@${headSha}`,
+      ],
+      processed_review_thread_fingerprints: [
+        `PRRT_kwDOSHIe7c6HbSbo@${headSha}#comment-safequery-shell`,
+        `PRRT_kwDOSHIe7c6HbjhR@${headSha}#comment-safequery-export`,
+      ],
     },
   ]);
 });

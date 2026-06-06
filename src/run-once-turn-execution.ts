@@ -40,6 +40,11 @@ import {
   shouldResumeAgentTurn,
 } from "./turn-execution-orchestration";
 import {
+  latestReviewThreadCommentFingerprint,
+  processedReviewThreadFingerprintKey,
+  processedReviewThreadKey,
+} from "./review-handling";
+import {
   FailureContext,
   GitHubIssue,
   GitHubPullRequest,
@@ -97,6 +102,19 @@ export interface CodexTurnContext {
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
   options: { dryRun: boolean };
+}
+
+function sameRepairTargets(left: string[] | null | undefined, right: string[] | null | undefined): boolean {
+  return sameStringList(left, right);
+}
+
+function sameStringList(left: string[] | null | undefined, right: string[] | null | undefined): boolean {
+  const normalizedLeft = left ?? [];
+  const normalizedRight = right ?? [];
+  return (
+    normalizedLeft.length === normalizedRight.length &&
+    normalizedLeft.every((target, index) => target === normalizedRight[index])
+  );
 }
 
 export interface CodexTurnResult {
@@ -1221,6 +1239,24 @@ export async function executeCodexTurnPhase(
           (postRunState !== "blocked" || hasVerifiedNoSourceChangeReviewThreadEvidence)
             ? pr.headRefOid
             : null;
+        const codexTurnVerificationRepairTargets = hasVerifiedNoSourceChangeReviewThreadEvidence
+          ? ["verified_no_source_change_review_thread_residue"]
+          : undefined;
+        const codexTurnVerificationReviewThreadIds =
+          codexTurnVerificationRepairTargets && currentPrHeadSha
+            ? verifiedNoSourceChangeReviewThreads.map((thread) =>
+                processedReviewThreadKey(thread.id, currentPrHeadSha),
+              )
+            : undefined;
+        const codexTurnVerificationReviewThreadFingerprints =
+          codexTurnVerificationRepairTargets && currentPrHeadSha
+            ? verifiedNoSourceChangeReviewThreads.flatMap((thread) => {
+                const fingerprint = latestReviewThreadCommentFingerprint(thread);
+                return fingerprint
+                  ? [processedReviewThreadFingerprintKey(thread.id, currentPrHeadSha, fingerprint)]
+                  : [];
+              })
+            : undefined;
         const codexTurnVerificationTimelineArtifacts =
           pr &&
           codexVerificationCommand &&
@@ -1239,11 +1275,11 @@ export async function executeCodexTurnPhase(
                     structuredResult?.summary,
                   ),
                   recorded_at: new Date().toISOString(),
-                  ...(hasVerifiedNoSourceChangeReviewThreadEvidence
+                  ...(codexTurnVerificationRepairTargets
                     ? {
-                        repair_targets: [
-                          "verified_no_source_change_review_thread_residue",
-                        ],
+                        repair_targets: codexTurnVerificationRepairTargets,
+                        processed_review_thread_ids: codexTurnVerificationReviewThreadIds ?? [],
+                        processed_review_thread_fingerprints: codexTurnVerificationReviewThreadFingerprints ?? [],
                       }
                     : {}),
                 },
@@ -1252,7 +1288,13 @@ export async function executeCodexTurnPhase(
                   candidate.gate === "codex_turn" &&
                   candidate.outcome === "passed" &&
                   candidate.head_sha === codexTurnVerificationHeadSha &&
-                  candidate.command === codexVerificationCommand,
+                  candidate.command === codexVerificationCommand &&
+                  sameRepairTargets(candidate.repair_targets, codexTurnVerificationRepairTargets) &&
+                  sameStringList(candidate.processed_review_thread_ids, codexTurnVerificationReviewThreadIds) &&
+                  sameStringList(
+                    candidate.processed_review_thread_fingerprints,
+                    codexTurnVerificationReviewThreadFingerprints,
+                  ),
               )
             : null;
         const preserveStaleNoPrRecoveryTracking =

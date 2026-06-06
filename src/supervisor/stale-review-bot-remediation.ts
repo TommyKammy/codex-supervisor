@@ -1,5 +1,10 @@
 import type { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "../core/types";
-import { hasProcessedReviewThread } from "../review-handling";
+import {
+  hasProcessedReviewThread,
+  latestReviewThreadCommentFingerprint,
+  processedReviewThreadFingerprintKey,
+  processedReviewThreadKey,
+} from "../review-handling";
 import {
   clusterConfiguredBotReviewThreads,
   codexConnectorMustFixReviewThreads,
@@ -369,6 +374,22 @@ function hasCurrentHeadLocalCiVerification(
 function hasCurrentHeadNoSourceChangeCodexTurnVerification(
   record: Pick<IssueRunRecord, "timeline_artifacts">,
   pr: Pick<GitHubPullRequest, "headRefOid">,
+  reviewThreads: ReviewThread[],
+): boolean {
+  return (record.timeline_artifacts ?? []).some(
+    (artifact) =>
+      artifact.type === "verification_result" &&
+      artifact.gate === "codex_turn" &&
+      artifact.outcome === "passed" &&
+      artifact.head_sha === pr.headRefOid &&
+      artifact.repair_targets?.includes("verified_no_source_change_review_thread_residue") === true &&
+      noSourceChangeArtifactCoversReviewThreads(artifact, pr, reviewThreads),
+  );
+}
+
+function hasCurrentHeadMarkedNoSourceChangeCodexTurnVerification(
+  record: Pick<IssueRunRecord, "timeline_artifacts">,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
 ): boolean {
   return (record.timeline_artifacts ?? []).some(
     (artifact) =>
@@ -382,6 +403,30 @@ function hasCurrentHeadNoSourceChangeCodexTurnVerification(
 
 function allCodexConnectorRepairResidueThreadsAreP2(reviewThreads: ReviewThread[]): boolean {
   return reviewThreads.length > 0 && reviewThreads.every((thread) => latestCodexConnectorPSeverity(thread) === "P2");
+}
+
+function noSourceChangeArtifactCoversReviewThreads(
+  artifact: NonNullable<IssueRunRecord["timeline_artifacts"]>[number],
+  pr: Pick<GitHubPullRequest, "headRefOid">,
+  reviewThreads: ReviewThread[],
+): boolean {
+  if (reviewThreads.length === 0) {
+    return false;
+  }
+  const processedThreadIds = artifact.processed_review_thread_ids ?? [];
+  const processedThreadFingerprints = artifact.processed_review_thread_fingerprints ?? [];
+  if (processedThreadIds.length === 0 && processedThreadFingerprints.length === 0) {
+    return false;
+  }
+  return reviewThreads.every((thread) => {
+    const latestFingerprint = latestReviewThreadCommentFingerprint(thread);
+    if (latestFingerprint) {
+      return processedThreadFingerprints.includes(
+        processedReviewThreadFingerprintKey(thread.id, pr.headRefOid, latestFingerprint),
+      );
+    }
+    return processedThreadIds.includes(processedReviewThreadKey(thread.id, pr.headRefOid));
+  });
 }
 
 function normalizeRepositoryPath(value: string): string {
@@ -900,18 +945,34 @@ function classifyCodexMetadataOnly(args: {
           missingProbeReason: "current_head_codex_no_major_signal_missing",
         };
       }
-      const verifiedNoSourceChangeRepair = hasCurrentHeadNoSourceChangeCodexTurnVerification(
+      const mustFixReviewThreads = codexConnectorMustFixReviewThreads(args.reviewThreads);
+      const hasMarkedNoSourceChangeRepair = hasCurrentHeadMarkedNoSourceChangeCodexTurnVerification(
         args.record,
         args.pr,
       );
+      const verifiedNoSourceChangeRepair = hasCurrentHeadNoSourceChangeCodexTurnVerification(
+        args.record,
+        args.pr,
+        mustFixReviewThreads,
+      );
       const hasExplicitCurrentHeadRepairVerification =
         hasCurrentHeadCodexTurnVerification(args.record, args.pr) ||
-        hasCurrentHeadLocalCiVerification(args.record, args.pr);
+        (!hasMarkedNoSourceChangeRepair && hasCurrentHeadLocalCiVerification(args.record, args.pr));
       const verifiedCurrentHeadRepair =
-        hasExplicitCurrentHeadRepairVerification || (!verifiedNoSourceChangeRepair && args.record.repair_attempt_count > 0);
+        hasExplicitCurrentHeadRepairVerification || (!hasMarkedNoSourceChangeRepair && args.record.repair_attempt_count > 0);
+      if (!verifiedCurrentHeadRepair && !verifiedNoSourceChangeRepair) {
+        return {
+          classification: "unknown_needs_operator",
+          summary: STALE_REVIEW_BOT_SUMMARY,
+          verificationEvidenceSummary,
+          missingProbeReason: hasMarkedNoSourceChangeRepair
+            ? "current_head_no_source_thread_evidence_missing"
+            : "current_head_repair_evidence_missing",
+        };
+      }
       if (
-        verifiedCurrentHeadRepair &&
-        !allCodexConnectorRepairResidueThreadsAreP2(codexConnectorMustFixReviewThreads(args.reviewThreads))
+        (verifiedCurrentHeadRepair || verifiedNoSourceChangeRepair) &&
+        !allCodexConnectorRepairResidueThreadsAreP2(mustFixReviewThreads)
       ) {
         return {
           classification: "unresolved_work",

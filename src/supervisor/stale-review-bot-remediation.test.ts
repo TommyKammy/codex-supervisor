@@ -102,6 +102,8 @@ test("buildStaleReviewBotRemediation classifies marked codex_turn evidence as no
     timeline_artifacts: scenario.recordPatch.timeline_artifacts?.map((artifact) => ({
       ...artifact,
       repair_targets: ["verified_no_source_change_review_thread_residue"],
+      processed_review_thread_ids: [`${scenario.reviewThread.id}@${headSha}`],
+      processed_review_thread_fingerprints: [`${scenario.reviewThread.id}@${headSha}#PRRC_kwDOSHIe7c6HbSbo`],
     })),
     repair_attempt_count: 2,
   });
@@ -120,6 +122,162 @@ test("buildStaleReviewBotRemediation classifies marked codex_turn evidence as no
   assert.match(
     remediation?.verificationEvidenceSummary ?? "",
     /Revalidated the current code against the live P2 thread with no source changes.;codex_pr_success_comment_after_current_head_request/,
+  );
+});
+
+test("buildStaleReviewBotRemediation does not treat local CI as repair evidence for marked no-source residue", () => {
+  const issueNumber = 2259;
+  const prNumber = 2261;
+  const headSha = "ff9a8ddf1299264dd8bd3e23b05dd457db4a3bad";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "PRRT_kwDORgvdZ86HhVCx",
+    commentId: "PRRC_kwDORgvdZ87IpoQW",
+    path: "src/supervisor/stale-review-bot-remediation.ts",
+    line: 909,
+    severity: "P2",
+    commentBody: "P2: Do not classify no-source turns as repairs because CI passed.",
+    discussionUrl: "https://example.test/pr/2261#discussion_r3366355990",
+    verifiedRepair: {
+      summary: "No-source Codex residue revalidation passed on this head.",
+      ranAt: "2026-06-06T02:08:00Z",
+      command: "npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+    currentHeadNoMajorReview: {
+      requestedAt: "2026-06-06T02:03:00Z",
+      observedAt: "2026-06-06T02:07:00Z",
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    verifiedNoSourceChangeReviewThreadAutoResolve: true,
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: false,
+  });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    timeline_artifacts: scenario.recordPatch.timeline_artifacts?.map((artifact) => ({
+      ...artifact,
+      repair_targets: ["verified_no_source_change_review_thread_residue"],
+      processed_review_thread_ids: [`${scenario.reviewThread.id}@${headSha}`],
+      processed_review_thread_fingerprints: [`${scenario.reviewThread.id}@${headSha}#PRRC_kwDORgvdZ87IpoQW`],
+    })),
+    latest_local_ci_result: {
+      outcome: "passed",
+      summary: "Local focused verifier also passed on this head.",
+      ran_at: "2026-06-06T02:08:30Z",
+      head_sha: headSha,
+      execution_mode: "shell",
+      command: "npm run build",
+      failure_class: null,
+      remediation_target: null,
+    },
+    repair_attempt_count: 2,
+  });
+  const pr = createPullRequest(scenario.pullRequestPatch);
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: scenario.passingChecks,
+    reviewThreads: [scenario.reviewThread],
+  });
+
+  assert.equal(remediation?.classification, "verified_no_source_change_pending_thread_resolution");
+  assert.equal(remediation?.codexCurrentHeadReviewState, "observed");
+  assert.match(
+    remediation?.verificationEvidenceSummary ?? "",
+    /Local focused verifier also passed on this head.;codex_pr_success_comment_after_current_head_request/,
+  );
+});
+
+test("buildStaleReviewBotRemediation requires no-source artifacts to cover every current residue thread", () => {
+  const issueNumber = 2259;
+  const prNumber = 2261;
+  const headSha = "ff9a8ddf1299264dd8bd3e23b05dd457db4a3bad";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "PRRT_verified_no_source_thread",
+    commentId: "comment-verified-no-source-thread",
+    path: "src/query-shell.ts",
+    line: 40,
+    severity: "P2",
+    commentBody: "P2: Preserve query shell behavior after no-source revalidation.",
+    discussionUrl: "https://example.test/pr/2261#discussion_verified",
+    verifiedRepair: {
+      summary: "No-source Codex residue revalidation passed for one thread.",
+      ranAt: "2026-06-06T02:12:00Z",
+      command: "npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+    currentHeadNoMajorReview: {
+      requestedAt: "2026-06-06T02:03:00Z",
+      observedAt: "2026-06-06T02:07:00Z",
+    },
+  });
+  const uncoveredThread = createReviewThread({
+    id: "PRRT_uncovered_no_source_thread",
+    path: "src/query-export.ts",
+    line: 72,
+    comments: {
+      nodes: [
+        {
+          id: "comment-uncovered-no-source-thread",
+          body: "P2: Keep query export behavior covered by focused verification.",
+          createdAt: "2026-06-06T02:09:00Z",
+          url: "https://example.test/pr/2261#discussion_uncovered",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    verifiedNoSourceChangeReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    processed_review_thread_ids: [
+      `${scenario.reviewThread.id}@${headSha}`,
+      `${uncoveredThread.id}@${headSha}`,
+    ],
+    processed_review_thread_fingerprints: [
+      `${scenario.reviewThread.id}@${headSha}#comment-verified-no-source-thread`,
+      `${uncoveredThread.id}@${headSha}#comment-uncovered-no-source-thread`,
+    ],
+    timeline_artifacts: scenario.recordPatch.timeline_artifacts?.map((artifact) => ({
+      ...artifact,
+      repair_targets: ["verified_no_source_change_review_thread_residue"],
+      processed_review_thread_ids: [`${scenario.reviewThread.id}@${headSha}`],
+      processed_review_thread_fingerprints: [
+        `${scenario.reviewThread.id}@${headSha}#comment-verified-no-source-thread`,
+      ],
+    })),
+    repair_attempt_count: 2,
+  });
+  const pr = createPullRequest(scenario.pullRequestPatch);
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: scenario.passingChecks,
+    reviewThreads: [scenario.reviewThread, uncoveredThread],
+  });
+
+  assert.equal(remediation?.classification, "unknown_needs_operator");
+  assert.equal(remediation?.missingProbeReason, "current_head_no_source_thread_evidence_missing");
+  assert.match(
+    remediation?.verificationEvidenceSummary ?? "",
+    /No-source Codex residue revalidation passed for one thread./,
   );
 });
 
