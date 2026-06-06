@@ -156,7 +156,7 @@ test("nextProcessedReviewThreadPatch scopes local-review no-change evidence to v
   assert.deepEqual(patch.processed_review_thread_fingerprints, [`thread-verified@${headSha}#comment-1`]);
 });
 
-test("selectVerifiedNoSourceChangeReviewThreads requires configured-bot root-cause line anchors", () => {
+test("selectVerifiedNoSourceChangeReviewThreads requires configured-bot exact finding anchors", () => {
   const selected = selectVerifiedNoSourceChangeReviewThreads({
     config: createConfig({
       reviewBotLogins: ["chatgpt-codex-connector"],
@@ -165,12 +165,19 @@ test("selectVerifiedNoSourceChangeReviewThreads requires configured-bot root-cau
       summaryPath: "reviews/issue-492/head-7a77d998.md",
       findingsPath: "reviews/issue-492/head-7a77d998.json",
       relevantFiles: ["src/query-workflow.ts"],
+      actionableFindings: [
+        {
+          title: "Preserve query workflow shell state",
+          file: "src/query-workflow.ts",
+          lines: "42",
+        },
+      ],
       rootCauses: [
         {
           severity: "medium",
-          summary: "Focused verification covers the query workflow shell state.",
+          summary: "Focused verification covers a compressed query workflow range.",
           file: "src/query-workflow.ts",
-          lines: "40-45",
+          lines: "40-80",
         },
       ],
       priorMissPatterns: [],
@@ -197,16 +204,16 @@ test("selectVerifiedNoSourceChangeReviewThreads requires configured-bot root-cau
         },
       }),
       createReviewThread({
-        id: "thread-same-file-unanchored",
+        id: "thread-in-root-cause-range-only",
         path: "src/query-workflow.ts",
-        line: 80,
+        line: 60,
         comments: {
           nodes: [
             {
-              id: "comment-unanchored",
-              body: "P2: Unrelated current-head finding on the same file.",
+              id: "comment-root-cause-range-only",
+              body: "P2: Unrelated current-head finding inside the compressed root-cause range.",
               createdAt: "2026-06-05T17:56:00Z",
-              url: "https://example.test/pr/498#discussion_unanchored",
+              url: "https://example.test/pr/498#discussion_root_cause_range_only",
               author: {
                 login: "chatgpt-codex-connector",
                 typeName: "Bot",

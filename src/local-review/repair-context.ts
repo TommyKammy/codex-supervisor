@@ -19,6 +19,12 @@ function hasUsableRootCauseSummary(
   return typeof value.summary === "string" && value.summary.trim() !== "";
 }
 
+function hasUsableActionableFinding(
+  value: Record<string, unknown>,
+): value is Record<string, unknown> & { title: string } {
+  return typeof value.title === "string" && value.title.trim() !== "";
+}
+
 function normalizeRepairContextFilePath(file: unknown): string | null {
   if (typeof file !== "string") {
     return null;
@@ -100,6 +106,23 @@ export async function loadLocalReviewRepairContext(
               : `${start}`,
       };
     });
+  const actionableReviewFindings = actionableFindings
+    .filter(isRecord)
+    .filter(hasUsableActionableFinding)
+    .map((finding) => {
+      const start = typeof finding.start === "number" ? finding.start : null;
+      const end = typeof finding.end === "number" ? finding.end : start;
+      return {
+        title: finding.title.trim(),
+        file: normalizeRepairContextFilePath(finding.file),
+        lines:
+          start == null
+            ? null
+            : end != null && end !== start
+              ? `${start}-${end}`
+              : `${start}`,
+      };
+    });
   const relevantFiles = [...new Set([
     ...rootCauses.map((rootCause) => rootCause.file).filter((filePath): filePath is string => Boolean(filePath)),
     ...actionableFindings
@@ -133,6 +156,7 @@ export async function loadLocalReviewRepairContext(
     summaryPath,
     findingsPath,
     relevantFiles,
+    actionableFindings: actionableReviewFindings,
     rootCauses,
     priorMissPatterns,
     verifierGuardrails,

@@ -66,7 +66,7 @@ function shouldLoadExternalReviewContext(args: {
   );
 }
 
-function parseRootCauseLineRange(lines: string | null): { start: number; end: number } | null {
+function parseLineRange(lines: string | null): { start: number; end: number } | null {
   const match = lines?.trim().match(/^(\d+)(?:-(\d+))?$/);
   if (!match) {
     return null;
@@ -86,13 +86,13 @@ export function selectVerifiedNoSourceChangeReviewThreads(args: {
   localReviewRepairContext: LocalReviewRepairContext | null;
   reviewThreads: ReviewThread[];
 }): ReviewThread[] {
-  const rootCauseAnchors = (args.localReviewRepairContext?.rootCauses ?? [])
-    .map((rootCause) => {
-      const range = parseRootCauseLineRange(rootCause.lines);
-      return rootCause.file && range ? { file: rootCause.file, ...range } : null;
+  const findingAnchors = (args.localReviewRepairContext?.actionableFindings ?? [])
+    .map((finding) => {
+      const range = parseLineRange(finding.lines);
+      return finding.file && range ? { file: finding.file, ...range } : null;
     })
     .filter((anchor): anchor is { file: string; start: number; end: number } => anchor !== null);
-  if (rootCauseAnchors.length === 0) {
+  if (findingAnchors.length === 0) {
     return [];
   }
 
@@ -107,7 +107,7 @@ export function selectVerifiedNoSourceChangeReviewThreads(args: {
       return false;
     }
 
-    return rootCauseAnchors.some(
+    return findingAnchors.some(
       (anchor) => anchor.file === thread.path && thread.line! >= anchor.start && thread.line! <= anchor.end,
     );
   });
