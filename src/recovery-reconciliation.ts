@@ -39,7 +39,10 @@ import {
   reconcileStaleFailedTrackedPrRecord,
   reconcileTrackedMergedButOpenIssuesInModule,
 } from "./recovery-tracked-pr-reconciliation";
-import { reconcileRecoverableBlockedIssueStatesInModule } from "./recovery-blocked-issue-reconciliation";
+import {
+  codexConnectorChurnStopEvidenceSource,
+  reconcileRecoverableBlockedIssueStatesInModule,
+} from "./recovery-blocked-issue-reconciliation";
 export {
   inspectOrphanedWorkspacePruneCandidates,
   pruneOrphanedWorkspacesForOperator,
@@ -419,6 +422,7 @@ function isCodexConnectorChurnLatchRecord(
     IssueRunRecord,
     | "blocked_reason"
     | "codex_connector_stable_churn_dossier_consumed_signature"
+    | "last_tracked_pr_progress_snapshot"
     | "last_tracked_pr_progress_summary"
     | "last_tracked_pr_repeat_failure_decision"
     | "pr_number"
@@ -432,7 +436,7 @@ function isCodexConnectorChurnLatchRecord(
     record.last_tracked_pr_repeat_failure_decision === "stop_no_progress" &&
     typeof record.codex_connector_stable_churn_dossier_consumed_signature === "string" &&
     record.codex_connector_stable_churn_dossier_consumed_signature.length > 0 &&
-    record.last_tracked_pr_progress_summary?.startsWith("no_progress_clustered_codex_churn ") === true
+    codexConnectorChurnStopEvidenceSource(record) !== null
   );
 }
 

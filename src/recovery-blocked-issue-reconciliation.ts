@@ -332,7 +332,7 @@ function hasCodexConnectorChurnStopEvidence(
   return codexConnectorChurnStopEvidenceSource(record) !== null;
 }
 
-function codexConnectorChurnStopEvidenceSource(
+export function codexConnectorChurnStopEvidenceSource(
   record: Pick<
     IssueRunRecord,
     | "blocked_reason"

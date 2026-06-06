@@ -500,6 +500,51 @@ test("releaseCodexConnectorChurnLatchForOperator clears only blocked Codex churn
   assert.equal(updated.repeated_failure_signature_count, 0);
 });
 
+test("releaseCodexConnectorChurnLatchForOperator accepts preserved snapshot-backed Codex churn latches", async () => {
+  const progressSnapshot = JSON.stringify({
+    headRefOid: "head-current-191",
+    unresolvedReviewThreadIds: ["thread-authority"],
+    unresolvedReviewThreadFingerprints: ["thread-authority#comment-authority"],
+    codexConnectorReviewChurnProgress: {
+      currentHeadSha: "head-current-191",
+      currentEffectiveMustFixCount: 1,
+      dominantFile: "src/release-readiness.ts",
+      dominantFilePercent: 100,
+      clusterCategorySignature: "truth_source",
+      representativeThreadIds: ["thread-authority"],
+    },
+  });
+  const original = createRecord({
+    issue_number: 366,
+    state: "blocked",
+    blocked_reason: "manual_review",
+    pr_number: 191,
+    codex_connector_stable_churn_dossier_consumed_signature:
+      "codex-connector-stable-same-file-churn:src/release-readiness.ts:truth_source:head-a_head-b",
+    last_tracked_pr_progress_snapshot: progressSnapshot,
+    last_tracked_pr_progress_summary:
+      "manual_review_preserved=codex_connector_churn_unresolved_configured_bot_threads",
+    last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [original],
+  });
+  const stateStoreBundle = createCountingStateStore("2026-03-11T06:33:08.821Z");
+
+  const result = await releaseCodexConnectorChurnLatchForOperator(stateStoreBundle.stateStore, state, 366);
+  const updated = state.issues["366"]!;
+
+  assert.equal(result.action, "release-codex-churn-latch");
+  assert.equal(result.outcome, "mutated");
+  assert.equal(result.nextState, "waiting_ci");
+  assert.equal(stateStoreBundle.saveCalls, 1);
+  assert.equal(updated.state, "waiting_ci");
+  assert.equal(updated.blocked_reason, null);
+  assert.equal(updated.codex_connector_stable_churn_dossier_consumed_signature, null);
+  assert.equal(updated.last_tracked_pr_progress_summary, null);
+  assert.equal(updated.last_tracked_pr_repeat_failure_decision, null);
+});
+
 test("releaseCodexConnectorChurnLatchForOperator rejects non-churn manual review blocks", async () => {
   const original = createRecord({
     issue_number: 366,
