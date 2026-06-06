@@ -35,6 +35,7 @@ import {
   nextProcessedReviewThreadPatch,
   nextReviewFollowUpPatch,
   prepareCodexTurnPrompt,
+  selectVerifiedNoSourceChangeReviewThreads,
   shouldResumeAgentTurn,
 } from "./turn-execution-orchestration";
 import {
@@ -494,7 +495,7 @@ export async function executeCodexTurnPhase(
           agentRunnerCapabilities: agentRunner.capabilities,
         });
         record = preparedTurn.record;
-        const { turnContext, reviewThreadsToProcess } = preparedTurn;
+        const { turnContext, reviewThreadsToProcess, localReviewRepairContext } = preparedTurn;
         const preRunJournalFingerprint =
           await captureIssueJournalFingerprint(journalPath);
         await writeInterruptedTurnMarker({
@@ -1145,16 +1146,32 @@ export async function executeCodexTurnPhase(
 
         const codexVerificationCommand =
           explicitPassingCodexTurnVerificationCommand(structuredResult?.tests);
+        const changedFilesAfterPublication =
+          workspaceStatus.headSha === turnStartHeadSha
+            ? []
+            : await listChangedTrackedFilesBetweenImpl(
+                workspacePath,
+                turnStartHeadSha,
+                workspaceStatus.headSha,
+              );
         const processedReviewThreadPatch = nextProcessedReviewThreadPatch({
           preRunState,
           record,
           currentPr: pr,
           evaluatedReviewHeadSha,
           reviewThreadsToProcess,
+          verifiedNoSourceChangeReviewThreads:
+            preRunState === "local_review_fix"
+              ? selectVerifiedNoSourceChangeReviewThreads({
+                  config,
+                  localReviewRepairContext,
+                  reviewThreads,
+                })
+              : undefined,
           persistVerifiedNoSourceChangeCurrentHead:
             Boolean(codexVerificationCommand) &&
             !workspaceStatus.hasUncommittedChanges &&
-            changedFilesInCurrentTurn.length === 0,
+            changedFilesAfterPublication.length === 0,
         });
         const reviewFollowUpPatch = nextReviewFollowUpPatch({
           config,

@@ -1,5 +1,6 @@
 import path from "node:path";
 import {
+  type LocalReviewRepairContext,
   shouldUseCompactResumePrompt,
 } from "./codex";
 import {
@@ -63,6 +64,53 @@ function shouldLoadExternalReviewContext(args: {
     args.record.local_review_head_sha === args.pr.headRefOid &&
     Boolean(args.record.local_review_summary_path)
   );
+}
+
+function parseRootCauseLineRange(lines: string | null): { start: number; end: number } | null {
+  const match = lines?.trim().match(/^(\d+)(?:-(\d+))?$/);
+  if (!match) {
+    return null;
+  }
+
+  const start = Number(match[1]);
+  const end = Number(match[2] ?? match[1]);
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start <= 0 || end < start) {
+    return null;
+  }
+
+  return { start, end };
+}
+
+export function selectVerifiedNoSourceChangeReviewThreads(args: {
+  config: Pick<SupervisorConfig, "reviewBotLogins" | "configuredReviewProviders">;
+  localReviewRepairContext: LocalReviewRepairContext | null;
+  reviewThreads: ReviewThread[];
+}): ReviewThread[] {
+  const rootCauseAnchors = (args.localReviewRepairContext?.rootCauses ?? [])
+    .map((rootCause) => {
+      const range = parseRootCauseLineRange(rootCause.lines);
+      return rootCause.file && range ? { file: rootCause.file, ...range } : null;
+    })
+    .filter((anchor): anchor is { file: string; start: number; end: number } => anchor !== null);
+  if (rootCauseAnchors.length === 0) {
+    return [];
+  }
+
+  const configuredThreadIds = new Set(
+    configuredBotReviewThreads(args.config as SupervisorConfig, args.reviewThreads)
+      .filter((thread) => !thread.isResolved && !thread.isOutdated)
+      .map((thread) => thread.id),
+  );
+
+  return args.reviewThreads.filter((thread) => {
+    if (!configuredThreadIds.has(thread.id) || !thread.path || thread.line == null) {
+      return false;
+    }
+
+    return rootCauseAnchors.some(
+      (anchor) => anchor.file === thread.path && thread.line! >= anchor.start && thread.line! <= anchor.end,
+    );
+  });
 }
 
 export function selectReviewThreadsForTurn(args: {
@@ -164,6 +212,7 @@ export async function prepareCodexTurnPrompt(args: {
   record: IssueRunRecord;
   turnContext: AgentTurnContext;
   reviewThreadsToProcess: ReviewThread[];
+  localReviewRepairContext: LocalReviewRepairContext | null;
 }> {
   const reviewThreadsToProcess = selectReviewThreadsForTurn({
     config: args.config,
@@ -289,7 +338,7 @@ export async function prepareCodexTurnPrompt(args: {
           externalReviewMissContext,
         };
 
-  return { record, turnContext, reviewThreadsToProcess };
+  return { record, turnContext, reviewThreadsToProcess, localReviewRepairContext };
 }
 
 export function nextProcessedReviewThreadPatch(args: {
@@ -299,15 +348,20 @@ export function nextProcessedReviewThreadPatch(args: {
   evaluatedReviewHeadSha: string;
   reviewThreadsToProcess: ReviewThread[];
   persistVerifiedNoSourceChangeCurrentHead?: boolean;
+  verifiedNoSourceChangeReviewThreads?: ReviewThread[];
 }): Pick<IssueRunRecord, "processed_review_thread_ids" | "processed_review_thread_fingerprints"> {
   const shouldPersistCurrentHeadThreadEvidence =
     args.preRunState === "addressing_review" ||
     (args.preRunState === "local_review_fix" && args.persistVerifiedNoSourceChangeCurrentHead === true);
+  const reviewThreadsForCurrentHeadEvidence =
+    args.preRunState === "local_review_fix"
+      ? args.verifiedNoSourceChangeReviewThreads ?? []
+      : args.reviewThreadsToProcess;
   const processedReviewThreadKeysForCurrentHead =
     shouldPersistCurrentHeadThreadEvidence &&
     args.currentPr &&
     args.currentPr.headRefOid === args.evaluatedReviewHeadSha
-      ? args.reviewThreadsToProcess.map((thread) =>
+      ? reviewThreadsForCurrentHeadEvidence.map((thread) =>
           processedReviewThreadKey(thread.id, args.evaluatedReviewHeadSha),
         )
       : [];
@@ -315,7 +369,7 @@ export function nextProcessedReviewThreadPatch(args: {
     shouldPersistCurrentHeadThreadEvidence &&
     args.currentPr &&
     args.currentPr.headRefOid === args.evaluatedReviewHeadSha
-      ? args.reviewThreadsToProcess.flatMap((thread) => {
+      ? reviewThreadsForCurrentHeadEvidence.flatMap((thread) => {
           const latestCommentFingerprint = latestReviewThreadCommentFingerprint(thread);
           return latestCommentFingerprint
             ? [

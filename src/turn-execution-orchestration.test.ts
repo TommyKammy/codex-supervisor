@@ -9,6 +9,7 @@ import {
   nextReviewFollowUpPatch,
   prepareCodexTurnPrompt,
   selectReviewThreadsForTurn,
+  selectVerifiedNoSourceChangeReviewThreads,
   shouldResumeAgentTurn,
 } from "./turn-execution-orchestration";
 import { processedReviewThreadFingerprintKey, processedReviewThreadKey } from "./review-handling";
@@ -117,6 +118,7 @@ test("nextProcessedReviewThreadPatch persists local-review no-change current-hea
     currentPr: { headRefOid: headSha },
     evaluatedReviewHeadSha: headSha,
     reviewThreadsToProcess: reviewThreads,
+    verifiedNoSourceChangeReviewThreads: reviewThreads,
     persistVerifiedNoSourceChangeCurrentHead: true,
   });
 
@@ -131,6 +133,111 @@ test("nextProcessedReviewThreadPatch persists local-review no-change current-hea
       `PRRT_kwDOSHIe7c6HbjhR@${headSha}#comment-safequery-export`,
     ],
   );
+});
+
+test("nextProcessedReviewThreadPatch scopes local-review no-change evidence to verified threads", () => {
+  const headSha = "7a77d998712882166f79c3710dd4c567da6da779";
+  const verifiedThread = createReviewThread({ id: "thread-verified" });
+  const unrelatedThread = createReviewThread({ id: "thread-unrelated" });
+  const patch = nextProcessedReviewThreadPatch({
+    preRunState: "local_review_fix",
+    record: {
+      processed_review_thread_ids: [],
+      processed_review_thread_fingerprints: [],
+    },
+    currentPr: { headRefOid: headSha },
+    evaluatedReviewHeadSha: headSha,
+    reviewThreadsToProcess: [verifiedThread, unrelatedThread],
+    verifiedNoSourceChangeReviewThreads: [verifiedThread],
+    persistVerifiedNoSourceChangeCurrentHead: true,
+  });
+
+  assert.deepEqual(patch.processed_review_thread_ids, [`thread-verified@${headSha}`]);
+  assert.deepEqual(patch.processed_review_thread_fingerprints, [`thread-verified@${headSha}#comment-1`]);
+});
+
+test("selectVerifiedNoSourceChangeReviewThreads requires configured-bot root-cause line anchors", () => {
+  const selected = selectVerifiedNoSourceChangeReviewThreads({
+    config: createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector"],
+    }),
+    localReviewRepairContext: {
+      summaryPath: "reviews/issue-492/head-7a77d998.md",
+      findingsPath: "reviews/issue-492/head-7a77d998.json",
+      relevantFiles: ["src/query-workflow.ts"],
+      rootCauses: [
+        {
+          severity: "medium",
+          summary: "Focused verification covers the query workflow shell state.",
+          file: "src/query-workflow.ts",
+          lines: "40-45",
+        },
+      ],
+      priorMissPatterns: [],
+      verifierGuardrails: [],
+    },
+    reviewThreads: [
+      createReviewThread({
+        id: "thread-verified",
+        path: "src/query-workflow.ts",
+        line: 42,
+        comments: {
+          nodes: [
+            {
+              id: "comment-verified",
+              body: "P2: Preserve query workflow shell state.",
+              createdAt: "2026-06-05T17:55:00Z",
+              url: "https://example.test/pr/498#discussion_verified",
+              author: {
+                login: "chatgpt-codex-connector",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+      createReviewThread({
+        id: "thread-same-file-unanchored",
+        path: "src/query-workflow.ts",
+        line: 80,
+        comments: {
+          nodes: [
+            {
+              id: "comment-unanchored",
+              body: "P2: Unrelated current-head finding on the same file.",
+              createdAt: "2026-06-05T17:56:00Z",
+              url: "https://example.test/pr/498#discussion_unanchored",
+              author: {
+                login: "chatgpt-codex-connector",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+      createReviewThread({
+        id: "thread-human",
+        path: "src/query-workflow.ts",
+        line: 42,
+        comments: {
+          nodes: [
+            {
+              id: "comment-human",
+              body: "Please check this manually.",
+              createdAt: "2026-06-05T17:57:00Z",
+              url: "https://example.test/pr/498#discussion_human",
+              author: {
+                login: "maintainer",
+                typeName: "User",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+  });
+
+  assert.deepEqual(selected.map((thread) => thread.id), ["thread-verified"]);
 });
 
 test("nextProcessedReviewThreadPatch fails closed for local-review current-head threads without no-change verification", () => {
