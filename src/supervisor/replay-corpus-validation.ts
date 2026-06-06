@@ -349,6 +349,17 @@ function validateTimelineArtifact(
     artifact.repair_targets === undefined
       ? undefined
       : expectStringArray(artifact.repair_targets, `${context} repair_targets`);
+  const processedReviewThreadIds =
+    artifact.processed_review_thread_ids === undefined
+      ? undefined
+      : expectStringArray(artifact.processed_review_thread_ids, `${context} processed_review_thread_ids`);
+  const processedReviewThreadFingerprints =
+    artifact.processed_review_thread_fingerprints === undefined
+      ? undefined
+      : expectStringArray(
+          artifact.processed_review_thread_fingerprints,
+          `${context} processed_review_thread_fingerprints`,
+        );
   return {
     type: expectEnum(artifact.type, `${context} type`, TIMELINE_ARTIFACT_TYPES),
     gate: expectEnum(artifact.gate, `${context} gate`, TIMELINE_ARTIFACT_GATES),
@@ -364,6 +375,10 @@ function validateTimelineArtifact(
     summary: expectString(artifact.summary, `${context} summary`),
     recorded_at: expectString(artifact.recorded_at, `${context} recorded_at`),
     ...(repairTargets === undefined ? {} : { repair_targets: repairTargets }),
+    ...(processedReviewThreadIds === undefined ? {} : { processed_review_thread_ids: processedReviewThreadIds }),
+    ...(processedReviewThreadFingerprints === undefined
+      ? {}
+      : { processed_review_thread_fingerprints: processedReviewThreadFingerprints }),
   };
 }
 

@@ -387,6 +387,774 @@ test("executeCodexTurnPhase persists explicit successful Codex verification for 
   ]);
 });
 
+test("executeCodexTurnPhase persists no-change current-head Codex thread and verification evidence after local review repair", async (t) => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+  });
+  const localReviewDir = await fs.mkdtemp(path.join(os.tmpdir(), "local-review-no-change-"));
+  t.after(async () => {
+    await fs.rm(localReviewDir, { recursive: true, force: true });
+  });
+  const localReviewSummaryPath = path.join(localReviewDir, "head-7a77d998.md");
+  const localReviewFindingsPath = path.join(localReviewDir, "head-7a77d998.json");
+  await fs.writeFile(localReviewSummaryPath, "# Local Review\n", "utf8");
+  await fs.writeFile(
+    localReviewFindingsPath,
+    `${JSON.stringify({
+      issueNumber: 492,
+      prNumber: 498,
+      branch: "codex/issue-492",
+      headSha: "7a77d998712882166f79c3710dd4c567da6da779",
+      rootCauseSummaries: [
+        {
+          summary: "Focused verification covers the query workflow shell state.",
+          severity: "medium",
+          file: "src/query-shell.ts",
+          start: 40,
+          end: 40,
+        },
+        {
+          summary: "Focused verification covers the query export flow.",
+          severity: "medium",
+          file: "src/query-export.ts",
+          start: 72,
+          end: 72,
+        },
+      ],
+      actionableFindings: [
+        {
+          role: "codex_connector_reviewer",
+          title: "Preserve query workflow shell state",
+          body: "Focused verification covers the query workflow shell state.",
+          file: "src/query-shell.ts",
+          start: 40,
+          end: 40,
+          severity: "medium",
+          confidence: 0.93,
+          category: "review_thread",
+          evidence: "PRRT_kwDOSHIe7c6HbSbo",
+        },
+        {
+          role: "codex_connector_reviewer",
+          title: "Keep query export flow covered",
+          body: "Focused verification covers the query export flow.",
+          file: "src/query-export.ts",
+          start: 72,
+          end: 72,
+          severity: "medium",
+          confidence: 0.93,
+          category: "review_thread",
+          evidence: "PRRT_kwDOSHIe7c6HbjhR",
+        },
+      ],
+    })}\n`,
+    "utf8",
+  );
+  const headSha = "7a77d998712882166f79c3710dd4c567da6da779";
+  const issue: GitHubIssue = createIssue({
+    title: "Persist verified no-change Codex thread evidence",
+  });
+  const pr: GitHubPullRequest = createPullRequest({
+    number: 498,
+    headRefOid: headSha,
+  });
+  const reviewThreads = [
+    createReviewThread({
+      id: "PRRT_kwDOSHIe7c6HbSbo",
+      path: "src/query-shell.ts",
+      line: 40,
+      comments: {
+        nodes: [
+          {
+            id: "comment-safequery-shell",
+            body: "P2: Preserve query workflow shell state after the current-head revalidation.",
+            createdAt: "2026-06-05T17:55:00Z",
+            url: "https://example.test/pr/498#discussion_shell",
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+    createReviewThread({
+      id: "PRRT_kwDOSHIe7c6HbjhR",
+      path: "src/query-export.ts",
+      line: 72,
+      comments: {
+        nodes: [
+          {
+            id: "comment-safequery-export",
+            body: "P2: Keep query export flow covered by focused verification.",
+            createdAt: "2026-06-05T17:55:01Z",
+            url: "https://example.test/pr/498#discussion_export",
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  ];
+  const latePostPromptReviewThread = createReviewThread({
+    id: "PRRT_late_same_anchor",
+    path: "src/query-shell.ts",
+    line: 40,
+    comments: {
+      nodes: [
+        {
+          id: "comment-late-same-anchor",
+          body: "P2: Newly posted same-anchor finding that was not in the Codex prompt.",
+          createdAt: "2026-06-05T17:59:00Z",
+          url: "https://example.test/pr/498#discussion_late_same_anchor",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const postRunReviewThreads = [...reviewThreads, latePostPromptReviewThread];
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 492,
+    issues: {
+      "492": createRecord({
+        issue_number: 492,
+        state: "local_review_fix",
+        pr_number: 498,
+        last_head_sha: headSha,
+        local_review_summary_path: localReviewSummaryPath,
+        processed_review_thread_ids: [],
+        processed_review_thread_fingerprints: [],
+        timeline_artifacts: [
+          {
+            type: "verification_result",
+            gate: "codex_turn",
+            command: "npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
+            head_sha: headSha,
+            outcome: "passed",
+            remediation_target: null,
+            next_action: "continue",
+            summary: "Earlier source-changing repair verification passed on this head.",
+            recorded_at: "2026-06-05T17:45:00Z",
+          },
+        ],
+      }),
+    },
+  };
+  const context = createCodexTurnContext({
+    state,
+    record: state.issues["492"]!,
+    issue,
+    pr,
+    checks: [],
+    reviewThreads,
+    workspaceStatus: {
+      branch: "codex/issue-492",
+      headSha,
+    },
+  });
+  let journalReads = 0;
+
+  const result = await executeCodexTurnPhase({
+    config,
+    stateStore: {
+      touch: (record, patch) => ({
+        ...record,
+        ...patch,
+        updated_at: record.updated_at,
+      }),
+      save: async () => undefined,
+    },
+    github: {
+      resolvePullRequestForBranch: async () => pr,
+      createPullRequest: async () => {
+        throw new Error("unexpected createPullRequest call");
+      },
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => postRunReviewThreads,
+      getExternalReviewSurface: async () => {
+        throw new Error("unexpected getExternalReviewSurface call");
+      },
+    },
+    context,
+    acquireSessionLock: async () => null,
+    classifyFailure: () => "command_error",
+    buildCodexFailureContext: (category, summary, details) => ({
+      category,
+      summary: `${category}:${summary}`,
+      signature: `${category}:${summary}`,
+      command: null,
+      details,
+      url: null,
+      updated_at: "2026-06-05T18:00:00Z",
+    }),
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    normalizeBlockerSignature: () => null,
+    isVerificationBlockedMessage: () => false,
+    derivePullRequestLifecycleSnapshot: (recordForState) => ({
+      recordForState,
+      nextState: "blocked",
+      failureContext: {
+        category: "review",
+        summary: "Verified no-change Codex residue is still awaiting thread resolution.",
+        signature: "unresolved-thread:PRRT_kwDOSHIe7c6HbSbo|PRRT_kwDOSHIe7c6HbjhR",
+        command: null,
+        details: [],
+        url: "https://example.test/pr/498#discussion_shell",
+        updated_at: "2026-06-05T18:00:00Z",
+      },
+      reviewWaitPatch: {},
+      copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    inferStateWithoutPullRequest: () => "stabilizing",
+    blockedReasonFromReviewState: () => "manual_review",
+    recoverUnexpectedCodexTurnFailure: async () => {
+      throw new Error("unexpected recoverUnexpectedCodexTurnFailure call");
+    },
+    getWorkspaceStatus: async () =>
+      createWorkspaceStatus({
+        branch: "codex/issue-492",
+        headSha,
+      }),
+    agentRunner: createSuccessfulAgentRunner(async () => ({
+      exitCode: 0,
+      sessionId: "session-492",
+      supervisorMessage: [
+        "Summary: Revalidated the current code against both live P2 threads with no source changes.",
+        "State hint: pr_open",
+        "Blocked reason: none",
+        "Tests: npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
+        "Failure signature: none",
+        "Next action: resolve verified Codex residue",
+      ].join("\n"),
+      stderr: "",
+      stdout: "",
+      structuredResult: {
+        summary: "Revalidated the current code against both live P2 threads with no source changes.",
+        stateHint: "pr_open",
+        blockedReason: null,
+        failureSignature: null,
+        nextAction: "resolve verified Codex residue",
+        tests: "npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
+      },
+      failureKind: null,
+      failureContext: null,
+    })),
+    readIssueJournal: async () => {
+      journalReads += 1;
+      return journalReads === 1
+        ? [
+            "## Codex Working Notes",
+            "### Current Handoff",
+            "- Hypothesis: no source change revalidation should persist Codex thread evidence.",
+          ].join("\n")
+        : [
+            "## Codex Working Notes",
+            "### Current Handoff",
+            "- Hypothesis: no source change revalidation should persist Codex thread evidence.",
+            "- What changed: revalidated both current-head Codex P2 threads with focused tests and no source changes.",
+            "- Next exact step: resolve verified Codex residue.",
+          ].join("\n");
+    },
+  });
+
+  assert.equal(result.kind, "completed");
+  assert.deepEqual(state.issues["492"]?.processed_review_thread_ids, [
+    `PRRT_kwDOSHIe7c6HbSbo@${headSha}`,
+    `PRRT_kwDOSHIe7c6HbjhR@${headSha}`,
+  ]);
+  assert.deepEqual(state.issues["492"]?.processed_review_thread_fingerprints, [
+    `PRRT_kwDOSHIe7c6HbSbo@${headSha}#comment-safequery-shell`,
+    `PRRT_kwDOSHIe7c6HbjhR@${headSha}#comment-safequery-export`,
+  ]);
+  assert.deepEqual(state.issues["492"]?.timeline_artifacts, [
+    {
+      type: "verification_result",
+      gate: "codex_turn",
+      command: "npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
+      head_sha: headSha,
+      outcome: "passed",
+      remediation_target: null,
+      next_action: "continue",
+      summary: "Earlier source-changing repair verification passed on this head.",
+      recorded_at: "2026-06-05T17:45:00Z",
+    },
+    {
+      type: "verification_result",
+      gate: "codex_turn",
+      command: "npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
+      head_sha: headSha,
+      outcome: "passed",
+      remediation_target: null,
+      next_action: "continue",
+      summary: "Revalidated the current code against both live P2 threads with no source changes.",
+      recorded_at: state.issues["492"]?.timeline_artifacts?.[1]?.recorded_at ?? "",
+      repair_targets: ["verified_no_source_change_review_thread_residue"],
+      processed_review_thread_ids: [
+        `PRRT_kwDOSHIe7c6HbSbo@${headSha}`,
+        `PRRT_kwDOSHIe7c6HbjhR@${headSha}`,
+      ],
+      processed_review_thread_fingerprints: [
+        `PRRT_kwDOSHIe7c6HbSbo@${headSha}#comment-safequery-shell`,
+        `PRRT_kwDOSHIe7c6HbjhR@${headSha}#comment-safequery-export`,
+      ],
+    },
+  ]);
+});
+
+test("executeCodexTurnPhase does not persist no-change evidence after publication hygiene commits", async (t) => {
+  const workspacePath = await createTrackedRepo();
+  t.after(async () => {
+    await fs.rm(workspacePath, { recursive: true, force: true });
+  });
+  git(workspacePath, "checkout", "-b", "codex/issue-492");
+  await fs.mkdir(path.join(workspacePath, "src"), { recursive: true });
+  await fs.mkdir(path.join(workspacePath, "docs"), { recursive: true });
+  await fs.writeFile(path.join(workspacePath, "src", "query.ts"), "export const ready = true;\n", "utf8");
+  git(workspacePath, "add", "src/query.ts");
+  git(workspacePath, "commit", "-m", "add query workflow");
+  git(workspacePath, "push", "-u", "origin", "codex/issue-492");
+  const remoteHead = git(workspacePath, "rev-parse", "HEAD").trim();
+  await fs.writeFile(
+    path.join(workspacePath, "docs", "handoff.md"),
+    `Path hygiene should rewrite ${SAMPLE_MACOS_WORKSTATION_PATH} before publication.\n`,
+    "utf8",
+  );
+  git(workspacePath, "add", "docs/handoff.md");
+  git(workspacePath, "commit", "-m", "add local handoff artifact");
+  const turnStartHead = git(workspacePath, "rev-parse", "HEAD").trim();
+  const localReviewDir = await fs.mkdtemp(path.join(os.tmpdir(), "local-review-publication-"));
+  t.after(async () => {
+    await fs.rm(localReviewDir, { recursive: true, force: true });
+  });
+  const localReviewSummaryPath = path.join(localReviewDir, "head-publication.md");
+  await fs.writeFile(localReviewSummaryPath, "# Local Review\n", "utf8");
+  await fs.writeFile(
+    path.join(localReviewDir, "head-publication.json"),
+    `${JSON.stringify({
+      issueNumber: 492,
+      prNumber: 498,
+      branch: "codex/issue-492",
+      headSha: turnStartHead,
+      rootCauseSummaries: [
+        {
+          summary: "Focused verification covers the query workflow thread.",
+          severity: "medium",
+          file: "src/query.ts",
+          start: 1,
+          end: 1,
+        },
+      ],
+      actionableFindings: [
+        {
+          role: "codex_connector_reviewer",
+          title: "Keep query workflow covered",
+          body: "Focused verification covers the query workflow thread.",
+          file: "src/query.ts",
+          start: 1,
+          end: 1,
+          severity: "medium",
+          confidence: 0.93,
+          category: "review_thread",
+          evidence: "PRRT_publication_hygiene",
+        },
+      ],
+    })}\n`,
+    "utf8",
+  );
+
+  const issue = createIssue({
+    number: 492,
+    title: "Do not persist after publication hygiene commits",
+  });
+  const reviewThreads = [
+    createReviewThread({
+      id: "PRRT_publication_hygiene",
+      path: "src/query.ts",
+      line: 1,
+      comments: {
+        nodes: [
+          {
+            id: "comment-publication-hygiene",
+            body: "P2: Keep query workflow covered by focused verification.",
+            createdAt: "2026-06-05T17:55:00Z",
+            url: "https://example.test/pr/498#discussion_publication_hygiene",
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  ];
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 492,
+    issues: {
+      "492": createRecord({
+        issue_number: 492,
+        state: "local_review_fix",
+        branch: "codex/issue-492",
+        workspace: workspacePath,
+        pr_number: 498,
+        last_head_sha: turnStartHead,
+        local_review_summary_path: localReviewSummaryPath,
+        processed_review_thread_ids: [],
+        processed_review_thread_fingerprints: [],
+      }),
+    },
+  };
+  const context = createCodexTurnContext({
+    state,
+    record: state.issues["492"]!,
+    issue,
+    workspacePath,
+    pr: createPullRequest({
+      number: 498,
+      headRefName: "codex/issue-492",
+      headRefOid: remoteHead,
+    }),
+    checks: [],
+    reviewThreads,
+    workspaceStatus: {
+      branch: "codex/issue-492",
+      headSha: turnStartHead,
+      baseAhead: 2,
+      remoteBranchExists: true,
+      remoteAhead: 1,
+    },
+  });
+  let journalReads = 0;
+
+  const result = await executeCodexTurnPhase({
+    config: createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector"],
+    }),
+    stateStore: {
+      touch: (record, patch) => ({
+        ...record,
+        ...patch,
+        updated_at: record.updated_at,
+      }),
+      save: async () => undefined,
+    },
+    github: {
+      resolvePullRequestForBranch: async () =>
+        createPullRequest({
+          number: 498,
+          headRefName: "codex/issue-492",
+          headRefOid: git(workspacePath, "rev-parse", "HEAD").trim(),
+        }),
+      createPullRequest: async () => {
+        throw new Error("unexpected createPullRequest call");
+      },
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => reviewThreads,
+      getExternalReviewSurface: async () => {
+        throw new Error("unexpected getExternalReviewSurface call");
+      },
+    },
+    context,
+    acquireSessionLock: async () => null,
+    classifyFailure: () => "command_error",
+    buildCodexFailureContext: (category, summary, details) => ({
+      category,
+      summary: `${category}:${summary}`,
+      signature: `${category}:${summary}`,
+      command: null,
+      details,
+      url: null,
+      updated_at: "2026-06-05T18:00:00Z",
+    }),
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    normalizeBlockerSignature: () => null,
+    isVerificationBlockedMessage: () => false,
+    derivePullRequestLifecycleSnapshot: (recordForState) => ({
+      recordForState,
+      nextState: "pr_open",
+      failureContext: null,
+      reviewWaitPatch: {},
+      copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    inferStateWithoutPullRequest: () => "stabilizing",
+    blockedReasonFromReviewState: () => null,
+    recoverUnexpectedCodexTurnFailure: async () => {
+      throw new Error("unexpected recoverUnexpectedCodexTurnFailure call");
+    },
+    getWorkspaceStatus: async () => {
+      const currentHead = git(workspacePath, "rev-parse", "HEAD").trim();
+      return createWorkspaceStatus({
+        branch: "codex/issue-492",
+        headSha: currentHead,
+        baseAhead: currentHead === turnStartHead ? 2 : 3,
+        remoteBranchExists: true,
+        remoteAhead: currentHead === turnStartHead ? 1 : 0,
+      });
+    },
+    runWorkstationLocalPathGate: async () => {
+      await fs.writeFile(
+        path.join(workspacePath, "docs", "handoff.md"),
+        "Path hygiene rewrote the local handoff artifact.\n",
+        "utf8",
+      );
+      return {
+        ok: true,
+        failureContext: null,
+        rewrittenTrustedGeneratedArtifactPaths: ["docs/handoff.md"],
+      };
+    },
+    readIssueJournal: async () => {
+      journalReads += 1;
+      return journalReads === 1
+        ? [
+            "## Codex Working Notes",
+            "### Current Handoff",
+            "- Hypothesis: no source change revalidation should not persist evidence after publication commits.",
+          ].join("\n")
+        : [
+            "## Codex Working Notes",
+            "### Current Handoff",
+            "- Hypothesis: no source change revalidation should not persist evidence after publication commits.",
+            "- What changed: revalidated the current code and publication hygiene rewrote a durable artifact.",
+            "- Current blocker: none.",
+            "- Next exact step: continue review handling without no-change thread evidence.",
+            "- Verification gap: none.",
+          ].join("\n");
+    },
+    agentRunner: createSuccessfulAgentRunner(async () => ({
+      exitCode: 0,
+      sessionId: "session-492",
+      supervisorMessage: [
+        "Summary: Revalidated the current code against the live P2 thread with no source changes.",
+        "State hint: pr_open",
+        "Blocked reason: none",
+        "Tests: npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
+        "Failure signature: none",
+        "Next action: continue",
+      ].join("\n"),
+      stderr: "",
+      stdout: "",
+      structuredResult: {
+        summary: "Revalidated the current code against the live P2 thread with no source changes.",
+        stateHint: "pr_open",
+        blockedReason: null,
+        failureSignature: null,
+        nextAction: "continue",
+        tests: "npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
+      },
+      failureKind: null,
+      failureContext: null,
+    })),
+  });
+
+  assert.equal(result.kind, "completed");
+  assert.notEqual(git(workspacePath, "rev-parse", "HEAD").trim(), turnStartHead);
+  assert.deepEqual(state.issues["492"]?.processed_review_thread_ids, []);
+  assert.deepEqual(state.issues["492"]?.processed_review_thread_fingerprints, []);
+});
+
+test("executeCodexTurnPhase does not persist no-change Codex thread evidence with a dirty workspace", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+  });
+  const headSha = "7a77d998712882166f79c3710dd4c567da6da779";
+  const issue: GitHubIssue = createIssue({
+    title: "Do not persist dirty no-change Codex thread evidence",
+  });
+  const pr: GitHubPullRequest = createPullRequest({
+    number: 498,
+    headRefOid: headSha,
+  });
+  const reviewThreads = [
+    createReviewThread({
+      id: "PRRT_kwDOSHIe7c6HbSbo",
+      comments: {
+        nodes: [
+          {
+            id: "comment-safequery-shell",
+            body: "P2: Preserve query workflow shell state after the current-head revalidation.",
+            createdAt: "2026-06-05T17:55:00Z",
+            url: "https://example.test/pr/498#discussion_shell",
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  ];
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 492,
+    issues: {
+      "492": createRecord({
+        issue_number: 492,
+        state: "local_review_fix",
+        pr_number: 498,
+        last_head_sha: headSha,
+        processed_review_thread_ids: [],
+        processed_review_thread_fingerprints: [],
+      }),
+    },
+  };
+  const context = createCodexTurnContext({
+    state,
+    record: state.issues["492"]!,
+    issue,
+    pr,
+    checks: [],
+    reviewThreads,
+    workspaceStatus: {
+      branch: "codex/issue-492",
+      headSha,
+    },
+  });
+  let journalReads = 0;
+
+  const result = await executeCodexTurnPhase({
+    config,
+    stateStore: {
+      touch: (record, patch) => ({
+        ...record,
+        ...patch,
+        updated_at: record.updated_at,
+      }),
+      save: async () => undefined,
+    },
+    github: {
+      resolvePullRequestForBranch: async () => pr,
+      createPullRequest: async () => {
+        throw new Error("unexpected createPullRequest call");
+      },
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => reviewThreads,
+      getExternalReviewSurface: async () => {
+        throw new Error("unexpected getExternalReviewSurface call");
+      },
+    },
+    context,
+    acquireSessionLock: async () => null,
+    classifyFailure: () => "command_error",
+    buildCodexFailureContext: (category, summary, details) => ({
+      category,
+      summary: `${category}:${summary}`,
+      signature: `${category}:${summary}`,
+      command: null,
+      details,
+      url: null,
+      updated_at: "2026-06-05T18:00:00Z",
+    }),
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    normalizeBlockerSignature: () => null,
+    isVerificationBlockedMessage: () => false,
+    derivePullRequestLifecycleSnapshot: (recordForState) => ({
+      recordForState,
+      nextState: "pr_open",
+      failureContext: null,
+      reviewWaitPatch: {},
+      copilotRequestObservationPatch: {},
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+    }),
+    inferStateWithoutPullRequest: () => "stabilizing",
+    blockedReasonFromReviewState: () => null,
+    recoverUnexpectedCodexTurnFailure: async () => {
+      throw new Error("unexpected recoverUnexpectedCodexTurnFailure call");
+    },
+    getWorkspaceStatus: async () =>
+      createWorkspaceStatus({
+        branch: "codex/issue-492",
+        headSha,
+        hasUncommittedChanges: true,
+      }),
+    agentRunner: createSuccessfulAgentRunner(async () => ({
+      exitCode: 0,
+      sessionId: "session-492",
+      supervisorMessage: [
+        "Summary: Revalidated the current code against the live P2 thread but left local edits uncommitted.",
+        "State hint: pr_open",
+        "Blocked reason: none",
+        "Tests: npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
+        "Failure signature: none",
+        "Next action: commit or discard local edits before resolving verified Codex residue",
+      ].join("\n"),
+      stderr: "",
+      stdout: "",
+      structuredResult: {
+        summary: "Revalidated the current code against the live P2 thread but left local edits uncommitted.",
+        stateHint: "pr_open",
+        blockedReason: null,
+        failureSignature: null,
+        nextAction: "commit or discard local edits before resolving verified Codex residue",
+        tests: "npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
+      },
+      failureKind: null,
+      failureContext: null,
+    })),
+    readIssueJournal: async () => {
+      journalReads += 1;
+      return journalReads === 1
+        ? [
+            "## Codex Working Notes",
+            "### Current Handoff",
+            "- Hypothesis: dirty no-source-change revalidation must not persist Codex thread evidence.",
+          ].join("\n")
+        : [
+            "## Codex Working Notes",
+            "### Current Handoff",
+            "- Hypothesis: dirty no-source-change revalidation must not persist Codex thread evidence.",
+            "- What changed: revalidated the current-head Codex P2 thread but left workspace edits uncommitted.",
+            "- Next exact step: commit or discard local edits before resolving verified Codex residue.",
+          ].join("\n");
+    },
+  });
+
+  assert.equal(result.kind, "completed");
+  assert.deepEqual(state.issues["492"]?.processed_review_thread_ids, []);
+  assert.deepEqual(state.issues["492"]?.processed_review_thread_fingerprints, []);
+});
+
 test("executeCodexTurnPhase accepts command-backed Codex verification with failure-adjacent path tokens", async () => {
   const commands = [
     "npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",

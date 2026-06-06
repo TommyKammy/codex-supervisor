@@ -41,6 +41,13 @@ export interface LocalReviewRepairContext {
   summaryPath: string;
   findingsPath: string | null;
   relevantFiles: string[];
+  actionableFindings?: Array<{
+    title: string;
+    body?: string | null;
+    file: string | null;
+    lines: string | null;
+    evidence?: string | null;
+  }>;
   rootCauses: Array<{
     severity: "low" | "medium" | "high";
     summary: string;

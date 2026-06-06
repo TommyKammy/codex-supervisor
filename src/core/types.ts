@@ -113,6 +113,8 @@ export interface TimelineArtifact {
   summary: string;
   recorded_at: string;
   repair_targets?: string[];
+  processed_review_thread_ids?: string[];
+  processed_review_thread_fingerprints?: string[];
 }
 
 export type FailureKind = "timeout" | "command_error" | "codex_exit" | "codex_failed" | null;

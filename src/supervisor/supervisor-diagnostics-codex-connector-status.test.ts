@@ -1634,7 +1634,7 @@ test("status --why names missing verification for manual-review Codex no-major r
     commentId: "comment-current-head-residue",
     path: "src/review-state.ts",
     line: 42,
-    commentBody: "P1: Preserve current-head review metadata convergence.",
+    commentBody: "P2: Preserve current-head review metadata convergence.",
     discussionUrl: "https://example.test/pr/180#discussion_current_head_residue",
     currentHeadNoMajorReview: {
       requestedAt: "2026-05-23T01:09:53Z",
@@ -1824,7 +1824,7 @@ test("status --why converges processed current-head Codex no-major review thread
         {
           ...scenario.reviewThread.comments.nodes[0],
           id: `comment-current-head-residue-${index}`,
-          body: `${index % 2 === 0 ? "P1" : "P2"}: Preserve current-head review metadata convergence.`,
+          body: "P2: Preserve current-head review metadata convergence.",
           url: `https://example.test/pr/180#discussion_${threadId}`,
         },
       ],

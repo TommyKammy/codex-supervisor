@@ -232,6 +232,45 @@ test("loadLocalReviewRepairContext surfaces malformed findings shapes", async ()
   await fs.rm(tempDir, { recursive: true, force: true });
 });
 
+test("loadLocalReviewRepairContext preserves actionable finding body and evidence", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "local-review-fix-evidence-test-"));
+  const summaryPath = path.join(tempDir, "head-evidence.md");
+  const findingsPath = path.join(tempDir, "head-evidence.json");
+
+  await fs.writeFile(summaryPath, "# summary\n", "utf8");
+  await fs.writeFile(
+    findingsPath,
+    JSON.stringify({
+      actionableFindings: [
+        {
+          title: " Preserve query workflow shell state ",
+          body: " Verified current-head thread PRRT_verified. ",
+          file: " src/query-workflow.ts ",
+          start: 42,
+          end: 42,
+          evidence: " https://example.test/pr/498#discussion_verified ",
+        },
+      ],
+      rootCauseSummaries: [],
+    }),
+    "utf8",
+  );
+
+  const context = await loadLocalReviewRepairContext(summaryPath);
+
+  assert.deepEqual(context?.actionableFindings, [
+    {
+      title: "Preserve query workflow shell state",
+      body: "Verified current-head thread PRRT_verified.",
+      file: "src/query-workflow.ts",
+      lines: "42",
+      evidence: "https://example.test/pr/498#discussion_verified",
+    },
+  ]);
+
+  await fs.rm(tempDir, { recursive: true, force: true });
+});
+
 test("loadLocalReviewRepairContext surfaces malformed committed durable guardrails", async () => {
   const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "local-review-fix-invalid-durable-guardrails-test-"));
   const reviewDir = path.join(workspaceDir, "reviews");

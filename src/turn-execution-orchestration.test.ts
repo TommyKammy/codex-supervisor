@@ -5,10 +5,12 @@ import os from "node:os";
 import path from "node:path";
 import { buildCodexPrompt } from "./codex";
 import {
+  hasCurrentTurnVerifiedNoSourceChangeReviewThreadEvidence,
   nextProcessedReviewThreadPatch,
   nextReviewFollowUpPatch,
   prepareCodexTurnPrompt,
   selectReviewThreadsForTurn,
+  selectVerifiedNoSourceChangeReviewThreads,
   shouldResumeAgentTurn,
 } from "./turn-execution-orchestration";
 import { processedReviewThreadFingerprintKey, processedReviewThreadKey } from "./review-handling";
@@ -67,6 +69,406 @@ test("nextProcessedReviewThreadPatch refreshes reprocessed same-head ids to the 
     patch.processed_review_thread_fingerprints[patch.processed_review_thread_fingerprints.length - 1],
     "thread-0@head-a#comment-0",
   );
+});
+
+test("nextProcessedReviewThreadPatch persists local-review no-change current-head verification evidence", () => {
+  const headSha = "7a77d998712882166f79c3710dd4c567da6da779";
+  const reviewThreads = [
+    createReviewThread({
+      id: "PRRT_kwDOSHIe7c6HbSbo",
+      comments: {
+        nodes: [
+          {
+            id: "comment-safequery-shell",
+            body: "P2: Preserve query workflow shell state after the current-head revalidation.",
+            createdAt: "2026-06-05T17:55:00Z",
+            url: "https://example.test/pr/498#discussion_shell",
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+    createReviewThread({
+      id: "PRRT_kwDOSHIe7c6HbjhR",
+      comments: {
+        nodes: [
+          {
+            id: "comment-safequery-export",
+            body: "P2: Keep query export flow covered by focused verification.",
+            createdAt: "2026-06-05T17:55:01Z",
+            url: "https://example.test/pr/498#discussion_export",
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  ];
+
+  const patch = nextProcessedReviewThreadPatch({
+    preRunState: "local_review_fix",
+    record: {
+      processed_review_thread_ids: [],
+      processed_review_thread_fingerprints: [],
+    },
+    currentPr: { headRefOid: headSha },
+    evaluatedReviewHeadSha: headSha,
+    reviewThreadsToProcess: reviewThreads,
+    verifiedNoSourceChangeReviewThreads: reviewThreads,
+    persistVerifiedNoSourceChangeCurrentHead: true,
+  });
+
+  assert.deepEqual(
+    patch.processed_review_thread_ids,
+    reviewThreads.map((thread) => `${thread.id}@${headSha}`),
+  );
+  assert.deepEqual(
+    patch.processed_review_thread_fingerprints,
+    [
+      `PRRT_kwDOSHIe7c6HbSbo@${headSha}#comment-safequery-shell`,
+      `PRRT_kwDOSHIe7c6HbjhR@${headSha}#comment-safequery-export`,
+    ],
+  );
+});
+
+test("nextProcessedReviewThreadPatch scopes local-review no-change evidence to verified threads", () => {
+  const headSha = "7a77d998712882166f79c3710dd4c567da6da779";
+  const verifiedThread = createReviewThread({ id: "thread-verified" });
+  const unrelatedThread = createReviewThread({ id: "thread-unrelated" });
+  const patch = nextProcessedReviewThreadPatch({
+    preRunState: "local_review_fix",
+    record: {
+      processed_review_thread_ids: [],
+      processed_review_thread_fingerprints: [],
+    },
+    currentPr: { headRefOid: headSha },
+    evaluatedReviewHeadSha: headSha,
+    reviewThreadsToProcess: [verifiedThread, unrelatedThread],
+    verifiedNoSourceChangeReviewThreads: [verifiedThread],
+    persistVerifiedNoSourceChangeCurrentHead: true,
+  });
+
+  assert.deepEqual(patch.processed_review_thread_ids, [`thread-verified@${headSha}`]);
+  assert.deepEqual(patch.processed_review_thread_fingerprints, [`thread-verified@${headSha}#comment-1`]);
+});
+
+test("hasCurrentTurnVerifiedNoSourceChangeReviewThreadEvidence requires newly verified threads", () => {
+  const headSha = "head-a";
+  const verifiedThread = createReviewThread({
+    id: "thread-verified",
+    comments: {
+      nodes: [
+        {
+          id: "comment-1",
+          body: "P2: verified.",
+          createdAt: "2026-03-13T06:20:00Z",
+          url: "https://example.test/pr/44#discussion_r1",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.equal(
+    hasCurrentTurnVerifiedNoSourceChangeReviewThreadEvidence({
+      preRunState: "local_review_fix",
+      currentPrHeadSha: headSha,
+      canPersistVerifiedNoSourceChangeCurrentHead: true,
+      verifiedNoSourceChangeReviewThreads: [verifiedThread],
+      processedReviewThreadIds: [`thread-verified@${headSha}`],
+    }),
+    true,
+  );
+  assert.equal(
+    hasCurrentTurnVerifiedNoSourceChangeReviewThreadEvidence({
+      preRunState: "local_review_fix",
+      currentPrHeadSha: headSha,
+      canPersistVerifiedNoSourceChangeCurrentHead: true,
+      verifiedNoSourceChangeReviewThreads: [],
+      processedReviewThreadIds: [`thread-verified@${headSha}`],
+    }),
+    false,
+  );
+});
+
+test("selectVerifiedNoSourceChangeReviewThreads requires configured-bot exact finding anchors", () => {
+  const selected = selectVerifiedNoSourceChangeReviewThreads({
+    config: createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector"],
+    }),
+    localReviewRepairContext: {
+      summaryPath: "reviews/issue-492/head-7a77d998.md",
+      findingsPath: "reviews/issue-492/head-7a77d998.json",
+      relevantFiles: ["src/query-workflow.ts"],
+      actionableFindings: [
+        {
+          title: "Preserve query workflow shell state",
+          body: "The no-change revalidation covered review thread PRRT_verified.",
+          file: "src/query-workflow.ts",
+          lines: "42",
+          evidence: "Verified thread PRRT_verified at https://example.test/pr/498#discussion_verified.",
+        },
+      ],
+      rootCauses: [
+        {
+          severity: "medium",
+          summary: "Focused verification covers a compressed query workflow range.",
+          file: "src/query-workflow.ts",
+          lines: "40-80",
+        },
+      ],
+      priorMissPatterns: [],
+      verifierGuardrails: [],
+    },
+    reviewThreads: [
+      createReviewThread({
+        id: "PRRT_verified",
+        path: "src/query-workflow.ts",
+        line: 42,
+        comments: {
+          nodes: [
+            {
+              id: "comment-verified",
+              body: "P2: Preserve query workflow shell state.",
+              createdAt: "2026-06-05T17:55:00Z",
+              url: "https://example.test/pr/498#discussion_verified",
+              author: {
+                login: "chatgpt-codex-connector",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+      createReviewThread({
+        id: "PRRT_same_line_without_evidence",
+        path: "src/query-workflow.ts",
+        line: 42,
+        comments: {
+          nodes: [
+            {
+              id: "comment-same-line-without-evidence",
+              body: "P2: A separate current-head finding on the same line still needs work.",
+              createdAt: "2026-06-05T17:55:30Z",
+              url: "https://example.test/pr/498#discussion_same_line_without_evidence",
+              author: {
+                login: "chatgpt-codex-connector",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+      createReviewThread({
+        id: "PRRT_human_latest",
+        path: "src/query-workflow.ts",
+        line: 42,
+        comments: {
+          nodes: [
+            {
+              id: "comment-human-latest-bot",
+              body: "P2: Preserve query workflow shell state.",
+              createdAt: "2026-06-05T17:55:00Z",
+              url: "https://example.test/pr/498#discussion_human_latest_bot",
+              author: {
+                login: "chatgpt-codex-connector",
+                typeName: "Bot",
+              },
+            },
+            {
+              id: "comment-human-latest",
+              body: "A maintainer follow-up should keep this out of no-change auto evidence.",
+              createdAt: "2026-06-05T17:56:00Z",
+              url: "https://example.test/pr/498#discussion_human_latest",
+              author: {
+                login: "maintainer",
+                typeName: "User",
+              },
+            },
+          ],
+        },
+      }),
+      createReviewThread({
+        id: "thread-in-root-cause-range-only",
+        path: "src/query-workflow.ts",
+        line: 60,
+        comments: {
+          nodes: [
+            {
+              id: "comment-root-cause-range-only",
+              body: "P2: Unrelated current-head finding inside the compressed root-cause range.",
+              createdAt: "2026-06-05T17:56:00Z",
+              url: "https://example.test/pr/498#discussion_root_cause_range_only",
+              author: {
+                login: "chatgpt-codex-connector",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+      createReviewThread({
+        id: "thread-human",
+        path: "src/query-workflow.ts",
+        line: 42,
+        comments: {
+          nodes: [
+            {
+              id: "comment-human",
+              body: "Please check this manually.",
+              createdAt: "2026-06-05T17:57:00Z",
+              url: "https://example.test/pr/498#discussion_human",
+              author: {
+                login: "maintainer",
+                typeName: "User",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+  });
+
+  assert.deepEqual(selected.map((thread) => thread.id), ["PRRT_verified"]);
+});
+
+test("selectVerifiedNoSourceChangeReviewThreads does not match prefixed discussion tokens", () => {
+  const selected = selectVerifiedNoSourceChangeReviewThreads({
+    config: createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector"],
+    }),
+    localReviewRepairContext: {
+      summaryPath: "reviews/issue-492/head-7a77d998.md",
+      findingsPath: "reviews/issue-492/head-7a77d998.json",
+      relevantFiles: ["src/query-workflow.ts"],
+      actionableFindings: [
+        {
+          title: "Preserve query workflow shell state",
+          body: "Focused verification covered the longer cited discussion.",
+          file: "src/query-workflow.ts",
+          lines: "42",
+          evidence: "Verified https://example.test/pr/498#discussion_r1234.",
+        },
+      ],
+      rootCauses: [],
+      priorMissPatterns: [],
+      verifierGuardrails: [],
+    },
+    reviewThreads: [
+      createReviewThread({
+        id: "PRRT_short_discussion",
+        path: "src/query-workflow.ts",
+        line: 42,
+        comments: {
+          nodes: [
+            {
+              id: "comment-short-discussion",
+              body: "P2: Shorter same-line discussion must not be selected.",
+              createdAt: "2026-06-05T17:55:00Z",
+              url: "https://example.test/pr/498#discussion_r123",
+              author: {
+                login: "chatgpt-codex-connector",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+      createReviewThread({
+        id: "PRRT_long_discussion",
+        path: "src/query-workflow.ts",
+        line: 42,
+        comments: {
+          nodes: [
+            {
+              id: "comment-long-discussion",
+              body: "P2: Longer cited discussion was verified.",
+              createdAt: "2026-06-05T17:55:30Z",
+              url: "https://example.test/pr/498#discussion_r1234",
+              author: {
+                login: "chatgpt-codex-connector",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+  });
+
+  assert.deepEqual(selected.map((thread) => thread.id), ["PRRT_long_discussion"]);
+});
+
+test("selectVerifiedNoSourceChangeReviewThreads fails closed without exact thread evidence", () => {
+  const selected = selectVerifiedNoSourceChangeReviewThreads({
+    config: createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector"],
+    }),
+    localReviewRepairContext: {
+      summaryPath: "reviews/issue-492/head-7a77d998.md",
+      findingsPath: "reviews/issue-492/head-7a77d998.json",
+      relevantFiles: ["src/query-workflow.ts"],
+      actionableFindings: [
+        {
+          title: "Preserve query workflow shell state",
+          body: "Focused tests already cover the review finding, but no source thread is cited.",
+          file: "src/query-workflow.ts",
+          lines: "42",
+          evidence: "The same-line behavior is covered by the focused test suite.",
+        },
+      ],
+      rootCauses: [],
+      priorMissPatterns: [],
+      verifierGuardrails: [],
+    },
+    reviewThreads: [
+      createReviewThread({
+        id: "PRRT_current_same_line",
+        path: "src/query-workflow.ts",
+        line: 42,
+        comments: {
+          nodes: [
+            {
+              id: "comment-current-same-line",
+              body: "P2: Preserve query workflow shell state.",
+              createdAt: "2026-06-05T17:55:00Z",
+              url: "https://example.test/pr/498#discussion_same_line",
+              author: {
+                login: "chatgpt-codex-connector",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+  });
+
+  assert.deepEqual(selected, []);
+});
+
+test("nextProcessedReviewThreadPatch fails closed for local-review current-head threads without no-change verification", () => {
+  const patch = nextProcessedReviewThreadPatch({
+    preRunState: "local_review_fix",
+    record: {
+      processed_review_thread_ids: [],
+      processed_review_thread_fingerprints: [],
+    },
+    currentPr: { headRefOid: "head-a" },
+    evaluatedReviewHeadSha: "head-a",
+    reviewThreadsToProcess: [createReviewThread({ id: "thread-1" })],
+  });
+
+  assert.deepEqual(patch.processed_review_thread_ids, []);
+  assert.deepEqual(patch.processed_review_thread_fingerprints, []);
 });
 
 test("selectReviewThreadsForTurn re-includes same-head configured-bot threads when the follow-up allowance is active", () => {

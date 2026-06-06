@@ -1,5 +1,6 @@
 import path from "node:path";
 import {
+  type LocalReviewRepairContext,
   shouldUseCompactResumePrompt,
 } from "./codex";
 import {
@@ -63,6 +64,98 @@ function shouldLoadExternalReviewContext(args: {
     args.record.local_review_head_sha === args.pr.headRefOid &&
     Boolean(args.record.local_review_summary_path)
   );
+}
+
+function parseLineRange(lines: string | null): { start: number; end: number } | null {
+  const match = lines?.trim().match(/^(\d+)(?:-(\d+))?$/);
+  if (!match) {
+    return null;
+  }
+
+  const start = Number(match[1]);
+  const end = Number(match[2] ?? match[1]);
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start <= 0 || end < start) {
+    return null;
+  }
+
+  return { start, end };
+}
+
+function extractReviewEvidenceTokens(value: string): Set<string> {
+  const tokens = new Set<string>();
+  const patterns = [
+    /\bPRRT_[A-Za-z0-9_-]+\b/gu,
+    /\bPRRC_[A-Za-z0-9_-]+\b/gu,
+    /https?:\/\/[^\s<>)\]]+#discussion_[A-Za-z0-9_-]+/gu,
+    /#discussion_[A-Za-z0-9_-]+/gu,
+  ];
+  for (const pattern of patterns) {
+    for (const match of value.matchAll(pattern)) {
+      tokens.add(match[0]);
+    }
+  }
+  return tokens;
+}
+
+export function selectVerifiedNoSourceChangeReviewThreads(args: {
+  config: Pick<SupervisorConfig, "reviewBotLogins" | "configuredReviewProviders">;
+  localReviewRepairContext: LocalReviewRepairContext | null;
+  reviewThreads: ReviewThread[];
+}): ReviewThread[] {
+  const findingAnchors = (args.localReviewRepairContext?.actionableFindings ?? [])
+    .map((finding) => {
+      const range = parseLineRange(finding.lines);
+      const sourceEvidence = [finding.title, finding.body, finding.evidence]
+        .filter((value): value is string => typeof value === "string" && value.trim() !== "")
+        .join("\n");
+      const sourceEvidenceTokens = extractReviewEvidenceTokens(sourceEvidence);
+      return finding.file && range && sourceEvidenceTokens.size > 0
+        ? { file: finding.file, sourceEvidenceTokens, ...range }
+        : null;
+    })
+    .filter(
+      (anchor): anchor is { file: string; start: number; end: number; sourceEvidenceTokens: Set<string> } =>
+        anchor !== null,
+    );
+  if (findingAnchors.length === 0) {
+    return [];
+  }
+
+  const configuredThreadIds = new Set(
+    configuredBotReviewThreads(args.config as SupervisorConfig, args.reviewThreads)
+      .filter(
+        (thread) =>
+          !thread.isResolved &&
+          !thread.isOutdated &&
+          latestReviewCommentAuthorIsAllowedBot(args.config as SupervisorConfig, thread),
+      )
+      .map((thread) => thread.id),
+  );
+
+  return args.reviewThreads.filter((thread) => {
+    if (!configuredThreadIds.has(thread.id) || !thread.path || thread.line == null) {
+      return false;
+    }
+
+    const latestComment = thread.comments.nodes[thread.comments.nodes.length - 1] ?? null;
+    const commentEvidenceTokens = new Set<string>([thread.id]);
+    if (latestComment?.id) {
+      commentEvidenceTokens.add(latestComment.id);
+    }
+    if (latestComment?.url) {
+      for (const token of extractReviewEvidenceTokens(latestComment.url)) {
+        commentEvidenceTokens.add(token);
+      }
+    }
+
+    return findingAnchors.some((anchor) => {
+      if (anchor.file !== thread.path || thread.line! < anchor.start || thread.line! > anchor.end) {
+        return false;
+      }
+
+      return Array.from(commentEvidenceTokens).some((token) => anchor.sourceEvidenceTokens.has(token));
+    });
+  });
 }
 
 export function selectReviewThreadsForTurn(args: {
@@ -164,6 +257,7 @@ export async function prepareCodexTurnPrompt(args: {
   record: IssueRunRecord;
   turnContext: AgentTurnContext;
   reviewThreadsToProcess: ReviewThread[];
+  localReviewRepairContext: LocalReviewRepairContext | null;
 }> {
   const reviewThreadsToProcess = selectReviewThreadsForTurn({
     config: args.config,
@@ -289,7 +383,7 @@ export async function prepareCodexTurnPrompt(args: {
           externalReviewMissContext,
         };
 
-  return { record, turnContext, reviewThreadsToProcess };
+  return { record, turnContext, reviewThreadsToProcess, localReviewRepairContext };
 }
 
 export function nextProcessedReviewThreadPatch(args: {
@@ -298,20 +392,29 @@ export function nextProcessedReviewThreadPatch(args: {
   currentPr: Pick<GitHubPullRequest, "headRefOid"> | null;
   evaluatedReviewHeadSha: string;
   reviewThreadsToProcess: ReviewThread[];
+  persistVerifiedNoSourceChangeCurrentHead?: boolean;
+  verifiedNoSourceChangeReviewThreads?: ReviewThread[];
 }): Pick<IssueRunRecord, "processed_review_thread_ids" | "processed_review_thread_fingerprints"> {
+  const shouldPersistCurrentHeadThreadEvidence =
+    args.preRunState === "addressing_review" ||
+    (args.preRunState === "local_review_fix" && args.persistVerifiedNoSourceChangeCurrentHead === true);
+  const reviewThreadsForCurrentHeadEvidence =
+    args.preRunState === "local_review_fix"
+      ? args.verifiedNoSourceChangeReviewThreads ?? []
+      : args.reviewThreadsToProcess;
   const processedReviewThreadKeysForCurrentHead =
-    args.preRunState === "addressing_review" &&
+    shouldPersistCurrentHeadThreadEvidence &&
     args.currentPr &&
     args.currentPr.headRefOid === args.evaluatedReviewHeadSha
-      ? args.reviewThreadsToProcess.map((thread) =>
+      ? reviewThreadsForCurrentHeadEvidence.map((thread) =>
           processedReviewThreadKey(thread.id, args.evaluatedReviewHeadSha),
         )
       : [];
   const processedReviewThreadFingerprintKeysForCurrentHead =
-    args.preRunState === "addressing_review" &&
+    shouldPersistCurrentHeadThreadEvidence &&
     args.currentPr &&
     args.currentPr.headRefOid === args.evaluatedReviewHeadSha
-      ? args.reviewThreadsToProcess.flatMap((thread) => {
+      ? reviewThreadsForCurrentHeadEvidence.flatMap((thread) => {
           const latestCommentFingerprint = latestReviewThreadCommentFingerprint(thread);
           return latestCommentFingerprint
             ? [
@@ -349,6 +452,26 @@ export function nextProcessedReviewThreadPatch(args: {
           ).slice(-200)
         : args.record.processed_review_thread_fingerprints,
   };
+}
+
+export function hasCurrentTurnVerifiedNoSourceChangeReviewThreadEvidence(args: {
+  preRunState: IssueRunRecord["state"];
+  currentPrHeadSha: string | null;
+  canPersistVerifiedNoSourceChangeCurrentHead: boolean;
+  verifiedNoSourceChangeReviewThreads: ReviewThread[];
+  processedReviewThreadIds: string[] | null | undefined;
+}): boolean {
+  return (
+    args.preRunState === "local_review_fix" &&
+    args.currentPrHeadSha !== null &&
+    args.canPersistVerifiedNoSourceChangeCurrentHead &&
+    args.verifiedNoSourceChangeReviewThreads.length > 0 &&
+    args.verifiedNoSourceChangeReviewThreads.every((thread) =>
+      args.processedReviewThreadIds?.includes(
+        processedReviewThreadKey(thread.id, args.currentPrHeadSha!),
+      ),
+    )
+  );
 }
 
 export function nextReviewFollowUpPatch(args: {
