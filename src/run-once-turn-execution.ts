@@ -1165,7 +1165,7 @@ export async function executeCodexTurnPhase(
               ? selectVerifiedNoSourceChangeReviewThreads({
                   config,
                   localReviewRepairContext,
-                  reviewThreads,
+                  reviewThreads: reviewThreadsToProcess,
                 })
               : undefined,
           persistVerifiedNoSourceChangeCurrentHead:

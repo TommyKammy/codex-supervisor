@@ -473,6 +473,26 @@ test("executeCodexTurnPhase persists no-change current-head Codex thread evidenc
       },
     }),
   ];
+  const latePostPromptReviewThread = createReviewThread({
+    id: "PRRT_late_same_anchor",
+    path: "src/query-shell.ts",
+    line: 40,
+    comments: {
+      nodes: [
+        {
+          id: "comment-late-same-anchor",
+          body: "P2: Newly posted same-anchor finding that was not in the Codex prompt.",
+          createdAt: "2026-06-05T17:59:00Z",
+          url: "https://example.test/pr/498#discussion_late_same_anchor",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const postRunReviewThreads = [...reviewThreads, latePostPromptReviewThread];
   const state: SupervisorStateFile = {
     activeIssueNumber: 492,
     issues: {
@@ -517,7 +537,7 @@ test("executeCodexTurnPhase persists no-change current-head Codex thread evidenc
         throw new Error("unexpected createPullRequest call");
       },
       getChecks: async () => [],
-      getUnresolvedReviewThreads: async () => reviewThreads,
+      getUnresolvedReviewThreads: async () => postRunReviewThreads,
       getExternalReviewSurface: async () => {
         throw new Error("unexpected getExternalReviewSurface call");
       },
