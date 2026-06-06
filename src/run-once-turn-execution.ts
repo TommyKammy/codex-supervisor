@@ -1153,6 +1153,7 @@ export async function executeCodexTurnPhase(
           reviewThreadsToProcess,
           persistVerifiedNoSourceChangeCurrentHead:
             Boolean(codexVerificationCommand) &&
+            !workspaceStatus.hasUncommittedChanges &&
             changedFilesInCurrentTurn.length === 0,
         });
         const reviewFollowUpPatch = nextReviewFollowUpPatch({
