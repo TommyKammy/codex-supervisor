@@ -529,6 +529,39 @@ test("releaseCodexConnectorChurnLatchForOperator rejects non-churn manual review
   assert.equal(state.issues["366"]?.state, "blocked");
 });
 
+test("releaseCodexConnectorChurnLatchForOperator rejects churn markers without a tracked PR", async () => {
+  const original = createRecord({
+    issue_number: 366,
+    state: "blocked",
+    blocked_reason: "manual_review",
+    pr_number: null,
+    codex_connector_stable_churn_dossier_consumed_signature:
+      "codex-connector-stable-same-file-churn:src/release-readiness.ts:truth_source:head-a_head-b",
+    last_tracked_pr_progress_summary:
+      "no_progress_clustered_codex_churn current_effective_must_fix=4 dossier_attempt=consumed",
+    last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [original],
+  });
+  const stateStore = {
+    touch(record: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return { ...record, ...patch };
+    },
+    async save(): Promise<void> {
+      throw new Error("unexpected save");
+    },
+  };
+
+  const result = await releaseCodexConnectorChurnLatchForOperator(stateStore, state, 366);
+
+  assert.equal(result.action, "release-codex-churn-latch");
+  assert.equal(result.outcome, "rejected");
+  assert.match(result.summary, /no blocked current-head Codex Connector churn latch is active/);
+  assert.equal(state.issues["366"]?.state, "blocked");
+  assert.equal(state.issues["366"]?.pr_number, null);
+});
+
 test("requeueIssueForOperator preserves non-verification diagnostics on operator requeue", async () => {
   const original = createRecord({
     issue_number: 367,
