@@ -9,6 +9,7 @@ import { buildIssueDefinitionFingerprint } from "../issue-definition-freshness";
 import {
   buildTrackedPrStaleFailureConvergencePatch,
   formatRecoveryLog,
+  releaseCodexConnectorChurnLatchForOperator,
   requeueIssueForOperator,
   reconcileMergedIssueClosures,
   reconcileParentEpicClosures,
@@ -445,6 +446,87 @@ test("requeueIssueForOperator requeues a blocked issue with no tracked PR", asyn
   assert.equal(state.issues["366"]?.copilot_review_timeout_reason, null);
   assert.equal(state.issues["366"]?.local_review_blocker_summary, null);
   assert.equal(saveCalls, 1);
+});
+
+test("releaseCodexConnectorChurnLatchForOperator clears only blocked Codex churn latch records", async () => {
+  const original = createRecord({
+    issue_number: 366,
+    state: "blocked",
+    blocked_reason: "manual_review",
+    pr_number: 191,
+    last_error: "stable Codex Connector churn dossier was already attempted",
+    last_failure_signature: "codex-review-churn:P2:src/release-readiness.ts",
+    repeated_failure_signature_count: 2,
+    codex_connector_stable_churn_dossier_consumed_signature:
+      "codex-connector-stable-same-file-churn:src/release-readiness.ts:truth_source:head-a_head-b",
+    last_tracked_pr_progress_summary:
+      "no_progress_clustered_codex_churn current_effective_must_fix=4 dossier_attempt=consumed",
+    last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [original],
+  });
+
+  let saveCalls = 0;
+  const stateStore = {
+    touch(record: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...record,
+        ...patch,
+        updated_at: "2026-03-11T06:33:08.821Z",
+      };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+
+  const result = await releaseCodexConnectorChurnLatchForOperator(stateStore, state, 366);
+  const updated = state.issues["366"]!;
+
+  assert.equal(result.action, "release-codex-churn-latch");
+  assert.equal(result.outcome, "mutated");
+  assert.equal(result.previousState, "blocked");
+  assert.equal(result.nextState, "waiting_ci");
+  assert.match(result.recoveryReason ?? "", /^operator_release_codex_churn_latch:/);
+  assert.equal(saveCalls, 1);
+  assert.equal(updated.state, "waiting_ci");
+  assert.equal(updated.blocked_reason, null);
+  assert.equal(updated.codex_connector_stable_churn_dossier_consumed_signature, null);
+  assert.equal(updated.last_tracked_pr_progress_summary, null);
+  assert.equal(updated.last_tracked_pr_repeat_failure_decision, null);
+  assert.equal(updated.last_error, null);
+  assert.equal(updated.last_failure_signature, null);
+  assert.equal(updated.repeated_failure_signature_count, 0);
+});
+
+test("releaseCodexConnectorChurnLatchForOperator rejects non-churn manual review blocks", async () => {
+  const original = createRecord({
+    issue_number: 366,
+    state: "blocked",
+    blocked_reason: "manual_review",
+    pr_number: 191,
+    last_tracked_pr_progress_summary: "no_meaningful_tracked_pr_progress",
+    last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [original],
+  });
+  const stateStore = {
+    touch(record: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return { ...record, ...patch };
+    },
+    async save(): Promise<void> {
+      throw new Error("unexpected save");
+    },
+  };
+
+  const result = await releaseCodexConnectorChurnLatchForOperator(stateStore, state, 366);
+
+  assert.equal(result.action, "release-codex-churn-latch");
+  assert.equal(result.outcome, "rejected");
+  assert.match(result.summary, /no blocked current-head Codex Connector churn latch is active/);
+  assert.equal(state.issues["366"]?.state, "blocked");
 });
 
 test("requeueIssueForOperator preserves non-verification diagnostics on operator requeue", async () => {

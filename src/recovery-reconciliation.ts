@@ -302,13 +302,14 @@ export function prependRecoveryLog(message: string, recoveryLog: string | null):
 }
 
 function buildRejectedMutationResult(
+  action: SupervisorMutationResultDto["action"],
   issueNumber: number,
   previousState: RunState | null,
   previousRecordSnapshot: SupervisorMutationRecordSnapshotDto | null,
   summary: string,
 ): SupervisorMutationResultDto {
   return {
-    action: "requeue",
+    action,
     issueNumber,
     outcome: "rejected",
     summary,
@@ -327,6 +328,7 @@ export async function requeueIssueForOperator(
   const record = state.issues[String(issueNumber)];
   if (!record) {
     return buildRejectedMutationResult(
+      "requeue",
       issueNumber,
       null,
       null,
@@ -339,6 +341,7 @@ export async function requeueIssueForOperator(
 
   if (state.activeIssueNumber === issueNumber) {
     return buildRejectedMutationResult(
+      "requeue",
       issueNumber,
       previousState,
       previousRecordSnapshot,
@@ -348,6 +351,7 @@ export async function requeueIssueForOperator(
 
   if (record.pr_number !== null) {
     return buildRejectedMutationResult(
+      "requeue",
       issueNumber,
       previousState,
       previousRecordSnapshot,
@@ -357,6 +361,7 @@ export async function requeueIssueForOperator(
 
   if (!OPERATOR_REQUEUEABLE_STATES.has(record.state)) {
     return buildRejectedMutationResult(
+      "requeue",
       issueNumber,
       previousState,
       previousRecordSnapshot,
@@ -402,6 +407,96 @@ export async function requeueIssueForOperator(
     issueNumber,
     outcome: "mutated",
     summary: `Requeued issue #${issueNumber} from ${previousState} to queued.`,
+    previousState,
+    previousRecordSnapshot,
+    nextState: updated.state,
+    recoveryReason: recoveryEvent.reason,
+  };
+}
+
+function isCodexConnectorChurnLatchRecord(
+  record: Pick<
+    IssueRunRecord,
+    | "blocked_reason"
+    | "codex_connector_stable_churn_dossier_consumed_signature"
+    | "last_tracked_pr_progress_summary"
+    | "last_tracked_pr_repeat_failure_decision"
+    | "state"
+  >,
+): boolean {
+  return (
+    record.state === "blocked" &&
+    record.blocked_reason === "manual_review" &&
+    record.last_tracked_pr_repeat_failure_decision === "stop_no_progress" &&
+    typeof record.codex_connector_stable_churn_dossier_consumed_signature === "string" &&
+    record.codex_connector_stable_churn_dossier_consumed_signature.length > 0 &&
+    record.last_tracked_pr_progress_summary?.startsWith("no_progress_clustered_codex_churn ") === true
+  );
+}
+
+export async function releaseCodexConnectorChurnLatchForOperator(
+  stateStore: StateStoreLike,
+  state: SupervisorStateFile,
+  issueNumber: number,
+): Promise<SupervisorMutationResultDto> {
+  const record = state.issues[String(issueNumber)];
+  if (!record) {
+    return buildRejectedMutationResult(
+      "release-codex-churn-latch",
+      issueNumber,
+      null,
+      null,
+      `Rejected Codex Connector churn latch release for issue #${issueNumber}: the issue is not tracked in supervisor state.`,
+    );
+  }
+
+  const previousRecordSnapshot = buildSupervisorMutationRecordSnapshot(record);
+  const previousState = previousRecordSnapshot.state;
+
+  if (state.activeIssueNumber === issueNumber) {
+    return buildRejectedMutationResult(
+      "release-codex-churn-latch",
+      issueNumber,
+      previousState,
+      previousRecordSnapshot,
+      `Rejected Codex Connector churn latch release for issue #${issueNumber}: active issue reservations cannot be mutated.`,
+    );
+  }
+
+  if (!isCodexConnectorChurnLatchRecord(record)) {
+    return buildRejectedMutationResult(
+      "release-codex-churn-latch",
+      issueNumber,
+      previousState,
+      previousRecordSnapshot,
+      `Rejected Codex Connector churn latch release for issue #${issueNumber}: no blocked current-head Codex Connector churn latch is active.`,
+    );
+  }
+
+  const recoveryEvent = buildRecoveryEvent(
+    issueNumber,
+    `operator_release_codex_churn_latch: cleared current-head Codex Connector churn latch for issue #${issueNumber}`,
+  );
+  const updated = stateStore.touch(record, applyRecoveryEvent({
+    state: "waiting_ci",
+    blocked_reason: null,
+    codex_connector_stable_churn_dossier_consumed_signature: null,
+    last_tracked_pr_progress_summary: null,
+    last_tracked_pr_repeat_failure_decision: null,
+    last_error: null,
+    last_failure_kind: null,
+    last_failure_context: null,
+    last_failure_signature: null,
+    repeated_failure_signature_count: 0,
+  }, recoveryEvent));
+  state.issues[String(issueNumber)] = updated;
+  await stateStore.save(state);
+
+  return {
+    action: "release-codex-churn-latch",
+    issueNumber,
+    outcome: "mutated",
+    summary: `Released Codex Connector churn latch for issue #${issueNumber}; supervisor may retry after operator intervention.`,
     previousState,
     previousRecordSnapshot,
     nextState: updated.state,

@@ -7,6 +7,7 @@ import type {
   SupervisorStateFile,
 } from "../core/types";
 import {
+  releaseCodexConnectorChurnLatchForOperator,
   pruneOrphanedWorkspacesForOperator,
   requeueIssueForOperator,
 } from "../recovery-reconciliation";
@@ -97,7 +98,7 @@ export function createSupervisorMutationRuntime(
       action: SupervisorRecoveryAction,
       issueNumber: number,
     ): Promise<SupervisorMutationResultDto> {
-      if (action !== "requeue") {
+      if (action !== "requeue" && action !== "release-codex-churn-latch") {
         throw new Error(`Unsupported recovery action: ${String(action)}`);
       }
 
@@ -118,7 +119,9 @@ export function createSupervisorMutationRuntime(
             recoveryReason: null,
           };
         }
-        return requeueIssueForOperator(stateStore, state, issueNumber);
+        return action === "release-codex-churn-latch"
+          ? releaseCodexConnectorChurnLatchForOperator(stateStore, state, issueNumber)
+          : requeueIssueForOperator(stateStore, state, issueNumber);
       } finally {
         await lock.release();
       }

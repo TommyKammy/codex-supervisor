@@ -1044,6 +1044,69 @@ test("runSupervisorCommand renders a structured requeue result", async () => {
   });
 });
 
+test("runSupervisorCommand renders a structured Codex churn latch release result", async () => {
+  const stdout: string[] = [];
+
+  await runSupervisorCommand(
+    { command: "release-codex-churn-latch", dryRun: false, why: false, issueNumber: 123 },
+    {
+      service: {
+        config: {} as SupervisorConfig,
+        pollIntervalMs: async () => 50,
+        runOnce: async () => {
+          throw new Error("unexpected runOnce");
+        },
+        queryStatus: async () => {
+          throw new Error("unexpected queryStatus");
+        },
+        queryExplain: async () => {
+          throw new Error("unexpected queryExplain");
+        },
+        queryIssueLint: async () => {
+          throw new Error("unexpected queryIssueLint");
+        },
+        queryDoctor: async () => {
+          throw new Error("unexpected queryDoctor");
+        },
+        runRecoveryAction: async (action, issueNumber) => {
+          assert.equal(action, "release-codex-churn-latch");
+          assert.equal(issueNumber, 123);
+          return {
+            action,
+            issueNumber,
+            outcome: "mutated",
+            summary: "Released Codex Connector churn latch for issue #123; supervisor may retry after operator intervention.",
+            previousState: "blocked",
+            previousRecordSnapshot: null,
+            nextState: "waiting_ci",
+            recoveryReason: "operator_release_codex_churn_latch: cleared current-head Codex Connector churn latch for issue #123",
+          };
+        },
+        pruneOrphanedWorkspaces: async () => {
+          throw new Error("unexpected pruneOrphanedWorkspaces");
+        },
+        resetCorruptJsonState: async () => {
+          throw new Error("unexpected resetCorruptJsonState");
+        },
+      },
+      writeStdout: (line) => {
+        stdout.push(line);
+      },
+    },
+  );
+
+  assert.deepEqual(JSON.parse(stdout[0] ?? ""), {
+    action: "release-codex-churn-latch",
+    issueNumber: 123,
+    outcome: "mutated",
+    summary: "Released Codex Connector churn latch for issue #123; supervisor may retry after operator intervention.",
+    previousState: "blocked",
+    previousRecordSnapshot: null,
+    nextState: "waiting_ci",
+    recoveryReason: "operator_release_codex_churn_latch: cleared current-head Codex Connector churn latch for issue #123",
+  });
+});
+
 test("runSupervisorCommand renders a structured execution metrics rollup result", async () => {
   const stdout: string[] = [];
 

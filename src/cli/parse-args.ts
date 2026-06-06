@@ -46,6 +46,7 @@ export function parseArgs(argv: string[]): CliOptions {
       token === "loop" ||
       token === "status" ||
       token === "requeue" ||
+      token === "release-codex-churn-latch" ||
       token === "rollup-execution-metrics" ||
       token === "summarize-post-merge-audits" ||
       token === "prune-orphaned-workspaces" ||
@@ -111,7 +112,13 @@ export function parseArgs(argv: string[]): CliOptions {
       continue;
     }
 
-    if ((command === "explain" || command === "issue-lint" || command === "requeue") && issueNumber === undefined) {
+    if (
+      (command === "explain" ||
+        command === "issue-lint" ||
+        command === "requeue" ||
+        command === "release-codex-churn-latch") &&
+      issueNumber === undefined
+    ) {
       if (/^[1-9]\d*$/.test(token)) {
         issueNumber = Number(token);
         continue;
@@ -186,6 +193,10 @@ export function parseArgs(argv: string[]): CliOptions {
 
   if (command === "requeue" && issueNumber === undefined) {
     throw new Error("The requeue command requires one issue number.");
+  }
+
+  if (command === "release-codex-churn-latch" && issueNumber === undefined) {
+    throw new Error("The release-codex-churn-latch command requires one issue number.");
   }
 
   if (command === "replay" && snapshotPath === undefined) {
