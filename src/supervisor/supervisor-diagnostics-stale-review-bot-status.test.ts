@@ -24,6 +24,7 @@ import {
 } from "./supervisor-diagnostics-status-scenarios";
 import {
   formatStaleReviewMetadataConvergenceDiagnostic,
+  formatStaleReviewBotTerminalStopLine,
 } from "./stale-review-bot-diagnostics-presenter";
 import { formatStaleReviewResidueOperatorDiagnostic } from "./supervisor-status-review-bot";
 import {
@@ -102,6 +103,23 @@ test("stale review-bot presenter keeps residue and metadata diagnostic lines sta
       }),
     }),
     "codex_connector_convergence status=stale_review_metadata provider=codex current_head_sha=deadbeef current_head_observed_at=2026-05-15T00:17:00Z latest_signal_head_sha=deadbeef highest_severity=none finding_count=0 merge_effect=ready next_action=merge_ready stale_review_metadata_classification=metadata_only",
+  );
+  assert.equal(
+    formatStaleReviewBotTerminalStopLine({
+      remediation,
+      diagnostics: {
+        issueNumber: 366,
+        prNumber: 44,
+        currentHeadSuccess: "yes",
+        unresolvedCurrentThreads: 1,
+        actionableMustFixThreads: 0,
+        verifiedStaleResidueThreads: 0,
+        missingVerificationEvidenceThreads: 0,
+        repeatStopExhausted: "no",
+        autoRepairSuppressedReason: "not_verified_stale_residue",
+      },
+    }),
+    "stale_review_bot_terminal_stop issue=#366 pr=#44 reason=metadata_only_review_thread_resolution_pending classification=metadata_only_missing_current_head_review head_freshness=processed_on_current_head:yes,current_head_success:yes review_thread_classification=unresolved:1,must_fix:0,verified_residue:0 auto_repair_suppressed_reason=not_verified_stale_residue next_action=request_current_head_review",
   );
 });
 

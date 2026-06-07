@@ -1203,6 +1203,10 @@ test("status --why requests Codex current-head review for metadata-only missing 
   );
   assert.match(
     status,
+    /^stale_review_bot_terminal_stop issue=#144 pr=#148 reason=metadata_only_review_thread_resolution_pending classification=metadata_only_missing_current_head_review head_freshness=processed_on_current_head:unknown,current_head_success:no review_thread_classification=unresolved:0,must_fix:0,verified_residue:0 auto_repair_suppressed_reason=not_verified_stale_residue next_action=request_current_head_review$/m,
+  );
+  assert.match(
+    status,
     /^codex_connector_operator_diagnostic interpretation=stale_review_residue current_head_sha=f3addc310b0ff8e4fc53d9f3e0ab783af70a552f latest_configured_bot_review_sha=none current_head_review_signal=missing actionable_current_diff_threads=0 next_action=request_current_head_review$/m,
   );
   assert.doesNotMatch(status, /^codex_connector_operator_diagnostic .*next_action=inspect_exact_review_thread_then_resolve_or_leave_manual_note$/m);

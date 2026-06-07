@@ -58,7 +58,9 @@ export function formatStaleReviewBotTerminalStopLine(args: {
   diagnostics: StaleReviewBotThreadDiagnosticsDto;
 }): string | null {
   const { remediation, diagnostics } = args;
-  const metadataTerminal = isProvenStaleReviewMetadataClassification(remediation.classification);
+  const metadataTerminal =
+    isProvenStaleReviewMetadataClassification(remediation.classification) ||
+    remediation.classification === "metadata_only_missing_current_head_review";
   if (diagnostics.repeatStopExhausted !== "yes" && !metadataTerminal) {
     return null;
   }
