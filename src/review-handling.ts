@@ -85,6 +85,18 @@ export function reviewLoopRetryAttemptCountForThread(
   return reviewLoopRetryStateEntryForThread(record, pr, thread)?.attempts ?? 0;
 }
 
+export function reviewLoopRetryBudgetExhaustedForThread(
+  record: Pick<IssueRunRecord, "review_loop_retry_state">,
+  pr: Pick<GitHubPullRequest, "number" | "headRefOid">,
+  thread: Pick<ReviewThread, "id" | "comments">,
+  retryLimit = 1,
+): boolean {
+  if (retryLimit <= 0) {
+    return true;
+  }
+  return reviewLoopRetryAttemptCountForThread(record, pr, thread) >= retryLimit;
+}
+
 export function nextReviewLoopRetryStateForThread(args: {
   record: Pick<IssueRunRecord, "review_loop_retry_state">;
   pr: Pick<GitHubPullRequest, "number" | "headRefOid">;

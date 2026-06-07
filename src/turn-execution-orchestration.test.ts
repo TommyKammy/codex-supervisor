@@ -26,6 +26,7 @@ import {
 
 test("nextProcessedReviewThreadPatch refreshes reprocessed same-head ids to the newest position before trimming", () => {
   const patch = nextProcessedReviewThreadPatch({
+    config: createConfig({ reviewBotLogins: ["copilot-pull-request-reviewer"] }),
     preRunState: "addressing_review",
     record: {
       processed_review_thread_ids: Array.from({ length: 200 }, (_, index) => `thread-${index}@head-a`),
@@ -33,8 +34,9 @@ test("nextProcessedReviewThreadPatch refreshes reprocessed same-head ids to the 
         { length: 200 },
         (_, index) => `thread-${index}@head-a#comment-${index}`,
       ),
+      review_loop_retry_state: [],
     },
-    currentPr: { headRefOid: "head-a" },
+    currentPr: { number: 116, headRefOid: "head-a" },
     evaluatedReviewHeadSha: "head-a",
     reviewThreadsToProcess: [
       createReviewThread({
@@ -69,6 +71,53 @@ test("nextProcessedReviewThreadPatch refreshes reprocessed same-head ids to the 
     patch.processed_review_thread_fingerprints[patch.processed_review_thread_fingerprints.length - 1],
     "thread-0@head-a#comment-0",
   );
+});
+
+test("nextProcessedReviewThreadPatch records review-loop retry attempts for current-head configured bot threads", () => {
+  const patch = nextProcessedReviewThreadPatch({
+    config: createConfig({ reviewBotLogins: ["chatgpt-codex-connector"] }),
+    preRunState: "addressing_review",
+    record: {
+      processed_review_thread_ids: [],
+      processed_review_thread_fingerprints: [],
+      review_loop_retry_state: [],
+    },
+    currentPr: { number: 2270, headRefOid: "head-a" },
+    evaluatedReviewHeadSha: "head-a",
+    attemptedAt: "2026-06-07T01:00:00Z",
+    reviewThreadsToProcess: [
+      createReviewThread({
+        id: "thread-codex",
+        comments: {
+          nodes: [
+            {
+              id: "comment-codex",
+              body: "P2: Preserve the retry state before sending this back into Codex.",
+              createdAt: "2026-06-07T00:55:00Z",
+              url: "https://example.test/pr/2270#discussion_r1",
+              author: {
+                login: "chatgpt-codex-connector",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+  });
+
+  assert.deepEqual(patch.review_loop_retry_state, [
+    {
+      fingerprint: "pr=2270|head=head-a|thread=thread-codex|comment=comment-codex",
+      pr_number: 2270,
+      head_sha: "head-a",
+      thread_id: "thread-codex",
+      latest_comment_fingerprint: "comment-codex",
+      attempts: 1,
+      first_attempted_at: "2026-06-07T01:00:00Z",
+      last_attempted_at: "2026-06-07T01:00:00Z",
+    },
+  ]);
 });
 
 test("nextProcessedReviewThreadPatch persists local-review no-change current-head verification evidence", () => {
@@ -111,12 +160,14 @@ test("nextProcessedReviewThreadPatch persists local-review no-change current-hea
   ];
 
   const patch = nextProcessedReviewThreadPatch({
+    config: createConfig({ reviewBotLogins: ["chatgpt-codex-connector"] }),
     preRunState: "local_review_fix",
     record: {
       processed_review_thread_ids: [],
       processed_review_thread_fingerprints: [],
+      review_loop_retry_state: [],
     },
-    currentPr: { headRefOid: headSha },
+    currentPr: { number: 498, headRefOid: headSha },
     evaluatedReviewHeadSha: headSha,
     reviewThreadsToProcess: reviewThreads,
     verifiedNoSourceChangeReviewThreads: reviewThreads,
@@ -141,12 +192,14 @@ test("nextProcessedReviewThreadPatch scopes local-review no-change evidence to v
   const verifiedThread = createReviewThread({ id: "thread-verified" });
   const unrelatedThread = createReviewThread({ id: "thread-unrelated" });
   const patch = nextProcessedReviewThreadPatch({
+    config: createConfig({ reviewBotLogins: ["chatgpt-codex-connector"] }),
     preRunState: "local_review_fix",
     record: {
       processed_review_thread_ids: [],
       processed_review_thread_fingerprints: [],
+      review_loop_retry_state: [],
     },
-    currentPr: { headRefOid: headSha },
+    currentPr: { number: 498, headRefOid: headSha },
     evaluatedReviewHeadSha: headSha,
     reviewThreadsToProcess: [verifiedThread, unrelatedThread],
     verifiedNoSourceChangeReviewThreads: [verifiedThread],
@@ -457,12 +510,14 @@ test("selectVerifiedNoSourceChangeReviewThreads fails closed without exact threa
 
 test("nextProcessedReviewThreadPatch fails closed for local-review current-head threads without no-change verification", () => {
   const patch = nextProcessedReviewThreadPatch({
+    config: createConfig(),
     preRunState: "local_review_fix",
     record: {
       processed_review_thread_ids: [],
       processed_review_thread_fingerprints: [],
+      review_loop_retry_state: [],
     },
-    currentPr: { headRefOid: "head-a" },
+    currentPr: { number: 498, headRefOid: "head-a" },
     evaluatedReviewHeadSha: "head-a",
     reviewThreadsToProcess: [createReviewThread({ id: "thread-1" })],
   });
@@ -529,6 +584,56 @@ test("selectReviewThreadsForTurn re-includes processed Codex Connector must-fix 
 
   assert.equal(selected.length, 1);
   assert.equal(selected[0]?.id, "thread-1");
+});
+
+test("selectReviewThreadsForTurn excludes Codex Connector must-fix threads after review-loop retry budget exhaustion", () => {
+  const selected = selectReviewThreadsForTurn({
+    config: createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector[bot]"],
+    }),
+    preRunState: "addressing_review",
+    record: {
+      processed_review_thread_ids: ["thread-1@head-a"],
+      processed_review_thread_fingerprints: ["thread-1@head-a#comment-1"],
+      review_loop_retry_state: [
+        {
+          fingerprint: "pr=116|head=head-a|thread=thread-1|comment=comment-1",
+          pr_number: 116,
+          head_sha: "head-a",
+          thread_id: "thread-1",
+          latest_comment_fingerprint: "comment-1",
+          attempts: 1,
+          first_attempted_at: "2026-06-07T01:00:00Z",
+          last_attempted_at: "2026-06-07T01:00:00Z",
+        },
+      ],
+      last_head_sha: "head-a",
+      review_follow_up_head_sha: null,
+      review_follow_up_remaining: 0,
+    },
+    pr: createPullRequest({ number: 116, headRefOid: "head-a" }),
+    reviewThreads: [
+      createReviewThread({
+        id: "thread-1",
+        comments: {
+          nodes: [
+            {
+              id: "comment-1",
+              body: "P2: Preserve failed restore cleanup as a blocking verification failure.",
+              createdAt: "2026-06-07T01:05:00Z",
+              url: "https://example.test/pr/116#discussion_r1",
+              author: {
+                login: "chatgpt-codex-connector[bot]",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+  });
+
+  assert.deepEqual(selected, []);
 });
 
 test("selectReviewThreadsForTurn switches churned Codex reviews from pending-only to root-cause repair", () => {

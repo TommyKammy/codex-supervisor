@@ -565,6 +565,77 @@ test("buildStaleReviewBotRemediation rejects review-bot-only checks as verified 
   assert.equal(diagnostics?.autoRepairSuppressedReason, "repeat_stop_exhausted");
 });
 
+test("buildStaleReviewBotThreadDiagnostics reports repeat-stop when review-loop retry state is exhausted", () => {
+  const issueNumber = 2270;
+  const prNumber = 2273;
+  const headSha = "b8500b1addreviewloopretrystate";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-review-loop-budget",
+    commentId: "comment-review-loop-budget",
+    path: "src/review-handling.ts",
+    line: 42,
+    severity: "P2",
+    commentBody: "P2: Preserve review-loop retry budget before another repair turn.",
+    discussionUrl: "https://example.test/pr/2273#discussion_r2270",
+    currentHeadNoMajorReview: {
+      requestedAt: "2026-06-07T01:03:00Z",
+      observedAt: "2026-06-07T01:07:00Z",
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    latest_local_ci_result: null,
+    timeline_artifacts: [],
+    last_tracked_pr_repeat_failure_decision: null,
+    review_loop_retry_state: [
+      {
+        fingerprint: `pr=${prNumber}|head=${headSha}|thread=${scenario.reviewThread.id}|comment=comment-review-loop-budget`,
+        pr_number: prNumber,
+        head_sha: headSha,
+        thread_id: scenario.reviewThread.id,
+        latest_comment_fingerprint: "comment-review-loop-budget",
+        attempts: 1,
+        first_attempted_at: "2026-06-07T01:00:00Z",
+        last_attempted_at: "2026-06-07T01:00:00Z",
+      },
+    ],
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    currentHeadCiGreenAt: "2026-06-07T01:02:00Z",
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotTopLevelReviewStrength: "blocking",
+  });
+  const checks = [{ name: "repo-ci", state: "SUCCESS", bucket: "pass" as const }];
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks,
+    reviewThreads: [scenario.reviewThread],
+  });
+  const diagnostics = buildStaleReviewBotThreadDiagnostics({
+    config,
+    record,
+    pr,
+    checks,
+    reviewThreads: [scenario.reviewThread],
+    remediation,
+  });
+
+  assert.equal(remediation?.classification, "unknown_needs_operator");
+  assert.equal(diagnostics?.repeatStopExhausted, "yes");
+  assert.equal(diagnostics?.autoRepairSuppressedReason, "repeat_stop_exhausted");
+});
+
 test("buildStaleReviewBotRemediation fails closed when covered evidence lacks current-head Codex no-major signal", () => {
   const issueNumber = 110;
   const prNumber = 115;

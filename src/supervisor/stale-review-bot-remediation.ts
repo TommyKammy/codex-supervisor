@@ -4,6 +4,7 @@ import {
   latestReviewThreadCommentFingerprint,
   processedReviewThreadFingerprintKey,
   processedReviewThreadKey,
+  reviewLoopRetryBudgetExhaustedForThread,
 } from "../review-handling";
 import {
   clusterConfiguredBotReviewThreads,
@@ -1157,10 +1158,17 @@ export function buildStaleReviewBotThreadDiagnostics(args: {
     remediation.classification === "metadata_only_missing_current_head_review" &&
     remediation.codexCurrentHeadReviewState === "missing";
   const isVerifiedResidue = isVerifiedStaleResidueClassification(remediation.classification);
+  const reviewLoopRetryExhausted =
+    config && args.pr && actionableMustFixThreads.length > 0
+      ? actionableMustFixThreads.every((thread) =>
+          reviewLoopRetryBudgetExhaustedForThread(args.record, args.pr!, thread),
+        )
+      : false;
   const repeatStopExhausted =
     currentHeadReviewRequestPending || isVerifiedResidue
       ? false
-      : args.record.last_tracked_pr_repeat_failure_decision === "stop_no_progress" ||
+      : reviewLoopRetryExhausted ||
+        args.record.last_tracked_pr_repeat_failure_decision === "stop_no_progress" ||
         (config && args.pr
           ? configuredBotReviewFollowUpState(config, args.record, args.pr, configuredThreads) === "exhausted"
           : false);

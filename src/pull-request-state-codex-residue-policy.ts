@@ -2,6 +2,10 @@ import {
   codexConnectorCurrentHeadReviewReadiness,
 } from "./codex-connector-review-request-decision";
 import {
+  hasProcessedReviewThread,
+  reviewLoopRetryBudgetExhaustedForThread,
+} from "./review-handling";
+import {
   codexConnectorMustFixReviewThreads,
   codexConnectorNitpickOnlyReviewThreads,
   evaluateCodexConnectorConvergencePolicy,
@@ -26,7 +30,6 @@ import {
   latestReviewCommentAuthorIsAllowedBot,
   manualReviewThreads,
 } from "./review-thread-reporting";
-import { hasProcessedReviewThread } from "./review-handling";
 import {
   mergeConflictDetected,
   summarizeChecks,
@@ -321,8 +324,7 @@ export function processedCodexConnectorMustFixThreadsExhaustedRepeatBudget(args:
   if (
     !configuredReviewProviderKinds(args.config).includes("codex") ||
     args.codexConnectorMustFixThreads.length === 0 ||
-    args.manualThreads.length > 0 ||
-    args.record.last_tracked_pr_repeat_failure_decision !== "stop_no_progress"
+    args.manualThreads.length > 0
   ) {
     return false;
   }
@@ -332,9 +334,16 @@ export function processedCodexConnectorMustFixThreadsExhaustedRepeatBudget(args:
     return false;
   }
 
-  return args.codexConnectorMustFixThreads.every((thread) =>
-    hasProcessedReviewThread(args.record, args.pr, thread),
+  const exhaustedByReviewLoopRetryState = args.codexConnectorMustFixThreads.every((thread) =>
+    reviewLoopRetryBudgetExhaustedForThread(args.record, args.pr, thread),
   );
+  const exhaustedByLegacyRepeatStop =
+    args.record.last_tracked_pr_repeat_failure_decision === "stop_no_progress" &&
+    args.codexConnectorMustFixThreads.every((thread) =>
+      hasProcessedReviewThread(args.record, args.pr, thread),
+    );
+
+  return exhaustedByReviewLoopRetryState || exhaustedByLegacyRepeatStop;
 }
 
 function isMergeCriticalPullRequest(pr: GitHubPullRequest): boolean {
