@@ -1766,6 +1766,14 @@ test("status --why names missing verification for manual-review Codex no-major r
   );
   assert.match(
     status,
+    /^stale_review_bot_terminal_stop issue=#171 pr=#180 reason=retry_budget_exhausted classification=unknown_needs_operator head_freshness=processed_on_current_head:unknown,current_head_success:yes review_thread_classification=unresolved:9,must_fix:9,verified_residue:0 auto_repair_suppressed_reason=repeat_stop_exhausted next_action=manual_review_thread_handling$/m,
+  );
+  assert.match(
+    explanation,
+    /^stale_review_bot_terminal_stop issue=#171 pr=#180 reason=retry_budget_exhausted classification=unknown_needs_operator head_freshness=processed_on_current_head:unknown,current_head_success:yes review_thread_classification=unresolved:9,must_fix:9,verified_residue:0 auto_repair_suppressed_reason=repeat_stop_exhausted next_action=manual_review_thread_handling$/m,
+  );
+  assert.match(
+    status,
     /^codex_connector_operator_diagnostic interpretation=stale_review_residue current_head_sha=12b099926c39c8b7502176339ea34750e6a807a4 latest_configured_bot_review_sha=none current_head_review_signal=observed actionable_current_diff_threads=unknown next_action=inspect_exact_review_thread_then_resolve_or_leave_manual_note$/m,
   );
   assert.doesNotMatch(status, /^codex_connector_convergence\b/m);

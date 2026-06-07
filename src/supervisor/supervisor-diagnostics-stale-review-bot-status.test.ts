@@ -207,6 +207,10 @@ test("status --why classifies current-head processed configured-bot success as s
     status,
     /^stale_review_bot_remediation issue=#365 pr=#372 reason=stale_review_bot code_ci=green current_head_sha=5de0d3844468d4a77cab512f8dcbe46171166c3a processed_on_current_head=yes classification=metadata_only review_thread_url=https:\/\/example\.test\/pr\/372#discussion_r365 manual_next_step=inspect_exact_review_thread_then_resolve_or_leave_manual_note summary=stale_configured_bot_thread_metadata_only$/m,
   );
+  assert.match(
+    status,
+    /^stale_review_bot_terminal_stop issue=#365 pr=#372 reason=metadata_only_review_thread_resolution_pending classification=metadata_only head_freshness=processed_on_current_head:yes,current_head_success:yes review_thread_classification=unresolved:1,must_fix:\d+,verified_residue:0 auto_repair_suppressed_reason=not_verified_stale_residue next_action=manual_review_thread_handling$/m,
+  );
   assert.match(status, /^operator_action action=resolve_stale_review_bot /m);
   assert.doesNotMatch(status, /provider_outage_suspected/);
   assert.doesNotMatch(status, /stale_review_bot_provider_signal_missing/);

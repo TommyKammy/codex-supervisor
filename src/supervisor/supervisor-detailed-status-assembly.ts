@@ -11,6 +11,7 @@ import {
 } from "./stale-review-bot-remediation";
 import {
   formatStaleReviewBotRemediationLine,
+  formatStaleReviewBotTerminalStopLine,
   formatStaleReviewBotThreadDiagnosticsLine,
 } from "./stale-review-bot-diagnostics-presenter";
 import type { IssueRunRecord } from "../core/types";
@@ -190,6 +191,13 @@ export function buildInactiveDetailedStatusLines(
     });
     if (diagnostics) {
       lines.push(formatStaleReviewBotThreadDiagnosticsLine(diagnostics));
+      const terminalStopLine = formatStaleReviewBotTerminalStopLine({
+        remediation: staleReviewBotRemediation,
+        diagnostics,
+      });
+      if (terminalStopLine) {
+        lines.push(terminalStopLine);
+      }
     }
   }
   if (latestRecord && pr) {

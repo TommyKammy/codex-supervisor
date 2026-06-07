@@ -135,6 +135,7 @@ test("buildRuntimeRecoverySummary reuses restart recommendation vocabulary and c
       detailedStatusLines: [
         "loop_runtime_blocker issue=#171 reason=recoverable_active_tracked_work_waiting_for_loop expected=loop_runtime_state_running_then_tracked_issue_advances",
         "stale_review_bot_remediation issue=#171 pr=#271 reason=stale_review_bot classification=metadata_only manual_next_step=inspect_exact_review_thread_then_resolve_or_leave_manual_note",
+        "stale_review_bot_terminal_stop issue=#171 pr=#271 reason=retry_budget_exhausted classification=unknown_needs_operator head_freshness=processed_on_current_head:yes,current_head_success:yes review_thread_classification=unresolved:1,must_fix:1,verified_residue:0 auto_repair_suppressed_reason=repeat_stop_exhausted next_action=manual_review_thread_handling",
         "no_active_tracked_record issue=#178 classification=repair_already_queued state=repairing_ci reason=repairable_path_hygiene_retry_state",
       ],
     }),
@@ -158,6 +159,11 @@ test("buildRuntimeRecoverySummary reuses restart recommendation vocabulary and c
           kind: "stale_review_bot_remediation",
           summary:
             "stale_review_bot_remediation issue=#171 pr=#271 reason=stale_review_bot classification=metadata_only manual_next_step=inspect_exact_review_thread_then_resolve_or_leave_manual_note",
+        },
+        {
+          kind: "stale_review_bot_terminal_stop",
+          summary:
+            "stale_review_bot_terminal_stop issue=#171 pr=#271 reason=retry_budget_exhausted classification=unknown_needs_operator head_freshness=processed_on_current_head:yes,current_head_success:yes review_thread_classification=unresolved:1,must_fix:1,verified_residue:0 auto_repair_suppressed_reason=repeat_stop_exhausted next_action=manual_review_thread_handling",
         },
         {
           kind: "repairable_path_hygiene",
