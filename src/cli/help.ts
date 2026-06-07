@@ -44,6 +44,8 @@ Inspect commands:
 
 Repair commands:
   requeue <issue-number>            Requeue a blocked or failed issue.
+  release-codex-churn-latch <issue-number>
+                                    Release a stopped Codex Connector churn latch.
   reset-corrupt-json-state          Move corrupt JSON state aside after inspection.
 
 Maintenance commands:

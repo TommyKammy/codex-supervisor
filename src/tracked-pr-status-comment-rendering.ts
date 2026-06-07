@@ -243,6 +243,7 @@ export function buildTrackedPrPersistentStatusComment(args: {
 }
 
 export function buildTrackedPrCodexConnectorChurnStatusComment(args: {
+  issueNumber: number;
   pr: Pick<GitHubPullRequest, "headRefOid">;
   dominantFile: string;
   currentEffectiveMustFixCount: number | string;
@@ -263,7 +264,7 @@ export function buildTrackedPrCodexConnectorChurnStatusComment(args: {
     ...(args.dossierAttemptMarker ? [`- dossier attempt marker: \`${args.dossierAttemptMarker}\``] : []),
     ...args.representativeThreadUrls.map((url) => `- representative thread: ${url}`),
     "- automatic retry: no",
-    "- next action: manually inspect the dominant file and representative Codex Connector threads before restarting the supervisor.",
+    `- next action: manually inspect the dominant file and representative Codex Connector threads, then run \`release-codex-churn-latch ${args.issueNumber}\` before restarting automation for this stopped fingerprint.`,
   ].join("\n");
 }
 

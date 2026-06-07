@@ -476,7 +476,7 @@ test("syncTrackedPrPersistentStatusComment comments with clustered Codex churn e
   );
   assert.match(commentBodies[0] ?? "", /dossier attempt marker: `codex-connector-stable-same-file-churn:/);
   assert.match(commentBodies[0] ?? "", /https:\/\/example\.test\/pr\/1390#discussion_current_0/);
-  assert.match(commentBodies[0] ?? "", /manual.*before restarting the supervisor/i);
+  assert.match(commentBodies[0] ?? "", /manual.*release-codex-churn-latch 102.*before restarting automation/i);
   assert.match(
     commentBodies[0] ?? "",
     /<!-- codex-supervisor:tracked-pr-status-comment issue=102 pr=116 kind=status -->/,

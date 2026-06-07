@@ -682,14 +682,14 @@ The WebUI uses the same config and the same `SupervisorService` boundary as the 
 node dist/index.js web --config /path/to/supervisor.config.json
 ```
 
-Current safe command surface:
+Current WebUI command surface:
 
 - `run-once`
 - `requeue`
 - `prune-orphaned-workspaces`
 - `reset-corrupt-json-state`
 
-Use the dashboard when you want a browser view of the same supervisor state, not a separate execution model.
+Use the dashboard when you want a browser view of the same supervisor state, not a separate execution model. CLI-only recovery commands, such as `release-codex-churn-latch <issue-number>` for explicitly releasing a stopped Codex Connector churn latch after manual inspection, are intentionally not implied by this WebUI surface.
 
 ## Related Docs
 

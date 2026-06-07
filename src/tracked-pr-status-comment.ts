@@ -396,6 +396,7 @@ function codexConnectorChurnStatusComment(
   return {
     blockerSignature,
     body: buildTrackedPrCodexConnectorChurnStatusComment({
+      issueNumber: args.record.issue_number,
       pr: args.pr,
       dominantFile: churnSnapshot.progress.dominantFile,
       currentEffectiveMustFixCount: churnSnapshot.progress.currentEffectiveMustFixCount,
