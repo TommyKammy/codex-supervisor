@@ -14,12 +14,15 @@ import { loadLocalReviewRepairContext } from "./local-review/repair-context";
 import {
   hasProcessedReviewThread,
   latestReviewThreadCommentFingerprint,
+  nextReviewLoopRetryStateForThread,
   processedReviewThreadFingerprintKey,
   processedReviewThreadKey,
+  reviewLoopRetryBudgetExhaustedForThread,
 } from "./review-handling";
 import {
   buildCodexConnectorReviewChurnDiagnostic,
   codexConnectorMustFixReviewThreads,
+  latestCodexConnectorReviewCommentFingerprint,
 } from "./codex-connector-review-policy";
 import {
   actionableConfiguredBotReviewThreads,
@@ -174,6 +177,7 @@ export function selectReviewThreadsForTurn(args: {
     | "last_head_sha"
     | "review_follow_up_head_sha"
     | "review_follow_up_remaining"
+    | "review_loop_retry_state"
   >;
   pr: GitHubPullRequest | null;
   reviewThreads: ReviewThread[];
@@ -190,10 +194,23 @@ export function selectReviewThreadsForTurn(args: {
   const activeConfiguredBotThreads = configuredBotReviewThreads(args.config as SupervisorConfig, args.reviewThreads).filter(
     (thread) => !thread.isResolved && !thread.isOutdated,
   );
-  const pendingThreads = actionableFollowUpThreads.filter(
-    (thread) => !hasProcessedReviewThread(args.record, currentPr, thread),
+  const codexConnectorMustFixThreadCandidates = codexConnectorMustFixReviewThreads(activeConfiguredBotThreads);
+  const codexConnectorMustFixThreadIds = new Set(codexConnectorMustFixThreadCandidates.map((thread) => thread.id));
+  const retryFingerprintForThread = (thread: ReviewThread) =>
+    codexConnectorMustFixThreadIds.has(thread.id) ? latestCodexConnectorReviewCommentFingerprint(thread) : undefined;
+  const reviewLoopRetryBudgetAvailable = (thread: ReviewThread, latestCommentFingerprintOverride?: string | null) =>
+    !reviewLoopRetryBudgetExhaustedForThread(args.record, currentPr, thread, 1, latestCommentFingerprintOverride);
+  const availableActionableFollowUpThreads = actionableFollowUpThreads.filter((thread) =>
+    reviewLoopRetryBudgetAvailable(thread, retryFingerprintForThread(thread)),
   );
-  const codexConnectorMustFixThreads = codexConnectorMustFixReviewThreads(activeConfiguredBotThreads);
+  const pendingThreads = actionableFollowUpThreads.filter(
+    (thread) =>
+      !hasProcessedReviewThread(args.record, currentPr, thread, retryFingerprintForThread(thread)) &&
+      reviewLoopRetryBudgetAvailable(thread, retryFingerprintForThread(thread)),
+  );
+  const codexConnectorMustFixThreads = codexConnectorMustFixThreadCandidates.filter((thread) =>
+    reviewLoopRetryBudgetAvailable(thread, latestCodexConnectorReviewCommentFingerprint(thread)),
+  );
   const codexConnectorReviewChurnDiagnostic = buildCodexConnectorReviewChurnDiagnostic(
     args.config,
     activeConfiguredBotThreads,
@@ -217,9 +234,9 @@ export function selectReviewThreadsForTurn(args: {
   return (
     args.record.review_follow_up_head_sha === currentPr.headRefOid &&
     (args.record.review_follow_up_remaining ?? 0) > 0 &&
-    actionableFollowUpThreads.length > 0
+    availableActionableFollowUpThreads.length > 0
   )
-    ? actionableFollowUpThreads
+    ? availableActionableFollowUpThreads
     : pendingThreads;
 }
 
@@ -387,14 +404,19 @@ export async function prepareCodexTurnPrompt(args: {
 }
 
 export function nextProcessedReviewThreadPatch(args: {
+  config: Pick<SupervisorConfig, "reviewBotLogins" | "configuredReviewProviders">;
   preRunState: IssueRunRecord["state"];
-  record: Pick<IssueRunRecord, "processed_review_thread_ids" | "processed_review_thread_fingerprints">;
-  currentPr: Pick<GitHubPullRequest, "headRefOid"> | null;
+  record: Pick<
+    IssueRunRecord,
+    "processed_review_thread_ids" | "processed_review_thread_fingerprints" | "review_loop_retry_state"
+  >;
+  currentPr: Pick<GitHubPullRequest, "number" | "headRefOid"> | null;
   evaluatedReviewHeadSha: string;
   reviewThreadsToProcess: ReviewThread[];
   persistVerifiedNoSourceChangeCurrentHead?: boolean;
   verifiedNoSourceChangeReviewThreads?: ReviewThread[];
-}): Pick<IssueRunRecord, "processed_review_thread_ids" | "processed_review_thread_fingerprints"> {
+  attemptedAt?: string;
+}): Pick<IssueRunRecord, "processed_review_thread_ids" | "processed_review_thread_fingerprints" | "review_loop_retry_state"> {
   const shouldPersistCurrentHeadThreadEvidence =
     args.preRunState === "addressing_review" ||
     (args.preRunState === "local_review_fix" && args.persistVerifiedNoSourceChangeCurrentHead === true);
@@ -427,6 +449,39 @@ export function nextProcessedReviewThreadPatch(args: {
             : [];
         })
       : [];
+  const unresolvedConfiguredThreadsToProcess = configuredBotReviewThreads(
+    args.config as SupervisorConfig,
+    args.reviewThreadsToProcess,
+  ).filter((thread) => !thread.isResolved && !thread.isOutdated);
+  const actionableThreadsToTrack = actionableConfiguredBotReviewThreads(
+    args.config as SupervisorConfig,
+    args.reviewThreadsToProcess,
+  ).filter((thread) => !thread.isResolved && !thread.isOutdated);
+  const codexMustFixThreadsToTrack = codexConnectorMustFixReviewThreads(unresolvedConfiguredThreadsToProcess);
+  const retryThreadsToTrack = uniqueReviewThreadsInOrder(
+    unresolvedConfiguredThreadsToProcess,
+    new Set([...actionableThreadsToTrack, ...codexMustFixThreadsToTrack].map((thread) => thread.id)),
+  );
+  const codexMustFixThreadIdsToTrack = new Set(codexMustFixThreadsToTrack.map((thread) => thread.id));
+  const reviewLoopRetryState =
+    args.preRunState === "addressing_review" &&
+    args.currentPr &&
+    args.currentPr.headRefOid === args.evaluatedReviewHeadSha
+      ? retryThreadsToTrack.reduce(
+            (state, thread) =>
+              nextReviewLoopRetryStateForThread({
+                record: { review_loop_retry_state: state },
+                pr: args.currentPr!,
+                thread,
+                attemptedAt: args.attemptedAt ?? new Date().toISOString(),
+                latestCommentFingerprintOverride: codexMustFixThreadIdsToTrack.has(thread.id)
+                  ? latestCodexConnectorReviewCommentFingerprint(thread)
+                  : undefined,
+              }),
+            args.record.review_loop_retry_state ?? [],
+          )
+          .slice(-200)
+      : args.record.review_loop_retry_state ?? [];
 
   return {
     processed_review_thread_ids:
@@ -451,6 +506,7 @@ export function nextProcessedReviewThreadPatch(args: {
             ]),
           ).slice(-200)
         : args.record.processed_review_thread_fingerprints,
+    review_loop_retry_state: reviewLoopRetryState,
   };
 }
 

@@ -1186,6 +1186,7 @@ export async function executeCodexTurnPhase(
           !workspaceStatus.hasUncommittedChanges &&
           changedFilesAfterPublication.length === 0;
         const processedReviewThreadPatch = nextProcessedReviewThreadPatch({
+          config,
           preRunState,
           record,
           currentPr: pr,

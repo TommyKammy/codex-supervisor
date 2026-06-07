@@ -50,8 +50,9 @@ export function reviewLoopRetryFingerprint(args: {
 export function reviewLoopRetryFingerprintForThread(
   pr: Pick<GitHubPullRequest, "number" | "headRefOid">,
   thread: Pick<ReviewThread, "id" | "comments">,
+  latestCommentFingerprintOverride?: string | null,
 ): string | null {
-  const latestCommentFingerprint = latestReviewThreadCommentFingerprint(thread);
+  const latestCommentFingerprint = latestCommentFingerprintOverride ?? latestReviewThreadCommentFingerprint(thread);
   if (!latestCommentFingerprint) {
     return null;
   }
@@ -68,8 +69,9 @@ export function reviewLoopRetryStateEntryForThread(
   record: Pick<IssueRunRecord, "review_loop_retry_state">,
   pr: Pick<GitHubPullRequest, "number" | "headRefOid">,
   thread: Pick<ReviewThread, "id" | "comments">,
+  latestCommentFingerprintOverride?: string | null,
 ): ReviewLoopRetryStateEntry | null {
-  const fingerprint = reviewLoopRetryFingerprintForThread(pr, thread);
+  const fingerprint = reviewLoopRetryFingerprintForThread(pr, thread, latestCommentFingerprintOverride);
   if (!fingerprint) {
     return null;
   }
@@ -81,8 +83,22 @@ export function reviewLoopRetryAttemptCountForThread(
   record: Pick<IssueRunRecord, "review_loop_retry_state">,
   pr: Pick<GitHubPullRequest, "number" | "headRefOid">,
   thread: Pick<ReviewThread, "id" | "comments">,
+  latestCommentFingerprintOverride?: string | null,
 ): number {
-  return reviewLoopRetryStateEntryForThread(record, pr, thread)?.attempts ?? 0;
+  return reviewLoopRetryStateEntryForThread(record, pr, thread, latestCommentFingerprintOverride)?.attempts ?? 0;
+}
+
+export function reviewLoopRetryBudgetExhaustedForThread(
+  record: Pick<IssueRunRecord, "review_loop_retry_state">,
+  pr: Pick<GitHubPullRequest, "number" | "headRefOid">,
+  thread: Pick<ReviewThread, "id" | "comments">,
+  retryLimit = 1,
+  latestCommentFingerprintOverride?: string | null,
+): boolean {
+  if (retryLimit <= 0) {
+    return true;
+  }
+  return reviewLoopRetryAttemptCountForThread(record, pr, thread, latestCommentFingerprintOverride) >= retryLimit;
 }
 
 export function nextReviewLoopRetryStateForThread(args: {
@@ -90,8 +106,10 @@ export function nextReviewLoopRetryStateForThread(args: {
   pr: Pick<GitHubPullRequest, "number" | "headRefOid">;
   thread: Pick<ReviewThread, "id" | "comments">;
   attemptedAt: string;
+  latestCommentFingerprintOverride?: string | null;
 }): ReviewLoopRetryStateEntry[] {
-  const latestCommentFingerprint = latestReviewThreadCommentFingerprint(args.thread);
+  const latestCommentFingerprint =
+    args.latestCommentFingerprintOverride ?? latestReviewThreadCommentFingerprint(args.thread);
   if (!latestCommentFingerprint) {
     return [...(args.record.review_loop_retry_state ?? [])];
   }
@@ -128,11 +146,12 @@ export function hasProcessedReviewThread(
   >,
   pr: Pick<GitHubPullRequest, "headRefOid">,
   thread: Pick<ReviewThread, "id" | "comments">,
+  latestCommentFingerprintOverride?: string | null,
 ): boolean {
   const processedKeys = record.processed_review_thread_ids ?? [];
   const processedFingerprints = record.processed_review_thread_fingerprints ?? [];
   const headScopedKey = processedReviewThreadKey(thread.id, pr.headRefOid);
-  const latestCommentFingerprint = latestReviewThreadCommentFingerprint(thread);
+  const latestCommentFingerprint = latestCommentFingerprintOverride ?? latestReviewThreadCommentFingerprint(thread);
   if (
     latestCommentFingerprint &&
     processedFingerprints.includes(

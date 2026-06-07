@@ -4,12 +4,14 @@ import {
   latestReviewThreadCommentFingerprint,
   processedReviewThreadFingerprintKey,
   processedReviewThreadKey,
+  reviewLoopRetryBudgetExhaustedForThread,
 } from "../review-handling";
 import {
   clusterConfiguredBotReviewThreads,
   codexConnectorMustFixReviewThreads,
   commitShasEqualForComparison,
   evaluateCodexConnectorConvergencePolicy,
+  latestCodexConnectorReviewCommentFingerprint,
   latestCodexConnectorPSeverity,
   latestCodexConnectorReviewComment,
 } from "../codex-connector-review-policy";
@@ -1148,7 +1150,8 @@ export function buildStaleReviewBotThreadDiagnostics(args: {
   const reviewThreads = args.reviewThreads ?? [];
   const configuredThreads = config ? configuredBotReviewThreads(config, reviewThreads) : [];
   const unresolvedConfiguredThreads = configuredThreads.filter((thread) => !thread.isResolved && !thread.isOutdated);
-  const actionableMustFixThreads = config && configuredReviewProviderKinds(config).includes("codex")
+  const codexConfigured = config ? configuredReviewProviderKinds(config).includes("codex") : false;
+  const actionableMustFixThreads = config && codexConfigured
     ? codexConnectorMustFixReviewThreads(reviewThreads)
     : config && args.pr
       ? pendingBotReviewThreads(config, args.record, args.pr, configuredThreads)
@@ -1157,10 +1160,23 @@ export function buildStaleReviewBotThreadDiagnostics(args: {
     remediation.classification === "metadata_only_missing_current_head_review" &&
     remediation.codexCurrentHeadReviewState === "missing";
   const isVerifiedResidue = isVerifiedStaleResidueClassification(remediation.classification);
+  const reviewLoopRetryExhausted =
+    config && args.pr && actionableMustFixThreads.length > 0
+      ? actionableMustFixThreads.every((thread) =>
+          reviewLoopRetryBudgetExhaustedForThread(
+            args.record,
+            args.pr!,
+            thread,
+            1,
+            codexConfigured ? latestCodexConnectorReviewCommentFingerprint(thread) : undefined,
+          ),
+        )
+      : false;
   const repeatStopExhausted =
     currentHeadReviewRequestPending || isVerifiedResidue
       ? false
-      : args.record.last_tracked_pr_repeat_failure_decision === "stop_no_progress" ||
+      : reviewLoopRetryExhausted ||
+        args.record.last_tracked_pr_repeat_failure_decision === "stop_no_progress" ||
         (config && args.pr
           ? configuredBotReviewFollowUpState(config, args.record, args.pr, configuredThreads) === "exhausted"
           : false);
