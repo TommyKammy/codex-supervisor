@@ -158,6 +158,20 @@ test("review policy input snapshots provider, PR, thread vocabulary, and process
   assert.equal(manualInput?.findingKind, "none");
   assert.deepEqual(manualInput?.vocabulary, ["manual_thread"]);
 
+  const idOnlyInput = buildReviewPolicyInput({
+    config,
+    pr,
+    record: {
+      provider_success_head_sha: null,
+      external_review_head_sha: null,
+      processed_review_thread_ids: ["thread-p3-softened@head-new"],
+      processed_review_thread_fingerprints: [],
+    },
+    reviewThreads: [p3NitpickThread],
+  }).threads[0];
+  assert.equal(idOnlyInput?.processedEvidence.processedOnCurrentHead, true);
+  assert.equal(idOnlyInput?.headRelation, "current_head");
+
   p2Thread.comments.nodes[0]!.body = "P3: Nitpick after snapshot mutation.";
   assert.equal(p2Input?.comments[0]?.body, "P2: Preserve failed restore cleanup as a blocking verification failure.");
 });

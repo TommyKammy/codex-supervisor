@@ -326,11 +326,14 @@ export function buildReviewPolicyInput(args: {
       );
       const isManualThread = !thread.isResolved && !thread.isOutdated && comments.length > 0 && !isConfiguredBotThread;
       const latestCommentFingerprintValue = latestCommentFingerprint(thread);
+      const processedThreadKeys = [...(args.record.processed_review_thread_ids ?? [])];
+      const processedThreadFingerprintKeys = [...(args.record.processed_review_thread_fingerprints ?? [])];
       const processedOnCurrentHeadValue = Boolean(
-        latestCommentFingerprintValue &&
-          (args.record.processed_review_thread_fingerprints ?? []).includes(
-            processedThreadFingerprintKey(thread.id, args.pr.headRefOid, latestCommentFingerprintValue),
-          ),
+        processedThreadKeys.includes(processedThreadKey(thread.id, args.pr.headRefOid)) ||
+          (latestCommentFingerprintValue &&
+            processedThreadFingerprintKeys.includes(
+              processedThreadFingerprintKey(thread.id, args.pr.headRefOid, latestCommentFingerprintValue),
+            )),
       );
       const processedOnPriorHeadValue = processedOnPriorHead({
         record: args.record,
@@ -362,8 +365,8 @@ export function buildReviewPolicyInput(args: {
           latestCommentFingerprint: latestCommentFingerprintValue,
           processedOnCurrentHead: processedOnCurrentHeadValue,
           processedOnPriorHead: processedOnPriorHeadValue,
-          processedThreadKeys: [...(args.record.processed_review_thread_ids ?? [])],
-          processedThreadFingerprintKeys: [...(args.record.processed_review_thread_fingerprints ?? [])],
+          processedThreadKeys,
+          processedThreadFingerprintKeys,
         },
         vocabulary: reviewPolicyThreadVocabulary({
           isConfiguredBotThread,
