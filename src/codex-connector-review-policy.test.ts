@@ -81,6 +81,10 @@ test("review policy input snapshots provider, PR, thread vocabulary, and process
     id: "thread-p3-softened",
     body: "P3: Nitpick: prefer a shorter helper name for readability.",
   });
+  const p3RiskThread = codexThread({
+    id: "thread-p3-risk",
+    body: "P3: This cleanup can cause a regression in the restore failure path.",
+  });
   const manualThread = createReviewThread({
     id: "thread-manual",
     comments: {
@@ -120,7 +124,7 @@ test("review policy input snapshots provider, PR, thread vocabulary, and process
         "thread-p2@head-old#comment-1",
       ],
     },
-    reviewThreads: [p2Thread, p3NitpickThread, manualThread],
+    reviewThreads: [p2Thread, p3NitpickThread, p3RiskThread, manualThread],
   });
 
   assert.deepEqual(input.providerIdentity, {
@@ -152,6 +156,15 @@ test("review policy input snapshots provider, PR, thread vocabulary, and process
     "current_head_thread",
     "configured_bot_thread",
     "softened_p3_advisory",
+  ]);
+
+  const p3RiskInput = input.threads.find((thread) => thread.id === "thread-p3-risk");
+  assert.equal(p3RiskInput?.findingKind, "must_fix");
+  assert.deepEqual(p3RiskInput?.vocabulary, [
+    "stale_commit_thread",
+    "configured_bot_thread",
+    "must_fix_finding",
+    "escalated_p3",
   ]);
 
   const manualInput = input.threads.find((thread) => thread.id === "thread-manual");

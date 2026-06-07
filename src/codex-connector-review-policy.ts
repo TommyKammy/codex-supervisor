@@ -27,11 +27,7 @@ export type ReviewPolicyThreadVocabulary =
   | "escalated_p3"
   | "must_fix_finding";
 
-export type ReviewPolicyFindingKind =
-  | "none"
-  | "must_fix"
-  | "softened_p3_advisory"
-  | "escalated_p3";
+export type ReviewPolicyFindingKind = "none" | "must_fix" | "softened_p3_advisory";
 
 export type ReviewPolicyHeadRelation = "current_head" | "stale_commit" | "unknown";
 
@@ -243,14 +239,14 @@ function reviewPolicyFindingKind(thread: ReviewThread): ReviewPolicyFindingKind 
   if (
     latestCodexConnectorReview.severity === "P0" ||
     latestCodexConnectorReview.severity === "P1" ||
-    latestCodexConnectorReview.severity === "P2"
+    latestCodexConnectorReview.severity === "P2" ||
+    (latestCodexConnectorReview.severity === "P3" &&
+      hasCodexConnectorStrongRiskWording(latestCodexConnectorReview.body))
   ) {
     return "must_fix";
   }
 
-  return hasCodexConnectorStrongRiskWording(latestCodexConnectorReview.body)
-    ? "escalated_p3"
-    : "softened_p3_advisory";
+  return "softened_p3_advisory";
 }
 
 function reviewPolicyThreadVocabulary(args: {
@@ -258,6 +254,7 @@ function reviewPolicyThreadVocabulary(args: {
   isManualThread: boolean;
   findingKind: ReviewPolicyFindingKind;
   headRelation: ReviewPolicyHeadRelation;
+  isEscalatedP3: boolean;
 }): ReviewPolicyThreadVocabulary[] {
   const vocabulary: ReviewPolicyThreadVocabulary[] = [];
   if (args.headRelation === "current_head") {
@@ -275,7 +272,8 @@ function reviewPolicyThreadVocabulary(args: {
     vocabulary.push("must_fix_finding");
   } else if (args.findingKind === "softened_p3_advisory") {
     vocabulary.push("softened_p3_advisory");
-  } else if (args.findingKind === "escalated_p3") {
+  }
+  if (args.isEscalatedP3) {
     vocabulary.push("escalated_p3");
   }
   return vocabulary;
@@ -347,6 +345,11 @@ export function buildReviewPolicyInput(args: {
           ? "current_head"
           : "unknown";
       const findingKind = reviewPolicyFindingKind(thread);
+      const latestCodexConnectorReview = latestCodexConnectorReviewComment(thread);
+      const isEscalatedP3 = Boolean(
+        latestCodexConnectorReview?.severity === "P3" &&
+          hasCodexConnectorStrongRiskWording(latestCodexConnectorReview.body),
+      );
 
       return {
         id: thread.id,
@@ -373,6 +376,7 @@ export function buildReviewPolicyInput(args: {
           isManualThread,
           findingKind,
           headRelation,
+          isEscalatedP3,
         }),
       };
     }),
