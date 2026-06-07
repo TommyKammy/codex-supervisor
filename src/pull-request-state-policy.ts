@@ -356,6 +356,7 @@ export function inferStateFromPullRequest(
     if (unresolvedBotThreads.length > 0 || pr.configuredBotTopLevelReviewStrength === "blocking") {
       if (
         codexConnectorMustFixThreads.length > 0 &&
+        !codexConnectorMustFixThreadsExhausted &&
         !checkSummary.hasFailing &&
         !checkSummary.hasPending &&
         (!config.humanReviewBlocksMerge || manualThreads.length === 0) &&
