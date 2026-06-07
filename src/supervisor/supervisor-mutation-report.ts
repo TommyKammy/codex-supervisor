@@ -1,6 +1,6 @@
 import type { IssueRunRecord, JsonCorruptStateResetResult, RunState } from "../core/types";
 
-export type SupervisorRecoveryAction = "requeue";
+export type SupervisorRecoveryAction = "requeue" | "release-codex-churn-latch";
 export type SupervisorOrphanPruneAction = "prune-orphaned-workspaces";
 export type SupervisorExecutionMetricsRollupAction = "rollup-execution-metrics";
 

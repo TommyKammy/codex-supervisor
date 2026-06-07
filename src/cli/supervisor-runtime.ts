@@ -29,6 +29,7 @@ type SupervisorRuntimeCommand = Extract<
   | "loop"
   | "status"
   | "requeue"
+  | "release-codex-churn-latch"
   | "rollup-execution-metrics"
   | "summarize-post-merge-audits"
   | "prune-orphaned-workspaces"
@@ -73,6 +74,7 @@ export function isSupervisorRuntimeCommand(command: CliOptions["command"]): comm
     command === "loop" ||
     command === "status" ||
     command === "requeue" ||
+    command === "release-codex-churn-latch" ||
     command === "rollup-execution-metrics" ||
     command === "summarize-post-merge-audits" ||
     command === "prune-orphaned-workspaces" ||
@@ -88,6 +90,7 @@ function requiresGsdInstall(command: SupervisorRuntimeCommand): boolean {
   return (
     command !== "status" &&
     command !== "requeue" &&
+    command !== "release-codex-churn-latch" &&
     command !== "rollup-execution-metrics" &&
     command !== "summarize-post-merge-audits" &&
     command !== "prune-orphaned-workspaces" &&
@@ -182,6 +185,13 @@ export async function runSupervisorCommand(
 
   if (options.command === "requeue") {
     writeStdout(renderSupervisorMutationResultDto(await service.runRecoveryAction("requeue", options.issueNumber!)));
+    return;
+  }
+
+  if (options.command === "release-codex-churn-latch") {
+    writeStdout(renderSupervisorMutationResultDto(
+      await service.runRecoveryAction("release-codex-churn-latch", options.issueNumber!),
+    ));
     return;
   }
 

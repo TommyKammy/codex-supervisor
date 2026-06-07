@@ -169,6 +169,21 @@ test("parseArgs accepts requeue with an issue number", () => {
   });
 });
 
+test("parseArgs accepts Codex churn latch release with an issue number", () => {
+  assert.deepEqual(parseArgs(["release-codex-churn-latch", "123"]), {
+    command: "release-codex-churn-latch",
+    configPath: undefined,
+    dryRun: false,
+    why: false,
+    issueLintSuggest: false,
+    explainMode: "summary",
+    issueNumber: 123,
+    snapshotPath: undefined,
+    caseId: undefined,
+    corpusPath: undefined,
+  });
+});
+
 test("parseArgs accepts rollup-execution-metrics without an issue number", () => {
   assert.deepEqual(parseArgs(["rollup-execution-metrics"]), {
     command: "rollup-execution-metrics",

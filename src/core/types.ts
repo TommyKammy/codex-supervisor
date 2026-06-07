@@ -369,6 +369,7 @@ export interface CliOptions {
     | "loop"
     | "status"
     | "requeue"
+    | "release-codex-churn-latch"
     | "rollup-execution-metrics"
     | "summarize-post-merge-audits"
     | "prune-orphaned-workspaces"
