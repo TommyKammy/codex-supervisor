@@ -185,6 +185,52 @@ test("review policy input snapshots provider, PR, thread vocabulary, and process
   assert.equal(idOnlyInput?.processedEvidence.processedOnCurrentHead, true);
   assert.equal(idOnlyInput?.headRelation, "current_head");
 
+  const refreshedCommentInput = buildReviewPolicyInput({
+    config,
+    pr,
+    record: {
+      provider_success_head_sha: null,
+      external_review_head_sha: null,
+      processed_review_thread_ids: ["thread-p3-softened@head-new"],
+      processed_review_thread_fingerprints: ["thread-p3-softened@head-new#old-comment"],
+    },
+    reviewThreads: [p3NitpickThread],
+  }).threads[0];
+  assert.equal(refreshedCommentInput?.processedEvidence.processedOnCurrentHead, false);
+  assert.equal(refreshedCommentInput?.headRelation, "unknown");
+
+  const priorIdOnlyInput = buildReviewPolicyInput({
+    config,
+    pr,
+    record: {
+      provider_success_head_sha: null,
+      external_review_head_sha: null,
+      processed_review_thread_ids: ["thread-p3-softened@head-old"],
+      processed_review_thread_fingerprints: [],
+    },
+    reviewThreads: [p3NitpickThread],
+  }).threads[0];
+  assert.equal(priorIdOnlyInput?.processedEvidence.processedOnPriorHead, true);
+
+  const outdatedInput = buildReviewPolicyInput({
+    config,
+    pr: {
+      ...pr,
+      configuredBotCurrentHeadObservedAt: "2026-03-11T00:04:00Z",
+      configuredBotLatestReviewedCommitSha: null,
+    },
+    record: {
+      provider_success_head_sha: null,
+      external_review_head_sha: null,
+      processed_review_thread_ids: [],
+      processed_review_thread_fingerprints: [],
+    },
+    reviewThreads: [{ ...p3RiskThread, id: "thread-p3-outdated", isOutdated: true }],
+  }).threads[0];
+  assert.equal(outdatedInput?.headRelation, "unknown");
+  assert.equal(outdatedInput?.findingKind, "none");
+  assert.deepEqual(outdatedInput?.vocabulary, ["configured_bot_thread"]);
+
   p2Thread.comments.nodes[0]!.body = "P3: Nitpick after snapshot mutation.";
   assert.equal(p2Input?.comments[0]?.body, "P2: Preserve failed restore cleanup as a blocking verification failure.");
 });

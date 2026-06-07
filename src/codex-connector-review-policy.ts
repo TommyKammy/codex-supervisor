@@ -194,27 +194,76 @@ function processedThreadFingerprintKey(threadId: string, headSha: string, latest
   return `${processedThreadKey(threadId, headSha)}#${latestCommentFingerprintValue}`;
 }
 
+function processedThreadHeadShas(args: {
+  processedThreadKeys: string[];
+  threadId: string;
+}): string[] {
+  const prefix = `${args.threadId}@`;
+  return args.processedThreadKeys
+    .filter((key) => key.startsWith(prefix))
+    .map((key) => key.slice(prefix.length))
+    .filter((headSha) => headSha.length > 0);
+}
+
+function hasProcessedThreadFingerprintForHead(args: {
+  processedThreadFingerprintKeys: string[];
+  threadId: string;
+  headSha: string;
+}): boolean {
+  const prefix = `${processedThreadKey(args.threadId, args.headSha)}#`;
+  return args.processedThreadFingerprintKeys.some((key) => key.startsWith(prefix));
+}
+
+function processedOnHead(args: {
+  processedThreadKeys: string[];
+  processedThreadFingerprintKeys: string[];
+  threadId: string;
+  headSha: string;
+  latestCommentFingerprint: string | null;
+}): boolean {
+  if (!args.processedThreadKeys.includes(processedThreadKey(args.threadId, args.headSha))) {
+    return false;
+  }
+
+  if (
+    hasProcessedThreadFingerprintForHead({
+      processedThreadFingerprintKeys: args.processedThreadFingerprintKeys,
+      threadId: args.threadId,
+      headSha: args.headSha,
+    })
+  ) {
+    return Boolean(
+      args.latestCommentFingerprint &&
+        args.processedThreadFingerprintKeys.includes(
+          processedThreadFingerprintKey(args.threadId, args.headSha, args.latestCommentFingerprint),
+        ),
+    );
+  }
+
+  return true;
+}
+
 function processedOnPriorHead(args: {
-  record: Pick<IssueRunRecord, "processed_review_thread_ids" | "processed_review_thread_fingerprints">;
+  processedThreadKeys: string[];
+  processedThreadFingerprintKeys: string[];
   pr: Pick<GitHubPullRequest, "headRefOid">;
   thread: Pick<ReviewThread, "id" | "comments">;
   latestCommentFingerprint: string | null;
 }): boolean {
-  if (!args.latestCommentFingerprint) {
-    return false;
-  }
-
-  const processedKeys = new Set(args.record.processed_review_thread_ids ?? []);
-  const fingerprintPrefix = `${args.thread.id}@`;
-  const fingerprintSuffix = `#${args.latestCommentFingerprint}`;
-  return (args.record.processed_review_thread_fingerprints ?? []).some((key) => {
-    if (!key.startsWith(fingerprintPrefix) || !key.endsWith(fingerprintSuffix)) {
-      return false;
-    }
-
-    const headSha = key.slice(fingerprintPrefix.length, key.length - fingerprintSuffix.length);
-    return Boolean(headSha && headSha !== args.pr.headRefOid && processedKeys.has(`${args.thread.id}@${headSha}`));
-  });
+  return processedThreadHeadShas({
+    processedThreadKeys: args.processedThreadKeys,
+    threadId: args.thread.id,
+  }).some(
+    (headSha) =>
+      headSha !== args.pr.headRefOid &&
+      processedOnHead({
+        processedThreadKeys: args.processedThreadKeys,
+        processedThreadFingerprintKeys: args.processedThreadFingerprintKeys,
+        threadId: args.thread.id,
+        headSha,
+        latestCommentFingerprint: args.latestCommentFingerprint,
+      }),
+  );
 }
 
 function reviewCommentSnapshot(comment: ReviewThreadComment): ReviewPolicyThreadCommentSnapshot {
@@ -326,28 +375,31 @@ export function buildReviewPolicyInput(args: {
       const latestCommentFingerprintValue = latestCommentFingerprint(thread);
       const processedThreadKeys = [...(args.record.processed_review_thread_ids ?? [])];
       const processedThreadFingerprintKeys = [...(args.record.processed_review_thread_fingerprints ?? [])];
-      const processedOnCurrentHeadValue = Boolean(
-        processedThreadKeys.includes(processedThreadKey(thread.id, args.pr.headRefOid)) ||
-          (latestCommentFingerprintValue &&
-            processedThreadFingerprintKeys.includes(
-              processedThreadFingerprintKey(thread.id, args.pr.headRefOid, latestCommentFingerprintValue),
-            )),
-      );
+      const processedOnCurrentHeadValue = processedOnHead({
+        processedThreadKeys,
+        processedThreadFingerprintKeys,
+        threadId: thread.id,
+        headSha: args.pr.headRefOid,
+        latestCommentFingerprint: latestCommentFingerprintValue,
+      });
       const processedOnPriorHeadValue = processedOnPriorHead({
-        record: args.record,
+        processedThreadKeys,
+        processedThreadFingerprintKeys,
         pr: args.pr,
         thread,
         latestCommentFingerprint: latestCommentFingerprintValue,
       });
       const headRelation: ReviewPolicyHeadRelation = staleCommitThreadIds.has(thread.id)
         ? "stale_commit"
-        : processedOnCurrentHeadValue || Boolean(currentHeadObservedAt)
+        : processedOnCurrentHeadValue || (!thread.isOutdated && Boolean(currentHeadObservedAt))
           ? "current_head"
           : "unknown";
       const findingKind = reviewPolicyFindingKind(thread);
       const latestCodexConnectorReview = latestCodexConnectorReviewComment(thread);
       const isEscalatedP3 = Boolean(
-        latestCodexConnectorReview?.severity === "P3" &&
+        !thread.isResolved &&
+          !thread.isOutdated &&
+          latestCodexConnectorReview?.severity === "P3" &&
           hasCodexConnectorStrongRiskWording(latestCodexConnectorReview.body),
       );
 
