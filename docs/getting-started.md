@@ -496,7 +496,7 @@ Supported run-mode vocabulary:
 
 `status` and `doctor` report `run_mode=...` next to the loop runtime marker fields when the mode can be inferred from the loop's own runtime marker. If diagnostics show `run_mode=unknown`, `ownership_confidence=ambiguous_owner`, or duplicate loop processes, inspect the marker and listed PIDs instead of deleting marker files or killing processes automatically.
 
-The WebUI uses the same `SupervisorService` boundary as the CLI. It reads the same typed status, doctor, explain, and issue-lint data, and it only exposes the current safe command set: `run-once`, `requeue`, `prune-orphaned-workspaces`, and `reset-corrupt-json-state`. A WebUI session is an operator surface, not a loop run mode; launcher-backed WebUI restart capability applies to the WebUI process only and does not imply ownership of the background loop.
+The WebUI uses the same `SupervisorService` boundary as the CLI. It reads the same typed status, doctor, explain, and issue-lint data, and it only exposes the current WebUI command set: `run-once`, `requeue`, `prune-orphaned-workspaces`, and `reset-corrupt-json-state`. CLI-only recovery commands, such as `release-codex-churn-latch <issue-number>`, remain outside the WebUI. A WebUI session is an operator surface, not a loop run mode; launcher-backed WebUI restart capability applies to the WebUI process only and does not imply ownership of the background loop.
 
 In normal operation, the supervisor will:
 

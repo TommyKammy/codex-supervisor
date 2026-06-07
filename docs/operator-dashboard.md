@@ -110,9 +110,9 @@ If local CI is configured, remember that the config can now use either:
 
 Use the [Configuration reference](./configuration.md) when you need to confirm which execution mode is active or when a local CI failure looks like a workspace toolchain problem instead of a repo command failure.
 
-## Current safe command surface
+## Current WebUI command surface
 
-The dashboard currently exposes only the same narrow safe commands that the CLI exposes:
+The dashboard currently exposes only this narrow WebUI mutation surface:
 
 - `run-once`
 - `requeue`
@@ -120,6 +120,8 @@ The dashboard currently exposes only the same narrow safe commands that the CLI 
 - `reset-corrupt-json-state`
 
 These commands still go through the backend service boundary. The browser does not mutate the state file directly, and each command now requires the local mutation token described above.
+
+CLI-only recovery commands, such as `release-codex-churn-latch <issue-number>` for explicitly releasing a stopped Codex Connector churn latch after manual inspection, remain outside the WebUI command surface.
 
 ## Panel expectations
 

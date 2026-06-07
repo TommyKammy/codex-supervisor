@@ -217,7 +217,7 @@ host ごとの loop 運用ルール:
 - Linux で launcher-managed な background loop を使いたい時は `./scripts/install-systemd.sh` を使います。
 - macOS で launcher-managed な WebUI を使いたい時は `./scripts/install-launchd-web.sh` を使います。こちらは loop ではなく WebUI entrypoint を host する path なので引き続きサポート対象です。
 
-WebUI は CLI と同じ `SupervisorService` を使い、typed な `status`、`doctor`、`explain`、`issue-lint` を読みます。現在の safe command surface は `run-once`、`requeue`、`prune-orphaned-workspaces`、`reset-corrupt-json-state` です。
+WebUI は CLI と同じ `SupervisorService` を使い、typed な `status`、`doctor`、`explain`、`issue-lint` を読みます。現在の WebUI command surface は `run-once`、`requeue`、`prune-orphaned-workspaces`、`reset-corrupt-json-state` です。`release-codex-churn-latch <issue-number>` のような CLI-only recovery command は WebUI の外に残します。
 
 WebUI は operator surface であり、loop run mode ではありません。`status` と `doctor` が表示する loop runtime は、WebUI process ではなく観測可能な loop runtime marker に基づきます。launcher-managed WebUI restart は WebUI process だけを対象にし、background loop の所有権を意味しません。
 
