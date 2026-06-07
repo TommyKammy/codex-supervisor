@@ -442,7 +442,14 @@ export function inferStateFromPullRequest(
     return "addressing_review";
   }
 
-  if (codexConnectorMustFixThreadsExhausted && !checkSummary.hasFailing && !checkSummary.hasPending) {
+  if (
+    codexConnectorMustFixThreadsExhausted &&
+    pendingBotThreads.length === 0 &&
+    !botFollowUpStateEligibleWithRetryBudget &&
+    !checkSummary.hasFailing &&
+    !checkSummary.hasPending &&
+    !mergeConflictDetected(pr)
+  ) {
     return "blocked";
   }
 
@@ -462,6 +469,15 @@ export function inferStateFromPullRequest(
     !mergeConflictDetected(pr)
   ) {
     return "blocked";
+  }
+
+  if (
+    mergeConflictDetected(pr) &&
+    codexConnectorMustFixThreadsExhausted &&
+    unresolvedBotThreads.length > 0 &&
+    unresolvedBotThreads.every((thread) => codexConnectorMustFixThreadIds.has(thread.id))
+  ) {
+    return "resolving_conflict";
   }
 
   if (unresolvedBotThreads.length > 0) {

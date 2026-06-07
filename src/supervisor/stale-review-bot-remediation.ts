@@ -11,6 +11,7 @@ import {
   codexConnectorMustFixReviewThreads,
   commitShasEqualForComparison,
   evaluateCodexConnectorConvergencePolicy,
+  latestCodexConnectorReviewCommentFingerprint,
   latestCodexConnectorPSeverity,
   latestCodexConnectorReviewComment,
 } from "../codex-connector-review-policy";
@@ -1149,7 +1150,8 @@ export function buildStaleReviewBotThreadDiagnostics(args: {
   const reviewThreads = args.reviewThreads ?? [];
   const configuredThreads = config ? configuredBotReviewThreads(config, reviewThreads) : [];
   const unresolvedConfiguredThreads = configuredThreads.filter((thread) => !thread.isResolved && !thread.isOutdated);
-  const actionableMustFixThreads = config && configuredReviewProviderKinds(config).includes("codex")
+  const codexConfigured = config ? configuredReviewProviderKinds(config).includes("codex") : false;
+  const actionableMustFixThreads = config && codexConfigured
     ? codexConnectorMustFixReviewThreads(reviewThreads)
     : config && args.pr
       ? pendingBotReviewThreads(config, args.record, args.pr, configuredThreads)
@@ -1161,7 +1163,13 @@ export function buildStaleReviewBotThreadDiagnostics(args: {
   const reviewLoopRetryExhausted =
     config && args.pr && actionableMustFixThreads.length > 0
       ? actionableMustFixThreads.every((thread) =>
-          reviewLoopRetryBudgetExhaustedForThread(args.record, args.pr!, thread),
+          reviewLoopRetryBudgetExhaustedForThread(
+            args.record,
+            args.pr!,
+            thread,
+            1,
+            codexConfigured ? latestCodexConnectorReviewCommentFingerprint(thread) : undefined,
+          ),
         )
       : false;
   const repeatStopExhausted =
