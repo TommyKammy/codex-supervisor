@@ -15,7 +15,10 @@ import {
   mergeConflictDetected,
   summarizeChecks,
 } from "./supervisor/supervisor-reporting";
-import { codexConnectorMustFixReviewThreads } from "./codex-connector-review-policy";
+import {
+  codexConnectorMustFixReviewThreads,
+  latestCodexConnectorReviewCommentFingerprint,
+} from "./codex-connector-review-policy";
 import {
   configuredBotReviewFollowUpState,
   configuredBotReviewThreads,
@@ -45,6 +48,7 @@ import {
   shouldWaitForConfiguredBotLatestHeadRearm,
   shouldWaitForCopilotReviewPropagation,
 } from "./pull-request-state-current-head-policy";
+import { reviewLoopRetryBudgetExhaustedForThread } from "./review-handling";
 import {
   effectiveConfiguredBotReviewThreadsForState,
   hasConfiguredProviderSuccess,
@@ -276,6 +280,17 @@ export function inferStateFromPullRequest(
   const pendingBotThreads = pendingBotReviewThreads(config, record, pr, unresolvedBotThreads);
   const botFollowUpState = configuredBotReviewFollowUpState(config, record, pr, unresolvedBotThreads);
   const codexConnectorMustFixThreads = codexConnectorMustFixReviewThreads(unresolvedBotThreads);
+  const codexConnectorMustFixThreadsExhausted =
+    codexConnectorMustFixThreads.length > 0 &&
+    codexConnectorMustFixThreads.every((thread) =>
+      reviewLoopRetryBudgetExhaustedForThread(
+        record,
+        pr,
+        thread,
+        1,
+        latestCodexConnectorReviewCommentFingerprint(thread),
+      ),
+    );
   const checkSummary = summarizeChecks(checks);
   const staleCodexWaitHasOnlyOutdatedResidue = staleSameHeadCodexWaitHasOnlyOutdatedResidue(
     config,
@@ -407,12 +422,17 @@ export function inferStateFromPullRequest(
 
   if (
     codexConnectorMustFixThreads.length > 0 &&
+    !codexConnectorMustFixThreadsExhausted &&
     !checkSummary.hasFailing &&
     !checkSummary.hasPending &&
     (!config.humanReviewBlocksMerge || manualThreads.length === 0) &&
     !mergeConflictDetected(pr)
   ) {
     return "addressing_review";
+  }
+
+  if (codexConnectorMustFixThreadsExhausted && !checkSummary.hasFailing && !checkSummary.hasPending) {
+    return "blocked";
   }
 
   if (checkSummary.hasFailing) {

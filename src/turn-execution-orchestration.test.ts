@@ -668,6 +668,66 @@ test("selectReviewThreadsForTurn excludes Codex Connector must-fix threads after
   assert.deepEqual(selected, []);
 });
 
+test("selectReviewThreadsForTurn matches Codex Connector retry exhaustion to the finding comment after later replies", () => {
+  const selected = selectReviewThreadsForTurn({
+    config: createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector[bot]"],
+    }),
+    preRunState: "addressing_review",
+    record: {
+      processed_review_thread_ids: ["thread-1@head-a"],
+      processed_review_thread_fingerprints: ["thread-1@head-a#comment-codex"],
+      review_loop_retry_state: [
+        {
+          fingerprint: "pr=116|head=head-a|thread=thread-1|comment=comment-codex",
+          pr_number: 116,
+          head_sha: "head-a",
+          thread_id: "thread-1",
+          latest_comment_fingerprint: "comment-codex",
+          attempts: 1,
+          first_attempted_at: "2026-06-07T01:00:00Z",
+          last_attempted_at: "2026-06-07T01:00:00Z",
+        },
+      ],
+      last_head_sha: "head-a",
+      review_follow_up_head_sha: null,
+      review_follow_up_remaining: 0,
+    },
+    pr: createPullRequest({ number: 116, headRefOid: "head-a" }),
+    reviewThreads: [
+      createReviewThread({
+        id: "thread-1",
+        comments: {
+          nodes: [
+            {
+              id: "comment-codex",
+              body: "P2: Preserve failed restore cleanup as a blocking verification failure.",
+              createdAt: "2026-06-07T01:05:00Z",
+              url: "https://example.test/pr/116#discussion_r1",
+              author: {
+                login: "chatgpt-codex-connector[bot]",
+                typeName: "Bot",
+              },
+            },
+            {
+              id: "comment-reply",
+              body: "Supervisor reply after the first repair attempt.",
+              createdAt: "2026-06-07T01:20:00Z",
+              url: "https://example.test/pr/116#discussion_r2",
+              author: {
+                login: "github-actions[bot]",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+  });
+
+  assert.deepEqual(selected, []);
+});
+
 test("selectReviewThreadsForTurn switches churned Codex reviews from pending-only to root-cause repair", () => {
   const reviewThreads = Array.from({ length: 8 }, (_, index) =>
     createReviewThread({

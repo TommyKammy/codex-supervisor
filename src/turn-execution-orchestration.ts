@@ -22,6 +22,7 @@ import {
 import {
   buildCodexConnectorReviewChurnDiagnostic,
   codexConnectorMustFixReviewThreads,
+  latestCodexConnectorReviewCommentFingerprint,
 } from "./codex-connector-review-policy";
 import {
   actionableConfiguredBotReviewThreads,
@@ -193,14 +194,17 @@ export function selectReviewThreadsForTurn(args: {
   const activeConfiguredBotThreads = configuredBotReviewThreads(args.config as SupervisorConfig, args.reviewThreads).filter(
     (thread) => !thread.isResolved && !thread.isOutdated,
   );
-  const reviewLoopRetryBudgetAvailable = (thread: ReviewThread) =>
-    !reviewLoopRetryBudgetExhaustedForThread(args.record, currentPr, thread);
-  const availableActionableFollowUpThreads = actionableFollowUpThreads.filter(reviewLoopRetryBudgetAvailable);
+  const reviewLoopRetryBudgetAvailable = (thread: ReviewThread, latestCommentFingerprintOverride?: string | null) =>
+    !reviewLoopRetryBudgetExhaustedForThread(args.record, currentPr, thread, 1, latestCommentFingerprintOverride);
+  const availableActionableFollowUpThreads = actionableFollowUpThreads.filter((thread) =>
+    reviewLoopRetryBudgetAvailable(thread),
+  );
   const pendingThreads = actionableFollowUpThreads.filter(
     (thread) => !hasProcessedReviewThread(args.record, currentPr, thread) && reviewLoopRetryBudgetAvailable(thread),
   );
-  const codexConnectorMustFixThreads =
-    codexConnectorMustFixReviewThreads(activeConfiguredBotThreads).filter(reviewLoopRetryBudgetAvailable);
+  const codexConnectorMustFixThreads = codexConnectorMustFixReviewThreads(activeConfiguredBotThreads).filter((thread) =>
+    reviewLoopRetryBudgetAvailable(thread, latestCodexConnectorReviewCommentFingerprint(thread)),
+  );
   const codexConnectorReviewChurnDiagnostic = buildCodexConnectorReviewChurnDiagnostic(
     args.config,
     activeConfiguredBotThreads,
@@ -452,6 +456,7 @@ export function nextProcessedReviewThreadPatch(args: {
                 pr: args.currentPr!,
                 thread,
                 attemptedAt: args.attemptedAt ?? new Date().toISOString(),
+                latestCommentFingerprintOverride: latestCodexConnectorReviewCommentFingerprint(thread),
               }),
             args.record.review_loop_retry_state ?? [],
           )

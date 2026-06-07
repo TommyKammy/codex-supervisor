@@ -1066,6 +1066,71 @@ test("inferStateFromPullRequest still blocks a journal-only configured-bot threa
   assert.equal(blockedReasonFromReviewState(config, record, pr, [...checks], reviewThreads), "manual_review");
 });
 
+test("inferStateFromPullRequest blocks exhausted Codex Connector must-fix threads instead of starting an empty repair turn", () => {
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    humanReviewBlocksMerge: false,
+  });
+  const record = createRecord({
+    state: "pr_open",
+    pr_number: 44,
+    last_head_sha: "head123",
+    processed_review_thread_ids: ["thread-1@head123"],
+    processed_review_thread_fingerprints: ["thread-1@head123#comment-codex"],
+    review_loop_retry_state: [
+      {
+        fingerprint: "pr=44|head=head123|thread=thread-1|comment=comment-codex",
+        pr_number: 44,
+        head_sha: "head123",
+        thread_id: "thread-1",
+        latest_comment_fingerprint: "comment-codex",
+        attempts: 1,
+        first_attempted_at: "2026-06-07T01:00:00Z",
+        last_attempted_at: "2026-06-07T01:00:00Z",
+      },
+    ],
+  });
+  const pr = createPullRequest({
+    number: 44,
+    headRefOid: "head123",
+    reviewDecision: null,
+    configuredBotTopLevelReviewStrength: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+  const reviewThreads = [
+    createReviewThread({
+      id: "thread-1",
+      comments: {
+        nodes: [
+          {
+            id: "comment-codex",
+            body: "P2: Apply retry exhaustion before entering another repair turn.",
+            createdAt: "2026-06-07T01:05:00Z",
+            url: "https://example.test/pr/44#discussion_r1",
+            author: {
+              login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+              typeName: "Bot",
+            },
+          },
+          {
+            id: "comment-reply",
+            body: "A later non-connector reply after the first repair attempt.",
+            createdAt: "2026-06-07T01:20:00Z",
+            url: "https://example.test/pr/44#discussion_r2",
+            author: {
+              login: "github-actions[bot]",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  ];
+
+  assert.equal(inferStateFromPullRequest(config, record, pr, passingChecks(), reviewThreads), "blocked");
+});
+
 test("inferStateFromPullRequest keeps human review gates in place when only a journal-only configured-bot thread remains", () => {
   const config = createConfig({
     reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],

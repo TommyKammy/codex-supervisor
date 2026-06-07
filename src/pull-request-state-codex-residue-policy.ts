@@ -11,6 +11,7 @@ import {
   evaluateCodexConnectorConvergencePolicy,
   hasCodexConnectorFindingReviewComment,
   hasCodexConnectorPrSuccessCurrentHeadObservation,
+  latestCodexConnectorReviewCommentFingerprint,
 } from "./codex-connector-review-policy";
 import {
   IssueRunRecord,
@@ -335,12 +336,18 @@ export function processedCodexConnectorMustFixThreadsExhaustedRepeatBudget(args:
   }
 
   const exhaustedByReviewLoopRetryState = args.codexConnectorMustFixThreads.every((thread) =>
-    reviewLoopRetryBudgetExhaustedForThread(args.record, args.pr, thread),
+    reviewLoopRetryBudgetExhaustedForThread(
+      args.record,
+      args.pr,
+      thread,
+      1,
+      latestCodexConnectorReviewCommentFingerprint(thread),
+    ),
   );
   const exhaustedByLegacyRepeatStop =
     args.record.last_tracked_pr_repeat_failure_decision === "stop_no_progress" &&
     args.codexConnectorMustFixThreads.every((thread) =>
-      hasProcessedReviewThread(args.record, args.pr, thread),
+      hasProcessedReviewThread(args.record, args.pr, thread, latestCodexConnectorReviewCommentFingerprint(thread)),
     );
 
   return exhaustedByReviewLoopRetryState || exhaustedByLegacyRepeatStop;
