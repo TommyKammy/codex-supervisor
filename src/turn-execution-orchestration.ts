@@ -194,15 +194,21 @@ export function selectReviewThreadsForTurn(args: {
   const activeConfiguredBotThreads = configuredBotReviewThreads(args.config as SupervisorConfig, args.reviewThreads).filter(
     (thread) => !thread.isResolved && !thread.isOutdated,
   );
+  const codexConnectorMustFixThreadCandidates = codexConnectorMustFixReviewThreads(activeConfiguredBotThreads);
+  const codexConnectorMustFixThreadIds = new Set(codexConnectorMustFixThreadCandidates.map((thread) => thread.id));
+  const retryFingerprintForThread = (thread: ReviewThread) =>
+    codexConnectorMustFixThreadIds.has(thread.id) ? latestCodexConnectorReviewCommentFingerprint(thread) : undefined;
   const reviewLoopRetryBudgetAvailable = (thread: ReviewThread, latestCommentFingerprintOverride?: string | null) =>
     !reviewLoopRetryBudgetExhaustedForThread(args.record, currentPr, thread, 1, latestCommentFingerprintOverride);
   const availableActionableFollowUpThreads = actionableFollowUpThreads.filter((thread) =>
-    reviewLoopRetryBudgetAvailable(thread),
+    reviewLoopRetryBudgetAvailable(thread, retryFingerprintForThread(thread)),
   );
   const pendingThreads = actionableFollowUpThreads.filter(
-    (thread) => !hasProcessedReviewThread(args.record, currentPr, thread) && reviewLoopRetryBudgetAvailable(thread),
+    (thread) =>
+      !hasProcessedReviewThread(args.record, currentPr, thread, retryFingerprintForThread(thread)) &&
+      reviewLoopRetryBudgetAvailable(thread, retryFingerprintForThread(thread)),
   );
-  const codexConnectorMustFixThreads = codexConnectorMustFixReviewThreads(activeConfiguredBotThreads).filter((thread) =>
+  const codexConnectorMustFixThreads = codexConnectorMustFixThreadCandidates.filter((thread) =>
     reviewLoopRetryBudgetAvailable(thread, latestCodexConnectorReviewCommentFingerprint(thread)),
   );
   const codexConnectorReviewChurnDiagnostic = buildCodexConnectorReviewChurnDiagnostic(
@@ -443,20 +449,34 @@ export function nextProcessedReviewThreadPatch(args: {
             : [];
         })
       : [];
+  const unresolvedConfiguredThreadsToProcess = configuredBotReviewThreads(
+    args.config as SupervisorConfig,
+    args.reviewThreadsToProcess,
+  ).filter((thread) => !thread.isResolved && !thread.isOutdated);
+  const actionableThreadsToTrack = actionableConfiguredBotReviewThreads(
+    args.config as SupervisorConfig,
+    args.reviewThreadsToProcess,
+  ).filter((thread) => !thread.isResolved && !thread.isOutdated);
+  const codexMustFixThreadsToTrack = codexConnectorMustFixReviewThreads(unresolvedConfiguredThreadsToProcess);
+  const retryThreadsToTrack = uniqueReviewThreadsInOrder(
+    unresolvedConfiguredThreadsToProcess,
+    new Set([...actionableThreadsToTrack, ...codexMustFixThreadsToTrack].map((thread) => thread.id)),
+  );
+  const codexMustFixThreadIdsToTrack = new Set(codexMustFixThreadsToTrack.map((thread) => thread.id));
   const reviewLoopRetryState =
     args.preRunState === "addressing_review" &&
     args.currentPr &&
     args.currentPr.headRefOid === args.evaluatedReviewHeadSha
-      ? actionableConfiguredBotReviewThreads(args.config as SupervisorConfig, args.reviewThreadsToProcess)
-          .filter((thread) => !thread.isResolved && !thread.isOutdated)
-          .reduce(
+      ? retryThreadsToTrack.reduce(
             (state, thread) =>
               nextReviewLoopRetryStateForThread({
                 record: { review_loop_retry_state: state },
                 pr: args.currentPr!,
                 thread,
                 attemptedAt: args.attemptedAt ?? new Date().toISOString(),
-                latestCommentFingerprintOverride: latestCodexConnectorReviewCommentFingerprint(thread),
+                latestCommentFingerprintOverride: codexMustFixThreadIdsToTrack.has(thread.id)
+                  ? latestCodexConnectorReviewCommentFingerprint(thread)
+                  : undefined,
               }),
             args.record.review_loop_retry_state ?? [],
           )

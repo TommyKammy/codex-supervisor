@@ -120,6 +120,63 @@ test("nextProcessedReviewThreadPatch records review-loop retry attempts for curr
   ]);
 });
 
+test("nextProcessedReviewThreadPatch records Codex must-fix retries when a later reply is newest", () => {
+  const patch = nextProcessedReviewThreadPatch({
+    config: createConfig({ reviewBotLogins: ["chatgpt-codex-connector"] }),
+    preRunState: "addressing_review",
+    record: {
+      processed_review_thread_ids: [],
+      processed_review_thread_fingerprints: [],
+      review_loop_retry_state: [],
+    },
+    currentPr: { number: 2270, headRefOid: "head-a" },
+    evaluatedReviewHeadSha: "head-a",
+    attemptedAt: "2026-06-07T01:00:00Z",
+    reviewThreadsToProcess: [
+      createReviewThread({
+        id: "thread-codex",
+        comments: {
+          nodes: [
+            {
+              id: "comment-codex",
+              body: "P2: Preserve the retry state before sending this back into Codex.",
+              createdAt: "2026-06-07T00:55:00Z",
+              url: "https://example.test/pr/2270#discussion_r1",
+              author: {
+                login: "chatgpt-codex-connector",
+                typeName: "Bot",
+              },
+            },
+            {
+              id: "comment-reply",
+              body: "Supervisor reply after the first repair attempt.",
+              createdAt: "2026-06-07T01:05:00Z",
+              url: "https://example.test/pr/2270#discussion_r2",
+              author: {
+                login: "github-actions[bot]",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+  });
+
+  assert.deepEqual(patch.review_loop_retry_state, [
+    {
+      fingerprint: "pr=2270|head=head-a|thread=thread-codex|comment=comment-codex",
+      pr_number: 2270,
+      head_sha: "head-a",
+      thread_id: "thread-codex",
+      latest_comment_fingerprint: "comment-codex",
+      attempts: 1,
+      first_attempted_at: "2026-06-07T01:00:00Z",
+      last_attempted_at: "2026-06-07T01:00:00Z",
+    },
+  ]);
+});
+
 test("nextProcessedReviewThreadPatch persists local-review no-change current-head verification evidence", () => {
   const headSha = "7a77d998712882166f79c3710dd4c567da6da779";
   const reviewThreads = [
@@ -716,6 +773,66 @@ test("selectReviewThreadsForTurn matches Codex Connector retry exhaustion to the
               url: "https://example.test/pr/116#discussion_r2",
               author: {
                 login: "github-actions[bot]",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+  });
+
+  assert.deepEqual(selected, []);
+});
+
+test("selectReviewThreadsForTurn does not reselect exhausted Codex findings through pending same-bot replies", () => {
+  const selected = selectReviewThreadsForTurn({
+    config: createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector"],
+    }),
+    preRunState: "addressing_review",
+    record: {
+      processed_review_thread_ids: ["thread-1@head-a"],
+      processed_review_thread_fingerprints: ["thread-1@head-a#comment-codex"],
+      review_loop_retry_state: [
+        {
+          fingerprint: "pr=116|head=head-a|thread=thread-1|comment=comment-codex",
+          pr_number: 116,
+          head_sha: "head-a",
+          thread_id: "thread-1",
+          latest_comment_fingerprint: "comment-codex",
+          attempts: 1,
+          first_attempted_at: "2026-06-07T01:00:00Z",
+          last_attempted_at: "2026-06-07T01:00:00Z",
+        },
+      ],
+      last_head_sha: "head-a",
+      review_follow_up_head_sha: null,
+      review_follow_up_remaining: 0,
+    },
+    pr: createPullRequest({ number: 116, headRefOid: "head-a" }),
+    reviewThreads: [
+      createReviewThread({
+        id: "thread-1",
+        comments: {
+          nodes: [
+            {
+              id: "comment-codex",
+              body: "P2: Preserve failed restore cleanup as a blocking verification failure.",
+              createdAt: "2026-06-07T01:05:00Z",
+              url: "https://example.test/pr/116#discussion_r1",
+              author: {
+                login: "chatgpt-codex-connector",
+                typeName: "Bot",
+              },
+            },
+            {
+              id: "comment-codex-reply",
+              body: "Connector follow-up without a new P-severity finding.",
+              createdAt: "2026-06-07T01:20:00Z",
+              url: "https://example.test/pr/116#discussion_r2",
+              author: {
+                login: "chatgpt-codex-connector",
                 typeName: "Bot",
               },
             },

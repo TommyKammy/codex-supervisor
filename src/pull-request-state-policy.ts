@@ -20,6 +20,7 @@ import {
   latestCodexConnectorReviewCommentFingerprint,
 } from "./codex-connector-review-policy";
 import {
+  actionableConfiguredBotReviewThreads,
   configuredBotReviewFollowUpState,
   configuredBotReviewThreads,
   manualReviewThreads,
@@ -277,20 +278,29 @@ export function inferStateFromPullRequest(
     reviewThreads,
   });
   const unresolvedBotThreads = effectiveConfiguredBotReviewThreadsForState(config, record, pr, checks, reviewThreads);
-  const pendingBotThreads = pendingBotReviewThreads(config, record, pr, unresolvedBotThreads);
-  const botFollowUpState = configuredBotReviewFollowUpState(config, record, pr, unresolvedBotThreads);
   const codexConnectorMustFixThreads = codexConnectorMustFixReviewThreads(unresolvedBotThreads);
+  const codexConnectorMustFixThreadIds = new Set(codexConnectorMustFixThreads.map((thread) => thread.id));
+  const retryFingerprintForThread = (thread: ReviewThread) =>
+    codexConnectorMustFixThreadIds.has(thread.id) ? latestCodexConnectorReviewCommentFingerprint(thread) : undefined;
+  const reviewLoopRetryBudgetAvailable = (thread: ReviewThread) =>
+    !reviewLoopRetryBudgetExhaustedForThread(record, pr, thread, 1, retryFingerprintForThread(thread));
+  const pendingBotThreads = pendingBotReviewThreads(config, record, pr, unresolvedBotThreads).filter(
+    reviewLoopRetryBudgetAvailable,
+  );
+  const botFollowUpState = configuredBotReviewFollowUpState(config, record, pr, unresolvedBotThreads);
+  const actionableFollowUpThreads = actionableConfiguredBotReviewThreads(config, unresolvedBotThreads).filter(
+    (thread) => !thread.isResolved && !thread.isOutdated,
+  );
+  const availableActionableFollowUpThreads = actionableFollowUpThreads.filter(reviewLoopRetryBudgetAvailable);
+  const botFollowUpStateEligibleWithRetryBudget =
+    botFollowUpState === "eligible" && availableActionableFollowUpThreads.length > 0;
+  const botFollowUpStateExhaustedByRetryBudget =
+    botFollowUpState === "eligible" &&
+    actionableFollowUpThreads.length > 0 &&
+    availableActionableFollowUpThreads.length === 0;
   const codexConnectorMustFixThreadsExhausted =
     codexConnectorMustFixThreads.length > 0 &&
-    codexConnectorMustFixThreads.every((thread) =>
-      reviewLoopRetryBudgetExhaustedForThread(
-        record,
-        pr,
-        thread,
-        1,
-        latestCodexConnectorReviewCommentFingerprint(thread),
-      ),
-    );
+    codexConnectorMustFixThreads.every((thread) => !reviewLoopRetryBudgetAvailable(thread));
   const checkSummary = summarizeChecks(checks);
   const staleCodexWaitHasOnlyOutdatedResidue = staleSameHeadCodexWaitHasOnlyOutdatedResidue(
     config,
@@ -334,7 +344,7 @@ export function inferStateFromPullRequest(
       return "blocked";
     }
 
-    if (pendingBotThreads.length > 0 || (botFollowUpState === "eligible" && manualThreads.length === 0)) {
+    if (pendingBotThreads.length > 0 || (botFollowUpStateEligibleWithRetryBudget && manualThreads.length === 0)) {
       return "addressing_review";
     }
 
@@ -439,8 +449,18 @@ export function inferStateFromPullRequest(
     return "repairing_ci";
   }
 
-  if (pendingBotThreads.length > 0 || (botFollowUpState === "eligible" && manualThreads.length === 0)) {
+  if (pendingBotThreads.length > 0 || (botFollowUpStateEligibleWithRetryBudget && manualThreads.length === 0)) {
     return "addressing_review";
+  }
+
+  if (
+    botFollowUpStateExhaustedByRetryBudget &&
+    manualThreads.length === 0 &&
+    !checkSummary.hasFailing &&
+    !checkSummary.hasPending &&
+    !mergeConflictDetected(pr)
+  ) {
+    return "blocked";
   }
 
   if (unresolvedBotThreads.length > 0) {

@@ -1131,6 +1131,63 @@ test("inferStateFromPullRequest blocks exhausted Codex Connector must-fix thread
   assert.equal(inferStateFromPullRequest(config, record, pr, passingChecks(), reviewThreads), "blocked");
 });
 
+test("inferStateFromPullRequest blocks exhausted non-Codex follow-up threads instead of starting an empty repair turn", () => {
+  const config = createConfig({
+    reviewBotLogins: ["copilot-pull-request-reviewer"],
+    humanReviewBlocksMerge: false,
+  });
+  const record = createRecord({
+    state: "pr_open",
+    pr_number: 44,
+    last_head_sha: "head123",
+    processed_review_thread_ids: ["thread-1@head123"],
+    processed_review_thread_fingerprints: ["thread-1@head123#comment-1"],
+    review_follow_up_head_sha: "head123",
+    review_follow_up_remaining: 1,
+    review_loop_retry_state: [
+      {
+        fingerprint: "pr=44|head=head123|thread=thread-1|comment=comment-1",
+        pr_number: 44,
+        head_sha: "head123",
+        thread_id: "thread-1",
+        latest_comment_fingerprint: "comment-1",
+        attempts: 1,
+        first_attempted_at: "2026-06-07T01:00:00Z",
+        last_attempted_at: "2026-06-07T01:00:00Z",
+      },
+    ],
+  });
+  const pr = createPullRequest({
+    number: 44,
+    headRefOid: "head123",
+    reviewDecision: null,
+    configuredBotTopLevelReviewStrength: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+  const reviewThreads = [
+    createReviewThread({
+      id: "thread-1",
+      comments: {
+        nodes: [
+          {
+            id: "comment-1",
+            body: "Please address this same-head follow-up before merging.",
+            createdAt: "2026-06-07T01:05:00Z",
+            url: "https://example.test/pr/44#discussion_r1",
+            author: {
+              login: "copilot-pull-request-reviewer",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  ];
+
+  assert.equal(inferStateFromPullRequest(config, record, pr, passingChecks(), reviewThreads), "blocked");
+});
+
 test("inferStateFromPullRequest keeps human review gates in place when only a journal-only configured-bot thread remains", () => {
   const config = createConfig({
     reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
