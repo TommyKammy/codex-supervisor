@@ -2,6 +2,7 @@ import {
   InventoryRefreshDiagnosticEntry,
   IssueRunRecord,
   JsonStateQuarantine,
+  ReviewLoopRetryStateEntry,
   StateLoadFinding,
   SupervisorStateFile,
 } from "./types";
@@ -101,6 +102,44 @@ function normalizeAddressingReviewStrategyReason(
   return strategy && typeof value === "string" && value.trim() !== "" ? value : null;
 }
 
+function normalizeReviewLoopRetryState(value: unknown): ReviewLoopRetryStateEntry[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((entry): entry is Record<string, unknown> =>
+      isRecord(entry) &&
+      typeof entry.fingerprint === "string" &&
+      entry.fingerprint.trim() !== "" &&
+      typeof entry.pr_number === "number" &&
+      Number.isInteger(entry.pr_number) &&
+      typeof entry.head_sha === "string" &&
+      entry.head_sha.trim() !== "" &&
+      typeof entry.thread_id === "string" &&
+      entry.thread_id.trim() !== "" &&
+      typeof entry.latest_comment_fingerprint === "string" &&
+      entry.latest_comment_fingerprint.trim() !== "" &&
+      typeof entry.attempts === "number" &&
+      Number.isInteger(entry.attempts) &&
+      entry.attempts > 0 &&
+      typeof entry.first_attempted_at === "string" &&
+      entry.first_attempted_at.trim() !== "" &&
+      typeof entry.last_attempted_at === "string" &&
+      entry.last_attempted_at.trim() !== "",
+    )
+    .map((entry): ReviewLoopRetryStateEntry => ({
+      fingerprint: entry.fingerprint as string,
+      pr_number: entry.pr_number as number,
+      head_sha: entry.head_sha as string,
+      thread_id: entry.thread_id as string,
+      latest_comment_fingerprint: entry.latest_comment_fingerprint as string,
+      attempts: entry.attempts as number,
+      first_attempted_at: entry.first_attempted_at as string,
+      last_attempted_at: entry.last_attempted_at as string,
+    }));
+}
+
 export function normalizeIssueRecord(value: IssueRunRecord): IssueRunRecord {
   const addressingReviewStrategy = normalizeAddressingReviewStrategy(value.addressing_review_strategy);
 
@@ -187,6 +226,7 @@ export function normalizeIssueRecord(value: IssueRunRecord): IssueRunRecord {
     last_host_local_pr_blocker_comment_head_sha: value.last_host_local_pr_blocker_comment_head_sha ?? null,
     stale_review_bot_reply_progress_keys: value.stale_review_bot_reply_progress_keys ?? [],
     stale_review_bot_resolve_progress_keys: value.stale_review_bot_resolve_progress_keys ?? [],
+    review_loop_retry_state: normalizeReviewLoopRetryState(value.review_loop_retry_state),
     blocked_reason: value.blocked_reason ?? null,
     review_follow_up_head_sha: value.review_follow_up_head_sha ?? null,
     review_follow_up_remaining: value.review_follow_up_remaining ?? 0,

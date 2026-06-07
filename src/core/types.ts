@@ -117,6 +117,17 @@ export interface TimelineArtifact {
   processed_review_thread_fingerprints?: string[];
 }
 
+export interface ReviewLoopRetryStateEntry {
+  fingerprint: string;
+  pr_number: number;
+  head_sha: string;
+  thread_id: string;
+  latest_comment_fingerprint: string;
+  attempts: number;
+  first_attempted_at: string;
+  last_attempted_at: string;
+}
+
 export type FailureKind = "timeout" | "command_error" | "codex_exit" | "codex_failed" | null;
 export type CommentIdentityStatus = "available" | "unavailable" | null;
 
@@ -307,6 +318,7 @@ export interface IssueRunRecord {
   last_stale_review_bot_reply_head_sha?: string | null;
   stale_review_bot_reply_progress_keys?: string[];
   stale_review_bot_resolve_progress_keys?: string[];
+  review_loop_retry_state?: ReviewLoopRetryStateEntry[];
   blocked_reason: BlockedReason;
   processed_review_thread_ids: string[];
   processed_review_thread_fingerprints: string[];

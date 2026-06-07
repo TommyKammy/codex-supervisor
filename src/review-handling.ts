@@ -4,6 +4,7 @@ import {
   GitHubPullRequest,
   IssueRunRecord,
   PullRequestCheck,
+  ReviewLoopRetryStateEntry,
   ReviewThread,
   SupervisorConfig,
 } from "./core/types";
@@ -30,6 +31,94 @@ export function processedReviewThreadFingerprintKey(
   latestCommentFingerprint: string,
 ): string {
   return `${processedReviewThreadKey(threadId, headSha)}#${latestCommentFingerprint}`;
+}
+
+export function reviewLoopRetryFingerprint(args: {
+  prNumber: number;
+  headSha: string;
+  threadId: string;
+  latestCommentFingerprint: string;
+}): string {
+  return [
+    `pr=${args.prNumber}`,
+    `head=${args.headSha}`,
+    `thread=${args.threadId}`,
+    `comment=${args.latestCommentFingerprint}`,
+  ].join("|");
+}
+
+export function reviewLoopRetryFingerprintForThread(
+  pr: Pick<GitHubPullRequest, "number" | "headRefOid">,
+  thread: Pick<ReviewThread, "id" | "comments">,
+): string | null {
+  const latestCommentFingerprint = latestReviewThreadCommentFingerprint(thread);
+  if (!latestCommentFingerprint) {
+    return null;
+  }
+
+  return reviewLoopRetryFingerprint({
+    prNumber: pr.number,
+    headSha: pr.headRefOid,
+    threadId: thread.id,
+    latestCommentFingerprint,
+  });
+}
+
+export function reviewLoopRetryStateEntryForThread(
+  record: Pick<IssueRunRecord, "review_loop_retry_state">,
+  pr: Pick<GitHubPullRequest, "number" | "headRefOid">,
+  thread: Pick<ReviewThread, "id" | "comments">,
+): ReviewLoopRetryStateEntry | null {
+  const fingerprint = reviewLoopRetryFingerprintForThread(pr, thread);
+  if (!fingerprint) {
+    return null;
+  }
+
+  return (record.review_loop_retry_state ?? []).find((entry) => entry.fingerprint === fingerprint) ?? null;
+}
+
+export function reviewLoopRetryAttemptCountForThread(
+  record: Pick<IssueRunRecord, "review_loop_retry_state">,
+  pr: Pick<GitHubPullRequest, "number" | "headRefOid">,
+  thread: Pick<ReviewThread, "id" | "comments">,
+): number {
+  return reviewLoopRetryStateEntryForThread(record, pr, thread)?.attempts ?? 0;
+}
+
+export function nextReviewLoopRetryStateForThread(args: {
+  record: Pick<IssueRunRecord, "review_loop_retry_state">;
+  pr: Pick<GitHubPullRequest, "number" | "headRefOid">;
+  thread: Pick<ReviewThread, "id" | "comments">;
+  attemptedAt: string;
+}): ReviewLoopRetryStateEntry[] {
+  const latestCommentFingerprint = latestReviewThreadCommentFingerprint(args.thread);
+  if (!latestCommentFingerprint) {
+    return [...(args.record.review_loop_retry_state ?? [])];
+  }
+
+  const fingerprint = reviewLoopRetryFingerprint({
+    prNumber: args.pr.number,
+    headSha: args.pr.headRefOid,
+    threadId: args.thread.id,
+    latestCommentFingerprint,
+  });
+  const existingEntries = args.record.review_loop_retry_state ?? [];
+  const existingEntry = existingEntries.find((entry) => entry.fingerprint === fingerprint);
+  const nextEntry: ReviewLoopRetryStateEntry = {
+    fingerprint,
+    pr_number: args.pr.number,
+    head_sha: args.pr.headRefOid,
+    thread_id: args.thread.id,
+    latest_comment_fingerprint: latestCommentFingerprint,
+    attempts: (existingEntry?.attempts ?? 0) + 1,
+    first_attempted_at: existingEntry?.first_attempted_at ?? args.attemptedAt,
+    last_attempted_at: args.attemptedAt,
+  };
+
+  return [
+    ...existingEntries.filter((entry) => entry.fingerprint !== fingerprint),
+    nextEntry,
+  ];
 }
 
 export function hasProcessedReviewThread(

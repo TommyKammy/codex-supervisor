@@ -110,6 +110,37 @@ test("StateStore json roundtrip preserves the active reservation and retry count
   });
 });
 
+test("StateStore touch preserves review-loop retry state patches", () => {
+  const store = new StateStore("/tmp/state.json", { backend: "json" });
+  const touched = store.touch(createRecord(2269), {
+    review_loop_retry_state: [
+      {
+        fingerprint: "pr=116|head=head-a|thread=thread-1|comment=comment-1",
+        pr_number: 116,
+        head_sha: "head-a",
+        thread_id: "thread-1",
+        latest_comment_fingerprint: "comment-1",
+        attempts: 1,
+        first_attempted_at: "2026-06-07T00:01:00Z",
+        last_attempted_at: "2026-06-07T00:01:00Z",
+      },
+    ],
+  });
+
+  assert.deepEqual(touched.review_loop_retry_state, [
+    {
+      fingerprint: "pr=116|head=head-a|thread=thread-1|comment=comment-1",
+      pr_number: 116,
+      head_sha: "head-a",
+      thread_id: "thread-1",
+      latest_comment_fingerprint: "comment-1",
+      attempts: 1,
+      first_attempted_at: "2026-06-07T00:01:00Z",
+      last_attempted_at: "2026-06-07T00:01:00Z",
+    },
+  ]);
+});
+
 test("StateStore json load normalizes tracked PR progress bookkeeping fields", async () => {
   await withTempDir(async (dir) => {
     const statePath = path.join(dir, "state.json");

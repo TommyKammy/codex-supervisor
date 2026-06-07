@@ -258,6 +258,8 @@ export class StateStore {
         patch.stale_review_bot_reply_progress_keys ?? record.stale_review_bot_reply_progress_keys ?? [],
       stale_review_bot_resolve_progress_keys:
         patch.stale_review_bot_resolve_progress_keys ?? record.stale_review_bot_resolve_progress_keys ?? [],
+      review_loop_retry_state:
+        patch.review_loop_retry_state ?? record.review_loop_retry_state ?? [],
       blocked_reason:
         hasOwn(patch, "blocked_reason") ? patch.blocked_reason ?? null : record.blocked_reason ?? null,
       updated_at: nowIso(),
