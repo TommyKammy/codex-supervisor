@@ -195,6 +195,7 @@ export function selectReviewThreadsForTurn(args: {
   );
   const reviewLoopRetryBudgetAvailable = (thread: ReviewThread) =>
     !reviewLoopRetryBudgetExhaustedForThread(args.record, currentPr, thread);
+  const availableActionableFollowUpThreads = actionableFollowUpThreads.filter(reviewLoopRetryBudgetAvailable);
   const pendingThreads = actionableFollowUpThreads.filter(
     (thread) => !hasProcessedReviewThread(args.record, currentPr, thread) && reviewLoopRetryBudgetAvailable(thread),
   );
@@ -223,9 +224,9 @@ export function selectReviewThreadsForTurn(args: {
   return (
     args.record.review_follow_up_head_sha === currentPr.headRefOid &&
     (args.record.review_follow_up_remaining ?? 0) > 0 &&
-    actionableFollowUpThreads.length > 0
+    availableActionableFollowUpThreads.length > 0
   )
-    ? actionableFollowUpThreads
+    ? availableActionableFollowUpThreads
     : pendingThreads;
 }
 

@@ -547,6 +547,38 @@ test("selectReviewThreadsForTurn re-includes same-head configured-bot threads wh
   assert.equal(selected[0]?.id, "thread-1");
 });
 
+test("selectReviewThreadsForTurn excludes exhausted same-head configured-bot threads when follow-up allowance is active", () => {
+  const selected = selectReviewThreadsForTurn({
+    config: createConfig({
+      reviewBotLogins: ["copilot-pull-request-reviewer"],
+    }),
+    preRunState: "addressing_review",
+    record: {
+      processed_review_thread_ids: ["thread-1@head-a"],
+      processed_review_thread_fingerprints: ["thread-1@head-a#comment-1"],
+      review_loop_retry_state: [
+        {
+          fingerprint: "pr=116|head=head-a|thread=thread-1|comment=comment-1",
+          pr_number: 116,
+          head_sha: "head-a",
+          thread_id: "thread-1",
+          latest_comment_fingerprint: "comment-1",
+          attempts: 1,
+          first_attempted_at: "2026-06-07T01:00:00Z",
+          last_attempted_at: "2026-06-07T01:00:00Z",
+        },
+      ],
+      last_head_sha: "head-a",
+      review_follow_up_head_sha: "head-a",
+      review_follow_up_remaining: 1,
+    },
+    pr: createPullRequest({ number: 116, headRefOid: "head-a" }),
+    reviewThreads: [createReviewThread({ id: "thread-1" })],
+  });
+
+  assert.deepEqual(selected, []);
+});
+
 test("selectReviewThreadsForTurn re-includes processed Codex Connector must-fix threads for same-PR repair", () => {
   const selected = selectReviewThreadsForTurn({
     config: createConfig({
