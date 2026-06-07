@@ -1,0 +1,50 @@
+{
+  "id": "metadata-only-review-residue",
+  "intent": "Stable read-only trace for metadata-only unresolved review residue after current-head evidence exists.",
+  "artifact": {
+    "schemaVersion": "pr_lifecycle_decision_trace.v1",
+    "traceId": "metadata-only-review-residue",
+    "generatedAt": "2026-06-07T00:50:00.000Z",
+    "facts": {
+      "source": "fresh_github",
+      "observedAt": "2026-06-07T00:49:00.000Z",
+      "pullRequestNumber": 1005,
+      "headSha": "head-metadata-residue",
+      "normalizedState": {
+        "source": "fresh_github",
+        "observedAt": "2026-06-07T00:49:00.000Z",
+        "pullRequestNumber": 1005,
+        "headSha": "head-metadata-residue",
+        "headFreshness": "current_head",
+        "reviewPosture": "metadata_only_unresolved",
+        "checkPosture": "green",
+        "mergeability": "mergeable",
+        "localStateFreshness": "fresh",
+        "evidence": {
+          "manualReviewThreadCount": 0,
+          "currentHeadConfiguredBotThreadCount": 0,
+          "stalePreviousHeadConfiguredBotThreadCount": 0,
+          "metadataOnlyUnresolvedThreadCount": 2,
+          "passingCheckCount": 3,
+          "pendingCheckCount": 0,
+          "failingCheckCount": 0,
+          "unknownCheckCount": 0,
+          "trackedHeadSha": "head-metadata-residue",
+          "workspaceHeadSha": "head-metadata-residue",
+          "lastObservedPrHeadSha": "head-metadata-residue"
+        }
+      }
+    },
+    "policy": {
+      "name": "pr_lifecycle_decision_kernel_v2",
+      "posture": "metadata_only_review_residue",
+      "reasons": ["verified_current_head_evidence", "metadata_only_unresolved_threads"]
+    },
+    "decision": {
+      "value": "ask_operator",
+      "recommendedAction": "manual_review",
+      "summary": "Review residue is metadata-only and needs explicit operator handling."
+    },
+    "evidenceTokens": ["pr=1005", "metadata_only_threads=2", "checks=green"]
+  }
+}
