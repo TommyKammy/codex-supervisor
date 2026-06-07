@@ -5,6 +5,7 @@ import {
   buildCodexConnectorPolicyBlockDiagnostic,
   buildCodexConnectorReviewChurnDiagnostic,
   buildCodexConnectorReviewChurnProgressSummary,
+  buildReviewPolicyInput,
   clusterConfiguredBotReviewThreads,
   compareCodexConnectorReviewChurnProgress,
   codexConnectorMustFixReviewThreads,
@@ -68,6 +69,97 @@ test("Codex Connector policy classifies must-fix, nitpick, and stale review comm
     p3Softened: 1,
     p3Escalated: 1,
   });
+});
+
+test("review policy input snapshots provider, PR, thread vocabulary, and processed evidence", () => {
+  const config = createConfig({ reviewBotLogins: ["chatgpt-codex-connector"] });
+  const p2Thread = codexThread({
+    id: "thread-p2",
+    body: "P2: Preserve failed restore cleanup as a blocking verification failure.",
+  });
+  const p3NitpickThread = codexThread({
+    id: "thread-p3-softened",
+    body: "P3: Nitpick: prefer a shorter helper name for readability.",
+  });
+  const manualThread = createReviewThread({
+    id: "thread-manual",
+    comments: {
+      nodes: [
+        {
+          id: "comment-human",
+          body: "Please double-check the migration note.",
+          createdAt: "2026-03-11T00:02:00Z",
+          url: "https://example.test/pr/44#discussion_human",
+          author: {
+            login: "maintainer",
+            typeName: "User",
+          },
+        },
+      ],
+    },
+  });
+  const pr: Pick<
+    GitHubPullRequest,
+    "number" | "headRefOid" | "configuredBotCurrentHeadObservedAt" | "configuredBotLatestReviewedCommitSha" | "currentHeadCiGreenAt"
+  > = {
+    number: 44,
+    headRefOid: "head-new",
+    configuredBotCurrentHeadObservedAt: null,
+    configuredBotLatestReviewedCommitSha: "head-old",
+    currentHeadCiGreenAt: "2026-03-11T00:03:00Z",
+  };
+  const input = buildReviewPolicyInput({
+    config,
+    pr,
+    record: {
+      provider_success_head_sha: "HEAD-OLD",
+      external_review_head_sha: "HEAD-NEW",
+      processed_review_thread_ids: ["thread-p3-softened@head-new", "thread-p2@head-old"],
+      processed_review_thread_fingerprints: [
+        "thread-p3-softened@head-new#comment-1",
+        "thread-p2@head-old#comment-1",
+      ],
+    },
+    reviewThreads: [p2Thread, p3NitpickThread, manualThread],
+  });
+
+  assert.deepEqual(input.providerIdentity, {
+    configuredProviderKinds: ["codex"],
+    configuredBotLogins: ["chatgpt-codex-connector"],
+  });
+  assert.deepEqual(input.pr, {
+    number: 44,
+    headSha: "head-new",
+    currentHeadObservedAt: null,
+    latestReviewedCommitSha: "head-old",
+    providerSuccessHeadSha: "head-old",
+    externalReviewHeadSha: "head-new",
+    currentHeadCiGreenAt: "2026-03-11T00:03:00Z",
+  });
+
+  const p2Input = input.threads.find((thread) => thread.id === "thread-p2");
+  assert.equal(p2Input?.headRelation, "stale_commit");
+  assert.equal(p2Input?.findingKind, "must_fix");
+  assert.equal(p2Input?.processedEvidence.processedOnCurrentHead, false);
+  assert.equal(p2Input?.processedEvidence.processedOnPriorHead, true);
+  assert.deepEqual(p2Input?.vocabulary, ["stale_commit_thread", "configured_bot_thread", "must_fix_finding"]);
+
+  const p3Input = input.threads.find((thread) => thread.id === "thread-p3-softened");
+  assert.equal(p3Input?.headRelation, "current_head");
+  assert.equal(p3Input?.findingKind, "softened_p3_advisory");
+  assert.equal(p3Input?.processedEvidence.processedOnCurrentHead, true);
+  assert.deepEqual(p3Input?.vocabulary, [
+    "current_head_thread",
+    "configured_bot_thread",
+    "softened_p3_advisory",
+  ]);
+
+  const manualInput = input.threads.find((thread) => thread.id === "thread-manual");
+  assert.equal(manualInput?.findingKind, "none");
+  assert.deepEqual(manualInput?.vocabulary, ["manual_thread"]);
+
+  p2Thread.comments.nodes[0]!.body = "P3: Nitpick after snapshot mutation.";
+  assert.equal(p2Input?.comments[0]?.body, "P2: Preserve failed restore cleanup as a blocking verification failure.");
 });
 
 test("Codex Connector policy diagnostics and convergence stay focused in the policy module", () => {

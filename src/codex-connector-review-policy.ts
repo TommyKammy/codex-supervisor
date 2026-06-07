@@ -1,11 +1,95 @@
-import { configuredReviewProviderKinds } from "./core/review-providers";
-import type { GitHubPullRequest, ReviewThread, SupervisorConfig } from "./core/types";
+import {
+  configuredReviewBotLogins,
+  configuredReviewProviderKinds,
+  normalizeReviewProviderLogin,
+} from "./core/review-providers";
+import type {
+  ConfiguredReviewProviderKind,
+  GitHubPullRequest,
+  IssueRunRecord,
+  ReviewThread,
+  ReviewThreadComment,
+  SupervisorConfig,
+} from "./core/types";
 import {
   type CodexConnectorPSeverity,
   extractCodexConnectorPSeverity,
   hasCodexConnectorStrongRiskWording,
   isCodexConnectorReviewer,
 } from "./external-review/external-review-normalization";
+
+export type ReviewPolicyThreadVocabulary =
+  | "current_head_thread"
+  | "stale_commit_thread"
+  | "manual_thread"
+  | "configured_bot_thread"
+  | "softened_p3_advisory"
+  | "escalated_p3"
+  | "must_fix_finding";
+
+export type ReviewPolicyFindingKind =
+  | "none"
+  | "must_fix"
+  | "softened_p3_advisory"
+  | "escalated_p3";
+
+export type ReviewPolicyHeadRelation = "current_head" | "stale_commit" | "unknown";
+
+export interface ReviewPolicyProviderIdentity {
+  configuredProviderKinds: ConfiguredReviewProviderKind[];
+  configuredBotLogins: string[];
+}
+
+export interface ReviewPolicyPrFacts {
+  number: number;
+  headSha: string;
+  currentHeadObservedAt: string | null;
+  latestReviewedCommitSha: string | null;
+  providerSuccessHeadSha: string | null;
+  externalReviewHeadSha: string | null;
+  currentHeadCiGreenAt: string | null;
+}
+
+export interface ReviewPolicyProcessedThreadEvidence {
+  threadId: string;
+  latestCommentFingerprint: string | null;
+  processedOnCurrentHead: boolean;
+  processedOnPriorHead: boolean;
+  processedThreadKeys: string[];
+  processedThreadFingerprintKeys: string[];
+}
+
+export interface ReviewPolicyThreadCommentSnapshot {
+  id: string;
+  body: string;
+  createdAt: string;
+  url: string;
+  authorLogin: string | null;
+  normalizedAuthorLogin: string | null;
+  authorTypeName: string | null;
+}
+
+export interface ReviewPolicyThreadInput {
+  id: string;
+  isResolved: boolean;
+  isOutdated: boolean;
+  path: string | null;
+  line: number | null;
+  comments: ReviewPolicyThreadCommentSnapshot[];
+  latestComment: ReviewPolicyThreadCommentSnapshot | null;
+  latestCodexConnectorSeverity: CodexConnectorPSeverity | null;
+  latestCodexConnectorCommentFingerprint: string | null;
+  findingKind: ReviewPolicyFindingKind;
+  headRelation: ReviewPolicyHeadRelation;
+  processedEvidence: ReviewPolicyProcessedThreadEvidence;
+  vocabulary: ReviewPolicyThreadVocabulary[];
+}
+
+export interface ReviewPolicyInput {
+  providerIdentity: ReviewPolicyProviderIdentity;
+  pr: ReviewPolicyPrFacts;
+  threads: ReviewPolicyThreadInput[];
+}
 
 function latestCodexConnectorReviewCommentNode(thread: ReviewThread): ReviewThread["comments"]["nodes"][number] | null {
   for (let index = thread.comments.nodes.length - 1; index >= 0; index -= 1) {
@@ -99,6 +183,197 @@ function validPolicyTimestamp(value: string | null | undefined): string | null {
   }
 
   return value;
+}
+
+function latestCommentFingerprint(thread: Pick<ReviewThread, "comments">): string | null {
+  const comment = thread.comments.nodes[thread.comments.nodes.length - 1] ?? null;
+  return comment?.id || comment?.createdAt || null;
+}
+
+function processedThreadKey(threadId: string, headSha: string): string {
+  return `${threadId}@${headSha}`;
+}
+
+function processedThreadFingerprintKey(threadId: string, headSha: string, latestCommentFingerprintValue: string): string {
+  return `${processedThreadKey(threadId, headSha)}#${latestCommentFingerprintValue}`;
+}
+
+function processedOnPriorHead(args: {
+  record: Pick<IssueRunRecord, "processed_review_thread_ids" | "processed_review_thread_fingerprints">;
+  pr: Pick<GitHubPullRequest, "headRefOid">;
+  thread: Pick<ReviewThread, "id" | "comments">;
+  latestCommentFingerprint: string | null;
+}): boolean {
+  if (!args.latestCommentFingerprint) {
+    return false;
+  }
+
+  const processedKeys = new Set(args.record.processed_review_thread_ids ?? []);
+  const fingerprintPrefix = `${args.thread.id}@`;
+  const fingerprintSuffix = `#${args.latestCommentFingerprint}`;
+  return (args.record.processed_review_thread_fingerprints ?? []).some((key) => {
+    if (!key.startsWith(fingerprintPrefix) || !key.endsWith(fingerprintSuffix)) {
+      return false;
+    }
+
+    const headSha = key.slice(fingerprintPrefix.length, key.length - fingerprintSuffix.length);
+    return Boolean(headSha && headSha !== args.pr.headRefOid && processedKeys.has(`${args.thread.id}@${headSha}`));
+  });
+}
+
+function reviewCommentSnapshot(comment: ReviewThreadComment): ReviewPolicyThreadCommentSnapshot {
+  const authorLogin = comment.author?.login ?? null;
+  return {
+    id: comment.id,
+    body: comment.body,
+    createdAt: comment.createdAt,
+    url: comment.url,
+    authorLogin,
+    normalizedAuthorLogin: normalizeReviewProviderLogin(authorLogin),
+    authorTypeName: comment.author?.typeName ?? null,
+  };
+}
+
+function reviewPolicyFindingKind(thread: ReviewThread): ReviewPolicyFindingKind {
+  const latestCodexConnectorReview = latestCodexConnectorReviewComment(thread);
+  if (!latestCodexConnectorReview || thread.isResolved || thread.isOutdated) {
+    return "none";
+  }
+
+  if (
+    latestCodexConnectorReview.severity === "P0" ||
+    latestCodexConnectorReview.severity === "P1" ||
+    latestCodexConnectorReview.severity === "P2"
+  ) {
+    return "must_fix";
+  }
+
+  return hasCodexConnectorStrongRiskWording(latestCodexConnectorReview.body)
+    ? "escalated_p3"
+    : "softened_p3_advisory";
+}
+
+function reviewPolicyThreadVocabulary(args: {
+  isConfiguredBotThread: boolean;
+  isManualThread: boolean;
+  findingKind: ReviewPolicyFindingKind;
+  headRelation: ReviewPolicyHeadRelation;
+}): ReviewPolicyThreadVocabulary[] {
+  const vocabulary: ReviewPolicyThreadVocabulary[] = [];
+  if (args.headRelation === "current_head") {
+    vocabulary.push("current_head_thread");
+  } else if (args.headRelation === "stale_commit") {
+    vocabulary.push("stale_commit_thread");
+  }
+  if (args.isManualThread) {
+    vocabulary.push("manual_thread");
+  }
+  if (args.isConfiguredBotThread) {
+    vocabulary.push("configured_bot_thread");
+  }
+  if (args.findingKind === "must_fix") {
+    vocabulary.push("must_fix_finding");
+  } else if (args.findingKind === "softened_p3_advisory") {
+    vocabulary.push("softened_p3_advisory");
+  } else if (args.findingKind === "escalated_p3") {
+    vocabulary.push("escalated_p3");
+  }
+  return vocabulary;
+}
+
+export function buildReviewPolicyInput(args: {
+  config: Pick<SupervisorConfig, "configuredReviewProviders" | "reviewBotLogins">;
+  pr: Pick<
+    GitHubPullRequest,
+    | "number"
+    | "headRefOid"
+    | "configuredBotCurrentHeadObservedAt"
+    | "configuredBotLatestReviewedCommitSha"
+    | "currentHeadCiGreenAt"
+  >;
+  record: Pick<
+    IssueRunRecord,
+    "provider_success_head_sha" | "external_review_head_sha" | "processed_review_thread_ids" | "processed_review_thread_fingerprints"
+  >;
+  reviewThreads: ReviewThread[];
+}): ReviewPolicyInput {
+  const configuredBotLogins = configuredReviewBotLogins(args.config);
+  const configuredBotLoginSet = new Set(configuredBotLogins);
+  const staleCommitThreadIds = new Set(
+    codexConnectorStaleReviewCommitThreads(args.pr, args.reviewThreads).map((thread) => thread.id),
+  );
+  const currentHeadObservedAt = validPolicyTimestamp(args.pr.configuredBotCurrentHeadObservedAt);
+
+  return {
+    providerIdentity: {
+      configuredProviderKinds: [...configuredReviewProviderKinds(args.config)],
+      configuredBotLogins: [...configuredBotLogins],
+    },
+    pr: {
+      number: args.pr.number,
+      headSha: args.pr.headRefOid,
+      currentHeadObservedAt,
+      latestReviewedCommitSha: normalizeCommitShaForComparison(args.pr.configuredBotLatestReviewedCommitSha),
+      providerSuccessHeadSha: normalizeCommitShaForComparison(args.record.provider_success_head_sha),
+      externalReviewHeadSha: normalizeCommitShaForComparison(args.record.external_review_head_sha),
+      currentHeadCiGreenAt: validPolicyTimestamp(args.pr.currentHeadCiGreenAt),
+    },
+    threads: args.reviewThreads.map((thread) => {
+      const comments = thread.comments.nodes.map(reviewCommentSnapshot);
+      const latestComment = comments[comments.length - 1] ?? null;
+      const isConfiguredBotThread = comments.some((comment) =>
+        Boolean(comment.normalizedAuthorLogin && configuredBotLoginSet.has(comment.normalizedAuthorLogin)),
+      );
+      const isManualThread = !thread.isResolved && !thread.isOutdated && comments.length > 0 && !isConfiguredBotThread;
+      const latestCommentFingerprintValue = latestCommentFingerprint(thread);
+      const processedOnCurrentHeadValue = Boolean(
+        latestCommentFingerprintValue &&
+          (args.record.processed_review_thread_fingerprints ?? []).includes(
+            processedThreadFingerprintKey(thread.id, args.pr.headRefOid, latestCommentFingerprintValue),
+          ),
+      );
+      const processedOnPriorHeadValue = processedOnPriorHead({
+        record: args.record,
+        pr: args.pr,
+        thread,
+        latestCommentFingerprint: latestCommentFingerprintValue,
+      });
+      const headRelation: ReviewPolicyHeadRelation = staleCommitThreadIds.has(thread.id)
+        ? "stale_commit"
+        : processedOnCurrentHeadValue || Boolean(currentHeadObservedAt)
+          ? "current_head"
+          : "unknown";
+      const findingKind = reviewPolicyFindingKind(thread);
+
+      return {
+        id: thread.id,
+        isResolved: thread.isResolved,
+        isOutdated: thread.isOutdated,
+        path: thread.path,
+        line: thread.line,
+        comments,
+        latestComment,
+        latestCodexConnectorSeverity: latestCodexConnectorPSeverity(thread),
+        latestCodexConnectorCommentFingerprint: latestCodexConnectorReviewCommentFingerprint(thread),
+        findingKind,
+        headRelation,
+        processedEvidence: {
+          threadId: thread.id,
+          latestCommentFingerprint: latestCommentFingerprintValue,
+          processedOnCurrentHead: processedOnCurrentHeadValue,
+          processedOnPriorHead: processedOnPriorHeadValue,
+          processedThreadKeys: [...(args.record.processed_review_thread_ids ?? [])],
+          processedThreadFingerprintKeys: [...(args.record.processed_review_thread_fingerprints ?? [])],
+        },
+        vocabulary: reviewPolicyThreadVocabulary({
+          isConfiguredBotThread,
+          isManualThread,
+          findingKind,
+          headRelation,
+        }),
+      };
+    }),
+  };
 }
 
 export function hasCodexConnectorPrSuccessCurrentHeadObservation(
