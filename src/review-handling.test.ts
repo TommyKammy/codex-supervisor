@@ -15,8 +15,12 @@ import {
   localReviewRetryLoopCandidate,
   localReviewRetryLoopStalled,
   nextLocalReviewSignatureTracking,
+  nextReviewLoopRetryStateForThread,
   reviewDecisionAllowsSamePrRepair,
   reviewDecisionAllowsSamePrManualReviewRepair,
+  reviewLoopRetryAttemptCountForThread,
+  reviewLoopRetryFingerprintForThread,
+  reviewLoopRetryStateEntryForThread,
 } from "./review-handling";
 import { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "./core/types";
 
@@ -232,6 +236,87 @@ test("hasProcessedReviewThread ignores unrelated same-head fingerprints when dec
     ),
     true,
   );
+});
+
+test("review-loop retry state counts attempts by PR, head, thread, and latest comment fingerprint", () => {
+  const pr = createPullRequest({ number: 116, headRefOid: "head-a" });
+  const thread = createReviewThread({
+    id: "thread-1",
+    comments: {
+      nodes: [
+        {
+          id: "comment-1",
+          body: "P2: Please address this.",
+          createdAt: "2026-06-07T00:00:00Z",
+          url: "https://example.test/pr/116#discussion_r1",
+          author: { login: "codex-connector", typeName: "Bot" },
+        },
+      ],
+    },
+  });
+
+  const firstState = nextReviewLoopRetryStateForThread({
+    record: createRecord(),
+    pr,
+    thread,
+    attemptedAt: "2026-06-07T00:01:00Z",
+  });
+  const secondState = nextReviewLoopRetryStateForThread({
+    record: createRecord({ review_loop_retry_state: firstState }),
+    pr,
+    thread,
+    attemptedAt: "2026-06-07T00:02:00Z",
+  });
+  const record = createRecord({ review_loop_retry_state: secondState });
+  const fingerprint = reviewLoopRetryFingerprintForThread(pr, thread);
+  const entry = reviewLoopRetryStateEntryForThread(record, pr, thread);
+
+  assert.equal(fingerprint, "pr=116|head=head-a|thread=thread-1|comment=comment-1");
+  assert.equal(reviewLoopRetryAttemptCountForThread(record, pr, thread), 2);
+  assert.equal(entry?.fingerprint, fingerprint);
+  assert.equal(entry?.pr_number, 116);
+  assert.equal(entry?.head_sha, "head-a");
+  assert.equal(entry?.thread_id, "thread-1");
+  assert.equal(entry?.latest_comment_fingerprint, "comment-1");
+  assert.equal(entry?.first_attempted_at, "2026-06-07T00:01:00Z");
+  assert.equal(entry?.last_attempted_at, "2026-06-07T00:02:00Z");
+});
+
+test("review-loop retry state keeps stale previous-head attempts separate from current-head attempts", () => {
+  const thread = createReviewThread({
+    id: "thread-1",
+    comments: {
+      nodes: [
+        {
+          id: "comment-1",
+          body: "P2: Please address this.",
+          createdAt: "2026-06-07T00:00:00Z",
+          url: "https://example.test/pr/116#discussion_r1",
+          author: { login: "codex-connector", typeName: "Bot" },
+        },
+      ],
+    },
+  });
+  const oldHeadPr = createPullRequest({ number: 116, headRefOid: "head-a" });
+  const currentHeadPr = createPullRequest({ number: 116, headRefOid: "head-b" });
+  const oldHeadState = nextReviewLoopRetryStateForThread({
+    record: createRecord(),
+    pr: oldHeadPr,
+    thread,
+    attemptedAt: "2026-06-07T00:01:00Z",
+  });
+  const currentHeadState = nextReviewLoopRetryStateForThread({
+    record: createRecord({ review_loop_retry_state: oldHeadState }),
+    pr: currentHeadPr,
+    thread,
+    attemptedAt: "2026-06-07T00:03:00Z",
+  });
+  const record = createRecord({ review_loop_retry_state: currentHeadState });
+
+  assert.equal(reviewLoopRetryAttemptCountForThread(record, oldHeadPr, thread), 1);
+  assert.equal(reviewLoopRetryAttemptCountForThread(record, currentHeadPr, thread), 1);
+  assert.equal(record.review_loop_retry_state?.length, 2);
+  assert.deepEqual(record.review_loop_retry_state?.map((entry) => entry.head_sha).sort(), ["head-a", "head-b"]);
 });
 
 test("local review gating respects enabled policy requirements for ready and merge transitions", () => {

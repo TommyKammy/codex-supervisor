@@ -163,6 +163,48 @@ test("normalizeStateForLoad defaults Codex Connector retry bookkeeping", () => {
   assert.equal(loaded.issues["1976"]?.codex_connector_review_request_comment_url, null);
 });
 
+test("normalizeStateForLoad defaults and preserves review-loop retry state", () => {
+  const loadedWithoutState = normalizeStateForLoad({
+    activeIssueNumber: null,
+    issues: {
+      "2269": createRecord(2269),
+    },
+  } satisfies SupervisorStateFile);
+  const loadedWithState = normalizeStateForLoad({
+    activeIssueNumber: null,
+    issues: {
+      "2270": createRecord(2270, {
+        review_loop_retry_state: [
+          {
+            fingerprint: "pr=116|head=head-a|thread=thread-1|comment=comment-1",
+            pr_number: 116,
+            head_sha: "head-a",
+            thread_id: "thread-1",
+            latest_comment_fingerprint: "comment-1",
+            attempts: 2,
+            first_attempted_at: "2026-06-07T00:01:00Z",
+            last_attempted_at: "2026-06-07T00:02:00Z",
+          },
+        ],
+      }),
+    },
+  } satisfies SupervisorStateFile);
+
+  assert.deepEqual(loadedWithoutState.issues["2269"]?.review_loop_retry_state, []);
+  assert.deepEqual(loadedWithState.issues["2270"]?.review_loop_retry_state, [
+    {
+      fingerprint: "pr=116|head=head-a|thread=thread-1|comment=comment-1",
+      pr_number: 116,
+      head_sha: "head-a",
+      thread_id: "thread-1",
+      latest_comment_fingerprint: "comment-1",
+      attempts: 2,
+      first_attempted_at: "2026-06-07T00:01:00Z",
+      last_attempted_at: "2026-06-07T00:02:00Z",
+    },
+  ]);
+});
+
 test("normalizeStateForLoad clamps persisted addressing review strategy fields", () => {
   const loaded = normalizeStateForLoad({
     activeIssueNumber: null,
