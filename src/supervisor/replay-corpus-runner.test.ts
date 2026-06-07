@@ -391,6 +391,8 @@ test("runReplayCorpus replays the checked-in PR lifecycle safety cases without m
     "clustered-codex-review-repair-convergence",
     "current-head-success-clears-stale-handoff",
     "codex-current-head-success-unresolved-must-fix",
+    "phase0-aegisops-repeated-codex-feedback-terminal",
+    "phase0-hrcore-current-head-repair-metadata-residue",
   ]);
 });
 

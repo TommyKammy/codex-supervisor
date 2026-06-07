@@ -382,6 +382,23 @@ function validateTimelineArtifact(
   };
 }
 
+function validateReviewLoopRetryStateEntry(
+  raw: unknown,
+  context: string,
+): NonNullable<ReplayCorpusInputSnapshot["local"]["record"]["review_loop_retry_state"]>[number] {
+  const entry = expectObject(raw, context);
+  return {
+    fingerprint: expectString(entry.fingerprint, `${context} fingerprint`),
+    pr_number: expectInteger(entry.pr_number, `${context} pr_number`),
+    head_sha: expectString(entry.head_sha, `${context} head_sha`),
+    thread_id: expectString(entry.thread_id, `${context} thread_id`),
+    latest_comment_fingerprint: expectString(entry.latest_comment_fingerprint, `${context} latest_comment_fingerprint`),
+    attempts: expectInteger(entry.attempts, `${context} attempts`),
+    first_attempted_at: expectString(entry.first_attempted_at, `${context} first_attempted_at`),
+    last_attempted_at: expectString(entry.last_attempted_at, `${context} last_attempted_at`),
+  };
+}
+
 function validateIssue(raw: unknown, context: string): ReplayCorpusInputSnapshot["issue"] {
   const issue = expectObject(raw, context);
   return {
@@ -545,6 +562,12 @@ function validateLocalRecord(raw: unknown, context: string): ReplayCorpusInputSn
       record.last_host_local_pr_blocker_comment_head_sha,
       `${context} last_host_local_pr_blocker_comment_head_sha`,
     ),
+    review_loop_retry_state:
+      record.review_loop_retry_state === undefined
+        ? undefined
+        : expectArray(record.review_loop_retry_state, `${context} review_loop_retry_state`).map((entry, index) =>
+            validateReviewLoopRetryStateEntry(entry, `${context} review_loop_retry_state[${index}]`),
+          ),
     processed_review_thread_ids: expectStringArray(
       record.processed_review_thread_ids,
       `${context} processed_review_thread_ids`,

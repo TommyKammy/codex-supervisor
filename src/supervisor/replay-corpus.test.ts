@@ -48,6 +48,7 @@ import {
   summarizeReplayCorpusPromotion,
 } from "./replay-corpus-promotion-summary";
 import { loadReplayCorpus, runReplayCorpus } from "./replay-corpus-runner";
+import { buildStaleReviewBotRemediation } from "./stale-review-bot-remediation";
 import { replaySupervisorCycleDecisionSnapshot } from "./supervisor-cycle-replay";
 import { buildSupervisorCycleDecisionSnapshot } from "./supervisor-cycle-snapshot";
 
@@ -192,7 +193,19 @@ test("Phase 0 replay fixture keeps AegisOps-style GitHub-green repeated Codex fe
     },
     processed_review_thread_ids: [`${thread.id}@${headSha}`],
     processed_review_thread_fingerprints: [`${thread.id}@${headSha}#comment-production-source-denylist-v1`],
-    last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+    last_tracked_pr_repeat_failure_decision: null,
+    review_loop_retry_state: [
+      {
+        fingerprint: `pr=${prNumber}|head=${headSha}|thread=${thread.id}|comment=comment-production-source-denylist-v1`,
+        pr_number: prNumber,
+        head_sha: headSha,
+        thread_id: thread.id,
+        latest_comment_fingerprint: "comment-production-source-denylist-v1",
+        attempts: 1,
+        first_attempted_at: "2026-06-07T02:08:00Z",
+        last_attempted_at: "2026-06-07T02:08:00Z",
+      },
+    ],
     last_error: "Repeated configured Codex review feedback made no tracked PR progress.",
     last_failure_context: {
       category: "manual",
@@ -264,7 +277,6 @@ test("Phase 0 replay fixture keeps HRCore-style metadata-only current-head repai
     body:
       "P2: The onboarding schema path list was missing the current repair artifact before this head.",
     url: `https://example.test/pull/${prNumber}#discussion_r9141`,
-    isOutdated: true,
   });
   const record = createRecord({
     issue_number: issueNumber,
@@ -350,11 +362,19 @@ test("Phase 0 replay fixture keeps HRCore-style metadata-only current-head repai
     reviewThreads: [thread],
     workspaceStatus: createWorkspaceStatus({ branch, headSha }),
   });
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: [{ name: "openapi verifier", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [thread],
+  });
   const replayed = replaySupervisorCycleDecisionSnapshot(snapshot, config);
 
+  assert.equal(remediation?.classification, "verified_current_head_repair_pending_thread_resolution");
   assert.equal(replayed.matchesCapturedDecision, true);
   assert.equal(snapshot.decision.nextState, "ready_to_merge");
-  assert.equal(snapshot.decision.shouldRunCodex, false);
+  assert.equal(snapshot.decision.shouldRunCodex, true);
   assert.equal(snapshot.decision.blockedReason, null);
   assert.equal(snapshot.decision.failureContext, null);
 });

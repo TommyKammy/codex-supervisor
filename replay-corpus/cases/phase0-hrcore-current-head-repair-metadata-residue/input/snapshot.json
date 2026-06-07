@@ -1,0 +1,201 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-06-07T03:20:00Z",
+  "issue": {
+    "number": 9141,
+    "title": "HRCore metadata-only current-head repair evidence terminal fixture",
+    "body": "Portable replay fixture for metadata-only unresolved configured review feedback after current-head repair evidence.",
+    "url": "https://example.test/issues/9141",
+    "state": "OPEN",
+    "updatedAt": "2026-06-07T03:10:00Z"
+  },
+  "local": {
+    "record": {
+      "issue_number": 9141,
+      "state": "blocked",
+      "branch": "codex/issue-9141",
+      "pr_number": 9241,
+      "workspace": ".",
+      "journal_path": ".codex-supervisor/issues/9141/issue-journal.md",
+      "attempt_count": 5,
+      "implementation_attempt_count": 2,
+      "repair_attempt_count": 3,
+      "timeout_retry_count": 0,
+      "blocked_verification_retry_count": 0,
+      "repeated_blocker_count": 0,
+      "repeated_failure_signature_count": 0,
+      "blocked_reason": "stale_review_bot",
+      "last_error": "Outdated configured Codex metadata remained after current-head repair evidence.",
+      "last_failure_kind": null,
+      "last_failure_context": {
+        "category": "manual",
+        "summary": "Outdated configured-bot metadata-only residue is blocking the tracked PR.",
+        "signature": "stalled-bot:thread-openapi-onboarding-schema",
+        "command": null,
+        "details": [
+          "reviewer=chatgpt-codex-connector file=openapi/hrcore.openapi.json line=128 processed_on_current_head=yes"
+        ],
+        "url": "https://example.test/pull/9241#discussion_r9141",
+        "updated_at": "2026-06-07T03:08:30Z"
+      },
+      "last_failure_signature": "stalled-bot:thread-openapi-onboarding-schema",
+      "last_head_sha": "head-hrcore-metadata-only",
+      "last_tracked_pr_progress_snapshot": null,
+      "last_tracked_pr_progress_summary": null,
+      "last_tracked_pr_repeat_failure_decision": null,
+      "review_wait_started_at": "2026-06-07T03:00:00Z",
+      "review_wait_head_sha": "head-hrcore-metadata-only",
+      "provider_success_observed_at": "2026-06-07T03:09:00Z",
+      "provider_success_head_sha": "head-hrcore-metadata-only",
+      "merge_readiness_last_evaluated_at": "2026-06-07T03:10:00Z",
+      "copilot_review_requested_observed_at": null,
+      "copilot_review_requested_head_sha": null,
+      "copilot_review_timed_out_at": null,
+      "copilot_review_timeout_action": null,
+      "copilot_review_timeout_reason": null,
+      "local_review_head_sha": null,
+      "local_review_blocker_summary": null,
+      "local_review_summary_path": null,
+      "local_review_run_at": null,
+      "local_review_max_severity": null,
+      "local_review_findings_count": 0,
+      "local_review_root_cause_count": 0,
+      "local_review_verified_max_severity": null,
+      "local_review_verified_findings_count": 0,
+      "local_review_recommendation": null,
+      "local_review_degraded": false,
+      "last_local_review_signature": null,
+      "repeated_local_review_signature_count": 0,
+      "latest_local_ci_result": null,
+      "timeline_artifacts": [
+        {
+          "type": "verification_result",
+          "gate": "codex_turn",
+          "command": "npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
+          "head_sha": "head-hrcore-metadata-only",
+          "outcome": "passed",
+          "remediation_target": null,
+          "next_action": "continue",
+          "summary": "HRCore OpenAPI onboarding schema repair evidence passed on the current head.",
+          "recorded_at": "2026-06-07T03:08:00Z",
+          "processed_review_thread_ids": [
+            "thread-openapi-onboarding-schema@head-hrcore-metadata-only"
+          ],
+          "processed_review_thread_fingerprints": [
+            "thread-openapi-onboarding-schema@head-hrcore-metadata-only#comment-openapi-onboarding-schema-v1"
+          ]
+        }
+      ],
+      "last_observed_host_local_pr_blocker_signature": null,
+      "last_observed_host_local_pr_blocker_head_sha": null,
+      "last_host_local_pr_blocker_comment_signature": null,
+      "last_host_local_pr_blocker_comment_head_sha": null,
+      "processed_review_thread_ids": [
+        "thread-openapi-onboarding-schema@head-hrcore-metadata-only"
+      ],
+      "processed_review_thread_fingerprints": [
+        "thread-openapi-onboarding-schema@head-hrcore-metadata-only#comment-openapi-onboarding-schema-v1"
+      ],
+      "updated_at": "2026-06-07T03:10:00Z"
+    },
+    "workspaceStatus": {
+      "branch": "codex/issue-9141",
+      "headSha": "head-hrcore-metadata-only",
+      "hasUncommittedChanges": false,
+      "baseAhead": 1,
+      "baseBehind": 0,
+      "remoteBranchExists": true,
+      "remoteAhead": 0,
+      "remoteBehind": 0
+    }
+  },
+  "github": {
+    "pullRequest": {
+      "number": 9241,
+      "title": "HRCore metadata-only current-head repair evidence terminal fixture",
+      "url": "https://example.test/pull/9241",
+      "state": "OPEN",
+      "createdAt": "2026-03-13T06:20:00Z",
+      "isDraft": false,
+      "reviewDecision": "APPROVED",
+      "mergeStateStatus": "CLEAN",
+      "mergeable": "MERGEABLE",
+      "headRefName": "codex/issue-9141",
+      "headRefOid": "head-hrcore-metadata-only",
+      "copilotReviewState": "not_requested",
+      "copilotReviewRequestedAt": null,
+      "copilotReviewArrivedAt": null,
+      "configuredBotCurrentHeadObservedAt": "2026-06-07T03:09:00Z",
+      "configuredBotCurrentHeadObservationSource": "codex_pr_success_comment",
+      "configuredBotCurrentHeadStatusState": "SUCCESS",
+      "currentHeadCiGreenAt": "2026-06-07T03:08:30Z",
+      "configuredBotTopLevelReviewStrength": null,
+      "mergedAt": null
+    },
+    "checks": [
+      {
+        "name": "openapi verifier",
+        "state": "SUCCESS",
+        "bucket": "pass",
+        "workflow": "CI"
+      }
+    ],
+    "reviewThreads": [
+      {
+        "id": "thread-openapi-onboarding-schema",
+        "isResolved": false,
+        "isOutdated": true,
+        "path": "openapi/hrcore.openapi.json",
+        "line": 128,
+        "comments": {
+          "nodes": [
+            {
+              "id": "comment-openapi-onboarding-schema-v1",
+              "body": "P2: The onboarding schema path list was missing the current repair artifact before this head.",
+              "createdAt": "2026-06-07T02:12:00Z",
+              "url": "https://example.test/pull/9241#discussion_r9141",
+              "author": {
+                "login": "chatgpt-codex-connector",
+                "typeName": "Bot"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "decision": {
+    "nextState": "ready_to_merge",
+    "shouldRunCodex": false,
+    "blockedReason": null,
+    "failureContext": null
+  },
+  "operatorSummary": {
+    "latestRecoverySummary": null,
+    "retrySummary": null,
+    "recoveryLoopSummary": null,
+    "activityContext": {
+      "handoffSummary": null,
+      "localReviewRoutingSummary": null,
+      "changeClassesSummary": null,
+      "verificationPolicySummary": null,
+      "durableGuardrailSummary": null,
+      "externalReviewFollowUpSummary": null,
+      "preMergeEvaluation": null,
+      "localCiStatus": null,
+      "latestRecovery": null,
+      "retryContext": {
+        "timeoutRetryCount": 0,
+        "blockedVerificationRetryCount": 0,
+        "repeatedBlockerCount": 0,
+        "repeatedFailureSignatureCount": 0,
+        "lastFailureSignature": "stalled-bot:thread-openapi-onboarding-schema"
+      },
+      "repeatedRecovery": null,
+      "recentPhaseChanges": [],
+      "localReviewSummaryPath": null,
+      "externalReviewMissesPath": null,
+      "reviewWaits": []
+    }
+  }
+}

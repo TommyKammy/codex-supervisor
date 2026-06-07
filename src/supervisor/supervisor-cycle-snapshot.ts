@@ -86,6 +86,7 @@ export interface SupervisorCycleDecisionSnapshot {
       | "last_observed_host_local_pr_blocker_head_sha"
       | "last_host_local_pr_blocker_comment_signature"
       | "last_host_local_pr_blocker_comment_head_sha"
+      | "review_loop_retry_state"
       | "processed_review_thread_ids"
       | "processed_review_thread_fingerprints"
       | "updated_at"
@@ -195,6 +196,9 @@ export function buildSupervisorCycleDecisionSnapshot(args: {
           record.last_host_local_pr_blocker_comment_signature ?? null,
         last_host_local_pr_blocker_comment_head_sha:
           record.last_host_local_pr_blocker_comment_head_sha ?? null,
+        review_loop_retry_state: record.review_loop_retry_state
+          ? record.review_loop_retry_state.map((entry) => ({ ...entry }))
+          : undefined,
         processed_review_thread_ids: [...record.processed_review_thread_ids],
         processed_review_thread_fingerprints: [...record.processed_review_thread_fingerprints],
         updated_at: record.updated_at,
@@ -284,6 +288,9 @@ export function buildSupervisorCycleDecisionSnapshot(args: {
           record.last_host_local_pr_blocker_comment_signature ?? null,
         last_host_local_pr_blocker_comment_head_sha:
           record.last_host_local_pr_blocker_comment_head_sha ?? null,
+        review_loop_retry_state: record.review_loop_retry_state
+          ? record.review_loop_retry_state.map((entry) => ({ ...entry }))
+          : undefined,
         processed_review_thread_ids: [...record.processed_review_thread_ids],
         processed_review_thread_fingerprints: [...record.processed_review_thread_fingerprints],
         updated_at: record.updated_at,
