@@ -76,6 +76,7 @@ import {
 } from "./stale-review-bot-remediation";
 import {
   formatStaleReviewBotRemediationLine,
+  formatStaleReviewBotTerminalStopLine,
   formatStaleReviewBotThreadDiagnosticsLine,
 } from "./stale-review-bot-diagnostics-presenter";
 import { formatMergedPrConvergenceOperatorEventLine } from "./supervisor-operator-events";
@@ -697,6 +698,14 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
     ...(dto.staleReviewBotRemediation ? [formatStaleReviewBotRemediationLine(dto.staleReviewBotRemediation)] : []),
     ...(dto.staleReviewBotThreadDiagnostics
       ? [formatStaleReviewBotThreadDiagnosticsLine(dto.staleReviewBotThreadDiagnostics)]
+      : []),
+    ...(dto.staleReviewBotRemediation && dto.staleReviewBotThreadDiagnostics
+      ? [
+          formatStaleReviewBotTerminalStopLine({
+            remediation: dto.staleReviewBotRemediation,
+            diagnostics: dto.staleReviewBotThreadDiagnostics,
+          }),
+        ].filter((line): line is string => line !== null)
       : []),
     ...(dto.effectiveReviewThreadDiagnosticsSummary ? [dto.effectiveReviewThreadDiagnosticsSummary] : []),
     ...(dto.codexConnectorOperatorDiagnosticSummary ? [dto.codexConnectorOperatorDiagnosticSummary] : []),

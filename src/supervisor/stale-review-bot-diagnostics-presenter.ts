@@ -53,6 +53,45 @@ export function formatStaleReviewBotThreadDiagnosticsLine(
   ].join(" ");
 }
 
+export function formatStaleReviewBotTerminalStopLine(args: {
+  remediation: StaleReviewBotRemediationDto;
+  diagnostics: StaleReviewBotThreadDiagnosticsDto;
+}): string | null {
+  const { remediation, diagnostics } = args;
+  const metadataTerminal =
+    isProvenStaleReviewMetadataClassification(remediation.classification) ||
+    remediation.classification === "metadata_only_missing_current_head_review";
+  if (diagnostics.repeatStopExhausted !== "yes" && !metadataTerminal) {
+    return null;
+  }
+
+  const terminalReason =
+    diagnostics.repeatStopExhausted === "yes"
+      ? "retry_budget_exhausted"
+      : "metadata_only_review_thread_resolution_pending";
+  const nextAction =
+    diagnostics.repeatStopExhausted === "yes"
+      ? "manual_review_thread_handling"
+      : remediation.classification === "metadata_only_missing_current_head_review"
+        ? "request_current_head_review"
+        : remediation.classification === "verified_no_source_change_pending_thread_resolution" ||
+            remediation.classification === "verified_current_head_repair_pending_thread_resolution"
+          ? "resolve_verified_review_thread_metadata"
+          : "manual_review_thread_handling";
+
+  return [
+    "stale_review_bot_terminal_stop",
+    `issue=#${diagnostics.issueNumber}`,
+    `pr=${diagnostics.prNumber === null ? "none" : `#${diagnostics.prNumber}`}`,
+    `reason=${terminalReason}`,
+    `classification=${remediation.classification}`,
+    `head_freshness=processed_on_current_head:${remediation.processedOnCurrentHead},current_head_success:${diagnostics.currentHeadSuccess}`,
+    `review_thread_classification=unresolved:${diagnostics.unresolvedCurrentThreads},must_fix:${diagnostics.actionableMustFixThreads},verified_residue:${diagnostics.verifiedStaleResidueThreads}`,
+    `auto_repair_suppressed_reason=${diagnostics.autoRepairSuppressedReason}`,
+    `next_action=${nextAction}`,
+  ].join(" ");
+}
+
 export function formatStaleReviewResidueOperatorDiagnostic(remediation: StaleReviewBotRemediationDto): string {
   const latestConfiguredBotReviewSha =
     remediation.processedOnCurrentHead === "yes" ? remediation.currentHeadSha : "none";

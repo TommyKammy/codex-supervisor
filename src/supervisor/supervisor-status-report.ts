@@ -60,6 +60,7 @@ export interface SupervisorRuntimeRecoverySignalDto {
     | "loop_runtime_stale_lock"
     | "loop_runtime_ambiguous_owner"
     | "stale_review_bot_remediation"
+    | "stale_review_bot_terminal_stop"
     | "repairable_path_hygiene";
   summary: string;
 }
@@ -149,6 +150,14 @@ function collectRuntimeRecoverySignals(args: {
   for (const line of args.detailedStatusLines) {
     if (line.startsWith("stale_review_bot_remediation ")) {
       push("stale_review_bot_remediation", line);
+      continue;
+    }
+    if (line.startsWith("stale_review_bot_terminal_stop ")) {
+      const key = `stale_review_bot_terminal_stop\0${line}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        signals.push({ kind: "stale_review_bot_terminal_stop", summary: sanitizeStatusValue(line) ?? line });
+      }
       continue;
     }
     if (
