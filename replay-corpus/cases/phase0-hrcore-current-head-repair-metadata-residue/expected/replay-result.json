@@ -1,0 +1,6 @@
+{
+  "nextState": "ready_to_merge",
+  "shouldRunCodex": false,
+  "blockedReason": null,
+  "failureSignature": null
+}

@@ -1,0 +1,226 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-06-07T02:15:00Z",
+  "issue": {
+    "number": 9140,
+    "title": "AegisOps repeated Codex review feedback terminal fixture",
+    "body": "Portable replay fixture for a GitHub-green PR stopped after repeated configured Codex feedback.",
+    "url": "https://example.test/issues/9140",
+    "state": "OPEN",
+    "updatedAt": "2026-06-07T02:13:00Z"
+  },
+  "local": {
+    "record": {
+      "issue_number": 9140,
+      "state": "blocked",
+      "branch": "codex/issue-9140",
+      "pr_number": 9240,
+      "workspace": ".",
+      "journal_path": ".codex-supervisor/issues/9140/issue-journal.md",
+      "attempt_count": 7,
+      "implementation_attempt_count": 2,
+      "repair_attempt_count": 5,
+      "timeout_retry_count": 0,
+      "blocked_verification_retry_count": 0,
+      "repeated_blocker_count": 0,
+      "repeated_failure_signature_count": 0,
+      "blocked_reason": "stale_review_bot",
+      "last_error": "Repeated configured Codex review feedback made no tracked PR progress.",
+      "last_failure_kind": null,
+      "last_failure_context": {
+        "category": "manual",
+        "summary": "1 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
+        "signature": "stalled-bot:thread-production-source-denylist",
+        "command": null,
+        "details": [
+          "reviewer=chatgpt-codex-connector file=aegisops/source_policy.ts line=44 p_severity=P1 processed_on_current_head=yes"
+        ],
+        "url": "https://example.test/pull/9240#discussion_r9140",
+        "updated_at": "2026-06-07T02:12:30Z"
+      },
+      "last_failure_signature": "stalled-bot:thread-production-source-denylist",
+      "last_head_sha": "head-aegisops-repeat-stop",
+      "last_tracked_pr_progress_snapshot": null,
+      "last_tracked_pr_progress_summary": null,
+      "last_tracked_pr_repeat_failure_decision": null,
+      "review_wait_started_at": "2026-06-07T02:00:00Z",
+      "review_wait_head_sha": "head-aegisops-repeat-stop",
+      "provider_success_observed_at": "2026-06-07T02:10:00Z",
+      "provider_success_head_sha": "head-aegisops-repeat-stop",
+      "merge_readiness_last_evaluated_at": "2026-06-07T02:12:30Z",
+      "copilot_review_requested_observed_at": null,
+      "copilot_review_requested_head_sha": null,
+      "copilot_review_timed_out_at": null,
+      "copilot_review_timeout_action": null,
+      "copilot_review_timeout_reason": null,
+      "local_review_head_sha": null,
+      "local_review_blocker_summary": null,
+      "local_review_summary_path": null,
+      "local_review_run_at": null,
+      "local_review_max_severity": null,
+      "local_review_findings_count": 0,
+      "local_review_root_cause_count": 0,
+      "local_review_verified_max_severity": null,
+      "local_review_verified_findings_count": 0,
+      "local_review_recommendation": null,
+      "local_review_degraded": false,
+      "last_local_review_signature": null,
+      "repeated_local_review_signature_count": 0,
+      "latest_local_ci_result": {
+        "outcome": "passed",
+        "summary": "AegisOps focused policy verifier passed on the current head.",
+        "ran_at": "2026-06-07T02:11:00Z",
+        "head_sha": "head-aegisops-repeat-stop",
+        "execution_mode": "structured",
+        "command": "npx tsx --test src/supervisor/replay-corpus.test.ts",
+        "failure_class": null,
+        "remediation_target": null
+      },
+      "last_observed_host_local_pr_blocker_signature": null,
+      "last_observed_host_local_pr_blocker_head_sha": null,
+      "last_host_local_pr_blocker_comment_signature": null,
+      "last_host_local_pr_blocker_comment_head_sha": null,
+      "review_loop_retry_state": [
+        {
+          "fingerprint": "pr=9240|head=head-aegisops-repeat-stop|thread=thread-production-source-denylist|comment=comment-production-source-denylist-v1",
+          "pr_number": 9240,
+          "head_sha": "head-aegisops-repeat-stop",
+          "thread_id": "thread-production-source-denylist",
+          "latest_comment_fingerprint": "comment-production-source-denylist-v1",
+          "attempts": 1,
+          "first_attempted_at": "2026-06-07T02:08:00Z",
+          "last_attempted_at": "2026-06-07T02:08:00Z"
+        }
+      ],
+      "processed_review_thread_ids": [
+        "thread-production-source-denylist@head-aegisops-repeat-stop"
+      ],
+      "processed_review_thread_fingerprints": [
+        "thread-production-source-denylist@head-aegisops-repeat-stop#comment-production-source-denylist-v1"
+      ],
+      "updated_at": "2026-06-07T02:13:00Z"
+    },
+    "workspaceStatus": {
+      "branch": "codex/issue-9140",
+      "headSha": "head-aegisops-repeat-stop",
+      "hasUncommittedChanges": false,
+      "baseAhead": 1,
+      "baseBehind": 0,
+      "remoteBranchExists": true,
+      "remoteAhead": 0,
+      "remoteBehind": 0
+    }
+  },
+  "github": {
+    "pullRequest": {
+      "number": 9240,
+      "title": "AegisOps repeated Codex review feedback terminal fixture",
+      "url": "https://example.test/pull/9240",
+      "state": "OPEN",
+      "createdAt": "2026-03-13T06:20:00Z",
+      "isDraft": false,
+      "reviewDecision": "CHANGES_REQUESTED",
+      "mergeStateStatus": "CLEAN",
+      "mergeable": "MERGEABLE",
+      "headRefName": "codex/issue-9140",
+      "headRefOid": "head-aegisops-repeat-stop",
+      "copilotReviewState": "not_requested",
+      "copilotReviewRequestedAt": null,
+      "copilotReviewArrivedAt": null,
+      "configuredBotCurrentHeadObservedAt": "2026-06-07T02:10:00Z",
+      "configuredBotCurrentHeadObservationSource": "codex_pr_success_comment",
+      "configuredBotCurrentHeadStatusState": "SUCCESS",
+      "currentHeadCiGreenAt": "2026-06-07T02:11:00Z",
+      "configuredBotTopLevelReviewStrength": "blocking",
+      "configuredBotTopLevelReviewSubmittedAt": "2026-06-07T02:10:00Z",
+      "mergedAt": null
+    },
+    "checks": [
+      {
+        "name": "policy verifier",
+        "state": "SUCCESS",
+        "bucket": "pass",
+        "workflow": "CI"
+      }
+    ],
+    "reviewThreads": [
+      {
+        "id": "thread-production-source-denylist",
+        "isResolved": false,
+        "isOutdated": false,
+        "path": "aegisops/source_policy.ts",
+        "line": 44,
+        "comments": {
+          "nodes": [
+            {
+              "id": "comment-production-source-denylist-v1",
+              "body": "P1: The production source denylist still allows simulator evidence to be treated as launch authority.",
+              "createdAt": "2026-06-07T02:12:00Z",
+              "url": "https://example.test/pull/9240#discussion_r9140",
+              "author": {
+                "login": "chatgpt-codex-connector",
+                "typeName": "Bot"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "decision": {
+    "nextState": "blocked",
+    "shouldRunCodex": false,
+    "blockedReason": "stale_review_bot",
+    "failureContext": {
+      "category": "manual",
+      "summary": "1 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
+      "signature": "stalled-bot:thread-production-source-denylist",
+      "command": null,
+      "details": [
+        "reviewer=chatgpt-codex-connector file=aegisops/source_policy.ts line=44 p_severity=P1 processed_on_current_head=yes"
+      ],
+      "url": "https://example.test/pull/9240#discussion_r9140",
+      "updated_at": "2026-06-07T13:14:18.593Z"
+    }
+  },
+  "operatorSummary": {
+    "latestRecoverySummary": null,
+    "retrySummary": null,
+    "recoveryLoopSummary": null,
+    "activityContext": {
+      "handoffSummary": null,
+      "localReviewRoutingSummary": null,
+      "changeClassesSummary": null,
+      "verificationPolicySummary": null,
+      "durableGuardrailSummary": null,
+      "externalReviewFollowUpSummary": null,
+      "preMergeEvaluation": null,
+      "localCiStatus": {
+        "outcome": "passed",
+        "summary": "AegisOps focused policy verifier passed on the current head.",
+        "ranAt": "2026-06-07T02:11:00Z",
+        "headSha": "head-aegisops-repeat-stop",
+        "headStatus": "current",
+        "context": "notice",
+        "command": "npx tsx --test src/supervisor/replay-corpus.test.ts",
+        "stderrSummary": null,
+        "failureClass": null,
+        "remediationTarget": null,
+        "verifierDriftHint": null
+      },
+      "latestRecovery": null,
+      "retryContext": {
+        "timeoutRetryCount": 0,
+        "blockedVerificationRetryCount": 0,
+        "repeatedBlockerCount": 0,
+        "repeatedFailureSignatureCount": 0,
+        "lastFailureSignature": "stalled-bot:thread-production-source-denylist"
+      },
+      "repeatedRecovery": null,
+      "recentPhaseChanges": [],
+      "localReviewSummaryPath": null,
+      "externalReviewMissesPath": null,
+      "reviewWaits": []
+    }
+  }
+}

@@ -76,6 +76,14 @@
     {
       "id": "codex-current-head-success-unresolved-must-fix",
       "path": "cases/codex-current-head-success-unresolved-must-fix"
+    },
+    {
+      "id": "phase0-aegisops-repeated-codex-feedback-terminal",
+      "path": "cases/phase0-aegisops-repeated-codex-feedback-terminal"
+    },
+    {
+      "id": "phase0-hrcore-current-head-repair-metadata-residue",
+      "path": "cases/phase0-hrcore-current-head-repair-metadata-residue"
     }
   ]
 }
