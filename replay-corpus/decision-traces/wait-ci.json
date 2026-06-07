@@ -1,0 +1,50 @@
+{
+  "id": "wait-ci",
+  "intent": "Stable read-only trace for a PR lifecycle decision that waits for pending CI.",
+  "artifact": {
+    "schemaVersion": "pr_lifecycle_decision_trace.v1",
+    "traceId": "wait-ci",
+    "generatedAt": "2026-06-07T00:20:00.000Z",
+    "facts": {
+      "source": "fresh_github",
+      "observedAt": "2026-06-07T00:19:00.000Z",
+      "pullRequestNumber": 1002,
+      "headSha": "head-wait-ci",
+      "normalizedState": {
+        "source": "fresh_github",
+        "observedAt": "2026-06-07T00:19:00.000Z",
+        "pullRequestNumber": 1002,
+        "headSha": "head-wait-ci",
+        "headFreshness": "current_head",
+        "reviewPosture": "current_head_review_observed",
+        "checkPosture": "pending",
+        "mergeability": "mergeable",
+        "localStateFreshness": "fresh",
+        "evidence": {
+          "manualReviewThreadCount": 0,
+          "currentHeadConfiguredBotThreadCount": 0,
+          "stalePreviousHeadConfiguredBotThreadCount": 0,
+          "metadataOnlyUnresolvedThreadCount": 0,
+          "passingCheckCount": 1,
+          "pendingCheckCount": 2,
+          "failingCheckCount": 0,
+          "unknownCheckCount": 0,
+          "trackedHeadSha": "head-wait-ci",
+          "workspaceHeadSha": "head-wait-ci",
+          "lastObservedPrHeadSha": "head-wait-ci"
+        }
+      }
+    },
+    "policy": {
+      "name": "pr_lifecycle_decision_kernel_v2",
+      "posture": "wait_for_ci",
+      "reasons": ["checks_pending"]
+    },
+    "decision": {
+      "value": "wait",
+      "recommendedAction": "wait_ci",
+      "summary": "Required checks are still pending."
+    },
+    "evidenceTokens": ["pr=1002", "head=head-wait-ci", "pending_checks=2"]
+  }
+}

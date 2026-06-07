@@ -1,0 +1,50 @@
+{
+  "id": "stale-local-state",
+  "intent": "Stable read-only trace for a PR lifecycle decision where fresh GitHub facts show stale local state.",
+  "artifact": {
+    "schemaVersion": "pr_lifecycle_decision_trace.v1",
+    "traceId": "stale-local-state",
+    "generatedAt": "2026-06-07T00:40:00.000Z",
+    "facts": {
+      "source": "fresh_github",
+      "observedAt": "2026-06-07T00:39:00.000Z",
+      "pullRequestNumber": 1004,
+      "headSha": "head-remote-new",
+      "normalizedState": {
+        "source": "fresh_github",
+        "observedAt": "2026-06-07T00:39:00.000Z",
+        "pullRequestNumber": 1004,
+        "headSha": "head-remote-new",
+        "headFreshness": "stale_head",
+        "reviewPosture": "current_head_review_observed",
+        "checkPosture": "green",
+        "mergeability": "mergeable",
+        "localStateFreshness": "stale",
+        "evidence": {
+          "manualReviewThreadCount": 0,
+          "currentHeadConfiguredBotThreadCount": 0,
+          "stalePreviousHeadConfiguredBotThreadCount": 0,
+          "metadataOnlyUnresolvedThreadCount": 0,
+          "passingCheckCount": 3,
+          "pendingCheckCount": 0,
+          "failingCheckCount": 0,
+          "unknownCheckCount": 0,
+          "trackedHeadSha": "head-local-old",
+          "workspaceHeadSha": "head-local-old",
+          "lastObservedPrHeadSha": "head-local-old"
+        }
+      }
+    },
+    "policy": {
+      "name": "pr_lifecycle_decision_kernel_v2",
+      "posture": "stale_local_state",
+      "reasons": ["local_head_differs_from_pr_head"]
+    },
+    "decision": {
+      "value": "do_nothing",
+      "recommendedAction": "refresh_state",
+      "summary": "Local state must refresh before action-taking evaluation."
+    },
+    "evidenceTokens": ["pr=1004", "remote=head-remote-new", "local=head-local-old"]
+  }
+}
