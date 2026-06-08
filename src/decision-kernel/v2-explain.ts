@@ -174,9 +174,7 @@ function buildPrLifecycleFactInventory(args: {
       mergeStateStatus: args.pr.mergeStateStatus,
       mergeable: args.pr.mergeable ?? null,
       currentHeadReviewObservedAt: args.pr.configuredBotCurrentHeadObservedAt ?? null,
-      currentHeadReviewHeadSha: args.pr.configuredBotCurrentHeadObservedAt
-        ? args.pr.configuredBotLatestReviewedCommitSha ?? args.pr.headRefOid
-        : null,
+      currentHeadReviewHeadSha: args.pr.configuredBotCurrentHeadObservedAt ? args.pr.headRefOid : null,
     },
     reviewThreads: summarizeReviewThreads(args.reviewPolicyInput),
     checks: summarizeCheckFacts(args.checks),
