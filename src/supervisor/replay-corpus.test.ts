@@ -31,6 +31,7 @@ import {
   deriveReplayCorpusPromotionWorthinessHints,
   summarizeReplayCorpusPromotion,
 } from "./replay-corpus-promotion-summary";
+import { createConnectorReviewPolicyReplayFixtures } from "./replay-corpus-policy-fixtures";
 import { loadReplayCorpus, runReplayCorpus } from "./replay-corpus-runner";
 
 test("replay-corpus facade re-exports the dedicated module entry points", () => {
@@ -81,4 +82,50 @@ test("Phase 0 replay fixtures are checked into the corpus with stable terminal o
 
   assert.deepEqual(phase0Results.map((entry) => entry.caseId), phase0CaseIds);
   assert.equal(phase0Results.every((entry) => entry.matchesExpected), true);
+});
+
+test("Phase 2 Connector review policy replay fixtures cover typed boundary outcomes", () => {
+  const fixtures = createConnectorReviewPolicyReplayFixtures();
+
+  assert.deepEqual(
+    fixtures.map((fixture) => fixture.id),
+    [
+      "phase2-aegisops-current-head-must-fix",
+      "phase2-hrcore-softened-p3-advisory",
+      "phase2-aegisops-stale-commit-waits",
+      "phase2-hrcore-metadata-residue",
+    ],
+  );
+  assert.deepEqual(new Set(fixtures.map((fixture) => fixture.projectShape)), new Set(["aegisops", "hrcore"]));
+
+  const outcomes = fixtures.flatMap((fixture) =>
+    fixture.expectedThreadOutcomes.map((outcome) => [outcome.boundaryOutcome, outcome.nextAction]),
+  );
+  assert.deepEqual(new Set(outcomes.map(([outcome]) => outcome)), new Set([
+    "must_fix_current_head",
+    "escalated_p3",
+    "softened_p3_advisory",
+    "stale_commit_thread",
+    "metadata_only_unresolved",
+    "manual_thread",
+    "configured_bot_thread",
+  ]));
+  assert.deepEqual(new Set(outcomes.map(([, nextAction]) => nextAction)), new Set([
+    "fix",
+    "wait",
+    "manual",
+    "metadata_cleanup",
+    "advisory_only",
+  ]));
+
+  const softenedP3 = fixtures.find((fixture) => fixture.id === "phase2-hrcore-softened-p3-advisory");
+  assert.deepEqual(softenedP3?.expectedThreadOutcomes, [
+    {
+      threadId: "softened-p3",
+      boundaryOutcome: "softened_p3_advisory",
+      nextAction: "advisory_only",
+    },
+  ]);
+  const repeatStopFixture = fixtures.find((fixture) => fixture.id === "phase2-hrcore-metadata-residue");
+  assert.equal(repeatStopFixture?.repeatStopSuppressedReason, "repeat_stop_exhausted");
 });
