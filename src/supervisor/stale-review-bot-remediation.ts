@@ -27,6 +27,15 @@ import {
   configuredReviewProviderKinds,
   normalizeReviewProviderLogin,
 } from "../core/review-providers";
+import {
+  STALE_REVIEW_BOT_MANUAL_NEXT_STEP,
+  VERIFIED_CURRENT_HEAD_REPAIR_MANUAL_NEXT_STEP,
+  VERIFIED_NO_SOURCE_CHANGE_MANUAL_NEXT_STEP,
+  classifyStaleReviewBotAutoRepairSuppressionPolicy,
+  classifyStaleReviewBotRemediationPolicy,
+  type StaleReviewBotAutoRepairSuppressedReason,
+  type StaleReviewBotClassificationPolicyDecision,
+} from "./stale-review-bot-classification-policy";
 
 export interface StaleReviewBotRemediationDto {
   issueNumber: number;
@@ -52,18 +61,6 @@ export interface StaleReviewBotRemediationDto {
   summary: string;
 }
 
-export type StaleReviewBotAutoRepairSuppressedReason =
-  | "none"
-  | "opt_in_disabled"
-  | "too_many_clusters"
-  | "missing_verification_probe"
-  | "manual_or_unconfigured_review_threads"
-  | "merge_conflict"
-  | "failing_checks"
-  | "pending_checks"
-  | "repeat_stop_exhausted"
-  | "not_verified_stale_residue";
-
 export interface StaleReviewBotThreadDiagnosticsDto {
   issueNumber: number;
   prNumber: number | null;
@@ -74,30 +71,6 @@ export interface StaleReviewBotThreadDiagnosticsDto {
   missingVerificationEvidenceThreads: number;
   repeatStopExhausted: "yes" | "no";
   autoRepairSuppressedReason: StaleReviewBotAutoRepairSuppressedReason;
-}
-
-const STALE_REVIEW_BOT_MANUAL_NEXT_STEP =
-  "inspect_exact_review_thread_then_resolve_or_leave_manual_note";
-const STALE_REVIEW_BOT_SUMMARY =
-  "code_or_ci_green_but_review_thread_metadata_unresolved";
-const STALE_REVIEW_BOT_METADATA_ONLY_SUMMARY =
-  "stale_configured_bot_thread_metadata_only";
-const STALE_REVIEW_BOT_METADATA_CURRENT_HEAD_SUMMARY =
-  "stale_configured_bot_thread_metadata_only_pending_current_head_review_request";
-const VERIFIED_NO_SOURCE_CHANGE_MANUAL_NEXT_STEP =
-  "resolve_verified_configured_bot_threads_then_rerun_supervisor";
-const VERIFIED_NO_SOURCE_CHANGE_SUMMARY =
-  "verified_no_source_change_configured_bot_thread_resolution_pending";
-const VERIFIED_CURRENT_HEAD_REPAIR_MANUAL_NEXT_STEP =
-  "resolve_verified_repaired_configured_bot_threads_then_rerun_supervisor";
-const VERIFIED_CURRENT_HEAD_REPAIR_SUMMARY =
-  "verified_current_head_repair_configured_bot_thread_resolution_pending";
-
-interface StaleReviewBotClassification {
-  classification: StaleReviewBotRemediationDto["classification"];
-  summary: string;
-  verificationEvidenceSummary?: string | null;
-  missingProbeReason?: string | null;
 }
 
 type RepositoryFileContents = Record<string, string | null | undefined>;
@@ -253,39 +226,22 @@ function classifyAutoRepairSuppression(args: {
   repeatStopExhausted: boolean;
 }): StaleReviewBotAutoRepairSuppressedReason {
   const { config, pr, checks, remediation } = args;
-  if (!config || !pr) {
-    return "not_verified_stale_residue";
-  }
-
-  if (args.repeatStopExhausted) {
-    return "repeat_stop_exhausted";
-  }
-  if (manualReviewThreads(config, args.reviewThreads).length > 0 || nonActionableConfiguredBotReviewThreads(config, args.reviewThreads).length > 0) {
-    return "manual_or_unconfigured_review_threads";
-  }
-  if (hasMergeConflictState(pr)) {
-    return "merge_conflict";
-  }
-  if (hasFailingChecks(checks)) {
-    return "failing_checks";
-  }
-  if (hasPendingChecks(checks)) {
-    return "pending_checks";
-  }
-  if (remediation.missingProbeReason) {
-    return "missing_verification_probe";
-  }
-  if (!isVerifiedStaleResidueClassification(remediation.classification)) {
-    if (clusterConfiguredBotReviewThreads(args.actionableMustFixThreads).length > 1) {
-      return "too_many_clusters";
-    }
-    return "not_verified_stale_residue";
-  }
-  if (!verifiedAutoResolveEnabled(config, remediation.classification)) {
-    return "opt_in_disabled";
-  }
-
-  return "none";
+  return classifyStaleReviewBotAutoRepairSuppressionPolicy({
+    hasConfigAndPr: Boolean(config && pr),
+    repeatStopExhausted: args.repeatStopExhausted,
+    manualOrUnconfiguredReviewThreads: Boolean(
+      config &&
+        (manualReviewThreads(config, args.reviewThreads).length > 0 ||
+          nonActionableConfiguredBotReviewThreads(config, args.reviewThreads).length > 0),
+    ),
+    mergeConflictState: Boolean(pr && hasMergeConflictState(pr)),
+    failingChecks: hasFailingChecks(checks),
+    pendingChecks: hasPendingChecks(checks),
+    missingProbeReason: remediation.missingProbeReason,
+    verifiedStaleResidue: isVerifiedStaleResidueClassification(remediation.classification),
+    actionableClusterCount: clusterConfiguredBotReviewThreads(args.actionableMustFixThreads).length,
+    verifiedAutoResolveEnabled: Boolean(config && verifiedAutoResolveEnabled(config, remediation.classification)),
+  });
 }
 
 function codexConnectorCurrentHeadReviewState(args: {
@@ -866,150 +822,62 @@ function classifyCodexMetadataOnly(args: {
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
   repositoryFileContents?: RepositoryFileContents;
-}): StaleReviewBotClassification {
-  const unresolvedWork = {
-    classification: "unresolved_work" as const,
-    summary: STALE_REVIEW_BOT_SUMMARY,
-  };
-
+}): StaleReviewBotClassificationPolicyDecision {
   const configuredThreads = configuredBotReviewThreads(args.config, args.reviewThreads);
-  if (configuredThreads.length === 0) {
-    return unresolvedWork;
-  }
-
   const currentConfiguredThreads = configuredThreads.filter((thread) => !thread.isOutdated);
-  if (
-    manualReviewThreads(args.config, args.reviewThreads).length > 0 ||
-    args.record.last_head_sha !== args.pr.headRefOid ||
-    !allChecksPassing(args.checks) ||
-    hasMergeConflictState(args.pr) ||
-    pendingBotReviewThreads(args.config, args.record, args.pr, currentConfiguredThreads).length > 0 ||
-    configuredBotReviewFollowUpState(args.config, args.record, args.pr, currentConfiguredThreads) === "eligible" ||
-    !currentConfiguredThreads.every((thread) => hasProcessedReviewThread(args.record, args.pr, thread))
-  ) {
-    return unresolvedWork;
-  }
-
   const policy = evaluateCodexConnectorConvergencePolicy(args.config, args.pr, args.reviewThreads);
-  if (!policy) {
-    return {
-      classification: "unknown_needs_operator",
-      summary: STALE_REVIEW_BOT_SUMMARY,
-    };
-  }
+  const mustFixReviewThreads = codexConnectorMustFixReviewThreads(args.reviewThreads);
+  const hasMarkedNoSourceChangeRepair = hasCurrentHeadMarkedNoSourceChangeCodexTurnVerification(
+    args.record,
+    args.pr,
+  );
+  const checkEvidenceCanProveRepair = args.record.repair_attempt_count > 0;
+  const verificationEvidenceSummary = currentHeadVerificationEvidenceSummary(
+    args.config,
+    args.record,
+    args.pr,
+    args.checks,
+    checkEvidenceCanProveRepair,
+  );
 
-  if (policy.outcome === "missing_current_head_review") {
-    return {
-      classification: "metadata_only_missing_current_head_review",
-      summary: STALE_REVIEW_BOT_METADATA_CURRENT_HEAD_SUMMARY,
-    };
-  }
-
-  if (policy.outcome === "must_fix_remaining") {
-    const hasUnprocessedMustFix = codexConnectorMustFixReviewThreads(args.reviewThreads).some(
-      (thread) => !hasProcessedReviewThread(args.record, args.pr, thread),
-    );
-    if (hasUnprocessedMustFix) {
-      return {
-        classification: "actionable_current_diff",
-        summary: STALE_REVIEW_BOT_SUMMARY,
-      };
-    }
-    const checkEvidenceCanProveRepair = args.record.repair_attempt_count > 0;
-    const verificationEvidenceSummary = currentHeadVerificationEvidenceSummary(
-      args.config,
+  return classifyStaleReviewBotRemediationPolicy({
+    provider: "codex",
+    configuredThreadCount: configuredThreads.length,
+    currentConfiguredThreadCount: currentConfiguredThreads.length,
+    manualThreadCount: manualReviewThreads(args.config, args.reviewThreads).length,
+    sameHead: args.record.last_head_sha === args.pr.headRefOid,
+    allChecksPassing: allChecksPassing(args.checks),
+    cleanMergeState: hasCleanMergeState(args.pr),
+    mergeConflictState: hasMergeConflictState(args.pr),
+    pendingBotThreadCount: pendingBotReviewThreads(args.config, args.record, args.pr, currentConfiguredThreads).length,
+    followUpState: configuredBotReviewFollowUpState(args.config, args.record, args.pr, currentConfiguredThreads),
+    allCurrentConfiguredThreadsProcessed: currentConfiguredThreads.every((thread) =>
+      hasProcessedReviewThread(args.record, args.pr, thread),
+    ),
+    convergenceOutcome: policy?.outcome ?? null,
+    hasUnprocessedMustFix: mustFixReviewThreads.some((thread) => !hasProcessedReviewThread(args.record, args.pr, thread)),
+    verificationEvidenceSummary,
+    noMajorSignalEvidence: currentHeadCodexNoMajorSignalEvidence({
+      record: args.record,
+      pr: args.pr,
+    }),
+    deterministicProbeEvidence: deterministicRepairProbeEvidence({
+      reviewThreads: args.reviewThreads,
+      repositoryFileContents: args.repositoryFileContents,
+    }),
+    hasMarkedNoSourceChangeRepair,
+    verifiedNoSourceChangeRepair: hasCurrentHeadNoSourceChangeCodexTurnVerification(
       args.record,
       args.pr,
-      args.checks,
-      checkEvidenceCanProveRepair,
-    );
-    if (verificationEvidenceSummary) {
-      const noMajorSignalEvidence = currentHeadCodexNoMajorSignalEvidence({
-        record: args.record,
-        pr: args.pr,
-      });
-      if (!noMajorSignalEvidence) {
-        const deterministicProbeEvidence = deterministicRepairProbeEvidence({
-          reviewThreads: args.reviewThreads,
-          repositoryFileContents: args.repositoryFileContents,
-        });
-        if (deterministicProbeEvidence) {
-          return {
-            classification: "verified_current_head_repair_pending_thread_resolution",
-            summary: VERIFIED_CURRENT_HEAD_REPAIR_SUMMARY,
-            verificationEvidenceSummary: `${verificationEvidenceSummary};${deterministicProbeEvidence}`,
-          };
-        }
-        return {
-          classification: "unknown_needs_operator",
-          summary: STALE_REVIEW_BOT_SUMMARY,
-          verificationEvidenceSummary,
-          missingProbeReason: "current_head_codex_no_major_signal_missing",
-        };
-      }
-      const mustFixReviewThreads = codexConnectorMustFixReviewThreads(args.reviewThreads);
-      const hasMarkedNoSourceChangeRepair = hasCurrentHeadMarkedNoSourceChangeCodexTurnVerification(
-        args.record,
-        args.pr,
-      );
-      const verifiedNoSourceChangeRepair = hasCurrentHeadNoSourceChangeCodexTurnVerification(
-        args.record,
-        args.pr,
-        mustFixReviewThreads,
-      );
-      const hasExplicitCurrentHeadRepairVerification =
-        hasCurrentHeadCodexTurnVerification(args.record, args.pr) ||
-        (!hasMarkedNoSourceChangeRepair && hasCurrentHeadLocalCiVerification(args.record, args.pr));
-      const verifiedCurrentHeadRepair =
-        hasExplicitCurrentHeadRepairVerification || (!hasMarkedNoSourceChangeRepair && args.record.repair_attempt_count > 0);
-      if (!verifiedCurrentHeadRepair && !verifiedNoSourceChangeRepair) {
-        return {
-          classification: "unknown_needs_operator",
-          summary: STALE_REVIEW_BOT_SUMMARY,
-          verificationEvidenceSummary,
-          missingProbeReason: hasMarkedNoSourceChangeRepair
-            ? "current_head_no_source_thread_evidence_missing"
-            : "current_head_repair_evidence_missing",
-        };
-      }
-      if (
-        (verifiedCurrentHeadRepair || verifiedNoSourceChangeRepair) &&
-        !allCodexConnectorRepairResidueThreadsAreP2(mustFixReviewThreads)
-      ) {
-        return {
-          classification: "unresolved_work",
-          summary: STALE_REVIEW_BOT_SUMMARY,
-          verificationEvidenceSummary,
-        };
-      }
-      return {
-        classification: verifiedCurrentHeadRepair
-          ? "verified_current_head_repair_pending_thread_resolution"
-          : "verified_no_source_change_pending_thread_resolution",
-        summary: verifiedCurrentHeadRepair
-          ? VERIFIED_CURRENT_HEAD_REPAIR_SUMMARY
-          : VERIFIED_NO_SOURCE_CHANGE_SUMMARY,
-        verificationEvidenceSummary: `${verificationEvidenceSummary};${noMajorSignalEvidence}`,
-      };
-    }
-    return {
-      classification: "unknown_needs_operator",
-      summary: STALE_REVIEW_BOT_SUMMARY,
-      missingProbeReason: "current_head_verification_evidence_missing",
-    };
-  }
-
-  if (policy.outcome === "converged" || policy.outcome === "nitpick_only") {
-    return {
-      classification: "metadata_only_current_head_converged",
-      summary: STALE_REVIEW_BOT_METADATA_ONLY_SUMMARY,
-    };
-  }
-
-  return {
-    classification: "unknown_needs_operator",
-    summary: STALE_REVIEW_BOT_SUMMARY,
-  };
+      mustFixReviewThreads,
+    ),
+    hasExplicitCurrentHeadRepairVerification:
+      hasCurrentHeadCodexTurnVerification(args.record, args.pr) ||
+      (!hasMarkedNoSourceChangeRepair && hasCurrentHeadLocalCiVerification(args.record, args.pr)),
+    repairAttemptCount: args.record.repair_attempt_count,
+    allMustFixRepairResidueThreadsAreP2: allCodexConnectorRepairResidueThreadsAreP2(mustFixReviewThreads),
+    currentHeadSuccess: hasCurrentHeadSuccessSignal(args.pr),
+  });
 }
 
 function classifyRemediation(args: {
@@ -1019,13 +887,32 @@ function classifyRemediation(args: {
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
   repositoryFileContents?: RepositoryFileContents;
-}): StaleReviewBotClassification {
-  const unresolvedWork = {
-    classification: "unresolved_work" as const,
-    summary: STALE_REVIEW_BOT_SUMMARY,
-  };
+}): StaleReviewBotClassificationPolicyDecision {
   if (!args.config || !args.pr) {
-    return unresolvedWork;
+    return classifyStaleReviewBotRemediationPolicy({
+      provider: "configured_bot",
+      configuredThreadCount: 0,
+      currentConfiguredThreadCount: 0,
+      manualThreadCount: 0,
+      sameHead: false,
+      allChecksPassing: false,
+      cleanMergeState: false,
+      mergeConflictState: false,
+      pendingBotThreadCount: 0,
+      followUpState: "inactive",
+      allCurrentConfiguredThreadsProcessed: false,
+      convergenceOutcome: null,
+      hasUnprocessedMustFix: false,
+      verificationEvidenceSummary: null,
+      noMajorSignalEvidence: null,
+      deterministicProbeEvidence: null,
+      hasMarkedNoSourceChangeRepair: false,
+      verifiedNoSourceChangeRepair: false,
+      hasExplicitCurrentHeadRepairVerification: false,
+      repairAttemptCount: 0,
+      allMustFixRepairResidueThreadsAreP2: false,
+      currentHeadSuccess: false,
+    });
   }
 
   const { config, record, pr, checks, reviewThreads } = args;
@@ -1041,25 +928,30 @@ function classifyRemediation(args: {
     });
   }
 
-  if (
-    configuredThreads.length === 0 ||
-    manualReviewThreads(config, reviewThreads).length > 0 ||
-    record.last_head_sha !== pr.headRefOid ||
-    !pr.configuredBotCurrentHeadObservedAt ||
-    pr.configuredBotCurrentHeadStatusState !== "SUCCESS" ||
-    !allChecksPassing(checks) ||
-    !hasCleanMergeState(pr) ||
-    pendingBotReviewThreads(config, record, pr, configuredThreads).length > 0 ||
-    configuredBotReviewFollowUpState(config, record, pr, configuredThreads) === "eligible" ||
-    !configuredThreads.every((thread) => hasProcessedReviewThread(record, pr, thread))
-  ) {
-    return unresolvedWork;
-  }
-
-  return {
-    classification: "metadata_only",
-    summary: STALE_REVIEW_BOT_METADATA_ONLY_SUMMARY,
-  };
+  return classifyStaleReviewBotRemediationPolicy({
+    provider: "configured_bot",
+    configuredThreadCount: configuredThreads.length,
+    currentConfiguredThreadCount: configuredThreads.length,
+    manualThreadCount: manualReviewThreads(config, reviewThreads).length,
+    sameHead: record.last_head_sha === pr.headRefOid,
+    allChecksPassing: allChecksPassing(checks),
+    cleanMergeState: hasCleanMergeState(pr),
+    mergeConflictState: hasMergeConflictState(pr),
+    pendingBotThreadCount: pendingBotReviewThreads(config, record, pr, configuredThreads).length,
+    followUpState: configuredBotReviewFollowUpState(config, record, pr, configuredThreads),
+    allCurrentConfiguredThreadsProcessed: configuredThreads.every((thread) => hasProcessedReviewThread(record, pr, thread)),
+    convergenceOutcome: null,
+    hasUnprocessedMustFix: false,
+    verificationEvidenceSummary: null,
+    noMajorSignalEvidence: null,
+    deterministicProbeEvidence: null,
+    hasMarkedNoSourceChangeRepair: false,
+    verifiedNoSourceChangeRepair: false,
+    hasExplicitCurrentHeadRepairVerification: false,
+    repairAttemptCount: record.repair_attempt_count,
+    allMustFixRepairResidueThreadsAreP2: false,
+    currentHeadSuccess: Boolean(pr.configuredBotCurrentHeadObservedAt && pr.configuredBotCurrentHeadStatusState === "SUCCESS"),
+  });
 }
 
 export function buildStaleReviewBotRemediation(args: {
