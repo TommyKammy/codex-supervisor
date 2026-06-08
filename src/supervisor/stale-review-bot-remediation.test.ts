@@ -6,6 +6,88 @@ import {
   createCodexConnectorTrackedReviewResidueScenario,
 } from "../codex-connector-tracked-pr-test-helpers";
 import { buildStaleReviewBotRemediation, buildStaleReviewBotThreadDiagnostics } from "./stale-review-bot-remediation";
+import {
+  classifyStaleReviewBotAutoRepairSuppressionPolicy,
+  classifyStaleReviewBotRemediationPolicy,
+  type StaleReviewBotClassificationPolicyArgs,
+} from "./stale-review-bot-classification-policy";
+
+function policy(overrides: Partial<StaleReviewBotClassificationPolicyArgs> = {}) {
+  const base: StaleReviewBotClassificationPolicyArgs = {
+    provider: "codex",
+    configuredThreadCount: 1,
+    currentConfiguredThreadCount: 1,
+    manualThreadCount: 0,
+    sameHead: true,
+    allChecksPassing: true,
+    cleanMergeState: true,
+    mergeConflictState: false,
+    pendingBotThreadCount: 0,
+    followUpState: "inactive",
+    allCurrentConfiguredThreadsProcessed: true,
+    convergenceOutcome: "must_fix_remaining",
+    hasUnprocessedMustFix: false,
+    verificationEvidenceSummary: null,
+    noMajorSignalEvidence: null,
+    deterministicProbeEvidence: null,
+    hasMarkedNoSourceChangeRepair: false,
+    verifiedNoSourceChangeRepair: false,
+    hasExplicitCurrentHeadRepairVerification: false,
+    repairAttemptCount: 0,
+    allMustFixRepairResidueThreadsAreP2: true,
+    currentHeadSuccess: true,
+  };
+
+  return classifyStaleReviewBotRemediationPolicy({ ...base, ...overrides });
+}
+
+test("classifyStaleReviewBotRemediationPolicy fails closed when current-head verification evidence is missing", () => {
+  assert.deepEqual(policy(), {
+    classification: "unknown_needs_operator",
+    summary: "code_or_ci_green_but_review_thread_metadata_unresolved",
+    missingProbeReason: "current_head_verification_evidence_missing",
+  });
+});
+
+test("classifyStaleReviewBotRemediationPolicy preserves typed missing current-head review outcome", () => {
+  assert.deepEqual(policy({ convergenceOutcome: "missing_current_head_review" }), {
+    classification: "metadata_only_missing_current_head_review",
+    summary: "stale_configured_bot_thread_metadata_only_pending_current_head_review_request",
+  });
+});
+
+test("classifyStaleReviewBotRemediationPolicy accepts verified current-head repair evidence", () => {
+  assert.deepEqual(
+    policy({
+      verificationEvidenceSummary: "focused_verifier_passed",
+      noMajorSignalEvidence: "codex_pr_success_comment_after_current_head_request",
+      hasExplicitCurrentHeadRepairVerification: true,
+    }),
+    {
+      classification: "verified_current_head_repair_pending_thread_resolution",
+      summary: "verified_current_head_repair_configured_bot_thread_resolution_pending",
+      verificationEvidenceSummary: "focused_verifier_passed;codex_pr_success_comment_after_current_head_request",
+    },
+  );
+});
+
+test("classifyStaleReviewBotAutoRepairSuppressionPolicy preserves repeat-stop suppression reason", () => {
+  assert.equal(
+    classifyStaleReviewBotAutoRepairSuppressionPolicy({
+      hasConfigAndPr: true,
+      repeatStopExhausted: true,
+      manualOrUnconfiguredReviewThreads: false,
+      mergeConflictState: false,
+      failingChecks: false,
+      pendingChecks: false,
+      missingProbeReason: null,
+      verifiedStaleResidue: false,
+      actionableClusterCount: 1,
+      verifiedAutoResolveEnabled: false,
+    }),
+    "repeat_stop_exhausted",
+  );
+});
 
 test("buildStaleReviewBotRemediation classifies same-head Codex no-major comment despite stale blocking review strength", () => {
   const issueNumber = 110;
