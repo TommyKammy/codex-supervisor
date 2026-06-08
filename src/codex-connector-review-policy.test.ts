@@ -145,6 +145,7 @@ test("review policy input snapshots provider, PR, thread vocabulary, and process
   const p2Input = input.threads.find((thread) => thread.id === "thread-p2");
   assert.equal(p2Input?.headRelation, "stale_commit");
   assert.equal(p2Input?.findingKind, "must_fix");
+  assert.equal(p2Input?.boundaryOutcome, "stale_commit_thread");
   assert.equal(p2Input?.processedEvidence.processedOnCurrentHead, false);
   assert.equal(p2Input?.processedEvidence.processedOnPriorHead, true);
   assert.deepEqual(p2Input?.vocabulary, ["stale_commit_thread", "configured_bot_thread", "must_fix_finding"]);
@@ -152,6 +153,7 @@ test("review policy input snapshots provider, PR, thread vocabulary, and process
   const p3Input = input.threads.find((thread) => thread.id === "thread-p3-softened");
   assert.equal(p3Input?.headRelation, "current_head");
   assert.equal(p3Input?.findingKind, "softened_p3_advisory");
+  assert.equal(p3Input?.boundaryOutcome, "softened_p3_advisory");
   assert.equal(p3Input?.processedEvidence.processedOnCurrentHead, true);
   assert.deepEqual(p3Input?.vocabulary, [
     "current_head_thread",
@@ -161,6 +163,7 @@ test("review policy input snapshots provider, PR, thread vocabulary, and process
 
   const p3RiskInput = input.threads.find((thread) => thread.id === "thread-p3-risk");
   assert.equal(p3RiskInput?.findingKind, "must_fix");
+  assert.equal(p3RiskInput?.boundaryOutcome, "stale_commit_thread");
   assert.deepEqual(p3RiskInput?.vocabulary, [
     "stale_commit_thread",
     "configured_bot_thread",
@@ -170,6 +173,7 @@ test("review policy input snapshots provider, PR, thread vocabulary, and process
 
   const manualInput = input.threads.find((thread) => thread.id === "thread-manual");
   assert.equal(manualInput?.findingKind, "none");
+  assert.equal(manualInput?.boundaryOutcome, "manual_thread");
   assert.deepEqual(manualInput?.vocabulary, ["manual_thread"]);
 
   const idOnlyInput = buildReviewPolicyInput({
@@ -201,6 +205,7 @@ test("review policy input snapshots provider, PR, thread vocabulary, and process
   }).threads[0];
   assert.equal(refreshedCommentInput?.processedEvidence.processedOnCurrentHead, false);
   assert.equal(refreshedCommentInput?.headRelation, "unknown");
+  assert.equal(refreshedCommentInput?.boundaryOutcome, "softened_p3_advisory");
 
   const priorIdOnlyInput = buildReviewPolicyInput({
     config,
@@ -248,6 +253,7 @@ test("review policy input snapshots provider, PR, thread vocabulary, and process
   }).threads[0];
   assert.equal(outdatedInput?.headRelation, "unknown");
   assert.equal(outdatedInput?.findingKind, "none");
+  assert.equal(outdatedInput?.boundaryOutcome, "configured_bot_thread");
   assert.deepEqual(outdatedInput?.vocabulary, ["configured_bot_thread"]);
 
   const outdatedManualInput = buildReviewPolicyInput({
@@ -263,6 +269,7 @@ test("review policy input snapshots provider, PR, thread vocabulary, and process
     reviewThreads: [{ ...manualThread, id: "thread-manual-outdated", isOutdated: true }],
   }).threads[0];
   assert.deepEqual(outdatedManualInput?.vocabulary, ["manual_thread"]);
+  assert.equal(outdatedManualInput?.boundaryOutcome, "manual_thread");
 
   const codexReplyThread = createReviewThread({
     id: "thread-codex-replied",
@@ -351,6 +358,93 @@ test("review policy input snapshots provider, PR, thread vocabulary, and process
   assert.equal(p2Input?.comments[0]?.body, "P2: Preserve failed restore cleanup as a blocking verification failure.");
 });
 
+test("review policy input exposes typed boundary outcomes for current-head and metadata residue cases", () => {
+  const config = createConfig({ reviewBotLogins: ["chatgpt-codex-connector"] });
+  const p1Thread = codexThread({
+    id: "thread-p1-current",
+    body: "P1: Keep current-head source fixes blocking until repaired.",
+  });
+  const p3RiskThread = codexThread({
+    id: "thread-p3-risk-current",
+    body: "P3: This cleanup can cause a regression in the restore failure path.",
+  });
+  const p3NitpickThread = codexThread({
+    id: "thread-p3-soft-current",
+    body: "P3: Nitpick: prefer a shorter helper name for readability.",
+  });
+  const metadataOnlyThread = codexThread({
+    id: "thread-metadata-only",
+    body: "P2: Older finding that lacks current-head processing evidence.",
+  });
+  const metadataOnlyP3RiskThread = codexThread({
+    id: "thread-metadata-only-p3-risk",
+    body: "P3: This cleanup can cause a regression before the current-head review is observed.",
+  });
+  const manualThread = createReviewThread({
+    id: "thread-manual-current",
+    comments: {
+      nodes: [
+        {
+          id: "comment-human-current",
+          body: "Manual review note.",
+          createdAt: "2026-03-11T00:02:00Z",
+          url: "https://example.test/pr/44#discussion_human_current",
+          author: {
+            login: "maintainer",
+            typeName: "User",
+          },
+        },
+      ],
+    },
+  });
+  const pr = {
+    number: 44,
+    headRefOid: "head-new",
+    configuredBotCurrentHeadObservedAt: null,
+    configuredBotLatestReviewedCommitSha: null,
+    currentHeadCiGreenAt: "2026-03-11T00:03:00Z",
+  };
+  const input = buildReviewPolicyInput({
+    config,
+    pr,
+    record: {
+      provider_success_head_sha: null,
+      external_review_head_sha: null,
+      last_head_sha: "head-new",
+      processed_review_thread_ids: [
+        "thread-p1-current@head-new",
+        "thread-p3-risk-current@head-new",
+        "thread-p3-soft-current@head-new",
+      ],
+      processed_review_thread_fingerprints: [
+        "thread-p1-current@head-new#comment-1",
+        "thread-p3-risk-current@head-new#comment-1",
+        "thread-p3-soft-current@head-new#comment-1",
+      ],
+    },
+    reviewThreads: [
+      p1Thread,
+      p3RiskThread,
+      p3NitpickThread,
+      metadataOnlyThread,
+      metadataOnlyP3RiskThread,
+      manualThread,
+    ],
+  });
+
+  assert.deepEqual(
+    input.threads.map((thread) => [thread.id, thread.boundaryOutcome]),
+    [
+      ["thread-p1-current", "must_fix_current_head"],
+      ["thread-p3-risk-current", "escalated_p3"],
+      ["thread-p3-soft-current", "softened_p3_advisory"],
+      ["thread-metadata-only", "metadata_only_unresolved"],
+      ["thread-metadata-only-p3-risk", "metadata_only_unresolved"],
+      ["thread-manual-current", "manual_thread"],
+    ],
+  );
+});
+
 test("Codex Connector policy diagnostics and convergence stay focused in the policy module", () => {
   const config = createConfig({ reviewBotLogins: ["chatgpt-codex-connector"] });
   const p1Thread = codexThread({
@@ -374,6 +468,21 @@ test("Codex Connector policy diagnostics and convergence stay focused in the pol
     threadUrl: "https://example.test/pr/44#discussion_r1",
     nextAction: "fix_on_new_head_or_wait_for_github_thread_resolution_or_use_explicit_manual_operator_path",
   });
+  const stalePr: Pick<
+    GitHubPullRequest,
+    "headRefOid" | "configuredBotCurrentHeadObservedAt" | "configuredBotLatestReviewedCommitSha"
+  > = {
+    headRefOid: "head-new",
+    configuredBotCurrentHeadObservedAt: null,
+    configuredBotLatestReviewedCommitSha: "head-old",
+  };
+  assert.equal(buildCodexConnectorPolicyBlockDiagnostic(config, [p1Thread], stalePr), null);
+  assert.equal(buildCodexConnectorP2P3PolicyDiagnostic(config, [p1Thread], stalePr), null);
+  const staleP3NitpickThread = codexThread({
+    id: "thread-stale-p3-nitpick",
+    body: "P3: Nitpick: prefer a shorter helper name for readability.",
+  });
+  assert.equal(buildCodexConnectorP2P3PolicyDiagnostic(config, [p1Thread, staleP3NitpickThread], stalePr), null);
   assert.equal(
     evaluateCodexConnectorConvergencePolicy(config, { configuredBotCurrentHeadObservedAt: "2026-03-11T00:04:00Z" }, [
       p0Thread,
