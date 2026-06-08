@@ -31,6 +31,16 @@ export type ReviewPolicyFindingKind = "none" | "must_fix" | "softened_p3_advisor
 
 export type ReviewPolicyHeadRelation = "current_head" | "stale_commit" | "unknown";
 
+export type ReviewPolicyBoundaryOutcome =
+  | "must_fix_current_head"
+  | "metadata_only_unresolved"
+  | "softened_p3_advisory"
+  | "escalated_p3"
+  | "manual_thread"
+  | "configured_bot_thread"
+  | "stale_commit_thread"
+  | "none";
+
 export interface ReviewPolicyProviderIdentity {
   configuredProviderKinds: ConfiguredReviewProviderKind[];
   configuredBotLogins: string[];
@@ -77,6 +87,7 @@ export interface ReviewPolicyThreadInput {
   latestCodexConnectorCommentFingerprint: string | null;
   findingKind: ReviewPolicyFindingKind;
   headRelation: ReviewPolicyHeadRelation;
+  boundaryOutcome: ReviewPolicyBoundaryOutcome;
   processedEvidence: ReviewPolicyProcessedThreadEvidence;
   vocabulary: ReviewPolicyThreadVocabulary[];
 }
@@ -334,6 +345,34 @@ function reviewPolicyThreadVocabulary(args: {
   return vocabulary;
 }
 
+function reviewPolicyBoundaryOutcome(args: {
+  isConfiguredBotThread: boolean;
+  isManualThread: boolean;
+  findingKind: ReviewPolicyFindingKind;
+  headRelation: ReviewPolicyHeadRelation;
+  isEscalatedP3: boolean;
+}): ReviewPolicyBoundaryOutcome {
+  if (args.headRelation === "stale_commit") {
+    return "stale_commit_thread";
+  }
+  if (args.isManualThread) {
+    return "manual_thread";
+  }
+  if (args.findingKind === "softened_p3_advisory") {
+    return "softened_p3_advisory";
+  }
+  if (args.findingKind === "must_fix") {
+    if (args.isEscalatedP3) {
+      return "escalated_p3";
+    }
+    return args.headRelation === "current_head" ? "must_fix_current_head" : "metadata_only_unresolved";
+  }
+  if (args.isConfiguredBotThread) {
+    return "configured_bot_thread";
+  }
+  return "none";
+}
+
 export function buildReviewPolicyInput(args: {
   config: Pick<SupervisorConfig, "configuredReviewProviders" | "reviewBotLogins">;
   pr: Pick<
@@ -415,6 +454,13 @@ export function buildReviewPolicyInput(args: {
           latestCodexConnectorReview?.severity === "P3" &&
           hasCodexConnectorStrongRiskWording(latestCodexConnectorReview.body),
       );
+      const boundaryOutcome = reviewPolicyBoundaryOutcome({
+        isConfiguredBotThread,
+        isManualThread,
+        findingKind,
+        headRelation,
+        isEscalatedP3,
+      });
 
       return {
         id: thread.id,
@@ -428,6 +474,7 @@ export function buildReviewPolicyInput(args: {
         latestCodexConnectorCommentFingerprint: latestCodexConnectorReviewCommentFingerprint(thread),
         findingKind,
         headRelation,
+        boundaryOutcome,
         processedEvidence: {
           threadId: thread.id,
           latestCommentFingerprint: latestCommentFingerprintValue,
@@ -674,6 +721,35 @@ function formatDiagnosticToken(value: string): string {
   return value.replace(/\s+/g, "_");
 }
 
+function buildDiagnosticReviewPolicyInput(
+  config: SupervisorConfig,
+  reviewThreads: ReviewThread[],
+  pr?: Pick<GitHubPullRequest, "headRefOid" | "configuredBotCurrentHeadObservedAt" | "configuredBotLatestReviewedCommitSha">,
+): ReviewPolicyInput {
+  const currentHeadSha = pr?.headRefOid ?? "diagnostic-current-head";
+  const hasStaleCommitResidue = pr ? codexConnectorStaleReviewCommitThreads(pr, reviewThreads).length > 0 : false;
+  return buildReviewPolicyInput({
+    config,
+    pr: {
+      number: 0,
+      headRefOid: currentHeadSha,
+      configuredBotCurrentHeadObservedAt: hasStaleCommitResidue
+        ? pr?.configuredBotCurrentHeadObservedAt ?? null
+        : pr?.configuredBotCurrentHeadObservedAt ?? "1970-01-01T00:00:00.000Z",
+      configuredBotLatestReviewedCommitSha: pr?.configuredBotLatestReviewedCommitSha ?? null,
+      currentHeadCiGreenAt: null,
+    },
+    record: {
+      provider_success_head_sha: null,
+      external_review_head_sha: null,
+      last_head_sha: currentHeadSha,
+      processed_review_thread_ids: [],
+      processed_review_thread_fingerprints: [],
+    },
+    reviewThreads,
+  });
+}
+
 export function evaluateCodexConnectorConvergencePolicy(
   config: SupervisorConfig,
   pr: Pick<GitHubPullRequest, "configuredBotCurrentHeadObservedAt">,
@@ -741,11 +817,13 @@ export function buildCodexConnectorPolicyBlockDiagnostic(
   if (!configuredReviewProviderKinds(config).includes("codex")) {
     return null;
   }
-  if (pr && codexConnectorStaleReviewCommitThreads(pr, reviewThreads).length > 0) {
-    return null;
-  }
-
-  const mustFixThreads = codexConnectorMustFixReviewThreads(reviewThreads);
+  const policyInput = buildDiagnosticReviewPolicyInput(config, reviewThreads, pr);
+  const currentHeadMustFixThreadIds = new Set(
+    policyInput.threads
+      .filter((thread) => thread.boundaryOutcome === "must_fix_current_head" || thread.boundaryOutcome === "escalated_p3")
+      .map((thread) => thread.id),
+  );
+  const mustFixThreads = reviewThreads.filter((thread) => currentHeadMustFixThreadIds.has(thread.id));
   if (mustFixThreads.length === 0) {
     return null;
   }
@@ -772,9 +850,7 @@ export function buildCodexConnectorP2P3PolicyDiagnostic(
   if (!configuredReviewProviderKinds(config).includes("codex")) {
     return null;
   }
-  if (pr && codexConnectorStaleReviewCommitThreads(pr, reviewThreads).length > 0) {
-    return null;
-  }
+  const policyInput = buildDiagnosticReviewPolicyInput(config, reviewThreads, pr);
 
   const diagnostic: CodexConnectorP2P3PolicyDiagnostic = {
     p2Actionable: 0,
@@ -782,20 +858,13 @@ export function buildCodexConnectorP2P3PolicyDiagnostic(
     p3Escalated: 0,
   };
 
-  for (const thread of reviewThreads) {
-    if (thread.isResolved || thread.isOutdated) {
-      continue;
-    }
-
-    const latestCodexConnectorReview = latestCodexConnectorReviewComment(thread);
-    if (latestCodexConnectorReview?.severity === "P2") {
+  for (const thread of policyInput.threads) {
+    if (thread.boundaryOutcome === "must_fix_current_head" && thread.latestCodexConnectorSeverity === "P2") {
       diagnostic.p2Actionable += 1;
-    } else if (latestCodexConnectorReview?.severity === "P3") {
-      if (hasCodexConnectorStrongRiskWording(latestCodexConnectorReview.body)) {
-        diagnostic.p3Escalated += 1;
-      } else {
-        diagnostic.p3Softened += 1;
-      }
+    } else if (thread.boundaryOutcome === "escalated_p3") {
+      diagnostic.p3Escalated += 1;
+    } else if (thread.boundaryOutcome === "softened_p3_advisory") {
+      diagnostic.p3Softened += 1;
     }
   }
 
