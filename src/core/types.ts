@@ -401,7 +401,7 @@ export interface CliOptions {
   dryRun: boolean;
   why: boolean;
   issueLintSuggest: boolean;
-  explainMode?: "summary" | "timeline" | "audit_bundle";
+  explainMode?: "summary" | "timeline" | "audit_bundle" | "v2";
   issueNumber?: number;
   snapshotPath?: string;
   caseId?: string;

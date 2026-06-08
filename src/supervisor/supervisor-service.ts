@@ -3,6 +3,7 @@ import type { DoctorDiagnostics } from "../doctor";
 import type { SetupConfigPreview, SetupConfigPreviewSelectableReviewProviderProfile } from "../setup-config-preview";
 import type { SetupConfigChanges, SetupConfigUpdateResult, UpdateSetupConfigArgs } from "../setup-config-write";
 import type { SetupReadinessReport } from "../setup-readiness";
+import type { DecisionKernelV2ExplainDto } from "../decision-kernel/v2-explain";
 import type {
   SupervisorExecutionMetricsRollupResultDto,
   SupervisorMutationResultDto,
@@ -29,6 +30,7 @@ export interface SupervisorService {
   queryPostMergeAuditSummary?: () => Promise<PostMergeAuditPatternSummaryDto>;
   resetCorruptJsonState: () => Promise<JsonCorruptStateResetResult>;
   queryExplain: (issueNumber: number) => Promise<SupervisorExplainDto>;
+  queryV2Explain?: (issueNumber: number) => Promise<DecisionKernelV2ExplainDto>;
   queryIssueLint: (issueNumber: number) => Promise<SupervisorIssueLintDto>;
   queryDoctor: () => Promise<DoctorDiagnostics>;
   querySetupReadiness?: () => Promise<SetupReadinessReport>;
@@ -108,6 +110,10 @@ class SupervisorApplicationService implements SupervisorService {
 
   queryExplain(issueNumber: number): Promise<SupervisorExplainDto> {
     return this.supervisor.explainReport(issueNumber);
+  }
+
+  queryV2Explain(issueNumber: number): Promise<DecisionKernelV2ExplainDto> {
+    return this.supervisor.v2ExplainReport(issueNumber);
   }
 
   queryIssueLint(issueNumber: number): Promise<SupervisorIssueLintDto> {

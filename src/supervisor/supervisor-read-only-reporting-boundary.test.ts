@@ -40,6 +40,10 @@ test("Supervisor read-only reporting methods remain thin delegators", async () =
     /^return buildSupervisorExplainReport\(\{\s*config: this\.config,\s*github: this\.github,\s*stateStore: this\.stateStore,\s*issueNumber,\s*\}\);$/s,
   );
   assert.match(
+    extractMethodBody(source, "async v2ExplainReport(issueNumber: number)"),
+    /^return buildSupervisorV2ExplainReport\(\{\s*config: this\.config,\s*github: this\.github,\s*stateStore: this\.stateStore,\s*issueNumber,\s*\}\);$/s,
+  );
+  assert.match(
     extractMethodBody(source, "async doctorReport()"),
     /^return buildSupervisorDoctorReport\(\{\s*config: this\.config,\s*configPath: this\.configPath,\s*github: this\.github,\s*\}\);$/s,
   );
