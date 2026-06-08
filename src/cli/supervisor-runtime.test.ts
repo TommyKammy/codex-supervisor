@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { LockHandle } from "../core/lock";
 import type { SupervisorConfig } from "../core/types";
+import type { DecisionKernelV2ExplainDto } from "../decision-kernel/v2-explain";
 import type { SetupReadinessReport } from "../setup-readiness";
 import type { SupervisorIssueLintDto } from "../supervisor/supervisor-selection-issue-lint";
 import type { SupervisorStatusDto } from "../supervisor/supervisor-status-report";
@@ -47,6 +48,20 @@ function createStatusDto(overrides: Partial<SupervisorStatusDto> = {}): Supervis
     readinessLines: [],
     whyLines: [],
     warning: null,
+    ...overrides,
+  };
+}
+
+function createV2ExplainDto(overrides: Partial<DecisionKernelV2ExplainDto> = {}): DecisionKernelV2ExplainDto {
+  return {
+    issueNumber: 1745,
+    title: "V2 explain",
+    prNumber: 1745,
+    targetStatus: "ready",
+    guidance: null,
+    inventory: null,
+    reviewPolicyInput: null,
+    decision: null,
     ...overrides,
   };
 }
@@ -800,6 +815,106 @@ test("runSupervisorCommand renders explain audit bundles as JSON", async () => {
   const rendered = JSON.parse(stdout[0] ?? "{}") as { advisoryOnly?: boolean; issue?: { number?: number } };
   assert.equal(rendered.advisoryOnly, true);
   assert.equal(rendered.issue?.number, 1745);
+});
+
+test("runSupervisorCommand renders v2 explain diagnostics through the read-only service boundary", async () => {
+  const stdout: string[] = [];
+  const calls: string[] = [];
+
+  await runSupervisorCommand(
+    { command: "explain", dryRun: false, why: false, explainMode: "v2", issueNumber: 1745 },
+    {
+      service: {
+        config: {} as SupervisorConfig,
+        pollIntervalMs: async () => 50,
+        runOnce: async () => {
+          calls.push("runOnce");
+          throw new Error("unexpected runOnce");
+        },
+        queryStatus: async () => {
+          calls.push("status");
+          return createStatusDto();
+        },
+        queryExplain: async () => {
+          calls.push("explain");
+          throw new Error("unexpected queryExplain");
+        },
+        queryV2Explain: async (issueNumber) => {
+          calls.push(`v2Explain:${issueNumber}`);
+          return createV2ExplainDto({
+            issueNumber,
+            decision: {
+              schemaVersion: "decision_kernel_v2.read_only.v1",
+              action: "request_review",
+              reasons: ["missing_current_head_review"],
+              requiredEvidence: ["current_head_review"],
+              safety: {
+                mode: "diagnostic_only",
+                authoritative: false,
+                mutationAllowed: false,
+              },
+              summary: "Current-head review evidence is missing.",
+              normalizedState: {
+                source: "fresh_github",
+                observedAt: "2026-06-08T00:00:00.000Z",
+                pullRequestNumber: 1745,
+                headSha: "head-current",
+                headFreshness: "current_head",
+                reviewPosture: "missing_current_head_review",
+                checkPosture: "green",
+                mergeability: "mergeable",
+                localStateFreshness: "fresh",
+                evidence: {
+                  manualReviewThreadCount: 0,
+                  currentHeadConfiguredBotThreadCount: 0,
+                  stalePreviousHeadConfiguredBotThreadCount: 0,
+                  metadataOnlyUnresolvedThreadCount: 0,
+                  passingCheckCount: 1,
+                  pendingCheckCount: 0,
+                  failingCheckCount: 0,
+                  unknownCheckCount: 0,
+                  trackedHeadSha: "head-current",
+                  workspaceHeadSha: null,
+                  lastObservedPrHeadSha: "head-current",
+                },
+              },
+            },
+          });
+        },
+        runRecoveryAction: async () => {
+          calls.push("recovery");
+          throw new Error("unexpected runRecoveryAction");
+        },
+        pruneOrphanedWorkspaces: async () => {
+          calls.push("pruneOrphanedWorkspaces");
+          throw new Error("unexpected pruneOrphanedWorkspaces");
+        },
+        resetCorruptJsonState: async () => {
+          calls.push("resetCorruptJsonState");
+          throw new Error("unexpected resetCorruptJsonState");
+        },
+        queryIssueLint: async () => {
+          calls.push("issueLint");
+          throw new Error("unexpected queryIssueLint");
+        },
+        queryDoctor: async () => {
+          calls.push("doctor");
+          throw new Error("unexpected queryDoctor");
+        },
+      },
+      writeStdout: (line) => {
+        stdout.push(line);
+      },
+      registerStopSignals: () => {},
+    },
+  );
+
+  assert.deepEqual(calls, ["v2Explain:1745"]);
+  assert.equal(stdout.length, 1);
+  assert.match(stdout[0] ?? "", /^v2_status=diagnostic_only$/m);
+  assert.match(stdout[0] ?? "", /^v2_authoritative=false$/m);
+  assert.match(stdout[0] ?? "", /^v2_mutation_allowed=false$/m);
+  assert.match(stdout[0] ?? "", /^v2_decision action=request_review/m);
 });
 
 test("runSupervisorCommand renders issue-lint output from the structured DTO", async () => {

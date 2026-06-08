@@ -142,6 +142,7 @@ const EXPECTED_FAMILY_FILES = {
     "pr-lifecycle-trace-fixtures.ts",
     "pr-lifecycle-trace-presenter.ts",
     "pr-lifecycle-trace.ts",
+    "v2-explain.ts",
   ],
   "external-review": [
     "external-review-classifier.ts",

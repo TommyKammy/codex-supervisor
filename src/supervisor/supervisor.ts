@@ -177,6 +177,7 @@ import {
   buildSupervisorExplainReport,
   buildSupervisorSetupReadinessReport,
   buildSupervisorStatusReport,
+  buildSupervisorV2ExplainReport,
 } from "./supervisor-read-only-reporting";
 
 interface ReadyIssueContext {
@@ -952,6 +953,15 @@ export class Supervisor {
 
   async explainReport(issueNumber: number): Promise<SupervisorExplainDto> {
     return buildSupervisorExplainReport({
+      config: this.config,
+      github: this.github,
+      stateStore: this.stateStore,
+      issueNumber,
+    });
+  }
+
+  async v2ExplainReport(issueNumber: number) {
+    return buildSupervisorV2ExplainReport({
       config: this.config,
       github: this.github,
       stateStore: this.stateStore,

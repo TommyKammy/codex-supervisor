@@ -406,6 +406,21 @@ test("parseArgs accepts explain audit bundle mode", () => {
   });
 });
 
+test("parseArgs accepts explain v2 diagnostic mode", () => {
+  assert.deepEqual(parseArgs(["explain", "1745", "--v2"]), {
+    command: "explain",
+    configPath: undefined,
+    dryRun: false,
+    why: false,
+    issueLintSuggest: false,
+    explainMode: "v2",
+    issueNumber: 1745,
+    snapshotPath: undefined,
+    caseId: undefined,
+    corpusPath: undefined,
+  });
+});
+
 test("parseArgs rejects timeline mode outside explain", () => {
   assert.throws(
     () => parseArgs(["status", "--timeline"]),
@@ -417,6 +432,13 @@ test("parseArgs rejects audit bundle mode outside explain", () => {
   assert.throws(
     () => parseArgs(["status", "--audit-bundle"]),
     /The --audit-bundle flag is only supported with the explain command\./,
+  );
+});
+
+test("parseArgs rejects v2 mode outside explain", () => {
+  assert.throws(
+    () => parseArgs(["status", "--v2"]),
+    /The --v2 flag is only supported with the explain command\./,
   );
 });
 
@@ -437,7 +459,14 @@ test("parseArgs rejects first-run summary mode outside doctor", () => {
 test("parseArgs rejects combining explain timeline and audit bundle modes", () => {
   assert.throws(
     () => parseArgs(["explain", "1745", "--timeline", "--audit-bundle"]),
-    /The --timeline and --audit-bundle flags cannot be combined\./,
+    /The --timeline, --audit-bundle, and --v2 flags cannot be combined\./,
+  );
+});
+
+test("parseArgs rejects combining explain v2 with other explain modes", () => {
+  assert.throws(
+    () => parseArgs(["explain", "1745", "--v2", "--audit-bundle"]),
+    /The --timeline, --audit-bundle, and --v2 flags cannot be combined\./,
   );
 });
 

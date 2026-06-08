@@ -36,6 +36,7 @@ Inspect commands:
   explain <issue-number> --timeline Show the issue-run evidence timeline.
   explain <issue-number> --audit-bundle
                                     Print a sanitized operator audit bundle.
+  explain <issue-number> --v2       Render the Phase 3 v2 decision model as diagnostic-only output.
   issue-lint <issue-number> [--suggest]
                                     Validate an execution-ready issue body.
   sample-issue [--output SAMPLE_ISSUE.md]

@@ -14,6 +14,10 @@ import { truncate } from "../core/utils";
 import { diagnoseSupervisorHost, loadStateReadonlyForDoctor, type DoctorDiagnostics } from "../doctor";
 import { GitHubClient } from "../github";
 import {
+  buildDecisionKernelV2ExplainDto,
+  type DecisionKernelV2ExplainDto,
+} from "../decision-kernel/v2-explain";
+import {
   buildInventoryOperatorStatus,
   formatInventoryOperatorPostureLine,
   formatInventoryRefreshDiagnosticLines,
@@ -682,6 +686,50 @@ export async function buildSupervisorExplainReport(args: {
     ...dto,
     loopRuntimeBlockerSummary: loopOffTrackedWorkBlocker?.summaryLine ?? null,
   };
+}
+
+export async function buildSupervisorV2ExplainReport(args: {
+  config: SupervisorConfig;
+  github: GitHubClient;
+  stateStore: StateStore;
+  issueNumber: number;
+}): Promise<DecisionKernelV2ExplainDto> {
+  const state = await args.stateStore.load();
+  const trackedPrOwners = Object.values(state.issues).filter((record) => record.pr_number === args.issueNumber);
+  const record = trackedPrOwners.length === 1
+    ? trackedPrOwners[0] ?? null
+    : state.issues[String(args.issueNumber)] ?? null;
+  const issueNumber = record?.issue_number ?? args.issueNumber;
+  const issue = await args.github.getIssue(issueNumber);
+  let pr: GitHubPullRequest | null = null;
+  let checks: PullRequestCheck[] = [];
+  let reviewThreads: ReviewThread[] = [];
+  let hydrationFailed = false;
+
+  if (record) {
+    try {
+      pr = await args.github.resolvePullRequestForBranch(record.branch, record.pr_number, { purpose: "status" });
+      if (pr) {
+        [checks, reviewThreads] = await Promise.all([
+          args.github.getChecks(pr.number),
+          args.github.getUnresolvedReviewThreads(pr.number),
+        ]);
+      }
+    } catch {
+      hydrationFailed = true;
+    }
+  }
+
+  return buildDecisionKernelV2ExplainDto({
+    config: args.config,
+    issueNumber: issue.number,
+    title: issue.title,
+    record,
+    pr,
+    checks,
+    reviewThreads,
+    hydrationFailed,
+  });
 }
 
 export async function buildSupervisorDoctorReport(args: {

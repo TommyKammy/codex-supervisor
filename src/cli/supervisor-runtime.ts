@@ -6,6 +6,7 @@ import { sleep as defaultSleep } from "../core/utils";
 import { ensureGsdInstalled as defaultEnsureGsdInstalled } from "../gsd";
 import { readManagedRestartCapabilityFromEnv, type ManagedRestartController } from "../managed-restart";
 import { renderDoctorReport } from "../doctor";
+import { renderDecisionKernelV2ExplainDto } from "../decision-kernel/v2-explain";
 import { renderJsonCorruptStateResetResultDto } from "../supervisor/supervisor-mutation-report";
 import { renderSupervisorExecutionMetricsRollupResultDto } from "../supervisor/supervisor-mutation-report";
 import { renderSupervisorMutationResultDto } from "../supervisor/supervisor-mutation-report";
@@ -222,6 +223,14 @@ export async function runSupervisorCommand(
   }
 
   if (options.command === "explain") {
+    if (options.explainMode === "v2") {
+      if (!service.queryV2Explain) {
+        throw new Error("Missing Decision Kernel v2 explain support.");
+      }
+      writeStdout(renderDecisionKernelV2ExplainDto(await service.queryV2Explain(options.issueNumber!)));
+      return;
+    }
+
     const explain = await service.queryExplain(options.issueNumber!);
     writeStdout(
       options.explainMode === "audit_bundle"

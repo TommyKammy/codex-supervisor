@@ -28,6 +28,7 @@ export function parseArgs(argv: string[]): CliOptions {
   let issueLintSuggest = false;
   let timelineRequested = false;
   let auditBundleRequested = false;
+  let v2Requested = false;
   let issueNumber: number | undefined;
   let snapshotPath: string | undefined;
   let caseId: string | undefined;
@@ -112,6 +113,11 @@ export function parseArgs(argv: string[]): CliOptions {
       continue;
     }
 
+    if (token === "--v2") {
+      v2Requested = true;
+      continue;
+    }
+
     if (
       (command === "explain" ||
         command === "issue-lint" ||
@@ -179,8 +185,13 @@ export function parseArgs(argv: string[]): CliOptions {
     throw new Error("The --audit-bundle flag is only supported with the explain command.");
   }
 
-  if (timelineRequested && auditBundleRequested) {
-    throw new Error("The --timeline and --audit-bundle flags cannot be combined.");
+  if (v2Requested && command !== "explain") {
+    throw new Error("The --v2 flag is only supported with the explain command.");
+  }
+
+  const explainModeRequestCount = [timelineRequested, auditBundleRequested, v2Requested].filter(Boolean).length;
+  if (explainModeRequestCount > 1) {
+    throw new Error("The --timeline, --audit-bundle, and --v2 flags cannot be combined.");
   }
 
   if (command === "explain" && issueNumber === undefined) {
@@ -211,7 +222,9 @@ export function parseArgs(argv: string[]): CliOptions {
     ? "audit_bundle"
     : timelineRequested
       ? "timeline"
-      : "summary";
+      : v2Requested
+        ? "v2"
+        : "summary";
 
   return {
     command,
