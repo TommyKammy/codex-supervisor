@@ -62,6 +62,7 @@ function createV2ExplainDto(overrides: Partial<DecisionKernelV2ExplainDto> = {})
     inventory: null,
     reviewPolicyInput: null,
     decision: null,
+    comparison: null,
     ...overrides,
   };
 }
@@ -879,6 +880,30 @@ test("runSupervisorCommand renders v2 explain diagnostics through the read-only 
                 },
               },
             },
+            comparison: {
+              current: {
+                state: "pr_open",
+                actionEquivalent: "ask_operator",
+              },
+              v2: {
+                action: "request_review",
+                reasons: ["missing_current_head_review"],
+              },
+              category: "manual_review_required",
+              differences: [
+                {
+                  field: "action",
+                  current: "ask_operator",
+                  v2: "request_review",
+                },
+                {
+                  field: "reason",
+                  current: "insufficient_merge_evidence",
+                  v2: "missing_current_head_review",
+                },
+              ],
+              safetyNote: "Current and v2 diverge in an unsafe or ambiguous way; require operator review before trusting v2.",
+            },
           });
         },
         runRecoveryAction: async () => {
@@ -915,6 +940,7 @@ test("runSupervisorCommand renders v2 explain diagnostics through the read-only 
   assert.match(stdout[0] ?? "", /^v2_authoritative=false$/m);
   assert.match(stdout[0] ?? "", /^v2_mutation_allowed=false$/m);
   assert.match(stdout[0] ?? "", /^v2_decision action=request_review/m);
+  assert.match(stdout[0] ?? "", /^v2_comparison category=manual_review_required current_state=pr_open/m);
 });
 
 test("runSupervisorCommand renders issue-lint output from the structured DTO", async () => {

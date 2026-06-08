@@ -13,11 +13,13 @@ import type {
   ReviewThread,
   SupervisorConfig,
 } from "../core/types";
+import { buildDecisionKernelV2ComparisonDto, type DecisionKernelV2ComparisonDto } from "./v2-comparison";
 import {
   DECISION_KERNEL_V2_READ_ONLY_SCHEMA_VERSION,
   evaluateDecisionKernelV2ReadOnlyFromFacts,
   type DecisionKernelV2ReadOnlyDecision,
 } from "../decision-kernel-v2";
+import { inferStateFromPullRequest } from "../pull-request-state";
 import {
   currentHeadObservationSatisfiesActiveWait,
   hasCurrentHeadProviderSuccess,
@@ -40,6 +42,7 @@ export interface DecisionKernelV2ExplainDto {
   inventory: PrLifecycleFactInventory | null;
   reviewPolicyInput: ReviewPolicyInput | null;
   decision: DecisionKernelV2ReadOnlyDecision | null;
+  comparison: DecisionKernelV2ComparisonDto | null;
 }
 
 export function buildDecisionKernelV2ExplainDto(args: {
@@ -112,6 +115,18 @@ export function buildDecisionKernelV2ExplainDto(args: {
       }),
     },
   });
+  const currentState = inferStateFromPullRequest(
+    args.config,
+    args.record,
+    args.pr,
+    args.checks,
+    args.reviewThreads,
+    args.nowMs,
+  );
+  const comparison = buildDecisionKernelV2ComparisonDto({
+    currentState,
+    v2Decision: decision,
+  });
 
   return {
     issueNumber: args.issueNumber,
@@ -122,6 +137,7 @@ export function buildDecisionKernelV2ExplainDto(args: {
     inventory,
     reviewPolicyInput,
     decision,
+    comparison,
   };
 }
 
@@ -176,7 +192,31 @@ export function renderDecisionKernelV2ExplainDto(dto: DecisionKernelV2ExplainDto
     );
   }
 
+  if (dto.comparison) {
+    lines.push(
+      [
+        "v2_comparison",
+        `category=${dto.comparison.category}`,
+        `current_state=${dto.comparison.current.state}`,
+        `current_action=${dto.comparison.current.actionEquivalent}`,
+        `v2_action=${dto.comparison.v2.action}`,
+        `differences=${renderComparisonDifferences(dto.comparison.differences)}`,
+        `safety=${dto.comparison.safetyNote.replace(/\s+/g, "_")}`,
+      ].join(" "),
+    );
+  }
+
   return lines.join("\n");
+}
+
+function renderComparisonDifferences(differences: DecisionKernelV2ComparisonDto["differences"]): string {
+  if (differences.length === 0) {
+    return "none";
+  }
+
+  return differences
+    .map((difference) => `${difference.field}:${difference.current}->${difference.v2}`)
+    .join("|");
 }
 
 function missingTarget(
@@ -197,6 +237,7 @@ function missingTarget(
     inventory: null,
     reviewPolicyInput: null,
     decision: null,
+    comparison: null,
   };
 }
 
