@@ -5,6 +5,7 @@ import {
   buildCodexConnectorPolicyBlockDiagnostic,
   buildCodexConnectorReviewChurnDiagnostic,
   buildCodexConnectorReviewChurnProgressSummary,
+  buildReviewPolicyInput,
   clusterConfiguredBotReviewThreads,
   compareCodexConnectorReviewChurnProgress,
   codexConnectorMustFixReviewThreads,
@@ -68,6 +69,286 @@ test("Codex Connector policy classifies must-fix, nitpick, and stale review comm
     p3Softened: 1,
     p3Escalated: 1,
   });
+});
+
+test("review policy input snapshots provider, PR, thread vocabulary, and processed evidence", () => {
+  const config = createConfig({ reviewBotLogins: ["chatgpt-codex-connector"] });
+  const p2Thread = codexThread({
+    id: "thread-p2",
+    body: "P2: Preserve failed restore cleanup as a blocking verification failure.",
+  });
+  const p3NitpickThread = codexThread({
+    id: "thread-p3-softened",
+    body: "P3: Nitpick: prefer a shorter helper name for readability.",
+  });
+  const p3RiskThread = codexThread({
+    id: "thread-p3-risk",
+    body: "P3: This cleanup can cause a regression in the restore failure path.",
+  });
+  const manualThread = createReviewThread({
+    id: "thread-manual",
+    comments: {
+      nodes: [
+        {
+          id: "comment-human",
+          body: "Please double-check the migration note.",
+          createdAt: "2026-03-11T00:02:00Z",
+          url: "https://example.test/pr/44#discussion_human",
+          author: {
+            login: "maintainer",
+            typeName: "User",
+          },
+        },
+      ],
+    },
+  });
+  const pr: Pick<
+    GitHubPullRequest,
+    "number" | "headRefOid" | "configuredBotCurrentHeadObservedAt" | "configuredBotLatestReviewedCommitSha" | "currentHeadCiGreenAt"
+  > = {
+    number: 44,
+    headRefOid: "head-new",
+    configuredBotCurrentHeadObservedAt: null,
+    configuredBotLatestReviewedCommitSha: "head-old",
+    currentHeadCiGreenAt: "2026-03-11T00:03:00Z",
+  };
+  const input = buildReviewPolicyInput({
+    config,
+    pr,
+    record: {
+      provider_success_head_sha: "HEAD-OLD",
+      external_review_head_sha: "HEAD-NEW",
+      last_head_sha: "head-new",
+      processed_review_thread_ids: ["thread-p3-softened@head-new", "thread-p2@head-old"],
+      processed_review_thread_fingerprints: [
+        "thread-p3-softened@head-new#comment-1",
+        "thread-p2@head-old#comment-1",
+      ],
+    },
+    reviewThreads: [p2Thread, p3NitpickThread, p3RiskThread, manualThread],
+  });
+
+  assert.deepEqual(input.providerIdentity, {
+    configuredProviderKinds: ["codex"],
+    configuredBotLogins: ["chatgpt-codex-connector"],
+  });
+  assert.deepEqual(input.pr, {
+    number: 44,
+    headSha: "head-new",
+    currentHeadObservedAt: null,
+    latestReviewedCommitSha: "head-old",
+    providerSuccessHeadSha: "head-old",
+    externalReviewHeadSha: "head-new",
+    currentHeadCiGreenAt: "2026-03-11T00:03:00Z",
+  });
+
+  const p2Input = input.threads.find((thread) => thread.id === "thread-p2");
+  assert.equal(p2Input?.headRelation, "stale_commit");
+  assert.equal(p2Input?.findingKind, "must_fix");
+  assert.equal(p2Input?.processedEvidence.processedOnCurrentHead, false);
+  assert.equal(p2Input?.processedEvidence.processedOnPriorHead, true);
+  assert.deepEqual(p2Input?.vocabulary, ["stale_commit_thread", "configured_bot_thread", "must_fix_finding"]);
+
+  const p3Input = input.threads.find((thread) => thread.id === "thread-p3-softened");
+  assert.equal(p3Input?.headRelation, "current_head");
+  assert.equal(p3Input?.findingKind, "softened_p3_advisory");
+  assert.equal(p3Input?.processedEvidence.processedOnCurrentHead, true);
+  assert.deepEqual(p3Input?.vocabulary, [
+    "current_head_thread",
+    "configured_bot_thread",
+    "softened_p3_advisory",
+  ]);
+
+  const p3RiskInput = input.threads.find((thread) => thread.id === "thread-p3-risk");
+  assert.equal(p3RiskInput?.findingKind, "must_fix");
+  assert.deepEqual(p3RiskInput?.vocabulary, [
+    "stale_commit_thread",
+    "configured_bot_thread",
+    "must_fix_finding",
+    "escalated_p3",
+  ]);
+
+  const manualInput = input.threads.find((thread) => thread.id === "thread-manual");
+  assert.equal(manualInput?.findingKind, "none");
+  assert.deepEqual(manualInput?.vocabulary, ["manual_thread"]);
+
+  const idOnlyInput = buildReviewPolicyInput({
+    config,
+    pr,
+    record: {
+      provider_success_head_sha: null,
+      external_review_head_sha: null,
+      last_head_sha: "head-new",
+      processed_review_thread_ids: ["thread-p3-softened@head-new"],
+      processed_review_thread_fingerprints: [],
+    },
+    reviewThreads: [p3NitpickThread],
+  }).threads[0];
+  assert.equal(idOnlyInput?.processedEvidence.processedOnCurrentHead, true);
+  assert.equal(idOnlyInput?.headRelation, "current_head");
+
+  const refreshedCommentInput = buildReviewPolicyInput({
+    config,
+    pr,
+    record: {
+      provider_success_head_sha: null,
+      external_review_head_sha: null,
+      last_head_sha: "head-new",
+      processed_review_thread_ids: ["thread-p3-softened@head-new"],
+      processed_review_thread_fingerprints: ["thread-p3-softened@head-new#old-comment"],
+    },
+    reviewThreads: [p3NitpickThread],
+  }).threads[0];
+  assert.equal(refreshedCommentInput?.processedEvidence.processedOnCurrentHead, false);
+  assert.equal(refreshedCommentInput?.headRelation, "unknown");
+
+  const priorIdOnlyInput = buildReviewPolicyInput({
+    config,
+    pr,
+    record: {
+      provider_success_head_sha: null,
+      external_review_head_sha: null,
+      last_head_sha: "head-new",
+      processed_review_thread_ids: ["thread-p3-softened@head-old"],
+      processed_review_thread_fingerprints: [],
+    },
+    reviewThreads: [p3NitpickThread],
+  }).threads[0];
+  assert.equal(priorIdOnlyInput?.processedEvidence.processedOnPriorHead, true);
+
+  const priorFingerprintOnlyInput = buildReviewPolicyInput({
+    config,
+    pr,
+    record: {
+      provider_success_head_sha: null,
+      external_review_head_sha: null,
+      last_head_sha: "head-new",
+      processed_review_thread_ids: [],
+      processed_review_thread_fingerprints: ["thread-p3-softened@head-old#comment-1"],
+    },
+    reviewThreads: [p3NitpickThread],
+  }).threads[0];
+  assert.equal(priorFingerprintOnlyInput?.processedEvidence.processedOnPriorHead, false);
+
+  const outdatedInput = buildReviewPolicyInput({
+    config,
+    pr: {
+      ...pr,
+      configuredBotCurrentHeadObservedAt: "2026-03-11T00:04:00Z",
+      configuredBotLatestReviewedCommitSha: null,
+    },
+    record: {
+      provider_success_head_sha: null,
+      external_review_head_sha: null,
+      last_head_sha: "head-new",
+      processed_review_thread_ids: [],
+      processed_review_thread_fingerprints: [],
+    },
+    reviewThreads: [{ ...p3RiskThread, id: "thread-p3-outdated", isOutdated: true }],
+  }).threads[0];
+  assert.equal(outdatedInput?.headRelation, "unknown");
+  assert.equal(outdatedInput?.findingKind, "none");
+  assert.deepEqual(outdatedInput?.vocabulary, ["configured_bot_thread"]);
+
+  const outdatedManualInput = buildReviewPolicyInput({
+    config,
+    pr,
+    record: {
+      provider_success_head_sha: null,
+      external_review_head_sha: null,
+      last_head_sha: "head-new",
+      processed_review_thread_ids: [],
+      processed_review_thread_fingerprints: [],
+    },
+    reviewThreads: [{ ...manualThread, id: "thread-manual-outdated", isOutdated: true }],
+  }).threads[0];
+  assert.deepEqual(outdatedManualInput?.vocabulary, ["manual_thread"]);
+
+  const codexReplyThread = createReviewThread({
+    id: "thread-codex-replied",
+    comments: {
+      nodes: [
+        {
+          id: "comment-codex-finding",
+          body: "P2: Preserve the original Codex finding fingerprint.",
+          createdAt: "2026-03-11T00:00:00Z",
+          url: "https://example.test/pr/44#discussion_codex",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+        {
+          id: "comment-supervisor-reply",
+          body: "Handled in the current patch.",
+          createdAt: "2026-03-11T00:01:00Z",
+          url: "https://example.test/pr/44#discussion_reply",
+          author: {
+            login: "maintainer",
+            typeName: "User",
+          },
+        },
+      ],
+    },
+  });
+  const codexReplyInput = buildReviewPolicyInput({
+    config,
+    pr,
+    record: {
+      provider_success_head_sha: null,
+      external_review_head_sha: null,
+      last_head_sha: "head-new",
+      processed_review_thread_ids: [],
+      processed_review_thread_fingerprints: ["thread-codex-replied@head-new#comment-codex-finding"],
+    },
+    reviewThreads: [codexReplyThread],
+  }).threads[0];
+  assert.equal(codexReplyInput?.processedEvidence.processedOnCurrentHead, true);
+
+  const priorCodexReplyInput = buildReviewPolicyInput({
+    config,
+    pr,
+    record: {
+      provider_success_head_sha: null,
+      external_review_head_sha: null,
+      last_head_sha: "head-new",
+      processed_review_thread_ids: ["thread-codex-replied@head-old"],
+      processed_review_thread_fingerprints: ["thread-codex-replied@head-old#comment-supervisor-reply"],
+    },
+    reviewThreads: [codexReplyThread],
+  }).threads[0];
+  assert.equal(priorCodexReplyInput?.processedEvidence.processedOnPriorHead, true);
+
+  const fingerprintOnlyInput = buildReviewPolicyInput({
+    config,
+    pr,
+    record: {
+      provider_success_head_sha: null,
+      external_review_head_sha: null,
+      last_head_sha: "head-new",
+      processed_review_thread_ids: [],
+      processed_review_thread_fingerprints: ["thread-p3-softened@head-new#comment-1"],
+    },
+    reviewThreads: [p3NitpickThread],
+  }).threads[0];
+  assert.equal(fingerprintOnlyInput?.processedEvidence.processedOnCurrentHead, true);
+
+  const legacyRawIdInput = buildReviewPolicyInput({
+    config,
+    pr,
+    record: {
+      provider_success_head_sha: null,
+      external_review_head_sha: null,
+      last_head_sha: "head-new",
+      processed_review_thread_ids: ["thread-p3-softened"],
+      processed_review_thread_fingerprints: [],
+    },
+    reviewThreads: [p3NitpickThread],
+  }).threads[0];
+  assert.equal(legacyRawIdInput?.processedEvidence.processedOnCurrentHead, true);
+
+  p2Thread.comments.nodes[0]!.body = "P3: Nitpick after snapshot mutation.";
+  assert.equal(p2Input?.comments[0]?.body, "P2: Preserve failed restore cleanup as a blocking verification failure.");
 });
 
 test("Codex Connector policy diagnostics and convergence stay focused in the policy module", () => {
