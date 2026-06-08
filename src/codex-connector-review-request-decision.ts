@@ -1,6 +1,13 @@
 import { displayLocalCiCommand } from "./core/config-parsing";
 import { configuredReviewProviderKinds } from "./core/review-providers";
-import type { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "./core/types";
+import type {
+  ConfiguredReviewProviderKind,
+  GitHubPullRequest,
+  IssueRunRecord,
+  PullRequestCheck,
+  ReviewThread,
+  SupervisorConfig,
+} from "./core/types";
 import {
   hasProcessedReviewThread,
   latestReviewThreadCommentFingerprint,
@@ -17,6 +24,7 @@ import {
   staleConfiguredBotReviewThreads,
 } from "./review-thread-reporting";
 import { buildStaleReviewBotRemediation } from "./supervisor/stale-review-bot-remediation";
+import type { StaleReviewBotRemediationDto } from "./supervisor/stale-review-bot-remediation";
 import { determineCopilotReviewTimeout } from "./pull-request-state-current-head-policy";
 import {
   extractCodexConnectorPSeverity,
@@ -29,6 +37,40 @@ export type CodexConnectorReviewRequestAction =
   | { kind: "none" }
   | { kind: "initial" }
   | { kind: "retry"; retryCount: number; retryAttempt: number };
+
+export type CodexConnectorReviewRequestPolicyOutcome =
+  | "request_initial"
+  | "request_retry"
+  | "wait"
+  | "block"
+  | "advisory";
+
+export type CodexConnectorReviewRequestPolicyReason =
+  | "non_codex_provider"
+  | "metadata_only_stale_review"
+  | "unresolved_work"
+  | "unknown_needs_operator"
+  | "timeout_action_not_request_review_comment"
+  | "waiting_for_timeout_trigger"
+  | "readiness_not_eligible"
+  | "request_not_yet_sent_for_current_head"
+  | "request_comment_identity_present"
+  | "retry_disabled"
+  | "retry_exhausted"
+  | "retry_wait_not_elapsed"
+  | "retry_ready";
+
+export type CodexConnectorReviewRequestPolicyDecision =
+  | {
+      outcome: Exclude<CodexConnectorReviewRequestPolicyOutcome, "request_retry">;
+      reason: Exclude<CodexConnectorReviewRequestPolicyReason, "retry_ready">;
+      action: { kind: "none" } | { kind: "initial" };
+    }
+  | {
+      outcome: "request_retry";
+      reason: "retry_ready";
+      action: { kind: "retry"; retryCount: number; retryAttempt: number };
+    };
 
 export type CodexConnectorCurrentHeadReviewReadiness =
   | { kind: "eligible" }
@@ -67,6 +109,34 @@ export interface CodexConnectorReviewRequestDecisionArgs {
   manualReviewThreads: (config: SupervisorConfig, reviewThreads: ReviewThread[]) => ReviewThread[];
   mergeConflictDetected: (pr: GitHubPullRequest) => boolean;
   nowMs?: () => number;
+}
+
+export interface CodexConnectorReviewRequestMetadataPair {
+  requestedAt: string | null;
+  headSha: string | null;
+}
+
+export interface CodexConnectorReviewRequestPolicyArgs {
+  configuredProviderKinds: ConfiguredReviewProviderKind[];
+  timeoutAction: SupervisorConfig["configuredBotCurrentHeadSignalTimeoutAction"];
+  currentHeadSha: string;
+  currentHeadObservedAt: string | null;
+  latestReviewedCommitSha: string | null;
+  providerSuccessHeadSha: string | null;
+  externalReviewHeadSha: string | null;
+  staleReviewClassification: StaleReviewBotRemediationDto["classification"] | null;
+  staleReviewCommitThreadCount: number;
+  hasCurrentHeadRequestTrigger: boolean;
+  currentHeadReviewRequestTimedOut: boolean;
+  readiness: CodexConnectorCurrentHeadReviewReadiness;
+  recordRequest: CodexConnectorReviewRequestMetadataPair;
+  prRequest: CodexConnectorReviewRequestMetadataPair;
+  hasRequestCommentIdentity: boolean;
+  retryLimit: number;
+  retryCountForCurrentHead: number;
+  retryAnchorAt: string | null;
+  retryNoResponseMinutes: number;
+  nowMs: number;
 }
 
 function isValidTimestamp(value: string | null | undefined): boolean {
@@ -135,6 +205,188 @@ function completeRequestMetadataPair(
   headSha: string | null,
 ): { requestedAt: string; headSha: string } | null {
   return requestedAt && headSha ? { requestedAt, headSha } : null;
+}
+
+function reviewRequestPolicyInactiveReason(
+  readiness: CodexConnectorCurrentHeadReviewReadiness,
+): Exclude<CodexConnectorReviewRequestPolicyOutcome, "request_retry"> {
+  if (readiness.kind === "eligible") {
+    return "wait";
+  }
+
+  if (
+    readiness.reason === "manual_review_threads" ||
+    readiness.reason === "unsafe_configured_threads" ||
+    readiness.reason === "changes_requested" ||
+    readiness.reason === "merge_conflict"
+  ) {
+    return "block";
+  }
+
+  return readiness.reason === "current_head_already_observed" ? "advisory" : "wait";
+}
+
+function staleReviewPolicySuppressesRequest(
+  args: Pick<
+    CodexConnectorReviewRequestPolicyArgs,
+    | "configuredProviderKinds"
+    | "currentHeadObservedAt"
+    | "latestReviewedCommitSha"
+    | "providerSuccessHeadSha"
+    | "externalReviewHeadSha"
+    | "currentHeadSha"
+    | "staleReviewClassification"
+  >,
+): CodexConnectorReviewRequestPolicyDecision | null {
+  if (!args.configuredProviderKinds.includes("codex")) {
+    return {
+      outcome: "advisory",
+      reason: "non_codex_provider",
+      action: { kind: "none" },
+    };
+  }
+
+  const isCodexMissingCurrentHeadReview =
+    args.staleReviewClassification === "metadata_only_missing_current_head_review";
+  const isStaleHeadMissingCurrentHeadReview =
+    !isValidTimestamp(args.currentHeadObservedAt) &&
+    (commitShasDifferForComparison(args.latestReviewedCommitSha, args.currentHeadSha) ||
+      commitShasDifferForComparison(args.providerSuccessHeadSha, args.currentHeadSha) ||
+      commitShasDifferForComparison(args.externalReviewHeadSha, args.currentHeadSha));
+  if (isCodexMissingCurrentHeadReview || isStaleHeadMissingCurrentHeadReview) {
+    return null;
+  }
+
+  if (
+    args.staleReviewClassification === "metadata_only" ||
+    args.staleReviewClassification === "metadata_only_current_head_converged" ||
+    args.staleReviewClassification === "verified_no_source_change_pending_thread_resolution" ||
+    args.staleReviewClassification === "verified_current_head_repair_pending_thread_resolution"
+  ) {
+    return {
+      outcome: "advisory",
+      reason: "metadata_only_stale_review",
+      action: { kind: "none" },
+    };
+  }
+
+  if (args.staleReviewClassification === "unresolved_work") {
+    return {
+      outcome: "block",
+      reason: "unresolved_work",
+      action: { kind: "none" },
+    };
+  }
+
+  if (args.staleReviewClassification === "unknown_needs_operator") {
+    return {
+      outcome: "block",
+      reason: "unknown_needs_operator",
+      action: { kind: "none" },
+    };
+  }
+
+  return null;
+}
+
+export function codexConnectorReviewRequestPolicy(
+  args: CodexConnectorReviewRequestPolicyArgs,
+): CodexConnectorReviewRequestPolicyDecision {
+  const staleReviewSuppression = staleReviewPolicySuppressesRequest(args);
+  if (staleReviewSuppression) {
+    return staleReviewSuppression;
+  }
+
+  const hasRecoverableStaleReviewCommitResidue =
+    args.configuredProviderKinds.includes("codex") &&
+    args.staleReviewCommitThreadCount > 0 &&
+    !isValidTimestamp(args.currentHeadObservedAt) &&
+    (commitShasDifferForComparison(args.latestReviewedCommitSha, args.currentHeadSha) ||
+      commitShasDifferForComparison(args.providerSuccessHeadSha, args.currentHeadSha) ||
+      commitShasDifferForComparison(args.externalReviewHeadSha, args.currentHeadSha)) &&
+    args.currentHeadReviewRequestTimedOut;
+
+  if (args.timeoutAction !== "request_review_comment") {
+    return {
+      outcome: "wait",
+      reason: "timeout_action_not_request_review_comment",
+      action: { kind: "none" },
+    };
+  }
+
+  if (!args.hasCurrentHeadRequestTrigger && !hasRecoverableStaleReviewCommitResidue) {
+    return {
+      outcome: "wait",
+      reason: "waiting_for_timeout_trigger",
+      action: { kind: "none" },
+    };
+  }
+
+  if (args.readiness.kind !== "eligible") {
+    return {
+      outcome: reviewRequestPolicyInactiveReason(args.readiness),
+      reason: "readiness_not_eligible",
+      action: { kind: "none" },
+    };
+  }
+
+  const request =
+    completeRequestMetadataPair(args.recordRequest.requestedAt, args.recordRequest.headSha) ??
+    completeRequestMetadataPair(args.prRequest.requestedAt, args.prRequest.headSha);
+  const requestAt = request?.requestedAt ?? null;
+  const requestHeadSha = request?.headSha ?? null;
+  const requestMatchesCurrentHead = Boolean(requestAt && requestHeadSha === args.currentHeadSha);
+
+  if (!requestMatchesCurrentHead) {
+    return {
+      outcome: "request_initial",
+      reason: "request_not_yet_sent_for_current_head",
+      action: { kind: "initial" },
+    };
+  }
+
+  if (args.hasRequestCommentIdentity) {
+    return {
+      outcome: "advisory",
+      reason: "request_comment_identity_present",
+      action: { kind: "none" },
+    };
+  }
+
+  if (args.retryLimit <= 0) {
+    return {
+      outcome: "wait",
+      reason: "retry_disabled",
+      action: { kind: "none" },
+    };
+  }
+
+  if (args.retryCountForCurrentHead >= args.retryLimit) {
+    return {
+      outcome: "block",
+      reason: "retry_exhausted",
+      action: { kind: "none" },
+    };
+  }
+
+  const waitUntil = args.retryAnchorAt ? addMinutes(args.retryAnchorAt, args.retryNoResponseMinutes) : null;
+  if (!waitUntil || args.nowMs < Date.parse(waitUntil)) {
+    return {
+      outcome: "wait",
+      reason: "retry_wait_not_elapsed",
+      action: { kind: "none" },
+    };
+  }
+
+  return {
+    outcome: "request_retry",
+    reason: "retry_ready",
+    action: {
+      kind: "retry",
+      retryCount: args.retryCountForCurrentHead,
+      retryAttempt: args.retryCountForCurrentHead + 1,
+    },
+  };
 }
 
 function hasProcessedReviewThreadOnNonCurrentHead(
@@ -249,8 +501,9 @@ export function codexConnectorReviewRequestAction(
 ): CodexConnectorReviewRequestAction {
   const nowMs = args.nowMs?.() ?? Date.now();
   const checkSummary = args.summarizeChecks(args.checks);
+  const configuredProviderKinds = configuredReviewProviderKinds(args.config);
   const configuredThreads = args.configuredBotReviewThreads(args.config, args.reviewThreads);
-  const staleCodexReviewState = configuredReviewProviderKinds(args.config).includes("codex")
+  const staleCodexReviewState = configuredProviderKinds.includes("codex")
     ? buildStaleReviewBotRemediation({
         config: args.config,
         record: args.record,
@@ -259,43 +512,9 @@ export function codexConnectorReviewRequestAction(
         reviewThreads: args.reviewThreads,
       })
     : null;
-  const isCodexMissingCurrentHeadReview =
-    staleCodexReviewState?.classification === "metadata_only_missing_current_head_review";
-  const isCodexConvergedCurrentHeadReview =
-    staleCodexReviewState?.classification === "metadata_only_current_head_converged";
-  const isCodexVerifiedNoSourceChangeThreadResolution =
-    staleCodexReviewState?.classification === "verified_no_source_change_pending_thread_resolution";
-  const isCodexVerifiedCurrentHeadRepairThreadResolution =
-    staleCodexReviewState?.classification === "verified_current_head_repair_pending_thread_resolution";
   const staleReviewCommitThreadIds = new Set(
     codexConnectorStaleReviewCommitThreads(args.pr, configuredThreads).map((thread) => thread.id),
   );
-  const isStaleHeadMissingCurrentHeadReview =
-    !isValidTimestamp(args.pr.configuredBotCurrentHeadObservedAt) &&
-    (commitShasDifferForComparison(args.pr.configuredBotLatestReviewedCommitSha, args.pr.headRefOid) ||
-      commitShasDifferForComparison(args.record.provider_success_head_sha, args.pr.headRefOid) ||
-      commitShasDifferForComparison(args.record.external_review_head_sha, args.pr.headRefOid));
-  const isCodexMetadataOnly =
-    staleCodexReviewState?.classification === "metadata_only" ||
-    staleCodexReviewState?.classification === "metadata_only_missing_current_head_review" ||
-    staleCodexReviewState?.classification === "metadata_only_current_head_converged" ||
-    isCodexVerifiedNoSourceChangeThreadResolution ||
-    isCodexVerifiedCurrentHeadRepairThreadResolution;
-
-  if (
-    configuredReviewProviderKinds(args.config).includes("codex") &&
-    !isCodexMissingCurrentHeadReview &&
-    !isStaleHeadMissingCurrentHeadReview &&
-    (isCodexConvergedCurrentHeadReview ||
-      isCodexVerifiedNoSourceChangeThreadResolution ||
-      isCodexVerifiedCurrentHeadRepairThreadResolution ||
-      isCodexMetadataOnly ||
-      staleCodexReviewState?.classification === "unresolved_work" ||
-      staleCodexReviewState?.classification === "unknown_needs_operator")
-  ) {
-    return { kind: "none" };
-  }
-
   const configuredThreadsAreSafeForCodexRequest = configuredBotThreadsAllowCodexConnectorRequest({
     config: args.config,
     record: args.record,
@@ -311,27 +530,15 @@ export function codexConnectorReviewRequestAction(
     currentHeadReviewTimeout.kind === "current_head_signal" &&
     currentHeadReviewTimeout.timedOut &&
     currentHeadReviewTimeout.action === "request_review_comment";
-  const hasRecoverableStaleReviewCommitResidue =
-    configuredReviewProviderKinds(args.config).includes("codex") &&
-    staleReviewCommitThreadIds.size > 0 &&
-    isStaleHeadMissingCurrentHeadReview &&
-    currentHeadReviewRequestTimedOut;
-
-  if (
-    args.config.configuredBotCurrentHeadSignalTimeoutAction !== "request_review_comment" ||
-    (!hasCurrentHeadRequestTrigger && !hasRecoverableStaleReviewCommitResidue) ||
-    codexConnectorCurrentHeadReviewReadiness({
-      config: args.config,
-      pr: args.pr,
-      checks: args.checks,
-      manualThreadCount: args.manualReviewThreads(args.config, args.reviewThreads).length,
-      configuredThreadsAreSafe: configuredThreadsAreSafeForCodexRequest,
-      checkSummary,
-      mergeConflict: args.mergeConflictDetected(args.pr),
-    }).kind !== "eligible"
-  ) {
-    return { kind: "none" };
-  }
+  const readiness = codexConnectorCurrentHeadReviewReadiness({
+    config: args.config,
+    pr: args.pr,
+    checks: args.checks,
+    manualThreadCount: args.manualReviewThreads(args.config, args.reviewThreads).length,
+    configuredThreadsAreSafe: configuredThreadsAreSafeForCodexRequest,
+    checkSummary,
+    mergeConflict: args.mergeConflictDetected(args.pr),
+  });
 
   const recordRequestAt = args.record.codex_connector_review_requested_observed_at ?? null;
   const recordRequestHeadSha = args.record.codex_connector_review_requested_head_sha ?? null;
@@ -341,45 +548,43 @@ export function codexConnectorReviewRequestAction(
     completeRequestMetadataPair(recordRequestAt, recordRequestHeadSha) ??
     completeRequestMetadataPair(prRequestAt, prRequestHeadSha);
   const requestAt = request?.requestedAt ?? null;
-  const requestHeadSha = request?.headSha ?? null;
-  const requestMatchesCurrentHead = Boolean(requestAt && requestHeadSha === args.pr.headRefOid);
-
-  if (!requestMatchesCurrentHead) {
-    return { kind: "initial" };
-  }
-
-  if (hasCodexConnectorReviewRequestCommentIdentity({ record: args.record, pr: args.pr })) {
-    return { kind: "none" };
-  }
-
   const retryLimit = args.config.codexConnectorReviewRequestRetryLimit ?? 1;
-  if (retryLimit <= 0) {
-    return { kind: "none" };
-  }
-
   const retryCount =
     args.record.codex_connector_review_request_retry_head_sha === args.pr.headRefOid
       ? args.record.codex_connector_review_request_retry_count ?? 0
       : 0;
-  if (retryCount >= retryLimit) {
-    return { kind: "none" };
-  }
-
   const retryAnchorAt =
     args.record.codex_connector_review_request_retry_head_sha === args.pr.headRefOid &&
     args.record.codex_connector_review_request_last_retried_at
       ? args.record.codex_connector_review_request_last_retried_at
       : requestAt;
-  const waitUntil = retryAnchorAt
-    ? addMinutes(retryAnchorAt, args.config.codexConnectorReviewRequestNoResponseMinutes ?? 10)
-    : null;
-  if (!waitUntil || nowMs < Date.parse(waitUntil)) {
-    return { kind: "none" };
-  }
 
-  return {
-    kind: "retry",
-    retryCount,
-    retryAttempt: retryCount + 1,
-  };
+  return codexConnectorReviewRequestPolicy({
+    configuredProviderKinds,
+    timeoutAction: args.config.configuredBotCurrentHeadSignalTimeoutAction,
+    currentHeadSha: args.pr.headRefOid,
+    currentHeadObservedAt: args.pr.configuredBotCurrentHeadObservedAt ?? null,
+    latestReviewedCommitSha: args.pr.configuredBotLatestReviewedCommitSha ?? null,
+    providerSuccessHeadSha: args.record.provider_success_head_sha ?? null,
+    externalReviewHeadSha: args.record.external_review_head_sha ?? null,
+    staleReviewClassification: staleCodexReviewState?.classification ?? null,
+    staleReviewCommitThreadCount: staleReviewCommitThreadIds.size,
+    hasCurrentHeadRequestTrigger,
+    currentHeadReviewRequestTimedOut,
+    readiness,
+    recordRequest: {
+      requestedAt: recordRequestAt,
+      headSha: recordRequestHeadSha,
+    },
+    prRequest: {
+      requestedAt: prRequestAt,
+      headSha: prRequestHeadSha,
+    },
+    hasRequestCommentIdentity: hasCodexConnectorReviewRequestCommentIdentity({ record: args.record, pr: args.pr }),
+    retryLimit,
+    retryCountForCurrentHead: retryCount,
+    retryAnchorAt,
+    retryNoResponseMinutes: args.config.codexConnectorReviewRequestNoResponseMinutes ?? 10,
+    nowMs,
+  }).action;
 }
