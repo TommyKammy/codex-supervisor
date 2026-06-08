@@ -144,17 +144,6 @@ function policyInput(args: {
   });
 }
 
-function expectedThreadOutcomes(
-  input: ReviewPolicyInput,
-  actions: Record<ReviewPolicyBoundaryOutcome, ConnectorReviewPolicyReplayNextAction>,
-): ConnectorReviewPolicyReplayFixture["expectedThreadOutcomes"] {
-  return input.threads.map((thread) => ({
-    threadId: thread.id,
-    boundaryOutcome: thread.boundaryOutcome,
-    nextAction: actions[thread.boundaryOutcome],
-  }));
-}
-
 export function createConnectorReviewPolicyReplayFixtures(): ConnectorReviewPolicyReplayFixture[] {
   const currentHeadP2 = codexThread({
     id: "current-head-p2",
@@ -206,64 +195,72 @@ export function createConnectorReviewPolicyReplayFixtures(): ConnectorReviewPoli
       projectShape: "aegisops",
       description: "AegisOps-style current-head Codex findings require source repair.",
       policyInput: mustFixInput,
-      expectedThreadOutcomes: expectedThreadOutcomes(mustFixInput, {
-        must_fix_current_head: "fix",
-        escalated_p3: "fix",
-        softened_p3_advisory: "advisory_only",
-        metadata_only_unresolved: "metadata_cleanup",
-        stale_commit_thread: "wait",
-        manual_thread: "manual",
-        configured_bot_thread: "metadata_cleanup",
-        none: "advisory_only",
-      }),
+      expectedThreadOutcomes: [
+        {
+          threadId: "current-head-p2",
+          boundaryOutcome: "must_fix_current_head",
+          nextAction: "fix",
+        },
+        {
+          threadId: "escalated-p3",
+          boundaryOutcome: "escalated_p3",
+          nextAction: "fix",
+        },
+      ],
     },
     {
       id: "phase2-hrcore-softened-p3-advisory",
       projectShape: "hrcore",
       description: "HRCore-style softened P3 feedback stays advisory-only.",
       policyInput: advisoryInput,
-      expectedThreadOutcomes: expectedThreadOutcomes(advisoryInput, {
-        must_fix_current_head: "fix",
-        escalated_p3: "fix",
-        softened_p3_advisory: "advisory_only",
-        metadata_only_unresolved: "metadata_cleanup",
-        stale_commit_thread: "wait",
-        manual_thread: "manual",
-        configured_bot_thread: "metadata_cleanup",
-        none: "advisory_only",
-      }),
+      expectedThreadOutcomes: [
+        {
+          threadId: "softened-p3",
+          boundaryOutcome: "softened_p3_advisory",
+          nextAction: "advisory_only",
+        },
+      ],
     },
     {
       id: "phase2-aegisops-stale-commit-waits",
       projectShape: "aegisops",
       description: "Old-head Codex review residue waits for current-head review instead of blocking merge as source work.",
       policyInput: staleCommitInput,
-      expectedThreadOutcomes: expectedThreadOutcomes(staleCommitInput, {
-        must_fix_current_head: "fix",
-        escalated_p3: "fix",
-        softened_p3_advisory: "advisory_only",
-        metadata_only_unresolved: "metadata_cleanup",
-        stale_commit_thread: "wait",
-        manual_thread: "manual",
-        configured_bot_thread: "metadata_cleanup",
-        none: "advisory_only",
-      }),
+      expectedThreadOutcomes: [
+        {
+          threadId: "stale-commit-p2",
+          boundaryOutcome: "stale_commit_thread",
+          nextAction: "wait",
+        },
+        {
+          threadId: "softened-p3",
+          boundaryOutcome: "softened_p3_advisory",
+          nextAction: "advisory_only",
+        },
+      ],
     },
     {
       id: "phase2-hrcore-metadata-residue",
       projectShape: "hrcore",
       description: "Metadata-only, manual, and configured-bot residue remain distinct from current-head source repair.",
       policyInput: metadataInput,
-      expectedThreadOutcomes: expectedThreadOutcomes(metadataInput, {
-        must_fix_current_head: "fix",
-        escalated_p3: "fix",
-        softened_p3_advisory: "advisory_only",
-        metadata_only_unresolved: "metadata_cleanup",
-        stale_commit_thread: "wait",
-        manual_thread: "manual",
-        configured_bot_thread: "metadata_cleanup",
-        none: "advisory_only",
-      }),
+      expectedThreadOutcomes: [
+        {
+          threadId: "metadata-only-p2",
+          boundaryOutcome: "metadata_only_unresolved",
+          nextAction: "metadata_cleanup",
+        },
+        {
+          threadId: "manual-thread",
+          boundaryOutcome: "manual_thread",
+          nextAction: "manual",
+        },
+        {
+          threadId: "configured-bot-thread",
+          boundaryOutcome: "configured_bot_thread",
+          nextAction: "metadata_cleanup",
+        },
+      ],
       repeatStopSuppressedReason: classifyStaleReviewBotAutoRepairSuppressionPolicy({
         hasConfigAndPr: true,
         repeatStopExhausted: true,
