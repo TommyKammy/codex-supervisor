@@ -173,6 +173,29 @@ test("evaluateDecisionKernelV2ReadOnly returns no_action for merge-ready diagnos
   assert.match(decision.summary, /diagnostic-only/);
 });
 
+test("evaluateDecisionKernelV2ReadOnly treats no-review-required PRs as merge-ready", () => {
+  const decision = evaluateDecisionKernelV2ReadOnlyFromFacts({
+    inventory: inventory({
+      pullRequest: {
+        number: 2300,
+        headSha: "head-current",
+        state: "OPEN",
+        isDraft: false,
+        mergeStateStatus: "CLEAN",
+        mergeable: "MERGEABLE",
+        currentHeadReviewObservedAt: null,
+        currentHeadReviewHeadSha: null,
+      },
+      configuredCurrentHeadReviewRequired: false,
+    }),
+  });
+
+  assert.equal(decision.normalizedState.reviewPosture, "no_unresolved_review");
+  assert.equal(decision.action, "no_action");
+  assert.deepEqual(decision.reasons, ["merge_ready_diagnostic_only"]);
+  assert.deepEqual(decision.requiredEvidence, []);
+});
+
 test("evaluateDecisionKernelV2ReadOnly snapshots normalized state", () => {
   const normalizedState = state();
   const decision = evaluateDecisionKernelV2ReadOnly({ normalizedState });
@@ -242,6 +265,65 @@ test("evaluateDecisionKernelV2ReadOnly waits for checks before requesting review
   assert.deepEqual(decision.requiredEvidence, ["green_checks"]);
 });
 
+test("evaluateDecisionKernelV2ReadOnly requests review when no CI is configured", () => {
+  const decision = evaluateDecisionKernelV2ReadOnlyFromFacts({
+    inventory: inventory({
+      pullRequest: {
+        number: 2300,
+        headSha: "head-current",
+        state: "OPEN",
+        isDraft: false,
+        mergeStateStatus: "CLEAN",
+        mergeable: "MERGEABLE",
+        currentHeadReviewObservedAt: null,
+        currentHeadReviewHeadSha: null,
+      },
+      checks: {
+        passingCount: 0,
+        pendingCount: 0,
+        failingCount: 0,
+        unknownCount: 0,
+      },
+    }),
+    checkPolicyInput: {
+      noChecksAndNoLocalCi: true,
+    },
+  });
+
+  assert.equal(decision.normalizedState.checkPosture, "unknown");
+  assert.equal(decision.action, "request_review");
+  assert.deepEqual(decision.reasons, ["missing_current_head_review"]);
+  assert.deepEqual(decision.requiredEvidence, ["current_head_review"]);
+});
+
+test("evaluateDecisionKernelV2ReadOnly waits for unknown checks without no-CI evidence", () => {
+  const decision = evaluateDecisionKernelV2ReadOnlyFromFacts({
+    inventory: inventory({
+      pullRequest: {
+        number: 2300,
+        headSha: "head-current",
+        state: "OPEN",
+        isDraft: false,
+        mergeStateStatus: "CLEAN",
+        mergeable: "MERGEABLE",
+        currentHeadReviewObservedAt: null,
+        currentHeadReviewHeadSha: null,
+      },
+      checks: {
+        passingCount: 0,
+        pendingCount: 0,
+        failingCount: 0,
+        unknownCount: 0,
+      },
+    }),
+  });
+
+  assert.equal(decision.normalizedState.checkPosture, "unknown");
+  assert.equal(decision.action, "wait");
+  assert.deepEqual(decision.reasons, ["checks_unknown"]);
+  assert.deepEqual(decision.requiredEvidence, ["green_checks"]);
+});
+
 test("evaluateDecisionKernelV2ReadOnly fails closed on mismatched review policy input", () => {
   const decision = evaluateDecisionKernelV2ReadOnly({
     normalizedState: state(),
@@ -262,6 +344,29 @@ test("evaluateDecisionKernelV2ReadOnly treats configured-bot residue as metadata
   assert.equal(decision.action, "ask_operator");
   assert.deepEqual(decision.reasons, ["metadata_only_review_residue"]);
   assert.deepEqual(decision.requiredEvidence, ["resolved_metadata_residue"]);
+});
+
+test("evaluateDecisionKernelV2ReadOnly requests current-head review before metadata cleanup", () => {
+  const decision = evaluateDecisionKernelV2ReadOnly({
+    normalizedState: state({
+      pullRequest: {
+        number: 2300,
+        headSha: "head-current",
+        state: "OPEN",
+        isDraft: false,
+        mergeStateStatus: "CLEAN",
+        mergeable: "MERGEABLE",
+        currentHeadReviewObservedAt: null,
+        currentHeadReviewHeadSha: null,
+      },
+    }),
+    reviewPolicyInput: reviewPolicyInput(["metadata_only_unresolved"]),
+  });
+
+  assert.equal(decision.normalizedState.reviewPosture, "missing_current_head_review");
+  assert.equal(decision.action, "request_review");
+  assert.deepEqual(decision.reasons, ["missing_current_head_review"]);
+  assert.deepEqual(decision.requiredEvidence, ["current_head_review"]);
 });
 
 test("evaluateDecisionKernelV2ReadOnly ignores resolved manual policy threads", () => {

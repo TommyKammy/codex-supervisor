@@ -53,9 +53,14 @@ export interface DecisionKernelV2SafetyPosture {
   mutationAllowed: false;
 }
 
+export interface DecisionKernelV2CheckPolicyInput {
+  noChecksAndNoLocalCi?: boolean;
+}
+
 export interface DecisionKernelV2ReadOnlyInput {
   normalizedState: NormalizedPrLifecycleState;
   reviewPolicyInput?: ReviewPolicyInput | null;
+  checkPolicyInput?: DecisionKernelV2CheckPolicyInput | null;
 }
 
 export interface DecisionKernelV2ReadOnlyDecision {
@@ -66,6 +71,10 @@ export interface DecisionKernelV2ReadOnlyDecision {
   safety: DecisionKernelV2SafetyPosture;
   summary: string;
   normalizedState: NormalizedPrLifecycleState;
+}
+
+interface CheckPolicyBoundarySummary {
+  noChecksAndNoLocalCi: boolean;
 }
 
 interface ReviewPolicyBoundarySummary {
@@ -82,7 +91,8 @@ export function evaluateDecisionKernelV2ReadOnly(
 ): DecisionKernelV2ReadOnlyDecision {
   const normalizedState = snapshotNormalizedState(input.normalizedState);
   const reviewPolicy = summarizeReviewPolicyBoundaries(input.reviewPolicyInput ?? null, normalizedState);
-  const selected = selectReadOnlyDecision(normalizedState, reviewPolicy);
+  const checkPolicy = summarizeCheckPolicyBoundaries(input.checkPolicyInput ?? null);
+  const selected = selectReadOnlyDecision(normalizedState, reviewPolicy, checkPolicy);
 
   return {
     schemaVersion: DECISION_KERNEL_V2_READ_ONLY_SCHEMA_VERSION,
@@ -98,16 +108,19 @@ export function evaluateDecisionKernelV2ReadOnly(
 export function evaluateDecisionKernelV2ReadOnlyFromFacts(args: {
   inventory: PrLifecycleFactInventory;
   reviewPolicyInput?: ReviewPolicyInput | null;
+  checkPolicyInput?: DecisionKernelV2CheckPolicyInput | null;
 }): DecisionKernelV2ReadOnlyDecision {
   return evaluateDecisionKernelV2ReadOnly({
     normalizedState: normalizePrLifecycleFacts(args.inventory),
     reviewPolicyInput: args.reviewPolicyInput ?? null,
+    checkPolicyInput: args.checkPolicyInput ?? null,
   });
 }
 
 function selectReadOnlyDecision(
   state: NormalizedPrLifecycleState,
   reviewPolicy: ReviewPolicyBoundarySummary,
+  checkPolicy: CheckPolicyBoundarySummary,
 ): Omit<DecisionKernelV2ReadOnlyDecision, "schemaVersion" | "safety" | "normalizedState"> {
   if (!state.pullRequestNumber || !state.headSha || state.headFreshness === "no_pull_request") {
     return decision("no_action", ["no_pull_request"], ["pull_request"], "No tracked pull request facts are available.");
@@ -173,15 +186,6 @@ function selectReadOnlyDecision(
     );
   }
 
-  if (state.reviewPosture === "metadata_only_unresolved" || reviewPolicy.metadataOnly > 0) {
-    return decision(
-      "ask_operator",
-      ["metadata_only_review_residue"],
-      ["resolved_metadata_residue"],
-      "Unresolved review metadata remains after source repair evidence.",
-    );
-  }
-
   if (state.checkPosture === "failing") {
     return decision("run_codex", ["checks_failing"], ["green_checks"], "Required checks are failing.");
   }
@@ -190,8 +194,28 @@ function selectReadOnlyDecision(
     return decision("wait", ["checks_pending"], ["green_checks"], "Required checks are still pending.");
   }
 
-  if (state.checkPosture === "unknown") {
+  const needsCurrentHeadReview = state.reviewPosture === "missing_current_head_review";
+
+  if (state.checkPosture === "unknown" && !(needsCurrentHeadReview && checkPolicy.noChecksAndNoLocalCi)) {
     return decision("wait", ["checks_unknown"], ["green_checks"], "Required check status is unknown.");
+  }
+
+  if (needsCurrentHeadReview) {
+    return decision(
+      "request_review",
+      ["missing_current_head_review"],
+      ["current_head_review"],
+      "Current-head review evidence is missing.",
+    );
+  }
+
+  if (state.reviewPosture === "metadata_only_unresolved" || reviewPolicy.metadataOnly > 0) {
+    return decision(
+      "ask_operator",
+      ["metadata_only_review_residue"],
+      ["resolved_metadata_residue"],
+      "Unresolved review metadata remains after source repair evidence.",
+    );
   }
 
   if (state.reviewPosture === "stale_previous_head_review" || reviewPolicy.staleCommit > 0) {
@@ -203,19 +227,11 @@ function selectReadOnlyDecision(
     );
   }
 
-  if (state.reviewPosture === "missing_current_head_review") {
-    return decision(
-      "request_review",
-      ["missing_current_head_review"],
-      ["current_head_review"],
-      "Current-head review evidence is missing.",
-    );
-  }
-
   if (
     state.headFreshness === "current_head" &&
     state.localStateFreshness === "fresh" &&
     (state.reviewPosture === "current_head_review_observed" ||
+      state.reviewPosture === "no_unresolved_review" ||
       (state.reviewPosture === "review_blocked" && reviewPolicyAllowsAdvisoryOnly(reviewPolicy))) &&
     state.checkPosture === "green" &&
     state.mergeability === "mergeable"
@@ -234,6 +250,12 @@ function selectReadOnlyDecision(
     ["current_head", "fresh_local_state", "current_head_review", "green_checks", "mergeable_state"],
     "The read-only v2 model lacks enough evidence to recommend an automated action.",
   );
+}
+
+function summarizeCheckPolicyBoundaries(value: DecisionKernelV2CheckPolicyInput | null): CheckPolicyBoundarySummary {
+  return {
+    noChecksAndNoLocalCi: value?.noChecksAndNoLocalCi === true,
+  };
 }
 
 function decision(
