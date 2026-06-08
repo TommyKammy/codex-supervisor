@@ -99,6 +99,8 @@ test("formatPrLifecycleTraceDiagnostic renders a merge-ready trace line", () => 
   assert.match(line, /mergeability=mergeable/);
   assert.match(line, /local_state=fresh/);
   assert.match(line, /evidence=pr=2281,head=head-current,checks=green/);
+  assert.match(line, /v2_comparison=none/);
+  assert.match(line, /v2_diagnostic_only=no/);
 });
 
 test("formatPrLifecycleTraceDiagnostic renders pending CI diagnostics", () => {
@@ -205,6 +207,38 @@ test("formatPrLifecycleTraceDiagnostic renders review-blocked diagnostics", () =
   assert.match(line, /review=review_blocked/);
   assert.match(line, /manual_threads=1/);
   assert.match(line, /current_bot_threads=2/);
+});
+
+test("formatPrLifecycleTraceDiagnostic renders diagnostic-only v2 comparison evidence", () => {
+  const line = formatPrLifecycleTraceDiagnostic(
+    buildPrLifecycleDecisionTrace(
+      traceInput({
+        v2Comparison: {
+          current: {
+            state: "blocked",
+            actionEquivalent: "ask_operator",
+          },
+          v2: {
+            action: "run_codex",
+            reasons: ["current_head_must_fix_review"],
+          },
+          category: "manual_review_required",
+          differences: [
+            {
+              field: "action",
+              current: "ask_operator",
+              v2: "run_codex",
+            },
+          ],
+          safetyNote: "Current and v2 diverge in an unsafe or ambiguous way; require operator review before trusting v2.",
+        },
+      }),
+    ),
+  );
+
+  assert.match(line, /v2_comparison=manual_review_required/);
+  assert.match(line, /v2_diagnostic_only=yes/);
+  assert.match(line, /v2_comparison_differences=action:ask_operator->run_codex/);
 });
 
 test("formatPrLifecycleTraceDiagnostic renders stale local state versus fresh GitHub facts", () => {

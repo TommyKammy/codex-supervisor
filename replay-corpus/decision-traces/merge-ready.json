@@ -45,6 +45,20 @@
       "recommendedAction": "merge",
       "summary": "Fresh PR lifecycle facts are merge ready."
     },
-    "evidenceTokens": ["pr=1001", "head=head-merge-ready", "checks=green"]
+    "evidenceTokens": ["pr=1001", "head=head-merge-ready", "checks=green"],
+    "v2Comparison": {
+      "diagnosticOnly": true,
+      "current": {
+        "state": "ready_to_merge",
+        "actionEquivalent": "no_action"
+      },
+      "v2": {
+        "action": "no_action",
+        "reasons": ["merge_ready_diagnostic_only"]
+      },
+      "category": "agreement",
+      "differences": [],
+      "safetyNote": "Current and v2 decisions agree for the compared action boundary."
+    }
   }
 }

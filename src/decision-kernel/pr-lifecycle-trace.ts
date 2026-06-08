@@ -1,4 +1,5 @@
 import type { NormalizedPrLifecycleState } from "./pr-lifecycle-state";
+import type { DecisionKernelV2ComparisonDto } from "./v2-comparison";
 
 export const PR_LIFECYCLE_DECISION_TRACE_SCHEMA_VERSION = "pr_lifecycle_decision_trace.v1";
 
@@ -46,6 +47,7 @@ export interface PrLifecycleDecisionTraceInput {
     summary: string;
   };
   evidenceTokens?: string[];
+  v2Comparison?: DecisionKernelV2ComparisonDto | null;
 }
 
 export interface PrLifecycleDecisionTraceArtifact {
@@ -70,6 +72,7 @@ export interface PrLifecycleDecisionTraceArtifact {
     summary: string;
   };
   evidenceTokens: string[];
+  v2Comparison: (DecisionKernelV2ComparisonDto & { diagnosticOnly: true }) | null;
 }
 
 export function buildPrLifecycleDecisionTrace(
@@ -99,6 +102,28 @@ export function buildPrLifecycleDecisionTrace(
       summary: input.decision.summary,
     },
     evidenceTokens: [...(input.evidenceTokens ?? [])],
+    v2Comparison: input.v2Comparison
+      ? {
+        ...snapshotV2Comparison(input.v2Comparison),
+        diagnosticOnly: true,
+      }
+      : null,
+  };
+}
+
+function snapshotV2Comparison(comparison: DecisionKernelV2ComparisonDto): DecisionKernelV2ComparisonDto {
+  return {
+    current: {
+      state: comparison.current.state,
+      actionEquivalent: comparison.current.actionEquivalent,
+    },
+    v2: {
+      action: comparison.v2.action,
+      reasons: [...comparison.v2.reasons],
+    },
+    category: comparison.category,
+    differences: comparison.differences.map((difference) => ({ ...difference })),
+    safetyNote: comparison.safetyNote,
   };
 }
 

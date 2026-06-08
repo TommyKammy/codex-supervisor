@@ -1,5 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import type { RunState } from "../core/types";
+import type {
+  DecisionKernelV2Action,
+  DecisionKernelV2Reason,
+} from "../decision-kernel-v2";
 import {
   PR_LIFECYCLE_DECISION_TRACE_SCHEMA_VERSION,
   type PrLifecycleDecision,
@@ -15,6 +20,10 @@ import type {
   PrLifecycleMergeabilityPosture,
   PrLifecycleReviewPosture,
 } from "./pr-lifecycle-state";
+import type {
+  DecisionKernelV2ComparisonCategory,
+  DecisionKernelV2ComparisonDifference,
+} from "./v2-comparison";
 
 export interface PrLifecycleTraceFixture {
   id: string;
@@ -86,6 +95,7 @@ function parsePrLifecycleDecisionTraceArtifact(
   const policy = requiredRecord(value.policy, source, "artifact.policy");
   const decision = requiredRecord(value.decision, source, "artifact.decision");
   const evidenceTokens = requiredStringArray(value.evidenceTokens, source, "artifact.evidenceTokens");
+  const v2Comparison = optionalV2Comparison(value.v2Comparison, source);
   const factsSource = requiredEnum(
     facts.source,
     source,
@@ -234,6 +244,7 @@ function parsePrLifecycleDecisionTraceArtifact(
       summary: requiredString(decision.summary, source, "artifact.decision.summary"),
     },
     evidenceTokens,
+    v2Comparison,
   };
 }
 
@@ -265,6 +276,47 @@ const prLifecyclePolicyPostures = [
 ] as const satisfies readonly PrLifecyclePolicyPosture[];
 const prLifecycleDecisions = ["merge", "wait", "request_review", "run_codex", "ask_operator", "do_nothing"] as const satisfies readonly PrLifecycleDecision[];
 const prLifecycleRecommendedActions = ["merge", "wait_ci", "request_review", "repair", "manual_review", "refresh_state", "no_action"] as const satisfies readonly PrLifecycleRecommendedAction[];
+const decisionKernelV2ComparisonCategories = ["agreement", "safe_divergence", "manual_review_required"] as const satisfies readonly DecisionKernelV2ComparisonCategory[];
+const decisionKernelV2Actions = ["wait", "request_review", "run_codex", "ask_operator", "no_action"] as const satisfies readonly DecisionKernelV2Action[];
+const decisionKernelV2Reasons = [
+  "no_pull_request",
+  "pull_request_closed",
+  "draft_pull_request",
+  "merge_conflict",
+  "stale_local_state",
+  "fresh_local_state_required",
+  "manual_review_thread",
+  "metadata_only_review_residue",
+  "current_head_must_fix_review",
+  "stale_commit_review",
+  "review_policy_input_mismatch",
+  "missing_current_head_review",
+  "checks_failing",
+  "checks_pending",
+  "checks_unknown",
+  "merge_ready_diagnostic_only",
+  "insufficient_merge_evidence",
+] as const satisfies readonly DecisionKernelV2Reason[];
+const runStates = [
+  "queued",
+  "planning",
+  "reproducing",
+  "implementing",
+  "local_review_fix",
+  "stabilizing",
+  "draft_pr",
+  "local_review",
+  "pr_open",
+  "repairing_ci",
+  "resolving_conflict",
+  "waiting_ci",
+  "addressing_review",
+  "ready_to_merge",
+  "merging",
+  "done",
+  "blocked",
+  "failed",
+] as const satisfies readonly RunState[];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -325,6 +377,91 @@ function requiredStringArray(value: unknown, source: string, field: string): str
     throw new Error(`Invalid PR lifecycle trace fixture at ${source}: ${field} must be a string array.`);
   }
   return [...value];
+}
+
+function requiredEnumArray<const T extends readonly string[]>(
+  value: unknown,
+  source: string,
+  field: string,
+  allowed: T,
+): T[number][] {
+  if (!Array.isArray(value)) {
+    throw new Error(`Invalid PR lifecycle trace fixture at ${source}: ${field} must be an array.`);
+  }
+
+  return value.map((entry, index) => requiredEnum(entry, source, `${field}[${index}]`, allowed));
+}
+
+function optionalV2Comparison(
+  value: unknown,
+  source: string,
+): PrLifecycleDecisionTraceArtifact["v2Comparison"] {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  const comparison = requiredRecord(value, source, "artifact.v2Comparison");
+  const current = requiredRecord(comparison.current, source, "artifact.v2Comparison.current");
+  const v2 = requiredRecord(comparison.v2, source, "artifact.v2Comparison.v2");
+  return {
+    diagnosticOnly: requiredBoolean(comparison.diagnosticOnly, source, "artifact.v2Comparison.diagnosticOnly"),
+    current: {
+      state: requiredEnum(current.state, source, "artifact.v2Comparison.current.state", runStates),
+      actionEquivalent: requiredEnum(
+        current.actionEquivalent,
+        source,
+        "artifact.v2Comparison.current.actionEquivalent",
+        decisionKernelV2Actions,
+      ),
+    },
+    v2: {
+      action: requiredEnum(v2.action, source, "artifact.v2Comparison.v2.action", decisionKernelV2Actions),
+      reasons: requiredEnumArray(
+        v2.reasons,
+        source,
+        "artifact.v2Comparison.v2.reasons",
+        decisionKernelV2Reasons,
+      ),
+    },
+    category: requiredEnum(
+      comparison.category,
+      source,
+      "artifact.v2Comparison.category",
+      decisionKernelV2ComparisonCategories,
+    ),
+    differences: requiredComparisonDifferences(
+      comparison.differences,
+      source,
+      "artifact.v2Comparison.differences",
+    ),
+    safetyNote: requiredString(comparison.safetyNote, source, "artifact.v2Comparison.safetyNote"),
+  };
+}
+
+function requiredBoolean(value: unknown, source: string, field: string): true {
+  if (value !== true) {
+    throw new Error(`Invalid PR lifecycle trace fixture at ${source}: ${field} must be true.`);
+  }
+  return true;
+}
+
+function requiredComparisonDifferences(
+  value: unknown,
+  source: string,
+  field: string,
+): DecisionKernelV2ComparisonDifference[] {
+  if (!Array.isArray(value)) {
+    throw new Error(`Invalid PR lifecycle trace fixture at ${source}: ${field} must be an array.`);
+  }
+
+  return value.map((entry, index) => {
+    const difference = requiredRecord(entry, source, `${field}[${index}]`);
+    return {
+      field: requiredString(difference.field, source, `${field}[${index}].field`),
+      current: requiredString(difference.current, source, `${field}[${index}].current`),
+      v2: requiredString(difference.v2, source, `${field}[${index}].v2`),
+    };
+  });
 }
 
 function assertEqualFixtureField(

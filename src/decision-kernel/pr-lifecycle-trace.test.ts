@@ -62,6 +62,7 @@ function traceInput(overrides: Partial<PrLifecycleDecisionTraceInput> = {}): PrL
       summary: "PR lifecycle facts are merge ready.",
     },
     evidenceTokens: ["pr=2280", "head=head-current", "checks=green"],
+    v2Comparison: null,
     ...overrides,
   };
 }
@@ -95,6 +96,7 @@ test("buildPrLifecycleDecisionTrace records a versioned facts-policy-decision-ac
   assert.equal(trace.facts.normalizedState.reviewPosture, "current_head_review_observed");
   assert.deepEqual(trace.policy.reasons, ["checks_green", "review_observed", "mergeable"]);
   assert.deepEqual(trace.evidenceTokens, ["pr=2280", "head=head-current", "checks=green"]);
+  assert.equal(trace.v2Comparison, null);
 });
 
 test("buildPrLifecycleDecisionTrace is byte-stable for the same explicit input", () => {
@@ -208,4 +210,28 @@ test("buildPrLifecycleDecisionTrace represents stale local state without side ef
   assert.equal(trace.facts.normalizedState.localStateFreshness, "stale");
   assert.equal(trace.policy.posture, "stale_local_state");
   assert.equal(trace.decision.recommendedAction, "refresh_state");
+});
+
+test("buildPrLifecycleDecisionTrace records optional v2 comparison evidence as diagnostic-only", () => {
+  const trace = buildPrLifecycleDecisionTrace(
+    traceInput({
+      v2Comparison: {
+        current: {
+          state: "ready_to_merge",
+          actionEquivalent: "no_action",
+        },
+        v2: {
+          action: "no_action",
+          reasons: ["merge_ready_diagnostic_only"],
+        },
+        category: "agreement",
+        differences: [],
+        safetyNote: "Current and v2 decisions agree for the compared action boundary.",
+      },
+    }),
+  );
+
+  assert.equal(trace.v2Comparison?.diagnosticOnly, true);
+  assert.equal(trace.v2Comparison?.category, "agreement");
+  assert.deepEqual(trace.v2Comparison?.v2.reasons, ["merge_ready_diagnostic_only"]);
 });

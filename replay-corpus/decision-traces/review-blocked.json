@@ -45,6 +45,26 @@
       "recommendedAction": "manual_review",
       "summary": "Current-head review threads block automated merge."
     },
-    "evidenceTokens": ["pr=1003", "manual_threads=1", "current_bot_threads=2"]
+    "evidenceTokens": ["pr=1003", "manual_threads=1", "current_bot_threads=2"],
+    "v2Comparison": {
+      "diagnosticOnly": true,
+      "current": {
+        "state": "blocked",
+        "actionEquivalent": "ask_operator"
+      },
+      "v2": {
+        "action": "ask_operator",
+        "reasons": ["manual_review_thread"]
+      },
+      "category": "agreement",
+      "differences": [
+        {
+          "field": "reason",
+          "current": "manual_review_required",
+          "v2": "manual_review_thread"
+        }
+      ],
+      "safetyNote": "Current and v2 decisions agree for the compared action boundary."
+    }
   }
 }
