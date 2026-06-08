@@ -79,6 +79,7 @@ interface CheckPolicyBoundarySummary {
 
 interface ReviewPolicyBoundarySummary {
   hasInput: boolean;
+  hasCodexProvider: boolean;
   currentHeadMustFix: number;
   metadataOnly: number;
   manual: number;
@@ -147,15 +148,6 @@ function selectReadOnlyDecision(
     );
   }
 
-  if (state.localStateFreshness === "missing" || state.localStateFreshness === "unknown") {
-    return decision(
-      "wait",
-      ["fresh_local_state_required"],
-      ["fresh_local_state"],
-      "Fresh local state is required before v2 can recommend source repair.",
-    );
-  }
-
   if (reviewPolicy.inputMismatch) {
     return decision(
       "ask_operator",
@@ -171,6 +163,49 @@ function selectReadOnlyDecision(
       ["manual_review_thread"],
       ["resolved_manual_threads"],
       "Manual review threads require operator review.",
+    );
+  }
+
+  const needsCurrentHeadReview = state.reviewPosture === "missing_current_head_review";
+  const needsFreshLocalState =
+    state.localStateFreshness === "missing" || state.localStateFreshness === "unknown";
+
+  if (needsCurrentHeadReview) {
+    if (state.checkPosture === "failing") {
+      if (needsFreshLocalState) {
+        return decision(
+          "wait",
+          ["fresh_local_state_required"],
+          ["fresh_local_state"],
+          "Fresh local state is required before v2 can recommend source repair.",
+        );
+      }
+
+      return decision("run_codex", ["checks_failing"], ["green_checks"], "Required checks are failing.");
+    }
+
+    if (state.checkPosture === "pending") {
+      return decision("wait", ["checks_pending"], ["green_checks"], "Required checks are still pending.");
+    }
+
+    if (state.checkPosture === "unknown" && !checkPolicy.noChecksAndNoLocalCi) {
+      return decision("wait", ["checks_unknown"], ["green_checks"], "Required check status is unknown.");
+    }
+
+    return decision(
+      "request_review",
+      ["missing_current_head_review"],
+      ["current_head_review"],
+      "Current-head review evidence is missing.",
+    );
+  }
+
+  if (needsFreshLocalState) {
+    return decision(
+      "wait",
+      ["fresh_local_state_required"],
+      ["fresh_local_state"],
+      "Fresh local state is required before v2 can recommend source repair.",
     );
   }
 
@@ -194,19 +229,8 @@ function selectReadOnlyDecision(
     return decision("wait", ["checks_pending"], ["green_checks"], "Required checks are still pending.");
   }
 
-  const needsCurrentHeadReview = state.reviewPosture === "missing_current_head_review";
-
-  if (state.checkPosture === "unknown" && !(needsCurrentHeadReview && checkPolicy.noChecksAndNoLocalCi)) {
+  if (state.checkPosture === "unknown" && !checkPolicy.noChecksAndNoLocalCi) {
     return decision("wait", ["checks_unknown"], ["green_checks"], "Required check status is unknown.");
-  }
-
-  if (needsCurrentHeadReview) {
-    return decision(
-      "request_review",
-      ["missing_current_head_review"],
-      ["current_head_review"],
-      "Current-head review evidence is missing.",
-    );
   }
 
   if (state.reviewPosture === "metadata_only_unresolved" || reviewPolicy.metadataOnly > 0) {
@@ -233,7 +257,7 @@ function selectReadOnlyDecision(
     (state.reviewPosture === "current_head_review_observed" ||
       state.reviewPosture === "no_unresolved_review" ||
       (state.reviewPosture === "review_blocked" && reviewPolicyAllowsAdvisoryOnly(reviewPolicy))) &&
-    state.checkPosture === "green" &&
+    (state.checkPosture === "green" || checkPolicy.noChecksAndNoLocalCi) &&
     state.mergeability === "mergeable"
   ) {
     return decision(
@@ -273,6 +297,7 @@ function summarizeReviewPolicyBoundaries(
 ): ReviewPolicyBoundarySummary {
   const summary: ReviewPolicyBoundarySummary = {
     hasInput: value !== null,
+    hasCodexProvider: value === null || value.providerIdentity.configuredProviderKinds.includes("codex"),
     currentHeadMustFix: 0,
     metadataOnly: 0,
     manual: 0,
@@ -282,6 +307,10 @@ function summarizeReviewPolicyBoundaries(
 
   if (value && (value.pr.number !== state.pullRequestNumber || value.pr.headSha !== state.headSha)) {
     summary.inputMismatch = true;
+    return summary;
+  }
+
+  if (!summary.hasCodexProvider) {
     return summary;
   }
 
@@ -314,6 +343,7 @@ function isCurrentHeadMustFixBoundary(outcome: ReviewPolicyBoundaryOutcome): boo
 function reviewPolicyAllowsAdvisoryOnly(reviewPolicy: ReviewPolicyBoundarySummary): boolean {
   return (
     reviewPolicy.hasInput &&
+    reviewPolicy.hasCodexProvider &&
     !reviewPolicy.inputMismatch &&
     reviewPolicy.currentHeadMustFix === 0 &&
     reviewPolicy.metadataOnly === 0 &&

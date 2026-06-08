@@ -206,7 +206,7 @@ function normalizeMergeability(
     return "conflicted";
   }
 
-  if (pullRequest.mergeStateStatus === "CLEAN" || pullRequest.mergeable === "MERGEABLE") {
+  if (pullRequest.mergeStateStatus === "CLEAN") {
     return "mergeable";
   }
 

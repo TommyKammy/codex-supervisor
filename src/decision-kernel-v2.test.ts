@@ -57,11 +57,13 @@ function reviewPolicyInput(
   outcomes: Array<ReviewPolicyInput["threads"][number]["boundaryOutcome"]>,
   overrides: Partial<ReviewPolicyInput["pr"]> = {},
   threadOverrides: Partial<ReviewPolicyInput["threads"][number]> = {},
+  providerIdentityOverrides: Partial<ReviewPolicyInput["providerIdentity"]> = {},
 ): ReviewPolicyInput {
   return {
     providerIdentity: {
       configuredProviderKinds: ["codex"],
       configuredBotLogins: ["chatgpt-codex-connector"],
+      ...providerIdentityOverrides,
     },
     pr: {
       number: 2300,
@@ -324,6 +326,54 @@ test("evaluateDecisionKernelV2ReadOnly waits for unknown checks without no-CI ev
   assert.deepEqual(decision.requiredEvidence, ["green_checks"]);
 });
 
+test("evaluateDecisionKernelV2ReadOnly treats no-CI check policy as merge-ready evidence", () => {
+  const decision = evaluateDecisionKernelV2ReadOnlyFromFacts({
+    inventory: inventory({
+      checks: {
+        passingCount: 0,
+        pendingCount: 0,
+        failingCount: 0,
+        unknownCount: 0,
+      },
+    }),
+    checkPolicyInput: {
+      noChecksAndNoLocalCi: true,
+    },
+  });
+
+  assert.equal(decision.normalizedState.checkPosture, "unknown");
+  assert.equal(decision.action, "no_action");
+  assert.deepEqual(decision.reasons, ["merge_ready_diagnostic_only"]);
+  assert.deepEqual(decision.requiredEvidence, []);
+});
+
+test("evaluateDecisionKernelV2ReadOnly does not require workspace freshness to request review", () => {
+  const decision = evaluateDecisionKernelV2ReadOnlyFromFacts({
+    inventory: inventory({
+      pullRequest: {
+        number: 2300,
+        headSha: "head-current",
+        state: "OPEN",
+        isDraft: false,
+        mergeStateStatus: "CLEAN",
+        mergeable: "MERGEABLE",
+        currentHeadReviewObservedAt: null,
+        currentHeadReviewHeadSha: null,
+      },
+      localState: {
+        trackedHeadSha: null,
+        workspaceHeadSha: null,
+        lastObservedPrHeadSha: "head-current",
+      },
+    }),
+  });
+
+  assert.equal(decision.normalizedState.localStateFreshness, "unknown");
+  assert.equal(decision.action, "request_review");
+  assert.deepEqual(decision.reasons, ["missing_current_head_review"]);
+  assert.deepEqual(decision.requiredEvidence, ["current_head_review"]);
+});
+
 test("evaluateDecisionKernelV2ReadOnly fails closed on mismatched review policy input", () => {
   const decision = evaluateDecisionKernelV2ReadOnly({
     normalizedState: state(),
@@ -367,6 +417,34 @@ test("evaluateDecisionKernelV2ReadOnly requests current-head review before metad
   assert.equal(decision.action, "request_review");
   assert.deepEqual(decision.reasons, ["missing_current_head_review"]);
   assert.deepEqual(decision.requiredEvidence, ["current_head_review"]);
+});
+
+test("evaluateDecisionKernelV2ReadOnly requires a clean merge state before reporting merge-ready", () => {
+  const decision = evaluateDecisionKernelV2ReadOnlyFromFacts({
+    inventory: inventory({
+      pullRequest: {
+        number: 2300,
+        headSha: "head-current",
+        state: "OPEN",
+        isDraft: false,
+        mergeStateStatus: "BLOCKED",
+        mergeable: "MERGEABLE",
+        currentHeadReviewObservedAt: "2026-06-08T00:01:00.000Z",
+        currentHeadReviewHeadSha: "head-current",
+      },
+    }),
+  });
+
+  assert.equal(decision.normalizedState.mergeability, "unknown");
+  assert.equal(decision.action, "ask_operator");
+  assert.deepEqual(decision.reasons, ["insufficient_merge_evidence"]);
+  assert.deepEqual(decision.requiredEvidence, [
+    "current_head",
+    "fresh_local_state",
+    "current_head_review",
+    "green_checks",
+    "mergeable_state",
+  ]);
 });
 
 test("evaluateDecisionKernelV2ReadOnly ignores resolved manual policy threads", () => {
@@ -417,6 +495,17 @@ test("evaluateDecisionKernelV2ReadOnly repairs failing checks before waiting for
   assert.equal(decision.action, "run_codex");
   assert.deepEqual(decision.reasons, ["checks_failing"]);
   assert.deepEqual(decision.requiredEvidence, ["green_checks"]);
+});
+
+test("evaluateDecisionKernelV2ReadOnly respects non-Codex provider policy input", () => {
+  const decision = evaluateDecisionKernelV2ReadOnly({
+    normalizedState: state(),
+    reviewPolicyInput: reviewPolicyInput(["must_fix_current_head"], {}, {}, { configuredProviderKinds: ["coderabbit"] }),
+  });
+
+  assert.equal(decision.action, "no_action");
+  assert.deepEqual(decision.reasons, ["merge_ready_diagnostic_only"]);
+  assert.deepEqual(decision.requiredEvidence, []);
 });
 
 test("evaluateDecisionKernelV2ReadOnly does not repair softened P3 advisory policy threads", () => {
