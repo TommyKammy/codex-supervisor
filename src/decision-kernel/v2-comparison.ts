@@ -101,13 +101,13 @@ function actionEquivalentForCurrentState(state: RunState): DecisionKernelV2Actio
     case "implementing":
     case "stabilizing":
     case "waiting_ci":
+    case "draft_pr":
+    case "local_review":
     case "merging":
+    case "pr_open":
       return "wait";
     case "blocked":
-    case "draft_pr":
     case "failed":
-    case "local_review":
-    case "pr_open":
       return "ask_operator";
   }
 }

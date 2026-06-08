@@ -883,7 +883,7 @@ test("runSupervisorCommand renders v2 explain diagnostics through the read-only 
             comparison: {
               current: {
                 state: "pr_open",
-                actionEquivalent: "ask_operator",
+                actionEquivalent: "wait",
               },
               v2: {
                 action: "request_review",
@@ -893,7 +893,7 @@ test("runSupervisorCommand renders v2 explain diagnostics through the read-only 
               differences: [
                 {
                   field: "action",
-                  current: "ask_operator",
+                  current: "wait",
                   v2: "request_review",
                 },
                 {

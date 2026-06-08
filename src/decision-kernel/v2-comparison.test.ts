@@ -82,6 +82,26 @@ test("buildDecisionKernelV2ComparisonDto classifies conservative v2 divergence a
   ]);
 });
 
+test("buildDecisionKernelV2ComparisonDto does not equate loop-advanceable PR states with operator handoff", () => {
+  for (const currentState of ["draft_pr", "local_review", "pr_open"] as const) {
+    const comparison = buildDecisionKernelV2ComparisonDto({
+      currentState,
+      v2Decision: v2Decision({
+        action: "ask_operator",
+        reasons: ["insufficient_merge_evidence"],
+        requiredEvidence: ["current_head", "fresh_local_state"],
+        summary: "The read-only v2 model lacks enough evidence to recommend an automated action.",
+      }),
+    });
+
+    assert.equal(comparison.current.actionEquivalent, "wait");
+    assert.equal(comparison.category, "safe_divergence");
+    assert.equal(comparison.differences[0]?.field, "action");
+    assert.equal(comparison.differences[0]?.current, "wait");
+    assert.equal(comparison.differences[0]?.v2, "ask_operator");
+  }
+});
+
 test("buildDecisionKernelV2ComparisonDto fails closed on unsafe or ambiguous divergence", () => {
   const comparison = buildDecisionKernelV2ComparisonDto({
     currentState: "blocked",
