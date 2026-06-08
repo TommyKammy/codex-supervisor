@@ -116,6 +116,31 @@ function codexSoftenedP3Thread(overrides: Partial<ReviewThread> = {}): ReviewThr
   });
 }
 
+function manualThread(overrides: Partial<ReviewThread> = {}): ReviewThread {
+  return {
+    id: "thread-human",
+    isResolved: false,
+    isOutdated: false,
+    path: "src/decision-kernel/v2-explain.ts",
+    line: 300,
+    comments: {
+      nodes: [
+        {
+          id: "comment-human",
+          body: "Please take another look.",
+          createdAt: "2026-06-08T00:04:00.000Z",
+          url: "https://example.test/comment-human",
+          author: {
+            login: "maintainer",
+            typeName: "User",
+          },
+        },
+      ],
+    },
+    ...overrides,
+  };
+}
+
 test("buildDecisionKernelV2ExplainDto uses PR head for current-head review observations", () => {
   const dto = buildDecisionKernelV2ExplainDto({
     config: codexConfig(),
@@ -263,6 +288,32 @@ test("buildDecisionKernelV2ExplainDto accepts durable provider success as curren
   assert.equal(dto.decision?.action, "no_action");
 });
 
+test("buildDecisionKernelV2ExplainDto accepts top-level configured-provider success signals as current-head review evidence", () => {
+  const dto = buildDecisionKernelV2ExplainDto({
+    config: codexConfig({
+      reviewBotLogins: ["coderabbitai"],
+      configuredReviewProviders: [{ kind: "coderabbit", reviewerLogins: ["coderabbitai"], signalSource: "review_threads" }],
+      configuredBotRequireCurrentHeadSignal: true,
+    }),
+    issueNumber: 2301,
+    title: "Phase 3.2",
+    record: record(),
+    pr: pullRequest({
+      configuredBotCurrentHeadObservedAt: null,
+      configuredBotLatestReviewedCommitSha: null,
+      configuredBotTopLevelReviewSubmittedAt: "2026-06-08T00:06:00.000Z",
+      configuredBotTopLevelReviewStrength: "nitpick_only",
+    }),
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass" }],
+    reviewThreads: [],
+  });
+
+  assert.equal(dto.inventory?.pullRequest?.currentHeadReviewObservedAt, "2026-06-08T00:06:00.000Z");
+  assert.equal(dto.inventory?.pullRequest?.currentHeadReviewHeadSha, "head-current");
+  assert.equal(dto.decision?.normalizedState.reviewPosture, "current_head_review_observed");
+  assert.equal(dto.decision?.action, "no_action");
+});
+
 test("buildDecisionKernelV2ExplainDto blocks merge-ready diagnostics on blocking human review decisions", () => {
   const dto = buildDecisionKernelV2ExplainDto({
     config: codexConfig({ humanReviewBlocksMerge: true }),
@@ -272,6 +323,62 @@ test("buildDecisionKernelV2ExplainDto blocks merge-ready diagnostics on blocking
     pr: pullRequest({ reviewDecision: "REVIEW_REQUIRED" }),
     checks: [{ name: "build", state: "SUCCESS", bucket: "pass" }],
     reviewThreads: [],
+  });
+
+  assert.equal(dto.decision?.normalizedState.reviewPosture, "current_head_review_observed");
+  assert.equal(dto.decision?.action, "ask_operator");
+  assert.deepEqual(dto.decision?.reasons, ["insufficient_merge_evidence"]);
+});
+
+test("buildDecisionKernelV2ExplainDto honors Codex-path changes-requested decisions even when the top-level review is nitpick-only", () => {
+  const dto = buildDecisionKernelV2ExplainDto({
+    config: codexConfig({ codexConnectorAutoMergeEnabled: true, humanReviewBlocksMerge: true }),
+    issueNumber: 2301,
+    title: "Phase 3.2",
+    record: record({
+      provider_success_observed_at: "2026-06-08T00:06:00.000Z",
+      provider_success_head_sha: "head-current",
+    }),
+    pr: pullRequest({
+      reviewDecision: "CHANGES_REQUESTED",
+      configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+      configuredBotTopLevelReviewStrength: "nitpick_only",
+    }),
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass" }],
+    reviewThreads: [],
+  });
+
+  assert.equal(dto.decision?.normalizedState.reviewPosture, "current_head_review_observed");
+  assert.equal(dto.decision?.action, "ask_operator");
+  assert.deepEqual(dto.decision?.reasons, ["insufficient_merge_evidence"]);
+});
+
+test("buildDecisionKernelV2ExplainDto ignores manual review threads when human review is advisory", () => {
+  const dto = buildDecisionKernelV2ExplainDto({
+    config: codexConfig({ humanReviewBlocksMerge: false }),
+    issueNumber: 2301,
+    title: "Phase 3.2",
+    record: record(),
+    pr: pullRequest(),
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass" }],
+    reviewThreads: [manualThread()],
+  });
+
+  assert.equal(dto.reviewPolicyInput?.threads.length, 0);
+  assert.equal(dto.inventory?.reviewThreads.unresolvedManualThreadCount, 0);
+  assert.equal(dto.decision?.action, "no_action");
+});
+
+test("buildDecisionKernelV2ExplainDto waits out configured-bot settled windows before merge-ready diagnostics", () => {
+  const dto = buildDecisionKernelV2ExplainDto({
+    config: codexConfig({ configuredBotSettledWaitSeconds: 5 }),
+    issueNumber: 2301,
+    title: "Phase 3.2",
+    record: record(),
+    pr: pullRequest(),
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass" }],
+    reviewThreads: [],
+    nowMs: Date.parse("2026-06-08T00:02:03.000Z"),
   });
 
   assert.equal(dto.decision?.normalizedState.reviewPosture, "current_head_review_observed");
@@ -357,6 +464,27 @@ test("buildDecisionKernelV2ExplainDto requires Codex no-major evidence for Codex
   assert.equal(dto.decision?.normalizedState.reviewPosture, "current_head_review_observed");
   assert.equal(dto.decision?.action, "ask_operator");
   assert.deepEqual(dto.decision?.reasons, ["insufficient_merge_evidence"]);
+});
+
+test("buildDecisionKernelV2ExplainDto does not require Codex no-major evidence on configured-provider auto-merge paths", () => {
+  const dto = buildDecisionKernelV2ExplainDto({
+    config: codexConfig({
+      codexConnectorAutoMergeEnabled: true,
+      reviewBotLogins: ["coderabbitai"],
+      configuredReviewProviders: [{ kind: "coderabbit", reviewerLogins: ["coderabbitai"], signalSource: "review_threads" }],
+    }),
+    issueNumber: 2301,
+    title: "Phase 3.2",
+    record: record(),
+    pr: pullRequest({
+      configuredBotCurrentHeadObservationSource: "review_thread",
+    }),
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass" }],
+    reviewThreads: [],
+  });
+
+  assert.equal(dto.decision?.normalizedState.reviewPosture, "current_head_review_observed");
+  assert.equal(dto.decision?.action, "no_action");
 });
 
 test("buildDecisionKernelV2ExplainDto respects explicit current-head signal requirements for non-Codex providers", () => {

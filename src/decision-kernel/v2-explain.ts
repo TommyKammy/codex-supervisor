@@ -5,6 +5,7 @@ import {
   type ReviewPolicyInput,
 } from "../codex-connector-review-policy";
 import { displayLocalCiCommand } from "../core/config-parsing";
+import { configuredReviewProviderKinds } from "../core/review-providers";
 import type {
   GitHubPullRequest,
   IssueRunRecord,
@@ -21,8 +22,12 @@ import {
   currentHeadObservationSatisfiesActiveWait,
   hasCurrentHeadProviderSuccess,
   requiresConfiguredBotCurrentHeadSignal,
+  shouldWaitForConfiguredBotCurrentHeadQuietPeriod,
 } from "../pull-request-state-current-head-policy";
-import { effectiveConfiguredBotReviewThreadsForState } from "../pull-request-state-codex-residue-policy";
+import {
+  effectiveConfiguredBotReviewThreadsForState,
+  hasConfiguredProviderSuccess,
+} from "../pull-request-state-codex-residue-policy";
 import { manualReviewThreads } from "../review-thread-reporting";
 import type { PrLifecycleFactInventory } from "./pr-lifecycle-state";
 
@@ -46,6 +51,7 @@ export function buildDecisionKernelV2ExplainDto(args: {
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
   hydrationFailed?: boolean;
+  nowMs?: number;
 }): DecisionKernelV2ExplainDto {
   if (!args.record) {
     return missingTarget(args, "missing_tracked_record", "Track the issue through the supervisor before running v2 explain.");
@@ -77,6 +83,7 @@ export function buildDecisionKernelV2ExplainDto(args: {
     record: args.record,
     pr: args.pr,
     checks: args.checks,
+    reviewThreads: effectiveReviewThreads,
     reviewPolicyInput,
   });
   const currentHeadLocalCiPassed = localCiPassedCurrentHead({
@@ -101,6 +108,7 @@ export function buildDecisionKernelV2ExplainDto(args: {
         pr: args.pr,
         checks: args.checks,
         reviewThreads: args.reviewThreads,
+        nowMs: args.nowMs,
       }),
     },
   });
@@ -197,11 +205,15 @@ function buildPrLifecycleFactInventory(args: {
   record: IssueRunRecord;
   pr: GitHubPullRequest;
   checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
   reviewPolicyInput: ReviewPolicyInput;
 }): PrLifecycleFactInventory {
   const currentHeadReviewEvidence = currentHeadReviewEvidenceFromPolicyInput({
+    config: args.config,
     pr: args.pr,
     record: args.record,
+    checks: args.checks,
+    reviewThreads: args.reviewThreads,
     reviewPolicyInput: args.reviewPolicyInput,
   });
 
@@ -232,8 +244,11 @@ function buildPrLifecycleFactInventory(args: {
 }
 
 function currentHeadReviewEvidenceFromPolicyInput(args: {
+  config: SupervisorConfig;
   pr: GitHubPullRequest;
   record: IssueRunRecord;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
   reviewPolicyInput: ReviewPolicyInput;
 }): { observedAt: string | null; headSha: string | null } {
   if (
@@ -246,9 +261,12 @@ function currentHeadReviewEvidenceFromPolicyInput(args: {
     };
   }
 
-  if (hasCurrentHeadProviderSuccess(args.record, args.pr)) {
+  if (
+    hasCurrentHeadProviderSuccess(args.record, args.pr) ||
+    hasConfiguredProviderSuccess(args.config, args.record, args.pr, args.checks, args.reviewThreads)
+  ) {
     return {
-      observedAt: args.record.provider_success_observed_at ?? null,
+      observedAt: configuredProviderSuccessObservedAt(args.record, args.pr),
       headSha: args.pr.headRefOid,
     };
   }
@@ -264,6 +282,14 @@ function currentHeadReviewEvidenceFromPolicyInput(args: {
     observedAt: null,
     headSha: null,
   };
+}
+
+function configuredProviderSuccessObservedAt(record: IssueRunRecord, pr: GitHubPullRequest): string | null {
+  if (hasCurrentHeadProviderSuccess(record, pr)) {
+    return record.provider_success_observed_at ?? null;
+  }
+
+  return pr.copilotReviewArrivedAt ?? pr.configuredBotTopLevelReviewSubmittedAt ?? pr.updatedAt ?? pr.createdAt ?? null;
 }
 
 function mergeReadyBlockedByLocalCi(args: {
@@ -293,8 +319,12 @@ function effectiveReviewThreadsForV2Explain(args: {
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
 }): ReviewThread[] {
+  const manualThreads = args.config.humanReviewBlocksMerge
+    ? manualReviewThreads(args.config, args.reviewThreads)
+    : [];
+
   return [
-    ...manualReviewThreads(args.config, args.reviewThreads),
+    ...manualThreads,
     ...effectiveConfiguredBotReviewThreadsForState(
       args.config,
       args.record,
@@ -311,16 +341,24 @@ function mergeReadyBlockedByFinalGuard(args: {
   pr: GitHubPullRequest;
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
+  nowMs?: number;
 }): boolean {
   if (args.pr.mergeable !== "MERGEABLE") {
     return true;
   }
 
-  if (args.config.humanReviewBlocksMerge && isBlockingHumanReviewDecision(args.pr)) {
+  const autoMergePath = autoMergePathForConfig(args.config);
+  const requiresCodexNoMajor = autoMergePath === "codex_connector_no_major";
+
+  if (args.config.humanReviewBlocksMerge && isBlockingHumanReviewDecision(args.pr, requiresCodexNoMajor)) {
     return true;
   }
 
-  if (args.config.codexConnectorAutoMergeEnabled === true && !hasCurrentHeadCodexNoMajor(args.record, args.pr)) {
+  if (requiresCodexNoMajor && !hasCurrentHeadCodexNoMajor(args.record, args.pr)) {
+    return true;
+  }
+
+  if (shouldWaitForConfiguredBotCurrentHeadQuietPeriod(args.config, args.pr, args.nowMs ?? Date.now())) {
     return true;
   }
 
@@ -333,10 +371,22 @@ function mergeReadyBlockedByFinalGuard(args: {
   ).length > 0;
 }
 
-function isBlockingHumanReviewDecision(pr: GitHubPullRequest): boolean {
+type V2AutoMergePath = "codex_connector_no_major" | "configured_bot_provider" | null;
+
+function autoMergePathForConfig(config: SupervisorConfig): V2AutoMergePath {
+  const providerKinds = configuredReviewProviderKinds(config);
+  if (providerKinds.length > 0 && !providerKinds.includes("codex")) {
+    return "configured_bot_provider";
+  }
+
+  return config.codexConnectorAutoMergeEnabled === true ? "codex_connector_no_major" : null;
+}
+
+function isBlockingHumanReviewDecision(pr: GitHubPullRequest, requiresCodexNoMajor: boolean): boolean {
   return (
     pr.reviewDecision === "REVIEW_REQUIRED" ||
-    (pr.reviewDecision === "CHANGES_REQUESTED" && pr.configuredBotTopLevelReviewStrength !== "nitpick_only")
+    (pr.reviewDecision === "CHANGES_REQUESTED" &&
+      (requiresCodexNoMajor || pr.configuredBotTopLevelReviewStrength !== "nitpick_only"))
   );
 }
 
