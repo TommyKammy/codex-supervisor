@@ -47,6 +47,7 @@ export function formatPrLifecycleTraceDiagnostic(
   const evidence = state.evidence;
   const evidenceTokens = trace.evidenceTokens.map(formatDiagnosticToken).join(",") || "none";
   const policyReasons = trace.policy.reasons.map(formatDiagnosticToken).join(",") || "none";
+  const v2Comparison = trace.v2Comparison;
 
   return [
     "pr_lifecycle_trace",
@@ -79,7 +80,23 @@ export function formatPrLifecycleTraceDiagnostic(
     `unknown_checks=${evidence.unknownCheckCount}`,
     `reasons=${policyReasons}`,
     `evidence=${evidenceTokens}`,
+    `v2_comparison=${v2Comparison?.category ?? "none"}`,
+    `v2_diagnostic_only=${v2Comparison?.diagnosticOnly ? "yes" : "no"}`,
+    `v2_comparison_differences=${formatV2ComparisonDifferences(v2Comparison?.differences ?? [])}`,
   ].join(" ");
+}
+
+function formatV2ComparisonDifferences(
+  differences: NonNullable<PrLifecycleDecisionTraceArtifact["v2Comparison"]>["differences"],
+): string {
+  if (differences.length === 0) {
+    return "none";
+  }
+
+  return differences
+    .map((difference) => `${difference.field}:${difference.current}->${difference.v2}`)
+    .map(formatDiagnosticToken)
+    .join(",");
 }
 
 function formatDiagnosticToken(value: string | null): string {

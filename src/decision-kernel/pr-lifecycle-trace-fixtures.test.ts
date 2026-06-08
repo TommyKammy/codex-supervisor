@@ -51,6 +51,20 @@ test("Decision Kernel trace fixtures preserve representative policy and decision
   );
 });
 
+test("Decision Kernel trace fixtures preserve optional v2 comparison evidence", async () => {
+  const fixtures = await loadPrLifecycleTraceFixtures(
+    path.join(process.cwd(), "replay-corpus", "decision-traces"),
+  );
+  const comparisonById = new Map(
+    fixtures.map((fixture) => [fixture.id, fixture.artifact.v2Comparison?.category ?? "none"]),
+  );
+
+  assert.equal(comparisonById.get("merge-ready"), "agreement");
+  assert.equal(comparisonById.get("review-blocked"), "manual_review_required");
+  assert.equal(comparisonById.get("wait-ci"), "none");
+  assert.equal(fixtures.find((fixture) => fixture.id === "merge-ready")?.artifact.v2Comparison?.diagnosticOnly, true);
+});
+
 test("Decision Kernel trace fixtures render compact diagnostics without host-local paths", async () => {
   const fixtures = await loadPrLifecycleTraceFixtures(
     path.join(process.cwd(), "replay-corpus", "decision-traces"),
@@ -63,6 +77,8 @@ test("Decision Kernel trace fixtures render compact diagnostics without host-loc
   assert.match(diagnostics.join("\n"), /label=review_blocked/);
   assert.match(diagnostics.join("\n"), /label=stale_local_state/);
   assert.match(diagnostics.join("\n"), /label=metadata_only_review_residue/);
+  assert.match(diagnostics.join("\n"), /v2_comparison=agreement/);
+  assert.match(diagnostics.join("\n"), /v2_comparison=manual_review_required/);
   assert.doesNotMatch(diagnostics.join("\n"), /\/Users\//);
   assert.doesNotMatch(diagnostics.join("\n"), /[A-Z]:\\/);
 });

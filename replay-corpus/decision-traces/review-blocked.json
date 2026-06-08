@@ -45,6 +45,31 @@
       "recommendedAction": "manual_review",
       "summary": "Current-head review threads block automated merge."
     },
-    "evidenceTokens": ["pr=1003", "manual_threads=1", "current_bot_threads=2"]
+    "evidenceTokens": ["pr=1003", "manual_threads=1", "current_bot_threads=2"],
+    "v2Comparison": {
+      "diagnosticOnly": true,
+      "current": {
+        "state": "blocked",
+        "actionEquivalent": "ask_operator"
+      },
+      "v2": {
+        "action": "run_codex",
+        "reasons": ["current_head_must_fix_review"]
+      },
+      "category": "manual_review_required",
+      "differences": [
+        {
+          "field": "action",
+          "current": "ask_operator",
+          "v2": "run_codex"
+        },
+        {
+          "field": "reason",
+          "current": "manual_review_required",
+          "v2": "current_head_must_fix_review"
+        }
+      ],
+      "safetyNote": "Current and v2 diverge in an unsafe or ambiguous way; require operator review before trusting v2."
+    }
   }
 }
