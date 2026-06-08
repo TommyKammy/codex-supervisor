@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { GitHubPullRequest, IssueRunRecord, SupervisorConfig } from "../core/types";
+import type { GitHubPullRequest, IssueRunRecord, ReviewThread, SupervisorConfig } from "../core/types";
 import { buildDecisionKernelV2ExplainDto } from "./v2-explain";
 
 function record(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
@@ -61,13 +61,43 @@ function pullRequest(overrides: Partial<GitHubPullRequest> = {}): GitHubPullRequ
   };
 }
 
+function codexConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
+  return {
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    configuredReviewProviders: [{ kind: "codex", reviewerLogins: ["chatgpt-codex-connector"], signalSource: "review_threads" }],
+    localCiCommand: undefined,
+    ...overrides,
+  } as unknown as SupervisorConfig;
+}
+
+function codexMustFixThread(overrides: Partial<ReviewThread> = {}): ReviewThread {
+  return {
+    id: "thread-codex-p2",
+    isResolved: false,
+    isOutdated: false,
+    path: "src/decision-kernel/v2-explain.ts",
+    line: 231,
+    comments: {
+      nodes: [
+        {
+          id: "comment-codex-p2",
+          body: "![P2 Badge](https://img.shields.io/badge/P2-yellow) Current-head review evidence should be requested first.",
+          createdAt: "2026-06-08T00:04:00.000Z",
+          url: "https://example.test/comment",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+    ...overrides,
+  };
+}
+
 test("buildDecisionKernelV2ExplainDto uses PR head for current-head review observations", () => {
   const dto = buildDecisionKernelV2ExplainDto({
-    config: {
-      reviewBotLogins: ["chatgpt-codex-connector"],
-      configuredReviewProviders: [{ kind: "codex", reviewerLogins: ["chatgpt-codex-connector"], signalSource: "review_threads" }],
-      localCiCommand: undefined,
-    } as unknown as SupervisorConfig,
+    config: codexConfig(),
     issueNumber: 2301,
     title: "Phase 3.2",
     record: record(),
@@ -83,11 +113,7 @@ test("buildDecisionKernelV2ExplainDto uses PR head for current-head review obser
 
 test("buildDecisionKernelV2ExplainDto ignores malformed current-head review timestamps", () => {
   const dto = buildDecisionKernelV2ExplainDto({
-    config: {
-      reviewBotLogins: ["chatgpt-codex-connector"],
-      configuredReviewProviders: [{ kind: "codex", reviewerLogins: ["chatgpt-codex-connector"], signalSource: "review_threads" }],
-      localCiCommand: undefined,
-    } as unknown as SupervisorConfig,
+    config: codexConfig(),
     issueNumber: 2301,
     title: "Phase 3.2",
     record: record(),
@@ -101,6 +127,87 @@ test("buildDecisionKernelV2ExplainDto ignores malformed current-head review time
 
   assert.equal(dto.inventory?.pullRequest?.currentHeadReviewObservedAt, null);
   assert.equal(dto.inventory?.pullRequest?.currentHeadReviewHeadSha, null);
+  assert.equal(dto.decision?.normalizedState.reviewPosture, "missing_current_head_review");
+  assert.equal(dto.decision?.action, "request_review");
+});
+
+test("buildDecisionKernelV2ExplainDto accepts external review records as current-head review evidence", () => {
+  const dto = buildDecisionKernelV2ExplainDto({
+    config: codexConfig(),
+    issueNumber: 2301,
+    title: "Phase 3.2",
+    record: record({ external_review_head_sha: "head-current" }),
+    pr: pullRequest({
+      configuredBotCurrentHeadObservedAt: null,
+      configuredBotLatestReviewedCommitSha: null,
+    }),
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass" }],
+    reviewThreads: [],
+  });
+
+  assert.equal(dto.inventory?.pullRequest?.currentHeadReviewObservedAt, "2026-06-08T00:01:00.000Z");
+  assert.equal(dto.inventory?.pullRequest?.currentHeadReviewHeadSha, "head-current");
+  assert.equal(dto.decision?.normalizedState.reviewPosture, "current_head_review_observed");
+  assert.equal(dto.decision?.action, "no_action");
+});
+
+test("buildDecisionKernelV2ExplainDto blocks merge-ready diagnostics until configured local CI passes current head", () => {
+  const dto = buildDecisionKernelV2ExplainDto({
+    config: codexConfig({ localCiCommand: "npm run verify:pre-pr" }),
+    issueNumber: 2301,
+    title: "Phase 3.2",
+    record: record(),
+    pr: pullRequest(),
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass" }],
+    reviewThreads: [],
+  });
+
+  assert.equal(dto.decision?.normalizedState.reviewPosture, "current_head_review_observed");
+  assert.equal(dto.decision?.action, "ask_operator");
+  assert.deepEqual(dto.decision?.reasons, ["insufficient_merge_evidence"]);
+});
+
+test("buildDecisionKernelV2ExplainDto allows merge-ready diagnostics after configured local CI passes current head", () => {
+  const dto = buildDecisionKernelV2ExplainDto({
+    config: codexConfig({ localCiCommand: "npm run verify:pre-pr" }),
+    issueNumber: 2301,
+    title: "Phase 3.2",
+    record: record({
+      latest_local_ci_result: {
+        outcome: "passed",
+        summary: "Configured local CI command passed.",
+        ran_at: "2026-06-08T00:05:00.000Z",
+        head_sha: "head-current",
+        execution_mode: "legacy_shell_string",
+        command: "npm run verify:pre-pr",
+        failure_class: null,
+        remediation_target: null,
+      },
+    }),
+    pr: pullRequest(),
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass" }],
+    reviewThreads: [],
+  });
+
+  assert.equal(dto.decision?.action, "no_action");
+});
+
+test("buildDecisionKernelV2ExplainDto requests review before metadata-only residue without current-head evidence", () => {
+  const dto = buildDecisionKernelV2ExplainDto({
+    config: codexConfig(),
+    issueNumber: 2301,
+    title: "Phase 3.2",
+    record: record(),
+    pr: pullRequest({
+      configuredBotCurrentHeadObservedAt: null,
+      configuredBotLatestReviewedCommitSha: null,
+    }),
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass" }],
+    reviewThreads: [codexMustFixThread()],
+  });
+
+  assert.equal(dto.reviewPolicyInput?.threads[0]?.boundaryOutcome, "metadata_only_unresolved");
+  assert.equal(dto.inventory?.reviewThreads.metadataOnlyUnresolvedThreadCount, 0);
   assert.equal(dto.decision?.normalizedState.reviewPosture, "missing_current_head_review");
   assert.equal(dto.decision?.action, "request_review");
 });

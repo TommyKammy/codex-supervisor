@@ -1,4 +1,8 @@
-import { buildReviewPolicyInput, type ReviewPolicyInput } from "../codex-connector-review-policy";
+import {
+  buildReviewPolicyInput,
+  commitShasEqualForComparison,
+  type ReviewPolicyInput,
+} from "../codex-connector-review-policy";
 import { displayLocalCiCommand } from "../core/config-parsing";
 import { configuredReviewProviderKinds } from "../core/review-providers";
 import type {
@@ -66,6 +70,11 @@ export function buildDecisionKernelV2ExplainDto(args: {
     reviewPolicyInput,
     checkPolicyInput: {
       noChecksAndNoLocalCi: args.checks.length === 0 && !displayLocalCiCommand(args.config.localCiCommand),
+      mergeReadyBlockedByLocalCi: mergeReadyBlockedByLocalCi({
+        config: args.config,
+        record: args.record,
+        pr: args.pr,
+      }),
     },
   });
 
@@ -163,6 +172,11 @@ function buildPrLifecycleFactInventory(args: {
   checks: PullRequestCheck[];
   reviewPolicyInput: ReviewPolicyInput;
 }): PrLifecycleFactInventory {
+  const currentHeadReviewEvidence = currentHeadReviewEvidenceFromPolicyInput({
+    pr: args.pr,
+    reviewPolicyInput: args.reviewPolicyInput,
+  });
+
   return {
     source: args.pr.hydrationProvenance === "cached" ? "cached_github" : "fresh_github",
     observedAt: args.pr.updatedAt ?? args.pr.createdAt ?? null,
@@ -173,10 +187,12 @@ function buildPrLifecycleFactInventory(args: {
       isDraft: args.pr.isDraft,
       mergeStateStatus: args.pr.mergeStateStatus,
       mergeable: args.pr.mergeable ?? null,
-      currentHeadReviewObservedAt: args.reviewPolicyInput.pr.currentHeadObservedAt,
-      currentHeadReviewHeadSha: args.reviewPolicyInput.pr.currentHeadObservedAt ? args.pr.headRefOid : null,
+      currentHeadReviewObservedAt: currentHeadReviewEvidence.observedAt,
+      currentHeadReviewHeadSha: currentHeadReviewEvidence.headSha,
     },
-    reviewThreads: summarizeReviewThreads(args.reviewPolicyInput),
+    reviewThreads: summarizeReviewThreads(args.reviewPolicyInput, {
+      currentHeadReviewObserved: currentHeadReviewEvidence.headSha === args.pr.headRefOid,
+    }),
     checks: summarizeCheckFacts(args.checks),
     localState: {
       trackedHeadSha: args.record.last_head_sha ?? null,
@@ -185,6 +201,43 @@ function buildPrLifecycleFactInventory(args: {
     },
     configuredCurrentHeadReviewRequired: configuredReviewProviderKinds(args.config).includes("codex"),
   };
+}
+
+function currentHeadReviewEvidenceFromPolicyInput(args: {
+  pr: GitHubPullRequest;
+  reviewPolicyInput: ReviewPolicyInput;
+}): { observedAt: string | null; headSha: string | null } {
+  if (args.reviewPolicyInput.pr.currentHeadObservedAt) {
+    return {
+      observedAt: args.reviewPolicyInput.pr.currentHeadObservedAt,
+      headSha: args.pr.headRefOid,
+    };
+  }
+
+  if (commitShasEqualForComparison(args.reviewPolicyInput.pr.externalReviewHeadSha, args.pr.headRefOid)) {
+    return {
+      observedAt: args.pr.updatedAt ?? args.pr.createdAt ?? null,
+      headSha: args.pr.headRefOid,
+    };
+  }
+
+  return {
+    observedAt: null,
+    headSha: null,
+  };
+}
+
+function mergeReadyBlockedByLocalCi(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+}): boolean {
+  if (!displayLocalCiCommand(args.config.localCiCommand)) {
+    return false;
+  }
+
+  const latestLocalCi = args.record.latest_local_ci_result ?? null;
+  return latestLocalCi?.outcome !== "passed" || !commitShasEqualForComparison(latestLocalCi.head_sha, args.pr.headRefOid);
 }
 
 function summarizeCheckFacts(checks: PullRequestCheck[]): PrLifecycleFactInventory["checks"] {
@@ -210,7 +263,10 @@ function summarizeCheckFacts(checks: PullRequestCheck[]): PrLifecycleFactInvento
   return facts;
 }
 
-function summarizeReviewThreads(input: ReviewPolicyInput): PrLifecycleFactInventory["reviewThreads"] {
+function summarizeReviewThreads(
+  input: ReviewPolicyInput,
+  options: { currentHeadReviewObserved: boolean },
+): PrLifecycleFactInventory["reviewThreads"] {
   const facts: PrLifecycleFactInventory["reviewThreads"] = {
     unresolvedManualThreadCount: 0,
     unresolvedCurrentHeadConfiguredBotThreadCount: 0,
@@ -228,7 +284,9 @@ function summarizeReviewThreads(input: ReviewPolicyInput): PrLifecycleFactInvent
     } else if (thread.boundaryOutcome === "stale_commit_thread") {
       facts.stalePreviousHeadConfiguredBotThreadCount += 1;
     } else if (thread.boundaryOutcome === "metadata_only_unresolved") {
-      facts.metadataOnlyUnresolvedThreadCount += 1;
+      if (options.currentHeadReviewObserved) {
+        facts.metadataOnlyUnresolvedThreadCount += 1;
+      }
     } else if (
       thread.boundaryOutcome === "must_fix_current_head" ||
       thread.boundaryOutcome === "escalated_p3" ||
