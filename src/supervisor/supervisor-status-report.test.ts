@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildSupervisorDashboardWorkflowSteps } from "./supervisor-dashboard-workflow";
-import { buildRuntimeRecoverySummary, renderSupervisorStatusDto } from "./supervisor-status-report";
+import {
+  buildRuntimeRecoverySummary,
+  renderDecisionKernelV2StatusLine,
+  renderSupervisorStatusDto,
+} from "./supervisor-status-report";
 
 const baseLoopRuntime = {
   state: "off" as const,
@@ -82,6 +86,38 @@ test("buildRuntimeRecoverySummary stays quiet when no actionable runtime recover
       detailedStatusLines: ["tracked_issues=0"],
     }),
     null,
+  );
+});
+
+test("renderDecisionKernelV2StatusLine keeps v2 visibly diagnostic-only", () => {
+  assert.equal(
+    renderDecisionKernelV2StatusLine(),
+    "decision_kernel_v2 mode=diagnostic_only authoritative=false mutation_allowed=false action_source=disabled",
+  );
+});
+
+test("renderSupervisorStatusDto includes the v2 diagnostic-only guardrail line", () => {
+  const rendered = renderSupervisorStatusDto({
+    gsdSummary: null,
+    candidateDiscovery: null,
+    candidateDiscoverySummary: null,
+    loopRuntime: baseLoopRuntime,
+    activeIssue: null,
+    selectionSummary: null,
+    trackedIssues: [],
+    runnableIssues: [],
+    blockedIssues: [],
+    detailedStatusLines: [],
+    reconciliationPhase: null,
+    reconciliationWarning: null,
+    readinessLines: [],
+    whyLines: [],
+    warning: null,
+  });
+
+  assert.match(
+    rendered,
+    /^decision_kernel_v2 mode=diagnostic_only authoritative=false mutation_allowed=false action_source=disabled$/m,
   );
 });
 

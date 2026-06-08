@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { ReviewPolicyInput } from "./codex-connector-review-policy";
 import {
+  DECISION_KERNEL_V2_DIAGNOSTIC_ONLY_POSTURE,
   DECISION_KERNEL_V2_READ_ONLY_SCHEMA_VERSION,
   evaluateDecisionKernelV2ReadOnly,
   evaluateDecisionKernelV2ReadOnlyFromFacts,
@@ -108,6 +109,14 @@ test("Decision Kernel v2 action vocabulary is typed", () => {
   assert.deepEqual(actions, ["wait", "request_review", "run_codex", "ask_operator", "no_action"]);
 });
 
+test("Decision Kernel v2 publishes a diagnostic-only safety posture", () => {
+  assert.deepEqual(DECISION_KERNEL_V2_DIAGNOSTIC_ONLY_POSTURE, {
+    mode: "diagnostic_only",
+    authoritative: false,
+    mutationAllowed: false,
+  });
+});
+
 test("evaluateDecisionKernelV2ReadOnly returns wait for stale local state", () => {
   const decision = evaluateDecisionKernelV2ReadOnlyFromFacts({
     inventory: inventory({
@@ -136,6 +145,7 @@ test("evaluateDecisionKernelV2ReadOnly returns wait for stale local state", () =
   assert.equal(decision.safety.mode, "diagnostic_only");
   assert.equal(decision.safety.authoritative, false);
   assert.equal(decision.safety.mutationAllowed, false);
+  assert.deepEqual(decision.safety, DECISION_KERNEL_V2_DIAGNOSTIC_ONLY_POSTURE);
 });
 
 test("evaluateDecisionKernelV2ReadOnly returns run_codex for current-head must-fix review policy", () => {

@@ -53,6 +53,12 @@ export interface DecisionKernelV2SafetyPosture {
   mutationAllowed: false;
 }
 
+export const DECISION_KERNEL_V2_DIAGNOSTIC_ONLY_POSTURE = {
+  mode: "diagnostic_only",
+  authoritative: false,
+  mutationAllowed: false,
+} as const satisfies DecisionKernelV2SafetyPosture;
+
 export interface DecisionKernelV2CheckPolicyInput {
   noChecksAndNoLocalCi?: boolean;
   mergeReadyBlockedByLocalCi?: boolean;
@@ -365,11 +371,7 @@ function reviewPolicyAllowsAdvisoryOnly(reviewPolicy: ReviewPolicyBoundarySummar
 }
 
 function diagnosticOnlySafetyPosture(): DecisionKernelV2SafetyPosture {
-  return {
-    mode: "diagnostic_only",
-    authoritative: false,
-    mutationAllowed: false,
-  };
+  return DECISION_KERNEL_V2_DIAGNOSTIC_ONLY_POSTURE;
 }
 
 function snapshotNormalizedState(state: NormalizedPrLifecycleState): NormalizedPrLifecycleState {

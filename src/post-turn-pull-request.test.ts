@@ -49,6 +49,14 @@ import {
   createReviewThread,
 } from "./turn-execution-test-helpers";
 
+test("post-turn pull request transitions do not import Decision Kernel v2 action decisions", async () => {
+  const source = await fs.readFile(path.join(process.cwd(), "src", "post-turn-pull-request.ts"), "utf8");
+
+  assert.doesNotMatch(source, /decision-kernel-v2/u);
+  assert.doesNotMatch(source, /evaluateDecisionKernelV2/u);
+  assert.doesNotMatch(source, /buildDecisionKernelV2ExplainDto/u);
+});
+
 test("handlePostTurnPullRequestTransitionsPhase emits typed review-wait change events", async () => {
   const config = createConfig();
   const issue = createIssue({ title: "Emit review wait changes" });

@@ -5,6 +5,7 @@ import type {
   LocalCiContractSummary,
   TrustDiagnosticsSummary,
 } from "../core/types";
+import { DECISION_KERNEL_V2_DIAGNOSTIC_ONLY_POSTURE } from "../decision-kernel-v2";
 import { sanitizeStatusValue } from "./supervisor-status-rendering";
 import { truncate } from "../core/utils";
 import type { BlockedReason, RunState, SupervisorStateFile, TimelineArtifact } from "../core/types";
@@ -209,6 +210,16 @@ export function renderGitHubRateLimitLine(resource: "rest" | "graphql", budget: 
   return `github_rate_limit resource=${resource} status=${budget.state} remaining=${budget.remaining} limit=${budget.limit} reset_at=${budget.resetAt}`;
 }
 
+export function renderDecisionKernelV2StatusLine(): string {
+  return [
+    "decision_kernel_v2",
+    `mode=${DECISION_KERNEL_V2_DIAGNOSTIC_ONLY_POSTURE.mode}`,
+    `authoritative=${DECISION_KERNEL_V2_DIAGNOSTIC_ONLY_POSTURE.authoritative}`,
+    `mutation_allowed=${DECISION_KERNEL_V2_DIAGNOSTIC_ONLY_POSTURE.mutationAllowed}`,
+    "action_source=disabled",
+  ].join(" ");
+}
+
 export function renderLoopRuntimeLine(loopRuntime: SupervisorLoopRuntimeDto): string {
   const markerPath = "markerPath" in loopRuntime ? loopRuntime.markerPath : "none";
   const configPath = "configPath" in loopRuntime ? loopRuntime.configPath : null;
@@ -302,6 +313,7 @@ export function renderSupervisorStatusDto(dto: SupervisorStatusDto): string {
     operatorActionLine,
     ...githubRateLimitLines,
     renderLoopRuntimeLine(dto.loopRuntime),
+    renderDecisionKernelV2StatusLine(),
     ...(duplicateLoopDiagnosticLine ? [duplicateLoopDiagnosticLine] : []),
     ...(loopRuntimeRecoveryLine ? [loopRuntimeRecoveryLine] : []),
     `trust_mode=${trustDiagnostics.trustMode}`,

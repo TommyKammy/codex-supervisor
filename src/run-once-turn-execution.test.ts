@@ -32,6 +32,14 @@ import { WORKSTATION_LOCAL_PATH_HYGIENE_REPAIRABLE_PUBLICATION_SIGNATURE } from 
 const SAMPLE_UNIX_WORKSTATION_PATH = `/${"home"}/alice/dev/private-repo`;
 const SAMPLE_MACOS_WORKSTATION_PATH = `/${"Users"}/alice/Dev/private-repo`;
 
+test("run-once turn execution does not import Decision Kernel v2 action decisions", async () => {
+  const source = await fs.readFile(path.join(process.cwd(), "src", "run-once-turn-execution.ts"), "utf8");
+
+  assert.doesNotMatch(source, /decision-kernel-v2/u);
+  assert.doesNotMatch(source, /evaluateDecisionKernelV2/u);
+  assert.doesNotMatch(source, /buildDecisionKernelV2ExplainDto/u);
+});
+
 function git(cwd: string, ...args: string[]): string {
   return execFileSync("git", ["-C", cwd, ...args], {
     encoding: "utf8",
