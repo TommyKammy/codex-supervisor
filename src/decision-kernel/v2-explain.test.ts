@@ -155,6 +155,9 @@ test("buildDecisionKernelV2ExplainDto uses PR head for current-head review obser
   assert.equal(dto.inventory?.pullRequest?.currentHeadReviewHeadSha, "head-current");
   assert.equal(dto.decision?.normalizedState.reviewPosture, "current_head_review_observed");
   assert.equal(dto.decision?.action, "no_action");
+  assert.equal(dto.comparison?.current.state, "ready_to_merge");
+  assert.equal(dto.comparison?.category, "agreement");
+  assert.deepEqual(dto.comparison?.differences, []);
 });
 
 test("buildDecisionKernelV2ExplainDto ignores malformed current-head review timestamps", () => {
@@ -175,6 +178,8 @@ test("buildDecisionKernelV2ExplainDto ignores malformed current-head review time
   assert.equal(dto.inventory?.pullRequest?.currentHeadReviewHeadSha, null);
   assert.equal(dto.decision?.normalizedState.reviewPosture, "missing_current_head_review");
   assert.equal(dto.decision?.action, "request_review");
+  assert.equal(dto.comparison?.category, "manual_review_required");
+  assert.deepEqual(dto.comparison?.differences.map((difference) => difference.field), ["action", "reason"]);
 });
 
 test("buildDecisionKernelV2ExplainDto accepts external review records as current-head review evidence", () => {

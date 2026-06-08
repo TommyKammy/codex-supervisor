@@ -4,6 +4,7 @@ import {
   hasCodexConnectorPrSuccessCurrentHeadObservation,
   type ReviewPolicyInput,
 } from "../codex-connector-review-policy";
+import { codexConnectorReviewRequestAction } from "../codex-connector-review-request-decision";
 import { displayLocalCiCommand } from "../core/config-parsing";
 import { configuredReviewProviderKinds } from "../core/review-providers";
 import type {
@@ -13,11 +14,13 @@ import type {
   ReviewThread,
   SupervisorConfig,
 } from "../core/types";
+import { buildDecisionKernelV2ComparisonDto, type DecisionKernelV2ComparisonDto } from "./v2-comparison";
 import {
   DECISION_KERNEL_V2_READ_ONLY_SCHEMA_VERSION,
   evaluateDecisionKernelV2ReadOnlyFromFacts,
   type DecisionKernelV2ReadOnlyDecision,
 } from "../decision-kernel-v2";
+import { inferStateFromPullRequest } from "../pull-request-state";
 import {
   currentHeadObservationSatisfiesActiveWait,
   hasCurrentHeadProviderSuccess,
@@ -28,7 +31,8 @@ import {
   effectiveConfiguredBotReviewThreadsForState,
   hasConfiguredProviderSuccess,
 } from "../pull-request-state-codex-residue-policy";
-import { manualReviewThreads } from "../review-thread-reporting";
+import { configuredBotReviewThreads, manualReviewThreads } from "../review-thread-reporting";
+import { mergeConflictDetected } from "../supervisor/supervisor-reporting";
 import type { PrLifecycleFactInventory } from "./pr-lifecycle-state";
 
 export interface DecisionKernelV2ExplainDto {
@@ -40,6 +44,7 @@ export interface DecisionKernelV2ExplainDto {
   inventory: PrLifecycleFactInventory | null;
   reviewPolicyInput: ReviewPolicyInput | null;
   decision: DecisionKernelV2ReadOnlyDecision | null;
+  comparison: DecisionKernelV2ComparisonDto | null;
 }
 
 export function buildDecisionKernelV2ExplainDto(args: {
@@ -112,6 +117,27 @@ export function buildDecisionKernelV2ExplainDto(args: {
       }),
     },
   });
+  const currentState = inferStateFromPullRequest(
+    args.config,
+    args.record,
+    args.pr,
+    args.checks,
+    args.reviewThreads,
+    args.nowMs,
+  );
+  const comparison = buildDecisionKernelV2ComparisonDto({
+    currentState,
+    currentActionEquivalent: currentActionEquivalentForV2Comparison({
+      config: args.config,
+      record: args.record,
+      pr: args.pr,
+      checks: args.checks,
+      reviewThreads: args.reviewThreads,
+      currentState,
+      nowMs: args.nowMs,
+    }),
+    v2Decision: decision,
+  });
 
   return {
     issueNumber: args.issueNumber,
@@ -122,6 +148,7 @@ export function buildDecisionKernelV2ExplainDto(args: {
     inventory,
     reviewPolicyInput,
     decision,
+    comparison,
   };
 }
 
@@ -176,7 +203,67 @@ export function renderDecisionKernelV2ExplainDto(dto: DecisionKernelV2ExplainDto
     );
   }
 
+  if (dto.comparison) {
+    lines.push(
+      [
+        "v2_comparison",
+        `category=${dto.comparison.category}`,
+        `current_state=${dto.comparison.current.state}`,
+        `current_action=${dto.comparison.current.actionEquivalent}`,
+        `v2_action=${dto.comparison.v2.action}`,
+        `differences=${renderComparisonDifferences(dto.comparison.differences)}`,
+        `safety=${dto.comparison.safetyNote.replace(/\s+/g, "_")}`,
+      ].join(" "),
+    );
+  }
+
   return lines.join("\n");
+}
+
+function currentActionEquivalentForV2Comparison(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+  currentState: ReturnType<typeof inferStateFromPullRequest>;
+  nowMs?: number;
+}): DecisionKernelV2ComparisonDto["current"]["actionEquivalent"] | undefined {
+  if (args.currentState !== "waiting_ci") {
+    return undefined;
+  }
+
+  const requestAction = codexConnectorReviewRequestAction({
+    config: args.config,
+    record: args.record,
+    pr: args.pr,
+    checks: args.checks,
+    reviewThreads: args.reviewThreads,
+    summarizeChecks: summarizeRequestChecks,
+    configuredBotReviewThreads,
+    manualReviewThreads,
+    mergeConflictDetected,
+    nowMs: args.nowMs === undefined ? undefined : () => args.nowMs as number,
+  });
+
+  return requestAction.kind === "none" ? undefined : "request_review";
+}
+
+function summarizeRequestChecks(checks: PullRequestCheck[]): { hasPending: boolean; hasFailing: boolean } {
+  return {
+    hasPending: checks.some((check) => check.bucket === "pending" || check.bucket === "cancel"),
+    hasFailing: checks.some((check) => check.bucket === "fail"),
+  };
+}
+
+function renderComparisonDifferences(differences: DecisionKernelV2ComparisonDto["differences"]): string {
+  if (differences.length === 0) {
+    return "none";
+  }
+
+  return differences
+    .map((difference) => `${difference.field}:${difference.current}->${difference.v2}`)
+    .join("|");
 }
 
 function missingTarget(
@@ -197,6 +284,7 @@ function missingTarget(
     inventory: null,
     reviewPolicyInput: null,
     decision: null,
+    comparison: null,
   };
 }
 
