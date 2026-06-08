@@ -7,6 +7,7 @@ import { buildCodexPrompt } from "../codex/codex-prompt";
 import { GitHubIssue, GitHubPullRequest, IssueRunRecord, ReviewThread, SupervisorConfig, WorkspaceStatus } from "../core/types";
 import { buildSupervisorCycleDecisionSnapshot } from "./supervisor-cycle-snapshot";
 import { createCheckedInReplayCorpusConfig } from "./replay-corpus-config";
+import { createConnectorReviewPolicyReplayFixtures } from "./replay-corpus-policy-fixtures";
 import { loadReplayCorpus, runReplayCorpus } from "./replay-corpus-runner";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
@@ -361,6 +362,25 @@ test("runReplayCorpus replays multiple cases in manifest order and reports norma
   assert.deepEqual(
     result.results.map((entry) => entry.actual),
     caseDefinitions.map(({ expected }) => expected),
+  );
+});
+
+test("runReplayCorpus checked-in corpus stays compatible with Connector policy replay fixtures", async () => {
+  const corpusRoot = path.join(process.cwd(), "replay-corpus");
+  const result = await runReplayCorpus(corpusRoot, createCheckedInReplayCorpusConfig(process.cwd()));
+  const policyFixtures = createConnectorReviewPolicyReplayFixtures();
+
+  assert.equal(result.mismatchCount, 0);
+  assert.ok(result.totalCases > 0);
+  assert.equal(policyFixtures.every((fixture) => fixture.policyInput.threads.length > 0), true);
+  assert.equal(
+    policyFixtures.every((fixture) =>
+      fixture.expectedThreadOutcomes.every((expected) => {
+        const actual = fixture.policyInput.threads.find((thread) => thread.id === expected.threadId);
+        return actual?.boundaryOutcome === expected.boundaryOutcome;
+      }),
+    ),
+    true,
   );
 });
 
