@@ -263,6 +263,102 @@ test("buildDecisionKernelV2ExplainDto accepts durable provider success as curren
   assert.equal(dto.decision?.action, "no_action");
 });
 
+test("buildDecisionKernelV2ExplainDto blocks merge-ready diagnostics on blocking human review decisions", () => {
+  const dto = buildDecisionKernelV2ExplainDto({
+    config: codexConfig({ humanReviewBlocksMerge: true }),
+    issueNumber: 2301,
+    title: "Phase 3.2",
+    record: record(),
+    pr: pullRequest({ reviewDecision: "REVIEW_REQUIRED" }),
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass" }],
+    reviewThreads: [],
+  });
+
+  assert.equal(dto.decision?.normalizedState.reviewPosture, "current_head_review_observed");
+  assert.equal(dto.decision?.action, "ask_operator");
+  assert.deepEqual(dto.decision?.reasons, ["insufficient_merge_evidence"]);
+});
+
+test("buildDecisionKernelV2ExplainDto requires active-wait-satisfying current-head observations", () => {
+  const dto = buildDecisionKernelV2ExplainDto({
+    config: codexConfig(),
+    issueNumber: 2301,
+    title: "Phase 3.2",
+    record: record({
+      review_wait_started_at: "2026-06-08T00:05:00.000Z",
+      review_wait_head_sha: "head-current",
+    }),
+    pr: pullRequest({
+      configuredBotCurrentHeadObservedAt: "2026-06-08T00:02:00.000Z",
+      configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    }),
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass" }],
+    reviewThreads: [],
+  });
+
+  assert.equal(dto.inventory?.pullRequest?.currentHeadReviewObservedAt, null);
+  assert.equal(dto.decision?.normalizedState.reviewPosture, "missing_current_head_review");
+  assert.equal(dto.decision?.action, "request_review");
+});
+
+test("buildDecisionKernelV2ExplainDto applies journal-only configured-bot clearance before blocking facts", () => {
+  const dto = buildDecisionKernelV2ExplainDto({
+    config: codexConfig(),
+    issueNumber: 2301,
+    title: "Phase 3.2",
+    record: record(),
+    pr: pullRequest({
+      configuredBotCurrentHeadStatusState: "SUCCESS",
+      configuredBotTopLevelReviewStrength: "nitpick_only",
+    }),
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass" }],
+    reviewThreads: [codexMustFixThread({ path: ".codex-supervisor/2301/issue-journal.md" })],
+  });
+
+  assert.equal(dto.reviewPolicyInput?.threads.length, 0);
+  assert.equal(dto.inventory?.reviewThreads.unresolvedCurrentHeadConfiguredBotThreadCount, 0);
+  assert.equal(dto.decision?.action, "no_action");
+});
+
+test("buildDecisionKernelV2ExplainDto blocks merge-ready diagnostics until mergeable is MERGEABLE", () => {
+  const dto = buildDecisionKernelV2ExplainDto({
+    config: codexConfig(),
+    issueNumber: 2301,
+    title: "Phase 3.2",
+    record: record(),
+    pr: pullRequest({ mergeable: "UNKNOWN" }),
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass" }],
+    reviewThreads: [],
+  });
+
+  assert.equal(dto.decision?.normalizedState.mergeability, "unknown");
+  assert.equal(dto.decision?.action, "ask_operator");
+  assert.deepEqual(dto.decision?.reasons, ["insufficient_merge_evidence"]);
+});
+
+test("buildDecisionKernelV2ExplainDto requires Codex no-major evidence for Codex auto-merge diagnostics", () => {
+  const dto = buildDecisionKernelV2ExplainDto({
+    config: codexConfig({ codexConnectorAutoMergeEnabled: true }),
+    issueNumber: 2301,
+    title: "Phase 3.2",
+    record: record({
+      provider_success_observed_at: "2026-06-08T00:06:00.000Z",
+      provider_success_head_sha: "head-current",
+    }),
+    pr: pullRequest({
+      configuredBotCurrentHeadObservedAt: null,
+      configuredBotCurrentHeadObservationSource: null,
+      configuredBotLatestReviewedCommitSha: null,
+    }),
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass" }],
+    reviewThreads: [],
+  });
+
+  assert.equal(dto.decision?.normalizedState.reviewPosture, "current_head_review_observed");
+  assert.equal(dto.decision?.action, "ask_operator");
+  assert.deepEqual(dto.decision?.reasons, ["insufficient_merge_evidence"]);
+});
+
 test("buildDecisionKernelV2ExplainDto respects explicit current-head signal requirements for non-Codex providers", () => {
   const dto = buildDecisionKernelV2ExplainDto({
     config: codexConfig({

@@ -57,6 +57,7 @@ export interface DecisionKernelV2CheckPolicyInput {
   noChecksAndNoLocalCi?: boolean;
   mergeReadyBlockedByLocalCi?: boolean;
   mergeReadyBlockedByRequiredChecks?: boolean;
+  mergeReadyBlockedByFinalGuard?: boolean;
 }
 
 export interface DecisionKernelV2ReadOnlyInput {
@@ -79,6 +80,7 @@ interface CheckPolicyBoundarySummary {
   noChecksAndNoLocalCi: boolean;
   mergeReadyBlockedByLocalCi: boolean;
   mergeReadyBlockedByRequiredChecks: boolean;
+  mergeReadyBlockedByFinalGuard: boolean;
 }
 
 interface ReviewPolicyBoundarySummary {
@@ -264,6 +266,7 @@ function selectReadOnlyDecision(
     (state.checkPosture === "green" || checkPolicy.noChecksAndNoLocalCi) &&
     !checkPolicy.mergeReadyBlockedByRequiredChecks &&
     !checkPolicy.mergeReadyBlockedByLocalCi &&
+    !checkPolicy.mergeReadyBlockedByFinalGuard &&
     state.mergeability === "mergeable"
   ) {
     return decision(
@@ -287,6 +290,7 @@ function summarizeCheckPolicyBoundaries(value: DecisionKernelV2CheckPolicyInput 
     noChecksAndNoLocalCi: value?.noChecksAndNoLocalCi === true,
     mergeReadyBlockedByLocalCi: value?.mergeReadyBlockedByLocalCi === true,
     mergeReadyBlockedByRequiredChecks: value?.mergeReadyBlockedByRequiredChecks === true,
+    mergeReadyBlockedByFinalGuard: value?.mergeReadyBlockedByFinalGuard === true,
   };
 }
 

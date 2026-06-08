@@ -1,6 +1,7 @@
 import {
   buildReviewPolicyInput,
   commitShasEqualForComparison,
+  hasCodexConnectorPrSuccessCurrentHeadObservation,
   type ReviewPolicyInput,
 } from "../codex-connector-review-policy";
 import { displayLocalCiCommand } from "../core/config-parsing";
@@ -17,9 +18,12 @@ import {
   type DecisionKernelV2ReadOnlyDecision,
 } from "../decision-kernel-v2";
 import {
+  currentHeadObservationSatisfiesActiveWait,
   hasCurrentHeadProviderSuccess,
   requiresConfiguredBotCurrentHeadSignal,
 } from "../pull-request-state-current-head-policy";
+import { effectiveConfiguredBotReviewThreadsForState } from "../pull-request-state-codex-residue-policy";
+import { manualReviewThreads } from "../review-thread-reporting";
 import type { PrLifecycleFactInventory } from "./pr-lifecycle-state";
 
 export interface DecisionKernelV2ExplainDto {
@@ -55,11 +59,18 @@ export function buildDecisionKernelV2ExplainDto(args: {
     return missingTarget(args, "missing_pull_request", "Open or restore the tracked pull request before running v2 explain.");
   }
 
+  const effectiveReviewThreads = effectiveReviewThreadsForV2Explain({
+    config: args.config,
+    pr: args.pr,
+    record: args.record,
+    checks: args.checks,
+    reviewThreads: args.reviewThreads,
+  });
   const reviewPolicyInput = buildReviewPolicyInput({
     config: args.config,
     pr: args.pr,
     record: args.record,
-    reviewThreads: args.reviewThreads,
+    reviewThreads: effectiveReviewThreads,
   });
   const inventory = buildPrLifecycleFactInventory({
     config: args.config,
@@ -83,6 +94,13 @@ export function buildDecisionKernelV2ExplainDto(args: {
         config: args.config,
         record: args.record,
         pr: args.pr,
+      }),
+      mergeReadyBlockedByFinalGuard: mergeReadyBlockedByFinalGuard({
+        config: args.config,
+        record: args.record,
+        pr: args.pr,
+        checks: args.checks,
+        reviewThreads: args.reviewThreads,
       }),
     },
   });
@@ -218,7 +236,10 @@ function currentHeadReviewEvidenceFromPolicyInput(args: {
   record: IssueRunRecord;
   reviewPolicyInput: ReviewPolicyInput;
 }): { observedAt: string | null; headSha: string | null } {
-  if (args.reviewPolicyInput.pr.currentHeadObservedAt) {
+  if (
+    args.reviewPolicyInput.pr.currentHeadObservedAt &&
+    currentHeadObservationSatisfiesActiveWait(args.record, args.pr)
+  ) {
     return {
       observedAt: args.reviewPolicyInput.pr.currentHeadObservedAt,
       headSha: args.pr.headRefOid,
@@ -263,6 +284,64 @@ function localCiPassedCurrentHead(args: {
 }): boolean {
   const latestLocalCi = args.record.latest_local_ci_result ?? null;
   return latestLocalCi?.outcome === "passed" && commitShasEqualForComparison(latestLocalCi.head_sha, args.pr.headRefOid);
+}
+
+function effectiveReviewThreadsForV2Explain(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+}): ReviewThread[] {
+  return [
+    ...manualReviewThreads(args.config, args.reviewThreads),
+    ...effectiveConfiguredBotReviewThreadsForState(
+      args.config,
+      args.record,
+      args.pr,
+      args.checks,
+      args.reviewThreads,
+    ),
+  ];
+}
+
+function mergeReadyBlockedByFinalGuard(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+}): boolean {
+  if (args.pr.mergeable !== "MERGEABLE") {
+    return true;
+  }
+
+  if (args.config.humanReviewBlocksMerge && isBlockingHumanReviewDecision(args.pr)) {
+    return true;
+  }
+
+  if (args.config.codexConnectorAutoMergeEnabled === true && !hasCurrentHeadCodexNoMajor(args.record, args.pr)) {
+    return true;
+  }
+
+  return effectiveConfiguredBotReviewThreadsForState(
+    args.config,
+    args.record,
+    args.pr,
+    args.checks,
+    args.reviewThreads,
+  ).length > 0;
+}
+
+function isBlockingHumanReviewDecision(pr: GitHubPullRequest): boolean {
+  return (
+    pr.reviewDecision === "REVIEW_REQUIRED" ||
+    (pr.reviewDecision === "CHANGES_REQUESTED" && pr.configuredBotTopLevelReviewStrength !== "nitpick_only")
+  );
+}
+
+function hasCurrentHeadCodexNoMajor(record: IssueRunRecord, pr: GitHubPullRequest): boolean {
+  return hasCurrentHeadProviderSuccess(record, pr) && hasCodexConnectorPrSuccessCurrentHeadObservation(pr);
 }
 
 function summarizeCheckFacts(checks: PullRequestCheck[]): PrLifecycleFactInventory["checks"] {
