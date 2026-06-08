@@ -362,10 +362,10 @@ function reviewPolicyBoundaryOutcome(args: {
     return "softened_p3_advisory";
   }
   if (args.findingKind === "must_fix") {
-    if (args.isEscalatedP3) {
-      return "escalated_p3";
+    if (args.headRelation !== "current_head") {
+      return "metadata_only_unresolved";
     }
-    return args.headRelation === "current_head" ? "must_fix_current_head" : "metadata_only_unresolved";
+    return args.isEscalatedP3 ? "escalated_p3" : "must_fix_current_head";
   }
   if (args.isConfiguredBotThread) {
     return "configured_bot_thread";

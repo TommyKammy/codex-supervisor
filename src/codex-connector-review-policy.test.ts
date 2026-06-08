@@ -376,6 +376,10 @@ test("review policy input exposes typed boundary outcomes for current-head and m
     id: "thread-metadata-only",
     body: "P2: Older finding that lacks current-head processing evidence.",
   });
+  const metadataOnlyP3RiskThread = codexThread({
+    id: "thread-metadata-only-p3-risk",
+    body: "P3: This cleanup can cause a regression before the current-head review is observed.",
+  });
   const manualThread = createReviewThread({
     id: "thread-manual-current",
     comments: {
@@ -418,7 +422,14 @@ test("review policy input exposes typed boundary outcomes for current-head and m
         "thread-p3-soft-current@head-new#comment-1",
       ],
     },
-    reviewThreads: [p1Thread, p3RiskThread, p3NitpickThread, metadataOnlyThread, manualThread],
+    reviewThreads: [
+      p1Thread,
+      p3RiskThread,
+      p3NitpickThread,
+      metadataOnlyThread,
+      metadataOnlyP3RiskThread,
+      manualThread,
+    ],
   });
 
   assert.deepEqual(
@@ -428,6 +439,7 @@ test("review policy input exposes typed boundary outcomes for current-head and m
       ["thread-p3-risk-current", "escalated_p3"],
       ["thread-p3-soft-current", "softened_p3_advisory"],
       ["thread-metadata-only", "metadata_only_unresolved"],
+      ["thread-metadata-only-p3-risk", "metadata_only_unresolved"],
       ["thread-manual-current", "manual_thread"],
     ],
   );
