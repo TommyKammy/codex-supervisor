@@ -196,28 +196,13 @@ function processedThreadFingerprintKey(threadId: string, headSha: string, latest
 
 function processedThreadHeadShas(args: {
   processedThreadKeys: string[];
-  processedThreadFingerprintKeys: string[];
   threadId: string;
 }): string[] {
   const prefix = `${args.threadId}@`;
-  const headShas = new Set<string>();
-  for (const key of args.processedThreadKeys) {
-    if (key.startsWith(prefix)) {
-      const headSha = key.slice(prefix.length);
-      if (headSha) {
-        headShas.add(headSha);
-      }
-    }
-  }
-  for (const key of args.processedThreadFingerprintKeys) {
-    if (key.startsWith(prefix)) {
-      const headSha = key.slice(prefix.length).split("#", 1)[0];
-      if (headSha) {
-        headShas.add(headSha);
-      }
-    }
-  }
-  return [...headShas];
+  return args.processedThreadKeys
+    .filter((key) => key.startsWith(prefix))
+    .map((key) => key.slice(prefix.length))
+    .filter((headSha) => headSha.length > 0);
 }
 
 function hasProcessedThreadFingerprintForHead(args: {
@@ -271,7 +256,6 @@ function processedOnPriorHead(args: {
 }): boolean {
   return processedThreadHeadShas({
     processedThreadKeys: args.processedThreadKeys,
-    processedThreadFingerprintKeys: args.processedThreadFingerprintKeys,
     threadId: args.thread.id,
   }).some(
     (headSha) =>
@@ -397,8 +381,9 @@ export function buildReviewPolicyInput(args: {
       const isConfiguredBotThread = comments.some((comment) =>
         Boolean(comment.normalizedAuthorLogin && configuredBotLoginSet.has(comment.normalizedAuthorLogin)),
       );
-      const isManualThread = !thread.isResolved && !thread.isOutdated && comments.length > 0 && !isConfiguredBotThread;
-      const latestCommentFingerprintValue = latestCodexConnectorReviewCommentFingerprint(thread) ?? latestCommentFingerprint(thread);
+      const isManualThread = comments.length > 0 && !isConfiguredBotThread;
+      const latestThreadCommentFingerprint = latestCommentFingerprint(thread);
+      const latestCommentFingerprintValue = latestCodexConnectorReviewCommentFingerprint(thread) ?? latestThreadCommentFingerprint;
       const processedThreadKeys = [...(args.record.processed_review_thread_ids ?? [])];
       const processedThreadFingerprintKeys = [...(args.record.processed_review_thread_fingerprints ?? [])];
       const processedOnCurrentHeadValue = processedOnHead({
@@ -415,7 +400,7 @@ export function buildReviewPolicyInput(args: {
         processedThreadFingerprintKeys,
         pr: args.pr,
         thread,
-        latestCommentFingerprint: latestCommentFingerprintValue,
+        latestCommentFingerprint: latestThreadCommentFingerprint,
       });
       const headRelation: ReviewPolicyHeadRelation = staleCommitThreadIds.has(thread.id)
         ? "stale_commit"

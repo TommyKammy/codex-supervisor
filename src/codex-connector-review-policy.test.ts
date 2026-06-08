@@ -216,6 +216,20 @@ test("review policy input snapshots provider, PR, thread vocabulary, and process
   }).threads[0];
   assert.equal(priorIdOnlyInput?.processedEvidence.processedOnPriorHead, true);
 
+  const priorFingerprintOnlyInput = buildReviewPolicyInput({
+    config,
+    pr,
+    record: {
+      provider_success_head_sha: null,
+      external_review_head_sha: null,
+      last_head_sha: "head-new",
+      processed_review_thread_ids: [],
+      processed_review_thread_fingerprints: ["thread-p3-softened@head-old#comment-1"],
+    },
+    reviewThreads: [p3NitpickThread],
+  }).threads[0];
+  assert.equal(priorFingerprintOnlyInput?.processedEvidence.processedOnPriorHead, false);
+
   const outdatedInput = buildReviewPolicyInput({
     config,
     pr: {
@@ -235,6 +249,20 @@ test("review policy input snapshots provider, PR, thread vocabulary, and process
   assert.equal(outdatedInput?.headRelation, "unknown");
   assert.equal(outdatedInput?.findingKind, "none");
   assert.deepEqual(outdatedInput?.vocabulary, ["configured_bot_thread"]);
+
+  const outdatedManualInput = buildReviewPolicyInput({
+    config,
+    pr,
+    record: {
+      provider_success_head_sha: null,
+      external_review_head_sha: null,
+      last_head_sha: "head-new",
+      processed_review_thread_ids: [],
+      processed_review_thread_fingerprints: [],
+    },
+    reviewThreads: [{ ...manualThread, id: "thread-manual-outdated", isOutdated: true }],
+  }).threads[0];
+  assert.deepEqual(outdatedManualInput?.vocabulary, ["manual_thread"]);
 
   const codexReplyThread = createReviewThread({
     id: "thread-codex-replied",
@@ -276,6 +304,20 @@ test("review policy input snapshots provider, PR, thread vocabulary, and process
     reviewThreads: [codexReplyThread],
   }).threads[0];
   assert.equal(codexReplyInput?.processedEvidence.processedOnCurrentHead, true);
+
+  const priorCodexReplyInput = buildReviewPolicyInput({
+    config,
+    pr,
+    record: {
+      provider_success_head_sha: null,
+      external_review_head_sha: null,
+      last_head_sha: "head-new",
+      processed_review_thread_ids: ["thread-codex-replied@head-old"],
+      processed_review_thread_fingerprints: ["thread-codex-replied@head-old#comment-supervisor-reply"],
+    },
+    reviewThreads: [codexReplyThread],
+  }).threads[0];
+  assert.equal(priorCodexReplyInput?.processedEvidence.processedOnPriorHead, true);
 
   const fingerprintOnlyInput = buildReviewPolicyInput({
     config,
