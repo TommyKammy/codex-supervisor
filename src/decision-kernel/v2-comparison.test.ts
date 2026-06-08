@@ -102,6 +102,29 @@ test("buildDecisionKernelV2ComparisonDto does not equate loop-advanceable PR sta
   }
 });
 
+test("buildDecisionKernelV2ComparisonDto preserves request-review equivalence for request-eligible waits", () => {
+  const comparison = buildDecisionKernelV2ComparisonDto({
+    currentState: "waiting_ci",
+    currentActionEquivalent: "request_review",
+    v2Decision: v2Decision({
+      action: "request_review",
+      reasons: ["missing_current_head_review"],
+      requiredEvidence: ["current_head_review"],
+      summary: "Current-head review evidence is missing.",
+    }),
+  });
+
+  assert.equal(comparison.current.actionEquivalent, "request_review");
+  assert.equal(comparison.category, "agreement");
+  assert.deepEqual(comparison.differences, [
+    {
+      field: "reason",
+      current: "checks_pending",
+      v2: "missing_current_head_review",
+    },
+  ]);
+});
+
 test("buildDecisionKernelV2ComparisonDto fails closed on unsafe or ambiguous divergence", () => {
   const comparison = buildDecisionKernelV2ComparisonDto({
     currentState: "blocked",

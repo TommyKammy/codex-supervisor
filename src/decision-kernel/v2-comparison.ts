@@ -32,9 +32,10 @@ export interface DecisionKernelV2ComparisonDto {
 
 export function buildDecisionKernelV2ComparisonDto(args: {
   currentState: RunState;
+  currentActionEquivalent?: DecisionKernelV2Action;
   v2Decision: DecisionKernelV2ReadOnlyDecision;
 }): DecisionKernelV2ComparisonDto {
-  const currentActionEquivalent = actionEquivalentForCurrentState(args.currentState);
+  const currentActionEquivalent = args.currentActionEquivalent ?? actionEquivalentForCurrentState(args.currentState);
   const differences = compareDecisionFields({
     currentState: args.currentState,
     currentActionEquivalent,

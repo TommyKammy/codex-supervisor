@@ -4,6 +4,7 @@ import {
   hasCodexConnectorPrSuccessCurrentHeadObservation,
   type ReviewPolicyInput,
 } from "../codex-connector-review-policy";
+import { codexConnectorReviewRequestAction } from "../codex-connector-review-request-decision";
 import { displayLocalCiCommand } from "../core/config-parsing";
 import { configuredReviewProviderKinds } from "../core/review-providers";
 import type {
@@ -30,7 +31,8 @@ import {
   effectiveConfiguredBotReviewThreadsForState,
   hasConfiguredProviderSuccess,
 } from "../pull-request-state-codex-residue-policy";
-import { manualReviewThreads } from "../review-thread-reporting";
+import { configuredBotReviewThreads, manualReviewThreads } from "../review-thread-reporting";
+import { mergeConflictDetected } from "../supervisor/supervisor-reporting";
 import type { PrLifecycleFactInventory } from "./pr-lifecycle-state";
 
 export interface DecisionKernelV2ExplainDto {
@@ -125,6 +127,15 @@ export function buildDecisionKernelV2ExplainDto(args: {
   );
   const comparison = buildDecisionKernelV2ComparisonDto({
     currentState,
+    currentActionEquivalent: currentActionEquivalentForV2Comparison({
+      config: args.config,
+      record: args.record,
+      pr: args.pr,
+      checks: args.checks,
+      reviewThreads: args.reviewThreads,
+      currentState,
+      nowMs: args.nowMs,
+    }),
     v2Decision: decision,
   });
 
@@ -207,6 +218,42 @@ export function renderDecisionKernelV2ExplainDto(dto: DecisionKernelV2ExplainDto
   }
 
   return lines.join("\n");
+}
+
+function currentActionEquivalentForV2Comparison(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+  currentState: ReturnType<typeof inferStateFromPullRequest>;
+  nowMs?: number;
+}): DecisionKernelV2ComparisonDto["current"]["actionEquivalent"] | undefined {
+  if (args.currentState !== "waiting_ci") {
+    return undefined;
+  }
+
+  const requestAction = codexConnectorReviewRequestAction({
+    config: args.config,
+    record: args.record,
+    pr: args.pr,
+    checks: args.checks,
+    reviewThreads: args.reviewThreads,
+    summarizeChecks: summarizeRequestChecks,
+    configuredBotReviewThreads,
+    manualReviewThreads,
+    mergeConflictDetected,
+    nowMs: args.nowMs === undefined ? undefined : () => args.nowMs as number,
+  });
+
+  return requestAction.kind === "none" ? undefined : "request_review";
+}
+
+function summarizeRequestChecks(checks: PullRequestCheck[]): { hasPending: boolean; hasFailing: boolean } {
+  return {
+    hasPending: checks.some((check) => check.bucket === "pending" || check.bucket === "cancel"),
+    hasFailing: checks.some((check) => check.bucket === "fail"),
+  };
 }
 
 function renderComparisonDifferences(differences: DecisionKernelV2ComparisonDto["differences"]): string {
