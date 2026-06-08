@@ -695,12 +695,8 @@ export async function buildSupervisorV2ExplainReport(args: {
   issueNumber: number;
 }): Promise<DecisionKernelV2ExplainDto> {
   const state = await args.stateStore.load();
-  const trackedPrOwners = Object.values(state.issues).filter((record) => record.pr_number === args.issueNumber);
-  const record = trackedPrOwners.length === 1
-    ? trackedPrOwners[0] ?? null
-    : state.issues[String(args.issueNumber)] ?? null;
-  const issueNumber = record?.issue_number ?? args.issueNumber;
-  const issue = await args.github.getIssue(issueNumber);
+  const record = state.issues[String(args.issueNumber)] ?? null;
+  const issue = await args.github.getIssue(args.issueNumber);
   let pr: GitHubPullRequest | null = null;
   let checks: PullRequestCheck[] = [];
   let reviewThreads: ReviewThread[] = [];
