@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   codexConnectorCurrentHeadReviewReadiness,
   codexConnectorReviewRequestAction,
+  codexConnectorReviewRequestPolicy,
 } from "./codex-connector-review-request-decision";
 import {
   codexConnectorPassingChecks,
@@ -94,8 +95,73 @@ function decideScenario(scenario: CodexConnectorReviewRequestScenario) {
   });
 }
 
+function policy(overrides: Partial<Parameters<typeof codexConnectorReviewRequestPolicy>[0]> = {}) {
+  const base: Parameters<typeof codexConnectorReviewRequestPolicy>[0] = {
+    configuredProviderKinds: ["codex"],
+    timeoutAction: "request_review_comment",
+    currentHeadSha: "head-1995",
+    currentHeadObservedAt: null,
+    latestReviewedCommitSha: null,
+    providerSuccessHeadSha: null,
+    externalReviewHeadSha: null,
+    staleReviewClassification: null,
+    staleReviewCommitThreadCount: 0,
+    hasCurrentHeadRequestTrigger: true,
+    currentHeadReviewRequestTimedOut: true,
+    readiness: { kind: "eligible" },
+    recordRequest: { requestedAt: null, headSha: null },
+    prRequest: { requestedAt: null, headSha: null },
+    hasRequestCommentIdentity: false,
+    retryLimit: 1,
+    retryCountForCurrentHead: 0,
+    retryAnchorAt: null,
+    retryNoResponseMinutes: 10,
+    nowMs: Date.parse("2026-05-08T03:30:00Z"),
+  };
+
+  return codexConnectorReviewRequestPolicy({ ...base, ...overrides });
+}
+
 test("codexConnectorReviewRequestAction selects an initial request without GitHub mutation inputs", () => {
   assert.deepEqual(decide(), { kind: "initial" });
+});
+
+test("codexConnectorReviewRequestPolicy returns an initial request outcome when eligible and unrequested", () => {
+  assert.deepEqual(policy(), {
+    outcome: "request_initial",
+    reason: "request_not_yet_sent_for_current_head",
+    action: { kind: "initial" },
+  });
+});
+
+test("codexConnectorReviewRequestPolicy blocks manual review threads before request mutation", () => {
+  assert.deepEqual(policy({ readiness: { kind: "none", reason: "manual_review_threads" } }), {
+    outcome: "block",
+    reason: "readiness_not_eligible",
+    action: { kind: "none" },
+  });
+});
+
+test("codexConnectorReviewRequestPolicy classifies metadata-only stale review state as advisory", () => {
+  assert.deepEqual(policy({ staleReviewClassification: "metadata_only_current_head_converged" }), {
+    outcome: "advisory",
+    reason: "metadata_only_stale_review",
+    action: { kind: "none" },
+  });
+});
+
+test("codexConnectorReviewRequestPolicy returns retry outcome after the no-response wait expires", () => {
+  assert.deepEqual(
+    policy({
+      recordRequest: { requestedAt: "2026-05-08T03:10:00Z", headSha: "head-1995" },
+      retryAnchorAt: "2026-05-08T03:10:00Z",
+    }),
+    {
+      outcome: "request_retry",
+      reason: "retry_ready",
+      action: { kind: "retry", retryCount: 0, retryAttempt: 1 },
+    },
+  );
 });
 
 test("codexConnectorCurrentHeadReviewReadiness exposes shared wait/request gating vocabulary", () => {
