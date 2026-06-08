@@ -27,6 +27,7 @@ export type DecisionKernelV2Reason =
   | "metadata_only_review_residue"
   | "current_head_must_fix_review"
   | "stale_commit_review"
+  | "review_policy_input_mismatch"
   | "missing_current_head_review"
   | "checks_failing"
   | "checks_pending"
@@ -39,6 +40,7 @@ export type DecisionKernelV2RequiredEvidence =
   | "current_head"
   | "fresh_local_state"
   | "current_head_review"
+  | "matching_review_policy_input"
   | "resolved_manual_threads"
   | "resolved_metadata_residue"
   | "green_checks"
@@ -70,13 +72,14 @@ interface ReviewPolicyBoundarySummary {
   metadataOnly: number;
   manual: number;
   staleCommit: number;
+  inputMismatch: boolean;
 }
 
 export function evaluateDecisionKernelV2ReadOnly(
   input: DecisionKernelV2ReadOnlyInput,
 ): DecisionKernelV2ReadOnlyDecision {
   const normalizedState = snapshotNormalizedState(input.normalizedState);
-  const reviewPolicy = summarizeReviewPolicyBoundaries(input.reviewPolicyInput ?? null);
+  const reviewPolicy = summarizeReviewPolicyBoundaries(input.reviewPolicyInput ?? null, normalizedState);
   const selected = selectReadOnlyDecision(normalizedState, reviewPolicy);
 
   return {
@@ -129,12 +132,12 @@ function selectReadOnlyDecision(
     );
   }
 
-  if (reviewPolicy.currentHeadMustFix > 0 || state.evidence.currentHeadConfiguredBotThreadCount > 0) {
+  if (reviewPolicy.inputMismatch) {
     return decision(
-      "run_codex",
-      ["current_head_must_fix_review"],
-      ["current_head_review", "resolved_manual_threads"],
-      "Current-head review findings require source repair.",
+      "ask_operator",
+      ["review_policy_input_mismatch"],
+      ["matching_review_policy_input"],
+      "Review policy input does not match the normalized pull request facts.",
     );
   }
 
@@ -144,6 +147,15 @@ function selectReadOnlyDecision(
       ["manual_review_thread"],
       ["resolved_manual_threads"],
       "Manual review threads require operator review.",
+    );
+  }
+
+  if (reviewPolicy.currentHeadMustFix > 0 || state.evidence.currentHeadConfiguredBotThreadCount > 0) {
+    return decision(
+      "run_codex",
+      ["current_head_must_fix_review"],
+      ["current_head_review", "resolved_manual_threads"],
+      "Current-head review findings require source repair.",
     );
   }
 
@@ -165,15 +177,6 @@ function selectReadOnlyDecision(
     );
   }
 
-  if (state.reviewPosture === "missing_current_head_review") {
-    return decision(
-      "request_review",
-      ["missing_current_head_review"],
-      ["current_head_review"],
-      "Current-head review evidence is missing.",
-    );
-  }
-
   if (state.checkPosture === "failing") {
     return decision("run_codex", ["checks_failing"], ["green_checks"], "Required checks are failing.");
   }
@@ -184,6 +187,15 @@ function selectReadOnlyDecision(
 
   if (state.checkPosture === "unknown") {
     return decision("wait", ["checks_unknown"], ["green_checks"], "Required check status is unknown.");
+  }
+
+  if (state.reviewPosture === "missing_current_head_review") {
+    return decision(
+      "request_review",
+      ["missing_current_head_review"],
+      ["current_head_review"],
+      "Current-head review evidence is missing.",
+    );
   }
 
   if (
@@ -218,18 +230,30 @@ function decision(
   return { action, reasons, requiredEvidence, summary };
 }
 
-function summarizeReviewPolicyBoundaries(value: ReviewPolicyInput | null): ReviewPolicyBoundarySummary {
+function summarizeReviewPolicyBoundaries(
+  value: ReviewPolicyInput | null,
+  state: NormalizedPrLifecycleState,
+): ReviewPolicyBoundarySummary {
   const summary: ReviewPolicyBoundarySummary = {
     currentHeadMustFix: 0,
     metadataOnly: 0,
     manual: 0,
     staleCommit: 0,
+    inputMismatch: false,
   };
+
+  if (value && (value.pr.number !== state.pullRequestNumber || value.pr.headSha !== state.headSha)) {
+    summary.inputMismatch = true;
+    return summary;
+  }
 
   for (const thread of value?.threads ?? []) {
     if (isCurrentHeadMustFixBoundary(thread.boundaryOutcome)) {
       summary.currentHeadMustFix += 1;
-    } else if (thread.boundaryOutcome === "metadata_only_unresolved") {
+    } else if (
+      thread.boundaryOutcome === "metadata_only_unresolved" ||
+      thread.boundaryOutcome === "configured_bot_thread"
+    ) {
       summary.metadataOnly += 1;
     } else if (thread.boundaryOutcome === "manual_thread") {
       summary.manual += 1;

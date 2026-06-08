@@ -53,7 +53,10 @@ function state(overrides: Partial<PrLifecycleFactInventory> = {}): NormalizedPrL
   return normalizePrLifecycleFacts(inventory(overrides));
 }
 
-function reviewPolicyInput(outcomes: Array<ReviewPolicyInput["threads"][number]["boundaryOutcome"]>): ReviewPolicyInput {
+function reviewPolicyInput(
+  outcomes: Array<ReviewPolicyInput["threads"][number]["boundaryOutcome"]>,
+  overrides: Partial<ReviewPolicyInput["pr"]> = {},
+): ReviewPolicyInput {
   return {
     providerIdentity: {
       configuredProviderKinds: ["codex"],
@@ -67,6 +70,7 @@ function reviewPolicyInput(outcomes: Array<ReviewPolicyInput["threads"][number][
       providerSuccessHeadSha: null,
       externalReviewHeadSha: null,
       currentHeadCiGreenAt: "2026-06-08T00:02:00.000Z",
+      ...overrides,
     },
     threads: outcomes.map((boundaryOutcome, index) => ({
       id: `thread-${index}`,
@@ -184,6 +188,73 @@ test("evaluateDecisionKernelV2ReadOnly keeps metadata residue distinct from sour
   const decision = evaluateDecisionKernelV2ReadOnly({
     normalizedState: state(),
     reviewPolicyInput: reviewPolicyInput(["metadata_only_unresolved"]),
+  });
+
+  assert.equal(decision.action, "ask_operator");
+  assert.deepEqual(decision.reasons, ["metadata_only_review_residue"]);
+  assert.deepEqual(decision.requiredEvidence, ["resolved_metadata_residue"]);
+});
+
+test("evaluateDecisionKernelV2ReadOnly honors manual review blockers before bot repairs", () => {
+  const decision = evaluateDecisionKernelV2ReadOnly({
+    normalizedState: state({
+      reviewThreads: {
+        unresolvedManualThreadCount: 1,
+        unresolvedCurrentHeadConfiguredBotThreadCount: 1,
+        stalePreviousHeadConfiguredBotThreadCount: 0,
+        metadataOnlyUnresolvedThreadCount: 0,
+      },
+    }),
+    reviewPolicyInput: reviewPolicyInput(["must_fix_current_head"]),
+  });
+
+  assert.equal(decision.action, "ask_operator");
+  assert.deepEqual(decision.reasons, ["manual_review_thread"]);
+  assert.deepEqual(decision.requiredEvidence, ["resolved_manual_threads"]);
+});
+
+test("evaluateDecisionKernelV2ReadOnly waits for checks before requesting review", () => {
+  const decision = evaluateDecisionKernelV2ReadOnlyFromFacts({
+    inventory: inventory({
+      pullRequest: {
+        number: 2300,
+        headSha: "head-current",
+        state: "OPEN",
+        isDraft: false,
+        mergeStateStatus: "CLEAN",
+        mergeable: "MERGEABLE",
+        currentHeadReviewObservedAt: null,
+        currentHeadReviewHeadSha: null,
+      },
+      checks: {
+        passingCount: 1,
+        pendingCount: 1,
+        failingCount: 0,
+        unknownCount: 0,
+      },
+    }),
+  });
+
+  assert.equal(decision.action, "wait");
+  assert.deepEqual(decision.reasons, ["checks_pending"]);
+  assert.deepEqual(decision.requiredEvidence, ["green_checks"]);
+});
+
+test("evaluateDecisionKernelV2ReadOnly fails closed on mismatched review policy input", () => {
+  const decision = evaluateDecisionKernelV2ReadOnly({
+    normalizedState: state(),
+    reviewPolicyInput: reviewPolicyInput(["must_fix_current_head"], { headSha: "head-old" }),
+  });
+
+  assert.equal(decision.action, "ask_operator");
+  assert.deepEqual(decision.reasons, ["review_policy_input_mismatch"]);
+  assert.deepEqual(decision.requiredEvidence, ["matching_review_policy_input"]);
+});
+
+test("evaluateDecisionKernelV2ReadOnly treats configured-bot residue as metadata cleanup", () => {
+  const decision = evaluateDecisionKernelV2ReadOnly({
+    normalizedState: state(),
+    reviewPolicyInput: reviewPolicyInput(["configured_bot_thread"]),
   });
 
   assert.equal(decision.action, "ask_operator");
