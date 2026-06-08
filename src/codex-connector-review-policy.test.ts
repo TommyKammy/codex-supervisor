@@ -478,6 +478,11 @@ test("Codex Connector policy diagnostics and convergence stay focused in the pol
   };
   assert.equal(buildCodexConnectorPolicyBlockDiagnostic(config, [p1Thread], stalePr), null);
   assert.equal(buildCodexConnectorP2P3PolicyDiagnostic(config, [p1Thread], stalePr), null);
+  const staleP3NitpickThread = codexThread({
+    id: "thread-stale-p3-nitpick",
+    body: "P3: Nitpick: prefer a shorter helper name for readability.",
+  });
+  assert.equal(buildCodexConnectorP2P3PolicyDiagnostic(config, [p1Thread, staleP3NitpickThread], stalePr), null);
   assert.equal(
     evaluateCodexConnectorConvergencePolicy(config, { configuredBotCurrentHeadObservedAt: "2026-03-11T00:04:00Z" }, [
       p0Thread,

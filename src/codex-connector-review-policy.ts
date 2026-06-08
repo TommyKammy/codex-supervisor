@@ -721,6 +721,15 @@ function formatDiagnosticToken(value: string): string {
   return value.replace(/\s+/g, "_");
 }
 
+function hasPendingCurrentHeadReviewSignal(
+  pr: Pick<GitHubPullRequest, "headRefOid" | "configuredBotCurrentHeadObservedAt" | "configuredBotLatestReviewedCommitSha">,
+): boolean {
+  return Boolean(
+    !validPolicyTimestamp(pr.configuredBotCurrentHeadObservedAt) &&
+      commitShasDifferForComparison(pr.configuredBotLatestReviewedCommitSha, pr.headRefOid),
+  );
+}
+
 function buildDiagnosticReviewPolicyInput(
   config: SupervisorConfig,
   reviewThreads: ReviewThread[],
@@ -848,6 +857,9 @@ export function buildCodexConnectorP2P3PolicyDiagnostic(
   pr?: Pick<GitHubPullRequest, "headRefOid" | "configuredBotCurrentHeadObservedAt" | "configuredBotLatestReviewedCommitSha">,
 ): CodexConnectorP2P3PolicyDiagnostic | null {
   if (!configuredReviewProviderKinds(config).includes("codex")) {
+    return null;
+  }
+  if (pr && hasPendingCurrentHeadReviewSignal(pr)) {
     return null;
   }
   const policyInput = buildDiagnosticReviewPolicyInput(config, reviewThreads, pr);
