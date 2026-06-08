@@ -80,3 +80,27 @@ test("buildDecisionKernelV2ExplainDto uses PR head for current-head review obser
   assert.equal(dto.decision?.normalizedState.reviewPosture, "current_head_review_observed");
   assert.equal(dto.decision?.action, "no_action");
 });
+
+test("buildDecisionKernelV2ExplainDto ignores malformed current-head review timestamps", () => {
+  const dto = buildDecisionKernelV2ExplainDto({
+    config: {
+      reviewBotLogins: ["chatgpt-codex-connector"],
+      configuredReviewProviders: [{ kind: "codex", reviewerLogins: ["chatgpt-codex-connector"], signalSource: "review_threads" }],
+      localCiCommand: undefined,
+    } as unknown as SupervisorConfig,
+    issueNumber: 2301,
+    title: "Phase 3.2",
+    record: record(),
+    pr: pullRequest({
+      configuredBotCurrentHeadObservedAt: "not-a-date",
+      configuredBotLatestReviewedCommitSha: "head-current",
+    }),
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass" }],
+    reviewThreads: [],
+  });
+
+  assert.equal(dto.inventory?.pullRequest?.currentHeadReviewObservedAt, null);
+  assert.equal(dto.inventory?.pullRequest?.currentHeadReviewHeadSha, null);
+  assert.equal(dto.decision?.normalizedState.reviewPosture, "missing_current_head_review");
+  assert.equal(dto.decision?.action, "request_review");
+});
