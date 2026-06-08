@@ -118,6 +118,7 @@ test("review policy input snapshots provider, PR, thread vocabulary, and process
     record: {
       provider_success_head_sha: "HEAD-OLD",
       external_review_head_sha: "HEAD-NEW",
+      last_head_sha: "head-new",
       processed_review_thread_ids: ["thread-p3-softened@head-new", "thread-p2@head-old"],
       processed_review_thread_fingerprints: [
         "thread-p3-softened@head-new#comment-1",
@@ -177,6 +178,7 @@ test("review policy input snapshots provider, PR, thread vocabulary, and process
     record: {
       provider_success_head_sha: null,
       external_review_head_sha: null,
+      last_head_sha: "head-new",
       processed_review_thread_ids: ["thread-p3-softened@head-new"],
       processed_review_thread_fingerprints: [],
     },
@@ -191,6 +193,7 @@ test("review policy input snapshots provider, PR, thread vocabulary, and process
     record: {
       provider_success_head_sha: null,
       external_review_head_sha: null,
+      last_head_sha: "head-new",
       processed_review_thread_ids: ["thread-p3-softened@head-new"],
       processed_review_thread_fingerprints: ["thread-p3-softened@head-new#old-comment"],
     },
@@ -205,6 +208,7 @@ test("review policy input snapshots provider, PR, thread vocabulary, and process
     record: {
       provider_success_head_sha: null,
       external_review_head_sha: null,
+      last_head_sha: "head-new",
       processed_review_thread_ids: ["thread-p3-softened@head-old"],
       processed_review_thread_fingerprints: [],
     },
@@ -222,6 +226,7 @@ test("review policy input snapshots provider, PR, thread vocabulary, and process
     record: {
       provider_success_head_sha: null,
       external_review_head_sha: null,
+      last_head_sha: "head-new",
       processed_review_thread_ids: [],
       processed_review_thread_fingerprints: [],
     },
@@ -230,6 +235,75 @@ test("review policy input snapshots provider, PR, thread vocabulary, and process
   assert.equal(outdatedInput?.headRelation, "unknown");
   assert.equal(outdatedInput?.findingKind, "none");
   assert.deepEqual(outdatedInput?.vocabulary, ["configured_bot_thread"]);
+
+  const codexReplyThread = createReviewThread({
+    id: "thread-codex-replied",
+    comments: {
+      nodes: [
+        {
+          id: "comment-codex-finding",
+          body: "P2: Preserve the original Codex finding fingerprint.",
+          createdAt: "2026-03-11T00:00:00Z",
+          url: "https://example.test/pr/44#discussion_codex",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+        {
+          id: "comment-supervisor-reply",
+          body: "Handled in the current patch.",
+          createdAt: "2026-03-11T00:01:00Z",
+          url: "https://example.test/pr/44#discussion_reply",
+          author: {
+            login: "maintainer",
+            typeName: "User",
+          },
+        },
+      ],
+    },
+  });
+  const codexReplyInput = buildReviewPolicyInput({
+    config,
+    pr,
+    record: {
+      provider_success_head_sha: null,
+      external_review_head_sha: null,
+      last_head_sha: "head-new",
+      processed_review_thread_ids: [],
+      processed_review_thread_fingerprints: ["thread-codex-replied@head-new#comment-codex-finding"],
+    },
+    reviewThreads: [codexReplyThread],
+  }).threads[0];
+  assert.equal(codexReplyInput?.processedEvidence.processedOnCurrentHead, true);
+
+  const fingerprintOnlyInput = buildReviewPolicyInput({
+    config,
+    pr,
+    record: {
+      provider_success_head_sha: null,
+      external_review_head_sha: null,
+      last_head_sha: "head-new",
+      processed_review_thread_ids: [],
+      processed_review_thread_fingerprints: ["thread-p3-softened@head-new#comment-1"],
+    },
+    reviewThreads: [p3NitpickThread],
+  }).threads[0];
+  assert.equal(fingerprintOnlyInput?.processedEvidence.processedOnCurrentHead, true);
+
+  const legacyRawIdInput = buildReviewPolicyInput({
+    config,
+    pr,
+    record: {
+      provider_success_head_sha: null,
+      external_review_head_sha: null,
+      last_head_sha: "head-new",
+      processed_review_thread_ids: ["thread-p3-softened"],
+      processed_review_thread_fingerprints: [],
+    },
+    reviewThreads: [p3NitpickThread],
+  }).threads[0];
+  assert.equal(legacyRawIdInput?.processedEvidence.processedOnCurrentHead, true);
 
   p2Thread.comments.nodes[0]!.body = "P3: Nitpick after snapshot mutation.";
   assert.equal(p2Input?.comments[0]?.body, "P2: Preserve failed restore cleanup as a blocking verification failure.");

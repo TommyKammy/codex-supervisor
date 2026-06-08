@@ -196,13 +196,28 @@ function processedThreadFingerprintKey(threadId: string, headSha: string, latest
 
 function processedThreadHeadShas(args: {
   processedThreadKeys: string[];
+  processedThreadFingerprintKeys: string[];
   threadId: string;
 }): string[] {
   const prefix = `${args.threadId}@`;
-  return args.processedThreadKeys
-    .filter((key) => key.startsWith(prefix))
-    .map((key) => key.slice(prefix.length))
-    .filter((headSha) => headSha.length > 0);
+  const headShas = new Set<string>();
+  for (const key of args.processedThreadKeys) {
+    if (key.startsWith(prefix)) {
+      const headSha = key.slice(prefix.length);
+      if (headSha) {
+        headShas.add(headSha);
+      }
+    }
+  }
+  for (const key of args.processedThreadFingerprintKeys) {
+    if (key.startsWith(prefix)) {
+      const headSha = key.slice(prefix.length).split("#", 1)[0];
+      if (headSha) {
+        headShas.add(headSha);
+      }
+    }
+  }
+  return [...headShas];
 }
 
 function hasProcessedThreadFingerprintForHead(args: {
@@ -217,30 +232,34 @@ function hasProcessedThreadFingerprintForHead(args: {
 function processedOnHead(args: {
   processedThreadKeys: string[];
   processedThreadFingerprintKeys: string[];
+  lastHeadSha: string | null;
   threadId: string;
+  currentHeadSha: string;
   headSha: string;
   latestCommentFingerprint: string | null;
 }): boolean {
-  if (!args.processedThreadKeys.includes(processedThreadKey(args.threadId, args.headSha))) {
-    return false;
+  const headScopedKey = processedThreadKey(args.threadId, args.headSha);
+  const exactFingerprintKey = args.latestCommentFingerprint
+    ? processedThreadFingerprintKey(args.threadId, args.headSha, args.latestCommentFingerprint)
+    : null;
+
+  if (exactFingerprintKey && args.processedThreadFingerprintKeys.includes(exactFingerprintKey)) {
+    return true;
   }
 
-  if (
-    hasProcessedThreadFingerprintForHead({
+  if (args.processedThreadKeys.includes(headScopedKey)) {
+    if (args.latestCommentFingerprint === null) {
+      return true;
+    }
+
+    return !hasProcessedThreadFingerprintForHead({
       processedThreadFingerprintKeys: args.processedThreadFingerprintKeys,
       threadId: args.threadId,
       headSha: args.headSha,
-    })
-  ) {
-    return Boolean(
-      args.latestCommentFingerprint &&
-        args.processedThreadFingerprintKeys.includes(
-          processedThreadFingerprintKey(args.threadId, args.headSha, args.latestCommentFingerprint),
-        ),
-    );
+    });
   }
 
-  return true;
+  return args.headSha === args.currentHeadSha && args.lastHeadSha === args.currentHeadSha && args.processedThreadKeys.includes(args.threadId);
 }
 
 function processedOnPriorHead(args: {
@@ -252,6 +271,7 @@ function processedOnPriorHead(args: {
 }): boolean {
   return processedThreadHeadShas({
     processedThreadKeys: args.processedThreadKeys,
+    processedThreadFingerprintKeys: args.processedThreadFingerprintKeys,
     threadId: args.thread.id,
   }).some(
     (headSha) =>
@@ -259,7 +279,9 @@ function processedOnPriorHead(args: {
       processedOnHead({
         processedThreadKeys: args.processedThreadKeys,
         processedThreadFingerprintKeys: args.processedThreadFingerprintKeys,
+        lastHeadSha: null,
         threadId: args.thread.id,
+        currentHeadSha: args.pr.headRefOid,
         headSha,
         latestCommentFingerprint: args.latestCommentFingerprint,
       }),
@@ -340,7 +362,11 @@ export function buildReviewPolicyInput(args: {
   >;
   record: Pick<
     IssueRunRecord,
-    "provider_success_head_sha" | "external_review_head_sha" | "processed_review_thread_ids" | "processed_review_thread_fingerprints"
+    | "provider_success_head_sha"
+    | "external_review_head_sha"
+    | "last_head_sha"
+    | "processed_review_thread_ids"
+    | "processed_review_thread_fingerprints"
   >;
   reviewThreads: ReviewThread[];
 }): ReviewPolicyInput {
@@ -372,13 +398,15 @@ export function buildReviewPolicyInput(args: {
         Boolean(comment.normalizedAuthorLogin && configuredBotLoginSet.has(comment.normalizedAuthorLogin)),
       );
       const isManualThread = !thread.isResolved && !thread.isOutdated && comments.length > 0 && !isConfiguredBotThread;
-      const latestCommentFingerprintValue = latestCommentFingerprint(thread);
+      const latestCommentFingerprintValue = latestCodexConnectorReviewCommentFingerprint(thread) ?? latestCommentFingerprint(thread);
       const processedThreadKeys = [...(args.record.processed_review_thread_ids ?? [])];
       const processedThreadFingerprintKeys = [...(args.record.processed_review_thread_fingerprints ?? [])];
       const processedOnCurrentHeadValue = processedOnHead({
         processedThreadKeys,
         processedThreadFingerprintKeys,
+        lastHeadSha: args.record.last_head_sha ?? null,
         threadId: thread.id,
+        currentHeadSha: args.pr.headRefOid,
         headSha: args.pr.headRefOid,
         latestCommentFingerprint: latestCommentFingerprintValue,
       });
