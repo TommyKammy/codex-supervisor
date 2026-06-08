@@ -4,7 +4,6 @@ import {
   type ReviewPolicyInput,
 } from "../codex-connector-review-policy";
 import { displayLocalCiCommand } from "../core/config-parsing";
-import { configuredReviewProviderKinds } from "../core/review-providers";
 import type {
   GitHubPullRequest,
   IssueRunRecord,
@@ -17,6 +16,10 @@ import {
   evaluateDecisionKernelV2ReadOnlyFromFacts,
   type DecisionKernelV2ReadOnlyDecision,
 } from "../decision-kernel-v2";
+import {
+  hasCurrentHeadProviderSuccess,
+  requiresConfiguredBotCurrentHeadSignal,
+} from "../pull-request-state-current-head-policy";
 import type { PrLifecycleFactInventory } from "./pr-lifecycle-state";
 
 export interface DecisionKernelV2ExplainDto {
@@ -75,6 +78,7 @@ export function buildDecisionKernelV2ExplainDto(args: {
     reviewPolicyInput,
     checkPolicyInput: {
       noChecksAndNoLocalCi: args.checks.length === 0 && (!localCiConfigured || currentHeadLocalCiPassed),
+      mergeReadyBlockedByRequiredChecks: args.checks.length === 0,
       mergeReadyBlockedByLocalCi: mergeReadyBlockedByLocalCi({
         config: args.config,
         record: args.record,
@@ -179,6 +183,7 @@ function buildPrLifecycleFactInventory(args: {
 }): PrLifecycleFactInventory {
   const currentHeadReviewEvidence = currentHeadReviewEvidenceFromPolicyInput({
     pr: args.pr,
+    record: args.record,
     reviewPolicyInput: args.reviewPolicyInput,
   });
 
@@ -204,17 +209,25 @@ function buildPrLifecycleFactInventory(args: {
       workspaceHeadSha: null,
       lastObservedPrHeadSha: args.record.last_head_sha ?? null,
     },
-    configuredCurrentHeadReviewRequired: configuredReviewProviderKinds(args.config).includes("codex"),
+    configuredCurrentHeadReviewRequired: requiresConfiguredBotCurrentHeadSignal(args.config),
   };
 }
 
 function currentHeadReviewEvidenceFromPolicyInput(args: {
   pr: GitHubPullRequest;
+  record: IssueRunRecord;
   reviewPolicyInput: ReviewPolicyInput;
 }): { observedAt: string | null; headSha: string | null } {
   if (args.reviewPolicyInput.pr.currentHeadObservedAt) {
     return {
       observedAt: args.reviewPolicyInput.pr.currentHeadObservedAt,
+      headSha: args.pr.headRefOid,
+    };
+  }
+
+  if (hasCurrentHeadProviderSuccess(args.record, args.pr)) {
+    return {
+      observedAt: args.record.provider_success_observed_at ?? null,
       headSha: args.pr.headRefOid,
     };
   }

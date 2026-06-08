@@ -213,7 +213,7 @@ test("buildDecisionKernelV2ExplainDto allows merge-ready diagnostics after confi
   assert.equal(dto.decision?.action, "no_action");
 });
 
-test("buildDecisionKernelV2ExplainDto treats current-head local CI as green evidence when GitHub checks are absent", () => {
+test("buildDecisionKernelV2ExplainDto keeps zero-check PRs out of merge-ready diagnostics", () => {
   const dto = buildDecisionKernelV2ExplainDto({
     config: codexConfig({ localCiCommand: "npm run verify:pre-pr" }),
     issueNumber: 2301,
@@ -236,7 +236,54 @@ test("buildDecisionKernelV2ExplainDto treats current-head local CI as green evid
   });
 
   assert.equal(dto.decision?.normalizedState.checkPosture, "unknown");
+  assert.equal(dto.decision?.action, "ask_operator");
+  assert.deepEqual(dto.decision?.reasons, ["insufficient_merge_evidence"]);
+});
+
+test("buildDecisionKernelV2ExplainDto accepts durable provider success as current-head review evidence", () => {
+  const dto = buildDecisionKernelV2ExplainDto({
+    config: codexConfig(),
+    issueNumber: 2301,
+    title: "Phase 3.2",
+    record: record({
+      provider_success_observed_at: "2026-06-08T00:06:00.000Z",
+      provider_success_head_sha: "head-current",
+    }),
+    pr: pullRequest({
+      configuredBotCurrentHeadObservedAt: null,
+      configuredBotLatestReviewedCommitSha: null,
+    }),
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass" }],
+    reviewThreads: [],
+  });
+
+  assert.equal(dto.inventory?.pullRequest?.currentHeadReviewObservedAt, "2026-06-08T00:06:00.000Z");
+  assert.equal(dto.inventory?.pullRequest?.currentHeadReviewHeadSha, "head-current");
+  assert.equal(dto.decision?.normalizedState.reviewPosture, "current_head_review_observed");
   assert.equal(dto.decision?.action, "no_action");
+});
+
+test("buildDecisionKernelV2ExplainDto respects explicit current-head signal requirements for non-Codex providers", () => {
+  const dto = buildDecisionKernelV2ExplainDto({
+    config: codexConfig({
+      reviewBotLogins: ["coderabbitai"],
+      configuredReviewProviders: [{ kind: "coderabbit", reviewerLogins: ["coderabbitai"], signalSource: "review_threads" }],
+      configuredBotRequireCurrentHeadSignal: true,
+    }),
+    issueNumber: 2301,
+    title: "Phase 3.2",
+    record: record(),
+    pr: pullRequest({
+      configuredBotCurrentHeadObservedAt: null,
+      configuredBotLatestReviewedCommitSha: null,
+    }),
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass" }],
+    reviewThreads: [],
+  });
+
+  assert.equal(dto.inventory?.configuredCurrentHeadReviewRequired, true);
+  assert.equal(dto.decision?.normalizedState.reviewPosture, "missing_current_head_review");
+  assert.equal(dto.decision?.action, "request_review");
 });
 
 test("buildDecisionKernelV2ExplainDto requests review before metadata-only residue without current-head evidence", () => {
