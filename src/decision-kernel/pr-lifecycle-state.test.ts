@@ -126,6 +126,25 @@ test("normalizePrLifecycleFacts surfaces missing review, pending checks, and con
   assert.equal(state.mergeability, "conflicted");
 });
 
+test("normalizePrLifecycleFacts requires a clean merge state for mergeable posture", () => {
+  const state = normalizePrLifecycleFacts(
+    inventory({
+      pullRequest: {
+        number: 2278,
+        headSha: "head-current",
+        state: "OPEN",
+        isDraft: false,
+        mergeStateStatus: "BLOCKED",
+        mergeable: "MERGEABLE",
+        currentHeadReviewObservedAt: "2026-06-07T00:01:00.000Z",
+        currentHeadReviewHeadSha: "head-current",
+      },
+    }),
+  );
+
+  assert.equal(state.mergeability, "unknown");
+});
+
 test("normalizePrLifecycleFacts prioritizes live review blockers and failing checks", () => {
   const state = normalizePrLifecycleFacts(
     inventory({

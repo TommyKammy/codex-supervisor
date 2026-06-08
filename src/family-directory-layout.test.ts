@@ -27,6 +27,7 @@ const EXPECTED_TOP_LEVEL_ENTRIES = {
     "committed-guardrails.ts",
     "conversation-resolution-blocker-diagnostics.ts",
     "conversation-resolution-policy.ts",
+    "decision-kernel-v2.ts",
     "diagnostics-dto.ts",
     "doctor.ts",
     "durable-artifact-provenance.ts",
