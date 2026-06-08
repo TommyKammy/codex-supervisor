@@ -53,23 +53,18 @@
         "actionEquivalent": "ask_operator"
       },
       "v2": {
-        "action": "run_codex",
-        "reasons": ["current_head_must_fix_review"]
+        "action": "ask_operator",
+        "reasons": ["manual_review_thread"]
       },
-      "category": "manual_review_required",
+      "category": "agreement",
       "differences": [
-        {
-          "field": "action",
-          "current": "ask_operator",
-          "v2": "run_codex"
-        },
         {
           "field": "reason",
           "current": "manual_review_required",
-          "v2": "current_head_must_fix_review"
+          "v2": "manual_review_thread"
         }
       ],
-      "safetyNote": "Current and v2 diverge in an unsafe or ambiguous way; require operator review before trusting v2."
+      "safetyNote": "Current and v2 decisions agree for the compared action boundary."
     }
   }
 }

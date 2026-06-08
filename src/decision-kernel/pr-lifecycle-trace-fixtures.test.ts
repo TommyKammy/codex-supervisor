@@ -5,11 +5,13 @@ import {
   guardPrLifecycleEvaluation,
   type PrLifecycleEvaluationMode,
 } from "./pr-lifecycle-evaluation-mode";
+import { evaluateDecisionKernelV2ReadOnly } from "../decision-kernel-v2";
 import {
   loadPrLifecycleTraceFixtures,
   parsePrLifecycleTraceFixture,
 } from "./pr-lifecycle-trace-fixtures";
 import { formatPrLifecycleTraceDiagnostic } from "./pr-lifecycle-trace-presenter";
+import { buildDecisionKernelV2ComparisonDto } from "./v2-comparison";
 
 const expectedFixtureIds = [
   "merge-ready",
@@ -60,9 +62,44 @@ test("Decision Kernel trace fixtures preserve optional v2 comparison evidence", 
   );
 
   assert.equal(comparisonById.get("merge-ready"), "agreement");
-  assert.equal(comparisonById.get("review-blocked"), "manual_review_required");
+  assert.equal(comparisonById.get("review-blocked"), "agreement");
   assert.equal(comparisonById.get("wait-ci"), "none");
   assert.equal(fixtures.find((fixture) => fixture.id === "merge-ready")?.artifact.v2Comparison?.diagnosticOnly, true);
+  assert.deepEqual(fixtures.find((fixture) => fixture.id === "review-blocked")?.artifact.v2Comparison?.differences, [
+    {
+      field: "reason",
+      current: "manual_review_required",
+      v2: "manual_review_thread",
+    },
+  ]);
+});
+
+test("Decision Kernel trace fixtures keep v2 comparison evidence reproducible from fixture facts", async () => {
+  const fixtures = await loadPrLifecycleTraceFixtures(
+    path.join(process.cwd(), "replay-corpus", "decision-traces"),
+  );
+
+  for (const fixture of fixtures) {
+    const comparison = fixture.artifact.v2Comparison;
+    if (!comparison) {
+      continue;
+    }
+
+    assert.deepEqual(
+      comparison,
+      {
+        diagnosticOnly: true,
+        ...buildDecisionKernelV2ComparisonDto({
+          currentState: comparison.current.state,
+          currentActionEquivalent: comparison.current.actionEquivalent,
+          v2Decision: evaluateDecisionKernelV2ReadOnly({
+            normalizedState: fixture.artifact.facts.normalizedState,
+          }),
+        }),
+      },
+      fixture.id,
+    );
+  }
 });
 
 test("Decision Kernel trace fixtures render compact diagnostics without host-local paths", async () => {
@@ -78,7 +115,7 @@ test("Decision Kernel trace fixtures render compact diagnostics without host-loc
   assert.match(diagnostics.join("\n"), /label=stale_local_state/);
   assert.match(diagnostics.join("\n"), /label=metadata_only_review_residue/);
   assert.match(diagnostics.join("\n"), /v2_comparison=agreement/);
-  assert.match(diagnostics.join("\n"), /v2_comparison=manual_review_required/);
+  assert.match(diagnostics.join("\n"), /v2_comparison_differences=reason:manual_review_required->manual_review_thread/);
   assert.doesNotMatch(diagnostics.join("\n"), /\/Users\//);
   assert.doesNotMatch(diagnostics.join("\n"), /[A-Z]:\\/);
 });
