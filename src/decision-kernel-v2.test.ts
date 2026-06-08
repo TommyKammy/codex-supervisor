@@ -56,6 +56,7 @@ function state(overrides: Partial<PrLifecycleFactInventory> = {}): NormalizedPrL
 function reviewPolicyInput(
   outcomes: Array<ReviewPolicyInput["threads"][number]["boundaryOutcome"]>,
   overrides: Partial<ReviewPolicyInput["pr"]> = {},
+  threadOverrides: Partial<ReviewPolicyInput["threads"][number]> = {},
 ): ReviewPolicyInput {
   return {
     providerIdentity: {
@@ -94,6 +95,7 @@ function reviewPolicyInput(
         processedThreadFingerprintKeys: [],
       },
       vocabulary: [],
+      ...threadOverrides,
     })),
   };
 }
@@ -260,4 +262,71 @@ test("evaluateDecisionKernelV2ReadOnly treats configured-bot residue as metadata
   assert.equal(decision.action, "ask_operator");
   assert.deepEqual(decision.reasons, ["metadata_only_review_residue"]);
   assert.deepEqual(decision.requiredEvidence, ["resolved_metadata_residue"]);
+});
+
+test("evaluateDecisionKernelV2ReadOnly ignores resolved manual policy threads", () => {
+  const decision = evaluateDecisionKernelV2ReadOnly({
+    normalizedState: state(),
+    reviewPolicyInput: reviewPolicyInput(["manual_thread"], {}, { isResolved: true }),
+  });
+
+  assert.equal(decision.action, "no_action");
+  assert.deepEqual(decision.reasons, ["merge_ready_diagnostic_only"]);
+});
+
+test("evaluateDecisionKernelV2ReadOnly requires local head evidence before repair actions", () => {
+  const decision = evaluateDecisionKernelV2ReadOnly({
+    normalizedState: state({
+      localState: {
+        trackedHeadSha: null,
+        workspaceHeadSha: null,
+        lastObservedPrHeadSha: "head-current",
+      },
+    }),
+    reviewPolicyInput: reviewPolicyInput(["must_fix_current_head"]),
+  });
+
+  assert.equal(decision.action, "wait");
+  assert.deepEqual(decision.reasons, ["fresh_local_state_required"]);
+  assert.deepEqual(decision.requiredEvidence, ["fresh_local_state"]);
+});
+
+test("evaluateDecisionKernelV2ReadOnly repairs failing checks before waiting for stale review", () => {
+  const decision = evaluateDecisionKernelV2ReadOnlyFromFacts({
+    inventory: inventory({
+      reviewThreads: {
+        unresolvedManualThreadCount: 0,
+        unresolvedCurrentHeadConfiguredBotThreadCount: 0,
+        stalePreviousHeadConfiguredBotThreadCount: 1,
+        metadataOnlyUnresolvedThreadCount: 0,
+      },
+      checks: {
+        passingCount: 1,
+        pendingCount: 0,
+        failingCount: 1,
+        unknownCount: 0,
+      },
+    }),
+  });
+
+  assert.equal(decision.action, "run_codex");
+  assert.deepEqual(decision.reasons, ["checks_failing"]);
+  assert.deepEqual(decision.requiredEvidence, ["green_checks"]);
+});
+
+test("evaluateDecisionKernelV2ReadOnly does not repair softened P3 advisory policy threads", () => {
+  const decision = evaluateDecisionKernelV2ReadOnly({
+    normalizedState: state({
+      reviewThreads: {
+        unresolvedManualThreadCount: 0,
+        unresolvedCurrentHeadConfiguredBotThreadCount: 1,
+        stalePreviousHeadConfiguredBotThreadCount: 0,
+        metadataOnlyUnresolvedThreadCount: 0,
+      },
+    }),
+    reviewPolicyInput: reviewPolicyInput(["softened_p3_advisory"]),
+  });
+
+  assert.equal(decision.action, "no_action");
+  assert.deepEqual(decision.reasons, ["merge_ready_diagnostic_only"]);
 });

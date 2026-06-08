@@ -23,6 +23,7 @@ export type DecisionKernelV2Reason =
   | "draft_pull_request"
   | "merge_conflict"
   | "stale_local_state"
+  | "fresh_local_state_required"
   | "manual_review_thread"
   | "metadata_only_review_residue"
   | "current_head_must_fix_review"
@@ -68,6 +69,7 @@ export interface DecisionKernelV2ReadOnlyDecision {
 }
 
 interface ReviewPolicyBoundarySummary {
+  hasInput: boolean;
   currentHeadMustFix: number;
   metadataOnly: number;
   manual: number;
@@ -132,6 +134,15 @@ function selectReadOnlyDecision(
     );
   }
 
+  if (state.localStateFreshness === "missing" || state.localStateFreshness === "unknown") {
+    return decision(
+      "wait",
+      ["fresh_local_state_required"],
+      ["fresh_local_state"],
+      "Fresh local state is required before v2 can recommend source repair.",
+    );
+  }
+
   if (reviewPolicy.inputMismatch) {
     return decision(
       "ask_operator",
@@ -150,7 +161,10 @@ function selectReadOnlyDecision(
     );
   }
 
-  if (reviewPolicy.currentHeadMustFix > 0 || state.evidence.currentHeadConfiguredBotThreadCount > 0) {
+  if (
+    reviewPolicy.currentHeadMustFix > 0 ||
+    (!reviewPolicy.hasInput && state.evidence.currentHeadConfiguredBotThreadCount > 0)
+  ) {
     return decision(
       "run_codex",
       ["current_head_must_fix_review"],
@@ -168,15 +182,6 @@ function selectReadOnlyDecision(
     );
   }
 
-  if (state.reviewPosture === "stale_previous_head_review" || reviewPolicy.staleCommit > 0) {
-    return decision(
-      "wait",
-      ["stale_commit_review"],
-      ["current_head_review"],
-      "Review findings are tied to a stale commit and need current-head evidence.",
-    );
-  }
-
   if (state.checkPosture === "failing") {
     return decision("run_codex", ["checks_failing"], ["green_checks"], "Required checks are failing.");
   }
@@ -187,6 +192,15 @@ function selectReadOnlyDecision(
 
   if (state.checkPosture === "unknown") {
     return decision("wait", ["checks_unknown"], ["green_checks"], "Required check status is unknown.");
+  }
+
+  if (state.reviewPosture === "stale_previous_head_review" || reviewPolicy.staleCommit > 0) {
+    return decision(
+      "wait",
+      ["stale_commit_review"],
+      ["current_head_review"],
+      "Review findings are tied to a stale commit and need current-head evidence.",
+    );
   }
 
   if (state.reviewPosture === "missing_current_head_review") {
@@ -201,7 +215,8 @@ function selectReadOnlyDecision(
   if (
     state.headFreshness === "current_head" &&
     state.localStateFreshness === "fresh" &&
-    state.reviewPosture === "current_head_review_observed" &&
+    (state.reviewPosture === "current_head_review_observed" ||
+      (state.reviewPosture === "review_blocked" && reviewPolicyAllowsAdvisoryOnly(reviewPolicy))) &&
     state.checkPosture === "green" &&
     state.mergeability === "mergeable"
   ) {
@@ -235,6 +250,7 @@ function summarizeReviewPolicyBoundaries(
   state: NormalizedPrLifecycleState,
 ): ReviewPolicyBoundarySummary {
   const summary: ReviewPolicyBoundarySummary = {
+    hasInput: value !== null,
     currentHeadMustFix: 0,
     metadataOnly: 0,
     manual: 0,
@@ -248,6 +264,10 @@ function summarizeReviewPolicyBoundaries(
   }
 
   for (const thread of value?.threads ?? []) {
+    if (thread.isResolved) {
+      continue;
+    }
+
     if (isCurrentHeadMustFixBoundary(thread.boundaryOutcome)) {
       summary.currentHeadMustFix += 1;
     } else if (
@@ -267,6 +287,17 @@ function summarizeReviewPolicyBoundaries(
 
 function isCurrentHeadMustFixBoundary(outcome: ReviewPolicyBoundaryOutcome): boolean {
   return outcome === "must_fix_current_head" || outcome === "escalated_p3";
+}
+
+function reviewPolicyAllowsAdvisoryOnly(reviewPolicy: ReviewPolicyBoundarySummary): boolean {
+  return (
+    reviewPolicy.hasInput &&
+    !reviewPolicy.inputMismatch &&
+    reviewPolicy.currentHeadMustFix === 0 &&
+    reviewPolicy.metadataOnly === 0 &&
+    reviewPolicy.manual === 0 &&
+    reviewPolicy.staleCommit === 0
+  );
 }
 
 function diagnosticOnlySafetyPosture(): DecisionKernelV2SafetyPosture {
