@@ -95,6 +95,27 @@ function codexMustFixThread(overrides: Partial<ReviewThread> = {}): ReviewThread
   };
 }
 
+function codexSoftenedP3Thread(overrides: Partial<ReviewThread> = {}): ReviewThread {
+  return codexMustFixThread({
+    id: "thread-codex-p3",
+    comments: {
+      nodes: [
+        {
+          id: "comment-codex-p3",
+          body: "![P3 Badge](https://img.shields.io/badge/P3-blue) Cosmetic note only.",
+          createdAt: "2026-06-08T00:04:00.000Z",
+          url: "https://example.test/comment-p3",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+    ...overrides,
+  });
+}
+
 test("buildDecisionKernelV2ExplainDto uses PR head for current-head review observations", () => {
   const dto = buildDecisionKernelV2ExplainDto({
     config: codexConfig(),
@@ -192,6 +213,32 @@ test("buildDecisionKernelV2ExplainDto allows merge-ready diagnostics after confi
   assert.equal(dto.decision?.action, "no_action");
 });
 
+test("buildDecisionKernelV2ExplainDto treats current-head local CI as green evidence when GitHub checks are absent", () => {
+  const dto = buildDecisionKernelV2ExplainDto({
+    config: codexConfig({ localCiCommand: "npm run verify:pre-pr" }),
+    issueNumber: 2301,
+    title: "Phase 3.2",
+    record: record({
+      latest_local_ci_result: {
+        outcome: "passed",
+        summary: "Configured local CI command passed.",
+        ran_at: "2026-06-08T00:05:00.000Z",
+        head_sha: "head-current",
+        execution_mode: "legacy_shell_string",
+        command: "npm run verify:pre-pr",
+        failure_class: null,
+        remediation_target: null,
+      },
+    }),
+    pr: pullRequest(),
+    checks: [],
+    reviewThreads: [],
+  });
+
+  assert.equal(dto.decision?.normalizedState.checkPosture, "unknown");
+  assert.equal(dto.decision?.action, "no_action");
+});
+
 test("buildDecisionKernelV2ExplainDto requests review before metadata-only residue without current-head evidence", () => {
   const dto = buildDecisionKernelV2ExplainDto({
     config: codexConfig(),
@@ -208,6 +255,26 @@ test("buildDecisionKernelV2ExplainDto requests review before metadata-only resid
 
   assert.equal(dto.reviewPolicyInput?.threads[0]?.boundaryOutcome, "metadata_only_unresolved");
   assert.equal(dto.inventory?.reviewThreads.metadataOnlyUnresolvedThreadCount, 0);
+  assert.equal(dto.decision?.normalizedState.reviewPosture, "missing_current_head_review");
+  assert.equal(dto.decision?.action, "request_review");
+});
+
+test("buildDecisionKernelV2ExplainDto requests review before advisory-only nitpicks without current-head evidence", () => {
+  const dto = buildDecisionKernelV2ExplainDto({
+    config: codexConfig(),
+    issueNumber: 2301,
+    title: "Phase 3.2",
+    record: record(),
+    pr: pullRequest({
+      configuredBotCurrentHeadObservedAt: null,
+      configuredBotLatestReviewedCommitSha: null,
+    }),
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass" }],
+    reviewThreads: [codexSoftenedP3Thread()],
+  });
+
+  assert.equal(dto.reviewPolicyInput?.threads[0]?.boundaryOutcome, "softened_p3_advisory");
+  assert.equal(dto.inventory?.reviewThreads.unresolvedCurrentHeadConfiguredBotThreadCount, 0);
   assert.equal(dto.decision?.normalizedState.reviewPosture, "missing_current_head_review");
   assert.equal(dto.decision?.action, "request_review");
 });

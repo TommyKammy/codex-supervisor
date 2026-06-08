@@ -65,11 +65,16 @@ export function buildDecisionKernelV2ExplainDto(args: {
     checks: args.checks,
     reviewPolicyInput,
   });
+  const currentHeadLocalCiPassed = localCiPassedCurrentHead({
+    record: args.record,
+    pr: args.pr,
+  });
+  const localCiConfigured = Boolean(displayLocalCiCommand(args.config.localCiCommand));
   const decision = evaluateDecisionKernelV2ReadOnlyFromFacts({
     inventory,
     reviewPolicyInput,
     checkPolicyInput: {
-      noChecksAndNoLocalCi: args.checks.length === 0 && !displayLocalCiCommand(args.config.localCiCommand),
+      noChecksAndNoLocalCi: args.checks.length === 0 && (!localCiConfigured || currentHeadLocalCiPassed),
       mergeReadyBlockedByLocalCi: mergeReadyBlockedByLocalCi({
         config: args.config,
         record: args.record,
@@ -236,8 +241,15 @@ function mergeReadyBlockedByLocalCi(args: {
     return false;
   }
 
+  return !localCiPassedCurrentHead(args);
+}
+
+function localCiPassedCurrentHead(args: {
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+}): boolean {
   const latestLocalCi = args.record.latest_local_ci_result ?? null;
-  return latestLocalCi?.outcome !== "passed" || !commitShasEqualForComparison(latestLocalCi.head_sha, args.pr.headRefOid);
+  return latestLocalCi?.outcome === "passed" && commitShasEqualForComparison(latestLocalCi.head_sha, args.pr.headRefOid);
 }
 
 function summarizeCheckFacts(checks: PullRequestCheck[]): PrLifecycleFactInventory["checks"] {
@@ -287,10 +299,13 @@ function summarizeReviewThreads(
       if (options.currentHeadReviewObserved) {
         facts.metadataOnlyUnresolvedThreadCount += 1;
       }
+    } else if (thread.boundaryOutcome === "softened_p3_advisory") {
+      if (options.currentHeadReviewObserved) {
+        facts.unresolvedCurrentHeadConfiguredBotThreadCount += 1;
+      }
     } else if (
       thread.boundaryOutcome === "must_fix_current_head" ||
       thread.boundaryOutcome === "escalated_p3" ||
-      thread.boundaryOutcome === "softened_p3_advisory" ||
       thread.boundaryOutcome === "configured_bot_thread"
     ) {
       facts.unresolvedCurrentHeadConfiguredBotThreadCount += 1;
