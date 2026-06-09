@@ -34,6 +34,7 @@ export type PrLifecycleRecommendedAction =
   | "request_review"
   | "repair"
   | "manual_review"
+  | "mark_stale_resolved"
   | "refresh_state"
   | "no_action";
 

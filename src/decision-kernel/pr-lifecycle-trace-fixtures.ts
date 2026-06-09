@@ -284,7 +284,16 @@ const prLifecyclePolicyPostures = [
   "unknown",
 ] as const satisfies readonly PrLifecyclePolicyPosture[];
 const prLifecycleDecisions = ["merge", "wait", "request_review", "run_codex", "ask_operator", "do_nothing"] as const satisfies readonly PrLifecycleDecision[];
-const prLifecycleRecommendedActions = ["merge", "wait_ci", "request_review", "repair", "manual_review", "refresh_state", "no_action"] as const satisfies readonly PrLifecycleRecommendedAction[];
+const prLifecycleRecommendedActions = [
+  "merge",
+  "wait_ci",
+  "request_review",
+  "repair",
+  "manual_review",
+  "mark_stale_resolved",
+  "refresh_state",
+  "no_action",
+] as const satisfies readonly PrLifecycleRecommendedAction[];
 const decisionKernelV2RuntimeModes = ["disabled", "diagnostic_only", "pr_lifecycle_action_taking"] as const satisfies readonly DecisionKernelV2RuntimeMode[];
 const decisionKernelV2ActionSources = ["disabled", "pr_lifecycle_v2"] as const satisfies readonly DecisionKernelV2ActionSource[];
 const decisionKernelV2ActionScopes = ["none", "pr_lifecycle"] as const satisfies readonly DecisionKernelV2ActionScope[];
