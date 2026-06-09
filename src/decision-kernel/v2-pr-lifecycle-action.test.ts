@@ -284,6 +284,100 @@ test("evaluateDecisionKernelV2PrLifecycleAction requires explicit merge gate inp
   ]);
 });
 
+test("evaluateDecisionKernelV2PrLifecycleAction ignores external handoff metadata as mutation authority", () => {
+  const unsafeExternalHandoff = {
+    routing_category: "external_orchestration_handoff",
+    mutation_authority: "core_executor_required",
+    external_handoff: "merge",
+    observed_at: "2026-06-09T00:05:00.000Z",
+    asserted_core_safety_gates: "passed",
+  };
+  const decision = evaluateDecisionKernelV2PrLifecycleAction({
+    mode: "pr_lifecycle_action_taking",
+    normalizedState: normalizePrLifecycleFacts(inventory()),
+    externalOrchestrationHandoff: unsafeExternalHandoff,
+  } as Parameters<typeof evaluateDecisionKernelV2PrLifecycleAction>[0] & {
+    externalOrchestrationHandoff: typeof unsafeExternalHandoff;
+  });
+
+  assert.equal(decision.v2Decision.action, "merge");
+  assert.equal(decision.action, "ask_operator");
+  assert.deepEqual(decision.reasons, ["v2_merge_gate_evidence_missing"]);
+  assert.deepEqual(decision.routing, {
+    action: "ask_operator",
+    routingCategory: "operator_action",
+    mutationAuthority: "none",
+  });
+});
+
+test("evaluateDecisionKernelV2PrLifecycleAction fails closed when external handoff evidence is malformed or stale", () => {
+  const cases = [
+    {
+      label: "malformed handoff cannot replace missing merge gates",
+      normalizedState: normalizePrLifecycleFacts(inventory()),
+      externalOrchestrationHandoff: {
+        routing_category: "core_action",
+        mutation_authority: "core_executor_required",
+        external_handoff: "merge",
+        observed_at: "not-a-date",
+      },
+      expectedAction: "ask_operator",
+      expectedReasons: ["v2_merge_gate_evidence_missing"],
+    },
+    {
+      label: "stale handoff cannot refresh cached facts",
+      normalizedState: normalizePrLifecycleFacts(
+        inventory({
+          source: "cached_github",
+        }),
+      ),
+      externalOrchestrationHandoff: {
+        routing_category: "external_orchestration_handoff",
+        mutation_authority: "none",
+        external_handoff: "prepare_evidence",
+        observed_at: "2026-06-08T00:00:00.000Z",
+      },
+      expectedAction: "ask_operator",
+      expectedReasons: ["fresh_facts_guard_blocked"],
+    },
+    {
+      label: "handoff cannot override failing checks",
+      normalizedState: normalizePrLifecycleFacts(
+        inventory({
+          checks: {
+            passingCount: 2,
+            pendingCount: 0,
+            failingCount: 1,
+            unknownCount: 0,
+          },
+        }),
+      ),
+      externalOrchestrationHandoff: {
+        routing_category: "external_orchestration_handoff",
+        mutation_authority: "none",
+        external_handoff: "prepare_evidence",
+        asserted_next_action: "merge",
+      },
+      expectedAction: "no_action",
+      expectedReasons: ["v2_action_not_promoted"],
+    },
+  ];
+
+  for (const testCase of cases) {
+    const decision = evaluateDecisionKernelV2PrLifecycleAction({
+      mode: "pr_lifecycle_action_taking",
+      normalizedState: testCase.normalizedState,
+      externalOrchestrationHandoff: testCase.externalOrchestrationHandoff,
+    } as Parameters<typeof evaluateDecisionKernelV2PrLifecycleAction>[0] & {
+      externalOrchestrationHandoff: unknown;
+    });
+
+    assert.equal(decision.action, testCase.expectedAction, testCase.label);
+    assert.deepEqual(decision.reasons, testCase.expectedReasons, testCase.label);
+    assert.notEqual(decision.action, "merge", testCase.label);
+  }
+});
+
 test("evaluateDecisionKernelV2PrLifecycleAction lets merge-ready facts bypass repair retry exhaustion", () => {
   const decision = evaluateDecisionKernelV2PrLifecycleAction({
     mode: "pr_lifecycle_action_taking",

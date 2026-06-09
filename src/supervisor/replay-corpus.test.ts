@@ -129,3 +129,39 @@ test("Phase 2 Connector review policy replay fixtures cover typed boundary outco
   const repeatStopFixture = fixtures.find((fixture) => fixture.id === "phase2-hrcore-metadata-residue");
   assert.equal(repeatStopFixture?.repeatStopSuppressedReason, "repeat_stop_exhausted");
 });
+
+test("Phase 5 external orchestration fixtures keep complex project handoffs bounded", () => {
+  const fixtures = [
+    {
+      id: "phase5-aegisops-external-handoff-review-ci-merge",
+      projectShape: "aegisops",
+      externalHandoff: {
+        routingCategory: "external_orchestration_handoff",
+        mutationAuthority: "none",
+        handoff: "prepare_evidence",
+      },
+      coreSafetyGates: ["fresh_pr_facts", "current_head_review", "green_checks", "mergeable_state"],
+      boundedNextAction: "ask_operator",
+    },
+    {
+      id: "phase5-hrcore-external-handoff-metadata-residue",
+      projectShape: "hrcore",
+      externalHandoff: {
+        routingCategory: "external_orchestration_handoff",
+        mutationAuthority: "none",
+        handoff: "prepare_evidence",
+      },
+      coreSafetyGates: ["fresh_pr_facts", "current_head_review", "resolved_metadata_residue"],
+      boundedNextAction: "ask_operator",
+    },
+  ];
+
+  assert.deepEqual(new Set(fixtures.map((fixture) => fixture.projectShape)), new Set(["aegisops", "hrcore"]));
+  assert.equal(fixtures.every((fixture) => fixture.externalHandoff.mutationAuthority === "none"), true);
+  assert.equal(fixtures.every((fixture) => fixture.externalHandoff.handoff === "prepare_evidence"), true);
+  assert.deepEqual(new Set(fixtures.map((fixture) => fixture.boundedNextAction)), new Set(["ask_operator"]));
+  assert.equal(
+    fixtures.every((fixture) => fixture.coreSafetyGates.length > 0 && fixture.coreSafetyGates.includes("fresh_pr_facts")),
+    true,
+  );
+});
