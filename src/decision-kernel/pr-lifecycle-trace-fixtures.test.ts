@@ -118,6 +118,8 @@ test("Decision Kernel trace fixtures render compact diagnostics without host-loc
   assert.match(diagnostics.join("\n"), /v2_comparison=manual_review_required/);
   assert.match(diagnostics.join("\n"), /v2_comparison_differences=action:no_action->merge/);
   assert.match(diagnostics.join("\n"), /v2_comparison_differences=reason:manual_review_required->manual_review_thread/);
+  assert.match(diagnostics.join("\n"), /rollback_posture=disable_to_rollback/);
+  assert.match(diagnostics.join("\n"), /rollback_posture=diagnostic_only_to_rollback/);
   assert.doesNotMatch(diagnostics.join("\n"), /\/Users\//);
   assert.doesNotMatch(diagnostics.join("\n"), /[A-Z]:\\/);
 });

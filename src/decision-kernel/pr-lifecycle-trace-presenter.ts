@@ -86,10 +86,21 @@ export function formatPrLifecycleTraceDiagnostic(
     `v2_mutation_allowed=${v2Mode.mutationAllowed}`,
     `v2_action_source=${v2Mode.actionSource}`,
     `v2_action_scope=${v2Mode.actionScope}`,
+    `rollback_posture=${rollbackPostureForV2Mode(v2Mode)}`,
     `v2_comparison=${v2Comparison?.category ?? "none"}`,
     `v2_diagnostic_only=${v2Comparison?.diagnosticOnly ? "yes" : "no"}`,
     `v2_comparison_differences=${formatV2ComparisonDifferences(v2Comparison?.differences ?? [])}`,
   ].join(" ");
+}
+
+function rollbackPostureForV2Mode(
+  mode: PrLifecycleDecisionTraceArtifact["v2Mode"],
+): "already_disabled" | "disable_to_rollback" | "diagnostic_only_to_rollback" {
+  if (mode.mode === "disabled") {
+    return "already_disabled";
+  }
+
+  return mode.mutationAllowed ? "disable_to_rollback" : "diagnostic_only_to_rollback";
 }
 
 function formatV2ComparisonDifferences(

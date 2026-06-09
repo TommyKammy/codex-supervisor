@@ -45,6 +45,13 @@
       "recommendedAction": "refresh_state",
       "summary": "Local state must refresh before action-taking evaluation."
     },
-    "evidenceTokens": ["pr=1004", "remote=head-remote-new", "local=head-local-old"]
+    "evidenceTokens": ["pr=1004", "remote=head-remote-new", "local=head-local-old"],
+    "v2Mode": {
+      "mode": "pr_lifecycle_action_taking",
+      "authoritative": true,
+      "mutationAllowed": true,
+      "actionSource": "pr_lifecycle_v2",
+      "actionScope": "pr_lifecycle"
+    }
   }
 }
