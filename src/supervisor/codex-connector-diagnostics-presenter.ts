@@ -2,25 +2,27 @@ import { configuredReviewProviderKinds } from "../core/review-providers";
 import { displayLocalCiCommand } from "../core/config-parsing";
 import { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "../core/types";
 import {
-  buildCodexConnectorP2P3PolicyDiagnostic,
-  buildCodexConnectorPolicyBlockDiagnostic,
   buildCodexConnectorReviewChurnDiagnostic,
   buildCodexConnectorReviewChurnHistory,
   buildCodexConnectorReviewChurnProgressSummary,
+  compareCodexConnectorReviewChurnProgress,
+  detectStableSameFileCodexConnectorChurn,
+  formatCodexConnectorReviewChurnDiagnostic,
+  type CodexConnectorReviewChurnHistoryEntry,
+  type CodexConnectorReviewChurnProgressSummary,
+  type CodexConnectorStableSameFileChurn,
+} from "../codex-connector-review-churn";
+import {
+  buildCodexConnectorP2P3PolicyDiagnostic,
+  buildCodexConnectorPolicyBlockDiagnostic,
   codexConnectorMustFixReviewThreads,
   codexConnectorStaleReviewCommitThreads,
   commitShasDifferForComparison,
   commitShasEqualForComparison,
-  compareCodexConnectorReviewChurnProgress,
-  detectStableSameFileCodexConnectorChurn,
   evaluateCodexConnectorConvergencePolicy,
   formatCodexConnectorP2P3PolicyDiagnostic,
   formatCodexConnectorPolicyBlockDiagnostic,
-  formatCodexConnectorReviewChurnDiagnostic,
   latestCodexConnectorReviewComment,
-  type CodexConnectorReviewChurnHistoryEntry,
-  type CodexConnectorReviewChurnProgressSummary,
-  type CodexConnectorStableSameFileChurn,
 } from "../codex-connector-review-policy";
 import { configuredBotCurrentHeadSignalWaitWindow } from "./review-bot-wait-windows";
 import { hasCodexConnectorReviewRequestCommentIdentity } from "../codex-connector-review-request-identity";

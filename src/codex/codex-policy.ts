@@ -2,7 +2,7 @@ import { CodexExecutionTarget, IssueRunRecord, ReasoningEffort, RunState, Superv
 import {
   codexConnectorStableSameFileChurnSignature,
   isCodexConnectorStableSameFileChurn,
-} from "../codex-connector-review-policy";
+} from "../codex-connector-review-churn";
 
 const REASONING_ORDER: ReasoningEffort[] = ["none", "low", "medium", "high", "xhigh"];
 
