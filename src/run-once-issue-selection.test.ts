@@ -28,6 +28,7 @@ test("run-once issue selection does not consume external orchestration handoff a
   assert.doesNotMatch(source, /evaluateDecisionKernelV2/u);
   assert.doesNotMatch(source, /buildDecisionKernelV2ExplainDto/u);
   assert.doesNotMatch(source, /pr_lifecycle_action_taking/u);
+  assert.doesNotMatch(source, /external_orchestration_handoff/u);
   assert.doesNotMatch(source, /external_handoff/u);
   assert.doesNotMatch(source, /mutation_authority/u);
   assert.doesNotMatch(source, /v2_routing/u);

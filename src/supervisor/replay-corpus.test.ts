@@ -157,6 +157,12 @@ test("Phase 5 replay corpus cases keep external orchestration handoffs bounded",
       },
     ],
   );
+  const handoffSummaries = phase5Cases.map((entry) =>
+    entry.input.snapshot.operatorSummary?.activityContext?.handoffSummary ?? "",
+  );
+  assert.equal(handoffSummaries.every((summary) => summary.includes("external_orchestration_handoff")), true);
+  assert.equal(handoffSummaries.every((summary) => summary.includes("mutationAuthority=none")), true);
+  assert.equal(handoffSummaries.every((summary) => summary.includes("boundedNextAction=ask_operator")), true);
 
   const result = await runReplayCorpus(corpusRoot, createCheckedInReplayCorpusConfig(process.cwd()));
   const phase5Results = result.results.filter((entry) => phase5CaseIds.includes(entry.caseId));

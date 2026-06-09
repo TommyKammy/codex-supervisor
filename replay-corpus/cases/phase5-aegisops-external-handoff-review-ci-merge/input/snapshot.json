@@ -188,7 +188,7 @@
     "retrySummary": null,
     "recoveryLoopSummary": null,
     "activityContext": {
-      "handoffSummary": null,
+      "handoffSummary": "routingCategory=external_orchestration_handoff mutationAuthority=none externalHandoff=prepare_evidence coreSafetyGates=preserved boundedNextAction=ask_operator",
       "localReviewRoutingSummary": null,
       "changeClassesSummary": null,
       "verificationPolicySummary": null,

@@ -40,6 +40,7 @@ test("run-once turn execution does not import Decision Kernel v2 action decision
   assert.doesNotMatch(source, /buildDecisionKernelV2ExplainDto/u);
   assert.doesNotMatch(source, /pr_lifecycle_action_taking/u);
   assert.doesNotMatch(source, /prLifecycleEvaluationModeForRuntime/u);
+  assert.doesNotMatch(source, /external_orchestration_handoff/u);
   assert.doesNotMatch(source, /external_handoff/u);
   assert.doesNotMatch(source, /mutation_authority/u);
   assert.doesNotMatch(source, /v2_routing/u);
