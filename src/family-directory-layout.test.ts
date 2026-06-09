@@ -18,6 +18,7 @@ const EXPECTED_TOP_LEVEL_ENTRIES = {
   ],
   files: [
     "build-freshness.ts",
+    "codex-connector-review-churn.ts",
     "codex-connector-review-policy.ts",
     "codex-connector-review-request-decision.ts",
     "codex-connector-review-request-identity.ts",

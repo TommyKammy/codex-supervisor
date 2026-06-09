@@ -4,17 +4,21 @@ import { FailureContext, GitHubPullRequest, IssueRunRecord, ReviewThread, Superv
 import { nowIso } from "./core/utils";
 import {
   buildCodexConnectorReviewChurnDiagnostic,
+  buildCodexConnectorMustFixFindingDetails,
+  clusterConfiguredBotReviewThreads,
+  formatCodexConnectorReviewChurnDiagnostic,
+  type CodexConnectorReviewChurnDiagnostic,
+  type ConfiguredBotReviewThreadCluster,
+} from "./codex-connector-review-churn";
+import {
   codexConnectorMustFixReviewThreads,
   isSoftenedCodexConnectorP3Thread,
   latestCodexConnectorPSeverity,
 } from "./codex-connector-review-policy";
 
 export {
-  buildCodexConnectorMustFixFindingDetails,
   buildCodexConnectorP2P3PolicyDiagnostic,
   buildCodexConnectorPolicyBlockDiagnostic,
-  buildCodexConnectorReviewChurnDiagnostic,
-  clusterConfiguredBotReviewThreads,
   codexConnectorMustFixReviewThreads,
   codexConnectorNitpickOnlyReviewThreads,
   codexConnectorStaleReviewCommitThreads,
@@ -23,7 +27,6 @@ export {
   evaluateCodexConnectorConvergencePolicy,
   formatCodexConnectorP2P3PolicyDiagnostic,
   formatCodexConnectorPolicyBlockDiagnostic,
-  formatCodexConnectorReviewChurnDiagnostic,
   latestCodexConnectorReviewComment,
   normalizeCommitShaForComparison,
   type CodexConnectorConvergenceMergeEffect,
@@ -36,9 +39,15 @@ export {
   type CodexConnectorNitpickOnlyPolicyResult,
   type CodexConnectorP2P3PolicyDiagnostic,
   type CodexConnectorPolicyBlockDiagnostic,
+} from "./codex-connector-review-policy";
+export {
+  buildCodexConnectorMustFixFindingDetails,
+  buildCodexConnectorReviewChurnDiagnostic,
+  clusterConfiguredBotReviewThreads,
+  formatCodexConnectorReviewChurnDiagnostic,
   type CodexConnectorReviewChurnDiagnostic,
   type ConfiguredBotReviewThreadCluster,
-} from "./codex-connector-review-policy";
+} from "./codex-connector-review-churn";
 
 function isAllowedReviewBotThread(config: SupervisorConfig, thread: ReviewThread): boolean {
   const configuredLogins = new Set(configuredReviewBotLogins(config));

@@ -31,8 +31,10 @@ import {
   buildCodexConnectorMustFixFindingDetails,
   buildCodexConnectorReviewChurnDiagnostic,
   codexConnectorStableSameFileChurnSignature,
-  codexConnectorMustFixReviewThreads,
   isCodexConnectorStableSameFileChurn,
+} from "../codex-connector-review-churn";
+import {
+  codexConnectorMustFixReviewThreads,
 } from "../codex-connector-review-policy";
 import { isWorkstationLocalPathHygieneFailureSignature } from "../workstation-local-path-gate";
 

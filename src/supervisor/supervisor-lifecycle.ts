@@ -34,7 +34,7 @@ import {
   type CodexConnectorReviewChurnProgressComparison,
   type CodexConnectorReviewChurnProgressSummary,
   type CodexConnectorStableSameFileChurn,
-} from "../codex-connector-review-policy";
+} from "../codex-connector-review-churn";
 import { configuredBotReviewThreads, manualReviewThreads } from "../review-thread-reporting";
 import {
   FailureContext,
