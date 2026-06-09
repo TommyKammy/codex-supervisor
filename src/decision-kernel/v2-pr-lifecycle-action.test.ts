@@ -6,6 +6,7 @@ import { normalizePrLifecycleFacts, type PrLifecycleFactInventory } from "./pr-l
 import {
   evaluateDecisionKernelV2PrLifecycleAction,
   routeDecisionKernelV2PrLifecycleAction,
+  type DecisionKernelV2PrLifecycleActionInput,
 } from "./v2-pr-lifecycle-action";
 
 function inventory(overrides: Partial<PrLifecycleFactInventory> = {}): PrLifecycleFactInventory {
@@ -282,6 +283,78 @@ test("evaluateDecisionKernelV2PrLifecycleAction requires explicit merge gate inp
     "gate=local_verification:missing",
     "gate=final_guard:missing",
   ]);
+});
+
+test("DecisionKernelV2PrLifecycleActionInput excludes external handoff authority fields", () => {
+  const actionInputKeys = {
+    mode: true,
+    normalizedState: true,
+    reviewPolicyInput: true,
+    checkPolicyInput: true,
+    reviewerLoopTerminal: true,
+  } satisfies Record<keyof DecisionKernelV2PrLifecycleActionInput, true>;
+
+  assert.equal("externalOrchestrationHandoff" in actionInputKeys, false);
+  assert.equal("routingCategory" in actionInputKeys, false);
+  assert.equal("mutationAuthority" in actionInputKeys, false);
+});
+
+test("evaluateDecisionKernelV2PrLifecycleAction fails closed without core safety gate evidence", () => {
+  const cases: Array<{
+    label: string;
+    input: DecisionKernelV2PrLifecycleActionInput;
+    expectedAction: string;
+    expectedReasons: string[];
+  }> = [
+    {
+      label: "missing merge gates",
+      input: {
+        mode: "pr_lifecycle_action_taking",
+        normalizedState: normalizePrLifecycleFacts(inventory()),
+      },
+      expectedAction: "ask_operator",
+      expectedReasons: ["v2_merge_gate_evidence_missing"],
+    },
+    {
+      label: "cached facts",
+      input: {
+        mode: "pr_lifecycle_action_taking",
+        normalizedState: normalizePrLifecycleFacts(
+          inventory({
+            source: "cached_github",
+          }),
+        ),
+      },
+      expectedAction: "ask_operator",
+      expectedReasons: ["fresh_facts_guard_blocked"],
+    },
+    {
+      label: "failing checks",
+      input: {
+        mode: "pr_lifecycle_action_taking",
+        normalizedState: normalizePrLifecycleFacts(
+          inventory({
+            checks: {
+              passingCount: 2,
+              pendingCount: 0,
+              failingCount: 1,
+              unknownCount: 0,
+            },
+          }),
+        ),
+      },
+      expectedAction: "no_action",
+      expectedReasons: ["v2_action_not_promoted"],
+    },
+  ];
+
+  for (const testCase of cases) {
+    const decision = evaluateDecisionKernelV2PrLifecycleAction(testCase.input);
+
+    assert.equal(decision.action, testCase.expectedAction, testCase.label);
+    assert.deepEqual(decision.reasons, testCase.expectedReasons, testCase.label);
+    assert.notEqual(decision.action, "merge", testCase.label);
+  }
 });
 
 test("evaluateDecisionKernelV2PrLifecycleAction lets merge-ready facts bypass repair retry exhaustion", () => {

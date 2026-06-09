@@ -129,3 +129,45 @@ test("Phase 2 Connector review policy replay fixtures cover typed boundary outco
   const repeatStopFixture = fixtures.find((fixture) => fixture.id === "phase2-hrcore-metadata-residue");
   assert.equal(repeatStopFixture?.repeatStopSuppressedReason, "repeat_stop_exhausted");
 });
+
+test("Phase 5 replay corpus cases keep external orchestration handoffs bounded", async () => {
+  const corpusRoot = path.join(process.cwd(), "replay-corpus");
+  const phase5CaseIds = [
+    "phase5-aegisops-external-handoff-review-ci-merge",
+    "phase5-hrcore-external-handoff-metadata-residue",
+  ];
+  const corpus = await loadReplayCorpus(corpusRoot);
+  const phase5Cases = corpus.cases.filter((entry) => phase5CaseIds.includes(entry.id));
+
+  assert.deepEqual(phase5Cases.map((entry) => entry.id), phase5CaseIds);
+  assert.deepEqual(
+    phase5Cases.map((entry) => entry.expected),
+    [
+      {
+        nextState: "blocked",
+        shouldRunCodex: false,
+        blockedReason: "stale_review_bot",
+        failureSignature: "stalled-bot:thread-production-source-denylist",
+      },
+      {
+        nextState: "ready_to_merge",
+        shouldRunCodex: false,
+        blockedReason: null,
+        failureSignature: null,
+      },
+    ],
+  );
+  const handoffSummaries = phase5Cases.map((entry) =>
+    entry.input.snapshot.operatorSummary?.activityContext?.handoffSummary ?? "",
+  );
+  assert.equal(handoffSummaries.every((summary) => summary.includes("external_orchestration_handoff")), true);
+  assert.equal(handoffSummaries.every((summary) => summary.includes("mutationAuthority=none")), true);
+  assert.equal(handoffSummaries.every((summary) => summary.includes("boundedNextAction=ask_operator")), true);
+
+  const result = await runReplayCorpus(corpusRoot, createCheckedInReplayCorpusConfig(process.cwd()));
+  const phase5Results = result.results.filter((entry) => phase5CaseIds.includes(entry.caseId));
+
+  assert.deepEqual(phase5Results.map((entry) => entry.caseId), phase5CaseIds);
+  assert.equal(phase5Results.every((entry) => entry.matchesExpected), true);
+  assert.equal(phase5Results.every((entry) => entry.actual.shouldRunCodex === false), true);
+});

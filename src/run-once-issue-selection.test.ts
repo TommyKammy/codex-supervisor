@@ -21,6 +21,22 @@ import {
   syncRequirementsBlockerIssueComment,
 } from "./requirements-blocker-issue-comment";
 
+test("run-once issue selection does not consume external orchestration handoff authority", async () => {
+  const source = await fs.readFile(path.join(process.cwd(), "src", "run-once-issue-selection.ts"), "utf8");
+
+  assert.doesNotMatch(source, /decision-kernel-v2/u);
+  assert.doesNotMatch(source, /evaluateDecisionKernelV2/u);
+  assert.doesNotMatch(source, /buildDecisionKernelV2ExplainDto/u);
+  assert.doesNotMatch(source, /pr_lifecycle_action_taking/u);
+  assert.doesNotMatch(source, /external_orchestration_handoff/u);
+  assert.doesNotMatch(source, /external_handoff/u);
+  assert.doesNotMatch(source, /mutation_authority/u);
+  assert.doesNotMatch(source, /v2_routing/u);
+  assert.doesNotMatch(source, /externalOrchestrationHandoff/u);
+  assert.doesNotMatch(source, /routingCategory/u);
+  assert.doesNotMatch(source, /mutationAuthority/u);
+});
+
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
   return {
     repoPath: "/tmp/repo",
