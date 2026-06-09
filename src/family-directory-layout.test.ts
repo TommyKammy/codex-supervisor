@@ -82,6 +82,7 @@ const EXPECTED_TOP_LEVEL_ENTRIES = {
     "run-once-issue-preparation.ts",
     "run-once-issue-selection.ts",
     "run-once-turn-execution.ts",
+    "run-once-turn-verification-evidence.ts",
     "setup-config-preview.ts",
     "setup-config-write.ts",
     "setup-readiness-first-run.ts",
