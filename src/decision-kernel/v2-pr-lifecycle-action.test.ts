@@ -172,7 +172,7 @@ test("evaluateDecisionKernelV2PrLifecycleAction promotes pending and unknown che
   assert.deepEqual(unknown.v2Decision.reasons, ["checks_unknown"]);
 });
 
-test("evaluateDecisionKernelV2PrLifecycleAction keeps repair and merge decisions outside the Phase 4.2 action boundary", () => {
+test("evaluateDecisionKernelV2PrLifecycleAction keeps repair outside the action boundary and promotes merge readiness", () => {
   const failingChecks = evaluateDecisionKernelV2PrLifecycleAction({
     mode: "pr_lifecycle_action_taking",
     normalizedState: normalizePrLifecycleFacts(
@@ -189,13 +189,200 @@ test("evaluateDecisionKernelV2PrLifecycleAction keeps repair and merge decisions
   const mergeReady = evaluateDecisionKernelV2PrLifecycleAction({
     mode: "pr_lifecycle_action_taking",
     normalizedState: normalizePrLifecycleFacts(inventory()),
+    checkPolicyInput: {
+      mergeReadyBlockedByRequiredChecks: false,
+      mergeReadyBlockedByLocalCi: false,
+      mergeReadyBlockedByFinalGuard: false,
+    },
   });
 
   assert.equal(failingChecks.v2Decision.action, "run_codex");
   assert.equal(failingChecks.action, "no_action");
   assert.deepEqual(failingChecks.reasons, ["v2_action_not_promoted"]);
-  assert.equal(mergeReady.v2Decision.action, "no_action");
-  assert.equal(mergeReady.action, "no_action");
+  assert.equal(mergeReady.v2Decision.action, "merge");
+  assert.equal(mergeReady.action, "merge");
+  assert.deepEqual(mergeReady.reasons, ["v2_merge_ready"]);
+  assert.deepEqual(mergeReady.traceDecision, {
+    value: "merge",
+    recommendedAction: "merge",
+    summary: "PR appears merge-ready.",
+  });
+  assert.deepEqual(mergeReady.evidenceTokens, [
+    "v2_reason=merge_ready_diagnostic_only",
+    "gate=head_sha:current_head",
+    "gate=local_state:fresh",
+    "gate=review:current_head_review_observed",
+    "gate=checks:green",
+    "gate=mergeability:mergeable",
+    "gate=required_checks:passed",
+    "gate=local_verification:passed",
+    "gate=final_guard:passed",
+  ]);
+});
+
+test("evaluateDecisionKernelV2PrLifecycleAction requires explicit merge gate input before promoting merge", () => {
+  const decision = evaluateDecisionKernelV2PrLifecycleAction({
+    mode: "pr_lifecycle_action_taking",
+    normalizedState: normalizePrLifecycleFacts(inventory()),
+  });
+
+  assert.equal(decision.v2Decision.action, "merge");
+  assert.equal(decision.action, "ask_operator");
+  assert.deepEqual(decision.reasons, ["v2_merge_gate_evidence_missing"]);
+  assert.deepEqual(decision.evidenceTokens, [
+    "missing=merge_gate_input",
+    "v2_reason=merge_ready_diagnostic_only",
+    "gate=head_sha:current_head",
+    "gate=local_state:fresh",
+    "gate=review:current_head_review_observed",
+    "gate=checks:green",
+    "gate=mergeability:mergeable",
+    "gate=required_checks:missing",
+    "gate=local_verification:missing",
+    "gate=final_guard:missing",
+  ]);
+});
+
+test("evaluateDecisionKernelV2PrLifecycleAction lets merge-ready facts bypass repair retry exhaustion", () => {
+  const decision = evaluateDecisionKernelV2PrLifecycleAction({
+    mode: "pr_lifecycle_action_taking",
+    normalizedState: normalizePrLifecycleFacts(inventory()),
+    checkPolicyInput: {
+      mergeReadyBlockedByRequiredChecks: false,
+      mergeReadyBlockedByLocalCi: false,
+      mergeReadyBlockedByFinalGuard: false,
+    },
+    reviewerLoopTerminal: {
+      retryBudgetExhausted: true,
+      reason: "repair retry exhausted",
+    },
+  });
+
+  assert.equal(decision.v2Decision.action, "merge");
+  assert.equal(decision.action, "merge");
+  assert.deepEqual(decision.reasons, ["v2_merge_ready"]);
+});
+
+test("evaluateDecisionKernelV2PrLifecycleAction fails closed before merge when safety evidence is missing or blocking", () => {
+  const cases: Array<{
+    label: string;
+    normalizedState: ReturnType<typeof normalizePrLifecycleFacts>;
+    checkPolicyInput?: Parameters<typeof evaluateDecisionKernelV2PrLifecycleAction>[0]["checkPolicyInput"];
+    expectedAction: string;
+    expectedReasons: string[];
+  }> = [
+    {
+      label: "pending CI",
+      normalizedState: normalizePrLifecycleFacts(
+        inventory({
+          checks: { passingCount: 2, pendingCount: 1, failingCount: 0, unknownCount: 0 },
+        }),
+      ),
+      expectedAction: "wait_ci",
+      expectedReasons: ["v2_wait_ci"],
+    },
+    {
+      label: "failing CI",
+      normalizedState: normalizePrLifecycleFacts(
+        inventory({
+          checks: { passingCount: 2, pendingCount: 0, failingCount: 1, unknownCount: 0 },
+        }),
+      ),
+      expectedAction: "no_action",
+      expectedReasons: ["v2_action_not_promoted"],
+    },
+    {
+      label: "manual review",
+      normalizedState: normalizePrLifecycleFacts(
+        inventory({
+          reviewThreads: {
+            unresolvedManualThreadCount: 1,
+            unresolvedCurrentHeadConfiguredBotThreadCount: 0,
+            stalePreviousHeadConfiguredBotThreadCount: 0,
+            metadataOnlyUnresolvedThreadCount: 0,
+          },
+        }),
+      ),
+      expectedAction: "ask_operator",
+      expectedReasons: ["v2_ask_operator"],
+    },
+    {
+      label: "SHA mismatch",
+      normalizedState: normalizePrLifecycleFacts(
+        inventory({
+          pullRequest: {
+            number: 2312,
+            headSha: "head-new",
+            state: "OPEN",
+            isDraft: false,
+            mergeStateStatus: "CLEAN",
+            mergeable: "MERGEABLE",
+            currentHeadReviewObservedAt: "2026-06-09T00:01:00.000Z",
+            currentHeadReviewHeadSha: "head-new",
+          },
+          localState: {
+            trackedHeadSha: "head-current",
+            workspaceHeadSha: "head-current",
+            lastObservedPrHeadSha: "head-current",
+          },
+        }),
+      ),
+      expectedAction: "ask_operator",
+      expectedReasons: ["fresh_facts_guard_blocked"],
+    },
+    {
+      label: "merge conflict",
+      normalizedState: normalizePrLifecycleFacts(
+        inventory({
+          pullRequest: {
+            number: 2312,
+            headSha: "head-current",
+            state: "OPEN",
+            isDraft: false,
+            mergeStateStatus: "DIRTY",
+            mergeable: "CONFLICTING",
+            currentHeadReviewObservedAt: "2026-06-09T00:01:00.000Z",
+            currentHeadReviewHeadSha: "head-current",
+          },
+        }),
+      ),
+      expectedAction: "ask_operator",
+      expectedReasons: ["v2_ask_operator"],
+    },
+    {
+      label: "missing local verification",
+      normalizedState: normalizePrLifecycleFacts(
+        inventory({
+          localState: {
+            trackedHeadSha: null,
+            workspaceHeadSha: null,
+            lastObservedPrHeadSha: null,
+          },
+        }),
+      ),
+      expectedAction: "ask_operator",
+      expectedReasons: ["fresh_facts_guard_blocked"],
+    },
+    {
+      label: "final guard blocked",
+      normalizedState: normalizePrLifecycleFacts(inventory()),
+      checkPolicyInput: { mergeReadyBlockedByFinalGuard: true },
+      expectedAction: "ask_operator",
+      expectedReasons: ["v2_ask_operator"],
+    },
+  ];
+
+  for (const testCase of cases) {
+    const decision = evaluateDecisionKernelV2PrLifecycleAction({
+      mode: "pr_lifecycle_action_taking",
+      normalizedState: testCase.normalizedState,
+      checkPolicyInput: testCase.checkPolicyInput,
+    });
+
+    assert.equal(decision.action, testCase.expectedAction, testCase.label);
+    assert.deepEqual(decision.reasons, testCase.expectedReasons, testCase.label);
+    assert.notEqual(decision.action, "merge", testCase.label);
+  }
 });
 
 test("evaluateDecisionKernelV2PrLifecycleAction promotes ambiguous review facts to ask_operator", () => {

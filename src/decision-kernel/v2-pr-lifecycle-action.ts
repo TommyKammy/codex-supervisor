@@ -19,6 +19,7 @@ import {
 import type { NormalizedPrLifecycleState } from "./pr-lifecycle-state";
 
 export type DecisionKernelV2PrLifecycleAction =
+  | "merge"
   | "request_review"
   | "wait_ci"
   | "mark_stale_resolved"
@@ -31,6 +32,8 @@ export type DecisionKernelV2PrLifecycleActionReason =
   | "fresh_facts_guard_blocked"
   | "v2_request_review"
   | "v2_wait_ci"
+  | "v2_merge_ready"
+  | "v2_merge_gate_evidence_missing"
   | "v2_mark_stale_resolved"
   | "v2_stale_review_needs_current_head_review"
   | "v2_metadata_terminal"
@@ -119,6 +122,7 @@ export function evaluateDecisionKernelV2PrLifecycleAction(
     mode,
     guard,
     v2Decision,
+    checkPolicyInput: input.checkPolicyInput ?? null,
     reviewerLoopTerminal: input.reviewerLoopTerminal ?? null,
   });
 }
@@ -127,9 +131,37 @@ function promoteV2Decision(args: {
   mode: DecisionKernelV2ModePosture;
   guard: PrLifecycleEvaluationGuardResult;
   v2Decision: DecisionKernelV2ReadOnlyDecision;
+  checkPolicyInput: DecisionKernelV2CheckPolicyInput | null;
   reviewerLoopTerminal: DecisionKernelV2ReviewerLoopTerminalInput | null;
 }): DecisionKernelV2PrLifecycleActionDecision {
-  const { mode, guard, v2Decision, reviewerLoopTerminal } = args;
+  const { mode, guard, v2Decision, checkPolicyInput, reviewerLoopTerminal } = args;
+
+  if (v2Decision.action === "merge") {
+    if (!hasExplicitPassingMergeGateInput(checkPolicyInput)) {
+      return actionDecision({
+        mode,
+        guard,
+        v2Decision,
+        action: "ask_operator",
+        reasons: ["v2_merge_gate_evidence_missing"],
+        evidenceTokens: [
+          "missing=merge_gate_input",
+          ...mergeSafetyEvidenceTokens(v2Decision, checkPolicyInput),
+        ],
+        summary: "Decision Kernel v2 merge action requires explicit passing merge gate evidence.",
+      });
+    }
+
+    return actionDecision({
+      mode,
+      guard,
+      v2Decision,
+      action: "merge",
+      reasons: ["v2_merge_ready"],
+      evidenceTokens: mergeSafetyEvidenceTokens(v2Decision, checkPolicyInput),
+      summary: v2Decision.summary,
+    });
+  }
 
   if (reviewerLoopTerminal?.retryBudgetExhausted) {
     return actionDecision({
@@ -212,6 +244,9 @@ function promoteV2Decision(args: {
       v2Decision,
       action: "ask_operator",
       reasons: ["v2_ask_operator"],
+      evidenceTokens: isMergeSafetyBlockedDecision(v2Decision)
+        ? mergeSafetyEvidenceTokens(v2Decision, checkPolicyInput)
+        : undefined,
       summary: v2Decision.summary,
     });
   }
@@ -236,6 +271,26 @@ function isStaleReviewTerminalDecision(decision: DecisionKernelV2ReadOnlyDecisio
 
 function isMetadataTerminalDecision(decision: DecisionKernelV2ReadOnlyDecision): boolean {
   return decision.reasons.includes("metadata_only_review_residue");
+}
+
+function isMergeSafetyBlockedDecision(decision: DecisionKernelV2ReadOnlyDecision): boolean {
+  return (
+    decision.reasons.includes("insufficient_merge_evidence") ||
+    decision.reasons.includes("merge_conflict") ||
+    decision.reasons.includes("draft_pull_request")
+  );
+}
+
+function hasExplicitPassingMergeGateInput(checkPolicyInput: DecisionKernelV2CheckPolicyInput | null): boolean {
+  return (
+    checkPolicyInput !== null &&
+    typeof checkPolicyInput.mergeReadyBlockedByRequiredChecks === "boolean" &&
+    typeof checkPolicyInput.mergeReadyBlockedByLocalCi === "boolean" &&
+    typeof checkPolicyInput.mergeReadyBlockedByFinalGuard === "boolean" &&
+    !checkPolicyInput.mergeReadyBlockedByRequiredChecks &&
+    !checkPolicyInput.mergeReadyBlockedByLocalCi &&
+    !checkPolicyInput.mergeReadyBlockedByFinalGuard
+  );
 }
 
 function hasCurrentHeadReviewEvidence(decision: DecisionKernelV2ReadOnlyDecision): boolean {
@@ -275,6 +330,8 @@ function traceDecision(
       return { value: "request_review", recommendedAction: "request_review", summary };
     case "wait_ci":
       return { value: "wait", recommendedAction: "wait_ci", summary };
+    case "merge":
+      return { value: "merge", recommendedAction: "merge", summary };
     case "mark_stale_resolved":
       return { value: "do_nothing", recommendedAction: "mark_stale_resolved", summary };
     case "ask_operator":
@@ -290,6 +347,32 @@ function reviewEvidenceTokens(decision: DecisionKernelV2ReadOnlyDecision): strin
     tokens.push(`required_evidence=${decision.requiredEvidence.join("+")}`);
   }
   return tokens;
+}
+
+function mergeSafetyEvidenceTokens(
+  decision: DecisionKernelV2ReadOnlyDecision,
+  checkPolicyInput: DecisionKernelV2CheckPolicyInput | null,
+): string[] {
+  const state = decision.normalizedState;
+  return [
+    ...reviewEvidenceTokens(decision),
+    `gate=head_sha:${state.headFreshness}`,
+    `gate=local_state:${state.localStateFreshness}`,
+    `gate=review:${state.reviewPosture}`,
+    `gate=checks:${checkPolicyInput?.noChecksAndNoLocalCi ? "no_checks_and_no_local_ci" : state.checkPosture}`,
+    `gate=mergeability:${state.mergeability}`,
+    `gate=required_checks:${mergeGateToken(checkPolicyInput?.mergeReadyBlockedByRequiredChecks)}`,
+    `gate=local_verification:${mergeGateToken(checkPolicyInput?.mergeReadyBlockedByLocalCi)}`,
+    `gate=final_guard:${mergeGateToken(checkPolicyInput?.mergeReadyBlockedByFinalGuard)}`,
+  ];
+}
+
+function mergeGateToken(blocked: boolean | undefined): "blocked" | "passed" | "missing" {
+  if (blocked === undefined) {
+    return "missing";
+  }
+
+  return blocked ? "blocked" : "passed";
 }
 
 function sanitizeEvidenceToken(value: string): string {

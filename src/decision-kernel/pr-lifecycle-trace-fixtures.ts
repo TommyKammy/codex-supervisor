@@ -298,7 +298,7 @@ const decisionKernelV2RuntimeModes = ["disabled", "diagnostic_only", "pr_lifecyc
 const decisionKernelV2ActionSources = ["disabled", "pr_lifecycle_v2"] as const satisfies readonly DecisionKernelV2ActionSource[];
 const decisionKernelV2ActionScopes = ["none", "pr_lifecycle"] as const satisfies readonly DecisionKernelV2ActionScope[];
 const decisionKernelV2ComparisonCategories = ["agreement", "safe_divergence", "manual_review_required"] as const satisfies readonly DecisionKernelV2ComparisonCategory[];
-const decisionKernelV2Actions = ["wait", "request_review", "run_codex", "ask_operator", "no_action"] as const satisfies readonly DecisionKernelV2Action[];
+const decisionKernelV2Actions = ["merge", "wait", "request_review", "run_codex", "ask_operator", "no_action"] as const satisfies readonly DecisionKernelV2Action[];
 const decisionKernelV2Reasons = [
   "no_pull_request",
   "pull_request_closed",

@@ -53,12 +53,18 @@
         "actionEquivalent": "no_action"
       },
       "v2": {
-        "action": "no_action",
+        "action": "merge",
         "reasons": ["merge_ready_diagnostic_only"]
       },
-      "category": "agreement",
-      "differences": [],
-      "safetyNote": "Current and v2 decisions agree for the compared action boundary."
+      "category": "manual_review_required",
+      "differences": [
+        {
+          "field": "action",
+          "current": "no_action",
+          "v2": "merge"
+        }
+      ],
+      "safetyNote": "Current and v2 diverge in an unsafe or ambiguous way; require operator review before trusting v2."
     }
   }
 }

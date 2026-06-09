@@ -104,9 +104,9 @@ function reviewPolicyInput(
 }
 
 test("Decision Kernel v2 action vocabulary is typed", () => {
-  const actions: DecisionKernelV2Action[] = ["wait", "request_review", "run_codex", "ask_operator", "no_action"];
+  const actions: DecisionKernelV2Action[] = ["merge", "wait", "request_review", "run_codex", "ask_operator", "no_action"];
 
-  assert.deepEqual(actions, ["wait", "request_review", "run_codex", "ask_operator", "no_action"]);
+  assert.deepEqual(actions, ["merge", "wait", "request_review", "run_codex", "ask_operator", "no_action"]);
 });
 
 test("Decision Kernel v2 publishes a diagnostic-only safety posture", () => {
@@ -176,13 +176,13 @@ test("evaluateDecisionKernelV2ReadOnly returns ask_operator for manual review th
   assert.deepEqual(decision.requiredEvidence, ["resolved_manual_threads"]);
 });
 
-test("evaluateDecisionKernelV2ReadOnly returns no_action for merge-ready diagnostic-only state", () => {
+test("evaluateDecisionKernelV2ReadOnly returns merge for merge-ready state", () => {
   const decision = evaluateDecisionKernelV2ReadOnlyFromFacts({ inventory: inventory() });
 
-  assert.equal(decision.action, "no_action");
+  assert.equal(decision.action, "merge");
   assert.deepEqual(decision.reasons, ["merge_ready_diagnostic_only"]);
   assert.deepEqual(decision.requiredEvidence, []);
-  assert.match(decision.summary, /diagnostic-only/);
+  assert.match(decision.summary, /merge-ready/);
 });
 
 test("evaluateDecisionKernelV2ReadOnly treats no-review-required PRs as merge-ready", () => {
@@ -203,7 +203,7 @@ test("evaluateDecisionKernelV2ReadOnly treats no-review-required PRs as merge-re
   });
 
   assert.equal(decision.normalizedState.reviewPosture, "no_unresolved_review");
-  assert.equal(decision.action, "no_action");
+  assert.equal(decision.action, "merge");
   assert.deepEqual(decision.reasons, ["merge_ready_diagnostic_only"]);
   assert.deepEqual(decision.requiredEvidence, []);
 });
@@ -352,7 +352,7 @@ test("evaluateDecisionKernelV2ReadOnly treats no-CI check policy as merge-ready 
   });
 
   assert.equal(decision.normalizedState.checkPosture, "unknown");
-  assert.equal(decision.action, "no_action");
+  assert.equal(decision.action, "merge");
   assert.deepEqual(decision.reasons, ["merge_ready_diagnostic_only"]);
   assert.deepEqual(decision.requiredEvidence, []);
 });
@@ -463,7 +463,7 @@ test("evaluateDecisionKernelV2ReadOnly ignores resolved manual policy threads", 
     reviewPolicyInput: reviewPolicyInput(["manual_thread"], {}, { isResolved: true }),
   });
 
-  assert.equal(decision.action, "no_action");
+  assert.equal(decision.action, "merge");
   assert.deepEqual(decision.reasons, ["merge_ready_diagnostic_only"]);
 });
 
@@ -513,7 +513,7 @@ test("evaluateDecisionKernelV2ReadOnly respects non-Codex provider policy input"
     reviewPolicyInput: reviewPolicyInput(["must_fix_current_head"], {}, {}, { configuredProviderKinds: ["coderabbit"] }),
   });
 
-  assert.equal(decision.action, "no_action");
+  assert.equal(decision.action, "merge");
   assert.deepEqual(decision.reasons, ["merge_ready_diagnostic_only"]);
   assert.deepEqual(decision.requiredEvidence, []);
 });
@@ -531,6 +531,6 @@ test("evaluateDecisionKernelV2ReadOnly does not repair softened P3 advisory poli
     reviewPolicyInput: reviewPolicyInput(["softened_p3_advisory"]),
   });
 
-  assert.equal(decision.action, "no_action");
+  assert.equal(decision.action, "merge");
   assert.deepEqual(decision.reasons, ["merge_ready_diagnostic_only"]);
 });
