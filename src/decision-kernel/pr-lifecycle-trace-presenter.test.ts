@@ -104,6 +104,7 @@ test("formatPrLifecycleTraceDiagnostic renders a merge-ready trace line", () => 
   assert.match(line, /v2_mutation_allowed=false/);
   assert.match(line, /v2_action_source=disabled/);
   assert.match(line, /v2_action_scope=none/);
+  assert.match(line, /rollback_posture=diagnostic_only_to_rollback/);
   assert.match(line, /v2_comparison=none/);
   assert.match(line, /v2_diagnostic_only=no/);
 });
@@ -122,6 +123,21 @@ test("formatPrLifecycleTraceDiagnostic renders the gated v2 PR lifecycle action 
   assert.match(line, /v2_mutation_allowed=true/);
   assert.match(line, /v2_action_source=pr_lifecycle_v2/);
   assert.match(line, /v2_action_scope=pr_lifecycle/);
+  assert.match(line, /rollback_posture=disable_to_rollback/);
+});
+
+test("formatPrLifecycleTraceDiagnostic renders disabled v2 rollback posture", () => {
+  const line = formatPrLifecycleTraceDiagnostic(
+    buildPrLifecycleDecisionTrace(
+      traceInput({
+        v2Mode: "disabled",
+      }),
+    ),
+  );
+
+  assert.match(line, /v2_mode=disabled/);
+  assert.match(line, /v2_action_source=disabled/);
+  assert.match(line, /rollback_posture=already_disabled/);
 });
 
 test("formatPrLifecycleTraceDiagnostic renders pending CI diagnostics", () => {

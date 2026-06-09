@@ -45,6 +45,13 @@
       "recommendedAction": "wait_ci",
       "summary": "Required checks are still pending."
     },
-    "evidenceTokens": ["pr=1002", "head=head-wait-ci", "pending_checks=2"]
+    "evidenceTokens": ["pr=1002", "head=head-wait-ci", "pending_checks=2"],
+    "v2Mode": {
+      "mode": "pr_lifecycle_action_taking",
+      "authoritative": true,
+      "mutationAllowed": true,
+      "actionSource": "pr_lifecycle_v2",
+      "actionScope": "pr_lifecycle"
+    }
   }
 }

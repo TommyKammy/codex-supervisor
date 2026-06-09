@@ -46,6 +46,13 @@
       "summary": "Fresh PR lifecycle facts are merge ready."
     },
     "evidenceTokens": ["pr=1001", "head=head-merge-ready", "checks=green"],
+    "v2Mode": {
+      "mode": "pr_lifecycle_action_taking",
+      "authoritative": true,
+      "mutationAllowed": true,
+      "actionSource": "pr_lifecycle_v2",
+      "actionScope": "pr_lifecycle"
+    },
     "v2Comparison": {
       "diagnosticOnly": true,
       "current": {

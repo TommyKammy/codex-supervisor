@@ -625,6 +625,134 @@ test("evaluateDecisionKernelV2PrLifecycleAction keeps disabled and diagnostic-on
   assert.deepEqual(diagnosticOnly.reasons, ["v2_diagnostic_only"]);
 });
 
+test("Phase 4 v2 PR lifecycle action-taking replay evidence covers selected actions and rollback modes", () => {
+  const normalizedReady = normalizePrLifecycleFacts(inventory());
+  const cases = [
+    {
+      id: "request-review",
+      decision: evaluateDecisionKernelV2PrLifecycleAction({
+        mode: "pr_lifecycle_action_taking",
+        normalizedState: normalizePrLifecycleFacts(
+          inventory({
+            pullRequest: {
+              number: 2312,
+              headSha: "head-current",
+              state: "OPEN",
+              isDraft: false,
+              mergeStateStatus: "CLEAN",
+              mergeable: "MERGEABLE",
+              currentHeadReviewObservedAt: null,
+              currentHeadReviewHeadSha: null,
+            },
+          }),
+        ),
+      }),
+    },
+    {
+      id: "wait-ci",
+      decision: evaluateDecisionKernelV2PrLifecycleAction({
+        mode: "pr_lifecycle_action_taking",
+        normalizedState: normalizePrLifecycleFacts(
+          inventory({
+            checks: {
+              passingCount: 1,
+              pendingCount: 1,
+              failingCount: 0,
+              unknownCount: 0,
+            },
+          }),
+        ),
+      }),
+    },
+    {
+      id: "stale-terminal",
+      decision: evaluateDecisionKernelV2PrLifecycleAction({
+        mode: "pr_lifecycle_action_taking",
+        normalizedState: normalizedReady,
+        reviewPolicyInput: reviewPolicyInput(["stale_commit_thread"]),
+      }),
+    },
+    {
+      id: "operator-escalation",
+      decision: evaluateDecisionKernelV2PrLifecycleAction({
+        mode: "pr_lifecycle_action_taking",
+        normalizedState: normalizePrLifecycleFacts(
+          inventory({
+            reviewThreads: {
+              unresolvedManualThreadCount: 1,
+              unresolvedCurrentHeadConfiguredBotThreadCount: 0,
+              stalePreviousHeadConfiguredBotThreadCount: 0,
+              metadataOnlyUnresolvedThreadCount: 0,
+            },
+          }),
+        ),
+      }),
+    },
+    {
+      id: "merge-ready",
+      decision: evaluateDecisionKernelV2PrLifecycleAction({
+        mode: "pr_lifecycle_action_taking",
+        normalizedState: normalizedReady,
+        checkPolicyInput: {
+          mergeReadyBlockedByRequiredChecks: false,
+          mergeReadyBlockedByLocalCi: false,
+          mergeReadyBlockedByFinalGuard: false,
+        },
+      }),
+    },
+    {
+      id: "diagnostic-rollback",
+      decision: evaluateDecisionKernelV2PrLifecycleAction({
+        mode: "diagnostic_only",
+        normalizedState: normalizedReady,
+      }),
+    },
+    {
+      id: "disabled-rollback",
+      decision: evaluateDecisionKernelV2PrLifecycleAction({
+        mode: "disabled",
+        normalizedState: normalizedReady,
+      }),
+    },
+  ] as const;
+
+  const traces = cases.map(({ id, decision }) =>
+    buildPrLifecycleDecisionTrace({
+      traceId: `phase4-${id}`,
+      generatedAt: "2026-06-09T00:03:00.000Z",
+      normalizedState: decision.v2Decision.normalizedState,
+      policy: {
+        name: "pr_lifecycle_decision_kernel_v2",
+        posture: "unknown",
+        reasons: decision.v2Decision.reasons,
+      },
+      decision: decision.traceDecision,
+      evidenceTokens: [`case=${id}`, ...decision.evidenceTokens],
+      v2Mode: decision.mode,
+    }),
+  );
+
+  assert.deepEqual(
+    traces.map((trace, index) => [
+      cases[index]?.id,
+      trace.v2Mode.mode,
+      trace.decision.value,
+      trace.decision.recommendedAction,
+      trace.v2Mode.actionSource,
+      trace.v2Mode.mutationAllowed,
+    ]),
+    [
+      ["request-review", "pr_lifecycle_action_taking", "request_review", "request_review", "pr_lifecycle_v2", true],
+      ["wait-ci", "pr_lifecycle_action_taking", "wait", "wait_ci", "pr_lifecycle_v2", true],
+      ["stale-terminal", "pr_lifecycle_action_taking", "do_nothing", "mark_stale_resolved", "pr_lifecycle_v2", true],
+      ["operator-escalation", "pr_lifecycle_action_taking", "ask_operator", "manual_review", "pr_lifecycle_v2", true],
+      ["merge-ready", "pr_lifecycle_action_taking", "merge", "merge", "pr_lifecycle_v2", true],
+      ["diagnostic-rollback", "diagnostic_only", "do_nothing", "no_action", "disabled", false],
+      ["disabled-rollback", "disabled", "do_nothing", "no_action", "disabled", false],
+    ],
+  );
+});
+
 test("v2 PR lifecycle action decisions can be recorded with a v2 action source trace posture", () => {
   const actionDecision = evaluateDecisionKernelV2PrLifecycleAction({
     mode: "pr_lifecycle_action_taking",
