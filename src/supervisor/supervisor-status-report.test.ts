@@ -92,18 +92,18 @@ test("buildRuntimeRecoverySummary stays quiet when no actionable runtime recover
 test("renderDecisionKernelV2StatusLine keeps v2 visibly diagnostic-only", () => {
   assert.equal(
     renderDecisionKernelV2StatusLine(),
-    "decision_kernel_v2 mode=diagnostic_only authoritative=false mutation_allowed=false action_source=disabled action_scope=none",
+    "decision_kernel_v2 mode=diagnostic_only authoritative=false mutation_allowed=false action_source=disabled action_scope=none routing_category=external_orchestration_handoff mutation_authority=none external_handoff=prepare_evidence core_safety_gates=preserved",
   );
 });
 
 test("renderDecisionKernelV2StatusLine distinguishes disabled and PR lifecycle action-taking modes", () => {
   assert.equal(
     renderDecisionKernelV2StatusLine("disabled"),
-    "decision_kernel_v2 mode=disabled authoritative=false mutation_allowed=false action_source=disabled action_scope=none",
+    "decision_kernel_v2 mode=disabled authoritative=false mutation_allowed=false action_source=disabled action_scope=none routing_category=external_orchestration_handoff mutation_authority=none external_handoff=prepare_evidence core_safety_gates=preserved",
   );
   assert.equal(
     renderDecisionKernelV2StatusLine("pr_lifecycle_action_taking"),
-    "decision_kernel_v2 mode=pr_lifecycle_action_taking authoritative=true mutation_allowed=true action_source=pr_lifecycle_v2 action_scope=pr_lifecycle",
+    "decision_kernel_v2 mode=pr_lifecycle_action_taking authoritative=true mutation_allowed=true action_source=pr_lifecycle_v2 action_scope=pr_lifecycle routing_category=core_action mutation_authority=core_executor_required external_handoff=none core_safety_gates=preserved",
   );
 });
 
@@ -128,7 +128,7 @@ test("renderSupervisorStatusDto includes the v2 diagnostic-only guardrail line",
 
   assert.match(
     rendered,
-    /^decision_kernel_v2 mode=diagnostic_only authoritative=false mutation_allowed=false action_source=disabled action_scope=none$/m,
+    /^decision_kernel_v2 mode=diagnostic_only authoritative=false mutation_allowed=false action_source=disabled action_scope=none routing_category=external_orchestration_handoff mutation_authority=none external_handoff=prepare_evidence core_safety_gates=preserved$/m,
   );
 });
 

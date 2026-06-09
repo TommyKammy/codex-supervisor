@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { GitHubPullRequest, IssueRunRecord, ReviewThread, SupervisorConfig } from "../core/types";
-import { buildDecisionKernelV2ExplainDto } from "./v2-explain";
+import { buildDecisionKernelV2ExplainDto, renderDecisionKernelV2ExplainDto } from "./v2-explain";
 
 function record(overrides: Partial<IssueRunRecord> = {}): IssueRunRecord {
   return {
@@ -165,6 +165,44 @@ test("buildDecisionKernelV2ExplainDto uses PR head for current-head review obser
       v2: "merge",
     },
   ]);
+});
+
+test("renderDecisionKernelV2ExplainDto surfaces core action routing without granting mutation authority", () => {
+  const dto = buildDecisionKernelV2ExplainDto({
+    config: codexConfig(),
+    issueNumber: 2301,
+    title: "Phase 3.2",
+    record: record(),
+    pr: pullRequest(),
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass" }],
+    reviewThreads: [],
+  });
+
+  const rendered = renderDecisionKernelV2ExplainDto(dto);
+
+  assert.match(
+    rendered,
+    /^v2_routing action=merge routing_category=core_action mutation_authority=none external_handoff=prepare_evidence core_safety_gates=preserved$/m,
+  );
+});
+
+test("renderDecisionKernelV2ExplainDto surfaces operator-action routing for manual gates", () => {
+  const dto = buildDecisionKernelV2ExplainDto({
+    config: codexConfig({ localCiCommand: "npm run verify:pre-pr" }),
+    issueNumber: 2301,
+    title: "Phase 3.2",
+    record: record(),
+    pr: pullRequest(),
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass" }],
+    reviewThreads: [],
+  });
+
+  const rendered = renderDecisionKernelV2ExplainDto(dto);
+
+  assert.match(
+    rendered,
+    /^v2_routing action=ask_operator routing_category=operator_action mutation_authority=none external_handoff=prepare_evidence core_safety_gates=preserved$/m,
+  );
 });
 
 test("buildDecisionKernelV2ExplainDto ignores malformed current-head review timestamps", () => {

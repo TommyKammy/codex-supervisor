@@ -18,6 +18,7 @@ import { buildDecisionKernelV2ComparisonDto, type DecisionKernelV2ComparisonDto 
 import {
   DECISION_KERNEL_V2_READ_ONLY_SCHEMA_VERSION,
   evaluateDecisionKernelV2ReadOnlyFromFacts,
+  type DecisionKernelV2Action,
   type DecisionKernelV2ReadOnlyDecision,
 } from "../decision-kernel-v2";
 import { inferStateFromPullRequest } from "../pull-request-state";
@@ -184,6 +185,7 @@ export function renderDecisionKernelV2ExplainDto(dto: DecisionKernelV2ExplainDto
 
   if (dto.decision) {
     const state = dto.decision.normalizedState;
+    const routing = routeDecisionKernelV2ExplainAction(dto.decision.action);
     lines.push(
       [
         "v2_normalized",
@@ -199,6 +201,14 @@ export function renderDecisionKernelV2ExplainDto(dto: DecisionKernelV2ExplainDto
         `reasons=${dto.decision.reasons.length === 0 ? "none" : dto.decision.reasons.join("|")}`,
         `required_evidence=${dto.decision.requiredEvidence.length === 0 ? "none" : dto.decision.requiredEvidence.join("|")}`,
         `summary=${dto.decision.summary.replace(/\s+/g, "_")}`,
+      ].join(" "),
+      [
+        "v2_routing",
+        `action=${dto.decision.action}`,
+        `routing_category=${routing.routingCategory}`,
+        "mutation_authority=none",
+        "external_handoff=prepare_evidence",
+        "core_safety_gates=preserved",
       ].join(" "),
     );
   }
@@ -218,6 +228,21 @@ export function renderDecisionKernelV2ExplainDto(dto: DecisionKernelV2ExplainDto
   }
 
   return lines.join("\n");
+}
+
+function routeDecisionKernelV2ExplainAction(action: DecisionKernelV2Action): {
+  routingCategory: "core_action" | "operator_action";
+} {
+  switch (action) {
+    case "merge":
+    case "wait":
+    case "request_review":
+    case "run_codex":
+      return { routingCategory: "core_action" };
+    case "ask_operator":
+    case "no_action":
+      return { routingCategory: "operator_action" };
+  }
 }
 
 function currentActionEquivalentForV2Comparison(args: {
