@@ -62,6 +62,7 @@ const EXPECTED_TOP_LEVEL_ENTRIES = {
     "reconciliation-backlog-diagnostics.ts",
     "recovery-active-reconciliation.ts",
     "recovery-blocked-issue-reconciliation.ts",
+    "recovery-codex-connector-churn.ts",
     "recovery-entrypoint-result.ts",
     "recovery-historical-reconciliation.ts",
     "recovery-no-pr-reconciliation.ts",
