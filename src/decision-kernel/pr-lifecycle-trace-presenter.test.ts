@@ -94,6 +94,8 @@ test("formatPrLifecycleTraceDiagnostic renders a merge-ready trace line", () => 
   assert.match(line, /policy=merge_ready/);
   assert.match(line, /decision=merge/);
   assert.match(line, /action=merge/);
+  assert.match(line, /routing_category=none/);
+  assert.match(line, /mutation_authority=none/);
   assert.match(line, /review=current_head_review_observed/);
   assert.match(line, /checks=green/);
   assert.match(line, /mergeability=mergeable/);
@@ -114,6 +116,11 @@ test("formatPrLifecycleTraceDiagnostic renders the gated v2 PR lifecycle action 
     buildPrLifecycleDecisionTrace(
       traceInput({
         v2Mode: "pr_lifecycle_action_taking",
+        routing: {
+          action: "merge",
+          routingCategory: "core_action",
+          mutationAuthority: "core_executor_required",
+        },
       }),
     ),
   );
@@ -123,6 +130,8 @@ test("formatPrLifecycleTraceDiagnostic renders the gated v2 PR lifecycle action 
   assert.match(line, /v2_mutation_allowed=true/);
   assert.match(line, /v2_action_source=pr_lifecycle_v2/);
   assert.match(line, /v2_action_scope=pr_lifecycle/);
+  assert.match(line, /routing_category=core_action/);
+  assert.match(line, /mutation_authority=core_executor_required/);
   assert.match(line, /rollback_posture=disable_to_rollback/);
 });
 

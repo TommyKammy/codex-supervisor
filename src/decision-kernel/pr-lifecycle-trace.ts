@@ -38,6 +38,14 @@ export type PrLifecycleRecommendedAction =
   | "refresh_state"
   | "no_action";
 
+export type PrLifecycleRoutingCategory = "core_action" | "operator_action" | "external_orchestration_handoff";
+
+export interface PrLifecycleActionRouting {
+  action: string;
+  routingCategory: PrLifecycleRoutingCategory;
+  mutationAuthority: "core_executor_required" | "none";
+}
+
 export interface PrLifecycleDecisionTraceInput {
   traceId: string;
   generatedAt: string;
@@ -52,6 +60,7 @@ export interface PrLifecycleDecisionTraceInput {
     recommendedAction: PrLifecycleRecommendedAction;
     summary: string;
   };
+  routing?: PrLifecycleActionRouting | null;
   evidenceTokens?: string[];
   v2Mode?: DecisionKernelV2RuntimeMode | DecisionKernelV2ModePosture;
   v2Comparison?: DecisionKernelV2ComparisonDto | null;
@@ -78,6 +87,7 @@ export interface PrLifecycleDecisionTraceArtifact {
     recommendedAction: PrLifecycleRecommendedAction;
     summary: string;
   };
+  routing: PrLifecycleActionRouting | null;
   evidenceTokens: string[];
   v2Mode: DecisionKernelV2ModePosture;
   v2Comparison: (DecisionKernelV2ComparisonDto & { diagnosticOnly: true }) | null;
@@ -109,6 +119,7 @@ export function buildPrLifecycleDecisionTrace(
       recommendedAction: input.decision.recommendedAction,
       summary: input.decision.summary,
     },
+    routing: input.routing ? snapshotRouting(input.routing) : null,
     evidenceTokens: [...(input.evidenceTokens ?? [])],
     v2Mode: snapshotV2Mode(input.v2Mode ?? "diagnostic_only"),
     v2Comparison: input.v2Comparison
@@ -117,6 +128,14 @@ export function buildPrLifecycleDecisionTrace(
         diagnosticOnly: true,
       }
       : null,
+  };
+}
+
+function snapshotRouting(routing: PrLifecycleActionRouting): PrLifecycleActionRouting {
+  return {
+    action: routing.action,
+    routingCategory: routing.routingCategory,
+    mutationAuthority: routing.mutationAuthority,
   };
 }
 

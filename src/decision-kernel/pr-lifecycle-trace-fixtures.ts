@@ -8,9 +8,11 @@ import type {
 import {
   PR_LIFECYCLE_DECISION_TRACE_SCHEMA_VERSION,
   type PrLifecycleDecision,
+  type PrLifecycleActionRouting,
   type PrLifecycleDecisionTraceArtifact,
   type PrLifecyclePolicyPosture,
   type PrLifecycleRecommendedAction,
+  type PrLifecycleRoutingCategory,
 } from "./pr-lifecycle-trace";
 import type {
   PrLifecycleCheckPosture,
@@ -102,6 +104,7 @@ function parsePrLifecycleDecisionTraceArtifact(
   const policy = requiredRecord(value.policy, source, "artifact.policy");
   const decision = requiredRecord(value.decision, source, "artifact.decision");
   const evidenceTokens = requiredStringArray(value.evidenceTokens, source, "artifact.evidenceTokens");
+  const routing = optionalRouting(value.routing, source);
   const v2Mode = optionalV2Mode(value.v2Mode, source);
   const v2Comparison = optionalV2Comparison(value.v2Comparison, source);
   const factsSource = requiredEnum(
@@ -251,9 +254,33 @@ function parsePrLifecycleDecisionTraceArtifact(
       ),
       summary: requiredString(decision.summary, source, "artifact.decision.summary"),
     },
+    routing,
     evidenceTokens,
     v2Mode,
     v2Comparison,
+  };
+}
+
+function optionalRouting(value: unknown, source: string): PrLifecycleActionRouting | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  const routing = requiredRecord(value, source, "artifact.routing");
+  return {
+    action: requiredString(routing.action, source, "artifact.routing.action"),
+    routingCategory: requiredEnum(
+      routing.routingCategory,
+      source,
+      "artifact.routing.routingCategory",
+      prLifecycleRoutingCategories,
+    ),
+    mutationAuthority: requiredEnum(
+      routing.mutationAuthority,
+      source,
+      "artifact.routing.mutationAuthority",
+      prLifecycleMutationAuthorityValues,
+    ),
   };
 }
 
@@ -294,6 +321,15 @@ const prLifecycleRecommendedActions = [
   "refresh_state",
   "no_action",
 ] as const satisfies readonly PrLifecycleRecommendedAction[];
+const prLifecycleRoutingCategories = [
+  "core_action",
+  "operator_action",
+  "external_orchestration_handoff",
+] as const satisfies readonly PrLifecycleRoutingCategory[];
+const prLifecycleMutationAuthorityValues = [
+  "core_executor_required",
+  "none",
+] as const satisfies readonly PrLifecycleActionRouting["mutationAuthority"][];
 const decisionKernelV2RuntimeModes = ["disabled", "diagnostic_only", "pr_lifecycle_action_taking"] as const satisfies readonly DecisionKernelV2RuntimeMode[];
 const decisionKernelV2ActionSources = ["disabled", "pr_lifecycle_v2"] as const satisfies readonly DecisionKernelV2ActionSource[];
 const decisionKernelV2ActionScopes = ["none", "pr_lifecycle"] as const satisfies readonly DecisionKernelV2ActionScope[];

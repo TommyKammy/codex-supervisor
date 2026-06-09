@@ -3,7 +3,7 @@
   "$id": "https://github.com/TommyKammy/codex-supervisor/docs/operator-actions.schema.json",
   "$ref": "#/$defs/operatorActionVocabularyContract",
   "contractName": "codex-supervisor.operator-actions",
-  "contractVersion": 1,
+  "contractVersion": 2,
   "compatibilityPolicy": {
     "versionField": "contractVersion",
     "enforcementBoundary": "src/operator-actions.ts remains the runtime enforcement boundary for operator action parsing and selection.",
@@ -134,6 +134,7 @@
         "contractName",
         "contractVersion",
         "canonicalSource",
+        "routingCategories",
         "actions",
         "externalHandoffs"
       ],
@@ -142,10 +143,22 @@
           "const": "codex-supervisor.operator-actions"
         },
         "contractVersion": {
-          "const": 1
+          "const": 2
         },
         "canonicalSource": {
           "const": "src/operator-actions.ts"
+        },
+        "routingCategories": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "core_action",
+              "operator_action",
+              "external_orchestration_handoff"
+            ]
+          },
+          "minItems": 3,
+          "uniqueItems": true
         },
         "actions": {
           "type": "array",
@@ -157,6 +170,7 @@
         },
         "externalHandoffs": {
           "type": "array",
+          "minItems": 1,
           "items": {
             "$ref": "#/$defs/externalHandoff"
           },

@@ -142,7 +142,7 @@ test("published operator action artifact matches the typed vocabulary", () => {
   const contract = readPublishedOperatorActionVocabulary();
 
   assert.equal(contract.contractName, "codex-supervisor.operator-actions");
-  assert.equal(contract.contractVersion, 1);
+  assert.equal(contract.contractVersion, 2);
   assert.equal(contract.canonicalSource, "src/operator-actions.ts");
   assert.deepEqual(contract.routingCategories, [
     "core_action",
@@ -174,6 +174,7 @@ test("operator action schema requires Phase 5 routing metadata", () => {
     "contractName",
     "contractVersion",
     "canonicalSource",
+    "routingCategories",
     "actions",
     "externalHandoffs",
   ]);
