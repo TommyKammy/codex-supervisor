@@ -218,6 +218,17 @@ export function renderDecisionKernelV2StatusLine(
   modeOrPosture: DecisionKernelV2RuntimeMode | DecisionKernelV2ModePosture = "diagnostic_only",
 ): string {
   const posture = typeof modeOrPosture === "string" ? decisionKernelV2ModePosture(modeOrPosture) : modeOrPosture;
+  const routing = posture.mode === "pr_lifecycle_action_taking"
+    ? {
+      category: "core_action",
+      mutationAuthority: "core_executor_required",
+      externalHandoff: "none",
+    }
+    : {
+      category: "external_orchestration_handoff",
+      mutationAuthority: "none",
+      externalHandoff: "prepare_evidence",
+    };
   return [
     "decision_kernel_v2",
     `mode=${posture.mode}`,
@@ -225,6 +236,10 @@ export function renderDecisionKernelV2StatusLine(
     `mutation_allowed=${posture.mutationAllowed}`,
     `action_source=${posture.actionSource}`,
     `action_scope=${posture.actionScope}`,
+    `routing_category=${routing.category}`,
+    `mutation_authority=${routing.mutationAuthority}`,
+    `external_handoff=${routing.externalHandoff}`,
+    "core_safety_gates=preserved",
   ].join(" ");
 }
 
