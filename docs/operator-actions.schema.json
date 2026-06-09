@@ -134,7 +134,8 @@
         "contractName",
         "contractVersion",
         "canonicalSource",
-        "actions"
+        "actions",
+        "externalHandoffs"
       ],
       "properties": {
         "contractName": {
@@ -168,7 +169,9 @@
       "required": [
         "action",
         "surfaces",
-        "meaning"
+        "meaning",
+        "routingCategory",
+        "mutationAuthority"
       ],
       "properties": {
         "action": {
@@ -200,7 +203,9 @@
       "type": "object",
       "required": [
         "handoff",
-        "meaning"
+        "meaning",
+        "routingCategory",
+        "mutationAuthority"
       ],
       "properties": {
         "handoff": {

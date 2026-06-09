@@ -32,6 +32,17 @@ interface PublishedOperatorActionVocabulary {
     mutationAuthority?: string;
   }>;
   routingCategories?: string[];
+  $defs?: {
+    operatorActionVocabularyContract?: {
+      required?: string[];
+    };
+    operatorAction?: {
+      required?: string[];
+    };
+    externalHandoff?: {
+      required?: string[];
+    };
+  };
 }
 
 const operatorActionContractPath = resolve(process.cwd(), "docs/operator-actions.schema.json");
@@ -154,6 +165,31 @@ test("operator action routing metadata is non-authoritative and external handoff
     assert.equal(handoff.mutationAuthority, "none");
     assert.doesNotMatch(handoff.meaning, /\b(authorize|execute implementation|merge)\b/i);
   }
+});
+
+test("operator action schema requires Phase 5 routing metadata", () => {
+  const contract = readPublishedOperatorActionVocabulary();
+
+  assert.deepEqual(contract.$defs?.operatorActionVocabularyContract?.required, [
+    "contractName",
+    "contractVersion",
+    "canonicalSource",
+    "actions",
+    "externalHandoffs",
+  ]);
+  assert.deepEqual(contract.$defs?.operatorAction?.required, [
+    "action",
+    "surfaces",
+    "meaning",
+    "routingCategory",
+    "mutationAuthority",
+  ]);
+  assert.deepEqual(contract.$defs?.externalHandoff?.required, [
+    "handoff",
+    "meaning",
+    "routingCategory",
+    "mutationAuthority",
+  ]);
 });
 
 test("operator action docs and WebUI labels cannot reference tokens outside the shared vocabulary", () => {
