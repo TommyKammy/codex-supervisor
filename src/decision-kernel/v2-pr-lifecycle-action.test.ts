@@ -222,7 +222,7 @@ test("evaluateDecisionKernelV2PrLifecycleAction promotes ambiguous review facts 
   });
 });
 
-test("evaluateDecisionKernelV2PrLifecycleAction promotes stale previous-head reviews to terminal stale resolution", () => {
+test("evaluateDecisionKernelV2PrLifecycleAction requests current-head review before stale previous-head terminal resolution", () => {
   const decision = evaluateDecisionKernelV2PrLifecycleAction({
     mode: "pr_lifecycle_action_taking",
     normalizedState: normalizePrLifecycleFacts(
@@ -233,6 +233,16 @@ test("evaluateDecisionKernelV2PrLifecycleAction promotes stale previous-head rev
           stalePreviousHeadConfiguredBotThreadCount: 1,
           metadataOnlyUnresolvedThreadCount: 0,
         },
+        pullRequest: {
+          number: 2312,
+          headSha: "head-current",
+          state: "OPEN",
+          isDraft: false,
+          mergeStateStatus: "CLEAN",
+          mergeable: "MERGEABLE",
+          currentHeadReviewObservedAt: null,
+          currentHeadReviewHeadSha: null,
+        },
       }),
     ),
     reviewPolicyInput: reviewPolicyInput(["stale_commit_thread"]),
@@ -240,6 +250,31 @@ test("evaluateDecisionKernelV2PrLifecycleAction promotes stale previous-head rev
 
   assert.equal(decision.v2Decision.action, "wait");
   assert.deepEqual(decision.v2Decision.reasons, ["stale_commit_review"]);
+  assert.equal(decision.action, "request_review");
+  assert.deepEqual(decision.reasons, ["v2_stale_review_needs_current_head_review"]);
+  assert.deepEqual(decision.traceDecision, {
+    value: "request_review",
+    recommendedAction: "request_review",
+    summary: "Stale review residue needs current-head review evidence before terminal stale resolution.",
+  });
+  assert.deepEqual(decision.evidenceTokens, [
+    "terminal=stale_commit_review",
+    "missing=current_head_review",
+    "v2_reason=stale_commit_review",
+    "required_evidence=current_head_review",
+  ]);
+});
+
+test("evaluateDecisionKernelV2PrLifecycleAction promotes stale review residue after current-head evidence exists", () => {
+  const decision = evaluateDecisionKernelV2PrLifecycleAction({
+    mode: "pr_lifecycle_action_taking",
+    normalizedState: normalizePrLifecycleFacts(inventory()),
+    reviewPolicyInput: reviewPolicyInput(["stale_commit_thread"]),
+  });
+
+  assert.equal(decision.v2Decision.action, "wait");
+  assert.deepEqual(decision.v2Decision.reasons, ["stale_commit_review"]);
+  assert.equal(decision.v2Decision.normalizedState.reviewPosture, "current_head_review_observed");
   assert.equal(decision.action, "mark_stale_resolved");
   assert.deepEqual(decision.reasons, ["v2_mark_stale_resolved"]);
   assert.deepEqual(decision.traceDecision, {
@@ -247,11 +282,6 @@ test("evaluateDecisionKernelV2PrLifecycleAction promotes stale previous-head rev
     recommendedAction: "mark_stale_resolved",
     summary: "Review findings are tied to a stale commit and need current-head evidence.",
   });
-  assert.deepEqual(decision.evidenceTokens, [
-    "terminal=stale_commit_review",
-    "v2_reason=stale_commit_review",
-    "required_evidence=current_head_review",
-  ]);
 });
 
 test("evaluateDecisionKernelV2PrLifecycleAction treats processed metadata-only residue as terminal operator cleanup", () => {
@@ -307,6 +337,40 @@ test("evaluateDecisionKernelV2PrLifecycleAction sends exhausted reviewer loops t
     "retry_budget=repeat_stop_exhausted",
     "v2_reason=current_head_must_fix_review",
     "required_evidence=current_head_review+resolved_manual_threads",
+  ]);
+});
+
+test("evaluateDecisionKernelV2PrLifecycleAction honors exhausted reviewer loops before requesting review", () => {
+  const decision = evaluateDecisionKernelV2PrLifecycleAction({
+    mode: "pr_lifecycle_action_taking",
+    normalizedState: normalizePrLifecycleFacts(
+      inventory({
+        pullRequest: {
+          number: 2312,
+          headSha: "head-current",
+          state: "OPEN",
+          isDraft: false,
+          mergeStateStatus: "CLEAN",
+          mergeable: "MERGEABLE",
+          currentHeadReviewObservedAt: null,
+          currentHeadReviewHeadSha: null,
+        },
+      }),
+    ),
+    reviewerLoopTerminal: {
+      retryBudgetExhausted: true,
+      reason: "retry exhausted",
+    },
+  });
+
+  assert.equal(decision.v2Decision.action, "request_review");
+  assert.equal(decision.action, "ask_operator");
+  assert.deepEqual(decision.reasons, ["v2_reviewer_loop_terminal"]);
+  assert.deepEqual(decision.evidenceTokens, [
+    "terminal=reviewer_loop_exhausted",
+    "retry_budget=retry_exhausted",
+    "v2_reason=missing_current_head_review",
+    "required_evidence=current_head_review",
   ]);
 });
 

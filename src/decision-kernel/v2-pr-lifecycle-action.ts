@@ -32,6 +32,7 @@ export type DecisionKernelV2PrLifecycleActionReason =
   | "v2_request_review"
   | "v2_wait_ci"
   | "v2_mark_stale_resolved"
+  | "v2_stale_review_needs_current_head_review"
   | "v2_metadata_terminal"
   | "v2_reviewer_loop_terminal"
   | "v2_ask_operator"
@@ -130,6 +131,22 @@ function promoteV2Decision(args: {
 }): DecisionKernelV2PrLifecycleActionDecision {
   const { mode, guard, v2Decision, reviewerLoopTerminal } = args;
 
+  if (reviewerLoopTerminal?.retryBudgetExhausted) {
+    return actionDecision({
+      mode,
+      guard,
+      v2Decision,
+      action: "ask_operator",
+      reasons: ["v2_reviewer_loop_terminal"],
+      evidenceTokens: [
+        "terminal=reviewer_loop_exhausted",
+        `retry_budget=${sanitizeEvidenceToken(reviewerLoopTerminal.reason)}`,
+        ...reviewEvidenceTokens(v2Decision),
+      ],
+      summary: "Reviewer loop retry budget is exhausted; require operator review instead of re-entering Codex repair.",
+    });
+  }
+
   if (v2Decision.action === "request_review") {
     return actionDecision({
       mode,
@@ -153,6 +170,18 @@ function promoteV2Decision(args: {
   }
 
   if (isStaleReviewTerminalDecision(v2Decision)) {
+    if (!hasCurrentHeadReviewEvidence(v2Decision)) {
+      return actionDecision({
+        mode,
+        guard,
+        v2Decision,
+        action: "request_review",
+        reasons: ["v2_stale_review_needs_current_head_review"],
+        evidenceTokens: ["terminal=stale_commit_review", "missing=current_head_review", ...reviewEvidenceTokens(v2Decision)],
+        summary: "Stale review residue needs current-head review evidence before terminal stale resolution.",
+      });
+    }
+
     return actionDecision({
       mode,
       guard,
@@ -173,22 +202,6 @@ function promoteV2Decision(args: {
       reasons: ["v2_metadata_terminal"],
       evidenceTokens: ["terminal=metadata_only_review_residue", ...reviewEvidenceTokens(v2Decision)],
       summary: v2Decision.summary,
-    });
-  }
-
-  if (reviewerLoopTerminal?.retryBudgetExhausted) {
-    return actionDecision({
-      mode,
-      guard,
-      v2Decision,
-      action: "ask_operator",
-      reasons: ["v2_reviewer_loop_terminal"],
-      evidenceTokens: [
-        "terminal=reviewer_loop_exhausted",
-        `retry_budget=${sanitizeEvidenceToken(reviewerLoopTerminal.reason)}`,
-        ...reviewEvidenceTokens(v2Decision),
-      ],
-      summary: "Reviewer loop retry budget is exhausted; require operator review instead of re-entering Codex repair.",
     });
   }
 
@@ -223,6 +236,13 @@ function isStaleReviewTerminalDecision(decision: DecisionKernelV2ReadOnlyDecisio
 
 function isMetadataTerminalDecision(decision: DecisionKernelV2ReadOnlyDecision): boolean {
   return decision.reasons.includes("metadata_only_review_residue");
+}
+
+function hasCurrentHeadReviewEvidence(decision: DecisionKernelV2ReadOnlyDecision): boolean {
+  return (
+    decision.normalizedState.reviewPosture === "current_head_review_observed" ||
+    decision.normalizedState.reviewPosture === "no_unresolved_review"
+  );
 }
 
 function actionDecision(args: {
