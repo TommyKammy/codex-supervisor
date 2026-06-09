@@ -125,11 +125,11 @@ test("Decision Kernel trace fixtures remain read-only for action-taking evaluati
     path.join(process.cwd(), "replay-corpus", "decision-traces"),
   );
   const modeById = new Map<string, PrLifecycleEvaluationMode>([
-    ["merge-ready", "action_taking"],
+    ["merge-ready", "pr_lifecycle_action_taking"],
     ["metadata-only-review-residue", "diagnostic_only"],
     ["review-blocked", "diagnostic_only"],
-    ["stale-local-state", "action_taking"],
-    ["wait-ci", "action_taking"],
+    ["stale-local-state", "pr_lifecycle_action_taking"],
+    ["wait-ci", "pr_lifecycle_action_taking"],
   ]);
   const results = fixtures.map((fixture) => [
     fixture.id,
@@ -273,5 +273,69 @@ test("parsePrLifecycleTraceFixture rejects top-level fact snapshots that disagre
         }
       }),
     /artifact\.facts\.headSha must match artifact\.facts\.normalizedState/,
+  );
+});
+
+test("parsePrLifecycleTraceFixture rejects v2 mode postures that disagree with the declared mode", () => {
+  assert.throws(
+    () =>
+      parsePrLifecycleTraceFixture({
+        id: "bad-v2-mode",
+        intent: "prove v2 mode posture validation fails",
+        artifact: {
+          schemaVersion: "pr_lifecycle_decision_trace.v1",
+          traceId: "bad-v2-mode",
+          generatedAt: "2026-06-07T00:00:00.000Z",
+          facts: {
+            source: "fixture",
+            observedAt: "2026-06-07T00:00:00.000Z",
+            pullRequestNumber: 100,
+            headSha: "head-current",
+            normalizedState: {
+              source: "fixture",
+              observedAt: "2026-06-07T00:00:00.000Z",
+              pullRequestNumber: 100,
+              headSha: "head-current",
+              headFreshness: "current_head",
+              reviewPosture: "current_head_review_observed",
+              checkPosture: "green",
+              mergeability: "mergeable",
+              localStateFreshness: "fresh",
+              evidence: {
+                manualReviewThreadCount: 0,
+                currentHeadConfiguredBotThreadCount: 0,
+                stalePreviousHeadConfiguredBotThreadCount: 0,
+                metadataOnlyUnresolvedThreadCount: 0,
+                passingCheckCount: 1,
+                pendingCheckCount: 0,
+                failingCheckCount: 0,
+                unknownCheckCount: 0,
+                trackedHeadSha: "head-current",
+                workspaceHeadSha: "head-current",
+                lastObservedPrHeadSha: "head-current"
+              }
+            }
+          },
+          policy: {
+            name: "pr_lifecycle_decision_kernel_v2",
+            posture: "merge_ready",
+            reasons: []
+          },
+          decision: {
+            value: "merge",
+            recommendedAction: "merge",
+            summary: "bad v2 mode"
+          },
+          evidenceTokens: [],
+          v2Mode: {
+            mode: "disabled",
+            authoritative: false,
+            mutationAllowed: true,
+            actionSource: "disabled",
+            actionScope: "none"
+          }
+        }
+      }),
+    /artifact\.v2Mode\.mutationAllowed must match the posture derived from artifact\.v2Mode\.mode/,
   );
 });

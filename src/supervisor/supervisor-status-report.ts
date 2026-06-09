@@ -5,7 +5,11 @@ import type {
   LocalCiContractSummary,
   TrustDiagnosticsSummary,
 } from "../core/types";
-import { DECISION_KERNEL_V2_DIAGNOSTIC_ONLY_POSTURE } from "../decision-kernel-v2";
+import {
+  decisionKernelV2ModePosture,
+  type DecisionKernelV2ModePosture,
+  type DecisionKernelV2RuntimeMode,
+} from "../decision-kernel/pr-lifecycle-evaluation-mode";
 import { sanitizeStatusValue } from "./supervisor-status-rendering";
 import { truncate } from "../core/utils";
 import type { BlockedReason, RunState, SupervisorStateFile, TimelineArtifact } from "../core/types";
@@ -210,13 +214,17 @@ export function renderGitHubRateLimitLine(resource: "rest" | "graphql", budget: 
   return `github_rate_limit resource=${resource} status=${budget.state} remaining=${budget.remaining} limit=${budget.limit} reset_at=${budget.resetAt}`;
 }
 
-export function renderDecisionKernelV2StatusLine(): string {
+export function renderDecisionKernelV2StatusLine(
+  modeOrPosture: DecisionKernelV2RuntimeMode | DecisionKernelV2ModePosture = "diagnostic_only",
+): string {
+  const posture = typeof modeOrPosture === "string" ? decisionKernelV2ModePosture(modeOrPosture) : modeOrPosture;
   return [
     "decision_kernel_v2",
-    `mode=${DECISION_KERNEL_V2_DIAGNOSTIC_ONLY_POSTURE.mode}`,
-    `authoritative=${DECISION_KERNEL_V2_DIAGNOSTIC_ONLY_POSTURE.authoritative}`,
-    `mutation_allowed=${DECISION_KERNEL_V2_DIAGNOSTIC_ONLY_POSTURE.mutationAllowed}`,
-    "action_source=disabled",
+    `mode=${posture.mode}`,
+    `authoritative=${posture.authoritative}`,
+    `mutation_allowed=${posture.mutationAllowed}`,
+    `action_source=${posture.actionSource}`,
+    `action_scope=${posture.actionScope}`,
   ].join(" ");
 }
 

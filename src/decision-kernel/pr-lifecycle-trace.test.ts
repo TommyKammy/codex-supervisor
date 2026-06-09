@@ -96,6 +96,13 @@ test("buildPrLifecycleDecisionTrace records a versioned facts-policy-decision-ac
   assert.equal(trace.facts.normalizedState.reviewPosture, "current_head_review_observed");
   assert.deepEqual(trace.policy.reasons, ["checks_green", "review_observed", "mergeable"]);
   assert.deepEqual(trace.evidenceTokens, ["pr=2280", "head=head-current", "checks=green"]);
+  assert.deepEqual(trace.v2Mode, {
+    mode: "diagnostic_only",
+    authoritative: false,
+    mutationAllowed: false,
+    actionSource: "disabled",
+    actionScope: "none",
+  });
   assert.equal(trace.v2Comparison, null);
 });
 
@@ -234,4 +241,20 @@ test("buildPrLifecycleDecisionTrace records optional v2 comparison evidence as d
   assert.equal(trace.v2Comparison?.diagnosticOnly, true);
   assert.equal(trace.v2Comparison?.category, "agreement");
   assert.deepEqual(trace.v2Comparison?.v2.reasons, ["merge_ready_diagnostic_only"]);
+});
+
+test("buildPrLifecycleDecisionTrace records the explicit v2 PR lifecycle mode boundary", () => {
+  const trace = buildPrLifecycleDecisionTrace(
+    traceInput({
+      v2Mode: "pr_lifecycle_action_taking",
+    }),
+  );
+
+  assert.deepEqual(trace.v2Mode, {
+    mode: "pr_lifecycle_action_taking",
+    authoritative: true,
+    mutationAllowed: true,
+    actionSource: "pr_lifecycle_v2",
+    actionScope: "pr_lifecycle",
+  });
 });

@@ -55,6 +55,8 @@ test("post-turn pull request transitions do not import Decision Kernel v2 action
   assert.doesNotMatch(source, /decision-kernel-v2/u);
   assert.doesNotMatch(source, /evaluateDecisionKernelV2/u);
   assert.doesNotMatch(source, /buildDecisionKernelV2ExplainDto/u);
+  assert.doesNotMatch(source, /pr_lifecycle_action_taking/u);
+  assert.doesNotMatch(source, /prLifecycleEvaluationModeForRuntime/u);
 });
 
 test("handlePostTurnPullRequestTransitionsPhase emits typed review-wait change events", async () => {

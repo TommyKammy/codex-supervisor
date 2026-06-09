@@ -38,6 +38,8 @@ test("run-once turn execution does not import Decision Kernel v2 action decision
   assert.doesNotMatch(source, /decision-kernel-v2/u);
   assert.doesNotMatch(source, /evaluateDecisionKernelV2/u);
   assert.doesNotMatch(source, /buildDecisionKernelV2ExplainDto/u);
+  assert.doesNotMatch(source, /pr_lifecycle_action_taking/u);
+  assert.doesNotMatch(source, /prLifecycleEvaluationModeForRuntime/u);
 });
 
 function git(cwd: string, ...args: string[]): string {

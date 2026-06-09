@@ -7,6 +7,7 @@ import {
   type NormalizedPrLifecycleState,
   type PrLifecycleFactInventory,
 } from "./decision-kernel/pr-lifecycle-state";
+import { DECISION_KERNEL_V2_DIAGNOSTIC_ONLY_MODE_POSTURE } from "./decision-kernel/pr-lifecycle-evaluation-mode";
 
 export const DECISION_KERNEL_V2_READ_ONLY_SCHEMA_VERSION = "decision_kernel_v2.read_only.v1";
 
@@ -54,9 +55,9 @@ export interface DecisionKernelV2SafetyPosture {
 }
 
 export const DECISION_KERNEL_V2_DIAGNOSTIC_ONLY_POSTURE = {
-  mode: "diagnostic_only",
-  authoritative: false,
-  mutationAllowed: false,
+  mode: DECISION_KERNEL_V2_DIAGNOSTIC_ONLY_MODE_POSTURE.mode,
+  authoritative: DECISION_KERNEL_V2_DIAGNOSTIC_ONLY_MODE_POSTURE.authoritative,
+  mutationAllowed: DECISION_KERNEL_V2_DIAGNOSTIC_ONLY_MODE_POSTURE.mutationAllowed,
 } as const satisfies DecisionKernelV2SafetyPosture;
 
 export interface DecisionKernelV2CheckPolicyInput {
