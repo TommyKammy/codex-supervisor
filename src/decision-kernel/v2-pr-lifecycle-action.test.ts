@@ -3,7 +3,10 @@ import test from "node:test";
 import type { ReviewPolicyInput } from "../codex-connector-review-policy";
 import { buildPrLifecycleDecisionTrace } from "./pr-lifecycle-trace";
 import { normalizePrLifecycleFacts, type PrLifecycleFactInventory } from "./pr-lifecycle-state";
-import { evaluateDecisionKernelV2PrLifecycleAction } from "./v2-pr-lifecycle-action";
+import {
+  evaluateDecisionKernelV2PrLifecycleAction,
+  routeDecisionKernelV2PrLifecycleAction,
+} from "./v2-pr-lifecycle-action";
 
 function inventory(overrides: Partial<PrLifecycleFactInventory> = {}): PrLifecycleFactInventory {
   return {
@@ -112,6 +115,44 @@ test("evaluateDecisionKernelV2PrLifecycleAction promotes missing review to reque
   });
   assert.equal(decision.mode.actionSource, "pr_lifecycle_v2");
   assert.equal(decision.guard?.decision, "allowed");
+  assert.deepEqual(decision.routing, {
+    action: "request_review",
+    routingCategory: "core_action",
+    mutationAuthority: "core_executor_required",
+  });
+});
+
+test("Decision Kernel v2 PR lifecycle action routes separate core actions from operator actions", () => {
+  assert.deepEqual(routeDecisionKernelV2PrLifecycleAction("merge"), {
+    action: "merge",
+    routingCategory: "core_action",
+    mutationAuthority: "core_executor_required",
+  });
+  assert.deepEqual(routeDecisionKernelV2PrLifecycleAction("request_review"), {
+    action: "request_review",
+    routingCategory: "core_action",
+    mutationAuthority: "core_executor_required",
+  });
+  assert.deepEqual(routeDecisionKernelV2PrLifecycleAction("wait_ci"), {
+    action: "wait_ci",
+    routingCategory: "core_action",
+    mutationAuthority: "core_executor_required",
+  });
+  assert.deepEqual(routeDecisionKernelV2PrLifecycleAction("mark_stale_resolved"), {
+    action: "mark_stale_resolved",
+    routingCategory: "core_action",
+    mutationAuthority: "core_executor_required",
+  });
+  assert.deepEqual(routeDecisionKernelV2PrLifecycleAction("ask_operator"), {
+    action: "ask_operator",
+    routingCategory: "operator_action",
+    mutationAuthority: "none",
+  });
+  assert.deepEqual(routeDecisionKernelV2PrLifecycleAction("no_action"), {
+    action: "no_action",
+    routingCategory: "operator_action",
+    mutationAuthority: "none",
+  });
 });
 
 test("evaluateDecisionKernelV2PrLifecycleAction promotes pending and unknown checks to wait_ci", () => {

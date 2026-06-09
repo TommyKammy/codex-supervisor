@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
   buildStatusOperatorCockpitViewModel,
+  externalOrchestrationHandoffVocabulary,
   operatorActionVocabulary,
   parseOperatorActionLine,
   type RestartRecommendation,
@@ -21,7 +22,16 @@ interface PublishedOperatorActionVocabulary {
     action: string;
     surfaces: string[];
     meaning: string;
+    routingCategory?: string;
+    mutationAuthority?: string;
   }>;
+  externalHandoffs?: Array<{
+    handoff: string;
+    meaning: string;
+    routingCategory?: string;
+    mutationAuthority?: string;
+  }>;
+  routingCategories?: string[];
 }
 
 const operatorActionContractPath = resolve(process.cwd(), "docs/operator-actions.schema.json");
@@ -123,8 +133,27 @@ test("published operator action artifact matches the typed vocabulary", () => {
   assert.equal(contract.contractName, "codex-supervisor.operator-actions");
   assert.equal(contract.contractVersion, 1);
   assert.equal(contract.canonicalSource, "src/operator-actions.ts");
+  assert.deepEqual(contract.routingCategories, [
+    "core_action",
+    "operator_action",
+    "external_orchestration_handoff",
+  ]);
   assert.deepEqual(contract.actions, operatorActionVocabulary);
+  assert.deepEqual(contract.externalHandoffs, externalOrchestrationHandoffVocabulary);
   assert.deepEqual(sortedTokens(Object.keys(validOperatorActions)), sortedTokens(operatorActionVocabulary.map((entry) => entry.action)));
+});
+
+test("operator action routing metadata is non-authoritative and external handoffs cannot mutate", () => {
+  for (const entry of operatorActionVocabulary) {
+    assert.equal(entry.routingCategory, "operator_action");
+    assert.equal(entry.mutationAuthority, "none");
+  }
+
+  for (const handoff of externalOrchestrationHandoffVocabulary) {
+    assert.equal(handoff.routingCategory, "external_orchestration_handoff");
+    assert.equal(handoff.mutationAuthority, "none");
+    assert.doesNotMatch(handoff.meaning, /\b(authorize|execute implementation|merge)\b/i);
+  }
 });
 
 test("operator action docs and WebUI labels cannot reference tokens outside the shared vocabulary", () => {
