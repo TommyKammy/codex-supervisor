@@ -60,6 +60,9 @@ External orchestration can help route, record, and explain work, but it cannot
 authorize implementation turns, GitHub mutations, merges, or safety-gate
 bypasses.
 
+Closeout evidence for the implemented boundary, rollback posture, and broad
+verification surface is recorded in [Phase 5 closeout evidence](./phase5-closeout-evidence.md).
+
 ## Safety Contract
 
 Automation must stay quiet when there is no actionable change. It should not

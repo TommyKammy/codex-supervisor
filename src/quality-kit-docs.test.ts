@@ -9,6 +9,7 @@ const kanameBootstrapHandoffPath = path.join("docs", "kaname-bootstrap-handoff.m
 const qualityKitPackageSurfacesPath = path.join("docs", "quality-kit-package-surfaces.md");
 const qualityGateExamplesPath = path.join("docs", "examples", "quality-gate-examples.md");
 const automationBoundaryPath = path.join("docs", "automation.md");
+const phase5CloseoutEvidencePath = path.join("docs", "phase5-closeout-evidence.md");
 const qualityKitTemplatesPath = path.join("docs", "templates", "quality-primitives");
 const publicSchemaArtifactPaths = [
   "docs/issue-body-contract.schema.json",
@@ -174,12 +175,21 @@ test("quality kit entrypoint defines the public package surface boundary", async
 });
 
 test("automation boundary publishes the Phase 5 core and external responsibility inventory", async () => {
-  const automationBoundary = await readRepoFile(automationBoundaryPath);
+  const [automationBoundary, closeoutEvidence, qualityKit] = await Promise.all([
+    readRepoFile(automationBoundaryPath),
+    readRepoFile(phase5CloseoutEvidencePath),
+    readRepoFile(qualityKitPath),
+  ]);
 
   assert.match(automationBoundary, /^## Phase 5 Boundary Inventory$/m);
+  assert.match(automationBoundary, /\[Phase 5 closeout evidence\]\(\.\/phase5-closeout-evidence\.md\)/);
+  assert.match(qualityKit, /\[Phase 5 closeout evidence\]\(\.\/phase5-closeout-evidence\.md\)/);
   assert.doesNotMatch(automationBoundary, /\/Users\/[A-Za-z0-9._-]+\//);
   assert.doesNotMatch(automationBoundary, /\/home\/[A-Za-z0-9._-]+\//);
   assert.doesNotMatch(automationBoundary, /C:\\Users\\[A-Za-z0-9._-]+\\/);
+  assert.doesNotMatch(closeoutEvidence, /\/Users\/[A-Za-z0-9._-]+\//);
+  assert.doesNotMatch(closeoutEvidence, /\/home\/[A-Za-z0-9._-]+\//);
+  assert.doesNotMatch(closeoutEvidence, /C:\\Users\\[A-Za-z0-9._-]+\\/);
 
   for (const coreResponsibility of [
     "issue contract validation and `issue-lint` readiness",
@@ -228,6 +238,35 @@ test("automation boundary publishes the Phase 5 core and external responsibility
   assert.match(automationBoundary, /cannot\s+authorize implementation turns/i);
   assert.match(automationBoundary, /GitHub mutations/i);
   assert.match(automationBoundary, /safety-gate\s+bypasses/i);
+
+  for (const heading of [
+    "Child Issue Outcomes",
+    "Responsibility Boundary",
+    "Contract Surfaces",
+    "Safety Evidence",
+    "Rollback Posture",
+    "Verification Evidence",
+  ]) {
+    assert.match(closeoutEvidence, new RegExp(`^## ${heading}$`, "m"), `expected ${heading} section`);
+  }
+
+  for (const closeoutFact of [
+    "#2322",
+    "#2323",
+    "#2324",
+    "#2325",
+    "#2326",
+    "external_orchestration_handoff",
+    "mutationAuthority=none",
+    "boundedNextAction=ask_operator",
+    "Disable or ignore external orchestration handoff metadata",
+    "No Phase 5 closeout step changes issue selection",
+    "npx tsx --test src/decision-kernel*.test.ts",
+    "npm run build",
+    "git diff --check",
+  ]) {
+    assert.match(closeoutEvidence, new RegExp(escapeRegExp(closeoutFact)), `expected closeout fact: ${closeoutFact}`);
+  }
 });
 
 test("public schema artifacts publish versioning and compatibility guidance", async () => {

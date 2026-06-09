@@ -16,6 +16,7 @@ The public package surface is the docs-first bundle recommended by the [Quality 
 - `docs/trust-posture-config.schema.json`: explicit trust and execution-safety posture vocabulary
 - `docs/supervised-automation-state-machine.schema.json`: operator-facing lifecycle vocabulary mapped to runtime `RunState`
 - `docs/codex-automation-connector-boundary.schema.json`: Codex app Automation boundary for orchestration without executor authority
+- `docs/phase5-closeout-evidence.md`: [Phase 5 closeout evidence](./phase5-closeout-evidence.md) for the implemented external orchestration boundary, rollback posture, and verification evidence
 - `docs/templates/quality-primitives/`: [quality primitive templates](./templates/quality-primitives/README.md) for copying the issue contract, AGENTS.md guidance, local CI gate, evidence timeline, trust posture, and operator action vocabulary into a new repo
 - `docs/quality-kit-adoption-checklist.md`: [Quality kit adoption checklist](./quality-kit-adoption-checklist.md) for introducing the docs-first kit to one repository and one safe issue before broader automation
 - `docs/kaname-bootstrap-handoff.md`: [KANAME bootstrap handoff](./kaname-bootstrap-handoff.md) for mapping the quality kit to KANAME-000 through KANAME-006 without creating a new repo or runtime
