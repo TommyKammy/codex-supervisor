@@ -85,6 +85,7 @@ const EXPECTED_TOP_LEVEL_ENTRIES = {
     "run-once-turn-verification-evidence.ts",
     "setup-config-preview.ts",
     "setup-config-write.ts",
+    "setup-readiness-config-fields.ts",
     "setup-readiness-first-run.ts",
     "setup-readiness.ts",
     "stale-configured-bot-auto-handle.ts",
