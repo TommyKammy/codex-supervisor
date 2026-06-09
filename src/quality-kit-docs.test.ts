@@ -8,6 +8,7 @@ const qualityKitAdoptionChecklistPath = path.join("docs", "quality-kit-adoption-
 const kanameBootstrapHandoffPath = path.join("docs", "kaname-bootstrap-handoff.md");
 const qualityKitPackageSurfacesPath = path.join("docs", "quality-kit-package-surfaces.md");
 const qualityGateExamplesPath = path.join("docs", "examples", "quality-gate-examples.md");
+const automationBoundaryPath = path.join("docs", "automation.md");
 const qualityKitTemplatesPath = path.join("docs", "templates", "quality-primitives");
 const publicSchemaArtifactPaths = [
   "docs/issue-body-contract.schema.json",
@@ -170,6 +171,63 @@ test("quality kit entrypoint defines the public package surface boundary", async
     readme,
     /\[AI coding quality kit\]\(\.\/docs\/quality-kit\.md\): compact primitive map and public package surface/i,
   );
+});
+
+test("automation boundary publishes the Phase 5 core and external responsibility inventory", async () => {
+  const automationBoundary = await readRepoFile(automationBoundaryPath);
+
+  assert.match(automationBoundary, /^## Phase 5 Boundary Inventory$/m);
+  assert.doesNotMatch(automationBoundary, /\/Users\/[A-Za-z0-9._-]+\//);
+  assert.doesNotMatch(automationBoundary, /\/home\/[A-Za-z0-9._-]+\//);
+  assert.doesNotMatch(automationBoundary, /C:\\Users\\[A-Za-z0-9._-]+\\/);
+
+  for (const coreResponsibility of [
+    "issue contract validation and `issue-lint` readiness",
+    "per-issue worktree and journal ownership",
+    "Codex execution and resume orchestration",
+    "PR lifecycle action selection",
+    "CI, review, branch-protection, head-SHA, and merge safety gates",
+    "evidence capture, replay, status, and explain output",
+  ]) {
+    assert.match(
+      automationBoundary,
+      new RegExp(escapeRegExp(coreResponsibility)),
+      `expected core responsibility: ${coreResponsibility}`,
+    );
+  }
+
+  for (const externalResponsibility of [
+    "evaluate roadmap, GitHub, local status, and note state",
+    "route actionable changes to the operator or the next runnable issue",
+    "draft confirm-required follow-up issues",
+    "record durable Obsidian or external history",
+    "notify the operator about actionable state changes",
+    "prepare operator-facing evidence",
+  ]) {
+    assert.match(
+      automationBoundary,
+      new RegExp(escapeRegExp(externalResponsibility)),
+      `expected external responsibility: ${externalResponsibility}`,
+    );
+  }
+
+  for (const unchangedBoundary of [
+    "does not replace issue selection",
+    "Codex execution",
+    "merge execution",
+    "branch protection",
+    "final auto-merge guard",
+  ]) {
+    assert.match(
+      automationBoundary,
+      new RegExp(escapeRegExp(unchangedBoundary), "i"),
+      `expected unchanged boundary: ${unchangedBoundary}`,
+    );
+  }
+
+  assert.match(automationBoundary, /cannot\s+authorize implementation turns/i);
+  assert.match(automationBoundary, /GitHub mutations/i);
+  assert.match(automationBoundary, /safety-gate\s+bypasses/i);
 });
 
 test("public schema artifacts publish versioning and compatibility guidance", async () => {

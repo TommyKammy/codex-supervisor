@@ -30,6 +30,36 @@ External automation may evaluate, route, draft, record, notify, and prepare
 operator-facing evidence. It may not execute implementation changes, decide
 merge readiness, or turn advisory context into supervisor authority.
 
+## Phase 5 Boundary Inventory
+
+Phase 5 keeps `codex-supervisor` core focused on executor-owned state changes
+and safety gates. These responsibilities stay inside core:
+
+- issue contract validation and `issue-lint` readiness
+- per-issue worktree and journal ownership
+- Codex execution and resume orchestration
+- PR lifecycle action selection, including review, CI, stale-review terminal,
+  operator escalation, and merge-readiness decisions
+- CI, review, branch-protection, head-SHA, and merge safety gates
+- evidence capture, replay, status, and explain output for supervisor-owned
+  decisions
+
+These responsibilities remain external orchestration:
+
+- evaluate roadmap, GitHub, local status, and note state
+- route actionable changes to the operator or the next runnable issue
+- draft confirm-required follow-up issues
+- record durable Obsidian or external history after real state changes
+- notify the operator about actionable state changes
+- prepare operator-facing evidence without treating that evidence as execution
+  authority
+
+Compatibility note: Phase 5 does not replace issue selection, Codex execution,
+merge execution, branch protection, or the supervisor's final auto-merge guard.
+External orchestration can help route, record, and explain work, but it cannot
+authorize implementation turns, GitHub mutations, merges, or safety-gate
+bypasses.
+
 ## Safety Contract
 
 Automation must stay quiet when there is no actionable change. It should not
