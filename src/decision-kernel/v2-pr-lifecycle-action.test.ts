@@ -3,7 +3,10 @@ import test from "node:test";
 import type { ReviewPolicyInput } from "../codex-connector-review-policy";
 import { buildPrLifecycleDecisionTrace } from "./pr-lifecycle-trace";
 import { normalizePrLifecycleFacts, type PrLifecycleFactInventory } from "./pr-lifecycle-state";
-import { evaluateDecisionKernelV2PrLifecycleAction } from "./v2-pr-lifecycle-action";
+import {
+  evaluateDecisionKernelV2PrLifecycleAction,
+  routeDecisionKernelV2PrLifecycleAction,
+} from "./v2-pr-lifecycle-action";
 
 function inventory(overrides: Partial<PrLifecycleFactInventory> = {}): PrLifecycleFactInventory {
   return {
@@ -112,6 +115,44 @@ test("evaluateDecisionKernelV2PrLifecycleAction promotes missing review to reque
   });
   assert.equal(decision.mode.actionSource, "pr_lifecycle_v2");
   assert.equal(decision.guard?.decision, "allowed");
+  assert.deepEqual(decision.routing, {
+    action: "request_review",
+    routingCategory: "core_action",
+    mutationAuthority: "core_executor_required",
+  });
+});
+
+test("Decision Kernel v2 PR lifecycle action routes separate core actions from operator actions", () => {
+  assert.deepEqual(routeDecisionKernelV2PrLifecycleAction("merge"), {
+    action: "merge",
+    routingCategory: "core_action",
+    mutationAuthority: "core_executor_required",
+  });
+  assert.deepEqual(routeDecisionKernelV2PrLifecycleAction("request_review"), {
+    action: "request_review",
+    routingCategory: "core_action",
+    mutationAuthority: "core_executor_required",
+  });
+  assert.deepEqual(routeDecisionKernelV2PrLifecycleAction("wait_ci"), {
+    action: "wait_ci",
+    routingCategory: "core_action",
+    mutationAuthority: "core_executor_required",
+  });
+  assert.deepEqual(routeDecisionKernelV2PrLifecycleAction("mark_stale_resolved"), {
+    action: "mark_stale_resolved",
+    routingCategory: "core_action",
+    mutationAuthority: "core_executor_required",
+  });
+  assert.deepEqual(routeDecisionKernelV2PrLifecycleAction("ask_operator"), {
+    action: "ask_operator",
+    routingCategory: "operator_action",
+    mutationAuthority: "none",
+  });
+  assert.deepEqual(routeDecisionKernelV2PrLifecycleAction("no_action"), {
+    action: "no_action",
+    routingCategory: "operator_action",
+    mutationAuthority: "none",
+  });
 });
 
 test("evaluateDecisionKernelV2PrLifecycleAction promotes pending and unknown checks to wait_ci", () => {
@@ -727,6 +768,7 @@ test("Phase 4 v2 PR lifecycle action-taking replay evidence covers selected acti
         reasons: decision.v2Decision.reasons,
       },
       decision: decision.traceDecision,
+      routing: decision.routing,
       evidenceTokens: [`case=${id}`, ...decision.evidenceTokens],
       v2Mode: decision.mode,
     }),
@@ -738,17 +780,19 @@ test("Phase 4 v2 PR lifecycle action-taking replay evidence covers selected acti
       trace.v2Mode.mode,
       trace.decision.value,
       trace.decision.recommendedAction,
+      trace.routing?.routingCategory,
+      trace.routing?.mutationAuthority,
       trace.v2Mode.actionSource,
       trace.v2Mode.mutationAllowed,
     ]),
     [
-      ["request-review", "pr_lifecycle_action_taking", "request_review", "request_review", "pr_lifecycle_v2", true],
-      ["wait-ci", "pr_lifecycle_action_taking", "wait", "wait_ci", "pr_lifecycle_v2", true],
-      ["stale-terminal", "pr_lifecycle_action_taking", "do_nothing", "mark_stale_resolved", "pr_lifecycle_v2", true],
-      ["operator-escalation", "pr_lifecycle_action_taking", "ask_operator", "manual_review", "pr_lifecycle_v2", true],
-      ["merge-ready", "pr_lifecycle_action_taking", "merge", "merge", "pr_lifecycle_v2", true],
-      ["diagnostic-rollback", "diagnostic_only", "do_nothing", "no_action", "disabled", false],
-      ["disabled-rollback", "disabled", "do_nothing", "no_action", "disabled", false],
+      ["request-review", "pr_lifecycle_action_taking", "request_review", "request_review", "core_action", "core_executor_required", "pr_lifecycle_v2", true],
+      ["wait-ci", "pr_lifecycle_action_taking", "wait", "wait_ci", "core_action", "core_executor_required", "pr_lifecycle_v2", true],
+      ["stale-terminal", "pr_lifecycle_action_taking", "do_nothing", "mark_stale_resolved", "core_action", "core_executor_required", "pr_lifecycle_v2", true],
+      ["operator-escalation", "pr_lifecycle_action_taking", "ask_operator", "manual_review", "operator_action", "none", "pr_lifecycle_v2", true],
+      ["merge-ready", "pr_lifecycle_action_taking", "merge", "merge", "core_action", "core_executor_required", "pr_lifecycle_v2", true],
+      ["diagnostic-rollback", "diagnostic_only", "do_nothing", "no_action", "operator_action", "none", "disabled", false],
+      ["disabled-rollback", "disabled", "do_nothing", "no_action", "operator_action", "none", "disabled", false],
     ],
   );
 });
@@ -781,6 +825,7 @@ test("v2 PR lifecycle action decisions can be recorded with a v2 action source t
       reasons: actionDecision.v2Decision.reasons,
     },
     decision: actionDecision.traceDecision,
+    routing: actionDecision.routing,
     evidenceTokens: ["pr=2312", "action_source=pr_lifecycle_v2", ...actionDecision.evidenceTokens],
     v2Mode: actionDecision.mode,
   });
@@ -789,4 +834,9 @@ test("v2 PR lifecycle action decisions can be recorded with a v2 action source t
   assert.equal(trace.v2Mode.actionSource, "pr_lifecycle_v2");
   assert.equal(trace.decision.value, "request_review");
   assert.equal(trace.decision.recommendedAction, "request_review");
+  assert.deepEqual(trace.routing, {
+    action: "request_review",
+    routingCategory: "core_action",
+    mutationAuthority: "core_executor_required",
+  });
 });

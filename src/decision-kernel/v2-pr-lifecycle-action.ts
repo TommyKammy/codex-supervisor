@@ -26,6 +26,14 @@ export type DecisionKernelV2PrLifecycleAction =
   | "ask_operator"
   | "no_action";
 
+export type DecisionKernelV2PrLifecycleActionRoutingCategory = "core_action" | "operator_action";
+
+export interface DecisionKernelV2PrLifecycleActionRoute {
+  action: DecisionKernelV2PrLifecycleAction;
+  routingCategory: DecisionKernelV2PrLifecycleActionRoutingCategory;
+  mutationAuthority: "core_executor_required" | "none";
+}
+
 export type DecisionKernelV2PrLifecycleActionReason =
   | "v2_disabled"
   | "v2_diagnostic_only"
@@ -67,6 +75,22 @@ export interface DecisionKernelV2PrLifecycleActionDecision {
     recommendedAction: PrLifecycleRecommendedAction;
     summary: string;
   };
+  routing: DecisionKernelV2PrLifecycleActionRoute;
+}
+
+export function routeDecisionKernelV2PrLifecycleAction(
+  action: DecisionKernelV2PrLifecycleAction,
+): DecisionKernelV2PrLifecycleActionRoute {
+  switch (action) {
+    case "merge":
+    case "request_review":
+    case "wait_ci":
+    case "mark_stale_resolved":
+      return { action, routingCategory: "core_action", mutationAuthority: "core_executor_required" };
+    case "ask_operator":
+    case "no_action":
+      return { action, routingCategory: "operator_action", mutationAuthority: "none" };
+  }
 }
 
 export function evaluateDecisionKernelV2PrLifecycleAction(
@@ -318,6 +342,7 @@ function actionDecision(args: {
     evidenceTokens: [...(args.evidenceTokens ?? reviewEvidenceTokens(args.v2Decision))],
     summary: args.summary,
     traceDecision: traceDecision(args.action, args.summary),
+    routing: routeDecisionKernelV2PrLifecycleAction(args.action),
   };
 }
 

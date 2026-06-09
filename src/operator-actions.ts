@@ -4,6 +4,15 @@ export interface OperatorActionVocabularyEntry {
   readonly action: string;
   readonly surfaces: ReadonlyArray<"status" | "doctor" | "webui">;
   readonly meaning: string;
+  readonly routingCategory: "operator_action";
+  readonly mutationAuthority: "none";
+}
+
+export interface ExternalOrchestrationHandoffVocabularyEntry {
+  readonly handoff: string;
+  readonly meaning: string;
+  readonly routingCategory: "external_orchestration_handoff";
+  readonly mutationAuthority: "none";
 }
 
 export const operatorActionVocabulary = [
@@ -11,54 +20,111 @@ export const operatorActionVocabulary = [
     action: "continue",
     surfaces: ["status", "doctor", "webui"],
     meaning: "No blocking operator action was detected; continue normal supervisor operation.",
+    routingCategory: "operator_action",
+    mutationAuthority: "none",
   },
   {
     action: "restart_loop",
     surfaces: ["status", "webui"],
     meaning:
       "Tracked work is active but the supervisor loop is off; restart the supported loop host so the runtime reports running and tracked work can advance.",
+    routingCategory: "operator_action",
+    mutationAuthority: "none",
   },
   {
     action: "fix_config",
     surfaces: ["status", "doctor", "webui"],
     meaning:
       "Repair host prerequisites, setup fields, workspace-preparation configuration, or incomplete local CI visibility before continuing.",
+    routingCategory: "operator_action",
+    mutationAuthority: "none",
   },
   {
     action: "adopt_local_ci",
     surfaces: ["doctor", "webui"],
     meaning: "A repo-owned local CI candidate exists; configure it before relying on local verification posture.",
+    routingCategory: "operator_action",
+    mutationAuthority: "none",
   },
   {
     action: "dismiss_local_ci",
     surfaces: ["webui"],
     meaning: "Explicitly dismiss a repo-owned local CI recommendation when local CI should remain unset.",
+    routingCategory: "operator_action",
+    mutationAuthority: "none",
   },
   {
     action: "manual_review",
     surfaces: ["status", "doctor", "webui"],
     meaning: "A tracked path or diagnostic warning requires human judgment before automation should continue.",
+    routingCategory: "operator_action",
+    mutationAuthority: "none",
   },
   {
     action: "resolve_stale_review_bot",
     surfaces: ["status", "webui"],
     meaning:
       "Code or CI is green but stale configured-bot review thread metadata still blocks the tracked PR; inspect and resolve the exact thread or leave a manual note.",
+    routingCategory: "operator_action",
+    mutationAuthority: "none",
   },
   {
     action: "provider_outage_suspected",
     surfaces: ["status", "webui"],
     meaning:
       "Required checks are green but the configured review provider has not reported on the current head; wait, verify provider delivery, or escalate to manual review.",
+    routingCategory: "operator_action",
+    mutationAuthority: "none",
   },
   {
     action: "safe_to_ignore",
     surfaces: ["doctor", "webui"],
     meaning: "A dismissed or already-completed advisory signal does not require operator action.",
+    routingCategory: "operator_action",
+    mutationAuthority: "none",
   },
 ] as const satisfies readonly OperatorActionVocabularyEntry[];
 
 export type OperatorActionToken = typeof operatorActionVocabulary[number]["action"];
+
+export const externalOrchestrationHandoffVocabulary = [
+  {
+    handoff: "evaluate",
+    meaning: "Read roadmap, GitHub, local status, and note state without changing supervisor runtime state.",
+    routingCategory: "external_orchestration_handoff",
+    mutationAuthority: "none",
+  },
+  {
+    handoff: "route",
+    meaning: "Route actionable changes to an operator or the next runnable issue without selecting execution authority.",
+    routingCategory: "external_orchestration_handoff",
+    mutationAuthority: "none",
+  },
+  {
+    handoff: "draft",
+    meaning: "Draft confirm-required follow-up issues without making them the default execution path.",
+    routingCategory: "external_orchestration_handoff",
+    mutationAuthority: "none",
+  },
+  {
+    handoff: "record",
+    meaning: "Record durable external history after real issue, PR, verification, or phase state changes.",
+    routingCategory: "external_orchestration_handoff",
+    mutationAuthority: "none",
+  },
+  {
+    handoff: "notify",
+    meaning: "Notify the operator about actionable state changes without modifying supervisor state.",
+    routingCategory: "external_orchestration_handoff",
+    mutationAuthority: "none",
+  },
+  {
+    handoff: "prepare_evidence",
+    meaning: "Prepare operator-facing evidence without treating that evidence as executor authority.",
+    routingCategory: "external_orchestration_handoff",
+    mutationAuthority: "none",
+  },
+] as const satisfies readonly ExternalOrchestrationHandoffVocabularyEntry[];
 
 export interface OperatorAction {
   action: OperatorActionToken;

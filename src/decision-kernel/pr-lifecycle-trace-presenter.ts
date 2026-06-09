@@ -58,6 +58,8 @@ export function formatPrLifecycleTraceDiagnostic(
     `policy=${trace.policy.posture}`,
     `decision=${trace.decision.value}`,
     `action=${trace.decision.recommendedAction}`,
+    `routing_category=${trace.routing?.routingCategory ?? "none"}`,
+    `mutation_authority=${trace.routing?.mutationAuthority ?? "none"}`,
     `source=${trace.facts.source}`,
     `pr=${trace.facts.pullRequestNumber ?? "none"}`,
     `head=${formatDiagnosticToken(trace.facts.headSha)}`,
