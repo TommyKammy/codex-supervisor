@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { ReviewPolicyInput } from "../codex-connector-review-policy";
 import { buildPrLifecycleDecisionTrace } from "./pr-lifecycle-trace";
 import { normalizePrLifecycleFacts, type PrLifecycleFactInventory } from "./pr-lifecycle-state";
 import { evaluateDecisionKernelV2PrLifecycleAction } from "./v2-pr-lifecycle-action";
@@ -37,6 +38,49 @@ function inventory(overrides: Partial<PrLifecycleFactInventory> = {}): PrLifecyc
     },
     configuredCurrentHeadReviewRequired: true,
     ...overrides,
+  };
+}
+
+function reviewPolicyInput(
+  outcomes: Array<ReviewPolicyInput["threads"][number]["boundaryOutcome"]>,
+): ReviewPolicyInput {
+  return {
+    providerIdentity: {
+      configuredProviderKinds: ["codex"],
+      configuredBotLogins: ["chatgpt-codex-connector"],
+    },
+    pr: {
+      number: 2312,
+      headSha: "head-current",
+      currentHeadObservedAt: "2026-06-09T00:01:00.000Z",
+      latestReviewedCommitSha: "head-current",
+      providerSuccessHeadSha: null,
+      externalReviewHeadSha: null,
+      currentHeadCiGreenAt: "2026-06-09T00:02:00.000Z",
+    },
+    threads: outcomes.map((boundaryOutcome, index) => ({
+      id: `thread-${index}`,
+      isResolved: false,
+      isOutdated: boundaryOutcome === "stale_commit_thread",
+      path: "src/example.ts",
+      line: 10 + index,
+      comments: [],
+      latestComment: null,
+      latestCodexConnectorSeverity: null,
+      latestCodexConnectorCommentFingerprint: null,
+      findingKind: boundaryOutcome === "must_fix_current_head" ? "must_fix" : "none",
+      headRelation: boundaryOutcome === "stale_commit_thread" ? "stale_commit" : "current_head",
+      boundaryOutcome,
+      processedEvidence: {
+        threadId: `thread-${index}`,
+        latestCommentFingerprint: null,
+        processedOnCurrentHead: boundaryOutcome === "metadata_only_unresolved",
+        processedOnPriorHead: boundaryOutcome === "stale_commit_thread",
+        processedThreadKeys: [`thread-${index}@head-current`],
+        processedThreadFingerprintKeys: [],
+      },
+      vocabulary: [],
+    })),
   };
 }
 
@@ -178,6 +222,179 @@ test("evaluateDecisionKernelV2PrLifecycleAction promotes ambiguous review facts 
   });
 });
 
+test("evaluateDecisionKernelV2PrLifecycleAction requests current-head review before stale previous-head terminal resolution", () => {
+  const decision = evaluateDecisionKernelV2PrLifecycleAction({
+    mode: "pr_lifecycle_action_taking",
+    normalizedState: normalizePrLifecycleFacts(
+      inventory({
+        reviewThreads: {
+          unresolvedManualThreadCount: 0,
+          unresolvedCurrentHeadConfiguredBotThreadCount: 0,
+          stalePreviousHeadConfiguredBotThreadCount: 1,
+          metadataOnlyUnresolvedThreadCount: 0,
+        },
+        pullRequest: {
+          number: 2312,
+          headSha: "head-current",
+          state: "OPEN",
+          isDraft: false,
+          mergeStateStatus: "CLEAN",
+          mergeable: "MERGEABLE",
+          currentHeadReviewObservedAt: null,
+          currentHeadReviewHeadSha: null,
+        },
+      }),
+    ),
+    reviewPolicyInput: reviewPolicyInput(["stale_commit_thread"]),
+  });
+
+  assert.equal(decision.v2Decision.action, "wait");
+  assert.deepEqual(decision.v2Decision.reasons, ["stale_commit_review"]);
+  assert.equal(decision.action, "request_review");
+  assert.deepEqual(decision.reasons, ["v2_stale_review_needs_current_head_review"]);
+  assert.deepEqual(decision.traceDecision, {
+    value: "request_review",
+    recommendedAction: "request_review",
+    summary: "Stale review residue needs current-head review evidence before terminal stale resolution.",
+  });
+  assert.deepEqual(decision.evidenceTokens, [
+    "terminal=stale_commit_review",
+    "missing=current_head_review",
+    "v2_reason=stale_commit_review",
+    "required_evidence=current_head_review",
+  ]);
+});
+
+test("evaluateDecisionKernelV2PrLifecycleAction promotes stale review residue after current-head evidence exists", () => {
+  const decision = evaluateDecisionKernelV2PrLifecycleAction({
+    mode: "pr_lifecycle_action_taking",
+    normalizedState: normalizePrLifecycleFacts(inventory()),
+    reviewPolicyInput: reviewPolicyInput(["stale_commit_thread"]),
+  });
+
+  assert.equal(decision.v2Decision.action, "wait");
+  assert.deepEqual(decision.v2Decision.reasons, ["stale_commit_review"]);
+  assert.equal(decision.v2Decision.normalizedState.reviewPosture, "current_head_review_observed");
+  assert.equal(decision.action, "mark_stale_resolved");
+  assert.deepEqual(decision.reasons, ["v2_mark_stale_resolved"]);
+  assert.deepEqual(decision.traceDecision, {
+    value: "do_nothing",
+    recommendedAction: "mark_stale_resolved",
+    summary: "Review findings are tied to a stale commit and need current-head evidence.",
+  });
+});
+
+test("evaluateDecisionKernelV2PrLifecycleAction treats processed metadata-only residue as terminal operator cleanup", () => {
+  const decision = evaluateDecisionKernelV2PrLifecycleAction({
+    mode: "pr_lifecycle_action_taking",
+    normalizedState: normalizePrLifecycleFacts(
+      inventory({
+        reviewThreads: {
+          unresolvedManualThreadCount: 0,
+          unresolvedCurrentHeadConfiguredBotThreadCount: 0,
+          stalePreviousHeadConfiguredBotThreadCount: 0,
+          metadataOnlyUnresolvedThreadCount: 1,
+        },
+      }),
+    ),
+    reviewPolicyInput: reviewPolicyInput(["metadata_only_unresolved"]),
+  });
+
+  assert.equal(decision.action, "ask_operator");
+  assert.deepEqual(decision.reasons, ["v2_metadata_terminal"]);
+  assert.deepEqual(decision.evidenceTokens, [
+    "terminal=metadata_only_review_residue",
+    "v2_reason=metadata_only_review_residue",
+    "required_evidence=resolved_metadata_residue",
+  ]);
+});
+
+test("evaluateDecisionKernelV2PrLifecycleAction sends exhausted reviewer loops to operator instead of Codex repair", () => {
+  const decision = evaluateDecisionKernelV2PrLifecycleAction({
+    mode: "pr_lifecycle_action_taking",
+    normalizedState: normalizePrLifecycleFacts(
+      inventory({
+        reviewThreads: {
+          unresolvedManualThreadCount: 0,
+          unresolvedCurrentHeadConfiguredBotThreadCount: 1,
+          stalePreviousHeadConfiguredBotThreadCount: 0,
+          metadataOnlyUnresolvedThreadCount: 0,
+        },
+      }),
+    ),
+    reviewPolicyInput: reviewPolicyInput(["must_fix_current_head"]),
+    reviewerLoopTerminal: {
+      retryBudgetExhausted: true,
+      reason: "repeat stop exhausted",
+    },
+  });
+
+  assert.equal(decision.v2Decision.action, "run_codex");
+  assert.equal(decision.action, "ask_operator");
+  assert.deepEqual(decision.reasons, ["v2_reviewer_loop_terminal"]);
+  assert.deepEqual(decision.evidenceTokens, [
+    "terminal=reviewer_loop_exhausted",
+    "retry_budget=repeat_stop_exhausted",
+    "v2_reason=current_head_must_fix_review",
+    "required_evidence=current_head_review+resolved_manual_threads",
+  ]);
+});
+
+test("evaluateDecisionKernelV2PrLifecycleAction honors exhausted reviewer loops before requesting review", () => {
+  const decision = evaluateDecisionKernelV2PrLifecycleAction({
+    mode: "pr_lifecycle_action_taking",
+    normalizedState: normalizePrLifecycleFacts(
+      inventory({
+        pullRequest: {
+          number: 2312,
+          headSha: "head-current",
+          state: "OPEN",
+          isDraft: false,
+          mergeStateStatus: "CLEAN",
+          mergeable: "MERGEABLE",
+          currentHeadReviewObservedAt: null,
+          currentHeadReviewHeadSha: null,
+        },
+      }),
+    ),
+    reviewerLoopTerminal: {
+      retryBudgetExhausted: true,
+      reason: "retry exhausted",
+    },
+  });
+
+  assert.equal(decision.v2Decision.action, "request_review");
+  assert.equal(decision.action, "ask_operator");
+  assert.deepEqual(decision.reasons, ["v2_reviewer_loop_terminal"]);
+  assert.deepEqual(decision.evidenceTokens, [
+    "terminal=reviewer_loop_exhausted",
+    "retry_budget=retry_exhausted",
+    "v2_reason=missing_current_head_review",
+    "required_evidence=current_head_review",
+  ]);
+});
+
+test("evaluateDecisionKernelV2PrLifecycleAction keeps must-fix current-head reviews outside terminal promotion without retry exhaustion", () => {
+  const decision = evaluateDecisionKernelV2PrLifecycleAction({
+    mode: "pr_lifecycle_action_taking",
+    normalizedState: normalizePrLifecycleFacts(
+      inventory({
+        reviewThreads: {
+          unresolvedManualThreadCount: 0,
+          unresolvedCurrentHeadConfiguredBotThreadCount: 1,
+          stalePreviousHeadConfiguredBotThreadCount: 0,
+          metadataOnlyUnresolvedThreadCount: 0,
+        },
+      }),
+    ),
+    reviewPolicyInput: reviewPolicyInput(["must_fix_current_head"]),
+  });
+
+  assert.equal(decision.v2Decision.action, "run_codex");
+  assert.equal(decision.action, "no_action");
+  assert.deepEqual(decision.reasons, ["v2_action_not_promoted"]);
+});
+
 test("evaluateDecisionKernelV2PrLifecycleAction fails closed when fresh fact requirements are not met", () => {
   const decision = evaluateDecisionKernelV2PrLifecycleAction({
     mode: "pr_lifecycle_action_taking",
@@ -249,7 +466,7 @@ test("v2 PR lifecycle action decisions can be recorded with a v2 action source t
       reasons: actionDecision.v2Decision.reasons,
     },
     decision: actionDecision.traceDecision,
-    evidenceTokens: ["pr=2312", "action_source=pr_lifecycle_v2"],
+    evidenceTokens: ["pr=2312", "action_source=pr_lifecycle_v2", ...actionDecision.evidenceTokens],
     v2Mode: actionDecision.mode,
   });
 
