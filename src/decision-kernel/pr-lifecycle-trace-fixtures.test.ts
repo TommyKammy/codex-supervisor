@@ -125,11 +125,11 @@ test("Decision Kernel trace fixtures remain read-only for action-taking evaluati
     path.join(process.cwd(), "replay-corpus", "decision-traces"),
   );
   const modeById = new Map<string, PrLifecycleEvaluationMode>([
-    ["merge-ready", "action_taking"],
+    ["merge-ready", "pr_lifecycle_action_taking"],
     ["metadata-only-review-residue", "diagnostic_only"],
     ["review-blocked", "diagnostic_only"],
-    ["stale-local-state", "action_taking"],
-    ["wait-ci", "action_taking"],
+    ["stale-local-state", "pr_lifecycle_action_taking"],
+    ["wait-ci", "pr_lifecycle_action_taking"],
   ]);
   const results = fixtures.map((fixture) => [
     fixture.id,

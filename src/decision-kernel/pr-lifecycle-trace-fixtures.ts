@@ -24,6 +24,13 @@ import type {
   DecisionKernelV2ComparisonCategory,
   DecisionKernelV2ComparisonDifference,
 } from "./v2-comparison";
+import {
+  decisionKernelV2ModePosture,
+  type DecisionKernelV2ActionScope,
+  type DecisionKernelV2ActionSource,
+  type DecisionKernelV2ModePosture,
+  type DecisionKernelV2RuntimeMode,
+} from "./pr-lifecycle-evaluation-mode";
 
 export interface PrLifecycleTraceFixture {
   id: string;
@@ -95,6 +102,7 @@ function parsePrLifecycleDecisionTraceArtifact(
   const policy = requiredRecord(value.policy, source, "artifact.policy");
   const decision = requiredRecord(value.decision, source, "artifact.decision");
   const evidenceTokens = requiredStringArray(value.evidenceTokens, source, "artifact.evidenceTokens");
+  const v2Mode = optionalV2Mode(value.v2Mode, source);
   const v2Comparison = optionalV2Comparison(value.v2Comparison, source);
   const factsSource = requiredEnum(
     facts.source,
@@ -244,6 +252,7 @@ function parsePrLifecycleDecisionTraceArtifact(
       summary: requiredString(decision.summary, source, "artifact.decision.summary"),
     },
     evidenceTokens,
+    v2Mode,
     v2Comparison,
   };
 }
@@ -276,6 +285,9 @@ const prLifecyclePolicyPostures = [
 ] as const satisfies readonly PrLifecyclePolicyPosture[];
 const prLifecycleDecisions = ["merge", "wait", "request_review", "run_codex", "ask_operator", "do_nothing"] as const satisfies readonly PrLifecycleDecision[];
 const prLifecycleRecommendedActions = ["merge", "wait_ci", "request_review", "repair", "manual_review", "refresh_state", "no_action"] as const satisfies readonly PrLifecycleRecommendedAction[];
+const decisionKernelV2RuntimeModes = ["disabled", "diagnostic_only", "pr_lifecycle_action_taking"] as const satisfies readonly DecisionKernelV2RuntimeMode[];
+const decisionKernelV2ActionSources = ["disabled", "pr_lifecycle_v2"] as const satisfies readonly DecisionKernelV2ActionSource[];
+const decisionKernelV2ActionScopes = ["none", "pr_lifecycle"] as const satisfies readonly DecisionKernelV2ActionScope[];
 const decisionKernelV2ComparisonCategories = ["agreement", "safe_divergence", "manual_review_required"] as const satisfies readonly DecisionKernelV2ComparisonCategory[];
 const decisionKernelV2Actions = ["wait", "request_review", "run_codex", "ask_operator", "no_action"] as const satisfies readonly DecisionKernelV2Action[];
 const decisionKernelV2Reasons = [
@@ -392,6 +404,21 @@ function requiredEnumArray<const T extends readonly string[]>(
   return value.map((entry, index) => requiredEnum(entry, source, `${field}[${index}]`, allowed));
 }
 
+function optionalV2Mode(value: unknown, source: string): DecisionKernelV2ModePosture {
+  if (value === undefined || value === null) {
+    return decisionKernelV2ModePosture("diagnostic_only");
+  }
+
+  const mode = requiredRecord(value, source, "artifact.v2Mode");
+  return {
+    mode: requiredEnum(mode.mode, source, "artifact.v2Mode.mode", decisionKernelV2RuntimeModes),
+    authoritative: requiredAnyBoolean(mode.authoritative, source, "artifact.v2Mode.authoritative"),
+    mutationAllowed: requiredAnyBoolean(mode.mutationAllowed, source, "artifact.v2Mode.mutationAllowed"),
+    actionSource: requiredEnum(mode.actionSource, source, "artifact.v2Mode.actionSource", decisionKernelV2ActionSources),
+    actionScope: requiredEnum(mode.actionScope, source, "artifact.v2Mode.actionScope", decisionKernelV2ActionScopes),
+  };
+}
+
 function optionalV2Comparison(
   value: unknown,
   source: string,
@@ -436,6 +463,13 @@ function optionalV2Comparison(
     ),
     safetyNote: requiredString(comparison.safetyNote, source, "artifact.v2Comparison.safetyNote"),
   };
+}
+
+function requiredAnyBoolean(value: unknown, source: string, field: string): boolean {
+  if (typeof value !== "boolean") {
+    throw new Error(`Invalid PR lifecycle trace fixture at ${source}: ${field} must be a boolean.`);
+  }
+  return value;
 }
 
 function requiredBoolean(value: unknown, source: string, field: string): true {

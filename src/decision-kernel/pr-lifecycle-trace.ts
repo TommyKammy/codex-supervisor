@@ -1,4 +1,9 @@
 import type { NormalizedPrLifecycleState } from "./pr-lifecycle-state";
+import {
+  decisionKernelV2ModePosture,
+  type DecisionKernelV2ModePosture,
+  type DecisionKernelV2RuntimeMode,
+} from "./pr-lifecycle-evaluation-mode";
 import type { DecisionKernelV2ComparisonDto } from "./v2-comparison";
 
 export const PR_LIFECYCLE_DECISION_TRACE_SCHEMA_VERSION = "pr_lifecycle_decision_trace.v1";
@@ -47,6 +52,7 @@ export interface PrLifecycleDecisionTraceInput {
     summary: string;
   };
   evidenceTokens?: string[];
+  v2Mode?: DecisionKernelV2RuntimeMode | DecisionKernelV2ModePosture;
   v2Comparison?: DecisionKernelV2ComparisonDto | null;
 }
 
@@ -72,6 +78,7 @@ export interface PrLifecycleDecisionTraceArtifact {
     summary: string;
   };
   evidenceTokens: string[];
+  v2Mode: DecisionKernelV2ModePosture;
   v2Comparison: (DecisionKernelV2ComparisonDto & { diagnosticOnly: true }) | null;
 }
 
@@ -102,12 +109,24 @@ export function buildPrLifecycleDecisionTrace(
       summary: input.decision.summary,
     },
     evidenceTokens: [...(input.evidenceTokens ?? [])],
+    v2Mode: snapshotV2Mode(input.v2Mode ?? "diagnostic_only"),
     v2Comparison: input.v2Comparison
       ? {
         ...snapshotV2Comparison(input.v2Comparison),
         diagnosticOnly: true,
       }
       : null,
+  };
+}
+
+function snapshotV2Mode(modeOrPosture: DecisionKernelV2RuntimeMode | DecisionKernelV2ModePosture): DecisionKernelV2ModePosture {
+  const posture = typeof modeOrPosture === "string" ? decisionKernelV2ModePosture(modeOrPosture) : modeOrPosture;
+  return {
+    mode: posture.mode,
+    authoritative: posture.authoritative,
+    mutationAllowed: posture.mutationAllowed,
+    actionSource: posture.actionSource,
+    actionScope: posture.actionScope,
   };
 }
 

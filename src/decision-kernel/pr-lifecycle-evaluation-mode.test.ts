@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   classifyPrLifecycleFactFreshness,
+  decisionKernelV2ModePosture,
   factFreshnessRequirementForMode,
   guardPrLifecycleEvaluation,
+  prLifecycleEvaluationModeForRuntime,
 } from "./pr-lifecycle-evaluation-mode";
 import {
   normalizePrLifecycleFacts,
@@ -47,18 +49,48 @@ function inventory(overrides: Partial<PrLifecycleFactInventory> = {}): PrLifecyc
 }
 
 test("factFreshnessRequirementForMode separates action-taking from diagnostics", () => {
-  assert.equal(factFreshnessRequirementForMode("action_taking"), "fresh_github_required");
+  assert.equal(factFreshnessRequirementForMode("pr_lifecycle_action_taking"), "fresh_github_required");
   assert.equal(factFreshnessRequirementForMode("diagnostic_only"), "cached_facts_allowed");
+});
+
+test("decisionKernelV2ModePosture names disabled, diagnostic, and PR lifecycle action-taking boundaries", () => {
+  assert.deepEqual(decisionKernelV2ModePosture("disabled"), {
+    mode: "disabled",
+    authoritative: false,
+    mutationAllowed: false,
+    actionSource: "disabled",
+    actionScope: "none",
+  });
+  assert.deepEqual(decisionKernelV2ModePosture("diagnostic_only"), {
+    mode: "diagnostic_only",
+    authoritative: false,
+    mutationAllowed: false,
+    actionSource: "disabled",
+    actionScope: "none",
+  });
+  assert.deepEqual(decisionKernelV2ModePosture("pr_lifecycle_action_taking"), {
+    mode: "pr_lifecycle_action_taking",
+    authoritative: true,
+    mutationAllowed: true,
+    actionSource: "pr_lifecycle_v2",
+    actionScope: "pr_lifecycle",
+  });
+});
+
+test("prLifecycleEvaluationModeForRuntime keeps disabled mode out of PR lifecycle evaluation", () => {
+  assert.equal(prLifecycleEvaluationModeForRuntime("disabled"), null);
+  assert.equal(prLifecycleEvaluationModeForRuntime("diagnostic_only"), "diagnostic_only");
+  assert.equal(prLifecycleEvaluationModeForRuntime("pr_lifecycle_action_taking"), "pr_lifecycle_action_taking");
 });
 
 test("guardPrLifecycleEvaluation allows action-taking with fresh GitHub facts", () => {
   const result = guardPrLifecycleEvaluation({
-    mode: "action_taking",
+    mode: "pr_lifecycle_action_taking",
     normalizedState: normalizePrLifecycleFacts(inventory()),
   });
 
   assert.deepEqual(result, {
-    mode: "action_taking",
+    mode: "pr_lifecycle_action_taking",
     requirement: "fresh_github_required",
     freshness: "fresh",
     decision: "allowed",
@@ -68,7 +100,7 @@ test("guardPrLifecycleEvaluation allows action-taking with fresh GitHub facts", 
 
 test("guardPrLifecycleEvaluation blocks action-taking with cached facts", () => {
   const result = guardPrLifecycleEvaluation({
-    mode: "action_taking",
+    mode: "pr_lifecycle_action_taking",
     normalizedState: normalizePrLifecycleFacts(
       inventory({
         source: "cached_github",
@@ -83,7 +115,7 @@ test("guardPrLifecycleEvaluation blocks action-taking with cached facts", () => 
 
 test("guardPrLifecycleEvaluation blocks action-taking with missing fact observation", () => {
   const result = guardPrLifecycleEvaluation({
-    mode: "action_taking",
+    mode: "pr_lifecycle_action_taking",
     normalizedState: normalizePrLifecycleFacts(
       inventory({
         observedAt: null,
@@ -98,7 +130,7 @@ test("guardPrLifecycleEvaluation blocks action-taking with missing fact observat
 
 test("guardPrLifecycleEvaluation blocks action-taking with malformed fact observation", () => {
   const result = guardPrLifecycleEvaluation({
-    mode: "action_taking",
+    mode: "pr_lifecycle_action_taking",
     normalizedState: normalizePrLifecycleFacts(
       inventory({
         observedAt: "not-a-date",
@@ -113,7 +145,7 @@ test("guardPrLifecycleEvaluation blocks action-taking with malformed fact observ
 
 test("guardPrLifecycleEvaluation blocks action-taking when fresh GitHub facts expose stale local state", () => {
   const result = guardPrLifecycleEvaluation({
-    mode: "action_taking",
+    mode: "pr_lifecycle_action_taking",
     normalizedState: normalizePrLifecycleFacts(
       inventory({
         pullRequest: {
@@ -142,7 +174,7 @@ test("guardPrLifecycleEvaluation blocks action-taking when fresh GitHub facts ex
 
 test("guardPrLifecycleEvaluation blocks action-taking when local state facts are missing", () => {
   const result = guardPrLifecycleEvaluation({
-    mode: "action_taking",
+    mode: "pr_lifecycle_action_taking",
     normalizedState: normalizePrLifecycleFacts(
       inventory({
         localState: {
@@ -161,7 +193,7 @@ test("guardPrLifecycleEvaluation blocks action-taking when local state facts are
 
 test("guardPrLifecycleEvaluation blocks action-taking when local head facts are unknown", () => {
   const result = guardPrLifecycleEvaluation({
-    mode: "action_taking",
+    mode: "pr_lifecycle_action_taking",
     normalizedState: normalizePrLifecycleFacts(
       inventory({
         localState: {

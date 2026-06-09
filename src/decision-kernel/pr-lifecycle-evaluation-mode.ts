@@ -1,6 +1,41 @@
 import type { NormalizedPrLifecycleState } from "./pr-lifecycle-state";
 
-export type PrLifecycleEvaluationMode = "action_taking" | "diagnostic_only";
+export type PrLifecycleEvaluationMode = "pr_lifecycle_action_taking" | "diagnostic_only";
+export type DecisionKernelV2RuntimeMode = "disabled" | PrLifecycleEvaluationMode;
+export type DecisionKernelV2ActionSource = "disabled" | "pr_lifecycle_v2";
+export type DecisionKernelV2ActionScope = "none" | "pr_lifecycle";
+
+export interface DecisionKernelV2ModePosture {
+  mode: DecisionKernelV2RuntimeMode;
+  authoritative: boolean;
+  mutationAllowed: boolean;
+  actionSource: DecisionKernelV2ActionSource;
+  actionScope: DecisionKernelV2ActionScope;
+}
+
+export const DECISION_KERNEL_V2_DISABLED_POSTURE = {
+  mode: "disabled",
+  authoritative: false,
+  mutationAllowed: false,
+  actionSource: "disabled",
+  actionScope: "none",
+} as const satisfies DecisionKernelV2ModePosture;
+
+export const DECISION_KERNEL_V2_DIAGNOSTIC_ONLY_MODE_POSTURE = {
+  mode: "diagnostic_only",
+  authoritative: false,
+  mutationAllowed: false,
+  actionSource: "disabled",
+  actionScope: "none",
+} as const satisfies DecisionKernelV2ModePosture;
+
+export const DECISION_KERNEL_V2_PR_LIFECYCLE_ACTION_TAKING_POSTURE = {
+  mode: "pr_lifecycle_action_taking",
+  authoritative: true,
+  mutationAllowed: true,
+  actionSource: "pr_lifecycle_v2",
+  actionScope: "pr_lifecycle",
+} as const satisfies DecisionKernelV2ModePosture;
 
 export type PrLifecycleFactFreshnessRequirement =
   | "fresh_github_required"
@@ -52,10 +87,31 @@ export function guardPrLifecycleEvaluation(
   };
 }
 
+export function decisionKernelV2ModePosture(mode: DecisionKernelV2RuntimeMode): DecisionKernelV2ModePosture {
+  switch (mode) {
+    case "disabled":
+      return DECISION_KERNEL_V2_DISABLED_POSTURE;
+    case "diagnostic_only":
+      return DECISION_KERNEL_V2_DIAGNOSTIC_ONLY_MODE_POSTURE;
+    case "pr_lifecycle_action_taking":
+      return DECISION_KERNEL_V2_PR_LIFECYCLE_ACTION_TAKING_POSTURE;
+  }
+}
+
+export function prLifecycleEvaluationModeForRuntime(
+  mode: DecisionKernelV2RuntimeMode,
+): PrLifecycleEvaluationMode | null {
+  if (mode === "disabled") {
+    return null;
+  }
+
+  return mode;
+}
+
 export function factFreshnessRequirementForMode(
   mode: PrLifecycleEvaluationMode,
 ): PrLifecycleFactFreshnessRequirement {
-  return mode === "action_taking" ? "fresh_github_required" : "cached_facts_allowed";
+  return mode === "pr_lifecycle_action_taking" ? "fresh_github_required" : "cached_facts_allowed";
 }
 
 export function classifyPrLifecycleFactFreshness(
