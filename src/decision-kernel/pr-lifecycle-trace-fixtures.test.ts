@@ -61,7 +61,7 @@ test("Decision Kernel trace fixtures preserve optional v2 comparison evidence", 
     fixtures.map((fixture) => [fixture.id, fixture.artifact.v2Comparison?.category ?? "none"]),
   );
 
-  assert.equal(comparisonById.get("merge-ready"), "agreement");
+  assert.equal(comparisonById.get("merge-ready"), "manual_review_required");
   assert.equal(comparisonById.get("review-blocked"), "agreement");
   assert.equal(comparisonById.get("wait-ci"), "none");
   assert.equal(fixtures.find((fixture) => fixture.id === "merge-ready")?.artifact.v2Comparison?.diagnosticOnly, true);
@@ -115,6 +115,8 @@ test("Decision Kernel trace fixtures render compact diagnostics without host-loc
   assert.match(diagnostics.join("\n"), /label=stale_local_state/);
   assert.match(diagnostics.join("\n"), /label=metadata_only_review_residue/);
   assert.match(diagnostics.join("\n"), /v2_comparison=agreement/);
+  assert.match(diagnostics.join("\n"), /v2_comparison=manual_review_required/);
+  assert.match(diagnostics.join("\n"), /v2_comparison_differences=action:no_action->merge/);
   assert.match(diagnostics.join("\n"), /v2_comparison_differences=reason:manual_review_required->manual_review_thread/);
   assert.doesNotMatch(diagnostics.join("\n"), /\/Users\//);
   assert.doesNotMatch(diagnostics.join("\n"), /[A-Z]:\\/);

@@ -89,7 +89,7 @@ function compareDecisionFields(args: {
 function actionEquivalentForCurrentState(state: RunState): DecisionKernelV2Action {
   switch (state) {
     case "ready_to_merge":
-      return "merge";
+      return "no_action";
     case "done":
       return "no_action";
     case "addressing_review":

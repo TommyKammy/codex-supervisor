@@ -156,8 +156,15 @@ test("buildDecisionKernelV2ExplainDto uses PR head for current-head review obser
   assert.equal(dto.decision?.normalizedState.reviewPosture, "current_head_review_observed");
   assert.equal(dto.decision?.action, "merge");
   assert.equal(dto.comparison?.current.state, "ready_to_merge");
-  assert.equal(dto.comparison?.category, "agreement");
-  assert.deepEqual(dto.comparison?.differences, []);
+  assert.equal(dto.comparison?.current.actionEquivalent, "no_action");
+  assert.equal(dto.comparison?.category, "manual_review_required");
+  assert.deepEqual(dto.comparison?.differences, [
+    {
+      field: "action",
+      current: "no_action",
+      v2: "merge",
+    },
+  ]);
 });
 
 test("buildDecisionKernelV2ExplainDto ignores malformed current-head review timestamps", () => {
@@ -180,6 +187,27 @@ test("buildDecisionKernelV2ExplainDto ignores malformed current-head review time
   assert.equal(dto.decision?.action, "request_review");
   assert.equal(dto.comparison?.category, "manual_review_required");
   assert.deepEqual(dto.comparison?.differences.map((difference) => difference.field), ["action", "reason"]);
+});
+
+test("buildDecisionKernelV2ExplainDto compares merge as agreement only when auto-merge is configured", () => {
+  const dto = buildDecisionKernelV2ExplainDto({
+    config: codexConfig({
+      reviewBotLogins: ["coderabbitai"],
+      configuredReviewProviders: [{ kind: "coderabbit", reviewerLogins: ["coderabbitai"], signalSource: "review_threads" }],
+    }),
+    issueNumber: 2301,
+    title: "Phase 3.2",
+    record: record(),
+    pr: pullRequest({ configuredBotCurrentHeadObservationSource: "review_thread" }),
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass" }],
+    reviewThreads: [],
+  });
+
+  assert.equal(dto.decision?.action, "merge");
+  assert.equal(dto.comparison?.current.state, "ready_to_merge");
+  assert.equal(dto.comparison?.current.actionEquivalent, "merge");
+  assert.equal(dto.comparison?.category, "agreement");
+  assert.deepEqual(dto.comparison?.differences, []);
 });
 
 test("buildDecisionKernelV2ExplainDto accepts external review records as current-head review evidence", () => {

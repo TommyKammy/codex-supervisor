@@ -229,6 +229,10 @@ function currentActionEquivalentForV2Comparison(args: {
   currentState: ReturnType<typeof inferStateFromPullRequest>;
   nowMs?: number;
 }): DecisionKernelV2ComparisonDto["current"]["actionEquivalent"] | undefined {
+  if (args.currentState === "ready_to_merge" && autoMergePathForConfig(args.config) !== null) {
+    return "merge";
+  }
+
   if (args.currentState !== "waiting_ci") {
     return undefined;
   }

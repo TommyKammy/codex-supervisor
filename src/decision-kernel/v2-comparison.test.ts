@@ -43,9 +43,29 @@ function v2Decision(overrides: Partial<DecisionKernelV2ReadOnlyDecision> = {}): 
   };
 }
 
-test("buildDecisionKernelV2ComparisonDto reports agreement for merge-ready merge decisions", () => {
+test("buildDecisionKernelV2ComparisonDto preserves no-auto-merge ready state as no_action", () => {
   const comparison = buildDecisionKernelV2ComparisonDto({
     currentState: "ready_to_merge",
+    v2Decision: v2Decision(),
+  });
+
+  assert.equal(comparison.category, "manual_review_required");
+  assert.equal(comparison.current.state, "ready_to_merge");
+  assert.equal(comparison.current.actionEquivalent, "no_action");
+  assert.equal(comparison.v2.action, "merge");
+  assert.deepEqual(comparison.differences, [
+    {
+      field: "action",
+      current: "no_action",
+      v2: "merge",
+    },
+  ]);
+});
+
+test("buildDecisionKernelV2ComparisonDto reports agreement for configured merge-ready merge decisions", () => {
+  const comparison = buildDecisionKernelV2ComparisonDto({
+    currentState: "ready_to_merge",
+    currentActionEquivalent: "merge",
     v2Decision: v2Decision(),
   });
 

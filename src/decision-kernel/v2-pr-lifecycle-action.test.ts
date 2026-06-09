@@ -189,6 +189,11 @@ test("evaluateDecisionKernelV2PrLifecycleAction keeps repair outside the action 
   const mergeReady = evaluateDecisionKernelV2PrLifecycleAction({
     mode: "pr_lifecycle_action_taking",
     normalizedState: normalizePrLifecycleFacts(inventory()),
+    checkPolicyInput: {
+      mergeReadyBlockedByRequiredChecks: false,
+      mergeReadyBlockedByLocalCi: false,
+      mergeReadyBlockedByFinalGuard: false,
+    },
   });
 
   assert.equal(failingChecks.v2Decision.action, "run_codex");
@@ -213,6 +218,49 @@ test("evaluateDecisionKernelV2PrLifecycleAction keeps repair outside the action 
     "gate=local_verification:passed",
     "gate=final_guard:passed",
   ]);
+});
+
+test("evaluateDecisionKernelV2PrLifecycleAction requires explicit merge gate input before promoting merge", () => {
+  const decision = evaluateDecisionKernelV2PrLifecycleAction({
+    mode: "pr_lifecycle_action_taking",
+    normalizedState: normalizePrLifecycleFacts(inventory()),
+  });
+
+  assert.equal(decision.v2Decision.action, "merge");
+  assert.equal(decision.action, "ask_operator");
+  assert.deepEqual(decision.reasons, ["v2_merge_gate_evidence_missing"]);
+  assert.deepEqual(decision.evidenceTokens, [
+    "missing=merge_gate_input",
+    "v2_reason=merge_ready_diagnostic_only",
+    "gate=head_sha:current_head",
+    "gate=local_state:fresh",
+    "gate=review:current_head_review_observed",
+    "gate=checks:green",
+    "gate=mergeability:mergeable",
+    "gate=required_checks:missing",
+    "gate=local_verification:missing",
+    "gate=final_guard:missing",
+  ]);
+});
+
+test("evaluateDecisionKernelV2PrLifecycleAction lets merge-ready facts bypass repair retry exhaustion", () => {
+  const decision = evaluateDecisionKernelV2PrLifecycleAction({
+    mode: "pr_lifecycle_action_taking",
+    normalizedState: normalizePrLifecycleFacts(inventory()),
+    checkPolicyInput: {
+      mergeReadyBlockedByRequiredChecks: false,
+      mergeReadyBlockedByLocalCi: false,
+      mergeReadyBlockedByFinalGuard: false,
+    },
+    reviewerLoopTerminal: {
+      retryBudgetExhausted: true,
+      reason: "repair retry exhausted",
+    },
+  });
+
+  assert.equal(decision.v2Decision.action, "merge");
+  assert.equal(decision.action, "merge");
+  assert.deepEqual(decision.reasons, ["v2_merge_ready"]);
 });
 
 test("evaluateDecisionKernelV2PrLifecycleAction fails closed before merge when safety evidence is missing or blocking", () => {
