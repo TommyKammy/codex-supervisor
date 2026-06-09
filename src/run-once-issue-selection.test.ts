@@ -31,6 +31,9 @@ test("run-once issue selection does not consume external orchestration handoff a
   assert.doesNotMatch(source, /external_handoff/u);
   assert.doesNotMatch(source, /mutation_authority/u);
   assert.doesNotMatch(source, /v2_routing/u);
+  assert.doesNotMatch(source, /externalOrchestrationHandoff/u);
+  assert.doesNotMatch(source, /routingCategory/u);
+  assert.doesNotMatch(source, /mutationAuthority/u);
 });
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {

@@ -84,6 +84,14 @@
     {
       "id": "phase0-hrcore-current-head-repair-metadata-residue",
       "path": "cases/phase0-hrcore-current-head-repair-metadata-residue"
+    },
+    {
+      "id": "phase5-aegisops-external-handoff-review-ci-merge",
+      "path": "cases/phase5-aegisops-external-handoff-review-ci-merge"
+    },
+    {
+      "id": "phase5-hrcore-external-handoff-metadata-residue",
+      "path": "cases/phase5-hrcore-external-handoff-metadata-residue"
     }
   ]
 }

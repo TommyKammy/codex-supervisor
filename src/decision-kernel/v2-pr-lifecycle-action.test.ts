@@ -6,6 +6,7 @@ import { normalizePrLifecycleFacts, type PrLifecycleFactInventory } from "./pr-l
 import {
   evaluateDecisionKernelV2PrLifecycleAction,
   routeDecisionKernelV2PrLifecycleAction,
+  type DecisionKernelV2PrLifecycleActionInput,
 } from "./v2-pr-lifecycle-action";
 
 function inventory(overrides: Partial<PrLifecycleFactInventory> = {}): PrLifecycleFactInventory {
@@ -284,79 +285,63 @@ test("evaluateDecisionKernelV2PrLifecycleAction requires explicit merge gate inp
   ]);
 });
 
-test("evaluateDecisionKernelV2PrLifecycleAction ignores external handoff metadata as mutation authority", () => {
-  const unsafeExternalHandoff = {
-    routing_category: "external_orchestration_handoff",
-    mutation_authority: "core_executor_required",
-    external_handoff: "merge",
-    observed_at: "2026-06-09T00:05:00.000Z",
-    asserted_core_safety_gates: "passed",
-  };
-  const decision = evaluateDecisionKernelV2PrLifecycleAction({
-    mode: "pr_lifecycle_action_taking",
-    normalizedState: normalizePrLifecycleFacts(inventory()),
-    externalOrchestrationHandoff: unsafeExternalHandoff,
-  } as Parameters<typeof evaluateDecisionKernelV2PrLifecycleAction>[0] & {
-    externalOrchestrationHandoff: typeof unsafeExternalHandoff;
-  });
+test("DecisionKernelV2PrLifecycleActionInput excludes external handoff authority fields", () => {
+  const actionInputKeys = {
+    mode: true,
+    normalizedState: true,
+    reviewPolicyInput: true,
+    checkPolicyInput: true,
+    reviewerLoopTerminal: true,
+  } satisfies Record<keyof DecisionKernelV2PrLifecycleActionInput, true>;
 
-  assert.equal(decision.v2Decision.action, "merge");
-  assert.equal(decision.action, "ask_operator");
-  assert.deepEqual(decision.reasons, ["v2_merge_gate_evidence_missing"]);
-  assert.deepEqual(decision.routing, {
-    action: "ask_operator",
-    routingCategory: "operator_action",
-    mutationAuthority: "none",
-  });
+  assert.equal("externalOrchestrationHandoff" in actionInputKeys, false);
+  assert.equal("routingCategory" in actionInputKeys, false);
+  assert.equal("mutationAuthority" in actionInputKeys, false);
 });
 
-test("evaluateDecisionKernelV2PrLifecycleAction fails closed when external handoff evidence is malformed or stale", () => {
-  const cases = [
+test("evaluateDecisionKernelV2PrLifecycleAction fails closed without core safety gate evidence", () => {
+  const cases: Array<{
+    label: string;
+    input: DecisionKernelV2PrLifecycleActionInput;
+    expectedAction: string;
+    expectedReasons: string[];
+  }> = [
     {
-      label: "malformed handoff cannot replace missing merge gates",
-      normalizedState: normalizePrLifecycleFacts(inventory()),
-      externalOrchestrationHandoff: {
-        routing_category: "core_action",
-        mutation_authority: "core_executor_required",
-        external_handoff: "merge",
-        observed_at: "not-a-date",
+      label: "missing merge gates",
+      input: {
+        mode: "pr_lifecycle_action_taking",
+        normalizedState: normalizePrLifecycleFacts(inventory()),
       },
       expectedAction: "ask_operator",
       expectedReasons: ["v2_merge_gate_evidence_missing"],
     },
     {
-      label: "stale handoff cannot refresh cached facts",
-      normalizedState: normalizePrLifecycleFacts(
-        inventory({
-          source: "cached_github",
-        }),
-      ),
-      externalOrchestrationHandoff: {
-        routing_category: "external_orchestration_handoff",
-        mutation_authority: "none",
-        external_handoff: "prepare_evidence",
-        observed_at: "2026-06-08T00:00:00.000Z",
+      label: "cached facts",
+      input: {
+        mode: "pr_lifecycle_action_taking",
+        normalizedState: normalizePrLifecycleFacts(
+          inventory({
+            source: "cached_github",
+          }),
+        ),
       },
       expectedAction: "ask_operator",
       expectedReasons: ["fresh_facts_guard_blocked"],
     },
     {
-      label: "handoff cannot override failing checks",
-      normalizedState: normalizePrLifecycleFacts(
-        inventory({
-          checks: {
-            passingCount: 2,
-            pendingCount: 0,
-            failingCount: 1,
-            unknownCount: 0,
-          },
-        }),
-      ),
-      externalOrchestrationHandoff: {
-        routing_category: "external_orchestration_handoff",
-        mutation_authority: "none",
-        external_handoff: "prepare_evidence",
-        asserted_next_action: "merge",
+      label: "failing checks",
+      input: {
+        mode: "pr_lifecycle_action_taking",
+        normalizedState: normalizePrLifecycleFacts(
+          inventory({
+            checks: {
+              passingCount: 2,
+              pendingCount: 0,
+              failingCount: 1,
+              unknownCount: 0,
+            },
+          }),
+        ),
       },
       expectedAction: "no_action",
       expectedReasons: ["v2_action_not_promoted"],
@@ -364,13 +349,7 @@ test("evaluateDecisionKernelV2PrLifecycleAction fails closed when external hando
   ];
 
   for (const testCase of cases) {
-    const decision = evaluateDecisionKernelV2PrLifecycleAction({
-      mode: "pr_lifecycle_action_taking",
-      normalizedState: testCase.normalizedState,
-      externalOrchestrationHandoff: testCase.externalOrchestrationHandoff,
-    } as Parameters<typeof evaluateDecisionKernelV2PrLifecycleAction>[0] & {
-      externalOrchestrationHandoff: unknown;
-    });
+    const decision = evaluateDecisionKernelV2PrLifecycleAction(testCase.input);
 
     assert.equal(decision.action, testCase.expectedAction, testCase.label);
     assert.deepEqual(decision.reasons, testCase.expectedReasons, testCase.label);

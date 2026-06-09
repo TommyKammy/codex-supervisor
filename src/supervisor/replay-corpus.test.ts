@@ -130,38 +130,38 @@ test("Phase 2 Connector review policy replay fixtures cover typed boundary outco
   assert.equal(repeatStopFixture?.repeatStopSuppressedReason, "repeat_stop_exhausted");
 });
 
-test("Phase 5 external orchestration fixtures keep complex project handoffs bounded", () => {
-  const fixtures = [
-    {
-      id: "phase5-aegisops-external-handoff-review-ci-merge",
-      projectShape: "aegisops",
-      externalHandoff: {
-        routingCategory: "external_orchestration_handoff",
-        mutationAuthority: "none",
-        handoff: "prepare_evidence",
-      },
-      coreSafetyGates: ["fresh_pr_facts", "current_head_review", "green_checks", "mergeable_state"],
-      boundedNextAction: "ask_operator",
-    },
-    {
-      id: "phase5-hrcore-external-handoff-metadata-residue",
-      projectShape: "hrcore",
-      externalHandoff: {
-        routingCategory: "external_orchestration_handoff",
-        mutationAuthority: "none",
-        handoff: "prepare_evidence",
-      },
-      coreSafetyGates: ["fresh_pr_facts", "current_head_review", "resolved_metadata_residue"],
-      boundedNextAction: "ask_operator",
-    },
+test("Phase 5 replay corpus cases keep external orchestration handoffs bounded", async () => {
+  const corpusRoot = path.join(process.cwd(), "replay-corpus");
+  const phase5CaseIds = [
+    "phase5-aegisops-external-handoff-review-ci-merge",
+    "phase5-hrcore-external-handoff-metadata-residue",
   ];
+  const corpus = await loadReplayCorpus(corpusRoot);
+  const phase5Cases = corpus.cases.filter((entry) => phase5CaseIds.includes(entry.id));
 
-  assert.deepEqual(new Set(fixtures.map((fixture) => fixture.projectShape)), new Set(["aegisops", "hrcore"]));
-  assert.equal(fixtures.every((fixture) => fixture.externalHandoff.mutationAuthority === "none"), true);
-  assert.equal(fixtures.every((fixture) => fixture.externalHandoff.handoff === "prepare_evidence"), true);
-  assert.deepEqual(new Set(fixtures.map((fixture) => fixture.boundedNextAction)), new Set(["ask_operator"]));
-  assert.equal(
-    fixtures.every((fixture) => fixture.coreSafetyGates.length > 0 && fixture.coreSafetyGates.includes("fresh_pr_facts")),
-    true,
+  assert.deepEqual(phase5Cases.map((entry) => entry.id), phase5CaseIds);
+  assert.deepEqual(
+    phase5Cases.map((entry) => entry.expected),
+    [
+      {
+        nextState: "blocked",
+        shouldRunCodex: false,
+        blockedReason: "stale_review_bot",
+        failureSignature: "stalled-bot:thread-production-source-denylist",
+      },
+      {
+        nextState: "ready_to_merge",
+        shouldRunCodex: false,
+        blockedReason: null,
+        failureSignature: null,
+      },
+    ],
   );
+
+  const result = await runReplayCorpus(corpusRoot, createCheckedInReplayCorpusConfig(process.cwd()));
+  const phase5Results = result.results.filter((entry) => phase5CaseIds.includes(entry.caseId));
+
+  assert.deepEqual(phase5Results.map((entry) => entry.caseId), phase5CaseIds);
+  assert.equal(phase5Results.every((entry) => entry.matchesExpected), true);
+  assert.equal(phase5Results.every((entry) => entry.actual.shouldRunCodex === false), true);
 });

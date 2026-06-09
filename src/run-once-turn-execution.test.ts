@@ -43,6 +43,9 @@ test("run-once turn execution does not import Decision Kernel v2 action decision
   assert.doesNotMatch(source, /external_handoff/u);
   assert.doesNotMatch(source, /mutation_authority/u);
   assert.doesNotMatch(source, /v2_routing/u);
+  assert.doesNotMatch(source, /externalOrchestrationHandoff/u);
+  assert.doesNotMatch(source, /routingCategory/u);
+  assert.doesNotMatch(source, /mutationAuthority/u);
 });
 
 function git(cwd: string, ...args: string[]): string {
