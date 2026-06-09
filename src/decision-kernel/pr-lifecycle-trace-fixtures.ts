@@ -410,12 +410,24 @@ function optionalV2Mode(value: unknown, source: string): DecisionKernelV2ModePos
   }
 
   const mode = requiredRecord(value, source, "artifact.v2Mode");
+  const parsedMode = requiredEnum(mode.mode, source, "artifact.v2Mode.mode", decisionKernelV2RuntimeModes);
+  const expected = decisionKernelV2ModePosture(parsedMode);
+  const authoritative = requiredAnyBoolean(mode.authoritative, source, "artifact.v2Mode.authoritative");
+  const mutationAllowed = requiredAnyBoolean(mode.mutationAllowed, source, "artifact.v2Mode.mutationAllowed");
+  const actionSource = requiredEnum(mode.actionSource, source, "artifact.v2Mode.actionSource", decisionKernelV2ActionSources);
+  const actionScope = requiredEnum(mode.actionScope, source, "artifact.v2Mode.actionScope", decisionKernelV2ActionScopes);
+
+  assertEqualV2ModePosture(authoritative, expected.authoritative, source, "artifact.v2Mode.authoritative");
+  assertEqualV2ModePosture(mutationAllowed, expected.mutationAllowed, source, "artifact.v2Mode.mutationAllowed");
+  assertEqualV2ModePosture(actionSource, expected.actionSource, source, "artifact.v2Mode.actionSource");
+  assertEqualV2ModePosture(actionScope, expected.actionScope, source, "artifact.v2Mode.actionScope");
+
   return {
-    mode: requiredEnum(mode.mode, source, "artifact.v2Mode.mode", decisionKernelV2RuntimeModes),
-    authoritative: requiredAnyBoolean(mode.authoritative, source, "artifact.v2Mode.authoritative"),
-    mutationAllowed: requiredAnyBoolean(mode.mutationAllowed, source, "artifact.v2Mode.mutationAllowed"),
-    actionSource: requiredEnum(mode.actionSource, source, "artifact.v2Mode.actionSource", decisionKernelV2ActionSources),
-    actionScope: requiredEnum(mode.actionScope, source, "artifact.v2Mode.actionScope", decisionKernelV2ActionScopes),
+    mode: parsedMode,
+    authoritative,
+    mutationAllowed,
+    actionSource,
+    actionScope,
   };
 }
 
@@ -507,6 +519,19 @@ function assertEqualFixtureField(
   if (actual !== expected) {
     throw new Error(
       `Invalid PR lifecycle trace fixture at ${source}: ${field} must match artifact.facts.normalizedState.`,
+    );
+  }
+}
+
+function assertEqualV2ModePosture(
+  actual: string | boolean,
+  expected: string | boolean,
+  source: string,
+  field: string,
+): void {
+  if (actual !== expected) {
+    throw new Error(
+      `Invalid PR lifecycle trace fixture at ${source}: ${field} must match the posture derived from artifact.v2Mode.mode.`,
     );
   }
 }
