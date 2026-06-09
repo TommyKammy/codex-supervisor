@@ -225,10 +225,10 @@ test("buildPrLifecycleDecisionTrace records optional v2 comparison evidence as d
       v2Comparison: {
         current: {
           state: "ready_to_merge",
-          actionEquivalent: "no_action",
+          actionEquivalent: "merge",
         },
         v2: {
-          action: "no_action",
+          action: "merge",
           reasons: ["merge_ready_diagnostic_only"],
         },
         category: "agreement",

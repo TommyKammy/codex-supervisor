@@ -154,7 +154,7 @@ test("buildDecisionKernelV2ExplainDto uses PR head for current-head review obser
 
   assert.equal(dto.inventory?.pullRequest?.currentHeadReviewHeadSha, "head-current");
   assert.equal(dto.decision?.normalizedState.reviewPosture, "current_head_review_observed");
-  assert.equal(dto.decision?.action, "no_action");
+  assert.equal(dto.decision?.action, "merge");
   assert.equal(dto.comparison?.current.state, "ready_to_merge");
   assert.equal(dto.comparison?.category, "agreement");
   assert.deepEqual(dto.comparison?.differences, []);
@@ -199,7 +199,7 @@ test("buildDecisionKernelV2ExplainDto accepts external review records as current
   assert.equal(dto.inventory?.pullRequest?.currentHeadReviewObservedAt, "2026-06-08T00:01:00.000Z");
   assert.equal(dto.inventory?.pullRequest?.currentHeadReviewHeadSha, "head-current");
   assert.equal(dto.decision?.normalizedState.reviewPosture, "current_head_review_observed");
-  assert.equal(dto.decision?.action, "no_action");
+  assert.equal(dto.decision?.action, "merge");
 });
 
 test("buildDecisionKernelV2ExplainDto blocks merge-ready diagnostics until configured local CI passes current head", () => {
@@ -240,7 +240,7 @@ test("buildDecisionKernelV2ExplainDto allows merge-ready diagnostics after confi
     reviewThreads: [],
   });
 
-  assert.equal(dto.decision?.action, "no_action");
+  assert.equal(dto.decision?.action, "merge");
 });
 
 test("buildDecisionKernelV2ExplainDto keeps zero-check PRs out of merge-ready diagnostics", () => {
@@ -290,7 +290,7 @@ test("buildDecisionKernelV2ExplainDto accepts durable provider success as curren
   assert.equal(dto.inventory?.pullRequest?.currentHeadReviewObservedAt, "2026-06-08T00:06:00.000Z");
   assert.equal(dto.inventory?.pullRequest?.currentHeadReviewHeadSha, "head-current");
   assert.equal(dto.decision?.normalizedState.reviewPosture, "current_head_review_observed");
-  assert.equal(dto.decision?.action, "no_action");
+  assert.equal(dto.decision?.action, "merge");
 });
 
 test("buildDecisionKernelV2ExplainDto accepts top-level configured-provider success signals as current-head review evidence", () => {
@@ -316,7 +316,7 @@ test("buildDecisionKernelV2ExplainDto accepts top-level configured-provider succ
   assert.equal(dto.inventory?.pullRequest?.currentHeadReviewObservedAt, "2026-06-08T00:06:00.000Z");
   assert.equal(dto.inventory?.pullRequest?.currentHeadReviewHeadSha, "head-current");
   assert.equal(dto.decision?.normalizedState.reviewPosture, "current_head_review_observed");
-  assert.equal(dto.decision?.action, "no_action");
+  assert.equal(dto.decision?.action, "merge");
 });
 
 test("buildDecisionKernelV2ExplainDto blocks merge-ready diagnostics on blocking human review decisions", () => {
@@ -371,7 +371,7 @@ test("buildDecisionKernelV2ExplainDto ignores manual review threads when human r
 
   assert.equal(dto.reviewPolicyInput?.threads.length, 0);
   assert.equal(dto.inventory?.reviewThreads.unresolvedManualThreadCount, 0);
-  assert.equal(dto.decision?.action, "no_action");
+  assert.equal(dto.decision?.action, "merge");
 });
 
 test("buildDecisionKernelV2ExplainDto waits out configured-bot settled windows before merge-ready diagnostics", () => {
@@ -429,7 +429,7 @@ test("buildDecisionKernelV2ExplainDto applies journal-only configured-bot cleara
 
   assert.equal(dto.reviewPolicyInput?.threads.length, 0);
   assert.equal(dto.inventory?.reviewThreads.unresolvedCurrentHeadConfiguredBotThreadCount, 0);
-  assert.equal(dto.decision?.action, "no_action");
+  assert.equal(dto.decision?.action, "merge");
 });
 
 test("buildDecisionKernelV2ExplainDto blocks merge-ready diagnostics until mergeable is MERGEABLE", () => {
@@ -489,7 +489,7 @@ test("buildDecisionKernelV2ExplainDto does not require Codex no-major evidence o
   });
 
   assert.equal(dto.decision?.normalizedState.reviewPosture, "current_head_review_observed");
-  assert.equal(dto.decision?.action, "no_action");
+  assert.equal(dto.decision?.action, "merge");
 });
 
 test("buildDecisionKernelV2ExplainDto respects explicit current-head signal requirements for non-Codex providers", () => {

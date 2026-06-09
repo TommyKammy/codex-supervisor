@@ -6,7 +6,7 @@ import { buildDecisionKernelV2ComparisonDto } from "./v2-comparison";
 function v2Decision(overrides: Partial<DecisionKernelV2ReadOnlyDecision> = {}): DecisionKernelV2ReadOnlyDecision {
   return {
     schemaVersion: "decision_kernel_v2.read_only.v1",
-    action: "no_action",
+    action: "merge",
     reasons: ["merge_ready_diagnostic_only"],
     requiredEvidence: [],
     safety: {
@@ -14,7 +14,7 @@ function v2Decision(overrides: Partial<DecisionKernelV2ReadOnlyDecision> = {}): 
       authoritative: false,
       mutationAllowed: false,
     },
-    summary: "PR appears merge-ready, but v2 is diagnostic-only in this phase.",
+    summary: "PR appears merge-ready.",
     normalizedState: {
       source: "fresh_github",
       observedAt: "2026-06-08T00:00:00.000Z",
@@ -43,7 +43,7 @@ function v2Decision(overrides: Partial<DecisionKernelV2ReadOnlyDecision> = {}): 
   };
 }
 
-test("buildDecisionKernelV2ComparisonDto reports agreement for merge-ready no-action decisions", () => {
+test("buildDecisionKernelV2ComparisonDto reports agreement for merge-ready merge decisions", () => {
   const comparison = buildDecisionKernelV2ComparisonDto({
     currentState: "ready_to_merge",
     v2Decision: v2Decision(),
@@ -51,8 +51,8 @@ test("buildDecisionKernelV2ComparisonDto reports agreement for merge-ready no-ac
 
   assert.equal(comparison.category, "agreement");
   assert.equal(comparison.current.state, "ready_to_merge");
-  assert.equal(comparison.current.actionEquivalent, "no_action");
-  assert.equal(comparison.v2.action, "no_action");
+  assert.equal(comparison.current.actionEquivalent, "merge");
+  assert.equal(comparison.v2.action, "merge");
   assert.deepEqual(comparison.differences, []);
 });
 

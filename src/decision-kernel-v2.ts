@@ -12,6 +12,7 @@ import { DECISION_KERNEL_V2_DIAGNOSTIC_ONLY_MODE_POSTURE } from "./decision-kern
 export const DECISION_KERNEL_V2_READ_ONLY_SCHEMA_VERSION = "decision_kernel_v2.read_only.v1";
 
 export type DecisionKernelV2Action =
+  | "merge"
   | "wait"
   | "request_review"
   | "run_codex"
@@ -276,12 +277,7 @@ function selectReadOnlyDecision(
     !checkPolicy.mergeReadyBlockedByFinalGuard &&
     state.mergeability === "mergeable"
   ) {
-    return decision(
-      "no_action",
-      ["merge_ready_diagnostic_only"],
-      [],
-      "PR appears merge-ready, but v2 is diagnostic-only in this phase.",
-    );
+    return decision("merge", ["merge_ready_diagnostic_only"], [], "PR appears merge-ready.");
   }
 
   return decision(
