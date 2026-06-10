@@ -305,6 +305,41 @@ function joinProgressValues(values: string[] | undefined): string | null {
   return Array.isArray(values) && values.length > 0 ? values.join("|") : null;
 }
 
+function processedCurrentUnresolvedReviewThreadFingerprints(current: TrackedPrProgressSnapshot): string[] {
+  const unresolvedThreadFingerprints = new Set(current.unresolvedReviewThreadFingerprints ?? []);
+  return (current.processedReviewThreadFingerprints ?? []).filter((fingerprint) => {
+    const match = fingerprint.match(/^(.+)@([^#]+)#(.+)$/);
+    if (!match) {
+      return false;
+    }
+    const [, threadId, headSha, latestCommentFingerprint] = match;
+    return headSha === current.headRefOid && unresolvedThreadFingerprints.has(`${threadId}#${latestCommentFingerprint}`);
+  });
+}
+
+function providerNeutralReviewLoopMadeNoProgress(
+  previous: TrackedPrProgressSnapshot | null,
+  current: TrackedPrProgressSnapshot,
+): boolean {
+  const currentProcessedFingerprints = processedCurrentUnresolvedReviewThreadFingerprints(current);
+  if (
+    previous === null ||
+    previous.headRefOid !== current.headRefOid ||
+    current.unresolvedReviewThreadIds.length === 0 ||
+    currentProcessedFingerprints.length === 0
+  ) {
+    return false;
+  }
+
+  return (
+    previous.unresolvedReviewThreadIds.join("|") === current.unresolvedReviewThreadIds.join("|") &&
+    joinProgressValues(previous.unresolvedReviewThreadFingerprints) ===
+      joinProgressValues(current.unresolvedReviewThreadFingerprints) &&
+    joinProgressValues(previous.unresolvedReviewThreadSourceAnchors) ===
+      joinProgressValues(current.unresolvedReviewThreadSourceAnchors)
+  );
+}
+
 function clusteredCodexChurnMadeNoProgress(
   previous: TrackedPrProgressSnapshot | null,
   current: TrackedPrProgressSnapshot,
@@ -442,6 +477,18 @@ function listChangedSignals(previous: TrackedPrProgressSnapshot | null, current:
     (previous?.copilotReviewArrivedAt ?? null) !== current.copilotReviewArrivedAt;
   if (previous !== null && !noProgressClusteredCodexChurn && botLifecycleChanged && !signals.includes("ci_state_changed")) {
     signals.push("ci_state_changed");
+  }
+
+  if (signals.length === 0 && providerNeutralReviewLoopMadeNoProgress(previous, current)) {
+    const currentProcessedFingerprints = processedCurrentUnresolvedReviewThreadFingerprints(current);
+    signals.push(
+      [
+        "no_progress_review_loop",
+        `current_unresolved_threads=${current.unresolvedReviewThreadIds.length}`,
+        `processed_review_threads=${currentProcessedFingerprints.length}`,
+        `head=${current.headRefOid}`,
+      ].join(" "),
+    );
   }
 
   return signals;

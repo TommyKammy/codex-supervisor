@@ -1459,6 +1459,168 @@ test("summarizeTrackedPrProgress treats updated same-thread guidance as tracked 
   assert.match(result.summary ?? "", /same_review_thread_guidance_changed/);
 });
 
+test("summarizeTrackedPrProgress reports provider-neutral no-progress review loops", () => {
+  const record = createRecord({
+    processed_review_thread_fingerprints: ["thread-1@head123#comment-1"],
+    last_tracked_pr_progress_snapshot: JSON.stringify({
+      headRefOid: "head123",
+      reviewDecision: "CHANGES_REQUESTED",
+      mergeStateStatus: "CLEAN",
+      copilotReviewState: null,
+      copilotReviewRequestedAt: null,
+      copilotReviewArrivedAt: null,
+      configuredBotCurrentHeadObservedAt: null,
+      configuredBotCurrentHeadStatusState: null,
+      currentHeadCiGreenAt: null,
+      configuredBotRateLimitedAt: null,
+      configuredBotDraftSkipAt: null,
+      configuredBotTopLevelReviewStrength: null,
+      configuredBotTopLevelReviewSubmittedAt: null,
+      checks: ["build:pass:SUCCESS:CI"],
+      unresolvedReviewThreadIds: ["thread-1"],
+      unresolvedReviewThreadFingerprints: ["thread-1#comment-1"],
+      unresolvedReviewThreadSourceAnchors: ["thread-1:src/file.ts:12"],
+      processedReviewThreadIds: ["thread-1@head123"],
+      processedReviewThreadFingerprints: ["thread-1@head123#comment-1"],
+      verificationProbeOutcomes: [],
+    }),
+  });
+  const pr = createPullRequest({
+    headRefOid: "head123",
+    reviewDecision: "CHANGES_REQUESTED",
+    mergeStateStatus: "CLEAN",
+  });
+  const reviewThreads: ReviewThread[] = [createReviewThread({ id: "thread-1" })];
+
+  const result = summarizeTrackedPrProgress(
+    record,
+    pr,
+    [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads,
+  );
+
+  assert.equal(
+    result.summary,
+    "no_progress_review_loop current_unresolved_threads=1 processed_review_threads=1 head=head123",
+  );
+});
+
+test("summarizeTrackedPrProgress ignores processed fingerprints for resolved review threads", () => {
+  const record = createRecord({
+    processed_review_thread_fingerprints: ["thread-resolved@head123#comment-resolved"],
+    last_tracked_pr_progress_snapshot: JSON.stringify({
+      headRefOid: "head123",
+      reviewDecision: "CHANGES_REQUESTED",
+      mergeStateStatus: "CLEAN",
+      copilotReviewState: null,
+      copilotReviewRequestedAt: null,
+      copilotReviewArrivedAt: null,
+      configuredBotCurrentHeadObservedAt: null,
+      configuredBotCurrentHeadStatusState: null,
+      currentHeadCiGreenAt: null,
+      configuredBotRateLimitedAt: null,
+      configuredBotDraftSkipAt: null,
+      configuredBotTopLevelReviewStrength: null,
+      configuredBotTopLevelReviewSubmittedAt: null,
+      checks: ["build:pass:SUCCESS:CI"],
+      unresolvedReviewThreadIds: ["thread-unprocessed"],
+      unresolvedReviewThreadFingerprints: ["thread-unprocessed#comment-unprocessed"],
+      unresolvedReviewThreadSourceAnchors: ["thread-unprocessed:src/file.ts:12"],
+      processedReviewThreadIds: ["thread-resolved@head123"],
+      processedReviewThreadFingerprints: ["thread-resolved@head123#comment-resolved"],
+      verificationProbeOutcomes: [],
+    }),
+  });
+  const pr = createPullRequest({
+    headRefOid: "head123",
+    reviewDecision: "CHANGES_REQUESTED",
+    mergeStateStatus: "CLEAN",
+  });
+  const reviewThreads: ReviewThread[] = [
+    createReviewThread({
+      id: "thread-unprocessed",
+      comments: {
+        nodes: [
+          {
+            id: "comment-unprocessed",
+            body: "Please address this still-unprocessed thread.",
+            createdAt: "2026-03-13T06:20:00Z",
+            url: "https://example.test/pr/42#discussion_unprocessed",
+            author: { login: "copilot-pull-request-reviewer", typeName: "Bot" },
+          },
+        ],
+      },
+    }),
+  ];
+
+  const result = summarizeTrackedPrProgress(
+    record,
+    pr,
+    [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads,
+  );
+
+  assert.equal(result.summary, null);
+});
+
+test("summarizeTrackedPrProgress ignores stale processed fingerprints for updated review guidance", () => {
+  const record = createRecord({
+    processed_review_thread_fingerprints: ["thread-1@head123#comment-old"],
+    last_tracked_pr_progress_snapshot: JSON.stringify({
+      headRefOid: "head123",
+      reviewDecision: "CHANGES_REQUESTED",
+      mergeStateStatus: "CLEAN",
+      copilotReviewState: null,
+      copilotReviewRequestedAt: null,
+      copilotReviewArrivedAt: null,
+      configuredBotCurrentHeadObservedAt: null,
+      configuredBotCurrentHeadStatusState: null,
+      currentHeadCiGreenAt: null,
+      configuredBotRateLimitedAt: null,
+      configuredBotDraftSkipAt: null,
+      configuredBotTopLevelReviewStrength: null,
+      configuredBotTopLevelReviewSubmittedAt: null,
+      checks: ["build:pass:SUCCESS:CI"],
+      unresolvedReviewThreadIds: ["thread-1"],
+      unresolvedReviewThreadFingerprints: ["thread-1#comment-new"],
+      unresolvedReviewThreadSourceAnchors: ["thread-1:src/file.ts:12"],
+      processedReviewThreadIds: ["thread-1@head123"],
+      processedReviewThreadFingerprints: ["thread-1@head123#comment-old"],
+      verificationProbeOutcomes: [],
+    }),
+  });
+  const pr = createPullRequest({
+    headRefOid: "head123",
+    reviewDecision: "CHANGES_REQUESTED",
+    mergeStateStatus: "CLEAN",
+  });
+  const reviewThreads: ReviewThread[] = [
+    createReviewThread({
+      id: "thread-1",
+      comments: {
+        nodes: [
+          {
+            id: "comment-new",
+            body: "Please address this updated guidance.",
+            createdAt: "2026-03-13T06:25:00Z",
+            url: "https://example.test/pr/42#discussion_new",
+            author: { login: "copilot-pull-request-reviewer", typeName: "Bot" },
+          },
+        ],
+      },
+    }),
+  ];
+
+  const result = summarizeTrackedPrProgress(
+    record,
+    pr,
+    [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads,
+  );
+
+  assert.equal(result.summary, null);
+});
+
 test("summarizeTrackedPrProgress treats changed review-thread cluster membership as tracked PR progress", () => {
   const record = createRecord({
     last_tracked_pr_progress_snapshot: JSON.stringify({
