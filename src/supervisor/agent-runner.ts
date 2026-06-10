@@ -49,6 +49,7 @@ interface AgentRunnerBaseRequest {
         | "addressing_review_strategy"
         | "addressing_review_strategy_reason"
         | "codex_connector_stable_churn_dossier_consumed_signature"
+        | "review_loop_retry_state"
       >
     > | null;
   repoSlug: string;

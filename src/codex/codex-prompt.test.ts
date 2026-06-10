@@ -817,7 +817,9 @@ test("buildCodexPrompt suppresses stale handoff next actions during addressing_r
 test("buildCodexPrompt switches repeated addressing-review failures to root-cause analysis", () => {
   const prompt = buildCodexPrompt({
     kind: "start",
-    config: createConfig(),
+    config: createConfig({
+      reviewBotLogins: ["copilot-pull-request-reviewer"],
+    }),
     repoSlug: "owner/repo",
     issue,
     branch: "codex/issue-46",
@@ -833,6 +835,18 @@ test("buildCodexPrompt switches repeated addressing-review failures to root-caus
       addressing_review_strategy: "root_cause_analysis",
       addressing_review_strategy_reason:
         "repeated_failure_signature_count=2; signature=1 unresolved automated review thread(s) remain.; tracked_pr_progress=no_meaningful_tracked_pr_progress; repeat_decision=retry_on_progress",
+      review_loop_retry_state: [
+        {
+          fingerprint: "pr=144|head=head-review-144|thread=thread-repeat|comment=comment-repeat",
+          pr_number: 144,
+          head_sha: "head-review-144",
+          thread_id: "thread-repeat",
+          latest_comment_fingerprint: "comment-repeat",
+          attempts: 2,
+          first_attempted_at: "2026-03-11T00:05:00Z",
+          last_attempted_at: "2026-03-11T00:15:00Z",
+        },
+      ],
     },
     pr: createPullRequest({
       number: 144,
@@ -860,6 +874,44 @@ test("buildCodexPrompt switches repeated addressing-review failures to root-caus
           ],
         },
       }),
+      createReviewThread({
+        id: "thread-resolved",
+        isResolved: true,
+        path: "src/resolved.ts",
+        comments: {
+          nodes: [
+            {
+              id: "comment-resolved",
+              body: "This resolved thread should not drive the current-head cluster.",
+              createdAt: "2026-03-11T00:01:00Z",
+              url: "https://example.test/pr/144#discussion_resolved",
+              author: {
+                login: "resolved-reviewer",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+      createReviewThread({
+        id: "thread-outdated",
+        isOutdated: true,
+        path: "src/outdated.ts",
+        comments: {
+          nodes: [
+            {
+              id: "comment-outdated",
+              body: "This outdated thread should not drive the current-head cluster.",
+              createdAt: "2026-03-11T00:02:00Z",
+              url: "https://example.test/pr/144#discussion_outdated",
+              author: {
+                login: "outdated-reviewer",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
     ],
     alwaysReadFiles: [],
     onDemandMemoryFiles: [],
@@ -873,6 +925,344 @@ test("buildCodexPrompt switches repeated addressing-review failures to root-caus
   assert.match(prompt, /First reproduce the blocker or prove the unresolved-thread cluster from current code and tests\./);
   assert.match(prompt, /Group the repeated comments by root cause/);
   assert.match(prompt, /do not weaken attempt limits, merge gates, or configured review-bot requirements/);
+  assert.match(prompt, /Provider-neutral review-loop evidence:/);
+  assert.match(prompt, /Current-head scope: head-review-144/);
+  assert.match(prompt, /Current-head unresolved configured-provider review threads: 1/);
+  assert.match(prompt, /Provider\/reviewer identities: copilot-pull-request-reviewer/);
+  assert.match(prompt, /Affected files: src\/review\.ts/);
+  assert.match(prompt, /Thread thread-repeat/);
+  assert.match(prompt, /latest_comment_fingerprint=comment-repeat/);
+  assert.match(prompt, /retry_count=2/);
+  assert.match(prompt, /classify these comments by provider\/reviewer, affected file, repeated failure mode, and verifier expectation/);
+  assert.match(prompt, /Choose regression probes from representative current-head comments before changing code\./);
+  assert.doesNotMatch(prompt, /Provider-neutral review-loop evidence:[\s\S]*thread-resolved[\s\S]*External review miss context:/);
+  assert.doesNotMatch(prompt, /Provider-neutral review-loop evidence:[\s\S]*thread-outdated[\s\S]*External review miss context:/);
+});
+
+test("buildCodexPrompt builds provider-neutral review-loop evidence from active threads when selected threads are exhausted", () => {
+  const prompt = buildCodexPrompt({
+    kind: "start",
+    config: createConfig({
+      reviewBotLogins: ["copilot-pull-request-reviewer"],
+    }),
+    repoSlug: "owner/repo",
+    issue,
+    branch: "codex/issue-46",
+    workspacePath: "/tmp/workspaces/issue-46",
+    state: "addressing_review" satisfies RunState,
+    record: {
+      repeated_failure_signature_count: 2,
+      blocked_verification_retry_count: 0,
+      timeout_retry_count: 0,
+      last_failure_signature: "1 unresolved automated review thread(s) remain.",
+      last_tracked_pr_progress_summary: "no_meaningful_tracked_pr_progress",
+      last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+      addressing_review_strategy: "root_cause_analysis",
+      addressing_review_strategy_reason: "provider_neutral_review_loop stalled on active current-head review threads",
+    },
+    pr: createPullRequest({
+      number: 145,
+      headRefOid: "head-review-active-145",
+      reviewDecision: "CHANGES_REQUESTED",
+    }),
+    checks: [],
+    reviewThreads: [],
+    activeReviewThreads: [
+      createReviewThread({
+        id: "thread-active-loop",
+        path: "src/active-loop.ts",
+        line: 64,
+        comments: {
+          nodes: [
+            {
+              id: "comment-active-loop",
+              body: "The current-head loop still needs file-level root-cause analysis.",
+              createdAt: "2026-03-11T00:05:00Z",
+              url: "https://example.test/pr/145#discussion_active_loop",
+              author: {
+                login: "copilot-pull-request-reviewer",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+      createReviewThread({
+        id: "thread-active-other",
+        path: "src/other-loop.ts",
+        line: 68,
+        comments: {
+          nodes: [
+            {
+              id: "comment-active-other",
+              body: "A second configured provider finding should stay visible in the active review-loop dossier.",
+              createdAt: "2026-03-11T00:05:30Z",
+              url: "https://example.test/pr/145#discussion_active_other",
+              author: {
+                login: "copilot-pull-request-reviewer",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+      createReviewThread({
+        id: "thread-active-manual",
+        path: "src/manual-loop.ts",
+        line: 72,
+        comments: {
+          nodes: [
+            {
+              id: "comment-active-manual",
+              body: "A human reviewer left a manual note that should not enter configured-provider retry evidence.",
+              createdAt: "2026-03-11T00:06:00Z",
+              url: "https://example.test/pr/145#discussion_active_manual",
+              author: {
+                login: "human-reviewer",
+                typeName: "User",
+              },
+            },
+          ],
+        },
+      }),
+      createReviewThread({
+        id: "thread-active-mixed-provider",
+        path: "src/mixed-loop.ts",
+        line: 74,
+        comments: {
+          nodes: [
+            {
+              id: "comment-active-mixed-provider",
+              body: "The Copilot blocker should remain visible even if a later Codex P3 advisory is appended.",
+              createdAt: "2026-03-11T00:06:30Z",
+              url: "https://example.test/pr/145#discussion_active_mixed_provider",
+              author: {
+                login: "copilot-pull-request-reviewer",
+                typeName: "Bot",
+              },
+            },
+            {
+              id: "comment-active-mixed-p3-advisory",
+              body: "P3: Consider clarifying this mixed-provider helper name in a follow-up.",
+              createdAt: "2026-03-11T00:07:00Z",
+              url: "https://example.test/pr/145#discussion_active_mixed_p3_advisory",
+              author: {
+                login: "chatgpt-codex-connector[bot]",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+      createReviewThread({
+        id: "thread-active-p3-advisory",
+        path: "src/advisory-loop.ts",
+        line: 76,
+        comments: {
+          nodes: [
+            {
+              id: "comment-active-p3-advisory",
+              body: "P3: Consider clarifying this helper name in a follow-up.",
+              createdAt: "2026-03-11T00:07:00Z",
+              url: "https://example.test/pr/145#discussion_active_p3_advisory",
+              author: {
+                login: "chatgpt-codex-connector[bot]",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+    alwaysReadFiles: [],
+    onDemandMemoryFiles: [],
+    journalPath: "/tmp/workspaces/issue-46/.codex-supervisor/issue-journal.md",
+  } satisfies AgentTurnContext);
+
+  assert.match(prompt, /Provider-neutral review-loop evidence:/);
+  assert.match(prompt, /Current-head scope: head-review-active-145/);
+  assert.match(prompt, /Current-head unresolved configured-provider review threads: 3/);
+  assert.match(prompt, /Thread thread-active-loop/);
+  assert.match(prompt, /Thread thread-active-other/);
+  assert.match(prompt, /Thread thread-active-mixed-provider/);
+  assert.match(prompt, /Affected files: src\/active-loop\.ts, src\/other-loop\.ts, src\/mixed-loop\.ts/);
+  assert.match(prompt, /latest_comment_fingerprint=comment-active-loop/);
+  assert.match(prompt, /comment=The current-head loop still needs file-level root-cause analysis\./);
+  assert.match(prompt, /latest_comment_fingerprint=comment-active-mixed-provider/);
+  assert.match(prompt, /comment=The Copilot blocker should remain visible even if a later Codex P3 advisory is appended\./);
+  assert.doesNotMatch(prompt, /Provider-neutral review-loop evidence:[\s\S]*latest_comment_fingerprint=comment-active-mixed-p3-advisory[\s\S]*External review miss context:/);
+  assert.doesNotMatch(prompt, /Provider-neutral review-loop evidence:[\s\S]*thread-active-manual[\s\S]*External review miss context:/);
+  assert.doesNotMatch(prompt, /Provider-neutral review-loop evidence:[\s\S]*src\/manual-loop\.ts[\s\S]*External review miss context:/);
+  assert.doesNotMatch(prompt, /Provider-neutral review-loop evidence:[\s\S]*thread-active-p3-advisory[\s\S]*External review miss context:/);
+  assert.doesNotMatch(prompt, /Provider-neutral review-loop evidence:[\s\S]*src\/advisory-loop\.ts[\s\S]*External review miss context:/);
+});
+
+test("buildCodexPrompt uses the Codex Connector finding fingerprint for provider-neutral retry counts", () => {
+  const prompt = buildCodexPrompt({
+    kind: "start",
+    config: createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector[bot]"],
+    }),
+    repoSlug: "owner/repo",
+    issue,
+    branch: "codex/issue-46",
+    workspacePath: "/tmp/workspaces/issue-46",
+    state: "addressing_review" satisfies RunState,
+    record: {
+      repeated_failure_signature_count: 2,
+      blocked_verification_retry_count: 0,
+      timeout_retry_count: 0,
+      last_failure_signature: "1 unresolved automated review thread(s) remain.",
+      last_tracked_pr_progress_summary: "no_meaningful_tracked_pr_progress",
+      last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+      addressing_review_strategy: "root_cause_analysis",
+      addressing_review_strategy_reason: "provider_neutral_review_loop stalled on Codex Connector must-fix finding",
+      review_loop_retry_state: [
+        {
+          fingerprint: "pr=146|head=head-review-connector-146|thread=thread-connector-finding|comment=comment-connector-finding",
+          pr_number: 146,
+          head_sha: "head-review-connector-146",
+          thread_id: "thread-connector-finding",
+          latest_comment_fingerprint: "comment-connector-finding",
+          attempts: 3,
+          first_attempted_at: "2026-03-11T00:05:00Z",
+          last_attempted_at: "2026-03-11T00:25:00Z",
+        },
+      ],
+    },
+    pr: createPullRequest({
+      number: 146,
+      headRefOid: "head-review-connector-146",
+      reviewDecision: "CHANGES_REQUESTED",
+    }),
+    checks: [],
+    reviewThreads: [
+      createReviewThread({
+        id: "thread-connector-finding",
+        path: "src/connector-finding.ts",
+        line: 72,
+        comments: {
+          nodes: [
+            {
+              id: "comment-connector-finding",
+              body: "P2: Missing root-cause review-loop evidence lets repeated connector findings degrade into reply-only patching.",
+              createdAt: "2026-03-11T00:05:00Z",
+              url: "https://example.test/pr/146#discussion_connector_finding",
+              author: {
+                login: "chatgpt-codex-connector[bot]",
+                typeName: "Bot",
+              },
+            },
+            {
+              id: "comment-later-reply",
+              body: "I pushed a small fix.",
+              createdAt: "2026-03-11T00:10:00Z",
+              url: "https://example.test/pr/146#discussion_later_reply",
+              author: {
+                login: "codex",
+                typeName: "User",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+    alwaysReadFiles: [],
+    onDemandMemoryFiles: [],
+    journalPath: "/tmp/workspaces/issue-46/.codex-supervisor/issue-journal.md",
+  } satisfies AgentTurnContext);
+
+  assert.match(prompt, /Provider-neutral review-loop evidence:/);
+  assert.match(prompt, /Thread thread-connector-finding/);
+  assert.match(prompt, /reviewer=chatgpt-codex-connector\[bot\]/);
+  assert.match(prompt, /latest_comment_fingerprint=comment-connector-finding/);
+  assert.match(prompt, /retry_count=3/);
+  assert.match(prompt, /url=https:\/\/example\.test\/pr\/146#discussion_connector_finding/);
+  assert.doesNotMatch(prompt, /Provider-neutral review-loop evidence:[\s\S]*latest_comment_fingerprint=comment-later-reply[\s\S]*External review miss context:/);
+});
+
+test("buildCodexPrompt anchors non-Codex provider-neutral evidence to provider comments after later replies", () => {
+  const prompt = buildCodexPrompt({
+    kind: "start",
+    config: createConfig({
+      reviewBotLogins: ["copilot-pull-request-reviewer"],
+    }),
+    repoSlug: "owner/repo",
+    issue,
+    branch: "codex/issue-46",
+    workspacePath: "/tmp/workspaces/issue-46",
+    state: "addressing_review" satisfies RunState,
+    record: {
+      repeated_failure_signature_count: 2,
+      blocked_verification_retry_count: 0,
+      timeout_retry_count: 0,
+      last_failure_signature: "1 unresolved automated review thread(s) remain.",
+      last_tracked_pr_progress_summary: "no_meaningful_tracked_pr_progress",
+      last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+      addressing_review_strategy: "root_cause_analysis",
+      addressing_review_strategy_reason: "provider_neutral_review_loop stalled on a non-Codex provider finding",
+      review_loop_retry_state: [
+        {
+          fingerprint: "pr=147|head=head-review-provider-147|thread=thread-provider-finding|comment=comment-provider-later-reply",
+          pr_number: 147,
+          head_sha: "head-review-provider-147",
+          thread_id: "thread-provider-finding",
+          latest_comment_fingerprint: "comment-provider-later-reply",
+          attempts: 2,
+          first_attempted_at: "2026-03-11T00:05:00Z",
+          last_attempted_at: "2026-03-11T00:15:00Z",
+        },
+      ],
+    },
+    pr: createPullRequest({
+      number: 147,
+      headRefOid: "head-review-provider-147",
+      reviewDecision: "CHANGES_REQUESTED",
+    }),
+    checks: [],
+    reviewThreads: [
+      createReviewThread({
+        id: "thread-provider-finding",
+        path: "src/provider-finding.ts",
+        line: 88,
+        comments: {
+          nodes: [
+            {
+              id: "comment-provider-finding",
+              body: "The provider finding should remain the evidence anchor after a later reply.",
+              createdAt: "2026-03-11T00:05:00Z",
+              url: "https://example.test/pr/147#discussion_provider_finding",
+              author: {
+                login: "copilot-pull-request-reviewer",
+                typeName: "Bot",
+              },
+            },
+            {
+              id: "comment-provider-later-reply",
+              body: "I tried a small local patch.",
+              createdAt: "2026-03-11T00:10:00Z",
+              url: "https://example.test/pr/147#discussion_provider_later_reply",
+              author: {
+                login: "codex",
+                typeName: "User",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+    alwaysReadFiles: [],
+    onDemandMemoryFiles: [],
+    journalPath: "/tmp/workspaces/issue-46/.codex-supervisor/issue-journal.md",
+  } satisfies AgentTurnContext);
+
+  assert.match(prompt, /Provider-neutral review-loop evidence:/);
+  assert.match(prompt, /Thread thread-provider-finding/);
+  assert.match(prompt, /reviewer=copilot-pull-request-reviewer/);
+  assert.match(prompt, /latest_comment_fingerprint=comment-provider-finding/);
+  assert.match(prompt, /retry_count=2/);
+  assert.match(prompt, /url=https:\/\/example\.test\/pr\/147#discussion_provider_finding/);
+  assert.doesNotMatch(prompt, /Provider-neutral review-loop evidence:[\s\S]*latest_comment_fingerprint=comment-provider-later-reply[\s\S]*External review miss context:/);
 });
 
 test("buildCodexPrompt adds structured Codex Connector must-fix guidance only for Codex Connector addressing_review", () => {

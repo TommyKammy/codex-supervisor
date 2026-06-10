@@ -23,7 +23,9 @@ import type {
   StartAgentTurnContext,
 } from "../supervisor/agent-runner";
 import {
+  configuredReviewBotLogins,
   configuredReviewProviderKinds,
+  normalizeReviewProviderLogin,
   reviewProviderProfileFromConfig,
   type ReviewProviderProfileSummary,
 } from "../core/review-providers";
@@ -35,8 +37,16 @@ import {
 } from "../codex-connector-review-churn";
 import {
   codexConnectorMustFixReviewThreads,
+  isSoftenedCodexConnectorP3Thread,
+  latestCodexConnectorReviewCommentFingerprint,
+  latestCodexConnectorReviewCommentNode,
 } from "../codex-connector-review-policy";
 import { isWorkstationLocalPathHygieneFailureSignature } from "../workstation-local-path-gate";
+import {
+  latestReviewThreadCommentFingerprint,
+  reviewLoopRetryAttemptCountForThread,
+} from "../review-handling";
+import { configuredBotReviewThreads } from "../review-thread-reporting";
 
 export interface LocalReviewRepairContext {
   repairIntent?: "same_pr_fix_blocked" | "same_pr_follow_up" | "same_pr_manual_review" | "high_severity_retry" | "unspecified";
@@ -404,6 +414,7 @@ export interface BuildCodexStartPromptInput {
       | "addressing_review_strategy"
       | "addressing_review_strategy_reason"
       | "codex_connector_stable_churn_dossier_consumed_signature"
+      | "review_loop_retry_state"
     >
   > | null;
   pr: GitHubPullRequest | null;
@@ -425,7 +436,102 @@ export interface BuildCodexStartPromptInput {
   reviewProviderProfile?: ReviewProviderProfileSummary;
 }
 
-function buildAddressingReviewStrategySwitch(input: Pick<BuildCodexStartPromptInput, "state" | "record" | "failureContext">): string[] {
+function buildProviderNeutralReviewLoopEvidence(
+  input: Pick<BuildCodexStartPromptInput, "config" | "record" | "pr" | "reviewThreads" | "activeReviewThreads">,
+): string[] {
+  const sourceReviewThreads = input.activeReviewThreads ?? input.reviewThreads;
+  const configuredThreads = input.config ? configuredBotReviewThreads(input.config, sourceReviewThreads) : [];
+  const currentHeadReviewThreads = configuredThreads.filter((thread) => !thread.isResolved && !thread.isOutdated);
+  const codexMustFixThreadIds = new Set(codexConnectorMustFixReviewThreads(currentHeadReviewThreads).map((thread) => thread.id));
+  const configuredProviderCommentForThread = (thread: ReviewThread): ReviewThread["comments"]["nodes"][number] | null => {
+    if (!input.config) {
+      return latestReviewComment(thread) ?? null;
+    }
+
+    const configuredLogins = new Set(configuredReviewBotLogins(input.config));
+    const softenedCodexConnectorCommentId = isSoftenedCodexConnectorP3Thread(thread)
+      ? latestCodexConnectorReviewCommentNode(thread)?.id ?? null
+      : null;
+    for (let index = thread.comments.nodes.length - 1; index >= 0; index -= 1) {
+      const comment = thread.comments.nodes[index]!;
+      const login = normalizeReviewProviderLogin(comment.author?.login);
+      if (softenedCodexConnectorCommentId && comment.id === softenedCodexConnectorCommentId) {
+        continue;
+      }
+      if (login && configuredLogins.has(login)) {
+        return comment;
+      }
+    }
+
+    return null;
+  };
+  const evidenceCommentForThread = (thread: ReviewThread) =>
+    codexMustFixThreadIds.has(thread.id)
+      ? latestCodexConnectorReviewCommentNode(thread) ?? latestReviewComment(thread) ?? null
+      : configuredProviderCommentForThread(thread);
+  const evidenceCommentFingerprintForThread = (thread: ReviewThread) =>
+    codexMustFixThreadIds.has(thread.id)
+      ? latestCodexConnectorReviewCommentFingerprint(thread) ?? latestReviewThreadCommentFingerprint(thread)
+      : (evidenceCommentForThread(thread)?.id ?? evidenceCommentForThread(thread)?.createdAt ?? latestReviewThreadCommentFingerprint(thread));
+  const evidenceEntries = currentHeadReviewThreads.flatMap((thread) => {
+    const evidenceComment = evidenceCommentForThread(thread);
+    const commentFingerprint = evidenceCommentFingerprintForThread(thread);
+    return evidenceComment && commentFingerprint ? [{ thread, evidenceComment, commentFingerprint }] : [];
+  });
+  if (evidenceEntries.length === 0) {
+    return [
+      "Provider-neutral review-loop evidence:",
+      "- Current-head unresolved configured-provider review threads: none selected.",
+    ];
+  }
+  const reviewerLogins = uniqueNonEmpty(
+    evidenceEntries.map((entry) => entry.evidenceComment.author?.login ?? "unknown"),
+  );
+  const affectedFiles = uniqueNonEmpty(evidenceEntries.map((entry) => entry.thread.path ?? "unknown"));
+  const threadEvidence = evidenceEntries.slice(0, 6).map(({ thread, evidenceComment, commentFingerprint }) => {
+    const trackedRetryCount =
+      input.record && input.pr
+        ? Math.max(
+            reviewLoopRetryAttemptCountForThread(input.record, input.pr, thread, commentFingerprint),
+            reviewLoopRetryAttemptCountForThread(
+              input.record,
+              input.pr,
+              thread,
+              latestReviewThreadCommentFingerprint(thread),
+            ),
+          )
+        : 0;
+    return [
+      `- Thread ${thread.id}`,
+      `  reviewer=${evidenceComment.author?.login ?? "unknown"}`,
+      `  file=${thread.path ?? "unknown"}:${thread.line ?? "?"}`,
+      `  latest_comment_fingerprint=${commentFingerprint}`,
+      `  retry_count=${trackedRetryCount > 0 ? String(trackedRetryCount) : "unknown"}`,
+      `  url=${evidenceComment.url ?? "n/a"}`,
+      `  comment=${truncate(evidenceComment.body.replace(/\s+/g, " ").trim(), 500) ?? ""}`,
+    ].join("\n");
+  });
+
+  return [
+    "Provider-neutral review-loop evidence:",
+    `- Current-head scope: ${input.pr?.headRefOid ?? "unknown"}`,
+    `- Current-head unresolved configured-provider review threads: ${evidenceEntries.length}`,
+    `- Provider/reviewer identities: ${reviewerLogins.join(", ") || "unknown"}`,
+    `- Affected files: ${affectedFiles.join(", ") || "unknown"}`,
+    "- Current-head thread evidence:",
+    ...threadEvidence,
+    ...(evidenceEntries.length > threadEvidence.length
+      ? [`- Additional current-head threads omitted: ${evidenceEntries.length - threadEvidence.length}`]
+      : []),
+    "- Before editing, classify these comments by provider/reviewer, affected file, repeated failure mode, and verifier expectation.",
+    "- Choose regression probes from representative current-head comments before changing code.",
+    "- Patch the shared failure mode first; avoid one literal wording or line-local patch per comment unless the cluster truly has independent issues.",
+  ];
+}
+
+function buildAddressingReviewStrategySwitch(
+  input: Pick<BuildCodexStartPromptInput, "config" | "state" | "record" | "failureContext" | "pr" | "reviewThreads" | "activeReviewThreads">,
+): string[] {
   if (input.state !== "addressing_review") {
     return [];
   }
@@ -456,6 +562,7 @@ function buildAddressingReviewStrategySwitch(input: Pick<BuildCodexStartPromptIn
     "- First reproduce the blocker or prove the unresolved-thread cluster from current code and tests.",
     "- Group the repeated comments by root cause, then make the smallest focused test update that would have caught the repeated failure.",
     "- Only after that root-cause grouping should you patch code, and do not weaken attempt limits, merge gates, or configured review-bot requirements.",
+    ...buildProviderNeutralReviewLoopEvidence(input),
   ];
 }
 

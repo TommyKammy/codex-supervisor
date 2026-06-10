@@ -98,7 +98,7 @@ export interface ReviewPolicyInput {
   threads: ReviewPolicyThreadInput[];
 }
 
-function latestCodexConnectorReviewCommentNode(thread: ReviewThread): ReviewThread["comments"]["nodes"][number] | null {
+export function latestCodexConnectorReviewCommentNode(thread: ReviewThread): ReviewThread["comments"]["nodes"][number] | null {
   for (let index = thread.comments.nodes.length - 1; index >= 0; index -= 1) {
     const comment = thread.comments.nodes[index];
     const login = comment.author?.login;
