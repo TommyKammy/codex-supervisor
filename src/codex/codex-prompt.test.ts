@@ -937,6 +937,150 @@ test("buildCodexPrompt switches repeated addressing-review failures to root-caus
   assert.doesNotMatch(prompt, /Provider-neutral review-loop evidence:[\s\S]*thread-outdated[\s\S]*External review miss context:/);
 });
 
+test("buildCodexPrompt builds provider-neutral review-loop evidence from active threads when selected threads are exhausted", () => {
+  const prompt = buildCodexPrompt({
+    kind: "start",
+    config: createConfig(),
+    repoSlug: "owner/repo",
+    issue,
+    branch: "codex/issue-46",
+    workspacePath: "/tmp/workspaces/issue-46",
+    state: "addressing_review" satisfies RunState,
+    record: {
+      repeated_failure_signature_count: 2,
+      blocked_verification_retry_count: 0,
+      timeout_retry_count: 0,
+      last_failure_signature: "1 unresolved automated review thread(s) remain.",
+      last_tracked_pr_progress_summary: "no_meaningful_tracked_pr_progress",
+      last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+      addressing_review_strategy: "root_cause_analysis",
+      addressing_review_strategy_reason: "provider_neutral_review_loop stalled on active current-head review threads",
+    },
+    pr: createPullRequest({
+      number: 145,
+      headRefOid: "head-review-active-145",
+      reviewDecision: "CHANGES_REQUESTED",
+    }),
+    checks: [],
+    reviewThreads: [],
+    activeReviewThreads: [
+      createReviewThread({
+        id: "thread-active-loop",
+        path: "src/active-loop.ts",
+        line: 64,
+        comments: {
+          nodes: [
+            {
+              id: "comment-active-loop",
+              body: "The current-head loop still needs file-level root-cause analysis.",
+              createdAt: "2026-03-11T00:05:00Z",
+              url: "https://example.test/pr/145#discussion_active_loop",
+              author: {
+                login: "copilot-pull-request-reviewer",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+    alwaysReadFiles: [],
+    onDemandMemoryFiles: [],
+    journalPath: "/tmp/workspaces/issue-46/.codex-supervisor/issue-journal.md",
+  } satisfies AgentTurnContext);
+
+  assert.match(prompt, /Provider-neutral review-loop evidence:/);
+  assert.match(prompt, /Current-head scope: head-review-active-145/);
+  assert.match(prompt, /Current-head unresolved configured-provider review threads: 1/);
+  assert.match(prompt, /Thread thread-active-loop/);
+  assert.match(prompt, /Affected files: src\/active-loop\.ts/);
+  assert.match(prompt, /latest_comment_fingerprint=comment-active-loop/);
+});
+
+test("buildCodexPrompt uses the Codex Connector finding fingerprint for provider-neutral retry counts", () => {
+  const prompt = buildCodexPrompt({
+    kind: "start",
+    config: createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector[bot]"],
+    }),
+    repoSlug: "owner/repo",
+    issue,
+    branch: "codex/issue-46",
+    workspacePath: "/tmp/workspaces/issue-46",
+    state: "addressing_review" satisfies RunState,
+    record: {
+      repeated_failure_signature_count: 2,
+      blocked_verification_retry_count: 0,
+      timeout_retry_count: 0,
+      last_failure_signature: "1 unresolved automated review thread(s) remain.",
+      last_tracked_pr_progress_summary: "no_meaningful_tracked_pr_progress",
+      last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+      addressing_review_strategy: "root_cause_analysis",
+      addressing_review_strategy_reason: "provider_neutral_review_loop stalled on Codex Connector must-fix finding",
+      review_loop_retry_state: [
+        {
+          fingerprint: "pr=146|head=head-review-connector-146|thread=thread-connector-finding|comment=comment-connector-finding",
+          pr_number: 146,
+          head_sha: "head-review-connector-146",
+          thread_id: "thread-connector-finding",
+          latest_comment_fingerprint: "comment-connector-finding",
+          attempts: 3,
+          first_attempted_at: "2026-03-11T00:05:00Z",
+          last_attempted_at: "2026-03-11T00:25:00Z",
+        },
+      ],
+    },
+    pr: createPullRequest({
+      number: 146,
+      headRefOid: "head-review-connector-146",
+      reviewDecision: "CHANGES_REQUESTED",
+    }),
+    checks: [],
+    reviewThreads: [
+      createReviewThread({
+        id: "thread-connector-finding",
+        path: "src/connector-finding.ts",
+        line: 72,
+        comments: {
+          nodes: [
+            {
+              id: "comment-connector-finding",
+              body: "P2: Missing root-cause review-loop evidence lets repeated connector findings degrade into reply-only patching.",
+              createdAt: "2026-03-11T00:05:00Z",
+              url: "https://example.test/pr/146#discussion_connector_finding",
+              author: {
+                login: "chatgpt-codex-connector[bot]",
+                typeName: "Bot",
+              },
+            },
+            {
+              id: "comment-later-reply",
+              body: "I pushed a small fix.",
+              createdAt: "2026-03-11T00:10:00Z",
+              url: "https://example.test/pr/146#discussion_later_reply",
+              author: {
+                login: "codex",
+                typeName: "User",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+    alwaysReadFiles: [],
+    onDemandMemoryFiles: [],
+    journalPath: "/tmp/workspaces/issue-46/.codex-supervisor/issue-journal.md",
+  } satisfies AgentTurnContext);
+
+  assert.match(prompt, /Provider-neutral review-loop evidence:/);
+  assert.match(prompt, /Thread thread-connector-finding/);
+  assert.match(prompt, /reviewer=chatgpt-codex-connector\[bot\]/);
+  assert.match(prompt, /latest_comment_fingerprint=comment-connector-finding/);
+  assert.match(prompt, /retry_count=3/);
+  assert.match(prompt, /url=https:\/\/example\.test\/pr\/146#discussion_connector_finding/);
+  assert.doesNotMatch(prompt, /Provider-neutral review-loop evidence:[\s\S]*latest_comment_fingerprint=comment-later-reply[\s\S]*External review miss context:/);
+});
+
 test("buildCodexPrompt adds structured Codex Connector must-fix guidance only for Codex Connector addressing_review", () => {
   const pr = createPullRequest({
     number: 144,

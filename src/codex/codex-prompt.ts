@@ -35,6 +35,8 @@ import {
 } from "../codex-connector-review-churn";
 import {
   codexConnectorMustFixReviewThreads,
+  latestCodexConnectorReviewCommentFingerprint,
+  latestCodexConnectorReviewCommentNode,
 } from "../codex-connector-review-policy";
 import { isWorkstationLocalPathHygieneFailureSignature } from "../workstation-local-path-gate";
 import {
@@ -431,9 +433,10 @@ export interface BuildCodexStartPromptInput {
 }
 
 function buildProviderNeutralReviewLoopEvidence(
-  input: Pick<BuildCodexStartPromptInput, "record" | "pr" | "reviewThreads">,
+  input: Pick<BuildCodexStartPromptInput, "record" | "pr" | "reviewThreads" | "activeReviewThreads">,
 ): string[] {
-  const currentHeadReviewThreads = input.reviewThreads.filter((thread) => !thread.isResolved && !thread.isOutdated);
+  const reviewThreads = input.reviewThreads.length > 0 ? input.reviewThreads : input.activeReviewThreads ?? [];
+  const currentHeadReviewThreads = reviewThreads.filter((thread) => !thread.isResolved && !thread.isOutdated);
   if (currentHeadReviewThreads.length === 0) {
     return [
       "Provider-neutral review-loop evidence:",
@@ -441,24 +444,33 @@ function buildProviderNeutralReviewLoopEvidence(
     ];
   }
 
+  const codexMustFixThreadIds = new Set(codexConnectorMustFixReviewThreads(currentHeadReviewThreads).map((thread) => thread.id));
+  const evidenceCommentForThread = (thread: ReviewThread) =>
+    codexMustFixThreadIds.has(thread.id)
+      ? latestCodexConnectorReviewCommentNode(thread) ?? latestReviewComment(thread)
+      : latestReviewComment(thread);
+  const evidenceCommentFingerprintForThread = (thread: ReviewThread) =>
+    codexMustFixThreadIds.has(thread.id)
+      ? latestCodexConnectorReviewCommentFingerprint(thread) ?? latestReviewThreadCommentFingerprint(thread)
+      : latestReviewThreadCommentFingerprint(thread);
   const reviewerLogins = uniqueNonEmpty(
-    currentHeadReviewThreads.map((thread) => latestReviewComment(thread)?.author?.login ?? "unknown"),
+    currentHeadReviewThreads.map((thread) => evidenceCommentForThread(thread)?.author?.login ?? "unknown"),
   );
   const affectedFiles = uniqueNonEmpty(currentHeadReviewThreads.map((thread) => thread.path ?? "unknown"));
   const threadEvidence = currentHeadReviewThreads.slice(0, 6).map((thread) => {
-    const latestComment = latestReviewComment(thread);
-    const commentFingerprint = latestReviewThreadCommentFingerprint(thread) ?? "none";
+    const evidenceComment = evidenceCommentForThread(thread);
+    const commentFingerprint = evidenceCommentFingerprintForThread(thread) ?? "none";
     const retryCount =
       input.record && input.pr
         ? reviewLoopRetryAttemptCountForThread(input.record, input.pr, thread, commentFingerprint)
         : 0;
     return [
       `- Thread ${thread.id}`,
-      `  reviewer=${latestComment?.author?.login ?? "unknown"}`,
+      `  reviewer=${evidenceComment?.author?.login ?? "unknown"}`,
       `  file=${thread.path ?? "unknown"}:${thread.line ?? "?"}`,
       `  latest_comment_fingerprint=${commentFingerprint}`,
       `  retry_count=${retryCount > 0 ? String(retryCount) : "unknown"}`,
-      `  url=${latestComment?.url ?? "n/a"}`,
+      `  url=${evidenceComment?.url ?? "n/a"}`,
     ].join("\n");
   });
 
@@ -480,7 +492,7 @@ function buildProviderNeutralReviewLoopEvidence(
 }
 
 function buildAddressingReviewStrategySwitch(
-  input: Pick<BuildCodexStartPromptInput, "state" | "record" | "failureContext" | "pr" | "reviewThreads">,
+  input: Pick<BuildCodexStartPromptInput, "state" | "record" | "failureContext" | "pr" | "reviewThreads" | "activeReviewThreads">,
 ): string[] {
   if (input.state !== "addressing_review") {
     return [];
