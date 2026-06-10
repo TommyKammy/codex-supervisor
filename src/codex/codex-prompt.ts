@@ -531,6 +531,7 @@ function buildProviderNeutralReviewLoopEvidence(
 
 function buildAddressingReviewStrategySwitch(
   input: Pick<BuildCodexStartPromptInput, "config" | "state" | "record" | "failureContext" | "pr" | "reviewThreads" | "activeReviewThreads">,
+  options: { specializedReviewLoopEvidenceLabels?: string[] } = {},
 ): string[] {
   if (input.state !== "addressing_review") {
     return [];
@@ -553,6 +554,7 @@ function buildAddressingReviewStrategySwitch(
       `tracked_pr_progress=${record?.last_tracked_pr_progress_summary ?? "unknown"}`,
       `repeat_decision=${record?.last_tracked_pr_repeat_failure_decision ?? "pending"}`,
     ].join("; ");
+  const specializedReviewLoopEvidenceLabels = options.specializedReviewLoopEvidenceLabels ?? [];
 
   return [
     "Addressing-review strategy switch:",
@@ -562,7 +564,13 @@ function buildAddressingReviewStrategySwitch(
     "- First reproduce the blocker or prove the unresolved-thread cluster from current code and tests.",
     "- Group the repeated comments by root cause, then make the smallest focused test update that would have caught the repeated failure.",
     "- Only after that root-cause grouping should you patch code, and do not weaken attempt limits, merge gates, or configured review-bot requirements.",
-    ...buildProviderNeutralReviewLoopEvidence(input),
+    ...(specializedReviewLoopEvidenceLabels.length > 0
+      ? [
+          `- Specialized review-loop evidence present: ${specializedReviewLoopEvidenceLabels.join(", ")}.`,
+          "- Use the root-cause analysis frame, but let the specialized Codex Connector sections define severity, must-fix gates, churn thresholds, dossier consumption, and manual-review stop semantics.",
+          "- Do not duplicate the specialized Codex Connector dossier as generic provider-neutral thread evidence.",
+        ]
+      : buildProviderNeutralReviewLoopEvidence(input)),
   ];
 }
 
@@ -941,8 +949,14 @@ function buildCodexStartPrompt(input: BuildCodexStartPromptInput): string {
             : []),
         ]
       : [];
-  const addressingReviewStrategySwitch = buildAddressingReviewStrategySwitch(input);
   const stableSameFileChurnDossier = buildStableSameFileChurnDossier(input);
+  const specializedReviewLoopEvidenceLabels = [
+    ...(codexConnectorReviewChurn ? ["Codex Connector clustered root-cause repair"] : []),
+    ...(stableSameFileChurnDossier.length > 0 ? ["Codex Connector stable churn dossier"] : []),
+  ];
+  const addressingReviewStrategySwitch = buildAddressingReviewStrategySwitch(input, {
+    specializedReviewLoopEvidenceLabels,
+  });
   const journalOperatorOverrides = useCodexConnectorReviewThreadFastPath
     ? extractJournalOperatorOverrides(input.journalExcerpt)
     : [];

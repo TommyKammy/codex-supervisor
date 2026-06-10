@@ -1480,6 +1480,18 @@ test("buildCodexPrompt routes concentrated Codex Connector P2 cascades to root-c
     branch: "codex/issue-2217",
     workspacePath: "/tmp/workspaces/issue-2217",
     state: "addressing_review" satisfies RunState,
+    record: {
+      repeated_failure_signature_count: 1,
+      blocked_verification_retry_count: 0,
+      timeout_retry_count: 0,
+      last_failure_signature: "codex-review-churn:P2:scripts",
+      last_tracked_pr_progress_summary:
+        "no_progress_review_loop current_unresolved_threads=4 processed_review_threads=4 head=head-connector-1388",
+      last_tracked_pr_repeat_failure_decision: "retry_on_progress",
+      addressing_review_strategy: "root_cause_analysis",
+      addressing_review_strategy_reason:
+        "trigger=provider_neutral_review_loop; tracked_pr_progress=no_progress_review_loop current_unresolved_threads=4 processed_review_threads=4 head=head-connector-1388",
+    },
     pr,
     checks: [],
     reviewThreads: threads,
@@ -1489,11 +1501,16 @@ test("buildCodexPrompt routes concentrated Codex Connector P2 cascades to root-c
   } satisfies AgentTurnContext);
 
   assert.match(prompt, /Codex Connector clustered root-cause repair:/);
+  assert.match(prompt, /Addressing-review strategy switch:/);
+  assert.match(prompt, /Specialized review-loop evidence present: Codex Connector clustered root-cause repair\./);
+  assert.match(prompt, /let the specialized Codex Connector sections define severity, must-fix gates, churn thresholds, dossier consumption, and manual-review stop semantics/);
+  assert.match(prompt, /Do not duplicate the specialized Codex Connector dossier as generic provider-neutral thread evidence\./);
   assert.match(prompt, /Triggered: review_churn must_fix=4 threshold=4/);
   assert.match(prompt, /Normalized categories: .*truth_source/);
   assert.match(prompt, /identify the common subject, verb, scope, and truth-category failure/);
   assert.match(prompt, /Prefer a generalized parser, table-driven verifier, or category-based guard/);
   assert.match(prompt, /P0\/P1\/P2 and escalated P3 Codex Connector findings are supervisor-enforced must-fix findings/);
+  assert.doesNotMatch(prompt, /Provider-neutral review-loop evidence:/);
 });
 
 test("buildCodexPrompt adds a stable same-file Codex Connector churn repair dossier", () => {
@@ -1534,9 +1551,16 @@ test("buildCodexPrompt adds a stable same-file Codex Connector churn repair doss
     workspacePath: "/tmp/workspaces/issue-2250",
     state: "addressing_review" satisfies RunState,
     record: {
-      repeated_failure_signature_count: 0,
+      repeated_failure_signature_count: 1,
       blocked_verification_retry_count: 0,
       timeout_retry_count: 0,
+      last_failure_signature: "codex-review-churn:P2:src/release-readiness.ts",
+      last_tracked_pr_progress_summary:
+        "no_progress_review_loop current_unresolved_threads=2 processed_review_threads=2 head=head-current-2250",
+      last_tracked_pr_repeat_failure_decision: "retry_on_progress",
+      addressing_review_strategy: "root_cause_analysis",
+      addressing_review_strategy_reason:
+        "trigger=provider_neutral_review_loop; tracked_pr_progress=no_progress_review_loop current_unresolved_threads=2 processed_review_threads=2 head=head-current-2250",
       last_tracked_pr_progress_snapshot: JSON.stringify({
         headRefOid: "head-current-2250",
         reviewDecision: "CHANGES_REQUESTED",
@@ -1586,6 +1610,9 @@ test("buildCodexPrompt adds a stable same-file Codex Connector churn repair doss
   } satisfies AgentTurnContext);
 
   assert.match(prompt, /Codex Connector stable churn dossier:/);
+  assert.match(prompt, /Addressing-review strategy switch:/);
+  assert.match(prompt, /Specialized review-loop evidence present: Codex Connector stable churn dossier\./);
+  assert.match(prompt, /Do not duplicate the specialized Codex Connector dossier as generic provider-neutral thread evidence\./);
   assert.match(prompt, /Active PR head: head-current-2250/);
   assert.match(prompt, /Recent repair heads: head-previous-2250, head-middle-2250, head-current-2250/);
   assert.match(prompt, /Must-fix count trend: head-previous-2250:4 -> head-middle-2250:4 -> head-current-2250:5/);
@@ -1595,6 +1622,7 @@ test("buildCodexPrompt adds a stable same-file Codex Connector churn repair doss
   assert.match(prompt, /Representative URLs: https:\/\/example\.test\/pr\/2250#discussion_thread-current-0, https:\/\/example\.test\/pr\/2250#discussion_thread-current-1/);
   assert.match(prompt, /Route this as one root-cause repair dossier, not per-thread patching/);
   assert.match(prompt, /Read src\/release-readiness\.ts as a whole before editing/);
+  assert.doesNotMatch(prompt, /Provider-neutral review-loop evidence:/);
 });
 
 test("buildCodexPrompt detects Codex Connector churn from all active threads when repair selection is narrow", () => {
