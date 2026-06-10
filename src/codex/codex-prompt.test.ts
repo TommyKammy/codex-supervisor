@@ -817,7 +817,9 @@ test("buildCodexPrompt suppresses stale handoff next actions during addressing_r
 test("buildCodexPrompt switches repeated addressing-review failures to root-cause analysis", () => {
   const prompt = buildCodexPrompt({
     kind: "start",
-    config: createConfig(),
+    config: createConfig({
+      reviewBotLogins: ["copilot-pull-request-reviewer"],
+    }),
     repoSlug: "owner/repo",
     issue,
     branch: "codex/issue-46",
@@ -986,6 +988,25 @@ test("buildCodexPrompt builds provider-neutral review-loop evidence from active 
         },
       }),
       createReviewThread({
+        id: "thread-active-other",
+        path: "src/other-loop.ts",
+        line: 68,
+        comments: {
+          nodes: [
+            {
+              id: "comment-active-other",
+              body: "A second configured provider finding should stay visible in the active review-loop dossier.",
+              createdAt: "2026-03-11T00:05:30Z",
+              url: "https://example.test/pr/145#discussion_active_other",
+              author: {
+                login: "copilot-pull-request-reviewer",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+      createReviewThread({
         id: "thread-active-manual",
         path: "src/manual-loop.ts",
         line: 72,
@@ -1004,6 +1025,25 @@ test("buildCodexPrompt builds provider-neutral review-loop evidence from active 
           ],
         },
       }),
+      createReviewThread({
+        id: "thread-active-p3-advisory",
+        path: "src/advisory-loop.ts",
+        line: 76,
+        comments: {
+          nodes: [
+            {
+              id: "comment-active-p3-advisory",
+              body: "P3: Consider clarifying this helper name in a follow-up.",
+              createdAt: "2026-03-11T00:07:00Z",
+              url: "https://example.test/pr/145#discussion_active_p3_advisory",
+              author: {
+                login: "chatgpt-codex-connector[bot]",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
     ],
     alwaysReadFiles: [],
     onDemandMemoryFiles: [],
@@ -1012,12 +1052,15 @@ test("buildCodexPrompt builds provider-neutral review-loop evidence from active 
 
   assert.match(prompt, /Provider-neutral review-loop evidence:/);
   assert.match(prompt, /Current-head scope: head-review-active-145/);
-  assert.match(prompt, /Current-head unresolved configured-provider review threads: 1/);
+  assert.match(prompt, /Current-head unresolved configured-provider review threads: 2/);
   assert.match(prompt, /Thread thread-active-loop/);
-  assert.match(prompt, /Affected files: src\/active-loop\.ts/);
+  assert.match(prompt, /Thread thread-active-other/);
+  assert.match(prompt, /Affected files: src\/active-loop\.ts, src\/other-loop\.ts/);
   assert.match(prompt, /latest_comment_fingerprint=comment-active-loop/);
   assert.doesNotMatch(prompt, /Provider-neutral review-loop evidence:[\s\S]*thread-active-manual[\s\S]*External review miss context:/);
   assert.doesNotMatch(prompt, /Provider-neutral review-loop evidence:[\s\S]*src\/manual-loop\.ts[\s\S]*External review miss context:/);
+  assert.doesNotMatch(prompt, /Provider-neutral review-loop evidence:[\s\S]*thread-active-p3-advisory[\s\S]*External review miss context:/);
+  assert.doesNotMatch(prompt, /Provider-neutral review-loop evidence:[\s\S]*src\/advisory-loop\.ts[\s\S]*External review miss context:/);
 });
 
 test("buildCodexPrompt uses the Codex Connector finding fingerprint for provider-neutral retry counts", () => {
@@ -1102,6 +1145,90 @@ test("buildCodexPrompt uses the Codex Connector finding fingerprint for provider
   assert.match(prompt, /retry_count=3/);
   assert.match(prompt, /url=https:\/\/example\.test\/pr\/146#discussion_connector_finding/);
   assert.doesNotMatch(prompt, /Provider-neutral review-loop evidence:[\s\S]*latest_comment_fingerprint=comment-later-reply[\s\S]*External review miss context:/);
+});
+
+test("buildCodexPrompt anchors non-Codex provider-neutral evidence to provider comments after later replies", () => {
+  const prompt = buildCodexPrompt({
+    kind: "start",
+    config: createConfig({
+      reviewBotLogins: ["copilot-pull-request-reviewer"],
+    }),
+    repoSlug: "owner/repo",
+    issue,
+    branch: "codex/issue-46",
+    workspacePath: "/tmp/workspaces/issue-46",
+    state: "addressing_review" satisfies RunState,
+    record: {
+      repeated_failure_signature_count: 2,
+      blocked_verification_retry_count: 0,
+      timeout_retry_count: 0,
+      last_failure_signature: "1 unresolved automated review thread(s) remain.",
+      last_tracked_pr_progress_summary: "no_meaningful_tracked_pr_progress",
+      last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+      addressing_review_strategy: "root_cause_analysis",
+      addressing_review_strategy_reason: "provider_neutral_review_loop stalled on a non-Codex provider finding",
+      review_loop_retry_state: [
+        {
+          fingerprint: "pr=147|head=head-review-provider-147|thread=thread-provider-finding|comment=comment-provider-finding",
+          pr_number: 147,
+          head_sha: "head-review-provider-147",
+          thread_id: "thread-provider-finding",
+          latest_comment_fingerprint: "comment-provider-finding",
+          attempts: 2,
+          first_attempted_at: "2026-03-11T00:05:00Z",
+          last_attempted_at: "2026-03-11T00:15:00Z",
+        },
+      ],
+    },
+    pr: createPullRequest({
+      number: 147,
+      headRefOid: "head-review-provider-147",
+      reviewDecision: "CHANGES_REQUESTED",
+    }),
+    checks: [],
+    reviewThreads: [
+      createReviewThread({
+        id: "thread-provider-finding",
+        path: "src/provider-finding.ts",
+        line: 88,
+        comments: {
+          nodes: [
+            {
+              id: "comment-provider-finding",
+              body: "The provider finding should remain the evidence anchor after a later reply.",
+              createdAt: "2026-03-11T00:05:00Z",
+              url: "https://example.test/pr/147#discussion_provider_finding",
+              author: {
+                login: "copilot-pull-request-reviewer",
+                typeName: "Bot",
+              },
+            },
+            {
+              id: "comment-provider-later-reply",
+              body: "I tried a small local patch.",
+              createdAt: "2026-03-11T00:10:00Z",
+              url: "https://example.test/pr/147#discussion_provider_later_reply",
+              author: {
+                login: "codex",
+                typeName: "User",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+    alwaysReadFiles: [],
+    onDemandMemoryFiles: [],
+    journalPath: "/tmp/workspaces/issue-46/.codex-supervisor/issue-journal.md",
+  } satisfies AgentTurnContext);
+
+  assert.match(prompt, /Provider-neutral review-loop evidence:/);
+  assert.match(prompt, /Thread thread-provider-finding/);
+  assert.match(prompt, /reviewer=copilot-pull-request-reviewer/);
+  assert.match(prompt, /latest_comment_fingerprint=comment-provider-finding/);
+  assert.match(prompt, /retry_count=2/);
+  assert.match(prompt, /url=https:\/\/example\.test\/pr\/147#discussion_provider_finding/);
+  assert.doesNotMatch(prompt, /Provider-neutral review-loop evidence:[\s\S]*latest_comment_fingerprint=comment-provider-later-reply[\s\S]*External review miss context:/);
 });
 
 test("buildCodexPrompt adds structured Codex Connector must-fix guidance only for Codex Connector addressing_review", () => {

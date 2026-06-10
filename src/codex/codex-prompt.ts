@@ -23,7 +23,9 @@ import type {
   StartAgentTurnContext,
 } from "../supervisor/agent-runner";
 import {
+  configuredReviewBotLogins,
   configuredReviewProviderKinds,
+  normalizeReviewProviderLogin,
   reviewProviderProfileFromConfig,
   type ReviewProviderProfileSummary,
 } from "../core/review-providers";
@@ -35,6 +37,7 @@ import {
 } from "../codex-connector-review-churn";
 import {
   codexConnectorMustFixReviewThreads,
+  isSoftenedCodexConnectorP3Thread,
   latestCodexConnectorReviewCommentFingerprint,
   latestCodexConnectorReviewCommentNode,
 } from "../codex-connector-review-policy";
@@ -436,12 +439,12 @@ export interface BuildCodexStartPromptInput {
 function buildProviderNeutralReviewLoopEvidence(
   input: Pick<BuildCodexStartPromptInput, "config" | "record" | "pr" | "reviewThreads" | "activeReviewThreads">,
 ): string[] {
-  const reviewThreads =
-    input.reviewThreads.length > 0
-      ? input.reviewThreads
-      : input.config
-        ? configuredBotReviewThreads(input.config, input.activeReviewThreads ?? [])
-        : [];
+  const sourceReviewThreads = input.activeReviewThreads ?? input.reviewThreads;
+  const reviewThreads = input.config
+    ? configuredBotReviewThreads(input.config, sourceReviewThreads).filter(
+        (thread) => !isSoftenedCodexConnectorP3Thread(thread),
+      )
+    : [];
   const currentHeadReviewThreads = reviewThreads.filter((thread) => !thread.isResolved && !thread.isOutdated);
   if (currentHeadReviewThreads.length === 0) {
     return [
@@ -451,14 +454,30 @@ function buildProviderNeutralReviewLoopEvidence(
   }
 
   const codexMustFixThreadIds = new Set(codexConnectorMustFixReviewThreads(currentHeadReviewThreads).map((thread) => thread.id));
+  const configuredProviderCommentForThread = (thread: ReviewThread) => {
+    if (!input.config) {
+      return latestReviewComment(thread);
+    }
+
+    const configuredLogins = new Set(configuredReviewBotLogins(input.config));
+    for (let index = thread.comments.nodes.length - 1; index >= 0; index -= 1) {
+      const comment = thread.comments.nodes[index]!;
+      const login = normalizeReviewProviderLogin(comment.author?.login);
+      if (login && configuredLogins.has(login)) {
+        return comment;
+      }
+    }
+
+    return latestReviewComment(thread);
+  };
   const evidenceCommentForThread = (thread: ReviewThread) =>
     codexMustFixThreadIds.has(thread.id)
       ? latestCodexConnectorReviewCommentNode(thread) ?? latestReviewComment(thread)
-      : latestReviewComment(thread);
+      : configuredProviderCommentForThread(thread);
   const evidenceCommentFingerprintForThread = (thread: ReviewThread) =>
     codexMustFixThreadIds.has(thread.id)
       ? latestCodexConnectorReviewCommentFingerprint(thread) ?? latestReviewThreadCommentFingerprint(thread)
-      : latestReviewThreadCommentFingerprint(thread);
+      : (evidenceCommentForThread(thread)?.id ?? evidenceCommentForThread(thread)?.createdAt ?? latestReviewThreadCommentFingerprint(thread));
   const reviewerLogins = uniqueNonEmpty(
     currentHeadReviewThreads.map((thread) => evidenceCommentForThread(thread)?.author?.login ?? "unknown"),
   );
