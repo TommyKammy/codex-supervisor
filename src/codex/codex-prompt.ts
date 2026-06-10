@@ -43,6 +43,7 @@ import {
   latestReviewThreadCommentFingerprint,
   reviewLoopRetryAttemptCountForThread,
 } from "../review-handling";
+import { configuredBotReviewThreads } from "../review-thread-reporting";
 
 export interface LocalReviewRepairContext {
   repairIntent?: "same_pr_fix_blocked" | "same_pr_follow_up" | "same_pr_manual_review" | "high_severity_retry" | "unspecified";
@@ -433,9 +434,14 @@ export interface BuildCodexStartPromptInput {
 }
 
 function buildProviderNeutralReviewLoopEvidence(
-  input: Pick<BuildCodexStartPromptInput, "record" | "pr" | "reviewThreads" | "activeReviewThreads">,
+  input: Pick<BuildCodexStartPromptInput, "config" | "record" | "pr" | "reviewThreads" | "activeReviewThreads">,
 ): string[] {
-  const reviewThreads = input.reviewThreads.length > 0 ? input.reviewThreads : input.activeReviewThreads ?? [];
+  const reviewThreads =
+    input.reviewThreads.length > 0
+      ? input.reviewThreads
+      : input.config
+        ? configuredBotReviewThreads(input.config, input.activeReviewThreads ?? [])
+        : [];
   const currentHeadReviewThreads = reviewThreads.filter((thread) => !thread.isResolved && !thread.isOutdated);
   if (currentHeadReviewThreads.length === 0) {
     return [
@@ -492,7 +498,7 @@ function buildProviderNeutralReviewLoopEvidence(
 }
 
 function buildAddressingReviewStrategySwitch(
-  input: Pick<BuildCodexStartPromptInput, "state" | "record" | "failureContext" | "pr" | "reviewThreads" | "activeReviewThreads">,
+  input: Pick<BuildCodexStartPromptInput, "config" | "state" | "record" | "failureContext" | "pr" | "reviewThreads" | "activeReviewThreads">,
 ): string[] {
   if (input.state !== "addressing_review") {
     return [];

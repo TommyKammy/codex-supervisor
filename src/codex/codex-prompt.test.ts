@@ -940,7 +940,9 @@ test("buildCodexPrompt switches repeated addressing-review failures to root-caus
 test("buildCodexPrompt builds provider-neutral review-loop evidence from active threads when selected threads are exhausted", () => {
   const prompt = buildCodexPrompt({
     kind: "start",
-    config: createConfig(),
+    config: createConfig({
+      reviewBotLogins: ["copilot-pull-request-reviewer"],
+    }),
     repoSlug: "owner/repo",
     issue,
     branch: "codex/issue-46",
@@ -983,6 +985,25 @@ test("buildCodexPrompt builds provider-neutral review-loop evidence from active 
           ],
         },
       }),
+      createReviewThread({
+        id: "thread-active-manual",
+        path: "src/manual-loop.ts",
+        line: 72,
+        comments: {
+          nodes: [
+            {
+              id: "comment-active-manual",
+              body: "A human reviewer left a manual note that should not enter configured-provider retry evidence.",
+              createdAt: "2026-03-11T00:06:00Z",
+              url: "https://example.test/pr/145#discussion_active_manual",
+              author: {
+                login: "human-reviewer",
+                typeName: "User",
+              },
+            },
+          ],
+        },
+      }),
     ],
     alwaysReadFiles: [],
     onDemandMemoryFiles: [],
@@ -995,6 +1016,8 @@ test("buildCodexPrompt builds provider-neutral review-loop evidence from active 
   assert.match(prompt, /Thread thread-active-loop/);
   assert.match(prompt, /Affected files: src\/active-loop\.ts/);
   assert.match(prompt, /latest_comment_fingerprint=comment-active-loop/);
+  assert.doesNotMatch(prompt, /Provider-neutral review-loop evidence:[\s\S]*thread-active-manual[\s\S]*External review miss context:/);
+  assert.doesNotMatch(prompt, /Provider-neutral review-loop evidence:[\s\S]*src\/manual-loop\.ts[\s\S]*External review miss context:/);
 });
 
 test("buildCodexPrompt uses the Codex Connector finding fingerprint for provider-neutral retry counts", () => {
