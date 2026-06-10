@@ -440,75 +440,87 @@ function buildProviderNeutralReviewLoopEvidence(
   input: Pick<BuildCodexStartPromptInput, "config" | "record" | "pr" | "reviewThreads" | "activeReviewThreads">,
 ): string[] {
   const sourceReviewThreads = input.activeReviewThreads ?? input.reviewThreads;
-  const reviewThreads = input.config
-    ? configuredBotReviewThreads(input.config, sourceReviewThreads).filter(
-        (thread) => !isSoftenedCodexConnectorP3Thread(thread),
-      )
-    : [];
-  const currentHeadReviewThreads = reviewThreads.filter((thread) => !thread.isResolved && !thread.isOutdated);
-  if (currentHeadReviewThreads.length === 0) {
-    return [
-      "Provider-neutral review-loop evidence:",
-      "- Current-head unresolved configured-provider review threads: none selected.",
-    ];
-  }
-
+  const configuredThreads = input.config ? configuredBotReviewThreads(input.config, sourceReviewThreads) : [];
+  const currentHeadReviewThreads = configuredThreads.filter((thread) => !thread.isResolved && !thread.isOutdated);
   const codexMustFixThreadIds = new Set(codexConnectorMustFixReviewThreads(currentHeadReviewThreads).map((thread) => thread.id));
-  const configuredProviderCommentForThread = (thread: ReviewThread) => {
+  const configuredProviderCommentForThread = (thread: ReviewThread): ReviewThread["comments"]["nodes"][number] | null => {
     if (!input.config) {
-      return latestReviewComment(thread);
+      return latestReviewComment(thread) ?? null;
     }
 
     const configuredLogins = new Set(configuredReviewBotLogins(input.config));
+    const softenedCodexConnectorCommentId = isSoftenedCodexConnectorP3Thread(thread)
+      ? latestCodexConnectorReviewCommentNode(thread)?.id ?? null
+      : null;
     for (let index = thread.comments.nodes.length - 1; index >= 0; index -= 1) {
       const comment = thread.comments.nodes[index]!;
       const login = normalizeReviewProviderLogin(comment.author?.login);
+      if (softenedCodexConnectorCommentId && comment.id === softenedCodexConnectorCommentId) {
+        continue;
+      }
       if (login && configuredLogins.has(login)) {
         return comment;
       }
     }
 
-    return latestReviewComment(thread);
+    return null;
   };
   const evidenceCommentForThread = (thread: ReviewThread) =>
     codexMustFixThreadIds.has(thread.id)
-      ? latestCodexConnectorReviewCommentNode(thread) ?? latestReviewComment(thread)
+      ? latestCodexConnectorReviewCommentNode(thread) ?? latestReviewComment(thread) ?? null
       : configuredProviderCommentForThread(thread);
   const evidenceCommentFingerprintForThread = (thread: ReviewThread) =>
     codexMustFixThreadIds.has(thread.id)
       ? latestCodexConnectorReviewCommentFingerprint(thread) ?? latestReviewThreadCommentFingerprint(thread)
       : (evidenceCommentForThread(thread)?.id ?? evidenceCommentForThread(thread)?.createdAt ?? latestReviewThreadCommentFingerprint(thread));
-  const reviewerLogins = uniqueNonEmpty(
-    currentHeadReviewThreads.map((thread) => evidenceCommentForThread(thread)?.author?.login ?? "unknown"),
-  );
-  const affectedFiles = uniqueNonEmpty(currentHeadReviewThreads.map((thread) => thread.path ?? "unknown"));
-  const threadEvidence = currentHeadReviewThreads.slice(0, 6).map((thread) => {
+  const evidenceEntries = currentHeadReviewThreads.flatMap((thread) => {
     const evidenceComment = evidenceCommentForThread(thread);
-    const commentFingerprint = evidenceCommentFingerprintForThread(thread) ?? "none";
-    const retryCount =
+    const commentFingerprint = evidenceCommentFingerprintForThread(thread);
+    return evidenceComment && commentFingerprint ? [{ thread, evidenceComment, commentFingerprint }] : [];
+  });
+  if (evidenceEntries.length === 0) {
+    return [
+      "Provider-neutral review-loop evidence:",
+      "- Current-head unresolved configured-provider review threads: none selected.",
+    ];
+  }
+  const reviewerLogins = uniqueNonEmpty(
+    evidenceEntries.map((entry) => entry.evidenceComment.author?.login ?? "unknown"),
+  );
+  const affectedFiles = uniqueNonEmpty(evidenceEntries.map((entry) => entry.thread.path ?? "unknown"));
+  const threadEvidence = evidenceEntries.slice(0, 6).map(({ thread, evidenceComment, commentFingerprint }) => {
+    const trackedRetryCount =
       input.record && input.pr
-        ? reviewLoopRetryAttemptCountForThread(input.record, input.pr, thread, commentFingerprint)
+        ? Math.max(
+            reviewLoopRetryAttemptCountForThread(input.record, input.pr, thread, commentFingerprint),
+            reviewLoopRetryAttemptCountForThread(
+              input.record,
+              input.pr,
+              thread,
+              latestReviewThreadCommentFingerprint(thread),
+            ),
+          )
         : 0;
     return [
       `- Thread ${thread.id}`,
-      `  reviewer=${evidenceComment?.author?.login ?? "unknown"}`,
+      `  reviewer=${evidenceComment.author?.login ?? "unknown"}`,
       `  file=${thread.path ?? "unknown"}:${thread.line ?? "?"}`,
       `  latest_comment_fingerprint=${commentFingerprint}`,
-      `  retry_count=${retryCount > 0 ? String(retryCount) : "unknown"}`,
-      `  url=${evidenceComment?.url ?? "n/a"}`,
+      `  retry_count=${trackedRetryCount > 0 ? String(trackedRetryCount) : "unknown"}`,
+      `  url=${evidenceComment.url ?? "n/a"}`,
     ].join("\n");
   });
 
   return [
     "Provider-neutral review-loop evidence:",
     `- Current-head scope: ${input.pr?.headRefOid ?? "unknown"}`,
-    `- Current-head unresolved configured-provider review threads: ${currentHeadReviewThreads.length}`,
+    `- Current-head unresolved configured-provider review threads: ${evidenceEntries.length}`,
     `- Provider/reviewer identities: ${reviewerLogins.join(", ") || "unknown"}`,
     `- Affected files: ${affectedFiles.join(", ") || "unknown"}`,
     "- Current-head thread evidence:",
     ...threadEvidence,
-    ...(currentHeadReviewThreads.length > threadEvidence.length
-      ? [`- Additional current-head threads omitted: ${currentHeadReviewThreads.length - threadEvidence.length}`]
+    ...(evidenceEntries.length > threadEvidence.length
+      ? [`- Additional current-head threads omitted: ${evidenceEntries.length - threadEvidence.length}`]
       : []),
     "- Before editing, classify these comments by provider/reviewer, affected file, repeated failure mode, and verifier expectation.",
     "- Choose regression probes from representative current-head comments before changing code.",

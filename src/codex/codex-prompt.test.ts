@@ -1026,6 +1026,35 @@ test("buildCodexPrompt builds provider-neutral review-loop evidence from active 
         },
       }),
       createReviewThread({
+        id: "thread-active-mixed-provider",
+        path: "src/mixed-loop.ts",
+        line: 74,
+        comments: {
+          nodes: [
+            {
+              id: "comment-active-mixed-provider",
+              body: "The Copilot blocker should remain visible even if a later Codex P3 advisory is appended.",
+              createdAt: "2026-03-11T00:06:30Z",
+              url: "https://example.test/pr/145#discussion_active_mixed_provider",
+              author: {
+                login: "copilot-pull-request-reviewer",
+                typeName: "Bot",
+              },
+            },
+            {
+              id: "comment-active-mixed-p3-advisory",
+              body: "P3: Consider clarifying this mixed-provider helper name in a follow-up.",
+              createdAt: "2026-03-11T00:07:00Z",
+              url: "https://example.test/pr/145#discussion_active_mixed_p3_advisory",
+              author: {
+                login: "chatgpt-codex-connector[bot]",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+      createReviewThread({
         id: "thread-active-p3-advisory",
         path: "src/advisory-loop.ts",
         line: 76,
@@ -1052,11 +1081,14 @@ test("buildCodexPrompt builds provider-neutral review-loop evidence from active 
 
   assert.match(prompt, /Provider-neutral review-loop evidence:/);
   assert.match(prompt, /Current-head scope: head-review-active-145/);
-  assert.match(prompt, /Current-head unresolved configured-provider review threads: 2/);
+  assert.match(prompt, /Current-head unresolved configured-provider review threads: 3/);
   assert.match(prompt, /Thread thread-active-loop/);
   assert.match(prompt, /Thread thread-active-other/);
-  assert.match(prompt, /Affected files: src\/active-loop\.ts, src\/other-loop\.ts/);
+  assert.match(prompt, /Thread thread-active-mixed-provider/);
+  assert.match(prompt, /Affected files: src\/active-loop\.ts, src\/other-loop\.ts, src\/mixed-loop\.ts/);
   assert.match(prompt, /latest_comment_fingerprint=comment-active-loop/);
+  assert.match(prompt, /latest_comment_fingerprint=comment-active-mixed-provider/);
+  assert.doesNotMatch(prompt, /Provider-neutral review-loop evidence:[\s\S]*latest_comment_fingerprint=comment-active-mixed-p3-advisory[\s\S]*External review miss context:/);
   assert.doesNotMatch(prompt, /Provider-neutral review-loop evidence:[\s\S]*thread-active-manual[\s\S]*External review miss context:/);
   assert.doesNotMatch(prompt, /Provider-neutral review-loop evidence:[\s\S]*src\/manual-loop\.ts[\s\S]*External review miss context:/);
   assert.doesNotMatch(prompt, /Provider-neutral review-loop evidence:[\s\S]*thread-active-p3-advisory[\s\S]*External review miss context:/);
@@ -1169,11 +1201,11 @@ test("buildCodexPrompt anchors non-Codex provider-neutral evidence to provider c
       addressing_review_strategy_reason: "provider_neutral_review_loop stalled on a non-Codex provider finding",
       review_loop_retry_state: [
         {
-          fingerprint: "pr=147|head=head-review-provider-147|thread=thread-provider-finding|comment=comment-provider-finding",
+          fingerprint: "pr=147|head=head-review-provider-147|thread=thread-provider-finding|comment=comment-provider-later-reply",
           pr_number: 147,
           head_sha: "head-review-provider-147",
           thread_id: "thread-provider-finding",
-          latest_comment_fingerprint: "comment-provider-finding",
+          latest_comment_fingerprint: "comment-provider-later-reply",
           attempts: 2,
           first_attempted_at: "2026-03-11T00:05:00Z",
           last_attempted_at: "2026-03-11T00:15:00Z",
