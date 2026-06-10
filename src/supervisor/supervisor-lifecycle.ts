@@ -306,14 +306,14 @@ function joinProgressValues(values: string[] | undefined): string | null {
 }
 
 function processedCurrentUnresolvedReviewThreadFingerprints(current: TrackedPrProgressSnapshot): string[] {
-  const unresolvedThreadIds = new Set(current.unresolvedReviewThreadIds);
+  const unresolvedThreadFingerprints = new Set(current.unresolvedReviewThreadFingerprints ?? []);
   return (current.processedReviewThreadFingerprints ?? []).filter((fingerprint) => {
-    const match = fingerprint.match(/^(.+)@([^#]+)#/);
+    const match = fingerprint.match(/^(.+)@([^#]+)#(.+)$/);
     if (!match) {
       return false;
     }
-    const [, threadId, headSha] = match;
-    return headSha === current.headRefOid && unresolvedThreadIds.has(threadId);
+    const [, threadId, headSha, latestCommentFingerprint] = match;
+    return headSha === current.headRefOid && unresolvedThreadFingerprints.has(`${threadId}#${latestCommentFingerprint}`);
   });
 }
 

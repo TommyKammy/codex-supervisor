@@ -171,6 +171,7 @@ export function addressingReviewStrategyPatch(
   record: Pick<
     IssueRunRecord,
     | "last_failure_signature"
+    | "last_head_sha"
     | "repeated_failure_signature_count"
     | "last_tracked_pr_progress_summary"
     | "last_tracked_pr_repeat_failure_decision"
@@ -187,10 +188,13 @@ export function addressingReviewStrategyPatch(
   const progressSummary = record.last_tracked_pr_progress_summary ?? "no progress baseline";
   const repeatDecision = record.last_tracked_pr_repeat_failure_decision ?? "pending";
   const repeatedFailureSignal = Boolean(record.last_failure_signature && record.repeated_failure_signature_count >= 2);
+  const providerNeutralReviewLoopHead = record.last_tracked_pr_progress_summary?.match(
+    /^no_progress_review_loop\b.*(?:^|\s)head=(\S+)/,
+  )?.[1];
   const providerNeutralReviewLoopSignal =
-    record.last_tracked_pr_progress_summary?.startsWith("no_progress_review_loop ") === true ||
-    record.last_tracked_pr_progress_summary === "no_meaningful_tracked_pr_progress" ||
-    record.last_tracked_pr_progress_summary === "suppressed_same_head_same_review_thread_blocker";
+    typeof providerNeutralReviewLoopHead === "string" &&
+    providerNeutralReviewLoopHead.length > 0 &&
+    providerNeutralReviewLoopHead === record.last_head_sha;
   if (!repeatedFailureSignal && !providerNeutralReviewLoopSignal) {
     return {
       addressing_review_strategy: "normal_patch",

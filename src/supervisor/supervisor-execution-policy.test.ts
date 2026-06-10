@@ -233,7 +233,7 @@ test("addressingReviewStrategyPatch switches repeated review failures to root-ca
     {
       addressing_review_strategy: "root_cause_analysis",
       addressing_review_strategy_reason:
-        "trigger=provider_neutral_review_loop; repeated_failure_signature_count=2; signature=review-thread-cluster-a; tracked_pr_progress=no_meaningful_tracked_pr_progress; repeat_decision=retry_on_progress",
+        "trigger=repeated_failure_signature; repeated_failure_signature_count=2; signature=review-thread-cluster-a; tracked_pr_progress=no_meaningful_tracked_pr_progress; repeat_decision=retry_on_progress",
     },
   );
 
@@ -241,6 +241,7 @@ test("addressingReviewStrategyPatch switches repeated review failures to root-ca
     addressingReviewStrategyPatch(
       createRecord({
         state: "addressing_review",
+        last_head_sha: "head-a",
         last_failure_signature: "review-thread-cluster-a",
         repeated_failure_signature_count: 1,
         last_tracked_pr_progress_summary:
@@ -253,6 +254,25 @@ test("addressingReviewStrategyPatch switches repeated review failures to root-ca
       addressing_review_strategy: "root_cause_analysis",
       addressing_review_strategy_reason:
         "trigger=provider_neutral_review_loop; repeated_failure_signature_count=1; signature=review-thread-cluster-a; tracked_pr_progress=no_progress_review_loop current_unresolved_threads=2 processed_review_threads=2 head=head-a; repeat_decision=retry_on_progress",
+    },
+  );
+
+  assert.deepEqual(
+    addressingReviewStrategyPatch(
+      createRecord({
+        state: "addressing_review",
+        last_head_sha: "head-b",
+        last_failure_signature: "review-thread-cluster-a",
+        repeated_failure_signature_count: 1,
+        last_tracked_pr_progress_summary:
+          "no_progress_review_loop current_unresolved_threads=2 processed_review_threads=2 head=head-a",
+        last_tracked_pr_repeat_failure_decision: "retry_on_progress",
+      }),
+      "addressing_review",
+    ),
+    {
+      addressing_review_strategy: "normal_patch",
+      addressing_review_strategy_reason: null,
     },
   );
 

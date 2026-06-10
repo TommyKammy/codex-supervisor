@@ -1563,6 +1563,64 @@ test("summarizeTrackedPrProgress ignores processed fingerprints for resolved rev
   assert.equal(result.summary, null);
 });
 
+test("summarizeTrackedPrProgress ignores stale processed fingerprints for updated review guidance", () => {
+  const record = createRecord({
+    processed_review_thread_fingerprints: ["thread-1@head123#comment-old"],
+    last_tracked_pr_progress_snapshot: JSON.stringify({
+      headRefOid: "head123",
+      reviewDecision: "CHANGES_REQUESTED",
+      mergeStateStatus: "CLEAN",
+      copilotReviewState: null,
+      copilotReviewRequestedAt: null,
+      copilotReviewArrivedAt: null,
+      configuredBotCurrentHeadObservedAt: null,
+      configuredBotCurrentHeadStatusState: null,
+      currentHeadCiGreenAt: null,
+      configuredBotRateLimitedAt: null,
+      configuredBotDraftSkipAt: null,
+      configuredBotTopLevelReviewStrength: null,
+      configuredBotTopLevelReviewSubmittedAt: null,
+      checks: ["build:pass:SUCCESS:CI"],
+      unresolvedReviewThreadIds: ["thread-1"],
+      unresolvedReviewThreadFingerprints: ["thread-1#comment-new"],
+      unresolvedReviewThreadSourceAnchors: ["thread-1:src/file.ts:12"],
+      processedReviewThreadIds: ["thread-1@head123"],
+      processedReviewThreadFingerprints: ["thread-1@head123#comment-old"],
+      verificationProbeOutcomes: [],
+    }),
+  });
+  const pr = createPullRequest({
+    headRefOid: "head123",
+    reviewDecision: "CHANGES_REQUESTED",
+    mergeStateStatus: "CLEAN",
+  });
+  const reviewThreads: ReviewThread[] = [
+    createReviewThread({
+      id: "thread-1",
+      comments: {
+        nodes: [
+          {
+            id: "comment-new",
+            body: "Please address this updated guidance.",
+            createdAt: "2026-03-13T06:25:00Z",
+            url: "https://example.test/pr/42#discussion_new",
+            author: { login: "copilot-pull-request-reviewer", typeName: "Bot" },
+          },
+        ],
+      },
+    }),
+  ];
+
+  const result = summarizeTrackedPrProgress(
+    record,
+    pr,
+    [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads,
+  );
+
+  assert.equal(result.summary, null);
+});
+
 test("summarizeTrackedPrProgress treats changed review-thread cluster membership as tracked PR progress", () => {
   const record = createRecord({
     last_tracked_pr_progress_snapshot: JSON.stringify({
