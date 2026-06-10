@@ -37,6 +37,10 @@ import {
   codexConnectorMustFixReviewThreads,
 } from "../codex-connector-review-policy";
 import { isWorkstationLocalPathHygieneFailureSignature } from "../workstation-local-path-gate";
+import {
+  latestReviewThreadCommentFingerprint,
+  reviewLoopRetryAttemptCountForThread,
+} from "../review-handling";
 
 export interface LocalReviewRepairContext {
   repairIntent?: "same_pr_fix_blocked" | "same_pr_follow_up" | "same_pr_manual_review" | "high_severity_retry" | "unspecified";
@@ -404,6 +408,7 @@ export interface BuildCodexStartPromptInput {
       | "addressing_review_strategy"
       | "addressing_review_strategy_reason"
       | "codex_connector_stable_churn_dossier_consumed_signature"
+      | "review_loop_retry_state"
     >
   > | null;
   pr: GitHubPullRequest | null;
@@ -425,7 +430,58 @@ export interface BuildCodexStartPromptInput {
   reviewProviderProfile?: ReviewProviderProfileSummary;
 }
 
-function buildAddressingReviewStrategySwitch(input: Pick<BuildCodexStartPromptInput, "state" | "record" | "failureContext">): string[] {
+function buildProviderNeutralReviewLoopEvidence(
+  input: Pick<BuildCodexStartPromptInput, "record" | "pr" | "reviewThreads">,
+): string[] {
+  const currentHeadReviewThreads = input.reviewThreads.filter((thread) => !thread.isResolved && !thread.isOutdated);
+  if (currentHeadReviewThreads.length === 0) {
+    return [
+      "Provider-neutral review-loop evidence:",
+      "- Current-head unresolved configured-provider review threads: none selected.",
+    ];
+  }
+
+  const reviewerLogins = uniqueNonEmpty(
+    currentHeadReviewThreads.map((thread) => latestReviewComment(thread)?.author?.login ?? "unknown"),
+  );
+  const affectedFiles = uniqueNonEmpty(currentHeadReviewThreads.map((thread) => thread.path ?? "unknown"));
+  const threadEvidence = currentHeadReviewThreads.slice(0, 6).map((thread) => {
+    const latestComment = latestReviewComment(thread);
+    const commentFingerprint = latestReviewThreadCommentFingerprint(thread) ?? "none";
+    const retryCount =
+      input.record && input.pr
+        ? reviewLoopRetryAttemptCountForThread(input.record, input.pr, thread, commentFingerprint)
+        : 0;
+    return [
+      `- Thread ${thread.id}`,
+      `  reviewer=${latestComment?.author?.login ?? "unknown"}`,
+      `  file=${thread.path ?? "unknown"}:${thread.line ?? "?"}`,
+      `  latest_comment_fingerprint=${commentFingerprint}`,
+      `  retry_count=${retryCount > 0 ? String(retryCount) : "unknown"}`,
+      `  url=${latestComment?.url ?? "n/a"}`,
+    ].join("\n");
+  });
+
+  return [
+    "Provider-neutral review-loop evidence:",
+    `- Current-head scope: ${input.pr?.headRefOid ?? "unknown"}`,
+    `- Current-head unresolved configured-provider review threads: ${currentHeadReviewThreads.length}`,
+    `- Provider/reviewer identities: ${reviewerLogins.join(", ") || "unknown"}`,
+    `- Affected files: ${affectedFiles.join(", ") || "unknown"}`,
+    "- Current-head thread evidence:",
+    ...threadEvidence,
+    ...(currentHeadReviewThreads.length > threadEvidence.length
+      ? [`- Additional current-head threads omitted: ${currentHeadReviewThreads.length - threadEvidence.length}`]
+      : []),
+    "- Before editing, classify these comments by provider/reviewer, affected file, repeated failure mode, and verifier expectation.",
+    "- Choose regression probes from representative current-head comments before changing code.",
+    "- Patch the shared failure mode first; avoid one literal wording or line-local patch per comment unless the cluster truly has independent issues.",
+  ];
+}
+
+function buildAddressingReviewStrategySwitch(
+  input: Pick<BuildCodexStartPromptInput, "state" | "record" | "failureContext" | "pr" | "reviewThreads">,
+): string[] {
   if (input.state !== "addressing_review") {
     return [];
   }
@@ -456,6 +512,7 @@ function buildAddressingReviewStrategySwitch(input: Pick<BuildCodexStartPromptIn
     "- First reproduce the blocker or prove the unresolved-thread cluster from current code and tests.",
     "- Group the repeated comments by root cause, then make the smallest focused test update that would have caught the repeated failure.",
     "- Only after that root-cause grouping should you patch code, and do not weaken attempt limits, merge gates, or configured review-bot requirements.",
+    ...buildProviderNeutralReviewLoopEvidence(input),
   ];
 }
 

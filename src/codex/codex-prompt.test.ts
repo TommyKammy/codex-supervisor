@@ -833,6 +833,18 @@ test("buildCodexPrompt switches repeated addressing-review failures to root-caus
       addressing_review_strategy: "root_cause_analysis",
       addressing_review_strategy_reason:
         "repeated_failure_signature_count=2; signature=1 unresolved automated review thread(s) remain.; tracked_pr_progress=no_meaningful_tracked_pr_progress; repeat_decision=retry_on_progress",
+      review_loop_retry_state: [
+        {
+          fingerprint: "pr=144|head=head-review-144|thread=thread-repeat|comment=comment-repeat",
+          pr_number: 144,
+          head_sha: "head-review-144",
+          thread_id: "thread-repeat",
+          latest_comment_fingerprint: "comment-repeat",
+          attempts: 2,
+          first_attempted_at: "2026-03-11T00:05:00Z",
+          last_attempted_at: "2026-03-11T00:15:00Z",
+        },
+      ],
     },
     pr: createPullRequest({
       number: 144,
@@ -860,6 +872,44 @@ test("buildCodexPrompt switches repeated addressing-review failures to root-caus
           ],
         },
       }),
+      createReviewThread({
+        id: "thread-resolved",
+        isResolved: true,
+        path: "src/resolved.ts",
+        comments: {
+          nodes: [
+            {
+              id: "comment-resolved",
+              body: "This resolved thread should not drive the current-head cluster.",
+              createdAt: "2026-03-11T00:01:00Z",
+              url: "https://example.test/pr/144#discussion_resolved",
+              author: {
+                login: "resolved-reviewer",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+      createReviewThread({
+        id: "thread-outdated",
+        isOutdated: true,
+        path: "src/outdated.ts",
+        comments: {
+          nodes: [
+            {
+              id: "comment-outdated",
+              body: "This outdated thread should not drive the current-head cluster.",
+              createdAt: "2026-03-11T00:02:00Z",
+              url: "https://example.test/pr/144#discussion_outdated",
+              author: {
+                login: "outdated-reviewer",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
     ],
     alwaysReadFiles: [],
     onDemandMemoryFiles: [],
@@ -873,6 +923,18 @@ test("buildCodexPrompt switches repeated addressing-review failures to root-caus
   assert.match(prompt, /First reproduce the blocker or prove the unresolved-thread cluster from current code and tests\./);
   assert.match(prompt, /Group the repeated comments by root cause/);
   assert.match(prompt, /do not weaken attempt limits, merge gates, or configured review-bot requirements/);
+  assert.match(prompt, /Provider-neutral review-loop evidence:/);
+  assert.match(prompt, /Current-head scope: head-review-144/);
+  assert.match(prompt, /Current-head unresolved configured-provider review threads: 1/);
+  assert.match(prompt, /Provider\/reviewer identities: copilot-pull-request-reviewer/);
+  assert.match(prompt, /Affected files: src\/review\.ts/);
+  assert.match(prompt, /Thread thread-repeat/);
+  assert.match(prompt, /latest_comment_fingerprint=comment-repeat/);
+  assert.match(prompt, /retry_count=2/);
+  assert.match(prompt, /classify these comments by provider\/reviewer, affected file, repeated failure mode, and verifier expectation/);
+  assert.match(prompt, /Choose regression probes from representative current-head comments before changing code\./);
+  assert.doesNotMatch(prompt, /Provider-neutral review-loop evidence:[\s\S]*thread-resolved[\s\S]*External review miss context:/);
+  assert.doesNotMatch(prompt, /Provider-neutral review-loop evidence:[\s\S]*thread-outdated[\s\S]*External review miss context:/);
 });
 
 test("buildCodexPrompt adds structured Codex Connector must-fix guidance only for Codex Connector addressing_review", () => {
