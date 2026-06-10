@@ -508,6 +508,7 @@ function buildProviderNeutralReviewLoopEvidence(
       `  latest_comment_fingerprint=${commentFingerprint}`,
       `  retry_count=${trackedRetryCount > 0 ? String(trackedRetryCount) : "unknown"}`,
       `  url=${evidenceComment.url ?? "n/a"}`,
+      `  comment=${truncate(evidenceComment.body.replace(/\s+/g, " ").trim(), 500) ?? ""}`,
     ].join("\n");
   });
 

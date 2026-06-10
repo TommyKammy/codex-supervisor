@@ -1087,7 +1087,9 @@ test("buildCodexPrompt builds provider-neutral review-loop evidence from active 
   assert.match(prompt, /Thread thread-active-mixed-provider/);
   assert.match(prompt, /Affected files: src\/active-loop\.ts, src\/other-loop\.ts, src\/mixed-loop\.ts/);
   assert.match(prompt, /latest_comment_fingerprint=comment-active-loop/);
+  assert.match(prompt, /comment=The current-head loop still needs file-level root-cause analysis\./);
   assert.match(prompt, /latest_comment_fingerprint=comment-active-mixed-provider/);
+  assert.match(prompt, /comment=The Copilot blocker should remain visible even if a later Codex P3 advisory is appended\./);
   assert.doesNotMatch(prompt, /Provider-neutral review-loop evidence:[\s\S]*latest_comment_fingerprint=comment-active-mixed-p3-advisory[\s\S]*External review miss context:/);
   assert.doesNotMatch(prompt, /Provider-neutral review-loop evidence:[\s\S]*thread-active-manual[\s\S]*External review miss context:/);
   assert.doesNotMatch(prompt, /Provider-neutral review-loop evidence:[\s\S]*src\/manual-loop\.ts[\s\S]*External review miss context:/);
