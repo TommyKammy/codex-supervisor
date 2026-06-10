@@ -305,11 +305,23 @@ function joinProgressValues(values: string[] | undefined): string | null {
   return Array.isArray(values) && values.length > 0 ? values.join("|") : null;
 }
 
+function processedCurrentUnresolvedReviewThreadFingerprints(current: TrackedPrProgressSnapshot): string[] {
+  const unresolvedThreadIds = new Set(current.unresolvedReviewThreadIds);
+  return (current.processedReviewThreadFingerprints ?? []).filter((fingerprint) => {
+    const match = fingerprint.match(/^(.+)@([^#]+)#/);
+    if (!match) {
+      return false;
+    }
+    const [, threadId, headSha] = match;
+    return headSha === current.headRefOid && unresolvedThreadIds.has(threadId);
+  });
+}
+
 function providerNeutralReviewLoopMadeNoProgress(
   previous: TrackedPrProgressSnapshot | null,
   current: TrackedPrProgressSnapshot,
 ): boolean {
-  const currentProcessedFingerprints = current.processedReviewThreadFingerprints ?? [];
+  const currentProcessedFingerprints = processedCurrentUnresolvedReviewThreadFingerprints(current);
   if (
     previous === null ||
     previous.headRefOid !== current.headRefOid ||
@@ -468,7 +480,7 @@ function listChangedSignals(previous: TrackedPrProgressSnapshot | null, current:
   }
 
   if (signals.length === 0 && providerNeutralReviewLoopMadeNoProgress(previous, current)) {
-    const currentProcessedFingerprints = current.processedReviewThreadFingerprints ?? [];
+    const currentProcessedFingerprints = processedCurrentUnresolvedReviewThreadFingerprints(current);
     signals.push(
       [
         "no_progress_review_loop",
