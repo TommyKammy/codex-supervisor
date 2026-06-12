@@ -30,14 +30,15 @@ import {
 import {
   buildCodexConnectorMustFixFindingDetails,
   buildCodexConnectorReviewChurnDiagnostic,
-  codexConnectorStableSameFileChurnSignature,
-  isCodexConnectorStableSameFileChurn,
 } from "../codex-connector-review-churn";
-import {
-  codexConnectorMustFixReviewThreads,
-} from "../codex-connector-review-policy";
+import { codexConnectorMustFixReviewThreads } from "../codex-connector-review-policy";
 import { isWorkstationLocalPathHygieneFailureSignature } from "../workstation-local-path-gate";
 import { buildProviderNeutralReviewLoopEvidence } from "./review-loop-prompt-evidence";
+import {
+  buildCodexConnectorReviewGuidance,
+  buildCodexConnectorSpecializedReviewLoopEvidenceLabels,
+  buildCodexConnectorStableSameFileChurnDossier,
+} from "./codex-connector-review-loop-prompt";
 
 export interface LocalReviewRepairContext {
   repairIntent?: "same_pr_fix_blocked" | "same_pr_follow_up" | "same_pr_manual_review" | "high_severity_retry" | "unspecified";
@@ -472,78 +473,6 @@ function buildAddressingReviewStrategySwitch(
   ];
 }
 
-function buildStableSameFileChurnDossier(input: Pick<BuildCodexStartPromptInput, "state" | "record" | "pr" | "reviewThreads">): string[] {
-  if (input.state !== "addressing_review" || !input.record?.last_tracked_pr_progress_snapshot) {
-    return [];
-  }
-
-  let snapshot: {
-    codexConnectorReviewChurnHistory?: Array<{
-      reviewedHeadSha: string;
-      effectiveMustFixCount: number;
-      clusterCategorySignature: string;
-    }>;
-    codexConnectorStableSameFileChurn?: {
-      streak: number;
-      dominantFile: string;
-      clusterCategorySignature: string;
-      currentEffectiveMustFixCount: number;
-      reviewedHeadShas: string[];
-      representativeThreadIds: string[];
-    };
-  };
-  try {
-    snapshot = JSON.parse(input.record.last_tracked_pr_progress_snapshot);
-  } catch {
-    return [];
-  }
-
-  const stable = snapshot.codexConnectorStableSameFileChurn;
-  if (!isCodexConnectorStableSameFileChurn(stable)) {
-    return [];
-  }
-
-  const signature = codexConnectorStableSameFileChurnSignature(stable);
-  if (signature === input.record.codex_connector_stable_churn_dossier_consumed_signature) {
-    return [];
-  }
-
-  const history = (snapshot.codexConnectorReviewChurnHistory ?? []).filter((entry) =>
-    stable.reviewedHeadShas.includes(entry.reviewedHeadSha),
-  );
-  const representativeSourceUrls = uniqueNonEmpty(
-    input.reviewThreads
-      .filter((thread) => stable.representativeThreadIds.includes(thread.id))
-      .flatMap((thread) => {
-        const url = latestReviewComment(thread)?.url;
-        return url ? [url] : [];
-      }),
-  );
-
-  return [
-    "Codex Connector stable churn dossier:",
-    `- Signature: ${signature}`,
-    `- Active PR head: ${input.pr?.headRefOid ?? stable.reviewedHeadShas[stable.reviewedHeadShas.length - 1] ?? "unknown"}`,
-    `- Recent repair heads: ${stable.reviewedHeadShas.join(", ")}`,
-    `- Must-fix count trend: ${
-      history.length > 0
-        ? history.map((entry) => `${entry.reviewedHeadSha}:${entry.effectiveMustFixCount}`).join(" -> ")
-        : String(stable.currentEffectiveMustFixCount)
-    }`,
-    `- Category signature trend: ${
-      history.length > 0
-        ? history.map((entry) => `${entry.reviewedHeadSha}:${entry.clusterCategorySignature}`).join(" -> ")
-        : stable.clusterCategorySignature
-    }`,
-    `- Dominant file: ${stable.dominantFile}`,
-    `- Current effective must-fix count: ${stable.currentEffectiveMustFixCount}`,
-    `- Representative thread ids: ${stable.representativeThreadIds.join(", ") || "none"}`,
-    `- Representative URLs: ${representativeSourceUrls.join(", ") || "none"}`,
-    "- Route this as one root-cause repair dossier, not per-thread patching.",
-    `- Read ${stable.dominantFile} as a whole before editing so the repair addresses the shared enforcement boundary.`,
-  ];
-}
-
 export interface BuildCodexResumePromptInput {
   repoSlug: string;
   issue: GitHubIssue;
@@ -818,40 +747,17 @@ function buildCodexStartPrompt(input: BuildCodexStartPromptInput): string {
       : [];
   const freshReviewCommentEvidenceExamples =
     input.state === "addressing_review" ? buildFreshReviewCommentEvidenceExamples(input.reviewThreads) : [];
-  const codexConnectorReviewGuidance =
-    usesCodexConnectorReviewProvider
-      ? [
-          "Codex Connector review handling:",
-          "- P0/P1/P2 and escalated P3 Codex Connector findings are supervisor-enforced must-fix findings.",
-          "- Same-head reply-only disagreement does not clear a must-fix finding for merge readiness.",
-          "- P3 nitpick-only findings are not enough by themselves to require a same-PR repair pass.",
-          "- If the finding is valid, make the smallest valid code fix and push a new PR head.",
-          "- If a must-fix finding conflicts with issue scope or appears unsafe to apply, route it to the existing manual/operator review path instead of self-dismissing it.",
-          ...(codexConnectorReviewChurn
-            ? [
-                "Codex Connector clustered root-cause repair:",
-                `- Triggered: review_churn must_fix=${codexConnectorReviewChurn.mustFixCount} threshold=${codexConnectorReviewChurn.threshold} concentration_basis=${codexConnectorReviewChurn.concentrationBasis} dominant_file=${codexConnectorReviewChurn.dominantFile} dominant_file_percent=${codexConnectorReviewChurn.dominantFilePercent}`,
-                `- Cluster signature: ${codexConnectorReviewChurn.signature}`,
-                `- Normalized categories: ${codexConnectorReviewChurn.normalizedCategories.join(", ")}`,
-                `- Representative threads: ${codexConnectorReviewChurn.representativeThreadIds.join(", ") || "none"}`,
-                "- Treat the comments as one review family before editing; identify the common subject, verb, scope, and truth-category failure that explains the variants.",
-                "- Prefer a generalized parser, table-driven verifier, or category-based guard over adding one literal regex or wording patch per thread.",
-                "- Use representative examples from the cluster as regression probes, then verify that the broader category is covered without weakening the fail-closed policy.",
-              ]
-            : []),
-          ...(codexConnectorMustFixFindingDetails.length > 0 && !useCodexConnectorReviewThreadFastPath
-            ? [
-                "Codex Connector must-fix findings:",
-                ...codexConnectorMustFixFindingDetails,
-              ]
-            : []),
-        ]
-      : [];
-  const stableSameFileChurnDossier = buildStableSameFileChurnDossier(input);
-  const specializedReviewLoopEvidenceLabels = [
-    ...(codexConnectorReviewChurn ? ["Codex Connector clustered root-cause repair"] : []),
-    ...(stableSameFileChurnDossier.length > 0 ? ["Codex Connector stable churn dossier"] : []),
-  ];
+  const codexConnectorReviewGuidance = buildCodexConnectorReviewGuidance({
+    usesCodexConnectorReviewProvider,
+    codexConnectorReviewChurn,
+    codexConnectorMustFixFindingDetails,
+    useCodexConnectorReviewThreadFastPath,
+  });
+  const stableSameFileChurnDossier = buildCodexConnectorStableSameFileChurnDossier(input);
+  const specializedReviewLoopEvidenceLabels = buildCodexConnectorSpecializedReviewLoopEvidenceLabels({
+    codexConnectorReviewChurn,
+    stableSameFileChurnDossier,
+  });
   const addressingReviewStrategySwitch = buildAddressingReviewStrategySwitch(input, {
     specializedReviewLoopEvidenceLabels,
   });
