@@ -22,7 +22,7 @@ import { buildIssueDefinitionFingerprint, issueDefinitionFreshnessPatch } from "
 import { RecoveryEvent } from "./run-once-cycle-prelude";
 import { StateStore } from "./core/state-store";
 import { GitHubIssue, GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig, SupervisorStateFile } from "./core/types";
-import { nowIso, truncate } from "./core/utils";
+import { truncate } from "./core/utils";
 import { resetTrackedPrHeadScopedStateOnAdvance } from "./tracked-pr-lifecycle-projection";
 import { applyFailureSignature } from "./supervisor/supervisor-failure-helpers";
 import { STALE_STABILIZING_NO_PR_RECOVERY_SIGNATURE } from "./no-pull-request-state";
@@ -53,6 +53,7 @@ import {
   shouldKeepCodexConnectorManualReviewChurnBlockQuiescent,
   shouldPreserveCodexConnectorManualReviewChurnBlock,
 } from "./recovery-codex-connector-churn";
+import { applyRecoveryEvent, buildRecoveryEvent, needsRecordUpdate } from "./recovery-event-patch";
 
 export { codexConnectorChurnStopEvidenceSource } from "./recovery-codex-connector-churn";
 
@@ -67,36 +68,6 @@ type RecoveryGitHubLike = Pick<
 > & Partial<
   Pick<import("./github").GitHubClient, "addIssueComment" | "getExternalReviewSurface" | "getIssueComments" | "updateIssueComment">
 >;
-
-function buildRecoveryEvent(issueNumber: number, reason: string): RecoveryEvent {
-  return {
-    issueNumber,
-    reason,
-    at: nowIso(),
-  };
-}
-
-function applyRecoveryEvent(
-  patch: Partial<IssueRunRecord>,
-  recoveryEvent: RecoveryEvent,
-): Partial<IssueRunRecord> {
-  return {
-    ...patch,
-    last_recovery_reason: recoveryEvent.reason,
-    last_recovery_at: recoveryEvent.at,
-  };
-}
-
-function needsRecordUpdate(record: IssueRunRecord, patch: Partial<IssueRunRecord>): boolean {
-  for (const [key, value] of Object.entries(patch)) {
-    const recordValue = record[key as keyof IssueRunRecord];
-    if (JSON.stringify(recordValue) !== JSON.stringify(value)) {
-      return true;
-    }
-  }
-
-  return false;
-}
 
 function latestFiniteTimestamp(...values: Array<string | null | undefined>): number | null {
   let latest: number | null = null;
