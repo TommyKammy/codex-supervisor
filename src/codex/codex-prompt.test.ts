@@ -1,9 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildCodexPrompt, buildCodexResumePrompt, shouldUseCompactResumePrompt } from "./codex-prompt";
+import {
+  buildCodexConnectorReviewGuidance,
+  buildCodexConnectorSpecializedReviewLoopEvidenceLabels,
+  buildCodexConnectorStableSameFileChurnDossier,
+} from "./codex-connector-review-loop-prompt";
+import { buildProviderNeutralReviewLoopEvidence } from "./review-loop-prompt-evidence";
 import { FailureContext, GitHubIssue, RunState } from "../core/types";
 import type { AgentTurnContext } from "../supervisor/agent-runner";
 import { createConfig, createPullRequest, createReviewThread } from "../turn-execution-test-helpers";
+import type { CodexConnectorReviewChurnDiagnostic } from "../codex-connector-review-churn";
 
 const issue: GitHubIssue = {
   number: 46,
@@ -1097,6 +1104,86 @@ test("buildCodexPrompt builds provider-neutral review-loop evidence from active 
   assert.doesNotMatch(prompt, /Provider-neutral review-loop evidence:[\s\S]*src\/advisory-loop\.ts[\s\S]*External review miss context:/);
 });
 
+test("buildProviderNeutralReviewLoopEvidence directly filters to active configured-provider current-head threads", () => {
+  const evidence = buildProviderNeutralReviewLoopEvidence({
+    config: createConfig({
+      reviewBotLogins: ["copilot-pull-request-reviewer"],
+    }),
+    record: null,
+    pr: createPullRequest({
+      number: 145,
+      headRefOid: "head-review-active-145",
+    }),
+    reviewThreads: [],
+    activeReviewThreads: [
+      createReviewThread({
+        id: "thread-active-loop",
+        path: "src/active-loop.ts",
+        line: 64,
+        comments: {
+          nodes: [
+            {
+              id: "comment-active-loop",
+              body: "The current-head loop still needs file-level root-cause analysis.",
+              createdAt: "2026-03-11T00:05:00Z",
+              url: "https://example.test/pr/145#discussion_active_loop",
+              author: {
+                login: "copilot-pull-request-reviewer",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+      createReviewThread({
+        id: "thread-human",
+        path: "src/manual-loop.ts",
+        comments: {
+          nodes: [
+            {
+              id: "comment-human",
+              body: "A human note should not enter provider-neutral configured-bot evidence.",
+              createdAt: "2026-03-11T00:06:00Z",
+              url: "https://example.test/pr/145#discussion_human",
+              author: {
+                login: "human-reviewer",
+                typeName: "User",
+              },
+            },
+          ],
+        },
+      }),
+      createReviewThread({
+        id: "thread-outdated",
+        path: "src/outdated-loop.ts",
+        isOutdated: true,
+        comments: {
+          nodes: [
+            {
+              id: "comment-outdated",
+              body: "An outdated configured-provider note must not drive current-head evidence.",
+              createdAt: "2026-03-11T00:04:00Z",
+              url: "https://example.test/pr/145#discussion_outdated",
+              author: {
+                login: "copilot-pull-request-reviewer",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+  }).join("\n");
+
+  assert.match(evidence, /Provider-neutral review-loop evidence:/);
+  assert.match(evidence, /Current-head scope: head-review-active-145/);
+  assert.match(evidence, /Current-head unresolved configured-provider review threads: 1/);
+  assert.match(evidence, /Thread thread-active-loop/);
+  assert.match(evidence, /latest_comment_fingerprint=comment-active-loop/);
+  assert.doesNotMatch(evidence, /thread-human/);
+  assert.doesNotMatch(evidence, /thread-outdated/);
+});
+
 test("buildCodexPrompt uses the Codex Connector finding fingerprint for provider-neutral retry counts", () => {
   const prompt = buildCodexPrompt({
     kind: "start",
@@ -1513,6 +1600,43 @@ test("buildCodexPrompt routes concentrated Codex Connector P2 cascades to root-c
   assert.doesNotMatch(prompt, /Provider-neutral review-loop evidence:/);
 });
 
+test("buildCodexConnectorReviewGuidance directly renders clustered churn as specialized evidence", () => {
+  const codexConnectorReviewChurn: CodexConnectorReviewChurnDiagnostic = {
+    mustFixCount: 4,
+    threshold: 4,
+    highestSeverity: "P2",
+    concentrationBasis: "file",
+    dominantFile: "scripts/verify-phase-release-bundle-inventory.sh",
+    dominantFileThreadCount: 4,
+    dominantFilePercent: 100,
+    fileConcentrationThresholdPercent: 75,
+    clusterCount: 2,
+    largestClusterSize: 3,
+    largestClusterPercent: 75,
+    normalizedCategories: ["truth_source", "scope"],
+    representativeThreadIds: ["thread-authority", "thread-truth"],
+    representativeSourceUrls: ["https://example.test/pr/1388#discussion_thread-authority"],
+    signature: "codex-review-churn:P2:scripts",
+    nextAction: "cluster_root_cause_repair",
+  };
+  const guidance = buildCodexConnectorReviewGuidance({
+    usesCodexConnectorReviewProvider: true,
+    codexConnectorReviewChurn,
+    codexConnectorMustFixFindingDetails: ["- Root-cause repair group 1\n  Policy: Codex Connector must_fix_remaining"],
+    useCodexConnectorReviewThreadFastPath: false,
+  }).join("\n");
+  const labels = buildCodexConnectorSpecializedReviewLoopEvidenceLabels({
+    codexConnectorReviewChurn,
+    stableSameFileChurnDossier: [],
+  });
+
+  assert.match(guidance, /Codex Connector clustered root-cause repair:/);
+  assert.match(guidance, /Triggered: review_churn must_fix=4 threshold=4/);
+  assert.match(guidance, /Normalized categories: truth_source, scope/);
+  assert.match(guidance, /Codex Connector must-fix findings:/);
+  assert.deepEqual(labels, ["Codex Connector clustered root-cause repair"]);
+});
+
 test("buildCodexPrompt adds a stable same-file Codex Connector churn repair dossier", () => {
   const pr = createPullRequest({
     number: 2250,
@@ -1623,6 +1747,70 @@ test("buildCodexPrompt adds a stable same-file Codex Connector churn repair doss
   assert.match(prompt, /Route this as one root-cause repair dossier, not per-thread patching/);
   assert.match(prompt, /Read src\/release-readiness\.ts as a whole before editing/);
   assert.doesNotMatch(prompt, /Provider-neutral review-loop evidence:/);
+});
+
+test("buildCodexConnectorStableSameFileChurnDossier directly renders unconsumed stable dossier evidence", () => {
+  const threads = ["thread-current-0", "thread-current-1"].map((id, index) =>
+    createReviewThread({
+      id,
+      path: "src/release-readiness.ts",
+      line: 120 + index,
+      comments: {
+        nodes: [
+          {
+            id: `${id}-comment`,
+            body: "P2: Keep release readiness truth-source claims blocked until verifier coverage exists.",
+            createdAt: "2026-06-01T06:30:00Z",
+            url: `https://example.test/pr/2250#discussion_${id}`,
+            author: {
+              login: "chatgpt-codex-connector[bot]",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  );
+  const dossier = buildCodexConnectorStableSameFileChurnDossier({
+    state: "addressing_review",
+    record: {
+      last_tracked_pr_progress_snapshot: JSON.stringify({
+        codexConnectorReviewChurnHistory: [
+          {
+            reviewedHeadSha: "head-current-2250",
+            effectiveMustFixCount: 5,
+            dominantFile: "src/release-readiness.ts",
+            clusterCategorySignature: "claim_detection+truth_source",
+            representativeThreadIds: ["thread-current-0", "thread-current-1"],
+          },
+        ],
+        codexConnectorStableSameFileChurn: {
+          streak: 3,
+          dominantFile: "src/release-readiness.ts",
+          clusterCategorySignature: "claim_detection+truth_source",
+          currentEffectiveMustFixCount: 5,
+          reviewedHeadShas: ["head-current-2250"],
+          representativeThreadIds: ["thread-current-0", "thread-current-1"],
+        },
+      }),
+      codex_connector_stable_churn_dossier_consumed_signature: null,
+    },
+    pr: createPullRequest({
+      number: 2250,
+      headRefOid: "head-current-2250",
+    }),
+    reviewThreads: threads,
+  });
+  const labels = buildCodexConnectorSpecializedReviewLoopEvidenceLabels({
+    codexConnectorReviewChurn: null,
+    stableSameFileChurnDossier: dossier,
+  });
+  const rendered = dossier.join("\n");
+
+  assert.match(rendered, /Codex Connector stable churn dossier:/);
+  assert.match(rendered, /Signature: codex-connector-stable-same-file-churn:src\/release-readiness\.ts:claim_detection_truth_source:head-current-2250/);
+  assert.match(rendered, /Representative URLs: https:\/\/example\.test\/pr\/2250#discussion_thread-current-0, https:\/\/example\.test\/pr\/2250#discussion_thread-current-1/);
+  assert.deepEqual(labels, ["Codex Connector stable churn dossier"]);
 });
 
 test("buildCodexPrompt detects Codex Connector churn from all active threads when repair selection is narrow", () => {
