@@ -585,7 +585,46 @@ test("evaluateDecisionKernelV2PrLifecycleAction promotes stale review residue af
   });
 });
 
-test("evaluateDecisionKernelV2PrLifecycleAction treats processed metadata-only residue as terminal operator cleanup", () => {
+test("evaluateDecisionKernelV2PrLifecycleAction promotes CLEAN metadata-only residue to merge-ready", () => {
+  const decision = evaluateDecisionKernelV2PrLifecycleAction({
+    mode: "pr_lifecycle_action_taking",
+    normalizedState: normalizePrLifecycleFacts(
+      inventory({
+        reviewThreads: {
+          unresolvedManualThreadCount: 0,
+          unresolvedCurrentHeadConfiguredBotThreadCount: 0,
+          stalePreviousHeadConfiguredBotThreadCount: 0,
+          metadataOnlyUnresolvedThreadCount: 1,
+        },
+      }),
+    ),
+    reviewPolicyInput: reviewPolicyInput(["metadata_only_unresolved"]),
+    checkPolicyInput: {
+      mergeReadyBlockedByRequiredChecks: false,
+      mergeReadyBlockedByLocalCi: false,
+      mergeReadyBlockedByFinalGuard: false,
+    },
+  });
+
+  assert.equal(decision.v2Decision.action, "merge");
+  assert.deepEqual(decision.v2Decision.reasons, ["merge_ready_diagnostic_only"]);
+  assert.equal(decision.v2Decision.normalizedState.reviewPosture, "metadata_only_unresolved");
+  assert.equal(decision.action, "merge");
+  assert.deepEqual(decision.reasons, ["v2_merge_ready"]);
+  assert.deepEqual(decision.evidenceTokens, [
+    "v2_reason=merge_ready_diagnostic_only",
+    "gate=head_sha:current_head",
+    "gate=local_state:fresh",
+    "gate=review:metadata_only_unresolved",
+    "gate=checks:green",
+    "gate=mergeability:mergeable",
+    "gate=required_checks:passed",
+    "gate=local_verification:passed",
+    "gate=final_guard:passed",
+  ]);
+});
+
+test("evaluateDecisionKernelV2PrLifecycleAction still requires merge gate evidence for metadata-only residue", () => {
   const decision = evaluateDecisionKernelV2PrLifecycleAction({
     mode: "pr_lifecycle_action_taking",
     normalizedState: normalizePrLifecycleFacts(
@@ -601,6 +640,51 @@ test("evaluateDecisionKernelV2PrLifecycleAction treats processed metadata-only r
     reviewPolicyInput: reviewPolicyInput(["metadata_only_unresolved"]),
   });
 
+  assert.equal(decision.v2Decision.action, "merge");
+  assert.equal(decision.action, "ask_operator");
+  assert.deepEqual(decision.reasons, ["v2_merge_gate_evidence_missing"]);
+  assert.deepEqual(decision.evidenceTokens, [
+    "missing=merge_gate_input",
+    "v2_reason=merge_ready_diagnostic_only",
+    "gate=head_sha:current_head",
+    "gate=local_state:fresh",
+    "gate=review:metadata_only_unresolved",
+    "gate=checks:green",
+    "gate=mergeability:mergeable",
+    "gate=required_checks:missing",
+    "gate=local_verification:missing",
+    "gate=final_guard:missing",
+  ]);
+});
+
+test("evaluateDecisionKernelV2PrLifecycleAction keeps metadata-only residue terminal when GitHub is blocked", () => {
+  const decision = evaluateDecisionKernelV2PrLifecycleAction({
+    mode: "pr_lifecycle_action_taking",
+    normalizedState: normalizePrLifecycleFacts(
+      inventory({
+        pullRequest: {
+          number: 2312,
+          headSha: "head-current",
+          state: "OPEN",
+          isDraft: false,
+          mergeStateStatus: "BLOCKED",
+          mergeable: "MERGEABLE",
+          currentHeadReviewObservedAt: "2026-06-09T00:01:00.000Z",
+          currentHeadReviewHeadSha: "head-current",
+        },
+        reviewThreads: {
+          unresolvedManualThreadCount: 0,
+          unresolvedCurrentHeadConfiguredBotThreadCount: 0,
+          stalePreviousHeadConfiguredBotThreadCount: 0,
+          metadataOnlyUnresolvedThreadCount: 1,
+        },
+      }),
+    ),
+    reviewPolicyInput: reviewPolicyInput(["metadata_only_unresolved"]),
+  });
+
+  assert.equal(decision.v2Decision.action, "ask_operator");
+  assert.deepEqual(decision.v2Decision.reasons, ["metadata_only_review_residue"]);
   assert.equal(decision.action, "ask_operator");
   assert.deepEqual(decision.reasons, ["v2_metadata_terminal"]);
   assert.deepEqual(decision.evidenceTokens, [
