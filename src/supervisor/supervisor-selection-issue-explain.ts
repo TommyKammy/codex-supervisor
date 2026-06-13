@@ -121,6 +121,10 @@ export interface SupervisorExplainDto {
   staleDiagnosticSummary?: string | null;
   staleReviewBotRemediation?: StaleReviewBotRemediationDto | null;
   staleReviewBotThreadDiagnostics?: StaleReviewBotThreadDiagnosticsDto | null;
+  staleReviewBotPr?: Pick<
+    GitHubPullRequest,
+    "state" | "isDraft" | "mergeStateStatus" | "mergeable" | "reviewDecision"
+  > | null;
   effectiveReviewThreadDiagnosticsSummary?: string | null;
   codexConnectorOperatorDiagnosticSummary?: string | null;
   codexConnectorPolicyBlockSummary?: string | null;
@@ -610,6 +614,7 @@ export async function buildIssueExplainDto(
     staleDiagnosticSummary,
     staleReviewBotRemediation,
     staleReviewBotThreadDiagnostics,
+    staleReviewBotPr: staleReviewBotRemediation && pr ? pr : null,
     effectiveReviewThreadDiagnosticsSummary,
     codexConnectorOperatorDiagnosticSummary: codexConnectorDiagnostics?.operatorDiagnosticSummary ?? null,
     codexConnectorPolicyBlockSummary: codexConnectorDiagnostics?.policyBlockSummary ?? null,
@@ -704,6 +709,7 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
           formatStaleReviewBotTerminalStopLine({
             remediation: dto.staleReviewBotRemediation,
             diagnostics: dto.staleReviewBotThreadDiagnostics,
+            pr: dto.staleReviewBotPr,
           }),
         ].filter((line): line is string => line !== null)
       : []),

@@ -194,6 +194,7 @@ export function buildInactiveDetailedStatusLines(
       const terminalStopLine = formatStaleReviewBotTerminalStopLine({
         remediation: staleReviewBotRemediation,
         diagnostics,
+        pr,
       });
       if (terminalStopLine) {
         lines.push(terminalStopLine);

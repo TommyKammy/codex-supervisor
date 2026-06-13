@@ -71,6 +71,23 @@ test("classifyStaleReviewBotRemediationPolicy accepts verified current-head repa
   );
 });
 
+test("classifyStaleReviewBotRemediationPolicy requires Codex no-major or deterministic repair evidence", () => {
+  assert.deepEqual(
+    policy({
+      verificationEvidenceSummary: "focused_verifier_passed",
+      hasExplicitCurrentHeadRepairVerification: true,
+      allMustFixRepairResidueThreadsAreP2: true,
+      currentHeadSuccess: true,
+    }),
+    {
+      classification: "unknown_needs_operator",
+      summary: "code_or_ci_green_but_review_thread_metadata_unresolved",
+      verificationEvidenceSummary: "focused_verifier_passed",
+      missingProbeReason: "current_head_codex_no_major_signal_missing",
+    },
+  );
+});
+
 test("classifyStaleReviewBotAutoRepairSuppressionPolicy preserves repeat-stop suppression reason", () => {
   assert.equal(
     classifyStaleReviewBotAutoRepairSuppressionPolicy({

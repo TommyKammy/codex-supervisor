@@ -29,10 +29,14 @@ import { hasCodexConnectorReviewRequestCommentIdentity } from "../codex-connecto
 import {
   formatStaleReviewMetadataConvergenceDiagnostic,
   formatStaleReviewResidueOperatorDiagnostic,
+  githubPullRequestAllowsMergeReadyAction,
   shouldSuppressActionableCodexDiagnostics,
   shouldUseStaleReviewRemediationDiagnostic,
 } from "./stale-review-bot-diagnostics-presenter";
-import { type StaleReviewBotRemediationDto } from "./stale-review-bot-remediation";
+import {
+  buildStaleReviewBotThreadDiagnostics,
+  type StaleReviewBotRemediationDto,
+} from "./stale-review-bot-remediation";
 
 function addMinutes(timestamp: string, minutes: number): string | null {
   const parsed = Date.parse(timestamp);
@@ -665,6 +669,22 @@ export function buildCodexConnectorDiagnosticBundle(args: {
       })
     : null;
   const stableSameFileChurn = detectStableSameFileCodexConnectorChurn(reviewChurnHistory);
+  const staleReviewBotThreadDiagnostics = staleReviewBotRemediation
+    ? buildStaleReviewBotThreadDiagnostics({
+        config: args.config,
+        record: args.record,
+        pr: args.pr,
+        checks: args.checks,
+        reviewThreads: args.reviewThreads,
+        remediation: staleReviewBotRemediation,
+      })
+    : null;
+  const verifiedCurrentHeadRepairResidueMergeReady = Boolean(
+    staleReviewBotRemediation?.classification === "verified_current_head_repair_pending_thread_resolution" &&
+      args.config.verifiedCurrentHeadRepairReviewThreadAutoResolve === true &&
+      staleReviewBotThreadDiagnostics?.autoRepairSuppressedReason === "none" &&
+      githubPullRequestAllowsMergeReadyAction(args.pr),
+  );
   return {
     policyBlockSummary: policyBlock ? formatCodexConnectorPolicyBlockDiagnostic(policyBlock) : null,
     p2p3PolicySummary: p2p3Policy ? formatCodexConnectorP2P3PolicyDiagnostic(p2p3Policy) : null,
@@ -722,8 +742,7 @@ export function buildCodexConnectorDiagnosticBundle(args: {
     operatorDiagnosticSummary: staleReviewBotRemediation
       ? formatStaleReviewResidueOperatorDiagnostic({
         remediation: staleReviewBotRemediation,
-        verifiedCurrentHeadRepairResidueMergeReady:
-          args.config.verifiedCurrentHeadRepairReviewThreadAutoResolve === true,
+        verifiedCurrentHeadRepairResidueMergeReady,
       })
       : formatCodexConnectorOperatorDiagnostic({
         config: args.config,

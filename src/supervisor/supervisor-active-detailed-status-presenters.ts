@@ -191,7 +191,7 @@ export function buildActiveStaleReviewBotDiagnosticLines(
     });
     if (diagnostics) {
       lines.push(formatStaleReviewBotThreadDiagnosticsLine(diagnostics));
-      const terminalStopLine = formatStaleReviewBotTerminalStopLine({ remediation, diagnostics });
+      const terminalStopLine = formatStaleReviewBotTerminalStopLine({ remediation, diagnostics, pr });
       if (terminalStopLine) {
         lines.push(terminalStopLine);
       }

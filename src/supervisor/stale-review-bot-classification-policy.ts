@@ -154,17 +154,6 @@ function classifyCodexReviewBotPolicy(
       args.hasExplicitCurrentHeadRepairVerification ||
       (!args.hasMarkedNoSourceChangeRepair && args.repairAttemptCount > 0);
     if (!args.noMajorSignalEvidence) {
-      if (
-        verifiedCurrentHeadRepair &&
-        args.allMustFixRepairResidueThreadsAreP2 &&
-        args.currentHeadSuccess
-      ) {
-        return {
-          classification: "verified_current_head_repair_pending_thread_resolution",
-          summary: VERIFIED_CURRENT_HEAD_REPAIR_SUMMARY,
-          verificationEvidenceSummary: args.verificationEvidenceSummary,
-        };
-      }
       if (args.deterministicProbeEvidence) {
         return {
           classification: "verified_current_head_repair_pending_thread_resolution",

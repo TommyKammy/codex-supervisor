@@ -8,6 +8,7 @@ import { renderSupervisorStatusDto } from "./supervisor-status-report";
 import { Supervisor } from "./supervisor";
 import {
   branchName,
+  createConfig,
   createRecord,
   createPullRequest,
   createSupervisorFixture,
@@ -26,7 +27,11 @@ import {
   formatStaleReviewMetadataConvergenceDiagnostic,
   formatStaleReviewBotTerminalStopLine,
 } from "./stale-review-bot-diagnostics-presenter";
-import { formatStaleReviewResidueOperatorDiagnostic } from "./supervisor-status-review-bot";
+import {
+  buildCodexConnectorDiagnosticBundle,
+  formatStaleReviewResidueOperatorDiagnostic,
+} from "./supervisor-status-review-bot";
+import { buildStaleReviewBotRemediation } from "./stale-review-bot-remediation";
 import {
   clearCurrentReconciliationPhase,
   writeCurrentReconciliationPhase,
@@ -121,6 +126,137 @@ test("stale review-bot presenter keeps residue and metadata diagnostic lines sta
     }),
     "stale_review_bot_terminal_stop issue=#366 pr=#44 reason=metadata_only_review_thread_resolution_pending classification=metadata_only_missing_current_head_review head_freshness=processed_on_current_head:yes,current_head_success:yes review_thread_classification=unresolved:1,must_fix:0,verified_residue:0 auto_repair_suppressed_reason=not_verified_stale_residue next_action=request_current_head_review",
   );
+});
+
+test("stale review-bot terminal stop only reports merge-ready when GitHub is merge-ready", () => {
+  const remediation = {
+    issueNumber: 401,
+    prNumber: 501,
+    reasonCode: "stale_review_bot" as const,
+    currentHeadSha: "head-401",
+    processedOnCurrentHead: "yes" as const,
+    codeCiState: "green" as const,
+    classification: "verified_current_head_repair_pending_thread_resolution" as const,
+    codexCurrentHeadReviewState: "observed" as const,
+    reviewThreadUrl: "https://example.test/pr/501#discussion_r401",
+    verificationEvidenceSummary: "focused_verifier_passed;codex_pr_success_comment_after_current_head_request",
+    missingProbeReason: null,
+    manualNextStep: "resolve_verified_repaired_configured_bot_threads_then_rerun_supervisor",
+    summary: "verified_current_head_repair_configured_bot_thread_resolution_pending",
+  };
+  const diagnostics = {
+    issueNumber: 401,
+    prNumber: 501,
+    currentHeadSuccess: "yes" as const,
+    unresolvedCurrentThreads: 1,
+    actionableMustFixThreads: 1,
+    verifiedStaleResidueThreads: 1,
+    missingVerificationEvidenceThreads: 0,
+    repeatStopExhausted: "no" as const,
+    autoRepairSuppressedReason: "none" as const,
+  };
+
+  assert.match(
+    formatStaleReviewBotTerminalStopLine({
+      remediation,
+      diagnostics,
+      pr: createPullRequest({ reviewDecision: "CHANGES_REQUESTED" }),
+    }) ?? "",
+    /next_action=resolve_verified_review_thread_metadata$/,
+  );
+  assert.match(
+    formatStaleReviewBotTerminalStopLine({
+      remediation,
+      diagnostics,
+      pr: createPullRequest(),
+    }) ?? "",
+    /next_action=merge_ready$/,
+  );
+});
+
+test("Codex connector operator diagnostic honors auto-repair suppression before merge-ready", () => {
+  const issueNumber = 402;
+  const prNumber = 502;
+  const headSha = "76060523f803ebe25832cb2c355aaaa9530502f5";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-402",
+    commentId: "comment-402",
+    path: "src/auth-boundary.ts",
+    line: 91,
+    severity: "P2",
+    commentBody: "P2: Prove the repaired auth boundary is covered before merge.",
+    discussionUrl: "https://example.test/pr/502#discussion_r402",
+    verifiedRepair: {
+      summary: "Focused verifier passed after the repair commit.",
+      ranAt: "2026-05-15T00:18:00Z",
+      command: "npx tsx --test src/supervisor/supervisor-diagnostics-stale-review-bot-status.test.ts",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+    currentHeadNoMajorReview: {
+      requestedAt: "2026-05-15T00:12:00Z",
+      observedAt: "2026-05-15T00:17:00Z",
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    processed_review_thread_ids: [
+      ...(scenario.recordPatch.processed_review_thread_ids ?? []),
+      `thread-402@${headSha}`,
+    ],
+    processed_review_thread_fingerprints: [
+      ...(scenario.recordPatch.processed_review_thread_fingerprints ?? []),
+      `thread-402@${headSha}#comment-402-maintainer-follow-up`,
+    ],
+  });
+  const pr = createPullRequest(scenario.pullRequestPatch);
+  const suppressedThread = {
+    ...scenario.reviewThread,
+    comments: {
+      nodes: [
+        ...scenario.reviewThread.comments.nodes,
+        {
+          id: "comment-402-maintainer-follow-up",
+          body: "Leaving this unresolved until the operator confirms the thread outcome.",
+          createdAt: "2026-05-15T00:19:00Z",
+          url: "https://example.test/pr/502#discussion_r402_human",
+          author: {
+            login: "maintainer",
+            typeName: "User",
+          },
+        },
+      ],
+    },
+  };
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: scenario.passingChecks,
+    reviewThreads: [suppressedThread],
+  });
+  assert.equal(remediation?.classification, "verified_current_head_repair_pending_thread_resolution");
+
+  const diagnostics = buildCodexConnectorDiagnosticBundle({
+    config,
+    record,
+    pr,
+    checks: scenario.passingChecks,
+    reviewThreads: [suppressedThread],
+    staleReviewBotRemediation: remediation,
+  });
+
+  assert.match(
+    diagnostics.operatorDiagnosticSummary ?? "",
+    /next_action=resolve_verified_repaired_configured_bot_threads_then_rerun_supervisor$/,
+  );
+  assert.doesNotMatch(diagnostics.operatorDiagnosticSummary ?? "", /next_action=merge_ready$/);
 });
 
 test("status --why classifies current-head processed configured-bot success as stale metadata remediation while idle", async (t) => {

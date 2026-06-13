@@ -6,6 +6,23 @@ import {
 } from "./stale-review-bot-remediation";
 import { GitHubPullRequest } from "../core/types";
 
+export function githubPullRequestAllowsMergeReadyAction(
+  pr: Pick<
+    GitHubPullRequest,
+    "state" | "isDraft" | "mergeStateStatus" | "mergeable" | "reviewDecision"
+  > | null | undefined,
+): boolean {
+  return Boolean(
+    pr &&
+      pr.state === "OPEN" &&
+      !pr.isDraft &&
+      pr.mergeStateStatus === "CLEAN" &&
+      pr.mergeable === "MERGEABLE" &&
+      pr.reviewDecision !== "CHANGES_REQUESTED" &&
+      pr.reviewDecision !== "REVIEW_REQUIRED",
+  );
+}
+
 export function formatStaleReviewBotRemediationLine(remediation: StaleReviewBotRemediationDto): string {
   const tokens = [
     "stale_review_bot_remediation",
@@ -56,6 +73,10 @@ export function formatStaleReviewBotThreadDiagnosticsLine(
 export function formatStaleReviewBotTerminalStopLine(args: {
   remediation: StaleReviewBotRemediationDto;
   diagnostics: StaleReviewBotThreadDiagnosticsDto;
+  pr?: Pick<
+    GitHubPullRequest,
+    "state" | "isDraft" | "mergeStateStatus" | "mergeable" | "reviewDecision"
+  > | null;
 }): string | null {
   const { remediation, diagnostics } = args;
   const metadataTerminal =
@@ -74,8 +95,9 @@ export function formatStaleReviewBotTerminalStopLine(args: {
       ? "manual_review_thread_handling"
       : remediation.classification === "metadata_only_missing_current_head_review"
         ? "request_current_head_review"
-        : remediation.classification === "verified_current_head_repair_pending_thread_resolution" &&
-            diagnostics.autoRepairSuppressedReason === "none"
+      : remediation.classification === "verified_current_head_repair_pending_thread_resolution" &&
+            diagnostics.autoRepairSuppressedReason === "none" &&
+            githubPullRequestAllowsMergeReadyAction(args.pr)
           ? "merge_ready"
         : remediation.classification === "verified_no_source_change_pending_thread_resolution" ||
             remediation.classification === "verified_current_head_repair_pending_thread_resolution"
