@@ -45,10 +45,10 @@ import {
   hasCodexConnectorFindingReviewComment,
 } from "./codex-connector-review-policy";
 import {
-  buildPreservedCodexConnectorChurnProgressSnapshot,
+  buildPreservedCodexConnectorManualReviewChurnPatch,
+  buildPreservedCodexConnectorManualReviewChurnReason,
   effectiveCurrentCodexConnectorMustFixBlockers,
   hasCodexConnectorChurnStopEvidence,
-  preservedCodexConnectorChurnProgressSummary,
   sameHeadCodexConnectorChurnBlockerUnchanged,
   shouldKeepCodexConnectorManualReviewChurnBlockQuiescent,
   shouldPreserveCodexConnectorManualReviewChurnBlock,
@@ -631,46 +631,30 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
           nextState,
         })
       ) {
-        const previousHead = record.last_head_sha ?? "unknown";
         const recoveryEvent = buildRecoveryEvent(
           record.issue_number,
-          `tracked_pr_manual_review_preserved: preserved issue #${record.issue_number} manual-review block after tracked PR #${trackedPullRequest.number} advanced from ${previousHead} to ${trackedPullRequest.headRefOid} because unresolved configured-bot review evidence still exists`,
+          buildPreservedCodexConnectorManualReviewChurnReason({
+            issueNumber: record.issue_number,
+            pullRequestNumber: trackedPullRequest.number,
+            previousHeadSha: record.last_head_sha,
+            nextHeadSha: trackedPullRequest.headRefOid,
+          }),
         );
-        const headAdvanceResetPatch = resetTrackedPrHeadScopedStateOnAdvance(record, trackedPullRequest.headRefOid);
-        const preservedFailureContext = buildReviewFailureContext(
-          effectiveCurrentCodexConnectorReviewThreads,
-          config,
-          trackedPullRequest,
-        );
-        const preservedFailureSignaturePatch = applyFailureSignature({
-          ...record,
-          last_failure_signature: null,
-          repeated_failure_signature_count: 0,
-        }, preservedFailureContext);
-        const preservePatch = applyRecoveryEvent({
-          state: "blocked",
-          blocked_reason: "manual_review",
-          last_error: preservedFailureContext ? truncate(preservedFailureContext.summary, 1000) : null,
-          last_failure_kind: null,
-          last_failure_context: preservedFailureContext,
-          last_blocker_signature: null,
-          ...preservedFailureSignaturePatch,
-          pr_number: trackedPullRequest.number,
-          ...headAdvanceResetPatch,
-          last_head_sha: trackedPullRequest.headRefOid,
-          last_tracked_pr_progress_snapshot: buildPreservedCodexConnectorChurnProgressSnapshot({
+        const preservePatch = applyRecoveryEvent(
+          buildPreservedCodexConnectorManualReviewChurnPatch({
             config,
-            record: projection.recordForState,
+            record,
+            recordForSnapshot: projection.recordForState,
             pr: trackedPullRequest,
             checks,
             effectiveReviewThreads: effectiveCurrentCodexConnectorReviewThreads,
+            reviewWaitPatch: projection.reviewWaitPatch,
+            codexConnectorReviewRequestObservationPatch: projection.codexConnectorReviewRequestObservationPatch,
+            copilotReviewRequestObservationPatch: projection.copilotReviewRequestObservationPatch,
+            copilotReviewTimeoutPatch: projection.copilotReviewTimeoutPatch,
           }),
-          last_tracked_pr_progress_summary: preservedCodexConnectorChurnProgressSummary(record),
-          ...projection.reviewWaitPatch,
-          ...projection.codexConnectorReviewRequestObservationPatch,
-          ...projection.copilotReviewRequestObservationPatch,
-          ...projection.copilotReviewTimeoutPatch,
-        }, recoveryEvent);
+          recoveryEvent,
+        );
         if (needsRecordUpdate(record, preservePatch)) {
           const updated = stateStore.touch(record, preservePatch);
           state.issues[String(record.issue_number)] = updated;

@@ -4,7 +4,11 @@ import {
   latestCodexConnectorReviewCommentFingerprint,
 } from "./codex-connector-review-policy";
 import type { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "./core/types";
+import { truncate } from "./core/utils";
 import { effectiveConfiguredBotReviewThreadsForState } from "./pull-request-state";
+import { buildReviewFailureContext } from "./review-thread-reporting";
+import { applyFailureSignature } from "./supervisor/supervisor-failure-helpers";
+import { resetTrackedPrHeadScopedStateOnAdvance } from "./tracked-pr-lifecycle-projection";
 
 export function hasCodexConnectorChurnStopEvidence(
   record: Pick<
@@ -229,4 +233,63 @@ export function shouldKeepCodexConnectorManualReviewChurnBlockQuiescent(args: {
     hasCodexConnectorChurnStopEvidence(args.record) &&
     args.effectiveReviewThreads.length > 0
   );
+}
+
+export function buildPreservedCodexConnectorManualReviewChurnReason(args: {
+  issueNumber: number;
+  pullRequestNumber: number;
+  previousHeadSha: string | null;
+  nextHeadSha: string;
+}): string {
+  return `tracked_pr_manual_review_preserved: preserved issue #${args.issueNumber} manual-review block after tracked PR #${args.pullRequestNumber} advanced from ${args.previousHeadSha ?? "unknown"} to ${args.nextHeadSha} because unresolved configured-bot review evidence still exists`;
+}
+
+export function buildPreservedCodexConnectorManualReviewChurnPatch(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  recordForSnapshot: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  effectiveReviewThreads: ReviewThread[];
+  reviewWaitPatch: Partial<IssueRunRecord>;
+  codexConnectorReviewRequestObservationPatch: Partial<IssueRunRecord>;
+  copilotReviewRequestObservationPatch: Partial<IssueRunRecord>;
+  copilotReviewTimeoutPatch: Partial<IssueRunRecord>;
+}): Partial<IssueRunRecord> {
+  const headAdvanceResetPatch = resetTrackedPrHeadScopedStateOnAdvance(args.record, args.pr.headRefOid);
+  const preservedFailureContext = buildReviewFailureContext(
+    args.effectiveReviewThreads,
+    args.config,
+    args.pr,
+  );
+  const preservedFailureSignaturePatch = applyFailureSignature({
+    ...args.record,
+    last_failure_signature: null,
+    repeated_failure_signature_count: 0,
+  }, preservedFailureContext);
+
+  return {
+    state: "blocked",
+    blocked_reason: "manual_review",
+    last_error: preservedFailureContext ? truncate(preservedFailureContext.summary, 1000) : null,
+    last_failure_kind: null,
+    last_failure_context: preservedFailureContext,
+    last_blocker_signature: null,
+    ...preservedFailureSignaturePatch,
+    pr_number: args.pr.number,
+    ...headAdvanceResetPatch,
+    last_head_sha: args.pr.headRefOid,
+    last_tracked_pr_progress_snapshot: buildPreservedCodexConnectorChurnProgressSnapshot({
+      config: args.config,
+      record: args.recordForSnapshot,
+      pr: args.pr,
+      checks: args.checks,
+      effectiveReviewThreads: args.effectiveReviewThreads,
+    }),
+    last_tracked_pr_progress_summary: preservedCodexConnectorChurnProgressSummary(args.record),
+    ...args.reviewWaitPatch,
+    ...args.codexConnectorReviewRequestObservationPatch,
+    ...args.copilotReviewRequestObservationPatch,
+    ...args.copilotReviewTimeoutPatch,
+  };
 }
