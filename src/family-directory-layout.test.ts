@@ -104,6 +104,7 @@ const EXPECTED_TOP_LEVEL_ENTRIES = {
     "turn-execution-failure-helpers.ts",
     "turn-execution-orchestration.ts",
     "turn-execution-path-hygiene-persistence.ts",
+    "turn-execution-post-publication-review.ts",
     "turn-execution-publication-gate.ts",
     "turn-execution-same-turn-repair.ts",
     "turn-execution-test-helpers.ts",
