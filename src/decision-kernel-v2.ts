@@ -247,15 +247,6 @@ function selectReadOnlyDecision(
     return decision("wait", ["checks_unknown"], ["green_checks"], "Required check status is unknown.");
   }
 
-  if (state.reviewPosture === "metadata_only_unresolved" || reviewPolicy.metadataOnly > 0) {
-    return decision(
-      "ask_operator",
-      ["metadata_only_review_residue"],
-      ["resolved_metadata_residue"],
-      "Unresolved review metadata remains after source repair evidence.",
-    );
-  }
-
   if (state.reviewPosture === "stale_previous_head_review" || reviewPolicy.staleCommit > 0) {
     return decision(
       "wait",
@@ -270,7 +261,8 @@ function selectReadOnlyDecision(
     state.localStateFreshness === "fresh" &&
     (state.reviewPosture === "current_head_review_observed" ||
       state.reviewPosture === "no_unresolved_review" ||
-      (state.reviewPosture === "review_blocked" && reviewPolicyAllowsAdvisoryOnly(reviewPolicy))) &&
+      state.reviewPosture === "metadata_only_unresolved" ||
+      (state.reviewPosture === "review_blocked" && reviewPolicyAllowsNonBlockingReviewResidue(reviewPolicy))) &&
     (state.checkPosture === "green" || checkPolicy.noChecksAndNoLocalCi) &&
     !checkPolicy.mergeReadyBlockedByRequiredChecks &&
     !checkPolicy.mergeReadyBlockedByLocalCi &&
@@ -278,6 +270,18 @@ function selectReadOnlyDecision(
     state.mergeability === "mergeable"
   ) {
     return decision("merge", ["merge_ready_diagnostic_only"], [], "PR appears merge-ready.");
+  }
+
+  if (
+    (state.reviewPosture === "metadata_only_unresolved" || reviewPolicy.metadataOnly > 0) &&
+    state.mergeability !== "mergeable"
+  ) {
+    return decision(
+      "ask_operator",
+      ["metadata_only_review_residue"],
+      ["resolved_metadata_residue"],
+      "Unresolved review metadata remains after source repair evidence.",
+    );
   }
 
   return decision(
@@ -355,13 +359,12 @@ function isCurrentHeadMustFixBoundary(outcome: ReviewPolicyBoundaryOutcome): boo
   return outcome === "must_fix_current_head" || outcome === "escalated_p3";
 }
 
-function reviewPolicyAllowsAdvisoryOnly(reviewPolicy: ReviewPolicyBoundarySummary): boolean {
+function reviewPolicyAllowsNonBlockingReviewResidue(reviewPolicy: ReviewPolicyBoundarySummary): boolean {
   return (
     reviewPolicy.hasInput &&
     reviewPolicy.hasCodexProvider &&
     !reviewPolicy.inputMismatch &&
     reviewPolicy.currentHeadMustFix === 0 &&
-    reviewPolicy.metadataOnly === 0 &&
     reviewPolicy.manual === 0 &&
     reviewPolicy.staleCommit === 0
   );

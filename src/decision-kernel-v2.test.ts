@@ -221,15 +221,23 @@ test("evaluateDecisionKernelV2ReadOnly snapshots normalized state", () => {
   assert.notEqual(decision.normalizedState.evidence, normalizedState.evidence);
 });
 
-test("evaluateDecisionKernelV2ReadOnly keeps metadata residue distinct from source repair", () => {
+test("evaluateDecisionKernelV2ReadOnly treats clean metadata-only residue as merge-ready", () => {
   const decision = evaluateDecisionKernelV2ReadOnly({
-    normalizedState: state(),
+    normalizedState: state({
+      reviewThreads: {
+        unresolvedManualThreadCount: 0,
+        unresolvedCurrentHeadConfiguredBotThreadCount: 0,
+        stalePreviousHeadConfiguredBotThreadCount: 0,
+        metadataOnlyUnresolvedThreadCount: 1,
+      },
+    }),
     reviewPolicyInput: reviewPolicyInput(["metadata_only_unresolved"]),
   });
 
-  assert.equal(decision.action, "ask_operator");
-  assert.deepEqual(decision.reasons, ["metadata_only_review_residue"]);
-  assert.deepEqual(decision.requiredEvidence, ["resolved_metadata_residue"]);
+  assert.equal(decision.normalizedState.reviewPosture, "metadata_only_unresolved");
+  assert.equal(decision.action, "merge");
+  assert.deepEqual(decision.reasons, ["merge_ready_diagnostic_only"]);
+  assert.deepEqual(decision.requiredEvidence, []);
 });
 
 test("evaluateDecisionKernelV2ReadOnly honors manual review blockers before bot repairs", () => {
@@ -395,12 +403,41 @@ test("evaluateDecisionKernelV2ReadOnly fails closed on mismatched review policy 
   assert.deepEqual(decision.requiredEvidence, ["matching_review_policy_input"]);
 });
 
-test("evaluateDecisionKernelV2ReadOnly treats configured-bot residue as metadata cleanup", () => {
+test("evaluateDecisionKernelV2ReadOnly does not block clean PRs on configured-bot metadata residue", () => {
   const decision = evaluateDecisionKernelV2ReadOnly({
     normalizedState: state(),
     reviewPolicyInput: reviewPolicyInput(["configured_bot_thread"]),
   });
 
+  assert.equal(decision.action, "merge");
+  assert.deepEqual(decision.reasons, ["merge_ready_diagnostic_only"]);
+  assert.deepEqual(decision.requiredEvidence, []);
+});
+
+test("evaluateDecisionKernelV2ReadOnly keeps metadata residue blocking when GitHub is not clean", () => {
+  const decision = evaluateDecisionKernelV2ReadOnly({
+    normalizedState: state({
+      pullRequest: {
+        number: 2300,
+        headSha: "head-current",
+        state: "OPEN",
+        isDraft: false,
+        mergeStateStatus: "BLOCKED",
+        mergeable: "MERGEABLE",
+        currentHeadReviewObservedAt: "2026-06-08T00:01:00.000Z",
+        currentHeadReviewHeadSha: "head-current",
+      },
+      reviewThreads: {
+        unresolvedManualThreadCount: 0,
+        unresolvedCurrentHeadConfiguredBotThreadCount: 0,
+        stalePreviousHeadConfiguredBotThreadCount: 0,
+        metadataOnlyUnresolvedThreadCount: 1,
+      },
+    }),
+    reviewPolicyInput: reviewPolicyInput(["metadata_only_unresolved"]),
+  });
+
+  assert.equal(decision.normalizedState.mergeability, "unknown");
   assert.equal(decision.action, "ask_operator");
   assert.deepEqual(decision.reasons, ["metadata_only_review_residue"]);
   assert.deepEqual(decision.requiredEvidence, ["resolved_metadata_residue"]);
