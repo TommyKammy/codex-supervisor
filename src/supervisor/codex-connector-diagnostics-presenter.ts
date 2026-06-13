@@ -720,7 +720,11 @@ export function buildCodexConnectorDiagnosticBundle(args: {
           reviewThreads: args.reviewThreads,
         }),
     operatorDiagnosticSummary: staleReviewBotRemediation
-      ? formatStaleReviewResidueOperatorDiagnostic(staleReviewBotRemediation)
+      ? formatStaleReviewResidueOperatorDiagnostic({
+        remediation: staleReviewBotRemediation,
+        verifiedCurrentHeadRepairResidueMergeReady:
+          args.config.verifiedCurrentHeadRepairReviewThreadAutoResolve === true,
+      })
       : formatCodexConnectorOperatorDiagnostic({
         config: args.config,
         record: args.record,

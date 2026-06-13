@@ -301,6 +301,28 @@ function hasUnblockedActiveIssueState(lines: string[]): boolean {
   return lines.some((line) => /^blocked_reason=none$/u.test(line));
 }
 
+function hasVerifiedCurrentHeadRepairResidueMergeReadyDiagnostic(lines: string[]): boolean {
+  return (
+    lines.some((line) =>
+      /^tracked_pr_mismatch\b/u.test(line) &&
+        /\bgithub_state=ready_to_merge\b/u.test(line) &&
+        /\bgithub_blocked_reason=none\b/u.test(line),
+    ) &&
+    lines.some((line) =>
+      /^codex_connector_convergence\b/u.test(line) &&
+        /\bmerge_effect=ready\b/u.test(line) &&
+        /\bnext_action=merge_ready\b/u.test(line) &&
+        /\bstale_review_metadata_classification=verified_current_head_repair_pending_thread_resolution\b/u.test(line),
+    ) &&
+    lines.some((line) =>
+      /^stale_review_bot_thread_diagnostics\b/u.test(line) &&
+        /\bverified_stale_residue_threads=[1-9]\d*\b/u.test(line) &&
+        /\bmissing_verification_evidence_threads=0\b/u.test(line) &&
+        /\bauto_repair_suppressed_reason=none\b/u.test(line),
+    )
+  );
+}
+
 export function parseOperatorActionLine(line: string): OperatorAction | null {
   if (!/^(operator_action|doctor_operator_action)\b/u.test(line)) {
     return null;
@@ -485,6 +507,7 @@ export function selectStatusOperatorAction(args: {
     requestEligibleRecoverySelectedIssues,
   );
   const ignoreStaleManualReviewExecutionMetrics = hasUnblockedActiveIssueState(contextLines);
+  const verifiedRepairResidueMergeReady = hasVerifiedCurrentHeadRepairResidueMergeReadyDiagnostic(contextLines);
 
   for (const line of args.detailedStatusLines) {
     const clusteredChurnManualReviewSummary = clusteredCodexChurnManualReviewSummary(line);
@@ -588,6 +611,12 @@ export function selectStatusOperatorAction(args: {
     }
 
     if (/^stale_review_bot_remediation\b/.test(line)) {
+      if (
+        verifiedRepairResidueMergeReady &&
+        /\bclassification=verified_current_head_repair_pending_thread_resolution\b/u.test(line)
+      ) {
+        continue;
+      }
       actions.push({
         action: "resolve_stale_review_bot",
         source: "stale_review_bot_remediation",

@@ -74,6 +74,9 @@ export function formatStaleReviewBotTerminalStopLine(args: {
       ? "manual_review_thread_handling"
       : remediation.classification === "metadata_only_missing_current_head_review"
         ? "request_current_head_review"
+        : remediation.classification === "verified_current_head_repair_pending_thread_resolution" &&
+            diagnostics.autoRepairSuppressedReason === "none"
+          ? "merge_ready"
         : remediation.classification === "verified_no_source_change_pending_thread_resolution" ||
             remediation.classification === "verified_current_head_repair_pending_thread_resolution"
           ? "resolve_verified_review_thread_metadata"
@@ -92,7 +95,17 @@ export function formatStaleReviewBotTerminalStopLine(args: {
   ].join(" ");
 }
 
-export function formatStaleReviewResidueOperatorDiagnostic(remediation: StaleReviewBotRemediationDto): string {
+export function formatStaleReviewResidueOperatorDiagnostic(
+  args:
+    | StaleReviewBotRemediationDto
+    | {
+        remediation: StaleReviewBotRemediationDto;
+        verifiedCurrentHeadRepairResidueMergeReady?: boolean;
+      },
+): string {
+  const remediation = "remediation" in args ? args.remediation : args;
+  const verifiedCurrentHeadRepairResidueMergeReady =
+    "remediation" in args && args.verifiedCurrentHeadRepairResidueMergeReady === true;
   const latestConfiguredBotReviewSha =
     remediation.processedOnCurrentHead === "yes" ? remediation.currentHeadSha : "none";
   const actionableCurrentDiffThreads =
@@ -103,6 +116,9 @@ export function formatStaleReviewResidueOperatorDiagnostic(remediation: StaleRev
     remediation.classification === "metadata_only_missing_current_head_review" &&
     remediation.codexCurrentHeadReviewState === "missing"
       ? "request_current_head_review"
+      : verifiedCurrentHeadRepairResidueMergeReady &&
+          remediation.classification === "verified_current_head_repair_pending_thread_resolution"
+        ? "merge_ready"
       : remediation.manualNextStep;
   return [
     "codex_connector_operator_diagnostic",

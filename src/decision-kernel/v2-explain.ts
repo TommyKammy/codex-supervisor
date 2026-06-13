@@ -31,6 +31,7 @@ import {
 import {
   effectiveConfiguredBotReviewThreadsForState,
   hasConfiguredProviderSuccess,
+  hasVerifiedCurrentHeadRepairReviewMetadataResidue,
 } from "../pull-request-state-codex-residue-policy";
 import { configuredBotReviewThreads, manualReviewThreads } from "../review-thread-reporting";
 import { mergeConflictDetected } from "../supervisor/supervisor-reporting";
@@ -466,12 +467,21 @@ function mergeReadyBlockedByFinalGuard(args: {
 
   const autoMergePath = autoMergePathForConfig(args.config);
   const requiresCodexNoMajor = autoMergePath === "codex_connector_no_major";
+  const currentHeadCodexNoMajor =
+    hasCurrentHeadCodexNoMajor(args.record, args.pr) ||
+    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+      config: args.config,
+      record: args.record,
+      pr: args.pr,
+      checks: args.checks,
+      reviewThreads: args.reviewThreads,
+    });
 
   if (args.config.humanReviewBlocksMerge && isBlockingHumanReviewDecision(args.pr, requiresCodexNoMajor)) {
     return true;
   }
 
-  if (requiresCodexNoMajor && !hasCurrentHeadCodexNoMajor(args.record, args.pr)) {
+  if (requiresCodexNoMajor && !currentHeadCodexNoMajor) {
     return true;
   }
 

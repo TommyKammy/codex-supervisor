@@ -301,6 +301,32 @@ export function hasProvenCodexConnectorStaleReviewMetadata(args: {
   return remediation ? isProvenStaleReviewMetadataClassification(remediation.classification) : false;
 }
 
+export function hasVerifiedCurrentHeadRepairReviewMetadataResidue(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+}): boolean {
+  if (args.config.verifiedCurrentHeadRepairReviewThreadAutoResolve !== true) {
+    return false;
+  }
+
+  const recordForClassification = recordForCodexStaleReviewMetadataClassification(args);
+  if (!recordForClassification) {
+    return false;
+  }
+
+  const remediation = buildStaleReviewBotRemediation({
+    config: args.config,
+    record: recordForClassification,
+    pr: args.pr,
+    checks: args.checks,
+    reviewThreads: args.reviewThreads,
+  });
+  return remediation?.classification === "verified_current_head_repair_pending_thread_resolution";
+}
+
 function configuredBotThreadsAllowCodexConnectorCurrentHeadWait(args: {
   config: SupervisorConfig;
   record: IssueRunRecord;
