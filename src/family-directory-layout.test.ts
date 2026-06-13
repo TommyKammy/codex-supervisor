@@ -103,6 +103,7 @@ const EXPECTED_TOP_LEVEL_ENTRIES = {
     "tracked-pr-status-comment.ts",
     "turn-execution-failure-helpers.ts",
     "turn-execution-orchestration.ts",
+    "turn-execution-path-hygiene-persistence.ts",
     "turn-execution-publication-gate.ts",
     "turn-execution-test-helpers.ts",
     "verifier-guardrails.ts",

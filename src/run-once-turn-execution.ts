@@ -30,7 +30,6 @@ import {
   getStaleStabilizingNoPrRecoveryCount,
   shouldPreserveStaleStabilizingNoPrRecoveryTracking,
 } from "./no-pull-request-state";
-import * as trackedPrStatusComments from "./tracked-pr-status-comment";
 import {
   hasCurrentTurnVerifiedNoSourceChangeReviewThreadEvidence,
   nextProcessedReviewThreadPatch,
@@ -82,6 +81,10 @@ import {
   conciseCodexVerificationSummary,
   explicitPassingCodexTurnVerificationCommand,
 } from "./run-once-turn-verification-evidence";
+import {
+  persistPublicationPathHygieneBlocked,
+  persistPublicationPathHygieneRepairQueued,
+} from "./turn-execution-path-hygiene-persistence";
 
 export {
   handlePostTurnPullRequestTransitionsPhase,
@@ -606,37 +609,19 @@ export async function executeCodexTurnPhase(
                 workspaceStatus.headSha,
               );
 
-        const publishTrackedPrHostLocalBlockerComment = async (
-          failureContext: WorkstationLocalPathGateResult["failureContext"] | null,
-          remediationTarget: "manual_review" | "repair_already_queued",
-        ): Promise<{ record: IssueRunRecord; didPublish: boolean }> => {
-          if (!pr) {
-            return { record, didPublish: false };
-          }
-
-          const originalRecord = record;
-          const updatedRecord = await trackedPrStatusComments.maybeCommentOnTrackedPrHostLocalBlocker({
-            github,
-            stateStore,
-            state,
-            record,
-            pr,
-            syncJournal,
-            gateType: "workstation_local_path_hygiene",
-            blockerSignature: failureContext?.signature ?? null,
-            failureClass: failureContext?.signature ?? null,
-            remediationTarget,
-            summary:
-              failureContext?.summary ??
-              "Tracked durable artifacts failed workstation-local path hygiene before publication.",
-            details: failureContext?.details,
-            localHeadSha: workspaceStatus.headSha,
-            remoteHeadSha: pr.headRefOid,
+        const syncPathHygieneExecutionMetrics = async (
+          nextRecord: IssueRunRecord,
+        ) => {
+          await syncExecutionMetricsRunSummarySafely({
+            previousRecord: args.context.record,
+            nextRecord,
+            issue,
+            pullRequest: pr,
+            retentionRootPath: executionMetricsRetentionRootPath(
+              args.config.stateFile,
+            ),
+            warningContext: "persisting",
           });
-          return {
-            record: updatedRecord,
-            didPublish: updatedRecord !== originalRecord,
-          };
         };
         if (
           (workspaceStatus.remoteAhead > 0 ||
@@ -701,44 +686,21 @@ export async function executeCodexTurnPhase(
                         `durable artifact normalization persistence failed for ${presentRewrittenTrackedPaths.join(", ")}: ${message}`,
                       ],
                     });
-                  record = stateStore.touch(record, {
-                    state: "blocked",
-                    last_error: truncate(
-                      retryPersistenceFailureContext.summary,
-                      1000,
-                    ),
-                    last_failure_kind: null,
-                    last_failure_context: retryPersistenceFailureContext,
-                    ...args.applyFailureSignature(
+                  const persistenceResult =
+                    await persistPublicationPathHygieneBlocked({
+                      stateStore,
+                      state,
                       record,
-                      retryPersistenceFailureContext,
-                    ),
-                    blocked_reason: "verification",
-                    ...issueDefinitionFreshnessPatch(issue),
-                  });
-                  const { record: blockageRecord, didPublish } =
-                    await publishTrackedPrHostLocalBlockerComment(
-                      retryPersistenceFailureContext,
-                      "manual_review",
-                    );
-                  record = blockageRecord;
-                  if (!didPublish) {
-                    state.issues[String(record.issue_number)] = record;
-                    await stateStore.save(state);
-                  }
-                  await syncExecutionMetricsRunSummarySafely({
-                    previousRecord: args.context.record,
-                    nextRecord: record,
-                    issue,
-                    pullRequest: pr,
-                    retentionRootPath: executionMetricsRetentionRootPath(
-                      args.config.stateFile,
-                    ),
-                    warningContext: "persisting",
-                  });
-                  if (!didPublish) {
-                    await syncJournal(record);
-                  }
+                      issue,
+                      pr,
+                      github,
+                      syncJournal,
+                      failureContext: retryPersistenceFailureContext,
+                      applyFailureSignature: args.applyFailureSignature,
+                      workspaceHeadSha: workspaceStatus.headSha,
+                      syncExecutionMetricsRunSummary: syncPathHygieneExecutionMetrics,
+                    });
+                  record = persistenceResult.record;
                   return {
                     kind: "returned",
                     message: `Workstation-local path hygiene blocked publication for issue #${record.issue_number}.`,
@@ -766,92 +728,42 @@ export async function executeCodexTurnPhase(
               continue;
             }
             if (repairFailureContext !== null) {
-              record = stateStore.touch(record, {
-                state: "repairing_ci",
-                timeline_artifacts: [
-                  ...(record.timeline_artifacts ?? []),
-                  {
-                    type: "path_hygiene_result",
-                    gate: "workstation_local_path_hygiene",
-                    command: repairFailureContext.command,
-                    head_sha: workspaceStatus.headSha,
-                    outcome: "repair_queued",
-                    remediation_target: "repair_already_queued",
-                    next_action: "wait_for_repair_turn",
-                    summary: repairFailureContext.summary,
-                    recorded_at: repairFailureContext.updated_at,
-                    repair_targets: [...actionablePublishableFilePaths].sort((left, right) => left.localeCompare(right)),
-                  },
-                ],
-                last_error: truncate(repairFailureContext.summary, 1000),
-                last_failure_kind: null,
-                last_failure_context: repairFailureContext,
-                ...args.applyFailureSignature(record, repairFailureContext),
-                blocked_reason: null,
-                ...issueDefinitionFreshnessPatch(issue),
-              });
-              state.issues[String(record.issue_number)] = record;
-              await stateStore.save(state);
-              await syncExecutionMetricsRunSummarySafely({
-                previousRecord: args.context.record,
-                nextRecord: record,
-                issue,
-                pullRequest: pr,
-                retentionRootPath: executionMetricsRetentionRootPath(
-                  args.config.stateFile,
-                ),
-                warningContext: "persisting",
-              });
-              const { record: blockageRecord, didPublish } =
-                await publishTrackedPrHostLocalBlockerComment(
-                  repairFailureContext,
-                  "repair_already_queued",
-                );
-              record = blockageRecord;
-              if (!didPublish) {
-                await syncJournal(record);
-              }
+              const persistenceResult =
+                await persistPublicationPathHygieneRepairQueued({
+                  stateStore,
+                  state,
+                  record,
+                  issue,
+                  pr,
+                  github,
+                  syncJournal,
+                  failureContext: repairFailureContext,
+                  actionablePublishableFilePaths,
+                  applyFailureSignature: args.applyFailureSignature,
+                  workspaceHeadSha: workspaceStatus.headSha,
+                  syncExecutionMetricsRunSummary: syncPathHygieneExecutionMetrics,
+                });
+              record = persistenceResult.record;
               return {
                 kind: "returned",
                 message: `Workstation-local path hygiene blocked publication for issue #${record.issue_number}.`,
               };
             }
-            record = stateStore.touch(record, {
-              state: "blocked",
-              last_error: truncate(
-                failureContext?.summary ??
-                  "Tracked durable artifacts failed workstation-local path hygiene before publication.",
-                1000,
-              ),
-              last_failure_kind: null,
-              last_failure_context: failureContext,
-              ...args.applyFailureSignature(record, failureContext),
-              blocked_reason: "verification",
-              ...issueDefinitionFreshnessPatch(issue),
-            });
-            const { record: blockageRecord, didPublish } =
-              await publishTrackedPrHostLocalBlockerComment(
-              failureContext,
-              "manual_review",
-            );
-            record = blockageRecord;
-            if (!didPublish) {
-              state.issues[String(record.issue_number)] = record;
-              await stateStore.save(state);
-            }
-            await syncExecutionMetricsRunSummarySafely({
-              previousRecord: args.context.record,
-              nextRecord: record,
-              issue,
-              pullRequest: pr,
-              retentionRootPath: executionMetricsRetentionRootPath(
-                args.config.stateFile,
-              ),
-              warningContext: "persisting",
-            });
-            if (!didPublish) {
-              await syncJournal(record);
-            }
+            const persistenceResult =
+              await persistPublicationPathHygieneBlocked({
+                stateStore,
+                state,
+                record,
+                issue,
+                pr,
+                github,
+                syncJournal,
+                failureContext,
+                applyFailureSignature: args.applyFailureSignature,
+                workspaceHeadSha: workspaceStatus.headSha,
+                syncExecutionMetricsRunSummary: syncPathHygieneExecutionMetrics,
+              });
+            record = persistenceResult.record;
             return {
               kind: "returned",
               message: `Workstation-local path hygiene blocked publication for issue #${record.issue_number}.`,
@@ -885,38 +797,21 @@ export async function executeCodexTurnPhase(
                   `durable artifact normalization persistence failed for ${presentRewrittenTrackedPaths.join(", ")}: ${message}`,
                 ],
               });
-              record = stateStore.touch(record, {
-                state: "blocked",
-                last_error: truncate(failureContext.summary, 1000),
-                last_failure_kind: null,
-                last_failure_context: failureContext,
-                ...args.applyFailureSignature(record, failureContext),
-                blocked_reason: "verification",
-                ...issueDefinitionFreshnessPatch(issue),
-              });
-              const { record: blockageRecord, didPublish } =
-                await publishTrackedPrHostLocalBlockerComment(
-                failureContext,
-                "manual_review",
-              );
-              record = blockageRecord;
-              if (!didPublish) {
-                state.issues[String(record.issue_number)] = record;
-                await stateStore.save(state);
-              }
-              await syncExecutionMetricsRunSummarySafely({
-                previousRecord: args.context.record,
-                nextRecord: record,
-                issue,
-                pullRequest: pr,
-                retentionRootPath: executionMetricsRetentionRootPath(
-                  args.config.stateFile,
-                ),
-                warningContext: "persisting",
-              });
-              if (!didPublish) {
-                await syncJournal(record);
-              }
+              const persistenceResult =
+                await persistPublicationPathHygieneBlocked({
+                  stateStore,
+                  state,
+                  record,
+                  issue,
+                  pr,
+                  github,
+                  syncJournal,
+                  failureContext,
+                  applyFailureSignature: args.applyFailureSignature,
+                  workspaceHeadSha: workspaceStatus.headSha,
+                  syncExecutionMetricsRunSummary: syncPathHygieneExecutionMetrics,
+                });
+              record = persistenceResult.record;
               return {
                 kind: "returned",
                 message: `Workstation-local path hygiene blocked publication for issue #${record.issue_number}.`,
