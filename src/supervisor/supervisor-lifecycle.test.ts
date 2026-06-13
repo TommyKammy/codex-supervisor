@@ -252,6 +252,81 @@ test("derivePullRequestLifecycleSnapshot keeps queued ready-promotion path hygie
   assert.deepEqual(snapshot.failureContext?.details, ["Actionable file: docs/guide.md"]);
 });
 
+test("derivePullRequestLifecycleSnapshot keeps recovered Codex stale metadata residue merge-ready", () => {
+  const headSha = "9ba6e1cf234dd5630a2ee527cd575bebd02fbeec";
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    humanReviewBlocksMerge: true,
+  });
+  const record = createRecord({
+    issue_number: 391,
+    state: "ready_to_merge",
+    pr_number: 398,
+    last_head_sha: headSha,
+    blocked_reason: null,
+    last_error: null,
+    last_failure_context: null,
+    last_failure_signature: null,
+    repeated_failure_signature_count: 0,
+    processed_review_thread_ids: [`thread-recovered@${headSha}`],
+    processed_review_thread_fingerprints: [`thread-recovered@${headSha}#comment-recovered`],
+    latest_local_ci_result: {
+      outcome: "passed",
+      summary: "Configured local CI command passed before auto-merging PR #398.",
+      ran_at: "2026-06-13T13:40:00Z",
+      head_sha: headSha,
+      execution_mode: "shell",
+      command: "npm run verify:pre-pr",
+      failure_class: null,
+      remediation_target: null,
+    },
+    codex_connector_review_requested_observed_at: "2026-06-13T13:34:00Z",
+    codex_connector_review_requested_head_sha: headSha,
+    last_recovery_reason:
+      `tracked_pr_lifecycle_recovered: resumed issue #391 from blocked to ready_to_merge using fresh tracked PR #398 facts at head ${headSha}`,
+    last_recovery_at: "2026-06-13T13:41:03Z",
+    last_tracked_pr_progress_summary:
+      `no_progress_review_loop current_unresolved_threads=5 processed_review_threads=5 head=${headSha}`,
+  });
+  const pr = createPullRequest({
+    number: 398,
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-06-13T13:40:00Z",
+    configuredBotCurrentHeadObservedAt: "2026-06-13T13:38:00Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
+    configuredBotLatestReviewedCommitSha: "1bd7511632c6db5bf1f1bbe91f0b5c4cebad1770",
+    codexConnectorReviewRequestedAt: "2026-06-13T13:34:00Z",
+    codexConnectorReviewRequestedHeadSha: headSha,
+  });
+  const checks: PullRequestCheck[] = [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+  const reviewThreads = [
+    createReviewThread({
+      id: "thread-recovered",
+      comments: {
+        nodes: [
+          {
+            id: "comment-recovered",
+            body: "P2: This current-head residue was already repaired and verified.",
+            createdAt: "2026-06-13T13:35:00Z",
+            url: "https://example.test/pr/398#discussion_recovered",
+            author: { login: "chatgpt-codex-connector", typeName: "Bot" },
+          },
+        ],
+      },
+    }),
+  ];
+
+  const snapshot = derivePullRequestLifecycleSnapshot(config, record, pr, checks, reviewThreads);
+
+  assert.equal(snapshot.nextState, "ready_to_merge");
+  assert.equal(snapshot.failureContext, null);
+  assert.equal(snapshot.recordForState.blocked_reason, null);
+});
+
 test("derivePullRequestLifecycleSnapshot keeps CodeRabbit repos in waiting_ci during the short current-head quiet period", () => {
   withStubbedDateNow("2026-03-13T02:04:03Z", () => {
     const config = createConfig({
