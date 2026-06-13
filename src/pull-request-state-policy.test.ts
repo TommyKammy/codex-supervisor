@@ -478,7 +478,8 @@ test("inferStateFromPullRequest advances past proven Codex Connector stale metad
     commentId: "comment-current-head-no-major",
     path: "src/current-head-proof.ts",
     line: 42,
-    commentBody: "P1: This older inline finding should not outvote current-head no-major evidence.",
+    severity: "P2",
+    commentBody: "P2: This older inline finding should not outvote current-head no-major evidence.",
     discussionUrl: "https://example.test/pr/117#discussion_r117",
     verifiedRepair: {
       summary: "Focused current-head verifier passed.",
@@ -499,6 +500,64 @@ test("inferStateFromPullRequest advances past proven Codex Connector stale metad
     ...scenario.recordPatch,
     copilot_review_timed_out_at: null,
     copilot_review_timeout_action: null,
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    configuredBotLatestReviewedCommitSha: "1bd7511632c6db5bf1f1bbe91f0b5c4cebad1770",
+  });
+
+  assert.equal(
+    inferStateFromPullRequest(config, record, pr, scenario.passingChecks, [scenario.reviewThread]),
+    "ready_to_merge",
+  );
+  assert.equal(
+    blockedReasonFromReviewState(config, record, pr, scenario.passingChecks, [scenario.reviewThread]),
+    null,
+  );
+});
+
+test("inferStateFromPullRequest keeps recovered Codex stale metadata residue merge-ready", () => {
+  const issueNumber = 2098;
+  const prNumber = 118;
+  const headSha = "9ba6e1cf234dd5630a2ee527cd575bebd02fbeec";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-recovered-metadata",
+    commentId: "comment-recovered-metadata",
+    path: "src/current-head-proof.ts",
+    line: 42,
+    severity: "P2",
+    commentBody: "P2: This current-head residue was already repaired and verified.",
+    discussionUrl: "https://example.test/pr/118#discussion_r118",
+    verifiedRepair: {
+      summary: "Configured local CI command passed before auto-merging PR #118.",
+      ranAt: "2026-05-15T00:18:00Z",
+      command: "npm run verify:pre-pr",
+    },
+    currentHeadNoMajorReview: {
+      requestedAt: "2026-05-15T00:12:00Z",
+      observedAt: "2026-05-15T00:17:00Z",
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    humanReviewBlocksMerge: true,
+  });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    state: "ready_to_merge",
+    blocked_reason: null,
+    last_error: null,
+    last_failure_context: null,
+    last_failure_signature: null,
+    repeated_failure_signature_count: 0,
+    last_recovery_reason:
+      `tracked_pr_lifecycle_recovered: resumed issue #${issueNumber} from blocked to ready_to_merge using fresh tracked PR #${prNumber} facts at head ${headSha}`,
+    last_recovery_at: "2026-05-15T00:19:00Z",
+    last_tracked_pr_progress_summary:
+      `no_progress_review_loop current_unresolved_threads=1 processed_review_threads=1 head=${headSha}`,
   });
   const pr = createPullRequest({
     ...scenario.pullRequestPatch,

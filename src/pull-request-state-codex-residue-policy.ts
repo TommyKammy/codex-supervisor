@@ -229,6 +229,52 @@ export function staleSameHeadCodexWaitHasOnlyOutdatedResidue(
   );
 }
 
+function recordForCodexStaleReviewMetadataClassification(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+}): IssueRunRecord | null {
+  if (args.record.blocked_reason === "stale_review_bot" || args.record.blocked_reason === "manual_review") {
+    return args.record;
+  }
+
+  if (args.record.blocked_reason !== null || !configuredReviewProviderKinds(args.config).includes("codex")) {
+    return null;
+  }
+
+  if (!pullRequestHeadMatchesRecord(args.record, args.pr)) {
+    return null;
+  }
+
+  const processedThreadEvidenceCount =
+    (args.record.processed_review_thread_ids ?? []).length +
+    (args.record.processed_review_thread_fingerprints ?? []).length;
+  if (processedThreadEvidenceCount === 0) {
+    return null;
+  }
+
+  const currentConfiguredThreads = configuredBotReviewThreads(args.config, args.reviewThreads)
+    .filter((thread) => !thread.isResolved && !thread.isOutdated);
+  if (currentConfiguredThreads.length === 0) {
+    return null;
+  }
+
+  if (!currentConfiguredThreads.every(hasCodexConnectorFindingReviewComment)) {
+    return null;
+  }
+
+  if (!currentConfiguredThreads.every((thread) => hasProcessedReviewThread(args.record, args.pr, thread))) {
+    return null;
+  }
+
+  return {
+    ...args.record,
+    blocked_reason: "stale_review_bot",
+  };
+}
+
 export function hasProvenCodexConnectorStaleReviewMetadata(args: {
   config: SupervisorConfig;
   record: IssueRunRecord;
@@ -236,9 +282,18 @@ export function hasProvenCodexConnectorStaleReviewMetadata(args: {
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
 }): boolean {
+  if (!configuredReviewProviderKinds(args.config).includes("codex")) {
+    return false;
+  }
+
+  const recordForClassification = recordForCodexStaleReviewMetadataClassification(args);
+  if (!recordForClassification) {
+    return false;
+  }
+
   const remediation = buildStaleReviewBotRemediation({
     config: args.config,
-    record: args.record,
+    record: recordForClassification,
     pr: args.pr,
     checks: args.checks,
     reviewThreads: args.reviewThreads,
