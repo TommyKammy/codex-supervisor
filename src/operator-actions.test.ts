@@ -311,7 +311,7 @@ test("selectStatusOperatorAction treats merge-ready verified current-head repair
       detailedStatusLines: [
         "stale_review_bot_remediation issue=#391 pr=#398 reason=stale_review_bot code_ci=green current_head_sha=head-current processed_on_current_head=yes classification=verified_current_head_repair_pending_thread_resolution codex_current_head_review_state=observed review_thread_url=https://example.test/pr/398#discussion_r398 manual_next_step=resolve_verified_repaired_configured_bot_threads_then_rerun_supervisor verification_evidence=Configured_local_CI_passed.;codex_pr_success_comment_after_current_head_request summary=verified_current_head_repair_configured_bot_thread_resolution_pending",
         "stale_review_bot_thread_diagnostics issue=#391 pr=#398 current_head_success=yes unresolved_current_threads=5 actionable_must_fix_threads=5 verified_stale_residue_threads=5 missing_verification_evidence_threads=0 repeat_stop_exhausted=no auto_repair_suppressed_reason=none",
-        "codex_connector_convergence status=stale_review_metadata provider=codex current_head_sha=head-current current_head_observed_at=2026-06-14T00:00:00Z latest_signal_head_sha=head-current highest_severity=none finding_count=0 merge_effect=ready next_action=merge_ready stale_review_metadata_classification=verified_current_head_repair_pending_thread_resolution",
+        "codex_connector_convergence status=stale_review_metadata provider=codex current_head_sha=head-current current_head_observed_at=2026-06-14T00:00:00Z latest_signal_head_sha=head-current highest_severity=none finding_count=0 merge_effect=ready next_action=merge_ready stale_review_metadata_classification=verified_current_head_repair_pending_thread_resolution issue=#391 pr=#398",
         "tracked_pr_mismatch issue=#391 pr=#398 recoverability=stale_already_handled github_state=ready_to_merge github_blocked_reason=none local_state=blocked local_blocked_reason=stale_review_bot stale_local_blocker=yes",
       ],
     }),
@@ -324,13 +324,53 @@ test("selectStatusOperatorAction treats merge-ready verified current-head repair
   );
 });
 
+test("selectStatusOperatorAction correlates verified current-head repair residue by PR", () => {
+  assert.deepEqual(
+    selectStatusOperatorAction({
+      detailedStatusLines: [
+        "stale_review_bot_remediation issue=#391 pr=#398 reason=stale_review_bot code_ci=green current_head_sha=head-current processed_on_current_head=yes classification=verified_current_head_repair_pending_thread_resolution codex_current_head_review_state=observed review_thread_url=https://example.test/pr/398#discussion_r398 manual_next_step=resolve_verified_repaired_configured_bot_threads_then_rerun_supervisor verification_evidence=Configured_local_CI_passed.;codex_pr_success_comment_after_current_head_request summary=verified_current_head_repair_configured_bot_thread_resolution_pending",
+        "stale_review_bot_thread_diagnostics issue=#391 pr=#398 current_head_success=yes unresolved_current_threads=5 actionable_must_fix_threads=5 verified_stale_residue_threads=5 missing_verification_evidence_threads=0 repeat_stop_exhausted=no auto_repair_suppressed_reason=none",
+        "codex_connector_convergence status=stale_review_metadata provider=codex current_head_sha=head-current current_head_observed_at=2026-06-14T00:00:00Z latest_signal_head_sha=head-current highest_severity=none finding_count=0 merge_effect=ready next_action=merge_ready stale_review_metadata_classification=verified_current_head_repair_pending_thread_resolution issue=#392 pr=#399",
+        "tracked_pr_mismatch issue=#391 pr=#398 recoverability=stale_already_handled github_state=ready_to_merge github_blocked_reason=none local_state=blocked local_blocked_reason=stale_review_bot stale_local_blocker=yes",
+      ],
+    }),
+    {
+      action: "resolve_stale_review_bot",
+      source: "stale_review_bot_remediation",
+      priority: 72,
+      summary:
+        "Code or CI is green but configured-bot review thread metadata is still unresolved; inspect the exact thread and resolve it or leave a manual note without changing merge policy.",
+    },
+  );
+});
+
+test("selectStatusOperatorAction keeps manual stale-review action when verified repair residue is suppressed", () => {
+  assert.deepEqual(
+    selectStatusOperatorAction({
+      detailedStatusLines: [
+        "stale_review_bot_remediation issue=#391 pr=#398 reason=stale_review_bot code_ci=green current_head_sha=head-current processed_on_current_head=yes classification=verified_current_head_repair_pending_thread_resolution codex_current_head_review_state=observed review_thread_url=https://example.test/pr/398#discussion_r398 manual_next_step=resolve_verified_repaired_configured_bot_threads_then_rerun_supervisor verification_evidence=Configured_local_CI_passed.;codex_pr_success_comment_after_current_head_request summary=verified_current_head_repair_configured_bot_thread_resolution_pending",
+        "stale_review_bot_thread_diagnostics issue=#391 pr=#398 current_head_success=yes unresolved_current_threads=5 actionable_must_fix_threads=5 verified_stale_residue_threads=5 missing_verification_evidence_threads=0 repeat_stop_exhausted=no auto_repair_suppressed_reason=manual_or_unconfigured_review_threads",
+        "codex_connector_convergence status=stale_review_metadata provider=codex current_head_sha=head-current current_head_observed_at=2026-06-14T00:00:00Z latest_signal_head_sha=head-current highest_severity=none finding_count=0 merge_effect=ready next_action=merge_ready stale_review_metadata_classification=verified_current_head_repair_pending_thread_resolution issue=#391 pr=#398",
+        "tracked_pr_mismatch issue=#391 pr=#398 recoverability=stale_already_handled github_state=ready_to_merge github_blocked_reason=none local_state=blocked local_blocked_reason=stale_review_bot stale_local_blocker=yes",
+      ],
+    }),
+    {
+      action: "resolve_stale_review_bot",
+      source: "stale_review_bot_remediation",
+      priority: 72,
+      summary:
+        "Code or CI is green but configured-bot review thread metadata is still unresolved; inspect the exact thread and resolve it or leave a manual note without changing merge policy.",
+    },
+  );
+});
+
 test("selectStatusOperatorAction keeps manual stale-review action when GitHub still blocks the PR", () => {
   assert.deepEqual(
     selectStatusOperatorAction({
       detailedStatusLines: [
         "stale_review_bot_remediation issue=#391 pr=#398 reason=stale_review_bot code_ci=green current_head_sha=head-current processed_on_current_head=yes classification=verified_current_head_repair_pending_thread_resolution codex_current_head_review_state=observed review_thread_url=https://example.test/pr/398#discussion_r398 manual_next_step=resolve_verified_repaired_configured_bot_threads_then_rerun_supervisor verification_evidence=Configured_local_CI_passed.;codex_pr_success_comment_after_current_head_request summary=verified_current_head_repair_configured_bot_thread_resolution_pending",
         "stale_review_bot_thread_diagnostics issue=#391 pr=#398 current_head_success=yes unresolved_current_threads=5 actionable_must_fix_threads=5 verified_stale_residue_threads=5 missing_verification_evidence_threads=0 repeat_stop_exhausted=no auto_repair_suppressed_reason=none",
-        "codex_connector_convergence status=stale_review_metadata provider=codex current_head_sha=head-current current_head_observed_at=2026-06-14T00:00:00Z latest_signal_head_sha=head-current highest_severity=none finding_count=0 merge_effect=ready next_action=merge_ready stale_review_metadata_classification=verified_current_head_repair_pending_thread_resolution",
+        "codex_connector_convergence status=stale_review_metadata provider=codex current_head_sha=head-current current_head_observed_at=2026-06-14T00:00:00Z latest_signal_head_sha=head-current highest_severity=none finding_count=0 merge_effect=ready next_action=merge_ready stale_review_metadata_classification=verified_current_head_repair_pending_thread_resolution issue=#391 pr=#398",
         "tracked_pr_mismatch issue=#391 pr=#398 recoverability=manual_attention_required github_state=blocked github_blocked_reason=stale_review_bot local_state=blocked local_blocked_reason=stale_review_bot stale_local_blocker=yes",
       ],
     }),

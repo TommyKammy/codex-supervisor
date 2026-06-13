@@ -36,6 +36,7 @@ import {
   summarizeChecks,
 } from "./supervisor/supervisor-reporting";
 import {
+  buildStaleReviewBotThreadDiagnostics,
   buildStaleReviewBotRemediation,
   isProvenStaleReviewMetadataClassification,
 } from "./supervisor/stale-review-bot-remediation";
@@ -324,7 +325,18 @@ export function hasVerifiedCurrentHeadRepairReviewMetadataResidue(args: {
     checks: args.checks,
     reviewThreads: args.reviewThreads,
   });
-  return remediation?.classification === "verified_current_head_repair_pending_thread_resolution";
+  if (remediation?.classification !== "verified_current_head_repair_pending_thread_resolution") {
+    return false;
+  }
+
+  const diagnostics = buildStaleReviewBotThreadDiagnostics({
+    config: args.config,
+    record: recordForClassification,
+    pr: args.pr,
+    checks: args.checks,
+    reviewThreads: args.reviewThreads,
+  });
+  return diagnostics?.autoRepairSuppressedReason === "none";
 }
 
 function configuredBotThreadsAllowCodexConnectorCurrentHeadWait(args: {

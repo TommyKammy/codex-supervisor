@@ -102,7 +102,7 @@ test("stale review-bot presenter keeps residue and metadata diagnostic lines sta
         configuredBotCurrentHeadObservedAt: "2026-05-15T00:17:00Z",
       }),
     }),
-    "codex_connector_convergence status=stale_review_metadata provider=codex current_head_sha=deadbeef current_head_observed_at=2026-05-15T00:17:00Z latest_signal_head_sha=deadbeef highest_severity=none finding_count=0 merge_effect=ready next_action=merge_ready stale_review_metadata_classification=metadata_only",
+    "codex_connector_convergence status=stale_review_metadata provider=codex current_head_sha=deadbeef current_head_observed_at=2026-05-15T00:17:00Z latest_signal_head_sha=deadbeef highest_severity=none finding_count=0 merge_effect=ready next_action=merge_ready stale_review_metadata_classification=metadata_only issue=#366 pr=#44",
   );
   assert.equal(
     formatStaleReviewBotTerminalStopLine({
@@ -385,7 +385,7 @@ test("status --why uses the shared stale review-bot presenter for active verifie
   );
   assert.match(
     status,
-    /^codex_connector_convergence status=stale_review_metadata provider=codex current_head_sha=76060523f803ebe25832cb2c355aaaa9530502f4 current_head_observed_at=2026-05-15T00:17:00Z latest_signal_head_sha=76060523f803ebe25832cb2c355aaaa9530502f4 highest_severity=none finding_count=0 merge_effect=ready next_action=merge_ready stale_review_metadata_classification=verified_current_head_repair_pending_thread_resolution$/m,
+    /^codex_connector_convergence status=stale_review_metadata provider=codex current_head_sha=76060523f803ebe25832cb2c355aaaa9530502f4 current_head_observed_at=2026-05-15T00:17:00Z latest_signal_head_sha=76060523f803ebe25832cb2c355aaaa9530502f4 highest_severity=none finding_count=0 merge_effect=ready next_action=merge_ready stale_review_metadata_classification=verified_current_head_repair_pending_thread_resolution issue=#400 pr=#500$/m,
   );
   assert.doesNotMatch(status, /^codex_connector_convergence status=stale_head /m);
   assert.doesNotMatch(status, /^codex_connector_operator_diagnostic interpretation=actionable_current_diff /m);

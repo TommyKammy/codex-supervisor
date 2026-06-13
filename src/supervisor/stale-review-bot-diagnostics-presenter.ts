@@ -150,6 +150,8 @@ export function formatStaleReviewMetadataConvergenceDiagnostic(args: {
     "merge_effect=ready",
     "next_action=merge_ready",
     `stale_review_metadata_classification=${args.remediation.classification}`,
+    `issue=#${args.remediation.issueNumber}`,
+    `pr=${args.remediation.prNumber === null ? "none" : `#${args.remediation.prNumber}`}`,
   ].join(" ");
 }
 

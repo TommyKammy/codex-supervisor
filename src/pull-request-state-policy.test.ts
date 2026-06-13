@@ -20,6 +20,7 @@ import {
   CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
   createCodexConnectorTrackedReviewResidueScenario,
 } from "./codex-connector-tracked-pr-test-helpers";
+import { hasVerifiedCurrentHeadRepairReviewMetadataResidue } from "./pull-request-state-codex-residue-policy";
 
 test("inferStateFromPullRequest routes actionable high local-review retry into local_review_fix", () => {
   const config = createConfig({
@@ -571,6 +572,71 @@ test("inferStateFromPullRequest keeps recovered Codex stale metadata residue mer
   assert.equal(
     blockedReasonFromReviewState(config, record, pr, scenario.passingChecks, [scenario.reviewThread]),
     null,
+  );
+});
+
+test("verified current-head repair residue evidence requires unsuppressed auto-repair diagnostics", () => {
+  const issueNumber = 2099;
+  const prNumber = 119;
+  const headSha = "3f1f51ea7ff5f861ae7dc7c8b43892ea20f5c119";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-current-head-repair-suppressed",
+    commentId: "comment-current-head-repair-suppressed",
+    path: "src/current-head-proof.ts",
+    line: 42,
+    severity: "P2",
+    commentBody: "P2: This current-head residue was already repaired and verified.",
+    discussionUrl: "https://example.test/pr/119#discussion_r119",
+    verifiedRepair: {
+      summary: "Focused current-head verifier passed.",
+      ranAt: "2026-05-15T00:18:00Z",
+      command: "npx tsx --test src/pull-request-state-policy.test.ts",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    humanReviewBlocksMerge: true,
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const record = createRecord(scenario.recordPatch);
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    configuredBotLatestReviewedCommitSha: "1bd7511632c6db5bf1f1bbe91f0b5c4cebad1770",
+    configuredBotCurrentHeadObservedAt: "2026-05-15T00:17:00Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+  });
+  const suppressedThread = {
+    ...scenario.reviewThread,
+    comments: {
+      nodes: [
+        ...scenario.reviewThread.comments.nodes,
+        {
+          id: "comment-current-head-repair-human-follow-up",
+          body: "Leaving this unresolved until the operator confirms the thread outcome.",
+          createdAt: "2026-05-15T00:19:00Z",
+          url: "https://example.test/pr/119#discussion_r119_human",
+          author: {
+            login: "maintainer",
+            typeName: "User",
+          },
+        },
+      ],
+    },
+  };
+
+  assert.equal(
+    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+      config,
+      record,
+      pr,
+      checks: scenario.passingChecks,
+      reviewThreads: [suppressedThread],
+    }),
+    false,
   );
 });
 

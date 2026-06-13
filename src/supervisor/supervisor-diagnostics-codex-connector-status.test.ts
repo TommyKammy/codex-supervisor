@@ -1902,7 +1902,7 @@ test("status --why converges processed current-head Codex no-major review thread
   );
   assert.match(
     status,
-    /^codex_connector_convergence status=stale_review_metadata provider=codex current_head_sha=12b099926c39c8b7502176339ea34750e6a807a4 current_head_observed_at=2026-05-23T01:14:50Z latest_signal_head_sha=12b099926c39c8b7502176339ea34750e6a807a4 highest_severity=none finding_count=0 merge_effect=ready next_action=merge_ready stale_review_metadata_classification=verified_current_head_repair_pending_thread_resolution$/m,
+    /^codex_connector_convergence status=stale_review_metadata provider=codex current_head_sha=12b099926c39c8b7502176339ea34750e6a807a4 current_head_observed_at=2026-05-23T01:14:50Z latest_signal_head_sha=12b099926c39c8b7502176339ea34750e6a807a4 highest_severity=none finding_count=0 merge_effect=ready next_action=merge_ready stale_review_metadata_classification=verified_current_head_repair_pending_thread_resolution issue=#171 pr=#180$/m,
   );
   assert.match(
     status,
