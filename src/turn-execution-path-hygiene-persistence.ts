@@ -86,6 +86,7 @@ async function publishTrackedPrHostLocalBlockerComment(
 
 export async function persistPublicationPathHygieneBlocked(
   args: BasePathHygienePersistenceArgs & {
+    publishTrackedPrComment?: boolean;
     summary?: string;
   },
 ): Promise<PathHygienePersistenceResult> {
@@ -101,11 +102,14 @@ export async function persistPublicationPathHygieneBlocked(
     blocked_reason: "verification",
     ...issueDefinitionFreshnessPatch(args.issue),
   });
-  const commentResult = await publishTrackedPrHostLocalBlockerComment({
-    ...args,
-    record: blockedRecord,
-    remediationTarget: "manual_review",
-  });
+  const commentResult =
+    args.publishTrackedPrComment === false
+      ? { record: blockedRecord, didPublishTrackedPrComment: false }
+      : await publishTrackedPrHostLocalBlockerComment({
+          ...args,
+          record: blockedRecord,
+          remediationTarget: "manual_review",
+        });
 
   if (!commentResult.didPublishTrackedPrComment) {
     args.state.issues[String(commentResult.record.issue_number)] = commentResult.record;
