@@ -63,7 +63,9 @@ const EXPECTED_TOP_LEVEL_ENTRIES = {
     "recovery-active-reconciliation.ts",
     "recovery-blocked-issue-reconciliation.ts",
     "recovery-codex-connector-churn.ts",
+    "recovery-current-head-evidence.ts",
     "recovery-entrypoint-result.ts",
+    "recovery-event-patch.ts",
     "recovery-historical-reconciliation.ts",
     "recovery-no-pr-reconciliation.ts",
     "recovery-parent-epic-reconciliation.ts",
@@ -112,12 +114,14 @@ const EXPECTED_TOP_LEVEL_ENTRIES = {
 
 const EXPECTED_FAMILY_FILES = {
   codex: [
+    "codex-connector-review-loop-prompt.ts",
     "codex-model-policy.ts",
     "codex-output-parser.ts",
     "codex-policy.ts",
     "codex-prompt.ts",
     "codex-runner.ts",
     "index.ts",
+    "review-loop-prompt-evidence.ts",
   ],
   core: [
     "command.ts",

@@ -21,7 +21,7 @@ import {
 import { buildIssueDefinitionFingerprint, issueDefinitionFreshnessPatch } from "./issue-definition-freshness";
 import { RecoveryEvent } from "./run-once-cycle-prelude";
 import { StateStore } from "./core/state-store";
-import { GitHubIssue, GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig, SupervisorStateFile } from "./core/types";
+import { GitHubIssue, GitHubPullRequest, IssueRunRecord, ReviewThread, SupervisorConfig, SupervisorStateFile } from "./core/types";
 import { truncate } from "./core/utils";
 import { resetTrackedPrHeadScopedStateOnAdvance } from "./tracked-pr-lifecycle-projection";
 import { applyFailureSignature } from "./supervisor/supervisor-failure-helpers";
@@ -53,6 +53,10 @@ import {
   shouldKeepCodexConnectorManualReviewChurnBlockQuiescent,
   shouldPreserveCodexConnectorManualReviewChurnBlock,
 } from "./recovery-codex-connector-churn";
+import {
+  isCurrentHeadReviewSignalRequestTimeout,
+  trackedHandoffExternalProgressEvidence,
+} from "./recovery-current-head-evidence";
 import { applyRecoveryEvent, buildRecoveryEvent, needsRecordUpdate } from "./recovery-event-patch";
 
 export { codexConnectorChurnStopEvidenceSource } from "./recovery-codex-connector-churn";
@@ -169,83 +173,6 @@ function shouldReconsiderGenericNoPrIssueDefinitionChange(
     Number.isFinite(issueUpdatedAtMs) &&
     localObservedAtMs !== null &&
     issueUpdatedAtMs > localObservedAtMs
-  );
-}
-
-function firstPassingCheckEvidence(checks: PullRequestCheck[]): string | null {
-  if (checks.length === 0) {
-    return null;
-  }
-
-  const checkSummary = summarizeChecks(checks);
-  if (!checkSummary.allPassing || checkSummary.hasPending || checkSummary.hasFailing) {
-    return null;
-  }
-
-  const firstCheckName = checks
-    .map((check) => check.name.trim())
-    .filter((name) => name.length > 0)
-    .sort()[0];
-
-  return `required_checks_green:${firstCheckName ?? "all"}`;
-}
-
-function currentHeadConfiguredBotEvidence(
-  pr: Pick<
-    GitHubPullRequest,
-    | "configuredBotCurrentHeadObservedAt"
-    | "configuredBotCurrentHeadStatusState"
-    | "configuredBotTopLevelReviewStrength"
-  >,
-): string | null {
-  if (!pr.configuredBotCurrentHeadObservedAt) {
-    return null;
-  }
-
-  const statusState = pr.configuredBotCurrentHeadStatusState?.toLowerCase() ?? null;
-  const statusPassed =
-    statusState === "success" ||
-    statusState === "pass" ||
-    statusState === "passed";
-  const topLevelPassed =
-    pr.configuredBotTopLevelReviewStrength === null ||
-    pr.configuredBotTopLevelReviewStrength === undefined ||
-    pr.configuredBotTopLevelReviewStrength === "nitpick_only";
-
-  if (!statusPassed && !topLevelPassed) {
-    return null;
-  }
-
-  return "configured_bot_current_head_passed";
-}
-
-function trackedHandoffExternalProgressEvidence(args: {
-  record: Pick<IssueRunRecord, "last_head_sha">;
-  pr: Pick<
-    GitHubPullRequest,
-    | "configuredBotCurrentHeadObservedAt"
-    | "configuredBotCurrentHeadStatusState"
-    | "configuredBotTopLevelReviewStrength"
-    | "headRefOid"
-  >;
-  checks: PullRequestCheck[];
-}): string | null {
-  if (!args.record.last_head_sha || args.record.last_head_sha === args.pr.headRefOid) {
-    return null;
-  }
-
-  return firstPassingCheckEvidence(args.checks) ?? currentHeadConfiguredBotEvidence(args.pr);
-}
-function isCurrentHeadReviewSignalRequestTimeout(
-  patch: Pick<
-    IssueRunRecord,
-    "copilot_review_timed_out_at" | "copilot_review_timeout_action" | "copilot_review_timeout_reason"
-  >,
-): boolean {
-  return (
-    patch.copilot_review_timed_out_at !== null &&
-    patch.copilot_review_timeout_action === "request_review_comment" &&
-    patch.copilot_review_timeout_reason?.includes("current-head review signal") === true
   );
 }
 
