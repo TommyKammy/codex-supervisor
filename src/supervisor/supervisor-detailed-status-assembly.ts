@@ -8,6 +8,7 @@ import {
 import {
   buildStaleReviewBotThreadDiagnostics,
   buildStaleReviewBotRemediation,
+  currentHeadVerifiedRepairResidueArtifactEvidenceSummary,
 } from "./stale-review-bot-remediation";
 import {
   formatStaleReviewBotRemediationLine,
@@ -159,11 +160,22 @@ export function buildInactiveDetailedStatusLines(
   ];
   let staleReviewBotRemediation: ReturnType<typeof buildStaleReviewBotRemediation> = null;
   const configTargetsCodex = configuredReviewProviderKinds(config).includes("codex");
+  const verifiedRepairArtifactEvidence =
+    latestRecord && pr
+      ? currentHeadVerifiedRepairResidueArtifactEvidenceSummary({
+          config,
+          record: latestRecord,
+          pr,
+          checks,
+          reviewThreads,
+        })
+      : null;
   if (
     latestRecord &&
     pr &&
     latestRecord.last_head_sha === pr.headRefOid &&
     (pr.configuredBotCurrentHeadStatusState === "SUCCESS" ||
+      verifiedRepairArtifactEvidence !== null ||
       (configTargetsCodex &&
         pr.configuredBotCurrentHeadObservationSource === "codex_pr_success_comment" &&
         Boolean(pr.configuredBotCurrentHeadObservedAt)))

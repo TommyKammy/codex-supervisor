@@ -349,7 +349,9 @@ function verifiedCurrentHeadRepairResidueMergeReadyDiagnosticKeys(lines: string[
 
     if (
       /^stale_review_bot_thread_diagnostics\b/u.test(line) &&
-      /\bverified_stale_residue_threads=[1-9]\d*\b/u.test(line) &&
+      (/\bverified_stale_residue_threads=[1-9]\d*\b/u.test(line) ||
+        (/\bunresolved_current_threads=0\b/u.test(line) &&
+          /\bactionable_must_fix_threads=0\b/u.test(line))) &&
       /\bmissing_verification_evidence_threads=0\b/u.test(line) &&
       /\bauto_repair_suppressed_reason=none\b/u.test(line)
     ) {
