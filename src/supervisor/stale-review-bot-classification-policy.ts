@@ -72,6 +72,7 @@ export interface StaleReviewBotClassificationPolicyArgs {
   hasExplicitCurrentHeadRepairVerification: boolean;
   repairAttemptCount: number;
   allMustFixRepairResidueThreadsAreP2: boolean;
+  requiresDeterministicRepairProbeEvidence: boolean;
   currentHeadSuccess: boolean;
 }
 
@@ -159,6 +160,17 @@ function classifyCodexReviewBotPolicy(
           classification: "verified_current_head_repair_pending_thread_resolution",
           summary: VERIFIED_CURRENT_HEAD_REPAIR_SUMMARY,
           verificationEvidenceSummary: `${args.verificationEvidenceSummary};${args.deterministicProbeEvidence}`,
+        };
+      }
+      if (
+        verifiedCurrentHeadRepair &&
+        args.allMustFixRepairResidueThreadsAreP2 &&
+        !args.requiresDeterministicRepairProbeEvidence
+      ) {
+        return {
+          classification: "verified_current_head_repair_pending_thread_resolution",
+          summary: VERIFIED_CURRENT_HEAD_REPAIR_SUMMARY,
+          verificationEvidenceSummary: args.verificationEvidenceSummary,
         };
       }
       return unknownNeedsOperator({

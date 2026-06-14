@@ -749,6 +749,16 @@ function deterministicRepairProbeEvidence(args: {
   return evidence.length > 0 ? evidence.join(";") : null;
 }
 
+function requiresDeterministicRepairProbeEvidence(reviewThreads: ReviewThread[]): boolean {
+  return codexConnectorMustFixReviewThreads(reviewThreads).some((thread) => {
+    const codexFindingBody = latestCodexConnectorReviewComment(thread)?.body ?? "";
+    return (
+      requestedPathListSelectors(codexFindingBody).length > 0 &&
+      extractConcreteRepoPaths(codexFindingBody).length > 0
+    );
+  });
+}
+
 function validTimestamp(value: string | null | undefined): string | null {
   if (!value || Number.isNaN(Date.parse(value))) {
     return null;
@@ -878,6 +888,7 @@ function classifyCodexMetadataOnly(args: {
       (!hasMarkedNoSourceChangeRepair && hasCurrentHeadLocalCiVerification(args.record, args.pr)),
     repairAttemptCount: args.record.repair_attempt_count,
     allMustFixRepairResidueThreadsAreP2: allCodexConnectorRepairResidueThreadsAreP2(mustFixReviewThreads),
+    requiresDeterministicRepairProbeEvidence: requiresDeterministicRepairProbeEvidence(args.reviewThreads),
     currentHeadSuccess: hasCurrentHeadSuccessSignal(args.pr),
   });
 }
@@ -913,6 +924,7 @@ function classifyRemediation(args: {
       hasExplicitCurrentHeadRepairVerification: false,
       repairAttemptCount: 0,
       allMustFixRepairResidueThreadsAreP2: false,
+      requiresDeterministicRepairProbeEvidence: false,
       currentHeadSuccess: false,
     });
   }
@@ -952,6 +964,7 @@ function classifyRemediation(args: {
     hasExplicitCurrentHeadRepairVerification: false,
     repairAttemptCount: record.repair_attempt_count,
     allMustFixRepairResidueThreadsAreP2: false,
+    requiresDeterministicRepairProbeEvidence: false,
     currentHeadSuccess: Boolean(pr.configuredBotCurrentHeadObservedAt && pr.configuredBotCurrentHeadStatusState === "SUCCESS"),
   });
 }

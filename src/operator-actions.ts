@@ -364,6 +364,23 @@ function verifiedCurrentHeadRepairResidueMergeReadyDiagnosticKeys(lines: string[
   );
 }
 
+function hasVerifiedCurrentHeadRepairResidueMergeReadyKeyForLine(
+  line: string,
+  keys: ReadonlySet<string>,
+): boolean {
+  const issuePrKey = readIssuePrKey(line);
+  if (issuePrKey !== null) {
+    return keys.has(issuePrKey);
+  }
+
+  const issueNumber = readIssueNumberToken(line, "issue");
+  if (issueNumber !== null) {
+    return [...keys].some((key) => key.startsWith(`${issueNumber}:`));
+  }
+
+  return keys.size === 1;
+}
+
 export function parseOperatorActionLine(line: string): OperatorAction | null {
   if (!/^(operator_action|doctor_operator_action)\b/u.test(line)) {
     return null;
@@ -680,6 +697,12 @@ export function selectStatusOperatorAction(args: {
       isManualReviewExecutionMetrics
     ) {
       if (isManualReviewExecutionMetrics && ignoreStaleManualReviewExecutionMetrics) {
+        continue;
+      }
+      if (
+        isManualReviewExecutionMetrics &&
+        hasVerifiedCurrentHeadRepairResidueMergeReadyKeyForLine(line, verifiedRepairResidueMergeReadyKeys)
+      ) {
         continue;
       }
       const issueNumber = readIssueNumberToken(line, "issue");
