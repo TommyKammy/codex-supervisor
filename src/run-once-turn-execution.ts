@@ -914,6 +914,7 @@ export async function executeCodexTurnPhase(
             verifiedNoSourceChangeReviewThreads:
               postPublicationReviewPersistence.verifiedNoSourceChangeReviewThreads,
             reviewThreadsToProcess,
+            changedFilesAfterPublication,
           });
         const preserveStaleNoPrRecoveryTracking =
           pr === null &&

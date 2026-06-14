@@ -41,6 +41,7 @@ test("buildPostPublicationCodexVerificationTimelineArtifacts persists scoped thr
     hasVerifiedNoSourceChangeReviewThreadEvidence: false,
     verifiedNoSourceChangeReviewThreads: [],
     reviewThreadsToProcess: [reviewThread],
+    changedFilesAfterPublication: ["src/review.ts"],
   });
 
   assert.equal(artifacts?.length, 1);
@@ -83,6 +84,7 @@ test("buildPostPublicationCodexVerificationTimelineArtifacts preserves no-source
     hasVerifiedNoSourceChangeReviewThreadEvidence: true,
     verifiedNoSourceChangeReviewThreads: [reviewThread],
     reviewThreadsToProcess: [reviewThread],
+    changedFilesAfterPublication: [],
   });
 
   assert.equal(artifacts?.length, 1);
@@ -90,5 +92,48 @@ test("buildPostPublicationCodexVerificationTimelineArtifacts preserves no-source
   assert.deepEqual(artifacts?.[0]?.processed_review_thread_ids, [`${reviewThread.id}@${headSha}`]);
   assert.deepEqual(artifacts?.[0]?.processed_review_thread_fingerprints, [
     `${reviewThread.id}@${headSha}#comment-no-source-repair`,
+  ]);
+});
+
+test("buildPostPublicationCodexVerificationTimelineArtifacts does not mark unchanged normal turns as current-head repair proof", () => {
+  const headSha = "head-unchanged-normal-repair";
+  const reviewThread = createReviewThread({
+    id: "thread-unchanged-normal-repair",
+    path: "src/review.ts",
+    line: 44,
+    comments: {
+      nodes: [
+        {
+          id: "comment-unchanged-normal-repair",
+          body: "P2: Verify this finding before merge.",
+          createdAt: "2026-06-15T05:23:00Z",
+          url: "https://example.test/pr/406#discussion_r408",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  const artifacts = buildPostPublicationCodexVerificationTimelineArtifacts({
+    record: createRecord({ timeline_artifacts: [] }),
+    currentPr: createPullRequest({ headRefOid: headSha }),
+    codexVerificationCommand: "npm test -- src/review.test.ts",
+    workspaceStatus: { headSha },
+    structuredSummary: "Focused verifier passed without source changes.",
+    postRunState: "blocked",
+    hasVerifiedNoSourceChangeReviewThreadEvidence: false,
+    verifiedNoSourceChangeReviewThreads: [],
+    reviewThreadsToProcess: [reviewThread],
+    changedFilesAfterPublication: [],
+  });
+
+  assert.equal(artifacts?.length, 1);
+  assert.equal(artifacts?.[0]?.repair_targets, undefined);
+  assert.deepEqual(artifacts?.[0]?.processed_review_thread_ids, [`${reviewThread.id}@${headSha}`]);
+  assert.deepEqual(artifacts?.[0]?.processed_review_thread_fingerprints, [
+    `${reviewThread.id}@${headSha}#comment-unchanged-normal-repair`,
   ]);
 });

@@ -142,6 +142,7 @@ export function buildPostPublicationCodexVerificationTimelineArtifacts(args: {
   hasVerifiedNoSourceChangeReviewThreadEvidence: boolean;
   verifiedNoSourceChangeReviewThreads: ReviewThread[];
   reviewThreadsToProcess: ReviewThread[];
+  changedFilesAfterPublication: readonly string[];
 }): TimelineArtifact[] | null {
   const currentPrHeadSha = args.currentPr?.headRefOid ?? null;
   const codexTurnVerificationReviewThreads = args.hasVerifiedNoSourceChangeReviewThreadEvidence
@@ -154,9 +155,10 @@ export function buildPostPublicationCodexVerificationTimelineArtifacts(args: {
   const hasCodexTurnVerificationReviewThreadEvidence =
     (codexTurnVerificationReviewThreadIds?.length ?? 0) > 0 ||
     (codexTurnVerificationReviewThreadFingerprints?.length ?? 0) > 0;
+  const hasPublishedRepairChanges = args.changedFilesAfterPublication.length > 0;
   const codexTurnVerificationRepairTargets = args.hasVerifiedNoSourceChangeReviewThreadEvidence
     ? [VERIFIED_NO_SOURCE_CHANGE_REVIEW_THREAD_RESIDUE_TARGET]
-    : hasCodexTurnVerificationReviewThreadEvidence
+    : hasPublishedRepairChanges && hasCodexTurnVerificationReviewThreadEvidence
       ? [VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET]
       : undefined;
   const codexTurnVerificationHeadSha =
