@@ -1,9 +1,11 @@
 import type { LocalReviewRepairContext } from "./codex";
+import { VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET } from "./current-head-codex-repair-proof";
 import {
   latestReviewThreadCommentFingerprint,
   processedReviewThreadFingerprintKey,
   processedReviewThreadKey,
 } from "./review-handling";
+import { isIgnoredSupervisorArtifactPath } from "./core/git-workspace-helpers";
 import {
   hasCurrentTurnVerifiedNoSourceChangeReviewThreadEvidence,
   nextProcessedReviewThreadPatch,
@@ -51,6 +53,38 @@ function processedReviewThreadFingerprintsForHead(threads: ReviewThread[], headS
       ? [processedReviewThreadFingerprintKey(thread.id, headSha, fingerprint)]
       : [];
   });
+}
+
+const VERIFIED_NO_SOURCE_CHANGE_REVIEW_THREAD_RESIDUE_TARGET =
+  "verified_no_source_change_review_thread_residue";
+
+function normalizeChangedFilePath(filePath: string): string {
+  return filePath.replace(/\\/g, "/").replace(/^(?:\.\/)+/u, "");
+}
+
+function changedFilesContainPublishedRepairSource(args: {
+  changedFilesAfterPublication: readonly string[];
+  artifactOnlyChangedFilesAfterPublication: readonly string[];
+  issueJournalRelativePath?: string;
+  workspaceStatus: Pick<WorkspaceStatus, "hasUncommittedChanges">;
+}): boolean {
+  if (args.workspaceStatus.hasUncommittedChanges) {
+    return false;
+  }
+
+  const artifactOnlyPaths = new Set(
+    args.artifactOnlyChangedFilesAfterPublication.map(normalizeChangedFilePath),
+  );
+  const issueJournalRelativePath = args.issueJournalRelativePath
+    ? normalizeChangedFilePath(args.issueJournalRelativePath)
+    : undefined;
+  return args.changedFilesAfterPublication
+    .map(normalizeChangedFilePath)
+    .some((filePath) =>
+      !artifactOnlyPaths.has(filePath) &&
+      filePath !== "WORKLOG.md" &&
+      !isIgnoredSupervisorArtifactPath(filePath, issueJournalRelativePath)
+    );
 }
 
 export interface PostPublicationReviewPersistence {
@@ -132,21 +166,21 @@ export function buildPostPublicationCodexVerificationTimelineArtifacts(args: {
   record: IssueRunRecord;
   currentPr: GitHubPullRequest | null;
   codexVerificationCommand: string | null;
-  workspaceStatus: Pick<WorkspaceStatus, "headSha">;
+  workspaceStatus: Pick<WorkspaceStatus, "hasUncommittedChanges" | "headSha">;
+  preRunState: IssueRunRecord["state"];
   structuredSummary: string | null | undefined;
   postRunState: IssueRunRecord["state"];
   hasVerifiedNoSourceChangeReviewThreadEvidence: boolean;
   verifiedNoSourceChangeReviewThreads: ReviewThread[];
   reviewThreadsToProcess: ReviewThread[];
+  changedFilesAfterPublication: readonly string[];
+  artifactOnlyChangedFilesAfterPublication: readonly string[];
+  issueJournalRelativePath?: string;
 }): TimelineArtifact[] | null {
   const currentPrHeadSha = args.currentPr?.headRefOid ?? null;
-  const codexTurnVerificationRepairTargets = args.hasVerifiedNoSourceChangeReviewThreadEvidence
-    ? ["verified_no_source_change_review_thread_residue"]
-    : undefined;
-  const codexTurnVerificationReviewThreads =
-    codexTurnVerificationRepairTargets
-      ? args.verifiedNoSourceChangeReviewThreads
-      : args.reviewThreadsToProcess;
+  const codexTurnVerificationReviewThreads = args.hasVerifiedNoSourceChangeReviewThreadEvidence
+    ? args.verifiedNoSourceChangeReviewThreads
+    : args.reviewThreadsToProcess;
   const codexTurnVerificationReviewThreadIds =
     processedReviewThreadIdsForHead(codexTurnVerificationReviewThreads, currentPrHeadSha);
   const codexTurnVerificationReviewThreadFingerprints =
@@ -154,6 +188,19 @@ export function buildPostPublicationCodexVerificationTimelineArtifacts(args: {
   const hasCodexTurnVerificationReviewThreadEvidence =
     (codexTurnVerificationReviewThreadIds?.length ?? 0) > 0 ||
     (codexTurnVerificationReviewThreadFingerprints?.length ?? 0) > 0;
+  const hasPublishedRepairChanges = changedFilesContainPublishedRepairSource({
+    changedFilesAfterPublication: args.changedFilesAfterPublication,
+    artifactOnlyChangedFilesAfterPublication: args.artifactOnlyChangedFilesAfterPublication,
+    issueJournalRelativePath: args.issueJournalRelativePath,
+    workspaceStatus: args.workspaceStatus,
+  });
+  const canEmitSourceChangingReviewRepairTarget =
+    args.preRunState === "addressing_review" && hasPublishedRepairChanges;
+  const codexTurnVerificationRepairTargets = args.hasVerifiedNoSourceChangeReviewThreadEvidence
+    ? [VERIFIED_NO_SOURCE_CHANGE_REVIEW_THREAD_RESIDUE_TARGET]
+    : canEmitSourceChangingReviewRepairTarget && hasCodexTurnVerificationReviewThreadEvidence
+      ? [VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET]
+      : undefined;
   const codexTurnVerificationHeadSha =
     args.currentPr &&
     args.codexVerificationCommand &&

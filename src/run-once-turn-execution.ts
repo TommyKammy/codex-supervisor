@@ -351,6 +351,18 @@ export async function executeCodexTurnPhase(
   let sessionLock: LockHandle | null = null;
   const turnStartHeadSha = workspaceStatus.headSha;
   let usedSameTurnPathRepairRetry = false;
+  let artifactOnlyChangedFilesAfterPublication: string[] = [];
+
+  const rememberArtifactOnlyChangedFilesAfterPublication = (
+    filePaths: readonly string[],
+  ) => {
+    artifactOnlyChangedFilesAfterPublication = [
+      ...new Set([
+        ...artifactOnlyChangedFilesAfterPublication,
+        ...filePaths,
+      ]),
+    ];
+  };
 
   try {
     try {
@@ -602,7 +614,7 @@ export async function executeCodexTurnPhase(
               args.config.stateFile,
             ),
             warningContext: "persisting",
-          });
+            });
         };
         if (
           (workspaceStatus.remoteAhead > 0 ||
@@ -637,6 +649,10 @@ export async function executeCodexTurnPhase(
                 changedFilesInCurrentTurn.includes(filePath),
               );
             if (sameTurnRepairEligible) {
+              const rewrittenTrackedPaths = [
+                ...(pathHygieneGate.rewrittenJournalPaths ?? []),
+                ...(pathHygieneGate.rewrittenTrustedGeneratedArtifactPaths ?? []),
+              ];
               const retryResult = await runSameTurnDurableArtifactRepairRetry({
                 stateStore,
                 state,
@@ -650,10 +666,7 @@ export async function executeCodexTurnPhase(
                 workspacePath,
                 workspaceStatus,
                 defaultBranch: config.defaultBranch,
-                rewrittenTrackedPaths: [
-                  ...(pathHygieneGate.rewrittenJournalPaths ?? []),
-                  ...(pathHygieneGate.rewrittenTrustedGeneratedArtifactPaths ?? []),
-                ],
+                rewrittenTrackedPaths,
                 getWorkspaceStatus: getWorkspaceStatusImpl,
                 syncExecutionMetricsRunSummary: syncPathHygieneExecutionMetrics,
               });
@@ -664,6 +677,7 @@ export async function executeCodexTurnPhase(
                   message: retryResult.message,
                 };
               }
+              rememberArtifactOnlyChangedFilesAfterPublication(rewrittenTrackedPaths);
               workspaceStatus = retryResult.workspaceStatus;
               usedSameTurnPathRepairRetry = true;
               continue;
@@ -720,6 +734,7 @@ export async function executeCodexTurnPhase(
               rewrittenTrackedPaths,
             );
           if (presentRewrittenTrackedPaths.length > 0) {
+            rememberArtifactOnlyChangedFilesAfterPublication(presentRewrittenTrackedPaths);
             try {
               await commitAndPushTrackedFiles({
                 workspacePath,
@@ -843,6 +858,9 @@ export async function executeCodexTurnPhase(
               message: retryResult.message,
             };
           }
+          rememberArtifactOnlyChangedFilesAfterPublication(
+            publicationGate.rewrittenTrackedPaths,
+          );
           workspaceStatus = retryResult.workspaceStatus;
           usedSameTurnPathRepairRetry = true;
           continue;
@@ -907,6 +925,7 @@ export async function executeCodexTurnPhase(
             currentPr: pr,
             codexVerificationCommand,
             workspaceStatus,
+            preRunState,
             structuredSummary: structuredResult?.summary,
             postRunState,
             hasVerifiedNoSourceChangeReviewThreadEvidence:
@@ -914,6 +933,9 @@ export async function executeCodexTurnPhase(
             verifiedNoSourceChangeReviewThreads:
               postPublicationReviewPersistence.verifiedNoSourceChangeReviewThreads,
             reviewThreadsToProcess,
+            changedFilesAfterPublication,
+            artifactOnlyChangedFilesAfterPublication,
+            issueJournalRelativePath: config.issueJournalRelativePath,
           });
         const preserveStaleNoPrRecoveryTracking =
           pr === null &&

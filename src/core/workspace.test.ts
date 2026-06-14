@@ -6,7 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
 import { SupervisorConfig } from "./types";
-import { ensureWorkspace, listTrackedTopLevelEntries } from "./workspace";
+import { ensureWorkspace, listChangedTrackedFilesBetween, listTrackedTopLevelEntries } from "./workspace";
 import { DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH, issueJournalPath, syncIssueJournal } from "./journal";
 
 const execFileAsync = promisify(execFile);
@@ -135,6 +135,32 @@ exec "$REAL_GIT" "$@"
     await fs.rm(fakeRoot, { recursive: true, force: true });
   }
 }
+
+test("listChangedTrackedFilesBetween includes deletion-only tracked changes", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-changed-files-"));
+  try {
+    const repoPath = path.join(root, "repo");
+    await fs.mkdir(repoPath, { recursive: true });
+    await git(repoPath, "init", "-b", "main");
+    await git(repoPath, "config", "user.name", "Codex Test");
+    await git(repoPath, "config", "user.email", "codex@example.test");
+    await fs.writeFile(path.join(repoPath, "delete-me.ts"), "export const deleted = true;\n", "utf8");
+    await git(repoPath, "add", "delete-me.ts");
+    await git(repoPath, "commit", "-m", "Add tracked file");
+    const baseSha = await gitOutput(repoPath, "rev-parse", "HEAD");
+
+    await fs.rm(path.join(repoPath, "delete-me.ts"));
+    await git(repoPath, "add", "-A");
+    await git(repoPath, "commit", "-m", "Delete tracked file");
+
+    assert.deepEqual(
+      await listChangedTrackedFilesBetween(repoPath, baseSha, "HEAD"),
+      ["delete-me.ts"],
+    );
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
 
 async function createRepositoryFixture(): Promise<SupervisorConfig> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-workspace-"));
