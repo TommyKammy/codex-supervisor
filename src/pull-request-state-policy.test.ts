@@ -609,7 +609,27 @@ test("verified current-head repair residue evidence can replace Codex no-major e
     configuredBotInitialGraceWaitSeconds: 0,
     verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
   });
-  const record = createRecord(scenario.recordPatch);
+  const record = createRecord({
+    ...scenario.recordPatch,
+    timeline_artifacts: [
+      {
+        type: "verification_result",
+        gate: "codex_turn",
+        command: "npx tsx --test src/pull-request-state-policy.test.ts",
+        head_sha: headSha,
+        outcome: "passed",
+        remediation_target: null,
+        next_action: "continue",
+        summary: "Focused current-head verifier passed.",
+        recorded_at: "2026-05-15T00:18:00Z",
+        repair_targets: [VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET],
+        processed_review_thread_ids: [`${scenario.reviewThread.id}@${headSha}`],
+        processed_review_thread_fingerprints: [
+          `${scenario.reviewThread.id}@${headSha}#${scenario.reviewThread.comments.nodes[0]?.id}`,
+        ],
+      },
+    ],
+  });
   const pr = createPullRequest({
     ...scenario.pullRequestPatch,
     configuredBotCurrentHeadObservedAt: "2026-05-15T00:17:00Z",
@@ -640,6 +660,85 @@ test("verified current-head repair residue evidence can replace Codex no-major e
   );
   assert.equal(inferStateFromPullRequest(config, record, pr, scenario.passingChecks, []), "ready_to_merge");
   assert.equal(inferGitHubWaitStep(config, record, pr, scenario.passingChecks, []), null);
+});
+
+test("legacy current-head processed-thread repair proof can replace Codex no-major evidence", () => {
+  const issueNumber = 2375;
+  const prNumber = 399;
+  const headSha = "01642468db1df175a92ec8d332fdf64e7754a3ab";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "PRRT_hrcore_399_termination_code_fields",
+    commentId: "PRRC_hrcore_399_termination_code_fields",
+    path: "web/src/App.tsx",
+    line: 911,
+    severity: "P2",
+    commentBody: "P2: Require termination code fields before submit.",
+    discussionUrl: "https://example.test/pr/399#discussion_r3409030367",
+    verifiedRepair: {
+      summary: "Verified current head addresses the review findings.",
+      ranAt: "2026-06-14T04:58:52.932Z",
+      command: "npm run verify:pre-pr",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    humanReviewBlocksMerge: true,
+    codexConnectorAutoMergeEnabled: true,
+    localCiCommand: "npm run verify:pre-pr",
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    blocked_reason: "verification",
+    last_failure_signature: `${headSha}:missing_current_head_codex_no_major`,
+    latest_local_ci_result: {
+      outcome: "passed",
+      summary: "Configured local CI command passed before auto-merging PR #399.",
+      ran_at: "2026-06-14T04:59:01.275Z",
+      head_sha: headSha,
+      execution_mode: "shell",
+      command: "npm run verify:pre-pr",
+      failure_class: null,
+      remediation_target: null,
+    },
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    configuredBotCurrentHeadObservedAt: "2026-06-14T05:12:43Z",
+    configuredBotCurrentHeadObservationSource: "review_thread",
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotLatestReviewedCommitSha: headSha,
+  });
+
+  assert.equal(
+    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+      config,
+      record,
+      pr,
+      checks: scenario.passingChecks,
+      reviewThreads: [scenario.reviewThread],
+    }),
+    true,
+  );
+  assert.equal(
+    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+      config,
+      record: createRecord({
+        ...record,
+        latest_local_ci_result: null,
+      }),
+      pr,
+      checks: scenario.passingChecks,
+      reviewThreads: [scenario.reviewThread],
+    }),
+    false,
+  );
+  assert.equal(inferStateFromPullRequest(config, record, pr, scenario.passingChecks, [scenario.reviewThread]), "ready_to_merge");
+  assert.equal(hasConfiguredProviderSuccess(config, record, pr, scenario.passingChecks, [scenario.reviewThread]), true);
 });
 
 test("verified current-head repair artifact does not clear non-Codex configured bot blockers", () => {
@@ -871,6 +970,36 @@ test("verified current-head repair residue can rely on persisted auto-resolve pr
       pr,
       checks: scenario.passingChecks,
       reviewThreads: [scenario.reviewThread],
+    }),
+    true,
+  );
+  assert.equal(
+    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+      config,
+      record,
+      pr,
+      checks: scenario.passingChecks,
+      reviewThreads: [
+        createReviewThread({
+          id: "thread-current-head-repair-unprocessed",
+          path: "src/current-head-proof.ts",
+          line: 46,
+          comments: {
+            nodes: [
+              {
+                id: "comment-current-head-repair-unprocessed",
+                body: "P2: This new current-head finding still needs a repair.",
+                createdAt: "2026-05-15T00:22:00Z",
+                url: "https://example.test/pr/120#discussion_unprocessed",
+                author: {
+                  login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+                  typeName: "Bot",
+                },
+              },
+            ],
+          },
+        }),
+      ],
     }),
     false,
   );

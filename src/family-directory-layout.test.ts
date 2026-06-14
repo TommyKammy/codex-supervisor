@@ -28,6 +28,7 @@ const EXPECTED_TOP_LEVEL_ENTRIES = {
     "committed-guardrails.ts",
     "conversation-resolution-blocker-diagnostics.ts",
     "conversation-resolution-policy.ts",
+    "current-head-codex-repair-proof.ts",
     "decision-kernel-v2.ts",
     "diagnostics-dto.ts",
     "doctor.ts",

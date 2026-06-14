@@ -545,12 +545,25 @@ test("buildDecisionKernelV2ExplainDto treats verified current-head repair residu
       configuredBotInitialGraceWaitSeconds: 0,
       configuredBotSettledWaitSeconds: 0,
       verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+      localCiCommand: "npm run verify:pre-pr",
     }),
     issueNumber: 2301,
     title: "Phase 3.2",
     record: record({
+      blocked_reason: "verification",
+      last_failure_signature: "auto-merge-refused:head-current:missing_current_head_codex_no_major",
       processed_review_thread_ids: ["thread-codex-p2@head-current"],
       processed_review_thread_fingerprints: ["thread-codex-p2@head-current#comment-codex-p2"],
+      latest_local_ci_result: {
+        outcome: "passed",
+        summary: "Configured local CI command passed before auto-merging PR.",
+        ran_at: "2026-06-08T00:06:30.000Z",
+        head_sha: "head-current",
+        execution_mode: "shell",
+        command: "npm run verify:pre-pr",
+        failure_class: null,
+        remediation_target: null,
+      },
       timeline_artifacts: [
         {
           type: "verification_result",
