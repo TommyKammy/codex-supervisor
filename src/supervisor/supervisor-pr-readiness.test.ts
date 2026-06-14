@@ -400,6 +400,7 @@ test("handlePostTurnMergeAndCompletion treats verified current-head repair resid
     ...scenario.pullRequestPatch,
     reviewDecision: "CHANGES_REQUESTED",
     configuredBotTopLevelReviewStrength: "blocking",
+    configuredBotOnlyChangesRequestedReview: true,
     configuredBotCurrentHeadObservedAt: "2026-06-13T00:17:00Z",
     configuredBotCurrentHeadObservationSource: "review_thread",
   });

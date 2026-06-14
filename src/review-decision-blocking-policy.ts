@@ -3,11 +3,12 @@ import type { GitHubPullRequest } from "./core/types";
 export type BlockingReviewDecision = "REVIEW_REQUIRED" | "CHANGES_REQUESTED";
 
 function configuredBotReviewDecisionResidue(
-  pr: Pick<GitHubPullRequest, "configuredBotTopLevelReviewStrength">,
+  pr: Pick<GitHubPullRequest, "configuredBotTopLevelReviewStrength" | "configuredBotOnlyChangesRequestedReview">,
 ): boolean {
   return (
-    pr.configuredBotTopLevelReviewStrength === "blocking" ||
-    pr.configuredBotTopLevelReviewStrength === "nitpick_only"
+    pr.configuredBotOnlyChangesRequestedReview === true &&
+    (pr.configuredBotTopLevelReviewStrength === "blocking" ||
+      pr.configuredBotTopLevelReviewStrength === "nitpick_only")
   );
 }
 
@@ -15,7 +16,7 @@ export function verifiedConfiguredBotReviewDecisionResidueSatisfied(args: {
   verifiedCurrentHeadRepairResidue: boolean;
   effectiveConfiguredBotBlockerCount: number;
   effectiveHumanBlockerCount: number;
-  pr: Pick<GitHubPullRequest, "reviewDecision" | "configuredBotTopLevelReviewStrength">;
+  pr: Pick<GitHubPullRequest, "reviewDecision" | "configuredBotTopLevelReviewStrength" | "configuredBotOnlyChangesRequestedReview">;
 }): boolean {
   return (
     args.pr.reviewDecision === "CHANGES_REQUESTED" &&
@@ -29,7 +30,7 @@ export function verifiedConfiguredBotReviewDecisionResidueSatisfied(args: {
 export function reviewDecisionBlocksCurrentHeadRepairProjection(args: {
   humanReviewBlocksMerge: boolean;
   manualThreadCount: number;
-  pr: Pick<GitHubPullRequest, "reviewDecision" | "configuredBotTopLevelReviewStrength">;
+  pr: Pick<GitHubPullRequest, "reviewDecision" | "configuredBotTopLevelReviewStrength" | "configuredBotOnlyChangesRequestedReview">;
 }): boolean {
   if (!args.humanReviewBlocksMerge) {
     return false;
@@ -46,7 +47,7 @@ export function aggregateHumanReviewDecisionBlocker(args: {
   verifiedCurrentHeadRepairResidue: boolean;
   effectiveConfiguredBotBlockerCount: number;
   effectiveHumanBlockerCount: number;
-  pr: Pick<GitHubPullRequest, "reviewDecision" | "configuredBotTopLevelReviewStrength">;
+  pr: Pick<GitHubPullRequest, "reviewDecision" | "configuredBotTopLevelReviewStrength" | "configuredBotOnlyChangesRequestedReview">;
 }): BlockingReviewDecision | null {
   if (!args.humanReviewBlocksMerge) {
     return null;

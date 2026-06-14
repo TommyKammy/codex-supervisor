@@ -80,6 +80,7 @@ function currentHeadCodexTurnVerificationArtifact(
 function currentHeadVerifiedRepairResidueArtifact(
   record: Pick<IssueRunRecord, "timeline_artifacts">,
   pr: Pick<GitHubPullRequest, "headRefOid">,
+  currentThreads?: ReviewThread[],
 ): TimelineArtifact | null {
   return (record.timeline_artifacts ?? []).find(
     (artifact) =>
@@ -87,7 +88,8 @@ function currentHeadVerifiedRepairResidueArtifact(
       artifact.outcome === "passed" &&
       artifact.head_sha === pr.headRefOid &&
       artifact.repair_targets?.includes(VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET) === true &&
-      artifactHeadScopedProcessedThreadEvidenceCount(artifact, pr) > 0,
+      artifactHeadScopedProcessedThreadEvidenceCount(artifact, pr) > 0 &&
+      (!currentThreads || repairArtifactCoversCurrentThreads(artifact, pr, currentThreads)),
   ) ?? null;
 }
 
@@ -240,8 +242,8 @@ export function projectCurrentHeadCodexRepairProof(args: {
     return null;
   }
 
-  const structuredArtifact = currentHeadVerifiedRepairResidueArtifact(args.record, args.pr);
-  if (structuredArtifact && repairArtifactCoversCurrentThreads(structuredArtifact, args.pr, repairResidueThreads)) {
+  const structuredArtifact = currentHeadVerifiedRepairResidueArtifact(args.record, args.pr, repairResidueThreads);
+  if (structuredArtifact) {
     return {
       source: "structured_artifact",
       summary: structuredArtifact.summary || "verified_current_head_repair_review_thread_residue_artifact",

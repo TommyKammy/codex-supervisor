@@ -747,6 +747,35 @@ test("legacy current-head processed-thread repair proof can replace Codex no-maj
       checks: scenario.passingChecks,
       reviewThreads: [scenario.reviewThread],
     }),
+    false,
+  );
+  assert.notEqual(
+    inferStateFromPullRequest(
+      config,
+      record,
+      createPullRequest({
+        ...pr,
+        reviewDecision: "CHANGES_REQUESTED",
+        configuredBotTopLevelReviewStrength: "blocking",
+      }),
+      scenario.passingChecks,
+      [scenario.reviewThread],
+    ),
+    "ready_to_merge",
+  );
+  assert.equal(
+    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+      config,
+      record,
+      pr: createPullRequest({
+        ...pr,
+        reviewDecision: "CHANGES_REQUESTED",
+        configuredBotTopLevelReviewStrength: "blocking",
+        configuredBotOnlyChangesRequestedReview: true,
+      }),
+      checks: scenario.passingChecks,
+      reviewThreads: [scenario.reviewThread],
+    }),
     true,
   );
   assert.equal(
@@ -1181,6 +1210,97 @@ test("verified current-head repair artifact must cover current unresolved thread
       reviewThreads: [uncoveredThread],
     }),
     false,
+  );
+});
+
+test("verified current-head repair artifact searches later artifacts for current-thread coverage", () => {
+  const issueNumber = 2376;
+  const prNumber = 401;
+  const headSha = "2f1f51ea7ff5f861ae7dc7c8b43892ea20f5d401";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-artifact-later-covered",
+    commentId: "comment-artifact-later-covered",
+    path: "src/current-head-proof.ts",
+    line: 52,
+    severity: "P2",
+    commentBody: "P2: This current-head thread needs the later artifact.",
+    discussionUrl: "https://example.test/pr/401#discussion_r403",
+  });
+  const staleThread = createReviewThread({
+    id: "thread-artifact-stale",
+    path: "src/current-head-proof.ts",
+    line: 50,
+    comments: {
+      nodes: [
+        {
+          id: "comment-artifact-stale",
+          body: "P2: This older finding was verified first.",
+          createdAt: "2026-06-14T04:50:00Z",
+          url: "https://example.test/pr/401#discussion_r400",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    timeline_artifacts: [
+      {
+        type: "verification_result",
+        gate: "codex_turn",
+        command: "npm test -- src/current-head-proof.test.ts",
+        head_sha: headSha,
+        outcome: "passed",
+        remediation_target: null,
+        next_action: "continue",
+        summary: "Only the stale current-head thread was verified.",
+        recorded_at: "2026-06-14T05:03:00Z",
+        repair_targets: [VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET],
+        processed_review_thread_ids: [`${staleThread.id}@${headSha}`],
+        processed_review_thread_fingerprints: [`${staleThread.id}@${headSha}#${staleThread.comments.nodes[0]?.id}`],
+      },
+      {
+        type: "verification_result",
+        gate: "codex_turn",
+        command: "npm test -- src/current-head-proof.test.ts",
+        head_sha: headSha,
+        outcome: "passed",
+        remediation_target: null,
+        next_action: "continue",
+        summary: "The current P2 thread was verified by a later artifact.",
+        recorded_at: "2026-06-14T05:05:00Z",
+        repair_targets: [VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET],
+        processed_review_thread_ids: [`${scenario.reviewThread.id}@${headSha}`],
+        processed_review_thread_fingerprints: [
+          `${scenario.reviewThread.id}@${headSha}#${scenario.reviewThread.comments.nodes[0]?.id}`,
+        ],
+      },
+    ],
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    configuredBotCurrentHeadStatusState: null,
+  });
+
+  assert.equal(
+    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+      config,
+      record,
+      pr,
+      checks: scenario.passingChecks,
+      reviewThreads: [scenario.reviewThread],
+    }),
+    true,
   );
 });
 

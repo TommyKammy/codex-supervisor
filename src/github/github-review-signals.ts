@@ -69,6 +69,7 @@ export interface CopilotReviewLifecycle {
 export interface ConfiguredBotTopLevelReviewSummary {
   strength: "nitpick_only" | "blocking" | null;
   submittedAt: string | null;
+  configuredBotOnlyChangesRequestedReview?: boolean | null;
 }
 
 export interface ConfiguredBotReviewSummary {
@@ -494,6 +495,39 @@ function inferConfiguredBotTopLevelReviewSummary(
   return latestConfiguredReview;
 }
 
+function inferConfiguredBotOnlyChangesRequestedReview(
+  facts: CopilotReviewLifecycleFacts,
+  reviewBotLogins: string[],
+): boolean | null {
+  const configuredReviewBots = new Set(normalizeReviewBotLogins(reviewBotLogins));
+  if (configuredReviewBots.size === 0) {
+    return null;
+  }
+
+  const latestReviewsByAuthor = new Map<string, { submittedAtMs: number; state: string | null }>();
+  for (const review of facts.reviews) {
+    const authorLogin = normalizeLogin(review.authorLogin);
+    if (!authorLogin) {
+      continue;
+    }
+
+    const submittedAtMs = parseTimestamp(review.submittedAt);
+    const existing = latestReviewsByAuthor.get(authorLogin);
+    if (!existing || submittedAtMs >= existing.submittedAtMs) {
+      latestReviewsByAuthor.set(authorLogin, { submittedAtMs, state: normalizeLogin(review.state)?.replace(/\s+/g, "_") ?? null });
+    }
+  }
+
+  const changesRequestedAuthors = Array.from(latestReviewsByAuthor.entries())
+    .filter(([, review]) => review.state === "changes_requested")
+    .map(([authorLogin]) => authorLogin);
+  if (changesRequestedAuthors.length === 0) {
+    return null;
+  }
+
+  return changesRequestedAuthors.every((authorLogin) => configuredReviewBots.has(authorLogin));
+}
+
 function reviewedCommitFromBody(body: string | null | undefined): string | null {
   const match = body?.match(/\bReviewed commit:\s*([0-9a-f]{7,40})\b/i);
   return match?.[1] ?? null;
@@ -808,9 +842,14 @@ export function buildConfiguredBotReviewSummary(
   codexConnectorReviewRequestIdentity?: CodexConnectorReviewRequestIdentity | null,
 ): ConfiguredBotReviewSummary {
   const currentHeadObservation = inferConfiguredBotCurrentHeadObservation(facts, reviewBotLogins, currentHeadOid);
+  const topLevelReview = inferConfiguredBotTopLevelReviewSummary(facts, reviewBotLogins);
+  Object.defineProperty(topLevelReview, "configuredBotOnlyChangesRequestedReview", {
+    enumerable: false,
+    value: inferConfiguredBotOnlyChangesRequestedReview(facts, reviewBotLogins),
+  });
   const summary = {
     lifecycle: inferCopilotReviewLifecycle(facts, reviewBotLogins),
-    topLevelReview: inferConfiguredBotTopLevelReviewSummary(facts, reviewBotLogins),
+    topLevelReview,
     ...(codexConnectorReviewRequestIdentity
       ? {
           codexConnectorReviewRequest: findCodexConnectorReviewRequest(facts.issueComments, codexConnectorReviewRequestIdentity),
