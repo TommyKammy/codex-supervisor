@@ -19,6 +19,7 @@ import type { BuildDetailedStatusModelArgs } from "./supervisor-status-model";
 import { classifyStaleReviewBotRecoverability } from "./stale-diagnostic-recoverability";
 import { isWorkstationLocalPathHygieneFailureSignature } from "../workstation-local-path-gate";
 import { formatLatestRecoveryStatusLine, sanitizeStatusValue } from "./supervisor-detailed-status-formatting";
+import { currentHeadLocalCiMissing, hasConfiguredLocalCiCommand } from "../local-ci-policy";
 
 export { buildActiveDetailedStatusLines } from "./supervisor-active-detailed-status-presenters";
 export { formatLatestRecoveryStatusLine, sanitizeStatusValue } from "./supervisor-detailed-status-formatting";
@@ -196,6 +197,8 @@ export function buildInactiveDetailedStatusLines(
         diagnostics,
         pr,
         checks,
+        localCiAllowsMergeReady:
+          !pr || !hasConfiguredLocalCiCommand(config) || !currentHeadLocalCiMissing(latestRecord, pr),
       });
       if (terminalStopLine) {
         lines.push(terminalStopLine);

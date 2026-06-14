@@ -41,6 +41,7 @@ import { truncate } from "../core/utils";
 import { summarizePreservedPartialWork } from "./supervisor-preserved-partial-work";
 import { buildConversationResolutionBlockerDiagnostic } from "../conversation-resolution-blocker-diagnostics";
 import { sanitizeStatusValue } from "./supervisor-detailed-status-formatting";
+import { currentHeadLocalCiMissing, hasConfiguredLocalCiCommand } from "../local-ci-policy";
 
 type ActiveDetailedStatusArgs = Omit<BuildDetailedStatusModelArgs, "latestRecord" | "trackedIssueCount"> & {
   activeRecord: NonNullable<BuildDetailedStatusModelArgs["activeRecord"]>;
@@ -191,7 +192,14 @@ export function buildActiveStaleReviewBotDiagnosticLines(
     });
     if (diagnostics) {
       lines.push(formatStaleReviewBotThreadDiagnosticsLine(diagnostics));
-      const terminalStopLine = formatStaleReviewBotTerminalStopLine({ remediation, diagnostics, pr, checks });
+      const terminalStopLine = formatStaleReviewBotTerminalStopLine({
+        remediation,
+        diagnostics,
+        pr,
+        checks,
+        localCiAllowsMergeReady:
+          !hasConfiguredLocalCiCommand(config) || !currentHeadLocalCiMissing(activeRecord, pr),
+      });
       if (terminalStopLine) {
         lines.push(terminalStopLine);
       }

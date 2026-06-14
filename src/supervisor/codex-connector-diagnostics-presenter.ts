@@ -1,6 +1,7 @@
 import { configuredReviewProviderKinds } from "../core/review-providers";
 import { displayLocalCiCommand } from "../core/config-parsing";
 import { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "../core/types";
+import { currentHeadLocalCiMissing, hasConfiguredLocalCiCommand } from "../local-ci-policy";
 import {
   buildCodexConnectorReviewChurnDiagnostic,
   buildCodexConnectorReviewChurnHistory,
@@ -686,6 +687,8 @@ export function buildCodexConnectorDiagnosticBundle(args: {
       diagnostics: staleReviewBotThreadDiagnostics,
       pr: args.pr,
       checks: args.checks,
+      localCiAllowsMergeReady:
+        !hasConfiguredLocalCiCommand(args.config) || !currentHeadLocalCiMissing(args.record, args.pr),
     });
   const suppressStaleReviewMetadataConvergence =
     staleReviewBotRemediation?.classification === "verified_current_head_repair_pending_thread_resolution" &&

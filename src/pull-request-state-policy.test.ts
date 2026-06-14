@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   blockedReasonFromReviewState,
+  effectiveConfiguredBotReviewThreadsForState,
   inferGitHubWaitStep,
   inferStateFromPullRequest,
   syncCopilotReviewTimeoutState,
@@ -601,6 +602,8 @@ test("verified current-head repair residue evidence can replace Codex no-major e
   const config = createConfig({
     reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
     humanReviewBlocksMerge: true,
+    configuredBotRequireCurrentHeadSignal: true,
+    configuredBotInitialGraceWaitSeconds: 0,
     verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
   });
   const record = createRecord(scenario.recordPatch);
@@ -631,6 +634,99 @@ test("verified current-head repair residue evidence can replace Codex no-major e
       reviewThreads: [scenario.reviewThread],
     }),
     false,
+  );
+  assert.equal(inferStateFromPullRequest(config, record, pr, scenario.passingChecks, []), "ready_to_merge");
+  assert.equal(inferGitHubWaitStep(config, record, pr, scenario.passingChecks, []), null);
+});
+
+test("verified current-head repair artifact does not clear non-Codex configured bot blockers", () => {
+  const issueNumber = 2101;
+  const prNumber = 121;
+  const headSha = "5f1f51ea7ff5f861ae7dc7c8b43892ea20f5c121";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-current-head-repair-codex-auto-resolved",
+    commentId: "comment-current-head-repair-codex-auto-resolved",
+    path: "src/current-head-proof.ts",
+    line: 46,
+    severity: "P2",
+    commentBody: "P2: Codex repair residue was already auto-resolved.",
+    discussionUrl: "https://example.test/pr/121#discussion_r121",
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN, "coderabbitai[bot]"],
+    humanReviewBlocksMerge: true,
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    timeline_artifacts: [
+      {
+        type: "verification_result",
+        gate: "workspace_preparation",
+        command: null,
+        head_sha: headSha,
+        outcome: "passed",
+        remediation_target: null,
+        next_action: "continue",
+        summary: "Codex repair residue was auto-resolved on this head.",
+        recorded_at: "2026-05-15T00:21:00Z",
+        repair_targets: [VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET],
+        processed_review_thread_ids: [`${scenario.reviewThread.id}@${headSha}`],
+        processed_review_thread_fingerprints: [
+          `${scenario.reviewThread.id}@${headSha}#${scenario.reviewThread.comments.nodes[0]?.id}`,
+        ],
+      },
+    ],
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    configuredBotCurrentHeadObservedAt: null,
+    configuredBotCurrentHeadObservationSource: null,
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotLatestReviewedCommitSha: null,
+  });
+  const codeRabbitThread = createReviewThread({
+    id: "thread-coderabbit-blocker",
+    path: "src/coderabbit-blocker.ts",
+    line: 33,
+    comments: {
+      nodes: [
+        {
+          id: "comment-coderabbit-blocker",
+          body: "Please address this CodeRabbit review thread.",
+          createdAt: "2026-05-15T00:22:00Z",
+          url: "https://example.test/pr/121#discussion_coderabbit",
+          author: {
+            login: "coderabbitai[bot]",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.equal(
+    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+      config,
+      record,
+      pr,
+      checks: scenario.passingChecks,
+      reviewThreads: [codeRabbitThread],
+    }),
+    false,
+  );
+  assert.deepEqual(
+    effectiveConfiguredBotReviewThreadsForState(config, record, pr, scenario.passingChecks, [
+      codeRabbitThread,
+    ]).map((thread) => thread.id),
+    ["thread-coderabbit-blocker"],
+  );
+  assert.notEqual(
+    inferStateFromPullRequest(config, record, pr, scenario.passingChecks, [codeRabbitThread]),
+    "ready_to_merge",
   );
 });
 

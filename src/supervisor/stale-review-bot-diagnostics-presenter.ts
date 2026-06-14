@@ -41,12 +41,14 @@ export function verifiedCurrentHeadRepairResidueAllowsMergeReadyAction(args: {
     "state" | "isDraft" | "mergeStateStatus" | "mergeable" | "reviewDecision"
   > | null | undefined;
   checks?: ReadonlyArray<Pick<PullRequestCheck, "bucket">> | null;
+  localCiAllowsMergeReady?: boolean;
 }): boolean {
   return Boolean(
     args.remediation?.classification === "verified_current_head_repair_pending_thread_resolution" &&
       args.diagnostics?.autoRepairSuppressedReason === "none" &&
       githubPullRequestAllowsMergeReadyAction(args.pr) &&
-      checksAllowMergeReadyAction(args.checks),
+      checksAllowMergeReadyAction(args.checks) &&
+      args.localCiAllowsMergeReady !== false,
   );
 }
 
@@ -105,6 +107,7 @@ export function formatStaleReviewBotTerminalStopLine(args: {
     "state" | "isDraft" | "mergeStateStatus" | "mergeable" | "reviewDecision"
   > | null;
   checks?: ReadonlyArray<Pick<PullRequestCheck, "bucket">> | null;
+  localCiAllowsMergeReady?: boolean;
 }): string | null {
   const { remediation, diagnostics } = args;
   const metadataTerminal =
@@ -128,6 +131,7 @@ export function formatStaleReviewBotTerminalStopLine(args: {
           diagnostics,
           pr: args.pr,
           checks: args.checks,
+          localCiAllowsMergeReady: args.localCiAllowsMergeReady,
         })
           ? "merge_ready"
         : remediation.classification === "verified_no_source_change_pending_thread_resolution" ||

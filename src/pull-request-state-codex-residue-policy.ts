@@ -58,6 +58,15 @@ function checksPresentAndGreen(checks: Pick<PullRequestCheck, "bucket">[]): bool
   return checks.length > 0 && checks.every((check) => check.bucket === "pass" || check.bucket === "skipping");
 }
 
+function unresolvedConfiguredBotThreadsAreCodexConnectorOnly(
+  config: SupervisorConfig,
+  reviewThreads: ReviewThread[],
+): boolean {
+  return configuredBotReviewThreads(config, reviewThreads)
+    .filter((thread) => !thread.isResolved)
+    .every(hasCodexConnectorFindingReviewComment);
+}
+
 function allowJournalOnlyConfiguredBotThreadException(
   config: SupervisorConfig,
   pr: GitHubPullRequest,
@@ -333,6 +342,7 @@ export function hasVerifiedCurrentHeadRepairReviewMetadataResidue(args: {
     configuredReviewProviderKinds(args.config).includes("codex") &&
     pullRequestHeadMatchesRecord(args.record, args.pr) &&
     codexConnectorMustFixReviewThreads(args.reviewThreads).length === 0 &&
+    unresolvedConfiguredBotThreadsAreCodexConnectorOnly(args.config, args.reviewThreads) &&
     hasCurrentHeadVerifiedRepairResidueArtifact(args.record, args.pr)
   ) {
     return true;
@@ -395,6 +405,10 @@ export function shouldWaitForCodexConnectorCurrentHeadReview(args: {
   unresolvedBotThreads: ReviewThread[];
   nowMs: number;
 }): boolean {
+  if (hasVerifiedCurrentHeadRepairReviewMetadataResidue(args)) {
+    return false;
+  }
+
   if (
     !configuredReviewProviderKinds(args.config).includes("codex") ||
     args.pr.isDraft ||
@@ -485,6 +499,18 @@ export function hasConfiguredProviderSuccess(
 ): boolean {
   if (!repoExpectsConfiguredBotReview(config) || !isMergeCriticalPullRequest(pr)) {
     return false;
+  }
+
+  if (
+    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+      config,
+      record,
+      pr,
+      checks,
+      reviewThreads,
+    })
+  ) {
+    return true;
   }
 
   const codexConnectorPolicy = evaluateCodexConnectorConvergencePolicy(config, pr, reviewThreads);

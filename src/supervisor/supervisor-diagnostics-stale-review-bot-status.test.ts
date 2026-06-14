@@ -182,6 +182,16 @@ test("stale review-bot terminal stop only reports merge-ready when GitHub is mer
     }) ?? "",
     /next_action=resolve_verified_review_thread_metadata$/,
   );
+  assert.match(
+    formatStaleReviewBotTerminalStopLine({
+      remediation,
+      diagnostics,
+      pr: createPullRequest(),
+      checks: [{ bucket: "pass" }],
+      localCiAllowsMergeReady: false,
+    }) ?? "",
+    /next_action=resolve_verified_review_thread_metadata$/,
+  );
 });
 
 test("Codex connector operator diagnostic honors auto-repair suppression before merge-ready", () => {

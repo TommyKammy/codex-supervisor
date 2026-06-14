@@ -18,7 +18,6 @@ import { getWorkspaceStatus } from "./core/workspace";
 import { codexConnectorMustFixReviewThreads } from "./codex-connector-review-policy";
 import {
   buildStaleReviewBotRemediation,
-  hasCurrentHeadVerifiedRepairResidueArtifact,
   VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET,
 } from "./supervisor/stale-review-bot-remediation";
 import {
@@ -45,6 +44,7 @@ type RepositoryFileContents = Record<string, string | null | undefined>;
 
 const execFileAsync = promisify(execFile);
 const MAX_REPAIR_PROBE_FILE_BYTES = 512_000;
+const MAX_VERIFIED_REPAIR_RESIDUE_ARTIFACT_KEYS = 200;
 
 function normalizeReviewThreadPath(value: string | null | undefined): string | null {
   const normalized = value?.trim().replace(/\\/g, "/").replace(/^\.\/+/u, "");
@@ -181,6 +181,46 @@ function verifiedCurrentHeadRepairResidueArtifact(args: {
   };
 }
 
+function isCurrentHeadVerifiedRepairResidueArtifact(
+  artifact: TimelineArtifact,
+  headSha: string,
+): boolean {
+  return (
+    artifact.head_sha === headSha &&
+    artifact.repair_targets?.includes(VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET) === true
+  );
+}
+
+function appendBoundedUniqueStrings(
+  existing: readonly string[] | null | undefined,
+  next: readonly string[] | null | undefined,
+): string[] {
+  return Array.from(new Set([...(existing ?? []), ...(next ?? [])])).slice(
+    -MAX_VERIFIED_REPAIR_RESIDUE_ARTIFACT_KEYS,
+  );
+}
+
+function mergeVerifiedCurrentHeadRepairResidueArtifact(
+  existing: TimelineArtifact | null,
+  next: TimelineArtifact,
+): TimelineArtifact {
+  if (!existing) {
+    return next;
+  }
+
+  return {
+    ...next,
+    processed_review_thread_ids: appendBoundedUniqueStrings(
+      existing.processed_review_thread_ids,
+      next.processed_review_thread_ids,
+    ),
+    processed_review_thread_fingerprints: appendBoundedUniqueStrings(
+      existing.processed_review_thread_fingerprints,
+      next.processed_review_thread_fingerprints,
+    ),
+  };
+}
+
 export async function handleStaleConfiguredBotReviewRemediation(args: {
   github: Partial<Pick<GitHubClient, "replyToReviewThread" | "resolveReviewThread">>;
   stateStore: Pick<StateStore, "touch" | "save">;
@@ -283,8 +323,7 @@ export async function handleStaleConfiguredBotReviewRemediation(args: {
   if (
     canResolveVerifiedCurrentHeadRepairThreadResolution &&
     staleReviewBotRemediation &&
-    (recoveryResult.status === "resolved" || recoveryResult.shouldRefreshPullRequest) &&
-    !hasCurrentHeadVerifiedRepairResidueArtifact(repliedRecord, args.pr)
+    (recoveryResult.status === "resolved" || recoveryResult.shouldRefreshPullRequest)
   ) {
     const artifact = verifiedCurrentHeadRepairResidueArtifact({
       pr: args.pr,
@@ -292,13 +331,15 @@ export async function handleStaleConfiguredBotReviewRemediation(args: {
       verificationEvidenceSummary: staleReviewBotRemediation.verificationEvidenceSummary,
     });
     if (artifact) {
+      const existingArtifact = (repliedRecord.timeline_artifacts ?? []).find((candidate) =>
+        isCurrentHeadVerifiedRepairResidueArtifact(candidate, args.pr.headRefOid),
+      ) ?? null;
+      const mergedArtifact = mergeVerifiedCurrentHeadRepairResidueArtifact(existingArtifact, artifact);
       repliedRecord = args.stateStore.touch(repliedRecord, {
         timeline_artifacts: upsertTimelineArtifact(
           repliedRecord,
-          artifact,
-          (candidate) =>
-            candidate.head_sha === args.pr.headRefOid &&
-            candidate.repair_targets?.includes(VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET) === true,
+          mergedArtifact,
+          (candidate) => isCurrentHeadVerifiedRepairResidueArtifact(candidate, args.pr.headRefOid),
         ),
       });
       args.state.issues[String(repliedRecord.issue_number)] = repliedRecord;

@@ -95,6 +95,7 @@ import {
   effectiveReviewThreadDiagnostics,
   formatEffectiveReviewThreadDiagnosticsLine,
 } from "../review-thread-reporting";
+import { currentHeadLocalCiMissing, hasConfiguredLocalCiCommand } from "../local-ci-policy";
 
 export type ExplainIssueGitHub =
   Pick<GitHubClient, "getIssue" | "listAllIssues" | "listCandidateIssues"> &
@@ -126,6 +127,7 @@ export interface SupervisorExplainDto {
     "state" | "isDraft" | "mergeStateStatus" | "mergeable" | "reviewDecision"
   > | null;
   staleReviewBotChecks?: ReadonlyArray<Pick<PullRequestCheck, "bucket">> | null;
+  staleReviewBotLocalCiAllowsMergeReady?: boolean;
   effectiveReviewThreadDiagnosticsSummary?: string | null;
   codexConnectorOperatorDiagnosticSummary?: string | null;
   codexConnectorPolicyBlockSummary?: string | null;
@@ -617,6 +619,10 @@ export async function buildIssueExplainDto(
     staleReviewBotThreadDiagnostics,
     staleReviewBotPr: staleReviewBotRemediation && pr ? pr : null,
     staleReviewBotChecks: staleReviewBotRemediation ? explainChecks : null,
+    staleReviewBotLocalCiAllowsMergeReady:
+      staleReviewBotRemediation && record && pr
+        ? !hasConfiguredLocalCiCommand(config) || !currentHeadLocalCiMissing(record, pr)
+        : true,
     effectiveReviewThreadDiagnosticsSummary,
     codexConnectorOperatorDiagnosticSummary: codexConnectorDiagnostics?.operatorDiagnosticSummary ?? null,
     codexConnectorPolicyBlockSummary: codexConnectorDiagnostics?.policyBlockSummary ?? null,
@@ -713,6 +719,7 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
             diagnostics: dto.staleReviewBotThreadDiagnostics,
             pr: dto.staleReviewBotPr,
             checks: dto.staleReviewBotChecks,
+            localCiAllowsMergeReady: dto.staleReviewBotLocalCiAllowsMergeReady,
           }),
         ].filter((line): line is string => line !== null)
       : []),
