@@ -13,6 +13,7 @@ import {
   CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
   createCodexConnectorTrackedReviewResidueScenario,
 } from "./codex-connector-tracked-pr-test-helpers";
+import { VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET } from "./supervisor/stale-review-bot-remediation";
 import {
   SAMPLE_MACOS_WORKSTATION_PATH,
   SAMPLE_UNIX_WORKSTATION_PATH,
@@ -2356,6 +2357,15 @@ test("handlePostTurnPullRequestTransitionsPhase resolves mechanically verified P
   assert.deepEqual(replyCalls.map((call) => call.threadId), ["thread-codex-mechanical-repair"]);
   assert.deepEqual(resolveCalls, ["thread-codex-mechanical-repair"]);
   assert.match(replyCalls[0]?.body ?? "", /reason=verified_current_head_repair_auto_resolve/);
+  assert.equal(
+    result.record.timeline_artifacts?.some(
+      (artifact) =>
+        artifact.head_sha === headSha &&
+        artifact.repair_targets?.includes(VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET) === true &&
+        artifact.processed_review_thread_ids?.includes(`thread-codex-mechanical-repair@${headSha}`) === true,
+    ),
+    true,
+  );
   assert.equal(requestComments.length, 0);
 });
 

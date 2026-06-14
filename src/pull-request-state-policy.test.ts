@@ -21,6 +21,7 @@ import {
   createCodexConnectorTrackedReviewResidueScenario,
 } from "./codex-connector-tracked-pr-test-helpers";
 import { hasVerifiedCurrentHeadRepairReviewMetadataResidue } from "./pull-request-state-codex-residue-policy";
+import { VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET } from "./supervisor/stale-review-bot-remediation";
 
 test("inferStateFromPullRequest routes actionable high local-review retry into local_review_fix", () => {
   const config = createConfig({
@@ -627,6 +628,76 @@ test("verified current-head repair residue evidence can replace Codex no-major e
       record,
       pr,
       checks: [],
+      reviewThreads: [scenario.reviewThread],
+    }),
+    false,
+  );
+});
+
+test("verified current-head repair residue can rely on persisted auto-resolve proof after threads clear", () => {
+  const issueNumber = 2100;
+  const prNumber = 120;
+  const headSha = "4f1f51ea7ff5f861ae7dc7c8b43892ea20f5c120";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-current-head-repair-auto-resolved",
+    commentId: "comment-current-head-repair-auto-resolved",
+    path: "src/current-head-proof.ts",
+    line: 45,
+    severity: "P2",
+    commentBody: "P2: This current-head residue was mechanically repaired and auto-resolved.",
+    discussionUrl: "https://example.test/pr/120#discussion_r120",
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    humanReviewBlocksMerge: true,
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    timeline_artifacts: [
+      {
+        type: "verification_result",
+        gate: "workspace_preparation",
+        command: null,
+        head_sha: headSha,
+        outcome: "passed",
+        remediation_target: null,
+        next_action: "continue",
+        summary: "deterministic_repair_probe:path_present_in_requested_live_lists:docs/page.md:policy_scan",
+        recorded_at: "2026-05-15T00:21:00Z",
+        repair_targets: [VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET],
+        processed_review_thread_ids: [`${scenario.reviewThread.id}@${headSha}`],
+        processed_review_thread_fingerprints: [`${scenario.reviewThread.id}@${headSha}#${scenario.reviewThread.comments.nodes[0]?.id}`],
+      },
+    ],
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    configuredBotCurrentHeadObservedAt: null,
+    configuredBotCurrentHeadObservationSource: null,
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotLatestReviewedCommitSha: null,
+  });
+
+  assert.equal(
+    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+      config,
+      record,
+      pr,
+      checks: scenario.passingChecks,
+      reviewThreads: [],
+    }),
+    true,
+  );
+  assert.equal(
+    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+      config,
+      record,
+      pr,
+      checks: scenario.passingChecks,
       reviewThreads: [scenario.reviewThread],
     }),
     false,

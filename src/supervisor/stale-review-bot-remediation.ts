@@ -77,6 +77,9 @@ export interface StaleReviewBotThreadDiagnosticsDto {
 
 type RepositoryFileContents = Record<string, string | null | undefined>;
 
+export const VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET =
+  "verified_current_head_repair_review_thread_residue";
+
 export function formatStaleReviewBotTokenValue(value: string): string {
   return value.replace(/\r?\n/gu, "\\n");
 }
@@ -329,6 +332,20 @@ function hasCurrentHeadLocalCiVerification(
   pr: Pick<GitHubPullRequest, "headRefOid">,
 ): boolean {
   return record.latest_local_ci_result?.outcome === "passed" && record.latest_local_ci_result.head_sha === pr.headRefOid;
+}
+
+export function hasCurrentHeadVerifiedRepairResidueArtifact(
+  record: Pick<IssueRunRecord, "timeline_artifacts">,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
+): boolean {
+  return (record.timeline_artifacts ?? []).some(
+    (artifact) =>
+      artifact.type === "verification_result" &&
+      artifact.outcome === "passed" &&
+      artifact.head_sha === pr.headRefOid &&
+      artifact.repair_targets?.includes(VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET) === true &&
+      (artifact.processed_review_thread_ids?.length ?? 0) > 0,
+  );
 }
 
 function hasCurrentHeadNoSourceChangeCodexTurnVerification(
@@ -843,6 +860,7 @@ function classifyCodexMetadataOnly(args: {
     args.record,
     args.pr,
   );
+  const hasCurrentHeadCodexTurnRepairVerification = hasCurrentHeadCodexTurnVerification(args.record, args.pr);
   const checkEvidenceCanProveRepair = args.record.repair_attempt_count > 0;
   const verificationEvidenceSummary = currentHeadVerificationEvidenceSummary(
     args.config,
@@ -883,9 +901,9 @@ function classifyCodexMetadataOnly(args: {
       args.pr,
       mustFixReviewThreads,
     ),
-    hasExplicitCurrentHeadRepairVerification:
-      hasCurrentHeadCodexTurnVerification(args.record, args.pr) ||
-      (!hasMarkedNoSourceChangeRepair && hasCurrentHeadLocalCiVerification(args.record, args.pr)),
+    hasExplicitCurrentHeadRepairVerification: hasCurrentHeadCodexTurnRepairVerification,
+    hasCurrentHeadRepairCheckVerification:
+      !hasMarkedNoSourceChangeRepair && hasCurrentHeadLocalCiVerification(args.record, args.pr),
     repairAttemptCount: args.record.repair_attempt_count,
     allMustFixRepairResidueThreadsAreP2: allCodexConnectorRepairResidueThreadsAreP2(mustFixReviewThreads),
     requiresDeterministicRepairProbeEvidence: requiresDeterministicRepairProbeEvidence(args.reviewThreads),
@@ -922,6 +940,7 @@ function classifyRemediation(args: {
       hasMarkedNoSourceChangeRepair: false,
       verifiedNoSourceChangeRepair: false,
       hasExplicitCurrentHeadRepairVerification: false,
+      hasCurrentHeadRepairCheckVerification: false,
       repairAttemptCount: 0,
       allMustFixRepairResidueThreadsAreP2: false,
       requiresDeterministicRepairProbeEvidence: false,
@@ -962,6 +981,7 @@ function classifyRemediation(args: {
     hasMarkedNoSourceChangeRepair: false,
     verifiedNoSourceChangeRepair: false,
     hasExplicitCurrentHeadRepairVerification: false,
+    hasCurrentHeadRepairCheckVerification: false,
     repairAttemptCount: record.repair_attempt_count,
     allMustFixRepairResidueThreadsAreP2: false,
     requiresDeterministicRepairProbeEvidence: false,

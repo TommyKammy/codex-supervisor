@@ -551,16 +551,19 @@ test("buildDecisionKernelV2ExplainDto treats verified current-head repair residu
     record: record({
       processed_review_thread_ids: ["thread-codex-p2@head-current"],
       processed_review_thread_fingerprints: ["thread-codex-p2@head-current#comment-codex-p2"],
-      latest_local_ci_result: {
-        outcome: "passed",
-        summary: "Focused verifier passed after the repair commit.",
-        ran_at: "2026-06-08T00:06:00.000Z",
-        head_sha: "head-current",
-        execution_mode: "shell",
-        command: "npm test -- src/decision-kernel/v2-explain.test.ts",
-        failure_class: null,
-        remediation_target: null,
-      },
+      timeline_artifacts: [
+        {
+          type: "verification_result",
+          gate: "codex_turn",
+          command: "npm test -- src/decision-kernel/v2-explain.test.ts",
+          head_sha: "head-current",
+          outcome: "passed",
+          remediation_target: null,
+          next_action: "continue",
+          summary: "Focused verifier passed after the repair commit.",
+          recorded_at: "2026-06-08T00:06:00.000Z",
+        },
+      ],
     }),
     pr: pullRequest({
       configuredBotCurrentHeadObservedAt: "2026-06-08T00:06:00.000Z",

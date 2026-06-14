@@ -38,6 +38,7 @@ import {
 import {
   buildStaleReviewBotThreadDiagnostics,
   buildStaleReviewBotRemediation,
+  hasCurrentHeadVerifiedRepairResidueArtifact,
   isProvenStaleReviewMetadataClassification,
 } from "./supervisor/stale-review-bot-remediation";
 import {
@@ -326,6 +327,15 @@ export function hasVerifiedCurrentHeadRepairReviewMetadataResidue(args: {
 
   if (!checksPresentAndGreen(args.checks)) {
     return false;
+  }
+
+  if (
+    configuredReviewProviderKinds(args.config).includes("codex") &&
+    pullRequestHeadMatchesRecord(args.record, args.pr) &&
+    codexConnectorMustFixReviewThreads(args.reviewThreads).length === 0 &&
+    hasCurrentHeadVerifiedRepairResidueArtifact(args.record, args.pr)
+  ) {
+    return true;
   }
 
   const recordForClassification = recordForCodexStaleReviewMetadataClassification(args);

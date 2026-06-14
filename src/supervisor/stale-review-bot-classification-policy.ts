@@ -70,6 +70,7 @@ export interface StaleReviewBotClassificationPolicyArgs {
   hasMarkedNoSourceChangeRepair: boolean;
   verifiedNoSourceChangeRepair: boolean;
   hasExplicitCurrentHeadRepairVerification: boolean;
+  hasCurrentHeadRepairCheckVerification: boolean;
   repairAttemptCount: number;
   allMustFixRepairResidueThreadsAreP2: boolean;
   requiresDeterministicRepairProbeEvidence: boolean;
@@ -153,9 +154,10 @@ function classifyCodexReviewBotPolicy(
     }
     const verifiedCurrentHeadRepair =
       args.hasExplicitCurrentHeadRepairVerification ||
+      args.hasCurrentHeadRepairCheckVerification ||
       (!args.hasMarkedNoSourceChangeRepair && args.repairAttemptCount > 0);
     if (!args.noMajorSignalEvidence) {
-      if (args.deterministicProbeEvidence) {
+      if (args.deterministicProbeEvidence && args.allMustFixRepairResidueThreadsAreP2) {
         return {
           classification: "verified_current_head_repair_pending_thread_resolution",
           summary: VERIFIED_CURRENT_HEAD_REPAIR_SUMMARY,
