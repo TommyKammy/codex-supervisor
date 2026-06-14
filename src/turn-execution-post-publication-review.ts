@@ -1,4 +1,5 @@
 import type { LocalReviewRepairContext } from "./codex";
+import { VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET } from "./current-head-codex-repair-proof";
 import {
   latestReviewThreadCommentFingerprint,
   processedReviewThreadFingerprintKey,
@@ -52,6 +53,9 @@ function processedReviewThreadFingerprintsForHead(threads: ReviewThread[], headS
       : [];
   });
 }
+
+const VERIFIED_NO_SOURCE_CHANGE_REVIEW_THREAD_RESIDUE_TARGET =
+  "verified_no_source_change_review_thread_residue";
 
 export interface PostPublicationReviewPersistence {
   processedReviewThreadPatch: Pick<
@@ -140,13 +144,9 @@ export function buildPostPublicationCodexVerificationTimelineArtifacts(args: {
   reviewThreadsToProcess: ReviewThread[];
 }): TimelineArtifact[] | null {
   const currentPrHeadSha = args.currentPr?.headRefOid ?? null;
-  const codexTurnVerificationRepairTargets = args.hasVerifiedNoSourceChangeReviewThreadEvidence
-    ? ["verified_no_source_change_review_thread_residue"]
-    : undefined;
-  const codexTurnVerificationReviewThreads =
-    codexTurnVerificationRepairTargets
-      ? args.verifiedNoSourceChangeReviewThreads
-      : args.reviewThreadsToProcess;
+  const codexTurnVerificationReviewThreads = args.hasVerifiedNoSourceChangeReviewThreadEvidence
+    ? args.verifiedNoSourceChangeReviewThreads
+    : args.reviewThreadsToProcess;
   const codexTurnVerificationReviewThreadIds =
     processedReviewThreadIdsForHead(codexTurnVerificationReviewThreads, currentPrHeadSha);
   const codexTurnVerificationReviewThreadFingerprints =
@@ -154,6 +154,11 @@ export function buildPostPublicationCodexVerificationTimelineArtifacts(args: {
   const hasCodexTurnVerificationReviewThreadEvidence =
     (codexTurnVerificationReviewThreadIds?.length ?? 0) > 0 ||
     (codexTurnVerificationReviewThreadFingerprints?.length ?? 0) > 0;
+  const codexTurnVerificationRepairTargets = args.hasVerifiedNoSourceChangeReviewThreadEvidence
+    ? [VERIFIED_NO_SOURCE_CHANGE_REVIEW_THREAD_RESIDUE_TARGET]
+    : hasCodexTurnVerificationReviewThreadEvidence
+      ? [VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET]
+      : undefined;
   const codexTurnVerificationHeadSha =
     args.currentPr &&
     args.codexVerificationCommand &&
