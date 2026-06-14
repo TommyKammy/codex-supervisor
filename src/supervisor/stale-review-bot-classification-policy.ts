@@ -163,7 +163,7 @@ function classifyCodexReviewBotPolicy(
         };
       }
       if (
-        verifiedCurrentHeadRepair &&
+        args.hasExplicitCurrentHeadRepairVerification &&
         args.allMustFixRepairResidueThreadsAreP2 &&
         !args.requiresDeterministicRepairProbeEvidence
       ) {

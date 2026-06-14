@@ -27,12 +27,11 @@ import {
 import { configuredBotCurrentHeadSignalWaitWindow } from "./review-bot-wait-windows";
 import { hasCodexConnectorReviewRequestCommentIdentity } from "../codex-connector-review-request-identity";
 import {
-  checksAllowMergeReadyAction,
   formatStaleReviewMetadataConvergenceDiagnostic,
   formatStaleReviewResidueOperatorDiagnostic,
-  githubPullRequestAllowsMergeReadyAction,
   shouldSuppressActionableCodexDiagnostics,
   shouldUseStaleReviewRemediationDiagnostic,
+  verifiedCurrentHeadRepairResidueAllowsMergeReadyAction,
 } from "./stale-review-bot-diagnostics-presenter";
 import {
   buildStaleReviewBotThreadDiagnostics,
@@ -680,13 +679,23 @@ export function buildCodexConnectorDiagnosticBundle(args: {
         remediation: staleReviewBotRemediation,
       })
     : null;
-  const verifiedCurrentHeadRepairResidueMergeReady = Boolean(
+  const verifiedCurrentHeadRepairResidueMergeReady =
+    args.config.verifiedCurrentHeadRepairReviewThreadAutoResolve === true &&
+    verifiedCurrentHeadRepairResidueAllowsMergeReadyAction({
+      remediation: staleReviewBotRemediation,
+      diagnostics: staleReviewBotThreadDiagnostics,
+      pr: args.pr,
+      checks: args.checks,
+    });
+  const suppressStaleReviewMetadataConvergence =
     staleReviewBotRemediation?.classification === "verified_current_head_repair_pending_thread_resolution" &&
-      args.config.verifiedCurrentHeadRepairReviewThreadAutoResolve === true &&
-      staleReviewBotThreadDiagnostics?.autoRepairSuppressedReason === "none" &&
-      githubPullRequestAllowsMergeReadyAction(args.pr) &&
-      checksAllowMergeReadyAction(args.checks),
-  );
+    !verifiedCurrentHeadRepairResidueMergeReady;
+  const staleReviewMetadataConvergenceSummary = staleReviewBotRemediation
+    ? formatStaleReviewMetadataConvergenceDiagnostic({
+      remediation: staleReviewBotRemediation,
+      pr: args.pr,
+    })
+    : null;
   return {
     policyBlockSummary: policyBlock ? formatCodexConnectorPolicyBlockDiagnostic(policyBlock) : null,
     p2p3PolicySummary: p2p3Policy ? formatCodexConnectorP2P3PolicyDiagnostic(p2p3Policy) : null,
@@ -723,10 +732,9 @@ export function buildCodexConnectorDiagnosticBundle(args: {
     }),
     convergenceSummary:
       staleReviewBotRemediation
-        ? formatStaleReviewMetadataConvergenceDiagnostic({
-          remediation: staleReviewBotRemediation,
-          pr: args.pr,
-        }) ??
+        ? suppressStaleReviewMetadataConvergence
+          ? null
+          : staleReviewMetadataConvergenceSummary ??
           (staleReviewBotRemediation.missingProbeReason
             ? null
             : formatCodexConnectorConvergenceDiagnostic({

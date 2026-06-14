@@ -33,6 +33,23 @@ export function checksAllowMergeReadyAction(
   );
 }
 
+export function verifiedCurrentHeadRepairResidueAllowsMergeReadyAction(args: {
+  remediation: StaleReviewBotRemediationDto | null | undefined;
+  diagnostics: StaleReviewBotThreadDiagnosticsDto | null | undefined;
+  pr: Pick<
+    GitHubPullRequest,
+    "state" | "isDraft" | "mergeStateStatus" | "mergeable" | "reviewDecision"
+  > | null | undefined;
+  checks?: ReadonlyArray<Pick<PullRequestCheck, "bucket">> | null;
+}): boolean {
+  return Boolean(
+    args.remediation?.classification === "verified_current_head_repair_pending_thread_resolution" &&
+      args.diagnostics?.autoRepairSuppressedReason === "none" &&
+      githubPullRequestAllowsMergeReadyAction(args.pr) &&
+      checksAllowMergeReadyAction(args.checks),
+  );
+}
+
 export function formatStaleReviewBotRemediationLine(remediation: StaleReviewBotRemediationDto): string {
   const tokens = [
     "stale_review_bot_remediation",
@@ -106,10 +123,12 @@ export function formatStaleReviewBotTerminalStopLine(args: {
       ? "manual_review_thread_handling"
       : remediation.classification === "metadata_only_missing_current_head_review"
         ? "request_current_head_review"
-      : remediation.classification === "verified_current_head_repair_pending_thread_resolution" &&
-            diagnostics.autoRepairSuppressedReason === "none" &&
-            githubPullRequestAllowsMergeReadyAction(args.pr) &&
-            checksAllowMergeReadyAction(args.checks)
+      : verifiedCurrentHeadRepairResidueAllowsMergeReadyAction({
+          remediation,
+          diagnostics,
+          pr: args.pr,
+          checks: args.checks,
+        })
           ? "merge_ready"
         : remediation.classification === "verified_no_source_change_pending_thread_resolution" ||
             remediation.classification === "verified_current_head_repair_pending_thread_resolution"
