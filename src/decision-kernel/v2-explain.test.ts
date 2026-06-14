@@ -524,6 +524,8 @@ test("buildDecisionKernelV2ExplainDto requires Codex no-major evidence for Codex
       provider_success_head_sha: "head-current",
     }),
     pr: pullRequest({
+      reviewDecision: "CHANGES_REQUESTED",
+      configuredBotTopLevelReviewStrength: "blocking",
       configuredBotCurrentHeadObservedAt: "2026-06-08T00:06:00.000Z",
       configuredBotCurrentHeadObservationSource: "review_thread",
       configuredBotCurrentHeadStatusState: "SUCCESS",

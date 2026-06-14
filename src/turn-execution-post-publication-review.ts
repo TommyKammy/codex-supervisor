@@ -140,14 +140,6 @@ export function buildPostPublicationCodexVerificationTimelineArtifacts(args: {
   reviewThreadsToProcess: ReviewThread[];
 }): TimelineArtifact[] | null {
   const currentPrHeadSha = args.currentPr?.headRefOid ?? null;
-  const codexTurnVerificationHeadSha =
-    args.currentPr &&
-    args.codexVerificationCommand &&
-    args.workspaceStatus.headSha === args.currentPr.headRefOid &&
-    args.postRunState !== "failed" &&
-    (args.postRunState !== "blocked" || args.hasVerifiedNoSourceChangeReviewThreadEvidence)
-      ? args.currentPr.headRefOid
-      : null;
   const codexTurnVerificationRepairTargets = args.hasVerifiedNoSourceChangeReviewThreadEvidence
     ? ["verified_no_source_change_review_thread_residue"]
     : undefined;
@@ -162,6 +154,16 @@ export function buildPostPublicationCodexVerificationTimelineArtifacts(args: {
   const hasCodexTurnVerificationReviewThreadEvidence =
     (codexTurnVerificationReviewThreadIds?.length ?? 0) > 0 ||
     (codexTurnVerificationReviewThreadFingerprints?.length ?? 0) > 0;
+  const codexTurnVerificationHeadSha =
+    args.currentPr &&
+    args.codexVerificationCommand &&
+    args.workspaceStatus.headSha === args.currentPr.headRefOid &&
+    args.postRunState !== "failed" &&
+    (args.postRunState !== "blocked" ||
+      args.hasVerifiedNoSourceChangeReviewThreadEvidence ||
+      hasCodexTurnVerificationReviewThreadEvidence)
+      ? args.currentPr.headRefOid
+      : null;
   const codexTurnVerificationTimelineArtifacts =
     args.currentPr &&
     args.codexVerificationCommand &&

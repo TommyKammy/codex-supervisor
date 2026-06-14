@@ -24,6 +24,7 @@ import {
   inferGitHubWaitStep,
 } from "../pull-request-state";
 import { projectCurrentHeadCodexRepairProof } from "../current-head-codex-repair-proof";
+import { aggregateHumanReviewDecisionBlocker } from "../review-decision-blocking-policy";
 import { hasCodexConnectorPrSuccessCurrentHeadObservation } from "../codex-connector-review-policy";
 import {
   syncCopilotReviewRequestObservation,
@@ -279,13 +280,14 @@ function finalAutoMergeGuard(args: {
   const verifiedCurrentHeadRepairResidue = verifiedCurrentHeadRepairProof !== null;
   const currentHeadCodexNoMajor = hasCurrentHeadCodexNoMajor(record, currentPr) || verifiedCurrentHeadRepairResidue;
   const requiresCodexNoMajor = autoMergePath === "codex_connector_no_major";
-  const aggregateHumanReviewBlocker =
-    config.humanReviewBlocksMerge &&
-    (currentPr.reviewDecision === "REVIEW_REQUIRED" ||
-      (currentPr.reviewDecision === "CHANGES_REQUESTED" &&
-        (requiresCodexNoMajor || currentPr.configuredBotTopLevelReviewStrength !== "nitpick_only")))
-      ? currentPr.reviewDecision
-      : null;
+  const aggregateHumanReviewBlocker = aggregateHumanReviewDecisionBlocker({
+    humanReviewBlocksMerge: Boolean(config.humanReviewBlocksMerge),
+    requiresCodexNoMajor,
+    verifiedCurrentHeadRepairResidue,
+    effectiveConfiguredBotBlockerCount: effectiveConfiguredBotBlockers,
+    effectiveHumanBlockerCount: effectiveHumanBlockers,
+    pr: currentPr,
+  });
   const localCiResult = record.latest_local_ci_result ?? null;
   const localCiConfigured = hasConfiguredLocalCiCommand(config);
   const localCiMissing = localCiConfigured && currentHeadLocalCiMissing(record, currentPr);

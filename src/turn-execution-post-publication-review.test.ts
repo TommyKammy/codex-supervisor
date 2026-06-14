@@ -8,7 +8,7 @@ import {
 } from "./pull-request-state-test-helpers";
 import { CODEX_CONNECTOR_REVIEW_BOT_LOGIN } from "./codex-connector-tracked-pr-test-helpers";
 
-test("buildPostPublicationCodexVerificationTimelineArtifacts persists scoped thread keys for normal repair turns", () => {
+test("buildPostPublicationCodexVerificationTimelineArtifacts persists scoped thread keys for blocked normal repair turns", () => {
   const headSha = "head-normal-repair";
   const reviewThread = createReviewThread({
     id: "thread-normal-repair",
@@ -36,7 +36,7 @@ test("buildPostPublicationCodexVerificationTimelineArtifacts persists scoped thr
     codexVerificationCommand: "npm test -- src/review.test.ts",
     workspaceStatus: { headSha },
     structuredSummary: "Focused repair verifier passed.",
-    postRunState: "ready_to_merge",
+    postRunState: "blocked",
     hasVerifiedNoSourceChangeReviewThreadEvidence: false,
     verifiedNoSourceChangeReviewThreads: [],
     reviewThreadsToProcess: [reviewThread],

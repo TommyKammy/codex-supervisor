@@ -727,6 +727,44 @@ test("legacy current-head processed-thread repair proof can replace Codex no-maj
   assert.equal(
     hasVerifiedCurrentHeadRepairReviewMetadataResidue({
       config,
+      record,
+      pr,
+      checks: scenario.passingChecks,
+      reviewThreads: [],
+    }),
+    true,
+  );
+  assert.equal(
+    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+      config,
+      record,
+      pr: createPullRequest({
+        ...pr,
+        reviewDecision: "CHANGES_REQUESTED",
+        configuredBotTopLevelReviewStrength: "blocking",
+      }),
+      checks: scenario.passingChecks,
+      reviewThreads: [scenario.reviewThread],
+    }),
+    true,
+  );
+  assert.equal(
+    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+      config,
+      record,
+      pr: createPullRequest({
+        ...pr,
+        reviewDecision: "CHANGES_REQUESTED",
+        configuredBotTopLevelReviewStrength: null,
+      }),
+      checks: scenario.passingChecks,
+      reviewThreads: [scenario.reviewThread],
+    }),
+    false,
+  );
+  assert.equal(
+    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+      config,
       record: createRecord({
         ...record,
         latest_local_ci_result: null,
@@ -805,6 +843,26 @@ test("legacy current-head processed-thread repair proof requires current-head no
       pr,
       checks: scenario.passingChecks,
       reviewThreads: [scenario.reviewThread],
+    }),
+    false,
+  );
+  assert.equal(
+    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+      config,
+      record,
+      pr,
+      checks: scenario.passingChecks,
+      reviewThreads: [],
+    }),
+    false,
+  );
+  assert.equal(
+    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+      config,
+      record,
+      pr,
+      checks: scenario.passingChecks,
+      reviewThreads: [],
     }),
     false,
   );

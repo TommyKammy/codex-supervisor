@@ -12,6 +12,7 @@ import {
   processedReviewThreadFingerprintKey,
   processedReviewThreadKey,
 } from "./review-handling";
+import { reviewDecisionBlocksCurrentHeadRepairProjection } from "./review-decision-blocking-policy";
 import {
   configuredBotReviewThreads,
   latestReviewCommentAuthorIsAllowedBot,
@@ -85,8 +86,19 @@ function currentHeadVerifiedRepairResidueArtifact(
       artifact.outcome === "passed" &&
       artifact.head_sha === pr.headRefOid &&
       artifact.repair_targets?.includes(VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET) === true &&
-      (artifact.processed_review_thread_ids?.length ?? 0) > 0,
+      artifactHeadScopedProcessedThreadEvidenceCount(artifact, pr) > 0,
   ) ?? null;
+}
+
+function artifactHeadScopedProcessedThreadEvidenceCount(
+  artifact: Pick<TimelineArtifact, "processed_review_thread_ids" | "processed_review_thread_fingerprints">,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
+): number {
+  const headToken = `@${pr.headRefOid}`;
+  return (
+    (artifact.processed_review_thread_ids ?? []).filter((key) => key.includes(headToken)).length +
+    (artifact.processed_review_thread_fingerprints ?? []).filter((key) => key.includes(headToken)).length
+  );
 }
 
 function repairArtifactCoversCurrentThreads(
@@ -95,7 +107,7 @@ function repairArtifactCoversCurrentThreads(
   currentThreads: ReviewThread[],
 ): boolean {
   if (currentThreads.length === 0) {
-    return true;
+    return artifactHeadScopedProcessedThreadEvidenceCount(artifact, pr) > 0;
   }
   const processedThreadIds = artifact.processed_review_thread_ids ?? [];
   const processedThreadFingerprints = artifact.processed_review_thread_fingerprints ?? [];
@@ -158,14 +170,11 @@ function humanReviewBlocksProjection(
   pr: GitHubPullRequest,
   reviewThreads: ReviewThread[],
 ): boolean {
-  if (!config.humanReviewBlocksMerge) {
-    return false;
-  }
-  return (
-    manualReviewThreads(config, reviewThreads).length > 0 ||
-    pr.reviewDecision === "REVIEW_REQUIRED" ||
-    pr.reviewDecision === "CHANGES_REQUESTED"
-  );
+  return reviewDecisionBlocksCurrentHeadRepairProjection({
+    humanReviewBlocksMerge: Boolean(config.humanReviewBlocksMerge),
+    manualThreadCount: manualReviewThreads(config, reviewThreads).length,
+    pr,
+  });
 }
 
 function projectionSafetyGatesPass(args: {
@@ -217,10 +226,6 @@ export function projectCurrentHeadCodexRepairProof(args: {
       processedThreadEvidenceCount: structuredArtifact.processed_review_thread_ids?.length ?? 0,
       currentConfiguredThreadCount: repairResidueThreads.length,
     };
-  }
-
-  if (repairResidueThreads.length === 0) {
-    return null;
   }
 
   const processedThreadEvidenceCount = headScopedProcessedThreadEvidenceCount(args.record, args.pr);

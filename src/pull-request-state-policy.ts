@@ -59,6 +59,7 @@ import {
   shouldWaitForCodexConnectorCurrentHeadReview,
   staleSameHeadCodexWaitHasOnlyOutdatedResidue,
 } from "./pull-request-state-codex-residue-policy";
+import { verifiedConfiguredBotReviewDecisionResidueSatisfied } from "./review-decision-blocking-policy";
 import { displayLocalCiCommand } from "./core/config-parsing";
 import { nowIso } from "./core/utils";
 import { hasQueuedReadyPromotionPathHygieneRepair } from "./ready-promotion-path-hygiene-repair";
@@ -129,11 +130,19 @@ export function buildCopilotReviewTimeoutFailureContext(
 }
 
 function mergeConditionsSatisfied(pr: GitHubPullRequest, checks: PullRequestCheck[]): boolean {
+  return mergeConditionsSatisfiedWithReview(pr, checks, reviewSatisfied(pr));
+}
+
+function mergeConditionsSatisfiedWithReview(
+  pr: GitHubPullRequest,
+  checks: PullRequestCheck[],
+  reviewDecisionSatisfied: boolean,
+): boolean {
   const checkSummary = summarizeChecks(checks);
   return (
     pr.state === "OPEN" &&
     !pr.isDraft &&
-    reviewSatisfied(pr) &&
+    reviewDecisionSatisfied &&
     checkSummary.allPassing &&
     pr.mergeStateStatus === "CLEAN"
   );
@@ -208,6 +217,12 @@ export function blockedReasonFromReviewState(
   });
   const configuredReviewMetadataSatisfied = provenCodexStaleReviewMetadata || verifiedCurrentHeadRepairResidue;
   const unresolvedBotThreads = effectiveConfiguredBotReviewThreadsForState(config, record, pr, checks, reviewThreads);
+  const botReviewDecisionResidueSatisfied = verifiedConfiguredBotReviewDecisionResidueSatisfied({
+    verifiedCurrentHeadRepairResidue,
+    effectiveConfiguredBotBlockerCount: unresolvedBotThreads.length,
+    effectiveHumanBlockerCount: manualThreads.length,
+    pr,
+  });
   const staleBotThreads =
     manualThreads.length === 0 && !configuredReviewMetadataSatisfied
       ? staleConfiguredBotReviewThreads(config, record, pr, unresolvedBotThreads)
@@ -249,6 +264,7 @@ export function blockedReasonFromReviewState(
 
   if (
     pr.reviewDecision === "CHANGES_REQUESTED" &&
+    !botReviewDecisionResidueSatisfied &&
     (pr.configuredBotTopLevelReviewStrength === "blocking" ||
       (config.humanReviewBlocksMerge && pr.configuredBotTopLevelReviewStrength !== "nitpick_only"))
   ) {
@@ -295,6 +311,13 @@ export function inferStateFromPullRequest(
   });
   const configuredReviewMetadataSatisfied = provenCodexStaleReviewMetadata || verifiedCurrentHeadRepairResidue;
   const unresolvedBotThreads = effectiveConfiguredBotReviewThreadsForState(config, record, pr, checks, reviewThreads);
+  const botReviewDecisionResidueSatisfied = verifiedConfiguredBotReviewDecisionResidueSatisfied({
+    verifiedCurrentHeadRepairResidue,
+    effectiveConfiguredBotBlockerCount: unresolvedBotThreads.length,
+    effectiveHumanBlockerCount: manualThreads.length,
+    pr,
+  });
+  const reviewDecisionSatisfiedForState = reviewSatisfied(pr) || botReviewDecisionResidueSatisfied;
   const codexConnectorMustFixThreads = codexConnectorMustFixReviewThreads(unresolvedBotThreads);
   const codexConnectorMustFixThreadIds = new Set(codexConnectorMustFixThreads.map((thread) => thread.id));
   const retryFingerprintForThread = (thread: ReviewThread) =>
@@ -347,7 +370,7 @@ export function inferStateFromPullRequest(
     return "waiting_ci";
   }
 
-  if (pr.reviewDecision === "CHANGES_REQUESTED") {
+  if (pr.reviewDecision === "CHANGES_REQUESTED" && !botReviewDecisionResidueSatisfied) {
     if (
       processedCodexConnectorMustFixThreadsExhaustedRepeatBudget({
         config,
@@ -612,11 +635,11 @@ export function inferStateFromPullRequest(
     return "waiting_ci";
   }
 
-  if (!pullRequestHeadMatchesRecord(record, pr) && mergeConditionsSatisfied(pr, checks)) {
+  if (!pullRequestHeadMatchesRecord(record, pr) && mergeConditionsSatisfiedWithReview(pr, checks, reviewDecisionSatisfiedForState)) {
     return "stabilizing";
   }
 
-  if (mergeConditionsSatisfied(pr, checks)) {
+  if (mergeConditionsSatisfiedWithReview(pr, checks, reviewDecisionSatisfiedForState)) {
     return "ready_to_merge";
   }
 
