@@ -52,6 +52,7 @@ import {
 import { reviewLoopRetryBudgetExhaustedForThread } from "./review-handling";
 import {
   effectiveConfiguredBotReviewThreadsForState,
+  currentHeadRepairProofSatisfiesConfiguredProviderSignal,
   hasConfiguredProviderSuccess,
   hasProvenCodexConnectorStaleReviewMetadata,
   hasVerifiedCurrentHeadRepairReviewMetadataResidue,
@@ -310,6 +311,15 @@ export function inferStateFromPullRequest(
     reviewThreads,
   });
   const configuredReviewMetadataSatisfied = provenCodexStaleReviewMetadata || verifiedCurrentHeadRepairResidue;
+  const configuredReviewMetadataWaitSatisfied =
+    provenCodexStaleReviewMetadata ||
+    currentHeadRepairProofSatisfiesConfiguredProviderSignal({
+      config,
+      record,
+      pr,
+      checks,
+      reviewThreads,
+    });
   const unresolvedBotThreads = effectiveConfiguredBotReviewThreadsForState(config, record, pr, checks, reviewThreads);
   const botReviewDecisionResidueSatisfied = verifiedConfiguredBotReviewDecisionResidueSatisfied({
     verifiedCurrentHeadRepairResidue,
@@ -355,7 +365,7 @@ export function inferStateFromPullRequest(
   }
 
   if (
-    !configuredReviewMetadataSatisfied &&
+    !configuredReviewMetadataWaitSatisfied &&
     shouldWaitForCodexConnectorCurrentHeadReview({
       config,
       record,
@@ -587,7 +597,7 @@ export function inferStateFromPullRequest(
   if (
     copilotTimeout.timedOut &&
     copilotTimeout.action === "block" &&
-    !configuredReviewMetadataSatisfied &&
+    !configuredReviewMetadataWaitSatisfied &&
     !staleCodexWaitHasOnlyOutdatedResidue
   ) {
     return "blocked";
@@ -596,7 +606,7 @@ export function inferStateFromPullRequest(
   if (
     copilotTimeout.timedOut &&
     copilotTimeout.action === "request_review_comment" &&
-    !configuredReviewMetadataSatisfied &&
+    !configuredReviewMetadataWaitSatisfied &&
     !staleCodexWaitHasOnlyOutdatedResidue
   ) {
     return "waiting_ci";
@@ -619,7 +629,7 @@ export function inferStateFromPullRequest(
   }
 
   if (
-    !configuredReviewMetadataSatisfied &&
+    !configuredReviewMetadataWaitSatisfied &&
     !staleCodexWaitHasOnlyOutdatedResidue &&
     configuredBotCurrentHeadSignalPending(config, record, pr) &&
     !copilotTimeout.timedOut
@@ -687,7 +697,7 @@ export function inferGitHubWaitStep(
   const copilotTimeout = determineCopilotReviewTimeout(config, record, pr, nowMs);
   const staleCodexWaitHasOnlyOutdatedResidue =
     reviewThreads.length > 0 && staleSameHeadCodexWaitHasOnlyOutdatedResidue(config, record, pr, checks, reviewThreads);
-  const verifiedCurrentHeadRepairResidue = hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+  const verifiedCurrentHeadRepairResidue = currentHeadRepairProofSatisfiesConfiguredProviderSignal({
     config,
     record,
     pr,

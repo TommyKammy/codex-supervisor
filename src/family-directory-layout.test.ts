@@ -78,6 +78,7 @@ const EXPECTED_TOP_LEVEL_ENTRIES = {
     "recovery-workspace-reconciliation.ts",
     "remediation-targets.ts",
     "requirements-blocker-issue-comment.ts",
+    "review-decision-blocking-policy.ts",
     "review-handling.ts",
     "review-role-detector.ts",
     "review-thread-reporting.ts",

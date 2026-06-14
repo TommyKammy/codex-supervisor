@@ -15,9 +15,10 @@ export function verifiedConfiguredBotReviewDecisionResidueSatisfied(args: {
   verifiedCurrentHeadRepairResidue: boolean;
   effectiveConfiguredBotBlockerCount: number;
   effectiveHumanBlockerCount: number;
-  pr: Pick<GitHubPullRequest, "configuredBotTopLevelReviewStrength">;
+  pr: Pick<GitHubPullRequest, "reviewDecision" | "configuredBotTopLevelReviewStrength">;
 }): boolean {
   return (
+    args.pr.reviewDecision === "CHANGES_REQUESTED" &&
     args.verifiedCurrentHeadRepairResidue &&
     args.effectiveConfiguredBotBlockerCount === 0 &&
     args.effectiveHumanBlockerCount === 0 &&

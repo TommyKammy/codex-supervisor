@@ -22,6 +22,7 @@ import {
   createCodexConnectorTrackedReviewResidueScenario,
 } from "./codex-connector-tracked-pr-test-helpers";
 import {
+  currentHeadRepairProofSatisfiesConfiguredProviderSignal,
   hasConfiguredProviderSuccess,
   hasVerifiedCurrentHeadRepairReviewMetadataResidue,
 } from "./pull-request-state-codex-residue-policy";
@@ -777,6 +778,164 @@ test("legacy current-head processed-thread repair proof can replace Codex no-maj
   );
   assert.equal(inferStateFromPullRequest(config, record, pr, scenario.passingChecks, [scenario.reviewThread]), "ready_to_merge");
   assert.equal(hasConfiguredProviderSuccess(config, record, pr, scenario.passingChecks, [scenario.reviewThread]), true);
+});
+
+test("legacy current-head repair proof does not satisfy GitHub review-required decisions", () => {
+  const issueNumber = 2375;
+  const prNumber = 399;
+  const headSha = "02642468db1df175a92ec8d332fdf64e7754a3ab";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "PRRT_review_required_residue",
+    commentId: "PRRC_review_required_residue",
+    path: "web/src/App.tsx",
+    line: 912,
+    severity: "P2",
+    commentBody: "P2: Require termination code fields before submit.",
+    discussionUrl: "https://example.test/pr/399#discussion_r3409030368",
+    verifiedRepair: {
+      summary: "Verified current head addresses the review findings.",
+      ranAt: "2026-06-14T04:58:52.932Z",
+      command: "npm run verify:pre-pr",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    humanReviewBlocksMerge: false,
+    codexConnectorAutoMergeEnabled: true,
+    localCiCommand: "npm run verify:pre-pr",
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    blocked_reason: "verification",
+    last_failure_signature: `${headSha}:missing_current_head_codex_no_major`,
+    latest_local_ci_result: {
+      outcome: "passed",
+      summary: "Configured local CI command passed before auto-merging PR #399.",
+      ran_at: "2026-06-14T04:59:01.275Z",
+      head_sha: headSha,
+      execution_mode: "shell",
+      command: "npm run verify:pre-pr",
+      failure_class: null,
+      remediation_target: null,
+    },
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    configuredBotCurrentHeadObservedAt: "2026-06-14T05:12:43Z",
+    configuredBotCurrentHeadObservationSource: "review_thread",
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotLatestReviewedCommitSha: headSha,
+    reviewDecision: "REVIEW_REQUIRED",
+    configuredBotTopLevelReviewStrength: "blocking",
+  });
+
+  assert.equal(
+    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+      config,
+      record,
+      pr,
+      checks: scenario.passingChecks,
+      reviewThreads: [],
+    }),
+    true,
+  );
+  assert.equal(inferStateFromPullRequest(config, record, pr, scenario.passingChecks, []), "pr_open");
+});
+
+test("cleared legacy repair proof does not replace a required Codex current-head signal", () => {
+  const issueNumber = 2375;
+  const prNumber = 399;
+  const headSha = "03642468db1df175a92ec8d332fdf64e7754a3ab";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "PRRT_wait_after_residue_cleanup",
+    commentId: "PRRC_wait_after_residue_cleanup",
+    path: "web/src/App.tsx",
+    line: 913,
+    severity: "P2",
+    commentBody: "P2: Require termination code fields before submit.",
+    discussionUrl: "https://example.test/pr/399#discussion_r3409030369",
+    verifiedRepair: {
+      summary: "Verified current head addresses the review findings.",
+      ranAt: "2026-06-14T04:58:52.932Z",
+      command: "npm run verify:pre-pr",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    humanReviewBlocksMerge: true,
+    codexConnectorAutoMergeEnabled: true,
+    localCiCommand: "npm run verify:pre-pr",
+    configuredBotRequireCurrentHeadSignal: true,
+    configuredBotInitialGraceWaitSeconds: 0,
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    blocked_reason: "verification",
+    last_failure_signature: `${headSha}:missing_current_head_codex_no_major`,
+    latest_local_ci_result: {
+      outcome: "passed",
+      summary: "Configured local CI command passed before auto-merging PR #399.",
+      ran_at: "2026-06-14T04:59:01.275Z",
+      head_sha: headSha,
+      execution_mode: "shell",
+      command: "npm run verify:pre-pr",
+      failure_class: null,
+      remediation_target: null,
+    },
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    currentHeadCiGreenAt: "2026-06-14T05:00:00Z",
+    configuredBotCurrentHeadObservedAt: null,
+    configuredBotCurrentHeadObservationSource: null,
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotLatestReviewedCommitSha: null,
+  });
+  const nowMs = Date.parse("2026-06-14T05:00:30Z");
+
+  assert.equal(
+    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+      config,
+      record,
+      pr,
+      checks: scenario.passingChecks,
+      reviewThreads: [],
+    }),
+    true,
+  );
+  assert.equal(
+    currentHeadRepairProofSatisfiesConfiguredProviderSignal({
+      config,
+      record,
+      pr,
+      checks: scenario.passingChecks,
+      reviewThreads: [],
+    }),
+    false,
+  );
+  assert.equal(
+    currentHeadRepairProofSatisfiesConfiguredProviderSignal({
+      config,
+      record,
+      pr,
+      checks: scenario.passingChecks,
+      reviewThreads: [scenario.reviewThread],
+    }),
+    true,
+  );
+  assert.equal(hasConfiguredProviderSuccess(config, record, pr, scenario.passingChecks, []), false);
+  assert.equal(inferGitHubWaitStep(config, record, pr, scenario.passingChecks, [], nowMs), "configured_bot_current_head_signal_wait");
+  assert.equal(inferStateFromPullRequest(config, record, pr, scenario.passingChecks, [], nowMs), "waiting_ci");
 });
 
 test("legacy current-head processed-thread repair proof requires current-head no-major refusal evidence", () => {

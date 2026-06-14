@@ -319,6 +319,25 @@ export function hasVerifiedCurrentHeadRepairReviewMetadataResidue(args: {
   return projectCurrentHeadCodexRepairProof(args) !== null;
 }
 
+export function currentHeadRepairProofSatisfiesConfiguredProviderSignal(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+}): boolean {
+  const proof = projectCurrentHeadCodexRepairProof(args);
+  if (!proof) {
+    return false;
+  }
+
+  if (!configuredBotCurrentHeadSignalPending(args.config, args.record, args.pr)) {
+    return true;
+  }
+
+  return proof.currentConfiguredThreadCount > 0;
+}
+
 function configuredBotThreadsAllowCodexConnectorCurrentHeadWait(args: {
   config: SupervisorConfig;
   record: IssueRunRecord;
@@ -350,7 +369,7 @@ export function shouldWaitForCodexConnectorCurrentHeadReview(args: {
   unresolvedBotThreads: ReviewThread[];
   nowMs: number;
 }): boolean {
-  if (hasVerifiedCurrentHeadRepairReviewMetadataResidue(args)) {
+  if (currentHeadRepairProofSatisfiesConfiguredProviderSignal(args)) {
     return false;
   }
 
@@ -447,7 +466,7 @@ export function hasConfiguredProviderSuccess(
   }
 
   if (
-    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+    currentHeadRepairProofSatisfiesConfiguredProviderSignal({
       config,
       record,
       pr,
