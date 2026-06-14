@@ -5,6 +5,7 @@ import {
   processedReviewThreadFingerprintKey,
   processedReviewThreadKey,
 } from "./review-handling";
+import { isIgnoredSupervisorArtifactPath } from "./core/git-workspace-helpers";
 import {
   hasCurrentTurnVerifiedNoSourceChangeReviewThreadEvidence,
   nextProcessedReviewThreadPatch,
@@ -56,6 +57,31 @@ function processedReviewThreadFingerprintsForHead(threads: ReviewThread[], headS
 
 const VERIFIED_NO_SOURCE_CHANGE_REVIEW_THREAD_RESIDUE_TARGET =
   "verified_no_source_change_review_thread_residue";
+
+function normalizeChangedFilePath(filePath: string): string {
+  return filePath.replace(/\\/g, "/").replace(/^(?:\.\/)+/u, "");
+}
+
+function changedFilesContainPublishedRepairSource(args: {
+  changedFilesAfterPublication: readonly string[];
+  artifactOnlyChangedFilesAfterPublication: readonly string[];
+  workspaceStatus: Pick<WorkspaceStatus, "hasUncommittedChanges">;
+}): boolean {
+  if (args.workspaceStatus.hasUncommittedChanges) {
+    return false;
+  }
+
+  const artifactOnlyPaths = new Set(
+    args.artifactOnlyChangedFilesAfterPublication.map(normalizeChangedFilePath),
+  );
+  return args.changedFilesAfterPublication
+    .map(normalizeChangedFilePath)
+    .some((filePath) =>
+      !artifactOnlyPaths.has(filePath) &&
+      filePath !== "WORKLOG.md" &&
+      !isIgnoredSupervisorArtifactPath(filePath)
+    );
+}
 
 export interface PostPublicationReviewPersistence {
   processedReviewThreadPatch: Pick<
@@ -136,13 +162,14 @@ export function buildPostPublicationCodexVerificationTimelineArtifacts(args: {
   record: IssueRunRecord;
   currentPr: GitHubPullRequest | null;
   codexVerificationCommand: string | null;
-  workspaceStatus: Pick<WorkspaceStatus, "headSha">;
+  workspaceStatus: Pick<WorkspaceStatus, "hasUncommittedChanges" | "headSha">;
   structuredSummary: string | null | undefined;
   postRunState: IssueRunRecord["state"];
   hasVerifiedNoSourceChangeReviewThreadEvidence: boolean;
   verifiedNoSourceChangeReviewThreads: ReviewThread[];
   reviewThreadsToProcess: ReviewThread[];
   changedFilesAfterPublication: readonly string[];
+  artifactOnlyChangedFilesAfterPublication: readonly string[];
 }): TimelineArtifact[] | null {
   const currentPrHeadSha = args.currentPr?.headRefOid ?? null;
   const codexTurnVerificationReviewThreads = args.hasVerifiedNoSourceChangeReviewThreadEvidence
@@ -155,7 +182,11 @@ export function buildPostPublicationCodexVerificationTimelineArtifacts(args: {
   const hasCodexTurnVerificationReviewThreadEvidence =
     (codexTurnVerificationReviewThreadIds?.length ?? 0) > 0 ||
     (codexTurnVerificationReviewThreadFingerprints?.length ?? 0) > 0;
-  const hasPublishedRepairChanges = args.changedFilesAfterPublication.length > 0;
+  const hasPublishedRepairChanges = changedFilesContainPublishedRepairSource({
+    changedFilesAfterPublication: args.changedFilesAfterPublication,
+    artifactOnlyChangedFilesAfterPublication: args.artifactOnlyChangedFilesAfterPublication,
+    workspaceStatus: args.workspaceStatus,
+  });
   const codexTurnVerificationRepairTargets = args.hasVerifiedNoSourceChangeReviewThreadEvidence
     ? [VERIFIED_NO_SOURCE_CHANGE_REVIEW_THREAD_RESIDUE_TARGET]
     : hasPublishedRepairChanges && hasCodexTurnVerificationReviewThreadEvidence

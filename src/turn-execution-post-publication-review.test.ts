@@ -35,13 +35,14 @@ test("buildPostPublicationCodexVerificationTimelineArtifacts persists scoped thr
     record: createRecord({ timeline_artifacts: [] }),
     currentPr: createPullRequest({ headRefOid: headSha }),
     codexVerificationCommand: "npm test -- src/review.test.ts",
-    workspaceStatus: { headSha },
+    workspaceStatus: { headSha, hasUncommittedChanges: false },
     structuredSummary: "Focused verifier passed without relying on summary wording.",
     postRunState: "blocked",
     hasVerifiedNoSourceChangeReviewThreadEvidence: false,
     verifiedNoSourceChangeReviewThreads: [],
     reviewThreadsToProcess: [reviewThread],
     changedFilesAfterPublication: ["src/review.ts"],
+    artifactOnlyChangedFilesAfterPublication: [],
   });
 
   assert.equal(artifacts?.length, 1);
@@ -78,13 +79,14 @@ test("buildPostPublicationCodexVerificationTimelineArtifacts preserves no-source
     record: createRecord({ timeline_artifacts: [] }),
     currentPr: createPullRequest({ headRefOid: headSha }),
     codexVerificationCommand: "npm test -- src/review.test.ts",
-    workspaceStatus: { headSha },
+    workspaceStatus: { headSha, hasUncommittedChanges: false },
     structuredSummary: "Focused no-source verifier passed.",
     postRunState: "blocked",
     hasVerifiedNoSourceChangeReviewThreadEvidence: true,
     verifiedNoSourceChangeReviewThreads: [reviewThread],
     reviewThreadsToProcess: [reviewThread],
     changedFilesAfterPublication: [],
+    artifactOnlyChangedFilesAfterPublication: [],
   });
 
   assert.equal(artifacts?.length, 1);
@@ -121,13 +123,14 @@ test("buildPostPublicationCodexVerificationTimelineArtifacts does not mark uncha
     record: createRecord({ timeline_artifacts: [] }),
     currentPr: createPullRequest({ headRefOid: headSha }),
     codexVerificationCommand: "npm test -- src/review.test.ts",
-    workspaceStatus: { headSha },
+    workspaceStatus: { headSha, hasUncommittedChanges: false },
     structuredSummary: "Focused verifier passed without source changes.",
     postRunState: "blocked",
     hasVerifiedNoSourceChangeReviewThreadEvidence: false,
     verifiedNoSourceChangeReviewThreads: [],
     reviewThreadsToProcess: [reviewThread],
     changedFilesAfterPublication: [],
+    artifactOnlyChangedFilesAfterPublication: [],
   });
 
   assert.equal(artifacts?.length, 1);
@@ -136,4 +139,89 @@ test("buildPostPublicationCodexVerificationTimelineArtifacts does not mark uncha
   assert.deepEqual(artifacts?.[0]?.processed_review_thread_fingerprints, [
     `${reviewThread.id}@${headSha}#comment-unchanged-normal-repair`,
   ]);
+});
+
+test("buildPostPublicationCodexVerificationTimelineArtifacts ignores artifact-only changes for current-head repair proof", () => {
+  const headSha = "head-artifact-only-repair";
+  const reviewThread = createReviewThread({
+    id: "thread-artifact-only-repair",
+    path: "src/review.ts",
+    line: 45,
+    comments: {
+      nodes: [
+        {
+          id: "comment-artifact-only-repair",
+          body: "P2: Verify this finding before merge.",
+          createdAt: "2026-06-15T05:24:00Z",
+          url: "https://example.test/pr/406#discussion_r409",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  const artifacts = buildPostPublicationCodexVerificationTimelineArtifacts({
+    record: createRecord({ timeline_artifacts: [] }),
+    currentPr: createPullRequest({ headRefOid: headSha }),
+    codexVerificationCommand: "npm test -- src/review.test.ts",
+    workspaceStatus: { headSha, hasUncommittedChanges: false },
+    structuredSummary: "Focused verifier passed after artifact normalization.",
+    postRunState: "blocked",
+    hasVerifiedNoSourceChangeReviewThreadEvidence: false,
+    verifiedNoSourceChangeReviewThreads: [],
+    reviewThreadsToProcess: [reviewThread],
+    changedFilesAfterPublication: [
+      ".codex-supervisor/issues/2377/issue-journal.md",
+      "docs/generated-summary.md",
+    ],
+    artifactOnlyChangedFilesAfterPublication: ["docs/generated-summary.md"],
+  });
+
+  assert.equal(artifacts?.length, 1);
+  assert.equal(artifacts?.[0]?.repair_targets, undefined);
+  assert.deepEqual(artifacts?.[0]?.processed_review_thread_ids, [`${reviewThread.id}@${headSha}`]);
+});
+
+test("buildPostPublicationCodexVerificationTimelineArtifacts requires a clean workspace for current-head repair proof", () => {
+  const headSha = "head-dirty-workspace-repair";
+  const reviewThread = createReviewThread({
+    id: "thread-dirty-workspace-repair",
+    path: "src/review.ts",
+    line: 46,
+    comments: {
+      nodes: [
+        {
+          id: "comment-dirty-workspace-repair",
+          body: "P2: Verify this finding before merge.",
+          createdAt: "2026-06-15T05:25:00Z",
+          url: "https://example.test/pr/406#discussion_r410",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  const artifacts = buildPostPublicationCodexVerificationTimelineArtifacts({
+    record: createRecord({ timeline_artifacts: [] }),
+    currentPr: createPullRequest({ headRefOid: headSha }),
+    codexVerificationCommand: "npm test -- src/review.test.ts",
+    workspaceStatus: { headSha, hasUncommittedChanges: true },
+    structuredSummary: "Focused verifier passed with dirty workspace.",
+    postRunState: "blocked",
+    hasVerifiedNoSourceChangeReviewThreadEvidence: false,
+    verifiedNoSourceChangeReviewThreads: [],
+    reviewThreadsToProcess: [reviewThread],
+    changedFilesAfterPublication: ["src/review.ts"],
+    artifactOnlyChangedFilesAfterPublication: [],
+  });
+
+  assert.equal(artifacts?.length, 1);
+  assert.equal(artifacts?.[0]?.repair_targets, undefined);
+  assert.deepEqual(artifacts?.[0]?.processed_review_thread_ids, [`${reviewThread.id}@${headSha}`]);
 });

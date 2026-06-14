@@ -602,8 +602,9 @@ export async function executeCodexTurnPhase(
               args.config.stateFile,
             ),
             warningContext: "persisting",
-          });
+            });
         };
+        let artifactOnlyChangedFilesAfterPublication: string[] = [];
         if (
           (workspaceStatus.remoteAhead > 0 ||
             !workspaceStatus.remoteBranchExists) &&
@@ -720,6 +721,12 @@ export async function executeCodexTurnPhase(
               rewrittenTrackedPaths,
             );
           if (presentRewrittenTrackedPaths.length > 0) {
+            artifactOnlyChangedFilesAfterPublication = [
+              ...new Set([
+                ...artifactOnlyChangedFilesAfterPublication,
+                ...presentRewrittenTrackedPaths,
+              ]),
+            ];
             try {
               await commitAndPushTrackedFiles({
                 workspacePath,
@@ -915,6 +922,7 @@ export async function executeCodexTurnPhase(
               postPublicationReviewPersistence.verifiedNoSourceChangeReviewThreads,
             reviewThreadsToProcess,
             changedFilesAfterPublication,
+            artifactOnlyChangedFilesAfterPublication,
           });
         const preserveStaleNoPrRecoveryTracking =
           pr === null &&

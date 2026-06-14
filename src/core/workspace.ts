@@ -20,6 +20,10 @@ const LIVE_ISSUE_JOURNAL_PATH_GLOB =
 const LIVE_ISSUE_JOURNAL_PATH_REGEX =
   /^\.codex-supervisor\/issues\/\d+\/issue-journal\.md$/u;
 
+function normalizeGitRelativePath(relativePath: string): string {
+  return relativePath.replace(/\\/g, "/").replace(/^(?:\.\/)+/u, "");
+}
+
 function assertIssueNumber(issueNumber: number): void {
   if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
     throw new Error(`Invalid issue number: ${issueNumber}`);
@@ -771,7 +775,7 @@ export async function listChangedTrackedFilesBetween(
     workspacePath,
     "diff",
     "--name-only",
-    "--diff-filter=ACMR",
+    "--diff-filter=ACMRD",
     "-z",
     fromRef,
     toRef,
@@ -781,7 +785,7 @@ export async function listChangedTrackedFilesBetween(
     .split("\0")
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0)
-    .map((entry) => normalizeGitPath(entry));
+    .map((entry) => normalizeGitRelativePath(entry));
 }
 
 export async function listTrackedTopLevelEntries(
