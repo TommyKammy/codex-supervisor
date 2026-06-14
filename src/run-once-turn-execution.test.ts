@@ -49,6 +49,18 @@ test("run-once turn execution does not import Decision Kernel v2 action decision
   assert.doesNotMatch(source, /mutationAuthority/u);
 });
 
+test("run-once turn execution keeps artifact-only repair paths across same-turn retries", async () => {
+  const source = await fs.readFile(path.join(process.cwd(), "src", "run-once-turn-execution.ts"), "utf8");
+  const accumulatorIndex = source.indexOf("let artifactOnlyChangedFilesAfterPublication: string[] = [];");
+  const loopIndex = source.indexOf("while (true)");
+
+  assert.ok(accumulatorIndex >= 0);
+  assert.ok(loopIndex >= 0);
+  assert.ok(accumulatorIndex < loopIndex);
+  assert.match(source, /rememberArtifactOnlyChangedFilesAfterPublication\(\s*rewrittenTrackedPaths,\s*\)/u);
+  assert.match(source, /rememberArtifactOnlyChangedFilesAfterPublication\(\s*publicationGate\.rewrittenTrackedPaths,\s*\)/u);
+});
+
 function git(cwd: string, ...args: string[]): string {
   return execFileSync("git", ["-C", cwd, ...args], {
     encoding: "utf8",
