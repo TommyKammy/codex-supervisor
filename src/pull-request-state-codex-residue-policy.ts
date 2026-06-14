@@ -58,6 +58,11 @@ function checksPresentAndGreen(checks: Pick<PullRequestCheck, "bucket">[]): bool
   return checks.length > 0 && checks.every((check) => check.bucket === "pass" || check.bucket === "skipping");
 }
 
+function configuredReviewProvidersAreCodexOnly(config: SupervisorConfig): boolean {
+  const providerKinds = configuredReviewProviderKinds(config);
+  return providerKinds.length > 0 && providerKinds.every((kind) => kind === "codex");
+}
+
 function unresolvedConfiguredBotThreadsAreCodexConnectorOnly(
   config: SupervisorConfig,
   reviewThreads: ReviewThread[],
@@ -338,8 +343,11 @@ export function hasVerifiedCurrentHeadRepairReviewMetadataResidue(args: {
     return false;
   }
 
+  if (!configuredReviewProvidersAreCodexOnly(args.config)) {
+    return false;
+  }
+
   if (
-    configuredReviewProviderKinds(args.config).includes("codex") &&
     pullRequestHeadMatchesRecord(args.record, args.pr) &&
     codexConnectorMustFixReviewThreads(args.reviewThreads).length === 0 &&
     unresolvedConfiguredBotThreadsAreCodexConnectorOnly(args.config, args.reviewThreads) &&
