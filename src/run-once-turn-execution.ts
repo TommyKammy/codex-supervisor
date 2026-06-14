@@ -914,6 +914,7 @@ export async function executeCodexTurnPhase(
             currentPr: pr,
             codexVerificationCommand,
             workspaceStatus,
+            preRunState,
             structuredSummary: structuredResult?.summary,
             postRunState,
             hasVerifiedNoSourceChangeReviewThreadEvidence:
@@ -923,6 +924,7 @@ export async function executeCodexTurnPhase(
             reviewThreadsToProcess,
             changedFilesAfterPublication,
             artifactOnlyChangedFilesAfterPublication,
+            issueJournalRelativePath: config.issueJournalRelativePath,
           });
         const preserveStaleNoPrRecoveryTracking =
           pr === null &&
