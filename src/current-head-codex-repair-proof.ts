@@ -15,6 +15,7 @@ import {
 import { reviewDecisionBlocksCurrentHeadRepairProjection } from "./review-decision-blocking-policy";
 import {
   configuredBotReviewThreads,
+  latestReviewComment,
   latestReviewCommentAuthorIsAllowedBot,
   manualReviewThreads,
 } from "./review-thread-reporting";
@@ -130,8 +131,29 @@ function repairArtifactCoversCurrentThreads(
     }
 
     const threadFingerprintPrefix = `${headScopedKey}#`;
-    return !processedThreadFingerprints.some((key) => key.startsWith(threadFingerprintPrefix));
+    return (
+      !processedThreadFingerprints.some((key) => key.startsWith(threadFingerprintPrefix)) &&
+      latestReviewThreadCommentPredatesArtifact(thread, artifact)
+    );
   });
+}
+
+function latestReviewThreadCommentPredatesArtifact(
+  thread: ReviewThread,
+  artifact: Pick<TimelineArtifact, "recorded_at">,
+): boolean {
+  const latestComment = latestReviewComment(thread);
+  if (!latestComment) {
+    return true;
+  }
+
+  const latestCommentMs = Date.parse(latestComment.createdAt);
+  const artifactRecordedMs = Date.parse(artifact.recorded_at);
+  if (Number.isNaN(latestCommentMs) || Number.isNaN(artifactRecordedMs)) {
+    return false;
+  }
+
+  return latestCommentMs <= artifactRecordedMs;
 }
 
 function headScopedProcessedThreadEvidenceCount(
