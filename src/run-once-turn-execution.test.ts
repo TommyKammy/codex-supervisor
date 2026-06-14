@@ -57,8 +57,8 @@ test("run-once turn execution keeps artifact-only repair paths across same-turn 
   assert.ok(accumulatorIndex >= 0);
   assert.ok(loopIndex >= 0);
   assert.ok(accumulatorIndex < loopIndex);
-  assert.match(source, /rememberArtifactOnlyChangedFilesAfterPublication\(\s*rewrittenTrackedPaths,\s*\)/u);
-  assert.match(source, /rememberArtifactOnlyChangedFilesAfterPublication\(\s*publicationGate\.rewrittenTrackedPaths,\s*\)/u);
+  assert.match(source, /rememberArtifactOnlyChangedFilesAfterPublication\(\s*rewrittenTrackedPaths\s*,?\s*\)/u);
+  assert.match(source, /rememberArtifactOnlyChangedFilesAfterPublication\(\s*publicationGate\.rewrittenTrackedPaths\s*,?\s*\)/u);
 });
 
 function git(cwd: string, ...args: string[]): string {
