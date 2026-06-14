@@ -5,8 +5,17 @@ import {
 import { configuredReviewProviderKinds } from "./core/review-providers";
 import type { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig, TimelineArtifact } from "./core/types";
 import { currentHeadLocalCiMissing, hasConfiguredLocalCiCommand } from "./local-ci-policy";
-import { hasProcessedReviewThread } from "./review-handling";
-import { configuredBotReviewThreads, manualReviewThreads } from "./review-thread-reporting";
+import {
+  hasProcessedReviewThread,
+  latestReviewThreadCommentFingerprint,
+  processedReviewThreadFingerprintKey,
+  processedReviewThreadKey,
+} from "./review-handling";
+import {
+  configuredBotReviewThreads,
+  latestReviewCommentAuthorIsAllowedBot,
+  manualReviewThreads,
+} from "./review-thread-reporting";
 
 export const VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET =
   "verified_current_head_repair_review_thread_residue";
@@ -37,7 +46,11 @@ function unresolvedConfiguredBotThreadsAreCodexConnectorOnly(
 ): boolean {
   return configuredBotReviewThreads(config, reviewThreads)
     .filter((thread) => !thread.isResolved)
-    .every(hasCodexConnectorFindingReviewComment);
+    .every(
+      (thread) =>
+        latestReviewCommentAuthorIsAllowedBot(config, thread) &&
+        hasCodexConnectorFindingReviewComment(thread),
+    );
 }
 
 function currentConfiguredBotThreads(config: SupervisorConfig, reviewThreads: ReviewThread[]): ReviewThread[] {
@@ -73,6 +86,27 @@ function currentHeadVerifiedRepairResidueArtifact(
   ) ?? null;
 }
 
+function repairArtifactCoversCurrentThreads(
+  artifact: TimelineArtifact,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
+  currentThreads: ReviewThread[],
+): boolean {
+  if (currentThreads.length === 0) {
+    return true;
+  }
+  const processedThreadIds = artifact.processed_review_thread_ids ?? [];
+  const processedThreadFingerprints = artifact.processed_review_thread_fingerprints ?? [];
+  return currentThreads.every((thread) => {
+    const latestFingerprint = latestReviewThreadCommentFingerprint(thread);
+    if (latestFingerprint) {
+      return processedThreadFingerprints.includes(
+        processedReviewThreadFingerprintKey(thread.id, pr.headRefOid, latestFingerprint),
+      );
+    }
+    return processedThreadIds.includes(processedReviewThreadKey(thread.id, pr.headRefOid));
+  });
+}
+
 function headScopedProcessedThreadEvidenceCount(
   record: Pick<IssueRunRecord, "processed_review_thread_ids" | "processed_review_thread_fingerprints">,
   pr: Pick<GitHubPullRequest, "headRefOid">,
@@ -94,10 +128,9 @@ function isCurrentHeadNoMajorMergeGuardFailure(
 ): boolean {
   const signature = record.last_failure_signature ?? "";
   const contextSignature = record.last_failure_context?.signature ?? "";
-  const contextDetails = record.last_failure_context?.details ?? "";
-  return [signature, contextSignature, contextDetails].some((value) =>
-    value.includes("missing_current_head_codex_no_major") &&
-    (!value.includes("auto-merge-refused:") || value.includes(pr.headRefOid)),
+  const contextDetails = record.last_failure_context?.details ?? [];
+  return [signature, contextSignature, ...contextDetails].some((value) =>
+    value.includes("missing_current_head_codex_no_major") && value.includes(pr.headRefOid),
   );
 }
 
@@ -154,7 +187,7 @@ export function projectCurrentHeadCodexRepairProof(args: {
   }
 
   const structuredArtifact = currentHeadVerifiedRepairResidueArtifact(args.record, args.pr);
-  if (structuredArtifact) {
+  if (structuredArtifact && repairArtifactCoversCurrentThreads(structuredArtifact, args.pr, currentThreads)) {
     return {
       source: "structured_artifact",
       summary: structuredArtifact.summary || "verified_current_head_repair_review_thread_residue_artifact",
