@@ -33,8 +33,10 @@ function policy(overrides: Partial<StaleReviewBotClassificationPolicyArgs> = {})
     hasMarkedNoSourceChangeRepair: false,
     verifiedNoSourceChangeRepair: false,
     hasExplicitCurrentHeadRepairVerification: false,
+    hasCurrentHeadRepairCheckVerification: false,
     repairAttemptCount: 0,
     allMustFixRepairResidueThreadsAreP2: true,
+    requiresDeterministicRepairProbeEvidence: false,
     currentHeadSuccess: true,
   };
 
@@ -67,6 +69,56 @@ test("classifyStaleReviewBotRemediationPolicy accepts verified current-head repa
       classification: "verified_current_head_repair_pending_thread_resolution",
       summary: "verified_current_head_repair_configured_bot_thread_resolution_pending",
       verificationEvidenceSummary: "focused_verifier_passed;codex_pr_success_comment_after_current_head_request",
+    },
+  );
+});
+
+test("classifyStaleReviewBotRemediationPolicy accepts explicit P2 repair evidence without Codex no-major", () => {
+  assert.deepEqual(
+    policy({
+      verificationEvidenceSummary: "focused_verifier_passed",
+      hasExplicitCurrentHeadRepairVerification: true,
+      allMustFixRepairResidueThreadsAreP2: true,
+      currentHeadSuccess: true,
+    }),
+    {
+      classification: "verified_current_head_repair_pending_thread_resolution",
+      summary: "verified_current_head_repair_configured_bot_thread_resolution_pending",
+      verificationEvidenceSummary: "focused_verifier_passed",
+    },
+  );
+});
+
+test("classifyStaleReviewBotRemediationPolicy rejects repair-attempt shortcut without Codex no-major", () => {
+  assert.deepEqual(
+    policy({
+      verificationEvidenceSummary: "current_head_checks_passed:build",
+      repairAttemptCount: 1,
+      allMustFixRepairResidueThreadsAreP2: true,
+      currentHeadSuccess: true,
+    }),
+    {
+      classification: "unknown_needs_operator",
+      summary: "code_or_ci_green_but_review_thread_metadata_unresolved",
+      verificationEvidenceSummary: "current_head_checks_passed:build",
+      missingProbeReason: "current_head_codex_no_major_signal_missing",
+    },
+  );
+});
+
+test("classifyStaleReviewBotRemediationPolicy rejects deterministic high-severity repair proof without Codex no-major", () => {
+  assert.deepEqual(
+    policy({
+      verificationEvidenceSummary: "focused_verifier_passed",
+      deterministicProbeEvidence: "deterministic_repair_probe:path_present_in_requested_live_lists:src/app.ts:policy_scan",
+      allMustFixRepairResidueThreadsAreP2: false,
+      currentHeadSuccess: true,
+    }),
+    {
+      classification: "unknown_needs_operator",
+      summary: "code_or_ci_green_but_review_thread_metadata_unresolved",
+      verificationEvidenceSummary: "focused_verifier_passed",
+      missingProbeReason: "current_head_codex_no_major_signal_missing",
     },
   );
 });
@@ -843,6 +895,121 @@ test("buildStaleReviewBotRemediation fails closed when covered evidence lacks cu
   assert.equal(remediation?.classification, "unknown_needs_operator");
   assert.equal(remediation?.codexCurrentHeadReviewState, "missing");
   assert.equal(remediation?.missingProbeReason, "current_head_codex_no_major_signal_missing");
+});
+
+test("buildStaleReviewBotRemediation classifies explicit P2 repair evidence without no-major signal", () => {
+  const issueNumber = 111;
+  const prNumber = 116;
+  const headSha = "d284c41883b831ab6b85bf3467a66a5c01fd49fb";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-p2-explicit-repair-no-major",
+    commentId: "comment-p2-explicit-repair-no-major",
+    path: "src/current-head-repair.ts",
+    line: 42,
+    severity: "P2",
+    commentBody: "P2: Verify this current-head repair before merge.",
+    discussionUrl: "https://example.test/pr/116#discussion_r116",
+    verifiedRepair: {
+      summary: "Focused current-head repair verifier passed.",
+      ranAt: "2026-05-21T11:10:00Z",
+      command: "npm test -- src/supervisor/stale-review-bot-remediation.test.ts",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+  });
+  const config = createConfig({ reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN] });
+  const record = createRecord(scenario.recordPatch);
+  const pr = createPullRequest(scenario.pullRequestPatch);
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: scenario.passingChecks,
+    reviewThreads: [scenario.reviewThread],
+  });
+
+  assert.equal(remediation?.classification, "verified_current_head_repair_pending_thread_resolution");
+  assert.equal(remediation?.codexCurrentHeadReviewState, "missing");
+  assert.equal(remediation?.missingProbeReason, null);
+  assert.equal(remediation?.verificationEvidenceSummary, "Focused current-head repair verifier passed.");
+});
+
+test("buildStaleReviewBotRemediation rejects local-CI-only P2 repair evidence without no-major signal", () => {
+  const issueNumber = 113;
+  const prNumber = 118;
+  const headSha = "f484c41883b831ab6b85bf3467a66a5c01fd49fd";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-p2-local-ci-only-no-major",
+    commentId: "comment-p2-local-ci-only-no-major",
+    path: "src/current-head-repair.ts",
+    line: 44,
+    severity: "P2",
+    commentBody: "P2: Verify this current-head repair before merge.",
+    discussionUrl: "https://example.test/pr/118#discussion_r118",
+    verifiedRepair: {
+      summary: "Generic local CI passed.",
+      ranAt: "2026-05-21T11:12:00Z",
+      command: "npm run verify:pre-pr",
+      evidenceSource: "latest_local_ci_result",
+    },
+  });
+  const config = createConfig({ reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN] });
+  const record = createRecord(scenario.recordPatch);
+  const pr = createPullRequest(scenario.pullRequestPatch);
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: scenario.passingChecks,
+    reviewThreads: [scenario.reviewThread],
+  });
+
+  assert.equal(remediation?.classification, "unknown_needs_operator");
+  assert.equal(remediation?.missingProbeReason, "current_head_codex_no_major_signal_missing");
+  assert.equal(remediation?.verificationEvidenceSummary, "Generic local CI passed.");
+});
+
+test("buildStaleReviewBotRemediation rejects repair-attempt-only P2 evidence without no-major signal", () => {
+  const issueNumber = 112;
+  const prNumber = 117;
+  const headSha = "e384c41883b831ab6b85bf3467a66a5c01fd49fc";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-p2-repair-attempt-only",
+    commentId: "comment-p2-repair-attempt-only",
+    path: "src/current-head-repair.ts",
+    line: 43,
+    severity: "P2",
+    commentBody: "P2: Verify this current-head repair before merge.",
+    discussionUrl: "https://example.test/pr/117#discussion_r117",
+  });
+  const config = createConfig({ reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN] });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    repair_attempt_count: 1,
+  });
+  const pr = createPullRequest(scenario.pullRequestPatch);
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: scenario.passingChecks,
+    reviewThreads: [scenario.reviewThread],
+  });
+
+  assert.equal(remediation?.classification, "unknown_needs_operator");
+  assert.equal(remediation?.missingProbeReason, "current_head_codex_no_major_signal_missing");
+  assert.equal(remediation?.verificationEvidenceSummary, "current_head_checks_passed:build");
 });
 
 test("buildStaleReviewBotRemediation verifies concrete P2 path-list repair without no-major signal", () => {

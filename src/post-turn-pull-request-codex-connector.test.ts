@@ -13,6 +13,7 @@ import {
   CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
   createCodexConnectorTrackedReviewResidueScenario,
 } from "./codex-connector-tracked-pr-test-helpers";
+import { VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET } from "./supervisor/stale-review-bot-remediation";
 import {
   SAMPLE_MACOS_WORKSTATION_PATH,
   SAMPLE_UNIX_WORKSTATION_PATH,
@@ -2230,6 +2231,130 @@ test("handlePostTurnPullRequestTransitionsPhase resolves verified current-head r
   assert.equal(requestComments.length, 0);
 });
 
+test("handlePostTurnPullRequestTransitionsPhase merges later same-head verified repair artifact keys", async () => {
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const issue = createIssue({ title: "Merge same-head verified repair artifact keys" });
+  const headSha = "head-1989";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber: issue.number,
+    prNumber: 1989,
+    headSha,
+    threadId: "thread-codex-repair-new",
+    commentId: "comment-codex-repair-new",
+    path: "src/review.ts",
+    line: 8,
+    severity: "P2",
+    commentBody: "P2: Verify the second repair residue before merge.",
+    discussionUrl: "https://example.test/pr/1989#discussion_r1989",
+    verifiedRepair: {
+      summary: "Focused verifier passed after the second repair commit.",
+      ranAt: "2026-05-15T00:28:00Z",
+      command: "npm test -- src/post-turn-pull-request.test.ts",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+    currentHeadNoMajorReview: {
+      requestedAt: "2026-05-15T00:22:00Z",
+      observedAt: "2026-05-15T00:27:00Z",
+    },
+  });
+  const pr = createPullRequest(scenario.pullRequestPatch);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        ...scenario.recordPatch,
+        timeline_artifacts: [
+          ...(scenario.recordPatch.timeline_artifacts ?? []),
+          {
+            type: "verification_result",
+            gate: "workspace_preparation",
+            command: null,
+            head_sha: headSha,
+            outcome: "passed",
+            remediation_target: null,
+            next_action: "continue",
+            summary: "Previous same-head verified repair residue was auto-resolved.",
+            recorded_at: "2026-05-15T00:21:00Z",
+            repair_targets: [VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET],
+            processed_review_thread_ids: [`thread-codex-repair-old@${headSha}`],
+            processed_review_thread_fingerprints: [`thread-codex-repair-old@${headSha}#comment-codex-repair-old`],
+          },
+        ],
+      }),
+    },
+  };
+  const replyCalls: Array<{ threadId: string; body: string }> = [];
+  const resolveCalls: string[] = [];
+  let snapshotLoads = 0;
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: createNoopStateStore(),
+    github: createDefaultGithub({
+      replyToReviewThread: async (threadId: string, body: string) => {
+        replyCalls.push({ threadId, body });
+      },
+      resolveReviewThread: async (threadId: string) => {
+        resolveCalls.push(threadId);
+      },
+    }),
+    context: createPostTurnContext({
+      state,
+      record: state.issues["102"]!,
+      issue,
+      pr,
+      workspacePath: path.join("/tmp/workspaces", "issue-102"),
+    }),
+    derivePullRequestLifecycleSnapshot: (recordForState, _pr, _checks, currentReviewThreads) =>
+      createLifecycleSnapshot(recordForState, currentReviewThreads.length === 0 ? "waiting_ci" : "blocked", {
+        failureContext: currentReviewThreads.length === 0 ? null : scenario.staleReviewFailureContext,
+      }),
+    applyFailureSignature: (_record, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    blockedReasonFromReviewState: (_record, _pr, _checks, currentReviewThreads) =>
+      currentReviewThreads.length === 0 ? null : "stale_review_bot",
+    summarizeChecks,
+    configuredBotReviewThreads,
+    manualReviewThreads,
+    mergeConflictDetected: () => false,
+    runLocalCiCommand: async () => undefined,
+    runWorkstationLocalPathGate: async () => ({
+      ok: true,
+      failureContext: null,
+    }),
+    loadOpenPullRequestSnapshot: async () => {
+      snapshotLoads += 1;
+      return {
+        pr,
+        checks: scenario.passingChecks,
+        reviewThreads: snapshotLoads <= 2 ? [scenario.reviewThread] : [],
+      };
+    },
+  });
+
+  const artifact = result.record.timeline_artifacts?.find(
+    (candidate) =>
+      candidate.head_sha === headSha &&
+      candidate.repair_targets?.includes(VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET) === true,
+  );
+  assert.deepEqual(replyCalls.map((call) => call.threadId), ["thread-codex-repair-new"]);
+  assert.deepEqual(resolveCalls, ["thread-codex-repair-new"]);
+  assert.deepEqual(artifact?.processed_review_thread_ids?.sort(), [
+    `thread-codex-repair-new@${headSha}`,
+    `thread-codex-repair-old@${headSha}`,
+  ]);
+  assert.deepEqual(artifact?.processed_review_thread_fingerprints?.sort(), [
+    `thread-codex-repair-new@${headSha}#comment-codex-repair-new`,
+    `thread-codex-repair-old@${headSha}#comment-codex-repair-old`,
+  ]);
+});
+
 test("handlePostTurnPullRequestTransitionsPhase resolves mechanically verified P2 repair residue without no-major signal", async () => {
   const config = createConfig({
     reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
@@ -2356,6 +2481,15 @@ test("handlePostTurnPullRequestTransitionsPhase resolves mechanically verified P
   assert.deepEqual(replyCalls.map((call) => call.threadId), ["thread-codex-mechanical-repair"]);
   assert.deepEqual(resolveCalls, ["thread-codex-mechanical-repair"]);
   assert.match(replyCalls[0]?.body ?? "", /reason=verified_current_head_repair_auto_resolve/);
+  assert.equal(
+    result.record.timeline_artifacts?.some(
+      (artifact) =>
+        artifact.head_sha === headSha &&
+        artifact.repair_targets?.includes(VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET) === true &&
+        artifact.processed_review_thread_ids?.includes(`thread-codex-mechanical-repair@${headSha}`) === true,
+    ),
+    true,
+  );
   assert.equal(requestComments.length, 0);
 });
 

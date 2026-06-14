@@ -54,6 +54,7 @@ import {
   effectiveConfiguredBotReviewThreadsForState,
   hasConfiguredProviderSuccess,
   hasProvenCodexConnectorStaleReviewMetadata,
+  hasVerifiedCurrentHeadRepairReviewMetadataResidue,
   processedCodexConnectorMustFixThreadsExhaustedRepeatBudget,
   shouldWaitForCodexConnectorCurrentHeadReview,
   staleSameHeadCodexWaitHasOnlyOutdatedResidue,
@@ -198,9 +199,17 @@ export function blockedReasonFromReviewState(
     checks,
     reviewThreads,
   });
+  const verifiedCurrentHeadRepairResidue = hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+    config,
+    record,
+    pr,
+    checks,
+    reviewThreads,
+  });
+  const configuredReviewMetadataSatisfied = provenCodexStaleReviewMetadata || verifiedCurrentHeadRepairResidue;
   const unresolvedBotThreads = effectiveConfiguredBotReviewThreadsForState(config, record, pr, checks, reviewThreads);
   const staleBotThreads =
-    manualThreads.length === 0 && !provenCodexStaleReviewMetadata
+    manualThreads.length === 0 && !configuredReviewMetadataSatisfied
       ? staleConfiguredBotReviewThreads(config, record, pr, unresolvedBotThreads)
       : [];
   const checkSummary = summarizeChecks(checks);
@@ -215,7 +224,7 @@ export function blockedReasonFromReviewState(
   if (
     copilotTimeout.timedOut &&
     copilotTimeout.action === "block" &&
-    !provenCodexStaleReviewMetadata &&
+    !configuredReviewMetadataSatisfied &&
     !staleCodexWaitHasOnlyOutdatedResidue
   ) {
     return "review_bot_timeout";
@@ -277,6 +286,14 @@ export function inferStateFromPullRequest(
     checks,
     reviewThreads,
   });
+  const verifiedCurrentHeadRepairResidue = hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+    config,
+    record,
+    pr,
+    checks,
+    reviewThreads,
+  });
+  const configuredReviewMetadataSatisfied = provenCodexStaleReviewMetadata || verifiedCurrentHeadRepairResidue;
   const unresolvedBotThreads = effectiveConfiguredBotReviewThreadsForState(config, record, pr, checks, reviewThreads);
   const codexConnectorMustFixThreads = codexConnectorMustFixReviewThreads(unresolvedBotThreads);
   const codexConnectorMustFixThreadIds = new Set(codexConnectorMustFixThreads.map((thread) => thread.id));
@@ -315,7 +332,7 @@ export function inferStateFromPullRequest(
   }
 
   if (
-    !provenCodexStaleReviewMetadata &&
+    !configuredReviewMetadataSatisfied &&
     shouldWaitForCodexConnectorCurrentHeadReview({
       config,
       record,
@@ -547,7 +564,7 @@ export function inferStateFromPullRequest(
   if (
     copilotTimeout.timedOut &&
     copilotTimeout.action === "block" &&
-    !provenCodexStaleReviewMetadata &&
+    !configuredReviewMetadataSatisfied &&
     !staleCodexWaitHasOnlyOutdatedResidue
   ) {
     return "blocked";
@@ -556,7 +573,7 @@ export function inferStateFromPullRequest(
   if (
     copilotTimeout.timedOut &&
     copilotTimeout.action === "request_review_comment" &&
-    !provenCodexStaleReviewMetadata &&
+    !configuredReviewMetadataSatisfied &&
     !staleCodexWaitHasOnlyOutdatedResidue
   ) {
     return "waiting_ci";
@@ -579,7 +596,7 @@ export function inferStateFromPullRequest(
   }
 
   if (
-    !provenCodexStaleReviewMetadata &&
+    !configuredReviewMetadataSatisfied &&
     !staleCodexWaitHasOnlyOutdatedResidue &&
     configuredBotCurrentHeadSignalPending(config, record, pr) &&
     !copilotTimeout.timedOut
@@ -647,7 +664,15 @@ export function inferGitHubWaitStep(
   const copilotTimeout = determineCopilotReviewTimeout(config, record, pr, nowMs);
   const staleCodexWaitHasOnlyOutdatedResidue =
     reviewThreads.length > 0 && staleSameHeadCodexWaitHasOnlyOutdatedResidue(config, record, pr, checks, reviewThreads);
+  const verifiedCurrentHeadRepairResidue = hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+    config,
+    record,
+    pr,
+    checks,
+    reviewThreads,
+  });
   if (
+    !verifiedCurrentHeadRepairResidue &&
     !staleCodexWaitHasOnlyOutdatedResidue &&
     configuredBotCurrentHeadSignalPending(config, record, pr) &&
     !copilotTimeout.timedOut

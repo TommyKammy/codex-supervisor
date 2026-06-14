@@ -1,6 +1,7 @@
 import { configuredReviewProviderKinds } from "../core/review-providers";
 import { displayLocalCiCommand } from "../core/config-parsing";
 import { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "../core/types";
+import { currentHeadLocalCiMissing, hasConfiguredLocalCiCommand } from "../local-ci-policy";
 import {
   buildCodexConnectorReviewChurnDiagnostic,
   buildCodexConnectorReviewChurnHistory,
@@ -31,8 +32,12 @@ import {
   formatStaleReviewResidueOperatorDiagnostic,
   shouldSuppressActionableCodexDiagnostics,
   shouldUseStaleReviewRemediationDiagnostic,
+  verifiedCurrentHeadRepairResidueAllowsMergeReadyAction,
 } from "./stale-review-bot-diagnostics-presenter";
-import { type StaleReviewBotRemediationDto } from "./stale-review-bot-remediation";
+import {
+  buildStaleReviewBotThreadDiagnostics,
+  type StaleReviewBotRemediationDto,
+} from "./stale-review-bot-remediation";
 
 function addMinutes(timestamp: string, minutes: number): string | null {
   const parsed = Date.parse(timestamp);
@@ -665,6 +670,35 @@ export function buildCodexConnectorDiagnosticBundle(args: {
       })
     : null;
   const stableSameFileChurn = detectStableSameFileCodexConnectorChurn(reviewChurnHistory);
+  const staleReviewBotThreadDiagnostics = staleReviewBotRemediation
+    ? buildStaleReviewBotThreadDiagnostics({
+        config: args.config,
+        record: args.record,
+        pr: args.pr,
+        checks: args.checks,
+        reviewThreads: args.reviewThreads,
+        remediation: staleReviewBotRemediation,
+      })
+    : null;
+  const verifiedCurrentHeadRepairResidueMergeReady =
+    args.config.verifiedCurrentHeadRepairReviewThreadAutoResolve === true &&
+    verifiedCurrentHeadRepairResidueAllowsMergeReadyAction({
+      remediation: staleReviewBotRemediation,
+      diagnostics: staleReviewBotThreadDiagnostics,
+      pr: args.pr,
+      checks: args.checks,
+      localCiAllowsMergeReady:
+        !hasConfiguredLocalCiCommand(args.config) || !currentHeadLocalCiMissing(args.record, args.pr),
+    });
+  const suppressStaleReviewMetadataConvergence =
+    staleReviewBotRemediation?.classification === "verified_current_head_repair_pending_thread_resolution" &&
+    !verifiedCurrentHeadRepairResidueMergeReady;
+  const staleReviewMetadataConvergenceSummary = staleReviewBotRemediation
+    ? formatStaleReviewMetadataConvergenceDiagnostic({
+      remediation: staleReviewBotRemediation,
+      pr: args.pr,
+    })
+    : null;
   return {
     policyBlockSummary: policyBlock ? formatCodexConnectorPolicyBlockDiagnostic(policyBlock) : null,
     p2p3PolicySummary: p2p3Policy ? formatCodexConnectorP2P3PolicyDiagnostic(p2p3Policy) : null,
@@ -701,10 +735,9 @@ export function buildCodexConnectorDiagnosticBundle(args: {
     }),
     convergenceSummary:
       staleReviewBotRemediation
-        ? formatStaleReviewMetadataConvergenceDiagnostic({
-          remediation: staleReviewBotRemediation,
-          pr: args.pr,
-        }) ??
+        ? suppressStaleReviewMetadataConvergence
+          ? null
+          : staleReviewMetadataConvergenceSummary ??
           (staleReviewBotRemediation.missingProbeReason
             ? null
             : formatCodexConnectorConvergenceDiagnostic({
@@ -720,7 +753,10 @@ export function buildCodexConnectorDiagnosticBundle(args: {
           reviewThreads: args.reviewThreads,
         }),
     operatorDiagnosticSummary: staleReviewBotRemediation
-      ? formatStaleReviewResidueOperatorDiagnostic(staleReviewBotRemediation)
+      ? formatStaleReviewResidueOperatorDiagnostic({
+        remediation: staleReviewBotRemediation,
+        verifiedCurrentHeadRepairResidueMergeReady,
+      })
       : formatCodexConnectorOperatorDiagnostic({
         config: args.config,
         record: args.record,

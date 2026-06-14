@@ -8,6 +8,7 @@ import { renderSupervisorStatusDto } from "./supervisor-status-report";
 import { Supervisor } from "./supervisor";
 import {
   branchName,
+  createConfig,
   createRecord,
   createPullRequest,
   createSupervisorFixture,
@@ -26,7 +27,14 @@ import {
   formatStaleReviewMetadataConvergenceDiagnostic,
   formatStaleReviewBotTerminalStopLine,
 } from "./stale-review-bot-diagnostics-presenter";
-import { formatStaleReviewResidueOperatorDiagnostic } from "./supervisor-status-review-bot";
+import {
+  buildCodexConnectorDiagnosticBundle,
+  formatStaleReviewResidueOperatorDiagnostic,
+} from "./supervisor-status-review-bot";
+import {
+  buildStaleReviewBotRemediation,
+  VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET,
+} from "./stale-review-bot-remediation";
 import {
   clearCurrentReconciliationPhase,
   writeCurrentReconciliationPhase,
@@ -102,7 +110,7 @@ test("stale review-bot presenter keeps residue and metadata diagnostic lines sta
         configuredBotCurrentHeadObservedAt: "2026-05-15T00:17:00Z",
       }),
     }),
-    "codex_connector_convergence status=stale_review_metadata provider=codex current_head_sha=deadbeef current_head_observed_at=2026-05-15T00:17:00Z latest_signal_head_sha=deadbeef highest_severity=none finding_count=0 merge_effect=ready next_action=merge_ready stale_review_metadata_classification=metadata_only",
+    "codex_connector_convergence status=stale_review_metadata provider=codex current_head_sha=deadbeef current_head_observed_at=2026-05-15T00:17:00Z latest_signal_head_sha=deadbeef highest_severity=none finding_count=0 merge_effect=ready next_action=merge_ready stale_review_metadata_classification=metadata_only issue=#366 pr=#44",
   );
   assert.equal(
     formatStaleReviewBotTerminalStopLine({
@@ -121,6 +129,174 @@ test("stale review-bot presenter keeps residue and metadata diagnostic lines sta
     }),
     "stale_review_bot_terminal_stop issue=#366 pr=#44 reason=metadata_only_review_thread_resolution_pending classification=metadata_only_missing_current_head_review head_freshness=processed_on_current_head:yes,current_head_success:yes review_thread_classification=unresolved:1,must_fix:0,verified_residue:0 auto_repair_suppressed_reason=not_verified_stale_residue next_action=request_current_head_review",
   );
+});
+
+test("stale review-bot terminal stop only reports merge-ready when GitHub is merge-ready", () => {
+  const remediation = {
+    issueNumber: 401,
+    prNumber: 501,
+    reasonCode: "stale_review_bot" as const,
+    currentHeadSha: "head-401",
+    processedOnCurrentHead: "yes" as const,
+    codeCiState: "green" as const,
+    classification: "verified_current_head_repair_pending_thread_resolution" as const,
+    codexCurrentHeadReviewState: "observed" as const,
+    reviewThreadUrl: "https://example.test/pr/501#discussion_r401",
+    verificationEvidenceSummary: "focused_verifier_passed;codex_pr_success_comment_after_current_head_request",
+    missingProbeReason: null,
+    manualNextStep: "resolve_verified_repaired_configured_bot_threads_then_rerun_supervisor",
+    summary: "verified_current_head_repair_configured_bot_thread_resolution_pending",
+  };
+  const diagnostics = {
+    issueNumber: 401,
+    prNumber: 501,
+    currentHeadSuccess: "yes" as const,
+    unresolvedCurrentThreads: 1,
+    actionableMustFixThreads: 1,
+    verifiedStaleResidueThreads: 1,
+    missingVerificationEvidenceThreads: 0,
+    repeatStopExhausted: "no" as const,
+    autoRepairSuppressedReason: "none" as const,
+  };
+
+  assert.match(
+    formatStaleReviewBotTerminalStopLine({
+      remediation,
+      diagnostics,
+      pr: createPullRequest({ reviewDecision: "CHANGES_REQUESTED" }),
+    }) ?? "",
+    /next_action=resolve_verified_review_thread_metadata$/,
+  );
+  assert.match(
+    formatStaleReviewBotTerminalStopLine({
+      remediation,
+      diagnostics,
+      pr: createPullRequest(),
+      checks: [{ bucket: "pass" }],
+    }) ?? "",
+    /next_action=merge_ready$/,
+  );
+  assert.match(
+    formatStaleReviewBotTerminalStopLine({
+      remediation,
+      diagnostics,
+      pr: createPullRequest(),
+      checks: [],
+    }) ?? "",
+    /next_action=resolve_verified_review_thread_metadata$/,
+  );
+  assert.match(
+    formatStaleReviewBotTerminalStopLine({
+      remediation,
+      diagnostics,
+      pr: createPullRequest(),
+      checks: [{ bucket: "pass" }],
+      localCiAllowsMergeReady: false,
+    }) ?? "",
+    /next_action=resolve_verified_review_thread_metadata$/,
+  );
+});
+
+test("Codex connector operator diagnostic honors auto-repair suppression before merge-ready", () => {
+  const issueNumber = 402;
+  const prNumber = 502;
+  const headSha = "76060523f803ebe25832cb2c355aaaa9530502f5";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-402",
+    commentId: "comment-402",
+    path: "src/auth-boundary.ts",
+    line: 91,
+    severity: "P2",
+    commentBody: "P2: Prove the repaired auth boundary is covered before merge.",
+    discussionUrl: "https://example.test/pr/502#discussion_r402",
+    verifiedRepair: {
+      summary: "Focused verifier passed after the repair commit.",
+      ranAt: "2026-05-15T00:18:00Z",
+      command: "npx tsx --test src/supervisor/supervisor-diagnostics-stale-review-bot-status.test.ts",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+    currentHeadNoMajorReview: {
+      requestedAt: "2026-05-15T00:12:00Z",
+      observedAt: "2026-05-15T00:17:00Z",
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    processed_review_thread_ids: [
+      ...(scenario.recordPatch.processed_review_thread_ids ?? []),
+      `thread-402@${headSha}`,
+    ],
+    processed_review_thread_fingerprints: [
+      ...(scenario.recordPatch.processed_review_thread_fingerprints ?? []),
+      `thread-402@${headSha}#comment-402-maintainer-follow-up`,
+    ],
+  });
+  const pr = createPullRequest(scenario.pullRequestPatch);
+  const suppressedThread = {
+    ...scenario.reviewThread,
+    comments: {
+      nodes: [
+        ...scenario.reviewThread.comments.nodes,
+        {
+          id: "comment-402-maintainer-follow-up",
+          body: "Leaving this unresolved until the operator confirms the thread outcome.",
+          createdAt: "2026-05-15T00:19:00Z",
+          url: "https://example.test/pr/502#discussion_r402_human",
+          author: {
+            login: "maintainer",
+            typeName: "User",
+          },
+        },
+      ],
+    },
+  };
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: scenario.passingChecks,
+    reviewThreads: [suppressedThread],
+  });
+  assert.equal(remediation?.classification, "verified_current_head_repair_pending_thread_resolution");
+
+  const diagnostics = buildCodexConnectorDiagnosticBundle({
+    config,
+    record,
+    pr,
+    checks: scenario.passingChecks,
+    reviewThreads: [suppressedThread],
+    staleReviewBotRemediation: remediation,
+  });
+
+  assert.match(
+    diagnostics.operatorDiagnosticSummary ?? "",
+    /next_action=resolve_verified_repaired_configured_bot_threads_then_rerun_supervisor$/,
+  );
+  assert.doesNotMatch(diagnostics.operatorDiagnosticSummary ?? "", /next_action=merge_ready$/);
+  assert.equal(diagnostics.convergenceSummary, null);
+
+  const missingChecksDiagnostics = buildCodexConnectorDiagnosticBundle({
+    config,
+    record,
+    pr,
+    checks: [],
+    reviewThreads: [scenario.reviewThread],
+    staleReviewBotRemediation: remediation,
+  });
+
+  assert.match(
+    missingChecksDiagnostics.operatorDiagnosticSummary ?? "",
+    /next_action=resolve_verified_repaired_configured_bot_threads_then_rerun_supervisor$/,
+  );
+  assert.doesNotMatch(missingChecksDiagnostics.operatorDiagnosticSummary ?? "", /next_action=merge_ready$/);
+  assert.equal(missingChecksDiagnostics.convergenceSummary, null);
 });
 
 test("status --why classifies current-head processed configured-bot success as stale metadata remediation while idle", async (t) => {
@@ -318,6 +494,99 @@ test("status --why reports effective configured-bot thread diagnostics for outda
   );
 });
 
+test("status --why surfaces artifact-backed verified repair residue after threads clear while idle", async (t) => {
+  const fixture = await createSupervisorFixture();
+  fixture.config.reviewBotLogins = [CODEX_CONNECTOR_REVIEW_BOT_LOGIN];
+  fixture.config.verifiedCurrentHeadRepairReviewThreadAutoResolve = true;
+  const issueNumber = 405;
+  const prNumber = 505;
+  const headSha = "76060523f803ebe25832cb2c355aaaa9530502f6";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-405",
+    commentId: "comment-405",
+    path: "src/auth-boundary.ts",
+    line: 92,
+    severity: "P2",
+    commentBody: "P2: Prove the repaired auth boundary is covered before merge.",
+    discussionUrl: "https://example.test/pr/505#discussion_r405",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        ...scenario.recordPatch,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        timeline_artifacts: [
+          {
+            type: "verification_result",
+            gate: "workspace_preparation",
+            command: null,
+            head_sha: headSha,
+            outcome: "passed",
+            remediation_target: null,
+            next_action: "continue",
+            summary: "Verified repair residue was auto-resolved on this head.",
+            recorded_at: "2026-05-15T00:21:00Z",
+            repair_targets: [VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET],
+            processed_review_thread_ids: [`thread-405@${headSha}`],
+            processed_review_thread_fingerprints: [`thread-405@${headSha}#comment-405`],
+          },
+        ],
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const trackedIssue = createTrackedStatusIssue({
+    issueNumber,
+    title: "Status why idle artifact-backed Codex verified repair residue",
+    summary: "Status should surface artifact-backed verified repair residue after threads clear.",
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    configuredBotCurrentHeadObservedAt: null,
+    configuredBotCurrentHeadObservationSource: null,
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotLatestReviewedCommitSha: null,
+  });
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => trackedIssue,
+    listCandidateIssues: async () => [trackedIssue],
+    listAllIssues: async () => [trackedIssue],
+    getPullRequestIfExists: async () => pr,
+    resolvePullRequestForBranch: async () => pr,
+    getChecks: async () => scenario.passingChecks,
+    getUnresolvedReviewThreads: async () => [],
+  };
+
+  const status = await supervisor.status({ why: true });
+
+  assert.match(status, /^No active issue\.$/m);
+  assert.match(
+    status,
+    /^no_active_tracked_record issue=#405 classification=stale_review_bot_remediation state=blocked reason=verified_current_head_repair_pending_thread_resolution$/m,
+  );
+  assert.match(
+    status,
+    /^stale_review_bot_remediation issue=#405 pr=#505 reason=stale_review_bot code_ci=green current_head_sha=76060523f803ebe25832cb2c355aaaa9530502f6 processed_on_current_head=yes classification=verified_current_head_repair_pending_thread_resolution codex_current_head_review_state=missing review_thread_url=https:\/\/example\.test\/pr\/505#discussion_r405 manual_next_step=resolve_verified_repaired_configured_bot_threads_then_rerun_supervisor verification_evidence=Verified_repair_residue_was_auto-resolved_on_this_head\. summary=verified_current_head_repair_configured_bot_thread_resolution_pending$/m,
+  );
+  assert.match(
+    status,
+    /^stale_review_bot_terminal_stop issue=#405 pr=#505 reason=metadata_only_review_thread_resolution_pending classification=verified_current_head_repair_pending_thread_resolution .*auto_repair_suppressed_reason=none next_action=merge_ready$/m,
+  );
+  assert.match(status, /^codex_connector_operator_diagnostic .*next_action=merge_ready$/m);
+  assert.doesNotMatch(status, /^operator_action action=resolve_stale_review_bot /m);
+  assert.doesNotMatch(status, /^operator_action action=manual_review /m);
+});
+
 test("status --why uses the shared stale review-bot presenter for active verified repair residue", async (t) => {
   const fixture = await createSupervisorFixture();
   fixture.config.reviewBotLogins = [CODEX_CONNECTOR_REVIEW_BOT_LOGIN];
@@ -383,9 +652,9 @@ test("status --why uses the shared stale review-bot presenter for active verifie
     status,
     /^stale_review_bot_remediation issue=#400 pr=#500 reason=stale_review_bot code_ci=green current_head_sha=76060523f803ebe25832cb2c355aaaa9530502f4 processed_on_current_head=yes classification=verified_current_head_repair_pending_thread_resolution codex_current_head_review_state=observed review_thread_url=https:\/\/example\.test\/pr\/500#discussion_r400 manual_next_step=resolve_verified_repaired_configured_bot_threads_then_rerun_supervisor verification_evidence=Focused_verifier_passed_after_the_repair_commit\.;codex_pr_success_comment_after_current_head_request summary=verified_current_head_repair_configured_bot_thread_resolution_pending$/m,
   );
-  assert.match(
+  assert.doesNotMatch(
     status,
-    /^codex_connector_convergence status=stale_review_metadata provider=codex current_head_sha=76060523f803ebe25832cb2c355aaaa9530502f4 current_head_observed_at=2026-05-15T00:17:00Z latest_signal_head_sha=76060523f803ebe25832cb2c355aaaa9530502f4 highest_severity=none finding_count=0 merge_effect=ready next_action=merge_ready stale_review_metadata_classification=verified_current_head_repair_pending_thread_resolution$/m,
+    /^codex_connector_convergence status=stale_review_metadata provider=codex current_head_sha=76060523f803ebe25832cb2c355aaaa9530502f4 current_head_observed_at=2026-05-15T00:17:00Z latest_signal_head_sha=76060523f803ebe25832cb2c355aaaa9530502f4 highest_severity=none finding_count=0 merge_effect=ready next_action=merge_ready stale_review_metadata_classification=verified_current_head_repair_pending_thread_resolution issue=#400 pr=#500$/m,
   );
   assert.doesNotMatch(status, /^codex_connector_convergence status=stale_head /m);
   assert.doesNotMatch(status, /^codex_connector_operator_diagnostic interpretation=actionable_current_diff /m);

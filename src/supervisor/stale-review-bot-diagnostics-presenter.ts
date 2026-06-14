@@ -4,7 +4,53 @@ import {
   type StaleReviewBotRemediationDto,
   type StaleReviewBotThreadDiagnosticsDto,
 } from "./stale-review-bot-remediation";
-import { GitHubPullRequest } from "../core/types";
+import { GitHubPullRequest, PullRequestCheck } from "../core/types";
+
+export function githubPullRequestAllowsMergeReadyAction(
+  pr: Pick<
+    GitHubPullRequest,
+    "state" | "isDraft" | "mergeStateStatus" | "mergeable" | "reviewDecision"
+  > | null | undefined,
+): boolean {
+  return Boolean(
+    pr &&
+      pr.state === "OPEN" &&
+      !pr.isDraft &&
+      pr.mergeStateStatus === "CLEAN" &&
+      pr.mergeable === "MERGEABLE" &&
+      pr.reviewDecision !== "CHANGES_REQUESTED" &&
+      pr.reviewDecision !== "REVIEW_REQUIRED",
+  );
+}
+
+export function checksAllowMergeReadyAction(
+  checks: ReadonlyArray<Pick<PullRequestCheck, "bucket">> | null | undefined,
+): boolean {
+  return Boolean(
+    checks &&
+      checks.length > 0 &&
+      checks.every((check) => check.bucket === "pass" || check.bucket === "skipping"),
+  );
+}
+
+export function verifiedCurrentHeadRepairResidueAllowsMergeReadyAction(args: {
+  remediation: StaleReviewBotRemediationDto | null | undefined;
+  diagnostics: StaleReviewBotThreadDiagnosticsDto | null | undefined;
+  pr: Pick<
+    GitHubPullRequest,
+    "state" | "isDraft" | "mergeStateStatus" | "mergeable" | "reviewDecision"
+  > | null | undefined;
+  checks?: ReadonlyArray<Pick<PullRequestCheck, "bucket">> | null;
+  localCiAllowsMergeReady?: boolean;
+}): boolean {
+  return Boolean(
+    args.remediation?.classification === "verified_current_head_repair_pending_thread_resolution" &&
+      args.diagnostics?.autoRepairSuppressedReason === "none" &&
+      githubPullRequestAllowsMergeReadyAction(args.pr) &&
+      checksAllowMergeReadyAction(args.checks) &&
+      args.localCiAllowsMergeReady !== false,
+  );
+}
 
 export function formatStaleReviewBotRemediationLine(remediation: StaleReviewBotRemediationDto): string {
   const tokens = [
@@ -56,6 +102,12 @@ export function formatStaleReviewBotThreadDiagnosticsLine(
 export function formatStaleReviewBotTerminalStopLine(args: {
   remediation: StaleReviewBotRemediationDto;
   diagnostics: StaleReviewBotThreadDiagnosticsDto;
+  pr?: Pick<
+    GitHubPullRequest,
+    "state" | "isDraft" | "mergeStateStatus" | "mergeable" | "reviewDecision"
+  > | null;
+  checks?: ReadonlyArray<Pick<PullRequestCheck, "bucket">> | null;
+  localCiAllowsMergeReady?: boolean;
 }): string | null {
   const { remediation, diagnostics } = args;
   const metadataTerminal =
@@ -74,6 +126,14 @@ export function formatStaleReviewBotTerminalStopLine(args: {
       ? "manual_review_thread_handling"
       : remediation.classification === "metadata_only_missing_current_head_review"
         ? "request_current_head_review"
+      : verifiedCurrentHeadRepairResidueAllowsMergeReadyAction({
+          remediation,
+          diagnostics,
+          pr: args.pr,
+          checks: args.checks,
+          localCiAllowsMergeReady: args.localCiAllowsMergeReady,
+        })
+          ? "merge_ready"
         : remediation.classification === "verified_no_source_change_pending_thread_resolution" ||
             remediation.classification === "verified_current_head_repair_pending_thread_resolution"
           ? "resolve_verified_review_thread_metadata"
@@ -92,7 +152,17 @@ export function formatStaleReviewBotTerminalStopLine(args: {
   ].join(" ");
 }
 
-export function formatStaleReviewResidueOperatorDiagnostic(remediation: StaleReviewBotRemediationDto): string {
+export function formatStaleReviewResidueOperatorDiagnostic(
+  args:
+    | StaleReviewBotRemediationDto
+    | {
+        remediation: StaleReviewBotRemediationDto;
+        verifiedCurrentHeadRepairResidueMergeReady?: boolean;
+      },
+): string {
+  const remediation = "remediation" in args ? args.remediation : args;
+  const verifiedCurrentHeadRepairResidueMergeReady =
+    "remediation" in args && args.verifiedCurrentHeadRepairResidueMergeReady === true;
   const latestConfiguredBotReviewSha =
     remediation.processedOnCurrentHead === "yes" ? remediation.currentHeadSha : "none";
   const actionableCurrentDiffThreads =
@@ -103,6 +173,9 @@ export function formatStaleReviewResidueOperatorDiagnostic(remediation: StaleRev
     remediation.classification === "metadata_only_missing_current_head_review" &&
     remediation.codexCurrentHeadReviewState === "missing"
       ? "request_current_head_review"
+      : verifiedCurrentHeadRepairResidueMergeReady &&
+          remediation.classification === "verified_current_head_repair_pending_thread_resolution"
+        ? "merge_ready"
       : remediation.manualNextStep;
   return [
     "codex_connector_operator_diagnostic",
@@ -134,6 +207,8 @@ export function formatStaleReviewMetadataConvergenceDiagnostic(args: {
     "merge_effect=ready",
     "next_action=merge_ready",
     `stale_review_metadata_classification=${args.remediation.classification}`,
+    `issue=#${args.remediation.issueNumber}`,
+    `pr=${args.remediation.prNumber === null ? "none" : `#${args.remediation.prNumber}`}`,
   ].join(" ");
 }
 

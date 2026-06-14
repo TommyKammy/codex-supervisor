@@ -524,8 +524,9 @@ test("buildDecisionKernelV2ExplainDto requires Codex no-major evidence for Codex
       provider_success_head_sha: "head-current",
     }),
     pr: pullRequest({
-      configuredBotCurrentHeadObservedAt: null,
-      configuredBotCurrentHeadObservationSource: null,
+      configuredBotCurrentHeadObservedAt: "2026-06-08T00:06:00.000Z",
+      configuredBotCurrentHeadObservationSource: "review_thread",
+      configuredBotCurrentHeadStatusState: "SUCCESS",
       configuredBotLatestReviewedCommitSha: null,
     }),
     checks: [{ name: "build", state: "SUCCESS", bucket: "pass" }],
@@ -535,6 +536,47 @@ test("buildDecisionKernelV2ExplainDto requires Codex no-major evidence for Codex
   assert.equal(dto.decision?.normalizedState.reviewPosture, "current_head_review_observed");
   assert.equal(dto.decision?.action, "ask_operator");
   assert.deepEqual(dto.decision?.reasons, ["insufficient_merge_evidence"]);
+});
+
+test("buildDecisionKernelV2ExplainDto treats verified current-head repair residue as Codex no-major evidence", () => {
+  const dto = buildDecisionKernelV2ExplainDto({
+    config: codexConfig({
+      codexConnectorAutoMergeEnabled: true,
+      configuredBotInitialGraceWaitSeconds: 0,
+      configuredBotSettledWaitSeconds: 0,
+      verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+    }),
+    issueNumber: 2301,
+    title: "Phase 3.2",
+    record: record({
+      processed_review_thread_ids: ["thread-codex-p2@head-current"],
+      processed_review_thread_fingerprints: ["thread-codex-p2@head-current#comment-codex-p2"],
+      timeline_artifacts: [
+        {
+          type: "verification_result",
+          gate: "codex_turn",
+          command: "npm test -- src/decision-kernel/v2-explain.test.ts",
+          head_sha: "head-current",
+          outcome: "passed",
+          remediation_target: null,
+          next_action: "continue",
+          summary: "Focused verifier passed after the repair commit.",
+          recorded_at: "2026-06-08T00:06:00.000Z",
+        },
+      ],
+    }),
+    pr: pullRequest({
+      configuredBotCurrentHeadObservedAt: "2026-06-08T00:06:00.000Z",
+      configuredBotCurrentHeadObservationSource: "review_thread",
+      configuredBotCurrentHeadStatusState: "SUCCESS",
+      configuredBotLatestReviewedCommitSha: null,
+    }),
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass" }],
+    reviewThreads: [codexMustFixThread()],
+  });
+
+  assert.equal(dto.decision?.normalizedState.reviewPosture, "current_head_review_observed");
+  assert.equal(dto.decision?.action, "merge");
 });
 
 test("buildDecisionKernelV2ExplainDto does not require Codex no-major evidence on configured-provider auto-merge paths", () => {

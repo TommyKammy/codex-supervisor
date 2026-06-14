@@ -7,8 +7,13 @@ import { syncCopilotReviewRequestObservation } from "../pull-request-state-sync"
 import { Supervisor } from "./supervisor";
 import { GitHubIssue, GitHubPullRequest, PullRequestCheck, ReviewThread, SupervisorStateFile } from "../core/types";
 import {
+  CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+  createCodexConnectorTrackedReviewResidueScenario,
+} from "../codex-connector-tracked-pr-test-helpers";
+import {
   branchName,
   createConfig,
+  createPullRequest,
   createRecord,
   createSupervisorFixture,
   executionReadyBody,
@@ -347,6 +352,204 @@ test("handlePostTurnPullRequestTransitions waits for Copilot propagation after m
   assert.equal(readyCalls, 1);
   assert.equal(autoMergeCalls, 0);
   assert.equal(snapshotLoads, 2);
+});
+
+test("handlePostTurnMergeAndCompletion treats verified current-head repair residue as Codex no-major evidence", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 2373;
+  const branch = branchName(fixture.config, issueNumber);
+  const config = createConfig({
+    ...fixture.config,
+    codexConnectorAutoMergeEnabled: true,
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    configuredBotInitialGraceWaitSeconds: 0,
+    configuredBotSettledWaitSeconds: 0,
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Treat verified residue as merge ready",
+    body: runnableCodexIssueBody("Treat verified residue as merge ready."),
+    createdAt: "2026-06-14T00:00:00Z",
+    updatedAt: "2026-06-14T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber: 3980,
+    headSha: "head-verified-repair-residue",
+    branch,
+    threadId: "thread-verified-repair-residue",
+    commentId: "comment-verified-repair-residue",
+    path: "src/review-policy.ts",
+    line: 14,
+    severity: "P2",
+    commentBody: "P2: Verify this current-head repair before merge.",
+    discussionUrl: "https://example.test/pr/3980#discussion_verified_repair_residue",
+    verifiedRepair: {
+      summary: "Focused verifier passed after the repair commit.",
+      ranAt: "2026-06-14T00:18:00Z",
+      command: "npm test -- src/review-policy.test.ts",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    configuredBotCurrentHeadObservedAt: "2026-06-13T00:17:00Z",
+    configuredBotCurrentHeadObservationSource: "review_thread",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        ...scenario.recordPatch,
+        issue_number: issueNumber,
+        state: "ready_to_merge",
+        branch,
+        blocked_reason: null,
+        last_error: null,
+        last_failure_context: null,
+      }),
+    },
+  };
+  const comments: Array<{ issueNumber: number; body: string }> = [];
+  const autoMergeCalls: Array<{ prNumber: number; headSha: string }> = [];
+  const supervisor = new Supervisor(config);
+  (supervisor as unknown as { loadOpenPullRequestSnapshot: (prNumber: number) => Promise<unknown> }).loadOpenPullRequestSnapshot = async (
+    prNumber: number,
+  ) => {
+    assert.equal(prNumber, 3980);
+    return { pr, checks: scenario.passingChecks, reviewThreads: [scenario.reviewThread] };
+  };
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    addIssueComment: async (commentIssueNumber: number, body: string) => {
+      comments.push({ issueNumber: commentIssueNumber, body });
+    },
+    enableAutoMerge: async (prNumber: number, headSha: string) => {
+      autoMergeCalls.push({ prNumber, headSha });
+    },
+  };
+
+  const merged = await (
+    supervisor as unknown as {
+      handlePostTurnMergeAndCompletion: (
+        state: SupervisorStateFile,
+        issue: GitHubIssue,
+        record: ReturnType<typeof createRecord>,
+        pr: GitHubPullRequest,
+        options: { dryRun: boolean },
+      ) => Promise<ReturnType<typeof createRecord>>;
+    }
+  ).handlePostTurnMergeAndCompletion(state, issue, state.issues[String(issueNumber)]!, pr, { dryRun: false });
+
+  assert.equal(merged.state, "merging");
+  assert.equal(merged.blocked_reason, null);
+  assert.deepEqual(autoMergeCalls, [{ prNumber: 3980, headSha: "head-verified-repair-residue" }]);
+  assert.equal(comments.length, 1);
+  assert.match(comments[0]?.body ?? "", /Final auto-merge guard passed for head/);
+  assert.doesNotMatch(merged.last_failure_signature ?? "", /missing_current_head_codex_no_major/);
+  assert.match(
+    merged.last_auto_merge_guard_context?.details.join("\\n") ?? "",
+    /codex_verified_current_head_repair_residue=yes/,
+  );
+});
+
+test("handlePostTurnMergeAndCompletion does not auto-merge high-severity verified repair residue without Codex no-major", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 2375;
+  const branch = branchName(fixture.config, issueNumber);
+  const config = createConfig({
+    ...fixture.config,
+    codexConnectorAutoMergeEnabled: true,
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    configuredBotInitialGraceWaitSeconds: 0,
+    configuredBotSettledWaitSeconds: 0,
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Keep high severity residue blocked",
+    body: runnableCodexIssueBody("Keep high severity residue blocked."),
+    createdAt: "2026-06-14T00:00:00Z",
+    updatedAt: "2026-06-14T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber: 3981,
+    headSha: "head-p1-verified-repair-residue",
+    branch,
+    threadId: "thread-p1-verified-repair-residue",
+    commentId: "comment-p1-verified-repair-residue",
+    path: "src/review-policy.ts",
+    line: 15,
+    severity: "P1",
+    commentBody: "P1: Keep high-severity repair residue behind a current-head no-major review.",
+    discussionUrl: "https://example.test/pr/3981#discussion_p1_verified_repair_residue",
+    verifiedRepair: {
+      summary: "Focused verifier passed after the repair commit.",
+      ranAt: "2026-06-14T00:18:00Z",
+      command: "npm test -- src/review-policy.test.ts",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    configuredBotCurrentHeadObservedAt: "2026-06-13T00:17:00Z",
+    configuredBotCurrentHeadObservationSource: "review_thread",
+    configuredBotCurrentHeadStatusState: null,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        ...scenario.recordPatch,
+        issue_number: issueNumber,
+        state: "ready_to_merge",
+        branch,
+        blocked_reason: null,
+        last_error: null,
+        last_failure_context: null,
+      }),
+    },
+  };
+  const comments: Array<{ issueNumber: number; body: string }> = [];
+  const autoMergeCalls: Array<{ prNumber: number; headSha: string }> = [];
+  const supervisor = new Supervisor(config);
+  (supervisor as unknown as { loadOpenPullRequestSnapshot: (prNumber: number) => Promise<unknown> }).loadOpenPullRequestSnapshot = async (
+    prNumber: number,
+  ) => {
+    assert.equal(prNumber, 3981);
+    return { pr, checks: scenario.passingChecks, reviewThreads: [scenario.reviewThread] };
+  };
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    addIssueComment: async (commentIssueNumber: number, body: string) => {
+      comments.push({ issueNumber: commentIssueNumber, body });
+    },
+    enableAutoMerge: async (prNumber: number, headSha: string) => {
+      autoMergeCalls.push({ prNumber, headSha });
+    },
+  };
+
+  const merged = await (
+    supervisor as unknown as {
+      handlePostTurnMergeAndCompletion: (
+        state: SupervisorStateFile,
+        issue: GitHubIssue,
+        record: ReturnType<typeof createRecord>,
+        pr: GitHubPullRequest,
+        options: { dryRun: boolean },
+      ) => Promise<ReturnType<typeof createRecord>>;
+    }
+  ).handlePostTurnMergeAndCompletion(state, issue, state.issues[String(issueNumber)]!, pr, { dryRun: false });
+
+  assert.equal(merged.state, "addressing_review");
+  assert.deepEqual(autoMergeCalls, []);
+  assert.equal(comments.length, 0);
 });
 
 test("handlePostTurnPullRequestTransitions refreshes PR state after marking ready", async () => {

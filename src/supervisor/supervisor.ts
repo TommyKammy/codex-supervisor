@@ -23,6 +23,7 @@ import {
   inferStateFromPullRequest,
   inferGitHubWaitStep,
 } from "../pull-request-state";
+import { hasVerifiedCurrentHeadRepairReviewMetadataResidue } from "../pull-request-state-codex-residue-policy";
 import { hasCodexConnectorPrSuccessCurrentHeadObservation } from "../codex-connector-review-policy";
 import {
   syncCopilotReviewRequestObservation,
@@ -268,7 +269,14 @@ function finalAutoMergeGuard(args: {
     reviewThreads,
   ).length;
   const effectiveHumanBlockers = config.humanReviewBlocksMerge ? manualReviewThreads(config, reviewThreads).length : 0;
-  const currentHeadCodexNoMajor = hasCurrentHeadCodexNoMajor(record, currentPr);
+  const verifiedCurrentHeadRepairResidue = hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+    config,
+    record,
+    pr: currentPr,
+    checks,
+    reviewThreads,
+  });
+  const currentHeadCodexNoMajor = hasCurrentHeadCodexNoMajor(record, currentPr) || verifiedCurrentHeadRepairResidue;
   const requiresCodexNoMajor = autoMergePath === "codex_connector_no_major";
   const aggregateHumanReviewBlocker =
     config.humanReviewBlocksMerge &&
@@ -289,6 +297,7 @@ function finalAutoMergeGuard(args: {
     requiresCodexNoMajor
       ? `codex_current_head_no_major=${currentHeadCodexNoMajor ? "yes" : "no"}`
       : "codex_current_head_no_major=not_required",
+    `codex_verified_current_head_repair_residue=${verifiedCurrentHeadRepairResidue ? "yes" : "no"}`,
     `configured_bot_blockers=${effectiveConfiguredBotBlockers}`,
     `human_blockers=${effectiveHumanBlockers}`,
     `review_decision=${currentPr.reviewDecision ?? "none"}`,
