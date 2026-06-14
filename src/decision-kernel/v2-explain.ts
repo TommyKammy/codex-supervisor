@@ -33,6 +33,7 @@ import {
   hasConfiguredProviderSuccess,
   hasVerifiedCurrentHeadRepairReviewMetadataResidue,
 } from "../pull-request-state-codex-residue-policy";
+import { aggregateHumanReviewDecisionBlocker } from "../review-decision-blocking-policy";
 import { configuredBotReviewThreads, manualReviewThreads } from "../review-thread-reporting";
 import { mergeConflictDetected } from "../supervisor/supervisor-reporting";
 import type { PrLifecycleFactInventory } from "./pr-lifecycle-state";
@@ -467,17 +468,36 @@ function mergeReadyBlockedByFinalGuard(args: {
 
   const autoMergePath = autoMergePathForConfig(args.config);
   const requiresCodexNoMajor = autoMergePath === "codex_connector_no_major";
+  const verifiedCurrentHeadRepairResidue = hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+    config: args.config,
+    record: args.record,
+    pr: args.pr,
+    checks: args.checks,
+    reviewThreads: args.reviewThreads,
+  });
   const currentHeadCodexNoMajor =
-    hasCurrentHeadCodexNoMajor(args.record, args.pr) ||
-    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
-      config: args.config,
-      record: args.record,
-      pr: args.pr,
-      checks: args.checks,
-      reviewThreads: args.reviewThreads,
-    });
+    hasCurrentHeadCodexNoMajor(args.record, args.pr) || verifiedCurrentHeadRepairResidue;
+  const effectiveConfiguredBotBlockers = effectiveConfiguredBotReviewThreadsForState(
+    args.config,
+    args.record,
+    args.pr,
+    args.checks,
+    args.reviewThreads,
+  ).length;
+  const effectiveHumanBlockers = args.config.humanReviewBlocksMerge
+    ? manualReviewThreads(args.config, args.reviewThreads).length
+    : 0;
 
-  if (args.config.humanReviewBlocksMerge && isBlockingHumanReviewDecision(args.pr, requiresCodexNoMajor)) {
+  if (
+    aggregateHumanReviewDecisionBlocker({
+      humanReviewBlocksMerge: Boolean(args.config.humanReviewBlocksMerge),
+      requiresCodexNoMajor,
+      verifiedCurrentHeadRepairResidue,
+      effectiveConfiguredBotBlockerCount: effectiveConfiguredBotBlockers,
+      effectiveHumanBlockerCount: effectiveHumanBlockers,
+      pr: args.pr,
+    })
+  ) {
     return true;
   }
 
@@ -489,13 +509,7 @@ function mergeReadyBlockedByFinalGuard(args: {
     return true;
   }
 
-  return effectiveConfiguredBotReviewThreadsForState(
-    args.config,
-    args.record,
-    args.pr,
-    args.checks,
-    args.reviewThreads,
-  ).length > 0;
+  return effectiveConfiguredBotBlockers > 0;
 }
 
 type V2AutoMergePath = "codex_connector_no_major" | "configured_bot_provider" | null;
@@ -507,14 +521,6 @@ function autoMergePathForConfig(config: SupervisorConfig): V2AutoMergePath {
   }
 
   return config.codexConnectorAutoMergeEnabled === true ? "codex_connector_no_major" : null;
-}
-
-function isBlockingHumanReviewDecision(pr: GitHubPullRequest, requiresCodexNoMajor: boolean): boolean {
-  return (
-    pr.reviewDecision === "REVIEW_REQUIRED" ||
-    (pr.reviewDecision === "CHANGES_REQUESTED" &&
-      (requiresCodexNoMajor || pr.configuredBotTopLevelReviewStrength !== "nitpick_only"))
-  );
 }
 
 function hasCurrentHeadCodexNoMajor(record: IssueRunRecord, pr: GitHubPullRequest): boolean {

@@ -13,6 +13,7 @@ import {
 import type { CopilotReviewState } from "./types";
 
 export interface CopilotReviewLifecycleFacts {
+  reviewsComplete?: boolean;
   reviewRequests: string[];
   reviews: Array<{
     authorLogin: string | null;
@@ -69,6 +70,7 @@ export interface CopilotReviewLifecycle {
 export interface ConfiguredBotTopLevelReviewSummary {
   strength: "nitpick_only" | "blocking" | null;
   submittedAt: string | null;
+  configuredBotOnlyChangesRequestedReview?: boolean | null;
 }
 
 export interface ConfiguredBotReviewSummary {
@@ -494,6 +496,57 @@ function inferConfiguredBotTopLevelReviewSummary(
   return latestConfiguredReview;
 }
 
+function normalizeReviewState(state: string | null | undefined): string | null {
+  return normalizeLogin(state)?.replace(/\s+/g, "_") ?? null;
+}
+
+function inferConfiguredBotOnlyChangesRequestedReview(
+  facts: CopilotReviewLifecycleFacts,
+  reviewBotLogins: string[],
+): boolean | null {
+  const configuredReviewBots = new Set(normalizeReviewBotLogins(reviewBotLogins));
+  if (configuredReviewBots.size === 0) {
+    return null;
+  }
+  if (facts.reviewsComplete === false) {
+    return null;
+  }
+
+  const changesRequestedAuthors = new Set<string>();
+  const chronologicalReviews = facts.reviews
+    .map((review, index) => ({
+      ...review,
+      index,
+      submittedAtMs: parseTimestamp(review.submittedAt),
+      state: normalizeReviewState(review.state),
+    }))
+    .sort((left, right) =>
+      left.submittedAtMs === right.submittedAtMs ? left.index - right.index : left.submittedAtMs - right.submittedAtMs,
+    );
+
+  for (const review of chronologicalReviews) {
+    const authorLogin = normalizeLogin(review.authorLogin);
+    if (!authorLogin) {
+      continue;
+    }
+
+    if (review.state === "changes_requested") {
+      changesRequestedAuthors.add(authorLogin);
+      continue;
+    }
+
+    if (review.state === "approved" || review.state === "dismissed") {
+      changesRequestedAuthors.delete(authorLogin);
+    }
+  }
+
+  if (changesRequestedAuthors.size === 0) {
+    return null;
+  }
+
+  return Array.from(changesRequestedAuthors).every((authorLogin) => configuredReviewBots.has(authorLogin));
+}
+
 function reviewedCommitFromBody(body: string | null | undefined): string | null {
   const match = body?.match(/\bReviewed commit:\s*([0-9a-f]{7,40})\b/i);
   return match?.[1] ?? null;
@@ -808,9 +861,14 @@ export function buildConfiguredBotReviewSummary(
   codexConnectorReviewRequestIdentity?: CodexConnectorReviewRequestIdentity | null,
 ): ConfiguredBotReviewSummary {
   const currentHeadObservation = inferConfiguredBotCurrentHeadObservation(facts, reviewBotLogins, currentHeadOid);
+  const topLevelReview = inferConfiguredBotTopLevelReviewSummary(facts, reviewBotLogins);
+  Object.defineProperty(topLevelReview, "configuredBotOnlyChangesRequestedReview", {
+    enumerable: false,
+    value: inferConfiguredBotOnlyChangesRequestedReview(facts, reviewBotLogins),
+  });
   const summary = {
     lifecycle: inferCopilotReviewLifecycle(facts, reviewBotLogins),
-    topLevelReview: inferConfiguredBotTopLevelReviewSummary(facts, reviewBotLogins),
+    topLevelReview,
     ...(codexConnectorReviewRequestIdentity
       ? {
           codexConnectorReviewRequest: findCodexConnectorReviewRequest(facts.issueComments, codexConnectorReviewRequestIdentity),

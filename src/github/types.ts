@@ -47,6 +47,7 @@ export interface GitHubPullRequest {
   configuredBotDraftSkipAt?: string | null;
   configuredBotTopLevelReviewStrength?: "nitpick_only" | "blocking" | null;
   configuredBotTopLevelReviewSubmittedAt?: string | null;
+  configuredBotOnlyChangesRequestedReview?: boolean | null;
   requiredConversationResolution?: {
     state: "enabled" | "disabled" | "unavailable" | "unknown";
     source?: string | null;

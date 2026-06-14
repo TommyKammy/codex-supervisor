@@ -587,6 +587,102 @@ test("status --why surfaces artifact-backed verified repair residue after thread
   assert.doesNotMatch(status, /^operator_action action=manual_review /m);
 });
 
+test("status --why surfaces legacy processed-thread repair proof while idle", async (t) => {
+  const fixture = await createSupervisorFixture();
+  fixture.config.reviewBotLogins = [CODEX_CONNECTOR_REVIEW_BOT_LOGIN];
+  fixture.config.localCiCommand = "npm run verify:pre-pr";
+  fixture.config.verifiedCurrentHeadRepairReviewThreadAutoResolve = true;
+  const issueNumber = 406;
+  const prNumber = 506;
+  const headSha = "01642468db1df175a92ec8d332fdf64e7754a3ab";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-406",
+    commentId: "comment-406",
+    path: "web/src/App.tsx",
+    line: 911,
+    severity: "P2",
+    commentBody: "P2: Require termination code fields before submit.",
+    discussionUrl: "https://example.test/pr/506#discussion_r406",
+    verifiedRepair: {
+      summary: "Verified current head addresses the review findings.",
+      ranAt: "2026-06-14T04:58:52.932Z",
+      command: "npm run verify:pre-pr",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        ...scenario.recordPatch,
+        state: "blocked",
+        blocked_reason: "verification",
+        last_failure_signature: `auto-merge-refused:${headSha}:missing_current_head_codex_no_major`,
+        workspace: path.join(fixture.workspaceRoot, `issue-${issueNumber}`),
+        journal_path: null,
+        latest_local_ci_result: {
+          outcome: "passed",
+          summary: "Configured local CI command passed before auto-merging PR #506.",
+          ran_at: "2026-06-14T04:59:01.275Z",
+          head_sha: headSha,
+          execution_mode: "shell",
+          command: "npm run verify:pre-pr",
+          failure_class: null,
+          remediation_target: null,
+        },
+      }),
+    },
+  };
+  await fs.writeFile(fixture.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  t.after(async () => {
+    await fs.rm(path.dirname(fixture.repoPath), { recursive: true, force: true });
+  });
+
+  const trackedIssue = createTrackedStatusIssue({
+    issueNumber,
+    title: "Status why idle legacy Codex verified repair residue",
+    summary: "Status should surface legacy processed-thread repair proof.",
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    configuredBotCurrentHeadObservedAt: "2026-06-14T05:12:43Z",
+    configuredBotCurrentHeadObservationSource: "review_thread",
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotLatestReviewedCommitSha: headSha,
+  });
+  const supervisor = new Supervisor(fixture.config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getIssue: async () => trackedIssue,
+    listCandidateIssues: async () => [trackedIssue],
+    listAllIssues: async () => [trackedIssue],
+    getPullRequestIfExists: async () => pr,
+    resolvePullRequestForBranch: async () => pr,
+    getChecks: async () => scenario.passingChecks,
+    getUnresolvedReviewThreads: async () => [scenario.reviewThread],
+  };
+
+  const status = await supervisor.status({ why: true });
+
+  assert.match(
+    status,
+    /^no_active_tracked_record issue=#406 classification=stale_review_bot_remediation state=blocked reason=verified_current_head_repair_pending_thread_resolution$/m,
+  );
+  assert.match(
+    status,
+    /^stale_review_bot_remediation issue=#406 pr=#506 reason=stale_review_bot code_ci=green current_head_sha=01642468db1df175a92ec8d332fdf64e7754a3ab processed_on_current_head=yes classification=verified_current_head_repair_pending_thread_resolution codex_current_head_review_state=missing review_thread_url=https:\/\/example\.test\/pr\/506#discussion_r406 manual_next_step=resolve_verified_repaired_configured_bot_threads_then_rerun_supervisor verification_evidence=legacy_processed_thread_evidence:Verified_current_head_addresses_the_review_findings\. summary=verified_current_head_repair_configured_bot_thread_resolution_pending$/m,
+  );
+  assert.match(
+    status,
+    /^stale_review_bot_terminal_stop issue=#406 pr=#506 reason=metadata_only_review_thread_resolution_pending classification=verified_current_head_repair_pending_thread_resolution .*auto_repair_suppressed_reason=none next_action=merge_ready$/m,
+  );
+  assert.match(status, /^codex_connector_operator_diagnostic .*next_action=merge_ready$/m);
+  assert.doesNotMatch(status, /^operator_action action=resolve_stale_review_bot /m);
+  assert.doesNotMatch(status, /^operator_action action=manual_review /m);
+});
+
 test("status --why uses the shared stale review-bot presenter for active verified repair residue", async (t) => {
   const fixture = await createSupervisorFixture();
   fixture.config.reviewBotLogins = [CODEX_CONNECTOR_REVIEW_BOT_LOGIN];

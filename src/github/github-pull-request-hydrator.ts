@@ -191,6 +191,9 @@ export class GitHubPullRequestHydrator {
               }
             }
             reviews(last: 100) {
+              pageInfo {
+                hasPreviousPage
+              }
               nodes {
                 submittedAt
                 state

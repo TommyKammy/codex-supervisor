@@ -365,6 +365,7 @@ test("handlePostTurnMergeAndCompletion treats verified current-head repair resid
     configuredBotInitialGraceWaitSeconds: 0,
     configuredBotSettledWaitSeconds: 0,
     verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+    localCiCommand: "npm run verify:pre-pr",
   });
   const issue: GitHubIssue = {
     number: issueNumber,
@@ -397,6 +398,9 @@ test("handlePostTurnMergeAndCompletion treats verified current-head repair resid
   });
   const pr = createPullRequest({
     ...scenario.pullRequestPatch,
+    reviewDecision: "CHANGES_REQUESTED",
+    configuredBotTopLevelReviewStrength: "blocking",
+    configuredBotOnlyChangesRequestedReview: true,
     configuredBotCurrentHeadObservedAt: "2026-06-13T00:17:00Z",
     configuredBotCurrentHeadObservationSource: "review_thread",
   });
@@ -410,7 +414,26 @@ test("handlePostTurnMergeAndCompletion treats verified current-head repair resid
         branch,
         blocked_reason: null,
         last_error: null,
-        last_failure_context: null,
+        last_failure_context: {
+          category: "blocked",
+          summary: "Final auto-merge guard refused without Codex no-major evidence.",
+          signature: "auto-merge-refused:head-verified-repair-residue:missing_current_head_codex_no_major",
+          command: null,
+          details: ["missing_current_head_codex_no_major"],
+          url: null,
+          updated_at: "2026-06-14T00:20:00Z",
+        },
+        last_failure_signature: "auto-merge-refused:head-verified-repair-residue:missing_current_head_codex_no_major",
+        latest_local_ci_result: {
+          outcome: "passed",
+          summary: "Configured local CI command passed before auto-merging PR #399.",
+          ran_at: "2026-06-14T04:59:01.275Z",
+          head_sha: "head-verified-repair-residue",
+          execution_mode: "shell",
+          command: "npm run verify:pre-pr",
+          failure_class: null,
+          remediation_target: null,
+        },
       }),
     },
   };
@@ -453,6 +476,10 @@ test("handlePostTurnMergeAndCompletion treats verified current-head repair resid
   assert.match(
     merged.last_auto_merge_guard_context?.details.join("\\n") ?? "",
     /codex_verified_current_head_repair_residue=yes/,
+  );
+  assert.match(
+    merged.last_auto_merge_guard_context?.details.join("\\n") ?? "",
+    /codex_repair_proof_source=legacy_processed_thread_evidence/,
   );
 });
 

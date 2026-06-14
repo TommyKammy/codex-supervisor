@@ -23,7 +23,8 @@ import {
   inferStateFromPullRequest,
   inferGitHubWaitStep,
 } from "../pull-request-state";
-import { hasVerifiedCurrentHeadRepairReviewMetadataResidue } from "../pull-request-state-codex-residue-policy";
+import { projectCurrentHeadCodexRepairProof } from "../current-head-codex-repair-proof";
+import { aggregateHumanReviewDecisionBlocker } from "../review-decision-blocking-policy";
 import { hasCodexConnectorPrSuccessCurrentHeadObservation } from "../codex-connector-review-policy";
 import {
   syncCopilotReviewRequestObservation,
@@ -269,22 +270,24 @@ function finalAutoMergeGuard(args: {
     reviewThreads,
   ).length;
   const effectiveHumanBlockers = config.humanReviewBlocksMerge ? manualReviewThreads(config, reviewThreads).length : 0;
-  const verifiedCurrentHeadRepairResidue = hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+  const verifiedCurrentHeadRepairProof = projectCurrentHeadCodexRepairProof({
     config,
     record,
     pr: currentPr,
     checks,
     reviewThreads,
   });
+  const verifiedCurrentHeadRepairResidue = verifiedCurrentHeadRepairProof !== null;
   const currentHeadCodexNoMajor = hasCurrentHeadCodexNoMajor(record, currentPr) || verifiedCurrentHeadRepairResidue;
   const requiresCodexNoMajor = autoMergePath === "codex_connector_no_major";
-  const aggregateHumanReviewBlocker =
-    config.humanReviewBlocksMerge &&
-    (currentPr.reviewDecision === "REVIEW_REQUIRED" ||
-      (currentPr.reviewDecision === "CHANGES_REQUESTED" &&
-        (requiresCodexNoMajor || currentPr.configuredBotTopLevelReviewStrength !== "nitpick_only")))
-      ? currentPr.reviewDecision
-      : null;
+  const aggregateHumanReviewBlocker = aggregateHumanReviewDecisionBlocker({
+    humanReviewBlocksMerge: Boolean(config.humanReviewBlocksMerge),
+    requiresCodexNoMajor,
+    verifiedCurrentHeadRepairResidue,
+    effectiveConfiguredBotBlockerCount: effectiveConfiguredBotBlockers,
+    effectiveHumanBlockerCount: effectiveHumanBlockers,
+    pr: currentPr,
+  });
   const localCiResult = record.latest_local_ci_result ?? null;
   const localCiConfigured = hasConfiguredLocalCiCommand(config);
   const localCiMissing = localCiConfigured && currentHeadLocalCiMissing(record, currentPr);
@@ -298,6 +301,7 @@ function finalAutoMergeGuard(args: {
       ? `codex_current_head_no_major=${currentHeadCodexNoMajor ? "yes" : "no"}`
       : "codex_current_head_no_major=not_required",
     `codex_verified_current_head_repair_residue=${verifiedCurrentHeadRepairResidue ? "yes" : "no"}`,
+    `codex_repair_proof_source=${verifiedCurrentHeadRepairProof?.source ?? "none"}`,
     `configured_bot_blockers=${effectiveConfiguredBotBlockers}`,
     `human_blockers=${effectiveHumanBlockers}`,
     `review_decision=${currentPr.reviewDecision ?? "none"}`,
@@ -842,6 +846,7 @@ export class Supervisor {
               state: "merging",
               blocked_reason: null,
               last_failure_context: null,
+              last_failure_signature: null,
               last_auto_merge_guard_context: autoMergeGuard.evidence,
               last_head_sha: currentPr.headRefOid,
             });

@@ -480,7 +480,8 @@ test("buildConfiguredBotReviewSummary keeps top-level review strength scoped to 
     timeline: [],
   };
 
-  assert.deepEqual(buildConfiguredBotReviewSummary(facts, ["coderabbitai[bot]"]), {
+  const summary = buildConfiguredBotReviewSummary(facts, ["coderabbitai[bot]"]);
+  assert.deepEqual(summary, {
     lifecycle: {
       state: "arrived",
       requestedAt: null,
@@ -497,6 +498,103 @@ test("buildConfiguredBotReviewSummary keeps top-level review strength scoped to 
     rateLimitWarningAt: null,
     draftSkipAt: null,
   });
+  assert.equal(summary.topLevelReview.configuredBotOnlyChangesRequestedReview, false);
+});
+
+test("buildConfiguredBotReviewSummary marks aggregate changes requested as configured-bot-only when no human blocker remains", () => {
+  const facts: CopilotReviewLifecycleFacts = {
+    reviewRequests: [],
+    reviews: [
+      {
+        authorLogin: "octocat",
+        submittedAt: "2026-03-13T02:02:00Z",
+        state: "CHANGES_REQUESTED",
+        body: "Please address these concerns.",
+      },
+      {
+        authorLogin: "octocat",
+        submittedAt: "2026-03-13T02:03:00Z",
+        state: "APPROVED",
+        body: "Looks good now.",
+      },
+      {
+        authorLogin: "coderabbitai[bot]",
+        submittedAt: "2026-03-13T02:04:00Z",
+        state: "CHANGES_REQUESTED",
+        body: "Nitpick: rename this helper for consistency.",
+      },
+    ],
+    comments: [],
+    issueComments: [],
+    timeline: [],
+  };
+
+  const summary = buildConfiguredBotReviewSummary(facts, ["coderabbitai[bot]"]);
+
+  assert.deepEqual(summary.topLevelReview, {
+    strength: "nitpick_only",
+    submittedAt: "2026-03-13T02:04:00Z",
+  });
+  assert.equal(summary.topLevelReview.configuredBotOnlyChangesRequestedReview, true);
+});
+
+test("buildConfiguredBotReviewSummary does not prove bot-only changes requested from a truncated review window", () => {
+  const facts: CopilotReviewLifecycleFacts = {
+    reviewsComplete: false,
+    reviewRequests: [],
+    reviews: [
+      {
+        authorLogin: "coderabbitai[bot]",
+        submittedAt: "2026-03-13T02:04:00Z",
+        state: "CHANGES_REQUESTED",
+        body: "Nitpick: rename this helper for consistency.",
+      },
+    ],
+    comments: [],
+    issueComments: [],
+    timeline: [],
+  };
+
+  const summary = buildConfiguredBotReviewSummary(facts, ["coderabbitai[bot]"]);
+
+  assert.deepEqual(summary.topLevelReview, {
+    strength: "nitpick_only",
+    submittedAt: "2026-03-13T02:04:00Z",
+  });
+  assert.equal(summary.topLevelReview.configuredBotOnlyChangesRequestedReview, null);
+});
+
+test("buildConfiguredBotReviewSummary keeps human changes requested active across comment-only follow-up reviews", () => {
+  const facts: CopilotReviewLifecycleFacts = {
+    reviewRequests: [],
+    reviews: [
+      {
+        authorLogin: "octocat",
+        submittedAt: "2026-03-13T02:02:00Z",
+        state: "CHANGES_REQUESTED",
+        body: "Please address these concerns.",
+      },
+      {
+        authorLogin: "octocat",
+        submittedAt: "2026-03-13T02:03:00Z",
+        state: "COMMENTED",
+        body: "Thanks for the update; still reviewing.",
+      },
+      {
+        authorLogin: "coderabbitai[bot]",
+        submittedAt: "2026-03-13T02:04:00Z",
+        state: "CHANGES_REQUESTED",
+        body: "Nitpick: rename this helper for consistency.",
+      },
+    ],
+    comments: [],
+    issueComments: [],
+    timeline: [],
+  };
+
+  const summary = buildConfiguredBotReviewSummary(facts, ["coderabbitai[bot]"]);
+
+  assert.equal(summary.topLevelReview.configuredBotOnlyChangesRequestedReview, false);
 });
 
 test("buildConfiguredBotReviewSummary treats configured-bot rate limit issue comments as a temporary requested state", () => {

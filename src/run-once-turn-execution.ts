@@ -913,6 +913,7 @@ export async function executeCodexTurnPhase(
               postPublicationReviewPersistence.hasVerifiedNoSourceChangeReviewThreadEvidence,
             verifiedNoSourceChangeReviewThreads:
               postPublicationReviewPersistence.verifiedNoSourceChangeReviewThreads,
+            reviewThreadsToProcess,
           });
         const preserveStaleNoPrRecoveryTracking =
           pr === null &&
