@@ -575,6 +575,8 @@ test("buildDecisionKernelV2ExplainDto treats verified current-head repair residu
           next_action: "continue",
           summary: "Focused verifier passed after the repair commit.",
           recorded_at: "2026-06-08T00:06:00.000Z",
+          processed_review_thread_ids: ["thread-codex-p2@head-current"],
+          processed_review_thread_fingerprints: ["thread-codex-p2@head-current#comment-codex-p2"],
         },
       ],
     }),

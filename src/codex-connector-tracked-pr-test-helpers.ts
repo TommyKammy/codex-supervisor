@@ -272,6 +272,8 @@ export function createCodexConnectorTrackedReviewResidueScenario({
         next_action: "continue",
         summary: verifiedRepair.summary,
         recorded_at: verifiedRepair.ranAt,
+        processed_review_thread_ids: [`${threadId}@${headSha}`],
+        processed_review_thread_fingerprints: [`${threadId}@${headSha}#${commentId}`],
       },
     ];
   }

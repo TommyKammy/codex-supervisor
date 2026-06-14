@@ -61,6 +61,7 @@ function currentConfiguredBotThreads(config: SupervisorConfig, reviewThreads: Re
 function currentHeadCodexTurnVerificationArtifact(
   record: Pick<IssueRunRecord, "timeline_artifacts">,
   pr: Pick<GitHubPullRequest, "headRefOid">,
+  currentThreads: ReviewThread[],
 ): TimelineArtifact | null {
   return (record.timeline_artifacts ?? []).find(
     (artifact) =>
@@ -68,7 +69,8 @@ function currentHeadCodexTurnVerificationArtifact(
       artifact.gate === "codex_turn" &&
       artifact.outcome === "passed" &&
       artifact.head_sha === pr.headRefOid &&
-      artifact.repair_targets?.includes("verified_no_source_change_review_thread_residue") !== true,
+      artifact.repair_targets?.includes("verified_no_source_change_review_thread_residue") !== true &&
+      repairArtifactCoversCurrentThreads(artifact, pr, currentThreads),
   ) ?? null;
 }
 
@@ -207,7 +209,7 @@ export function projectCurrentHeadCodexRepairProof(args: {
     return null;
   }
 
-  const currentHeadVerification = currentHeadCodexTurnVerificationArtifact(args.record, args.pr);
+  const currentHeadVerification = currentHeadCodexTurnVerificationArtifact(args.record, args.pr, currentThreads);
   if (!currentHeadVerification) {
     return null;
   }
