@@ -11,6 +11,7 @@ import {
   evaluateCodexConnectorConvergencePolicy,
   hasCodexConnectorFindingReviewComment,
   hasCodexConnectorPrSuccessCurrentHeadObservation,
+  latestCodexConnectorPSeverity,
   latestCodexConnectorReviewCommentFingerprint,
 } from "./codex-connector-review-policy";
 import {
@@ -30,6 +31,7 @@ import {
   configuredBotReviewThreads,
   latestReviewCommentAuthorIsAllowedBot,
   manualReviewThreads,
+  nonActionableConfiguredBotReviewThreads,
 } from "./review-thread-reporting";
 import {
   mergeConflictDetected,
@@ -51,6 +53,10 @@ import {
 function isIssueJournalThreadPath(thread: Pick<ReviewThread, "path">): boolean {
   const normalizedPath = thread.path?.replace(/\\/g, "/") ?? "";
   return /^\.codex-supervisor\/.+\/issue-journal\.md$/.test(normalizedPath);
+}
+
+function checksPresentAndGreen(checks: Pick<PullRequestCheck, "bucket">[]): boolean {
+  return checks.length > 0 && checks.every((check) => check.bucket === "pass" || check.bucket === "skipping");
 }
 
 function allowJournalOnlyConfiguredBotThreadException(
@@ -142,7 +148,14 @@ export function effectiveConfiguredBotReviewThreadsForState(
     pr,
     checks,
     reviewThreads,
-  })
+  }) ||
+    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+      config,
+      record,
+      pr,
+      checks,
+      reviewThreads,
+    })
     ? []
     : effectiveConfiguredBotReviewThreads(config, record, pr, checks, reviewThreads);
 }
@@ -313,6 +326,10 @@ export function hasVerifiedCurrentHeadRepairReviewMetadataResidue(args: {
     return false;
   }
 
+  if (!checksPresentAndGreen(args.checks)) {
+    return false;
+  }
+
   const recordForClassification = recordForCodexStaleReviewMetadataClassification(args);
   if (!recordForClassification) {
     return false;
@@ -326,7 +343,10 @@ export function hasVerifiedCurrentHeadRepairReviewMetadataResidue(args: {
     reviewThreads: args.reviewThreads,
   });
   if (remediation?.classification !== "verified_current_head_repair_pending_thread_resolution") {
-    return false;
+    return hasExplicitVerifiedCurrentHeadRepairResidue({
+      ...args,
+      record: recordForClassification,
+    });
   }
 
   const diagnostics = buildStaleReviewBotThreadDiagnostics({
@@ -337,6 +357,76 @@ export function hasVerifiedCurrentHeadRepairReviewMetadataResidue(args: {
     reviewThreads: args.reviewThreads,
   });
   return diagnostics?.autoRepairSuppressedReason === "none";
+}
+
+function hasExplicitVerifiedCurrentHeadRepairResidue(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+}): boolean {
+  if (!pullRequestHeadMatchesRecord(args.record, args.pr) || mergeConflictDetected(args.pr)) {
+    return false;
+  }
+
+  if (manualReviewThreads(args.config, args.reviewThreads).length > 0) {
+    return false;
+  }
+  if (nonActionableConfiguredBotReviewThreads(args.config, args.reviewThreads).length > 0) {
+    return false;
+  }
+
+  const configuredThreads = configuredBotReviewThreads(args.config, args.reviewThreads)
+    .filter((thread) => !thread.isResolved && !thread.isOutdated);
+  if (
+    configuredThreads.length === 0 ||
+    !configuredThreads.every(hasCodexConnectorFindingReviewComment) ||
+    !configuredThreads.every((thread) => hasProcessedReviewThread(args.record, args.pr, thread))
+  ) {
+    return false;
+  }
+
+  const mustFixThreads = codexConnectorMustFixReviewThreads(args.reviewThreads);
+  if (mustFixThreads.length === 0) {
+    return false;
+  }
+  if (!mustFixThreads.every((thread) => latestCodexConnectorPSeverity(thread) === "P2")) {
+    return false;
+  }
+  if (!mustFixThreads.every((thread) => hasProcessedReviewThread(args.record, args.pr, thread))) {
+    return false;
+  }
+
+  return hasExplicitCurrentHeadRepairVerification(args.record, args.pr);
+}
+
+function hasExplicitCurrentHeadRepairVerification(
+  record: Pick<IssueRunRecord, "latest_local_ci_result" | "timeline_artifacts">,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
+): boolean {
+  const hasMarkedNoSourceChangeRepair = (record.timeline_artifacts ?? []).some(
+    (artifact) =>
+      artifact.type === "verification_result" &&
+      artifact.gate === "codex_turn" &&
+      artifact.outcome === "passed" &&
+      artifact.head_sha === pr.headRefOid &&
+      artifact.repair_targets?.includes("verified_no_source_change_review_thread_residue") === true,
+  );
+  const hasCodexTurnRepairVerification = (record.timeline_artifacts ?? []).some(
+    (artifact) =>
+      artifact.type === "verification_result" &&
+      artifact.gate === "codex_turn" &&
+      artifact.outcome === "passed" &&
+      artifact.head_sha === pr.headRefOid &&
+      artifact.repair_targets?.includes("verified_no_source_change_review_thread_residue") !== true,
+  );
+  const hasLocalCiRepairVerification =
+    !hasMarkedNoSourceChangeRepair &&
+    record.latest_local_ci_result?.outcome === "passed" &&
+    record.latest_local_ci_result.head_sha === pr.headRefOid;
+
+  return hasCodexTurnRepairVerification || hasLocalCiRepairVerification;
 }
 
 function configuredBotThreadsAllowCodexConnectorCurrentHeadWait(args: {

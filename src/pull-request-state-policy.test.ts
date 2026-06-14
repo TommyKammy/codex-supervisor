@@ -575,6 +575,64 @@ test("inferStateFromPullRequest keeps recovered Codex stale metadata residue mer
   );
 });
 
+test("verified current-head repair residue evidence can replace Codex no-major evidence", () => {
+  const issueNumber = 2098;
+  const prNumber = 118;
+  const headSha = "2f1f51ea7ff5f861ae7dc7c8b43892ea20f5c118";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-current-head-repair-explicit",
+    commentId: "comment-current-head-repair-explicit",
+    path: "src/current-head-proof.ts",
+    line: 41,
+    severity: "P2",
+    commentBody: "P2: This current-head residue was already repaired and verified.",
+    discussionUrl: "https://example.test/pr/118#discussion_r118",
+    verifiedRepair: {
+      summary: "Focused current-head verifier passed.",
+      ranAt: "2026-05-15T00:18:00Z",
+      command: "npx tsx --test src/pull-request-state-policy.test.ts",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    humanReviewBlocksMerge: true,
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const record = createRecord(scenario.recordPatch);
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    configuredBotCurrentHeadObservedAt: "2026-05-15T00:17:00Z",
+    configuredBotCurrentHeadObservationSource: "review_thread",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotLatestReviewedCommitSha: null,
+  });
+
+  assert.equal(
+    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+      config,
+      record,
+      pr,
+      checks: scenario.passingChecks,
+      reviewThreads: [scenario.reviewThread],
+    }),
+    true,
+  );
+  assert.equal(
+    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+      config,
+      record,
+      pr,
+      checks: [],
+      reviewThreads: [scenario.reviewThread],
+    }),
+    false,
+  );
+});
+
 test("verified current-head repair residue evidence requires unsuppressed auto-repair diagnostics", () => {
   const issueNumber = 2099;
   const prNumber = 119;

@@ -169,8 +169,18 @@ test("stale review-bot terminal stop only reports merge-ready when GitHub is mer
       remediation,
       diagnostics,
       pr: createPullRequest(),
+      checks: [{ bucket: "pass" }],
     }) ?? "",
     /next_action=merge_ready$/,
+  );
+  assert.match(
+    formatStaleReviewBotTerminalStopLine({
+      remediation,
+      diagnostics,
+      pr: createPullRequest(),
+      checks: [],
+    }) ?? "",
+    /next_action=resolve_verified_review_thread_metadata$/,
   );
 });
 
@@ -257,6 +267,21 @@ test("Codex connector operator diagnostic honors auto-repair suppression before 
     /next_action=resolve_verified_repaired_configured_bot_threads_then_rerun_supervisor$/,
   );
   assert.doesNotMatch(diagnostics.operatorDiagnosticSummary ?? "", /next_action=merge_ready$/);
+
+  const missingChecksDiagnostics = buildCodexConnectorDiagnosticBundle({
+    config,
+    record,
+    pr,
+    checks: [],
+    reviewThreads: [scenario.reviewThread],
+    staleReviewBotRemediation: remediation,
+  });
+
+  assert.match(
+    missingChecksDiagnostics.operatorDiagnosticSummary ?? "",
+    /next_action=resolve_verified_repaired_configured_bot_threads_then_rerun_supervisor$/,
+  );
+  assert.doesNotMatch(missingChecksDiagnostics.operatorDiagnosticSummary ?? "", /next_action=merge_ready$/);
 });
 
 test("status --why classifies current-head processed configured-bot success as stale metadata remediation while idle", async (t) => {

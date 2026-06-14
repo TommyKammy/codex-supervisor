@@ -27,6 +27,7 @@ import {
 import { configuredBotCurrentHeadSignalWaitWindow } from "./review-bot-wait-windows";
 import { hasCodexConnectorReviewRequestCommentIdentity } from "../codex-connector-review-request-identity";
 import {
+  checksAllowMergeReadyAction,
   formatStaleReviewMetadataConvergenceDiagnostic,
   formatStaleReviewResidueOperatorDiagnostic,
   githubPullRequestAllowsMergeReadyAction,
@@ -683,7 +684,8 @@ export function buildCodexConnectorDiagnosticBundle(args: {
     staleReviewBotRemediation?.classification === "verified_current_head_repair_pending_thread_resolution" &&
       args.config.verifiedCurrentHeadRepairReviewThreadAutoResolve === true &&
       staleReviewBotThreadDiagnostics?.autoRepairSuppressedReason === "none" &&
-      githubPullRequestAllowsMergeReadyAction(args.pr),
+      githubPullRequestAllowsMergeReadyAction(args.pr) &&
+      checksAllowMergeReadyAction(args.checks),
   );
   return {
     policyBlockSummary: policyBlock ? formatCodexConnectorPolicyBlockDiagnostic(policyBlock) : null,

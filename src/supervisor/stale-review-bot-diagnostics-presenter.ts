@@ -4,7 +4,7 @@ import {
   type StaleReviewBotRemediationDto,
   type StaleReviewBotThreadDiagnosticsDto,
 } from "./stale-review-bot-remediation";
-import { GitHubPullRequest } from "../core/types";
+import { GitHubPullRequest, PullRequestCheck } from "../core/types";
 
 export function githubPullRequestAllowsMergeReadyAction(
   pr: Pick<
@@ -20,6 +20,16 @@ export function githubPullRequestAllowsMergeReadyAction(
       pr.mergeable === "MERGEABLE" &&
       pr.reviewDecision !== "CHANGES_REQUESTED" &&
       pr.reviewDecision !== "REVIEW_REQUIRED",
+  );
+}
+
+export function checksAllowMergeReadyAction(
+  checks: ReadonlyArray<Pick<PullRequestCheck, "bucket">> | null | undefined,
+): boolean {
+  return Boolean(
+    checks &&
+      checks.length > 0 &&
+      checks.every((check) => check.bucket === "pass" || check.bucket === "skipping"),
   );
 }
 
@@ -77,6 +87,7 @@ export function formatStaleReviewBotTerminalStopLine(args: {
     GitHubPullRequest,
     "state" | "isDraft" | "mergeStateStatus" | "mergeable" | "reviewDecision"
   > | null;
+  checks?: ReadonlyArray<Pick<PullRequestCheck, "bucket">> | null;
 }): string | null {
   const { remediation, diagnostics } = args;
   const metadataTerminal =
@@ -97,7 +108,8 @@ export function formatStaleReviewBotTerminalStopLine(args: {
         ? "request_current_head_review"
       : remediation.classification === "verified_current_head_repair_pending_thread_resolution" &&
             diagnostics.autoRepairSuppressedReason === "none" &&
-            githubPullRequestAllowsMergeReadyAction(args.pr)
+            githubPullRequestAllowsMergeReadyAction(args.pr) &&
+            checksAllowMergeReadyAction(args.checks)
           ? "merge_ready"
         : remediation.classification === "verified_no_source_change_pending_thread_resolution" ||
             remediation.classification === "verified_current_head_repair_pending_thread_resolution"

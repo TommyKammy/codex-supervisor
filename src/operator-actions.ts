@@ -328,6 +328,16 @@ function verifiedCurrentHeadRepairResidueMergeReadyDiagnosticKeys(lines: string[
     }
 
     if (
+      /^stale_review_bot_terminal_stop\b/u.test(line) &&
+      /\bclassification=verified_current_head_repair_pending_thread_resolution\b/u.test(line) &&
+      /\bauto_repair_suppressed_reason=none\b/u.test(line) &&
+      /\bnext_action=merge_ready\b/u.test(line)
+    ) {
+      readyGitHubPrKeys.add(issuePrKey);
+      continue;
+    }
+
+    if (
       /^codex_connector_convergence\b/u.test(line) &&
       /\bmerge_effect=ready\b/u.test(line) &&
       /\bnext_action=merge_ready\b/u.test(line) &&

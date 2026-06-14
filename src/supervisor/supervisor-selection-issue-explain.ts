@@ -125,6 +125,7 @@ export interface SupervisorExplainDto {
     GitHubPullRequest,
     "state" | "isDraft" | "mergeStateStatus" | "mergeable" | "reviewDecision"
   > | null;
+  staleReviewBotChecks?: ReadonlyArray<Pick<PullRequestCheck, "bucket">> | null;
   effectiveReviewThreadDiagnosticsSummary?: string | null;
   codexConnectorOperatorDiagnosticSummary?: string | null;
   codexConnectorPolicyBlockSummary?: string | null;
@@ -615,6 +616,7 @@ export async function buildIssueExplainDto(
     staleReviewBotRemediation,
     staleReviewBotThreadDiagnostics,
     staleReviewBotPr: staleReviewBotRemediation && pr ? pr : null,
+    staleReviewBotChecks: staleReviewBotRemediation ? explainChecks : null,
     effectiveReviewThreadDiagnosticsSummary,
     codexConnectorOperatorDiagnosticSummary: codexConnectorDiagnostics?.operatorDiagnosticSummary ?? null,
     codexConnectorPolicyBlockSummary: codexConnectorDiagnostics?.policyBlockSummary ?? null,
@@ -710,6 +712,7 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
             remediation: dto.staleReviewBotRemediation,
             diagnostics: dto.staleReviewBotThreadDiagnostics,
             pr: dto.staleReviewBotPr,
+            checks: dto.staleReviewBotChecks,
           }),
         ].filter((line): line is string => line !== null)
       : []),

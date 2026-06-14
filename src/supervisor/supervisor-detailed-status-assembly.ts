@@ -195,6 +195,7 @@ export function buildInactiveDetailedStatusLines(
         remediation: staleReviewBotRemediation,
         diagnostics,
         pr,
+        checks,
       });
       if (terminalStopLine) {
         lines.push(terminalStopLine);
