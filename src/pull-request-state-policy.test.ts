@@ -967,6 +967,168 @@ test("verified current-head repair artifact must cover current unresolved thread
   );
 });
 
+test("verified current-head repair artifact accepts id-only scoped coverage when no artifact fingerprint exists", () => {
+  const issueNumber = 2376;
+  const prNumber = 404;
+  const headSha = "5f1f51ea7ff5f861ae7dc7c8b43892ea20f5c404";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-artifact-id-only",
+    commentId: "comment-artifact-id-only",
+    path: "src/current-head-proof.ts",
+    line: 59,
+    severity: "P2",
+    commentBody: "P2: Artifact id-only coverage should still prove this repaired thread.",
+    discussionUrl: "https://example.test/pr/404#discussion_r404",
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    timeline_artifacts: [
+      {
+        type: "verification_result",
+        gate: "codex_turn",
+        command: "npm test -- src/current-head-proof.test.ts",
+        head_sha: headSha,
+        outcome: "passed",
+        remediation_target: null,
+        next_action: "continue",
+        summary: "Focused current-head repair verifier passed before fingerprints existed.",
+        recorded_at: "2026-06-14T05:15:00Z",
+        repair_targets: [VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET],
+        processed_review_thread_ids: [`${scenario.reviewThread.id}@${headSha}`],
+        processed_review_thread_fingerprints: [],
+      },
+    ],
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    configuredBotCurrentHeadStatusState: null,
+  });
+
+  assert.equal(
+    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+      config,
+      record,
+      pr,
+      checks: scenario.passingChecks,
+      reviewThreads: [scenario.reviewThread],
+    }),
+    true,
+  );
+});
+
+test("current-head repair proof ignores non-blocking P3 nitpicks while rejecting escalated P3 blockers", () => {
+  const issueNumber = 2376;
+  const prNumber = 405;
+  const headSha = "6f1f51ea7ff5f861ae7dc7c8b43892ea20f5c405";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-p2-repaired-with-p3-nitpick",
+    commentId: "comment-p2-repaired-with-p3-nitpick",
+    path: "src/current-head-proof.ts",
+    line: 61,
+    severity: "P2",
+    commentBody: "P2: This repaired thread should remain covered by the proof.",
+    discussionUrl: "https://example.test/pr/405#discussion_r405",
+  });
+  const p3NitpickThread = createReviewThread({
+    id: "thread-p3-nitpick",
+    path: "src/current-head-proof.ts",
+    line: 63,
+    comments: {
+      nodes: [
+        {
+          id: "comment-p3-nitpick",
+          body: "P3: Consider renaming this helper for clarity.",
+          createdAt: "2026-06-14T05:18:00Z",
+          url: "https://example.test/pr/405#discussion_r406",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const p3EscalatedThread = createReviewThread({
+    id: "thread-p3-escalated",
+    path: "src/current-head-proof.ts",
+    line: 65,
+    comments: {
+      nodes: [
+        {
+          id: "comment-p3-escalated",
+          body: "P3: Missing verification risks a regression.",
+          createdAt: "2026-06-14T05:19:00Z",
+          url: "https://example.test/pr/405#discussion_r407",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    timeline_artifacts: [
+      {
+        type: "verification_result",
+        gate: "codex_turn",
+        command: "npm test -- src/current-head-proof.test.ts",
+        head_sha: headSha,
+        outcome: "passed",
+        remediation_target: null,
+        next_action: "continue",
+        summary: "Focused current-head repair verifier passed for the P2 finding.",
+        recorded_at: "2026-06-14T05:20:00Z",
+        repair_targets: [VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET],
+        processed_review_thread_ids: [`${scenario.reviewThread.id}@${headSha}`],
+        processed_review_thread_fingerprints: [
+          `${scenario.reviewThread.id}@${headSha}#${scenario.reviewThread.comments.nodes[0]?.id}`,
+        ],
+      },
+    ],
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    configuredBotCurrentHeadStatusState: null,
+  });
+
+  assert.equal(
+    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+      config,
+      record,
+      pr,
+      checks: scenario.passingChecks,
+      reviewThreads: [scenario.reviewThread, p3NitpickThread],
+    }),
+    true,
+  );
+  assert.equal(
+    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+      config,
+      record,
+      pr,
+      checks: scenario.passingChecks,
+      reviewThreads: [scenario.reviewThread, p3EscalatedThread],
+    }),
+    false,
+  );
+});
+
 test("current-head repair proof rejects configured bot threads updated by humans", () => {
   const issueNumber = 2376;
   const prNumber = 402;

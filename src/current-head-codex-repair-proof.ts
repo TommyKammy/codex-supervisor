@@ -1,4 +1,5 @@
 import {
+  codexConnectorMustFixReviewThreads,
   hasCodexConnectorFindingReviewComment,
   latestCodexConnectorPSeverity,
 } from "./codex-connector-review-policy";
@@ -99,13 +100,25 @@ function repairArtifactCoversCurrentThreads(
   const processedThreadIds = artifact.processed_review_thread_ids ?? [];
   const processedThreadFingerprints = artifact.processed_review_thread_fingerprints ?? [];
   return currentThreads.every((thread) => {
+    const headScopedKey = processedReviewThreadKey(thread.id, pr.headRefOid);
     const latestFingerprint = latestReviewThreadCommentFingerprint(thread);
-    if (latestFingerprint) {
-      return processedThreadFingerprints.includes(
+    if (
+      latestFingerprint &&
+      processedThreadFingerprints.includes(
         processedReviewThreadFingerprintKey(thread.id, pr.headRefOid, latestFingerprint),
-      );
+      )
+    ) {
+      return true;
     }
-    return processedThreadIds.includes(processedReviewThreadKey(thread.id, pr.headRefOid));
+    if (!processedThreadIds.includes(headScopedKey)) {
+      return false;
+    }
+    if (!latestFingerprint) {
+      return true;
+    }
+
+    const threadFingerprintPrefix = `${headScopedKey}#`;
+    return !processedThreadFingerprints.some((key) => key.startsWith(threadFingerprintPrefix));
   });
 }
 
@@ -120,8 +133,12 @@ function headScopedProcessedThreadEvidenceCount(
   );
 }
 
-function currentConfiguredThreadsAreLowSeverityRepairResidue(currentThreads: ReviewThread[]): boolean {
-  return currentThreads.every((thread) => latestCodexConnectorPSeverity(thread) === "P2");
+function currentRepairResidueThreads(currentThreads: ReviewThread[]): ReviewThread[] | null {
+  const mustFixThreads = codexConnectorMustFixReviewThreads(currentThreads);
+  if (!mustFixThreads.every((thread) => latestCodexConnectorPSeverity(thread) === "P2")) {
+    return null;
+  }
+  return mustFixThreads;
 }
 
 function isCurrentHeadNoMajorMergeGuardFailure(
@@ -181,35 +198,40 @@ export function projectCurrentHeadCodexRepairProof(args: {
   }
 
   const currentThreads = currentConfiguredBotThreads(args.config, args.reviewThreads);
-  if (!currentThreads.every((thread) => hasProcessedReviewThread(args.record, args.pr, thread))) {
+  const repairResidueThreads = currentRepairResidueThreads(currentThreads);
+  if (!repairResidueThreads) {
     return null;
   }
-  if (!currentConfiguredThreadsAreLowSeverityRepairResidue(currentThreads)) {
+  if (
+    repairResidueThreads.length > 0 &&
+    !repairResidueThreads.every((thread) => hasProcessedReviewThread(args.record, args.pr, thread))
+  ) {
     return null;
   }
 
   const structuredArtifact = currentHeadVerifiedRepairResidueArtifact(args.record, args.pr);
-  if (structuredArtifact && repairArtifactCoversCurrentThreads(structuredArtifact, args.pr, currentThreads)) {
+  if (structuredArtifact && repairArtifactCoversCurrentThreads(structuredArtifact, args.pr, repairResidueThreads)) {
     return {
       source: "structured_artifact",
       summary: structuredArtifact.summary || "verified_current_head_repair_review_thread_residue_artifact",
       processedThreadEvidenceCount: structuredArtifact.processed_review_thread_ids?.length ?? 0,
-      currentConfiguredThreadCount: currentThreads.length,
+      currentConfiguredThreadCount: repairResidueThreads.length,
     };
+  }
+
+  if (repairResidueThreads.length === 0) {
+    return null;
   }
 
   const processedThreadEvidenceCount = headScopedProcessedThreadEvidenceCount(args.record, args.pr);
   if (processedThreadEvidenceCount === 0) {
     return null;
   }
-  if (currentThreads.length === 0) {
-    return null;
-  }
   if (!isCurrentHeadNoMajorMergeGuardFailure(args.record, args.pr)) {
     return null;
   }
 
-  const currentHeadVerification = currentHeadCodexTurnVerificationArtifact(args.record, args.pr, currentThreads);
+  const currentHeadVerification = currentHeadCodexTurnVerificationArtifact(args.record, args.pr, repairResidueThreads);
   if (!currentHeadVerification) {
     return null;
   }
@@ -218,7 +240,7 @@ export function projectCurrentHeadCodexRepairProof(args: {
     source: "legacy_processed_thread_evidence",
     summary: `legacy_processed_thread_evidence:${currentHeadVerification.summary || currentHeadVerification.command || "current_head_codex_turn_verification"}`,
     processedThreadEvidenceCount,
-    currentConfiguredThreadCount: currentThreads.length,
+    currentConfiguredThreadCount: repairResidueThreads.length,
   };
 }
 

@@ -34,6 +34,25 @@ function sameRepairTargets(left: string[] | null | undefined, right: string[] | 
   return sameStringList(left, right);
 }
 
+function processedReviewThreadIdsForHead(threads: ReviewThread[], headSha: string | null): string[] | undefined {
+  if (!headSha || threads.length === 0) {
+    return undefined;
+  }
+  return threads.map((thread) => processedReviewThreadKey(thread.id, headSha));
+}
+
+function processedReviewThreadFingerprintsForHead(threads: ReviewThread[], headSha: string | null): string[] | undefined {
+  if (!headSha || threads.length === 0) {
+    return undefined;
+  }
+  return threads.flatMap((thread) => {
+    const fingerprint = latestReviewThreadCommentFingerprint(thread);
+    return fingerprint
+      ? [processedReviewThreadFingerprintKey(thread.id, headSha, fingerprint)]
+      : [];
+  });
+}
+
 export interface PostPublicationReviewPersistence {
   processedReviewThreadPatch: Pick<
     IssueRunRecord,
@@ -118,6 +137,7 @@ export function buildPostPublicationCodexVerificationTimelineArtifacts(args: {
   postRunState: IssueRunRecord["state"];
   hasVerifiedNoSourceChangeReviewThreadEvidence: boolean;
   verifiedNoSourceChangeReviewThreads: ReviewThread[];
+  reviewThreadsToProcess: ReviewThread[];
 }): TimelineArtifact[] | null {
   const currentPrHeadSha = args.currentPr?.headRefOid ?? null;
   const codexTurnVerificationHeadSha =
@@ -131,21 +151,17 @@ export function buildPostPublicationCodexVerificationTimelineArtifacts(args: {
   const codexTurnVerificationRepairTargets = args.hasVerifiedNoSourceChangeReviewThreadEvidence
     ? ["verified_no_source_change_review_thread_residue"]
     : undefined;
+  const codexTurnVerificationReviewThreads =
+    codexTurnVerificationRepairTargets
+      ? args.verifiedNoSourceChangeReviewThreads
+      : args.reviewThreadsToProcess;
   const codexTurnVerificationReviewThreadIds =
-    codexTurnVerificationRepairTargets && currentPrHeadSha
-      ? args.verifiedNoSourceChangeReviewThreads.map((thread) =>
-          processedReviewThreadKey(thread.id, currentPrHeadSha),
-        )
-      : undefined;
+    processedReviewThreadIdsForHead(codexTurnVerificationReviewThreads, currentPrHeadSha);
   const codexTurnVerificationReviewThreadFingerprints =
-    codexTurnVerificationRepairTargets && currentPrHeadSha
-      ? args.verifiedNoSourceChangeReviewThreads.flatMap((thread) => {
-          const fingerprint = latestReviewThreadCommentFingerprint(thread);
-          return fingerprint
-            ? [processedReviewThreadFingerprintKey(thread.id, currentPrHeadSha, fingerprint)]
-            : [];
-        })
-      : undefined;
+    processedReviewThreadFingerprintsForHead(codexTurnVerificationReviewThreads, currentPrHeadSha);
+  const hasCodexTurnVerificationReviewThreadEvidence =
+    (codexTurnVerificationReviewThreadIds?.length ?? 0) > 0 ||
+    (codexTurnVerificationReviewThreadFingerprints?.length ?? 0) > 0;
   const codexTurnVerificationTimelineArtifacts =
     args.currentPr &&
     args.codexVerificationCommand &&
@@ -163,8 +179,10 @@ export function buildPostPublicationCodexVerificationTimelineArtifacts(args: {
             summary: conciseCodexVerificationSummary(args.structuredSummary),
             recorded_at: new Date().toISOString(),
             ...(codexTurnVerificationRepairTargets
+              ? { repair_targets: codexTurnVerificationRepairTargets }
+              : {}),
+            ...(hasCodexTurnVerificationReviewThreadEvidence
               ? {
-                  repair_targets: codexTurnVerificationRepairTargets,
                   processed_review_thread_ids: codexTurnVerificationReviewThreadIds ?? [],
                   processed_review_thread_fingerprints: codexTurnVerificationReviewThreadFingerprints ?? [],
                 }
