@@ -34,6 +34,9 @@ export interface PullRequestCopilotReviewLifecycleResponse {
     } | null>;
   } | null;
   reviews?: {
+    pageInfo?: {
+      hasPreviousPage?: boolean | null;
+    } | null;
     nodes?: Array<{
       author?: {
         login?: string | null;
@@ -230,6 +233,7 @@ export function mapCopilotReviewLifecycleFacts(
   lifecycle: PullRequestCopilotReviewLifecycleResponse | null | undefined,
 ): CopilotReviewLifecycleFacts {
   return {
+    reviewsComplete: lifecycle?.reviews?.pageInfo?.hasPreviousPage === true ? false : true,
     reviewRequests:
       lifecycle?.reviewRequests?.nodes
         ?.map((node) => extractReviewerLogin(node?.requestedReviewer))

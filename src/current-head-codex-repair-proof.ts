@@ -1,10 +1,12 @@
 import {
   codexConnectorMustFixReviewThreads,
   hasCodexConnectorFindingReviewComment,
+  latestCodexConnectorReviewComment,
   latestCodexConnectorPSeverity,
 } from "./codex-connector-review-policy";
 import { configuredReviewProviderKinds } from "./core/review-providers";
 import type { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig, TimelineArtifact } from "./core/types";
+import { hasCodexConnectorStrongRiskWording } from "./external-review/external-review-normalization";
 import { currentHeadLocalCiMissing, hasConfiguredLocalCiCommand } from "./local-ci-policy";
 import {
   hasProcessedReviewThread,
@@ -177,6 +179,35 @@ function currentRepairResidueThreads(currentThreads: ReviewThread[]): ReviewThre
   return mustFixThreads;
 }
 
+function unresolvedCodexConnectorMustFixThreads(reviewThreads: ReviewThread[]): ReviewThread[] {
+  return reviewThreads.filter((thread) => {
+    if (thread.isResolved) {
+      return false;
+    }
+
+    const latestReview = latestCodexConnectorReviewComment(thread);
+    if (!latestReview) {
+      return false;
+    }
+
+    return (
+      latestReview.severity === "P0" ||
+      latestReview.severity === "P1" ||
+      latestReview.severity === "P2" ||
+      (latestReview.severity === "P3" && hasCodexConnectorStrongRiskWording(latestReview.body))
+    );
+  });
+}
+
+function allUnresolvedCodexConnectorMustFixThreadsAreP2(
+  config: SupervisorConfig,
+  reviewThreads: ReviewThread[],
+): boolean {
+  return unresolvedCodexConnectorMustFixThreads(
+    configuredBotReviewThreads(config, reviewThreads),
+  ).every((thread) => latestCodexConnectorPSeverity(thread) === "P2");
+}
+
 function isCurrentHeadNoMajorMergeGuardFailure(
   record: Pick<IssueRunRecord, "blocked_reason" | "last_failure_context" | "last_failure_signature">,
   pr: Pick<GitHubPullRequest, "headRefOid">,
@@ -232,7 +263,7 @@ export function projectCurrentHeadCodexRepairProof(args: {
 
   const currentThreads = currentConfiguredBotThreads(args.config, args.reviewThreads);
   const repairResidueThreads = currentRepairResidueThreads(currentThreads);
-  if (!repairResidueThreads) {
+  if (!repairResidueThreads || !allUnresolvedCodexConnectorMustFixThreadsAreP2(args.config, args.reviewThreads)) {
     return null;
   }
   if (

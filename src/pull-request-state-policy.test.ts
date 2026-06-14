@@ -965,6 +965,14 @@ test("cleared legacy repair proof does not replace a required Codex current-head
   assert.equal(hasConfiguredProviderSuccess(config, record, pr, scenario.passingChecks, []), false);
   assert.equal(inferGitHubWaitStep(config, record, pr, scenario.passingChecks, [], nowMs), "configured_bot_current_head_signal_wait");
   assert.equal(inferStateFromPullRequest(config, record, pr, scenario.passingChecks, [], nowMs), "waiting_ci");
+  assert.equal(
+    inferStateFromPullRequest(config, record, pr, scenario.passingChecks, [], Date.parse("2026-06-14T05:11:00Z")),
+    "blocked",
+  );
+  assert.equal(
+    blockedReasonFromReviewState(config, record, pr, scenario.passingChecks, [], Date.parse("2026-06-14T05:11:00Z")),
+    "review_bot_timeout",
+  );
 });
 
 test("legacy current-head processed-thread repair proof requires current-head no-major refusal evidence", () => {
@@ -1535,6 +1543,100 @@ test("current-head repair proof ignores non-blocking P3 nitpicks while rejecting
       pr,
       checks: scenario.passingChecks,
       reviewThreads: [scenario.reviewThread, p3EscalatedThread],
+    }),
+    false,
+  );
+});
+
+test("current-head repair proof rejects unresolved outdated high-severity Codex residue", () => {
+  const issueNumber = 2376;
+  const prNumber = 406;
+  const headSha = "7f1f51ea7ff5f861ae7dc7c8b43892ea20f5c406";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-p2-repaired-with-outdated-p1",
+    commentId: "comment-p2-repaired-with-outdated-p1",
+    path: "src/current-head-proof.ts",
+    line: 71,
+    severity: "P2",
+    commentBody: "P2: This repaired thread has structured proof.",
+    discussionUrl: "https://example.test/pr/406#discussion_r406",
+    verifiedRepair: {
+      summary: "Verified current head addresses the P2 review finding.",
+      ranAt: "2026-06-14T05:25:00Z",
+      command: "npm run verify:pre-pr",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+  });
+  const outdatedP1Thread = createReviewThread({
+    id: "thread-outdated-p1",
+    isOutdated: true,
+    path: "src/current-head-proof.ts",
+    line: 73,
+    comments: {
+      nodes: [
+        {
+          id: "comment-outdated-p1",
+          body: "P1: This unresolved stale finding still represents high-severity residue.",
+          createdAt: "2026-06-14T05:24:00Z",
+          url: "https://example.test/pr/406#discussion_r407",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    timeline_artifacts: [
+      {
+        type: "verification_result",
+        gate: "codex_turn",
+        command: "npm run verify:pre-pr",
+        head_sha: headSha,
+        outcome: "passed",
+        remediation_target: null,
+        next_action: "continue",
+        summary: "Focused current-head repair verifier passed for the P2 finding.",
+        recorded_at: "2026-06-14T05:25:00Z",
+        repair_targets: [VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET],
+        processed_review_thread_ids: [`${scenario.reviewThread.id}@${headSha}`],
+        processed_review_thread_fingerprints: [
+          `${scenario.reviewThread.id}@${headSha}#${scenario.reviewThread.comments.nodes[0]?.id}`,
+        ],
+      },
+    ],
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    configuredBotCurrentHeadStatusState: null,
+  });
+
+  assert.equal(
+    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+      config,
+      record,
+      pr,
+      checks: scenario.passingChecks,
+      reviewThreads: [scenario.reviewThread],
+    }),
+    true,
+  );
+  assert.equal(
+    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+      config,
+      record,
+      pr,
+      checks: scenario.passingChecks,
+      reviewThreads: [scenario.reviewThread, outdatedP1Thread],
     }),
     false,
   );

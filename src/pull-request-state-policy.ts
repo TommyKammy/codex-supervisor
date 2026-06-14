@@ -217,6 +217,15 @@ export function blockedReasonFromReviewState(
     reviewThreads,
   });
   const configuredReviewMetadataSatisfied = provenCodexStaleReviewMetadata || verifiedCurrentHeadRepairResidue;
+  const configuredReviewMetadataWaitSatisfied =
+    provenCodexStaleReviewMetadata ||
+    currentHeadRepairProofSatisfiesConfiguredProviderSignal({
+      config,
+      record,
+      pr,
+      checks,
+      reviewThreads,
+    });
   const unresolvedBotThreads = effectiveConfiguredBotReviewThreadsForState(config, record, pr, checks, reviewThreads);
   const botReviewDecisionResidueSatisfied = verifiedConfiguredBotReviewDecisionResidueSatisfied({
     verifiedCurrentHeadRepairResidue,
@@ -240,7 +249,7 @@ export function blockedReasonFromReviewState(
   if (
     copilotTimeout.timedOut &&
     copilotTimeout.action === "block" &&
-    !configuredReviewMetadataSatisfied &&
+    !configuredReviewMetadataWaitSatisfied &&
     !staleCodexWaitHasOnlyOutdatedResidue
   ) {
     return "review_bot_timeout";

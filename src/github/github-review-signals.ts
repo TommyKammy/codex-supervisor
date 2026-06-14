@@ -13,6 +13,7 @@ import {
 import type { CopilotReviewState } from "./types";
 
 export interface CopilotReviewLifecycleFacts {
+  reviewsComplete?: boolean;
   reviewRequests: string[];
   reviews: Array<{
     authorLogin: string | null;
@@ -495,6 +496,10 @@ function inferConfiguredBotTopLevelReviewSummary(
   return latestConfiguredReview;
 }
 
+function normalizeReviewState(state: string | null | undefined): string | null {
+  return normalizeLogin(state)?.replace(/\s+/g, "_") ?? null;
+}
+
 function inferConfiguredBotOnlyChangesRequestedReview(
   facts: CopilotReviewLifecycleFacts,
   reviewBotLogins: string[],
@@ -503,29 +508,43 @@ function inferConfiguredBotOnlyChangesRequestedReview(
   if (configuredReviewBots.size === 0) {
     return null;
   }
+  if (facts.reviewsComplete === false) {
+    return null;
+  }
 
-  const latestReviewsByAuthor = new Map<string, { submittedAtMs: number; state: string | null }>();
-  for (const review of facts.reviews) {
+  const changesRequestedAuthors = new Set<string>();
+  const chronologicalReviews = facts.reviews
+    .map((review, index) => ({
+      ...review,
+      index,
+      submittedAtMs: parseTimestamp(review.submittedAt),
+      state: normalizeReviewState(review.state),
+    }))
+    .sort((left, right) =>
+      left.submittedAtMs === right.submittedAtMs ? left.index - right.index : left.submittedAtMs - right.submittedAtMs,
+    );
+
+  for (const review of chronologicalReviews) {
     const authorLogin = normalizeLogin(review.authorLogin);
     if (!authorLogin) {
       continue;
     }
 
-    const submittedAtMs = parseTimestamp(review.submittedAt);
-    const existing = latestReviewsByAuthor.get(authorLogin);
-    if (!existing || submittedAtMs >= existing.submittedAtMs) {
-      latestReviewsByAuthor.set(authorLogin, { submittedAtMs, state: normalizeLogin(review.state)?.replace(/\s+/g, "_") ?? null });
+    if (review.state === "changes_requested") {
+      changesRequestedAuthors.add(authorLogin);
+      continue;
+    }
+
+    if (review.state === "approved" || review.state === "dismissed") {
+      changesRequestedAuthors.delete(authorLogin);
     }
   }
 
-  const changesRequestedAuthors = Array.from(latestReviewsByAuthor.entries())
-    .filter(([, review]) => review.state === "changes_requested")
-    .map(([authorLogin]) => authorLogin);
-  if (changesRequestedAuthors.length === 0) {
+  if (changesRequestedAuthors.size === 0) {
     return null;
   }
 
-  return changesRequestedAuthors.every((authorLogin) => configuredReviewBots.has(authorLogin));
+  return Array.from(changesRequestedAuthors).every((authorLogin) => configuredReviewBots.has(authorLogin));
 }
 
 function reviewedCommitFromBody(body: string | null | undefined): string | null {
