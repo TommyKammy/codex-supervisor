@@ -191,6 +191,17 @@ function isCurrentHeadVerifiedRepairResidueArtifact(
   );
 }
 
+function isAutoResolvedCurrentHeadVerifiedRepairResidueArtifact(
+  artifact: TimelineArtifact,
+  headSha: string,
+): boolean {
+  return (
+    isCurrentHeadVerifiedRepairResidueArtifact(artifact, headSha) &&
+    artifact.gate === "workspace_preparation" &&
+    artifact.command === null
+  );
+}
+
 function appendBoundedUniqueStrings(
   existing: readonly string[] | null | undefined,
   next: readonly string[] | null | undefined,
@@ -332,14 +343,14 @@ export async function handleStaleConfiguredBotReviewRemediation(args: {
     });
     if (artifact) {
       const existingArtifact = (repliedRecord.timeline_artifacts ?? []).find((candidate) =>
-        isCurrentHeadVerifiedRepairResidueArtifact(candidate, args.pr.headRefOid),
+        isAutoResolvedCurrentHeadVerifiedRepairResidueArtifact(candidate, args.pr.headRefOid),
       ) ?? null;
       const mergedArtifact = mergeVerifiedCurrentHeadRepairResidueArtifact(existingArtifact, artifact);
       repliedRecord = args.stateStore.touch(repliedRecord, {
         timeline_artifacts: upsertTimelineArtifact(
           repliedRecord,
           mergedArtifact,
-          (candidate) => isCurrentHeadVerifiedRepairResidueArtifact(candidate, args.pr.headRefOid),
+          (candidate) => isAutoResolvedCurrentHeadVerifiedRepairResidueArtifact(candidate, args.pr.headRefOid),
         ),
       });
       args.state.issues[String(repliedRecord.issue_number)] = repliedRecord;

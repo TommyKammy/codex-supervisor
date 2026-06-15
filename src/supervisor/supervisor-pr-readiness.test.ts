@@ -19,6 +19,7 @@ import {
   executionReadyBody,
   git,
 } from "./supervisor-test-helpers";
+import { VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET } from "./stale-review-bot-remediation";
 
 function runnableCodexIssueBody(summary: string): string {
   return `${executionReadyBody(summary)}
@@ -481,6 +482,122 @@ test("handlePostTurnMergeAndCompletion treats verified current-head repair resid
     merged.last_auto_merge_guard_context?.details.join("\\n") ?? "",
     /codex_repair_proof_source=legacy_processed_thread_evidence/,
   );
+});
+
+test("handlePostTurnMergeAndCompletion honors scoped local proof in the final auto-merge guard", async () => {
+  const fixture = await createSupervisorFixture();
+  const issueNumber = 2381;
+  const branch = branchName(fixture.config, issueNumber);
+  const config = createConfig({
+    ...fixture.config,
+    codexConnectorAutoMergeEnabled: true,
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    configuredBotInitialGraceWaitSeconds: 0,
+    configuredBotSettledWaitSeconds: 0,
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+    localCiCommand: "npm run verify:pre-pr",
+  });
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Merge scoped local proof",
+    body: runnableCodexIssueBody("Merge scoped local proof."),
+    createdAt: "2026-06-14T00:00:00Z",
+    updatedAt: "2026-06-14T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const headSha = "head-scoped-local-proof";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber: 4020,
+    headSha,
+    branch,
+    threadId: "thread-scoped-local-proof",
+    commentId: "comment-scoped-local-proof",
+    path: "src/review-policy.ts",
+    line: 14,
+    severity: "P2",
+    commentBody: "P2: Verify this current-head repair before merge.",
+    discussionUrl: "https://example.test/pr/4020#discussion_scoped_local_proof",
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    reviewDecision: "CHANGES_REQUESTED",
+    configuredBotTopLevelReviewStrength: "blocking",
+    configuredBotOnlyChangesRequestedReview: true,
+    configuredBotCurrentHeadObservedAt: "2026-06-14T00:17:00Z",
+    configuredBotCurrentHeadObservationSource: "review_thread",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        ...scenario.recordPatch,
+        issue_number: issueNumber,
+        state: "ready_to_merge",
+        branch,
+        blocked_reason: null,
+        last_error: null,
+        latest_local_ci_result: null,
+        timeline_artifacts: [
+          {
+            type: "verification_result",
+            gate: "codex_turn",
+            command: "npm run verify:pre-pr",
+            head_sha: headSha,
+            outcome: "passed",
+            remediation_target: null,
+            next_action: "continue",
+            summary: "Configured local CI passed after the current-head repair.",
+            recorded_at: "2026-06-14T00:18:00Z",
+            repair_targets: [VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET],
+            processed_review_thread_ids: [`${scenario.reviewThread.id}@${headSha}`],
+            processed_review_thread_fingerprints: [
+              `${scenario.reviewThread.id}@${headSha}#${scenario.reviewThread.comments.nodes[0]?.id}`,
+            ],
+          },
+        ],
+      }),
+    },
+  };
+  const comments: Array<{ issueNumber: number; body: string }> = [];
+  const autoMergeCalls: Array<{ prNumber: number; headSha: string }> = [];
+  const supervisor = new Supervisor(config);
+  (supervisor as unknown as { loadOpenPullRequestSnapshot: (prNumber: number) => Promise<unknown> }).loadOpenPullRequestSnapshot = async (
+    prNumber: number,
+  ) => {
+    assert.equal(prNumber, 4020);
+    return { pr, checks: scenario.passingChecks, reviewThreads: [scenario.reviewThread] };
+  };
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    addIssueComment: async (commentIssueNumber: number, body: string) => {
+      comments.push({ issueNumber: commentIssueNumber, body });
+    },
+    enableAutoMerge: async (prNumber: number, mergeHeadSha: string) => {
+      autoMergeCalls.push({ prNumber, headSha: mergeHeadSha });
+    },
+  };
+
+  const merged = await (
+    supervisor as unknown as {
+      handlePostTurnMergeAndCompletion: (
+        state: SupervisorStateFile,
+        issue: GitHubIssue,
+        record: ReturnType<typeof createRecord>,
+        pr: GitHubPullRequest,
+        options: { dryRun: boolean },
+      ) => Promise<ReturnType<typeof createRecord>>;
+    }
+  ).handlePostTurnMergeAndCompletion(state, issue, state.issues[String(issueNumber)]!, pr, { dryRun: false });
+
+  assert.equal(merged.state, "merging");
+  assert.equal(merged.blocked_reason, null);
+  assert.deepEqual(autoMergeCalls, [{ prNumber: 4020, headSha }]);
+  assert.equal(comments.length, 1);
+  assert.match(comments[0]?.body ?? "", /Final auto-merge guard passed for head/);
+  assert.match(merged.last_auto_merge_guard_context?.details.join("\\n") ?? "", /local_ci=scoped_repair_proof/);
+  assert.doesNotMatch(merged.last_failure_signature ?? "", /missing_current_head_local_ci_success/);
 });
 
 test("handlePostTurnMergeAndCompletion does not auto-merge high-severity verified repair residue without Codex no-major", async () => {

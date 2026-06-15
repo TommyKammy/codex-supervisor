@@ -2341,10 +2341,19 @@ test("handlePostTurnPullRequestTransitionsPhase merges later same-head verified 
   const artifact = result.record.timeline_artifacts?.find(
     (candidate) =>
       candidate.head_sha === headSha &&
+      candidate.gate === "workspace_preparation" &&
+      candidate.command === null &&
       candidate.repair_targets?.includes(VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET) === true,
+  );
+  const originalVerificationArtifact = result.record.timeline_artifacts?.find(
+    (candidate) =>
+      candidate.head_sha === headSha &&
+      candidate.gate === "codex_turn" &&
+      candidate.command === "npm test -- src/post-turn-pull-request.test.ts",
   );
   assert.deepEqual(replyCalls.map((call) => call.threadId), ["thread-codex-repair-new"]);
   assert.deepEqual(resolveCalls, ["thread-codex-repair-new"]);
+  assert.equal(originalVerificationArtifact?.command, "npm test -- src/post-turn-pull-request.test.ts");
   assert.deepEqual(artifact?.processed_review_thread_ids?.sort(), [
     `thread-codex-repair-new@${headSha}`,
     `thread-codex-repair-old@${headSha}`,

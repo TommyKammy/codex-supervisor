@@ -48,6 +48,7 @@ import { applyTrackedPrLifecycleState } from "./post-turn-pull-request-lifecycle
 import { maybePromoteDraftPullRequestToReady } from "./post-turn-ready-promotion";
 import { effectiveConfiguredBotReviewThreadsForState } from "./pull-request-state-codex-residue-policy";
 import { getWorkspaceStatus } from "./core/workspace";
+import { projectCurrentHeadCodexRepairProof } from "./current-head-codex-repair-proof";
 
 export { syncTrackedPrPersistentStatusComment } from "./tracked-pr-status-comment";
 
@@ -542,11 +543,22 @@ export async function handlePostTurnPullRequestTransitionsPhase(
   if (record.state === "blocked" && record.last_failure_context?.signature?.startsWith("codex-connector-review-request-failed:")) {
     effectiveFailureContext = record.last_failure_context;
   }
+  const currentHeadRepairProof = projectCurrentHeadCodexRepairProof({
+    config,
+    record,
+    pr: postReady.pr,
+    checks: postReady.checks,
+    reviewThreads: postReady.reviewThreads,
+  });
+  const localCiSatisfiedByRepairProof =
+    currentHeadRepairProof?.localVerificationEvidenceSource ===
+    "scoped_repair_timeline_artifact_with_non_review_checks";
   if (
     record.state === "ready_to_merge" &&
     !postReady.pr.isDraft &&
     hasConfiguredLocalCiCommand(config) &&
     currentHeadLocalCiMissing(record, postReady.pr) &&
+    !localCiSatisfiedByRepairProof &&
     !options.dryRun
   ) {
     const currentHeadLocalCiGate = await runTrackedPrCurrentHeadLocalCiGate({
