@@ -76,7 +76,7 @@ export interface CurrentHeadLocalVerificationEvidence {
 }
 
 export function currentHeadLocalVerificationEvidence(args: {
-  config: Pick<SupervisorConfig, "reviewBotLogins" | "configuredReviewProviders">;
+  config: Pick<SupervisorConfig, "localCiCommand" | "reviewBotLogins" | "configuredReviewProviders">;
   record: Pick<IssueRunRecord, "latest_local_ci_result">;
   pr: Pick<GitHubPullRequest, "headRefOid">;
   checks: Pick<PullRequestCheck, "bucket" | "name" | "workflow">[];
@@ -89,8 +89,18 @@ export function currentHeadLocalVerificationEvidence(args: {
       summary: latestLocalCi.summary || latestLocalCi.command || "current_head_local_ci_passed",
     };
   }
+  if (latestLocalCi?.head_sha === args.pr.headRefOid) {
+    return null;
+  }
 
   if (!args.scopedTimelineArtifact) {
+    return null;
+  }
+  const configuredLocalCiCommand = displayLocalCiCommand(args.config.localCiCommand ?? undefined);
+  if (
+    !configuredLocalCiCommand ||
+    args.scopedTimelineArtifact.command?.trim() !== configuredLocalCiCommand
+  ) {
     return null;
   }
 
