@@ -38,6 +38,8 @@ import {
 import {
   buildStaleReviewBotRemediation,
   isProvenStaleReviewMetadataClassification,
+  isVerifiedStaleResidueClassification,
+  type StaleReviewBotRemediationDto,
 } from "./supervisor/stale-review-bot-remediation";
 import { projectCurrentHeadCodexRepairProof } from "./current-head-codex-repair-proof";
 import {
@@ -82,6 +84,11 @@ function allowJournalOnlyConfiguredBotThreadException(
 
   const unresolvedConfiguredBotThreads = configuredBotReviewThreads(config, reviewThreads);
   return unresolvedConfiguredBotThreads.length > 0 && unresolvedConfiguredBotThreads.every(isIssueJournalThreadPath);
+}
+
+function configuredReviewProvidersAreCodexOnly(config: SupervisorConfig): boolean {
+  const providerKinds = configuredReviewProviderKinds(config);
+  return providerKinds.length > 0 && providerKinds.every((kind) => kind === "codex");
 }
 
 function effectiveConfiguredBotReviewThreads(
@@ -244,11 +251,15 @@ function recordForCodexStaleReviewMetadataClassification(args: {
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
 }): IssueRunRecord | null {
-  if (args.record.blocked_reason === "stale_review_bot" || args.record.blocked_reason === "manual_review") {
-    return args.record;
+  if (
+    args.record.blocked_reason !== null &&
+    args.record.blocked_reason !== "stale_review_bot" &&
+    args.record.blocked_reason !== "manual_review"
+  ) {
+    return null;
   }
 
-  if (args.record.blocked_reason !== null || !configuredReviewProviderKinds(args.config).includes("codex")) {
+  if (!configuredReviewProviderKinds(args.config).includes("codex")) {
     return null;
   }
 
@@ -269,7 +280,38 @@ function recordForCodexStaleReviewMetadataClassification(args: {
     return null;
   }
 
-  if (!currentConfiguredThreads.every(hasCodexConnectorFindingReviewComment)) {
+  const recordForClassification = {
+    ...args.record,
+    blocked_reason: "stale_review_bot" as const,
+  };
+  const allCurrentConfiguredThreadsAreCodexFindings = currentConfiguredThreads.every(
+    hasCodexConnectorFindingReviewComment,
+  );
+
+  if (codexConnectorMustFixReviewThreads(currentConfiguredThreads).length > 0) {
+    if (!allCurrentConfiguredThreadsAreCodexFindings) {
+      return null;
+    }
+    const remediation = buildStaleReviewBotRemediation({
+      config: args.config,
+      record: recordForClassification,
+      pr: args.pr,
+      checks: args.checks,
+      reviewThreads: args.reviewThreads,
+    });
+    if (
+      remediation &&
+      verifiedMustFixStaleResidueHasScopedProof({
+        ...args,
+        classification: remediation.classification,
+      })
+    ) {
+      return recordForClassification;
+    }
+    return null;
+  }
+
+  if (!allCurrentConfiguredThreadsAreCodexFindings) {
     return null;
   }
 
@@ -277,10 +319,26 @@ function recordForCodexStaleReviewMetadataClassification(args: {
     return null;
   }
 
-  return {
-    ...args.record,
-    blocked_reason: "stale_review_bot",
-  };
+  return recordForClassification;
+}
+
+function verifiedMustFixStaleResidueHasScopedProof(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+  classification: StaleReviewBotRemediationDto["classification"];
+}): boolean {
+  if (!isVerifiedStaleResidueClassification(args.classification)) {
+    return false;
+  }
+
+  if (args.classification === "verified_current_head_repair_pending_thread_resolution") {
+    return projectCurrentHeadCodexRepairProof(args) !== null;
+  }
+
+  return true;
 }
 
 export function hasProvenCodexConnectorStaleReviewMetadata(args: {
@@ -473,6 +531,13 @@ export function hasConfiguredProviderSuccess(
       checks,
       reviewThreads,
     })
+  ) {
+    return true;
+  }
+
+  if (
+    configuredReviewProvidersAreCodexOnly(config) &&
+    hasProvenCodexConnectorStaleReviewMetadata({ config, record, pr, checks, reviewThreads })
   ) {
     return true;
   }

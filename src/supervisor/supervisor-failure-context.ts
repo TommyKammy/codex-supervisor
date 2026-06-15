@@ -19,7 +19,7 @@ import {
   manualReviewThreads,
   nonActionableConfiguredBotReviewThreads,
   pendingBotReviewThreads,
-  staleConfiguredBotReviewThreads,
+  stalledConfiguredBotReviewThreads,
 } from "../review-thread-reporting";
 import {
   localReviewBlocksMerge,
@@ -88,7 +88,7 @@ export function inferFailureContext(
       }
 
       const stalledBotReviewContext = buildStalledBotReviewFailureContext(
-        staleConfiguredBotReviewThreads(config, record, pr, effectiveConfiguredBotThreads),
+        stalledConfiguredBotReviewThreads(config, record, pr, effectiveConfiguredBotThreads),
         configuredBotReviewFollowUpState(config, record, pr, effectiveConfiguredBotThreads) === "exhausted"
           ? "exhausted_follow_up"
           : "no_progress",
@@ -143,7 +143,7 @@ export function inferFailureContext(
     }
 
     const stalledBotReviewContext = buildStalledBotReviewFailureContext(
-      staleConfiguredBotReviewThreads(config, record, pr, effectiveConfiguredBotThreads),
+      stalledConfiguredBotReviewThreads(config, record, pr, effectiveConfiguredBotThreads),
       configuredBotReviewFollowUpState(config, record, pr, effectiveConfiguredBotThreads) === "exhausted"
         ? "exhausted_follow_up"
         : "no_progress",

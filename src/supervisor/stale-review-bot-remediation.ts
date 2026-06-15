@@ -205,7 +205,9 @@ export function isProvenStaleReviewMetadataClassification(
   );
 }
 
-function isVerifiedStaleResidueClassification(classification: StaleReviewBotRemediationDto["classification"]): boolean {
+export function isVerifiedStaleResidueClassification(
+  classification: StaleReviewBotRemediationDto["classification"],
+): boolean {
   return (
     classification === "verified_no_source_change_pending_thread_resolution" ||
     classification === "verified_current_head_repair_pending_thread_resolution"
