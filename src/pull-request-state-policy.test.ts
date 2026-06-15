@@ -1268,6 +1268,9 @@ test("structured current-head repair artifact still requires green non-review ch
   const reviewOnlyChecks: PullRequestCheck[] = [
     { name: "Codex Review", state: "SUCCESS", bucket: "pass", workflow: "Codex Connector Review" },
   ];
+  const bareCodexReviewOnlyChecks: PullRequestCheck[] = [
+    { name: "Codex", state: "SUCCESS", bucket: "pass", workflow: "Codex" },
+  ];
 
   assert.equal(
     hasVerifiedCurrentHeadRepairReviewMetadataResidue({
@@ -1281,6 +1284,21 @@ test("structured current-head repair artifact still requires green non-review ch
   );
   assert.notEqual(inferStateFromPullRequest(config, record, pr, reviewOnlyChecks, [scenario.reviewThread]), "ready_to_merge");
   assert.equal(hasConfiguredProviderSuccess(config, record, pr, reviewOnlyChecks, [scenario.reviewThread]), false);
+  assert.equal(
+    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+      config,
+      record,
+      pr,
+      checks: bareCodexReviewOnlyChecks,
+      reviewThreads: [scenario.reviewThread],
+    }),
+    false,
+  );
+  assert.notEqual(
+    inferStateFromPullRequest(config, record, pr, bareCodexReviewOnlyChecks, [scenario.reviewThread]),
+    "ready_to_merge",
+  );
+  assert.equal(hasConfiguredProviderSuccess(config, record, pr, bareCodexReviewOnlyChecks, [scenario.reviewThread]), false);
 });
 
 test("structured current-head repair artifact must run the configured local CI command", () => {

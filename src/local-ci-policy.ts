@@ -46,13 +46,17 @@ function isConfiguredReviewBotCheck(
     if (configuredBotLogins.some((configuredLogin) => label.includes(configuredLogin))) {
       return true;
     }
-    if (configuredProviderKinds.includes("codex") && label.includes("codex") && (label.includes("connector") || label.includes("review"))) {
+    if (
+      configuredProviderKinds.includes("codex") &&
+      label.includes("codex") &&
+      (label === "codex" || label.includes("connector") || label.includes("review"))
+    ) {
       return true;
     }
     if (configuredProviderKinds.includes("coderabbit") && label.includes("coderabbit")) {
       return true;
     }
-    return configuredProviderKinds.includes("copilot") && label.includes("copilot") && label.includes("review");
+    return configuredProviderKinds.includes("copilot") && label.includes("copilot") && (label === "copilot" || label.includes("review"));
   });
 }
 
