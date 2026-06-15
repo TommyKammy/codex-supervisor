@@ -5,7 +5,11 @@ import {
   CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
   createCodexConnectorTrackedReviewResidueScenario,
 } from "../codex-connector-tracked-pr-test-helpers";
-import { buildStaleReviewBotRemediation, buildStaleReviewBotThreadDiagnostics } from "./stale-review-bot-remediation";
+import {
+  buildStaleReviewBotRemediation,
+  buildStaleReviewBotThreadDiagnostics,
+  VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET,
+} from "./stale-review-bot-remediation";
 import {
   classifyStaleReviewBotAutoRepairSuppressionPolicy,
   classifyStaleReviewBotRemediationPolicy,
@@ -935,6 +939,75 @@ test("buildStaleReviewBotRemediation classifies explicit P2 repair evidence with
   assert.equal(remediation?.codexCurrentHeadReviewState, "missing");
   assert.equal(remediation?.missingProbeReason, null);
   assert.equal(remediation?.verificationEvidenceSummary, "Focused current-head repair verifier passed.");
+});
+
+test("buildStaleReviewBotRemediation surfaces scoped repair artifact plus non-review checks as local proof", () => {
+  const issueNumber = 2381;
+  const prNumber = 402;
+  const headSha = "e584c41883b831ab6b85bf3467a66a5c01fd49fd";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "PRRT_hrcore_402_local_proof_artifact",
+    commentId: "PRRC_hrcore_402_local_proof_artifact",
+    path: "web/src/App.tsx",
+    line: 911,
+    severity: "P2",
+    commentBody: "P2: Require termination code fields before submit.",
+    discussionUrl: "https://example.test/pr/402#discussion_r402",
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    localCiCommand: "npm run verify:pre-pr",
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    blocked_reason: "verification",
+    last_failure_signature: `auto-merge-refused:${headSha}:missing_current_head_codex_no_major`,
+    latest_local_ci_result: null,
+    timeline_artifacts: [
+      {
+        type: "verification_result",
+        gate: "codex_turn",
+        command: "npm run verify:pre-pr",
+        head_sha: headSha,
+        outcome: "passed",
+        remediation_target: null,
+        next_action: "continue",
+        summary: "Focused verifier passed after the current-head repair.",
+        recorded_at: "2026-06-14T04:58:52.932Z",
+        repair_targets: [VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET],
+        processed_review_thread_ids: [`${scenario.reviewThread.id}@${headSha}`],
+        processed_review_thread_fingerprints: [
+          `${scenario.reviewThread.id}@${headSha}#${scenario.reviewThread.comments.nodes[0]?.id}`,
+        ],
+      },
+    ],
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    configuredBotCurrentHeadObservedAt: "2026-06-14T05:12:43Z",
+    configuredBotCurrentHeadObservationSource: "review_thread",
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotLatestReviewedCommitSha: headSha,
+  });
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: scenario.passingChecks,
+    reviewThreads: [scenario.reviewThread],
+  });
+
+  assert.equal(remediation?.classification, "verified_current_head_repair_pending_thread_resolution");
+  assert.equal(remediation?.missingProbeReason, null);
+  assert.match(
+    remediation?.verificationEvidenceSummary ?? "",
+    /^Focused verifier passed after the current-head repair.;local_verification=Focused verifier passed after the current-head repair.;current_head_checks_passed:build$/,
+  );
 });
 
 test("buildStaleReviewBotRemediation surfaces legacy current-head repair proof source", () => {

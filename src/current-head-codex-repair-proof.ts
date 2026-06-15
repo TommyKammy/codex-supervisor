@@ -7,7 +7,11 @@ import {
 import { configuredReviewProviderKinds } from "./core/review-providers";
 import type { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig, TimelineArtifact } from "./core/types";
 import { hasCodexConnectorStrongRiskWording } from "./external-review/external-review-normalization";
-import { currentHeadLocalCiMissing, hasConfiguredLocalCiCommand } from "./local-ci-policy";
+import {
+  currentHeadLocalVerificationEvidence,
+  hasConfiguredLocalCiCommand,
+  type CurrentHeadLocalVerificationEvidence,
+} from "./local-ci-policy";
 import {
   hasProcessedReviewThread,
   latestReviewThreadCommentFingerprint,
@@ -32,6 +36,8 @@ export type CurrentHeadCodexRepairProofSource =
 export interface CurrentHeadCodexRepairProofProjection {
   source: CurrentHeadCodexRepairProofSource;
   summary: string;
+  localVerificationEvidenceSource: CurrentHeadLocalVerificationEvidence["source"] | null;
+  localVerificationEvidenceSummary: string | null;
   processedThreadEvidenceCount: number;
   currentConfiguredThreadCount: number;
 }
@@ -244,7 +250,6 @@ function projectionSafetyGatesPass(args: {
     configuredReviewProvidersAreCodexOnly(args.config) &&
     checksPresentAndGreen(args.checks) &&
     args.record.last_head_sha === args.pr.headRefOid &&
-    (!hasConfiguredLocalCiCommand(args.config) || !currentHeadLocalCiMissing(args.record, args.pr)) &&
     !humanReviewBlocksProjection(args.config, args.pr, args.reviewThreads) &&
     unresolvedConfiguredBotThreadsAreCodexConnectorOnly(args.config, args.reviewThreads)
   );
@@ -274,10 +279,25 @@ export function projectCurrentHeadCodexRepairProof(args: {
   }
 
   const structuredArtifact = currentHeadVerifiedRepairResidueArtifact(args.record, args.pr, repairResidueThreads);
+  const configuredLocalCiRequired = hasConfiguredLocalCiCommand(args.config);
+  const structuredLocalVerificationEvidence = configuredLocalCiRequired
+    ? currentHeadLocalVerificationEvidence({
+        config: args.config,
+        record: args.record,
+        pr: args.pr,
+        checks: args.checks,
+        scopedTimelineArtifact: structuredArtifact,
+      })
+    : null;
+  if (configuredLocalCiRequired && !structuredLocalVerificationEvidence) {
+    return null;
+  }
   if (structuredArtifact) {
     return {
       source: "structured_artifact",
       summary: structuredArtifact.summary || "verified_current_head_repair_review_thread_residue_artifact",
+      localVerificationEvidenceSource: structuredLocalVerificationEvidence?.source ?? null,
+      localVerificationEvidenceSummary: structuredLocalVerificationEvidence?.summary ?? null,
       processedThreadEvidenceCount: structuredArtifact.processed_review_thread_ids?.length ?? 0,
       currentConfiguredThreadCount: repairResidueThreads.length,
     };
@@ -295,10 +315,24 @@ export function projectCurrentHeadCodexRepairProof(args: {
   if (!currentHeadVerification) {
     return null;
   }
+  const legacyLocalVerificationEvidence = configuredLocalCiRequired
+    ? currentHeadLocalVerificationEvidence({
+        config: args.config,
+        record: args.record,
+        pr: args.pr,
+        checks: args.checks,
+        scopedTimelineArtifact: null,
+      })
+    : null;
+  if (configuredLocalCiRequired && !legacyLocalVerificationEvidence) {
+    return null;
+  }
 
   return {
     source: "legacy_processed_thread_evidence",
     summary: `legacy_processed_thread_evidence:${currentHeadVerification.summary || currentHeadVerification.command || "current_head_codex_turn_verification"}`,
+    localVerificationEvidenceSource: legacyLocalVerificationEvidence?.source ?? null,
+    localVerificationEvidenceSummary: legacyLocalVerificationEvidence?.summary ?? null,
     processedThreadEvidenceCount,
     currentConfiguredThreadCount: repairResidueThreads.length,
   };

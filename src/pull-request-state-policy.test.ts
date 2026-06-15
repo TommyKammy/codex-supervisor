@@ -8,7 +8,7 @@ import {
   syncCopilotReviewTimeoutState,
   syncMergeLatencyVisibility,
 } from "./pull-request-state";
-import { GitHubPullRequest, IssueRunRecord, SupervisorConfig } from "./core/types";
+import { GitHubPullRequest, IssueRunRecord, PullRequestCheck, SupervisorConfig } from "./core/types";
 import {
   createConfig,
   createPullRequest,
@@ -1141,7 +1141,7 @@ test("legacy current-head processed-thread repair proof requires scoped verifier
   );
 });
 
-test("structured current-head repair artifact proves HRCore-style repaired P2 residue without summary wording", () => {
+test("structured current-head repair artifact proves HRCore-style repaired P2 residue without latest local CI result", () => {
   const issueNumber = 2377;
   const prNumber = 399;
   const headSha = "01642468db1df175a92ec8d332fdf64e7754a3ab";
@@ -1168,16 +1168,7 @@ test("structured current-head repair artifact proves HRCore-style repaired P2 re
     ...scenario.recordPatch,
     blocked_reason: "verification",
     last_failure_signature: `auto-merge-refused:${headSha}:missing_current_head_codex_no_major`,
-    latest_local_ci_result: {
-      outcome: "passed",
-      summary: "Configured local CI command passed before auto-merging PR #399.",
-      ran_at: "2026-06-14T04:59:01.275Z",
-      head_sha: headSha,
-      execution_mode: "shell",
-      command: "npm run verify:pre-pr",
-      failure_class: null,
-      remediation_target: null,
-    },
+    latest_local_ci_result: null,
     timeline_artifacts: [
       {
         type: "verification_result",
@@ -1217,6 +1208,79 @@ test("structured current-head repair artifact proves HRCore-style repaired P2 re
   );
   assert.equal(inferStateFromPullRequest(config, record, pr, scenario.passingChecks, [scenario.reviewThread]), "ready_to_merge");
   assert.equal(hasConfiguredProviderSuccess(config, record, pr, scenario.passingChecks, [scenario.reviewThread]), true);
+  assert.deepEqual(effectiveConfiguredBotReviewThreadsForState(config, record, pr, scenario.passingChecks, [scenario.reviewThread]), []);
+});
+
+test("structured current-head repair artifact still requires green non-review checks when latest local CI result is absent", () => {
+  const issueNumber = 2381;
+  const prNumber = 402;
+  const headSha = "e4642468db1df175a92ec8d332fdf64e7754a3cd";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "PRRT_hrcore_402_review_check_only",
+    commentId: "PRRC_hrcore_402_review_check_only",
+    path: "web/src/App.tsx",
+    line: 812,
+    severity: "P2",
+    commentBody: "P2: Require termination code fields before submit.",
+    discussionUrl: "https://example.test/pr/402#discussion_r3409030367",
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    humanReviewBlocksMerge: true,
+    codexConnectorAutoMergeEnabled: true,
+    localCiCommand: "npm run verify:pre-pr",
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    blocked_reason: "verification",
+    last_failure_signature: `auto-merge-refused:${headSha}:missing_current_head_codex_no_major`,
+    latest_local_ci_result: null,
+    timeline_artifacts: [
+      {
+        type: "verification_result",
+        gate: "codex_turn",
+        command: "npm run verify:pre-pr",
+        head_sha: headSha,
+        outcome: "passed",
+        remediation_target: null,
+        next_action: "continue",
+        summary: "Focused verifier passed after the source-changing repair.",
+        recorded_at: "2026-06-14T04:58:52.932Z",
+        repair_targets: [VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET],
+        processed_review_thread_ids: [`${scenario.reviewThread.id}@${headSha}`],
+        processed_review_thread_fingerprints: [
+          `${scenario.reviewThread.id}@${headSha}#${scenario.reviewThread.comments.nodes[0]?.id}`,
+        ],
+      },
+    ],
+  });
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    configuredBotCurrentHeadObservedAt: "2026-06-14T05:12:43Z",
+    configuredBotCurrentHeadObservationSource: "review_thread",
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotLatestReviewedCommitSha: headSha,
+  });
+  const reviewOnlyChecks: PullRequestCheck[] = [
+    { name: "Codex Review", state: "SUCCESS", bucket: "pass", workflow: "Codex Connector Review" },
+  ];
+
+  assert.equal(
+    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+      config,
+      record,
+      pr,
+      checks: reviewOnlyChecks,
+      reviewThreads: [scenario.reviewThread],
+    }),
+    false,
+  );
+  assert.notEqual(inferStateFromPullRequest(config, record, pr, reviewOnlyChecks, [scenario.reviewThread]), "ready_to_merge");
+  assert.equal(hasConfiguredProviderSuccess(config, record, pr, reviewOnlyChecks, [scenario.reviewThread]), false);
 });
 
 test("record-level stale metadata proof does not suppress current-head Codex P2 repair progress", () => {
