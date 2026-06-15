@@ -1,6 +1,6 @@
 {
   "nextState": "blocked",
   "shouldRunCodex": false,
-  "blockedReason": "stale_review_bot",
+  "blockedReason": "manual_review",
   "failureSignature": "stalled-bot:thread-production-source-denylist"
 }

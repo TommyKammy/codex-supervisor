@@ -1,4 +1,4 @@
-import { hasProcessedReviewThread } from "./review-handling";
+import { hasProcessedReviewThread, reviewLoopRetryBudgetExhaustedForThread } from "./review-handling";
 import { configuredReviewBotLogins, normalizeReviewProviderLogin } from "./core/review-providers";
 import { FailureContext, GitHubPullRequest, IssueRunRecord, ReviewThread, SupervisorConfig } from "./core/types";
 import { nowIso } from "./core/utils";
@@ -13,6 +13,7 @@ import {
 import {
   codexConnectorMustFixReviewThreads,
   isSoftenedCodexConnectorP3Thread,
+  latestCodexConnectorReviewCommentFingerprint,
   latestCodexConnectorPSeverity,
 } from "./codex-connector-review-policy";
 
@@ -354,6 +355,10 @@ export function staleConfiguredBotReviewThreads(
     return [];
   }
 
+  if (codexConnectorMustFixReviewThreads(configuredThreads).length > 0) {
+    return [];
+  }
+
   if (pendingBotReviewThreads(config, record, pr, configuredThreads).length > 0) {
     return [];
   }
@@ -363,6 +368,63 @@ export function staleConfiguredBotReviewThreads(
   }
 
   return configuredThreads;
+}
+
+export function stalledConfiguredBotReviewThreads(
+  config: SupervisorConfig,
+  record: Pick<
+    IssueRunRecord,
+    | "processed_review_thread_ids"
+    | "processed_review_thread_fingerprints"
+    | "last_head_sha"
+    | "review_follow_up_head_sha"
+    | "review_follow_up_remaining"
+    | "last_tracked_pr_repeat_failure_decision"
+    | "review_loop_retry_state"
+  >,
+  pr: Pick<
+    GitHubPullRequest,
+    | "number"
+    | "headRefOid"
+    | "configuredBotCurrentHeadObservedAt"
+    | "configuredBotCurrentHeadStatusState"
+    | "configuredBotTopLevelReviewStrength"
+  >,
+  reviewThreads: ReviewThread[],
+): ReviewThread[] {
+  const staleThreads = staleConfiguredBotReviewThreads(config, record, pr, reviewThreads);
+  if (staleThreads.length > 0) {
+    return staleThreads;
+  }
+
+  const configuredThreads = hasExplicitCurrentHeadNoActionableConfiguredBotSignal(pr)
+    ? configuredBotReviewThreads(config, reviewThreads)
+    : actionableConfiguredBotReviewThreads(config, reviewThreads);
+  const mustFixThreads = codexConnectorMustFixReviewThreads(configuredThreads);
+  if (mustFixThreads.length === 0 || pendingBotReviewThreads(config, record, pr, configuredThreads).length > 0) {
+    return [];
+  }
+
+  const exhaustedMustFixThreads = mustFixThreads.filter((thread) =>
+    reviewLoopRetryBudgetExhaustedForThread(
+      record,
+      pr,
+      thread,
+      1,
+      latestCodexConnectorReviewCommentFingerprint(thread),
+    ),
+  );
+  if (exhaustedMustFixThreads.length === mustFixThreads.length) {
+    return exhaustedMustFixThreads;
+  }
+
+  const legacyRepeatStopExhausted =
+    record.last_tracked_pr_repeat_failure_decision === "stop_no_progress" &&
+    mustFixThreads.every((thread) =>
+      hasProcessedReviewThread(record, pr, thread) ||
+      hasProcessedReviewThread(record, pr, thread, latestCodexConnectorReviewCommentFingerprint(thread)),
+    );
+  return legacyRepeatStopExhausted ? mustFixThreads : [];
 }
 
 export function nonActionableConfiguredBotReviewThreads(

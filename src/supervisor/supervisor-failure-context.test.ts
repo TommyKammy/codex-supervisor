@@ -268,6 +268,105 @@ test("inferFailureContext returns automated review blocker context", () => {
   assert.equal(context?.summary, "1 unresolved automated review thread(s) remain.");
 });
 
+test("inferFailureContext preserves stalled diagnostics for exhausted current-head Codex P2", () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    humanReviewBlocksMerge: false,
+  });
+  const pr = createPullRequest({
+    number: 44,
+    headRefOid: "head123",
+    reviewDecision: null,
+    configuredBotCurrentHeadObservedAt: "2026-06-15T01:00:00Z",
+    configuredBotCurrentHeadStatusState: null,
+  });
+  const record = createRecord({
+    pr_number: 44,
+    last_head_sha: "head123",
+    processed_review_thread_ids: ["thread-p2@head123"],
+    processed_review_thread_fingerprints: ["thread-p2@head123#comment-p2"],
+    review_loop_retry_state: [
+      {
+        fingerprint: "pr=44|head=head123|thread=thread-p2|comment=comment-p2",
+        pr_number: 44,
+        head_sha: "head123",
+        thread_id: "thread-p2",
+        latest_comment_fingerprint: "comment-p2",
+        attempts: 1,
+        first_attempted_at: "2026-06-15T01:03:00Z",
+        last_attempted_at: "2026-06-15T01:03:00Z",
+      },
+    ],
+  });
+  const reviewThread = createReviewThread({
+    id: "thread-p2",
+    comments: {
+      nodes: [
+        {
+          id: "comment-p2",
+          body: "P2: Keep exhausted current-head findings visible in diagnostics.",
+          createdAt: "2026-06-15T01:02:00Z",
+          url: "https://example.test/pr/44#discussion_p2",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  const context = inferFailureContext(config, record, pr, [], [reviewThread]);
+
+  assert.equal(context?.category, "manual");
+  assert.equal(context?.signature, "stalled-bot:thread-p2");
+  assert.match(context?.details[0] ?? "", /processed_on_current_head=yes/);
+});
+
+test("inferFailureContext preserves stalled diagnostics for legacy repeat-stop Codex P2", () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    humanReviewBlocksMerge: false,
+  });
+  const pr = createPullRequest({
+    number: 44,
+    headRefOid: "head123",
+    reviewDecision: null,
+    configuredBotCurrentHeadObservedAt: "2026-06-15T01:00:00Z",
+    configuredBotCurrentHeadStatusState: null,
+  });
+  const record = createRecord({
+    pr_number: 44,
+    last_head_sha: "head123",
+    processed_review_thread_ids: ["thread-legacy-p2@head123"],
+    processed_review_thread_fingerprints: ["thread-legacy-p2@head123#comment-legacy-p2"],
+    last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+  });
+  const reviewThread = createReviewThread({
+    id: "thread-legacy-p2",
+    comments: {
+      nodes: [
+        {
+          id: "comment-legacy-p2",
+          body: "P2: Keep legacy repeat-stop findings visible in diagnostics.",
+          createdAt: "2026-06-15T01:02:00Z",
+          url: "https://example.test/pr/44#discussion_legacy_p2",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  const context = inferFailureContext(config, record, pr, [], [reviewThread]);
+
+  assert.equal(context?.category, "manual");
+  assert.equal(context?.signature, "stalled-bot:thread-legacy-p2");
+  assert.match(context?.details[0] ?? "", /processed_on_current_head=yes/);
+});
+
 test("inferFailureContext returns local review blocker context", () => {
   const config = createConfig({
     localReviewPolicy: "block_ready",

@@ -4283,6 +4283,166 @@ test("reconcileRecoverableBlockedIssueStates allows same-head tracked PR recover
   ]);
 });
 
+test("reconcileRecoverableBlockedIssueStates advances current-head Codex P2 residue into review repair", async () => {
+  const issueNumber = 392;
+  const prNumber = 399;
+  const headSha = "01642468db1df175a92ec8d332fdf64e7754a3ab";
+  const threadId = "PRRT_hrcore_399_progress_repair";
+  const commentId = "PRRC_hrcore_399_progress_repair";
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    humanReviewBlocksMerge: true,
+    codexConnectorAutoMergeEnabled: true,
+    localCiCommand: "npm run verify:pre-pr",
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    activeIssueNumber: issueNumber,
+    issues: [
+      createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        branch: `codex/issue-${issueNumber}`,
+        pr_number: prNumber,
+        last_head_sha: headSha,
+        attempt_count: 4,
+        implementation_attempt_count: 1,
+        repair_attempt_count: 0,
+        blocked_reason: "verification",
+        last_error: "Auto-merge refused because current-head Codex must-fix findings remain.",
+        last_failure_signature: `auto-merge-refused:${headSha}:missing_current_head_codex_no_major`,
+        repeated_failure_signature_count: 1,
+        processed_review_thread_ids: [`${threadId}@${headSha}`],
+        processed_review_thread_fingerprints: [`${threadId}@${headSha}#${commentId}`],
+        latest_local_ci_result: {
+          outcome: "passed",
+          summary: "Configured local CI command passed before auto-merging PR #399.",
+          ran_at: "2026-06-14T04:59:01.275Z",
+          head_sha: headSha,
+          execution_mode: "shell",
+          command: "npm run verify:pre-pr",
+          failure_class: null,
+          remediation_target: null,
+        },
+        timeline_artifacts: [
+          {
+            type: "verification_result",
+            gate: "codex_turn",
+            command: "npm run verify:pre-pr",
+            head_sha: headSha,
+            outcome: "passed",
+            remediation_target: null,
+            next_action: "continue",
+            summary: "Verified current head addresses the review findings.",
+            recorded_at: "2026-06-14T04:58:52.932Z",
+          },
+        ],
+      }),
+    ],
+  });
+  const issue = createIssue({
+    number: issueNumber,
+    title: "Implement HRCore WebUI approval flow",
+    updatedAt: "2026-06-14T05:14:00Z",
+  });
+  const pr = createPullRequest({
+    number: prNumber,
+    title: "Implement HRCore WebUI approval flow",
+    headRefName: `codex/issue-${issueNumber}`,
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-06-14T04:59:01.275Z",
+    configuredBotCurrentHeadObservedAt: "2026-06-14T05:12:43Z",
+    configuredBotCurrentHeadObservationSource: "review_thread",
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotLatestReviewedCommitSha: headSha,
+  });
+  const reviewThread = createReviewThread({
+    id: threadId,
+    isResolved: false,
+    isOutdated: false,
+    path: "web/src/App.tsx",
+    line: 911,
+    comments: {
+      nodes: [
+        {
+          id: commentId,
+          body: "P2: Require termination code fields before submit.",
+          createdAt: "2026-06-14T04:48:23Z",
+          url: "https://example.test/pr/399#discussion_r3409030367",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+        {
+          id: "PRRC_hrcore_399_operator_ack",
+          body:
+            "The supervisor reprocessed this configured-bot finding on the current head and classified it as stale. Leaving thread resolution to a human operator.",
+          createdAt: "2026-06-14T04:59:30Z",
+          url: "https://example.test/pr/399#discussion_r3409030500",
+          author: {
+            login: "TommyKammy",
+            typeName: "User",
+          },
+        },
+      ],
+    },
+  });
+  let saveCalls = 0;
+
+  const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => pr,
+      getIssue: async () => issue,
+      getChecks: async () => [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getUnresolvedReviewThreads: async () => [reviewThread],
+    },
+    {
+      touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+        return {
+          ...current,
+          ...patch,
+          updated_at: "2026-06-15T00:25:00Z",
+        };
+      },
+      async save(): Promise<void> {
+        saveCalls += 1;
+      },
+    },
+    state,
+    config,
+    [issue],
+    {
+      shouldAutoRetryHandoffMissing,
+      inferStateFromPullRequest,
+      inferFailureContext,
+      blockedReasonForLifecycleState,
+      isOpenPullRequest,
+      syncReviewWaitWindow,
+      syncCopilotReviewRequestObservation,
+      syncCopilotReviewTimeoutState,
+    },
+  );
+
+  const updated = state.issues[String(issueNumber)];
+  assert.equal(updated.state, "addressing_review");
+  assert.equal(updated.blocked_reason, null);
+  assert.equal(updated.last_failure_signature, null);
+  assert.equal(updated.repeated_failure_signature_count, 0);
+  assert.equal(updated.repair_attempt_count, 0);
+  assert.equal(updated.last_head_sha, headSha);
+  assert.match(
+    updated.last_recovery_reason ?? "",
+    /tracked_pr_lifecycle_recovered: resumed issue #392 from blocked to addressing_review using fresh tracked PR #399 facts/,
+  );
+  assert.equal(saveCalls, 1);
+  assert.deepEqual(recoveryEvents.map((event) => event.reason), [
+    `tracked_pr_lifecycle_recovered: resumed issue #${issueNumber} from blocked to addressing_review using fresh tracked PR #${prNumber} facts at head ${headSha}`,
+  ]);
+});
+
 test("reconcileRecoverableBlockedIssueStates keeps same-head draft tracked PRs blocked when the verification gate still fails", async () => {
   const config = createConfig({
     localCiCommand: "npm run verify:paths",

@@ -239,8 +239,8 @@ function projectionSafetyGatesPass(args: {
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
 }): boolean {
+  // Auto-resolution opt-in gates the write action; this proof also drives manual-resolution state.
   return (
-    args.config.verifiedCurrentHeadRepairReviewThreadAutoResolve === true &&
     configuredReviewProvidersAreCodexOnly(args.config) &&
     checksPresentAndGreen(args.checks) &&
     args.record.last_head_sha === args.pr.headRefOid &&
