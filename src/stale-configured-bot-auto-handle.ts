@@ -4,6 +4,7 @@ import { promisify } from "node:util";
 import type { GitHubClient } from "./github";
 import type { IssueJournalSync } from "./run-once-issue-preparation";
 import type { StateStore } from "./core/state-store";
+import { displayLocalCiCommand } from "./core/config";
 import type {
   FailureContext,
   GitHubPullRequest,
@@ -202,6 +203,19 @@ function isAutoResolvedCurrentHeadVerifiedRepairResidueArtifact(
   );
 }
 
+function isConfiguredLocalCiCurrentHeadVerifiedRepairResidueArtifact(
+  config: SupervisorConfig,
+  artifact: TimelineArtifact,
+  headSha: string,
+): boolean {
+  const configuredLocalCiCommand = displayLocalCiCommand(config.localCiCommand ?? undefined);
+  return (
+    configuredLocalCiCommand !== null &&
+    isCurrentHeadVerifiedRepairResidueArtifact(artifact, headSha) &&
+    artifact.command?.trim() === configuredLocalCiCommand
+  );
+}
+
 function appendBoundedUniqueStrings(
   existing: readonly string[] | null | undefined,
   next: readonly string[] | null | undefined,
@@ -220,7 +234,13 @@ function mergeVerifiedCurrentHeadRepairResidueArtifact(
   }
 
   return {
-    ...next,
+    ...existing,
+    summary: next.summary,
+    recorded_at: next.recorded_at,
+    outcome: next.outcome,
+    next_action: next.next_action,
+    remediation_target: next.remediation_target,
+    repair_targets: appendBoundedUniqueStrings(existing.repair_targets, next.repair_targets),
     processed_review_thread_ids: appendBoundedUniqueStrings(
       existing.processed_review_thread_ids,
       next.processed_review_thread_ids,
@@ -342,15 +362,23 @@ export async function handleStaleConfiguredBotReviewRemediation(args: {
       verificationEvidenceSummary: staleReviewBotRemediation.verificationEvidenceSummary,
     });
     if (artifact) {
-      const existingArtifact = (repliedRecord.timeline_artifacts ?? []).find((candidate) =>
-        isAutoResolvedCurrentHeadVerifiedRepairResidueArtifact(candidate, args.pr.headRefOid),
-      ) ?? null;
+      const existingArtifact =
+        (repliedRecord.timeline_artifacts ?? []).find((candidate) =>
+          isConfiguredLocalCiCurrentHeadVerifiedRepairResidueArtifact(args.config, candidate, args.pr.headRefOid),
+        ) ??
+        (repliedRecord.timeline_artifacts ?? []).find((candidate) =>
+          isAutoResolvedCurrentHeadVerifiedRepairResidueArtifact(candidate, args.pr.headRefOid),
+        ) ??
+        null;
       const mergedArtifact = mergeVerifiedCurrentHeadRepairResidueArtifact(existingArtifact, artifact);
       repliedRecord = args.stateStore.touch(repliedRecord, {
         timeline_artifacts: upsertTimelineArtifact(
           repliedRecord,
           mergedArtifact,
-          (candidate) => isAutoResolvedCurrentHeadVerifiedRepairResidueArtifact(candidate, args.pr.headRefOid),
+          (candidate) =>
+            existingArtifact
+              ? candidate === existingArtifact
+              : isAutoResolvedCurrentHeadVerifiedRepairResidueArtifact(candidate, args.pr.headRefOid),
         ),
       });
       args.state.issues[String(repliedRecord.issue_number)] = repliedRecord;
