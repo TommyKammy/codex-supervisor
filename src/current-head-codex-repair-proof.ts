@@ -7,7 +7,11 @@ import {
 import { configuredReviewProviderKinds } from "./core/review-providers";
 import type { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig, TimelineArtifact } from "./core/types";
 import { hasCodexConnectorStrongRiskWording } from "./external-review/external-review-normalization";
-import { currentHeadLocalCiMissing, hasConfiguredLocalCiCommand } from "./local-ci-policy";
+import {
+  currentHeadLocalVerificationEvidence,
+  hasConfiguredLocalCiCommand,
+  type CurrentHeadLocalVerificationEvidence,
+} from "./local-ci-policy";
 import {
   hasProcessedReviewThread,
   latestReviewThreadCommentFingerprint,
@@ -32,6 +36,8 @@ export type CurrentHeadCodexRepairProofSource =
 export interface CurrentHeadCodexRepairProofProjection {
   source: CurrentHeadCodexRepairProofSource;
   summary: string;
+  localVerificationEvidenceSource: CurrentHeadLocalVerificationEvidence["source"] | null;
+  localVerificationEvidenceSummary: string | null;
   processedThreadEvidenceCount: number;
   currentConfiguredThreadCount: number;
 }
@@ -84,7 +90,15 @@ function currentHeadVerifiedRepairResidueArtifact(
   pr: Pick<GitHubPullRequest, "headRefOid">,
   currentThreads?: ReviewThread[],
 ): TimelineArtifact | null {
-  return (record.timeline_artifacts ?? []).find(
+  return currentHeadVerifiedRepairResidueArtifacts(record, pr, currentThreads)[0] ?? null;
+}
+
+function currentHeadVerifiedRepairResidueArtifacts(
+  record: Pick<IssueRunRecord, "timeline_artifacts">,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
+  currentThreads?: ReviewThread[],
+): TimelineArtifact[] {
+  return (record.timeline_artifacts ?? []).filter(
     (artifact) =>
       artifact.type === "verification_result" &&
       artifact.outcome === "passed" &&
@@ -92,7 +106,7 @@ function currentHeadVerifiedRepairResidueArtifact(
       artifact.repair_targets?.includes(VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET) === true &&
       artifactHeadScopedProcessedThreadEvidenceCount(artifact, pr) > 0 &&
       (!currentThreads || repairArtifactCoversCurrentThreads(artifact, pr, currentThreads)),
-  ) ?? null;
+  );
 }
 
 function artifactHeadScopedProcessedThreadEvidenceCount(
@@ -244,7 +258,6 @@ function projectionSafetyGatesPass(args: {
     configuredReviewProvidersAreCodexOnly(args.config) &&
     checksPresentAndGreen(args.checks) &&
     args.record.last_head_sha === args.pr.headRefOid &&
-    (!hasConfiguredLocalCiCommand(args.config) || !currentHeadLocalCiMissing(args.record, args.pr)) &&
     !humanReviewBlocksProjection(args.config, args.pr, args.reviewThreads) &&
     unresolvedConfiguredBotThreadsAreCodexConnectorOnly(args.config, args.reviewThreads)
   );
@@ -273,14 +286,52 @@ export function projectCurrentHeadCodexRepairProof(args: {
     return null;
   }
 
-  const structuredArtifact = currentHeadVerifiedRepairResidueArtifact(args.record, args.pr, repairResidueThreads);
-  if (structuredArtifact) {
+  const configuredLocalCiRequired = hasConfiguredLocalCiCommand(args.config);
+  const structuredProof = currentHeadVerifiedRepairResidueArtifacts(args.record, args.pr, repairResidueThreads)
+    .map((structuredArtifact) => {
+      const localVerificationEvidence = configuredLocalCiRequired
+        ? currentHeadLocalVerificationEvidence({
+            config: args.config,
+            record: args.record,
+            pr: args.pr,
+            checks: args.checks,
+            scopedTimelineArtifact: structuredArtifact,
+          })
+        : null;
+      if (configuredLocalCiRequired && !localVerificationEvidence) {
+        return null;
+      }
+      return {
+        structuredArtifact,
+        localVerificationEvidence,
+      };
+    })
+    .find((proof): proof is {
+      structuredArtifact: TimelineArtifact;
+      localVerificationEvidence: CurrentHeadLocalVerificationEvidence | null;
+    } => proof !== null);
+  if (structuredProof) {
     return {
       source: "structured_artifact",
-      summary: structuredArtifact.summary || "verified_current_head_repair_review_thread_residue_artifact",
-      processedThreadEvidenceCount: structuredArtifact.processed_review_thread_ids?.length ?? 0,
+      summary: structuredProof.structuredArtifact.summary || "verified_current_head_repair_review_thread_residue_artifact",
+      localVerificationEvidenceSource: structuredProof.localVerificationEvidence?.source ?? null,
+      localVerificationEvidenceSummary: structuredProof.localVerificationEvidence?.summary ?? null,
+      processedThreadEvidenceCount: structuredProof.structuredArtifact.processed_review_thread_ids?.length ?? 0,
       currentConfiguredThreadCount: repairResidueThreads.length,
     };
+  }
+
+  const unscopedLocalVerificationEvidence = configuredLocalCiRequired
+    ? currentHeadLocalVerificationEvidence({
+        config: args.config,
+        record: args.record,
+        pr: args.pr,
+        checks: args.checks,
+        scopedTimelineArtifact: null,
+      })
+    : null;
+  if (configuredLocalCiRequired && !unscopedLocalVerificationEvidence) {
+    return null;
   }
 
   const processedThreadEvidenceCount = headScopedProcessedThreadEvidenceCount(args.record, args.pr);
@@ -295,10 +346,11 @@ export function projectCurrentHeadCodexRepairProof(args: {
   if (!currentHeadVerification) {
     return null;
   }
-
   return {
     source: "legacy_processed_thread_evidence",
     summary: `legacy_processed_thread_evidence:${currentHeadVerification.summary || currentHeadVerification.command || "current_head_codex_turn_verification"}`,
+    localVerificationEvidenceSource: unscopedLocalVerificationEvidence?.source ?? null,
+    localVerificationEvidenceSummary: unscopedLocalVerificationEvidence?.summary ?? null,
     processedThreadEvidenceCount,
     currentConfiguredThreadCount: repairResidueThreads.length,
   };

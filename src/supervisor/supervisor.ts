@@ -290,7 +290,11 @@ function finalAutoMergeGuard(args: {
   });
   const localCiResult = record.latest_local_ci_result ?? null;
   const localCiConfigured = hasConfiguredLocalCiCommand(config);
-  const localCiMissing = localCiConfigured && currentHeadLocalCiMissing(record, currentPr);
+  const localCiSatisfiedByRepairProof =
+    verifiedCurrentHeadRepairProof?.localVerificationEvidenceSource ===
+    "scoped_repair_timeline_artifact_with_non_review_checks";
+  const localCiMissing =
+    localCiConfigured && currentHeadLocalCiMissing(record, currentPr) && !localCiSatisfiedByRepairProof;
   const evidenceDetails = [
     `auto_merge_path=${autoMergePath}`,
     `head_sha=${currentPr.headRefOid}`,
@@ -306,7 +310,7 @@ function finalAutoMergeGuard(args: {
     `human_blockers=${effectiveHumanBlockers}`,
     `review_decision=${currentPr.reviewDecision ?? "none"}`,
     localCiConfigured
-      ? `local_ci=${localCiResult?.outcome ?? "missing"} head_sha=${localCiResult?.head_sha ?? "none"}`
+      ? `local_ci=${localCiSatisfiedByRepairProof ? "scoped_repair_proof" : localCiResult?.outcome ?? "missing"} head_sha=${localCiResult?.head_sha ?? "none"}`
       : "local_ci=not_configured",
   ];
 

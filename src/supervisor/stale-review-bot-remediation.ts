@@ -24,12 +24,9 @@ import {
   nonActionableConfiguredBotReviewThreads,
   pendingBotReviewThreads,
 } from "../review-thread-reporting";
-import {
-  configuredReviewBotLogins,
-  configuredReviewProviderKinds,
-  normalizeReviewProviderLogin,
-} from "../core/review-providers";
+import { configuredReviewProviderKinds } from "../core/review-providers";
 import { projectCurrentHeadCodexRepairProof } from "../current-head-codex-repair-proof";
+import { currentHeadPassingNonReviewChecks } from "../local-ci-policy";
 import {
   STALE_REVIEW_BOT_MANUAL_NEXT_STEP,
   VERIFIED_CURRENT_HEAD_REPAIR_SUMMARY,
@@ -130,45 +127,6 @@ function codeCiState(
 
 function allChecksPassing(checks: Pick<PullRequestCheck, "bucket">[]): boolean {
   return checks.length > 0 && checks.every((check) => check.bucket === "pass" || check.bucket === "skipping");
-}
-
-function isConfiguredReviewBotCheck(
-  config: Pick<SupervisorConfig, "reviewBotLogins" | "configuredReviewProviders">,
-  check: Pick<PullRequestCheck, "name" | "workflow">,
-): boolean {
-  const configuredBotLogins = configuredReviewBotLogins(config);
-  const configuredProviderKinds = configuredReviewProviderKinds(config);
-  const labels = [check.name, check.workflow].flatMap((label) => {
-    const normalized = label?.trim().toLowerCase();
-    return normalized ? [normalized] : [];
-  });
-
-  return labels.some((label) => {
-    const login = normalizeReviewProviderLogin(label);
-    if (login && configuredBotLogins.includes(login)) {
-      return true;
-    }
-    if (configuredBotLogins.some((configuredLogin) => label.includes(configuredLogin))) {
-      return true;
-    }
-    if (configuredProviderKinds.includes("codex") && label.includes("codex") && (label.includes("connector") || label.includes("review"))) {
-      return true;
-    }
-    if (configuredProviderKinds.includes("coderabbit") && label.includes("coderabbit")) {
-      return true;
-    }
-    return configuredProviderKinds.includes("copilot") && label.includes("copilot") && label.includes("review");
-  });
-}
-
-function currentHeadPassingNonReviewChecks(
-  config: Pick<SupervisorConfig, "reviewBotLogins" | "configuredReviewProviders">,
-  checks: Pick<PullRequestCheck, "bucket" | "name" | "workflow">[],
-): Pick<PullRequestCheck, "bucket" | "name" | "workflow">[] {
-  if (!allChecksPassing(checks)) {
-    return [];
-  }
-  return checks.filter((check) => check.bucket === "pass" && !isConfiguredReviewBotCheck(config, check));
 }
 
 function hasFailingChecks(checks: Pick<PullRequestCheck, "bucket">[]): boolean {
@@ -347,7 +305,14 @@ export function currentHeadVerifiedRepairResidueArtifactEvidenceSummary(args: {
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
 }): string | null {
-  return projectCurrentHeadCodexRepairProof(args)?.summary ?? null;
+  const proof = projectCurrentHeadCodexRepairProof(args);
+  if (!proof) {
+    return null;
+  }
+  if (proof.localVerificationEvidenceSource === "scoped_repair_timeline_artifact_with_non_review_checks") {
+    return `${proof.summary};local_verification=${proof.localVerificationEvidenceSummary}`;
+  }
+  return proof.summary;
 }
 
 function hasCurrentHeadNoSourceChangeCodexTurnVerification(
