@@ -203,7 +203,7 @@ test("buildStaleReviewBotRemediation classifies same-head Codex no-major comment
   );
   assert.match(
     remediation?.verificationEvidenceSummary ?? "",
-    /Focused mutation lock verifier passed on the current head.;codex_pr_success_comment_after_current_head_request/,
+    /thread_scoped_current_head_verification_artifact:Focused mutation lock verifier passed on the current head.;codex_no_major_support=codex_pr_success_comment_after_current_head_request/u,
   );
   assert.equal(diagnostics?.currentHeadSuccess, "yes");
 });

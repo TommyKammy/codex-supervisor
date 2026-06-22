@@ -1,5 +1,6 @@
 import {
   codexConnectorMustFixReviewThreads,
+  commitShasEqualForComparison,
   hasCodexConnectorFindingReviewComment,
   latestCodexConnectorReviewComment,
   latestCodexConnectorPSeverity,
@@ -31,6 +32,7 @@ export const VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET =
 
 export type CurrentHeadCodexRepairProofSource =
   | "structured_artifact"
+  | "thread_scoped_verification_artifact"
   | "legacy_processed_thread_evidence";
 
 export interface CurrentHeadCodexRepairProofProjection {
@@ -83,6 +85,24 @@ function currentHeadCodexTurnVerificationArtifact(
       artifact.repair_targets?.includes("verified_no_source_change_review_thread_residue") !== true &&
       repairArtifactCoversCurrentThreads(artifact, pr, currentThreads),
   ) ?? null;
+}
+
+function currentHeadThreadScopedVerificationArtifacts(
+  record: Pick<IssueRunRecord, "timeline_artifacts">,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
+  currentThreads: ReviewThread[],
+): TimelineArtifact[] {
+  return (record.timeline_artifacts ?? []).filter(
+    (artifact) =>
+      artifact.type === "verification_result" &&
+      artifact.gate === "codex_turn" &&
+      artifact.outcome === "passed" &&
+      artifact.head_sha === pr.headRefOid &&
+      artifact.repair_targets?.includes("verified_no_source_change_review_thread_residue") !== true &&
+      artifact.repair_targets?.includes(VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET) !== true &&
+      artifactHeadScopedProcessedThreadEvidenceCount(artifact, pr) > 0 &&
+      repairArtifactCoversCurrentThreads(artifact, pr, currentThreads),
+  );
 }
 
 function currentHeadVerifiedRepairResidueArtifact(
@@ -139,7 +159,7 @@ function repairArtifactCoversCurrentThreads(
         processedReviewThreadFingerprintKey(thread.id, pr.headRefOid, latestFingerprint),
       )
     ) {
-      return true;
+      return latestReviewThreadCommentPredatesArtifact(thread, artifact);
     }
     if (!processedThreadIds.includes(headScopedKey)) {
       return false;
@@ -234,6 +254,69 @@ function isCurrentHeadNoMajorMergeGuardFailure(
   );
 }
 
+function validTimestamp(value: string | null | undefined): string | null {
+  if (!value || Number.isNaN(Date.parse(value))) {
+    return null;
+  }
+  return value;
+}
+
+function currentHeadNoMajorSupportSummary(
+  record: Pick<
+    IssueRunRecord,
+    "codex_connector_review_requested_observed_at" | "codex_connector_review_requested_head_sha"
+  >,
+  pr: Pick<
+    GitHubPullRequest,
+    | "headRefOid"
+    | "codexConnectorReviewRequestedAt"
+    | "codexConnectorReviewRequestedHeadSha"
+    | "configuredBotCurrentHeadObservedAt"
+    | "configuredBotCurrentHeadObservationSource"
+  >,
+): string | null {
+  if (pr.configuredBotCurrentHeadObservationSource !== "codex_pr_success_comment") {
+    return null;
+  }
+  const observedAt = validTimestamp(pr.configuredBotCurrentHeadObservedAt);
+  if (!observedAt) {
+    return null;
+  }
+  const requestedAt =
+    validTimestamp(record.codex_connector_review_requested_observed_at) ??
+    validTimestamp(pr.codexConnectorReviewRequestedAt);
+  const requestedHeadSha =
+    record.codex_connector_review_requested_head_sha ?? pr.codexConnectorReviewRequestedHeadSha;
+  if (!requestedAt || !commitShasEqualForComparison(requestedHeadSha, pr.headRefOid)) {
+    return null;
+  }
+  if (Date.parse(observedAt) < Date.parse(requestedAt)) {
+    return null;
+  }
+  return "codex_pr_success_comment_after_current_head_request";
+}
+
+function formatThreadScopedVerificationSummary(args: {
+  artifact: TimelineArtifact;
+  localVerificationEvidence: CurrentHeadLocalVerificationEvidence | null;
+  noMajorSupport: string | null;
+}): string {
+  const artifactSummary =
+    args.artifact.summary ||
+    args.artifact.command ||
+    "current_head_thread_scoped_verification_passed";
+  const details = [`thread_scoped_current_head_verification_artifact:${artifactSummary}`];
+  if (args.localVerificationEvidence) {
+    details.push(
+      `local_verification=${args.localVerificationEvidence.source}:${args.localVerificationEvidence.summary}`,
+    );
+  }
+  if (args.noMajorSupport) {
+    details.push(`codex_no_major_support=${args.noMajorSupport}`);
+  }
+  return details.join(";");
+}
+
 function humanReviewBlocksProjection(
   config: SupervisorConfig,
   pr: GitHubPullRequest,
@@ -317,6 +400,48 @@ export function projectCurrentHeadCodexRepairProof(args: {
       localVerificationEvidenceSource: structuredProof.localVerificationEvidence?.source ?? null,
       localVerificationEvidenceSummary: structuredProof.localVerificationEvidence?.summary ?? null,
       processedThreadEvidenceCount: structuredProof.structuredArtifact.processed_review_thread_ids?.length ?? 0,
+      currentConfiguredThreadCount: repairResidueThreads.length,
+    };
+  }
+
+  const noMajorSupport = currentHeadNoMajorSupportSummary(args.record, args.pr);
+  const threadScopedProof = noMajorSupport
+    ? currentHeadThreadScopedVerificationArtifacts(args.record, args.pr, repairResidueThreads)
+        .map((artifact) => {
+          const localVerificationEvidence = configuredLocalCiRequired
+            ? currentHeadLocalVerificationEvidence({
+                config: args.config,
+                record: args.record,
+                pr: args.pr,
+                checks: args.checks,
+                scopedTimelineArtifact: artifact,
+              })
+            : null;
+          if (configuredLocalCiRequired && !localVerificationEvidence) {
+            return null;
+          }
+          return {
+            artifact,
+            localVerificationEvidence,
+          };
+        })
+        .find((proof): proof is {
+          artifact: TimelineArtifact;
+          localVerificationEvidence: CurrentHeadLocalVerificationEvidence | null;
+        } => proof !== null)
+    : null;
+  if (threadScopedProof) {
+    return {
+      source: "thread_scoped_verification_artifact",
+      summary: formatThreadScopedVerificationSummary({
+        artifact: threadScopedProof.artifact,
+        localVerificationEvidence: threadScopedProof.localVerificationEvidence,
+        noMajorSupport,
+      }),
+      localVerificationEvidenceSource: threadScopedProof.localVerificationEvidence?.source ?? null,
+      localVerificationEvidenceSummary: threadScopedProof.localVerificationEvidence?.summary ?? null,
+      processedThreadEvidenceCount:
+        threadScopedProof.artifact.processed_review_thread_ids?.length ?? 0,
       currentConfiguredThreadCount: repairResidueThreads.length,
     };
   }

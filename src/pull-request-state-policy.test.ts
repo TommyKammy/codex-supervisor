@@ -26,7 +26,10 @@ import {
   hasConfiguredProviderSuccess,
   hasVerifiedCurrentHeadRepairReviewMetadataResidue,
 } from "./pull-request-state-codex-residue-policy";
-import { VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET } from "./supervisor/stale-review-bot-remediation";
+import {
+  currentHeadVerifiedRepairResidueArtifactEvidenceSummary,
+  VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET,
+} from "./supervisor/stale-review-bot-remediation";
 
 test("inferStateFromPullRequest routes actionable high local-review retry into local_review_fix", () => {
   const config = createConfig({
@@ -668,6 +671,167 @@ test("verified current-head repair residue evidence can replace Codex no-major e
   assert.equal(inferGitHubWaitStep(config, record, pr, scenario.passingChecks, []), null);
 });
 
+test("thread-scoped current-head verification artifact proves repaired Codex P2 residue", () => {
+  const issueNumber = 2383;
+  const prNumber = 44;
+  const headSha = "3cc6bf7f17a37a7bd2e766a40d856fd7ccc0f2cc";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "PRRT_veridoc_scope_binding",
+    commentId: "PRRC_veridoc_scope_binding",
+    path: "core/validate/automatic.py",
+    line: 78,
+    severity: "P2",
+    commentBody: "P2: Do not let confidence review skip scope binding.",
+    discussionUrl: "https://example.test/pr/44#discussion_r3452786352",
+    verifiedRepair: {
+      summary: "Focused low-confidence scope-binding verifier passed.",
+      ranAt: "2026-06-22T14:18:00Z",
+      command: "python3 -m pytest tests/test_automatic_validation.py",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+    currentHeadNoMajorReview: {
+      requestedAt: "2026-06-22T14:11:32Z",
+      observedAt: "2026-06-22T14:15:07Z",
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    humanReviewBlocksMerge: true,
+    codexConnectorAutoMergeEnabled: true,
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    blocked_reason: "stale_review_bot",
+  });
+  const pr = createPullRequest(scenario.pullRequestPatch);
+
+  assert.equal(
+    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+      config,
+      record,
+      pr,
+      checks: scenario.passingChecks,
+      reviewThreads: [scenario.reviewThread],
+    }),
+    true,
+  );
+  assert.equal(inferStateFromPullRequest(config, record, pr, scenario.passingChecks, [scenario.reviewThread]), "ready_to_merge");
+  assert.deepEqual(
+    effectiveConfiguredBotReviewThreadsForState(config, record, pr, scenario.passingChecks, [scenario.reviewThread]),
+    [],
+  );
+  assert.match(
+    currentHeadVerifiedRepairResidueArtifactEvidenceSummary({
+      config,
+      record,
+      pr,
+      checks: scenario.passingChecks,
+      reviewThreads: [scenario.reviewThread],
+    }) ?? "",
+    /thread_scoped_current_head_verification_artifact:Focused low-confidence scope-binding verifier passed.;codex_no_major_support=codex_pr_success_comment_after_current_head_request/u,
+  );
+});
+
+test("same-head no-major comment without thread-scoped verification does not prove Codex P2 residue", () => {
+  const issueNumber = 2383;
+  const prNumber = 44;
+  const headSha = "3cc6bf7f17a37a7bd2e766a40d856fd7ccc0f2cc";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "PRRT_veridoc_no_proof",
+    commentId: "PRRC_veridoc_no_proof",
+    path: "core/validate/automatic.py",
+    line: 78,
+    severity: "P2",
+    commentBody: "P2: Do not let confidence review skip scope binding.",
+    discussionUrl: "https://example.test/pr/44#discussion_r3452786352",
+    currentHeadNoMajorReview: {
+      requestedAt: "2026-06-22T14:11:32Z",
+      observedAt: "2026-06-22T14:15:07Z",
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    humanReviewBlocksMerge: true,
+    codexConnectorAutoMergeEnabled: true,
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    blocked_reason: "stale_review_bot",
+  });
+  const pr = createPullRequest(scenario.pullRequestPatch);
+
+  assert.equal(
+    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+      config,
+      record,
+      pr,
+      checks: scenario.passingChecks,
+      reviewThreads: [scenario.reviewThread],
+    }),
+    false,
+  );
+  assert.notEqual(inferStateFromPullRequest(config, record, pr, scenario.passingChecks, [scenario.reviewThread]), "ready_to_merge");
+});
+
+test("thread-scoped verification artifact must postdate the latest Codex thread comment", () => {
+  const issueNumber = 2383;
+  const prNumber = 44;
+  const headSha = "3cc6bf7f17a37a7bd2e766a40d856fd7ccc0f2cc";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "PRRT_veridoc_stale_proof",
+    commentId: "PRRC_veridoc_stale_proof",
+    path: "core/validate/automatic.py",
+    line: 78,
+    severity: "P2",
+    commentBody: "P2: Do not let confidence review skip scope binding.",
+    discussionUrl: "https://example.test/pr/44#discussion_r3452786352",
+    verifiedRepair: {
+      summary: "Focused verifier ran before the review thread was updated.",
+      ranAt: "2026-05-15T00:01:00Z",
+      command: "python3 -m pytest tests/test_automatic_validation.py",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+    currentHeadNoMajorReview: {
+      requestedAt: "2026-06-22T14:11:32Z",
+      observedAt: "2026-06-22T14:15:07Z",
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    humanReviewBlocksMerge: true,
+    codexConnectorAutoMergeEnabled: true,
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    ...scenario.recordPatch,
+    blocked_reason: "stale_review_bot",
+  });
+  const pr = createPullRequest(scenario.pullRequestPatch);
+
+  assert.equal(
+    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+      config,
+      record,
+      pr,
+      checks: scenario.passingChecks,
+      reviewThreads: [scenario.reviewThread],
+    }),
+    false,
+  );
+  assert.notEqual(inferStateFromPullRequest(config, record, pr, scenario.passingChecks, [scenario.reviewThread]), "ready_to_merge");
+});
+
 test("legacy current-head processed-thread repair proof can replace Codex no-major evidence", () => {
   const issueNumber = 2375;
   const prNumber = 399;
@@ -803,6 +967,7 @@ test("legacy current-head processed-thread repair proof can replace Codex no-maj
       record: createRecord({
         ...record,
         latest_local_ci_result: null,
+        timeline_artifacts: [],
       }),
       pr,
       checks: scenario.passingChecks,
@@ -1012,6 +1177,7 @@ test("legacy current-head processed-thread repair proof requires current-head no
     ...scenario.recordPatch,
     blocked_reason: "verification",
     last_failure_signature: `auto-merge-refused:${oldHeadSha}:missing_current_head_codex_no_major`,
+    timeline_artifacts: [],
     last_failure_context: {
       category: "blocked",
       summary: "Old auto-merge guard refusal should not prove the current head.",
