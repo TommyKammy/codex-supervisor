@@ -73,6 +73,16 @@ test("buildPostPublicationCodexVerificationTimelineArtifacts records failed stil
             typeName: "Bot",
           },
         },
+        {
+          id: "comment-supervisor-reply",
+          body: "Supervisor reply after the first failed repair attempt.",
+          createdAt: "2026-06-22T22:45:00Z",
+          url: "https://example.test/pr/406#discussion_r405_reply",
+          author: {
+            login: "github-actions[bot]",
+            typeName: "Bot",
+          },
+        },
       ],
     },
   });
@@ -101,6 +111,47 @@ test("buildPostPublicationCodexVerificationTimelineArtifacts records failed stil
   assert.deepEqual(artifacts?.[0]?.processed_review_thread_fingerprints, [
     `${reviewThread.id}@${headSha}#comment-still-valid-probe`,
   ]);
+});
+
+test("buildPostPublicationCodexVerificationTimelineArtifacts does not record failed probes from dirty workspaces", () => {
+  const headSha = "head-dirty-still-valid-probe";
+  const reviewThread = createReviewThread({
+    id: "thread-dirty-still-valid-probe",
+    path: "src/review.ts",
+    line: 41,
+    comments: {
+      nodes: [
+        {
+          id: "comment-dirty-still-valid-probe",
+          body: "P2: Keep query token redaction active for this path.",
+          createdAt: "2026-06-22T22:40:00Z",
+          url: "https://example.test/pr/406#discussion_r405",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  const artifacts = buildPostPublicationCodexVerificationTimelineArtifacts({
+    record: createRecord({ timeline_artifacts: [] }),
+    currentPr: createPullRequest({ headRefOid: headSha }),
+    codexVerificationCommand: null,
+    failedCodexVerificationCommand: "python -m pytest tests/test_audit_log.py -k query_code failed",
+    workspaceStatus: { headSha, hasUncommittedChanges: true },
+    preRunState: "addressing_review",
+    structuredSummary: "Focused query-code redaction probe still reproduces against local edits.",
+    postRunState: "blocked",
+    hasVerifiedNoSourceChangeReviewThreadEvidence: false,
+    verifiedNoSourceChangeReviewThreads: [],
+    reviewThreadsToProcess: [reviewThread],
+    changedFilesAfterPublication: [],
+    artifactOnlyChangedFilesAfterPublication: [],
+  });
+
+  assert.equal(artifacts, null);
 });
 
 test("buildPostPublicationCodexVerificationTimelineArtifacts preserves no-source-change repair targets", () => {

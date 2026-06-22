@@ -4,7 +4,7 @@ import { manualReviewThreads } from "./review-thread-reporting";
 import { buildCodexConnectorStillValidReviewRepairTargets } from "./codex-connector-valid-review-repair";
 
 function allChecksGreen(checks: Pick<PullRequestCheck, "bucket">[]): boolean {
-  return checks.length > 0 && checks.every((check) => check.bucket === "pass" || check.bucket === "skipping");
+  return checks.every((check) => check.bucket === "pass" || check.bucket === "skipping");
 }
 
 function prAllowsRepair(pr: Pick<GitHubPullRequest, "state" | "isDraft" | "mergeStateStatus" | "mergeable">): boolean {

@@ -1,6 +1,9 @@
 import type { LocalReviewRepairContext } from "./codex";
 import { STILL_VALID_REVIEW_THREAD_REPAIR_TARGET } from "./codex-connector-valid-review-repair";
-import { codexConnectorMustFixReviewThreads } from "./codex-connector-review-policy";
+import {
+  codexConnectorMustFixReviewThreads,
+  latestCodexConnectorReviewCommentFingerprint,
+} from "./codex-connector-review-policy";
 import { VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET } from "./current-head-codex-repair-proof";
 import {
   latestReviewThreadCommentFingerprint,
@@ -54,6 +57,22 @@ function processedReviewThreadFingerprintsForHead(threads: ReviewThread[], headS
   }
   return threads.flatMap((thread) => {
     const fingerprint = latestReviewThreadCommentFingerprint(thread);
+    return fingerprint
+      ? [processedReviewThreadFingerprintKey(thread.id, headSha, fingerprint)]
+      : [];
+  });
+}
+
+function processedCodexConnectorReviewThreadFingerprintsForHead(
+  threads: ReviewThread[],
+  headSha: string | null,
+): string[] | undefined {
+  if (!headSha || threads.length === 0) {
+    return undefined;
+  }
+  return threads.flatMap((thread) => {
+    const fingerprint = latestCodexConnectorReviewCommentFingerprint(thread) ??
+      latestReviewThreadCommentFingerprint(thread);
     return fingerprint
       ? [processedReviewThreadFingerprintKey(thread.id, headSha, fingerprint)]
       : [];
@@ -261,7 +280,7 @@ export function buildPostPublicationCodexVerificationTimelineArtifacts(args: {
   const stillValidRepairProbeThreadIds =
     processedReviewThreadIdsForHead(stillValidRepairProbeThreads, currentPrHeadSha);
   const stillValidRepairProbeThreadFingerprints =
-    processedReviewThreadFingerprintsForHead(stillValidRepairProbeThreads, currentPrHeadSha);
+    processedCodexConnectorReviewThreadFingerprintsForHead(stillValidRepairProbeThreads, currentPrHeadSha);
   const hasStillValidRepairProbeThreadEvidence =
     (stillValidRepairProbeThreadIds?.length ?? 0) > 0 ||
     (stillValidRepairProbeThreadFingerprints?.length ?? 0) > 0;
@@ -270,6 +289,7 @@ export function buildPostPublicationCodexVerificationTimelineArtifacts(args: {
     args.failedCodexVerificationCommand &&
     args.preRunState === "addressing_review" &&
     args.postRunState === "blocked" &&
+    !args.workspaceStatus.hasUncommittedChanges &&
     args.workspaceStatus.headSha === args.currentPr.headRefOid &&
     hasStillValidRepairProbeThreadEvidence;
   const stillValidRepairProbeTimelineArtifacts = canEmitStillValidRepairProbeFailure

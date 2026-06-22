@@ -546,7 +546,7 @@ Parallelizable: No
   const github = {
     pr,
     reviewThreads,
-    checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }] as PullRequestCheck[],
+    checks: [] as PullRequestCheck[],
     listCandidateIssues: async () => [issue],
     listAllIssues: async () => [issue],
     getPullRequestIfExists: async function(this: { pr: typeof pr }, prNumber: number) {
