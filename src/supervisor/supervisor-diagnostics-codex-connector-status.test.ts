@@ -1615,7 +1615,7 @@ test("status --why surfaces verified Codex residue remediation for manual_review
 
   assert.match(
     status,
-    /^stale_review_bot_remediation issue=#143 pr=#147 reason=stale_review_bot code_ci=green current_head_sha=68401b26947918f0ce2280a9526ab68298b1a25c processed_on_current_head=yes classification=verified_current_head_repair_pending_thread_resolution codex_current_head_review_state=observed review_thread_url=https:\/\/example\.test\/pr\/147#discussion_r147 manual_next_step=resolve_verified_repaired_configured_bot_threads_then_rerun_supervisor verification_evidence=verify-pre-pr_passed_with_96_tests\.;codex_pr_success_comment_after_current_head_request summary=verified_current_head_repair_configured_bot_thread_resolution_pending$/m,
+    /^stale_review_bot_remediation issue=#143 pr=#147 reason=stale_review_bot code_ci=green current_head_sha=68401b26947918f0ce2280a9526ab68298b1a25c processed_on_current_head=yes classification=verified_current_head_repair_pending_thread_resolution codex_current_head_review_state=observed review_thread_url=https:\/\/example\.test\/pr\/147#discussion_r147 manual_next_step=resolve_verified_repaired_configured_bot_threads_then_rerun_supervisor verification_evidence=thread_scoped_current_head_verification_artifact:verify-pre-pr_passed_with_96_tests\.;codex_no_major_support=codex_pr_success_comment_after_current_head_request summary=verified_current_head_repair_configured_bot_thread_resolution_pending$/m,
   );
   assert.match(status, /^operator_action action=resolve_stale_review_bot source=stale_review_bot_remediation /m);
   assert.doesNotMatch(status, /run-once --config \.\.\. --dry-run/);

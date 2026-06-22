@@ -836,7 +836,7 @@ test("explain distinguishes Codex verified current-head repair residue from no-s
 
   assert.match(
     explanation,
-    /^stale_review_bot_remediation issue=#199 pr=#399 reason=stale_review_bot code_ci=green current_head_sha=head-199 processed_on_current_head=yes classification=verified_current_head_repair_pending_thread_resolution codex_current_head_review_state=observed review_thread_url=https:\/\/example\.test\/pr\/399#discussion_r399 manual_next_step=resolve_verified_repaired_configured_bot_threads_then_rerun_supervisor verification_evidence=Focused_verifier_passed_after_the_repair_commit\.;codex_pr_success_comment_after_current_head_request summary=verified_current_head_repair_configured_bot_thread_resolution_pending$/m,
+    /^stale_review_bot_remediation issue=#199 pr=#399 reason=stale_review_bot code_ci=green current_head_sha=head-199 processed_on_current_head=yes classification=verified_current_head_repair_pending_thread_resolution codex_current_head_review_state=observed review_thread_url=https:\/\/example\.test\/pr\/399#discussion_r399 manual_next_step=resolve_verified_repaired_configured_bot_threads_then_rerun_supervisor verification_evidence=thread_scoped_current_head_verification_artifact:Focused_verifier_passed_after_the_repair_commit\.;codex_no_major_support=codex_pr_success_comment_after_current_head_request summary=verified_current_head_repair_configured_bot_thread_resolution_pending$/m,
   );
   assert.doesNotMatch(explanation, /classification=verified_no_source_change_pending_thread_resolution/);
 });
