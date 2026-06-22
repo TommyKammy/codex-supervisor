@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   GitHubIssue,
+  PullRequestCheck,
   ReviewThread,
   SupervisorStateFile,
 } from "../core/types";
@@ -543,11 +544,21 @@ Parallelizable: No
     },
   ];
   const github = {
+    pr,
+    reviewThreads,
+    checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }] as PullRequestCheck[],
     listCandidateIssues: async () => [issue],
     listAllIssues: async () => [issue],
-    getPullRequestIfExists: async () => pr,
-    getChecks: async () => [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
-    getUnresolvedReviewThreads: async () => reviewThreads,
+    getPullRequestIfExists: async function(this: { pr: typeof pr }, prNumber: number) {
+      assert.equal(this.pr.number, prNumber);
+      return this.pr;
+    },
+    getChecks: async function(this: { checks: PullRequestCheck[] }) {
+      return this.checks;
+    },
+    getUnresolvedReviewThreads: async function(this: { reviewThreads: ReviewThread[] }) {
+      return this.reviewThreads;
+    },
   };
 
   const readinessSummary = await buildReadinessSummary(github, config, state);

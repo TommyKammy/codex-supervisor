@@ -525,9 +525,15 @@ async function selectIssueRecord(
         !(await shouldSelectCodexConnectorValidReviewRepair({
           config,
           record: existing,
-          getPullRequestIfExists: github.getPullRequestIfExists,
-          getChecks: github.getChecks,
-          getUnresolvedReviewThreads: github.getUnresolvedReviewThreads,
+          getPullRequestIfExists: github.getPullRequestIfExists
+            ? (prNumber, options) => github.getPullRequestIfExists!(prNumber, options)
+            : undefined,
+          getChecks: github.getChecks
+            ? (prNumber) => github.getChecks!(prNumber)
+            : undefined,
+          getUnresolvedReviewThreads: github.getUnresolvedReviewThreads
+            ? (prNumber) => github.getUnresolvedReviewThreads!(prNumber)
+            : undefined,
         })) &&
         !(isAutonomousExecutionTrustBlockedRecord(existing) && trustDecision.allowed)
       ) {

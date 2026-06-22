@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { STILL_VALID_REVIEW_THREAD_REPAIR_TARGET } from "./codex-connector-valid-review-repair";
 import { VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET } from "./current-head-codex-repair-proof";
 import { buildPostPublicationCodexVerificationTimelineArtifacts } from "./turn-execution-post-publication-review";
 import {
@@ -51,6 +52,54 @@ test("buildPostPublicationCodexVerificationTimelineArtifacts persists scoped thr
   assert.deepEqual(artifacts?.[0]?.processed_review_thread_ids, [`${reviewThread.id}@${headSha}`]);
   assert.deepEqual(artifacts?.[0]?.processed_review_thread_fingerprints, [
     `${reviewThread.id}@${headSha}#comment-normal-repair`,
+  ]);
+});
+
+test("buildPostPublicationCodexVerificationTimelineArtifacts records failed still-valid Codex probe targets", () => {
+  const headSha = "head-still-valid-probe";
+  const reviewThread = createReviewThread({
+    id: "thread-still-valid-probe",
+    path: "src/review.ts",
+    line: 41,
+    comments: {
+      nodes: [
+        {
+          id: "comment-still-valid-probe",
+          body: "P2: Keep query token redaction active for this path.",
+          createdAt: "2026-06-22T22:40:00Z",
+          url: "https://example.test/pr/406#discussion_r405",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  const artifacts = buildPostPublicationCodexVerificationTimelineArtifacts({
+    record: createRecord({ timeline_artifacts: [] }),
+    currentPr: createPullRequest({ headRefOid: headSha }),
+    codexVerificationCommand: null,
+    failedCodexVerificationCommand: "python -m pytest tests/test_audit_log.py -k query_code failed",
+    workspaceStatus: { headSha, hasUncommittedChanges: false },
+    preRunState: "addressing_review",
+    structuredSummary: "Focused query-code redaction probe still reproduces.",
+    postRunState: "blocked",
+    hasVerifiedNoSourceChangeReviewThreadEvidence: false,
+    verifiedNoSourceChangeReviewThreads: [],
+    reviewThreadsToProcess: [reviewThread],
+    changedFilesAfterPublication: ["src/review.ts"],
+    artifactOnlyChangedFilesAfterPublication: [],
+  });
+
+  assert.equal(artifacts?.length, 1);
+  assert.equal(artifacts?.[0]?.outcome, "failed");
+  assert.deepEqual(artifacts?.[0]?.repair_targets, [STILL_VALID_REVIEW_THREAD_REPAIR_TARGET]);
+  assert.equal(artifacts?.[0]?.next_action, "repair_still_valid_review_thread");
+  assert.deepEqual(artifacts?.[0]?.processed_review_thread_ids, [`${reviewThread.id}@${headSha}`]);
+  assert.deepEqual(artifacts?.[0]?.processed_review_thread_fingerprints, [
+    `${reviewThread.id}@${headSha}#comment-still-valid-probe`,
   ]);
 });
 

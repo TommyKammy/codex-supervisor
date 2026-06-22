@@ -72,6 +72,12 @@ function hasExplicitNegativeCodexTurnVerificationOutcome(value: string): boolean
   );
 }
 
+function hasExplicitFailedCodexTurnVerificationOutcome(value: string): boolean {
+  return /(?:^|\s)(?:failed|failure|error|timeout|blocked)(?=$|[\s:.,;])/i.test(
+    value,
+  );
+}
+
 export function explicitPassingCodexTurnVerificationCommand(
   tests: string | null | undefined,
 ): string | null {
@@ -88,8 +94,30 @@ export function explicitPassingCodexTurnVerificationCommand(
   return value;
 }
 
+export function explicitFailedCodexTurnVerificationCommand(
+  tests: string | null | undefined,
+): string | null {
+  const value = tests?.trim();
+  if (!value) {
+    return null;
+  }
+  if (!hasExplicitCodexTurnVerificationCommandEvidence(value)) {
+    return null;
+  }
+  if (!hasExplicitFailedCodexTurnVerificationOutcome(value)) {
+    return null;
+  }
+  return value;
+}
+
 export function conciseCodexVerificationSummary(summary: string | null | undefined): string {
   const value = summary?.trim();
   return truncate(value && value.length > 0 ? value : "Codex turn verification passed.", 500) ??
     "Codex turn verification passed.";
+}
+
+export function conciseFailedCodexVerificationSummary(summary: string | null | undefined): string {
+  const value = summary?.trim();
+  return truncate(value && value.length > 0 ? value : "Codex turn verification failed.", 500) ??
+    "Codex turn verification failed.";
 }

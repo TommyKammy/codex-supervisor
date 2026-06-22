@@ -1,4 +1,5 @@
 import type { GitHubPullRequest, IssueRunRecord, ReviewThread, TimelineArtifact } from "./core/types";
+import { VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET } from "./current-head-codex-repair-proof";
 import {
   latestReviewThreadCommentFingerprint,
   processedReviewThreadFingerprintKey,
@@ -14,6 +15,8 @@ import {
 
 export const STILL_VALID_REVIEW_THREAD_REPAIR_TARGET =
   "still_valid_review_thread_repair";
+const VERIFIED_NO_SOURCE_CHANGE_REVIEW_THREAD_RESIDUE_TARGET =
+  "verified_no_source_change_review_thread_residue";
 
 export interface CodexConnectorValidReviewRepairTarget {
   threadId: string;
@@ -33,19 +36,66 @@ function timelineArtifactCoversReviewThread(args: {
   const processedThreadIds = args.artifact.processed_review_thread_ids ?? [];
   const processedThreadFingerprints = args.artifact.processed_review_thread_fingerprints ?? [];
   const headScopedThreadId = processedReviewThreadKey(args.thread.id, args.pr.headRefOid);
-  if (processedThreadIds.includes(headScopedThreadId)) {
-    return true;
-  }
-
   const latestCommentFingerprint =
     latestCodexConnectorReviewCommentFingerprint(args.thread as ReviewThread) ??
     latestReviewThreadCommentFingerprint(args.thread);
-  if (!latestCommentFingerprint) {
-    return false;
+  if (
+    latestCommentFingerprint &&
+    processedThreadFingerprints.includes(
+      processedReviewThreadFingerprintKey(args.thread.id, args.pr.headRefOid, latestCommentFingerprint),
+    )
+  ) {
+    return true;
   }
 
-  return processedThreadFingerprints.includes(
-    processedReviewThreadFingerprintKey(args.thread.id, args.pr.headRefOid, latestCommentFingerprint),
+  if (!processedThreadIds.includes(headScopedThreadId)) {
+    return false;
+  }
+  if (!latestCommentFingerprint) {
+    return true;
+  }
+
+  const threadFingerprintPrefix = `${headScopedThreadId}#`;
+  return !processedThreadFingerprints.some((key) => key.startsWith(threadFingerprintPrefix));
+}
+
+function isCurrentHeadCodexTurnArtifact(args: {
+  artifact: TimelineArtifact;
+  pr: Pick<GitHubPullRequest, "headRefOid">;
+  thread: ReviewThread;
+}): boolean {
+  return (
+    args.artifact.type === "verification_result" &&
+    args.artifact.gate === "codex_turn" &&
+    args.artifact.head_sha === args.pr.headRefOid &&
+    timelineArtifactCoversReviewThread(args)
+  );
+}
+
+function isStillValidRepairProbeFailure(args: {
+  artifact: TimelineArtifact;
+  pr: Pick<GitHubPullRequest, "headRefOid">;
+  thread: ReviewThread;
+}): boolean {
+  return (
+    isCurrentHeadCodexTurnArtifact(args) &&
+    args.artifact.outcome === "failed" &&
+    args.artifact.repair_targets?.includes(STILL_VALID_REVIEW_THREAD_REPAIR_TARGET) === true
+  );
+}
+
+function isLaterConvergedRepairProof(args: {
+  artifact: TimelineArtifact;
+  pr: Pick<GitHubPullRequest, "headRefOid">;
+  thread: ReviewThread;
+}): boolean {
+  return (
+    isCurrentHeadCodexTurnArtifact(args) &&
+    args.artifact.outcome === "passed" &&
+    (
+      args.artifact.repair_targets?.includes(VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET) === true ||
+      args.artifact.repair_targets?.includes(VERIFIED_NO_SOURCE_CHANGE_REVIEW_THREAD_RESIDUE_TARGET) === true
+    )
   );
 }
 
@@ -54,14 +104,15 @@ export function failedStillValidReviewThreadProbeArtifact(args: {
   pr: Pick<GitHubPullRequest, "headRefOid">;
   thread: ReviewThread;
 }): TimelineArtifact | null {
-  return [...(args.record.timeline_artifacts ?? [])].reverse().find((artifact) =>
-    artifact.type === "verification_result" &&
-    artifact.gate === "codex_turn" &&
-    artifact.outcome === "failed" &&
-    artifact.head_sha === args.pr.headRefOid &&
-    artifact.repair_targets?.includes(STILL_VALID_REVIEW_THREAD_REPAIR_TARGET) === true &&
-    timelineArtifactCoversReviewThread({ artifact, pr: args.pr, thread: args.thread }),
-  ) ?? null;
+  for (const artifact of [...(args.record.timeline_artifacts ?? [])].reverse()) {
+    if (isLaterConvergedRepairProof({ artifact, pr: args.pr, thread: args.thread })) {
+      return null;
+    }
+    if (isStillValidRepairProbeFailure({ artifact, pr: args.pr, thread: args.thread })) {
+      return artifact;
+    }
+  }
+  return null;
 }
 
 export function codexConnectorStillValidReviewRepairThreads(args: {
