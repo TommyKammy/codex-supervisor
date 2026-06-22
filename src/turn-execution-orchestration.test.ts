@@ -14,6 +14,7 @@ import {
   shouldResumeAgentTurn,
 } from "./turn-execution-orchestration";
 import { processedReviewThreadFingerprintKey, processedReviewThreadKey } from "./review-handling";
+import { STILL_VALID_REVIEW_THREAD_REPAIR_TARGET } from "./codex-connector-valid-review-repair";
 import { SupervisorStateFile } from "./core/types";
 import {
   createConfig,
@@ -723,6 +724,73 @@ test("selectReviewThreadsForTurn excludes Codex Connector must-fix threads after
   });
 
   assert.deepEqual(selected, []);
+});
+
+test("selectReviewThreadsForTurn re-includes exhausted Codex Connector threads with failed still-valid probe evidence", () => {
+  const selected = selectReviewThreadsForTurn({
+    config: createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector[bot]"],
+    }),
+    preRunState: "addressing_review",
+    record: {
+      processed_review_thread_ids: ["thread-1@head-a"],
+      processed_review_thread_fingerprints: ["thread-1@head-a#comment-1"],
+      review_loop_retry_state: [
+        {
+          fingerprint: "pr=116|head=head-a|thread=thread-1|comment=comment-1",
+          pr_number: 116,
+          head_sha: "head-a",
+          thread_id: "thread-1",
+          latest_comment_fingerprint: "comment-1",
+          attempts: 1,
+          first_attempted_at: "2026-06-07T01:00:00Z",
+          last_attempted_at: "2026-06-07T01:00:00Z",
+        },
+      ],
+      timeline_artifacts: [
+        {
+          type: "verification_result",
+          gate: "codex_turn",
+          command: "python -m pytest tests/test_audit_log.py -k query_code",
+          head_sha: "head-a",
+          outcome: "failed",
+          remediation_target: null,
+          next_action: "repair still-valid review thread",
+          summary: "Focused query-code redaction probe still reproduces.",
+          recorded_at: "2026-06-07T01:30:00Z",
+          repair_targets: [STILL_VALID_REVIEW_THREAD_REPAIR_TARGET],
+          processed_review_thread_ids: ["thread-1@head-a"],
+          processed_review_thread_fingerprints: ["thread-1@head-a#comment-1"],
+        },
+      ],
+      last_head_sha: "head-a",
+      review_follow_up_head_sha: null,
+      review_follow_up_remaining: 0,
+    },
+    pr: createPullRequest({ number: 116, headRefOid: "head-a" }),
+    reviewThreads: [
+      createReviewThread({
+        id: "thread-1",
+        comments: {
+          nodes: [
+            {
+              id: "comment-1",
+              body: "P2: Redact query-only credential names such as ?code=...",
+              createdAt: "2026-06-07T01:05:00Z",
+              url: "https://example.test/pr/116#discussion_r1",
+              author: {
+                login: "chatgpt-codex-connector[bot]",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+  });
+
+  assert.equal(selected.length, 1);
+  assert.equal(selected[0]?.id, "thread-1");
 });
 
 test("selectReviewThreadsForTurn matches Codex Connector retry exhaustion to the finding comment after later replies", () => {

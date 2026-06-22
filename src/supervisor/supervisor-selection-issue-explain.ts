@@ -76,6 +76,7 @@ import {
 } from "./stale-review-bot-remediation";
 import {
   formatStaleReviewBotRemediationLine,
+  formatStaleReviewBotRepairTargetLine,
   formatStaleReviewBotTerminalStopLine,
   formatStaleReviewBotThreadDiagnosticsLine,
 } from "./stale-review-bot-diagnostics-presenter";
@@ -710,7 +711,12 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
     ...(dto.staleDiagnosticSummary ? [dto.staleDiagnosticSummary] : []),
     ...(dto.staleReviewBotRemediation ? [formatStaleReviewBotRemediationLine(dto.staleReviewBotRemediation)] : []),
     ...(dto.staleReviewBotThreadDiagnostics
-      ? [formatStaleReviewBotThreadDiagnosticsLine(dto.staleReviewBotThreadDiagnostics)]
+      ? [
+          formatStaleReviewBotThreadDiagnosticsLine(dto.staleReviewBotThreadDiagnostics),
+          ...(dto.staleReviewBotThreadDiagnostics.validRepairTargets ?? []).map((target) =>
+            formatStaleReviewBotRepairTargetLine(dto.staleReviewBotThreadDiagnostics!, target),
+          ),
+        ]
       : []),
     ...(dto.staleReviewBotRemediation && dto.staleReviewBotThreadDiagnostics
       ? [

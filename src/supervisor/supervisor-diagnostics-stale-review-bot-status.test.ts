@@ -25,6 +25,7 @@ import {
 } from "./supervisor-diagnostics-status-scenarios";
 import {
   formatStaleReviewMetadataConvergenceDiagnostic,
+  formatStaleReviewBotRepairTargetLine,
   formatStaleReviewBotTerminalStopLine,
 } from "./stale-review-bot-diagnostics-presenter";
 import {
@@ -39,6 +40,24 @@ import {
   clearCurrentReconciliationPhase,
   writeCurrentReconciliationPhase,
 } from "./supervisor-reconciliation-phase";
+
+test("formatStaleReviewBotRepairTargetLine surfaces still-valid thread repair details", () => {
+  assert.equal(
+    formatStaleReviewBotRepairTargetLine(
+      { issueNumber: 2385, prNumber: 45 },
+      {
+        threadId: "thread-query-code",
+        path: "core/llm/conversion_plan.py",
+        line: "699",
+        severity: "P2",
+        url: "https://example.test/pr/45#discussion_r3455261710",
+        evidenceSummary: "query_params code probe still leaks.",
+        summary: "P2: Redact query-only credential names such as ?key=... or ?code=...",
+      },
+    ),
+    "stale_review_bot_repair_target issue=#2385 pr=#45 thread=thread-query-code file=core/llm/conversion_plan.py line=699 severity=P2 url=https://example.test/pr/45#discussion_r3455261710 evidence=query_params_code_probe_still_leaks. summary=P2:_Redact_query-only_credential_names_such_as_?key=..._or_?code=... next_action=repair_still_valid_review_thread",
+  );
+});
 
 test("renderSupervisorStatusDto maps stale configured-bot remediation to the root operator action", () => {
   const status = renderSupervisorStatusDto({

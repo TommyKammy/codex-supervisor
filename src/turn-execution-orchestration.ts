@@ -26,6 +26,7 @@ import {
   codexConnectorMustFixReviewThreads,
   latestCodexConnectorReviewCommentFingerprint,
 } from "./codex-connector-review-policy";
+import { codexConnectorStillValidReviewRepairThreads } from "./codex-connector-valid-review-repair";
 import {
   actionableConfiguredBotReviewThreads,
   configuredBotReviewThreads,
@@ -180,6 +181,7 @@ export function selectReviewThreadsForTurn(args: {
     | "review_follow_up_head_sha"
     | "review_follow_up_remaining"
     | "review_loop_retry_state"
+    | "timeline_artifacts"
   >;
   pr: GitHubPullRequest | null;
   reviewThreads: ReviewThread[];
@@ -210,6 +212,11 @@ export function selectReviewThreadsForTurn(args: {
       !hasProcessedReviewThread(args.record, currentPr, thread, retryFingerprintForThread(thread)) &&
       reviewLoopRetryBudgetAvailable(thread, retryFingerprintForThread(thread)),
   );
+  const stillValidRepairThreads = codexConnectorStillValidReviewRepairThreads({
+    record: args.record,
+    pr: currentPr,
+    reviewThreads: activeConfiguredBotThreads,
+  });
   const codexConnectorMustFixThreads = codexConnectorMustFixThreadCandidates.filter((thread) =>
     reviewLoopRetryBudgetAvailable(thread, latestCodexConnectorReviewCommentFingerprint(thread)),
   );
@@ -221,7 +228,14 @@ export function selectReviewThreadsForTurn(args: {
   if (codexConnectorReviewChurnDiagnostic && codexConnectorMustFixThreads.length > 0) {
     return uniqueReviewThreadsInOrder(
       activeConfiguredBotThreads,
-      new Set([...pendingThreads, ...codexConnectorMustFixThreads].map((thread) => thread.id)),
+      new Set([...pendingThreads, ...stillValidRepairThreads, ...codexConnectorMustFixThreads].map((thread) => thread.id)),
+    );
+  }
+
+  if (stillValidRepairThreads.length > 0) {
+    return uniqueReviewThreadsInOrder(
+      activeConfiguredBotThreads,
+      new Set([...pendingThreads, ...stillValidRepairThreads].map((thread) => thread.id)),
     );
   }
 

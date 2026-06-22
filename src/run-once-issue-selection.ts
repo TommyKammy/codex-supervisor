@@ -47,6 +47,7 @@ import {
 } from "./supervisor/supervisor-events";
 import { findLatestBlockedPreservedPartialWorkIncident } from "./supervisor/supervisor-preserved-partial-work";
 import { codexConnectorReviewRequestAction } from "./codex-connector-review-request-decision";
+import { shouldSelectCodexConnectorValidReviewRepair } from "./codex-connector-valid-review-repair-selection";
 import { configuredBotReviewThreads, manualReviewThreads } from "./review-thread-reporting";
 import { mergeConflictDetected, summarizeChecks } from "./supervisor/supervisor-reporting";
 
@@ -139,8 +140,7 @@ function shouldFetchDirectTrackedPrRecoveryIssue(
     record.state === "blocked" &&
     (record.blocked_reason === "manual_review" || record.blocked_reason === "stale_review_bot") &&
     record.pr_number !== null &&
-    configuredReviewProviderKinds(config).includes("codex") &&
-    config.configuredBotCurrentHeadSignalTimeoutAction === "request_review_comment"
+    configuredReviewProviderKinds(config).includes("codex")
   );
 }
 
@@ -522,6 +522,13 @@ async function selectIssueRecord(
       if (
         !isEligibleForSelection(existing, config) &&
         !(await shouldSelectCodexConnectorReviewRequestRecovery(github, config, existing)) &&
+        !(await shouldSelectCodexConnectorValidReviewRepair({
+          config,
+          record: existing,
+          getPullRequestIfExists: github.getPullRequestIfExists,
+          getChecks: github.getChecks,
+          getUnresolvedReviewThreads: github.getUnresolvedReviewThreads,
+        })) &&
         !(isAutonomousExecutionTrustBlockedRecord(existing) && trustDecision.allowed)
       ) {
         continue;

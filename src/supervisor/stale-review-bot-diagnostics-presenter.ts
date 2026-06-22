@@ -4,6 +4,7 @@ import {
   type StaleReviewBotRemediationDto,
   type StaleReviewBotThreadDiagnosticsDto,
 } from "./stale-review-bot-remediation";
+import type { CodexConnectorValidReviewRepairTarget } from "../codex-connector-valid-review-repair";
 import { GitHubPullRequest, PullRequestCheck } from "../core/types";
 
 export function githubPullRequestAllowsMergeReadyAction(
@@ -99,6 +100,25 @@ export function formatStaleReviewBotThreadDiagnosticsLine(
   ].join(" ");
 }
 
+export function formatStaleReviewBotRepairTargetLine(
+  diagnostics: Pick<StaleReviewBotThreadDiagnosticsDto, "issueNumber" | "prNumber">,
+  target: CodexConnectorValidReviewRepairTarget,
+): string {
+  return [
+    "stale_review_bot_repair_target",
+    `issue=#${diagnostics.issueNumber}`,
+    `pr=${diagnostics.prNumber === null ? "none" : `#${diagnostics.prNumber}`}`,
+    `thread=${formatStaleReviewBotTokenValue(target.threadId)}`,
+    `file=${formatStaleReviewBotTokenValue(target.path)}`,
+    `line=${formatStaleReviewBotTokenValue(target.line)}`,
+    `severity=${formatStaleReviewBotTokenValue(target.severity)}`,
+    `url=${target.url ? formatStaleReviewBotTokenValue(target.url) : "none"}`,
+    `evidence=${formatStaleReviewBotTokenValue(target.evidenceSummary).replace(/\s+/gu, "_")}`,
+    `summary=${formatStaleReviewBotTokenValue(target.summary).replace(/\s+/gu, "_")}`,
+    "next_action=repair_still_valid_review_thread",
+  ].join(" ");
+}
+
 export function formatStaleReviewBotTerminalStopLine(args: {
   remediation: StaleReviewBotRemediationDto;
   diagnostics: StaleReviewBotThreadDiagnosticsDto;
@@ -122,7 +142,9 @@ export function formatStaleReviewBotTerminalStopLine(args: {
       ? "retry_budget_exhausted"
       : "metadata_only_review_thread_resolution_pending";
   const nextAction =
-    diagnostics.repeatStopExhausted === "yes"
+    (diagnostics.validRepairTargets ?? []).length > 0
+      ? "repair_still_valid_review_thread"
+      : diagnostics.repeatStopExhausted === "yes"
       ? "manual_review_thread_handling"
       : remediation.classification === "metadata_only_missing_current_head_review"
         ? "request_current_head_review"

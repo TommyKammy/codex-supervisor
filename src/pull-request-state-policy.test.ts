@@ -30,6 +30,7 @@ import {
   currentHeadVerifiedRepairResidueArtifactEvidenceSummary,
   VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET,
 } from "./supervisor/stale-review-bot-remediation";
+import { STILL_VALID_REVIEW_THREAD_REPAIR_TARGET } from "./codex-connector-valid-review-repair";
 
 test("inferStateFromPullRequest routes actionable high local-review retry into local_review_fix", () => {
   const config = createConfig({
@@ -3722,6 +3723,77 @@ test("inferStateFromPullRequest blocks exhausted Codex Connector must-fix thread
   ];
 
   assert.equal(inferStateFromPullRequest(config, record, pr, passingChecks(), reviewThreads), "blocked");
+});
+
+test("inferStateFromPullRequest re-enters review repair for exhausted Codex thread with failed still-valid probe", () => {
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    humanReviewBlocksMerge: false,
+  });
+  const record = createRecord({
+    state: "pr_open",
+    pr_number: 44,
+    last_head_sha: "head123",
+    processed_review_thread_ids: ["thread-1@head123"],
+    processed_review_thread_fingerprints: ["thread-1@head123#comment-codex"],
+    review_loop_retry_state: [
+      {
+        fingerprint: "pr=44|head=head123|thread=thread-1|comment=comment-codex",
+        pr_number: 44,
+        head_sha: "head123",
+        thread_id: "thread-1",
+        latest_comment_fingerprint: "comment-codex",
+        attempts: 1,
+        first_attempted_at: "2026-06-07T01:00:00Z",
+        last_attempted_at: "2026-06-07T01:00:00Z",
+      },
+    ],
+    timeline_artifacts: [
+      {
+        type: "verification_result",
+        gate: "codex_turn",
+        command: "python -m pytest tests/test_audit_log.py -k query_code",
+        head_sha: "head123",
+        outcome: "failed",
+        remediation_target: null,
+        next_action: "repair still-valid review thread",
+        summary: "Focused query-code redaction probe still reproduces.",
+        recorded_at: "2026-06-07T01:30:00Z",
+        repair_targets: [STILL_VALID_REVIEW_THREAD_REPAIR_TARGET],
+        processed_review_thread_ids: ["thread-1@head123"],
+        processed_review_thread_fingerprints: ["thread-1@head123#comment-codex"],
+      },
+    ],
+  });
+  const pr = createPullRequest({
+    number: 44,
+    headRefOid: "head123",
+    reviewDecision: null,
+    configuredBotTopLevelReviewStrength: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+  const reviewThreads = [
+    createReviewThread({
+      id: "thread-1",
+      comments: {
+        nodes: [
+          {
+            id: "comment-codex",
+            body: "P2: Redact query-only credential names such as ?code=...",
+            createdAt: "2026-06-07T01:05:00Z",
+            url: "https://example.test/pr/44#discussion_r1",
+            author: {
+              login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  ];
+
+  assert.equal(inferStateFromPullRequest(config, record, pr, passingChecks(), reviewThreads), "addressing_review");
 });
 
 test("inferStateFromPullRequest blocks exhausted Codex Connector repairs even with nonblocking human threads", () => {
