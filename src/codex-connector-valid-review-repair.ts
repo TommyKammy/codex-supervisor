@@ -36,22 +36,23 @@ function timelineArtifactCoversReviewThread(args: {
   const processedThreadIds = args.artifact.processed_review_thread_ids ?? [];
   const processedThreadFingerprints = args.artifact.processed_review_thread_fingerprints ?? [];
   const headScopedThreadId = processedReviewThreadKey(args.thread.id, args.pr.headRefOid);
-  const latestCommentFingerprint =
-    latestCodexConnectorReviewCommentFingerprint(args.thread as ReviewThread) ??
-    latestReviewThreadCommentFingerprint(args.thread);
-  if (
-    latestCommentFingerprint &&
-    processedThreadFingerprints.includes(
-      processedReviewThreadFingerprintKey(args.thread.id, args.pr.headRefOid, latestCommentFingerprint),
-    )
-  ) {
+  const latestCommentFingerprints = [
+    latestCodexConnectorReviewCommentFingerprint(args.thread as ReviewThread),
+    latestReviewThreadCommentFingerprint(args.thread),
+  ].filter((fingerprint): fingerprint is string => Boolean(fingerprint));
+  const acceptedFingerprintKeys = new Set(
+    latestCommentFingerprints.map((fingerprint) =>
+      processedReviewThreadFingerprintKey(args.thread.id, args.pr.headRefOid, fingerprint),
+    ),
+  );
+  if (processedThreadFingerprints.some((fingerprint) => acceptedFingerprintKeys.has(fingerprint))) {
     return true;
   }
 
   if (!processedThreadIds.includes(headScopedThreadId)) {
     return false;
   }
-  if (!latestCommentFingerprint) {
+  if (latestCommentFingerprints.length === 0) {
     return true;
   }
 
@@ -93,6 +94,7 @@ function isLaterConvergedRepairProof(args: {
     isCurrentHeadCodexTurnArtifact(args) &&
     args.artifact.outcome === "passed" &&
     (
+      (args.artifact.repair_targets?.length ?? 0) === 0 ||
       args.artifact.repair_targets?.includes(VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET) === true ||
       args.artifact.repair_targets?.includes(VERIFIED_NO_SOURCE_CHANGE_REVIEW_THREAD_RESIDUE_TARGET) === true
     )

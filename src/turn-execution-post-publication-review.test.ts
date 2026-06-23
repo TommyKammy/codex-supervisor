@@ -110,7 +110,49 @@ test("buildPostPublicationCodexVerificationTimelineArtifacts records failed stil
   assert.deepEqual(artifacts?.[0]?.processed_review_thread_ids, [`${reviewThread.id}@${headSha}`]);
   assert.deepEqual(artifacts?.[0]?.processed_review_thread_fingerprints, [
     `${reviewThread.id}@${headSha}#comment-still-valid-probe`,
+    `${reviewThread.id}@${headSha}#comment-supervisor-reply`,
   ]);
+});
+
+test("buildPostPublicationCodexVerificationTimelineArtifacts does not record unscoped failed probes", () => {
+  const headSha = "head-unscoped-still-valid-probe";
+  const reviewThread = createReviewThread({
+    id: "thread-unscoped-still-valid-probe",
+    path: "src/review.ts",
+    line: 41,
+    comments: {
+      nodes: [
+        {
+          id: "comment-unscoped-still-valid-probe",
+          body: "P2: Keep query token redaction active for this path.",
+          createdAt: "2026-06-22T22:40:00Z",
+          url: "https://example.test/pr/406#discussion_r405",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  const artifacts = buildPostPublicationCodexVerificationTimelineArtifacts({
+    record: createRecord({ timeline_artifacts: [] }),
+    currentPr: createPullRequest({ headRefOid: headSha }),
+    codexVerificationCommand: null,
+    failedCodexVerificationCommand: "npm test failed",
+    workspaceStatus: { headSha, hasUncommittedChanges: false },
+    preRunState: "addressing_review",
+    structuredSummary: "npm test failed.",
+    postRunState: "blocked",
+    hasVerifiedNoSourceChangeReviewThreadEvidence: false,
+    verifiedNoSourceChangeReviewThreads: [],
+    reviewThreadsToProcess: [reviewThread],
+    changedFilesAfterPublication: [],
+    artifactOnlyChangedFilesAfterPublication: [],
+  });
+
+  assert.equal(artifacts, null);
 });
 
 test("buildPostPublicationCodexVerificationTimelineArtifacts does not record failed probes from dirty workspaces", () => {
