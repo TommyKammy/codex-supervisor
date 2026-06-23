@@ -21,6 +21,7 @@ import {
 import { configuredReviewBotLogins } from "../core/review-providers";
 import { shouldAutoRetryTimeout } from "./supervisor-failure-helpers";
 import { buildStaleStabilizingNoPrRecoveryWarningLine } from "../no-pull-request-state";
+import { shouldReenterCodexConnectorValidReviewRepair } from "../codex-connector-valid-review-repair-selection";
 import {
   evaluateAutonomousExecutionTrust,
   isAutonomousExecutionTrustBlockedRecord,
@@ -76,6 +77,7 @@ import {
 } from "./stale-review-bot-remediation";
 import {
   formatStaleReviewBotRemediationLine,
+  formatStaleReviewBotRepairTargetLine,
   formatStaleReviewBotTerminalStopLine,
   formatStaleReviewBotThreadDiagnosticsLine,
 } from "./stale-review-bot-diagnostics-presenter";
@@ -516,6 +518,16 @@ export async function buildIssueExplainDto(
     /^codex_connector_review_fallback\b/u.test(codexConnectorDiagnostics.reviewFallbackSummary) &&
     /\bstatus=request_eligible\b/u.test(codexConnectorDiagnostics.reviewFallbackSummary) &&
     /\bnext_action=request_current_head_review\b/u.test(codexConnectorDiagnostics.reviewFallbackSummary);
+  const codexConnectorValidReviewRepairEligible =
+    record && pr && !trackedPrHydrationFailed
+      ? shouldReenterCodexConnectorValidReviewRepair({
+          config,
+          record,
+          pr,
+          checks: explainChecks,
+          reviewThreads: explainReviewThreads,
+        })
+      : false;
   const noActiveTrackedRecordSummary =
     record && state.activeIssueNumber === null
       ? formatNoActiveTrackedRecordClassificationLine(config, record, staleReviewBotRemediation)
@@ -578,6 +590,7 @@ export async function buildIssueExplainDto(
     record &&
     !isEligibleForSelection(record, config) &&
     !codexConnectorReviewRequestRecoveryEligible &&
+    !codexConnectorValidReviewRepairEligible &&
     !(isAutonomousExecutionTrustBlockedRecord(record) && trustDecision.allowed)
   ) {
     reasons.push(...buildNonRunnableLocalStateReasons(record, config));
@@ -710,7 +723,12 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
     ...(dto.staleDiagnosticSummary ? [dto.staleDiagnosticSummary] : []),
     ...(dto.staleReviewBotRemediation ? [formatStaleReviewBotRemediationLine(dto.staleReviewBotRemediation)] : []),
     ...(dto.staleReviewBotThreadDiagnostics
-      ? [formatStaleReviewBotThreadDiagnosticsLine(dto.staleReviewBotThreadDiagnostics)]
+      ? [
+          formatStaleReviewBotThreadDiagnosticsLine(dto.staleReviewBotThreadDiagnostics),
+          ...(dto.staleReviewBotThreadDiagnostics.validRepairTargets ?? []).map((target) =>
+            formatStaleReviewBotRepairTargetLine(dto.staleReviewBotThreadDiagnostics!, target),
+          ),
+        ]
       : []),
     ...(dto.staleReviewBotRemediation && dto.staleReviewBotThreadDiagnostics
       ? [

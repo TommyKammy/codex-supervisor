@@ -14,6 +14,8 @@ import {
   shouldResumeAgentTurn,
 } from "./turn-execution-orchestration";
 import { processedReviewThreadFingerprintKey, processedReviewThreadKey } from "./review-handling";
+import { STILL_VALID_REVIEW_THREAD_REPAIR_TARGET } from "./codex-connector-valid-review-repair";
+import { VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET } from "./current-head-codex-repair-proof";
 import { SupervisorStateFile } from "./core/types";
 import {
   createConfig,
@@ -713,6 +715,318 @@ test("selectReviewThreadsForTurn excludes Codex Connector must-fix threads after
               url: "https://example.test/pr/116#discussion_r1",
               author: {
                 login: "chatgpt-codex-connector[bot]",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+  });
+
+  assert.deepEqual(selected, []);
+});
+
+test("selectReviewThreadsForTurn re-includes exhausted Codex Connector threads with failed still-valid probe evidence", () => {
+  const selected = selectReviewThreadsForTurn({
+    config: createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector[bot]"],
+    }),
+    preRunState: "addressing_review",
+    record: {
+      processed_review_thread_ids: ["thread-1@head-a"],
+      processed_review_thread_fingerprints: ["thread-1@head-a#comment-1"],
+      review_loop_retry_state: [
+        {
+          fingerprint: "pr=116|head=head-a|thread=thread-1|comment=comment-1",
+          pr_number: 116,
+          head_sha: "head-a",
+          thread_id: "thread-1",
+          latest_comment_fingerprint: "comment-1",
+          attempts: 1,
+          first_attempted_at: "2026-06-07T01:00:00Z",
+          last_attempted_at: "2026-06-07T01:00:00Z",
+        },
+      ],
+      timeline_artifacts: [
+        {
+          type: "verification_result",
+          gate: "codex_turn",
+          command: "python -m pytest tests/test_audit_log.py -k query_code",
+          head_sha: "head-a",
+          outcome: "failed",
+          remediation_target: null,
+          next_action: "repair still-valid review thread",
+          summary: "Focused query-code redaction probe still reproduces.",
+          recorded_at: "2026-06-07T01:30:00Z",
+          repair_targets: [STILL_VALID_REVIEW_THREAD_REPAIR_TARGET],
+          processed_review_thread_ids: ["thread-1@head-a"],
+          processed_review_thread_fingerprints: ["thread-1@head-a#comment-1"],
+        },
+      ],
+      last_head_sha: "head-a",
+      review_follow_up_head_sha: null,
+      review_follow_up_remaining: 0,
+    },
+    pr: createPullRequest({ number: 116, headRefOid: "head-a" }),
+    reviewThreads: [
+      createReviewThread({
+        id: "thread-1",
+        comments: {
+          nodes: [
+            {
+              id: "comment-1",
+              body: "P2: Redact query-only credential names such as ?code=...",
+              createdAt: "2026-06-07T01:05:00Z",
+              url: "https://example.test/pr/116#discussion_r1",
+              author: {
+                login: "chatgpt-codex-connector[bot]",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+  });
+
+  assert.equal(selected.length, 1);
+  assert.equal(selected[0]?.id, "thread-1");
+});
+
+test("selectReviewThreadsForTurn ignores stale still-valid probe evidence after newer Codex finding comments", () => {
+  const selected = selectReviewThreadsForTurn({
+    config: createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector[bot]"],
+    }),
+    preRunState: "addressing_review",
+    record: {
+      processed_review_thread_ids: ["thread-1@head-a"],
+      processed_review_thread_fingerprints: ["thread-1@head-a#comment-old"],
+      review_loop_retry_state: [
+        {
+          fingerprint: "pr=116|head=head-a|thread=thread-1|comment=comment-new",
+          pr_number: 116,
+          head_sha: "head-a",
+          thread_id: "thread-1",
+          latest_comment_fingerprint: "comment-new",
+          attempts: 1,
+          first_attempted_at: "2026-06-07T01:00:00Z",
+          last_attempted_at: "2026-06-07T01:00:00Z",
+        },
+      ],
+      timeline_artifacts: [
+        {
+          type: "verification_result",
+          gate: "codex_turn",
+          command: "python -m pytest tests/test_audit_log.py -k query_code",
+          head_sha: "head-a",
+          outcome: "failed",
+          remediation_target: null,
+          next_action: "repair_still_valid_review_thread",
+          summary: "Earlier query-code probe reproduced an older finding.",
+          recorded_at: "2026-06-07T01:30:00Z",
+          repair_targets: [STILL_VALID_REVIEW_THREAD_REPAIR_TARGET],
+          processed_review_thread_ids: ["thread-1@head-a"],
+          processed_review_thread_fingerprints: ["thread-1@head-a#comment-old"],
+        },
+      ],
+      last_head_sha: "head-a",
+      review_follow_up_head_sha: null,
+      review_follow_up_remaining: 0,
+    },
+    pr: createPullRequest({ number: 116, headRefOid: "head-a" }),
+    reviewThreads: [
+      createReviewThread({
+        id: "thread-1",
+        comments: {
+          nodes: [
+            {
+              id: "comment-old",
+              body: "P2: Redact query-only credential names such as ?code=...",
+              createdAt: "2026-06-07T01:05:00Z",
+              url: "https://example.test/pr/116#discussion_r1",
+              author: {
+                login: "chatgpt-codex-connector[bot]",
+                typeName: "Bot",
+              },
+            },
+            {
+              id: "comment-new",
+              body: "P2: Also redact query-only callback tokens in the newer branch.",
+              createdAt: "2026-06-07T01:45:00Z",
+              url: "https://example.test/pr/116#discussion_r2",
+              author: {
+                login: "chatgpt-codex-connector[bot]",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+  });
+
+  assert.deepEqual(selected, []);
+});
+
+test("selectReviewThreadsForTurn stops at later current-head repair proof before older still-valid probe failures", () => {
+  const selected = selectReviewThreadsForTurn({
+    config: createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector[bot]"],
+    }),
+    preRunState: "addressing_review",
+    record: {
+      processed_review_thread_ids: ["thread-1@head-a"],
+      processed_review_thread_fingerprints: ["thread-1@head-a#comment-1"],
+      review_loop_retry_state: [
+        {
+          fingerprint: "pr=116|head=head-a|thread=thread-1|comment=comment-1",
+          pr_number: 116,
+          head_sha: "head-a",
+          thread_id: "thread-1",
+          latest_comment_fingerprint: "comment-1",
+          attempts: 1,
+          first_attempted_at: "2026-06-07T01:00:00Z",
+          last_attempted_at: "2026-06-07T01:00:00Z",
+        },
+      ],
+      timeline_artifacts: [
+        {
+          type: "verification_result",
+          gate: "codex_turn",
+          command: "python -m pytest tests/test_audit_log.py -k query_code",
+          head_sha: "head-a",
+          outcome: "failed",
+          remediation_target: null,
+          next_action: "repair_still_valid_review_thread",
+          summary: "Focused query-code redaction probe still reproduces.",
+          recorded_at: "2026-06-07T01:30:00Z",
+          repair_targets: [STILL_VALID_REVIEW_THREAD_REPAIR_TARGET],
+          processed_review_thread_ids: ["thread-1@head-a"],
+          processed_review_thread_fingerprints: ["thread-1@head-a#comment-1"],
+        },
+        {
+          type: "verification_result",
+          gate: "codex_turn",
+          command: "npx tsx --test src/audit-log.test.ts",
+          head_sha: "head-a",
+          outcome: "passed",
+          remediation_target: null,
+          next_action: "continue",
+          summary: "Focused repair verification passed.",
+          recorded_at: "2026-06-07T01:40:00Z",
+          repair_targets: [VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET],
+          processed_review_thread_ids: ["thread-1@head-a"],
+          processed_review_thread_fingerprints: ["thread-1@head-a#comment-1"],
+        },
+      ],
+      last_head_sha: "head-a",
+      review_follow_up_head_sha: null,
+      review_follow_up_remaining: 0,
+    },
+    pr: createPullRequest({ number: 116, headRefOid: "head-a" }),
+    reviewThreads: [
+      createReviewThread({
+        id: "thread-1",
+        comments: {
+          nodes: [
+            {
+              id: "comment-1",
+              body: "P2: Redact query-only credential names such as ?code=...",
+              createdAt: "2026-06-07T01:05:00Z",
+              url: "https://example.test/pr/116#discussion_r1",
+              author: {
+                login: "chatgpt-codex-connector[bot]",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+  });
+
+  assert.deepEqual(selected, []);
+});
+
+test("selectReviewThreadsForTurn clears still-valid failures with later targetless thread proof", () => {
+  const selected = selectReviewThreadsForTurn({
+    config: createConfig({
+      reviewBotLogins: ["chatgpt-codex-connector[bot]"],
+    }),
+    preRunState: "addressing_review",
+    record: {
+      processed_review_thread_ids: ["thread-1@head-a"],
+      processed_review_thread_fingerprints: ["thread-1@head-a#comment-codex"],
+      review_loop_retry_state: [
+        {
+          fingerprint: "pr=116|head=head-a|thread=thread-1|comment=comment-codex",
+          pr_number: 116,
+          head_sha: "head-a",
+          thread_id: "thread-1",
+          latest_comment_fingerprint: "comment-codex",
+          attempts: 1,
+          first_attempted_at: "2026-06-07T01:00:00Z",
+          last_attempted_at: "2026-06-07T01:00:00Z",
+        },
+      ],
+      timeline_artifacts: [
+        {
+          type: "verification_result",
+          gate: "codex_turn",
+          command: "python -m pytest tests/test_audit_log.py -k query_code",
+          head_sha: "head-a",
+          outcome: "failed",
+          remediation_target: null,
+          next_action: "repair_still_valid_review_thread",
+          summary: "Focused query-code redaction probe still reproduces.",
+          recorded_at: "2026-06-07T01:30:00Z",
+          repair_targets: [STILL_VALID_REVIEW_THREAD_REPAIR_TARGET],
+          processed_review_thread_ids: ["thread-1@head-a"],
+          processed_review_thread_fingerprints: ["thread-1@head-a#comment-codex"],
+        },
+        {
+          type: "verification_result",
+          gate: "codex_turn",
+          command: "npx tsx --test src/audit-log.test.ts",
+          head_sha: "head-a",
+          outcome: "passed",
+          remediation_target: null,
+          next_action: "continue",
+          summary: "Focused verifier passed after checking the current thread.",
+          recorded_at: "2026-06-07T01:40:00Z",
+          processed_review_thread_ids: ["thread-1@head-a"],
+          processed_review_thread_fingerprints: ["thread-1@head-a#comment-reply"],
+        },
+      ],
+      last_head_sha: "head-a",
+      review_follow_up_head_sha: null,
+      review_follow_up_remaining: 0,
+    },
+    pr: createPullRequest({ number: 116, headRefOid: "head-a" }),
+    reviewThreads: [
+      createReviewThread({
+        id: "thread-1",
+        comments: {
+          nodes: [
+            {
+              id: "comment-codex",
+              body: "P2: Redact query-only credential names such as ?code=...",
+              createdAt: "2026-06-07T01:05:00Z",
+              url: "https://example.test/pr/116#discussion_r1",
+              author: {
+                login: "chatgpt-codex-connector[bot]",
+                typeName: "Bot",
+              },
+            },
+            {
+              id: "comment-reply",
+              body: "Supervisor reply after the no-source revalidation.",
+              createdAt: "2026-06-07T01:35:00Z",
+              url: "https://example.test/pr/116#discussion_r2",
+              author: {
+                login: "github-actions[bot]",
                 typeName: "Bot",
               },
             },

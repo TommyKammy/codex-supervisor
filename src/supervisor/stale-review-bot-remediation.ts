@@ -28,6 +28,10 @@ import { configuredReviewProviderKinds } from "../core/review-providers";
 import { projectCurrentHeadCodexRepairProof } from "../current-head-codex-repair-proof";
 import { currentHeadPassingNonReviewChecks } from "../local-ci-policy";
 import {
+  buildCodexConnectorStillValidReviewRepairTargets,
+  type CodexConnectorValidReviewRepairTarget,
+} from "../codex-connector-valid-review-repair";
+import {
   STALE_REVIEW_BOT_MANUAL_NEXT_STEP,
   VERIFIED_CURRENT_HEAD_REPAIR_SUMMARY,
   VERIFIED_CURRENT_HEAD_REPAIR_MANUAL_NEXT_STEP,
@@ -77,6 +81,7 @@ export interface StaleReviewBotThreadDiagnosticsDto {
   missingVerificationEvidenceThreads: number;
   repeatStopExhausted: "yes" | "no";
   autoRepairSuppressedReason: StaleReviewBotAutoRepairSuppressedReason;
+  validRepairTargets?: CodexConnectorValidReviewRepairTarget[];
 }
 
 type RepositoryFileContents = Record<string, string | null | undefined>;
@@ -1100,7 +1105,17 @@ export function buildStaleReviewBotThreadDiagnostics(args: {
   const verifiedStaleResidueThreads = isVerifiedResidue
     ? unresolvedConfiguredThreads.length
     : 0;
-  const missingVerificationEvidenceThreads = remediation.missingProbeReason ? Math.max(actionableMustFixThreads.length, 1) : 0;
+  const validRepairTargets =
+    config && args.pr
+      ? buildCodexConnectorStillValidReviewRepairTargets({
+          record: args.record,
+          pr: args.pr,
+          reviewThreads: actionableMustFixThreads,
+        })
+      : [];
+  const missingVerificationEvidenceThreads = remediation.missingProbeReason
+    ? Math.max(actionableMustFixThreads.length - validRepairTargets.length, validRepairTargets.length > 0 ? 0 : 1)
+    : 0;
 
   return {
     issueNumber: args.record.issue_number,
@@ -1121,5 +1136,6 @@ export function buildStaleReviewBotThreadDiagnostics(args: {
       actionableMustFixThreads,
       repeatStopExhausted,
     }),
+    validRepairTargets,
   };
 }

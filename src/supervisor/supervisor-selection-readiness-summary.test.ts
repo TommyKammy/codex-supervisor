@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   GitHubIssue,
+  PullRequestCheck,
   ReviewThread,
   SupervisorStateFile,
 } from "../core/types";
@@ -10,6 +11,7 @@ import {
   buildSelectionWhySummary,
 } from "./supervisor-selection-readiness-summary";
 import { createConfig, createPullRequest, createRecord } from "./supervisor-test-helpers";
+import { STILL_VALID_REVIEW_THREAD_REPAIR_TARGET } from "../codex-connector-valid-review-repair";
 
 function createIssue(overrides: Partial<GitHubIssue> = {}): GitHubIssue {
   return {
@@ -428,6 +430,149 @@ Parallelizable: No
 
   assert.match(whyLines.join("\n"), /^selected_issue=#2072$/m);
   assert.doesNotMatch(readinessSummary.readinessLines.join("\n"), /^blocked_issues=#2072 blocked_by=local_state:blocked$/m);
+});
+
+test("buildReadinessSummary selects still-valid Codex review repair target after retry exhaustion", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    configuredBotInitialGraceWaitSeconds: 0,
+    configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+  });
+  const issueNumber = 2385;
+  const prNumber = 45;
+  const branch = "codex/issue-2385";
+  const currentHead = "190f9fd34d4ffc4534c1927e91c7a53ae17535d5";
+  const issue = createIssue({
+    number: issueNumber,
+    title: "Continue repair when unresolved Codex threads are still substantively valid",
+    body: `## Summary
+Continue repair for a still-valid unresolved Codex Connector thread.
+
+## Scope
+- route failed thread-scoped probes back into review repair
+
+Depends on: none
+Parallelizable: No
+
+## Execution order
+1 of 1
+
+## Acceptance criteria
+- the tracked PR is selected for another focused repair pass
+
+## Verification
+- npx tsx --test src/supervisor/supervisor-selection-readiness-summary.test.ts`,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        branch,
+        pr_number: prNumber,
+        blocked_reason: "manual_review",
+        last_head_sha: currentHead,
+        processed_review_thread_ids: [`thread-query-code@${currentHead}`],
+        processed_review_thread_fingerprints: [`thread-query-code@${currentHead}#comment-query-code`],
+        review_loop_retry_state: [
+          {
+            fingerprint: `pr=${prNumber}|head=${currentHead}|thread=thread-query-code|comment=comment-query-code`,
+            pr_number: prNumber,
+            head_sha: currentHead,
+            thread_id: "thread-query-code",
+            latest_comment_fingerprint: "comment-query-code",
+            attempts: 1,
+            first_attempted_at: "2026-06-22T21:00:00Z",
+            last_attempted_at: "2026-06-22T21:00:00Z",
+          },
+        ],
+        timeline_artifacts: [
+          {
+            type: "verification_result",
+            gate: "codex_turn",
+            command: "python -m pytest tests/test_llm_conversion_plan.py -k query_code",
+            head_sha: currentHead,
+            outcome: "failed",
+            remediation_target: null,
+            next_action: "repair still-valid review thread",
+            summary: "query_params code probe still leaks.",
+            recorded_at: "2026-06-22T21:05:00Z",
+            repair_targets: [STILL_VALID_REVIEW_THREAD_REPAIR_TARGET],
+            processed_review_thread_ids: [`thread-query-code@${currentHead}`],
+            processed_review_thread_fingerprints: [`thread-query-code@${currentHead}#comment-query-code`],
+          },
+        ],
+      }),
+    },
+  };
+  const pr = createPullRequest({
+    number: prNumber,
+    headRefName: branch,
+    headRefOid: currentHead,
+    isDraft: false,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-06-22T20:40:44Z",
+    configuredBotCurrentHeadObservedAt: "2026-06-22T20:53:59Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
+    configuredBotLatestReviewedCommitSha: currentHead,
+  });
+  const reviewThreads: ReviewThread[] = [
+    {
+      id: "thread-query-code",
+      isResolved: false,
+      isOutdated: false,
+      path: "core/llm/conversion_plan.py",
+      line: 699,
+      comments: {
+        nodes: [
+          {
+            id: "comment-query-code",
+            body: "P2: Redact query-only credential names such as ?key=... or ?code=...",
+            createdAt: "2026-06-22T20:50:00Z",
+            url: "https://example.test/pr/45#discussion_r3455261710",
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    },
+  ];
+  const github = {
+    pr,
+    reviewThreads,
+    checks: [] as PullRequestCheck[],
+    listCandidateIssues: async () => [issue],
+    listAllIssues: async () => [issue],
+    getPullRequestIfExists: async function(this: { pr: typeof pr }, prNumber: number) {
+      assert.equal(this.pr.number, prNumber);
+      return this.pr;
+    },
+    getChecks: async function(this: { checks: PullRequestCheck[] }) {
+      return this.checks;
+    },
+    getUnresolvedReviewThreads: async function(this: { reviewThreads: ReviewThread[] }) {
+      return this.reviewThreads;
+    },
+  };
+
+  const readinessSummary = await buildReadinessSummary(github, config, state);
+  const whyLines = await buildSelectionWhySummary(github, config, state);
+
+  assert.deepEqual(readinessSummary.blockedIssues, []);
+  assert.deepEqual(readinessSummary.runnableIssues, [
+    {
+      issueNumber,
+      title: "Continue repair when unresolved Codex threads are still substantively valid",
+      readiness: "execution_ready",
+    },
+  ]);
+  assert.match(whyLines.join("\n"), /^selected_issue=#2385$/m);
 });
 
 test("buildReadinessSummary selects stale review-commit residue recovery without timeout metadata", async () => {

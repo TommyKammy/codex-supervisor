@@ -1,4 +1,11 @@
 import type { LocalReviewRepairContext } from "./codex";
+import { STILL_VALID_REVIEW_THREAD_REPAIR_TARGET } from "./codex-connector-valid-review-repair";
+import {
+  codexConnectorMustFixReviewThreads,
+  latestCodexConnectorReviewComment,
+  latestCodexConnectorReviewCommentFingerprint,
+  latestCodexConnectorReviewCommentNode,
+} from "./codex-connector-review-policy";
 import { VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET } from "./current-head-codex-repair-proof";
 import {
   latestReviewThreadCommentFingerprint,
@@ -21,7 +28,10 @@ import {
   WorkspaceStatus,
 } from "./core/types";
 import { upsertTimelineArtifact } from "./timeline-artifacts";
-import { conciseCodexVerificationSummary } from "./run-once-turn-verification-evidence";
+import {
+  conciseCodexVerificationSummary,
+  conciseFailedCodexVerificationSummary,
+} from "./run-once-turn-verification-evidence";
 
 function sameStringList(left: string[] | null | undefined, right: string[] | null | undefined): boolean {
   const normalizedLeft = left ?? [];
@@ -55,8 +65,112 @@ function processedReviewThreadFingerprintsForHead(threads: ReviewThread[], headS
   });
 }
 
+function processedCodexConnectorReviewThreadFingerprintsForHead(
+  threads: ReviewThread[],
+  headSha: string | null,
+): string[] | undefined {
+  if (!headSha || threads.length === 0) {
+    return undefined;
+  }
+  return threads.flatMap((thread) => {
+    const fingerprints = [
+      latestCodexConnectorReviewCommentFingerprint(thread),
+      latestReviewThreadCommentFingerprint(thread),
+    ].filter((fingerprint): fingerprint is string => Boolean(fingerprint));
+    return [...new Set(fingerprints)].map((fingerprint) =>
+      processedReviewThreadFingerprintKey(thread.id, headSha, fingerprint),
+    );
+  });
+}
+
 const VERIFIED_NO_SOURCE_CHANGE_REVIEW_THREAD_RESIDUE_TARGET =
   "verified_no_source_change_review_thread_residue";
+
+const FAILED_STILL_VALID_PROBE_EVIDENCE_STOP_WORDS = new Set([
+  "about",
+  "after",
+  "also",
+  "before",
+  "blocked",
+  "codex",
+  "connector",
+  "error",
+  "failed",
+  "failure",
+  "finding",
+  "focused",
+  "from",
+  "into",
+  "latest",
+  "line",
+  "only",
+  "path",
+  "probe",
+  "repair",
+  "review",
+  "still",
+  "test",
+  "tests",
+  "that",
+  "this",
+  "thread",
+  "valid",
+  "with",
+]);
+
+function normalizeEvidenceText(value: string): string {
+  return value.toLowerCase().replace(/\s+/gu, " ").trim();
+}
+
+function evidenceTokens(value: string): Set<string> {
+  return new Set(
+    normalizeEvidenceText(value)
+      .split(/[^a-z0-9_]+/u)
+      .filter((token) => token.length >= 4 && !FAILED_STILL_VALID_PROBE_EVIDENCE_STOP_WORDS.has(token)),
+  );
+}
+
+function textIncludesLiteralEvidence(evidenceText: string, value: string | null | undefined): boolean {
+  const normalizedValue = normalizeEvidenceText(value ?? "");
+  return normalizedValue.length > 0 && evidenceText.includes(normalizedValue);
+}
+
+function hasFailedStillValidProbeEvidenceForThread(args: {
+  command: string | null | undefined;
+  summary: string | null | undefined;
+  thread: ReviewThread;
+}): boolean {
+  const evidenceText = normalizeEvidenceText(
+    [args.command, args.summary].filter((value): value is string => Boolean(value?.trim())).join("\n"),
+  );
+  if (!evidenceText) {
+    return false;
+  }
+
+  const latestCodexCommentNode = latestCodexConnectorReviewCommentNode(args.thread);
+  const latestThreadComment = args.thread.comments.nodes[args.thread.comments.nodes.length - 1] ?? null;
+  const literalThreadEvidence = [
+    args.thread.id,
+    args.thread.path ?? null,
+    latestCodexCommentNode?.id ?? null,
+    latestCodexCommentNode?.url ?? null,
+    latestThreadComment?.id ?? null,
+    latestThreadComment?.url ?? null,
+  ];
+  if (literalThreadEvidence.some((value) => textIncludesLiteralEvidence(evidenceText, value))) {
+    return true;
+  }
+
+  const findingBody = latestCodexConnectorReviewComment(args.thread)?.body ?? "";
+  const findingTokens = evidenceTokens(findingBody);
+  if (findingTokens.size === 0) {
+    return false;
+  }
+
+  const matchedTokenCount = [...evidenceTokens(evidenceText)]
+    .filter((token) => findingTokens.has(token)).length;
+  return matchedTokenCount >= (findingTokens.size === 1 ? 1 : 2);
+}
 
 function normalizeChangedFilePath(filePath: string): string {
   return filePath.replace(/\\/g, "/").replace(/^(?:\.\/)+/u, "");
@@ -166,6 +280,7 @@ export function buildPostPublicationCodexVerificationTimelineArtifacts(args: {
   record: IssueRunRecord;
   currentPr: GitHubPullRequest | null;
   codexVerificationCommand: string | null;
+  failedCodexVerificationCommand?: string | null;
   workspaceStatus: Pick<WorkspaceStatus, "hasUncommittedChanges" | "headSha">;
   preRunState: IssueRunRecord["state"];
   structuredSummary: string | null | undefined;
@@ -251,5 +366,59 @@ export function buildPostPublicationCodexVerificationTimelineArtifacts(args: {
             ),
         )
       : null;
-  return codexTurnVerificationTimelineArtifacts;
+  const stillValidRepairProbeThreads = codexConnectorMustFixReviewThreads(args.reviewThreadsToProcess)
+    .filter((thread) =>
+      hasFailedStillValidProbeEvidenceForThread({
+        command: args.failedCodexVerificationCommand,
+        summary: args.structuredSummary,
+        thread,
+      }),
+    );
+  const stillValidRepairProbeThreadIds =
+    processedReviewThreadIdsForHead(stillValidRepairProbeThreads, currentPrHeadSha);
+  const stillValidRepairProbeThreadFingerprints =
+    processedCodexConnectorReviewThreadFingerprintsForHead(stillValidRepairProbeThreads, currentPrHeadSha);
+  const hasStillValidRepairProbeThreadEvidence =
+    (stillValidRepairProbeThreadIds?.length ?? 0) > 0 ||
+    (stillValidRepairProbeThreadFingerprints?.length ?? 0) > 0;
+  const canEmitStillValidRepairProbeFailure =
+    args.currentPr &&
+    args.failedCodexVerificationCommand &&
+    args.preRunState === "addressing_review" &&
+    args.postRunState === "blocked" &&
+    !args.workspaceStatus.hasUncommittedChanges &&
+    args.workspaceStatus.headSha === args.currentPr.headRefOid &&
+    hasStillValidRepairProbeThreadEvidence;
+  const stillValidRepairProbeTimelineArtifacts = canEmitStillValidRepairProbeFailure
+    ? upsertTimelineArtifact(
+        args.record,
+        {
+          type: "verification_result",
+          gate: "codex_turn",
+          command: args.failedCodexVerificationCommand!,
+          head_sha: args.currentPr!.headRefOid,
+          outcome: "failed",
+          remediation_target: null,
+          next_action: "repair_still_valid_review_thread",
+          summary: conciseFailedCodexVerificationSummary(args.structuredSummary),
+          recorded_at: new Date().toISOString(),
+          repair_targets: [STILL_VALID_REVIEW_THREAD_REPAIR_TARGET],
+          processed_review_thread_ids: stillValidRepairProbeThreadIds ?? [],
+          processed_review_thread_fingerprints: stillValidRepairProbeThreadFingerprints ?? [],
+        },
+        (candidate) =>
+          candidate.type === "verification_result" &&
+          candidate.gate === "codex_turn" &&
+          candidate.outcome === "failed" &&
+          candidate.head_sha === args.currentPr!.headRefOid &&
+          candidate.command === args.failedCodexVerificationCommand &&
+          candidate.repair_targets?.includes(STILL_VALID_REVIEW_THREAD_REPAIR_TARGET) === true &&
+          sameStringList(candidate.processed_review_thread_ids, stillValidRepairProbeThreadIds) &&
+          sameStringList(
+            candidate.processed_review_thread_fingerprints,
+            stillValidRepairProbeThreadFingerprints,
+          ),
+      )
+    : null;
+  return stillValidRepairProbeTimelineArtifacts ?? codexTurnVerificationTimelineArtifacts;
 }

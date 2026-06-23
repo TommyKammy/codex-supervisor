@@ -20,6 +20,7 @@ import {
   buildRequirementsBlockerIssueComment,
   syncRequirementsBlockerIssueComment,
 } from "./requirements-blocker-issue-comment";
+import { STILL_VALID_REVIEW_THREAD_REPAIR_TARGET } from "./codex-connector-valid-review-repair";
 
 test("run-once issue selection does not consume external orchestration handoff authority", async () => {
   const source = await fs.readFile(path.join(process.cwd(), "src", "run-once-issue-selection.ts"), "utf8");
@@ -1211,6 +1212,155 @@ test("resolveRunnableIssueContext selects stale-review-bot tracked PR when Codex
       await result.issueLock.release();
     }
   }
+});
+
+test("resolveRunnableIssueContext selects still-valid Codex review repair with bound GitHub methods", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    humanReviewBlocksMerge: false,
+  });
+  const issueNumber = 2385;
+  const prNumber = 2386;
+  const branch = "codex/issue-2385";
+  const headSha = "head-2385-current";
+  const threadId = "thread-query-code";
+  const commentId = "comment-query-code";
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Continue still-valid Codex repair",
+    body: executionReadyBody("Continue repair for a still-valid unresolved Codex Connector thread."),
+    createdAt: "2026-06-22T00:00:00Z",
+    updatedAt: "2026-06-22T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    labels: [],
+    state: "OPEN",
+  };
+  const record = createRecord(issueNumber, {
+    state: "blocked",
+    branch,
+    pr_number: prNumber,
+    blocked_reason: "manual_review",
+    last_head_sha: headSha,
+    processed_review_thread_ids: [`${threadId}@${headSha}`],
+    processed_review_thread_fingerprints: [`${threadId}@${headSha}#${commentId}`],
+    review_loop_retry_state: [
+      {
+        fingerprint: `pr=${prNumber}|head=${headSha}|thread=${threadId}|comment=${commentId}`,
+        pr_number: prNumber,
+        head_sha: headSha,
+        thread_id: threadId,
+        latest_comment_fingerprint: commentId,
+        attempts: 1,
+        first_attempted_at: "2026-06-22T21:00:00Z",
+        last_attempted_at: "2026-06-22T21:00:00Z",
+      },
+    ],
+    timeline_artifacts: [
+      {
+        type: "verification_result",
+        gate: "codex_turn",
+        command: "python -m pytest tests/test_audit_log.py -k query_code",
+        head_sha: headSha,
+        outcome: "failed",
+        remediation_target: null,
+        next_action: "repair_still_valid_review_thread",
+        summary: "Focused query-code redaction probe still reproduces.",
+        recorded_at: "2026-06-22T21:05:00Z",
+        repair_targets: [STILL_VALID_REVIEW_THREAD_REPAIR_TARGET],
+        processed_review_thread_ids: [`${threadId}@${headSha}`],
+        processed_review_thread_fingerprints: [`${threadId}@${headSha}#${commentId}`],
+      },
+    ],
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: record,
+    },
+  };
+  const pr: GitHubPullRequest = {
+    number: prNumber,
+    title: "Tracked PR",
+    url: `https://example.test/pr/${prNumber}`,
+    state: "OPEN",
+    createdAt: "2026-06-22T00:00:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: branch,
+    headRefOid: headSha,
+    mergedAt: null,
+    currentHeadCiGreenAt: "2026-06-22T20:40:44Z",
+    configuredBotLatestReviewedCommitSha: headSha,
+    configuredBotCurrentHeadObservedAt: "2026-06-22T20:53:59Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    codexConnectorReviewRequestedAt: null,
+    codexConnectorReviewRequestedHeadSha: null,
+  };
+  const checks: PullRequestCheck[] = [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }];
+  const reviewThreads: ReviewThread[] = [
+    {
+      id: threadId,
+      isResolved: false,
+      isOutdated: false,
+      path: "core/llm/conversion_plan.py",
+      line: 699,
+      comments: {
+        nodes: [
+          {
+            id: commentId,
+            body: "P2: Redact query-only credential names such as ?code=...",
+            createdAt: "2026-06-22T20:50:00Z",
+            url: `https://example.test/pr/${prNumber}#discussion_r1`,
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    },
+  ];
+  const github = {
+    pr,
+    checks,
+    reviewThreads,
+    listCandidateIssues: async () => [issue],
+    getIssue: async () => issue,
+    getPullRequestIfExists: async function(this: { pr: GitHubPullRequest }, prNumberToFetch: number) {
+      assert.equal(this.pr.number, prNumberToFetch);
+      return this.pr;
+    },
+    getChecks: async function(this: { checks: PullRequestCheck[] }) {
+      return this.checks;
+    },
+    getUnresolvedReviewThreads: async function(this: { reviewThreads: ReviewThread[] }) {
+      return this.reviewThreads;
+    },
+  };
+  const savedStates: SupervisorStateFile[] = [];
+
+  const result = await resolveRunnableIssueContext({
+    github,
+    config,
+    stateStore: createTouchStateStore(savedStates),
+    state,
+    currentRecord: null,
+    acquireIssueLock: async () => ({
+      acquired: true,
+      release: async () => {},
+    }),
+    ensureRecordJournalContext: async (selectedRecord) => ({
+      workspace: selectedRecord.workspace,
+      journal_path: selectedRecord.journal_path,
+    }),
+  });
+
+  assert.equal(typeof result, "object");
+  assert.equal((result as { kind: string }).kind, "ready");
+  assert.equal((result as { record: IssueRunRecord }).record.issue_number, issueNumber);
 });
 
 test("resolveRunnableIssueContext selects stale review-commit residue without timeout metadata", async () => {

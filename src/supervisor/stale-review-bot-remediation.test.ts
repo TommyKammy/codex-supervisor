@@ -10,6 +10,7 @@ import {
   buildStaleReviewBotThreadDiagnostics,
   VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET,
 } from "./stale-review-bot-remediation";
+import { STILL_VALID_REVIEW_THREAD_REPAIR_TARGET } from "../codex-connector-valid-review-repair";
 import {
   classifyStaleReviewBotAutoRepairSuppressionPolicy,
   classifyStaleReviewBotRemediationPolicy,
@@ -1999,6 +2000,153 @@ test("buildStaleReviewBotRemediation ignores unprocessed outdated Codex threads 
   assert.equal(remediation?.classification, "unknown_needs_operator");
   assert.equal(remediation?.codexCurrentHeadReviewState, "observed");
   assert.equal(remediation?.missingProbeReason, "current_head_verification_evidence_missing");
+});
+
+test("buildStaleReviewBotThreadDiagnostics separates still-valid repair targets from unknown mixed residue", () => {
+  const issueNumber = 2385;
+  const prNumber = 45;
+  const headSha = "190f9fd34d4ffc4534c1927e91c7a53ae17535d5";
+  const config = createConfig({ reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN] });
+  const stillValidThread = createReviewThread({
+    id: "thread-query-code",
+    path: "core/llm/conversion_plan.py",
+    line: 699,
+    comments: {
+      nodes: [
+        {
+          id: "comment-query-code",
+          body: "P2: Redact query-only credential names such as ?key=... or ?code=...",
+          createdAt: "2026-06-22T20:50:00Z",
+          url: "https://example.test/pr/45#discussion_r3455261710",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const unknownThread = createReviewThread({
+    id: "thread-schema-value",
+    path: "core/llm/conversion_plan.py",
+    line: 565,
+    comments: {
+      nodes: [
+        {
+          id: "comment-schema-value",
+          body: "P2: Reject non-string schema value literals too.",
+          createdAt: "2026-06-22T20:49:00Z",
+          url: "https://example.test/pr/45#discussion_r3455261682",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const record = createRecord({
+    issue_number: issueNumber,
+    state: "blocked",
+    pr_number: prNumber,
+    last_head_sha: headSha,
+    blocked_reason: "stale_review_bot",
+    processed_review_thread_ids: [`${stillValidThread.id}@${headSha}`, `${unknownThread.id}@${headSha}`],
+    processed_review_thread_fingerprints: [
+      `${stillValidThread.id}@${headSha}#comment-query-code`,
+      `${unknownThread.id}@${headSha}#comment-schema-value`,
+    ],
+    review_loop_retry_state: [
+      {
+        fingerprint: `pr=${prNumber}|head=${headSha}|thread=${stillValidThread.id}|comment=comment-query-code`,
+        pr_number: prNumber,
+        head_sha: headSha,
+        thread_id: stillValidThread.id,
+        latest_comment_fingerprint: "comment-query-code",
+        attempts: 1,
+        first_attempted_at: "2026-06-22T21:00:00Z",
+        last_attempted_at: "2026-06-22T21:00:00Z",
+      },
+      {
+        fingerprint: `pr=${prNumber}|head=${headSha}|thread=${unknownThread.id}|comment=comment-schema-value`,
+        pr_number: prNumber,
+        head_sha: headSha,
+        thread_id: unknownThread.id,
+        latest_comment_fingerprint: "comment-schema-value",
+        attempts: 1,
+        first_attempted_at: "2026-06-22T21:00:00Z",
+        last_attempted_at: "2026-06-22T21:00:00Z",
+      },
+    ],
+    timeline_artifacts: [
+      {
+        type: "verification_result",
+        gate: "codex_turn",
+        command: "python -m pytest tests/test_llm_conversion_plan.py -k query_code",
+        head_sha: headSha,
+        outcome: "failed",
+        remediation_target: null,
+        next_action: "repair still-valid review thread",
+        summary: "query_params code probe still leaks.",
+        recorded_at: "2026-06-22T21:05:00Z",
+        repair_targets: [STILL_VALID_REVIEW_THREAD_REPAIR_TARGET],
+        processed_review_thread_ids: [`${stillValidThread.id}@${headSha}`],
+        processed_review_thread_fingerprints: [`${stillValidThread.id}@${headSha}#comment-query-code`],
+      },
+    ],
+    last_failure_context: {
+      category: "manual",
+      summary: "Mixed current-head Codex residue remains unresolved.",
+      signature: `stalled-bot:${stillValidThread.id}|stalled-bot:${unknownThread.id}`,
+      command: null,
+      details: [
+        `reviewer=${CODEX_CONNECTOR_REVIEW_BOT_LOGIN} file=${stillValidThread.path} line=${stillValidThread.line} p_severity=P2 processed_on_current_head=yes`,
+        `reviewer=${CODEX_CONNECTOR_REVIEW_BOT_LOGIN} file=${unknownThread.path} line=${unknownThread.line} p_severity=P2 processed_on_current_head=yes`,
+      ],
+      url: "https://example.test/pr/45#discussion_r3455261710",
+      updated_at: "2026-06-22T21:10:00Z",
+    },
+    codex_connector_review_requested_observed_at: "2026-06-22T20:49:10Z",
+    codex_connector_review_requested_head_sha: headSha,
+  });
+  const pr = createPullRequest({
+    number: prNumber,
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-06-22T20:40:44Z",
+    configuredBotCurrentHeadObservedAt: "2026-06-22T20:53:59Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
+    configuredBotLatestReviewedCommitSha: headSha,
+  });
+  const checks = [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass" as const, workflow: "CI" }];
+  const reviewThreads = [stillValidThread, unknownThread];
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks,
+    reviewThreads,
+  });
+  const diagnostics = buildStaleReviewBotThreadDiagnostics({
+    config,
+    record,
+    pr,
+    checks,
+    reviewThreads,
+    remediation,
+  });
+
+  assert.equal(remediation?.classification, "unknown_needs_operator");
+  assert.equal(diagnostics?.actionableMustFixThreads, 2);
+  assert.equal(diagnostics?.missingVerificationEvidenceThreads, 1);
+  assert.equal(diagnostics?.repeatStopExhausted, "yes");
+  assert.equal(diagnostics?.validRepairTargets?.length, 1);
+  assert.equal(diagnostics?.validRepairTargets?.[0]?.threadId, "thread-query-code");
+  assert.equal(diagnostics?.validRepairTargets?.[0]?.path, "core/llm/conversion_plan.py");
+  assert.equal(diagnostics?.validRepairTargets?.[0]?.severity, "P2");
 });
 
 test("buildStaleReviewBotThreadDiagnostics does not report repeat-stop suppression when Codex current-head request is pending", () => {

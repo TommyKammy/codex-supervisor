@@ -68,6 +68,7 @@ import {
 import { issueDefinitionFreshnessPatch } from "./issue-definition-freshness";
 import { applyCodexTurnPublicationGate } from "./turn-execution-publication-gate";
 import {
+  explicitFailedCodexTurnVerificationCommand,
   explicitPassingCodexTurnVerificationCommand,
 } from "./run-once-turn-verification-evidence";
 import {
@@ -877,6 +878,8 @@ export async function executeCodexTurnPhase(
 
         const codexVerificationCommand =
           explicitPassingCodexTurnVerificationCommand(structuredResult?.tests);
+        const failedCodexVerificationCommand =
+          explicitFailedCodexTurnVerificationCommand(structuredResult?.tests);
         const changedFilesAfterPublication =
           workspaceStatus.headSha === turnStartHeadSha
             ? []
@@ -924,6 +927,7 @@ export async function executeCodexTurnPhase(
             record,
             currentPr: pr,
             codexVerificationCommand,
+            failedCodexVerificationCommand,
             workspaceStatus,
             preRunState,
             structuredSummary: structuredResult?.summary,

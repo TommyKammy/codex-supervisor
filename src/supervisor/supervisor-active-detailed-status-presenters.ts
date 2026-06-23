@@ -32,6 +32,7 @@ import {
 } from "./stale-review-bot-remediation";
 import {
   formatStaleReviewBotRemediationLine,
+  formatStaleReviewBotRepairTargetLine,
   formatStaleReviewBotTerminalStopLine,
   formatStaleReviewBotThreadDiagnosticsLine,
 } from "./stale-review-bot-diagnostics-presenter";
@@ -192,6 +193,9 @@ export function buildActiveStaleReviewBotDiagnosticLines(
     });
     if (diagnostics) {
       lines.push(formatStaleReviewBotThreadDiagnosticsLine(diagnostics));
+      for (const target of diagnostics.validRepairTargets ?? []) {
+        lines.push(formatStaleReviewBotRepairTargetLine(diagnostics, target));
+      }
       const terminalStopLine = formatStaleReviewBotTerminalStopLine({
         remediation,
         diagnostics,

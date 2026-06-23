@@ -6,6 +6,7 @@ import {
   GitHubIssue,
   SupervisorStateFile,
 } from "../core/types";
+import { STILL_VALID_REVIEW_THREAD_REPAIR_TARGET } from "../codex-connector-valid-review-repair";
 import {
   buildIssueExplainDto,
   buildIssueExplainSummary,
@@ -18,6 +19,7 @@ import {
   createConfig,
   createPullRequest,
   createRecord,
+  createReviewThread,
   createSupervisorFixture,
   createSupervisorState,
 } from "./supervisor-test-helpers";
@@ -1520,6 +1522,106 @@ test("buildIssueExplainDto reports local-review-blocked external readiness for d
     dto.externalSignalReadinessSummary,
     "external_signal_readiness status=blocked_by_local_review ci=passing review=local_review_blocked workflows=absent",
   );
+});
+
+test("buildIssueExplainDto marks still-valid Codex review repair targets runnable", async () => {
+  const issueNumber = 1694;
+  const prNumber = 94;
+  const branch = "codex/reopen-issue-1694";
+  const headSha = "head-1694";
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    humanReviewBlocksMerge: false,
+  });
+  const issue = createIssue({
+    number: issueNumber,
+    title: "Continue still-valid Codex repair",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "blocked",
+        blocked_reason: "manual_review",
+        branch,
+        pr_number: prNumber,
+        last_head_sha: headSha,
+        processed_review_thread_ids: [`thread-query-code@${headSha}`],
+        processed_review_thread_fingerprints: [`thread-query-code@${headSha}#comment-query-code`],
+        review_loop_retry_state: [
+          {
+            fingerprint: `pr=${prNumber}|head=${headSha}|thread=thread-query-code|comment=comment-query-code`,
+            pr_number: prNumber,
+            head_sha: headSha,
+            thread_id: "thread-query-code",
+            latest_comment_fingerprint: "comment-query-code",
+            attempts: 1,
+            first_attempted_at: "2026-06-22T21:00:00Z",
+            last_attempted_at: "2026-06-22T21:00:00Z",
+          },
+        ],
+        timeline_artifacts: [
+          {
+            type: "verification_result",
+            gate: "codex_turn",
+            command: "python -m pytest tests/test_audit_log.py -k query_code",
+            head_sha: headSha,
+            outcome: "failed",
+            remediation_target: null,
+            next_action: "repair_still_valid_review_thread",
+            summary: "Focused query-code redaction probe still reproduces.",
+            recorded_at: "2026-06-22T21:05:00Z",
+            repair_targets: [STILL_VALID_REVIEW_THREAD_REPAIR_TARGET],
+            processed_review_thread_ids: [`thread-query-code@${headSha}`],
+            processed_review_thread_fingerprints: [`thread-query-code@${headSha}#comment-query-code`],
+          },
+        ],
+      }),
+    },
+  };
+  const reviewThread = createReviewThread({
+    id: "thread-query-code",
+    path: "core/llm/conversion_plan.py",
+    line: 699,
+    comments: {
+      nodes: [
+        {
+          id: "comment-query-code",
+          body: "P2: Redact query-only credential names such as ?code=...",
+          createdAt: "2026-06-22T20:55:00Z",
+          url: "https://example.test/pr/94#discussion_r1",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const github = {
+    getIssue: async () => issue,
+    listAllIssues: async () => [issue],
+    listCandidateIssues: async () => [issue],
+    resolvePullRequestForBranch: async () => createPullRequest({
+      number: prNumber,
+      headRefName: branch,
+      headRefOid: headSha,
+      isDraft: false,
+      mergeStateStatus: "CLEAN",
+      mergeable: "MERGEABLE",
+    }),
+    getChecks: async () => [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    getUnresolvedReviewThreads: async () => [reviewThread],
+  };
+
+  const rendered = renderIssueExplainDto(
+    await buildIssueExplainDto(github, config, state, issueNumber),
+  );
+
+  assert.match(rendered, /^runnable=yes$/m);
+  assert.match(rendered, /^stale_review_bot_repair_target .*next_action=repair_still_valid_review_thread$/m);
+  assert.doesNotMatch(rendered, /^reason_\d+=local_state blocked$/m);
 });
 
 test("buildIssueExplainDto reports dependency root blockers for stale configured-bot predecessors", async () => {

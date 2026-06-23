@@ -19,6 +19,7 @@ import {
   codexConnectorMustFixReviewThreads,
   latestCodexConnectorReviewCommentFingerprint,
 } from "./codex-connector-review-policy";
+import { shouldReenterCodexConnectorValidReviewRepair } from "./codex-connector-valid-review-repair-selection";
 import {
   actionableConfiguredBotReviewThreads,
   configuredBotReviewFollowUpState,
@@ -368,6 +369,13 @@ export function inferStateFromPullRequest(
     checks,
     reviewThreads,
   );
+  const stillValidCodexRepairAvailable = shouldReenterCodexConnectorValidReviewRepair({
+    config,
+    record,
+    pr,
+    checks,
+    reviewThreads,
+  });
 
   if (pr.mergedAt || pr.state === "MERGED") {
     return "done";
@@ -390,6 +398,10 @@ export function inferStateFromPullRequest(
   }
 
   if (pr.reviewDecision === "CHANGES_REQUESTED" && !botReviewDecisionResidueSatisfied) {
+    if (stillValidCodexRepairAvailable) {
+      return "addressing_review";
+    }
+
     if (
       processedCodexConnectorMustFixThreadsExhaustedRepeatBudget({
         config,
@@ -491,6 +503,7 @@ export function inferStateFromPullRequest(
   }
 
   if (
+    stillValidCodexRepairAvailable ||
     codexConnectorMustFixThreads.length > 0 &&
     !codexConnectorMustFixThreadsExhausted &&
     !checkSummary.hasFailing &&

@@ -39,6 +39,7 @@ import {
   formatMergedPrConvergenceOperatorEventLine,
 } from "./supervisor-operator-events";
 import { codexConnectorReviewRequestAction } from "../codex-connector-review-request-decision";
+import { shouldSelectCodexConnectorValidReviewRepair } from "../codex-connector-valid-review-repair-selection";
 import { configuredBotReviewThreads, manualReviewThreads } from "../review-thread-reporting";
 import { mergeConflictDetected, summarizeChecks } from "./supervisor-reporting";
 
@@ -112,6 +113,36 @@ async function findCodexConnectorReviewRequestRecoveryIssueNumbers(
   }
 
   return recoveryIssueNumbers;
+}
+
+async function findCodexConnectorValidReviewRepairIssueNumbers(
+  github: SelectionWhyGitHub,
+  config: SupervisorConfig,
+  state: SupervisorStateFile,
+  candidateIssues: GitHubIssue[],
+): Promise<ReadonlySet<number>> {
+  const repairIssueNumbers = new Set<number>();
+  for (const issue of candidateIssues) {
+    if (
+      await shouldSelectCodexConnectorValidReviewRepair({
+        config,
+        record: state.issues[String(issue.number)],
+        getPullRequestIfExists: github.getPullRequestIfExists
+          ? (prNumber, options) => github.getPullRequestIfExists!(prNumber, options)
+          : undefined,
+        getChecks: github.getChecks
+          ? (prNumber) => github.getChecks!(prNumber)
+          : undefined,
+        getUnresolvedReviewThreads: github.getUnresolvedReviewThreads
+          ? (prNumber) => github.getUnresolvedReviewThreads!(prNumber)
+          : undefined,
+      })
+    ) {
+      repairIssueNumbers.add(issue.number);
+    }
+  }
+
+  return repairIssueNumbers;
 }
 
 export interface SupervisorCandidateDiscoveryDto {
@@ -219,6 +250,12 @@ export async function buildReadinessSummary(
   const candidateIssues = await github.listCandidateIssues();
   const issues = await github.listAllIssues();
   const recoveryIssueNumbers = await findCodexConnectorReviewRequestRecoveryIssueNumbers(github, config, state, candidateIssues);
+  const validReviewRepairIssueNumbers = await findCodexConnectorValidReviewRepairIssueNumbers(
+    github,
+    config,
+    state,
+    candidateIssues,
+  );
   return buildReadinessSummaryFromIssues(
     config,
     state,
@@ -227,6 +264,7 @@ export async function buildReadinessSummary(
     candidateDiscoveryWarningLine,
     [],
     recoveryIssueNumbers,
+    validReviewRepairIssueNumbers,
   );
 }
 
@@ -258,6 +296,7 @@ function buildReadinessSummaryFromIssues(
   candidateDiscoveryWarningLine: string | null,
   prefixedReadinessLines: string[] = [],
   codexConnectorReviewRequestRecoveryIssueNumbers: ReadonlySet<number> = new Set(),
+  codexConnectorValidReviewRepairIssueNumbers: ReadonlySet<number> = new Set(),
 ): SupervisorReadinessSummaryDto {
   const runnableIssues: SupervisorRunnableIssueDto[] = [];
   const blockedIssues: SupervisorBlockedIssueDto[] = [];
@@ -320,6 +359,7 @@ function buildReadinessSummaryFromIssues(
     if (
       !isEligibleForSelection(existing, config) &&
       !codexConnectorReviewRequestRecoveryIssueNumbers.has(issue.number) &&
+      !codexConnectorValidReviewRepairIssueNumbers.has(issue.number) &&
       !(isAutonomousExecutionTrustBlockedRecord(existing) && trustDecision.allowed)
     ) {
       blockedIssues.push({
@@ -445,6 +485,19 @@ export async function buildSelectionSummary(
     if (
       !isEligibleForSelection(existing, config) &&
       !(await shouldSelectCodexConnectorReviewRequestRecovery(github, config, existing)) &&
+      !(await shouldSelectCodexConnectorValidReviewRepair({
+        config,
+        record: existing,
+        getPullRequestIfExists: github.getPullRequestIfExists
+          ? (prNumber, options) => github.getPullRequestIfExists!(prNumber, options)
+          : undefined,
+        getChecks: github.getChecks
+          ? (prNumber) => github.getChecks!(prNumber)
+          : undefined,
+        getUnresolvedReviewThreads: github.getUnresolvedReviewThreads
+          ? (prNumber) => github.getUnresolvedReviewThreads!(prNumber)
+          : undefined,
+      })) &&
       !(isAutonomousExecutionTrustBlockedRecord(existing) && trustDecision.allowed)
     ) {
       if (blockedPartialWorkIncident?.record.issue_number === issue.number) {
