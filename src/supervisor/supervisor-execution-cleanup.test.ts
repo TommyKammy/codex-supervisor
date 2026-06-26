@@ -1309,7 +1309,7 @@ test("runOnce clears a stale active issue reservation before selecting the next 
   (supervisor as unknown as { github: Record<string, unknown> }).github = {
     authStatus: async () => ({ ok: true, message: null }),
     listAllIssues: async () => [nextIssue, staleIssue],
-    listCandidateIssues: async () => [nextIssue, staleIssue],
+    listCandidateIssues: async () => [nextIssue],
     getIssue: async (issueNumber: number) => (issueNumber === nextIssueNumber ? nextIssue : staleIssue),
     resolvePullRequestForBranch: async (branchName: string, prNumber: number | null) => {
       assert.equal(branchName, nextBranch);

@@ -899,6 +899,7 @@ export async function executeCodexTurnPhase(
           preRunReviewThreads: args.context.reviewThreads,
           postRunReviewThreads: reviewThreads,
           codexVerificationCommand,
+          structuredSummary: structuredResult?.summary,
           workspaceStatus,
           changedFilesAfterPublication,
         });
@@ -954,6 +955,7 @@ export async function executeCodexTurnPhase(
           ...(postRunSnapshot?.codexConnectorRequestObservationPatch ?? {}),
           ...(postRunSnapshot?.copilotRequestObservationPatch ?? {}),
           ...(postRunSnapshot?.copilotTimeoutPatch ?? {}),
+          ...postPublicationReviewPersistence.currentHeadLocalCiPatch,
           ...processedReviewThreadPatch,
           ...reviewFollowUpPatch,
           blocked_verification_retry_count: pr

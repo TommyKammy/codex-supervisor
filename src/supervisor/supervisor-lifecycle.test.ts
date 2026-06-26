@@ -280,6 +280,22 @@ test("derivePullRequestLifecycleSnapshot keeps recovered Codex stale metadata re
       failure_class: null,
       remediation_target: null,
     },
+    timeline_artifacts: [
+      {
+        type: "verification_result",
+        gate: "codex_turn",
+        command: "npm run verify:pre-pr",
+        head_sha: headSha,
+        outcome: "passed",
+        remediation_target: null,
+        next_action: "continue",
+        summary: "Verified current head addresses the recovered Connector residue.",
+        recorded_at: "2026-06-13T13:40:30Z",
+        repair_targets: ["verified_current_head_repair_review_thread_residue"],
+        processed_review_thread_ids: [`thread-recovered@${headSha}`],
+        processed_review_thread_fingerprints: [`thread-recovered@${headSha}#comment-recovered`],
+      },
+    ],
     codex_connector_review_requested_observed_at: "2026-06-13T13:34:00Z",
     codex_connector_review_requested_head_sha: headSha,
     last_recovery_reason:

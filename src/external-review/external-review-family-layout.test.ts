@@ -37,6 +37,7 @@ const EXPECTED_TEST_FILES = [
   "external-review-regression-candidate-qualification.test.ts",
   "external-review-regression-candidates.test.ts",
   "external-review-signal-collection.test.ts",
+  "external-review-signal-heuristics.test.ts",
 ] as const;
 
 test("external-review runtime modules and focused tests stay aligned", async () => {

@@ -549,7 +549,7 @@ test("inferStateFromPullRequest softens unresolved Codex Connector P3 nitpick-on
   assert.equal(inferStateFromPullRequest(config, record, pr, passingChecks(), [p3NitpickThread]), "ready_to_merge");
 });
 
-test("inferStateFromPullRequest waits for current-head Codex Connector review instead of reprocessing stale processed nitpicks", () => {
+test("inferStateFromPullRequest blocks stale processed nitpicks when changes-requested is still active", () => {
   const config = createConfig({
     reviewBotLogins: ["chatgpt-codex-connector[bot]"],
     configuredBotInitialGraceWaitSeconds: 0,
@@ -571,7 +571,8 @@ test("inferStateFromPullRequest waits for current-head Codex Connector review in
     headRefOid: "head-a",
     currentHeadCiGreenAt: "2026-03-11T00:00:00Z",
     configuredBotCurrentHeadObservedAt: null,
-    configuredBotTopLevelReviewStrength: null,
+    configuredBotOnlyChangesRequestedReview: true,
+    configuredBotTopLevelReviewStrength: "blocking",
   });
   const p3NitpickThread = createReviewThread({
     comments: {
@@ -592,7 +593,7 @@ test("inferStateFromPullRequest waits for current-head Codex Connector review in
 
   assert.equal(
     inferStateFromPullRequest(config, record, pr, passingChecks(), [p3NitpickThread], Date.parse("2026-03-11T00:12:00Z")),
-    "waiting_ci",
+    "blocked",
   );
 });
 

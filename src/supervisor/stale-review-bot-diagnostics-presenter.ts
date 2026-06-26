@@ -86,7 +86,7 @@ export function formatStaleReviewBotRemediationLine(remediation: StaleReviewBotR
 export function formatStaleReviewBotThreadDiagnosticsLine(
   diagnostics: StaleReviewBotThreadDiagnosticsDto,
 ): string {
-  return [
+  const tokens = [
     "stale_review_bot_thread_diagnostics",
     `issue=#${diagnostics.issueNumber}`,
     `pr=${diagnostics.prNumber === null ? "none" : `#${diagnostics.prNumber}`}`,
@@ -97,7 +97,13 @@ export function formatStaleReviewBotThreadDiagnosticsLine(
     `missing_verification_evidence_threads=${diagnostics.missingVerificationEvidenceThreads}`,
     `repeat_stop_exhausted=${diagnostics.repeatStopExhausted}`,
     `auto_repair_suppressed_reason=${diagnostics.autoRepairSuppressedReason}`,
-  ].join(" ");
+  ];
+  if ((diagnostics.currentHeadRepairProofRejectionReasons ?? []).length > 0) {
+    tokens.push(
+      `current_head_repair_proof_rejection=${diagnostics.currentHeadRepairProofRejectionReasons!.join(",")}`,
+    );
+  }
+  return tokens.join(" ");
 }
 
 export function formatStaleReviewBotRepairTargetLine(
