@@ -503,7 +503,7 @@ test("buildStaleReviewBotRemediation accepts green current-head checks as verifi
   assert.equal(diagnostics?.autoRepairSuppressedReason, "none");
 });
 
-test("buildStaleReviewBotRemediation keeps P1 current-head repair residue blocked after no-major", () => {
+test("buildStaleReviewBotRemediation accepts P1 current-head repair residue with scoped proof after no-major", () => {
   const issueNumber = 188;
   const prNumber = 195;
   const headSha = "f2b1be31eaf78a3d1c7f1ccd28e730bb38e00b1d";
@@ -516,7 +516,7 @@ test("buildStaleReviewBotRemediation keeps P1 current-head repair residue blocke
     path: "src/app.ts",
     line: 88,
     severity: "P1",
-    commentBody: "P1: Do not auto-resolve higher-severity current-head repair residue.",
+    commentBody: "P1: Require scoped proof before promoting higher-severity current-head repair residue.",
     discussionUrl: "https://example.test/pr/195#discussion_r3316522485",
     verifiedRepair: {
       summary: "Focused verifier passed after the repair commit.",
@@ -556,13 +556,14 @@ test("buildStaleReviewBotRemediation keeps P1 current-head repair residue blocke
     remediation,
   });
 
-  assert.equal(remediation?.classification, "unresolved_work");
+  assert.equal(remediation?.classification, "verified_current_head_repair_pending_thread_resolution");
   assert.equal(remediation?.codexCurrentHeadReviewState, "observed");
-  assert.equal(diagnostics?.verifiedStaleResidueThreads, 0);
-  assert.equal(diagnostics?.autoRepairSuppressedReason, "not_verified_stale_residue");
+  assert.equal(diagnostics?.verifiedStaleResidueThreads, 1);
+  assert.equal(diagnostics?.missingVerificationEvidenceThreads, 0);
+  assert.equal(diagnostics?.autoRepairSuppressedReason, "none");
 });
 
-test("buildStaleReviewBotRemediation keeps mixed no-source and repair evidence on the repair safety path", () => {
+test("buildStaleReviewBotRemediation keeps mixed P1 no-source and repair evidence on the repair safety path", () => {
   const issueNumber = 2259;
   const prNumber = 2261;
   const headSha = "d7fdcf2f9ae36d48cd4eb6dc7d35de103d34856f";
@@ -634,10 +635,11 @@ test("buildStaleReviewBotRemediation keeps mixed no-source and repair evidence o
     remediation,
   });
 
-  assert.equal(remediation?.classification, "unresolved_work");
+  assert.equal(remediation?.classification, "verified_current_head_repair_pending_thread_resolution");
   assert.equal(remediation?.codexCurrentHeadReviewState, "observed");
-  assert.equal(diagnostics?.verifiedStaleResidueThreads, 0);
-  assert.equal(diagnostics?.autoRepairSuppressedReason, "not_verified_stale_residue");
+  assert.equal(diagnostics?.verifiedStaleResidueThreads, 1);
+  assert.equal(diagnostics?.missingVerificationEvidenceThreads, 0);
+  assert.equal(diagnostics?.autoRepairSuppressedReason, "none");
 });
 
 test("buildStaleReviewBotRemediation rejects review-bot-only checks as verified repair evidence", () => {

@@ -205,12 +205,17 @@ function headScopedProcessedThreadEvidenceCount(
   );
 }
 
-function currentRepairResidueThreads(currentThreads: ReviewThread[]): ReviewThread[] | null {
+function currentRepairResidueThreads(currentThreads: ReviewThread[], p1ProofAllowed: boolean): ReviewThread[] | null {
   const mustFixThreads = codexConnectorMustFixReviewThreads(currentThreads);
-  if (!mustFixThreads.every((thread) => latestCodexConnectorPSeverity(thread) === "P2")) {
+  if (!mustFixThreads.every((thread) => codexConnectorSeverityCanUseCurrentHeadRepairProof(thread, p1ProofAllowed))) {
     return null;
   }
   return mustFixThreads;
+}
+
+function codexConnectorSeverityCanUseCurrentHeadRepairProof(thread: ReviewThread, p1ProofAllowed: boolean): boolean {
+  const severity = latestCodexConnectorPSeverity(thread);
+  return severity === "P2" || (severity === "P1" && p1ProofAllowed);
 }
 
 function unresolvedCodexConnectorMustFixThreads(reviewThreads: ReviewThread[]): ReviewThread[] {
@@ -233,13 +238,14 @@ function unresolvedCodexConnectorMustFixThreads(reviewThreads: ReviewThread[]): 
   });
 }
 
-function allUnresolvedCodexConnectorMustFixThreadsAreP2(
+function allUnresolvedCodexConnectorMustFixThreadsCanUseCurrentHeadRepairProof(
   config: SupervisorConfig,
   reviewThreads: ReviewThread[],
+  p1ProofAllowed: boolean,
 ): boolean {
   return unresolvedCodexConnectorMustFixThreads(
     configuredBotReviewThreads(config, reviewThreads),
-  ).every((thread) => latestCodexConnectorPSeverity(thread) === "P2");
+  ).every((thread) => codexConnectorSeverityCanUseCurrentHeadRepairProof(thread, p1ProofAllowed));
 }
 
 function isCurrentHeadNoMajorMergeGuardFailure(
@@ -358,8 +364,16 @@ export function projectCurrentHeadCodexRepairProof(args: {
   }
 
   const currentThreads = currentConfiguredBotThreads(args.config, args.reviewThreads);
-  const repairResidueThreads = currentRepairResidueThreads(currentThreads);
-  if (!repairResidueThreads || !allUnresolvedCodexConnectorMustFixThreadsAreP2(args.config, args.reviewThreads)) {
+  const noMajorSupport = currentHeadNoMajorSupportSummary(args.record, args.pr);
+  const repairResidueThreads = currentRepairResidueThreads(currentThreads, noMajorSupport !== null);
+  if (
+    !repairResidueThreads ||
+    !allUnresolvedCodexConnectorMustFixThreadsCanUseCurrentHeadRepairProof(
+      args.config,
+      args.reviewThreads,
+      noMajorSupport !== null,
+    )
+  ) {
     return null;
   }
   if (
@@ -404,7 +418,6 @@ export function projectCurrentHeadCodexRepairProof(args: {
     };
   }
 
-  const noMajorSupport = currentHeadNoMajorSupportSummary(args.record, args.pr);
   const threadScopedProof = noMajorSupport
     ? currentHeadThreadScopedVerificationArtifacts(args.record, args.pr, repairResidueThreads)
         .map((artifact) => {

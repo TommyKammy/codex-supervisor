@@ -3325,13 +3325,13 @@ test("handlePostTurnPullRequestTransitionsPhase keeps verified repair thread res
   }
 });
 
-test("handlePostTurnPullRequestTransitionsPhase keeps P1 verified current-head repair residue blocked", async () => {
+test("handlePostTurnPullRequestTransitionsPhase resolves P1 verified current-head repair residue after no-major", async () => {
   const config = createConfig({
     reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
     configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
     verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
   });
-  const issue = createIssue({ title: "Do not auto-resolve P1 verified current-head repair residue" });
+  const issue = createIssue({ title: "Resolve P1 verified current-head repair residue after no-major" });
   const scenario = createCodexConnectorTrackedReviewResidueScenario({
     issueNumber: issue.number,
     prNumber: 2035,
@@ -3341,7 +3341,7 @@ test("handlePostTurnPullRequestTransitionsPhase keeps P1 verified current-head r
     path: "src/review.ts",
     line: 301,
     severity: "P1",
-    commentBody: "P1: Keep higher-severity current-head repair residue blocked for operator review.",
+    commentBody: "P1: Require scoped proof before resolving higher-severity current-head repair residue.",
     discussionUrl: "https://example.test/pr/2035#discussion_r2035",
     verifiedRepair: {
       summary: "Focused verifier passed after the repair commit.",
@@ -3416,6 +3416,8 @@ test("handlePostTurnPullRequestTransitionsPhase keeps P1 verified current-head r
   });
 
   assert.equal(result.record.state, "blocked");
-  assert.deepEqual(replyCalls, []);
-  assert.deepEqual(resolveCalls, []);
+  assert.deepEqual(replyCalls.map((call) => call.threadId), ["thread-codex-p1-repair"]);
+  assert.deepEqual(resolveCalls, ["thread-codex-p1-repair"]);
+  assert.match(replyCalls[0]?.body ?? "", /reason=verified_current_head_repair_auto_resolve/);
+  assert.match(replyCalls[0]?.body ?? "", /p_severity=P1/);
 });
