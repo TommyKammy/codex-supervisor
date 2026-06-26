@@ -205,12 +205,17 @@ function headScopedProcessedThreadEvidenceCount(
   );
 }
 
-function currentRepairResidueThreads(currentThreads: ReviewThread[]): ReviewThread[] | null {
+function currentRepairResidueThreads(currentThreads: ReviewThread[], p1ProofAllowed: boolean): ReviewThread[] | null {
   const mustFixThreads = codexConnectorMustFixReviewThreads(currentThreads);
-  if (!mustFixThreads.every((thread) => latestCodexConnectorPSeverity(thread) === "P2")) {
+  if (!mustFixThreads.every((thread) => codexConnectorSeverityCanUseCurrentHeadRepairProof(thread, p1ProofAllowed))) {
     return null;
   }
   return mustFixThreads;
+}
+
+function codexConnectorSeverityCanUseCurrentHeadRepairProof(thread: ReviewThread, p1ProofAllowed: boolean): boolean {
+  const severity = latestCodexConnectorPSeverity(thread);
+  return severity === "P2" || (severity === "P1" && p1ProofAllowed);
 }
 
 function unresolvedCodexConnectorMustFixThreads(reviewThreads: ReviewThread[]): ReviewThread[] {
@@ -233,13 +238,32 @@ function unresolvedCodexConnectorMustFixThreads(reviewThreads: ReviewThread[]): 
   });
 }
 
-function allUnresolvedCodexConnectorMustFixThreadsAreP2(
+function unresolvedCodexConnectorP1Threads(reviewThreads: ReviewThread[]): ReviewThread[] {
+  return unresolvedCodexConnectorMustFixThreads(reviewThreads).filter(
+    (thread) => latestCodexConnectorPSeverity(thread) === "P1",
+  );
+}
+
+function appendUniqueThreads(baseThreads: ReviewThread[], additionalThreads: ReviewThread[]): ReviewThread[] {
+  const threadIds = new Set(baseThreads.map((thread) => thread.id));
+  const threads = [...baseThreads];
+  for (const thread of additionalThreads) {
+    if (!threadIds.has(thread.id)) {
+      threadIds.add(thread.id);
+      threads.push(thread);
+    }
+  }
+  return threads;
+}
+
+function allUnresolvedCodexConnectorMustFixThreadsCanUseCurrentHeadRepairProof(
   config: SupervisorConfig,
   reviewThreads: ReviewThread[],
+  p1ProofAllowed: boolean,
 ): boolean {
   return unresolvedCodexConnectorMustFixThreads(
     configuredBotReviewThreads(config, reviewThreads),
-  ).every((thread) => latestCodexConnectorPSeverity(thread) === "P2");
+  ).every((thread) => codexConnectorSeverityCanUseCurrentHeadRepairProof(thread, p1ProofAllowed));
 }
 
 function isCurrentHeadNoMajorMergeGuardFailure(
@@ -358,10 +382,25 @@ export function projectCurrentHeadCodexRepairProof(args: {
   }
 
   const currentThreads = currentConfiguredBotThreads(args.config, args.reviewThreads);
-  const repairResidueThreads = currentRepairResidueThreads(currentThreads);
-  if (!repairResidueThreads || !allUnresolvedCodexConnectorMustFixThreadsAreP2(args.config, args.reviewThreads)) {
+  const noMajorSupport = currentHeadNoMajorSupportSummary(args.record, args.pr);
+  const p1ProofAllowed = noMajorSupport !== null;
+  const repairResidueThreads = currentRepairResidueThreads(currentThreads, p1ProofAllowed);
+  if (
+    !repairResidueThreads ||
+    !allUnresolvedCodexConnectorMustFixThreadsCanUseCurrentHeadRepairProof(
+      args.config,
+      args.reviewThreads,
+      p1ProofAllowed,
+    )
+  ) {
     return null;
   }
+  const proofCoverageThreads = p1ProofAllowed
+    ? appendUniqueThreads(
+        repairResidueThreads,
+        unresolvedCodexConnectorP1Threads(configuredBotReviewThreads(args.config, args.reviewThreads)),
+      )
+    : repairResidueThreads;
   if (
     repairResidueThreads.length > 0 &&
     !repairResidueThreads.every((thread) => hasProcessedReviewThread(args.record, args.pr, thread))
@@ -370,7 +409,7 @@ export function projectCurrentHeadCodexRepairProof(args: {
   }
 
   const configuredLocalCiRequired = hasConfiguredLocalCiCommand(args.config);
-  const structuredProof = currentHeadVerifiedRepairResidueArtifacts(args.record, args.pr, repairResidueThreads)
+  const structuredProof = currentHeadVerifiedRepairResidueArtifacts(args.record, args.pr, proofCoverageThreads)
     .map((structuredArtifact) => {
       const localVerificationEvidence = configuredLocalCiRequired
         ? currentHeadLocalVerificationEvidence({
@@ -404,9 +443,8 @@ export function projectCurrentHeadCodexRepairProof(args: {
     };
   }
 
-  const noMajorSupport = currentHeadNoMajorSupportSummary(args.record, args.pr);
   const threadScopedProof = noMajorSupport
-    ? currentHeadThreadScopedVerificationArtifacts(args.record, args.pr, repairResidueThreads)
+    ? currentHeadThreadScopedVerificationArtifacts(args.record, args.pr, proofCoverageThreads)
         .map((artifact) => {
           const localVerificationEvidence = configuredLocalCiRequired
             ? currentHeadLocalVerificationEvidence({
@@ -467,7 +505,7 @@ export function projectCurrentHeadCodexRepairProof(args: {
     return null;
   }
 
-  const currentHeadVerification = currentHeadCodexTurnVerificationArtifact(args.record, args.pr, repairResidueThreads);
+  const currentHeadVerification = currentHeadCodexTurnVerificationArtifact(args.record, args.pr, proofCoverageThreads);
   if (!currentHeadVerification) {
     return null;
   }

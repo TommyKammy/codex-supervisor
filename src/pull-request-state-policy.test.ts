@@ -737,6 +737,104 @@ test("thread-scoped current-head verification artifact proves repaired Codex P2 
   );
 });
 
+test("thread-scoped current-head verification artifact proves repaired mixed P1 and P2 Codex residue", () => {
+  const issueNumber = 2387;
+  const prNumber = 72;
+  const headSha = "f9e584d660a4ae175a9b72980e2dcc83d9d86413";
+  const verificationRanAt = "2026-06-26T08:01:05.083Z";
+  const findings = [
+    ["PRRT_kwDOTAxt0M6Machd", "PRRC_kwDOTAxt0M6Machd", 1293, "P1", "Require each mode to cover all high-risk labels"],
+    ["PRRT_kwDOTAxt0M6Mache", "PRRC_kwDOTAxt0M6Mache", 1234, "P2", "Validate the comparison fixture manifest before scoring"],
+    ["PRRT_kwDOTAxt0M6Ma6T5", "PRRC_kwDOTAxt0M6Ma6T5", 1318, "P2", "Reject non-string high-risk value mismatches"],
+    ["PRRT_kwDOTAxt0M6MbQYm", "PRRC_kwDOTAxt0M6MbQYm", 935, "P2", "Validate high-risk block ids against fixtures"],
+    ["PRRT_kwDOTAxt0M6MbQYq", "PRRC_kwDOTAxt0M6MbQYq", 1143, "P2", "Bind captured values to the high-risk block"],
+    ["PRRT_kwDOTAxt0M6MbbY1", "PRRC_kwDOTAxt0M6MbbY1", 937, "P2", "Validate high-risk label IDs against the taxonomy"],
+    ["PRRT_kwDOTAxt0M6MbbY_", "PRRC_kwDOTAxt0M6MbbY_", 1168, "P2", "Accept parsed values from full-field cells"],
+    ["PRRT_kwDOTAxt0M6MbjJ3", "PRRC_kwDOTAxt0M6MbjJ3", 1312, "P2", "Reject string actuals for non-string labels"],
+  ] as const;
+  const scenarios = findings.map(([threadId, commentId, line, severity, title]) =>
+    createCodexConnectorTrackedReviewResidueScenario({
+      issueNumber,
+      prNumber,
+      headSha,
+      threadId,
+      commentId,
+      path: "scripts/evaluate_dataset.py",
+      line,
+      severity,
+      commentBody: `${severity}: ${title}.`,
+      discussionUrl: `https://example.test/pr/72#discussion_${threadId}`,
+      verifiedRepair: {
+        summary: "Focused current-head verification covered the 8 Connector findings.",
+        ranAt: verificationRanAt,
+        command: "python3 -m unittest tests.test_evaluate_dataset",
+        evidenceSource: "codex_turn_timeline_artifact",
+      },
+      currentHeadNoMajorReview: {
+        requestedAt: "2026-06-26T06:36:48Z",
+        observedAt: "2026-06-26T06:45:03Z",
+      },
+    }),
+  );
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    humanReviewBlocksMerge: true,
+    codexConnectorAutoMergeEnabled: true,
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const reviewThreads = scenarios.map((scenario) => scenario.reviewThread);
+  const processedReviewThreadIds = reviewThreads.map((thread) => `${thread.id}@${headSha}`);
+  const processedReviewThreadFingerprints = reviewThreads.map(
+    (thread) => `${thread.id}@${headSha}#${thread.comments.nodes[0]?.id}`,
+  );
+  const record = createRecord({
+    ...scenarios[0].recordPatch,
+    blocked_reason: "stale_review_bot",
+    processed_review_thread_ids: processedReviewThreadIds,
+    processed_review_thread_fingerprints: processedReviewThreadFingerprints,
+    last_failure_signature: findings.map(([threadId]) => threadId).join("|"),
+    timeline_artifacts: [
+      {
+        type: "verification_result",
+        gate: "codex_turn",
+        command: "python3 -m unittest tests.test_evaluate_dataset",
+        head_sha: headSha,
+        outcome: "passed",
+        remediation_target: null,
+        next_action: "continue",
+        summary: "Focused current-head verification covered the 8 Connector findings.",
+        recorded_at: verificationRanAt,
+        processed_review_thread_ids: processedReviewThreadIds,
+        processed_review_thread_fingerprints: processedReviewThreadFingerprints,
+      },
+    ],
+  });
+  const pr = createPullRequest(scenarios[0].pullRequestPatch);
+
+  assert.equal(
+    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+      config,
+      record,
+      pr,
+      checks: scenarios[0].passingChecks,
+      reviewThreads,
+    }),
+    true,
+  );
+  assert.equal(inferStateFromPullRequest(config, record, pr, scenarios[0].passingChecks, reviewThreads), "ready_to_merge");
+  assert.deepEqual(effectiveConfiguredBotReviewThreadsForState(config, record, pr, scenarios[0].passingChecks, reviewThreads), []);
+  assert.match(
+    currentHeadVerifiedRepairResidueArtifactEvidenceSummary({
+      config,
+      record,
+      pr,
+      checks: scenarios[0].passingChecks,
+      reviewThreads,
+    }) ?? "",
+    /thread_scoped_current_head_verification_artifact:Focused current-head verification covered the 8 Connector findings.;codex_no_major_support=codex_pr_success_comment_after_current_head_request/u,
+  );
+});
+
 test("same-head no-major comment without thread-scoped verification does not prove Codex P2 residue", () => {
   const issueNumber = 2383;
   const prNumber = 44;
@@ -2627,6 +2725,10 @@ test("current-head repair proof rejects unresolved outdated high-severity Codex 
       ranAt: "2026-06-14T05:25:00Z",
       command: "npm run verify:pre-pr",
       evidenceSource: "codex_turn_timeline_artifact",
+    },
+    currentHeadNoMajorReview: {
+      requestedAt: "2026-06-14T05:18:00Z",
+      observedAt: "2026-06-14T05:21:00Z",
     },
   });
   const outdatedP1Thread = createReviewThread({
