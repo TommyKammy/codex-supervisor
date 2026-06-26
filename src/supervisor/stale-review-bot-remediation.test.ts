@@ -94,6 +94,92 @@ test("classifyStaleReviewBotRemediationPolicy accepts explicit P2 repair evidenc
   );
 });
 
+test("buildStaleReviewBotThreadDiagnostics reports current-head repair proof local CI shape mismatches", () => {
+  const headSha = "head-proof-diagnostics";
+  const thread = createReviewThread({
+    id: "thread-proof-diagnostics",
+    path: "scripts/evaluate_dataset.py",
+    line: 1293,
+    comments: {
+      nodes: [
+        {
+          id: "comment-proof-diagnostics",
+          body: "P2: Verify this current-head residue is covered.",
+          createdAt: "2026-06-26T06:20:00Z",
+          url: "https://example.test/pr/72#discussion_proof_diagnostics",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    localCiCommand: "python3 scripts/ci/repo_hygiene.py",
+  });
+  const record = createRecord({
+    last_head_sha: headSha,
+    blocked_reason: "manual_review",
+    last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+    processed_review_thread_ids: [`${thread.id}@${headSha}`],
+    processed_review_thread_fingerprints: [`${thread.id}@${headSha}#comment-proof-diagnostics`],
+    latest_local_ci_result: null,
+    timeline_artifacts: [
+      {
+        type: "verification_result",
+        gate: "codex_turn",
+        command: "python3 -m unittest tests.test_evaluate_dataset; python3 scripts/ci/repo_hygiene.py",
+        head_sha: headSha,
+        outcome: "passed",
+        remediation_target: null,
+        next_action: "continue",
+        summary: "Current head covers the Connector residue case.",
+        recorded_at: "2026-06-26T06:36:00Z",
+        repair_targets: [VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET],
+        processed_review_thread_ids: [`${thread.id}@${headSha}`],
+        processed_review_thread_fingerprints: [`${thread.id}@${headSha}#comment-proof-diagnostics`],
+      },
+    ],
+  });
+  const pr = createPullRequest({
+    headRefOid: headSha,
+    configuredBotCurrentHeadObservedAt: "2026-06-26T06:30:00Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    codexConnectorReviewRequestedAt: "2026-06-26T06:10:00Z",
+    codexConnectorReviewRequestedHeadSha: headSha,
+  });
+
+  const diagnostics = buildStaleReviewBotThreadDiagnostics({
+    config,
+    record,
+    pr,
+    checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [thread],
+    remediation: {
+      issueNumber: 366,
+      prNumber: null,
+      reasonCode: "stale_review_bot",
+      currentHeadSha: headSha,
+      processedOnCurrentHead: "yes",
+      codeCiState: "green",
+      classification: "unknown_needs_operator",
+      codexCurrentHeadReviewState: "observed",
+      reviewThreadUrl: "https://example.test/pr/72#discussion_proof_diagnostics",
+      verificationEvidenceSummary: null,
+      missingProbeReason: "current_head_verification_evidence_missing",
+      manualNextStep: "inspect_exact_review_thread_then_resolve_or_leave_manual_note",
+      summary: "code_or_ci_green_but_review_thread_metadata_unresolved",
+    },
+  });
+
+  assert.deepEqual(diagnostics?.currentHeadRepairProofRejectionReasons, [
+    "current_head_repair_proof_scoped_artifact_command_mismatch_with_configured_local_ci",
+  ]);
+});
+
 test("classifyStaleReviewBotRemediationPolicy rejects repair-attempt shortcut without Codex no-major", () => {
   assert.deepEqual(
     policy({

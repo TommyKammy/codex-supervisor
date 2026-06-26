@@ -65,7 +65,7 @@ test("Phase 0 replay fixtures are checked into the corpus with stable terminal o
       {
         nextState: "blocked",
         shouldRunCodex: false,
-        blockedReason: "stale_review_bot",
+        blockedReason: "manual_review",
         failureSignature: "stalled-bot:thread-production-source-denylist",
       },
       {
@@ -146,7 +146,7 @@ test("Phase 5 replay corpus cases keep external orchestration handoffs bounded",
       {
         nextState: "blocked",
         shouldRunCodex: false,
-        blockedReason: "stale_review_bot",
+        blockedReason: "manual_review",
         failureSignature: "stalled-bot:thread-production-source-denylist",
       },
       {

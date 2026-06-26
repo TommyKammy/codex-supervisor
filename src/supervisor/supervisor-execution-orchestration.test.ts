@@ -2115,7 +2115,7 @@ test("runPreparedIssue auto-handles stale Codex Connector conversation residue b
   assert.ok(record.provider_success_observed_at);
 });
 
-test("runPreparedIssue auto-resolves verified current-head repair residue before repeat-stop suppression", async () => {
+test("runPreparedIssue promotes accepted current-head repair proof before repeat-stop suppression", async () => {
   const fixture = await createSupervisorFixture();
   fixture.config.sameFailureSignatureRepeatLimit = 3;
   fixture.config.reviewBotLogins = ["chatgpt-codex-connector"];
@@ -2194,6 +2194,22 @@ test("runPreparedIssue auto-resolves verified current-head repair residue before
       processedReviewThreadFingerprints: threadIds.map((threadId) => `${threadId}@${headSha}#comment-${threadId}`),
       verificationProbeOutcomes: [],
     }),
+    timeline_artifacts: [
+      {
+        type: "verification_result",
+        gate: "codex_turn",
+        command: "npm test -- src/current-repair.test.ts",
+        head_sha: headSha,
+        outcome: "passed",
+        remediation_target: null,
+        next_action: "continue",
+        summary: "Focused verifier proved current head covers the configured-bot repair residue.",
+        recorded_at: "2026-05-30T01:02:30Z",
+        repair_targets: ["verified_current_head_repair_review_thread_residue"],
+        processed_review_thread_ids: threadIds.map((threadId) => `${threadId}@${headSha}`),
+        processed_review_thread_fingerprints: threadIds.map((threadId) => `${threadId}@${headSha}#comment-${threadId}`),
+      },
+    ],
     last_tracked_pr_repeat_failure_decision: "stop_no_progress",
     stale_review_bot_reply_progress_keys: [],
     stale_review_bot_resolve_progress_keys: [],
@@ -2212,7 +2228,7 @@ test("runPreparedIssue auto-resolves verified current-head repair residue before
     number: prNumber,
     title: "Verified current-head repair residue",
     isDraft: false,
-    reviewDecision: "CHANGES_REQUESTED",
+    reviewDecision: null,
     headRefOid: headSha,
     mergeStateStatus: "CLEAN",
     mergeable: "MERGEABLE",
@@ -2352,8 +2368,8 @@ test("runPreparedIssue auto-resolves verified current-head repair residue before
   });
 
   assert.doesNotMatch(message, /blocked after repeated identical review-related failure signatures/);
-  assert.deepEqual(replyCalls, threadIds);
-  assert.deepEqual(resolveCalls, threadIds);
+  assert.deepEqual(replyCalls, []);
+  assert.deepEqual(resolveCalls, []);
   const persisted = JSON.parse(await fs.readFile(fixture.stateFile, "utf8")) as SupervisorStateFile;
   const record = persisted.issues[String(issueNumber)];
   assert.equal(record.state, "ready_to_merge");
@@ -2361,10 +2377,10 @@ test("runPreparedIssue auto-resolves verified current-head repair residue before
   assert.equal(record.last_failure_context, null);
   assert.equal(record.last_failure_signature, null);
   assert.equal(record.repeated_failure_signature_count, 0);
-  assert.equal(record.last_stale_review_bot_reply_head_sha, headSha);
-  assert.equal(record.last_stale_review_bot_reply_signature, staleSignature);
-  assert.equal(record.stale_review_bot_reply_progress_keys?.length, threadIds.length);
-  assert.equal(record.stale_review_bot_resolve_progress_keys?.length, threadIds.length);
+  assert.equal(record.last_stale_review_bot_reply_head_sha, null);
+  assert.equal(record.last_stale_review_bot_reply_signature, null);
+  assert.deepEqual(record.stale_review_bot_reply_progress_keys, []);
+  assert.deepEqual(record.stale_review_bot_resolve_progress_keys, []);
 });
 
 test("runPreparedIssue preserves prepared stale-review residue eligibility before repeat-stop suppression", async () => {

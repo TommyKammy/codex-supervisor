@@ -515,7 +515,7 @@ test("projectTrackedPrLifecycle keeps stale configured-bot classification when c
   });
 
   assert.equal(projection.nextState, "blocked");
-  assert.equal(projection.nextBlockedReason, "manual_review");
+  assert.equal(projection.nextBlockedReason, "stale_review_bot");
   assert.equal(projection.recordForState.review_follow_up_head_sha, "head-191");
   assert.equal(projection.recordForState.review_follow_up_remaining, 0);
   assert.deepEqual(projection.recordForState.processed_review_thread_ids, ["thread-1@head-191"]);

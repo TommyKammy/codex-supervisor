@@ -7,6 +7,7 @@ import {
   latestCodexConnectorReviewCommentNode,
 } from "./codex-connector-review-policy";
 import { VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET } from "./current-head-codex-repair-proof";
+import { displayLocalCiCommand } from "./core/config";
 import {
   latestReviewThreadCommentFingerprint,
   processedReviewThreadFingerprintKey,
@@ -22,6 +23,7 @@ import {
 import {
   GitHubPullRequest,
   IssueRunRecord,
+  LatestLocalCiResult,
   ReviewThread,
   SupervisorConfig,
   TimelineArtifact,
@@ -207,8 +209,41 @@ export interface PostPublicationReviewPersistence {
     "processed_review_thread_ids" | "processed_review_thread_fingerprints" | "review_loop_retry_state"
   >;
   reviewFollowUpPatch: Pick<IssueRunRecord, "review_follow_up_head_sha" | "review_follow_up_remaining">;
+  currentHeadLocalCiPatch: Partial<Pick<IssueRunRecord, "latest_local_ci_result">>;
   hasVerifiedNoSourceChangeReviewThreadEvidence: boolean;
   verifiedNoSourceChangeReviewThreads: ReviewThread[];
+}
+
+function currentHeadLocalCiPatchFromCodexVerification(args: {
+  config: Pick<SupervisorConfig, "localCiCommand">;
+  currentPr: GitHubPullRequest | null;
+  codexVerificationCommand: string | null;
+  workspaceStatus: Pick<WorkspaceStatus, "hasUncommittedChanges" | "headSha">;
+  structuredSummary: string | null | undefined;
+}): Partial<Pick<IssueRunRecord, "latest_local_ci_result">> {
+  const configuredLocalCiCommand = displayLocalCiCommand(args.config.localCiCommand ?? undefined);
+  if (
+    !configuredLocalCiCommand ||
+    !args.currentPr ||
+    !args.codexVerificationCommand ||
+    args.codexVerificationCommand.trim() !== configuredLocalCiCommand ||
+    args.workspaceStatus.hasUncommittedChanges ||
+    args.workspaceStatus.headSha !== args.currentPr.headRefOid
+  ) {
+    return {};
+  }
+
+  const latestLocalCiResult: LatestLocalCiResult = {
+    outcome: "passed",
+    summary: conciseCodexVerificationSummary(args.structuredSummary) || "configured_local_ci_passed_in_codex_turn",
+    ran_at: new Date().toISOString(),
+    head_sha: args.currentPr.headRefOid,
+    execution_mode: null,
+    command: configuredLocalCiCommand,
+    failure_class: null,
+    remediation_target: null,
+  };
+  return { latest_local_ci_result: latestLocalCiResult };
 }
 
 export function buildPostPublicationReviewPersistence(args: {
@@ -222,6 +257,7 @@ export function buildPostPublicationReviewPersistence(args: {
   preRunReviewThreads: ReviewThread[];
   postRunReviewThreads: ReviewThread[];
   codexVerificationCommand: string | null;
+  structuredSummary?: string | null;
   workspaceStatus: Pick<WorkspaceStatus, "hasUncommittedChanges" | "headSha">;
   changedFilesAfterPublication: readonly string[];
 }): PostPublicationReviewPersistence {
@@ -271,6 +307,13 @@ export function buildPostPublicationReviewPersistence(args: {
   return {
     processedReviewThreadPatch,
     reviewFollowUpPatch,
+    currentHeadLocalCiPatch: currentHeadLocalCiPatchFromCodexVerification({
+      config: args.config,
+      currentPr: args.currentPr,
+      codexVerificationCommand: args.codexVerificationCommand,
+      workspaceStatus: args.workspaceStatus,
+      structuredSummary: args.structuredSummary,
+    }),
     hasVerifiedNoSourceChangeReviewThreadEvidence,
     verifiedNoSourceChangeReviewThreads,
   };
@@ -312,7 +355,10 @@ export function buildPostPublicationCodexVerificationTimelineArtifacts(args: {
   const canEmitSourceChangingReviewRepairTarget =
     args.preRunState === "addressing_review" && hasPublishedRepairChanges;
   const codexTurnVerificationRepairTargets = args.hasVerifiedNoSourceChangeReviewThreadEvidence
-    ? [VERIFIED_NO_SOURCE_CHANGE_REVIEW_THREAD_RESIDUE_TARGET]
+    ? [
+        VERIFIED_NO_SOURCE_CHANGE_REVIEW_THREAD_RESIDUE_TARGET,
+        VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET,
+      ]
     : canEmitSourceChangingReviewRepairTarget && hasCodexTurnVerificationReviewThreadEvidence
       ? [VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET]
       : undefined;

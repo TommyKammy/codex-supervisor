@@ -413,6 +413,8 @@ test("runReplayCorpus replays the checked-in PR lifecycle safety cases without m
     "codex-current-head-success-unresolved-must-fix",
     "phase0-aegisops-repeated-codex-feedback-terminal",
     "phase0-hrcore-current-head-repair-metadata-residue",
+    "phase5-aegisops-external-handoff-review-ci-merge",
+    "phase5-hrcore-external-handoff-metadata-residue",
   ]);
 });
 

@@ -24,6 +24,8 @@ const EXPECTED_TOP_LEVEL_ENTRIES = {
     "codex-connector-review-request-identity.ts",
     "codex-connector-review-request-transition.ts",
     "codex-connector-tracked-pr-test-helpers.ts",
+    "codex-connector-valid-review-repair-selection.ts",
+    "codex-connector-valid-review-repair.ts",
     "committed-guardrails-cli.ts",
     "committed-guardrails.ts",
     "conversation-resolution-blocker-diagnostics.ts",

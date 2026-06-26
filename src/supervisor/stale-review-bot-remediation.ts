@@ -25,7 +25,10 @@ import {
   pendingBotReviewThreads,
 } from "../review-thread-reporting";
 import { configuredReviewProviderKinds } from "../core/review-providers";
-import { projectCurrentHeadCodexRepairProof } from "../current-head-codex-repair-proof";
+import {
+  currentHeadCodexRepairProofRejectionReasons,
+  projectCurrentHeadCodexRepairProof,
+} from "../current-head-codex-repair-proof";
 import { currentHeadPassingNonReviewChecks } from "../local-ci-policy";
 import {
   buildCodexConnectorStillValidReviewRepairTargets,
@@ -81,6 +84,7 @@ export interface StaleReviewBotThreadDiagnosticsDto {
   missingVerificationEvidenceThreads: number;
   repeatStopExhausted: "yes" | "no";
   autoRepairSuppressedReason: StaleReviewBotAutoRepairSuppressedReason;
+  currentHeadRepairProofRejectionReasons?: string[];
   validRepairTargets?: CodexConnectorValidReviewRepairTarget[];
 }
 
@@ -1116,6 +1120,25 @@ export function buildStaleReviewBotThreadDiagnostics(args: {
   const missingVerificationEvidenceThreads = remediation.missingProbeReason
     ? Math.max(actionableMustFixThreads.length - validRepairTargets.length, validRepairTargets.length > 0 ? 0 : 1)
     : 0;
+  const currentHeadRepairProofRejectionReasons =
+    config &&
+    args.pr &&
+    codexConfigured &&
+    args.record.blocked_reason === "manual_review" &&
+    args.record.last_tracked_pr_repeat_failure_decision === "stop_no_progress" &&
+    !isVerifiedResidue &&
+    actionableMustFixThreads.length > 0
+      ? currentHeadCodexRepairProofRejectionReasons({
+          config,
+          record: args.record,
+          pr: args.pr,
+          checks: args.checks,
+          reviewThreads,
+        })
+      : [];
+  const reportableCurrentHeadRepairProofRejectionReasons = currentHeadRepairProofRejectionReasons.filter(
+    (reason) => reason !== "current_head_repair_proof_structured_artifact_missing",
+  );
 
   return {
     issueNumber: args.record.issue_number,
@@ -1136,6 +1159,9 @@ export function buildStaleReviewBotThreadDiagnostics(args: {
       actionableMustFixThreads,
       repeatStopExhausted,
     }),
+    ...(reportableCurrentHeadRepairProofRejectionReasons.length > 0
+      ? { currentHeadRepairProofRejectionReasons: reportableCurrentHeadRepairProofRejectionReasons }
+      : {}),
     validRepairTargets,
   };
 }

@@ -5,6 +5,7 @@ import {
   latestCodexConnectorReviewComment,
   latestCodexConnectorPSeverity,
 } from "./codex-connector-review-policy";
+import { displayLocalCiCommand } from "./core/config";
 import { configuredReviewProviderKinds } from "./core/review-providers";
 import type { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig, TimelineArtifact } from "./core/types";
 import { hasCodexConnectorStrongRiskWording } from "./external-review/external-review-normalization";
@@ -174,6 +175,14 @@ function repairArtifactCoversCurrentThreads(
       latestReviewThreadCommentPredatesArtifact(thread, artifact)
     );
   });
+}
+
+function coveredCurrentThreadCount(
+  artifact: TimelineArtifact,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
+  currentThreads: ReviewThread[],
+): number {
+  return currentThreads.filter((thread) => repairArtifactCoversCurrentThreads(artifact, pr, [thread])).length;
 }
 
 function latestReviewThreadCommentPredatesArtifact(
@@ -517,6 +526,98 @@ export function projectCurrentHeadCodexRepairProof(args: {
     processedThreadEvidenceCount,
     currentConfiguredThreadCount: repairResidueThreads.length,
   };
+}
+
+export function currentHeadCodexRepairProofRejectionReasons(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+}): string[] {
+  if (projectCurrentHeadCodexRepairProof(args)) {
+    return [];
+  }
+  if (!projectionSafetyGatesPass(args)) {
+    return ["current_head_repair_proof_safety_gates_not_met"];
+  }
+
+  const currentThreads = currentConfiguredBotThreads(args.config, args.reviewThreads);
+  const noMajorSupport = currentHeadNoMajorSupportSummary(args.record, args.pr);
+  const p1ProofAllowed = noMajorSupport !== null;
+  const repairResidueThreads = currentRepairResidueThreads(currentThreads, p1ProofAllowed);
+  if (!repairResidueThreads) {
+    return ["current_head_repair_proof_unsupported_thread_severity"];
+  }
+  const proofCoverageThreads = p1ProofAllowed
+    ? appendUniqueThreads(
+        repairResidueThreads,
+        unresolvedCodexConnectorP1Threads(configuredBotReviewThreads(args.config, args.reviewThreads)),
+      )
+    : repairResidueThreads;
+  const reasons: string[] = [];
+  if (
+    repairResidueThreads.length > 0 &&
+    !repairResidueThreads.every((thread) => hasProcessedReviewThread(args.record, args.pr, thread))
+  ) {
+    reasons.push("current_head_repair_proof_processed_thread_evidence_missing");
+  }
+
+  const currentHeadPassedArtifacts = (args.record.timeline_artifacts ?? []).filter(
+    (artifact) =>
+      artifact.type === "verification_result" &&
+      artifact.gate === "codex_turn" &&
+      artifact.outcome === "passed" &&
+      artifact.head_sha === args.pr.headRefOid,
+  );
+  const structuredArtifacts = currentHeadPassedArtifacts.filter(
+    (artifact) =>
+      artifact.repair_targets?.includes(VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET) === true,
+  );
+  if (structuredArtifacts.length === 0) {
+    const coveringUnmarkedArtifact = currentHeadPassedArtifacts.find((artifact) =>
+      repairArtifactCoversCurrentThreads(artifact, args.pr, proofCoverageThreads)
+    );
+    reasons.push(
+      coveringUnmarkedArtifact
+        ? "current_head_repair_proof_repair_target_missing"
+        : "current_head_repair_proof_structured_artifact_missing",
+    );
+  } else if (!structuredArtifacts.some((artifact) => repairArtifactCoversCurrentThreads(artifact, args.pr, proofCoverageThreads))) {
+    const bestCoverage = Math.max(
+      0,
+      ...structuredArtifacts.map((artifact) => coveredCurrentThreadCount(artifact, args.pr, proofCoverageThreads)),
+    );
+    reasons.push(`current_head_repair_proof_thread_coverage_${bestCoverage}_of_${proofCoverageThreads.length}`);
+  }
+
+  if (hasConfiguredLocalCiCommand(args.config)) {
+    const latestLocalCi = args.record.latest_local_ci_result;
+    if (latestLocalCi?.outcome === "passed" && latestLocalCi.head_sha === args.pr.headRefOid) {
+      return reasons;
+    }
+    const configuredLocalCiCommand = displayLocalCiCommand(args.config.localCiCommand ?? undefined);
+    const scopedProofArtifacts = [
+      ...structuredArtifacts,
+      ...currentHeadThreadScopedVerificationArtifacts(args.record, args.pr, proofCoverageThreads),
+    ].filter((artifact, index, artifacts) => artifacts.findIndex((candidate) => candidate === artifact) === index);
+    const coveringScopedProofArtifacts = scopedProofArtifacts.filter((artifact) =>
+      repairArtifactCoversCurrentThreads(artifact, args.pr, proofCoverageThreads)
+    );
+    if (latestLocalCi?.head_sha === args.pr.headRefOid) {
+      reasons.push("current_head_repair_proof_latest_local_ci_result_not_passed");
+    } else if (
+      configuredLocalCiCommand &&
+      coveringScopedProofArtifacts.length > 0 &&
+      coveringScopedProofArtifacts.every((artifact) => artifact.command?.trim() !== configuredLocalCiCommand)
+    ) {
+      reasons.push("current_head_repair_proof_scoped_artifact_command_mismatch_with_configured_local_ci");
+    } else {
+      reasons.push("current_head_repair_proof_latest_local_ci_result_missing");
+    }
+  }
+
+  return reasons.length > 0 ? reasons : ["current_head_repair_proof_missing"];
 }
 
 export function hasCurrentHeadVerifiedRepairResidueArtifact(

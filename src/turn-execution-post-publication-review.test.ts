@@ -2,8 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { STILL_VALID_REVIEW_THREAD_REPAIR_TARGET } from "./codex-connector-valid-review-repair";
 import { VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET } from "./current-head-codex-repair-proof";
-import { buildPostPublicationCodexVerificationTimelineArtifacts } from "./turn-execution-post-publication-review";
 import {
+  buildPostPublicationCodexVerificationTimelineArtifacts,
+  buildPostPublicationReviewPersistence,
+} from "./turn-execution-post-publication-review";
+import {
+  createConfig,
   createPullRequest,
   createRecord,
   createReviewThread,
@@ -234,11 +238,58 @@ test("buildPostPublicationCodexVerificationTimelineArtifacts preserves no-source
   });
 
   assert.equal(artifacts?.length, 1);
-  assert.deepEqual(artifacts?.[0]?.repair_targets, ["verified_no_source_change_review_thread_residue"]);
+  assert.deepEqual(artifacts?.[0]?.repair_targets, [
+    "verified_no_source_change_review_thread_residue",
+    VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET,
+  ]);
   assert.deepEqual(artifacts?.[0]?.processed_review_thread_ids, [`${reviewThread.id}@${headSha}`]);
   assert.deepEqual(artifacts?.[0]?.processed_review_thread_fingerprints, [
     `${reviewThread.id}@${headSha}#comment-no-source-repair`,
   ]);
+});
+
+test("buildPostPublicationReviewPersistence records exact current-head configured local CI from Codex verification", () => {
+  const headSha = "head-local-ci-proof";
+  const reviewThread = createReviewThread({
+    id: "thread-local-ci-proof",
+    comments: {
+      nodes: [
+        {
+          id: "comment-local-ci-proof",
+          body: "P2: Verify this already-addressed finding before merge.",
+          createdAt: "2026-06-26T06:23:00Z",
+          url: "https://example.test/pr/406#discussion_local_ci",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  const persistence = buildPostPublicationReviewPersistence({
+    config: createConfig({ localCiCommand: "python3 scripts/ci/repo_hygiene.py" }),
+    preRunState: "addressing_review",
+    record: createRecord({ timeline_artifacts: [] }),
+    currentPr: createPullRequest({ headRefOid: headSha }),
+    evaluatedReviewHeadSha: headSha,
+    reviewThreadsToProcess: [reviewThread],
+    localReviewRepairContext: null,
+    preRunReviewThreads: [reviewThread],
+    postRunReviewThreads: [reviewThread],
+    codexVerificationCommand: "python3 scripts/ci/repo_hygiene.py",
+    structuredSummary: "Configured local CI passed after verifying Connector residue.",
+    workspaceStatus: { headSha, hasUncommittedChanges: false },
+    changedFilesAfterPublication: [],
+  });
+
+  assert.equal(persistence.currentHeadLocalCiPatch.latest_local_ci_result?.outcome, "passed");
+  assert.equal(persistence.currentHeadLocalCiPatch.latest_local_ci_result?.head_sha, headSha);
+  assert.equal(
+    persistence.currentHeadLocalCiPatch.latest_local_ci_result?.command,
+    "python3 scripts/ci/repo_hygiene.py",
+  );
 });
 
 test("buildPostPublicationCodexVerificationTimelineArtifacts does not mark unchanged normal turns as current-head repair proof", () => {
