@@ -2726,6 +2726,10 @@ test("current-head repair proof rejects unresolved outdated high-severity Codex 
       command: "npm run verify:pre-pr",
       evidenceSource: "codex_turn_timeline_artifact",
     },
+    currentHeadNoMajorReview: {
+      requestedAt: "2026-06-14T05:18:00Z",
+      observedAt: "2026-06-14T05:21:00Z",
+    },
   });
   const outdatedP1Thread = createReviewThread({
     id: "thread-outdated-p1",
