@@ -44,6 +44,7 @@ import {
 import {
   hasCodexConnectorFindingReviewComment,
 } from "./codex-connector-review-policy";
+import { projectCurrentHeadCodexRepairProof } from "./current-head-codex-repair-proof";
 import {
   buildPreservedCodexConnectorManualReviewChurnPatch,
   buildPreservedCodexConnectorManualReviewChurnReason,
@@ -476,12 +477,24 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
         isReviewSignalProjectedState &&
         isCurrentHeadReviewSignalRequestTimeout(projection.copilotReviewTimeoutPatch) &&
         hasOnlyOutdatedConfiguredBotResidue(config, reviewThreads);
+      const sameHeadCurrentHeadRepairProofRecovery =
+        externalProgressEvidence === null &&
+        record.last_head_sha === trackedPullRequest.headRefOid &&
+        projection.nextState !== "blocked" &&
+        projectCurrentHeadCodexRepairProof({
+          config,
+          record: projection.recordForState,
+          pr: trackedPullRequest,
+          checks,
+          reviewThreads,
+        }) !== null;
       const sameHeadProviderSuccessRecovery =
         externalProgressEvidence === null &&
         record.last_head_sha === trackedPullRequest.headRefOid &&
         projection.nextState !== "blocked" &&
         projection.mergeLatencyVisibilityPatch.provider_success_head_sha === trackedPullRequest.headRefOid &&
-        (reviewThreads.filter((thread) => !thread.isResolved).length === 0 ||
+        (sameHeadCurrentHeadRepairProofRecovery ||
+          reviewThreads.filter((thread) => !thread.isResolved).length === 0 ||
           hasOnlyOutdatedConfiguredBotResidue(config, reviewThreads));
       if (
         !externalProgressEvidence &&
@@ -589,8 +602,25 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
         record.last_tracked_pr_repeat_failure_decision === "stop_no_progress" &&
         nextState !== "blocked" &&
         hasOnlyOutdatedConfiguredBotResidue(config, reviewThreads);
-      const recoverySuppression = staleLocalManualReviewResidueRecovery
-        ? { shouldSuppress: false, progressSummary: "stale_local_blocker_recovered=outdated_configured_bot_residue" }
+      const sameHeadCurrentHeadRepairProofRecovery =
+        record.blocked_reason === "manual_review" &&
+        record.last_tracked_pr_repeat_failure_decision === "stop_no_progress" &&
+        record.last_head_sha === trackedPullRequest.headRefOid &&
+        nextState !== "blocked" &&
+        projectCurrentHeadCodexRepairProof({
+          config,
+          record: projection.recordForState,
+          pr: trackedPullRequest,
+          checks,
+          reviewThreads,
+        }) !== null;
+      const recoverySuppression = staleLocalManualReviewResidueRecovery || sameHeadCurrentHeadRepairProofRecovery
+        ? {
+            shouldSuppress: false,
+            progressSummary: staleLocalManualReviewResidueRecovery
+              ? "stale_local_blocker_recovered=outdated_configured_bot_residue"
+              : "same_head_current_head_repair_proof_recovered",
+          }
         : suppressSameHeadNoProgressReviewThreadRecovery(
           record,
           trackedPullRequest,
@@ -606,6 +636,7 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
       });
       const shouldKeepCodexConnectorChurnBlockQuiescent =
         !staleLocalManualReviewResidueRecovery &&
+        !sameHeadCurrentHeadRepairProofRecovery &&
         shouldKeepCodexConnectorManualReviewChurnBlockQuiescent({
           record,
           effectiveReviewThreads: effectiveCurrentCodexConnectorReviewThreads,
@@ -624,6 +655,7 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
       }
       if (
         !staleLocalManualReviewResidueRecovery &&
+        !sameHeadCurrentHeadRepairProofRecovery &&
         shouldPreserveCodexConnectorManualReviewChurnBlock({
           record,
           effectiveReviewThreads: effectiveCurrentCodexConnectorReviewThreads,
@@ -774,6 +806,11 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
         patch.last_tracked_pr_repeat_failure_decision = null;
         patch.processed_review_thread_ids = [];
         patch.processed_review_thread_fingerprints = [];
+      }
+      if (sameHeadCurrentHeadRepairProofRecovery) {
+        patch.last_tracked_pr_progress_snapshot = null;
+        patch.last_tracked_pr_progress_summary = null;
+        patch.last_tracked_pr_repeat_failure_decision = null;
       }
       const recoveryEvent = staleLocalManualReviewResidueRecovery
         ? buildRecoveryEvent(

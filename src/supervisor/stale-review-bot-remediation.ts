@@ -27,6 +27,7 @@ import {
 import { configuredReviewProviderKinds } from "../core/review-providers";
 import {
   currentHeadCodexRepairProofRejectionReasons,
+  hasFreshCurrentHeadCodexSuccessReviewedCommit,
   projectCurrentHeadCodexRepairProof,
 } from "../current-head-codex-repair-proof";
 import { currentHeadPassingNonReviewChecks } from "../local-ci-policy";
@@ -226,9 +227,14 @@ function codexConnectorCurrentHeadReviewState(args: {
   config: SupervisorConfig | null;
   record: IssueRunRecord;
   pr: GitHubPullRequest;
+  reviewThreads: ReviewThread[];
 }): "observed" | "requested" | "missing" | "not_applicable" {
   if (!args.config || !configuredReviewProviderKinds(args.config).includes("codex")) {
     return "not_applicable";
+  }
+
+  if (hasFreshCurrentHeadCodexSuccessReviewedCommit(args.pr, args.reviewThreads)) {
+    return "observed";
   }
 
   if (
@@ -790,17 +796,24 @@ function currentHeadCodexNoMajorSignalEvidence(args: {
     | "configuredBotCurrentHeadObservedAt"
     | "configuredBotCurrentHeadObservationSource"
     | "configuredBotCurrentHeadStatusState"
+    | "configuredBotCurrentHeadActionableObservedAt"
+    | "configuredBotCurrentHeadCodexSuccessReviewedCommitSha"
+    | "configuredBotCurrentHeadCodexSuccessObservedAt"
   >;
+  reviewThreads: ReviewThread[];
 }): string | null {
-  if (
-    args.pr.configuredBotCurrentHeadObservationSource !== "codex_pr_success_comment" ||
-    !hasCurrentHeadSuccessSignal(args.pr)
-  ) {
+  if (hasFreshCurrentHeadCodexSuccessReviewedCommit(args.pr, args.reviewThreads)) {
+    return "codex_pr_success_comment_reviewed_current_head";
+  }
+  if (!hasCurrentHeadSuccessSignal(args.pr)) {
     return null;
   }
 
   const observedAt = validTimestamp(args.pr.configuredBotCurrentHeadObservedAt);
   if (!observedAt) {
+    return null;
+  }
+  if (args.pr.configuredBotCurrentHeadObservationSource !== "codex_pr_success_comment") {
     return null;
   }
 
@@ -875,6 +888,7 @@ function classifyCodexMetadataOnly(args: {
     noMajorSignalEvidence: currentHeadCodexNoMajorSignalEvidence({
       record: args.record,
       pr: args.pr,
+      reviewThreads: args.reviewThreads,
     }),
     deterministicProbeEvidence: deterministicRepairProbeEvidence({
       reviewThreads: args.reviewThreads,
@@ -1024,6 +1038,7 @@ export function buildStaleReviewBotRemediation(args: {
       config: args.config ?? null,
       record: args.record,
       pr: args.pr,
+      reviewThreads: args.reviewThreads ?? [],
     })
     : "not_applicable";
 

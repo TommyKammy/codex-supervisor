@@ -295,6 +295,55 @@ test("buildStaleReviewBotRemediation classifies same-head Codex no-major comment
   assert.equal(diagnostics?.currentHeadSuccess, "yes");
 });
 
+test("buildStaleReviewBotRemediation accepts reviewed-current-head no-major without request marker", () => {
+  const issueNumber = 80;
+  const prNumber = 93;
+  const headSha = "647c90b90b820cb17b83d2d80b5dddd3e789028b";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "thread-current-line-residue",
+    commentId: "comment-current-line-residue",
+    path: "apps/web/index.html",
+    line: 757,
+    severity: "P2",
+    commentBody: "P2: Ignore stale job responses after credential changes.",
+    discussionUrl: "https://example.test/pr/93#discussion_current_line_residue",
+    verifiedRepair: {
+      summary: "Rechecked unresolved review cluster; no product-code changes needed.",
+      ranAt: "2026-06-27T00:50:21Z",
+      command: "python3 scripts/ci/repo_hygiene.py",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+  });
+  const config = createConfig({ reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN] });
+  const record = createRecord(scenario.recordPatch);
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    configuredBotCurrentHeadObservedAt: "2026-06-27T00:54:12Z",
+    configuredBotCurrentHeadObservationSource: "status_context",
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "647c90b90b",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-06-27T00:53:12Z",
+  });
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: scenario.passingChecks,
+    reviewThreads: [scenario.reviewThread],
+  });
+
+  assert.equal(remediation?.classification, "verified_current_head_repair_pending_thread_resolution");
+  assert.equal(remediation?.codexCurrentHeadReviewState, "observed");
+  assert.match(
+    remediation?.verificationEvidenceSummary ?? "",
+    /codex_no_major_support=codex_pr_success_comment_reviewed_current_head/u,
+  );
+});
+
 test("buildStaleReviewBotRemediation classifies marked codex_turn evidence as no-source residue", () => {
   const issueNumber = 492;
   const prNumber = 498;

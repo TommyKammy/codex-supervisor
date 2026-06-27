@@ -79,6 +79,9 @@ export interface ConfiguredBotReviewSummary {
   codexConnectorReviewRequest?: CodexConnectorReviewRequestObservation | null;
   currentHeadObservedAt: string | null;
   currentHeadObservationSource: ConfiguredBotCurrentHeadObservationSource;
+  currentHeadActionableObservedAt?: string | null;
+  currentHeadCodexSuccessReviewedCommitSha?: string | null;
+  currentHeadCodexSuccessObservedAt?: string | null;
   currentHeadStatusState: string | null;
   latestReviewedCommitSha: string | null;
   currentHeadCiGreenAt: string | null;
@@ -548,8 +551,20 @@ function inferConfiguredBotOnlyChangesRequestedReview(
 }
 
 function reviewedCommitFromBody(body: string | null | undefined): string | null {
-  const match = body?.match(/\bReviewed commit:\s*([0-9a-f]{7,40})\b/i);
+  const match = body?.match(/\bReviewed commit:\*{0,2}\s*`?([0-9a-f]{7,40})\b/i);
   return match?.[1] ?? null;
+}
+
+function commitShaMatchesByPrefix(left: string | null | undefined, right: string | null | undefined): boolean {
+  const normalizedLeft = left?.trim().toLowerCase();
+  const normalizedRight = right?.trim().toLowerCase();
+  return Boolean(
+    normalizedLeft &&
+      normalizedRight &&
+      (normalizedLeft === normalizedRight ||
+        normalizedLeft.startsWith(normalizedRight) ||
+        normalizedRight.startsWith(normalizedLeft)),
+  );
 }
 
 function inferLatestConfiguredBotReviewedCommitSha(
@@ -583,6 +598,33 @@ function inferLatestConfiguredBotReviewedCommitSha(
     }
   }
 
+  if (hasConfiguredCodexConnectorLogin(configuredReviewBots)) {
+    for (const comment of facts.issueComments) {
+      const authorLogin = normalizeLogin(comment.authorLogin);
+      if (
+        !authorLogin ||
+        !isCodexConnectorLogin(authorLogin) ||
+        !isCodexConnectorPrSuccessCommentText(comment.body)
+      ) {
+        continue;
+      }
+
+      const submittedAtMs = parseTimestamp(comment.createdAt);
+      if (submittedAtMs === 0) {
+        continue;
+      }
+
+      const reviewedCommitSha = reviewedCommitFromBody(comment.body);
+      if (!reviewedCommitSha) {
+        continue;
+      }
+
+      if (!latest || submittedAtMs >= latest.submittedAtMs) {
+        latest = { submittedAtMs, reviewedCommitSha };
+      }
+    }
+  }
+
   return latest?.reviewedCommitSha ?? null;
 }
 
@@ -590,7 +632,10 @@ function inferConfiguredBotCurrentHeadObservation(
   facts: CopilotReviewLifecycleFacts,
   reviewBotLogins: string[],
   currentHeadOid: string | null | undefined,
-): { observedAt: string | null; source: ConfiguredBotCurrentHeadObservationSource } {
+): {
+  observedAt: string | null;
+  source: ConfiguredBotCurrentHeadObservationSource;
+} {
   const normalizedCurrentHeadOid = currentHeadOid?.trim();
   if (!normalizedCurrentHeadOid) {
     return { observedAt: null, source: null };
@@ -601,7 +646,10 @@ function inferConfiguredBotCurrentHeadObservation(
     return { observedAt: null, source: null };
   }
 
-  const currentHeadObservations: Array<{ observedAt: string | null | undefined; source: NonNullable<ConfiguredBotCurrentHeadObservationSource> }> = [];
+  const currentHeadObservations: Array<{
+    observedAt: string | null | undefined;
+    source: NonNullable<ConfiguredBotCurrentHeadObservationSource>;
+  }> = [];
   for (const review of facts.reviews) {
     const authorLogin = normalizeLogin(review.authorLogin);
     if (
@@ -646,6 +694,10 @@ function inferConfiguredBotCurrentHeadObservation(
         isCodexConnectorLogin(authorLogin) &&
         isCodexConnectorPrSuccessCommentText(comment.body)
       ) {
+        const reviewedCommitSha = reviewedCommitFromBody(comment.body);
+        if (reviewedCommitSha && !commitShaMatchesByPrefix(reviewedCommitSha, normalizedCurrentHeadOid)) {
+          continue;
+        }
         currentHeadObservations.push({ observedAt: comment.createdAt, source: "codex_pr_success_comment" });
       }
     }
@@ -655,10 +707,11 @@ function inferConfiguredBotCurrentHeadObservation(
   if (!latestStrongCurrentHeadObservedAt) {
     return { observedAt: null, source: null };
   }
-  const latestStrongCurrentHeadObservationSource =
+  const latestStrongCurrentHeadObservation =
     currentHeadObservations
       .filter((observation) => observation.observedAt === latestStrongCurrentHeadObservedAt)
-      .at(-1)?.source ?? null;
+      .at(-1) ?? null;
+  const latestStrongCurrentHeadObservationSource = latestStrongCurrentHeadObservation?.source ?? null;
 
   const latestStrongCurrentHeadObservedAtMs = parseTimestamp(latestStrongCurrentHeadObservedAt);
   const weaklyAnchoredCodeRabbitCommentTimes = facts.comments.flatMap((comment) => {
@@ -691,6 +744,116 @@ function inferConfiguredBotCurrentHeadObservation(
     observedAt: latestObservedAt,
     source: latestObservedAt === latestStrongCurrentHeadObservedAt ? latestStrongCurrentHeadObservationSource : "review_thread_comment",
   };
+}
+
+function inferCurrentHeadCodexSuccessObservation(
+  facts: CopilotReviewLifecycleFacts,
+  reviewBotLogins: string[],
+  currentHeadOid: string | null | undefined,
+): { observedAt: string; reviewedCommitSha: string } | null {
+  const normalizedCurrentHeadOid = currentHeadOid?.trim();
+  if (!normalizedCurrentHeadOid) {
+    return null;
+  }
+
+  const configuredReviewBots = new Set(normalizeReviewBotLogins(reviewBotLogins));
+  if (!hasConfiguredCodexConnectorLogin(configuredReviewBots)) {
+    return null;
+  }
+
+  let latest: { createdAt: string; createdAtMs: number; reviewedCommitSha: string } | null = null;
+  for (const comment of facts.issueComments) {
+    const authorLogin = normalizeLogin(comment.authorLogin);
+    if (
+      !authorLogin ||
+      !isCodexConnectorLogin(authorLogin) ||
+      !isCodexConnectorPrSuccessCommentText(comment.body)
+    ) {
+      continue;
+    }
+
+    const reviewedCommitSha = reviewedCommitFromBody(comment.body);
+    if (!commitShaMatchesByPrefix(reviewedCommitSha, normalizedCurrentHeadOid)) {
+      continue;
+    }
+
+    const createdAtMs = parseTimestamp(comment.createdAt);
+    if (createdAtMs === 0) {
+      continue;
+    }
+
+    if (!latest || createdAtMs >= latest.createdAtMs) {
+      latest = { createdAt: comment.createdAt!, createdAtMs, reviewedCommitSha: reviewedCommitSha! };
+    }
+  }
+
+  return latest
+    ? {
+        observedAt: latest.createdAt,
+        reviewedCommitSha: latest.reviewedCommitSha,
+      }
+    : null;
+}
+
+function inferConfiguredBotCurrentHeadActionableObservedAt(
+  facts: CopilotReviewLifecycleFacts,
+  reviewBotLogins: string[],
+  currentHeadOid: string | null | undefined,
+  currentHeadCodexSuccessObservedAt: string | null | undefined,
+): string | null {
+  const normalizedCurrentHeadOid = currentHeadOid?.trim();
+  if (!normalizedCurrentHeadOid) {
+    return null;
+  }
+
+  const configuredReviewBots = new Set(normalizeReviewBotLogins(reviewBotLogins));
+  if (configuredReviewBots.size === 0) {
+    return null;
+  }
+
+  const currentHeadActionableTimes: string[] = [];
+  for (const review of facts.reviews) {
+    const authorLogin = normalizeLogin(review.authorLogin);
+    if (
+      authorLogin &&
+      configuredReviewBots.has(authorLogin) &&
+      review.commitOid === normalizedCurrentHeadOid &&
+      isActionableTopLevelReview(review) &&
+      review.submittedAt
+    ) {
+      currentHeadActionableTimes.push(review.submittedAt);
+    }
+  }
+
+  for (const comment of facts.comments) {
+    const authorLogin = normalizeLogin(comment.authorLogin);
+    if (
+      authorLogin &&
+      configuredReviewBots.has(authorLogin) &&
+      comment.originalCommitOid === normalizedCurrentHeadOid &&
+      comment.createdAt
+    ) {
+      currentHeadActionableTimes.push(comment.createdAt);
+    }
+  }
+
+  const successObservedAtMs = parseTimestamp(currentHeadCodexSuccessObservedAt);
+  if (successObservedAtMs !== 0) {
+    for (const comment of facts.issueComments) {
+      const authorLogin = normalizeLogin(comment.authorLogin);
+      if (
+        authorLogin &&
+        configuredReviewBots.has(authorLogin) &&
+        hasActionableReviewText(comment.body) &&
+        parseTimestamp(comment.createdAt) >= successObservedAtMs &&
+        comment.createdAt
+      ) {
+        currentHeadActionableTimes.push(comment.createdAt);
+      }
+    }
+  }
+
+  return latestTimestamp(currentHeadActionableTimes);
 }
 
 function inferConfiguredBotCurrentHeadStatusState(
@@ -861,6 +1024,17 @@ export function buildConfiguredBotReviewSummary(
   codexConnectorReviewRequestIdentity?: CodexConnectorReviewRequestIdentity | null,
 ): ConfiguredBotReviewSummary {
   const currentHeadObservation = inferConfiguredBotCurrentHeadObservation(facts, reviewBotLogins, currentHeadOid);
+  const currentHeadCodexSuccessObservation = inferCurrentHeadCodexSuccessObservation(
+    facts,
+    reviewBotLogins,
+    currentHeadOid,
+  );
+  const currentHeadActionableObservedAt = inferConfiguredBotCurrentHeadActionableObservedAt(
+    facts,
+    reviewBotLogins,
+    currentHeadOid,
+    currentHeadCodexSuccessObservation?.observedAt ?? null,
+  );
   const topLevelReview = inferConfiguredBotTopLevelReviewSummary(facts, reviewBotLogins);
   Object.defineProperty(topLevelReview, "configuredBotOnlyChangesRequestedReview", {
     enumerable: false,
@@ -884,6 +1058,18 @@ export function buildConfiguredBotReviewSummary(
   Object.defineProperty(summary, "latestReviewedCommitSha", {
     enumerable: false,
     value: inferLatestConfiguredBotReviewedCommitSha(facts, reviewBotLogins),
+  });
+  Object.defineProperty(summary, "currentHeadActionableObservedAt", {
+    enumerable: false,
+    value: currentHeadActionableObservedAt,
+  });
+  Object.defineProperty(summary, "currentHeadCodexSuccessReviewedCommitSha", {
+    enumerable: false,
+    value: currentHeadCodexSuccessObservation?.reviewedCommitSha ?? null,
+  });
+  Object.defineProperty(summary, "currentHeadCodexSuccessObservedAt", {
+    enumerable: false,
+    value: currentHeadCodexSuccessObservation?.observedAt ?? null,
   });
   return summary;
 }

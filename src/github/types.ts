@@ -40,6 +40,9 @@ export interface GitHubPullRequest {
   codexConnectorReviewRequestCommentUrl?: string | null;
   configuredBotCurrentHeadObservedAt?: string | null;
   configuredBotCurrentHeadObservationSource?: string | null;
+  configuredBotCurrentHeadActionableObservedAt?: string | null;
+  configuredBotCurrentHeadCodexSuccessReviewedCommitSha?: string | null;
+  configuredBotCurrentHeadCodexSuccessObservedAt?: string | null;
   configuredBotCurrentHeadStatusState?: string | null;
   configuredBotLatestReviewedCommitSha?: string | null;
   currentHeadCiGreenAt?: string | null;

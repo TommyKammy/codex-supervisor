@@ -361,6 +361,10 @@ export function applyConfiguredBotReviewSummary(
     codexConnectorReviewRequestCommentUrl: summary?.codexConnectorReviewRequest?.commentUrl ?? null,
     configuredBotCurrentHeadObservedAt: summary?.currentHeadObservedAt ?? null,
     configuredBotCurrentHeadObservationSource: summary?.currentHeadObservationSource ?? null,
+    configuredBotCurrentHeadActionableObservedAt: summary?.currentHeadActionableObservedAt ?? null,
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha:
+      summary?.currentHeadCodexSuccessReviewedCommitSha ?? null,
+    configuredBotCurrentHeadCodexSuccessObservedAt: summary?.currentHeadCodexSuccessObservedAt ?? null,
     configuredBotCurrentHeadStatusState: summary?.currentHeadStatusState ?? null,
     configuredBotLatestReviewedCommitSha: summary?.latestReviewedCommitSha ?? null,
     currentHeadCiGreenAt: summary?.currentHeadCiGreenAt ?? null,
