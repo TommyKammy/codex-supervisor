@@ -35,6 +35,7 @@ const CODEX_TURN_VERIFICATION_COMMAND_NAMES = [
   "prettier",
   "ruff",
   "mypy",
+  "rtk",
   "gh",
   "git",
 ].join("|");
@@ -44,11 +45,48 @@ const CODEX_TURN_VERIFICATION_COMMAND_PATTERN = new RegExp(
 );
 
 function hasExplicitCodexTurnVerificationCommandEvidence(value: string): boolean {
-  return value
-    .split(/[\n;]+/)
-    .map((candidate) => candidate.trim().replace(/^`+|`+$/g, "").trim())
-    .filter((candidate) => candidate.length > 0)
+  return codexTurnVerificationCommandEntries(value)
     .some((candidate) => CODEX_TURN_VERIFICATION_COMMAND_PATTERN.test(candidate));
+}
+
+function normalizeCodexTurnVerificationCommandEntry(value: string): string {
+  return value
+    .trim()
+    .replace(/^`+|`+$/g, "")
+    .replace(/^\$\s*/u, "")
+    .trim();
+}
+
+function codexTurnVerificationCommandEntries(value: string | null | undefined): string[] {
+  const normalized = normalizeCodexTurnVerificationCommandEntry(value ?? "");
+  if (!normalized) {
+    return [];
+  }
+  const splitEntries = normalized
+    .split(/[\n;]+/)
+    .map(normalizeCodexTurnVerificationCommandEntry)
+    .filter((candidate) => candidate.length > 0);
+  return [...new Set([normalized, ...splitEntries])];
+}
+
+function verificationCommandComparisonVariants(value: string): string[] {
+  const normalized = normalizeCodexTurnVerificationCommandEntry(value);
+  const withoutRtk = normalized.replace(/^rtk\s+/u, "").trim();
+  return [...new Set([normalized, withoutRtk].filter((candidate) => candidate.length > 0))];
+}
+
+export function codexTurnVerificationIncludesCommand(
+  tests: string | null | undefined,
+  expectedCommand: string | null | undefined,
+): boolean {
+  const expected = expectedCommand?.trim();
+  if (!expected) {
+    return false;
+  }
+  const expectedCommands = new Set(verificationCommandComparisonVariants(expected));
+  return codexTurnVerificationCommandEntries(tests)
+    .flatMap(verificationCommandComparisonVariants)
+    .some((candidate) => expectedCommands.has(candidate));
 }
 
 function hasExplicitNegativeCodexTurnVerificationOutcome(value: string): boolean {

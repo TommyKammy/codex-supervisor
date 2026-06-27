@@ -176,6 +176,56 @@ test("projectCurrentHeadCodexRepairProof accepts thread-scoped proof after revie
   }), []);
 });
 
+test("projectCurrentHeadCodexRepairProof rejects summary-only verification evidence", () => {
+  const headSha = "7f2ebe6039905200cf06756e8e4b55185439f52f";
+  const threads = [
+    codexThread({ id: "thread-summary-only-a", commentId: "comment-summary-only-a", severity: "P2", line: 148 }),
+    codexThread({ id: "thread-summary-only-b", commentId: "comment-summary-only-b", severity: "P2", line: 320 }),
+  ];
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    localCiCommand: "python3 scripts/ci/repo_hygiene.py",
+  });
+  const record = createRecord({
+    last_head_sha: headSha,
+    blocked_reason: "manual_review",
+    last_codex_summary: [
+      "Verified live PR state on the current head and no product-code change was needed.",
+      "Tests: rtk python3 -m unittest discover; rtk python3 scripts/ci/repo_hygiene.py; rtk git diff --check",
+    ].join("\n"),
+    processed_review_thread_ids: threads.map((thread) => `${thread.id}@${headSha}`),
+    processed_review_thread_fingerprints: threads.map((thread) => `${thread.id}@${headSha}#${thread.comments.nodes[0]!.id}`),
+    latest_local_ci_result: null,
+    timeline_artifacts: [],
+  });
+  const pr = createPullRequest({
+    headRefOid: headSha,
+    configuredBotCurrentHeadObservedAt: "2026-06-27T14:28:46Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "7f2ebe6039",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-06-27T14:28:46Z",
+  });
+
+  assert.equal(projectCurrentHeadCodexRepairProof({
+    config,
+    record,
+    pr,
+    checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: threads,
+  }), null);
+  assert.deepEqual(currentHeadCodexRepairProofRejectionReasons({
+    config,
+    record,
+    pr,
+    checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: threads,
+  }), [
+    "current_head_repair_proof_structured_artifact_missing",
+    "current_head_repair_proof_latest_local_ci_result_missing",
+  ]);
+});
+
 test("projectCurrentHeadCodexRepairProof rejects thread-scoped no-major proof for an older reviewed commit", () => {
   const headSha = "647c90b90b820cb17b83d2d80b5dddd3e789028b";
   const threads = [
