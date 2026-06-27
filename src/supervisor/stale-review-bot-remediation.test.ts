@@ -321,9 +321,9 @@ test("buildStaleReviewBotRemediation accepts reviewed-current-head no-major with
   const record = createRecord(scenario.recordPatch);
   const pr = createPullRequest({
     ...scenario.pullRequestPatch,
-    configuredBotCurrentHeadObservedAt: "2026-06-27T00:53:12Z",
-    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
-    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotCurrentHeadObservedAt: "2026-06-27T00:54:12Z",
+    configuredBotCurrentHeadObservationSource: "status_context",
+    configuredBotCurrentHeadStatusState: null,
     configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "647c90b90b",
     configuredBotCurrentHeadCodexSuccessObservedAt: "2026-06-27T00:53:12Z",
   });

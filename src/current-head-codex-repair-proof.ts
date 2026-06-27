@@ -311,6 +311,50 @@ export function latestCodexConnectorMustFixReviewCommentObservedAt(reviewThreads
   return latest?.observedAt ?? null;
 }
 
+type CurrentHeadCodexSuccessFacts = Pick<
+  GitHubPullRequest,
+  | "headRefOid"
+  | "configuredBotCurrentHeadObservedAt"
+  | "configuredBotCurrentHeadObservationSource"
+  | "configuredBotCurrentHeadCodexSuccessReviewedCommitSha"
+  | "configuredBotCurrentHeadCodexSuccessObservedAt"
+>;
+
+function laterCurrentHeadObservationInvalidatesCodexSuccess(
+  pr: CurrentHeadCodexSuccessFacts,
+  successObservedAt: string,
+): boolean {
+  const observedAt = validTimestamp(pr.configuredBotCurrentHeadObservedAt);
+  if (!observedAt || Date.parse(successObservedAt) >= Date.parse(observedAt)) {
+    return false;
+  }
+  return (
+    pr.configuredBotCurrentHeadObservationSource !== "codex_pr_success_comment" &&
+    pr.configuredBotCurrentHeadObservationSource !== "status_context"
+  );
+}
+
+export function hasFreshCurrentHeadCodexSuccessReviewedCommit(
+  pr: CurrentHeadCodexSuccessFacts,
+  reviewThreads: ReviewThread[],
+): boolean {
+  if (!commitShasMatchByPrefixForComparison(pr.configuredBotCurrentHeadCodexSuccessReviewedCommitSha, pr.headRefOid)) {
+    return false;
+  }
+  const successObservedAt = validTimestamp(pr.configuredBotCurrentHeadCodexSuccessObservedAt);
+  if (!successObservedAt) {
+    return false;
+  }
+  if (laterCurrentHeadObservationInvalidatesCodexSuccess(pr, successObservedAt)) {
+    return false;
+  }
+  const latestMustFixObservedAt = validTimestamp(latestCodexConnectorMustFixReviewCommentObservedAt(reviewThreads));
+  if (latestMustFixObservedAt && Date.parse(successObservedAt) < Date.parse(latestMustFixObservedAt)) {
+    return false;
+  }
+  return true;
+}
+
 function currentHeadNoMajorSupportSummary(
   record: Pick<
     IssueRunRecord,
@@ -332,15 +376,7 @@ function currentHeadNoMajorSupportSummary(
   if (!observedAt) {
     return null;
   }
-  if (commitShasMatchByPrefixForComparison(pr.configuredBotCurrentHeadCodexSuccessReviewedCommitSha, pr.headRefOid)) {
-    const successObservedAt = validTimestamp(pr.configuredBotCurrentHeadCodexSuccessObservedAt);
-    if (!successObservedAt) {
-      return null;
-    }
-    const latestMustFixObservedAt = validTimestamp(latestCodexConnectorMustFixReviewCommentObservedAt(reviewThreads));
-    if (latestMustFixObservedAt && Date.parse(successObservedAt) < Date.parse(latestMustFixObservedAt)) {
-      return null;
-    }
+  if (hasFreshCurrentHeadCodexSuccessReviewedCommit(pr, reviewThreads)) {
     return "codex_pr_success_comment_reviewed_current_head";
   }
   if (pr.configuredBotCurrentHeadObservationSource !== "codex_pr_success_comment") {

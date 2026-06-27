@@ -28,7 +28,7 @@ import {
 import { configuredReviewProviderKinds } from "../core/review-providers";
 import {
   currentHeadCodexRepairProofRejectionReasons,
-  latestCodexConnectorMustFixReviewCommentObservedAt,
+  hasFreshCurrentHeadCodexSuccessReviewedCommit,
   projectCurrentHeadCodexRepairProof,
 } from "../current-head-codex-repair-proof";
 import { currentHeadPassingNonReviewChecks } from "../local-ci-policy";
@@ -228,9 +228,14 @@ function codexConnectorCurrentHeadReviewState(args: {
   config: SupervisorConfig | null;
   record: IssueRunRecord;
   pr: GitHubPullRequest;
+  reviewThreads: ReviewThread[];
 }): "observed" | "requested" | "missing" | "not_applicable" {
   if (!args.config || !configuredReviewProviderKinds(args.config).includes("codex")) {
     return "not_applicable";
+  }
+
+  if (hasFreshCurrentHeadCodexSuccessReviewedCommit(args.pr, args.reviewThreads)) {
+    return "observed";
   }
 
   if (
@@ -797,29 +802,16 @@ function currentHeadCodexNoMajorSignalEvidence(args: {
   >;
   reviewThreads: ReviewThread[];
 }): string | null {
-  if (
-    !hasCurrentHeadSuccessSignal(args.pr)
-  ) {
+  if (hasFreshCurrentHeadCodexSuccessReviewedCommit(args.pr, args.reviewThreads)) {
+    return "codex_pr_success_comment_reviewed_current_head";
+  }
+  if (!hasCurrentHeadSuccessSignal(args.pr)) {
     return null;
   }
 
   const observedAt = validTimestamp(args.pr.configuredBotCurrentHeadObservedAt);
   if (!observedAt) {
     return null;
-  }
-
-  if (commitShasMatchByPrefixForComparison(args.pr.configuredBotCurrentHeadCodexSuccessReviewedCommitSha, args.pr.headRefOid)) {
-    const successObservedAt = validTimestamp(args.pr.configuredBotCurrentHeadCodexSuccessObservedAt);
-    if (!successObservedAt) {
-      return null;
-    }
-    const latestMustFixObservedAt = validTimestamp(
-      latestCodexConnectorMustFixReviewCommentObservedAt(args.reviewThreads),
-    );
-    if (latestMustFixObservedAt && Date.parse(successObservedAt) < Date.parse(latestMustFixObservedAt)) {
-      return null;
-    }
-    return "codex_pr_success_comment_reviewed_current_head";
   }
   if (args.pr.configuredBotCurrentHeadObservationSource !== "codex_pr_success_comment") {
     return null;
@@ -1046,6 +1038,7 @@ export function buildStaleReviewBotRemediation(args: {
       config: args.config ?? null,
       record: args.record,
       pr: args.pr,
+      reviewThreads: args.reviewThreads ?? [],
     })
     : "not_applicable";
 
