@@ -337,6 +337,95 @@ test("buildPostPublicationReviewPersistence records configured local CI from rtk
   );
 });
 
+test("buildPostPublicationReviewPersistence records rtk-configured local CI from exact Codex verification", () => {
+  const headSha = "head-local-ci-proof-rtk-configured";
+  const reviewThread = createReviewThread({
+    id: "thread-local-ci-proof-rtk-configured",
+    comments: {
+      nodes: [
+        {
+          id: "comment-local-ci-proof-rtk-configured",
+          body: "P2: Verify this already-addressed finding before merge.",
+          createdAt: "2026-06-28T06:24:00Z",
+          url: "https://example.test/pr/406#discussion_local_ci_rtk_configured",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  const persistence = buildPostPublicationReviewPersistence({
+    config: createConfig({ localCiCommand: "rtk python3 scripts/ci/repo_hygiene.py" }),
+    preRunState: "addressing_review",
+    record: createRecord({ timeline_artifacts: [] }),
+    currentPr: createPullRequest({ headRefOid: headSha }),
+    evaluatedReviewHeadSha: headSha,
+    reviewThreadsToProcess: [reviewThread],
+    localReviewRepairContext: null,
+    preRunReviewThreads: [reviewThread],
+    postRunReviewThreads: [reviewThread],
+    codexVerificationCommand:
+      "rtk python3 -m unittest discover; rtk python3 scripts/ci/repo_hygiene.py; rtk git diff --check",
+    structuredSummary: "Configured local CI passed after verifying Connector residue.",
+    workspaceStatus: { headSha, hasUncommittedChanges: false },
+    changedFilesAfterPublication: [],
+  });
+
+  assert.equal(persistence.currentHeadLocalCiPatch.latest_local_ci_result?.outcome, "passed");
+  assert.equal(persistence.currentHeadLocalCiPatch.latest_local_ci_result?.head_sha, headSha);
+  assert.equal(
+    persistence.currentHeadLocalCiPatch.latest_local_ci_result?.command,
+    "rtk python3 scripts/ci/repo_hygiene.py",
+  );
+});
+
+test("buildPostPublicationReviewPersistence records compound local CI from exact Codex verification", () => {
+  const headSha = "head-local-ci-proof-compound";
+  const reviewThread = createReviewThread({
+    id: "thread-local-ci-proof-compound",
+    comments: {
+      nodes: [
+        {
+          id: "comment-local-ci-proof-compound",
+          body: "P2: Verify this already-addressed finding before merge.",
+          createdAt: "2026-06-28T06:25:00Z",
+          url: "https://example.test/pr/406#discussion_local_ci_compound",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  const persistence = buildPostPublicationReviewPersistence({
+    config: createConfig({ localCiCommand: "npm run lint; npm test" }),
+    preRunState: "addressing_review",
+    record: createRecord({ timeline_artifacts: [] }),
+    currentPr: createPullRequest({ headRefOid: headSha }),
+    evaluatedReviewHeadSha: headSha,
+    reviewThreadsToProcess: [reviewThread],
+    localReviewRepairContext: null,
+    preRunReviewThreads: [reviewThread],
+    postRunReviewThreads: [reviewThread],
+    codexVerificationCommand: "npm run lint; npm test",
+    structuredSummary: "Configured local CI passed after verifying Connector residue.",
+    workspaceStatus: { headSha, hasUncommittedChanges: false },
+    changedFilesAfterPublication: [],
+  });
+
+  assert.equal(persistence.currentHeadLocalCiPatch.latest_local_ci_result?.outcome, "passed");
+  assert.equal(persistence.currentHeadLocalCiPatch.latest_local_ci_result?.head_sha, headSha);
+  assert.equal(
+    persistence.currentHeadLocalCiPatch.latest_local_ci_result?.command,
+    "npm run lint; npm test",
+  );
+});
+
 test("buildPostPublicationCodexVerificationTimelineArtifacts does not mark unchanged normal turns as current-head repair proof", () => {
   const headSha = "head-unchanged-normal-repair";
   const reviewThread = createReviewThread({
