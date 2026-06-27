@@ -3336,9 +3336,17 @@ test("reconcileRecoverableBlockedIssueStates replays reviewed-current-head no-ma
       headRefOid: headSha,
       unresolvedReviewThreadIds: [threadId],
       unresolvedReviewThreadFingerprints: [`${threadId}#${commentId}`],
+      codexConnectorReviewChurnProgress: {
+        currentHeadSha: headSha,
+        currentEffectiveMustFixCount: 1,
+        dominantFile: "apps/web/index.html",
+        dominantFilePercent: 100,
+        clusterCategorySignature: "async_response",
+        representativeThreadIds: [threadId],
+      },
     }),
     last_tracked_pr_progress_summary:
-      "manual_review_preserved=codex_connector_churn_unresolved_configured_bot_threads",
+      "no_progress_clustered_codex_churn current_effective_must_fix=1",
     last_tracked_pr_repeat_failure_decision: "stop_no_progress",
     processed_review_thread_ids: [`${threadId}@${headSha}`],
     processed_review_thread_fingerprints: [`${threadId}@${headSha}#${commentId}`],
@@ -3390,6 +3398,7 @@ test("reconcileRecoverableBlockedIssueStates replays reviewed-current-head no-ma
     configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
     configuredBotCurrentHeadStatusState: "SUCCESS",
     configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "647c90b90b",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-06-27T00:53:12Z",
   });
 
   let saveCalls = 0;

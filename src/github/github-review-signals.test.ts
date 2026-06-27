@@ -1339,6 +1339,7 @@ test("buildConfiguredBotReviewSummary anchors Codex Connector no-major issue com
   assert.equal(summary.currentHeadObservedAt, "2026-06-27T00:53:12Z");
   assert.equal(summary.currentHeadObservationSource, "codex_pr_success_comment");
   assert.equal(summary.currentHeadCodexSuccessReviewedCommitSha, "647c90b90b");
+  assert.equal(summary.currentHeadCodexSuccessObservedAt, "2026-06-27T00:53:12Z");
   assert.equal(summary.latestReviewedCommitSha, "647c90b90b");
 });
 
@@ -1373,6 +1374,7 @@ test("buildConfiguredBotReviewSummary preserves Codex success reviewed commit af
   assert.equal(summary.currentHeadObservedAt, "2026-06-27T00:54:12Z");
   assert.equal(summary.currentHeadObservationSource, "status_context");
   assert.equal(summary.currentHeadCodexSuccessReviewedCommitSha, "647c90b90b");
+  assert.equal(summary.currentHeadCodexSuccessObservedAt, "2026-06-27T00:53:12Z");
 });
 
 test("buildConfiguredBotReviewSummary rejects stale reviewed-commit Codex Connector no-major issue comments", () => {
@@ -1400,6 +1402,7 @@ test("buildConfiguredBotReviewSummary rejects stale reviewed-commit Codex Connec
   assert.equal(summary.currentHeadObservedAt, null);
   assert.equal(summary.currentHeadObservationSource, null);
   assert.equal(summary.currentHeadCodexSuccessReviewedCommitSha, null);
+  assert.equal(summary.currentHeadCodexSuccessObservedAt, null);
   assert.equal(summary.latestReviewedCommitSha, "dbe5e968ce");
 });
 

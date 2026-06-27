@@ -153,6 +153,7 @@ test("projectCurrentHeadCodexRepairProof accepts thread-scoped proof after revie
     configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
     configuredBotCurrentHeadStatusState: "SUCCESS",
     configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "647c90b90b",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-06-27T00:53:12Z",
   });
 
   const proof = projectCurrentHeadCodexRepairProof({
@@ -221,6 +222,7 @@ test("projectCurrentHeadCodexRepairProof rejects thread-scoped no-major proof fo
     configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
     configuredBotCurrentHeadStatusState: "SUCCESS",
     configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "dbe5e968ce",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-06-27T00:53:12Z",
   });
 
   assert.equal(projectCurrentHeadCodexRepairProof({
@@ -237,6 +239,65 @@ test("projectCurrentHeadCodexRepairProof rejects thread-scoped no-major proof fo
     checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
     reviewThreads: threads,
   }), ["current_head_repair_proof_repair_target_missing"]);
+});
+
+test("projectCurrentHeadCodexRepairProof rejects reviewed-current-head no-major before a later blocker", () => {
+  const headSha = "647c90b90b820cb17b83d2d80b5dddd3e789028b";
+  const threads = [
+    codexThread({ id: "thread-after-no-major", commentId: "comment-after-no-major", severity: "P2", line: 432 }),
+  ];
+  threads[0]!.comments.nodes[0]!.createdAt = "2026-06-27T00:54:12Z";
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    localCiCommand: "python3 scripts/ci/repo_hygiene.py",
+  });
+  const record = createRecord({
+    last_head_sha: headSha,
+    blocked_reason: "manual_review",
+    processed_review_thread_ids: threads.map((thread) => `${thread.id}@${headSha}`),
+    processed_review_thread_fingerprints: threads.map((thread) => `${thread.id}@${headSha}#${thread.comments.nodes[0]!.id}`),
+    latest_local_ci_result: {
+      outcome: "passed",
+      summary: "Repo hygiene passed on current head.",
+      ran_at: "2026-06-27T00:55:00Z",
+      head_sha: headSha,
+      execution_mode: "shell",
+      command: "python3 scripts/ci/repo_hygiene.py",
+      failure_class: null,
+      remediation_target: null,
+    },
+    timeline_artifacts: [
+      {
+        type: "verification_result",
+        gate: "codex_turn",
+        command: "python3 scripts/ci/repo_hygiene.py",
+        head_sha: headSha,
+        outcome: "passed",
+        remediation_target: null,
+        next_action: "continue",
+        summary: "Rechecked unresolved review cluster; no source changes needed.",
+        recorded_at: "2026-06-27T00:55:21Z",
+        processed_review_thread_ids: threads.map((thread) => `${thread.id}@${headSha}`),
+        processed_review_thread_fingerprints: threads.map((thread) => `${thread.id}@${headSha}#${thread.comments.nodes[0]!.id}`),
+      },
+    ],
+  });
+  const pr = createPullRequest({
+    headRefOid: headSha,
+    configuredBotCurrentHeadObservedAt: "2026-06-27T00:54:12Z",
+    configuredBotCurrentHeadObservationSource: "review_thread_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "647c90b90b",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-06-27T00:53:12Z",
+  });
+
+  assert.equal(projectCurrentHeadCodexRepairProof({
+    config,
+    record,
+    pr,
+    checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: threads,
+  }), null);
 });
 
 test("projectCurrentHeadCodexRepairProof rejects unanchored no-major even when a separate latest reviewed commit matches", () => {

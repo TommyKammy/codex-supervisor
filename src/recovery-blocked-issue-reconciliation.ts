@@ -636,6 +636,7 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
       });
       const shouldKeepCodexConnectorChurnBlockQuiescent =
         !staleLocalManualReviewResidueRecovery &&
+        !sameHeadCurrentHeadRepairProofRecovery &&
         shouldKeepCodexConnectorManualReviewChurnBlockQuiescent({
           record,
           effectiveReviewThreads: effectiveCurrentCodexConnectorReviewThreads,
@@ -654,6 +655,7 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
       }
       if (
         !staleLocalManualReviewResidueRecovery &&
+        !sameHeadCurrentHeadRepairProofRecovery &&
         shouldPreserveCodexConnectorManualReviewChurnBlock({
           record,
           effectiveReviewThreads: effectiveCurrentCodexConnectorReviewThreads,

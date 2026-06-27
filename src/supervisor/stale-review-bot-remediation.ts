@@ -28,6 +28,7 @@ import {
 import { configuredReviewProviderKinds } from "../core/review-providers";
 import {
   currentHeadCodexRepairProofRejectionReasons,
+  latestCodexConnectorMustFixReviewCommentObservedAt,
   projectCurrentHeadCodexRepairProof,
 } from "../current-head-codex-repair-proof";
 import { currentHeadPassingNonReviewChecks } from "../local-ci-policy";
@@ -792,7 +793,9 @@ function currentHeadCodexNoMajorSignalEvidence(args: {
     | "configuredBotCurrentHeadObservationSource"
     | "configuredBotCurrentHeadStatusState"
     | "configuredBotCurrentHeadCodexSuccessReviewedCommitSha"
+    | "configuredBotCurrentHeadCodexSuccessObservedAt"
   >;
+  reviewThreads: ReviewThread[];
 }): string | null {
   if (
     !hasCurrentHeadSuccessSignal(args.pr)
@@ -806,6 +809,16 @@ function currentHeadCodexNoMajorSignalEvidence(args: {
   }
 
   if (commitShasMatchByPrefixForComparison(args.pr.configuredBotCurrentHeadCodexSuccessReviewedCommitSha, args.pr.headRefOid)) {
+    const successObservedAt = validTimestamp(args.pr.configuredBotCurrentHeadCodexSuccessObservedAt);
+    if (!successObservedAt) {
+      return null;
+    }
+    const latestMustFixObservedAt = validTimestamp(
+      latestCodexConnectorMustFixReviewCommentObservedAt(args.reviewThreads),
+    );
+    if (latestMustFixObservedAt && Date.parse(successObservedAt) < Date.parse(latestMustFixObservedAt)) {
+      return null;
+    }
     return "codex_pr_success_comment_reviewed_current_head";
   }
   if (args.pr.configuredBotCurrentHeadObservationSource !== "codex_pr_success_comment") {
@@ -883,6 +896,7 @@ function classifyCodexMetadataOnly(args: {
     noMajorSignalEvidence: currentHeadCodexNoMajorSignalEvidence({
       record: args.record,
       pr: args.pr,
+      reviewThreads: args.reviewThreads,
     }),
     deterministicProbeEvidence: deterministicRepairProbeEvidence({
       reviewThreads: args.reviewThreads,
