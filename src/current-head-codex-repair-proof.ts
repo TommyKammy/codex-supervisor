@@ -307,18 +307,18 @@ function currentHeadNoMajorSupportSummary(
     | "codexConnectorReviewRequestedHeadSha"
     | "configuredBotCurrentHeadObservedAt"
     | "configuredBotCurrentHeadObservationSource"
-    | "configuredBotCurrentHeadObservationReviewedCommitSha"
+    | "configuredBotCurrentHeadCodexSuccessReviewedCommitSha"
   >,
 ): string | null {
-  if (pr.configuredBotCurrentHeadObservationSource !== "codex_pr_success_comment") {
-    return null;
-  }
   const observedAt = validTimestamp(pr.configuredBotCurrentHeadObservedAt);
   if (!observedAt) {
     return null;
   }
-  if (commitShasMatchByPrefixForComparison(pr.configuredBotCurrentHeadObservationReviewedCommitSha, pr.headRefOid)) {
+  if (commitShasMatchByPrefixForComparison(pr.configuredBotCurrentHeadCodexSuccessReviewedCommitSha, pr.headRefOid)) {
     return "codex_pr_success_comment_reviewed_current_head";
+  }
+  if (pr.configuredBotCurrentHeadObservationSource !== "codex_pr_success_comment") {
+    return null;
   }
   const requestedAt =
     validTimestamp(record.codex_connector_review_requested_observed_at) ??

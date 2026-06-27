@@ -324,7 +324,7 @@ test("buildStaleReviewBotRemediation accepts reviewed-current-head no-major with
     configuredBotCurrentHeadObservedAt: "2026-06-27T00:53:12Z",
     configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
     configuredBotCurrentHeadStatusState: "SUCCESS",
-    configuredBotCurrentHeadObservationReviewedCommitSha: "647c90b90b",
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "647c90b90b",
   });
 
   const remediation = buildStaleReviewBotRemediation({

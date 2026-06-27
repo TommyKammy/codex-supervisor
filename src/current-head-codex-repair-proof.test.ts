@@ -152,7 +152,7 @@ test("projectCurrentHeadCodexRepairProof accepts thread-scoped proof after revie
     configuredBotCurrentHeadObservedAt: "2026-06-27T00:53:12Z",
     configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
     configuredBotCurrentHeadStatusState: "SUCCESS",
-    configuredBotCurrentHeadObservationReviewedCommitSha: "647c90b90b",
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "647c90b90b",
   });
 
   const proof = projectCurrentHeadCodexRepairProof({
@@ -220,7 +220,7 @@ test("projectCurrentHeadCodexRepairProof rejects thread-scoped no-major proof fo
     configuredBotCurrentHeadObservedAt: "2026-06-27T00:53:12Z",
     configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
     configuredBotCurrentHeadStatusState: "SUCCESS",
-    configuredBotCurrentHeadObservationReviewedCommitSha: "dbe5e968ce",
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "dbe5e968ce",
   });
 
   assert.equal(projectCurrentHeadCodexRepairProof({
@@ -284,7 +284,7 @@ test("projectCurrentHeadCodexRepairProof rejects unanchored no-major even when a
     configuredBotCurrentHeadObservedAt: "2026-06-27T00:53:12Z",
     configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
     configuredBotCurrentHeadStatusState: "SUCCESS",
-    configuredBotCurrentHeadObservationReviewedCommitSha: null,
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: null,
     configuredBotLatestReviewedCommitSha: "647c90b90b",
   });
 

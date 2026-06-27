@@ -791,11 +791,10 @@ function currentHeadCodexNoMajorSignalEvidence(args: {
     | "configuredBotCurrentHeadObservedAt"
     | "configuredBotCurrentHeadObservationSource"
     | "configuredBotCurrentHeadStatusState"
-    | "configuredBotCurrentHeadObservationReviewedCommitSha"
+    | "configuredBotCurrentHeadCodexSuccessReviewedCommitSha"
   >;
 }): string | null {
   if (
-    args.pr.configuredBotCurrentHeadObservationSource !== "codex_pr_success_comment" ||
     !hasCurrentHeadSuccessSignal(args.pr)
   ) {
     return null;
@@ -806,8 +805,11 @@ function currentHeadCodexNoMajorSignalEvidence(args: {
     return null;
   }
 
-  if (commitShasMatchByPrefixForComparison(args.pr.configuredBotCurrentHeadObservationReviewedCommitSha, args.pr.headRefOid)) {
+  if (commitShasMatchByPrefixForComparison(args.pr.configuredBotCurrentHeadCodexSuccessReviewedCommitSha, args.pr.headRefOid)) {
     return "codex_pr_success_comment_reviewed_current_head";
+  }
+  if (args.pr.configuredBotCurrentHeadObservationSource !== "codex_pr_success_comment") {
+    return null;
   }
 
   const requestedAt =

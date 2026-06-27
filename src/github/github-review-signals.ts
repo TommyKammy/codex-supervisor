@@ -79,7 +79,7 @@ export interface ConfiguredBotReviewSummary {
   codexConnectorReviewRequest?: CodexConnectorReviewRequestObservation | null;
   currentHeadObservedAt: string | null;
   currentHeadObservationSource: ConfiguredBotCurrentHeadObservationSource;
-  currentHeadObservationReviewedCommitSha?: string | null;
+  currentHeadCodexSuccessReviewedCommitSha?: string | null;
   currentHeadStatusState: string | null;
   latestReviewedCommitSha: string | null;
   currentHeadCiGreenAt: string | null;
@@ -633,22 +633,20 @@ function inferConfiguredBotCurrentHeadObservation(
 ): {
   observedAt: string | null;
   source: ConfiguredBotCurrentHeadObservationSource;
-  reviewedCommitSha: string | null;
 } {
   const normalizedCurrentHeadOid = currentHeadOid?.trim();
   if (!normalizedCurrentHeadOid) {
-    return { observedAt: null, source: null, reviewedCommitSha: null };
+    return { observedAt: null, source: null };
   }
 
   const configuredReviewBots = new Set(normalizeReviewBotLogins(reviewBotLogins));
   if (configuredReviewBots.size === 0) {
-    return { observedAt: null, source: null, reviewedCommitSha: null };
+    return { observedAt: null, source: null };
   }
 
   const currentHeadObservations: Array<{
     observedAt: string | null | undefined;
     source: NonNullable<ConfiguredBotCurrentHeadObservationSource>;
-    reviewedCommitSha?: string | null;
   }> = [];
   for (const review of facts.reviews) {
     const authorLogin = normalizeLogin(review.authorLogin);
@@ -698,18 +696,14 @@ function inferConfiguredBotCurrentHeadObservation(
         if (reviewedCommitSha && !commitShaMatchesByPrefix(reviewedCommitSha, normalizedCurrentHeadOid)) {
           continue;
         }
-        currentHeadObservations.push({
-          observedAt: comment.createdAt,
-          source: "codex_pr_success_comment",
-          reviewedCommitSha,
-        });
+        currentHeadObservations.push({ observedAt: comment.createdAt, source: "codex_pr_success_comment" });
       }
     }
   }
 
   const latestStrongCurrentHeadObservedAt = latestTimestamp(currentHeadObservations.map((observation) => observation.observedAt));
   if (!latestStrongCurrentHeadObservedAt) {
-    return { observedAt: null, source: null, reviewedCommitSha: null };
+    return { observedAt: null, source: null };
   }
   const latestStrongCurrentHeadObservation =
     currentHeadObservations
@@ -747,11 +741,51 @@ function inferConfiguredBotCurrentHeadObservation(
   return {
     observedAt: latestObservedAt,
     source: latestObservedAt === latestStrongCurrentHeadObservedAt ? latestStrongCurrentHeadObservationSource : "review_thread_comment",
-    reviewedCommitSha:
-      latestObservedAt === latestStrongCurrentHeadObservedAt
-        ? latestStrongCurrentHeadObservation?.reviewedCommitSha ?? null
-        : null,
   };
+}
+
+function inferCurrentHeadCodexSuccessReviewedCommitSha(
+  facts: CopilotReviewLifecycleFacts,
+  reviewBotLogins: string[],
+  currentHeadOid: string | null | undefined,
+): string | null {
+  const normalizedCurrentHeadOid = currentHeadOid?.trim();
+  if (!normalizedCurrentHeadOid) {
+    return null;
+  }
+
+  const configuredReviewBots = new Set(normalizeReviewBotLogins(reviewBotLogins));
+  if (!hasConfiguredCodexConnectorLogin(configuredReviewBots)) {
+    return null;
+  }
+
+  let latest: { createdAtMs: number; reviewedCommitSha: string } | null = null;
+  for (const comment of facts.issueComments) {
+    const authorLogin = normalizeLogin(comment.authorLogin);
+    if (
+      !authorLogin ||
+      !isCodexConnectorLogin(authorLogin) ||
+      !isCodexConnectorPrSuccessCommentText(comment.body)
+    ) {
+      continue;
+    }
+
+    const reviewedCommitSha = reviewedCommitFromBody(comment.body);
+    if (!commitShaMatchesByPrefix(reviewedCommitSha, normalizedCurrentHeadOid)) {
+      continue;
+    }
+
+    const createdAtMs = parseTimestamp(comment.createdAt);
+    if (createdAtMs === 0) {
+      continue;
+    }
+
+    if (!latest || createdAtMs >= latest.createdAtMs) {
+      latest = { createdAtMs, reviewedCommitSha: reviewedCommitSha! };
+    }
+  }
+
+  return latest?.reviewedCommitSha ?? null;
 }
 
 function inferConfiguredBotCurrentHeadStatusState(
@@ -946,9 +980,9 @@ export function buildConfiguredBotReviewSummary(
     enumerable: false,
     value: inferLatestConfiguredBotReviewedCommitSha(facts, reviewBotLogins),
   });
-  Object.defineProperty(summary, "currentHeadObservationReviewedCommitSha", {
+  Object.defineProperty(summary, "currentHeadCodexSuccessReviewedCommitSha", {
     enumerable: false,
-    value: currentHeadObservation.reviewedCommitSha,
+    value: inferCurrentHeadCodexSuccessReviewedCommitSha(facts, reviewBotLogins, currentHeadOid),
   });
   return summary;
 }
