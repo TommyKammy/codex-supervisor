@@ -548,8 +548,20 @@ function inferConfiguredBotOnlyChangesRequestedReview(
 }
 
 function reviewedCommitFromBody(body: string | null | undefined): string | null {
-  const match = body?.match(/\bReviewed commit:\s*([0-9a-f]{7,40})\b/i);
+  const match = body?.match(/\bReviewed commit:\*{0,2}\s*`?([0-9a-f]{7,40})\b/i);
   return match?.[1] ?? null;
+}
+
+function commitShaMatchesByPrefix(left: string | null | undefined, right: string | null | undefined): boolean {
+  const normalizedLeft = left?.trim().toLowerCase();
+  const normalizedRight = right?.trim().toLowerCase();
+  return Boolean(
+    normalizedLeft &&
+      normalizedRight &&
+      (normalizedLeft === normalizedRight ||
+        normalizedLeft.startsWith(normalizedRight) ||
+        normalizedRight.startsWith(normalizedLeft)),
+  );
 }
 
 function inferLatestConfiguredBotReviewedCommitSha(
@@ -580,6 +592,33 @@ function inferLatestConfiguredBotReviewedCommitSha(
 
     if (!latest || submittedAtMs >= latest.submittedAtMs) {
       latest = { submittedAtMs, reviewedCommitSha };
+    }
+  }
+
+  if (hasConfiguredCodexConnectorLogin(configuredReviewBots)) {
+    for (const comment of facts.issueComments) {
+      const authorLogin = normalizeLogin(comment.authorLogin);
+      if (
+        !authorLogin ||
+        !isCodexConnectorLogin(authorLogin) ||
+        !isCodexConnectorPrSuccessCommentText(comment.body)
+      ) {
+        continue;
+      }
+
+      const submittedAtMs = parseTimestamp(comment.createdAt);
+      if (submittedAtMs === 0) {
+        continue;
+      }
+
+      const reviewedCommitSha = reviewedCommitFromBody(comment.body);
+      if (!reviewedCommitSha) {
+        continue;
+      }
+
+      if (!latest || submittedAtMs >= latest.submittedAtMs) {
+        latest = { submittedAtMs, reviewedCommitSha };
+      }
     }
   }
 
@@ -646,6 +685,10 @@ function inferConfiguredBotCurrentHeadObservation(
         isCodexConnectorLogin(authorLogin) &&
         isCodexConnectorPrSuccessCommentText(comment.body)
       ) {
+        const reviewedCommitSha = reviewedCommitFromBody(comment.body);
+        if (reviewedCommitSha && !commitShaMatchesByPrefix(reviewedCommitSha, normalizedCurrentHeadOid)) {
+          continue;
+        }
         currentHeadObservations.push({ observedAt: comment.createdAt, source: "codex_pr_success_comment" });
       }
     }

@@ -12,6 +12,7 @@ import {
 import {
   codexConnectorMustFixReviewThreads,
   commitShasEqualForComparison,
+  commitShasMatchByPrefixForComparison,
   evaluateCodexConnectorConvergencePolicy,
   latestCodexConnectorReviewCommentFingerprint,
   latestCodexConnectorPSeverity,
@@ -790,6 +791,7 @@ function currentHeadCodexNoMajorSignalEvidence(args: {
     | "configuredBotCurrentHeadObservedAt"
     | "configuredBotCurrentHeadObservationSource"
     | "configuredBotCurrentHeadStatusState"
+    | "configuredBotLatestReviewedCommitSha"
   >;
 }): string | null {
   if (
@@ -802,6 +804,10 @@ function currentHeadCodexNoMajorSignalEvidence(args: {
   const observedAt = validTimestamp(args.pr.configuredBotCurrentHeadObservedAt);
   if (!observedAt) {
     return null;
+  }
+
+  if (commitShasMatchByPrefixForComparison(args.pr.configuredBotLatestReviewedCommitSha, args.pr.headRefOid)) {
+    return "codex_pr_success_comment_reviewed_current_head";
   }
 
   const requestedAt =

@@ -1,6 +1,7 @@
 import {
   codexConnectorMustFixReviewThreads,
   commitShasEqualForComparison,
+  commitShasMatchByPrefixForComparison,
   hasCodexConnectorFindingReviewComment,
   latestCodexConnectorReviewComment,
   latestCodexConnectorPSeverity,
@@ -306,6 +307,7 @@ function currentHeadNoMajorSupportSummary(
     | "codexConnectorReviewRequestedHeadSha"
     | "configuredBotCurrentHeadObservedAt"
     | "configuredBotCurrentHeadObservationSource"
+    | "configuredBotLatestReviewedCommitSha"
   >,
 ): string | null {
   if (pr.configuredBotCurrentHeadObservationSource !== "codex_pr_success_comment") {
@@ -314,6 +316,9 @@ function currentHeadNoMajorSupportSummary(
   const observedAt = validTimestamp(pr.configuredBotCurrentHeadObservedAt);
   if (!observedAt) {
     return null;
+  }
+  if (commitShasMatchByPrefixForComparison(pr.configuredBotLatestReviewedCommitSha, pr.headRefOid)) {
+    return "codex_pr_success_comment_reviewed_current_head";
   }
   const requestedAt =
     validTimestamp(record.codex_connector_review_requested_observed_at) ??

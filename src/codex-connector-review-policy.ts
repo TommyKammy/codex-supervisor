@@ -178,6 +178,18 @@ export function commitShasEqualForComparison(left: string | null | undefined, ri
   return Boolean(normalizedLeft && normalizedRight && normalizedLeft === normalizedRight);
 }
 
+export function commitShasMatchByPrefixForComparison(left: string | null | undefined, right: string | null | undefined): boolean {
+  const normalizedLeft = normalizeCommitShaForComparison(left);
+  const normalizedRight = normalizeCommitShaForComparison(right);
+  return Boolean(
+    normalizedLeft &&
+      normalizedRight &&
+      (normalizedLeft === normalizedRight ||
+        normalizedLeft.startsWith(normalizedRight) ||
+        normalizedRight.startsWith(normalizedLeft)),
+  );
+}
+
 export function commitShasDifferForComparison(left: string | null | undefined, right: string | null | undefined): boolean {
   const normalizedLeft = normalizeCommitShaForComparison(left);
   const normalizedRight = normalizeCommitShaForComparison(right);

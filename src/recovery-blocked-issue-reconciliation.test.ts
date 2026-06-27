@@ -3312,6 +3312,143 @@ test("reconcileRecoverableBlockedIssueStates replays accepted current-head repai
   ]);
 });
 
+test("reconcileRecoverableBlockedIssueStates replays reviewed-current-head no-major over unresolved inline residue", async () => {
+  const headSha = "647c90b90b820cb17b83d2d80b5dddd3e789028b";
+  const threadId = "thread-current-line-residue";
+  const commentId = "comment-current-line-residue";
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    localCiCommand: "python3 scripts/ci/repo_hygiene.py",
+    staleConfiguredBotReviewPolicy: "reply_and_resolve",
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const original = createRecord({
+    issue_number: 80,
+    state: "blocked",
+    blocked_reason: "manual_review",
+    pr_number: 93,
+    last_head_sha: headSha,
+    last_error:
+      "Clustered Codex Connector churn made no progress; inspect dominant file apps/web/index.html with current effective must-fix count 12 before restarting the loop.",
+    last_failure_signature: "codex-review-churn:P2:apps/web/index.html",
+    repeated_failure_signature_count: 3,
+    last_tracked_pr_progress_summary:
+      "manual_review_preserved=codex_connector_churn_unresolved_configured_bot_threads",
+    last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+    processed_review_thread_ids: [`${threadId}@${headSha}`],
+    processed_review_thread_fingerprints: [`${threadId}@${headSha}#${commentId}`],
+    latest_local_ci_result: {
+      outcome: "passed",
+      summary: "Repo hygiene passed on current head.",
+      ran_at: "2026-06-27T00:50:00Z",
+      head_sha: headSha,
+      execution_mode: "shell",
+      command: "python3 scripts/ci/repo_hygiene.py",
+      failure_class: null,
+      remediation_target: null,
+    },
+    timeline_artifacts: [
+      {
+        type: "verification_result",
+        gate: "codex_turn",
+        command: "python3 scripts/ci/repo_hygiene.py",
+        head_sha: headSha,
+        outcome: "passed",
+        remediation_target: null,
+        next_action: "continue",
+        summary: "Rechecked unresolved review cluster; no product-code changes needed.",
+        recorded_at: "2026-06-27T00:50:21Z",
+        processed_review_thread_ids: [`${threadId}@${headSha}`],
+        processed_review_thread_fingerprints: [`${threadId}@${headSha}#${commentId}`],
+      },
+    ],
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [original],
+  });
+  const issue = createIssue({
+    number: 80,
+    title: "MVP-10: add local API auth role checks",
+    updatedAt: "2026-06-27T00:55:00Z",
+  });
+  const pr = createPullRequest({
+    number: 93,
+    title: "MVP-10: add local API auth role checks",
+    url: "https://example.test/pr/93",
+    headRefName: "codex/issue-80",
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    reviewDecision: null,
+    currentHeadCiGreenAt: "2026-06-27T00:30:24Z",
+    configuredBotCurrentHeadObservedAt: "2026-06-27T00:53:12Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotLatestReviewedCommitSha: "647c90b90b",
+  });
+
+  let saveCalls = 0;
+  const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => pr,
+      getIssue: async () => issue,
+      getChecks: async () => [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getUnresolvedReviewThreads: async () => [
+        createReviewThread({
+          id: threadId,
+          path: "apps/web/index.html",
+          line: 757,
+          comments: {
+            nodes: [{
+              id: commentId,
+              body: "P2: Ignore stale job responses after credential changes.",
+              createdAt: "2026-06-27T00:20:00Z",
+              url: "https://example.test/pr/93#discussion_current_line_residue",
+              author: { login: "chatgpt-codex-connector", typeName: "Bot" },
+            }],
+          },
+        }),
+      ],
+    },
+    {
+      touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+        return {
+          ...current,
+          ...patch,
+          updated_at: "2026-06-27T00:56:00Z",
+        };
+      },
+      async save(): Promise<void> {
+        saveCalls += 1;
+      },
+    },
+    state,
+    config,
+    [issue],
+    {
+      shouldAutoRetryHandoffMissing,
+      inferStateFromPullRequest,
+      inferFailureContext,
+      blockedReasonForLifecycleState,
+      isOpenPullRequest,
+      syncReviewWaitWindow,
+      syncCopilotReviewRequestObservation,
+      syncCopilotReviewTimeoutState,
+    },
+  );
+
+  const updated = state.issues["80"];
+  assert.equal(updated.state, "ready_to_merge");
+  assert.equal(updated.blocked_reason, null);
+  assert.equal(updated.provider_success_head_sha, headSha);
+  assert.ok(updated.provider_success_observed_at);
+  assert.equal(updated.last_tracked_pr_repeat_failure_decision, null);
+  assert.equal(saveCalls, 1);
+  assert.deepEqual(recoveryEvents.map((event) => event.reason), [
+    `tracked_pr_lifecycle_recovered: resumed issue #80 from blocked to ready_to_merge using fresh tracked PR #93 facts at head ${headSha}`,
+  ]);
+});
+
 test("reconcileRecoverableBlockedIssueStates ignores human replies when comparing same-head Codex Connector churn guidance", async () => {
   const config = createConfig({
     reviewBotLogins: ["chatgpt-codex-connector"],
