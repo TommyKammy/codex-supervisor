@@ -3330,8 +3330,13 @@ test("reconcileRecoverableBlockedIssueStates replays reviewed-current-head no-ma
     last_head_sha: headSha,
     last_error:
       "Clustered Codex Connector churn made no progress; inspect dominant file apps/web/index.html with current effective must-fix count 12 before restarting the loop.",
-    last_failure_signature: "codex-review-churn:P2:apps/web/index.html",
+    last_failure_signature: threadId,
     repeated_failure_signature_count: 3,
+    last_tracked_pr_progress_snapshot: JSON.stringify({
+      headRefOid: headSha,
+      unresolvedReviewThreadIds: [threadId],
+      unresolvedReviewThreadFingerprints: [`${threadId}#${commentId}`],
+    }),
     last_tracked_pr_progress_summary:
       "manual_review_preserved=codex_connector_churn_unresolved_configured_bot_threads",
     last_tracked_pr_repeat_failure_decision: "stop_no_progress",
@@ -3384,7 +3389,7 @@ test("reconcileRecoverableBlockedIssueStates replays reviewed-current-head no-ma
     configuredBotCurrentHeadObservedAt: "2026-06-27T00:53:12Z",
     configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
     configuredBotCurrentHeadStatusState: "SUCCESS",
-    configuredBotLatestReviewedCommitSha: "647c90b90b",
+    configuredBotCurrentHeadObservationReviewedCommitSha: "647c90b90b",
   });
 
   let saveCalls = 0;

@@ -791,7 +791,7 @@ function currentHeadCodexNoMajorSignalEvidence(args: {
     | "configuredBotCurrentHeadObservedAt"
     | "configuredBotCurrentHeadObservationSource"
     | "configuredBotCurrentHeadStatusState"
-    | "configuredBotLatestReviewedCommitSha"
+    | "configuredBotCurrentHeadObservationReviewedCommitSha"
   >;
 }): string | null {
   if (
@@ -806,7 +806,7 @@ function currentHeadCodexNoMajorSignalEvidence(args: {
     return null;
   }
 
-  if (commitShasMatchByPrefixForComparison(args.pr.configuredBotLatestReviewedCommitSha, args.pr.headRefOid)) {
+  if (commitShasMatchByPrefixForComparison(args.pr.configuredBotCurrentHeadObservationReviewedCommitSha, args.pr.headRefOid)) {
     return "codex_pr_success_comment_reviewed_current_head";
   }
 

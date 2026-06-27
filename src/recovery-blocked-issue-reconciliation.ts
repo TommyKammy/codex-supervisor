@@ -614,8 +614,13 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
           checks,
           reviewThreads,
         }) !== null;
-      const recoverySuppression = staleLocalManualReviewResidueRecovery
-        ? { shouldSuppress: false, progressSummary: "stale_local_blocker_recovered=outdated_configured_bot_residue" }
+      const recoverySuppression = staleLocalManualReviewResidueRecovery || sameHeadCurrentHeadRepairProofRecovery
+        ? {
+            shouldSuppress: false,
+            progressSummary: staleLocalManualReviewResidueRecovery
+              ? "stale_local_blocker_recovered=outdated_configured_bot_residue"
+              : "same_head_current_head_repair_proof_recovered",
+          }
         : suppressSameHeadNoProgressReviewThreadRecovery(
           record,
           trackedPullRequest,

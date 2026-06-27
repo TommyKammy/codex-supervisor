@@ -79,6 +79,7 @@ export interface ConfiguredBotReviewSummary {
   codexConnectorReviewRequest?: CodexConnectorReviewRequestObservation | null;
   currentHeadObservedAt: string | null;
   currentHeadObservationSource: ConfiguredBotCurrentHeadObservationSource;
+  currentHeadObservationReviewedCommitSha?: string | null;
   currentHeadStatusState: string | null;
   latestReviewedCommitSha: string | null;
   currentHeadCiGreenAt: string | null;
@@ -629,18 +630,26 @@ function inferConfiguredBotCurrentHeadObservation(
   facts: CopilotReviewLifecycleFacts,
   reviewBotLogins: string[],
   currentHeadOid: string | null | undefined,
-): { observedAt: string | null; source: ConfiguredBotCurrentHeadObservationSource } {
+): {
+  observedAt: string | null;
+  source: ConfiguredBotCurrentHeadObservationSource;
+  reviewedCommitSha: string | null;
+} {
   const normalizedCurrentHeadOid = currentHeadOid?.trim();
   if (!normalizedCurrentHeadOid) {
-    return { observedAt: null, source: null };
+    return { observedAt: null, source: null, reviewedCommitSha: null };
   }
 
   const configuredReviewBots = new Set(normalizeReviewBotLogins(reviewBotLogins));
   if (configuredReviewBots.size === 0) {
-    return { observedAt: null, source: null };
+    return { observedAt: null, source: null, reviewedCommitSha: null };
   }
 
-  const currentHeadObservations: Array<{ observedAt: string | null | undefined; source: NonNullable<ConfiguredBotCurrentHeadObservationSource> }> = [];
+  const currentHeadObservations: Array<{
+    observedAt: string | null | undefined;
+    source: NonNullable<ConfiguredBotCurrentHeadObservationSource>;
+    reviewedCommitSha?: string | null;
+  }> = [];
   for (const review of facts.reviews) {
     const authorLogin = normalizeLogin(review.authorLogin);
     if (
@@ -689,19 +698,24 @@ function inferConfiguredBotCurrentHeadObservation(
         if (reviewedCommitSha && !commitShaMatchesByPrefix(reviewedCommitSha, normalizedCurrentHeadOid)) {
           continue;
         }
-        currentHeadObservations.push({ observedAt: comment.createdAt, source: "codex_pr_success_comment" });
+        currentHeadObservations.push({
+          observedAt: comment.createdAt,
+          source: "codex_pr_success_comment",
+          reviewedCommitSha,
+        });
       }
     }
   }
 
   const latestStrongCurrentHeadObservedAt = latestTimestamp(currentHeadObservations.map((observation) => observation.observedAt));
   if (!latestStrongCurrentHeadObservedAt) {
-    return { observedAt: null, source: null };
+    return { observedAt: null, source: null, reviewedCommitSha: null };
   }
-  const latestStrongCurrentHeadObservationSource =
+  const latestStrongCurrentHeadObservation =
     currentHeadObservations
       .filter((observation) => observation.observedAt === latestStrongCurrentHeadObservedAt)
-      .at(-1)?.source ?? null;
+      .at(-1) ?? null;
+  const latestStrongCurrentHeadObservationSource = latestStrongCurrentHeadObservation?.source ?? null;
 
   const latestStrongCurrentHeadObservedAtMs = parseTimestamp(latestStrongCurrentHeadObservedAt);
   const weaklyAnchoredCodeRabbitCommentTimes = facts.comments.flatMap((comment) => {
@@ -733,6 +747,10 @@ function inferConfiguredBotCurrentHeadObservation(
   return {
     observedAt: latestObservedAt,
     source: latestObservedAt === latestStrongCurrentHeadObservedAt ? latestStrongCurrentHeadObservationSource : "review_thread_comment",
+    reviewedCommitSha:
+      latestObservedAt === latestStrongCurrentHeadObservedAt
+        ? latestStrongCurrentHeadObservation?.reviewedCommitSha ?? null
+        : null,
   };
 }
 
@@ -927,6 +945,10 @@ export function buildConfiguredBotReviewSummary(
   Object.defineProperty(summary, "latestReviewedCommitSha", {
     enumerable: false,
     value: inferLatestConfiguredBotReviewedCommitSha(facts, reviewBotLogins),
+  });
+  Object.defineProperty(summary, "currentHeadObservationReviewedCommitSha", {
+    enumerable: false,
+    value: currentHeadObservation.reviewedCommitSha,
   });
   return summary;
 }
