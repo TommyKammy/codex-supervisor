@@ -54,7 +54,7 @@ import {
   listChangedTrackedFilesBetween,
   pushBranch,
 } from "./core/workspace";
-import { AgentRunner, createCodexAgentRunner } from "./supervisor/agent-runner";
+import { AgentRunner, createCodexAgentRunner, parseAgentTurnStructuredResult } from "./supervisor/agent-runner";
 import {
   executionMetricsRetentionRootPath,
   syncExecutionMetricsRunSummarySafely,
@@ -440,10 +440,9 @@ export async function executeCodexTurnPhase(
           record.state === "addressing_review" && codexSessionStarted
             ? stableSameFileCodexConnectorChurnDossierConsumptionPatch(record)
             : {};
-        const structuredResult = agentRunner.capabilities
-          .supportsStructuredResult
+        const structuredResult = agentRunner.capabilities.supportsStructuredResult
           ? turnResult.structuredResult
-          : null;
+          : parseAgentTurnStructuredResult(turnResult.supervisorMessage);
         const hintedState = structuredResult?.stateHint ?? null;
         const hintedBlockedReason = structuredResult?.blockedReason ?? null;
         const hintedFailureSignature =

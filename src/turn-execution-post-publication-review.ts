@@ -31,6 +31,7 @@ import {
 } from "./core/types";
 import { upsertTimelineArtifact } from "./timeline-artifacts";
 import {
+  codexTurnVerificationIncludesCommand,
   conciseCodexVerificationSummary,
   conciseFailedCodexVerificationSummary,
 } from "./run-once-turn-verification-evidence";
@@ -226,7 +227,7 @@ function currentHeadLocalCiPatchFromCodexVerification(args: {
     !configuredLocalCiCommand ||
     !args.currentPr ||
     !args.codexVerificationCommand ||
-    args.codexVerificationCommand.trim() !== configuredLocalCiCommand ||
+    !codexTurnVerificationIncludesCommand(args.codexVerificationCommand, configuredLocalCiCommand) ||
     args.workspaceStatus.hasUncommittedChanges ||
     args.workspaceStatus.headSha !== args.currentPr.headRefOid
   ) {

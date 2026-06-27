@@ -35,6 +35,7 @@ const CODEX_TURN_VERIFICATION_COMMAND_NAMES = [
   "prettier",
   "ruff",
   "mypy",
+  "rtk",
   "gh",
   "git",
 ].join("|");
@@ -44,11 +45,35 @@ const CODEX_TURN_VERIFICATION_COMMAND_PATTERN = new RegExp(
 );
 
 function hasExplicitCodexTurnVerificationCommandEvidence(value: string): boolean {
-  return value
+  return codexTurnVerificationCommandEntries(value)
+    .some((candidate) => CODEX_TURN_VERIFICATION_COMMAND_PATTERN.test(candidate));
+}
+
+function codexTurnVerificationCommandEntries(value: string | null | undefined): string[] {
+  return (value ?? "")
     .split(/[\n;]+/)
     .map((candidate) => candidate.trim().replace(/^`+|`+$/g, "").trim())
-    .filter((candidate) => candidate.length > 0)
-    .some((candidate) => CODEX_TURN_VERIFICATION_COMMAND_PATTERN.test(candidate));
+    .filter((candidate) => candidate.length > 0);
+}
+
+function normalizeVerificationCommandForComparison(value: string): string {
+  return value
+    .replace(/^\$\s*/u, "")
+    .replace(/^rtk\s+/u, "")
+    .trim();
+}
+
+export function codexTurnVerificationIncludesCommand(
+  tests: string | null | undefined,
+  expectedCommand: string | null | undefined,
+): boolean {
+  const expected = expectedCommand?.trim();
+  if (!expected) {
+    return false;
+  }
+  return codexTurnVerificationCommandEntries(tests)
+    .map(normalizeVerificationCommandForComparison)
+    .some((candidate) => candidate === expected);
 }
 
 function hasExplicitNegativeCodexTurnVerificationOutcome(value: string): boolean {
