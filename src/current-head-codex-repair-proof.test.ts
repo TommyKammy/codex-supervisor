@@ -343,9 +343,10 @@ test("projectCurrentHeadCodexRepairProof rejects reviewed-current-head no-major 
   });
   const pr = createPullRequest({
     headRefOid: headSha,
-    configuredBotCurrentHeadObservedAt: "2026-06-27T00:54:12Z",
-    configuredBotCurrentHeadObservationSource: "review_thread_comment",
+    configuredBotCurrentHeadObservedAt: "2026-06-27T00:55:12Z",
+    configuredBotCurrentHeadObservationSource: "status_context",
     configuredBotCurrentHeadStatusState: null,
+    configuredBotCurrentHeadActionableObservedAt: "2026-06-27T00:54:12Z",
     configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "647c90b90b",
     configuredBotCurrentHeadCodexSuccessObservedAt: "2026-06-27T00:53:12Z",
   });

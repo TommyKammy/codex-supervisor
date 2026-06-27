@@ -316,6 +316,7 @@ type CurrentHeadCodexSuccessFacts = Pick<
   | "headRefOid"
   | "configuredBotCurrentHeadObservedAt"
   | "configuredBotCurrentHeadObservationSource"
+  | "configuredBotCurrentHeadActionableObservedAt"
   | "configuredBotCurrentHeadCodexSuccessReviewedCommitSha"
   | "configuredBotCurrentHeadCodexSuccessObservedAt"
 >;
@@ -345,7 +346,11 @@ export function hasFreshCurrentHeadCodexSuccessReviewedCommit(
   if (!successObservedAt) {
     return false;
   }
-  if (laterCurrentHeadObservationInvalidatesCodexSuccess(pr, successObservedAt)) {
+  const latestActionableObservedAt = validTimestamp(pr.configuredBotCurrentHeadActionableObservedAt);
+  if (latestActionableObservedAt && Date.parse(successObservedAt) < Date.parse(latestActionableObservedAt)) {
+    return false;
+  }
+  if (!latestActionableObservedAt && laterCurrentHeadObservationInvalidatesCodexSuccess(pr, successObservedAt)) {
     return false;
   }
   const latestMustFixObservedAt = validTimestamp(latestCodexConnectorMustFixReviewCommentObservedAt(reviewThreads));
@@ -367,6 +372,7 @@ function currentHeadNoMajorSupportSummary(
     | "codexConnectorReviewRequestedHeadSha"
     | "configuredBotCurrentHeadObservedAt"
     | "configuredBotCurrentHeadObservationSource"
+    | "configuredBotCurrentHeadActionableObservedAt"
     | "configuredBotCurrentHeadCodexSuccessReviewedCommitSha"
     | "configuredBotCurrentHeadCodexSuccessObservedAt"
   >,

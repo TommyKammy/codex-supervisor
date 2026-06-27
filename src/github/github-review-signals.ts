@@ -79,6 +79,7 @@ export interface ConfiguredBotReviewSummary {
   codexConnectorReviewRequest?: CodexConnectorReviewRequestObservation | null;
   currentHeadObservedAt: string | null;
   currentHeadObservationSource: ConfiguredBotCurrentHeadObservationSource;
+  currentHeadActionableObservedAt?: string | null;
   currentHeadCodexSuccessReviewedCommitSha?: string | null;
   currentHeadCodexSuccessObservedAt?: string | null;
   currentHeadStatusState: string | null;
@@ -794,6 +795,67 @@ function inferCurrentHeadCodexSuccessObservation(
     : null;
 }
 
+function inferConfiguredBotCurrentHeadActionableObservedAt(
+  facts: CopilotReviewLifecycleFacts,
+  reviewBotLogins: string[],
+  currentHeadOid: string | null | undefined,
+  currentHeadCodexSuccessObservedAt: string | null | undefined,
+): string | null {
+  const normalizedCurrentHeadOid = currentHeadOid?.trim();
+  if (!normalizedCurrentHeadOid) {
+    return null;
+  }
+
+  const configuredReviewBots = new Set(normalizeReviewBotLogins(reviewBotLogins));
+  if (configuredReviewBots.size === 0) {
+    return null;
+  }
+
+  const currentHeadActionableTimes: string[] = [];
+  for (const review of facts.reviews) {
+    const authorLogin = normalizeLogin(review.authorLogin);
+    if (
+      authorLogin &&
+      configuredReviewBots.has(authorLogin) &&
+      review.commitOid === normalizedCurrentHeadOid &&
+      isActionableTopLevelReview(review) &&
+      review.submittedAt
+    ) {
+      currentHeadActionableTimes.push(review.submittedAt);
+    }
+  }
+
+  for (const comment of facts.comments) {
+    const authorLogin = normalizeLogin(comment.authorLogin);
+    if (
+      authorLogin &&
+      configuredReviewBots.has(authorLogin) &&
+      comment.originalCommitOid === normalizedCurrentHeadOid &&
+      comment.createdAt
+    ) {
+      currentHeadActionableTimes.push(comment.createdAt);
+    }
+  }
+
+  const successObservedAtMs = parseTimestamp(currentHeadCodexSuccessObservedAt);
+  if (successObservedAtMs !== 0) {
+    for (const comment of facts.issueComments) {
+      const authorLogin = normalizeLogin(comment.authorLogin);
+      if (
+        authorLogin &&
+        configuredReviewBots.has(authorLogin) &&
+        hasActionableReviewText(comment.body) &&
+        parseTimestamp(comment.createdAt) >= successObservedAtMs &&
+        comment.createdAt
+      ) {
+        currentHeadActionableTimes.push(comment.createdAt);
+      }
+    }
+  }
+
+  return latestTimestamp(currentHeadActionableTimes);
+}
+
 function inferConfiguredBotCurrentHeadStatusState(
   facts: CopilotReviewLifecycleFacts,
   reviewBotLogins: string[],
@@ -967,6 +1029,12 @@ export function buildConfiguredBotReviewSummary(
     reviewBotLogins,
     currentHeadOid,
   );
+  const currentHeadActionableObservedAt = inferConfiguredBotCurrentHeadActionableObservedAt(
+    facts,
+    reviewBotLogins,
+    currentHeadOid,
+    currentHeadCodexSuccessObservation?.observedAt ?? null,
+  );
   const topLevelReview = inferConfiguredBotTopLevelReviewSummary(facts, reviewBotLogins);
   Object.defineProperty(topLevelReview, "configuredBotOnlyChangesRequestedReview", {
     enumerable: false,
@@ -990,6 +1058,10 @@ export function buildConfiguredBotReviewSummary(
   Object.defineProperty(summary, "latestReviewedCommitSha", {
     enumerable: false,
     value: inferLatestConfiguredBotReviewedCommitSha(facts, reviewBotLogins),
+  });
+  Object.defineProperty(summary, "currentHeadActionableObservedAt", {
+    enumerable: false,
+    value: currentHeadActionableObservedAt,
   });
   Object.defineProperty(summary, "currentHeadCodexSuccessReviewedCommitSha", {
     enumerable: false,

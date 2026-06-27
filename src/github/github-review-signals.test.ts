@@ -1377,6 +1377,46 @@ test("buildConfiguredBotReviewSummary preserves Codex success reviewed commit af
   assert.equal(summary.currentHeadCodexSuccessObservedAt, "2026-06-27T00:53:12Z");
 });
 
+test("buildConfiguredBotReviewSummary preserves actionable observations hidden by later status contexts", () => {
+  const headSha = "647c90b90b820cb17b83d2d80b5dddd3e789028b";
+  const facts: CopilotReviewLifecycleFacts = {
+    reviewRequests: [],
+    reviews: [],
+    comments: [],
+    issueComments: [
+      {
+        authorLogin: "chatgpt-codex-connector[bot]",
+        createdAt: "2026-06-27T00:53:12Z",
+        body: "Codex Review: Didn't find any major issues. :tada:\n\n**Reviewed commit:** `647c90b90b`",
+      },
+      {
+        authorLogin: "chatgpt-codex-connector[bot]",
+        createdAt: "2026-06-27T00:54:12Z",
+        body: "P2: This current-head issue should be fixed.",
+      },
+    ],
+    statusContexts: [
+      {
+        creatorLogin: "chatgpt-codex-connector[bot]",
+        context: "Codex Review",
+        description: "Codex review finished.",
+        state: "SUCCESS",
+        createdAt: "2026-06-27T00:55:12Z",
+        commitOid: headSha,
+      },
+    ],
+    timeline: [],
+  };
+
+  const summary = buildConfiguredBotReviewSummary(facts, ["chatgpt-codex-connector"], headSha);
+
+  assert.equal(summary.currentHeadObservedAt, "2026-06-27T00:55:12Z");
+  assert.equal(summary.currentHeadObservationSource, "status_context");
+  assert.equal(summary.currentHeadActionableObservedAt, "2026-06-27T00:54:12Z");
+  assert.equal(summary.currentHeadCodexSuccessReviewedCommitSha, "647c90b90b");
+  assert.equal(summary.currentHeadCodexSuccessObservedAt, "2026-06-27T00:53:12Z");
+});
+
 test("buildConfiguredBotReviewSummary rejects stale reviewed-commit Codex Connector no-major issue comments", () => {
   const facts: CopilotReviewLifecycleFacts = {
     reviewRequests: [],

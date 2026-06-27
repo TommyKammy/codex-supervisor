@@ -12,7 +12,6 @@ import {
 import {
   codexConnectorMustFixReviewThreads,
   commitShasEqualForComparison,
-  commitShasMatchByPrefixForComparison,
   evaluateCodexConnectorConvergencePolicy,
   latestCodexConnectorReviewCommentFingerprint,
   latestCodexConnectorPSeverity,
@@ -797,6 +796,7 @@ function currentHeadCodexNoMajorSignalEvidence(args: {
     | "configuredBotCurrentHeadObservedAt"
     | "configuredBotCurrentHeadObservationSource"
     | "configuredBotCurrentHeadStatusState"
+    | "configuredBotCurrentHeadActionableObservedAt"
     | "configuredBotCurrentHeadCodexSuccessReviewedCommitSha"
     | "configuredBotCurrentHeadCodexSuccessObservedAt"
   >;
