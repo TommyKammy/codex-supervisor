@@ -26,6 +26,7 @@ import {
 import { projectCurrentHeadCodexRepairProof } from "../current-head-codex-repair-proof";
 import { aggregateHumanReviewDecisionBlocker } from "../review-decision-blocking-policy";
 import { hasCodexConnectorPrSuccessCurrentHeadObservation } from "../codex-connector-review-policy";
+import { currentHeadObservationSatisfiesActiveWait } from "../pull-request-state-current-head-policy";
 import {
   syncCopilotReviewRequestObservation,
   syncCopilotReviewTimeoutState,
@@ -237,7 +238,8 @@ function hasCurrentHeadCodexNoMajor(record: IssueRunRecord, pr: GitHubPullReques
   return Boolean(
     record.provider_success_head_sha === pr.headRefOid &&
       validTimestamp(record.provider_success_observed_at) &&
-      hasCodexConnectorPrSuccessCurrentHeadObservation(pr),
+      hasCodexConnectorPrSuccessCurrentHeadObservation(pr) &&
+      currentHeadObservationSatisfiesActiveWait(record, pr),
   );
 }
 

@@ -1846,6 +1846,103 @@ test("handlePostTurnMergeAndCompletion blocks Codex auto-merge without current-h
   assert.equal(autoMergeCalls, 0);
 });
 
+test("handlePostTurnMergeAndCompletion blocks stale Codex success before the active wait", async () => {
+  const fixture = await createSupervisorFixture();
+  const config = createConfig({
+    ...fixture.config,
+    codexConnectorAutoMergeEnabled: true,
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+  });
+  const issueNumber = 1236;
+  const headSha = "head-stale-codex-success";
+  const staleObservedAt = "2026-03-13T06:10:00Z";
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "ready_to_merge",
+        last_head_sha: headSha,
+        review_wait_started_at: "2026-03-13T06:20:00Z",
+        review_wait_head_sha: headSha,
+        provider_success_observed_at: staleObservedAt,
+        provider_success_head_sha: headSha,
+      }),
+    },
+  };
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Reject stale Codex success",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+  const pr: GitHubPullRequest = {
+    number: 1236,
+    title: "Stale Codex success",
+    url: "https://example.test/pr/1236",
+    state: "OPEN",
+    createdAt: "2026-03-13T06:00:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-1236",
+    headRefOid: headSha,
+    mergedAt: null,
+    configuredBotCurrentHeadObservedAt: staleObservedAt,
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
+  };
+
+  let autoMergeCalls = 0;
+  const supervisor = new Supervisor(config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getPullRequest: async (prNumber: number) => {
+      assert.equal(prNumber, 1236);
+      return pr;
+    },
+    getChecks: async (prNumber: number) => {
+      assert.equal(prNumber, 1236);
+      return passingChecks();
+    },
+    getUnresolvedReviewThreads: async (prNumber: number) => {
+      assert.equal(prNumber, 1236);
+      return [];
+    },
+    enableAutoMerge: async () => {
+      autoMergeCalls += 1;
+    },
+  };
+
+  const result = await (
+    supervisor as unknown as {
+      handlePostTurnMergeAndCompletion: (
+        state: SupervisorStateFile,
+        issue: GitHubIssue,
+        record: ReturnType<typeof createRecord>,
+        pr: GitHubPullRequest,
+        options: { dryRun: boolean },
+      ) => Promise<ReturnType<typeof createRecord>>;
+    }
+  ).handlePostTurnMergeAndCompletion(state, issue, state.issues[String(issueNumber)]!, pr, { dryRun: false });
+
+  assert.equal(result.state, "blocked");
+  assert.equal(result.blocked_reason, "verification");
+  assert.equal(
+    result.last_failure_context?.signature,
+    `auto-merge-refused:${headSha}:missing_current_head_codex_no_major`,
+  );
+  assert.match(
+    result.last_auto_merge_guard_context?.details.join("\n") ?? "",
+    /codex_actual_current_head_no_major=no/,
+  );
+  assert.equal(autoMergeCalls, 0);
+});
+
 test("handlePostTurnMergeAndCompletion reverts to draft when the refreshed PR is no longer merge-ready", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 118;

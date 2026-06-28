@@ -523,7 +523,11 @@ function autoMergePathForConfig(config: SupervisorConfig): V2AutoMergePath {
 }
 
 function hasCurrentHeadCodexNoMajor(record: IssueRunRecord, pr: GitHubPullRequest): boolean {
-  return hasCurrentHeadProviderSuccess(record, pr) && hasCodexConnectorPrSuccessCurrentHeadObservation(pr);
+  return (
+    hasCurrentHeadProviderSuccess(record, pr) &&
+    hasCodexConnectorPrSuccessCurrentHeadObservation(pr) &&
+    currentHeadObservationSatisfiesActiveWait(record, pr)
+  );
 }
 
 function summarizeCheckFacts(checks: PullRequestCheck[]): PrLifecycleFactInventory["checks"] {
