@@ -23,10 +23,9 @@ import {
   inferStateFromPullRequest,
   inferGitHubWaitStep,
 } from "../pull-request-state";
+import { hasActualCurrentHeadCodexNoMajorSupport } from "../pull-request-state-codex-residue-policy";
 import { projectCurrentHeadCodexRepairProof } from "../current-head-codex-repair-proof";
 import { aggregateHumanReviewDecisionBlocker } from "../review-decision-blocking-policy";
-import { hasCodexConnectorPrSuccessCurrentHeadObservation } from "../codex-connector-review-policy";
-import { currentHeadObservationSatisfiesActiveWait } from "../pull-request-state-current-head-policy";
 import {
   syncCopilotReviewRequestObservation,
   syncCopilotReviewTimeoutState,
@@ -234,12 +233,18 @@ function buildAutoMergeEvidenceContext(details: string[], pr: GitHubPullRequest)
   };
 }
 
-function hasCurrentHeadCodexNoMajor(record: IssueRunRecord, pr: GitHubPullRequest): boolean {
+function hasCurrentHeadCodexNoMajor(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+}): boolean {
+  const { config, record, pr, checks, reviewThreads } = args;
   return Boolean(
     record.provider_success_head_sha === pr.headRefOid &&
       validTimestamp(record.provider_success_observed_at) &&
-      hasCodexConnectorPrSuccessCurrentHeadObservation(pr) &&
-      currentHeadObservationSatisfiesActiveWait(record, pr),
+      hasActualCurrentHeadCodexNoMajorSupport({ config, record, pr, checks, reviewThreads }),
   );
 }
 
@@ -280,7 +285,13 @@ function finalAutoMergeGuard(args: {
     reviewThreads,
   });
   const verifiedCurrentHeadRepairResidue = verifiedCurrentHeadRepairProof !== null;
-  const currentHeadCodexNoMajor = hasCurrentHeadCodexNoMajor(record, currentPr);
+  const currentHeadCodexNoMajor = hasCurrentHeadCodexNoMajor({
+    config,
+    record,
+    pr: currentPr,
+    checks,
+    reviewThreads,
+  });
   const requiresCodexNoMajor = autoMergePath === "codex_connector_no_major";
   const currentHeadMergeProof = requiresCodexNoMajor
     ? currentHeadCodexNoMajor

@@ -1,7 +1,6 @@
 import {
   buildReviewPolicyInput,
   commitShasEqualForComparison,
-  hasCodexConnectorPrSuccessCurrentHeadObservation,
   type ReviewPolicyInput,
 } from "../codex-connector-review-policy";
 import { codexConnectorReviewRequestAction } from "../codex-connector-review-request-decision";
@@ -30,6 +29,7 @@ import {
 } from "../pull-request-state-current-head-policy";
 import {
   effectiveConfiguredBotReviewThreadsForState,
+  hasActualCurrentHeadCodexNoMajorSupport,
   hasConfiguredProviderSuccess,
   hasVerifiedCurrentHeadRepairReviewMetadataResidue,
 } from "../pull-request-state-codex-residue-policy";
@@ -475,7 +475,13 @@ function mergeReadyBlockedByFinalGuard(args: {
     checks: args.checks,
     reviewThreads: args.reviewThreads,
   });
-  const currentHeadCodexNoMajor = hasCurrentHeadCodexNoMajor(args.record, args.pr);
+  const currentHeadCodexNoMajor = hasCurrentHeadCodexNoMajor({
+    config: args.config,
+    record: args.record,
+    pr: args.pr,
+    checks: args.checks,
+    reviewThreads: args.reviewThreads,
+  });
   const effectiveConfiguredBotBlockers = effectiveConfiguredBotReviewThreadsForState(
     args.config,
     args.record,
@@ -522,11 +528,17 @@ function autoMergePathForConfig(config: SupervisorConfig): V2AutoMergePath {
   return config.codexConnectorAutoMergeEnabled === true ? "codex_connector_no_major" : null;
 }
 
-function hasCurrentHeadCodexNoMajor(record: IssueRunRecord, pr: GitHubPullRequest): boolean {
+function hasCurrentHeadCodexNoMajor(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+}): boolean {
+  const { config, record, pr, checks, reviewThreads } = args;
   return (
     hasCurrentHeadProviderSuccess(record, pr) &&
-    hasCodexConnectorPrSuccessCurrentHeadObservation(pr) &&
-    currentHeadObservationSatisfiesActiveWait(record, pr)
+    hasActualCurrentHeadCodexNoMajorSupport({ config, record, pr, checks, reviewThreads })
   );
 }
 

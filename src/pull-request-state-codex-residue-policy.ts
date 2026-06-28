@@ -41,11 +41,15 @@ import {
   isVerifiedStaleResidueClassification,
   type StaleReviewBotRemediationDto,
 } from "./supervisor/stale-review-bot-remediation";
-import { projectCurrentHeadCodexRepairProof } from "./current-head-codex-repair-proof";
+import {
+  hasFreshCurrentHeadCodexSuccessReviewedCommit,
+  projectCurrentHeadCodexRepairProof,
+} from "./current-head-codex-repair-proof";
 import {
   configuredBotCurrentHeadSignalPending,
   copilotReviewPending,
   currentHeadObservationSatisfiesActiveWait,
+  currentHeadTimestampSatisfiesActiveWait,
   determineCopilotReviewTimeout,
   validTimestamp,
 } from "./pull-request-state-current-head-policy";
@@ -389,7 +393,38 @@ export function currentHeadRepairProofSatisfiesConfiguredProviderSignal(args: {
     return false;
   }
 
-  return !configuredBotCurrentHeadSignalPending(args.config, args.record, args.pr);
+  return hasActualCurrentHeadCodexNoMajorSupport(args);
+}
+
+export function hasActualCurrentHeadCodexNoMajorSupport(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+}): boolean {
+  if (
+    hasFreshCurrentHeadCodexSuccessReviewedCommit(args.pr, args.reviewThreads) &&
+    currentHeadTimestampSatisfiesActiveWait(
+      args.record,
+      args.pr,
+      args.pr.configuredBotCurrentHeadCodexSuccessObservedAt,
+    )
+  ) {
+    return true;
+  }
+
+  return Boolean(
+    hasCodexConnectorPrSuccessCurrentHeadObservation(args.pr) &&
+      (currentHeadObservationSatisfiesActiveWait(args.record, args.pr) ||
+        staleSameHeadCodexWaitHasOnlyOutdatedResidue(
+          args.config,
+          args.record,
+          args.pr,
+          args.checks,
+          args.reviewThreads,
+        )),
+  );
 }
 
 function configuredBotThreadsAllowCodexConnectorCurrentHeadWait(args: {

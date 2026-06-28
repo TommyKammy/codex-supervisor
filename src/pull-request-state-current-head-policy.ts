@@ -312,6 +312,24 @@ export function currentHeadObservationSatisfiesActiveWait(
   return Date.parse(observedAt) >= Date.parse(waitStartedAt);
 }
 
+export function currentHeadTimestampSatisfiesActiveWait(
+  record: Pick<IssueRunRecord, "review_wait_started_at" | "review_wait_head_sha">,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
+  observedAtValue: string | null | undefined,
+): boolean {
+  const observedAt = validTimestamp(observedAtValue);
+  if (!observedAt) {
+    return false;
+  }
+
+  const waitStartedAt = validTimestamp(record.review_wait_started_at);
+  if (!waitStartedAt || record.review_wait_head_sha !== pr.headRefOid) {
+    return true;
+  }
+
+  return Date.parse(observedAt) >= Date.parse(waitStartedAt);
+}
+
 export function shouldWaitForConfiguredBotInitialGracePeriod(
   config: SupervisorConfig,
   pr: GitHubPullRequest,

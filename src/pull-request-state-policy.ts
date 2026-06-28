@@ -20,6 +20,7 @@ import {
   latestCodexConnectorReviewCommentFingerprint,
 } from "./codex-connector-review-policy";
 import { shouldReenterCodexConnectorValidReviewRepair } from "./codex-connector-valid-review-repair-selection";
+import { configuredReviewProviderKinds } from "./core/review-providers";
 import {
   actionableConfiguredBotReviewThreads,
   configuredBotReviewFollowUpState,
@@ -44,6 +45,7 @@ import {
   copilotReviewPending,
   determineConfiguredBotRateLimitWait,
   determineCopilotReviewTimeout as determineCopilotReviewTimeoutForNow,
+  hasCurrentHeadProviderSuccess,
   shouldWaitForConfiguredBotCurrentHeadQuietPeriod,
   shouldWaitForConfiguredBotDraftSkipRearm,
   shouldWaitForConfiguredBotInitialGracePeriod,
@@ -54,6 +56,7 @@ import { reviewLoopRetryBudgetExhaustedForThread } from "./review-handling";
 import {
   effectiveConfiguredBotReviewThreadsForState,
   currentHeadRepairProofSatisfiesConfiguredProviderSignal,
+  hasActualCurrentHeadCodexNoMajorSupport,
   hasConfiguredProviderSuccess,
   hasProvenCodexConnectorStaleReviewMetadata,
   hasVerifiedCurrentHeadRepairReviewMetadataResidue,
@@ -147,6 +150,38 @@ function mergeConditionsSatisfiedWithReview(
     reviewDecisionSatisfied &&
     checkSummary.allPassing &&
     pr.mergeStateStatus === "CLEAN"
+  );
+}
+
+function configuredBotCurrentHeadSignalStillPending(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+}): boolean {
+  if (configuredBotCurrentHeadSignalPending(args.config, args.record, args.pr)) {
+    return true;
+  }
+  if (!configuredReviewProviderKinds(args.config).includes("codex")) {
+    return false;
+  }
+  return (
+    hasCurrentHeadProviderSuccess(args.record, args.pr) &&
+    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
+      config: args.config,
+      record: args.record,
+      pr: args.pr,
+      checks: args.checks,
+      reviewThreads: args.reviewThreads,
+    }) &&
+    !hasActualCurrentHeadCodexNoMajorSupport({
+      config: args.config,
+      record: args.record,
+      pr: args.pr,
+      checks: args.checks,
+      reviewThreads: args.reviewThreads,
+    })
   );
 }
 
@@ -653,7 +688,7 @@ export function inferStateFromPullRequest(
   if (
     !configuredReviewMetadataWaitSatisfied &&
     !staleCodexWaitHasOnlyOutdatedResidue &&
-    configuredBotCurrentHeadSignalPending(config, record, pr) &&
+    configuredBotCurrentHeadSignalStillPending({ config, record, pr, checks, reviewThreads }) &&
     !copilotTimeout.timedOut
   ) {
     return "waiting_ci";
@@ -729,7 +764,7 @@ export function inferGitHubWaitStep(
   if (
     !verifiedCurrentHeadRepairResidue &&
     !staleCodexWaitHasOnlyOutdatedResidue &&
-    configuredBotCurrentHeadSignalPending(config, record, pr) &&
+    configuredBotCurrentHeadSignalStillPending({ config, record, pr, checks, reviewThreads }) &&
     !copilotTimeout.timedOut
   ) {
     return "configured_bot_current_head_signal_wait";

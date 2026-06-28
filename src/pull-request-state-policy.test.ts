@@ -1075,7 +1075,7 @@ test("legacy current-head processed-thread repair proof can replace Codex no-maj
     false,
   );
   assert.equal(inferStateFromPullRequest(config, record, pr, scenario.passingChecks, [scenario.reviewThread]), "ready_to_merge");
-  assert.equal(hasConfiguredProviderSuccess(config, record, pr, scenario.passingChecks, [scenario.reviewThread]), true);
+  assert.equal(hasConfiguredProviderSuccess(config, record, pr, scenario.passingChecks, [scenario.reviewThread]), false);
 });
 
 test("legacy current-head repair proof does not satisfy GitHub review-required decisions", () => {
@@ -1232,8 +1232,17 @@ test("cleared legacy repair proof does not replace a required Codex current-head
     false,
   );
   assert.equal(hasConfiguredProviderSuccess(config, record, pr, scenario.passingChecks, []), false);
+  assert.equal(hasConfiguredProviderSuccess(config, record, pr, scenario.passingChecks, [scenario.reviewThread]), false);
   assert.equal(inferGitHubWaitStep(config, record, pr, scenario.passingChecks, [], nowMs), "configured_bot_current_head_signal_wait");
+  assert.equal(
+    inferGitHubWaitStep(config, record, pr, scenario.passingChecks, [scenario.reviewThread], nowMs),
+    "configured_bot_current_head_signal_wait",
+  );
   assert.equal(inferStateFromPullRequest(config, record, pr, scenario.passingChecks, [], nowMs), "waiting_ci");
+  assert.equal(
+    inferStateFromPullRequest(config, record, pr, scenario.passingChecks, [scenario.reviewThread], nowMs),
+    "waiting_ci",
+  );
   assert.equal(
     inferStateFromPullRequest(config, record, pr, scenario.passingChecks, [], Date.parse("2026-06-14T05:11:00Z")),
     "blocked",
@@ -1472,7 +1481,7 @@ test("structured current-head repair artifact proves HRCore-style repaired P2 re
     true,
   );
   assert.equal(inferStateFromPullRequest(config, record, pr, scenario.passingChecks, [scenario.reviewThread]), "ready_to_merge");
-  assert.equal(hasConfiguredProviderSuccess(config, record, pr, scenario.passingChecks, [scenario.reviewThread]), true);
+  assert.equal(hasConfiguredProviderSuccess(config, record, pr, scenario.passingChecks, [scenario.reviewThread]), false);
   assert.deepEqual(effectiveConfiguredBotReviewThreadsForState(config, record, pr, scenario.passingChecks, [scenario.reviewThread]), []);
 });
 
@@ -1948,7 +1957,7 @@ test("verified no-source current-head P2 residue remains configured-provider suc
   );
 });
 
-test("verified repair current-head P2 residue remains configured-provider success", () => {
+test("verified repair current-head P2 residue does not replace blocking provider success", () => {
   const issueNumber = 2380;
   const prNumber = 403;
   const headSha = "b5c4f67verifiedrepairp2";
@@ -2017,7 +2026,7 @@ test("verified repair current-head P2 residue remains configured-provider succes
       checks: scenario.passingChecks,
       reviewThreads: [scenario.reviewThread],
     }),
-    true,
+    false,
   );
   assert.equal(
     hasConfiguredProviderSuccess(config, record, pr, scenario.passingChecks, [scenario.reviewThread]),
