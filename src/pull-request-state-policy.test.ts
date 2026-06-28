@@ -207,7 +207,7 @@ test("inferStateFromPullRequest keeps waiting for a required current-head signal
   });
 });
 
-test("inferStateFromPullRequest clears stale Codex request-comment timeout after provider success", () => {
+test("inferStateFromPullRequest re-arms stale Codex success before the active wait", () => {
   const headSha = "d5a9957506c697dc13f5431bb460cfe95257bcae";
   const config = createConfig({
     reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
@@ -241,12 +241,13 @@ test("inferStateFromPullRequest clears stale Codex request-comment timeout after
   });
 
   withStubbedDateNow("2026-05-25T10:10:02.845Z", () => {
-    assert.equal(inferStateFromPullRequest(config, record, pr, passingChecks(), []), "ready_to_merge");
+    assert.equal(inferStateFromPullRequest(config, record, pr, passingChecks(), []), "waiting_ci");
     assert.equal(inferGitHubWaitStep(config, record, pr, passingChecks(), []), null);
     assert.deepEqual(syncCopilotReviewTimeoutState(config, record, pr), {
-      copilot_review_timed_out_at: null,
-      copilot_review_timeout_action: null,
-      copilot_review_timeout_reason: null,
+      copilot_review_timed_out_at: "2026-05-23T16:05:34.342Z",
+      copilot_review_timeout_action: "request_review_comment",
+      copilot_review_timeout_reason:
+        "configured review bot (chatgpt-codex-connector) never produced a current-head review signal within 1 minute(s) for head d5a9957506c697dc13f5431bb460cfe95257bcae.",
     });
   });
 });
@@ -1075,7 +1076,7 @@ test("legacy current-head processed-thread repair proof can replace Codex no-maj
     false,
   );
   assert.equal(inferStateFromPullRequest(config, record, pr, scenario.passingChecks, [scenario.reviewThread]), "ready_to_merge");
-  assert.equal(hasConfiguredProviderSuccess(config, record, pr, scenario.passingChecks, [scenario.reviewThread]), true);
+  assert.equal(hasConfiguredProviderSuccess(config, record, pr, scenario.passingChecks, [scenario.reviewThread]), false);
 });
 
 test("legacy current-head repair proof does not satisfy GitHub review-required decisions", () => {
@@ -1229,11 +1230,20 @@ test("cleared legacy repair proof does not replace a required Codex current-head
       checks: scenario.passingChecks,
       reviewThreads: [scenario.reviewThread],
     }),
-    true,
+    false,
   );
   assert.equal(hasConfiguredProviderSuccess(config, record, pr, scenario.passingChecks, []), false);
+  assert.equal(hasConfiguredProviderSuccess(config, record, pr, scenario.passingChecks, [scenario.reviewThread]), false);
   assert.equal(inferGitHubWaitStep(config, record, pr, scenario.passingChecks, [], nowMs), "configured_bot_current_head_signal_wait");
+  assert.equal(
+    inferGitHubWaitStep(config, record, pr, scenario.passingChecks, [scenario.reviewThread], nowMs),
+    "configured_bot_current_head_signal_wait",
+  );
   assert.equal(inferStateFromPullRequest(config, record, pr, scenario.passingChecks, [], nowMs), "waiting_ci");
+  assert.equal(
+    inferStateFromPullRequest(config, record, pr, scenario.passingChecks, [scenario.reviewThread], nowMs),
+    "waiting_ci",
+  );
   assert.equal(
     inferStateFromPullRequest(config, record, pr, scenario.passingChecks, [], Date.parse("2026-06-14T05:11:00Z")),
     "blocked",
@@ -1472,7 +1482,7 @@ test("structured current-head repair artifact proves HRCore-style repaired P2 re
     true,
   );
   assert.equal(inferStateFromPullRequest(config, record, pr, scenario.passingChecks, [scenario.reviewThread]), "ready_to_merge");
-  assert.equal(hasConfiguredProviderSuccess(config, record, pr, scenario.passingChecks, [scenario.reviewThread]), true);
+  assert.equal(hasConfiguredProviderSuccess(config, record, pr, scenario.passingChecks, [scenario.reviewThread]), false);
   assert.deepEqual(effectiveConfiguredBotReviewThreadsForState(config, record, pr, scenario.passingChecks, [scenario.reviewThread]), []);
 });
 
@@ -1948,7 +1958,7 @@ test("verified no-source current-head P2 residue remains configured-provider suc
   );
 });
 
-test("verified repair current-head P2 residue remains configured-provider success", () => {
+test("verified repair current-head P2 residue does not replace blocking provider success", () => {
   const issueNumber = 2380;
   const prNumber = 403;
   const headSha = "b5c4f67verifiedrepairp2";
@@ -2017,7 +2027,7 @@ test("verified repair current-head P2 residue remains configured-provider succes
       checks: scenario.passingChecks,
       reviewThreads: [scenario.reviewThread],
     }),
-    true,
+    false,
   );
   assert.equal(
     hasConfiguredProviderSuccess(config, record, pr, scenario.passingChecks, [scenario.reviewThread]),

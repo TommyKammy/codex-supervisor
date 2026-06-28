@@ -15,6 +15,7 @@ import {
   createConfig,
   createPullRequest,
   createRecord,
+  createReviewThread,
   createSupervisorFixture,
   executionReadyBody,
   git,
@@ -355,7 +356,7 @@ test("handlePostTurnPullRequestTransitions waits for Copilot propagation after m
   assert.equal(snapshotLoads, 2);
 });
 
-test("handlePostTurnMergeAndCompletion treats verified current-head repair residue as Codex no-major evidence", async () => {
+test("handlePostTurnMergeAndCompletion blocks verified repair residue without current-head Codex no-major", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 2373;
   const branch = branchName(fixture.config, issueNumber);
@@ -468,15 +469,29 @@ test("handlePostTurnMergeAndCompletion treats verified current-head repair resid
     }
   ).handlePostTurnMergeAndCompletion(state, issue, state.issues[String(issueNumber)]!, pr, { dryRun: false });
 
-  assert.equal(merged.state, "merging");
-  assert.equal(merged.blocked_reason, null);
-  assert.deepEqual(autoMergeCalls, [{ prNumber: 3980, headSha: "head-verified-repair-residue" }]);
-  assert.equal(comments.length, 1);
-  assert.match(comments[0]?.body ?? "", /Final auto-merge guard passed for head/);
-  assert.doesNotMatch(merged.last_failure_signature ?? "", /missing_current_head_codex_no_major/);
+  assert.equal(merged.state, "blocked");
+  assert.equal(merged.blocked_reason, "verification");
+  assert.deepEqual(autoMergeCalls, []);
+  assert.equal(comments.length, 0);
+  assert.equal(
+    merged.last_failure_context?.signature,
+    "auto-merge-refused:head-verified-repair-residue:missing_current_head_codex_no_major",
+  );
+  assert.match(
+    merged.last_auto_merge_guard_context?.details.join("\n") ?? "",
+    /codex_current_head_no_major=no/,
+  );
+  assert.match(
+    merged.last_auto_merge_guard_context?.details.join("\n") ?? "",
+    /codex_actual_current_head_no_major=no/,
+  );
   assert.match(
     merged.last_auto_merge_guard_context?.details.join("\\n") ?? "",
     /codex_verified_current_head_repair_residue=yes/,
+  );
+  assert.match(
+    merged.last_auto_merge_guard_context?.details.join("\n") ?? "",
+    /codex_current_head_merge_proof=none/,
   );
   assert.match(
     merged.last_auto_merge_guard_context?.details.join("\\n") ?? "",
@@ -520,14 +535,18 @@ test("handlePostTurnMergeAndCompletion honors scoped local proof in the final au
     severity: "P2",
     commentBody: "P2: Verify this current-head repair before merge.",
     discussionUrl: "https://example.test/pr/4020#discussion_scoped_local_proof",
+    currentHeadNoMajorReview: {
+      requestedAt: "2026-06-14T00:16:00Z",
+      observedAt: "2026-06-14T00:19:00Z",
+    },
   });
   const pr = createPullRequest({
     ...scenario.pullRequestPatch,
-    reviewDecision: "CHANGES_REQUESTED",
-    configuredBotTopLevelReviewStrength: "blocking",
-    configuredBotOnlyChangesRequestedReview: true,
-    configuredBotCurrentHeadObservedAt: "2026-06-14T00:17:00Z",
-    configuredBotCurrentHeadObservationSource: "review_thread",
+    reviewDecision: null,
+    configuredBotTopLevelReviewStrength: null,
+    configuredBotOnlyChangesRequestedReview: false,
+    configuredBotCurrentHeadObservedAt: "2026-06-14T00:19:00Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
   });
   const state: SupervisorStateFile = {
     activeIssueNumber: null,
@@ -539,6 +558,8 @@ test("handlePostTurnMergeAndCompletion honors scoped local proof in the final au
         branch,
         blocked_reason: null,
         last_error: null,
+        provider_success_observed_at: "2026-06-14T00:19:00Z",
+        provider_success_head_sha: headSha,
         latest_local_ci_result: null,
         timeline_artifacts: [
           {
@@ -596,6 +617,14 @@ test("handlePostTurnMergeAndCompletion honors scoped local proof in the final au
   assert.deepEqual(autoMergeCalls, [{ prNumber: 4020, headSha }]);
   assert.equal(comments.length, 1);
   assert.match(comments[0]?.body ?? "", /Final auto-merge guard passed for head/);
+  assert.match(
+    merged.last_auto_merge_guard_context?.details.join("\n") ?? "",
+    /codex_actual_current_head_no_major=yes/,
+  );
+  assert.match(
+    merged.last_auto_merge_guard_context?.details.join("\n") ?? "",
+    /codex_current_head_merge_proof=connector_no_major/,
+  );
   assert.match(merged.last_auto_merge_guard_context?.details.join("\\n") ?? "", /local_ci=scoped_repair_proof/);
   assert.doesNotMatch(merged.last_failure_signature ?? "", /missing_current_head_local_ci_success/);
 });
@@ -1816,6 +1845,326 @@ test("handlePostTurnMergeAndCompletion blocks Codex auto-merge without current-h
   assert.equal(result.blocked_reason, "verification");
   assert.equal(result.last_failure_context?.signature, "auto-merge-refused:head-123:missing_current_head_codex_no_major");
   assert.equal(autoMergeCalls, 0);
+});
+
+test("handlePostTurnMergeAndCompletion blocks stale Codex success before the active wait", async () => {
+  const fixture = await createSupervisorFixture();
+  const config = createConfig({
+    ...fixture.config,
+    codexConnectorAutoMergeEnabled: true,
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+  });
+  const issueNumber = 1236;
+  const headSha = "head-stale-codex-success";
+  const staleObservedAt = "2026-03-13T06:10:00Z";
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "ready_to_merge",
+        last_head_sha: headSha,
+        review_wait_started_at: "2026-03-13T06:20:00Z",
+        review_wait_head_sha: headSha,
+        provider_success_observed_at: staleObservedAt,
+        provider_success_head_sha: headSha,
+        processed_review_thread_ids: [`thread-stale-success-repair@${headSha}`],
+        processed_review_thread_fingerprints: [`thread-stale-success-repair@${headSha}#comment-stale-success-repair`],
+        timeline_artifacts: [
+          {
+            type: "verification_result",
+            gate: "codex_turn",
+            command: "npm test -- src/supervisor/supervisor-pr-readiness.test.ts",
+            head_sha: headSha,
+            outcome: "passed",
+            remediation_target: null,
+            next_action: "continue",
+            summary: "Verified the repair residue locally.",
+            recorded_at: "2026-03-13T06:21:00Z",
+            repair_targets: [VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET],
+            processed_review_thread_ids: [`thread-stale-success-repair@${headSha}`],
+            processed_review_thread_fingerprints: [`thread-stale-success-repair@${headSha}#comment-stale-success-repair`],
+          },
+        ],
+      }),
+    },
+  };
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Reject stale Codex success",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+  const pr: GitHubPullRequest = {
+    number: 1236,
+    title: "Stale Codex success",
+    url: "https://example.test/pr/1236",
+    state: "OPEN",
+    createdAt: "2026-03-13T06:00:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-1236",
+    headRefOid: headSha,
+    mergedAt: null,
+    configuredBotCurrentHeadObservedAt: staleObservedAt,
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
+  };
+  const reviewThread = createReviewThread({
+    id: "thread-stale-success-repair",
+    isOutdated: false,
+    comments: {
+      nodes: [
+        {
+          id: "comment-stale-success-repair",
+          body: "P2: This repaired finding still needs a fresh current-head Connector no-major signal.",
+          createdAt: "2026-03-13T06:05:00Z",
+          url: "https://example.test/pr/1236#discussion_stale_success",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  let autoMergeCalls = 0;
+  const supervisor = new Supervisor(config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getPullRequest: async (prNumber: number) => {
+      assert.equal(prNumber, 1236);
+      return pr;
+    },
+    getChecks: async (prNumber: number) => {
+      assert.equal(prNumber, 1236);
+      return passingChecks();
+    },
+    getUnresolvedReviewThreads: async (prNumber: number) => {
+      assert.equal(prNumber, 1236);
+      return [reviewThread];
+    },
+    enableAutoMerge: async () => {
+      autoMergeCalls += 1;
+    },
+  };
+
+  const result = await (
+    supervisor as unknown as {
+      handlePostTurnMergeAndCompletion: (
+        state: SupervisorStateFile,
+        issue: GitHubIssue,
+        record: ReturnType<typeof createRecord>,
+        pr: GitHubPullRequest,
+        options: { dryRun: boolean },
+      ) => Promise<ReturnType<typeof createRecord>>;
+    }
+  ).handlePostTurnMergeAndCompletion(state, issue, state.issues[String(issueNumber)]!, pr, { dryRun: false });
+
+  assert.equal(result.state, "waiting_ci");
+  assert.equal(result.blocked_reason, null);
+  assert.equal(result.last_failure_context, null);
+  assert.equal(result.last_auto_merge_guard_context ?? null, null);
+  assert.equal(autoMergeCalls, 0);
+});
+
+test("handlePostTurnMergeAndCompletion preserves same-head no-major for only outdated residue", async () => {
+  const fixture = await createSupervisorFixture();
+  const config = createConfig({
+    ...fixture.config,
+    codexConnectorAutoMergeEnabled: true,
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+  });
+  const issueNumber = 1237;
+  const headSha = "head-outdated-residue-success";
+  const observedAt = "2026-03-13T06:10:00Z";
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "ready_to_merge",
+        last_head_sha: headSha,
+        review_wait_started_at: "2026-03-13T06:20:00Z",
+        review_wait_head_sha: headSha,
+        provider_success_observed_at: observedAt,
+        provider_success_head_sha: headSha,
+      }),
+    },
+  };
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Preserve outdated residue success",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+  const pr = createPullRequest({
+    number: 1237,
+    title: "Outdated residue success",
+    headRefName: "codex/issue-1237",
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    configuredBotCurrentHeadObservedAt: "2026-03-13T06:21:00Z",
+    configuredBotCurrentHeadObservationSource: "status_context",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: headSha,
+    configuredBotCurrentHeadCodexSuccessObservedAt: observedAt,
+    currentHeadCiGreenAt: "2026-03-13T06:09:00Z",
+  });
+  const reviewThread = createReviewThread({
+    id: "thread-outdated-codex-residue",
+    isOutdated: true,
+    comments: {
+      nodes: [
+        {
+          id: "comment-outdated-codex-residue",
+          body: "P2: This old finding is covered by the current-head no-major signal.",
+          createdAt: "2026-03-13T06:00:00Z",
+          url: "https://example.test/pr/1237#discussion_outdated",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  const comments: Array<{ issueNumber: number; body: string }> = [];
+  const autoMergeCalls: Array<{ prNumber: number; headSha: string }> = [];
+  const supervisor = new Supervisor(config);
+  (supervisor as unknown as { loadOpenPullRequestSnapshot: (prNumber: number) => Promise<unknown> }).loadOpenPullRequestSnapshot = async (
+    prNumber: number,
+  ) => {
+    assert.equal(prNumber, 1237);
+    return { pr, checks: passingChecks(), reviewThreads: [reviewThread] };
+  };
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    addIssueComment: async (commentIssueNumber: number, body: string) => {
+      comments.push({ issueNumber: commentIssueNumber, body });
+    },
+    enableAutoMerge: async (prNumber: number, mergeHeadSha: string) => {
+      autoMergeCalls.push({ prNumber, headSha: mergeHeadSha });
+    },
+  };
+
+  const result = await (
+    supervisor as unknown as {
+      handlePostTurnMergeAndCompletion: (
+        state: SupervisorStateFile,
+        issue: GitHubIssue,
+        record: ReturnType<typeof createRecord>,
+        pr: GitHubPullRequest,
+        options: { dryRun: boolean },
+      ) => Promise<ReturnType<typeof createRecord>>;
+    }
+  ).handlePostTurnMergeAndCompletion(state, issue, state.issues[String(issueNumber)]!, pr, { dryRun: false });
+
+  assert.equal(result.state, "merging");
+  assert.deepEqual(autoMergeCalls, [{ prNumber: 1237, headSha }]);
+  assert.equal(comments.length, 1);
+  assert.match(
+    result.last_auto_merge_guard_context?.details.join("\n") ?? "",
+    /codex_actual_current_head_no_major=yes/,
+  );
+});
+
+test("handlePostTurnMergeAndCompletion accepts preserved reviewed-commit Codex success", async () => {
+  const fixture = await createSupervisorFixture();
+  const config = createConfig({
+    ...fixture.config,
+    codexConnectorAutoMergeEnabled: true,
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+  });
+  const issueNumber = 1238;
+  const headSha = "head-reviewed-commit-success";
+  const successObservedAt = "2026-03-13T06:25:00Z";
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "ready_to_merge",
+        last_head_sha: headSha,
+        review_wait_started_at: "2026-03-13T06:20:00Z",
+        review_wait_head_sha: headSha,
+        provider_success_observed_at: successObservedAt,
+        provider_success_head_sha: headSha,
+      }),
+    },
+  };
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Preserve reviewed commit success",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+  const pr = createPullRequest({
+    number: 1238,
+    title: "Reviewed commit success",
+    headRefName: "codex/issue-1238",
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    configuredBotCurrentHeadObservedAt: "2026-03-13T06:26:00Z",
+    configuredBotCurrentHeadObservationSource: "status_context",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: headSha,
+    configuredBotCurrentHeadCodexSuccessObservedAt: successObservedAt,
+  });
+
+  const comments: Array<{ issueNumber: number; body: string }> = [];
+  const autoMergeCalls: Array<{ prNumber: number; headSha: string }> = [];
+  const supervisor = new Supervisor(config);
+  (supervisor as unknown as { loadOpenPullRequestSnapshot: (prNumber: number) => Promise<unknown> }).loadOpenPullRequestSnapshot = async (
+    prNumber: number,
+  ) => {
+    assert.equal(prNumber, 1238);
+    return { pr, checks: passingChecks(), reviewThreads: [] };
+  };
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    addIssueComment: async (commentIssueNumber: number, body: string) => {
+      comments.push({ issueNumber: commentIssueNumber, body });
+    },
+    enableAutoMerge: async (prNumber: number, mergeHeadSha: string) => {
+      autoMergeCalls.push({ prNumber, headSha: mergeHeadSha });
+    },
+  };
+
+  const result = await (
+    supervisor as unknown as {
+      handlePostTurnMergeAndCompletion: (
+        state: SupervisorStateFile,
+        issue: GitHubIssue,
+        record: ReturnType<typeof createRecord>,
+        pr: GitHubPullRequest,
+        options: { dryRun: boolean },
+      ) => Promise<ReturnType<typeof createRecord>>;
+    }
+  ).handlePostTurnMergeAndCompletion(state, issue, state.issues[String(issueNumber)]!, pr, { dryRun: false });
+
+  assert.equal(result.state, "merging");
+  assert.deepEqual(autoMergeCalls, [{ prNumber: 1238, headSha }]);
+  assert.equal(comments.length, 1);
+  assert.match(
+    result.last_auto_merge_guard_context?.details.join("\n") ?? "",
+    /codex_actual_current_head_no_major=yes/,
+  );
 });
 
 test("handlePostTurnMergeAndCompletion reverts to draft when the refreshed PR is no longer merge-ready", async () => {

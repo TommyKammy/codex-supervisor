@@ -41,11 +41,15 @@ import {
   isVerifiedStaleResidueClassification,
   type StaleReviewBotRemediationDto,
 } from "./supervisor/stale-review-bot-remediation";
-import { projectCurrentHeadCodexRepairProof } from "./current-head-codex-repair-proof";
+import {
+  hasFreshCurrentHeadCodexSuccessReviewedCommit,
+  projectCurrentHeadCodexRepairProof,
+} from "./current-head-codex-repair-proof";
 import {
   configuredBotCurrentHeadSignalPending,
   copilotReviewPending,
   currentHeadObservationSatisfiesActiveWait,
+  currentHeadTimestampSatisfiesActiveWait,
   determineCopilotReviewTimeout,
   validTimestamp,
 } from "./pull-request-state-current-head-policy";
@@ -176,7 +180,9 @@ function codexConnectorOutdatedThreadClearanceAllowed(
   const onlyOutdatedCodexConnectorThreads =
     threadsAfterConvergencePolicy.length > 0 &&
     threadsAfterConvergencePolicy.every((thread) => isClearableOutdatedCodexConnectorResidueThread(config, thread));
-  const currentHeadCodexSuccess = hasCodexConnectorPrSuccessCurrentHeadObservation(pr);
+  const currentHeadCodexSuccess =
+    hasCodexConnectorPrSuccessCurrentHeadObservation(pr) ||
+    hasFreshCurrentHeadCodexSuccessReviewedCommit(pr, reviewThreads);
   const convergedOutdatedResidueCanClear =
     providerKinds.includes("codex") &&
     providerKinds.every((kind) => kind === "codex") &&
@@ -206,10 +212,16 @@ export function staleSameHeadCodexWaitHasOnlyOutdatedResidue(
   reviewThreads: ReviewThread[],
 ): boolean {
   const providerKinds = configuredReviewProviderKinds(config);
+  const successObservedAt =
+    pr.configuredBotCurrentHeadObservationSource === "codex_pr_success_comment"
+      ? validTimestamp(pr.configuredBotCurrentHeadObservedAt)
+      : hasFreshCurrentHeadCodexSuccessReviewedCommit(pr, reviewThreads)
+        ? validTimestamp(pr.configuredBotCurrentHeadCodexSuccessObservedAt)
+        : null;
   if (
     !providerKinds.includes("codex") ||
     providerKinds.some((kind) => kind !== "codex") ||
-    !hasCodexConnectorPrSuccessCurrentHeadObservation(pr)
+    !successObservedAt
   ) {
     return false;
   }
@@ -218,13 +230,12 @@ export function staleSameHeadCodexWaitHasOnlyOutdatedResidue(
     return false;
   }
 
-  const observedAt = validTimestamp(pr.configuredBotCurrentHeadObservedAt);
   const waitStartedAt = validTimestamp(record.review_wait_started_at);
-  if (!observedAt || !waitStartedAt || record.review_wait_head_sha !== pr.headRefOid) {
+  if (!waitStartedAt || record.review_wait_head_sha !== pr.headRefOid) {
     return false;
   }
 
-  if (Date.parse(observedAt) >= Date.parse(waitStartedAt)) {
+  if (Date.parse(successObservedAt) >= Date.parse(waitStartedAt)) {
     return false;
   }
 
@@ -389,11 +400,38 @@ export function currentHeadRepairProofSatisfiesConfiguredProviderSignal(args: {
     return false;
   }
 
-  if (!configuredBotCurrentHeadSignalPending(args.config, args.record, args.pr)) {
+  return hasActualCurrentHeadCodexNoMajorSupport(args);
+}
+
+export function hasActualCurrentHeadCodexNoMajorSupport(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+}): boolean {
+  if (
+    hasFreshCurrentHeadCodexSuccessReviewedCommit(args.pr, args.reviewThreads) &&
+    currentHeadTimestampSatisfiesActiveWait(
+      args.record,
+      args.pr,
+      args.pr.configuredBotCurrentHeadCodexSuccessObservedAt,
+    )
+  ) {
     return true;
   }
 
-  return proof.currentConfiguredThreadCount > 0;
+  return Boolean(
+    (hasCodexConnectorPrSuccessCurrentHeadObservation(args.pr) &&
+      currentHeadObservationSatisfiesActiveWait(args.record, args.pr)) ||
+      staleSameHeadCodexWaitHasOnlyOutdatedResidue(
+        args.config,
+        args.record,
+        args.pr,
+        args.checks,
+        args.reviewThreads,
+      ),
+  );
 }
 
 function configuredBotThreadsAllowCodexConnectorCurrentHeadWait(args: {

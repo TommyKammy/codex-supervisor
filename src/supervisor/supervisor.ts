@@ -23,9 +23,9 @@ import {
   inferStateFromPullRequest,
   inferGitHubWaitStep,
 } from "../pull-request-state";
+import { hasActualCurrentHeadCodexNoMajorSupport } from "../pull-request-state-codex-residue-policy";
 import { projectCurrentHeadCodexRepairProof } from "../current-head-codex-repair-proof";
 import { aggregateHumanReviewDecisionBlocker } from "../review-decision-blocking-policy";
-import { hasCodexConnectorPrSuccessCurrentHeadObservation } from "../codex-connector-review-policy";
 import {
   syncCopilotReviewRequestObservation,
   syncCopilotReviewTimeoutState,
@@ -233,11 +233,18 @@ function buildAutoMergeEvidenceContext(details: string[], pr: GitHubPullRequest)
   };
 }
 
-function hasCurrentHeadCodexNoMajor(record: IssueRunRecord, pr: GitHubPullRequest): boolean {
+function hasCurrentHeadCodexNoMajor(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+}): boolean {
+  const { config, record, pr, checks, reviewThreads } = args;
   return Boolean(
     record.provider_success_head_sha === pr.headRefOid &&
       validTimestamp(record.provider_success_observed_at) &&
-      hasCodexConnectorPrSuccessCurrentHeadObservation(pr),
+      hasActualCurrentHeadCodexNoMajorSupport({ config, record, pr, checks, reviewThreads }),
   );
 }
 
@@ -278,8 +285,19 @@ function finalAutoMergeGuard(args: {
     reviewThreads,
   });
   const verifiedCurrentHeadRepairResidue = verifiedCurrentHeadRepairProof !== null;
-  const currentHeadCodexNoMajor = hasCurrentHeadCodexNoMajor(record, currentPr) || verifiedCurrentHeadRepairResidue;
+  const currentHeadCodexNoMajor = hasCurrentHeadCodexNoMajor({
+    config,
+    record,
+    pr: currentPr,
+    checks,
+    reviewThreads,
+  });
   const requiresCodexNoMajor = autoMergePath === "codex_connector_no_major";
+  const currentHeadMergeProof = requiresCodexNoMajor
+    ? currentHeadCodexNoMajor
+      ? "connector_no_major"
+      : "none"
+    : "not_required";
   const aggregateHumanReviewBlocker = aggregateHumanReviewDecisionBlocker({
     humanReviewBlocksMerge: Boolean(config.humanReviewBlocksMerge),
     requiresCodexNoMajor,
@@ -304,7 +322,11 @@ function finalAutoMergeGuard(args: {
     requiresCodexNoMajor
       ? `codex_current_head_no_major=${currentHeadCodexNoMajor ? "yes" : "no"}`
       : "codex_current_head_no_major=not_required",
+    requiresCodexNoMajor
+      ? `codex_actual_current_head_no_major=${currentHeadCodexNoMajor ? "yes" : "no"}`
+      : "codex_actual_current_head_no_major=not_required",
     `codex_verified_current_head_repair_residue=${verifiedCurrentHeadRepairResidue ? "yes" : "no"}`,
+    `codex_current_head_merge_proof=${currentHeadMergeProof}`,
     `codex_repair_proof_source=${verifiedCurrentHeadRepairProof?.source ?? "none"}`,
     `configured_bot_blockers=${effectiveConfiguredBotBlockers}`,
     `human_blockers=${effectiveHumanBlockers}`,

@@ -312,6 +312,24 @@ export function currentHeadObservationSatisfiesActiveWait(
   return Date.parse(observedAt) >= Date.parse(waitStartedAt);
 }
 
+export function currentHeadTimestampSatisfiesActiveWait(
+  record: Pick<IssueRunRecord, "review_wait_started_at" | "review_wait_head_sha">,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
+  observedAtValue: string | null | undefined,
+): boolean {
+  const observedAt = validTimestamp(observedAtValue);
+  if (!observedAt) {
+    return false;
+  }
+
+  const waitStartedAt = validTimestamp(record.review_wait_started_at);
+  if (!waitStartedAt || record.review_wait_head_sha !== pr.headRefOid) {
+    return true;
+  }
+
+  return Date.parse(observedAt) >= Date.parse(waitStartedAt);
+}
+
 export function shouldWaitForConfiguredBotInitialGracePeriod(
   config: SupervisorConfig,
   pr: GitHubPullRequest,
@@ -480,17 +498,24 @@ function configuredBotCurrentHeadSignalWaitStartAt(
   record: IssueRunRecord,
   pr: GitHubPullRequest,
 ): string | null {
+  if (!requiresConfiguredBotCurrentHeadSignal(config) || pr.isDraft) {
+    return null;
+  }
+
+  const codexConnectorRequiresSignal = configuredReviewProviderKinds(config).includes("codex");
   if (
-    !requiresConfiguredBotCurrentHeadSignal(config) ||
-    pr.isDraft ||
-    hasCurrentHeadProviderSuccess(record, pr) ||
-    (validTimestamp(pr.configuredBotCurrentHeadObservedAt) && currentHeadObservationSatisfiesActiveWait(record, pr))
+    codexConnectorRequiresSignal
+      ? hasCurrentHeadProviderSuccess(record, pr) && currentHeadObservationSatisfiesActiveWait(record, pr)
+      : hasCurrentHeadProviderSuccess(record, pr)
   ) {
     return null;
   }
 
+  if (validTimestamp(pr.configuredBotCurrentHeadObservedAt) && currentHeadObservationSatisfiesActiveWait(record, pr)) {
+    return null;
+  }
+
   const currentHeadCiGreenAt = validTimestamp(pr.currentHeadCiGreenAt);
-  const codexConnectorRequiresSignal = configuredReviewProviderKinds(config).includes("codex");
   const fallbackWaitStartedAt =
     codexConnectorRequiresSignal && record.review_wait_head_sha === pr.headRefOid
       ? validTimestamp(record.review_wait_started_at)

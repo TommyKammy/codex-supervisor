@@ -479,6 +479,31 @@ test("buildDecisionKernelV2ExplainDto requires active-wait-satisfying current-he
   assert.equal(dto.decision?.action, "request_review");
 });
 
+test("buildDecisionKernelV2ExplainDto blocks Codex auto-merge on stale provider success before the active wait", () => {
+  const dto = buildDecisionKernelV2ExplainDto({
+    config: codexConfig({ codexConnectorAutoMergeEnabled: true }),
+    issueNumber: 2301,
+    title: "Phase 3.2",
+    record: record({
+      review_wait_started_at: "2026-06-08T00:05:00.000Z",
+      review_wait_head_sha: "head-current",
+      provider_success_observed_at: "2026-06-08T00:02:00.000Z",
+      provider_success_head_sha: "head-current",
+    }),
+    pr: pullRequest({
+      configuredBotCurrentHeadObservedAt: "2026-06-08T00:02:00.000Z",
+      configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+      configuredBotTopLevelReviewStrength: null,
+    }),
+    checks: [{ name: "build", state: "SUCCESS", bucket: "pass" }],
+    reviewThreads: [],
+  });
+
+  assert.equal(dto.decision?.normalizedState.reviewPosture, "current_head_review_observed");
+  assert.equal(dto.decision?.action, "ask_operator");
+  assert.deepEqual(dto.decision?.reasons, ["insufficient_merge_evidence"]);
+});
+
 test("buildDecisionKernelV2ExplainDto applies journal-only configured-bot clearance before blocking facts", () => {
   const dto = buildDecisionKernelV2ExplainDto({
     config: codexConfig(),
@@ -541,7 +566,7 @@ test("buildDecisionKernelV2ExplainDto requires Codex no-major evidence for Codex
   assert.deepEqual(dto.decision?.reasons, ["insufficient_merge_evidence"]);
 });
 
-test("buildDecisionKernelV2ExplainDto treats verified current-head repair residue as Codex no-major evidence", () => {
+test("buildDecisionKernelV2ExplainDto does not treat verified repair residue as Codex no-major evidence", () => {
   const dto = buildDecisionKernelV2ExplainDto({
     config: codexConfig({
       codexConnectorAutoMergeEnabled: true,
@@ -594,7 +619,8 @@ test("buildDecisionKernelV2ExplainDto treats verified current-head repair residu
   });
 
   assert.equal(dto.decision?.normalizedState.reviewPosture, "current_head_review_observed");
-  assert.equal(dto.decision?.action, "merge");
+  assert.equal(dto.decision?.action, "ask_operator");
+  assert.deepEqual(dto.decision?.reasons, ["insufficient_merge_evidence"]);
 });
 
 test("buildDecisionKernelV2ExplainDto does not require Codex no-major evidence on configured-provider auto-merge paths", () => {
