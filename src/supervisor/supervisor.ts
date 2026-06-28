@@ -278,8 +278,13 @@ function finalAutoMergeGuard(args: {
     reviewThreads,
   });
   const verifiedCurrentHeadRepairResidue = verifiedCurrentHeadRepairProof !== null;
-  const currentHeadCodexNoMajor = hasCurrentHeadCodexNoMajor(record, currentPr) || verifiedCurrentHeadRepairResidue;
+  const currentHeadCodexNoMajor = hasCurrentHeadCodexNoMajor(record, currentPr);
   const requiresCodexNoMajor = autoMergePath === "codex_connector_no_major";
+  const currentHeadMergeProof = requiresCodexNoMajor
+    ? currentHeadCodexNoMajor
+      ? "connector_no_major"
+      : "none"
+    : "not_required";
   const aggregateHumanReviewBlocker = aggregateHumanReviewDecisionBlocker({
     humanReviewBlocksMerge: Boolean(config.humanReviewBlocksMerge),
     requiresCodexNoMajor,
@@ -304,7 +309,11 @@ function finalAutoMergeGuard(args: {
     requiresCodexNoMajor
       ? `codex_current_head_no_major=${currentHeadCodexNoMajor ? "yes" : "no"}`
       : "codex_current_head_no_major=not_required",
+    requiresCodexNoMajor
+      ? `codex_actual_current_head_no_major=${currentHeadCodexNoMajor ? "yes" : "no"}`
+      : "codex_actual_current_head_no_major=not_required",
     `codex_verified_current_head_repair_residue=${verifiedCurrentHeadRepairResidue ? "yes" : "no"}`,
+    `codex_current_head_merge_proof=${currentHeadMergeProof}`,
     `codex_repair_proof_source=${verifiedCurrentHeadRepairProof?.source ?? "none"}`,
     `configured_bot_blockers=${effectiveConfiguredBotBlockers}`,
     `human_blockers=${effectiveHumanBlockers}`,

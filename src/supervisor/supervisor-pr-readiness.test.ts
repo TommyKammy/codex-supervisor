@@ -355,7 +355,7 @@ test("handlePostTurnPullRequestTransitions waits for Copilot propagation after m
   assert.equal(snapshotLoads, 2);
 });
 
-test("handlePostTurnMergeAndCompletion treats verified current-head repair residue as Codex no-major evidence", async () => {
+test("handlePostTurnMergeAndCompletion blocks verified repair residue without current-head Codex no-major", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 2373;
   const branch = branchName(fixture.config, issueNumber);
@@ -468,15 +468,29 @@ test("handlePostTurnMergeAndCompletion treats verified current-head repair resid
     }
   ).handlePostTurnMergeAndCompletion(state, issue, state.issues[String(issueNumber)]!, pr, { dryRun: false });
 
-  assert.equal(merged.state, "merging");
-  assert.equal(merged.blocked_reason, null);
-  assert.deepEqual(autoMergeCalls, [{ prNumber: 3980, headSha: "head-verified-repair-residue" }]);
-  assert.equal(comments.length, 1);
-  assert.match(comments[0]?.body ?? "", /Final auto-merge guard passed for head/);
-  assert.doesNotMatch(merged.last_failure_signature ?? "", /missing_current_head_codex_no_major/);
+  assert.equal(merged.state, "blocked");
+  assert.equal(merged.blocked_reason, "verification");
+  assert.deepEqual(autoMergeCalls, []);
+  assert.equal(comments.length, 0);
+  assert.equal(
+    merged.last_failure_context?.signature,
+    "auto-merge-refused:head-verified-repair-residue:missing_current_head_codex_no_major",
+  );
+  assert.match(
+    merged.last_auto_merge_guard_context?.details.join("\n") ?? "",
+    /codex_current_head_no_major=no/,
+  );
+  assert.match(
+    merged.last_auto_merge_guard_context?.details.join("\n") ?? "",
+    /codex_actual_current_head_no_major=no/,
+  );
   assert.match(
     merged.last_auto_merge_guard_context?.details.join("\\n") ?? "",
     /codex_verified_current_head_repair_residue=yes/,
+  );
+  assert.match(
+    merged.last_auto_merge_guard_context?.details.join("\n") ?? "",
+    /codex_current_head_merge_proof=none/,
   );
   assert.match(
     merged.last_auto_merge_guard_context?.details.join("\\n") ?? "",
@@ -520,14 +534,18 @@ test("handlePostTurnMergeAndCompletion honors scoped local proof in the final au
     severity: "P2",
     commentBody: "P2: Verify this current-head repair before merge.",
     discussionUrl: "https://example.test/pr/4020#discussion_scoped_local_proof",
+    currentHeadNoMajorReview: {
+      requestedAt: "2026-06-14T00:16:00Z",
+      observedAt: "2026-06-14T00:19:00Z",
+    },
   });
   const pr = createPullRequest({
     ...scenario.pullRequestPatch,
-    reviewDecision: "CHANGES_REQUESTED",
-    configuredBotTopLevelReviewStrength: "blocking",
-    configuredBotOnlyChangesRequestedReview: true,
-    configuredBotCurrentHeadObservedAt: "2026-06-14T00:17:00Z",
-    configuredBotCurrentHeadObservationSource: "review_thread",
+    reviewDecision: null,
+    configuredBotTopLevelReviewStrength: null,
+    configuredBotOnlyChangesRequestedReview: false,
+    configuredBotCurrentHeadObservedAt: "2026-06-14T00:19:00Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
   });
   const state: SupervisorStateFile = {
     activeIssueNumber: null,
@@ -539,6 +557,8 @@ test("handlePostTurnMergeAndCompletion honors scoped local proof in the final au
         branch,
         blocked_reason: null,
         last_error: null,
+        provider_success_observed_at: "2026-06-14T00:19:00Z",
+        provider_success_head_sha: headSha,
         latest_local_ci_result: null,
         timeline_artifacts: [
           {
@@ -596,6 +616,14 @@ test("handlePostTurnMergeAndCompletion honors scoped local proof in the final au
   assert.deepEqual(autoMergeCalls, [{ prNumber: 4020, headSha }]);
   assert.equal(comments.length, 1);
   assert.match(comments[0]?.body ?? "", /Final auto-merge guard passed for head/);
+  assert.match(
+    merged.last_auto_merge_guard_context?.details.join("\n") ?? "",
+    /codex_actual_current_head_no_major=yes/,
+  );
+  assert.match(
+    merged.last_auto_merge_guard_context?.details.join("\n") ?? "",
+    /codex_current_head_merge_proof=connector_no_major/,
+  );
   assert.match(merged.last_auto_merge_guard_context?.details.join("\\n") ?? "", /local_ci=scoped_repair_proof/);
   assert.doesNotMatch(merged.last_failure_signature ?? "", /missing_current_head_local_ci_success/);
 });

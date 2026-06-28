@@ -1229,7 +1229,7 @@ test("cleared legacy repair proof does not replace a required Codex current-head
       checks: scenario.passingChecks,
       reviewThreads: [scenario.reviewThread],
     }),
-    true,
+    false,
   );
   assert.equal(hasConfiguredProviderSuccess(config, record, pr, scenario.passingChecks, []), false);
   assert.equal(inferGitHubWaitStep(config, record, pr, scenario.passingChecks, [], nowMs), "configured_bot_current_head_signal_wait");

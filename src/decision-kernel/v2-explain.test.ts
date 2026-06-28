@@ -541,7 +541,7 @@ test("buildDecisionKernelV2ExplainDto requires Codex no-major evidence for Codex
   assert.deepEqual(dto.decision?.reasons, ["insufficient_merge_evidence"]);
 });
 
-test("buildDecisionKernelV2ExplainDto treats verified current-head repair residue as Codex no-major evidence", () => {
+test("buildDecisionKernelV2ExplainDto does not treat verified repair residue as Codex no-major evidence", () => {
   const dto = buildDecisionKernelV2ExplainDto({
     config: codexConfig({
       codexConnectorAutoMergeEnabled: true,
@@ -594,7 +594,8 @@ test("buildDecisionKernelV2ExplainDto treats verified current-head repair residu
   });
 
   assert.equal(dto.decision?.normalizedState.reviewPosture, "current_head_review_observed");
-  assert.equal(dto.decision?.action, "merge");
+  assert.equal(dto.decision?.action, "ask_operator");
+  assert.deepEqual(dto.decision?.reasons, ["insufficient_merge_evidence"]);
 });
 
 test("buildDecisionKernelV2ExplainDto does not require Codex no-major evidence on configured-provider auto-merge paths", () => {

@@ -475,8 +475,7 @@ function mergeReadyBlockedByFinalGuard(args: {
     checks: args.checks,
     reviewThreads: args.reviewThreads,
   });
-  const currentHeadCodexNoMajor =
-    hasCurrentHeadCodexNoMajor(args.record, args.pr) || verifiedCurrentHeadRepairResidue;
+  const currentHeadCodexNoMajor = hasCurrentHeadCodexNoMajor(args.record, args.pr);
   const effectiveConfiguredBotBlockers = effectiveConfiguredBotReviewThreadsForState(
     args.config,
     args.record,

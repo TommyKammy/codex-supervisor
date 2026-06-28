@@ -389,11 +389,7 @@ export function currentHeadRepairProofSatisfiesConfiguredProviderSignal(args: {
     return false;
   }
 
-  if (!configuredBotCurrentHeadSignalPending(args.config, args.record, args.pr)) {
-    return true;
-  }
-
-  return proof.currentConfiguredThreadCount > 0;
+  return !configuredBotCurrentHeadSignalPending(args.config, args.record, args.pr);
 }
 
 function configuredBotThreadsAllowCodexConnectorCurrentHeadWait(args: {
