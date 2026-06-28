@@ -207,7 +207,7 @@ test("inferStateFromPullRequest keeps waiting for a required current-head signal
   });
 });
 
-test("inferStateFromPullRequest clears stale Codex request-comment timeout after provider success", () => {
+test("inferStateFromPullRequest re-arms stale Codex success before the active wait", () => {
   const headSha = "d5a9957506c697dc13f5431bb460cfe95257bcae";
   const config = createConfig({
     reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
@@ -241,12 +241,13 @@ test("inferStateFromPullRequest clears stale Codex request-comment timeout after
   });
 
   withStubbedDateNow("2026-05-25T10:10:02.845Z", () => {
-    assert.equal(inferStateFromPullRequest(config, record, pr, passingChecks(), []), "ready_to_merge");
+    assert.equal(inferStateFromPullRequest(config, record, pr, passingChecks(), []), "waiting_ci");
     assert.equal(inferGitHubWaitStep(config, record, pr, passingChecks(), []), null);
     assert.deepEqual(syncCopilotReviewTimeoutState(config, record, pr), {
-      copilot_review_timed_out_at: null,
-      copilot_review_timeout_action: null,
-      copilot_review_timeout_reason: null,
+      copilot_review_timed_out_at: "2026-05-23T16:05:34.342Z",
+      copilot_review_timeout_action: "request_review_comment",
+      copilot_review_timeout_reason:
+        "configured review bot (chatgpt-codex-connector) never produced a current-head review signal within 1 minute(s) for head d5a9957506c697dc13f5431bb460cfe95257bcae.",
     });
   });
 });

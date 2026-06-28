@@ -2014,10 +2014,12 @@ test("handlePostTurnMergeAndCompletion preserves same-head no-major for only out
     headRefOid: headSha,
     mergeStateStatus: "CLEAN",
     mergeable: "MERGEABLE",
-    configuredBotCurrentHeadObservedAt: observedAt,
-    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadObservedAt: "2026-03-13T06:21:00Z",
+    configuredBotCurrentHeadObservationSource: "status_context",
     configuredBotCurrentHeadStatusState: "SUCCESS",
     configuredBotTopLevelReviewStrength: null,
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: headSha,
+    configuredBotCurrentHeadCodexSuccessObservedAt: observedAt,
     currentHeadCiGreenAt: "2026-03-13T06:09:00Z",
   });
   const reviewThread = createReviewThread({

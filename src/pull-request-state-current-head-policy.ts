@@ -498,17 +498,24 @@ function configuredBotCurrentHeadSignalWaitStartAt(
   record: IssueRunRecord,
   pr: GitHubPullRequest,
 ): string | null {
+  if (!requiresConfiguredBotCurrentHeadSignal(config) || pr.isDraft) {
+    return null;
+  }
+
+  const codexConnectorRequiresSignal = configuredReviewProviderKinds(config).includes("codex");
   if (
-    !requiresConfiguredBotCurrentHeadSignal(config) ||
-    pr.isDraft ||
-    hasCurrentHeadProviderSuccess(record, pr) ||
-    (validTimestamp(pr.configuredBotCurrentHeadObservedAt) && currentHeadObservationSatisfiesActiveWait(record, pr))
+    codexConnectorRequiresSignal
+      ? hasCurrentHeadProviderSuccess(record, pr) && currentHeadObservationSatisfiesActiveWait(record, pr)
+      : hasCurrentHeadProviderSuccess(record, pr)
   ) {
     return null;
   }
 
+  if (validTimestamp(pr.configuredBotCurrentHeadObservedAt) && currentHeadObservationSatisfiesActiveWait(record, pr)) {
+    return null;
+  }
+
   const currentHeadCiGreenAt = validTimestamp(pr.currentHeadCiGreenAt);
-  const codexConnectorRequiresSignal = configuredReviewProviderKinds(config).includes("codex");
   const fallbackWaitStartedAt =
     codexConnectorRequiresSignal && record.review_wait_head_sha === pr.headRefOid
       ? validTimestamp(record.review_wait_started_at)
