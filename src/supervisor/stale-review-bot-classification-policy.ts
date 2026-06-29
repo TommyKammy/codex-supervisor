@@ -148,7 +148,7 @@ function classifyCodexReviewBotPolicy(
         summary: STALE_REVIEW_BOT_SUMMARY,
       };
     }
-    if (args.currentHeadCleanCommentResidueEvidence) {
+    if (args.currentHeadCleanCommentResidueEvidence && args.cleanMergeState) {
       return {
         classification: "verified_no_source_change_pending_thread_resolution",
         summary: VERIFIED_NO_SOURCE_CHANGE_SUMMARY,

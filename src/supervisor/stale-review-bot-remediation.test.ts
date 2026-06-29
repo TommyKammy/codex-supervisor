@@ -110,6 +110,21 @@ test("classifyStaleReviewBotRemediationPolicy accepts current-head Codex clean c
   );
 });
 
+test("classifyStaleReviewBotRemediationPolicy requires clean merge state for clean comment residue evidence", () => {
+  assert.deepEqual(
+    policy({
+      cleanMergeState: false,
+      currentHeadCleanCommentResidueEvidence:
+        "codex_current_head_clean_comment:reviewed_commit=head-44:observed_at=2026-06-29T17:14:09Z:discounted_threads=12",
+    }),
+    {
+      classification: "unknown_needs_operator",
+      summary: "code_or_ci_green_but_review_thread_metadata_unresolved",
+      missingProbeReason: "current_head_verification_evidence_missing",
+    },
+  );
+});
+
 test("buildStaleReviewBotThreadDiagnostics reports current-head repair proof local CI shape mismatches", () => {
   const headSha = "head-proof-diagnostics";
   const thread = createReviewThread({
