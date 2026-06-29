@@ -805,8 +805,15 @@ function currentHeadCodexNoMajorSignalEvidence(args: {
     | "configuredBotCurrentHeadCodexSuccessObservedAt"
   >;
   reviewThreads: ReviewThread[];
+  currentConfiguredThreads: ReviewThread[];
 }): string | null {
-  if (hasFreshCurrentHeadCodexSuccessReviewedCommit(args.pr, args.reviewThreads)) {
+  if (
+    hasFreshCurrentHeadCodexSuccessReviewedCurrentConfiguredFindings({
+      pr: args.pr,
+      reviewThreads: args.reviewThreads,
+      currentConfiguredThreads: args.currentConfiguredThreads,
+    })
+  ) {
     return "codex_pr_success_comment_reviewed_current_head";
   }
   if (!hasCurrentHeadSuccessSignal(args.pr)) {
@@ -880,6 +887,35 @@ function latestCommentIsConfiguredCodexFinding(config: SupervisorConfig, thread:
   );
 }
 
+function latestCurrentConfiguredCodexFindingObservedAt(reviewThreads: ReviewThread[]): string | null {
+  return reviewThreads.reduce<string | null>((latestObservedAt, thread) => {
+    const observedAt = validTimestamp(latestCodexConnectorReviewCommentNode(thread)?.createdAt);
+    if (!observedAt) {
+      return latestObservedAt;
+    }
+    if (!latestObservedAt || Date.parse(observedAt) > Date.parse(latestObservedAt)) {
+      return observedAt;
+    }
+    return latestObservedAt;
+  }, null);
+}
+
+function hasFreshCurrentHeadCodexSuccessReviewedCurrentConfiguredFindings(args: {
+  pr: Parameters<typeof hasFreshCurrentHeadCodexSuccessReviewedCommit>[0];
+  reviewThreads: ReviewThread[];
+  currentConfiguredThreads: ReviewThread[];
+}): boolean {
+  if (!hasFreshCurrentHeadCodexSuccessReviewedCommit(args.pr, args.reviewThreads)) {
+    return false;
+  }
+  const successObservedAt = validTimestamp(args.pr.configuredBotCurrentHeadCodexSuccessObservedAt);
+  const latestCurrentFindingObservedAt = latestCurrentConfiguredCodexFindingObservedAt(args.currentConfiguredThreads);
+  return Boolean(
+    successObservedAt &&
+      (!latestCurrentFindingObservedAt || Date.parse(successObservedAt) >= Date.parse(latestCurrentFindingObservedAt)),
+  );
+}
+
 function currentHeadCodexCleanCommentResidueEvidence(args: {
   config: SupervisorConfig;
   record: IssueRunRecord;
@@ -904,7 +940,13 @@ function currentHeadCodexCleanCommentResidueEvidence(args: {
   if (hasLocalOrPreMergeBlockers(args.config, args.record, args.pr)) {
     return null;
   }
-  if (!hasFreshCurrentHeadCodexSuccessReviewedCommit(args.pr, args.reviewThreads)) {
+  if (
+    !hasFreshCurrentHeadCodexSuccessReviewedCurrentConfiguredFindings({
+      pr: args.pr,
+      reviewThreads: args.reviewThreads,
+      currentConfiguredThreads: args.currentConfiguredThreads,
+    })
+  ) {
     return null;
   }
   if (
@@ -993,6 +1035,7 @@ function classifyCodexMetadataOnly(args: {
       record: args.record,
       pr: args.pr,
       reviewThreads: args.reviewThreads,
+      currentConfiguredThreads,
     }),
     currentHeadCleanCommentResidueEvidence,
     deterministicProbeEvidence: deterministicRepairProbeEvidence({
