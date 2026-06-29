@@ -14,7 +14,7 @@ import {
   codexConnectorMustFixReviewThreads,
   commitShasEqualForComparison,
   evaluateCodexConnectorConvergencePolicy,
-  hasCodexConnectorFindingReviewComment,
+  latestCodexConnectorReviewCommentNode,
   latestCodexConnectorReviewCommentFingerprint,
   latestCodexConnectorPSeverity,
   latestCodexConnectorReviewComment,
@@ -22,6 +22,7 @@ import {
 import {
   configuredBotReviewFollowUpState,
   configuredBotReviewThreads,
+  latestReviewComment,
   latestReviewCommentAuthorIsAllowedBot,
   manualReviewThreads,
   nonActionableConfiguredBotReviewThreads,
@@ -851,6 +852,10 @@ function hasLocalOrPreMergeBlockers(
   >,
   pr: GitHubPullRequest,
 ): boolean {
+  const explicitPreMergeBlocker =
+    record.pre_merge_evaluation_outcome === "fix_blocked" ||
+    record.pre_merge_evaluation_outcome === "manual_review_blocked" ||
+    record.pre_merge_evaluation_outcome === "follow_up_eligible";
   return Boolean(
     localReviewBlocksMerge(config, record, pr) ||
     record.local_review_degraded ||
@@ -858,8 +863,20 @@ function hasLocalOrPreMergeBlockers(
       (record.pre_merge_must_fix_count ?? 0) > 0 ||
       (record.pre_merge_manual_review_count ?? 0) > 0 ||
       (record.pre_merge_follow_up_count ?? 0) > 0 ||
-      (record.pre_merge_evaluation_outcome &&
-        record.pre_merge_evaluation_outcome !== "mergeable"),
+      explicitPreMergeBlocker,
+  );
+}
+
+function latestCommentIsConfiguredCodexFinding(config: SupervisorConfig, thread: ReviewThread): boolean {
+  if (!latestReviewCommentAuthorIsAllowedBot(config, thread)) {
+    return false;
+  }
+  const latestComment = latestReviewComment(thread);
+  const latestCodexFindingComment = latestCodexConnectorReviewCommentNode(thread);
+  return Boolean(
+    latestComment &&
+      latestCodexFindingComment &&
+      latestComment.id === latestCodexFindingComment.id,
   );
 }
 
@@ -895,8 +912,7 @@ function currentHeadCodexCleanCommentResidueEvidence(args: {
       (thread) =>
         thread.isResolved ||
         thread.isOutdated ||
-        !latestReviewCommentAuthorIsAllowedBot(args.config, thread) ||
-        !hasCodexConnectorFindingReviewComment(thread),
+        !latestCommentIsConfiguredCodexFinding(args.config, thread),
     )
   ) {
     return null;
