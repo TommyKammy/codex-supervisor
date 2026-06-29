@@ -66,6 +66,7 @@ export interface StaleReviewBotClassificationPolicyArgs {
   hasUnprocessedMustFix: boolean;
   verificationEvidenceSummary: string | null;
   noMajorSignalEvidence: string | null;
+  currentHeadCleanCommentResidueEvidence: string | null;
   deterministicProbeEvidence: string | null;
   hasMarkedNoSourceChangeRepair: boolean;
   verifiedNoSourceChangeRepair: boolean;
@@ -145,6 +146,13 @@ function classifyCodexReviewBotPolicy(
       return {
         classification: "actionable_current_diff",
         summary: STALE_REVIEW_BOT_SUMMARY,
+      };
+    }
+    if (args.currentHeadCleanCommentResidueEvidence) {
+      return {
+        classification: "verified_no_source_change_pending_thread_resolution",
+        summary: VERIFIED_NO_SOURCE_CHANGE_SUMMARY,
+        verificationEvidenceSummary: args.currentHeadCleanCommentResidueEvidence,
       };
     }
     if (!args.verificationEvidenceSummary) {

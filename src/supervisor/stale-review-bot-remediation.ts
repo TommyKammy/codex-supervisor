@@ -13,6 +13,7 @@ import {
   codexConnectorMustFixReviewThreads,
   commitShasEqualForComparison,
   evaluateCodexConnectorConvergencePolicy,
+  hasCodexConnectorFindingReviewComment,
   latestCodexConnectorReviewCommentFingerprint,
   latestCodexConnectorPSeverity,
   latestCodexConnectorReviewComment,
@@ -833,6 +834,74 @@ function currentHeadCodexNoMajorSignalEvidence(args: {
   return "codex_pr_success_comment_after_current_head_request";
 }
 
+function hasLocalOrPreMergeBlockers(
+  record: Pick<
+    IssueRunRecord,
+    | "local_review_degraded"
+    | "local_review_findings_count"
+    | "pre_merge_evaluation_outcome"
+    | "pre_merge_must_fix_count"
+    | "pre_merge_manual_review_count"
+    | "pre_merge_follow_up_count"
+  >,
+): boolean {
+  return Boolean(
+    record.local_review_degraded ||
+      record.local_review_findings_count > 0 ||
+      (record.pre_merge_must_fix_count ?? 0) > 0 ||
+      (record.pre_merge_manual_review_count ?? 0) > 0 ||
+      (record.pre_merge_follow_up_count ?? 0) > 0 ||
+      (record.pre_merge_evaluation_outcome &&
+        record.pre_merge_evaluation_outcome !== "mergeable"),
+  );
+}
+
+function currentHeadCodexCleanCommentResidueEvidence(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  reviewThreads: ReviewThread[];
+  currentConfiguredThreads: ReviewThread[];
+  mustFixReviewThreads: ReviewThread[];
+}): string | null {
+  const providerKinds = configuredReviewProviderKinds(args.config);
+  if (providerKinds.length === 0 || providerKinds.some((kind) => kind !== "codex")) {
+    return null;
+  }
+  if (args.mustFixReviewThreads.length === 0 || args.currentConfiguredThreads.length === 0) {
+    return null;
+  }
+  if (args.pr.configuredBotTopLevelReviewStrength === "blocking") {
+    return null;
+  }
+  if (hasLocalOrPreMergeBlockers(args.record)) {
+    return null;
+  }
+  if (!hasFreshCurrentHeadCodexSuccessReviewedCommit(args.pr, args.reviewThreads)) {
+    return null;
+  }
+  if (
+    args.currentConfiguredThreads.some(
+      (thread) =>
+        thread.isResolved ||
+        thread.isOutdated ||
+        !hasCodexConnectorFindingReviewComment(thread),
+    )
+  ) {
+    return null;
+  }
+  if (args.mustFixReviewThreads.some((thread) => latestCodexConnectorPSeverity(thread) === "P0")) {
+    return null;
+  }
+
+  return [
+    "codex_current_head_clean_comment",
+    `reviewed_commit=${args.pr.configuredBotCurrentHeadCodexSuccessReviewedCommitSha ?? "unknown"}`,
+    `observed_at=${args.pr.configuredBotCurrentHeadCodexSuccessObservedAt ?? "unknown"}`,
+    `discounted_threads=${args.mustFixReviewThreads.length}`,
+  ].join(":");
+}
+
 function classifyCodexMetadataOnly(args: {
   config: SupervisorConfig;
   record: IssueRunRecord;
@@ -845,6 +914,14 @@ function classifyCodexMetadataOnly(args: {
   const currentConfiguredThreads = configuredThreads.filter((thread) => !thread.isOutdated);
   const policy = evaluateCodexConnectorConvergencePolicy(args.config, args.pr, args.reviewThreads);
   const mustFixReviewThreads = codexConnectorMustFixReviewThreads(args.reviewThreads);
+  const currentHeadCleanCommentResidueEvidence = currentHeadCodexCleanCommentResidueEvidence({
+    config: args.config,
+    record: args.record,
+    pr: args.pr,
+    reviewThreads: args.reviewThreads,
+    currentConfiguredThreads,
+    mustFixReviewThreads,
+  });
   const hasMarkedNoSourceChangeRepair = hasCurrentHeadMarkedNoSourceChangeCodexTurnVerification(
     args.record,
     args.pr,
@@ -890,6 +967,7 @@ function classifyCodexMetadataOnly(args: {
       pr: args.pr,
       reviewThreads: args.reviewThreads,
     }),
+    currentHeadCleanCommentResidueEvidence,
     deterministicProbeEvidence: deterministicRepairProbeEvidence({
       reviewThreads: args.reviewThreads,
       repositoryFileContents: args.repositoryFileContents,
@@ -935,6 +1013,7 @@ function classifyRemediation(args: {
       hasUnprocessedMustFix: false,
       verificationEvidenceSummary: null,
       noMajorSignalEvidence: null,
+      currentHeadCleanCommentResidueEvidence: null,
       deterministicProbeEvidence: null,
       hasMarkedNoSourceChangeRepair: false,
       verifiedNoSourceChangeRepair: false,
@@ -976,6 +1055,7 @@ function classifyRemediation(args: {
     hasUnprocessedMustFix: false,
     verificationEvidenceSummary: null,
     noMajorSignalEvidence: null,
+    currentHeadCleanCommentResidueEvidence: null,
     deterministicProbeEvidence: null,
     hasMarkedNoSourceChangeRepair: false,
     verifiedNoSourceChangeRepair: false,
