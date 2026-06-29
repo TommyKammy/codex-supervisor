@@ -2,6 +2,7 @@ import type { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread,
 import {
   hasProcessedReviewThread,
   latestReviewThreadCommentFingerprint,
+  localReviewBlocksMerge,
   processedReviewThreadFingerprintKey,
   processedReviewThreadKey,
   reviewLoopRetryBudgetExhaustedForThread,
@@ -21,6 +22,7 @@ import {
 import {
   configuredBotReviewFollowUpState,
   configuredBotReviewThreads,
+  latestReviewCommentAuthorIsAllowedBot,
   manualReviewThreads,
   nonActionableConfiguredBotReviewThreads,
   pendingBotReviewThreads,
@@ -835,8 +837,11 @@ function currentHeadCodexNoMajorSignalEvidence(args: {
 }
 
 function hasLocalOrPreMergeBlockers(
+  config: SupervisorConfig,
   record: Pick<
     IssueRunRecord,
+    | "local_review_head_sha"
+    | "local_review_recommendation"
     | "local_review_degraded"
     | "local_review_findings_count"
     | "pre_merge_evaluation_outcome"
@@ -844,8 +849,10 @@ function hasLocalOrPreMergeBlockers(
     | "pre_merge_manual_review_count"
     | "pre_merge_follow_up_count"
   >,
+  pr: GitHubPullRequest,
 ): boolean {
   return Boolean(
+    localReviewBlocksMerge(config, record, pr) ||
     record.local_review_degraded ||
       record.local_review_findings_count > 0 ||
       (record.pre_merge_must_fix_count ?? 0) > 0 ||
@@ -874,7 +881,10 @@ function currentHeadCodexCleanCommentResidueEvidence(args: {
   if (args.pr.configuredBotTopLevelReviewStrength === "blocking") {
     return null;
   }
-  if (hasLocalOrPreMergeBlockers(args.record)) {
+  if (!hasCleanMergeState(args.pr)) {
+    return null;
+  }
+  if (hasLocalOrPreMergeBlockers(args.config, args.record, args.pr)) {
     return null;
   }
   if (!hasFreshCurrentHeadCodexSuccessReviewedCommit(args.pr, args.reviewThreads)) {
@@ -885,6 +895,7 @@ function currentHeadCodexCleanCommentResidueEvidence(args: {
       (thread) =>
         thread.isResolved ||
         thread.isOutdated ||
+        !latestReviewCommentAuthorIsAllowedBot(args.config, thread) ||
         !hasCodexConnectorFindingReviewComment(thread),
     )
   ) {
