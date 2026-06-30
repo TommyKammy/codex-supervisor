@@ -308,6 +308,7 @@ export function localReviewHighSeverityNeedsRetry(
   pr: Pick<GitHubPullRequest, "headRefOid" | "reviewDecision">,
 ): boolean {
   return (
+    config.localReviewEnabled &&
     config.localReviewPolicy !== "advisory" &&
     record.local_review_head_sha === pr.headRefOid &&
     record.local_review_verified_max_severity === "high" &&
@@ -472,6 +473,7 @@ export function localReviewHighSeverityNeedsBlock(
   pr: GitHubPullRequest,
 ): boolean {
   return (
+    config.localReviewEnabled &&
     config.localReviewPolicy !== "advisory" &&
     record.local_review_head_sha === pr.headRefOid &&
     record.local_review_verified_max_severity === "high" &&

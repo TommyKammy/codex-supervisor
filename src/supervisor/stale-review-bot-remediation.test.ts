@@ -34,6 +34,7 @@ function policy(overrides: Partial<StaleReviewBotClassificationPolicyArgs> = {})
     hasUnprocessedMustFix: false,
     verificationEvidenceSummary: null,
     noMajorSignalEvidence: null,
+    currentHeadCleanCommentResidueEvidence: null,
     deterministicProbeEvidence: null,
     hasMarkedNoSourceChangeRepair: false,
     verifiedNoSourceChangeRepair: false,
@@ -90,6 +91,52 @@ test("classifyStaleReviewBotRemediationPolicy accepts explicit P2 repair evidenc
       classification: "verified_current_head_repair_pending_thread_resolution",
       summary: "verified_current_head_repair_configured_bot_thread_resolution_pending",
       verificationEvidenceSummary: "focused_verifier_passed",
+    },
+  );
+});
+
+test("classifyStaleReviewBotRemediationPolicy accepts current-head Codex clean comment residue evidence", () => {
+  assert.deepEqual(
+    policy({
+      currentHeadCleanCommentResidueEvidence:
+        "codex_current_head_clean_comment:reviewed_commit=head-44:observed_at=2026-06-29T17:14:09Z:discounted_threads=12",
+    }),
+    {
+      classification: "verified_no_source_change_pending_thread_resolution",
+      summary: "verified_no_source_change_configured_bot_thread_resolution_pending",
+      verificationEvidenceSummary:
+        "codex_current_head_clean_comment:reviewed_commit=head-44:observed_at=2026-06-29T17:14:09Z:discounted_threads=12",
+    },
+  );
+});
+
+test("classifyStaleReviewBotRemediationPolicy preserves repair classification for clean comment residue", () => {
+  assert.deepEqual(
+    policy({
+      repairAttemptCount: 1,
+      currentHeadCleanCommentResidueEvidence:
+        "codex_current_head_clean_comment:reviewed_commit=head-44:observed_at=2026-06-29T17:14:09Z:discounted_threads=12",
+    }),
+    {
+      classification: "verified_current_head_repair_pending_thread_resolution",
+      summary: "verified_current_head_repair_configured_bot_thread_resolution_pending",
+      verificationEvidenceSummary:
+        "codex_current_head_clean_comment:reviewed_commit=head-44:observed_at=2026-06-29T17:14:09Z:discounted_threads=12",
+    },
+  );
+});
+
+test("classifyStaleReviewBotRemediationPolicy requires clean merge state for clean comment residue evidence", () => {
+  assert.deepEqual(
+    policy({
+      cleanMergeState: false,
+      currentHeadCleanCommentResidueEvidence:
+        "codex_current_head_clean_comment:reviewed_commit=head-44:observed_at=2026-06-29T17:14:09Z:discounted_threads=12",
+    }),
+    {
+      classification: "unknown_needs_operator",
+      summary: "code_or_ci_green_but_review_thread_metadata_unresolved",
+      missingProbeReason: "current_head_verification_evidence_missing",
     },
   );
 });
@@ -503,7 +550,7 @@ test("buildStaleReviewBotRemediation requires no-source artifacts to cover every
         {
           id: "comment-uncovered-no-source-thread",
           body: "P2: Keep query export behavior covered by focused verification.",
-          createdAt: "2026-06-06T02:09:00Z",
+          createdAt: "2026-06-06T02:05:00Z",
           url: "https://example.test/pr/2261#discussion_uncovered",
           author: {
             login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
@@ -2136,6 +2183,1168 @@ test("buildStaleReviewBotRemediation ignores unprocessed outdated Codex threads 
 
   assert.equal(remediation?.classification, "unknown_needs_operator");
   assert.equal(remediation?.codexCurrentHeadReviewState, "observed");
+  assert.equal(remediation?.missingProbeReason, "current_head_verification_evidence_missing");
+});
+
+test("buildStaleReviewBotRemediation treats later current-head Codex clean comment as residue proof", () => {
+  const issueNumber = 2397;
+  const prNumber = 137;
+  const headSha = "e1104394b172f8ae88a871f32441e7a16c0f973c";
+  const currentThreads = [
+    createReviewThread({
+      id: "thread-evaluate-dataset",
+      path: "scripts/evaluate_dataset.py",
+      line: 1593,
+      comments: {
+        nodes: [
+          {
+            id: "comment-evaluate-dataset",
+            body: "P2: Earlier current-head finding that was superseded by the later clean Codex review.",
+            createdAt: "2026-06-29T13:26:35Z",
+            url: `https://example.test/pr/${prNumber}#discussion_r3492030463`,
+            author: {
+              login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+    createReviewThread({
+      id: "thread-gmp-report",
+      path: "docs/gmp08-acceptance-evaluation.md",
+      line: 11,
+      comments: {
+        nodes: [
+          {
+            id: "comment-gmp-report",
+            body: "P2: Earlier report finding that was superseded by the later clean Codex review.",
+            createdAt: "2026-06-29T15:54:04Z",
+            url: `https://example.test/pr/${prNumber}#discussion_r3493003675`,
+            author: {
+              login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  ];
+  const config = createConfig({ reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN] });
+  const record = createRecord({
+    issue_number: issueNumber,
+    state: "blocked",
+    pr_number: prNumber,
+    last_head_sha: headSha,
+    blocked_reason: "manual_review",
+    processed_review_thread_ids: currentThreads.map((thread) => `${thread.id}@${headSha}`),
+    processed_review_thread_fingerprints: [
+      `thread-evaluate-dataset@${headSha}#comment-evaluate-dataset`,
+      `thread-gmp-report@${headSha}#comment-gmp-report`,
+    ],
+    last_failure_context: {
+      category: "manual",
+      summary: "Current-head Codex residue remained unresolved after a clean current-head comment.",
+      signature: currentThreads.map((thread) => `stalled-bot:${thread.id}`).join("|"),
+      command: null,
+      details: currentThreads.map(
+        (thread) =>
+          `reviewer=${CODEX_CONNECTOR_REVIEW_BOT_LOGIN} file=${thread.path} line=${thread.line} processed_on_current_head=yes`,
+      ),
+      url: `https://example.test/pr/${prNumber}#discussion_r3492030463`,
+      updated_at: "2026-06-29T17:14:48Z",
+    },
+    codex_connector_review_requested_observed_at: "2026-06-29T17:08:34Z",
+    codex_connector_review_requested_head_sha: headSha,
+    pre_merge_must_fix_count: 0,
+    pre_merge_manual_review_count: 0,
+    pre_merge_follow_up_count: 0,
+  });
+  const pr = createPullRequest({
+    number: prNumber,
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-06-29T17:10:00Z",
+    codexConnectorReviewRequestedAt: "2026-06-29T17:08:34Z",
+    codexConnectorReviewRequestedHeadSha: headSha,
+    configuredBotCurrentHeadObservedAt: "2026-06-29T17:14:09Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
+    configuredBotLatestReviewedCommitSha: "e1104394b1",
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "e1104394b1",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-06-29T17:14:09Z",
+  });
+  const checks = [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass" as const, workflow: "CI" }];
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks,
+    reviewThreads: currentThreads,
+  });
+  const diagnostics = buildStaleReviewBotThreadDiagnostics({
+    config,
+    record,
+    pr,
+    checks,
+    reviewThreads: currentThreads,
+    remediation,
+  });
+
+  assert.equal(remediation?.classification, "verified_no_source_change_pending_thread_resolution");
+  assert.equal(remediation?.codexCurrentHeadReviewState, "observed");
+  assert.equal(remediation?.missingProbeReason, null);
+  assert.equal(
+    remediation?.verificationEvidenceSummary,
+    "codex_current_head_clean_comment:reviewed_commit=e1104394b1:observed_at=2026-06-29T17:14:09Z:discounted_threads=2",
+  );
+  assert.equal(diagnostics?.verifiedStaleResidueThreads, 2);
+  assert.equal(diagnostics?.missingVerificationEvidenceThreads, 0);
+  assert.equal(diagnostics?.repeatStopExhausted, "no");
+});
+
+test("buildStaleReviewBotRemediation keeps P1 clean comment residue on the scoped proof path", () => {
+  const headSha = "e1104394b172f8ae88a871f32441e7a16c0f973c";
+  const thread = createReviewThread({
+    id: "thread-p1-before-clean",
+    path: "scripts/evaluate_dataset.py",
+    line: 1593,
+    comments: {
+      nodes: [
+        {
+          id: "comment-p1-before-clean",
+          body: "P1: Earlier current-head finding that requires scoped proof despite the later clean Codex review.",
+          createdAt: "2026-06-29T13:26:35Z",
+          url: "https://example.test/pr/137#discussion_p1_before_clean",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const config = createConfig({ reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN] });
+  const record = createRecord({
+    issue_number: 2397,
+    state: "blocked",
+    pr_number: 137,
+    last_head_sha: headSha,
+    blocked_reason: "stale_review_bot",
+    processed_review_thread_ids: [`${thread.id}@${headSha}`],
+    processed_review_thread_fingerprints: [`${thread.id}@${headSha}#comment-p1-before-clean`],
+  });
+  const pr = createPullRequest({
+    number: 137,
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-06-29T17:10:00Z",
+    configuredBotCurrentHeadObservedAt: "2026-06-29T17:14:09Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
+    configuredBotLatestReviewedCommitSha: "e1104394b1",
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "e1104394b1",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-06-29T17:14:09Z",
+  });
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [thread],
+  });
+
+  assert.equal(remediation?.classification, "unknown_needs_operator");
+  assert.equal(remediation?.missingProbeReason, "current_head_verification_evidence_missing");
+});
+
+test("buildStaleReviewBotRemediation accepts follow-up-only local review with clean comment residue proof", () => {
+  const headSha = "e1104394b172f8ae88a871f32441e7a16c0f973c";
+  const thread = createReviewThread({
+    id: "thread-follow-up-before-clean",
+    path: "docs/gmp08-acceptance-evaluation.md",
+    line: 11,
+    comments: {
+      nodes: [
+        {
+          id: "comment-follow-up-before-clean",
+          body: "P2: Earlier follow-up-only residue before the clean Codex review.",
+          createdAt: "2026-06-29T15:54:04Z",
+          url: "https://example.test/pr/137#discussion_follow_up_before_clean",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+  });
+  const record = createRecord({
+    issue_number: 2397,
+    state: "blocked",
+    pr_number: 137,
+    last_head_sha: headSha,
+    blocked_reason: "stale_review_bot",
+    local_review_head_sha: headSha,
+    local_review_findings_count: 2,
+    local_review_recommendation: "changes_requested",
+    pre_merge_evaluation_outcome: "follow_up_eligible",
+    pre_merge_follow_up_count: 2,
+    processed_review_thread_ids: [`${thread.id}@${headSha}`],
+    processed_review_thread_fingerprints: [`${thread.id}@${headSha}#comment-follow-up-before-clean`],
+  });
+  const pr = createPullRequest({
+    number: 137,
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-06-29T17:10:00Z",
+    configuredBotCurrentHeadObservedAt: "2026-06-29T17:14:09Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
+    configuredBotLatestReviewedCommitSha: "e1104394b1",
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "e1104394b1",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-06-29T17:14:09Z",
+  });
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [thread],
+  });
+
+  assert.equal(remediation?.classification, "verified_no_source_change_pending_thread_resolution");
+  assert.equal(
+    remediation?.verificationEvidenceSummary,
+    "codex_current_head_clean_comment:reviewed_commit=e1104394b1:observed_at=2026-06-29T17:14:09Z:discounted_threads=1",
+  );
+});
+
+test("buildStaleReviewBotRemediation ignores stale disabled local review fields with clean comment residue proof", () => {
+  const headSha = "e1104394b172f8ae88a871f32441e7a16c0f973c";
+  const thread = createReviewThread({
+    id: "thread-disabled-local-before-clean",
+    path: "docs/gmp08-acceptance-evaluation.md",
+    line: 11,
+    comments: {
+      nodes: [
+        {
+          id: "comment-disabled-local-before-clean",
+          body: "P2: Earlier stale local-review residue before the clean Codex review.",
+          createdAt: "2026-06-29T15:54:04Z",
+          url: "https://example.test/pr/137#discussion_disabled_local_before_clean",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    localReviewEnabled: false,
+    localReviewPolicy: "block_merge",
+    localReviewHighSeverityAction: "blocked",
+  });
+  const record = createRecord({
+    issue_number: 2397,
+    state: "blocked",
+    pr_number: 137,
+    last_head_sha: headSha,
+    blocked_reason: "stale_review_bot",
+    local_review_head_sha: headSha,
+    local_review_degraded: true,
+    local_review_findings_count: 2,
+    local_review_recommendation: "changes_requested",
+    local_review_verified_max_severity: "high",
+    pre_merge_evaluation_outcome: "fix_blocked",
+    pre_merge_must_fix_count: 2,
+    pre_merge_manual_review_count: 1,
+    processed_review_thread_ids: [`${thread.id}@${headSha}`],
+    processed_review_thread_fingerprints: [`${thread.id}@${headSha}#comment-disabled-local-before-clean`],
+  });
+  const pr = createPullRequest({
+    number: 137,
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-06-29T17:10:00Z",
+    configuredBotCurrentHeadObservedAt: "2026-06-29T17:14:09Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
+    configuredBotLatestReviewedCommitSha: "e1104394b1",
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "e1104394b1",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-06-29T17:14:09Z",
+  });
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [thread],
+  });
+
+  assert.equal(remediation?.classification, "verified_no_source_change_pending_thread_resolution");
+});
+
+test("buildStaleReviewBotRemediation fails closed for same-second clean comments and Codex findings", () => {
+  const headSha = "e1104394b172f8ae88a871f32441e7a16c0f973c";
+  const thread = createReviewThread({
+    id: "thread-same-second-clean",
+    path: "scripts/evaluate_dataset.py",
+    line: 1593,
+    comments: {
+      nodes: [
+        {
+          id: "comment-same-second-clean",
+          body: "P2: Same-second finding must not be covered by the clean Codex review.",
+          createdAt: "2026-06-29T17:14:09Z",
+          url: "https://example.test/pr/137#discussion_same_second_clean",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const config = createConfig({ reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN] });
+  const record = createRecord({
+    issue_number: 2397,
+    state: "blocked",
+    pr_number: 137,
+    last_head_sha: headSha,
+    blocked_reason: "stale_review_bot",
+    processed_review_thread_ids: [`${thread.id}@${headSha}`],
+    processed_review_thread_fingerprints: [`${thread.id}@${headSha}#comment-same-second-clean`],
+  });
+  const pr = createPullRequest({
+    number: 137,
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-06-29T17:10:00Z",
+    configuredBotCurrentHeadObservedAt: "2026-06-29T17:14:09Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
+    configuredBotLatestReviewedCommitSha: "e1104394b1",
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "e1104394b1",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-06-29T17:14:09Z",
+  });
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [thread],
+  });
+
+  assert.equal(remediation?.classification, "unknown_needs_operator");
+  assert.equal(remediation?.missingProbeReason, "current_head_verification_evidence_missing");
+});
+
+test("buildStaleReviewBotRemediation honors current-head high-severity local-review blockers", () => {
+  const headSha = "e1104394b172f8ae88a871f32441e7a16c0f973c";
+  const thread = createReviewThread({
+    id: "thread-high-severity-before-clean",
+    path: "scripts/evaluate_dataset.py",
+    line: 1593,
+    comments: {
+      nodes: [
+        {
+          id: "comment-high-severity-before-clean",
+          body: "P2: Earlier finding before a blocked high-severity local review.",
+          createdAt: "2026-06-29T15:54:04Z",
+          url: "https://example.test/pr/137#discussion_high_severity_before_clean",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+    localReviewHighSeverityAction: "blocked",
+  });
+  const record = createRecord({
+    issue_number: 2397,
+    state: "blocked",
+    pr_number: 137,
+    last_head_sha: headSha,
+    blocked_reason: "stale_review_bot",
+    local_review_head_sha: headSha,
+    local_review_verified_max_severity: "high",
+    processed_review_thread_ids: [`${thread.id}@${headSha}`],
+    processed_review_thread_fingerprints: [`${thread.id}@${headSha}#comment-high-severity-before-clean`],
+  });
+  const pr = createPullRequest({
+    number: 137,
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-06-29T17:10:00Z",
+    configuredBotCurrentHeadObservedAt: "2026-06-29T17:14:09Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
+    configuredBotLatestReviewedCommitSha: "e1104394b1",
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "e1104394b1",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-06-29T17:14:09Z",
+  });
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [thread],
+  });
+
+  assert.equal(remediation?.classification, "unknown_needs_operator");
+  assert.equal(remediation?.missingProbeReason, "current_head_verification_evidence_missing");
+});
+
+test("buildStaleReviewBotRemediation honors current-head high-severity local-review retry gates", () => {
+  const headSha = "e1104394b172f8ae88a871f32441e7a16c0f973c";
+  const thread = createReviewThread({
+    id: "thread-high-severity-retry-before-clean",
+    path: "scripts/evaluate_dataset.py",
+    line: 1593,
+    comments: {
+      nodes: [
+        {
+          id: "comment-high-severity-retry-before-clean",
+          body: "P2: Earlier finding before a high-severity local-review retry gate.",
+          createdAt: "2026-06-29T15:54:04Z",
+          url: "https://example.test/pr/137#discussion_high_severity_retry_before_clean",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+    localReviewHighSeverityAction: "retry",
+  });
+  const record = createRecord({
+    issue_number: 2397,
+    state: "blocked",
+    pr_number: 137,
+    last_head_sha: headSha,
+    blocked_reason: "stale_review_bot",
+    local_review_head_sha: headSha,
+    local_review_verified_max_severity: "high",
+    pre_merge_evaluation_outcome: "manual_review_blocked",
+    processed_review_thread_ids: [`${thread.id}@${headSha}`],
+    processed_review_thread_fingerprints: [`${thread.id}@${headSha}#comment-high-severity-retry-before-clean`],
+  });
+  const pr = createPullRequest({
+    number: 137,
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-06-29T17:10:00Z",
+    configuredBotCurrentHeadObservedAt: "2026-06-29T17:14:09Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
+    configuredBotLatestReviewedCommitSha: "e1104394b1",
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "e1104394b1",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-06-29T17:14:09Z",
+  });
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [thread],
+  });
+
+  assert.equal(remediation?.classification, "unknown_needs_operator");
+  assert.equal(remediation?.missingProbeReason, "current_head_verification_evidence_missing");
+});
+
+test("buildStaleReviewBotRemediation requires clean comments to satisfy the active review wait", () => {
+  const headSha = "e1104394b172f8ae88a871f32441e7a16c0f973c";
+  const thread = createReviewThread({
+    id: "thread-wait-after-clean",
+    path: "docs/gmp08-acceptance-evaluation.md",
+    line: 11,
+    comments: {
+      nodes: [
+        {
+          id: "comment-wait-after-clean",
+          body: "P2: Earlier residue before the wait was re-armed after the clean Codex review.",
+          createdAt: "2026-06-29T15:54:04Z",
+          url: "https://example.test/pr/137#discussion_wait_after_clean",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const config = createConfig({ reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN] });
+  const record = createRecord({
+    issue_number: 2397,
+    state: "blocked",
+    pr_number: 137,
+    last_head_sha: headSha,
+    blocked_reason: "stale_review_bot",
+    review_wait_started_at: "2026-06-29T17:20:00Z",
+    review_wait_head_sha: headSha,
+    processed_review_thread_ids: [`${thread.id}@${headSha}`],
+    processed_review_thread_fingerprints: [`${thread.id}@${headSha}#comment-wait-after-clean`],
+  });
+  const pr = createPullRequest({
+    number: 137,
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-06-29T17:10:00Z",
+    configuredBotCurrentHeadObservedAt: "2026-06-29T17:14:09Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
+    configuredBotLatestReviewedCommitSha: "e1104394b1",
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "e1104394b1",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-06-29T17:14:09Z",
+  });
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [thread],
+  });
+
+  assert.equal(remediation?.classification, "unknown_needs_operator");
+  assert.equal(remediation?.missingProbeReason, "current_head_verification_evidence_missing");
+});
+
+test("buildStaleReviewBotRemediation honors human review decision blockers", () => {
+  const headSha = "e1104394b172f8ae88a871f32441e7a16c0f973c";
+  const thread = createReviewThread({
+    id: "thread-human-review-before-clean",
+    path: "scripts/evaluate_dataset.py",
+    line: 1593,
+    comments: {
+      nodes: [
+        {
+          id: "comment-human-review-before-clean",
+          body: "P2: Earlier finding before an outstanding human review decision.",
+          createdAt: "2026-06-29T15:54:04Z",
+          url: "https://example.test/pr/137#discussion_human_review_before_clean",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    humanReviewBlocksMerge: true,
+  });
+  const record = createRecord({
+    issue_number: 2397,
+    state: "blocked",
+    pr_number: 137,
+    last_head_sha: headSha,
+    blocked_reason: "stale_review_bot",
+    processed_review_thread_ids: [`${thread.id}@${headSha}`],
+    processed_review_thread_fingerprints: [`${thread.id}@${headSha}#comment-human-review-before-clean`],
+  });
+  const pr = createPullRequest({
+    number: 137,
+    headRefOid: headSha,
+    reviewDecision: "REVIEW_REQUIRED",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-06-29T17:10:00Z",
+    configuredBotCurrentHeadObservedAt: "2026-06-29T17:14:09Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
+    configuredBotLatestReviewedCommitSha: "e1104394b1",
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "e1104394b1",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-06-29T17:14:09Z",
+  });
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [thread],
+  });
+
+  assert.equal(remediation?.classification, "unknown_needs_operator");
+  assert.equal(remediation?.missingProbeReason, "current_head_verification_evidence_missing");
+});
+
+test("buildStaleReviewBotRemediation lets fresh clean comments supersede stale blocking top-level reviews", () => {
+  const headSha = "e1104394b13abbd7dbf2a7f8f0d1f3ce9a0ff123";
+  const thread = createReviewThread({
+    id: "thread-before-clean",
+    path: "scripts/evaluate_dataset.py",
+    line: 1763,
+    comments: {
+      nodes: [
+        {
+          id: "comment-before-clean",
+          body: "P2: Earlier must-fix finding before the clean comment.",
+          createdAt: "2026-06-29T15:54:04Z",
+          url: "https://example.test/pr/137#discussion_before_clean",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const config = createConfig({ reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN] });
+  const record = createRecord({
+    issue_number: 2397,
+    state: "blocked",
+    pr_number: 137,
+    last_head_sha: headSha,
+    blocked_reason: "stale_review_bot",
+    processed_review_thread_ids: [`${thread.id}@${headSha}`],
+    processed_review_thread_fingerprints: [`${thread.id}@${headSha}#comment-before-clean`],
+  });
+  const pr = createPullRequest({
+    number: 137,
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-06-29T17:10:00Z",
+    configuredBotCurrentHeadObservedAt: "2026-06-29T17:14:09Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: "blocking",
+    configuredBotTopLevelReviewSubmittedAt: "2026-06-29T15:55:00Z",
+    configuredBotLatestReviewedCommitSha: "e1104394b1",
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "e1104394b1",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-06-29T17:14:09Z",
+  });
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [thread],
+  });
+
+  assert.equal(remediation?.classification, "verified_no_source_change_pending_thread_resolution");
+  assert.equal(
+    remediation?.verificationEvidenceSummary,
+    "codex_current_head_clean_comment:reviewed_commit=e1104394b1:observed_at=2026-06-29T17:14:09Z:discounted_threads=1",
+  );
+});
+
+test("buildStaleReviewBotRemediation keeps blocking top-level reviews newer than clean comments blocking", () => {
+  const headSha = "e1104394b13abbd7dbf2a7f8f0d1f3ce9a0ff123";
+  const thread = createReviewThread({
+    id: "thread-before-clean",
+    path: "scripts/evaluate_dataset.py",
+    line: 1763,
+    comments: {
+      nodes: [
+        {
+          id: "comment-before-clean",
+          body: "P2: Earlier must-fix finding before the clean comment.",
+          createdAt: "2026-06-29T15:54:04Z",
+          url: "https://example.test/pr/137#discussion_before_clean",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const config = createConfig({ reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN] });
+  const record = createRecord({
+    issue_number: 2397,
+    state: "blocked",
+    pr_number: 137,
+    last_head_sha: headSha,
+    blocked_reason: "stale_review_bot",
+    processed_review_thread_ids: [`${thread.id}@${headSha}`],
+    processed_review_thread_fingerprints: [`${thread.id}@${headSha}#comment-before-clean`],
+  });
+  const pr = createPullRequest({
+    number: 137,
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-06-29T17:10:00Z",
+    configuredBotCurrentHeadObservedAt: "2026-06-29T17:14:09Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: "blocking",
+    configuredBotTopLevelReviewSubmittedAt: "2026-06-29T17:20:00Z",
+    configuredBotLatestReviewedCommitSha: "e1104394b1",
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "e1104394b1",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-06-29T17:14:09Z",
+  });
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [thread],
+  });
+
+  assert.equal(remediation?.classification, "unknown_needs_operator");
+  assert.equal(remediation?.missingProbeReason, "current_head_verification_evidence_missing");
+});
+
+test("buildStaleReviewBotRemediation does not trust clean comments before later Codex findings", () => {
+  const headSha = "6fd42b1c0efb902736bca43f2489ad14fe20f163";
+  const thread = createReviewThread({
+    id: "thread-later-finding",
+    path: "scripts/evaluate_dataset.py",
+    line: 1763,
+    comments: {
+      nodes: [
+        {
+          id: "comment-later-finding",
+          body: "P2: Later finding after the clean comment must still block.",
+          createdAt: "2026-06-29T17:20:00Z",
+          url: "https://example.test/pr/137#discussion_later",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const config = createConfig({ reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN] });
+  const record = createRecord({
+    issue_number: 2397,
+    state: "blocked",
+    pr_number: 137,
+    last_head_sha: headSha,
+    blocked_reason: "stale_review_bot",
+    processed_review_thread_ids: [`${thread.id}@${headSha}`],
+    processed_review_thread_fingerprints: [`${thread.id}@${headSha}#comment-later-finding`],
+  });
+  const pr = createPullRequest({
+    number: 137,
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-06-29T17:10:00Z",
+    configuredBotCurrentHeadObservedAt: "2026-06-29T17:14:09Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
+    configuredBotLatestReviewedCommitSha: "6fd42b1c0e",
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "6fd42b1c0e",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-06-29T17:14:09Z",
+  });
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [thread],
+  });
+
+  assert.equal(remediation?.classification, "unknown_needs_operator");
+  assert.equal(remediation?.missingProbeReason, "current_head_verification_evidence_missing");
+});
+
+test("buildStaleReviewBotRemediation does not trust clean comments before later P3 Codex findings", () => {
+  const headSha = "f476344b5dc0f449bc87c024574ea4f284189e8c";
+  const p2Thread = createReviewThread({
+    id: "thread-p2-before-clean",
+    path: "scripts/evaluate_dataset.py",
+    line: 1763,
+    comments: {
+      nodes: [
+        {
+          id: "comment-p2-before-clean",
+          body: "P2: Earlier must-fix finding before the clean comment.",
+          createdAt: "2026-06-29T13:20:00Z",
+          url: "https://example.test/pr/137#discussion_p2_before_clean",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const p3Thread = createReviewThread({
+    id: "thread-p3-after-clean",
+    path: "docs/gmp08-acceptance-evaluation.md",
+    line: 22,
+    comments: {
+      nodes: [
+        {
+          id: "comment-p3-after-clean",
+          body: "P3: Later advisory finding after the clean comment.",
+          createdAt: "2026-06-29T17:20:00Z",
+          url: "https://example.test/pr/137#discussion_p3_after_clean",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const config = createConfig({ reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN] });
+  const record = createRecord({
+    issue_number: 2397,
+    state: "blocked",
+    pr_number: 137,
+    last_head_sha: headSha,
+    blocked_reason: "stale_review_bot",
+    processed_review_thread_ids: [`${p2Thread.id}@${headSha}`, `${p3Thread.id}@${headSha}`],
+    processed_review_thread_fingerprints: [
+      `${p2Thread.id}@${headSha}#comment-p2-before-clean`,
+      `${p3Thread.id}@${headSha}#comment-p3-after-clean`,
+    ],
+  });
+  const pr = createPullRequest({
+    number: 137,
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-06-29T17:10:00Z",
+    configuredBotCurrentHeadObservedAt: "2026-06-29T17:14:09Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
+    configuredBotLatestReviewedCommitSha: "f476344b5d",
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "f476344b5d",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-06-29T17:14:09Z",
+  });
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [p2Thread, p3Thread],
+  });
+
+  assert.equal(remediation?.classification, "unknown_needs_operator");
+  assert.equal(remediation?.missingProbeReason, "current_head_verification_evidence_missing");
+});
+
+test("buildStaleReviewBotRemediation does not treat clean comments before later P3 Codex findings as no-major evidence", () => {
+  const headSha = "f476344b5dc0f449bc87c024574ea4f284189e8c";
+  const p2Thread = createReviewThread({
+    id: "thread-p2-before-clean",
+    path: "scripts/evaluate_dataset.py",
+    line: 1763,
+    comments: {
+      nodes: [
+        {
+          id: "comment-p2-before-clean",
+          body: "P2: Earlier must-fix finding before the clean comment.",
+          createdAt: "2026-06-29T13:20:00Z",
+          url: "https://example.test/pr/137#discussion_p2_before_clean",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const p3Thread = createReviewThread({
+    id: "thread-p3-after-clean",
+    path: "docs/gmp08-acceptance-evaluation.md",
+    line: 22,
+    comments: {
+      nodes: [
+        {
+          id: "comment-p3-after-clean",
+          body: "P3: Later advisory finding after the clean comment.",
+          createdAt: "2026-06-29T17:20:00Z",
+          url: "https://example.test/pr/137#discussion_p3_after_clean",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const config = createConfig({ reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN] });
+  const record = createRecord({
+    issue_number: 2397,
+    state: "blocked",
+    pr_number: 137,
+    last_head_sha: headSha,
+    blocked_reason: "stale_review_bot",
+    repair_attempt_count: 1,
+    codex_connector_review_requested_observed_at: "2026-06-29T17:08:34Z",
+    codex_connector_review_requested_head_sha: headSha,
+    processed_review_thread_ids: [`${p2Thread.id}@${headSha}`, `${p3Thread.id}@${headSha}`],
+    processed_review_thread_fingerprints: [
+      `${p2Thread.id}@${headSha}#comment-p2-before-clean`,
+      `${p3Thread.id}@${headSha}#comment-p3-after-clean`,
+    ],
+  });
+  const pr = createPullRequest({
+    number: 137,
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-06-29T17:10:00Z",
+    configuredBotCurrentHeadObservedAt: "2026-06-29T17:14:09Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    codexConnectorReviewRequestedAt: "2026-06-29T17:08:34Z",
+    codexConnectorReviewRequestedHeadSha: headSha,
+    configuredBotTopLevelReviewStrength: null,
+    configuredBotLatestReviewedCommitSha: "f476344b5d",
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "f476344b5d",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-06-29T17:14:09Z",
+  });
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [p2Thread, p3Thread],
+  });
+
+  assert.equal(remediation?.classification, "unknown_needs_operator");
+  assert.equal(remediation?.verificationEvidenceSummary, "current_head_checks_passed:Minimal checks");
+  assert.equal(remediation?.missingProbeReason, "current_head_codex_no_major_signal_missing");
+});
+
+test("buildStaleReviewBotRemediation does not trust clean comments when merge state is not clean", () => {
+  const headSha = "13d9f6eba849ce0e8facd37fbfe5d3d6969f80de";
+  const thread = createReviewThread({
+    id: "thread-blocked-merge",
+    path: "scripts/evaluate_dataset.py",
+    line: 1593,
+    comments: {
+      nodes: [
+        {
+          id: "comment-blocked-merge",
+          body: "P2: Finding must not be discounted while merge state is blocked.",
+          createdAt: "2026-06-29T13:26:35Z",
+          url: "https://example.test/pr/137#discussion_blocked_merge",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const config = createConfig({ reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN] });
+  const record = createRecord({
+    issue_number: 2397,
+    state: "blocked",
+    pr_number: 137,
+    last_head_sha: headSha,
+    blocked_reason: "stale_review_bot",
+    processed_review_thread_ids: [`${thread.id}@${headSha}`],
+    processed_review_thread_fingerprints: [`${thread.id}@${headSha}#comment-blocked-merge`],
+  });
+  const pr = createPullRequest({
+    number: 137,
+    headRefOid: headSha,
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-06-29T17:10:00Z",
+    configuredBotCurrentHeadObservedAt: "2026-06-29T17:14:09Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "13d9f6eba8",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-06-29T17:14:09Z",
+  });
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [thread],
+  });
+
+  assert.equal(remediation?.classification, "unknown_needs_operator");
+  assert.equal(remediation?.missingProbeReason, "current_head_verification_evidence_missing");
+});
+
+test("buildStaleReviewBotRemediation does not trust clean comments after human replies on a Codex thread", () => {
+  const headSha = "56e2d73eb2655c75d4c09f1a9517b7e8bc39ad6d";
+  const thread = createReviewThread({
+    id: "thread-human-reply",
+    path: "scripts/evaluate_dataset.py",
+    line: 1593,
+    comments: {
+      nodes: [
+        {
+          id: "comment-human-reply-codex",
+          body: "P2: Finding must not be discounted after a human reply.",
+          createdAt: "2026-06-29T13:26:35Z",
+          url: "https://example.test/pr/137#discussion_human_reply",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+        {
+          id: "comment-human-reply-human",
+          body: "This thread still needs a human decision.",
+          createdAt: "2026-06-29T17:18:00Z",
+          url: "https://example.test/pr/137#discussion_human_reply_followup",
+          author: {
+            login: "reviewer-human",
+            typeName: "User",
+          },
+        },
+      ],
+    },
+  });
+  const config = createConfig({ reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN] });
+  const record = createRecord({
+    issue_number: 2397,
+    state: "blocked",
+    pr_number: 137,
+    last_head_sha: headSha,
+    blocked_reason: "stale_review_bot",
+    processed_review_thread_ids: [`${thread.id}@${headSha}`],
+    processed_review_thread_fingerprints: [`${thread.id}@${headSha}#comment-human-reply-codex`],
+  });
+  const pr = createPullRequest({
+    number: 137,
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-06-29T17:10:00Z",
+    configuredBotCurrentHeadObservedAt: "2026-06-29T17:14:09Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "56e2d73eb2",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-06-29T17:14:09Z",
+  });
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [thread],
+  });
+
+  assert.equal(remediation?.classification, "unresolved_work");
+  assert.equal(remediation?.missingProbeReason, null);
+});
+
+test("buildStaleReviewBotRemediation does not trust clean comments before required pre-merge evaluation", () => {
+  const headSha = "946046250d7a8ca70526b578f7227fa495eec29b";
+  const thread = createReviewThread({
+    id: "thread-missing-premerge",
+    path: "scripts/evaluate_dataset.py",
+    line: 1593,
+    comments: {
+      nodes: [
+        {
+          id: "comment-missing-premerge",
+          body: "P2: Finding must not be discounted before block-merge local review runs.",
+          createdAt: "2026-06-29T13:26:35Z",
+          url: "https://example.test/pr/137#discussion_missing_premerge",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+  });
+  const record = createRecord({
+    issue_number: 2397,
+    state: "blocked",
+    pr_number: 137,
+    last_head_sha: headSha,
+    blocked_reason: "manual_review",
+    local_review_head_sha: headSha,
+    local_review_findings_count: 0,
+    local_review_recommendation: "ready",
+    pre_merge_evaluation_outcome: null,
+    processed_review_thread_ids: [`${thread.id}@${headSha}`],
+    processed_review_thread_fingerprints: [`${thread.id}@${headSha}#comment-missing-premerge`],
+  });
+  const pr = createPullRequest({
+    number: 137,
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-06-29T17:10:00Z",
+    configuredBotCurrentHeadObservedAt: "2026-06-29T17:14:09Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: null,
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "946046250d",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-06-29T17:14:09Z",
+  });
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [thread],
+  });
+
+  assert.equal(remediation?.classification, "unknown_needs_operator");
   assert.equal(remediation?.missingProbeReason, "current_head_verification_evidence_missing");
 });
 

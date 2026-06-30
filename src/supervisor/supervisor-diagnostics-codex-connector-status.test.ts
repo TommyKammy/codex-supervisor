@@ -1541,7 +1541,7 @@ test("status --why distinguishes codex verified current-head repair residue from
 
   assert.match(
     status,
-    /^stale_review_bot_remediation issue=#399 pr=#499 reason=stale_review_bot code_ci=green current_head_sha=76060523f803ebe25832cb2c355aaaa9530502f3 processed_on_current_head=yes classification=verified_current_head_repair_pending_thread_resolution codex_current_head_review_state=observed review_thread_url=https:\/\/example\.test\/pr\/499#discussion_r399 manual_next_step=resolve_verified_repaired_configured_bot_threads_then_rerun_supervisor verification_evidence=Focused_verifier_passed_after_the_repair_commit\.;codex_pr_success_comment_after_current_head_request summary=verified_current_head_repair_configured_bot_thread_resolution_pending$/m,
+    /^stale_review_bot_remediation issue=#399 pr=#499 reason=stale_review_bot code_ci=green current_head_sha=76060523f803ebe25832cb2c355aaaa9530502f3 processed_on_current_head=yes classification=verified_current_head_repair_pending_thread_resolution codex_current_head_review_state=observed review_thread_url=https:\/\/example\.test\/pr\/499#discussion_r399 manual_next_step=resolve_verified_repaired_configured_bot_threads_then_rerun_supervisor verification_evidence=Focused_verifier_passed_after_the_repair_commit\. summary=verified_current_head_repair_configured_bot_thread_resolution_pending$/m,
   );
   assert.doesNotMatch(status, /classification=verified_no_source_change_pending_thread_resolution/);
 });

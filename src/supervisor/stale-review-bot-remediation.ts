@@ -2,10 +2,16 @@ import type { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread,
 import {
   hasProcessedReviewThread,
   latestReviewThreadCommentFingerprint,
+  localReviewBlocksMerge,
+  localReviewDegradedNeedsBlock,
+  localReviewHighSeverityNeedsBlock,
+  localReviewHighSeverityNeedsRetry,
+  localReviewRequiresManualReview,
   processedReviewThreadFingerprintKey,
   processedReviewThreadKey,
   reviewLoopRetryBudgetExhaustedForThread,
 } from "../review-handling";
+import { reviewDecisionBlocksCurrentHeadRepairProjection } from "../review-decision-blocking-policy";
 import {
   clusterConfiguredBotReviewThreads,
 } from "../codex-connector-review-churn";
@@ -13,6 +19,7 @@ import {
   codexConnectorMustFixReviewThreads,
   commitShasEqualForComparison,
   evaluateCodexConnectorConvergencePolicy,
+  latestCodexConnectorReviewCommentNode,
   latestCodexConnectorReviewCommentFingerprint,
   latestCodexConnectorPSeverity,
   latestCodexConnectorReviewComment,
@@ -20,6 +27,8 @@ import {
 import {
   configuredBotReviewFollowUpState,
   configuredBotReviewThreads,
+  latestReviewComment,
+  latestReviewCommentAuthorIsAllowedBot,
   manualReviewThreads,
   nonActionableConfiguredBotReviewThreads,
   pendingBotReviewThreads,
@@ -31,6 +40,7 @@ import {
   projectCurrentHeadCodexRepairProof,
 } from "../current-head-codex-repair-proof";
 import { currentHeadPassingNonReviewChecks } from "../local-ci-policy";
+import { currentHeadTimestampSatisfiesActiveWait } from "../pull-request-state-current-head-policy";
 import {
   buildCodexConnectorStillValidReviewRepairTargets,
   type CodexConnectorValidReviewRepairTarget,
@@ -786,7 +796,10 @@ function hasCurrentHeadSuccessSignal(
 function currentHeadCodexNoMajorSignalEvidence(args: {
   record: Pick<
     IssueRunRecord,
-    "codex_connector_review_requested_observed_at" | "codex_connector_review_requested_head_sha"
+    | "codex_connector_review_requested_observed_at"
+    | "codex_connector_review_requested_head_sha"
+    | "review_wait_started_at"
+    | "review_wait_head_sha"
   >;
   pr: Pick<
     GitHubPullRequest,
@@ -801,8 +814,15 @@ function currentHeadCodexNoMajorSignalEvidence(args: {
     | "configuredBotCurrentHeadCodexSuccessObservedAt"
   >;
   reviewThreads: ReviewThread[];
+  currentConfiguredThreads: ReviewThread[];
 }): string | null {
-  if (hasFreshCurrentHeadCodexSuccessReviewedCommit(args.pr, args.reviewThreads)) {
+  const successObservedAt = validTimestamp(args.pr.configuredBotCurrentHeadCodexSuccessObservedAt);
+  if (
+    successObservedAt &&
+    hasFreshCurrentHeadCodexSuccessReviewedCommit(args.pr, args.reviewThreads) &&
+    currentHeadTimestampSatisfiesActiveWait(args.record, args.pr, successObservedAt) &&
+    observedAtCoversCurrentConfiguredCodexFindings(successObservedAt, args.currentConfiguredThreads)
+  ) {
     return "codex_pr_success_comment_reviewed_current_head";
   }
   if (!hasCurrentHeadSuccessSignal(args.pr)) {
@@ -830,7 +850,197 @@ function currentHeadCodexNoMajorSignalEvidence(args: {
     return null;
   }
 
+  if (!observedAtCoversCurrentConfiguredCodexFindings(observedAt, args.currentConfiguredThreads)) {
+    return null;
+  }
+
   return "codex_pr_success_comment_after_current_head_request";
+}
+
+function hasLocalOrPreMergeBlockers(
+  config: SupervisorConfig,
+  record: Pick<
+    IssueRunRecord,
+    | "local_review_head_sha"
+    | "local_review_recommendation"
+    | "local_review_degraded"
+    | "local_review_findings_count"
+    | "local_review_verified_max_severity"
+    | "pre_merge_evaluation_outcome"
+    | "pre_merge_must_fix_count"
+    | "pre_merge_manual_review_count"
+    | "pre_merge_follow_up_count"
+  >,
+  pr: GitHubPullRequest,
+): boolean {
+  return Boolean(
+    localReviewRequiresManualReview(config, record, pr) ||
+    localReviewDegradedNeedsBlock(config, record, pr) ||
+    localReviewHighSeverityBlocksCleanCommentResidue(config, record, pr) ||
+    localReviewBlocksMerge(config, record, pr),
+  );
+}
+
+function localReviewHighSeverityBlocksCleanCommentResidue(
+  config: SupervisorConfig,
+  record: Pick<
+    IssueRunRecord,
+    "local_review_head_sha" | "local_review_verified_max_severity" | "pre_merge_evaluation_outcome"
+  >,
+  pr: GitHubPullRequest,
+): boolean {
+  return (
+    localReviewHighSeverityNeedsRetry(config, record, pr) ||
+    (config.localReviewEnabled && localReviewHighSeverityNeedsBlock(config, record, pr))
+  );
+}
+
+function humanReviewDecisionBlocksCleanCommentResidue(
+  config: SupervisorConfig,
+  pr: GitHubPullRequest,
+  reviewThreads: ReviewThread[],
+): boolean {
+  return reviewDecisionBlocksCurrentHeadRepairProjection({
+    humanReviewBlocksMerge: Boolean(config.humanReviewBlocksMerge),
+    manualThreadCount: manualReviewThreads(config, reviewThreads).length,
+    pr,
+  });
+}
+
+function reviewDecisionBlocksCleanCommentResidue(
+  config: SupervisorConfig,
+  pr: GitHubPullRequest,
+  reviewThreads: ReviewThread[],
+): boolean {
+  return (
+    humanReviewDecisionBlocksCleanCommentResidue(config, pr, reviewThreads) ||
+    hasCurrentBlockingTopLevelReviewAfterCodexSuccess(pr)
+  );
+}
+
+function latestCommentIsConfiguredCodexFinding(config: SupervisorConfig, thread: ReviewThread): boolean {
+  if (!latestReviewCommentAuthorIsAllowedBot(config, thread)) {
+    return false;
+  }
+  const latestComment = latestReviewComment(thread);
+  const latestCodexFindingComment = latestCodexConnectorReviewCommentNode(thread);
+  return Boolean(
+    latestComment &&
+      latestCodexFindingComment &&
+      latestComment.id === latestCodexFindingComment.id,
+  );
+}
+
+function latestCurrentConfiguredCodexFindingObservedAt(reviewThreads: ReviewThread[]): string | null {
+  return reviewThreads.reduce<string | null>((latestObservedAt, thread) => {
+    const observedAt = validTimestamp(latestCodexConnectorReviewCommentNode(thread)?.createdAt);
+    if (!observedAt) {
+      return latestObservedAt;
+    }
+    if (!latestObservedAt || Date.parse(observedAt) > Date.parse(latestObservedAt)) {
+      return observedAt;
+    }
+    return latestObservedAt;
+  }, null);
+}
+
+function observedAtCoversCurrentConfiguredCodexFindings(observedAt: string, currentConfiguredThreads: ReviewThread[]): boolean {
+  const latestCurrentFindingObservedAt = latestCurrentConfiguredCodexFindingObservedAt(currentConfiguredThreads);
+  return !latestCurrentFindingObservedAt || Date.parse(observedAt) > Date.parse(latestCurrentFindingObservedAt);
+}
+
+function hasFreshCurrentHeadCodexSuccessAfterActiveWaitReviewedCurrentConfiguredFindings(args: {
+  pr: Parameters<typeof hasFreshCurrentHeadCodexSuccessReviewedCommit>[0];
+  record: Pick<IssueRunRecord, "review_wait_started_at" | "review_wait_head_sha">;
+  reviewThreads: ReviewThread[];
+  currentConfiguredThreads: ReviewThread[];
+}): boolean {
+  if (!hasFreshCurrentHeadCodexSuccessReviewedCommit(args.pr, args.reviewThreads)) {
+    return false;
+  }
+  const successObservedAt = validTimestamp(args.pr.configuredBotCurrentHeadCodexSuccessObservedAt);
+  return Boolean(
+    successObservedAt &&
+      currentHeadTimestampSatisfiesActiveWait(args.record, args.pr, successObservedAt) &&
+      observedAtCoversCurrentConfiguredCodexFindings(successObservedAt, args.currentConfiguredThreads),
+  );
+}
+
+function hasCurrentBlockingTopLevelReviewAfterCodexSuccess(
+  pr: Pick<
+    GitHubPullRequest,
+    | "configuredBotTopLevelReviewStrength"
+    | "configuredBotTopLevelReviewSubmittedAt"
+    | "configuredBotCurrentHeadCodexSuccessObservedAt"
+  >,
+): boolean {
+  if (pr.configuredBotTopLevelReviewStrength !== "blocking") {
+    return false;
+  }
+
+  const topLevelReviewSubmittedAt = validTimestamp(pr.configuredBotTopLevelReviewSubmittedAt);
+  const successObservedAt = validTimestamp(pr.configuredBotCurrentHeadCodexSuccessObservedAt);
+  if (!topLevelReviewSubmittedAt || !successObservedAt) {
+    return true;
+  }
+
+  return Date.parse(topLevelReviewSubmittedAt) >= Date.parse(successObservedAt);
+}
+
+function currentHeadCodexCleanCommentResidueEvidence(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  reviewThreads: ReviewThread[];
+  currentConfiguredThreads: ReviewThread[];
+  mustFixReviewThreads: ReviewThread[];
+}): string | null {
+  const providerKinds = configuredReviewProviderKinds(args.config);
+  if (providerKinds.length === 0 || providerKinds.some((kind) => kind !== "codex")) {
+    return null;
+  }
+  if (args.mustFixReviewThreads.length === 0 || args.currentConfiguredThreads.length === 0) {
+    return null;
+  }
+  if (!hasCleanMergeState(args.pr)) {
+    return null;
+  }
+  if (hasLocalOrPreMergeBlockers(args.config, args.record, args.pr)) {
+    return null;
+  }
+  if (
+    !hasFreshCurrentHeadCodexSuccessAfterActiveWaitReviewedCurrentConfiguredFindings({
+      pr: args.pr,
+      record: args.record,
+      reviewThreads: args.reviewThreads,
+      currentConfiguredThreads: args.currentConfiguredThreads,
+    })
+  ) {
+    return null;
+  }
+  if (reviewDecisionBlocksCleanCommentResidue(args.config, args.pr, args.reviewThreads)) {
+    return null;
+  }
+  if (
+    args.currentConfiguredThreads.some(
+      (thread) =>
+        thread.isResolved ||
+        thread.isOutdated ||
+        !latestCommentIsConfiguredCodexFinding(args.config, thread),
+    )
+  ) {
+    return null;
+  }
+  if (!allCodexConnectorRepairResidueThreadsAreP2(args.mustFixReviewThreads)) {
+    return null;
+  }
+
+  return [
+    "codex_current_head_clean_comment",
+    `reviewed_commit=${args.pr.configuredBotCurrentHeadCodexSuccessReviewedCommitSha ?? "unknown"}`,
+    `observed_at=${args.pr.configuredBotCurrentHeadCodexSuccessObservedAt ?? "unknown"}`,
+    `discounted_threads=${args.mustFixReviewThreads.length}`,
+  ].join(":");
 }
 
 function classifyCodexMetadataOnly(args: {
@@ -845,6 +1055,14 @@ function classifyCodexMetadataOnly(args: {
   const currentConfiguredThreads = configuredThreads.filter((thread) => !thread.isOutdated);
   const policy = evaluateCodexConnectorConvergencePolicy(args.config, args.pr, args.reviewThreads);
   const mustFixReviewThreads = codexConnectorMustFixReviewThreads(args.reviewThreads);
+  const currentHeadCleanCommentResidueEvidence = currentHeadCodexCleanCommentResidueEvidence({
+    config: args.config,
+    record: args.record,
+    pr: args.pr,
+    reviewThreads: args.reviewThreads,
+    currentConfiguredThreads,
+    mustFixReviewThreads,
+  });
   const hasMarkedNoSourceChangeRepair = hasCurrentHeadMarkedNoSourceChangeCodexTurnVerification(
     args.record,
     args.pr,
@@ -889,7 +1107,9 @@ function classifyCodexMetadataOnly(args: {
       record: args.record,
       pr: args.pr,
       reviewThreads: args.reviewThreads,
+      currentConfiguredThreads,
     }),
+    currentHeadCleanCommentResidueEvidence,
     deterministicProbeEvidence: deterministicRepairProbeEvidence({
       reviewThreads: args.reviewThreads,
       repositoryFileContents: args.repositoryFileContents,
@@ -935,6 +1155,7 @@ function classifyRemediation(args: {
       hasUnprocessedMustFix: false,
       verificationEvidenceSummary: null,
       noMajorSignalEvidence: null,
+      currentHeadCleanCommentResidueEvidence: null,
       deterministicProbeEvidence: null,
       hasMarkedNoSourceChangeRepair: false,
       verifiedNoSourceChangeRepair: false,
@@ -976,6 +1197,7 @@ function classifyRemediation(args: {
     hasUnprocessedMustFix: false,
     verificationEvidenceSummary: null,
     noMajorSignalEvidence: null,
+    currentHeadCleanCommentResidueEvidence: null,
     deterministicProbeEvidence: null,
     hasMarkedNoSourceChangeRepair: false,
     verifiedNoSourceChangeRepair: false,

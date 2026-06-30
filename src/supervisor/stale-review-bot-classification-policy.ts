@@ -66,6 +66,7 @@ export interface StaleReviewBotClassificationPolicyArgs {
   hasUnprocessedMustFix: boolean;
   verificationEvidenceSummary: string | null;
   noMajorSignalEvidence: string | null;
+  currentHeadCleanCommentResidueEvidence: string | null;
   deterministicProbeEvidence: string | null;
   hasMarkedNoSourceChangeRepair: boolean;
   verifiedNoSourceChangeRepair: boolean;
@@ -147,15 +148,26 @@ function classifyCodexReviewBotPolicy(
         summary: STALE_REVIEW_BOT_SUMMARY,
       };
     }
+    const verifiedCurrentHeadRepair =
+      args.hasExplicitCurrentHeadRepairVerification ||
+      args.hasCurrentHeadRepairCheckVerification ||
+      (!args.hasMarkedNoSourceChangeRepair && args.repairAttemptCount > 0);
+    if (args.currentHeadCleanCommentResidueEvidence && args.cleanMergeState) {
+      return {
+        classification: verifiedCurrentHeadRepair
+          ? "verified_current_head_repair_pending_thread_resolution"
+          : "verified_no_source_change_pending_thread_resolution",
+        summary: verifiedCurrentHeadRepair
+          ? VERIFIED_CURRENT_HEAD_REPAIR_SUMMARY
+          : VERIFIED_NO_SOURCE_CHANGE_SUMMARY,
+        verificationEvidenceSummary: args.currentHeadCleanCommentResidueEvidence,
+      };
+    }
     if (!args.verificationEvidenceSummary) {
       return unknownNeedsOperator({
         missingProbeReason: "current_head_verification_evidence_missing",
       });
     }
-    const verifiedCurrentHeadRepair =
-      args.hasExplicitCurrentHeadRepairVerification ||
-      args.hasCurrentHeadRepairCheckVerification ||
-      (!args.hasMarkedNoSourceChangeRepair && args.repairAttemptCount > 0);
     if (!args.noMajorSignalEvidence) {
       if (args.deterministicProbeEvidence && args.allMustFixRepairResidueThreadsAreP2) {
         return {
