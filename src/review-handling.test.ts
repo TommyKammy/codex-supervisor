@@ -718,14 +718,62 @@ test("local review high-severity actions distinguish retry from blocked", () => 
     local_review_verified_max_severity: "high",
   });
 
-  assert.equal(localReviewHighSeverityNeedsRetry(createConfig({ localReviewHighSeverityAction: "retry" }), record, pr), true);
-  assert.equal(localReviewHighSeverityNeedsRetry(createConfig({ localReviewHighSeverityAction: "blocked" }), record, pr), false);
-  assert.equal(localReviewHighSeverityNeedsBlock(createConfig({ localReviewHighSeverityAction: "blocked" }), record, pr), true);
-  assert.equal(localReviewHighSeverityNeedsBlock(createConfig({ localReviewHighSeverityAction: "retry" }), record, pr), false);
+  assert.equal(
+    localReviewHighSeverityNeedsRetry(
+      createConfig({ localReviewEnabled: true, localReviewHighSeverityAction: "retry" }),
+      record,
+      pr,
+    ),
+    true,
+  );
+  assert.equal(
+    localReviewHighSeverityNeedsRetry(
+      createConfig({ localReviewEnabled: true, localReviewHighSeverityAction: "blocked" }),
+      record,
+      pr,
+    ),
+    false,
+  );
+  assert.equal(
+    localReviewHighSeverityNeedsBlock(
+      createConfig({ localReviewEnabled: true, localReviewHighSeverityAction: "blocked" }),
+      record,
+      pr,
+    ),
+    true,
+  );
+  assert.equal(
+    localReviewHighSeverityNeedsBlock(
+      createConfig({ localReviewEnabled: true, localReviewHighSeverityAction: "retry" }),
+      record,
+      pr,
+    ),
+    false,
+  );
+  assert.equal(
+    localReviewHighSeverityNeedsRetry(
+      createConfig({ localReviewEnabled: false, localReviewHighSeverityAction: "retry" }),
+      record,
+      pr,
+    ),
+    false,
+  );
+  assert.equal(
+    localReviewHighSeverityNeedsBlock(
+      createConfig({ localReviewEnabled: false, localReviewHighSeverityAction: "blocked" }),
+      record,
+      pr,
+    ),
+    false,
+  );
 });
 
 test("localReviewHighSeverityNeedsRetry only escalates verifier-confirmed high findings", () => {
-  const config = createConfig({ localReviewPolicy: "block_ready", localReviewHighSeverityAction: "retry" });
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_ready",
+    localReviewHighSeverityAction: "retry",
+  });
   const pr = createPullRequest();
 
   assert.equal(
@@ -754,7 +802,11 @@ test("localReviewHighSeverityNeedsRetry only escalates verifier-confirmed high f
 });
 
 test("localReviewHighSeverityNeedsRetry keeps current-head fix-blocked retries behind review gates", () => {
-  const config = createConfig({ localReviewPolicy: "block_merge", localReviewHighSeverityAction: "retry" });
+  const config = createConfig({
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+    localReviewHighSeverityAction: "retry",
+  });
   const record = createRecord({
     local_review_head_sha: "deadbeef",
     local_review_verified_max_severity: "high",

@@ -369,6 +369,7 @@ test("inferFailureContext preserves stalled diagnostics for legacy repeat-stop C
 
 test("inferFailureContext returns local review blocker context", () => {
   const config = createConfig({
+    localReviewEnabled: true,
     localReviewPolicy: "block_ready",
     localReviewHighSeverityAction: "blocked",
   });

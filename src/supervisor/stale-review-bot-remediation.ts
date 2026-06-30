@@ -870,7 +870,7 @@ function hasLocalOrPreMergeBlockers(
   return Boolean(
     localReviewRequiresManualReview(config, record, pr) ||
     localReviewDegradedNeedsBlock(config, record, pr) ||
-    localReviewHighSeverityNeedsBlock(config, record, pr) ||
+    (config.localReviewEnabled && localReviewHighSeverityNeedsBlock(config, record, pr)) ||
     localReviewBlocksMerge(config, record, pr),
   );
 }

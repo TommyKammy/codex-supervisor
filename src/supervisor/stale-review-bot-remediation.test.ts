@@ -2457,7 +2457,8 @@ test("buildStaleReviewBotRemediation ignores stale disabled local review fields 
   const config = createConfig({
     reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
     localReviewEnabled: false,
-    localReviewPolicy: "advisory",
+    localReviewPolicy: "block_merge",
+    localReviewHighSeverityAction: "blocked",
   });
   const record = createRecord({
     issue_number: 2397,
@@ -2465,10 +2466,11 @@ test("buildStaleReviewBotRemediation ignores stale disabled local review fields 
     pr_number: 137,
     last_head_sha: headSha,
     blocked_reason: "stale_review_bot",
-    local_review_head_sha: "old-head",
+    local_review_head_sha: headSha,
     local_review_degraded: true,
     local_review_findings_count: 2,
     local_review_recommendation: "changes_requested",
+    local_review_verified_max_severity: "high",
     pre_merge_evaluation_outcome: "fix_blocked",
     pre_merge_must_fix_count: 2,
     pre_merge_manual_review_count: 1,
@@ -2582,6 +2584,7 @@ test("buildStaleReviewBotRemediation honors current-head high-severity local-rev
   });
   const config = createConfig({
     reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    localReviewEnabled: true,
     localReviewPolicy: "block_merge",
     localReviewHighSeverityAction: "blocked",
   });
