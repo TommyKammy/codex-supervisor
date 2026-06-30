@@ -3,10 +3,14 @@ import {
   hasProcessedReviewThread,
   latestReviewThreadCommentFingerprint,
   localReviewBlocksMerge,
+  localReviewDegradedNeedsBlock,
+  localReviewHighSeverityNeedsBlock,
+  localReviewRequiresManualReview,
   processedReviewThreadFingerprintKey,
   processedReviewThreadKey,
   reviewLoopRetryBudgetExhaustedForThread,
 } from "../review-handling";
+import { reviewDecisionBlocksCurrentHeadRepairProjection } from "../review-decision-blocking-policy";
 import {
   clusterConfiguredBotReviewThreads,
 } from "../codex-connector-review-churn";
@@ -855,6 +859,7 @@ function hasLocalOrPreMergeBlockers(
     | "local_review_recommendation"
     | "local_review_degraded"
     | "local_review_findings_count"
+    | "local_review_verified_max_severity"
     | "pre_merge_evaluation_outcome"
     | "pre_merge_must_fix_count"
     | "pre_merge_manual_review_count"
@@ -862,15 +867,34 @@ function hasLocalOrPreMergeBlockers(
   >,
   pr: GitHubPullRequest,
 ): boolean {
-  const preMergeBlocker =
-    record.pre_merge_evaluation_outcome === "fix_blocked" ||
-    record.pre_merge_evaluation_outcome === "manual_review_blocked";
   return Boolean(
-    localReviewBlocksMerge(config, record, pr) ||
-    record.local_review_degraded ||
-      (record.pre_merge_must_fix_count ?? 0) > 0 ||
-      (record.pre_merge_manual_review_count ?? 0) > 0 ||
-      preMergeBlocker,
+    localReviewRequiresManualReview(config, record, pr) ||
+    localReviewDegradedNeedsBlock(config, record, pr) ||
+    localReviewHighSeverityNeedsBlock(config, record, pr) ||
+    localReviewBlocksMerge(config, record, pr),
+  );
+}
+
+function humanReviewDecisionBlocksCleanCommentResidue(
+  config: SupervisorConfig,
+  pr: GitHubPullRequest,
+  reviewThreads: ReviewThread[],
+): boolean {
+  return reviewDecisionBlocksCurrentHeadRepairProjection({
+    humanReviewBlocksMerge: Boolean(config.humanReviewBlocksMerge),
+    manualThreadCount: manualReviewThreads(config, reviewThreads).length,
+    pr,
+  });
+}
+
+function reviewDecisionBlocksCleanCommentResidue(
+  config: SupervisorConfig,
+  pr: GitHubPullRequest,
+  reviewThreads: ReviewThread[],
+): boolean {
+  return (
+    humanReviewDecisionBlocksCleanCommentResidue(config, pr, reviewThreads) ||
+    hasCurrentBlockingTopLevelReviewAfterCodexSuccess(pr)
   );
 }
 
@@ -902,7 +926,7 @@ function latestCurrentConfiguredCodexFindingObservedAt(reviewThreads: ReviewThre
 
 function observedAtCoversCurrentConfiguredCodexFindings(observedAt: string, currentConfiguredThreads: ReviewThread[]): boolean {
   const latestCurrentFindingObservedAt = latestCurrentConfiguredCodexFindingObservedAt(currentConfiguredThreads);
-  return !latestCurrentFindingObservedAt || Date.parse(observedAt) >= Date.parse(latestCurrentFindingObservedAt);
+  return !latestCurrentFindingObservedAt || Date.parse(observedAt) > Date.parse(latestCurrentFindingObservedAt);
 }
 
 function hasFreshCurrentHeadCodexSuccessReviewedCurrentConfiguredFindings(args: {
@@ -970,7 +994,7 @@ function currentHeadCodexCleanCommentResidueEvidence(args: {
   ) {
     return null;
   }
-  if (hasCurrentBlockingTopLevelReviewAfterCodexSuccess(args.pr)) {
+  if (reviewDecisionBlocksCleanCommentResidue(args.config, args.pr, args.reviewThreads)) {
     return null;
   }
   if (
