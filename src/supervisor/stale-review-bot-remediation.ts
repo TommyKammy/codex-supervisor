@@ -5,6 +5,7 @@ import {
   localReviewBlocksMerge,
   localReviewDegradedNeedsBlock,
   localReviewHighSeverityNeedsBlock,
+  localReviewHighSeverityNeedsRetry,
   localReviewRequiresManualReview,
   processedReviewThreadFingerprintKey,
   processedReviewThreadKey,
@@ -39,6 +40,7 @@ import {
   projectCurrentHeadCodexRepairProof,
 } from "../current-head-codex-repair-proof";
 import { currentHeadPassingNonReviewChecks } from "../local-ci-policy";
+import { currentHeadTimestampSatisfiesActiveWait } from "../pull-request-state-current-head-policy";
 import {
   buildCodexConnectorStillValidReviewRepairTargets,
   type CodexConnectorValidReviewRepairTarget,
@@ -794,7 +796,10 @@ function hasCurrentHeadSuccessSignal(
 function currentHeadCodexNoMajorSignalEvidence(args: {
   record: Pick<
     IssueRunRecord,
-    "codex_connector_review_requested_observed_at" | "codex_connector_review_requested_head_sha"
+    | "codex_connector_review_requested_observed_at"
+    | "codex_connector_review_requested_head_sha"
+    | "review_wait_started_at"
+    | "review_wait_head_sha"
   >;
   pr: Pick<
     GitHubPullRequest,
@@ -815,6 +820,7 @@ function currentHeadCodexNoMajorSignalEvidence(args: {
   if (
     successObservedAt &&
     hasFreshCurrentHeadCodexSuccessReviewedCommit(args.pr, args.reviewThreads) &&
+    currentHeadTimestampSatisfiesActiveWait(args.record, args.pr, successObservedAt) &&
     observedAtCoversCurrentConfiguredCodexFindings(successObservedAt, args.currentConfiguredThreads)
   ) {
     return "codex_pr_success_comment_reviewed_current_head";
@@ -870,8 +876,22 @@ function hasLocalOrPreMergeBlockers(
   return Boolean(
     localReviewRequiresManualReview(config, record, pr) ||
     localReviewDegradedNeedsBlock(config, record, pr) ||
-    (config.localReviewEnabled && localReviewHighSeverityNeedsBlock(config, record, pr)) ||
+    localReviewHighSeverityBlocksCleanCommentResidue(config, record, pr) ||
     localReviewBlocksMerge(config, record, pr),
+  );
+}
+
+function localReviewHighSeverityBlocksCleanCommentResidue(
+  config: SupervisorConfig,
+  record: Pick<
+    IssueRunRecord,
+    "local_review_head_sha" | "local_review_verified_max_severity" | "pre_merge_evaluation_outcome"
+  >,
+  pr: GitHubPullRequest,
+): boolean {
+  return (
+    localReviewHighSeverityNeedsRetry(config, record, pr) ||
+    (config.localReviewEnabled && localReviewHighSeverityNeedsBlock(config, record, pr))
   );
 }
 
@@ -929,8 +949,9 @@ function observedAtCoversCurrentConfiguredCodexFindings(observedAt: string, curr
   return !latestCurrentFindingObservedAt || Date.parse(observedAt) > Date.parse(latestCurrentFindingObservedAt);
 }
 
-function hasFreshCurrentHeadCodexSuccessReviewedCurrentConfiguredFindings(args: {
+function hasFreshCurrentHeadCodexSuccessAfterActiveWaitReviewedCurrentConfiguredFindings(args: {
   pr: Parameters<typeof hasFreshCurrentHeadCodexSuccessReviewedCommit>[0];
+  record: Pick<IssueRunRecord, "review_wait_started_at" | "review_wait_head_sha">;
   reviewThreads: ReviewThread[];
   currentConfiguredThreads: ReviewThread[];
 }): boolean {
@@ -939,7 +960,9 @@ function hasFreshCurrentHeadCodexSuccessReviewedCurrentConfiguredFindings(args: 
   }
   const successObservedAt = validTimestamp(args.pr.configuredBotCurrentHeadCodexSuccessObservedAt);
   return Boolean(
-    successObservedAt && observedAtCoversCurrentConfiguredCodexFindings(successObservedAt, args.currentConfiguredThreads),
+    successObservedAt &&
+      currentHeadTimestampSatisfiesActiveWait(args.record, args.pr, successObservedAt) &&
+      observedAtCoversCurrentConfiguredCodexFindings(successObservedAt, args.currentConfiguredThreads),
   );
 }
 
@@ -986,8 +1009,9 @@ function currentHeadCodexCleanCommentResidueEvidence(args: {
     return null;
   }
   if (
-    !hasFreshCurrentHeadCodexSuccessReviewedCurrentConfiguredFindings({
+    !hasFreshCurrentHeadCodexSuccessAfterActiveWaitReviewedCurrentConfiguredFindings({
       pr: args.pr,
+      record: args.record,
       reviewThreads: args.reviewThreads,
       currentConfiguredThreads: args.currentConfiguredThreads,
     })
