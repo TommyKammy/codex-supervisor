@@ -807,12 +807,11 @@ function currentHeadCodexNoMajorSignalEvidence(args: {
   reviewThreads: ReviewThread[];
   currentConfiguredThreads: ReviewThread[];
 }): string | null {
+  const successObservedAt = validTimestamp(args.pr.configuredBotCurrentHeadCodexSuccessObservedAt);
   if (
-    hasFreshCurrentHeadCodexSuccessReviewedCurrentConfiguredFindings({
-      pr: args.pr,
-      reviewThreads: args.reviewThreads,
-      currentConfiguredThreads: args.currentConfiguredThreads,
-    })
+    successObservedAt &&
+    hasFreshCurrentHeadCodexSuccessReviewedCommit(args.pr, args.reviewThreads) &&
+    observedAtCoversCurrentConfiguredCodexFindings(successObservedAt, args.currentConfiguredThreads)
   ) {
     return "codex_pr_success_comment_reviewed_current_head";
   }
@@ -841,6 +840,10 @@ function currentHeadCodexNoMajorSignalEvidence(args: {
     return null;
   }
 
+  if (!observedAtCoversCurrentConfiguredCodexFindings(observedAt, args.currentConfiguredThreads)) {
+    return null;
+  }
+
   return "codex_pr_success_comment_after_current_head_request";
 }
 
@@ -859,18 +862,15 @@ function hasLocalOrPreMergeBlockers(
   >,
   pr: GitHubPullRequest,
 ): boolean {
-  const explicitPreMergeBlocker =
+  const preMergeBlocker =
     record.pre_merge_evaluation_outcome === "fix_blocked" ||
-    record.pre_merge_evaluation_outcome === "manual_review_blocked" ||
-    record.pre_merge_evaluation_outcome === "follow_up_eligible";
+    record.pre_merge_evaluation_outcome === "manual_review_blocked";
   return Boolean(
     localReviewBlocksMerge(config, record, pr) ||
     record.local_review_degraded ||
-      record.local_review_findings_count > 0 ||
       (record.pre_merge_must_fix_count ?? 0) > 0 ||
       (record.pre_merge_manual_review_count ?? 0) > 0 ||
-      (record.pre_merge_follow_up_count ?? 0) > 0 ||
-      explicitPreMergeBlocker,
+      preMergeBlocker,
   );
 }
 
@@ -900,6 +900,11 @@ function latestCurrentConfiguredCodexFindingObservedAt(reviewThreads: ReviewThre
   }, null);
 }
 
+function observedAtCoversCurrentConfiguredCodexFindings(observedAt: string, currentConfiguredThreads: ReviewThread[]): boolean {
+  const latestCurrentFindingObservedAt = latestCurrentConfiguredCodexFindingObservedAt(currentConfiguredThreads);
+  return !latestCurrentFindingObservedAt || Date.parse(observedAt) >= Date.parse(latestCurrentFindingObservedAt);
+}
+
 function hasFreshCurrentHeadCodexSuccessReviewedCurrentConfiguredFindings(args: {
   pr: Parameters<typeof hasFreshCurrentHeadCodexSuccessReviewedCommit>[0];
   reviewThreads: ReviewThread[];
@@ -909,10 +914,8 @@ function hasFreshCurrentHeadCodexSuccessReviewedCurrentConfiguredFindings(args: 
     return false;
   }
   const successObservedAt = validTimestamp(args.pr.configuredBotCurrentHeadCodexSuccessObservedAt);
-  const latestCurrentFindingObservedAt = latestCurrentConfiguredCodexFindingObservedAt(args.currentConfiguredThreads);
   return Boolean(
-    successObservedAt &&
-      (!latestCurrentFindingObservedAt || Date.parse(successObservedAt) >= Date.parse(latestCurrentFindingObservedAt)),
+    successObservedAt && observedAtCoversCurrentConfiguredCodexFindings(successObservedAt, args.currentConfiguredThreads),
   );
 }
 
@@ -980,7 +983,7 @@ function currentHeadCodexCleanCommentResidueEvidence(args: {
   ) {
     return null;
   }
-  if (args.mustFixReviewThreads.some((thread) => latestCodexConnectorPSeverity(thread) === "P0")) {
+  if (!allCodexConnectorRepairResidueThreadsAreP2(args.mustFixReviewThreads)) {
     return null;
   }
 
