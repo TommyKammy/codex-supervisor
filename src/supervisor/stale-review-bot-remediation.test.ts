@@ -2305,6 +2305,127 @@ test("buildStaleReviewBotRemediation treats later current-head Codex clean comme
   assert.equal(diagnostics?.repeatStopExhausted, "no");
 });
 
+test("buildStaleReviewBotRemediation lets fresh clean comments supersede stale blocking top-level reviews", () => {
+  const headSha = "e1104394b13abbd7dbf2a7f8f0d1f3ce9a0ff123";
+  const thread = createReviewThread({
+    id: "thread-before-clean",
+    path: "scripts/evaluate_dataset.py",
+    line: 1763,
+    comments: {
+      nodes: [
+        {
+          id: "comment-before-clean",
+          body: "P2: Earlier must-fix finding before the clean comment.",
+          createdAt: "2026-06-29T15:54:04Z",
+          url: "https://example.test/pr/137#discussion_before_clean",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const config = createConfig({ reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN] });
+  const record = createRecord({
+    issue_number: 2397,
+    state: "blocked",
+    pr_number: 137,
+    last_head_sha: headSha,
+    blocked_reason: "stale_review_bot",
+    processed_review_thread_ids: [`${thread.id}@${headSha}`],
+    processed_review_thread_fingerprints: [`${thread.id}@${headSha}#comment-before-clean`],
+  });
+  const pr = createPullRequest({
+    number: 137,
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-06-29T17:10:00Z",
+    configuredBotCurrentHeadObservedAt: "2026-06-29T17:14:09Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: "blocking",
+    configuredBotTopLevelReviewSubmittedAt: "2026-06-29T15:55:00Z",
+    configuredBotLatestReviewedCommitSha: "e1104394b1",
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "e1104394b1",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-06-29T17:14:09Z",
+  });
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [thread],
+  });
+
+  assert.equal(remediation?.classification, "verified_no_source_change_pending_thread_resolution");
+  assert.equal(
+    remediation?.verificationEvidenceSummary,
+    "codex_current_head_clean_comment:reviewed_commit=e1104394b1:observed_at=2026-06-29T17:14:09Z:discounted_threads=1",
+  );
+});
+
+test("buildStaleReviewBotRemediation keeps blocking top-level reviews newer than clean comments blocking", () => {
+  const headSha = "e1104394b13abbd7dbf2a7f8f0d1f3ce9a0ff123";
+  const thread = createReviewThread({
+    id: "thread-before-clean",
+    path: "scripts/evaluate_dataset.py",
+    line: 1763,
+    comments: {
+      nodes: [
+        {
+          id: "comment-before-clean",
+          body: "P2: Earlier must-fix finding before the clean comment.",
+          createdAt: "2026-06-29T15:54:04Z",
+          url: "https://example.test/pr/137#discussion_before_clean",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const config = createConfig({ reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN] });
+  const record = createRecord({
+    issue_number: 2397,
+    state: "blocked",
+    pr_number: 137,
+    last_head_sha: headSha,
+    blocked_reason: "stale_review_bot",
+    processed_review_thread_ids: [`${thread.id}@${headSha}`],
+    processed_review_thread_fingerprints: [`${thread.id}@${headSha}#comment-before-clean`],
+  });
+  const pr = createPullRequest({
+    number: 137,
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-06-29T17:10:00Z",
+    configuredBotCurrentHeadObservedAt: "2026-06-29T17:14:09Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotTopLevelReviewStrength: "blocking",
+    configuredBotTopLevelReviewSubmittedAt: "2026-06-29T17:20:00Z",
+    configuredBotLatestReviewedCommitSha: "e1104394b1",
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "e1104394b1",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-06-29T17:14:09Z",
+  });
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [thread],
+  });
+
+  assert.equal(remediation?.classification, "unknown_needs_operator");
+  assert.equal(remediation?.missingProbeReason, "current_head_verification_evidence_missing");
+});
+
 test("buildStaleReviewBotRemediation does not trust clean comments before later Codex findings", () => {
   const headSha = "6fd42b1c0efb902736bca43f2489ad14fe20f163";
   const thread = createReviewThread({

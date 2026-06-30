@@ -916,6 +916,27 @@ function hasFreshCurrentHeadCodexSuccessReviewedCurrentConfiguredFindings(args: 
   );
 }
 
+function hasCurrentBlockingTopLevelReviewAfterCodexSuccess(
+  pr: Pick<
+    GitHubPullRequest,
+    | "configuredBotTopLevelReviewStrength"
+    | "configuredBotTopLevelReviewSubmittedAt"
+    | "configuredBotCurrentHeadCodexSuccessObservedAt"
+  >,
+): boolean {
+  if (pr.configuredBotTopLevelReviewStrength !== "blocking") {
+    return false;
+  }
+
+  const topLevelReviewSubmittedAt = validTimestamp(pr.configuredBotTopLevelReviewSubmittedAt);
+  const successObservedAt = validTimestamp(pr.configuredBotCurrentHeadCodexSuccessObservedAt);
+  if (!topLevelReviewSubmittedAt || !successObservedAt) {
+    return true;
+  }
+
+  return Date.parse(topLevelReviewSubmittedAt) >= Date.parse(successObservedAt);
+}
+
 function currentHeadCodexCleanCommentResidueEvidence(args: {
   config: SupervisorConfig;
   record: IssueRunRecord;
@@ -931,9 +952,6 @@ function currentHeadCodexCleanCommentResidueEvidence(args: {
   if (args.mustFixReviewThreads.length === 0 || args.currentConfiguredThreads.length === 0) {
     return null;
   }
-  if (args.pr.configuredBotTopLevelReviewStrength === "blocking") {
-    return null;
-  }
   if (!hasCleanMergeState(args.pr)) {
     return null;
   }
@@ -947,6 +965,9 @@ function currentHeadCodexCleanCommentResidueEvidence(args: {
       currentConfiguredThreads: args.currentConfiguredThreads,
     })
   ) {
+    return null;
+  }
+  if (hasCurrentBlockingTopLevelReviewAfterCodexSuccess(args.pr)) {
     return null;
   }
   if (
