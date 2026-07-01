@@ -3463,6 +3463,526 @@ test("reconcileRecoverableBlockedIssueStates replays reviewed-current-head no-ma
   ]);
 });
 
+test("reconcileRecoverableBlockedIssueStates persists current-head clean proof after terminal manual review", async () => {
+  const headSha = "74d44b0a48f7b65fbcc9361a6509727c3ba987dc";
+  const threadA = "PRRT_kwDOTAxt0M6Ndr2b";
+  const threadB = "PRRT_kwDOTAxt0M6NeErE";
+  const command = "python3 -m pytest tests/test_desktop_api_auth.py tests/test_poc_web_api.py -q";
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    localCiCommand: command,
+    staleConfiguredBotReviewPolicy: "reply_only",
+  });
+  const original = createRecord({
+    issue_number: 147,
+    state: "blocked",
+    blocked_reason: "manual_review",
+    pr_number: 156,
+    last_head_sha: headSha,
+    last_error:
+      "2 configured bot review thread(s) remain unresolved after processing on the current head without measurable progress and now require manual attention.",
+    last_failure_signature: threadA,
+    repeated_failure_signature_count: 3,
+    last_tracked_pr_progress_snapshot: JSON.stringify({
+      headRefOid: headSha,
+      mergeStateStatus: "CLEAN",
+      configuredBotCurrentHeadObservedAt: null,
+      configuredBotTopLevelReviewStrength: null,
+      configuredBotTopLevelReviewSubmittedAt: null,
+      checks: ["Minimal checks:pass:SUCCESS:CI"],
+      unresolvedReviewThreadIds: [threadA, threadB],
+      processedReviewThreadIds: [`${threadA}@${headSha}`, `${threadB}@${headSha}`],
+      verificationProbeOutcomes: [`codex_turn:${command}:passed:none`],
+    }),
+    last_tracked_pr_progress_summary: "no_meaningful_tracked_pr_progress",
+    last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+    processed_review_thread_ids: [`${threadA}@${headSha}`, `${threadB}@${headSha}`],
+    processed_review_thread_fingerprints: [
+      `${threadA}@${headSha}#comment-stale-p1`,
+      `${threadB}@${headSha}#comment-stale-p2`,
+    ],
+    timeline_artifacts: [
+      {
+        type: "verification_result",
+        gate: "codex_turn",
+        command,
+        head_sha: headSha,
+        outcome: "passed",
+        remediation_target: null,
+        next_action: "continue",
+        summary: "Focused current-head probe covered the stale Connector findings.",
+        recorded_at: "2026-07-01T06:52:31Z",
+      },
+    ],
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [original],
+  });
+  const issue = createIssue({
+    number: 147,
+    title: "P5-09 terminal security acceptance",
+    updatedAt: "2026-07-01T07:22:42Z",
+  });
+  const pr = createPullRequest({
+    number: 156,
+    title: "P5-09 terminal security acceptance",
+    url: "https://example.test/pr/156",
+    headRefName: "codex/issue-147",
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    reviewDecision: null,
+    currentHeadCiGreenAt: "2026-07-01T06:52:00Z",
+    configuredBotCurrentHeadObservedAt: "2026-07-01T06:50:19Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "74d44b0a48",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-07-01T06:50:19Z",
+  });
+  const stateStore = createCountingStateStore("2026-07-01T07:25:00Z");
+
+  const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => pr,
+      getIssue: async () => issue,
+      getChecks: async () => [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getUnresolvedReviewThreads: async () => [
+        createReviewThread({
+          id: threadA,
+          path: "apps/desktop/api_client.py",
+          line: 494,
+          comments: {
+            nodes: [{
+              id: "comment-stale-p1",
+              body: "P1: Allow result-save audits to recover cleanly.",
+              createdAt: "2026-07-01T03:52:01Z",
+              url: "https://example.test/pr/156#discussion_r3503170216",
+              author: { login: "chatgpt-codex-connector", typeName: "Bot" },
+            }],
+          },
+        }),
+        createReviewThread({
+          id: threadB,
+          path: "services/api/poc_web.py",
+          line: 826,
+          comments: {
+            nodes: [{
+              id: "comment-stale-p2",
+              body: "P2: Make creator publish idempotent.",
+              createdAt: "2026-07-01T04:36:26Z",
+              url: "https://example.test/pr/156#discussion_r3503310471",
+              author: { login: "chatgpt-codex-connector", typeName: "Bot" },
+            }],
+          },
+        }),
+      ],
+    },
+    stateStore.stateStore,
+    state,
+    config,
+    [issue],
+    {
+      shouldAutoRetryHandoffMissing,
+      inferStateFromPullRequest,
+      inferFailureContext,
+      blockedReasonForLifecycleState,
+      isOpenPullRequest,
+      syncReviewWaitWindow,
+      syncCopilotReviewRequestObservation,
+      syncCopilotReviewTimeoutState,
+    },
+  );
+
+  const updated = state.issues["147"];
+  assert.equal(updated.state, "ready_to_merge");
+  assert.equal(updated.blocked_reason, null);
+  assert.equal(updated.provider_success_head_sha, headSha);
+  assert.ok(updated.provider_success_observed_at);
+  assert.equal(updated.last_tracked_pr_progress_snapshot, null);
+  assert.equal(updated.last_tracked_pr_progress_summary, null);
+  assert.equal(stateStore.saveCalls, 1);
+  assert.deepEqual(recoveryEvents.map((event) => event.reason), [
+    `tracked_pr_lifecycle_recovered: resumed issue #147 from blocked to ready_to_merge using fresh tracked PR #156 facts at head ${headSha}`,
+  ]);
+});
+
+test("reconcileRecoverableBlockedIssueStates does not promote required reviews with record-scoped proof", async () => {
+  const headSha = "74d44b0a48f7b65fbcc9361a6509727c3ba987dc";
+  const threadId = "thread-required-review-proof";
+  const commentId = "comment-required-review-proof";
+  const command = "npm run build";
+  const config = createConfig({
+    humanReviewBlocksMerge: false,
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    localCiCommand: command,
+  });
+  const original = createRecord({
+    issue_number: 148,
+    state: "blocked",
+    blocked_reason: "manual_review",
+    pr_number: 157,
+    last_head_sha: headSha,
+    last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+    processed_review_thread_ids: [`${threadId}@${headSha}`],
+    processed_review_thread_fingerprints: [`${threadId}@${headSha}#${commentId}`],
+    timeline_artifacts: [
+      {
+        type: "verification_result",
+        gate: "codex_turn",
+        command,
+        head_sha: headSha,
+        outcome: "passed",
+        remediation_target: null,
+        next_action: "continue",
+        summary: "Focused current-head probe covered the Connector finding.",
+        recorded_at: "2026-07-01T06:52:31Z",
+      },
+    ],
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [original],
+  });
+  const issue = createIssue({ number: 148, updatedAt: "2026-07-01T07:22:42Z" });
+  const pr = createPullRequest({
+    number: 157,
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    reviewDecision: "REVIEW_REQUIRED",
+    configuredBotCurrentHeadObservedAt: "2026-07-01T06:50:19Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "74d44b0a48",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-07-01T06:50:19Z",
+  });
+  const stateStore = createCountingStateStore("2026-07-01T07:25:00Z");
+
+  await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => pr,
+      getIssue: async () => issue,
+      getChecks: async () => [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getUnresolvedReviewThreads: async () => [
+        createReviewThread({
+          id: threadId,
+          comments: {
+            nodes: [{
+              id: commentId,
+              body: "P2: Keep required-review PRs out of ready promotion.",
+              createdAt: "2026-07-01T03:52:01Z",
+              url: "https://example.test/pr/157#discussion_required",
+              author: { login: "chatgpt-codex-connector", typeName: "Bot" },
+            }],
+          },
+        }),
+      ],
+    },
+    stateStore.stateStore,
+    state,
+    config,
+    [issue],
+    {
+      shouldAutoRetryHandoffMissing,
+      inferStateFromPullRequest,
+      inferFailureContext,
+      blockedReasonForLifecycleState,
+      isOpenPullRequest,
+      syncReviewWaitWindow,
+      syncCopilotReviewRequestObservation,
+      syncCopilotReviewTimeoutState,
+    },
+  );
+
+  assert.equal(state.issues["148"].state, "addressing_review");
+  assert.equal(state.issues["148"].blocked_reason, null);
+});
+
+test("reconcileRecoverableBlockedIssueStates does not promote changes-requested reviews with record-scoped proof", async () => {
+  const headSha = "74d44b0a48f7b65fbcc9361a6509727c3ba987dc";
+  const threadId = "thread-changes-requested-proof";
+  const commentId = "comment-changes-requested-proof";
+  const command = "npm run build";
+  const config = createConfig({
+    humanReviewBlocksMerge: false,
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    localCiCommand: command,
+  });
+  const original = createRecord({
+    issue_number: 150,
+    state: "blocked",
+    blocked_reason: "manual_review",
+    pr_number: 159,
+    last_head_sha: headSha,
+    last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+    processed_review_thread_ids: [`${threadId}@${headSha}`],
+    processed_review_thread_fingerprints: [`${threadId}@${headSha}#${commentId}`],
+    timeline_artifacts: [
+      {
+        type: "verification_result",
+        gate: "codex_turn",
+        command,
+        head_sha: headSha,
+        outcome: "passed",
+        remediation_target: null,
+        next_action: "continue",
+        summary: "Focused current-head probe covered the Connector finding.",
+        recorded_at: "2026-07-01T06:52:31Z",
+      },
+    ],
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [original],
+  });
+  const issue = createIssue({ number: 150, updatedAt: "2026-07-01T07:22:42Z" });
+  const pr = createPullRequest({
+    number: 159,
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    reviewDecision: "CHANGES_REQUESTED",
+    configuredBotCurrentHeadObservedAt: "2026-07-01T06:50:19Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "74d44b0a48",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-07-01T06:50:19Z",
+  });
+  const stateStore = createCountingStateStore("2026-07-01T07:25:00Z");
+
+  await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => pr,
+      getIssue: async () => issue,
+      getChecks: async () => [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getUnresolvedReviewThreads: async () => [
+        createReviewThread({
+          id: threadId,
+          comments: {
+            nodes: [{
+              id: commentId,
+              body: "P2: Keep changes-requested PRs out of ready promotion.",
+              createdAt: "2026-07-01T03:52:01Z",
+              url: "https://example.test/pr/159#discussion_changes_requested",
+              author: { login: "chatgpt-codex-connector", typeName: "Bot" },
+            }],
+          },
+        }),
+      ],
+    },
+    stateStore.stateStore,
+    state,
+    config,
+    [issue],
+    {
+      shouldAutoRetryHandoffMissing,
+      inferStateFromPullRequest,
+      inferFailureContext,
+      blockedReasonForLifecycleState,
+      isOpenPullRequest,
+      syncReviewWaitWindow,
+      syncCopilotReviewRequestObservation,
+      syncCopilotReviewTimeoutState,
+    },
+  );
+
+  assert.equal(state.issues["150"].state, "blocked");
+  assert.equal(state.issues["150"].blocked_reason, "manual_review");
+});
+
+test("reconcileRecoverableBlockedIssueStates requires stop-no-progress for record-scoped proof recovery", async () => {
+  const headSha = "74d44b0a48f7b65fbcc9361a6509727c3ba987dc";
+  const threadId = "thread-non-terminal-proof";
+  const commentId = "comment-non-terminal-proof";
+  const command = "npm run build";
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    localCiCommand: command,
+  });
+  const original = createRecord({
+    issue_number: 151,
+    state: "blocked",
+    blocked_reason: "manual_review",
+    pr_number: 160,
+    last_head_sha: headSha,
+    last_tracked_pr_repeat_failure_decision: null,
+    processed_review_thread_ids: [`${threadId}@${headSha}`],
+    processed_review_thread_fingerprints: [`${threadId}@${headSha}#${commentId}`],
+    timeline_artifacts: [
+      {
+        type: "verification_result",
+        gate: "codex_turn",
+        command,
+        head_sha: headSha,
+        outcome: "passed",
+        remediation_target: null,
+        next_action: "continue",
+        summary: "Focused current-head probe covered the Connector finding.",
+        recorded_at: "2026-07-01T06:52:31Z",
+      },
+    ],
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [original],
+  });
+  const issue = createIssue({ number: 151, updatedAt: "2026-07-01T07:22:42Z" });
+  const pr = createPullRequest({
+    number: 160,
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    reviewDecision: null,
+    configuredBotCurrentHeadObservedAt: "2026-07-01T06:50:19Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "74d44b0a48",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-07-01T06:50:19Z",
+  });
+  const stateStore = createCountingStateStore("2026-07-01T07:25:00Z");
+
+  await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => pr,
+      getIssue: async () => issue,
+      getChecks: async () => [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getUnresolvedReviewThreads: async () => [
+        createReviewThread({
+          id: threadId,
+          comments: {
+            nodes: [{
+              id: commentId,
+              body: "P2: Non-terminal manual review should remain on the normal repair path.",
+              createdAt: "2026-07-01T03:52:01Z",
+              url: "https://example.test/pr/160#discussion_non_terminal",
+              author: { login: "chatgpt-codex-connector", typeName: "Bot" },
+            }],
+          },
+        }),
+      ],
+    },
+    stateStore.stateStore,
+    state,
+    config,
+    [issue],
+    {
+      shouldAutoRetryHandoffMissing,
+      inferStateFromPullRequest,
+      inferFailureContext,
+      blockedReasonForLifecycleState,
+      isOpenPullRequest,
+      syncReviewWaitWindow,
+      syncCopilotReviewRequestObservation,
+      syncCopilotReviewTimeoutState,
+    },
+  );
+
+  assert.equal(state.issues["151"].state, "addressing_review");
+  assert.equal(state.issues["151"].blocked_reason, null);
+  assert.equal(state.issues["151"].provider_success_head_sha, null);
+});
+
+test("reconcileRecoverableBlockedIssueStates preserves local manual review blocks despite record-scoped proof", async () => {
+  const headSha = "74d44b0a48f7b65fbcc9361a6509727c3ba987dc";
+  const threadId = "thread-local-review-proof";
+  const commentId = "comment-local-review-proof";
+  const command = "npm run build";
+  const config = createConfig({
+    humanReviewBlocksMerge: false,
+    localReviewEnabled: true,
+    localReviewPolicy: "block_merge",
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    localCiCommand: command,
+  });
+  const failureContext = {
+    category: "review" as const,
+    summary: "Local pre-merge review still requires manual review.",
+    signature: "local-review:manual",
+    command: null,
+    details: ["pre_merge_evaluation_outcome=manual_review_blocked"],
+    url: null,
+    updated_at: "2026-07-01T07:25:00Z",
+  };
+  const original = createRecord({
+    issue_number: 149,
+    state: "blocked",
+    blocked_reason: "manual_review",
+    pr_number: 158,
+    last_head_sha: headSha,
+    pre_merge_evaluation_outcome: "manual_review_blocked",
+    last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+    processed_review_thread_ids: [`${threadId}@${headSha}`],
+    processed_review_thread_fingerprints: [`${threadId}@${headSha}#${commentId}`],
+    timeline_artifacts: [
+      {
+        type: "verification_result",
+        gate: "codex_turn",
+        command,
+        head_sha: headSha,
+        outcome: "passed",
+        remediation_target: null,
+        next_action: "continue",
+        summary: "Focused current-head probe covered the Connector finding.",
+        recorded_at: "2026-07-01T06:52:31Z",
+      },
+    ],
+  });
+  const state: SupervisorStateFile = createSupervisorState({
+    issues: [original],
+  });
+  const issue = createIssue({ number: 149, updatedAt: "2026-07-01T07:22:42Z" });
+  const pr = createPullRequest({
+    number: 158,
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    reviewDecision: null,
+    configuredBotCurrentHeadObservedAt: "2026-07-01T06:50:19Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "74d44b0a48",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-07-01T06:50:19Z",
+  });
+  const stateStore = createCountingStateStore("2026-07-01T07:25:00Z");
+
+  await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => pr,
+      getIssue: async () => issue,
+      getChecks: async () => [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      getUnresolvedReviewThreads: async () => [
+        createReviewThread({
+          id: threadId,
+          comments: {
+            nodes: [{
+              id: commentId,
+              body: "P2: Connector proof exists but local review still blocks.",
+              createdAt: "2026-07-01T03:52:01Z",
+              url: "https://example.test/pr/158#discussion_local_review",
+              author: { login: "chatgpt-codex-connector", typeName: "Bot" },
+            }],
+          },
+        }),
+      ],
+    },
+    stateStore.stateStore,
+    state,
+    config,
+    [issue],
+    {
+      shouldAutoRetryHandoffMissing,
+      inferStateFromPullRequest: () => "blocked",
+      inferFailureContext: () => failureContext,
+      blockedReasonForLifecycleState: () => "manual_review",
+      isOpenPullRequest,
+      syncReviewWaitWindow,
+      syncCopilotReviewRequestObservation,
+      syncCopilotReviewTimeoutState,
+    },
+  );
+
+  assert.equal(state.issues["149"].state, "blocked");
+  assert.equal(state.issues["149"].blocked_reason, "manual_review");
+  assert.equal(state.issues["149"].pre_merge_evaluation_outcome, "manual_review_blocked");
+});
+
 test("reconcileRecoverableBlockedIssueStates ignores human replies when comparing same-head Codex Connector churn guidance", async () => {
   const config = createConfig({
     reviewBotLogins: ["chatgpt-codex-connector"],

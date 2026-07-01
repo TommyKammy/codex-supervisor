@@ -593,7 +593,7 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
         syncCopilotReviewRequestObservation: syncCopilotReviewRequestObservationImpl,
         syncCopilotReviewTimeoutState: syncCopilotReviewTimeoutStateImpl,
       });
-      const nextState = projection.nextState;
+      let nextState = projection.nextState;
       if (projection.shouldSuppressRecovery) {
         continue;
       }
@@ -602,18 +602,49 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
         record.last_tracked_pr_repeat_failure_decision === "stop_no_progress" &&
         nextState !== "blocked" &&
         hasOnlyOutdatedConfiguredBotResidue(config, reviewThreads);
+      const blockedManualReviewProjectionRecoverableByCurrentHeadProof =
+        projection.nextBlockedReason === "manual_review" &&
+        record.last_tracked_pr_repeat_failure_decision === "stop_no_progress" &&
+        record.pre_merge_evaluation_outcome !== "manual_review_blocked";
       const sameHeadCurrentHeadRepairProofRecovery =
         record.blocked_reason === "manual_review" &&
         record.last_tracked_pr_repeat_failure_decision === "stop_no_progress" &&
         record.last_head_sha === trackedPullRequest.headRefOid &&
-        nextState !== "blocked" &&
+        (nextState !== "blocked" || blockedManualReviewProjectionRecoverableByCurrentHeadProof) &&
         projectCurrentHeadCodexRepairProof({
           config,
           record: projection.recordForState,
           pr: trackedPullRequest,
           checks,
           reviewThreads,
+          allowRecordProcessedThreadEvidence: true,
         }) !== null;
+      const sameHeadCurrentHeadRepairProofPromotesReady =
+        sameHeadCurrentHeadRepairProofRecovery &&
+        (
+          nextState === "addressing_review" ||
+          (nextState === "blocked" && projection.nextBlockedReason === "manual_review")
+        ) &&
+        trackedPullRequest.state === "OPEN" &&
+        !trackedPullRequest.isDraft &&
+        trackedPullRequest.reviewDecision !== "REVIEW_REQUIRED" &&
+        trackedPullRequest.reviewDecision !== "CHANGES_REQUESTED" &&
+        trackedPullRequest.mergeStateStatus === "CLEAN";
+      if (sameHeadCurrentHeadRepairProofPromotesReady) {
+        nextState = "ready_to_merge";
+      }
+      const currentHeadRepairProofMergeLatencyVisibilityPatch: Partial<IssueRunRecord> =
+        sameHeadCurrentHeadRepairProofRecovery
+          ? {
+            ...projection.mergeLatencyVisibilityPatch,
+            provider_success_head_sha: trackedPullRequest.headRefOid,
+            provider_success_observed_at:
+              projection.mergeLatencyVisibilityPatch.provider_success_observed_at ??
+              trackedPullRequest.configuredBotCurrentHeadObservedAt ??
+              trackedPullRequest.currentHeadCiGreenAt ??
+              record.provider_success_observed_at,
+          }
+          : projection.mergeLatencyVisibilityPatch;
       const recoverySuppression = staleLocalManualReviewResidueRecovery || sameHeadCurrentHeadRepairProofRecovery
         ? {
             shouldSuppress: false,
@@ -734,6 +765,10 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
       if (nextState === "blocked" || preserveDraftReadyPromotionBlocker) {
         const headAdvanceResetPatch = resetTrackedPrHeadScopedStateOnAdvance(record, trackedPullRequest.headRefOid);
         const headAdvanced = Object.keys(headAdvanceResetPatch).length > 0;
+        const blockedMergeLatencyVisibilityPatch =
+          projection.mergeLatencyVisibilityPatch.provider_success_head_sha !== null
+            ? projection.mergeLatencyVisibilityPatch
+            : {};
         const blockerSemanticsChanged =
           headAdvanced
           || nextBlockedReason !== record.blocked_reason
@@ -766,6 +801,7 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
           ...projection.reviewWaitPatch,
           ...projection.copilotReviewRequestObservationPatch,
           ...projection.copilotReviewTimeoutPatch,
+          ...blockedMergeLatencyVisibilityPatch,
         };
         const nextPatch = blockerSemanticsChanged
           ? {
@@ -795,7 +831,7 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
         codexConnectorReviewRequestObservationPatch: projection.codexConnectorReviewRequestObservationPatch,
         copilotReviewRequestObservationPatch: projection.copilotReviewRequestObservationPatch,
         copilotReviewTimeoutPatch: projection.copilotReviewTimeoutPatch,
-        mergeLatencyVisibilityPatch: projection.mergeLatencyVisibilityPatch,
+        mergeLatencyVisibilityPatch: currentHeadRepairProofMergeLatencyVisibilityPatch,
       });
       if (!staleLocalManualReviewResidueRecovery && effectiveRecoverySuppression.progressSummary !== null) {
         patch.last_tracked_pr_progress_summary = effectiveRecoverySuppression.progressSummary;
