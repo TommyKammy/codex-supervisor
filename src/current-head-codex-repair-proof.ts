@@ -36,6 +36,7 @@ export const VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET =
 export type CurrentHeadCodexRepairProofSource =
   | "structured_artifact"
   | "thread_scoped_verification_artifact"
+  | "record_processed_thread_evidence"
   | "legacy_processed_thread_evidence";
 
 export interface CurrentHeadCodexRepairProofProjection {
@@ -88,6 +89,20 @@ function currentHeadCodexTurnVerificationArtifact(
       artifact.repair_targets?.includes("verified_no_source_change_review_thread_residue") !== true &&
       repairArtifactCoversCurrentThreads(artifact, pr, currentThreads),
   ) ?? null;
+}
+
+function currentHeadPassedCodexTurnArtifacts(
+  record: Pick<IssueRunRecord, "timeline_artifacts">,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
+): TimelineArtifact[] {
+  return (record.timeline_artifacts ?? []).filter(
+    (artifact) =>
+      artifact.type === "verification_result" &&
+      artifact.gate === "codex_turn" &&
+      artifact.outcome === "passed" &&
+      artifact.head_sha === pr.headRefOid &&
+      artifact.repair_targets?.includes("verified_no_source_change_review_thread_residue") !== true,
+  );
 }
 
 function currentHeadThreadScopedVerificationArtifacts(
@@ -458,6 +473,7 @@ export function projectCurrentHeadCodexRepairProof(args: {
   pr: GitHubPullRequest;
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
+  allowRecordProcessedThreadEvidence?: boolean;
 }): CurrentHeadCodexRepairProofProjection | null {
   if (!projectionSafetyGatesPass(args)) {
     return null;
@@ -566,6 +582,55 @@ export function projectCurrentHeadCodexRepairProof(args: {
     };
   }
 
+  const recordProcessedThreadEvidenceCount = headScopedProcessedThreadEvidenceCount(args.record, args.pr);
+  if (
+    args.allowRecordProcessedThreadEvidence === true &&
+    noMajorSupport &&
+    recordProcessedThreadEvidenceCount > 0 &&
+    proofCoverageThreads.every((thread) => hasProcessedReviewThread(args.record, args.pr, thread))
+  ) {
+    const recordScopedProof = currentHeadPassedCodexTurnArtifacts(args.record, args.pr)
+      .filter((artifact) =>
+        proofCoverageThreads.every((thread) => latestReviewThreadCommentPredatesArtifact(thread, artifact))
+      )
+      .map((artifact) => {
+        const localVerificationEvidence = configuredLocalCiRequired
+          ? currentHeadLocalVerificationEvidence({
+              config: args.config,
+              record: args.record,
+              pr: args.pr,
+              checks: args.checks,
+              scopedTimelineArtifact: artifact,
+            })
+          : null;
+        if (configuredLocalCiRequired && !localVerificationEvidence) {
+          return null;
+        }
+        return {
+          artifact,
+          localVerificationEvidence,
+        };
+      })
+      .find((proof): proof is {
+        artifact: TimelineArtifact;
+        localVerificationEvidence: CurrentHeadLocalVerificationEvidence | null;
+      } => proof !== null);
+    if (recordScopedProof) {
+      return {
+        source: "record_processed_thread_evidence",
+        summary: formatThreadScopedVerificationSummary({
+          artifact: recordScopedProof.artifact,
+          localVerificationEvidence: recordScopedProof.localVerificationEvidence,
+          noMajorSupport,
+        }),
+        localVerificationEvidenceSource: recordScopedProof.localVerificationEvidence?.source ?? null,
+        localVerificationEvidenceSummary: recordScopedProof.localVerificationEvidence?.summary ?? null,
+        processedThreadEvidenceCount: recordProcessedThreadEvidenceCount,
+        currentConfiguredThreadCount: repairResidueThreads.length,
+      };
+    }
+  }
+
   const unscopedLocalVerificationEvidence = configuredLocalCiRequired
     ? currentHeadLocalVerificationEvidence({
         config: args.config,
@@ -579,7 +644,7 @@ export function projectCurrentHeadCodexRepairProof(args: {
     return null;
   }
 
-  const processedThreadEvidenceCount = headScopedProcessedThreadEvidenceCount(args.record, args.pr);
+  const processedThreadEvidenceCount = recordProcessedThreadEvidenceCount;
   if (processedThreadEvidenceCount === 0) {
     return null;
   }

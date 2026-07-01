@@ -71,6 +71,17 @@ test("projectCurrentHeadCodexRepairProof accepts structured P1 residue proof wit
       {
         type: "verification_result",
         gate: "codex_turn",
+        command: "npm run build",
+        head_sha: headSha,
+        outcome: "passed",
+        remediation_target: null,
+        next_action: "continue",
+        summary: "Earlier generic build passed before the focused current-head probe.",
+        recorded_at: "2026-07-01T06:51:00Z",
+      },
+      {
+        type: "verification_result",
+        gate: "codex_turn",
         command: "python3 scripts/ci/repo_hygiene.py",
         head_sha: headSha,
         outcome: "passed",
@@ -174,6 +185,229 @@ test("projectCurrentHeadCodexRepairProof accepts thread-scoped proof after revie
     checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
     reviewThreads: threads,
   }), []);
+});
+
+test("projectCurrentHeadCodexRepairProof accepts record-scoped processed evidence with current-head clean comment", () => {
+  const headSha = "74d44b0a48f7b65fbcc9361a6509727c3ba987dc";
+  const threads = [
+    codexThread({ id: "thread-current-clean-a", commentId: "comment-current-clean-a", severity: "P1", line: 494 }),
+    codexThread({ id: "thread-current-clean-b", commentId: "comment-current-clean-b", severity: "P2", line: 826 }),
+  ];
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    localCiCommand: "python3 -m pytest tests/test_desktop_api_auth.py tests/test_poc_web_api.py -q",
+  });
+  const record = createRecord({
+    last_head_sha: headSha,
+    blocked_reason: "manual_review",
+    codex_connector_review_requested_observed_at: "2026-07-01T06:41:26Z",
+    codex_connector_review_requested_head_sha: headSha,
+    processed_review_thread_ids: threads.map((thread) => `${thread.id}@${headSha}`),
+    processed_review_thread_fingerprints: threads.map((thread) => `${thread.id}@${headSha}#${thread.comments.nodes[0]!.id}`),
+    timeline_artifacts: [
+      {
+        type: "verification_result",
+        gate: "codex_turn",
+        command: "python3 -m pytest tests/test_desktop_api_auth.py tests/test_poc_web_api.py -q",
+        head_sha: headSha,
+        outcome: "passed",
+        remediation_target: null,
+        next_action: "continue",
+        summary: "Focused current-head probe covered the stale Connector findings.",
+        recorded_at: "2026-07-01T06:52:31Z",
+      },
+    ],
+  });
+  const pr = createPullRequest({
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    reviewDecision: null,
+    currentHeadCiGreenAt: "2026-07-01T06:52:00Z",
+    configuredBotCurrentHeadObservedAt: "2026-07-01T06:50:19Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "74d44b0a48",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-07-01T06:50:19Z",
+  });
+
+  const proof = projectCurrentHeadCodexRepairProof({
+    config,
+    record,
+    pr,
+    checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: threads,
+    allowRecordProcessedThreadEvidence: true,
+  });
+
+  assert.equal(proof?.source, "record_processed_thread_evidence");
+  assert.equal(proof?.localVerificationEvidenceSource, "scoped_repair_timeline_artifact_with_non_review_checks");
+  assert.equal(proof?.processedThreadEvidenceCount, 4);
+  assert.match(proof?.summary ?? "", /codex_no_major_support=codex_pr_success_comment_reviewed_current_head/);
+});
+
+test("projectCurrentHeadCodexRepairProof rejects record-scoped proof before latest thread comments", () => {
+  const headSha = "74d44b0a48f7b65fbcc9361a6509727c3ba987dc";
+  const threads = [
+    codexThread({ id: "thread-old-proof-a", commentId: "comment-old-proof-a", severity: "P2", line: 494 }),
+  ];
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+  });
+  const record = createRecord({
+    last_head_sha: headSha,
+    blocked_reason: "manual_review",
+    processed_review_thread_ids: threads.map((thread) => `${thread.id}@${headSha}`),
+    processed_review_thread_fingerprints: threads.map((thread) => `${thread.id}@${headSha}#${thread.comments.nodes[0]!.id}`),
+    timeline_artifacts: [
+      {
+        type: "verification_result",
+        gate: "codex_turn",
+        command: "npm run build",
+        head_sha: headSha,
+        outcome: "passed",
+        remediation_target: null,
+        next_action: "continue",
+        summary: "This pass predates the latest Connector finding.",
+        recorded_at: "2026-06-26T06:19:00Z",
+      },
+    ],
+  });
+  const pr = createPullRequest({
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    reviewDecision: null,
+    configuredBotCurrentHeadObservedAt: "2026-07-01T06:50:19Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "74d44b0a48",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-07-01T06:50:19Z",
+  });
+
+  const proof = projectCurrentHeadCodexRepairProof({
+    config,
+    record,
+    pr,
+    checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: threads,
+    allowRecordProcessedThreadEvidence: true,
+  });
+
+  assert.equal(proof, null);
+});
+
+test("projectCurrentHeadCodexRepairProof requires record evidence for outdated P1 coverage threads", () => {
+  const headSha = "74d44b0a48f7b65fbcc9361a6509727c3ba987dc";
+  const currentThread = codexThread({
+    id: "thread-current-p2",
+    commentId: "comment-current-p2",
+    severity: "P2",
+    line: 494,
+  });
+  const outdatedP1Thread = {
+    ...codexThread({
+      id: "thread-outdated-p1",
+      commentId: "comment-outdated-p1",
+      severity: "P1",
+      line: 826,
+    }),
+    isOutdated: true,
+  };
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+  });
+  const record = createRecord({
+    last_head_sha: headSha,
+    blocked_reason: "manual_review",
+    processed_review_thread_ids: [`${currentThread.id}@${headSha}`],
+    processed_review_thread_fingerprints: [
+      `${currentThread.id}@${headSha}#${currentThread.comments.nodes[0]!.id}`,
+    ],
+    timeline_artifacts: [
+      {
+        type: "verification_result",
+        gate: "codex_turn",
+        command: "npm run build",
+        head_sha: headSha,
+        outcome: "passed",
+        remediation_target: null,
+        next_action: "continue",
+        summary: "Focused current-head probe covered only the current thread.",
+        recorded_at: "2026-07-01T06:52:31Z",
+      },
+    ],
+  });
+  const pr = createPullRequest({
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    reviewDecision: null,
+    configuredBotCurrentHeadObservedAt: "2026-07-01T06:50:19Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "74d44b0a48",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-07-01T06:50:19Z",
+  });
+
+  assert.equal(projectCurrentHeadCodexRepairProof({
+    config,
+    record,
+    pr,
+    checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [currentThread, outdatedP1Thread],
+    allowRecordProcessedThreadEvidence: true,
+  }), null);
+});
+
+test("projectCurrentHeadCodexRepairProof rejects no-source artifacts for record-scoped repair proof", () => {
+  const headSha = "74d44b0a48f7b65fbcc9361a6509727c3ba987dc";
+  const threads = [
+    codexThread({ id: "thread-no-source-proof", commentId: "comment-no-source-proof", severity: "P2", line: 494 }),
+  ];
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+  });
+  const record = createRecord({
+    last_head_sha: headSha,
+    blocked_reason: "manual_review",
+    processed_review_thread_ids: threads.map((thread) => `${thread.id}@${headSha}`),
+    processed_review_thread_fingerprints: threads.map((thread) => `${thread.id}@${headSha}#${thread.comments.nodes[0]!.id}`),
+    timeline_artifacts: [
+      {
+        type: "verification_result",
+        gate: "codex_turn",
+        command: "npm run build",
+        head_sha: headSha,
+        outcome: "passed",
+        remediation_target: null,
+        next_action: "continue",
+        summary: "No-source revalidation belongs to the no-source auto-resolve path.",
+        recorded_at: "2026-07-01T06:52:31Z",
+        repair_targets: ["verified_no_source_change_review_thread_residue"],
+      },
+    ],
+  });
+  const pr = createPullRequest({
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    reviewDecision: null,
+    configuredBotCurrentHeadObservedAt: "2026-07-01T06:50:19Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "74d44b0a48",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-07-01T06:50:19Z",
+  });
+
+  assert.equal(projectCurrentHeadCodexRepairProof({
+    config,
+    record,
+    pr,
+    checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: threads,
+    allowRecordProcessedThreadEvidence: true,
+  }), null);
 });
 
 test("projectCurrentHeadCodexRepairProof rejects summary-only verification evidence", () => {
