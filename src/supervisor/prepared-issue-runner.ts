@@ -263,6 +263,7 @@ export async function runPreparedIssueFlow(
   let skipCodexAfterPreStopStaleConfiguredBotAutoResolve = false;
 
   if (pr) {
+    const recordBeforePullRequestLifecycle = record;
     const lifecycle = derivePullRequestLifecycleSnapshot(config, record, pr, checks, reviewThreads);
     const localReviewRepairSummary =
       lifecycle.nextState === "local_review_fix"
@@ -498,13 +499,13 @@ export async function runPreparedIssueFlow(
     const verifiedStaleResidueFileContents = await loadReviewThreadFileContents({
       defaultBranch: config.defaultBranch,
       expectedHeadSha: pr.headRefOid,
-      branch: record.branch,
+      branch: recordBeforePullRequestLifecycle.branch,
       workspacePath,
       reviewThreads,
     });
     const verifiedStaleResidueRemediation = buildStaleReviewBotRemediation({
       config,
-      record,
+      record: recordBeforePullRequestLifecycle,
       pr,
       checks,
       reviewThreads,
@@ -514,7 +515,7 @@ export async function runPreparedIssueFlow(
       !options.dryRun &&
       shouldAutoResolveVerifiedStaleReviewResidue({
         config,
-        record,
+        record: recordBeforePullRequestLifecycle,
         pr,
         checks,
         reviewThreads,
@@ -525,13 +526,13 @@ export async function runPreparedIssueFlow(
         github,
         stateStore,
         state,
-        record,
+        record: recordBeforePullRequestLifecycle,
         pr,
         checks,
         reviewThreads,
         syncJournal,
         config,
-        failureContext: effectiveFailureContext,
+        failureContext: recordBeforePullRequestLifecycle.last_failure_context ?? effectiveFailureContext,
         summarizeChecks,
         manualReviewThreadCount: manualReviewThreads(config, reviewThreads).length,
         workspacePath,

@@ -42,7 +42,11 @@ import {
   buildCodexConnectorDiagnosticBundle,
   externalSignalReadinessDiagnostics,
 } from "./supervisor-status-review-bot";
-import { inspectTrackedIssueHostDiagnostics, summarizeIssueJournalHandoff } from "../core/journal";
+import {
+  inspectTrackedIssueHostDiagnostics,
+  resolveTrackedIssueHostPaths,
+  summarizeIssueJournalHandoff,
+} from "../core/journal";
 import { formatInventoryRefreshDiagnosticLines, formatInventoryRefreshStatusLine } from "../inventory-refresh-state";
 import { buildTrackedPrMismatch, buildTrackedPrReadyPromotionMaintenanceLines } from "./tracked-pr-mismatch";
 import {
@@ -482,7 +486,7 @@ export async function buildIssueExplainDto(
           defaultBranch: config.defaultBranch,
           expectedHeadSha: pr.headRefOid,
           branch: record.branch,
-          workspacePath: record.workspace,
+          workspacePath: resolveTrackedIssueHostPaths(config, record).workspace,
           reviewThreads: explainReviewThreads,
         })
       : undefined;

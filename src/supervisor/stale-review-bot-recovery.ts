@@ -183,15 +183,22 @@ export async function recoverStaleConfiguredBotReviewThreads(args: {
     args.record.last_stale_review_bot_reply_head_sha === args.pr.headRefOid &&
     args.record.last_stale_review_bot_reply_signature === blockerSignature
   ) {
-    return buildResult({
-      status: "no_op",
-      record: args.record,
-      shouldRefreshPullRequest: args.resolveAfterReply && hasResolvedAllStaleConfiguredBotThreads({
+    const resolvedAllThreads =
+      args.resolveAfterReply &&
+      hasResolvedAllStaleConfiguredBotThreads({
         record: args.record,
         headSha: args.pr.headRefOid,
         signature: blockerSignature,
-      }),
-    });
+      });
+    if (args.resolveAfterReply && !resolvedAllThreads) {
+      // Reply progress alone is not enough for reply-and-resolve recovery; fall through and resolve missing threads.
+    } else {
+      return buildResult({
+        status: "no_op",
+        record: args.record,
+        shouldRefreshPullRequest: resolvedAllThreads,
+      });
+    }
   }
 
   const configuredThreads = configuredBotReviewThreads(args.config, args.reviewThreads);

@@ -674,11 +674,10 @@ Parallelizable: No
 test("buildReadinessSummary preserves file-probe evidence when selecting verified residue", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "verified-residue-selection-"));
   try {
-    const repoPath = path.join(root, "repo");
-    const remotePath = path.join(root, "remote.git");
     const issueNumber = 2402;
     const prNumber = 174;
     const branch = "codex/issue-2402-file-probe";
+    const repoPath = path.join(root, `issue-${issueNumber}`);
     const policyPath = "src/mvp-a-onboarding-traceability.ts";
     const documentPath = "docs/mvp-a/policy/onboarding-traceability.md";
     await fs.mkdir(path.dirname(path.join(repoPath, policyPath)), { recursive: true });
@@ -699,11 +698,7 @@ test("buildReadinessSummary preserves file-probe evidence when selecting verifie
     execFileSync("git", ["-C", repoPath, "config", "user.name", "Test User"]);
     execFileSync("git", ["-C", repoPath, "add", policyPath]);
     execFileSync("git", ["-C", repoPath, "commit", "-m", "Add policy path list"], { stdio: "ignore" });
-    execFileSync("git", ["init", "--bare", remotePath], { stdio: "ignore" });
-    execFileSync("git", ["-C", repoPath, "remote", "add", "origin", remotePath]);
-    execFileSync("git", ["-C", repoPath, "push", "-u", "origin", "main"], { stdio: "ignore" });
     execFileSync("git", ["-C", repoPath, "checkout", "-b", branch], { stdio: "ignore" });
-    execFileSync("git", ["-C", repoPath, "push", "-u", "origin", branch], { stdio: "ignore" });
     const headSha = execFileSync("git", ["-C", repoPath, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
     const config = createConfig({
       repoPath,
@@ -762,7 +757,7 @@ Parallelizable: No
           blocked_reason: "manual_review",
           repair_attempt_count: 1,
           last_tracked_pr_repeat_failure_decision: "stop_no_progress",
-          workspace: repoPath,
+          workspace: path.join(root, "stale-other-host-workspace"),
         }),
       },
     };

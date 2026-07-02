@@ -2,7 +2,6 @@ import { execFile } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { ReviewThread } from "./core/types";
-import { getWorkspaceStatus } from "./core/workspace";
 
 export type RepositoryFileContents = Record<string, string | null | undefined>;
 
@@ -68,8 +67,22 @@ export async function loadReviewThreadFileContents(args: {
   }
 
   try {
-    const workspaceStatus = await getWorkspaceStatus(args.workspacePath, args.branch, args.defaultBranch);
-    if (workspaceStatus.headSha !== args.expectedHeadSha || workspaceStatus.hasUncommittedChanges) {
+    const [headResult, branchResult, statusResult] = await Promise.all([
+      execFileAsync("git", ["-C", args.workspacePath, "rev-parse", "HEAD"], { encoding: "utf8", maxBuffer: 64_000 }),
+      execFileAsync("git", ["-C", args.workspacePath, "rev-parse", "--abbrev-ref", "HEAD"], {
+        encoding: "utf8",
+        maxBuffer: 64_000,
+      }),
+      execFileAsync("git", ["-C", args.workspacePath, "status", "--porcelain=v1", "-z", "--untracked-files=all"], {
+        encoding: "utf8",
+        maxBuffer: 1_000_000,
+      }),
+    ]);
+    if (
+      headResult.stdout.trim() !== args.expectedHeadSha ||
+      branchResult.stdout.trim() !== args.branch ||
+      statusResult.stdout.length > 0
+    ) {
       return undefined;
     }
   } catch {

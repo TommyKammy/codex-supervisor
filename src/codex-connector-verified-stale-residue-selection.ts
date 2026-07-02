@@ -7,6 +7,7 @@ import {
   loadReviewThreadFileContents,
   type RepositoryFileContents,
 } from "./review-thread-file-contents";
+import { resolveTrackedIssueHostPaths } from "./core/journal";
 
 export function shouldReenterCodexConnectorVerifiedStaleResidueAutoResolve(args: {
   config: SupervisorConfig;
@@ -64,11 +65,12 @@ export async function shouldSelectCodexConnectorVerifiedStaleResidueAutoResolve(
       args.getChecks(pr.number),
       args.getUnresolvedReviewThreads(pr.number),
     ]);
+    const resolvedPaths = resolveTrackedIssueHostPaths(args.config, record);
     const repositoryFileContents = await loadReviewThreadFileContents({
       defaultBranch: args.config.defaultBranch,
       expectedHeadSha: pr.headRefOid,
       branch: record.branch,
-      workspacePath: record.workspace,
+      workspacePath: resolvedPaths.workspace,
       reviewThreads,
     });
 
