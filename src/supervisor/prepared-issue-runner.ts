@@ -62,6 +62,7 @@ import {
   shouldAutoResolveVerifiedStaleReviewResidue,
 } from "./stale-review-bot-remediation";
 import { hasResolvedAllStaleConfiguredBotThreads } from "./stale-review-bot-recovery";
+import { loadReviewThreadFileContents } from "../review-thread-file-contents";
 
 export interface PreparedIssueRunContext extends PreparedIssueExecutionContext {
   state: SupervisorStateFile;
@@ -210,6 +211,21 @@ function didAutoResolveStaleConfiguredBotBeforeRepeatStop(args: {
       headSha: args.pr.headRefOid,
       signature,
     })
+  );
+}
+
+export function hasCompletedVerifiedStaleResidueAutoResolve(args: {
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+}): boolean {
+  const signature = args.record.last_stale_review_bot_reply_signature;
+  return Boolean(
+    signature &&
+      hasResolvedAllStaleConfiguredBotThreads({
+        record: args.record,
+        headSha: args.pr.headRefOid,
+        signature,
+      }),
   );
 }
 
@@ -479,6 +495,13 @@ export async function runPreparedIssueFlow(
         );
       }
     }
+    const verifiedStaleResidueFileContents = await loadReviewThreadFileContents({
+      defaultBranch: config.defaultBranch,
+      expectedHeadSha: pr.headRefOid,
+      branch: record.branch,
+      workspacePath,
+      reviewThreads,
+    });
     if (
       !options.dryRun &&
       shouldAutoResolveVerifiedStaleReviewResidue({
@@ -487,6 +510,7 @@ export async function runPreparedIssueFlow(
         pr,
         checks,
         reviewThreads,
+        repositoryFileContents: verifiedStaleResidueFileContents,
       })
     ) {
       record = await syncTrackedPrPersistentStatusComment({
@@ -504,7 +528,7 @@ export async function runPreparedIssueFlow(
         manualReviewThreadCount: manualReviewThreads(config, reviewThreads).length,
         workspacePath,
       });
-      if (record.last_stale_review_bot_reply_head_sha === pr.headRefOid) {
+      if (hasCompletedVerifiedStaleResidueAutoResolve({ record, pr })) {
         record = stateStore.touch(record, {
           state: "pr_open",
           blocked_reason: null,

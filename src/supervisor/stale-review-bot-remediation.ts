@@ -1292,6 +1292,7 @@ export function shouldAutoResolveVerifiedStaleReviewResidue(args: {
   pr: GitHubPullRequest;
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
+  repositoryFileContents?: RepositoryFileContents;
   remediation?: StaleReviewBotRemediationDto | null;
 }): boolean {
   const remediation =
@@ -1302,6 +1303,7 @@ export function shouldAutoResolveVerifiedStaleReviewResidue(args: {
       pr: args.pr,
       checks: args.checks,
       reviewThreads: args.reviewThreads,
+      repositoryFileContents: args.repositoryFileContents,
     });
 
   return Boolean(

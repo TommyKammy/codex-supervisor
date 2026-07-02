@@ -3,6 +3,10 @@ import {
   buildStaleReviewBotRemediation,
   shouldAutoResolveVerifiedStaleReviewResidue,
 } from "./supervisor/stale-review-bot-remediation";
+import {
+  loadReviewThreadFileContents,
+  type RepositoryFileContents,
+} from "./review-thread-file-contents";
 
 export function shouldReenterCodexConnectorVerifiedStaleResidueAutoResolve(args: {
   config: SupervisorConfig;
@@ -10,6 +14,7 @@ export function shouldReenterCodexConnectorVerifiedStaleResidueAutoResolve(args:
   pr: GitHubPullRequest;
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
+  repositoryFileContents?: RepositoryFileContents;
 }): boolean {
   const remediation = buildStaleReviewBotRemediation({
     config: args.config,
@@ -17,6 +22,7 @@ export function shouldReenterCodexConnectorVerifiedStaleResidueAutoResolve(args:
     pr: args.pr,
     checks: args.checks,
     reviewThreads: args.reviewThreads,
+    repositoryFileContents: args.repositoryFileContents,
   });
 
   return shouldAutoResolveVerifiedStaleReviewResidue({
@@ -58,6 +64,13 @@ export async function shouldSelectCodexConnectorVerifiedStaleResidueAutoResolve(
       args.getChecks(pr.number),
       args.getUnresolvedReviewThreads(pr.number),
     ]);
+    const repositoryFileContents = await loadReviewThreadFileContents({
+      defaultBranch: args.config.defaultBranch,
+      expectedHeadSha: pr.headRefOid,
+      branch: record.branch,
+      workspacePath: record.workspace,
+      reviewThreads,
+    });
 
     return shouldReenterCodexConnectorVerifiedStaleResidueAutoResolve({
       config: args.config,
@@ -65,6 +78,7 @@ export async function shouldSelectCodexConnectorVerifiedStaleResidueAutoResolve(
       pr,
       checks,
       reviewThreads,
+      repositoryFileContents,
     });
   } catch {
     return false;
