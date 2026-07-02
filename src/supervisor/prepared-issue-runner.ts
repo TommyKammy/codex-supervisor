@@ -512,8 +512,10 @@ export async function runPreparedIssueFlow(
       reviewThreads,
       repositoryFileContents: verifiedStaleResidueFileContents,
     });
+    const verifiedStaleResidueFailureContext = recordBeforePullRequestLifecycle.last_failure_context;
     if (
       !options.dryRun &&
+      verifiedStaleResidueFailureContext &&
       shouldAutoResolveVerifiedStaleReviewResidue({
         config,
         record: recordBeforePullRequestLifecycle,
@@ -533,7 +535,7 @@ export async function runPreparedIssueFlow(
         reviewThreads,
         syncJournal,
         config,
-        failureContext: recordBeforePullRequestLifecycle.last_failure_context ?? effectiveFailureContext,
+        failureContext: verifiedStaleResidueFailureContext,
         summarizeChecks,
         manualReviewThreadCount: manualReviewThreads(config, reviewThreads).length,
         workspacePath,
