@@ -502,6 +502,14 @@ export async function runPreparedIssueFlow(
       workspacePath,
       reviewThreads,
     });
+    const verifiedStaleResidueRemediation = buildStaleReviewBotRemediation({
+      config,
+      record,
+      pr,
+      checks,
+      reviewThreads,
+      repositoryFileContents: verifiedStaleResidueFileContents,
+    });
     if (
       !options.dryRun &&
       shouldAutoResolveVerifiedStaleReviewResidue({
@@ -510,7 +518,7 @@ export async function runPreparedIssueFlow(
         pr,
         checks,
         reviewThreads,
-        repositoryFileContents: verifiedStaleResidueFileContents,
+        remediation: verifiedStaleResidueRemediation,
       })
     ) {
       record = await syncTrackedPrPersistentStatusComment({

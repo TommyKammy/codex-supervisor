@@ -1292,20 +1292,8 @@ export function shouldAutoResolveVerifiedStaleReviewResidue(args: {
   pr: GitHubPullRequest;
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
-  repositoryFileContents?: RepositoryFileContents;
-  remediation?: StaleReviewBotRemediationDto | null;
+  remediation: StaleReviewBotRemediationDto | null;
 }): boolean {
-  const remediation =
-    args.remediation ??
-    buildStaleReviewBotRemediation({
-      config: args.config,
-      record: args.record,
-      pr: args.pr,
-      checks: args.checks,
-      reviewThreads: args.reviewThreads,
-      repositoryFileContents: args.repositoryFileContents,
-    });
-
   return Boolean(
     args.record.state === "blocked" &&
       (args.record.blocked_reason === "manual_review" || args.record.blocked_reason === "stale_review_bot") &&
@@ -1315,9 +1303,9 @@ export function shouldAutoResolveVerifiedStaleReviewResidue(args: {
       !hasPendingChecks(args.checks) &&
       !hasFailingChecks(args.checks) &&
       manualReviewThreads(args.config, args.reviewThreads).length === 0 &&
-      remediation &&
-      isVerifiedStaleResidueClassification(remediation.classification) &&
-      verifiedStaleReviewResidueAutoResolveEnabled(args.config, remediation.classification),
+      args.remediation &&
+      isVerifiedStaleResidueClassification(args.remediation.classification) &&
+      verifiedStaleReviewResidueAutoResolveEnabled(args.config, args.remediation.classification),
   );
 }
 
