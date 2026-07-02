@@ -55,6 +55,7 @@ import {
   type StaleReviewBotAutoRepairSuppressedReason,
   type StaleReviewBotClassificationPolicyDecision,
 } from "./stale-review-bot-classification-policy";
+import { staleConfiguredBotReplyThreadIds } from "./stale-review-bot-recovery";
 
 export {
   hasCurrentHeadVerifiedRepairResidueArtifact,
@@ -192,7 +193,7 @@ export function isVerifiedStaleResidueClassification(
   );
 }
 
-function verifiedAutoResolveEnabled(
+export function verifiedStaleReviewResidueAutoResolveEnabled(
   config: SupervisorConfig,
   classification: StaleReviewBotRemediationDto["classification"],
 ): boolean {
@@ -202,6 +203,21 @@ function verifiedAutoResolveEnabled(
     (classification === "verified_current_head_repair_pending_thread_resolution" &&
       config.verifiedCurrentHeadRepairReviewThreadAutoResolve === true)
   );
+}
+
+function hasRecoverableStaleReviewThreadContext(args: {
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  configuredThreads: ReviewThread[];
+}): boolean {
+  const signature = args.record.last_failure_context?.signature;
+  const signedThreadIds = staleConfiguredBotReplyThreadIds(signature);
+  if (!signature || signedThreadIds.length === 0) {
+    return false;
+  }
+
+  const unresolvedThreadIds = new Set(args.configuredThreads.map((thread) => thread.id));
+  return signedThreadIds.some((threadId) => unresolvedThreadIds.has(threadId));
 }
 
 function classifyAutoRepairSuppression(args: {
@@ -229,7 +245,7 @@ function classifyAutoRepairSuppression(args: {
     missingProbeReason: remediation.missingProbeReason,
     verifiedStaleResidue: isVerifiedStaleResidueClassification(remediation.classification),
     actionableClusterCount: clusterConfiguredBotReviewThreads(args.actionableMustFixThreads).length,
-    verifiedAutoResolveEnabled: Boolean(config && verifiedAutoResolveEnabled(config, remediation.classification)),
+    verifiedAutoResolveEnabled: Boolean(config && verifiedStaleReviewResidueAutoResolveEnabled(config, remediation.classification)),
   });
 }
 
@@ -1284,6 +1300,39 @@ export function buildStaleReviewBotRemediation(args: {
         : STALE_REVIEW_BOT_MANUAL_NEXT_STEP,
     summary: classification.summary,
   };
+}
+
+export function shouldAutoResolveVerifiedStaleReviewResidue(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+  remediation: StaleReviewBotRemediationDto | null;
+}): boolean {
+  const configuredThreads = configuredBotReviewThreads(args.config, args.reviewThreads);
+  return Boolean(
+    args.record.state === "blocked" &&
+      (args.record.blocked_reason === "manual_review" || args.record.blocked_reason === "stale_review_bot") &&
+      args.record.pr_number === args.pr.number &&
+      configuredReviewProviderKinds(args.config).includes("codex") &&
+      !hasMergeConflictState(args.pr) &&
+      !hasPendingChecks(args.checks) &&
+      !hasFailingChecks(args.checks) &&
+      manualReviewThreads(args.config, args.reviewThreads).length === 0 &&
+      configuredThreads.length > 0 &&
+      configuredThreads.every((thread) =>
+        latestReviewCommentAuthorIsAllowedBot(args.config, thread),
+      ) &&
+      hasRecoverableStaleReviewThreadContext({
+        record: args.record,
+        pr: args.pr,
+        configuredThreads,
+      }) &&
+      args.remediation &&
+      isVerifiedStaleResidueClassification(args.remediation.classification) &&
+      verifiedStaleReviewResidueAutoResolveEnabled(args.config, args.remediation.classification),
+  );
 }
 
 export function buildStaleReviewBotThreadDiagnostics(args: {

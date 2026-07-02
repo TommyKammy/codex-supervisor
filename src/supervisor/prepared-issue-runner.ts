@@ -57,8 +57,12 @@ import {
   manualReviewThreads,
 } from "../review-thread-reporting";
 import { RecoveryEvent } from "../run-once-cycle-prelude";
-import { buildStaleReviewBotRemediation } from "./stale-review-bot-remediation";
+import {
+  buildStaleReviewBotRemediation,
+  shouldAutoResolveVerifiedStaleReviewResidue,
+} from "./stale-review-bot-remediation";
 import { hasResolvedAllStaleConfiguredBotThreads } from "./stale-review-bot-recovery";
+import { loadReviewThreadFileContents } from "../review-thread-file-contents";
 
 export interface PreparedIssueRunContext extends PreparedIssueExecutionContext {
   state: SupervisorStateFile;
@@ -210,6 +214,21 @@ function didAutoResolveStaleConfiguredBotBeforeRepeatStop(args: {
   );
 }
 
+export function hasCompletedVerifiedStaleResidueAutoResolve(args: {
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+}): boolean {
+  const signature = args.record.last_stale_review_bot_reply_signature;
+  return Boolean(
+    signature &&
+      hasResolvedAllStaleConfiguredBotThreads({
+        record: args.record,
+        headSha: args.pr.headRefOid,
+        signature,
+      }),
+  );
+}
+
 export async function runPreparedIssueFlow(
   dependencies: PreparedIssueRunnerDependencies,
   context: PreparedIssueRunContext,
@@ -244,6 +263,7 @@ export async function runPreparedIssueFlow(
   let skipCodexAfterPreStopStaleConfiguredBotAutoResolve = false;
 
   if (pr) {
+    const recordBeforePullRequestLifecycle = record;
     const lifecycle = derivePullRequestLifecycleSnapshot(config, record, pr, checks, reviewThreads);
     const localReviewRepairSummary =
       lifecycle.nextState === "local_review_fix"
@@ -472,6 +492,69 @@ export async function runPreparedIssueFlow(
         await syncJournal(record);
         return prependRecoveryLog(
           `Issue #${record.issue_number} stopped after repeated identical failure signatures.`,
+          recoveryLog,
+        );
+      }
+    }
+    const verifiedStaleResidueFileContents = await loadReviewThreadFileContents({
+      defaultBranch: config.defaultBranch,
+      expectedHeadSha: pr.headRefOid,
+      branch: recordBeforePullRequestLifecycle.branch,
+      workspacePath,
+      issueJournalRelativePath: config.issueJournalRelativePath,
+      reviewThreads,
+    });
+    const verifiedStaleResidueRemediation = buildStaleReviewBotRemediation({
+      config,
+      record: recordBeforePullRequestLifecycle,
+      pr,
+      checks,
+      reviewThreads,
+      repositoryFileContents: verifiedStaleResidueFileContents,
+    });
+    const verifiedStaleResidueFailureContext = recordBeforePullRequestLifecycle.last_failure_context;
+    if (
+      !options.dryRun &&
+      !skipCodexAfterPreStopStaleConfiguredBotAutoResolve &&
+      verifiedStaleResidueFailureContext &&
+      shouldAutoResolveVerifiedStaleReviewResidue({
+        config,
+        record: recordBeforePullRequestLifecycle,
+        pr,
+        checks,
+        reviewThreads,
+        remediation: verifiedStaleResidueRemediation,
+      })
+    ) {
+      record = await syncTrackedPrPersistentStatusComment({
+        github,
+        stateStore,
+        state,
+        record: recordBeforePullRequestLifecycle,
+        pr,
+        checks,
+        reviewThreads,
+        syncJournal,
+        config,
+        failureContext: verifiedStaleResidueFailureContext,
+        summarizeChecks,
+        manualReviewThreadCount: manualReviewThreads(config, reviewThreads).length,
+        workspacePath,
+      });
+      if (hasCompletedVerifiedStaleResidueAutoResolve({ record, pr })) {
+        record = stateStore.touch(record, {
+          state: "pr_open",
+          blocked_reason: null,
+          last_error: null,
+          last_failure_kind: null,
+        });
+        skipCodexAfterPreStopStaleConfiguredBotAutoResolve = true;
+      } else {
+        state.issues[String(record.issue_number)] = record;
+        await stateStore.save(state);
+        await syncJournal(record);
+        return prependRecoveryLog(
+          `Issue #${record.issue_number} remains blocked; verified stale review residue auto-resolve did not complete.`,
           recoveryLog,
         );
       }

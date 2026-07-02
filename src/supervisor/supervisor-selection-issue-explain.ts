@@ -22,6 +22,8 @@ import { configuredReviewBotLogins } from "../core/review-providers";
 import { shouldAutoRetryTimeout } from "./supervisor-failure-helpers";
 import { buildStaleStabilizingNoPrRecoveryWarningLine } from "../no-pull-request-state";
 import { shouldReenterCodexConnectorValidReviewRepair } from "../codex-connector-valid-review-repair-selection";
+import { shouldReenterCodexConnectorVerifiedStaleResidueAutoResolve } from "../codex-connector-verified-stale-residue-selection";
+import { loadReviewThreadFileContents } from "../review-thread-file-contents";
 import {
   evaluateAutonomousExecutionTrust,
   isAutonomousExecutionTrustBlockedRecord,
@@ -40,7 +42,11 @@ import {
   buildCodexConnectorDiagnosticBundle,
   externalSignalReadinessDiagnostics,
 } from "./supervisor-status-review-bot";
-import { inspectTrackedIssueHostDiagnostics, summarizeIssueJournalHandoff } from "../core/journal";
+import {
+  inspectTrackedIssueHostDiagnostics,
+  resolveTrackedIssueHostPaths,
+  summarizeIssueJournalHandoff,
+} from "../core/journal";
 import { formatInventoryRefreshDiagnosticLines, formatInventoryRefreshStatusLine } from "../inventory-refresh-state";
 import { buildTrackedPrMismatch, buildTrackedPrReadyPromotionMaintenanceLines } from "./tracked-pr-mismatch";
 import {
@@ -474,6 +480,17 @@ export async function buildIssueExplainDto(
         return `external_signal_readiness status=${readiness.status} ci=${readiness.ci} review=${readiness.review} workflows=${readiness.workflows}`;
       })()
       : null;
+  const reviewThreadFileContents =
+    record && pr && !trackedPrHydrationFailed
+      ? await loadReviewThreadFileContents({
+          defaultBranch: config.defaultBranch,
+          expectedHeadSha: pr.headRefOid,
+          branch: record.branch,
+          workspacePath: resolveTrackedIssueHostPaths(config, record).workspace,
+          issueJournalRelativePath: config.issueJournalRelativePath,
+          reviewThreads: explainReviewThreads,
+        })
+      : undefined;
   const staleReviewBotRemediation =
     record && pr && !trackedPrHydrationFailed
       ? buildStaleReviewBotRemediation({
@@ -482,6 +499,7 @@ export async function buildIssueExplainDto(
         pr,
         checks: explainChecks,
         reviewThreads: explainReviewThreads,
+        repositoryFileContents: reviewThreadFileContents,
       })
       : null;
   const staleReviewBotThreadDiagnostics =
@@ -526,6 +544,17 @@ export async function buildIssueExplainDto(
           pr,
           checks: explainChecks,
           reviewThreads: explainReviewThreads,
+        })
+      : false;
+  const codexConnectorVerifiedStaleResidueAutoResolveEligible =
+    record && pr && !trackedPrHydrationFailed
+      ? shouldReenterCodexConnectorVerifiedStaleResidueAutoResolve({
+          config,
+          record,
+          pr,
+          checks: explainChecks,
+          reviewThreads: explainReviewThreads,
+          repositoryFileContents: reviewThreadFileContents,
         })
       : false;
   const noActiveTrackedRecordSummary =
@@ -591,6 +620,7 @@ export async function buildIssueExplainDto(
     !isEligibleForSelection(record, config) &&
     !codexConnectorReviewRequestRecoveryEligible &&
     !codexConnectorValidReviewRepairEligible &&
+    !codexConnectorVerifiedStaleResidueAutoResolveEligible &&
     !(isAutonomousExecutionTrustBlockedRecord(record) && trustDecision.allowed)
   ) {
     reasons.push(...buildNonRunnableLocalStateReasons(record, config));

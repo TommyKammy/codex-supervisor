@@ -6,10 +6,14 @@ import test from "node:test";
 import { StateStore } from "../core/state-store";
 import type { IssueRunRecord } from "../core/types";
 import type { GitHubClient } from "../github";
-import { runPreparedIssueFlow } from "./prepared-issue-runner";
+import {
+  hasCompletedVerifiedStaleResidueAutoResolve,
+  runPreparedIssueFlow,
+} from "./prepared-issue-runner";
 import {
   createConfig,
   createIssue,
+  createPullRequest,
   createRecord,
   createSupervisorState,
 } from "./supervisor-test-helpers";
@@ -106,4 +110,27 @@ test("runPreparedIssueFlow persists no-PR prepared issues without dispatching Co
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }
+});
+
+test("hasCompletedVerifiedStaleResidueAutoResolve requires matching resolve progress", () => {
+  const headSha = "68401b26947918f0ce2280a9526ab68298b1a25c";
+  const signature = "stalled-bot:PRRT_verified_residue";
+  const pr = createPullRequest({ headRefOid: headSha });
+  const replyOnlyRecord = createRecord({
+    last_stale_review_bot_reply_head_sha: headSha,
+    last_stale_review_bot_reply_signature: signature,
+    stale_review_bot_reply_progress_keys: [
+      `reply:PRRT_verified_residue@${headSha}:${signature}`,
+    ],
+    stale_review_bot_resolve_progress_keys: [],
+  });
+  const resolvedRecord = createRecord({
+    ...replyOnlyRecord,
+    stale_review_bot_resolve_progress_keys: [
+      `resolve:PRRT_verified_residue@${headSha}:${signature}`,
+    ],
+  });
+
+  assert.equal(hasCompletedVerifiedStaleResidueAutoResolve({ record: replyOnlyRecord, pr }), false);
+  assert.equal(hasCompletedVerifiedStaleResidueAutoResolve({ record: resolvedRecord, pr }), true);
 });
