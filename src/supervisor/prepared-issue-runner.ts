@@ -501,6 +501,7 @@ export async function runPreparedIssueFlow(
       expectedHeadSha: pr.headRefOid,
       branch: recordBeforePullRequestLifecycle.branch,
       workspacePath,
+      issueJournalRelativePath: config.issueJournalRelativePath,
       reviewThreads,
     });
     const verifiedStaleResidueRemediation = buildStaleReviewBotRemediation({

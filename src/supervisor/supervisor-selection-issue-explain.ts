@@ -487,6 +487,7 @@ export async function buildIssueExplainDto(
           expectedHeadSha: pr.headRefOid,
           branch: record.branch,
           workspacePath: resolveTrackedIssueHostPaths(config, record).workspace,
+          issueJournalRelativePath: config.issueJournalRelativePath,
           reviewThreads: explainReviewThreads,
         })
       : undefined;
@@ -553,6 +554,7 @@ export async function buildIssueExplainDto(
           pr,
           checks: explainChecks,
           reviewThreads: explainReviewThreads,
+          repositoryFileContents: reviewThreadFileContents,
         })
       : false;
   const noActiveTrackedRecordSummary =

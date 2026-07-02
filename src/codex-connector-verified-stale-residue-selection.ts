@@ -71,6 +71,7 @@ export async function shouldSelectCodexConnectorVerifiedStaleResidueAutoResolve(
       expectedHeadSha: pr.headRefOid,
       branch: record.branch,
       workspacePath: resolvedPaths.workspace,
+      issueJournalRelativePath: args.config.issueJournalRelativePath,
       reviewThreads,
     });
 

@@ -2,6 +2,10 @@ import { execFile } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { ReviewThread } from "./core/types";
+import {
+  isIgnoredSupervisorArtifactPath,
+  parseGitStatusPorcelainV1Paths,
+} from "./core/git-workspace-helpers";
 
 export type RepositoryFileContents = Record<string, string | null | undefined>;
 
@@ -60,6 +64,7 @@ export async function loadReviewThreadFileContents(args: {
   expectedHeadSha: string;
   branch: string;
   workspacePath?: string | null;
+  issueJournalRelativePath?: string;
   reviewThreads: ReviewThread[];
 }): Promise<RepositoryFileContents | undefined> {
   if (!args.workspacePath) {
@@ -78,10 +83,16 @@ export async function loadReviewThreadFileContents(args: {
         maxBuffer: 1_000_000,
       }),
     ]);
+    const meaningfulWorkspaceChanges = parseGitStatusPorcelainV1Paths(statusResult.stdout)
+      .some((paths) =>
+        paths.some((relativePath) =>
+          !isIgnoredSupervisorArtifactPath(relativePath, args.issueJournalRelativePath),
+        ),
+      );
     if (
       headResult.stdout.trim() !== args.expectedHeadSha ||
       branchResult.stdout.trim() !== args.branch ||
-      statusResult.stdout.length > 0
+      meaningfulWorkspaceChanges
     ) {
       return undefined;
     }

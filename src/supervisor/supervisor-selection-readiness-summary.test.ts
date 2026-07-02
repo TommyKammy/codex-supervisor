@@ -700,6 +700,12 @@ test("buildReadinessSummary preserves file-probe evidence when selecting verifie
     execFileSync("git", ["-C", repoPath, "commit", "-m", "Add policy path list"], { stdio: "ignore" });
     execFileSync("git", ["-C", repoPath, "checkout", "-b", branch], { stdio: "ignore" });
     const headSha = execFileSync("git", ["-C", repoPath, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+    await fs.mkdir(path.join(repoPath, ".codex-supervisor"), { recursive: true });
+    await fs.writeFile(
+      path.join(repoPath, ".codex-supervisor", "issue-journal.md"),
+      "Supervisor-owned journal artifact should not block file probes.\n",
+      "utf8",
+    );
     const config = createConfig({
       repoPath,
       defaultBranch: "main",

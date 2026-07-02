@@ -183,6 +183,7 @@ export async function handleStaleConfiguredBotReviewRemediation(args: {
             expectedHeadSha: args.pr.headRefOid,
             branch: remediationRecord.branch,
             workspacePath: args.workspacePath,
+            issueJournalRelativePath: args.config.issueJournalRelativePath,
             reviewThreads: args.reviewThreads,
           }),
         })
