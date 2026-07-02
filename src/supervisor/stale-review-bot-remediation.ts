@@ -55,6 +55,10 @@ import {
   type StaleReviewBotAutoRepairSuppressedReason,
   type StaleReviewBotClassificationPolicyDecision,
 } from "./stale-review-bot-classification-policy";
+import {
+  staleConfiguredBotReplyThreadIds,
+  staleConfiguredBotReviewProgressKey,
+} from "./stale-review-bot-recovery";
 
 export {
   hasCurrentHeadVerifiedRepairResidueArtifact,
@@ -201,6 +205,38 @@ export function verifiedStaleReviewResidueAutoResolveEnabled(
       config.verifiedNoSourceChangeReviewThreadAutoResolve === true) ||
     (classification === "verified_current_head_repair_pending_thread_resolution" &&
       config.verifiedCurrentHeadRepairReviewThreadAutoResolve === true)
+  );
+}
+
+function hasRecoverableStaleReviewThreadContext(args: {
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  configuredThreads: ReviewThread[];
+}): boolean {
+  const signature = args.record.last_failure_context?.signature;
+  const signedThreadIds = staleConfiguredBotReplyThreadIds(signature);
+  if (!signature || signedThreadIds.length === 0) {
+    return false;
+  }
+
+  const unresolvedThreadIds = new Set(args.configuredThreads.map((thread) => thread.id));
+  const resolvedProgressKeys = new Set(args.record.stale_review_bot_resolve_progress_keys ?? []);
+  const normalizedSignature = signedThreadIds.map((threadId) => `stalled-bot:${threadId}`).join("|");
+  return (
+    signedThreadIds.some((threadId) => unresolvedThreadIds.has(threadId)) &&
+    signedThreadIds.every((threadId) => {
+      if (unresolvedThreadIds.has(threadId)) {
+        return true;
+      }
+      return resolvedProgressKeys.has(
+        staleConfiguredBotReviewProgressKey({
+          headSha: args.pr.headRefOid,
+          signature: normalizedSignature,
+          threadId,
+          phase: "resolve",
+        }),
+      );
+    })
   );
 }
 
@@ -1294,6 +1330,7 @@ export function shouldAutoResolveVerifiedStaleReviewResidue(args: {
   reviewThreads: ReviewThread[];
   remediation: StaleReviewBotRemediationDto | null;
 }): boolean {
+  const configuredThreads = configuredBotReviewThreads(args.config, args.reviewThreads);
   return Boolean(
     args.record.state === "blocked" &&
       (args.record.blocked_reason === "manual_review" || args.record.blocked_reason === "stale_review_bot") &&
@@ -1303,9 +1340,15 @@ export function shouldAutoResolveVerifiedStaleReviewResidue(args: {
       !hasPendingChecks(args.checks) &&
       !hasFailingChecks(args.checks) &&
       manualReviewThreads(args.config, args.reviewThreads).length === 0 &&
-      configuredBotReviewThreads(args.config, args.reviewThreads).every((thread) =>
+      configuredThreads.length > 0 &&
+      configuredThreads.every((thread) =>
         latestReviewCommentAuthorIsAllowedBot(args.config, thread),
       ) &&
+      hasRecoverableStaleReviewThreadContext({
+        record: args.record,
+        pr: args.pr,
+        configuredThreads,
+      }) &&
       args.remediation &&
       isVerifiedStaleResidueClassification(args.remediation.classification) &&
       verifiedStaleReviewResidueAutoResolveEnabled(args.config, args.remediation.classification),
