@@ -57,7 +57,10 @@ import {
   manualReviewThreads,
 } from "../review-thread-reporting";
 import { RecoveryEvent } from "../run-once-cycle-prelude";
-import { buildStaleReviewBotRemediation } from "./stale-review-bot-remediation";
+import {
+  buildStaleReviewBotRemediation,
+  shouldAutoResolveVerifiedStaleReviewResidue,
+} from "./stale-review-bot-remediation";
 import { hasResolvedAllStaleConfiguredBotThreads } from "./stale-review-bot-recovery";
 
 export interface PreparedIssueRunContext extends PreparedIssueExecutionContext {
@@ -472,6 +475,49 @@ export async function runPreparedIssueFlow(
         await syncJournal(record);
         return prependRecoveryLog(
           `Issue #${record.issue_number} stopped after repeated identical failure signatures.`,
+          recoveryLog,
+        );
+      }
+    }
+    if (
+      !options.dryRun &&
+      shouldAutoResolveVerifiedStaleReviewResidue({
+        config,
+        record,
+        pr,
+        checks,
+        reviewThreads,
+      })
+    ) {
+      record = await syncTrackedPrPersistentStatusComment({
+        github,
+        stateStore,
+        state,
+        record,
+        pr,
+        checks,
+        reviewThreads,
+        syncJournal,
+        config,
+        failureContext: effectiveFailureContext,
+        summarizeChecks,
+        manualReviewThreadCount: manualReviewThreads(config, reviewThreads).length,
+        workspacePath,
+      });
+      if (record.last_stale_review_bot_reply_head_sha === pr.headRefOid) {
+        record = stateStore.touch(record, {
+          state: "pr_open",
+          blocked_reason: null,
+          last_error: null,
+          last_failure_kind: null,
+        });
+        skipCodexAfterPreStopStaleConfiguredBotAutoResolve = true;
+      } else {
+        state.issues[String(record.issue_number)] = record;
+        await stateStore.save(state);
+        await syncJournal(record);
+        return prependRecoveryLog(
+          `Issue #${record.issue_number} remains blocked; verified stale review residue auto-resolve did not complete.`,
           recoveryLog,
         );
       }

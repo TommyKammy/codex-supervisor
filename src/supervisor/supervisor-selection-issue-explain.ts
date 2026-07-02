@@ -22,6 +22,7 @@ import { configuredReviewBotLogins } from "../core/review-providers";
 import { shouldAutoRetryTimeout } from "./supervisor-failure-helpers";
 import { buildStaleStabilizingNoPrRecoveryWarningLine } from "../no-pull-request-state";
 import { shouldReenterCodexConnectorValidReviewRepair } from "../codex-connector-valid-review-repair-selection";
+import { shouldReenterCodexConnectorVerifiedStaleResidueAutoResolve } from "../codex-connector-verified-stale-residue-selection";
 import {
   evaluateAutonomousExecutionTrust,
   isAutonomousExecutionTrustBlockedRecord,
@@ -528,6 +529,16 @@ export async function buildIssueExplainDto(
           reviewThreads: explainReviewThreads,
         })
       : false;
+  const codexConnectorVerifiedStaleResidueAutoResolveEligible =
+    record && pr && !trackedPrHydrationFailed
+      ? shouldReenterCodexConnectorVerifiedStaleResidueAutoResolve({
+          config,
+          record,
+          pr,
+          checks: explainChecks,
+          reviewThreads: explainReviewThreads,
+        })
+      : false;
   const noActiveTrackedRecordSummary =
     record && state.activeIssueNumber === null
       ? formatNoActiveTrackedRecordClassificationLine(config, record, staleReviewBotRemediation)
@@ -591,6 +602,7 @@ export async function buildIssueExplainDto(
     !isEligibleForSelection(record, config) &&
     !codexConnectorReviewRequestRecoveryEligible &&
     !codexConnectorValidReviewRepairEligible &&
+    !codexConnectorVerifiedStaleResidueAutoResolveEligible &&
     !(isAutonomousExecutionTrustBlockedRecord(record) && trustDecision.allowed)
   ) {
     reasons.push(...buildNonRunnableLocalStateReasons(record, config));

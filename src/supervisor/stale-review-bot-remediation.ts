@@ -192,7 +192,7 @@ export function isVerifiedStaleResidueClassification(
   );
 }
 
-function verifiedAutoResolveEnabled(
+export function verifiedStaleReviewResidueAutoResolveEnabled(
   config: SupervisorConfig,
   classification: StaleReviewBotRemediationDto["classification"],
 ): boolean {
@@ -229,7 +229,7 @@ function classifyAutoRepairSuppression(args: {
     missingProbeReason: remediation.missingProbeReason,
     verifiedStaleResidue: isVerifiedStaleResidueClassification(remediation.classification),
     actionableClusterCount: clusterConfiguredBotReviewThreads(args.actionableMustFixThreads).length,
-    verifiedAutoResolveEnabled: Boolean(config && verifiedAutoResolveEnabled(config, remediation.classification)),
+    verifiedAutoResolveEnabled: Boolean(config && verifiedStaleReviewResidueAutoResolveEnabled(config, remediation.classification)),
   });
 }
 
@@ -1284,6 +1284,39 @@ export function buildStaleReviewBotRemediation(args: {
         : STALE_REVIEW_BOT_MANUAL_NEXT_STEP,
     summary: classification.summary,
   };
+}
+
+export function shouldAutoResolveVerifiedStaleReviewResidue(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+  remediation?: StaleReviewBotRemediationDto | null;
+}): boolean {
+  const remediation =
+    args.remediation ??
+    buildStaleReviewBotRemediation({
+      config: args.config,
+      record: args.record,
+      pr: args.pr,
+      checks: args.checks,
+      reviewThreads: args.reviewThreads,
+    });
+
+  return Boolean(
+    args.record.state === "blocked" &&
+      (args.record.blocked_reason === "manual_review" || args.record.blocked_reason === "stale_review_bot") &&
+      args.record.pr_number === args.pr.number &&
+      configuredReviewProviderKinds(args.config).includes("codex") &&
+      !hasMergeConflictState(args.pr) &&
+      !hasPendingChecks(args.checks) &&
+      !hasFailingChecks(args.checks) &&
+      manualReviewThreads(args.config, args.reviewThreads).length === 0 &&
+      remediation &&
+      isVerifiedStaleResidueClassification(remediation.classification) &&
+      verifiedStaleReviewResidueAutoResolveEnabled(args.config, remediation.classification),
+  );
 }
 
 export function buildStaleReviewBotThreadDiagnostics(args: {

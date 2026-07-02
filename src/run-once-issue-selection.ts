@@ -48,6 +48,7 @@ import {
 import { findLatestBlockedPreservedPartialWorkIncident } from "./supervisor/supervisor-preserved-partial-work";
 import { codexConnectorReviewRequestAction } from "./codex-connector-review-request-decision";
 import { shouldSelectCodexConnectorValidReviewRepair } from "./codex-connector-valid-review-repair-selection";
+import { shouldSelectCodexConnectorVerifiedStaleResidueAutoResolve } from "./codex-connector-verified-stale-residue-selection";
 import { configuredBotReviewThreads, manualReviewThreads } from "./review-thread-reporting";
 import { mergeConflictDetected, summarizeChecks } from "./supervisor/supervisor-reporting";
 
@@ -523,6 +524,19 @@ async function selectIssueRecord(
         !isEligibleForSelection(existing, config) &&
         !(await shouldSelectCodexConnectorReviewRequestRecovery(github, config, existing)) &&
         !(await shouldSelectCodexConnectorValidReviewRepair({
+          config,
+          record: existing,
+          getPullRequestIfExists: github.getPullRequestIfExists
+            ? (prNumber, options) => github.getPullRequestIfExists!(prNumber, options)
+            : undefined,
+          getChecks: github.getChecks
+            ? (prNumber) => github.getChecks!(prNumber)
+            : undefined,
+          getUnresolvedReviewThreads: github.getUnresolvedReviewThreads
+            ? (prNumber) => github.getUnresolvedReviewThreads!(prNumber)
+            : undefined,
+        })) &&
+        !(await shouldSelectCodexConnectorVerifiedStaleResidueAutoResolve({
           config,
           record: existing,
           getPullRequestIfExists: github.getPullRequestIfExists

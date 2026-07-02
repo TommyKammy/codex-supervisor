@@ -12,6 +12,10 @@ import {
 } from "./supervisor-selection-readiness-summary";
 import { createConfig, createPullRequest, createRecord } from "./supervisor-test-helpers";
 import { STILL_VALID_REVIEW_THREAD_REPAIR_TARGET } from "../codex-connector-valid-review-repair";
+import {
+  CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+  createCodexConnectorTrackedReviewResidueScenario,
+} from "../codex-connector-tracked-pr-test-helpers";
 
 function createIssue(overrides: Partial<GitHubIssue> = {}): GitHubIssue {
   return {
@@ -573,6 +577,94 @@ Parallelizable: No
     },
   ]);
   assert.match(whyLines.join("\n"), /^selected_issue=#2385$/m);
+});
+
+test("buildReadinessSummary selects verified manual-review residue for auto-resolve", async () => {
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const issueNumber = 2401;
+  const prNumber = 174;
+  const headSha = "68401b26947918f0ce2280a9526ab68298b1a25c";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "PRRT_verified_residue",
+    commentId: "comment-verified-residue",
+    path: "src/writeback-ingest.ts",
+    line: 42,
+    commentBody: "P2: Update the published writeback response schema.",
+    discussionUrl: "https://example.test/pr/174#discussion_r2401",
+    verifiedRepair: {
+      summary: "verify-pre-pr passed with 96 tests.",
+      ranAt: "2026-05-18T07:18:00Z",
+      command: "npm run verify:pre-pr",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+    currentHeadNoMajorReview: {
+      requestedAt: "2026-05-18T07:12:00Z",
+      observedAt: "2026-05-18T07:17:00Z",
+    },
+  });
+  const issue = createIssue({
+    number: issueNumber,
+    title: "Auto-resolve verified manual-review residue",
+    body: `## Summary
+Resolve verified stale Codex review residue after manual review fallthrough.
+
+## Scope
+- route verified manual-review residue into auto-resolution
+
+Depends on: none
+Parallelizable: No
+
+## Execution order
+1 of 1
+
+## Acceptance criteria
+- verified residue is selected instead of reported as no runnable issue
+
+## Verification
+- npx tsx --test src/supervisor/supervisor-selection-readiness-summary.test.ts`,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        ...scenario.recordPatch,
+        state: "blocked",
+        blocked_reason: "manual_review",
+      }),
+    },
+  };
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+  });
+  const github = {
+    listCandidateIssues: async () => [issue],
+    listAllIssues: async () => [issue],
+    getPullRequestIfExists: async () => pr,
+    getChecks: async () => scenario.passingChecks,
+    getUnresolvedReviewThreads: async () => [scenario.reviewThread],
+  };
+
+  const readinessSummary = await buildReadinessSummary(github, config, state);
+  const whyLines = await buildSelectionWhySummary(github, config, state);
+
+  assert.deepEqual(readinessSummary.blockedIssues, []);
+  assert.deepEqual(readinessSummary.runnableIssues, [
+    {
+      issueNumber,
+      title: "Auto-resolve verified manual-review residue",
+      readiness: "execution_ready",
+    },
+  ]);
+  assert.match(whyLines.join("\n"), /^selected_issue=#2401$/m);
+  assert.doesNotMatch(whyLines.join("\n"), /^selected_issue=none$/m);
 });
 
 test("buildReadinessSummary selects stale review-commit residue recovery without timeout metadata", async () => {
