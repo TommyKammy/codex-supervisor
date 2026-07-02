@@ -23,6 +23,7 @@ import { shouldAutoRetryTimeout } from "./supervisor-failure-helpers";
 import { buildStaleStabilizingNoPrRecoveryWarningLine } from "../no-pull-request-state";
 import { shouldReenterCodexConnectorValidReviewRepair } from "../codex-connector-valid-review-repair-selection";
 import { shouldReenterCodexConnectorVerifiedStaleResidueAutoResolve } from "../codex-connector-verified-stale-residue-selection";
+import { loadReviewThreadFileContents } from "../review-thread-file-contents";
 import {
   evaluateAutonomousExecutionTrust,
   isAutonomousExecutionTrustBlockedRecord,
@@ -475,6 +476,16 @@ export async function buildIssueExplainDto(
         return `external_signal_readiness status=${readiness.status} ci=${readiness.ci} review=${readiness.review} workflows=${readiness.workflows}`;
       })()
       : null;
+  const reviewThreadFileContents =
+    record && pr && !trackedPrHydrationFailed
+      ? await loadReviewThreadFileContents({
+          defaultBranch: config.defaultBranch,
+          expectedHeadSha: pr.headRefOid,
+          branch: record.branch,
+          workspacePath: record.workspace,
+          reviewThreads: explainReviewThreads,
+        })
+      : undefined;
   const staleReviewBotRemediation =
     record && pr && !trackedPrHydrationFailed
       ? buildStaleReviewBotRemediation({
@@ -483,6 +494,7 @@ export async function buildIssueExplainDto(
         pr,
         checks: explainChecks,
         reviewThreads: explainReviewThreads,
+        repositoryFileContents: reviewThreadFileContents,
       })
       : null;
   const staleReviewBotThreadDiagnostics =
