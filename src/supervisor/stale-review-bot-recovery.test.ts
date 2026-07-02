@@ -165,18 +165,18 @@ test("recoverStaleConfiguredBotReviewThreads clears stale residue when resolve p
     ),
     url: "https://example.test/review/183",
   };
-  const reviewThreads = threadIds.map((threadId) =>
+  const reviewThreads = [
     createReviewThread({
-      id: threadId,
+      id: threadIds[1],
       path: "src/review.ts",
       line: 42,
       comments: {
         nodes: [
           {
-            id: `comment-${threadId}`,
+            id: `comment-${threadIds[1]}`,
             body: "This finding is stale on the current head.",
             createdAt: "2026-05-24T02:05:00Z",
-            url: `https://example.test/pr/183#discussion_${threadId}`,
+            url: `https://example.test/pr/183#discussion_${threadIds[1]}`,
             author: {
               login: "chatgpt-codex-connector",
               typeName: "Bot",
@@ -185,7 +185,7 @@ test("recoverStaleConfiguredBotReviewThreads clears stale residue when resolve p
         ],
       },
     }),
-  );
+  ];
   const replies: string[] = [];
   const resolutions: string[] = [];
 
@@ -308,6 +308,92 @@ test("recoverStaleConfiguredBotReviewThreads retries missing resolves when a rep
   assert.deepEqual(replies, []);
   assert.deepEqual(resolutions, ["thread-1"]);
   assert.equal(result.shouldRefreshPullRequest, true);
+});
+
+test("recoverStaleConfiguredBotReviewThreads skips human-touched configured-bot threads", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    staleConfiguredBotReviewPolicy: "reply_and_resolve",
+  });
+  const pr = createPullRequest({
+    number: 185,
+    headRefOid: "head-185",
+  });
+  const signature = "stalled-bot:thread-human-latest";
+  const record = createRecord({
+    issue_number: 185,
+    pr_number: pr.number,
+    state: "blocked",
+    blocked_reason: "manual_review",
+    last_head_sha: pr.headRefOid,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 185,
+    issues: {
+      "185": record,
+    },
+  };
+  const reviewThreads = [
+    createReviewThread({
+      id: "thread-human-latest",
+      path: "src/review.ts",
+      line: 42,
+      comments: {
+        nodes: [
+          {
+            id: "comment-bot",
+            body: "This finding is stale on the current head.",
+            createdAt: "2026-05-24T02:05:00Z",
+            url: "https://example.test/pr/185#discussion_thread-human-latest",
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+          {
+            id: "comment-human",
+            body: "A human reviewer is still discussing this thread.",
+            createdAt: "2026-05-24T02:10:00Z",
+            url: "https://example.test/pr/185#discussion_thread-human-latest_followup",
+            author: {
+              login: "reviewer-human",
+              typeName: "User",
+            },
+          },
+        ],
+      },
+    }),
+  ];
+  const replies: string[] = [];
+  const resolutions: string[] = [];
+
+  const result = await recoverStaleConfiguredBotReviewThreads({
+    github: {
+      replyToReviewThread: async (threadId: string) => {
+        replies.push(threadId);
+      },
+      resolveReviewThread: async (threadId: string) => {
+        resolutions.push(threadId);
+      },
+    },
+    stateStore: createNoopStateStore(),
+    state,
+    record,
+    pr,
+    reviewThreads,
+    syncJournal: async () => undefined,
+    config,
+    failureContext: {
+      ...createFailureContext("stale configured-bot review thread"),
+      signature,
+    },
+    resolveAfterReply: true,
+  });
+
+  assert.equal(result.status, "skipped");
+  assert.equal(result.skippedReason, "missing_configured_thread");
+  assert.deepEqual(replies, []);
+  assert.deepEqual(resolutions, []);
 });
 
 test("recoverStaleConfiguredBotReviewThreads normalizes raw PRRT thread signatures", async () => {

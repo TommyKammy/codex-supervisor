@@ -10,7 +10,11 @@ import type {
   SupervisorStateFile,
 } from "../core/types";
 import { truncate } from "../core/utils";
-import { configuredBotReviewThreads, latestReviewComment } from "../review-thread-reporting";
+import {
+  configuredBotReviewThreads,
+  latestReviewComment,
+  latestReviewCommentAuthorIsAllowedBot,
+} from "../review-thread-reporting";
 
 export const STALE_CONFIGURED_BOT_REVIEW_REASON_CODE = "stale_review_bot";
 
@@ -201,24 +205,42 @@ export async function recoverStaleConfiguredBotReviewThreads(args: {
     }
   }
 
-  const configuredThreads = configuredBotReviewThreads(args.config, args.reviewThreads);
-  const replyThreadIds = staleConfiguredBotReplyThreadIds(blockerSignature);
-  if (replyThreadIds.length === 0) {
-    return buildResult({ status: "skipped", record: args.record, skippedReason: "missing_thread_signature" });
-  }
-
-  const replyThreads = replyThreadIds
-    .map((threadId) => configuredThreads.find((thread) => thread.id === threadId) ?? null)
-    .filter((thread): thread is ReviewThread => thread !== null);
-  if (replyThreads.length !== replyThreadIds.length) {
-    return buildResult({ status: "skipped", record: args.record, skippedReason: "missing_configured_thread" });
-  }
-
   let record = args.record;
   let replyCount = 0;
   let resolveCount = 0;
   const replyProgressKeys = new Set(record.stale_review_bot_reply_progress_keys ?? []);
   const resolveProgressKeys = new Set(record.stale_review_bot_resolve_progress_keys ?? []);
+
+  const configuredThreads = configuredBotReviewThreads(args.config, args.reviewThreads).filter((thread) =>
+    latestReviewCommentAuthorIsAllowedBot(args.config, thread),
+  );
+  const replyThreadIds = staleConfiguredBotReplyThreadIds(blockerSignature);
+  if (replyThreadIds.length === 0) {
+    return buildResult({ status: "skipped", record: args.record, skippedReason: "missing_thread_signature" });
+  }
+
+  const unresolvedReplyThreadIds =
+    args.resolveAfterReply
+      ? replyThreadIds.filter((threadId) => {
+          const resolveKey = staleConfiguredBotReviewProgressKey({
+            headSha: args.pr.headRefOid,
+            signature: blockerSignature,
+            threadId,
+            phase: "resolve",
+          });
+          return !resolveProgressKeys.has(resolveKey);
+        })
+      : replyThreadIds;
+  if (unresolvedReplyThreadIds.length === 0) {
+    return buildResult({ status: "no_op", record, shouldRefreshPullRequest: args.resolveAfterReply });
+  }
+
+  const replyThreads = unresolvedReplyThreadIds
+    .map((threadId) => configuredThreads.find((thread) => thread.id === threadId) ?? null)
+    .filter((thread): thread is ReviewThread => thread !== null);
+  if (replyThreads.length !== unresolvedReplyThreadIds.length) {
+    return buildResult({ status: "skipped", record: args.record, skippedReason: "missing_configured_thread" });
+  }
 
   try {
     for (const replyThread of replyThreads) {

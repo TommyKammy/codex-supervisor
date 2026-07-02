@@ -1303,6 +1303,9 @@ export function shouldAutoResolveVerifiedStaleReviewResidue(args: {
       !hasPendingChecks(args.checks) &&
       !hasFailingChecks(args.checks) &&
       manualReviewThreads(args.config, args.reviewThreads).length === 0 &&
+      configuredBotReviewThreads(args.config, args.reviewThreads).every((thread) =>
+        latestReviewCommentAuthorIsAllowedBot(args.config, thread),
+      ) &&
       args.remediation &&
       isVerifiedStaleResidueClassification(args.remediation.classification) &&
       verifiedStaleReviewResidueAutoResolveEnabled(args.config, args.remediation.classification),
