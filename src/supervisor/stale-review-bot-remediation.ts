@@ -55,10 +55,7 @@ import {
   type StaleReviewBotAutoRepairSuppressedReason,
   type StaleReviewBotClassificationPolicyDecision,
 } from "./stale-review-bot-classification-policy";
-import {
-  staleConfiguredBotReplyThreadIds,
-  staleConfiguredBotReviewProgressKey,
-} from "./stale-review-bot-recovery";
+import { staleConfiguredBotReplyThreadIds } from "./stale-review-bot-recovery";
 
 export {
   hasCurrentHeadVerifiedRepairResidueArtifact,
@@ -220,24 +217,7 @@ function hasRecoverableStaleReviewThreadContext(args: {
   }
 
   const unresolvedThreadIds = new Set(args.configuredThreads.map((thread) => thread.id));
-  const resolvedProgressKeys = new Set(args.record.stale_review_bot_resolve_progress_keys ?? []);
-  const normalizedSignature = signedThreadIds.map((threadId) => `stalled-bot:${threadId}`).join("|");
-  return (
-    signedThreadIds.some((threadId) => unresolvedThreadIds.has(threadId)) &&
-    signedThreadIds.every((threadId) => {
-      if (unresolvedThreadIds.has(threadId)) {
-        return true;
-      }
-      return resolvedProgressKeys.has(
-        staleConfiguredBotReviewProgressKey({
-          headSha: args.pr.headRefOid,
-          signature: normalizedSignature,
-          threadId,
-          phase: "resolve",
-        }),
-      );
-    })
-  );
+  return signedThreadIds.some((threadId) => unresolvedThreadIds.has(threadId));
 }
 
 function classifyAutoRepairSuppression(args: {

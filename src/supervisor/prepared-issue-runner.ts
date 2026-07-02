@@ -515,6 +515,7 @@ export async function runPreparedIssueFlow(
     const verifiedStaleResidueFailureContext = recordBeforePullRequestLifecycle.last_failure_context;
     if (
       !options.dryRun &&
+      !skipCodexAfterPreStopStaleConfiguredBotAutoResolve &&
       verifiedStaleResidueFailureContext &&
       shouldAutoResolveVerifiedStaleReviewResidue({
         config,

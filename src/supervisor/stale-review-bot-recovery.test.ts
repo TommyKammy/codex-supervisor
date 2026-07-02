@@ -310,6 +310,85 @@ test("recoverStaleConfiguredBotReviewThreads retries missing resolves when a rep
   assert.equal(result.shouldRefreshPullRequest, true);
 });
 
+test("recoverStaleConfiguredBotReviewThreads finalizes records with completed resolve progress", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    staleConfiguredBotReviewPolicy: "reply_and_resolve",
+  });
+  const pr = createPullRequest({
+    number: 186,
+    headRefOid: "head-186",
+  });
+  const signature = "stalled-bot:thread-1";
+  const record = createRecord({
+    issue_number: 186,
+    pr_number: pr.number,
+    state: "blocked",
+    blocked_reason: "stale_review_bot",
+    last_head_sha: pr.headRefOid,
+    last_failure_context: createFailureContext("stale configured-bot review thread"),
+    last_failure_signature: signature,
+    repeated_failure_signature_count: 4,
+    stale_review_bot_reply_progress_keys: [
+      staleConfiguredBotReviewProgressKey({
+        headSha: pr.headRefOid,
+        signature,
+        threadId: "thread-1",
+        phase: "reply",
+      }),
+    ],
+    stale_review_bot_resolve_progress_keys: [
+      staleConfiguredBotReviewProgressKey({
+        headSha: pr.headRefOid,
+        signature,
+        threadId: "thread-1",
+        phase: "resolve",
+      }),
+    ],
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 186,
+    issues: {
+      "186": record,
+    },
+  };
+  const replies: string[] = [];
+  const resolutions: string[] = [];
+
+  const result = await recoverStaleConfiguredBotReviewThreads({
+    github: {
+      replyToReviewThread: async (threadId: string) => {
+        replies.push(threadId);
+      },
+      resolveReviewThread: async (threadId: string) => {
+        resolutions.push(threadId);
+      },
+    },
+    stateStore: createNoopStateStore(),
+    state,
+    record,
+    pr,
+    reviewThreads: [],
+    syncJournal: async () => undefined,
+    config,
+    failureContext: {
+      ...createFailureContext("stale configured-bot review thread"),
+      signature,
+    },
+    resolveAfterReply: true,
+  });
+
+  assert.equal(result.status, "no_op");
+  assert.deepEqual(replies, []);
+  assert.deepEqual(resolutions, []);
+  assert.equal(result.shouldRefreshPullRequest, true);
+  assert.equal(result.record.last_failure_context, null);
+  assert.equal(result.record.last_failure_signature, null);
+  assert.equal(result.record.repeated_failure_signature_count, 0);
+  assert.equal(result.record.last_stale_review_bot_reply_head_sha, pr.headRefOid);
+  assert.equal(result.record.last_stale_review_bot_reply_signature, signature);
+});
+
 test("recoverStaleConfiguredBotReviewThreads skips human-touched configured-bot threads", async () => {
   const config = createConfig({
     reviewBotLogins: ["chatgpt-codex-connector"],

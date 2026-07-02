@@ -211,7 +211,9 @@ export async function recoverStaleConfiguredBotReviewThreads(args: {
   const replyProgressKeys = new Set(record.stale_review_bot_reply_progress_keys ?? []);
   const resolveProgressKeys = new Set(record.stale_review_bot_resolve_progress_keys ?? []);
 
-  const configuredThreads = configuredBotReviewThreads(args.config, args.reviewThreads).filter((thread) =>
+  const configuredThreads = configuredBotReviewThreads(args.config, args.reviewThreads);
+  const configuredThreadIds = new Set(configuredThreads.map((thread) => thread.id));
+  const recoverableConfiguredThreads = configuredThreads.filter((thread) =>
     latestReviewCommentAuthorIsAllowedBot(args.config, thread),
   );
   const replyThreadIds = staleConfiguredBotReplyThreadIds(blockerSignature);
@@ -219,9 +221,10 @@ export async function recoverStaleConfiguredBotReviewThreads(args: {
     return buildResult({ status: "skipped", record: args.record, skippedReason: "missing_thread_signature" });
   }
 
+  const currentReplyThreadIds = replyThreadIds.filter((threadId) => configuredThreadIds.has(threadId));
   const unresolvedReplyThreadIds =
     args.resolveAfterReply
-      ? replyThreadIds.filter((threadId) => {
+      ? currentReplyThreadIds.filter((threadId) => {
           const resolveKey = staleConfiguredBotReviewProgressKey({
             headSha: args.pr.headRefOid,
             signature: blockerSignature,
@@ -230,13 +233,10 @@ export async function recoverStaleConfiguredBotReviewThreads(args: {
           });
           return !resolveProgressKeys.has(resolveKey);
         })
-      : replyThreadIds;
-  if (unresolvedReplyThreadIds.length === 0) {
-    return buildResult({ status: "no_op", record, shouldRefreshPullRequest: args.resolveAfterReply });
-  }
+      : currentReplyThreadIds;
 
   const replyThreads = unresolvedReplyThreadIds
-    .map((threadId) => configuredThreads.find((thread) => thread.id === threadId) ?? null)
+    .map((threadId) => recoverableConfiguredThreads.find((thread) => thread.id === threadId) ?? null)
     .filter((thread): thread is ReviewThread => thread !== null);
   if (replyThreads.length !== unresolvedReplyThreadIds.length) {
     return buildResult({ status: "skipped", record: args.record, skippedReason: "missing_configured_thread" });
