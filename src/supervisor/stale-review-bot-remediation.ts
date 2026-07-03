@@ -195,6 +195,12 @@ export function isVerifiedStaleResidueClassification(
   );
 }
 
+function isPolicyResolvableStaleReviewBotClassification(
+  classification: StaleReviewBotRemediationDto["classification"],
+): boolean {
+  return classification === "metadata_only" || classification === "metadata_only_current_head_converged";
+}
+
 export function verifiedStaleReviewResidueAutoResolveEnabled(
   config: SupervisorConfig,
   classification: StaleReviewBotRemediationDto["classification"],
@@ -1323,8 +1329,7 @@ export function shouldAutoResolveVerifiedStaleReviewResidue(args: {
   );
   return Boolean(
     args.record.state === "blocked" &&
-      (args.record.blocked_reason === null ||
-        args.record.blocked_reason === "manual_review" ||
+      (args.record.blocked_reason === "manual_review" ||
         args.record.blocked_reason === "stale_review_bot") &&
       args.record.pr_number === args.pr.number &&
       configuredReviewProviderKinds(args.config).includes("codex") &&
@@ -1341,8 +1346,10 @@ export function shouldAutoResolveVerifiedStaleReviewResidue(args: {
         recoverableThreads: recoverableCodexThreads,
       }) &&
       args.remediation &&
-      isVerifiedStaleResidueClassification(args.remediation.classification) &&
-      verifiedStaleReviewResidueAutoResolveEnabled(args.config, args.remediation.classification),
+      ((isVerifiedStaleResidueClassification(args.remediation.classification) &&
+        verifiedStaleReviewResidueAutoResolveEnabled(args.config, args.remediation.classification)) ||
+        (isPolicyResolvableStaleReviewBotClassification(args.remediation.classification) &&
+          args.config.staleConfiguredBotReviewPolicy === "reply_and_resolve")),
   );
 }
 

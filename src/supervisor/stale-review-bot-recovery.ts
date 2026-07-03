@@ -15,7 +15,11 @@ import {
   latestReviewComment,
   latestReviewCommentAuthorIsAllowedBot,
 } from "../review-thread-reporting";
-import { isRecoverableVerifiedCodexStaleResidueThread } from "./verified-stale-residue-review-thread";
+import {
+  isRecoverableVerifiedCodexStaleResidueThread,
+  isSupervisorVerifiedStaleResidueAutoResolveComment,
+  isTrustedSupervisorMarkerAuthor,
+} from "./verified-stale-residue-review-thread";
 
 export const STALE_CONFIGURED_BOT_REVIEW_REASON_CODE = "stale_review_bot";
 
@@ -219,10 +223,39 @@ export async function recoverStaleConfiguredBotReviewThreads(args: {
   const configuredThreads = configuredBotReviewThreads(args.config, args.reviewThreads);
   const configuredThreadIds = new Set(configuredThreads.map((thread) => thread.id));
   const verifiedCodexAutoResolveReason = isVerifiedCodexAutoResolveReason(args.reasonCode);
+  const hasReplyProgressForThread = (threadId: string): boolean =>
+    replyProgressKeys.has(staleConfiguredBotReviewProgressKey({
+      headSha: args.pr.headRefOid,
+      signature: blockerSignature,
+      threadId,
+      phase: "reply",
+    }));
+  const latestCommentIsTrustedSupervisorReply = (thread: ReviewThread): boolean => {
+    const latestComment = latestReviewComment(thread);
+    return Boolean(
+      latestComment &&
+        isTrustedSupervisorMarkerAuthor(args.config, latestComment) &&
+        latestComment.body.includes("The supervisor reprocessed this configured-bot finding on the current head") &&
+        latestComment.body.includes(`head=${args.pr.headRefOid}`) &&
+        latestComment.body.includes(`thread=${thread.id}`) &&
+        latestComment.body.includes("reason="),
+    );
+  };
+  const latestCommentIsTrustedSupervisorMarker = (thread: ReviewThread): boolean => {
+    const latestComment = latestReviewComment(thread);
+    return Boolean(
+      latestComment &&
+        isTrustedSupervisorMarkerAuthor(args.config, latestComment) &&
+        isSupervisorVerifiedStaleResidueAutoResolveComment(latestComment.body),
+    );
+  };
   const recoverableConfiguredThreads = configuredThreads.filter((thread) =>
-    verifiedCodexAutoResolveReason
+    args.resolveAfterReply && hasReplyProgressForThread(thread.id) && latestCommentIsTrustedSupervisorReply(thread)
+      ? true
+      : verifiedCodexAutoResolveReason
       ? isRecoverableVerifiedCodexStaleResidueThread(args.config, thread)
-      : latestReviewCommentAuthorIsAllowedBot(args.config, thread),
+      : latestReviewCommentAuthorIsAllowedBot(args.config, thread) ||
+        latestCommentIsTrustedSupervisorMarker(thread),
   );
   const replyThreadIds = staleConfiguredBotReplyThreadIds(blockerSignature);
   if (replyThreadIds.length === 0) {

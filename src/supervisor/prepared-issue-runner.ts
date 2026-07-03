@@ -179,6 +179,9 @@ function shouldTryVerifiedStaleConfiguredBotAutoResolveBeforeRepeatStop(args: {
     return false;
   }
   return (
+    ((remediation.classification === "metadata_only" ||
+      remediation.classification === "metadata_only_current_head_converged") &&
+      args.config.staleConfiguredBotReviewPolicy === "reply_and_resolve") ||
     (remediation.classification === "verified_no_source_change_pending_thread_resolution" &&
       args.config.verifiedNoSourceChangeReviewThreadAutoResolve === true) ||
     (remediation.classification === "verified_current_head_repair_pending_thread_resolution" &&
@@ -353,13 +356,12 @@ export async function runPreparedIssueFlow(
     if (effectiveFailureContext && (repeatedFailureSignatureStop || trackedPrReviewFailureStop)) {
       let handledStaleConfiguredBotResidueBeforeRepeatStop = false;
       const staleConfiguredBotRecoveryRecord = staleConfiguredBotRepeatStopRecoveryRecord({
-        record,
+        record: recordBeforePullRequestLifecycle,
         failureContext: effectiveFailureContext,
       });
       if (
         !options.dryRun &&
-        trackedPrRepeatFailureDisposition.shouldStop &&
-        trackedPrReviewFailureStop &&
+        (repeatedFailureSignatureStop || trackedPrReviewFailureStop) &&
         staleConfiguredBotRecoveryRecord !== null &&
         shouldTryVerifiedStaleConfiguredBotAutoResolveBeforeRepeatStop({
           config,

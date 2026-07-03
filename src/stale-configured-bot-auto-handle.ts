@@ -241,7 +241,7 @@ export async function handleStaleConfiguredBotReviewRemediation(args: {
       canResolveVerifiedCurrentHeadRepairThreadResolution,
     reasonCode: canResolveVerifiedCurrentHeadRepairThreadResolution
       ? "verified_current_head_repair_auto_resolve"
-      : canResolveVerifiedNoSourceChangeThreadResolution || canResolveConversationResolutionBlocker
+      : canResolveVerifiedNoSourceChangeThreadResolution
         ? "verified_no_source_change_auto_resolve"
         : STALE_CONFIGURED_BOT_REVIEW_REASON_CODE,
   });

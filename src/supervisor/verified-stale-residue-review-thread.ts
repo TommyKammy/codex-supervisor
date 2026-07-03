@@ -18,11 +18,7 @@ function normalizedRepoOwnerLogin(config: SupervisorConfig): string | null {
   return owner || null;
 }
 
-function isTrustedSupervisorMarkerAuthor(config: SupervisorConfig, comment: ReviewThreadComment): boolean {
-  if (comment.author?.typeName === "Bot") {
-    return true;
-  }
-
+export function isTrustedSupervisorMarkerAuthor(config: SupervisorConfig, comment: ReviewThreadComment): boolean {
   const login = comment.author?.login?.trim().toLowerCase();
   const owner = normalizedRepoOwnerLogin(config);
   return Boolean(login && owner && login === owner);

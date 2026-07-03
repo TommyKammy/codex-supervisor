@@ -310,6 +310,108 @@ test("recoverStaleConfiguredBotReviewThreads retries missing resolves when a rep
   assert.equal(result.shouldRefreshPullRequest, true);
 });
 
+test("recoverStaleConfiguredBotReviewThreads resolves provider-neutral threads after supervisor reply progress", async () => {
+  const config = createConfig({
+    repoSlug: "TommyKammy/codex-supervisor",
+    reviewBotLogins: ["coderabbitai"],
+    staleConfiguredBotReviewPolicy: "reply_and_resolve",
+  });
+  const pr = createPullRequest({
+    number: 185,
+    headRefOid: "head-185",
+  });
+  const signature = "stalled-bot:thread-coderabbit";
+  const record = createRecord({
+    issue_number: 185,
+    pr_number: pr.number,
+    state: "blocked",
+    blocked_reason: "stale_review_bot",
+    last_head_sha: pr.headRefOid,
+    last_stale_review_bot_reply_head_sha: pr.headRefOid,
+    last_stale_review_bot_reply_signature: signature,
+    stale_review_bot_reply_progress_keys: [
+      staleConfiguredBotReviewProgressKey({
+        headSha: pr.headRefOid,
+        signature,
+        threadId: "thread-coderabbit",
+        phase: "reply",
+      }),
+    ],
+    stale_review_bot_resolve_progress_keys: [],
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 185,
+    issues: {
+      "185": record,
+    },
+  };
+  const reviewThreads = [
+    createReviewThread({
+      id: "thread-coderabbit",
+      path: "src/review.ts",
+      line: 42,
+      comments: {
+        nodes: [
+          {
+            id: "comment-coderabbit",
+            body: "CodeRabbit finding is stale on this head.",
+            createdAt: "2026-05-24T02:05:00Z",
+            url: "https://example.test/pr/185#discussion_thread-coderabbit",
+            author: {
+              login: "coderabbitai",
+              typeName: "Bot",
+            },
+          },
+          {
+            id: "comment-supervisor",
+            body: [
+              "The supervisor reprocessed this configured-bot finding on the current head `head-185` and classified it as stale.",
+              "",
+              "Audit: issue=#185 pr=#185 head=head-185 thread=thread-coderabbit reason=stale_review_bot.",
+            ].join("\n"),
+            createdAt: "2026-05-24T02:10:00Z",
+            url: "https://example.test/pr/185#discussion_thread-coderabbit_followup",
+            author: {
+              login: "TommyKammy",
+              typeName: "User",
+            },
+          },
+        ],
+      },
+    }),
+  ];
+  const replies: string[] = [];
+  const resolutions: string[] = [];
+
+  const result = await recoverStaleConfiguredBotReviewThreads({
+    github: {
+      replyToReviewThread: async (threadId: string) => {
+        replies.push(threadId);
+      },
+      resolveReviewThread: async (threadId: string) => {
+        resolutions.push(threadId);
+      },
+    },
+    stateStore: createNoopStateStore(),
+    state,
+    record,
+    pr,
+    reviewThreads,
+    syncJournal: async () => undefined,
+    config,
+    failureContext: {
+      ...createFailureContext("stale configured-bot review thread"),
+      signature,
+    },
+    resolveAfterReply: true,
+  });
+
+  assert.equal(result.status, "resolved");
+  assert.deepEqual(replies, []);
+  assert.deepEqual(resolutions, ["thread-coderabbit"]);
+  assert.equal(result.shouldRefreshPullRequest, true);
+});
+
 test("recoverStaleConfiguredBotReviewThreads finalizes records with completed resolve progress", async () => {
   const config = createConfig({
     reviewBotLogins: ["chatgpt-codex-connector"],
@@ -779,6 +881,94 @@ test("recoverStaleConfiguredBotReviewThreads rejects quoted supervisor markers f
             author: {
               login: "reviewer-human",
               typeName: "User",
+            },
+          },
+        ],
+      },
+    }),
+  ];
+  const replies: string[] = [];
+  const resolutions: string[] = [];
+
+  const result = await recoverStaleConfiguredBotReviewThreads({
+    github: {
+      replyToReviewThread: async (threadId: string) => {
+        replies.push(threadId);
+      },
+      resolveReviewThread: async (threadId: string) => {
+        resolutions.push(threadId);
+      },
+    },
+    stateStore: createNoopStateStore(),
+    state,
+    record,
+    pr,
+    reviewThreads,
+    syncJournal: async () => undefined,
+    config,
+    failureContext: {
+      ...createFailureContext("stale configured-bot review thread"),
+      signature,
+    },
+    resolveAfterReply: true,
+    reasonCode: "verified_no_source_change_auto_resolve",
+  });
+
+  assert.equal(result.status, "skipped");
+  assert.equal(result.skippedReason, "missing_configured_thread");
+  assert.deepEqual(replies, []);
+  assert.deepEqual(resolutions, []);
+});
+
+test("recoverStaleConfiguredBotReviewThreads rejects supervisor markers from arbitrary bots", async () => {
+  const config = createConfig({
+    repoSlug: "owner/repo",
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    staleConfiguredBotReviewPolicy: "reply_and_resolve",
+  });
+  const pr = createPullRequest({
+    number: 191,
+    headRefOid: "head-191",
+  });
+  const signature = "stalled-bot:thread-codex-then-bot-marker";
+  const record = createRecord({
+    issue_number: 191,
+    pr_number: pr.number,
+    state: "blocked",
+    blocked_reason: "manual_review",
+    last_head_sha: pr.headRefOid,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 191,
+    issues: {
+      "191": record,
+    },
+  };
+  const reviewThreads = [
+    createReviewThread({
+      id: "thread-codex-then-bot-marker",
+      path: "src/review.ts",
+      line: 42,
+      comments: {
+        nodes: [
+          {
+            id: "comment-codex",
+            body: "P2: This Codex finding was previously verified.",
+            createdAt: "2026-05-24T02:05:00Z",
+            url: "https://example.test/pr/191#discussion_thread-codex-then-bot-marker",
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+          {
+            id: "comment-third-party-bot-marker",
+            body: "Supervisor confirmed this stale Codex Connector finding is covered by the current-head success signal.",
+            createdAt: "2026-05-24T02:10:00Z",
+            url: "https://example.test/pr/191#discussion_thread-codex-then-bot-marker_followup",
+            author: {
+              login: "unconfigured-helper-bot",
+              typeName: "Bot",
             },
           },
         ],

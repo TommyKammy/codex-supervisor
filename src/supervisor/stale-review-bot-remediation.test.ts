@@ -3491,7 +3491,7 @@ test("shouldAutoResolveVerifiedStaleReviewResidue treats externally resolved sig
   );
 });
 
-test("shouldAutoResolveVerifiedStaleReviewResidue accepts prepared records after blocked reason is cleared", () => {
+test("shouldAutoResolveVerifiedStaleReviewResidue rejects records after blocked reason is cleared", () => {
   const headSha = "56e2d73eb2655c75d4c09f1a9517b7e8bc39ad6d";
   const thread = createReviewThread({
     id: "thread-prepared-record",
@@ -3562,7 +3562,7 @@ test("shouldAutoResolveVerifiedStaleReviewResidue accepts prepared records after
         summary: "verified_no_source_change_configured_bot_thread_resolution_pending",
       },
     }),
-    true,
+    false,
   );
 });
 
@@ -3879,14 +3879,15 @@ test("shouldAutoResolveVerifiedStaleReviewResidue accepts signed Codex threads w
           createdAt: "2026-06-29T17:18:00Z",
           url: "https://example.test/pr/137#discussion_codex_then_supervisor_followup",
           author: {
-            login: "github-actions[bot]",
-            typeName: "Bot",
+            login: "TommyKammy",
+            typeName: "User",
           },
         },
       ],
     },
   });
   const config = createConfig({
+    repoSlug: "TommyKammy/codex-supervisor",
     reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN, "coderabbitai"],
     verifiedNoSourceChangeReviewThreadAutoResolve: true,
   });
