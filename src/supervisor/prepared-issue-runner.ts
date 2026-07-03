@@ -219,13 +219,18 @@ export function hasCompletedVerifiedStaleResidueAutoResolve(args: {
   pr: GitHubPullRequest;
 }): boolean {
   const signature = args.record.last_stale_review_bot_reply_signature;
+  if (!signature || args.record.last_stale_review_bot_reply_head_sha !== args.pr.headRefOid) {
+    return false;
+  }
+  if (args.record.last_failure_context === null && args.record.last_failure_signature === null) {
+    return true;
+  }
   return Boolean(
-    signature &&
-      hasResolvedAllStaleConfiguredBotThreads({
-        record: args.record,
-        headSha: args.pr.headRefOid,
-        signature,
-      }),
+    hasResolvedAllStaleConfiguredBotThreads({
+      record: args.record,
+      headSha: args.pr.headRefOid,
+      signature,
+    }),
   );
 }
 

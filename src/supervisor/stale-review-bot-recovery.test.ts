@@ -389,6 +389,86 @@ test("recoverStaleConfiguredBotReviewThreads finalizes records with completed re
   assert.equal(result.record.last_stale_review_bot_reply_signature, signature);
 });
 
+test("recoverStaleConfiguredBotReviewThreads treats externally resolved signed siblings as completed", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    staleConfiguredBotReviewPolicy: "reply_and_resolve",
+  });
+  const pr = createPullRequest({
+    number: 187,
+    headRefOid: "head-187",
+  });
+  const signature = "stalled-bot:thread-resolved-externally|stalled-bot:thread-visible";
+  const record = createRecord({
+    issue_number: 187,
+    pr_number: pr.number,
+    state: "blocked",
+    blocked_reason: "stale_review_bot",
+    last_head_sha: pr.headRefOid,
+    last_failure_context: createFailureContext("stale configured-bot review thread"),
+    last_failure_signature: signature,
+    repeated_failure_signature_count: 4,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 187,
+    issues: {
+      "187": record,
+    },
+  };
+  const reviewThreads = [
+    createReviewThread({
+      id: "thread-visible",
+      path: "src/review.ts",
+      line: 42,
+      comments: {
+        nodes: [
+          {
+            id: "comment-visible",
+            body: "This signed Codex finding still needs resolution.",
+            createdAt: "2026-05-24T02:05:00Z",
+            url: "https://example.test/pr/187#discussion_thread-visible",
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  ];
+  const resolutions: string[] = [];
+
+  const result = await recoverStaleConfiguredBotReviewThreads({
+    github: {
+      replyToReviewThread: async () => undefined,
+      resolveReviewThread: async (threadId: string) => {
+        resolutions.push(threadId);
+      },
+    },
+    stateStore: createNoopStateStore(),
+    state,
+    record,
+    pr,
+    reviewThreads,
+    syncJournal: async () => undefined,
+    config,
+    failureContext: {
+      ...createFailureContext("stale configured-bot review thread"),
+      signature,
+    },
+    resolveAfterReply: true,
+  });
+
+  assert.equal(result.status, "resolved");
+  assert.deepEqual(resolutions, ["thread-visible"]);
+  assert.equal(result.shouldRefreshPullRequest, true);
+  assert.equal(result.record.last_failure_context, null);
+  assert.equal(result.record.last_failure_signature, null);
+  assert.deepEqual(result.record.stale_review_bot_resolve_progress_keys, [
+    `resolve:thread-visible@${pr.headRefOid}:${signature}`,
+  ]);
+});
+
 test("recoverStaleConfiguredBotReviewThreads skips human-touched configured-bot threads", async () => {
   const config = createConfig({
     reviewBotLogins: ["chatgpt-codex-connector"],

@@ -318,12 +318,18 @@ export async function recoverStaleConfiguredBotReviewThreads(args: {
     });
   }
 
+  const resolvedCurrentReplyThreads =
+    args.resolveAfterReply &&
+    currentReplyThreadIds.every((threadId) =>
+      resolveProgressKeys.has(staleConfiguredBotReviewProgressKey({
+        headSha: args.pr.headRefOid,
+        signature: blockerSignature,
+        threadId,
+        phase: "resolve",
+      })),
+    );
   const staleResidueClearedPatch =
-    args.resolveAfterReply && hasResolvedAllStaleConfiguredBotThreads({
-      record,
-      headSha: args.pr.headRefOid,
-      signature: blockerSignature,
-    })
+    resolvedCurrentReplyThreads
       ? {
           last_failure_context: null,
           last_failure_signature: null,
@@ -350,10 +356,6 @@ export async function recoverStaleConfiguredBotReviewThreads(args: {
     record: updatedRecord,
     replyCount,
     resolveCount,
-    shouldRefreshPullRequest: args.resolveAfterReply && hasResolvedAllStaleConfiguredBotThreads({
-      record: updatedRecord,
-      headSha: args.pr.headRefOid,
-      signature: blockerSignature,
-    }),
+    shouldRefreshPullRequest: resolvedCurrentReplyThreads,
   });
 }

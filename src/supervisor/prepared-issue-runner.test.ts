@@ -130,7 +130,18 @@ test("hasCompletedVerifiedStaleResidueAutoResolve requires matching resolve prog
       `resolve:PRRT_verified_residue@${headSha}:${signature}`,
     ],
   });
+  const finalizedRecord = createRecord({
+    last_stale_review_bot_reply_head_sha: headSha,
+    last_stale_review_bot_reply_signature:
+      "stalled-bot:PRRT_resolved_externally|stalled-bot:PRRT_verified_residue",
+    last_failure_context: null,
+    last_failure_signature: null,
+    stale_review_bot_resolve_progress_keys: [
+      `resolve:PRRT_verified_residue@${headSha}:stalled-bot:PRRT_resolved_externally|stalled-bot:PRRT_verified_residue`,
+    ],
+  });
 
   assert.equal(hasCompletedVerifiedStaleResidueAutoResolve({ record: replyOnlyRecord, pr }), false);
   assert.equal(hasCompletedVerifiedStaleResidueAutoResolve({ record: resolvedRecord, pr }), true);
+  assert.equal(hasCompletedVerifiedStaleResidueAutoResolve({ record: finalizedRecord, pr }), true);
 });

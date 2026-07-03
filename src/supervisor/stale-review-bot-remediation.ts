@@ -19,6 +19,7 @@ import {
   codexConnectorMustFixReviewThreads,
   commitShasEqualForComparison,
   evaluateCodexConnectorConvergencePolicy,
+  hasCodexConnectorFindingReviewComment,
   latestCodexConnectorReviewCommentNode,
   latestCodexConnectorReviewCommentFingerprint,
   latestCodexConnectorPSeverity,
@@ -1311,6 +1312,7 @@ export function shouldAutoResolveVerifiedStaleReviewResidue(args: {
   remediation: StaleReviewBotRemediationDto | null;
 }): boolean {
   const configuredThreads = configuredBotReviewThreads(args.config, args.reviewThreads);
+  const codexConfiguredThreads = configuredThreads.filter((thread) => hasCodexConnectorFindingReviewComment(thread));
   return Boolean(
     args.record.state === "blocked" &&
       (args.record.blocked_reason === "manual_review" || args.record.blocked_reason === "stale_review_bot") &&
@@ -1324,10 +1326,11 @@ export function shouldAutoResolveVerifiedStaleReviewResidue(args: {
       configuredThreads.every((thread) =>
         latestReviewCommentAuthorIsAllowedBot(args.config, thread),
       ) &&
+      codexConfiguredThreads.length > 0 &&
       hasRecoverableStaleReviewThreadContext({
         record: args.record,
         pr: args.pr,
-        configuredThreads,
+        configuredThreads: codexConfiguredThreads,
       }) &&
       args.remediation &&
       isVerifiedStaleResidueClassification(args.remediation.classification) &&
