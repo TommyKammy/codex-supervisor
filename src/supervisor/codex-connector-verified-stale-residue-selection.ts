@@ -1,13 +1,14 @@
-import type { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "./core/types";
+import { configuredReviewProviderKinds } from "../core/review-providers";
+import type { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "../core/types";
 import {
   buildStaleReviewBotRemediation,
   shouldAutoResolveVerifiedStaleReviewResidue,
-} from "./supervisor/stale-review-bot-remediation";
+} from "./stale-review-bot-remediation";
 import {
   loadReviewThreadFileContents,
   type RepositoryFileContents,
 } from "./review-thread-file-contents";
-import { resolveTrackedIssueHostPaths } from "./core/journal";
+import { resolveTrackedIssueHostPaths } from "../core/journal";
 
 export function shouldReenterCodexConnectorVerifiedStaleResidueAutoResolve(args: {
   config: SupervisorConfig;
@@ -48,6 +49,7 @@ export async function shouldSelectCodexConnectorVerifiedStaleResidueAutoResolve(
     record.state !== "blocked" ||
     (record.blocked_reason !== "manual_review" && record.blocked_reason !== "stale_review_bot") ||
     record.pr_number === null ||
+    !configuredReviewProviderKinds(args.config).includes("codex") ||
     !args.getPullRequestIfExists ||
     !args.getChecks ||
     !args.getUnresolvedReviewThreads
@@ -57,7 +59,7 @@ export async function shouldSelectCodexConnectorVerifiedStaleResidueAutoResolve(
 
   try {
     const pr = await args.getPullRequestIfExists(record.pr_number, { purpose: "status" });
-    if (!pr || pr.headRefName !== record.branch) {
+    if (!pr) {
       return false;
     }
 

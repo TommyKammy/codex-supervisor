@@ -22,8 +22,8 @@ import { configuredReviewBotLogins } from "../core/review-providers";
 import { shouldAutoRetryTimeout } from "./supervisor-failure-helpers";
 import { buildStaleStabilizingNoPrRecoveryWarningLine } from "../no-pull-request-state";
 import { shouldReenterCodexConnectorValidReviewRepair } from "../codex-connector-valid-review-repair-selection";
-import { shouldReenterCodexConnectorVerifiedStaleResidueAutoResolve } from "../codex-connector-verified-stale-residue-selection";
-import { loadReviewThreadFileContents } from "../review-thread-file-contents";
+import { shouldReenterCodexConnectorVerifiedStaleResidueAutoResolve } from "./codex-connector-verified-stale-residue-selection";
+import { loadReviewThreadFileContents } from "./review-thread-file-contents";
 import {
   evaluateAutonomousExecutionTrust,
   isAutonomousExecutionTrustBlockedRecord,

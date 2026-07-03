@@ -40,7 +40,7 @@ import {
 } from "./supervisor-operator-events";
 import { codexConnectorReviewRequestAction } from "../codex-connector-review-request-decision";
 import { shouldSelectCodexConnectorValidReviewRepair } from "../codex-connector-valid-review-repair-selection";
-import { shouldSelectCodexConnectorVerifiedStaleResidueAutoResolve } from "../codex-connector-verified-stale-residue-selection";
+import { shouldSelectCodexConnectorVerifiedStaleResidueAutoResolve } from "./codex-connector-verified-stale-residue-selection";
 import { configuredBotReviewThreads, manualReviewThreads } from "../review-thread-reporting";
 import { mergeConflictDetected, summarizeChecks } from "./supervisor-reporting";
 

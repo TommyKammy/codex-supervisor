@@ -34,7 +34,7 @@ import {
   nonActionableConfiguredBotReviewThreads,
   pendingBotReviewThreads,
 } from "../review-thread-reporting";
-import { isCodexConnectorReviewer } from "../external-review/external-review-normalization";
+import { isRecoverableVerifiedCodexStaleResidueThread } from "./verified-stale-residue-review-thread";
 import { configuredReviewProviderKinds } from "../core/review-providers";
 import {
   currentHeadCodexRepairProofRejectionReasons,
@@ -220,11 +220,6 @@ function hasRecoverableStaleReviewThreadContext(args: {
 
   const unresolvedThreadIds = new Set(args.configuredThreads.map((thread) => thread.id));
   return signedThreadIds.some((threadId) => unresolvedThreadIds.has(threadId));
-}
-
-function latestReviewCommentAuthorIsCodexConnector(thread: ReviewThread): boolean {
-  const login = latestReviewComment(thread)?.author?.login;
-  return Boolean(login && isCodexConnectorReviewer(login));
 }
 
 function classifyAutoRepairSuppression(args: {
@@ -1319,7 +1314,8 @@ export function shouldAutoResolveVerifiedStaleReviewResidue(args: {
 }): boolean {
   const configuredThreads = configuredBotReviewThreads(args.config, args.reviewThreads);
   const codexConfiguredThreads = configuredThreads.filter(
-    (thread) => hasCodexConnectorFindingReviewComment(thread) && latestReviewCommentAuthorIsCodexConnector(thread),
+    (thread) => hasCodexConnectorFindingReviewComment(thread) &&
+      isRecoverableVerifiedCodexStaleResidueThread(args.config, thread),
   );
   return Boolean(
     args.record.state === "blocked" &&

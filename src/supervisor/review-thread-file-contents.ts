@@ -1,11 +1,11 @@
 import { execFile } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
-import type { ReviewThread } from "./core/types";
+import type { ReviewThread } from "../core/types";
 import {
   isIgnoredSupervisorArtifactPath,
   parseGitStatusPorcelainV1Paths,
-} from "./core/git-workspace-helpers";
+} from "../core/git-workspace-helpers";
 
 export type RepositoryFileContents = Record<string, string | null | undefined>;
 
@@ -72,12 +72,8 @@ export async function loadReviewThreadFileContents(args: {
   }
 
   try {
-    const [headResult, branchResult, statusResult] = await Promise.all([
+    const [headResult, statusResult] = await Promise.all([
       execFileAsync("git", ["-C", args.workspacePath, "rev-parse", "HEAD"], { encoding: "utf8", maxBuffer: 64_000 }),
-      execFileAsync("git", ["-C", args.workspacePath, "rev-parse", "--abbrev-ref", "HEAD"], {
-        encoding: "utf8",
-        maxBuffer: 64_000,
-      }),
       execFileAsync("git", ["-C", args.workspacePath, "status", "--porcelain=v1", "-z", "--untracked-files=all"], {
         encoding: "utf8",
         maxBuffer: 1_000_000,
@@ -88,10 +84,9 @@ export async function loadReviewThreadFileContents(args: {
         paths.some((relativePath) =>
           !isIgnoredSupervisorArtifactPath(relativePath, args.issueJournalRelativePath),
         ),
-      );
+    );
     if (
       headResult.stdout.trim() !== args.expectedHeadSha ||
-      branchResult.stdout.trim() !== args.branch ||
       meaningfulWorkspaceChanges
     ) {
       return undefined;

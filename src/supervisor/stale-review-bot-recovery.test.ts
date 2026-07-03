@@ -642,6 +642,92 @@ test("recoverStaleConfiguredBotReviewThreads skips verified Codex auto-resolve w
   assert.deepEqual(resolutions, []);
 });
 
+test("recoverStaleConfiguredBotReviewThreads allows verified Codex auto-resolve after supervisor reply notes", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector", "coderabbitai"],
+    staleConfiguredBotReviewPolicy: "reply_and_resolve",
+  });
+  const pr = createPullRequest({
+    number: 189,
+    headRefOid: "head-189",
+  });
+  const signature = "stalled-bot:thread-codex-then-supervisor";
+  const record = createRecord({
+    issue_number: 189,
+    pr_number: pr.number,
+    state: "blocked",
+    blocked_reason: "manual_review",
+    last_head_sha: pr.headRefOid,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 189,
+    issues: {
+      "189": record,
+    },
+  };
+  const reviewThreads = [
+    createReviewThread({
+      id: "thread-codex-then-supervisor",
+      path: "src/review.ts",
+      line: 42,
+      comments: {
+        nodes: [
+          {
+            id: "comment-codex",
+            body: "P2: This Codex finding was previously verified.",
+            createdAt: "2026-05-24T02:05:00Z",
+            url: "https://example.test/pr/189#discussion_thread-codex-then-supervisor",
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+          {
+            id: "comment-supervisor",
+            body: "Supervisor confirmed this stale Codex Connector finding is covered by the current-head success signal.",
+            createdAt: "2026-05-24T02:10:00Z",
+            url: "https://example.test/pr/189#discussion_thread-codex-then-supervisor_followup",
+            author: {
+              login: "TommyKammy",
+              typeName: "User",
+            },
+          },
+        ],
+      },
+    }),
+  ];
+  const replies: string[] = [];
+  const resolutions: string[] = [];
+
+  const result = await recoverStaleConfiguredBotReviewThreads({
+    github: {
+      replyToReviewThread: async (threadId: string) => {
+        replies.push(threadId);
+      },
+      resolveReviewThread: async (threadId: string) => {
+        resolutions.push(threadId);
+      },
+    },
+    stateStore: createNoopStateStore(),
+    state,
+    record,
+    pr,
+    reviewThreads,
+    syncJournal: async () => undefined,
+    config,
+    failureContext: {
+      ...createFailureContext("stale configured-bot review thread"),
+      signature,
+    },
+    resolveAfterReply: true,
+    reasonCode: "verified_no_source_change_auto_resolve",
+  });
+
+  assert.equal(result.status, "resolved");
+  assert.deepEqual(replies, ["thread-codex-then-supervisor"]);
+  assert.deepEqual(resolutions, ["thread-codex-then-supervisor"]);
+});
+
 test("recoverStaleConfiguredBotReviewThreads normalizes raw PRRT thread signatures", async () => {
   const config = createConfig({
     reviewBotLogins: ["chatgpt-codex-connector"],

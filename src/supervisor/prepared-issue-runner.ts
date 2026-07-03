@@ -62,7 +62,7 @@ import {
   shouldAutoResolveVerifiedStaleReviewResidue,
 } from "./stale-review-bot-remediation";
 import { hasResolvedAllStaleConfiguredBotThreads } from "./stale-review-bot-recovery";
-import { loadReviewThreadFileContents } from "../review-thread-file-contents";
+import { loadReviewThreadFileContents } from "./review-thread-file-contents";
 
 export interface PreparedIssueRunContext extends PreparedIssueExecutionContext {
   state: SupervisorStateFile;

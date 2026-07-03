@@ -27,7 +27,7 @@ import {
   processedReviewThreadKey,
 } from "./review-handling";
 import { upsertTimelineArtifact } from "./timeline-artifacts";
-import { loadReviewThreadFileContents } from "./review-thread-file-contents";
+import { loadReviewThreadFileContents } from "./supervisor/review-thread-file-contents";
 
 export interface StaleConfiguredBotConversationResolutionBlocker {
   failureContext: FailureContext;
