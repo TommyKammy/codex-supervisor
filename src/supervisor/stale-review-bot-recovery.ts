@@ -15,6 +15,7 @@ import {
   latestReviewComment,
   latestReviewCommentAuthorIsAllowedBot,
 } from "../review-thread-reporting";
+import { isCodexConnectorReviewer } from "../external-review/external-review-normalization";
 
 export const STALE_CONFIGURED_BOT_REVIEW_REASON_CODE = "stale_review_bot";
 
@@ -85,6 +86,15 @@ function buildStaleConfiguredBotReplyBody(args: {
         : "Under the configured `reply_and_resolve` policy, the supervisor is auto-resolving this stale thread now."
       : "Leaving thread resolution to a human operator.",
   ].join("\n\n");
+}
+
+function isVerifiedCodexAutoResolveReason(reasonCode: string | undefined): boolean {
+  return reasonCode === "verified_no_source_change_auto_resolve" || reasonCode === "verified_current_head_repair_auto_resolve";
+}
+
+function latestReviewCommentAuthorIsCodexConnector(thread: ReviewThread): boolean {
+  const login = latestReviewComment(thread)?.author?.login;
+  return Boolean(login && isCodexConnectorReviewer(login));
 }
 
 export function staleConfiguredBotReplyThreadIds(signature: string | null | undefined): string[] {
@@ -214,7 +224,8 @@ export async function recoverStaleConfiguredBotReviewThreads(args: {
   const configuredThreads = configuredBotReviewThreads(args.config, args.reviewThreads);
   const configuredThreadIds = new Set(configuredThreads.map((thread) => thread.id));
   const recoverableConfiguredThreads = configuredThreads.filter((thread) =>
-    latestReviewCommentAuthorIsAllowedBot(args.config, thread),
+    latestReviewCommentAuthorIsAllowedBot(args.config, thread) &&
+    (!isVerifiedCodexAutoResolveReason(args.reasonCode) || latestReviewCommentAuthorIsCodexConnector(thread)),
   );
   const replyThreadIds = staleConfiguredBotReplyThreadIds(blockerSignature);
   if (replyThreadIds.length === 0) {

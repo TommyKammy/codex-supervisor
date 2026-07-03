@@ -34,6 +34,7 @@ import {
   nonActionableConfiguredBotReviewThreads,
   pendingBotReviewThreads,
 } from "../review-thread-reporting";
+import { isCodexConnectorReviewer } from "../external-review/external-review-normalization";
 import { configuredReviewProviderKinds } from "../core/review-providers";
 import {
   currentHeadCodexRepairProofRejectionReasons,
@@ -219,6 +220,11 @@ function hasRecoverableStaleReviewThreadContext(args: {
 
   const unresolvedThreadIds = new Set(args.configuredThreads.map((thread) => thread.id));
   return signedThreadIds.some((threadId) => unresolvedThreadIds.has(threadId));
+}
+
+function latestReviewCommentAuthorIsCodexConnector(thread: ReviewThread): boolean {
+  const login = latestReviewComment(thread)?.author?.login;
+  return Boolean(login && isCodexConnectorReviewer(login));
 }
 
 function classifyAutoRepairSuppression(args: {
@@ -1312,10 +1318,14 @@ export function shouldAutoResolveVerifiedStaleReviewResidue(args: {
   remediation: StaleReviewBotRemediationDto | null;
 }): boolean {
   const configuredThreads = configuredBotReviewThreads(args.config, args.reviewThreads);
-  const codexConfiguredThreads = configuredThreads.filter((thread) => hasCodexConnectorFindingReviewComment(thread));
+  const codexConfiguredThreads = configuredThreads.filter(
+    (thread) => hasCodexConnectorFindingReviewComment(thread) && latestReviewCommentAuthorIsCodexConnector(thread),
+  );
   return Boolean(
     args.record.state === "blocked" &&
-      (args.record.blocked_reason === "manual_review" || args.record.blocked_reason === "stale_review_bot") &&
+      (args.record.blocked_reason === null ||
+        args.record.blocked_reason === "manual_review" ||
+        args.record.blocked_reason === "stale_review_bot") &&
       args.record.pr_number === args.pr.number &&
       configuredReviewProviderKinds(args.config).includes("codex") &&
       !hasMergeConflictState(args.pr) &&
@@ -1323,9 +1333,6 @@ export function shouldAutoResolveVerifiedStaleReviewResidue(args: {
       !hasFailingChecks(args.checks) &&
       manualReviewThreads(args.config, args.reviewThreads).length === 0 &&
       configuredThreads.length > 0 &&
-      configuredThreads.every((thread) =>
-        latestReviewCommentAuthorIsAllowedBot(args.config, thread),
-      ) &&
       codexConfiguredThreads.length > 0 &&
       hasRecoverableStaleReviewThreadContext({
         record: args.record,

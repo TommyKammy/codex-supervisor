@@ -555,6 +555,93 @@ test("recoverStaleConfiguredBotReviewThreads skips human-touched configured-bot 
   assert.deepEqual(resolutions, []);
 });
 
+test("recoverStaleConfiguredBotReviewThreads skips verified Codex auto-resolve when another bot is latest", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector", "coderabbitai"],
+    staleConfiguredBotReviewPolicy: "reply_and_resolve",
+  });
+  const pr = createPullRequest({
+    number: 188,
+    headRefOid: "head-188",
+  });
+  const signature = "stalled-bot:thread-codex-then-coderabbit";
+  const record = createRecord({
+    issue_number: 188,
+    pr_number: pr.number,
+    state: "blocked",
+    blocked_reason: "manual_review",
+    last_head_sha: pr.headRefOid,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 188,
+    issues: {
+      "188": record,
+    },
+  };
+  const reviewThreads = [
+    createReviewThread({
+      id: "thread-codex-then-coderabbit",
+      path: "src/review.ts",
+      line: 42,
+      comments: {
+        nodes: [
+          {
+            id: "comment-codex",
+            body: "P2: This Codex finding was previously verified.",
+            createdAt: "2026-05-24T02:05:00Z",
+            url: "https://example.test/pr/188#discussion_thread-codex-then-coderabbit",
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+          {
+            id: "comment-coderabbit",
+            body: "A different configured bot is now the latest reviewer.",
+            createdAt: "2026-05-24T02:10:00Z",
+            url: "https://example.test/pr/188#discussion_thread-codex-then-coderabbit_followup",
+            author: {
+              login: "coderabbitai",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  ];
+  const replies: string[] = [];
+  const resolutions: string[] = [];
+
+  const result = await recoverStaleConfiguredBotReviewThreads({
+    github: {
+      replyToReviewThread: async (threadId: string) => {
+        replies.push(threadId);
+      },
+      resolveReviewThread: async (threadId: string) => {
+        resolutions.push(threadId);
+      },
+    },
+    stateStore: createNoopStateStore(),
+    state,
+    record,
+    pr,
+    reviewThreads,
+    syncJournal: async () => undefined,
+    config,
+    failureContext: {
+      ...createFailureContext("stale configured-bot review thread"),
+      signature,
+    },
+    resolveAfterReply: true,
+    reasonCode: "verified_no_source_change_auto_resolve",
+  });
+
+  assert.equal(result.status, "skipped");
+  assert.equal(result.skippedReason, "missing_configured_thread");
+  assert.deepEqual(replies, []);
+  assert.deepEqual(resolutions, []);
+});
+
 test("recoverStaleConfiguredBotReviewThreads normalizes raw PRRT thread signatures", async () => {
   const config = createConfig({
     reviewBotLogins: ["chatgpt-codex-connector"],
