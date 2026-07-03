@@ -2660,6 +2660,7 @@ test("runPreparedIssue marks active stale Codex Connector residue successful bef
       "",
     ],
   });
+  fixture.config.repoSlug = "TommyKammy/codex-supervisor";
   fixture.config.sameFailureSignatureRepeatLimit = 3;
   fixture.config.reviewBotLogins = ["chatgpt-codex-connector"];
   fixture.config.verifiedNoSourceChangeReviewThreadAutoResolve = true;
@@ -2926,6 +2927,7 @@ test("runPreparedIssue recovers blocked stale Codex Connector residue with parti
       "",
     ],
   });
+  fixture.config.repoSlug = "TommyKammy/codex-supervisor";
   fixture.config.sameFailureSignatureRepeatLimit = 3;
   fixture.config.reviewBotLogins = ["chatgpt-codex-connector"];
   fixture.config.verifiedNoSourceChangeReviewThreadAutoResolve = true;
@@ -3157,6 +3159,7 @@ test("runPreparedIssue records provider success for HRCore stale residue before 
       "",
     ],
   });
+  fixture.config.repoSlug = "TommyKammy/codex-supervisor";
   fixture.config.sameFailureSignatureRepeatLimit = 3;
   fixture.config.reviewBotLogins = ["chatgpt-codex-connector"];
   fixture.config.verifiedNoSourceChangeReviewThreadAutoResolve = true;

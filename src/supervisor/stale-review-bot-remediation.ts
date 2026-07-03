@@ -211,6 +211,7 @@ function hasRecoverableStaleReviewThreadContext(args: {
   record: IssueRunRecord;
   pr: GitHubPullRequest;
   configuredThreads: ReviewThread[];
+  recoverableThreads: ReviewThread[];
 }): boolean {
   const signature = args.record.last_failure_context?.signature;
   const signedThreadIds = staleConfiguredBotReplyThreadIds(signature);
@@ -218,8 +219,11 @@ function hasRecoverableStaleReviewThreadContext(args: {
     return false;
   }
 
-  const unresolvedThreadIds = new Set(args.configuredThreads.map((thread) => thread.id));
-  return signedThreadIds.some((threadId) => unresolvedThreadIds.has(threadId));
+  const unresolvedConfiguredThreadIds = new Set(args.configuredThreads.map((thread) => thread.id));
+  const recoverableThreadIds = new Set(args.recoverableThreads.map((thread) => thread.id));
+  const currentSignedThreadIds = signedThreadIds.filter((threadId) => unresolvedConfiguredThreadIds.has(threadId));
+  return currentSignedThreadIds.length > 0 &&
+    currentSignedThreadIds.every((threadId) => recoverableThreadIds.has(threadId));
 }
 
 function classifyAutoRepairSuppression(args: {
@@ -1313,7 +1317,7 @@ export function shouldAutoResolveVerifiedStaleReviewResidue(args: {
   remediation: StaleReviewBotRemediationDto | null;
 }): boolean {
   const configuredThreads = configuredBotReviewThreads(args.config, args.reviewThreads);
-  const codexConfiguredThreads = configuredThreads.filter(
+  const recoverableCodexThreads = configuredThreads.filter(
     (thread) => hasCodexConnectorFindingReviewComment(thread) &&
       isRecoverableVerifiedCodexStaleResidueThread(args.config, thread),
   );
@@ -1329,11 +1333,12 @@ export function shouldAutoResolveVerifiedStaleReviewResidue(args: {
       !hasFailingChecks(args.checks) &&
       manualReviewThreads(args.config, args.reviewThreads).length === 0 &&
       configuredThreads.length > 0 &&
-      codexConfiguredThreads.length > 0 &&
+      recoverableCodexThreads.length > 0 &&
       hasRecoverableStaleReviewThreadContext({
         record: args.record,
         pr: args.pr,
-        configuredThreads: codexConfiguredThreads,
+        configuredThreads,
+        recoverableThreads: recoverableCodexThreads,
       }) &&
       args.remediation &&
       isVerifiedStaleResidueClassification(args.remediation.classification) &&

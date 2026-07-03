@@ -59,7 +59,7 @@ export async function shouldSelectCodexConnectorVerifiedStaleResidueAutoResolve(
 
   try {
     const pr = await args.getPullRequestIfExists(record.pr_number, { purpose: "status" });
-    if (!pr) {
+    if (!pr || pr.headRefName !== record.branch) {
       return false;
     }
 

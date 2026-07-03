@@ -557,6 +557,7 @@ test("recoverStaleConfiguredBotReviewThreads skips human-touched configured-bot 
 
 test("recoverStaleConfiguredBotReviewThreads skips verified Codex auto-resolve when another bot is latest", async () => {
   const config = createConfig({
+    repoSlug: "TommyKammy/codex-supervisor",
     reviewBotLogins: ["chatgpt-codex-connector", "coderabbitai"],
     staleConfiguredBotReviewPolicy: "reply_and_resolve",
   });
@@ -644,6 +645,7 @@ test("recoverStaleConfiguredBotReviewThreads skips verified Codex auto-resolve w
 
 test("recoverStaleConfiguredBotReviewThreads allows verified Codex auto-resolve after supervisor reply notes", async () => {
   const config = createConfig({
+    repoSlug: "TommyKammy/codex-supervisor",
     reviewBotLogins: ["chatgpt-codex-connector", "coderabbitai"],
     staleConfiguredBotReviewPolicy: "reply_and_resolve",
   });
@@ -726,6 +728,94 @@ test("recoverStaleConfiguredBotReviewThreads allows verified Codex auto-resolve 
   assert.equal(result.status, "resolved");
   assert.deepEqual(replies, ["thread-codex-then-supervisor"]);
   assert.deepEqual(resolutions, ["thread-codex-then-supervisor"]);
+});
+
+test("recoverStaleConfiguredBotReviewThreads rejects quoted supervisor markers from non-owner humans", async () => {
+  const config = createConfig({
+    repoSlug: "owner/repo",
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    staleConfiguredBotReviewPolicy: "reply_and_resolve",
+  });
+  const pr = createPullRequest({
+    number: 190,
+    headRefOid: "head-190",
+  });
+  const signature = "stalled-bot:thread-codex-then-human-marker";
+  const record = createRecord({
+    issue_number: 190,
+    pr_number: pr.number,
+    state: "blocked",
+    blocked_reason: "manual_review",
+    last_head_sha: pr.headRefOid,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 190,
+    issues: {
+      "190": record,
+    },
+  };
+  const reviewThreads = [
+    createReviewThread({
+      id: "thread-codex-then-human-marker",
+      path: "src/review.ts",
+      line: 42,
+      comments: {
+        nodes: [
+          {
+            id: "comment-codex",
+            body: "P2: This Codex finding was previously verified.",
+            createdAt: "2026-05-24T02:05:00Z",
+            url: "https://example.test/pr/190#discussion_thread-codex-then-human-marker",
+            author: {
+              login: "chatgpt-codex-connector",
+              typeName: "Bot",
+            },
+          },
+          {
+            id: "comment-human-marker",
+            body: "Supervisor confirmed this stale Codex Connector finding is covered by the current-head success signal.",
+            createdAt: "2026-05-24T02:10:00Z",
+            url: "https://example.test/pr/190#discussion_thread-codex-then-human-marker_followup",
+            author: {
+              login: "reviewer-human",
+              typeName: "User",
+            },
+          },
+        ],
+      },
+    }),
+  ];
+  const replies: string[] = [];
+  const resolutions: string[] = [];
+
+  const result = await recoverStaleConfiguredBotReviewThreads({
+    github: {
+      replyToReviewThread: async (threadId: string) => {
+        replies.push(threadId);
+      },
+      resolveReviewThread: async (threadId: string) => {
+        resolutions.push(threadId);
+      },
+    },
+    stateStore: createNoopStateStore(),
+    state,
+    record,
+    pr,
+    reviewThreads,
+    syncJournal: async () => undefined,
+    config,
+    failureContext: {
+      ...createFailureContext("stale configured-bot review thread"),
+      signature,
+    },
+    resolveAfterReply: true,
+    reasonCode: "verified_no_source_change_auto_resolve",
+  });
+
+  assert.equal(result.status, "skipped");
+  assert.equal(result.skippedReason, "missing_configured_thread");
+  assert.deepEqual(replies, []);
+  assert.deepEqual(resolutions, []);
 });
 
 test("recoverStaleConfiguredBotReviewThreads normalizes raw PRRT thread signatures", async () => {
