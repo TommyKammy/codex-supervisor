@@ -1,4 +1,8 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import {
   GitHubIssue,
@@ -12,6 +16,10 @@ import {
 } from "./supervisor-selection-readiness-summary";
 import { createConfig, createPullRequest, createRecord } from "./supervisor-test-helpers";
 import { STILL_VALID_REVIEW_THREAD_REPAIR_TARGET } from "../codex-connector-valid-review-repair";
+import {
+  CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+  createCodexConnectorTrackedReviewResidueScenario,
+} from "../codex-connector-tracked-pr-test-helpers";
 
 function createIssue(overrides: Partial<GitHubIssue> = {}): GitHubIssue {
   return {
@@ -573,6 +581,220 @@ Parallelizable: No
     },
   ]);
   assert.match(whyLines.join("\n"), /^selected_issue=#2385$/m);
+});
+
+test("buildReadinessSummary selects verified manual-review residue for auto-resolve", async () => {
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const issueNumber = 2401;
+  const prNumber = 174;
+  const headSha = "68401b26947918f0ce2280a9526ab68298b1a25c";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "PRRT_verified_residue",
+    commentId: "comment-verified-residue",
+    path: "src/writeback-ingest.ts",
+    line: 42,
+    commentBody: "P2: Update the published writeback response schema.",
+    discussionUrl: "https://example.test/pr/174#discussion_r2401",
+    verifiedRepair: {
+      summary: "verify-pre-pr passed with 96 tests.",
+      ranAt: "2026-05-18T07:18:00Z",
+      command: "npm run verify:pre-pr",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+    currentHeadNoMajorReview: {
+      requestedAt: "2026-05-18T07:12:00Z",
+      observedAt: "2026-05-18T07:17:00Z",
+    },
+  });
+  const issue = createIssue({
+    number: issueNumber,
+    title: "Auto-resolve verified manual-review residue",
+    body: `## Summary
+Resolve verified stale Codex review residue after manual review fallthrough.
+
+## Scope
+- route verified manual-review residue into auto-resolution
+
+Depends on: none
+Parallelizable: No
+
+## Execution order
+1 of 1
+
+## Acceptance criteria
+- verified residue is selected instead of reported as no runnable issue
+
+## Verification
+- npx tsx --test src/supervisor/supervisor-selection-readiness-summary.test.ts`,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        ...scenario.recordPatch,
+        state: "blocked",
+        blocked_reason: "manual_review",
+      }),
+    },
+  };
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+  });
+  const github = {
+    listCandidateIssues: async () => [issue],
+    listAllIssues: async () => [issue],
+    getPullRequestIfExists: async () => pr,
+    getChecks: async () => scenario.passingChecks,
+    getUnresolvedReviewThreads: async () => [scenario.reviewThread],
+  };
+
+  const readinessSummary = await buildReadinessSummary(github, config, state);
+  const whyLines = await buildSelectionWhySummary(github, config, state);
+
+  assert.deepEqual(readinessSummary.blockedIssues, []);
+  assert.deepEqual(readinessSummary.runnableIssues, [
+    {
+      issueNumber,
+      title: "Auto-resolve verified manual-review residue",
+      readiness: "execution_ready",
+    },
+  ]);
+  assert.match(whyLines.join("\n"), /^selected_issue=#2401$/m);
+  assert.doesNotMatch(whyLines.join("\n"), /^selected_issue=none$/m);
+});
+
+test("buildReadinessSummary preserves file-probe evidence when selecting verified residue", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "verified-residue-selection-"));
+  try {
+    const issueNumber = 2402;
+    const prNumber = 174;
+    const branch = "codex/issue-2402-file-probe";
+    const repoPath = path.join(root, `issue-${issueNumber}`);
+    const policyPath = "src/mvp-a-onboarding-traceability.ts";
+    const documentPath = "docs/mvp-a/policy/onboarding-traceability.md";
+    await fs.mkdir(path.dirname(path.join(repoPath, policyPath)), { recursive: true });
+    await fs.writeFile(
+      path.join(repoPath, policyPath),
+      [
+        "const LOADER_PATHS = [",
+        `  "${documentPath}",`,
+        "];",
+        "const POLICY_SCAN_PATHS = [",
+        `  "${documentPath}",`,
+        "];",
+      ].join("\n"),
+      "utf8",
+    );
+    execFileSync("git", ["init", "-b", "main", repoPath], { stdio: "ignore" });
+    execFileSync("git", ["-C", repoPath, "config", "user.email", "test@example.test"]);
+    execFileSync("git", ["-C", repoPath, "config", "user.name", "Test User"]);
+    execFileSync("git", ["-C", repoPath, "add", policyPath]);
+    execFileSync("git", ["-C", repoPath, "commit", "-m", "Add policy path list"], { stdio: "ignore" });
+    execFileSync("git", ["-C", repoPath, "checkout", "-b", branch], { stdio: "ignore" });
+    const headSha = execFileSync("git", ["-C", repoPath, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+    await fs.mkdir(path.join(repoPath, ".codex-supervisor"), { recursive: true });
+    await fs.writeFile(
+      path.join(repoPath, ".codex-supervisor", "issue-journal.md"),
+      "Supervisor-owned journal artifact should not block file probes.\n",
+      "utf8",
+    );
+    const config = createConfig({
+      repoPath,
+      defaultBranch: "main",
+      workspaceRoot: root,
+      reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+      verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+    });
+    const scenario = createCodexConnectorTrackedReviewResidueScenario({
+      issueNumber,
+      prNumber,
+      headSha,
+      branch,
+      threadId: "thread-file-probe-residue",
+      commentId: "comment-file-probe-residue",
+      path: policyPath,
+      line: 42,
+      severity: "P2",
+      commentBody:
+        `P2: Add \`${documentPath}\` to both the loader path list and the policy scan path list.`,
+      discussionUrl: "https://example.test/pr/174#discussion_r2402",
+      verifiedRepair: {
+        summary: "Focused traceability verifier passed after the repair commit.",
+        ranAt: "2026-06-05T21:10:00Z",
+        command: "npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
+        evidenceSource: "codex_turn_timeline_artifact",
+      },
+    });
+    const issue = createIssue({
+      number: issueNumber,
+      title: "Auto-resolve file-probed verified residue",
+      body: `## Summary
+Resolve verified stale Codex review residue after a deterministic file probe.
+
+## Scope
+- route verified manual-review residue into auto-resolution
+
+Depends on: none
+Parallelizable: No
+
+## Execution order
+1 of 1
+
+## Acceptance criteria
+- file-probed verified residue is selected
+
+## Verification
+- npx tsx --test src/supervisor/supervisor-selection-readiness-summary.test.ts`,
+    });
+    const state: SupervisorStateFile = {
+      activeIssueNumber: null,
+      issues: {
+        [String(issueNumber)]: createRecord({
+          ...scenario.recordPatch,
+          state: "blocked",
+          blocked_reason: "manual_review",
+          repair_attempt_count: 1,
+          last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+          workspace: path.join(root, "stale-other-host-workspace"),
+        }),
+      },
+    };
+    const pr = createPullRequest({
+      ...scenario.pullRequestPatch,
+      configuredBotCurrentHeadStatusState: null,
+      configuredBotTopLevelReviewStrength: "blocking",
+    });
+    const github = {
+      listCandidateIssues: async () => [issue],
+      listAllIssues: async () => [issue],
+      getPullRequestIfExists: async () => pr,
+      getChecks: async () => scenario.passingChecks,
+      getUnresolvedReviewThreads: async () => [scenario.reviewThread],
+    };
+
+    const readinessSummary = await buildReadinessSummary(github, config, state);
+    const whyLines = await buildSelectionWhySummary(github, config, state);
+
+    assert.deepEqual(readinessSummary.blockedIssues, []);
+    assert.deepEqual(readinessSummary.runnableIssues, [
+      {
+        issueNumber,
+        title: "Auto-resolve file-probed verified residue",
+        readiness: "execution_ready",
+      },
+    ]);
+    assert.match(whyLines.join("\n"), /^selected_issue=#2402$/m);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
 });
 
 test("buildReadinessSummary selects stale review-commit residue recovery without timeout metadata", async () => {

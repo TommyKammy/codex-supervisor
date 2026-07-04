@@ -10,7 +10,16 @@ import type {
   SupervisorStateFile,
 } from "../core/types";
 import { truncate } from "../core/utils";
-import { configuredBotReviewThreads, latestReviewComment } from "../review-thread-reporting";
+import {
+  configuredBotReviewThreads,
+  latestReviewComment,
+  latestReviewCommentAuthorIsAllowedBot,
+} from "../review-thread-reporting";
+import {
+  isRecoverableVerifiedCodexStaleResidueThread,
+  isSupervisorVerifiedStaleResidueAutoResolveComment,
+  isTrustedSupervisorMarkerAuthor,
+} from "./verified-stale-residue-review-thread";
 
 export const STALE_CONFIGURED_BOT_REVIEW_REASON_CODE = "stale_review_bot";
 
@@ -81,6 +90,10 @@ function buildStaleConfiguredBotReplyBody(args: {
         : "Under the configured `reply_and_resolve` policy, the supervisor is auto-resolving this stale thread now."
       : "Leaving thread resolution to a human operator.",
   ].join("\n\n");
+}
+
+function isVerifiedCodexAutoResolveReason(reasonCode: string | undefined): boolean {
+  return reasonCode === "verified_no_source_change_auto_resolve" || reasonCode === "verified_current_head_repair_auto_resolve";
 }
 
 export function staleConfiguredBotReplyThreadIds(signature: string | null | undefined): string[] {
@@ -183,28 +196,22 @@ export async function recoverStaleConfiguredBotReviewThreads(args: {
     args.record.last_stale_review_bot_reply_head_sha === args.pr.headRefOid &&
     args.record.last_stale_review_bot_reply_signature === blockerSignature
   ) {
-    return buildResult({
-      status: "no_op",
-      record: args.record,
-      shouldRefreshPullRequest: args.resolveAfterReply && hasResolvedAllStaleConfiguredBotThreads({
+    const resolvedAllThreads =
+      args.resolveAfterReply &&
+      hasResolvedAllStaleConfiguredBotThreads({
         record: args.record,
         headSha: args.pr.headRefOid,
         signature: blockerSignature,
-      }),
-    });
-  }
-
-  const configuredThreads = configuredBotReviewThreads(args.config, args.reviewThreads);
-  const replyThreadIds = staleConfiguredBotReplyThreadIds(blockerSignature);
-  if (replyThreadIds.length === 0) {
-    return buildResult({ status: "skipped", record: args.record, skippedReason: "missing_thread_signature" });
-  }
-
-  const replyThreads = replyThreadIds
-    .map((threadId) => configuredThreads.find((thread) => thread.id === threadId) ?? null)
-    .filter((thread): thread is ReviewThread => thread !== null);
-  if (replyThreads.length !== replyThreadIds.length) {
-    return buildResult({ status: "skipped", record: args.record, skippedReason: "missing_configured_thread" });
+      });
+    if (args.resolveAfterReply && !resolvedAllThreads) {
+      // Reply progress alone is not enough for reply-and-resolve recovery; fall through and resolve missing threads.
+    } else {
+      return buildResult({
+        status: "no_op",
+        record: args.record,
+        shouldRefreshPullRequest: resolvedAllThreads,
+      });
+    }
   }
 
   let record = args.record;
@@ -212,6 +219,71 @@ export async function recoverStaleConfiguredBotReviewThreads(args: {
   let resolveCount = 0;
   const replyProgressKeys = new Set(record.stale_review_bot_reply_progress_keys ?? []);
   const resolveProgressKeys = new Set(record.stale_review_bot_resolve_progress_keys ?? []);
+
+  const configuredThreads = configuredBotReviewThreads(args.config, args.reviewThreads);
+  const configuredThreadIds = new Set(configuredThreads.map((thread) => thread.id));
+  const verifiedCodexAutoResolveReason = isVerifiedCodexAutoResolveReason(args.reasonCode);
+  const hasReplyProgressForThread = (threadId: string): boolean =>
+    replyProgressKeys.has(staleConfiguredBotReviewProgressKey({
+      headSha: args.pr.headRefOid,
+      signature: blockerSignature,
+      threadId,
+      phase: "reply",
+    }));
+  const latestCommentIsTrustedSupervisorReply = (thread: ReviewThread): boolean => {
+    const latestComment = latestReviewComment(thread);
+    return Boolean(
+      latestComment &&
+        isTrustedSupervisorMarkerAuthor(args.config, latestComment) &&
+        latestComment.body.includes("The supervisor reprocessed this configured-bot finding on the current head") &&
+        latestComment.body.includes(`head=${args.pr.headRefOid}`) &&
+        latestComment.body.includes(`thread=${thread.id}`) &&
+        latestComment.body.includes("reason="),
+    );
+  };
+  const latestCommentIsTrustedSupervisorMarker = (thread: ReviewThread): boolean => {
+    const latestComment = latestReviewComment(thread);
+    return Boolean(
+      latestComment &&
+        isTrustedSupervisorMarkerAuthor(args.config, latestComment) &&
+        isSupervisorVerifiedStaleResidueAutoResolveComment(latestComment.body),
+    );
+  };
+  const recoverableConfiguredThreads = configuredThreads.filter((thread) =>
+    args.resolveAfterReply && hasReplyProgressForThread(thread.id) && latestCommentIsTrustedSupervisorReply(thread)
+      ? true
+      : verifiedCodexAutoResolveReason
+      ? isRecoverableVerifiedCodexStaleResidueThread(args.config, thread)
+      : latestReviewCommentAuthorIsAllowedBot(args.config, thread) ||
+        latestCommentIsTrustedSupervisorMarker(thread),
+  );
+  const replyThreadIds = staleConfiguredBotReplyThreadIds(blockerSignature);
+  if (replyThreadIds.length === 0) {
+    return buildResult({ status: "skipped", record: args.record, skippedReason: "missing_thread_signature" });
+  }
+
+  const currentReplyThreadIds = args.resolveAfterReply
+    ? replyThreadIds.filter((threadId) => configuredThreadIds.has(threadId))
+    : replyThreadIds;
+  const unresolvedReplyThreadIds =
+    args.resolveAfterReply
+      ? currentReplyThreadIds.filter((threadId) => {
+          const resolveKey = staleConfiguredBotReviewProgressKey({
+            headSha: args.pr.headRefOid,
+            signature: blockerSignature,
+            threadId,
+            phase: "resolve",
+          });
+          return !resolveProgressKeys.has(resolveKey);
+        })
+      : currentReplyThreadIds;
+
+  const replyThreads = unresolvedReplyThreadIds
+    .map((threadId) => recoverableConfiguredThreads.find((thread) => thread.id === threadId) ?? null)
+    .filter((thread): thread is ReviewThread => thread !== null);
+  if (replyThreads.length !== unresolvedReplyThreadIds.length) {
+    return buildResult({ status: "skipped", record: args.record, skippedReason: "missing_configured_thread" });
+  }
 
   try {
     for (const replyThread of replyThreads) {
@@ -289,12 +361,18 @@ export async function recoverStaleConfiguredBotReviewThreads(args: {
     });
   }
 
+  const resolvedCurrentReplyThreads =
+    args.resolveAfterReply &&
+    currentReplyThreadIds.every((threadId) =>
+      resolveProgressKeys.has(staleConfiguredBotReviewProgressKey({
+        headSha: args.pr.headRefOid,
+        signature: blockerSignature,
+        threadId,
+        phase: "resolve",
+      })),
+    );
   const staleResidueClearedPatch =
-    args.resolveAfterReply && hasResolvedAllStaleConfiguredBotThreads({
-      record,
-      headSha: args.pr.headRefOid,
-      signature: blockerSignature,
-    })
+    resolvedCurrentReplyThreads
       ? {
           last_failure_context: null,
           last_failure_signature: null,
@@ -321,10 +399,6 @@ export async function recoverStaleConfiguredBotReviewThreads(args: {
     record: updatedRecord,
     replyCount,
     resolveCount,
-    shouldRefreshPullRequest: args.resolveAfterReply && hasResolvedAllStaleConfiguredBotThreads({
-      record: updatedRecord,
-      headSha: args.pr.headRefOid,
-      signature: blockerSignature,
-    }),
+    shouldRefreshPullRequest: resolvedCurrentReplyThreads,
   });
 }

@@ -225,6 +225,7 @@ const EXPECTED_FAMILY_FILES = {
     "agent-runner.ts",
     "artifact-test-helpers.ts",
     "codex-connector-diagnostics-presenter.ts",
+    "codex-connector-verified-stale-residue-selection.ts",
     "execution-metrics-aggregation.ts",
     "execution-metrics-debugging.ts",
     "execution-metrics-lifecycle.ts",
@@ -254,6 +255,7 @@ const EXPECTED_FAMILY_FILES = {
     "replay-corpus.ts",
     "review-bot-profile.ts",
     "review-bot-wait-windows.ts",
+    "review-thread-file-contents.ts",
     "stale-diagnostic-recoverability.ts",
     "stale-review-bot-classification-policy.ts",
     "stale-review-bot-diagnostics-presenter.ts",
@@ -300,6 +302,7 @@ const EXPECTED_FAMILY_FILES = {
     "supervisor-trust-gate.ts",
     "supervisor.ts",
     "tracked-pr-mismatch.ts",
+    "verified-stale-residue-review-thread.ts",
   ],
 } as const;
 

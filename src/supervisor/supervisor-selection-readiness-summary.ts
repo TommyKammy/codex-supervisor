@@ -40,6 +40,7 @@ import {
 } from "./supervisor-operator-events";
 import { codexConnectorReviewRequestAction } from "../codex-connector-review-request-decision";
 import { shouldSelectCodexConnectorValidReviewRepair } from "../codex-connector-valid-review-repair-selection";
+import { shouldSelectCodexConnectorVerifiedStaleResidueAutoResolve } from "./codex-connector-verified-stale-residue-selection";
 import { configuredBotReviewThreads, manualReviewThreads } from "../review-thread-reporting";
 import { mergeConflictDetected, summarizeChecks } from "./supervisor-reporting";
 
@@ -143,6 +144,36 @@ async function findCodexConnectorValidReviewRepairIssueNumbers(
   }
 
   return repairIssueNumbers;
+}
+
+async function findCodexConnectorVerifiedStaleResidueAutoResolveIssueNumbers(
+  github: SelectionWhyGitHub,
+  config: SupervisorConfig,
+  state: SupervisorStateFile,
+  candidateIssues: GitHubIssue[],
+): Promise<ReadonlySet<number>> {
+  const recoveryIssueNumbers = new Set<number>();
+  for (const issue of candidateIssues) {
+    if (
+      await shouldSelectCodexConnectorVerifiedStaleResidueAutoResolve({
+        config,
+        record: state.issues[String(issue.number)],
+        getPullRequestIfExists: github.getPullRequestIfExists
+          ? (prNumber, options) => github.getPullRequestIfExists!(prNumber, options)
+          : undefined,
+        getChecks: github.getChecks
+          ? (prNumber) => github.getChecks!(prNumber)
+          : undefined,
+        getUnresolvedReviewThreads: github.getUnresolvedReviewThreads
+          ? (prNumber) => github.getUnresolvedReviewThreads!(prNumber)
+          : undefined,
+      })
+    ) {
+      recoveryIssueNumbers.add(issue.number);
+    }
+  }
+
+  return recoveryIssueNumbers;
 }
 
 export interface SupervisorCandidateDiscoveryDto {
@@ -256,6 +287,13 @@ export async function buildReadinessSummary(
     state,
     candidateIssues,
   );
+  const verifiedStaleResidueAutoResolveIssueNumbers =
+    await findCodexConnectorVerifiedStaleResidueAutoResolveIssueNumbers(
+      github,
+      config,
+      state,
+      candidateIssues,
+    );
   return buildReadinessSummaryFromIssues(
     config,
     state,
@@ -265,6 +303,7 @@ export async function buildReadinessSummary(
     [],
     recoveryIssueNumbers,
     validReviewRepairIssueNumbers,
+    verifiedStaleResidueAutoResolveIssueNumbers,
   );
 }
 
@@ -297,6 +336,7 @@ function buildReadinessSummaryFromIssues(
   prefixedReadinessLines: string[] = [],
   codexConnectorReviewRequestRecoveryIssueNumbers: ReadonlySet<number> = new Set(),
   codexConnectorValidReviewRepairIssueNumbers: ReadonlySet<number> = new Set(),
+  codexConnectorVerifiedStaleResidueAutoResolveIssueNumbers: ReadonlySet<number> = new Set(),
 ): SupervisorReadinessSummaryDto {
   const runnableIssues: SupervisorRunnableIssueDto[] = [];
   const blockedIssues: SupervisorBlockedIssueDto[] = [];
@@ -360,6 +400,7 @@ function buildReadinessSummaryFromIssues(
       !isEligibleForSelection(existing, config) &&
       !codexConnectorReviewRequestRecoveryIssueNumbers.has(issue.number) &&
       !codexConnectorValidReviewRepairIssueNumbers.has(issue.number) &&
+      !codexConnectorVerifiedStaleResidueAutoResolveIssueNumbers.has(issue.number) &&
       !(isAutonomousExecutionTrustBlockedRecord(existing) && trustDecision.allowed)
     ) {
       blockedIssues.push({
@@ -486,6 +527,19 @@ export async function buildSelectionSummary(
       !isEligibleForSelection(existing, config) &&
       !(await shouldSelectCodexConnectorReviewRequestRecovery(github, config, existing)) &&
       !(await shouldSelectCodexConnectorValidReviewRepair({
+        config,
+        record: existing,
+        getPullRequestIfExists: github.getPullRequestIfExists
+          ? (prNumber, options) => github.getPullRequestIfExists!(prNumber, options)
+          : undefined,
+        getChecks: github.getChecks
+          ? (prNumber) => github.getChecks!(prNumber)
+          : undefined,
+        getUnresolvedReviewThreads: github.getUnresolvedReviewThreads
+          ? (prNumber) => github.getUnresolvedReviewThreads!(prNumber)
+          : undefined,
+      })) &&
+      !(await shouldSelectCodexConnectorVerifiedStaleResidueAutoResolve({
         config,
         record: existing,
         getPullRequestIfExists: github.getPullRequestIfExists

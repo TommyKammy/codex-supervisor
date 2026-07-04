@@ -8,6 +8,7 @@ import {
 import {
   buildStaleReviewBotRemediation,
   buildStaleReviewBotThreadDiagnostics,
+  shouldAutoResolveVerifiedStaleReviewResidue,
   VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET,
 } from "./stale-review-bot-remediation";
 import { STILL_VALID_REVIEW_THREAD_REPAIR_TARGET } from "../codex-connector-valid-review-repair";
@@ -3281,6 +3282,731 @@ test("buildStaleReviewBotRemediation does not trust clean comments after human r
 
   assert.equal(remediation?.classification, "unresolved_work");
   assert.equal(remediation?.missingProbeReason, null);
+});
+
+test("shouldAutoResolveVerifiedStaleReviewResidue rejects configured-bot threads with human latest replies", () => {
+  const headSha = "56e2d73eb2655c75d4c09f1a9517b7e8bc39ad6d";
+  const thread = createReviewThread({
+    id: "thread-human-latest-auto-resolve",
+    path: "scripts/evaluate_dataset.py",
+    line: 1593,
+    comments: {
+      nodes: [
+        {
+          id: "comment-human-latest-auto-resolve-codex",
+          body: "P2: Finding must not be auto-resolved after a human reply.",
+          createdAt: "2026-06-29T13:26:35Z",
+          url: "https://example.test/pr/137#discussion_human_latest_auto_resolve",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+        {
+          id: "comment-human-latest-auto-resolve-human",
+          body: "A human reviewer is still discussing this thread.",
+          createdAt: "2026-06-29T17:18:00Z",
+          url: "https://example.test/pr/137#discussion_human_latest_auto_resolve_followup",
+          author: {
+            login: "reviewer-human",
+            typeName: "User",
+          },
+        },
+      ],
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    verifiedNoSourceChangeReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    issue_number: 2397,
+    state: "blocked",
+    pr_number: 137,
+    last_head_sha: headSha,
+    blocked_reason: "stale_review_bot",
+  });
+  const pr = createPullRequest({
+    number: 137,
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+
+  assert.equal(
+    shouldAutoResolveVerifiedStaleReviewResidue({
+      config,
+      record,
+      pr,
+      checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      reviewThreads: [thread],
+      remediation: {
+        issueNumber: record.issue_number,
+        prNumber: pr.number,
+        reasonCode: "stale_review_bot",
+        currentHeadSha: headSha,
+        processedOnCurrentHead: "yes",
+        codeCiState: "green",
+        classification: "verified_no_source_change_pending_thread_resolution",
+        codexCurrentHeadReviewState: "observed",
+        reviewThreadUrl: "https://example.test/pr/137#discussion_human_latest_auto_resolve",
+        verificationEvidenceSummary: "verified_no_source_change",
+        missingProbeReason: null,
+        manualNextStep: "resolve_verified_no_source_change_configured_bot_threads_then_rerun_supervisor",
+        summary: "verified_no_source_change_configured_bot_thread_resolution_pending",
+      },
+    }),
+    false,
+  );
+});
+
+test("shouldAutoResolveVerifiedStaleReviewResidue requires unresolved configured-bot threads", () => {
+  const headSha = "56e2d73eb2655c75d4c09f1a9517b7e8bc39ad6d";
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    verifiedNoSourceChangeReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    issue_number: 2397,
+    state: "blocked",
+    pr_number: 137,
+    last_head_sha: headSha,
+    blocked_reason: "stale_review_bot",
+    last_failure_context: {
+      category: "manual",
+      summary: "stale configured-bot residue",
+      signature: "stalled-bot:thread-resolved-externally",
+      command: null,
+      details: [],
+      url: "https://example.test/pr/137#discussion_resolved_externally",
+      updated_at: "2026-06-29T17:18:00Z",
+    },
+  });
+  const pr = createPullRequest({
+    number: 137,
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+
+  assert.equal(
+    shouldAutoResolveVerifiedStaleReviewResidue({
+      config,
+      record,
+      pr,
+      checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      reviewThreads: [],
+      remediation: {
+        issueNumber: record.issue_number,
+        prNumber: pr.number,
+        reasonCode: "stale_review_bot",
+        currentHeadSha: headSha,
+        processedOnCurrentHead: "yes",
+        codeCiState: "green",
+        classification: "verified_no_source_change_pending_thread_resolution",
+        codexCurrentHeadReviewState: "observed",
+        reviewThreadUrl: "https://example.test/pr/137#discussion_resolved_externally",
+        verificationEvidenceSummary: "verified_no_source_change",
+        missingProbeReason: null,
+        manualNextStep: "resolve_verified_no_source_change_configured_bot_threads_then_rerun_supervisor",
+        summary: "verified_no_source_change_configured_bot_thread_resolution_pending",
+      },
+    }),
+    false,
+  );
+});
+
+test("shouldAutoResolveVerifiedStaleReviewResidue treats externally resolved signed siblings as cleared", () => {
+  const headSha = "56e2d73eb2655c75d4c09f1a9517b7e8bc39ad6d";
+  const remainingThread = createReviewThread({
+    id: "thread-still-unresolved",
+    path: "scripts/evaluate_dataset.py",
+    line: 1593,
+    comments: {
+      nodes: [
+        {
+          id: "comment-still-unresolved",
+          body: "P2: Remaining signed Codex thread still needs auto-resolve.",
+          createdAt: "2026-06-29T13:26:35Z",
+          url: "https://example.test/pr/137#discussion_still_unresolved",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    verifiedNoSourceChangeReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    issue_number: 2397,
+    state: "blocked",
+    pr_number: 137,
+    last_head_sha: headSha,
+    blocked_reason: "stale_review_bot",
+    last_failure_context: {
+      category: "manual",
+      summary: "stale configured-bot residue",
+      signature: "stalled-bot:thread-resolved-externally|stalled-bot:thread-still-unresolved",
+      command: null,
+      details: [],
+      url: "https://example.test/pr/137#discussion_still_unresolved",
+      updated_at: "2026-06-29T17:18:00Z",
+    },
+  });
+  const pr = createPullRequest({
+    number: 137,
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+
+  assert.equal(
+    shouldAutoResolveVerifiedStaleReviewResidue({
+      config,
+      record,
+      pr,
+      checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      reviewThreads: [remainingThread],
+      remediation: {
+        issueNumber: record.issue_number,
+        prNumber: pr.number,
+        reasonCode: "stale_review_bot",
+        currentHeadSha: headSha,
+        processedOnCurrentHead: "yes",
+        codeCiState: "green",
+        classification: "verified_no_source_change_pending_thread_resolution",
+        codexCurrentHeadReviewState: "observed",
+        reviewThreadUrl: "https://example.test/pr/137#discussion_still_unresolved",
+        verificationEvidenceSummary: "verified_no_source_change",
+        missingProbeReason: null,
+        manualNextStep: "resolve_verified_no_source_change_configured_bot_threads_then_rerun_supervisor",
+        summary: "verified_no_source_change_configured_bot_thread_resolution_pending",
+      },
+    }),
+    true,
+  );
+});
+
+test("shouldAutoResolveVerifiedStaleReviewResidue rejects records after blocked reason is cleared", () => {
+  const headSha = "56e2d73eb2655c75d4c09f1a9517b7e8bc39ad6d";
+  const thread = createReviewThread({
+    id: "thread-prepared-record",
+    path: "scripts/evaluate_dataset.py",
+    line: 1593,
+    comments: {
+      nodes: [
+        {
+          id: "comment-prepared-record",
+          body: "P2: Prepared records still need verified residue resolution.",
+          createdAt: "2026-06-29T13:26:35Z",
+          url: "https://example.test/pr/137#discussion_prepared_record",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    verifiedNoSourceChangeReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    issue_number: 2397,
+    state: "blocked",
+    pr_number: 137,
+    last_head_sha: headSha,
+    blocked_reason: null,
+    last_failure_context: {
+      category: "manual",
+      summary: "stale configured-bot residue",
+      signature: "stalled-bot:thread-prepared-record",
+      command: null,
+      details: [],
+      url: "https://example.test/pr/137#discussion_prepared_record",
+      updated_at: "2026-06-29T17:18:00Z",
+    },
+  });
+  const pr = createPullRequest({
+    number: 137,
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+
+  assert.equal(
+    shouldAutoResolveVerifiedStaleReviewResidue({
+      config,
+      record,
+      pr,
+      checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      reviewThreads: [thread],
+      remediation: {
+        issueNumber: record.issue_number,
+        prNumber: pr.number,
+        reasonCode: "stale_review_bot",
+        currentHeadSha: headSha,
+        processedOnCurrentHead: "yes",
+        codeCiState: "green",
+        classification: "verified_no_source_change_pending_thread_resolution",
+        codexCurrentHeadReviewState: "observed",
+        reviewThreadUrl: "https://example.test/pr/137#discussion_prepared_record",
+        verificationEvidenceSummary: "verified_no_source_change",
+        missingProbeReason: null,
+        manualNextStep: "resolve_verified_no_source_change_configured_bot_threads_then_rerun_supervisor",
+        summary: "verified_no_source_change_configured_bot_thread_resolution_pending",
+      },
+    }),
+    false,
+  );
+});
+
+test("shouldAutoResolveVerifiedStaleReviewResidue rejects non-Codex signed thread contexts", () => {
+  const headSha = "56e2d73eb2655c75d4c09f1a9517b7e8bc39ad6d";
+  const codexThread = createReviewThread({
+    id: "thread-codex-residue",
+    path: "scripts/evaluate_dataset.py",
+    line: 1593,
+    comments: {
+      nodes: [
+        {
+          id: "comment-codex-residue",
+          body: "P2: Remaining Codex residue has verified no-source evidence.",
+          createdAt: "2026-06-29T13:26:35Z",
+          url: "https://example.test/pr/137#discussion_codex_residue",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const nonCodexThread = createReviewThread({
+    id: "thread-coderabbit-residue",
+    path: "scripts/evaluate_dataset.py",
+    line: 1600,
+    comments: {
+      nodes: [
+        {
+          id: "comment-coderabbit-residue",
+          body: "Please address this separate configured-bot thread.",
+          createdAt: "2026-06-29T13:30:35Z",
+          url: "https://example.test/pr/137#discussion_coderabbit_residue",
+          author: {
+            login: "coderabbitai",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN, "coderabbitai"],
+    verifiedNoSourceChangeReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    issue_number: 2397,
+    state: "blocked",
+    pr_number: 137,
+    last_head_sha: headSha,
+    blocked_reason: "stale_review_bot",
+    last_failure_context: {
+      category: "manual",
+      summary: "stale configured-bot residue",
+      signature: "stalled-bot:thread-coderabbit-residue",
+      command: null,
+      details: [],
+      url: "https://example.test/pr/137#discussion_coderabbit_residue",
+      updated_at: "2026-06-29T17:18:00Z",
+    },
+  });
+  const pr = createPullRequest({
+    number: 137,
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+
+  assert.equal(
+    shouldAutoResolveVerifiedStaleReviewResidue({
+      config,
+      record,
+      pr,
+      checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      reviewThreads: [codexThread, nonCodexThread],
+      remediation: {
+        issueNumber: record.issue_number,
+        prNumber: pr.number,
+        reasonCode: "stale_review_bot",
+        currentHeadSha: headSha,
+        processedOnCurrentHead: "yes",
+        codeCiState: "green",
+        classification: "verified_no_source_change_pending_thread_resolution",
+        codexCurrentHeadReviewState: "observed",
+        reviewThreadUrl: "https://example.test/pr/137#discussion_codex_residue",
+        verificationEvidenceSummary: "verified_no_source_change",
+        missingProbeReason: null,
+        manualNextStep: "resolve_verified_no_source_change_configured_bot_threads_then_rerun_supervisor",
+        summary: "verified_no_source_change_configured_bot_thread_resolution_pending",
+      },
+    }),
+    false,
+  );
+});
+
+test("shouldAutoResolveVerifiedStaleReviewResidue rejects Codex threads with later configured-bot replies", () => {
+  const headSha = "56e2d73eb2655c75d4c09f1a9517b7e8bc39ad6d";
+  const thread = createReviewThread({
+    id: "thread-codex-then-coderabbit",
+    path: "scripts/evaluate_dataset.py",
+    line: 1593,
+    comments: {
+      nodes: [
+        {
+          id: "comment-codex-before-coderabbit",
+          body: "P2: Codex residue was verified on the current head.",
+          createdAt: "2026-06-29T13:26:35Z",
+          url: "https://example.test/pr/137#discussion_codex_then_coderabbit",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+        {
+          id: "comment-coderabbit-latest",
+          body: "This separate configured reviewer is now the latest blocker.",
+          createdAt: "2026-06-29T17:18:00Z",
+          url: "https://example.test/pr/137#discussion_codex_then_coderabbit_followup",
+          author: {
+            login: "coderabbitai",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN, "coderabbitai"],
+    verifiedNoSourceChangeReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    issue_number: 2397,
+    state: "blocked",
+    pr_number: 137,
+    last_head_sha: headSha,
+    blocked_reason: "stale_review_bot",
+    last_failure_context: {
+      category: "manual",
+      summary: "stale configured-bot residue",
+      signature: "stalled-bot:thread-codex-then-coderabbit",
+      command: null,
+      details: [],
+      url: "https://example.test/pr/137#discussion_codex_then_coderabbit",
+      updated_at: "2026-06-29T17:18:00Z",
+    },
+  });
+  const pr = createPullRequest({
+    number: 137,
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+
+  assert.equal(
+    shouldAutoResolveVerifiedStaleReviewResidue({
+      config,
+      record,
+      pr,
+      checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      reviewThreads: [thread],
+      remediation: {
+        issueNumber: record.issue_number,
+        prNumber: pr.number,
+        reasonCode: "stale_review_bot",
+        currentHeadSha: headSha,
+        processedOnCurrentHead: "yes",
+        codeCiState: "green",
+        classification: "verified_no_source_change_pending_thread_resolution",
+        codexCurrentHeadReviewState: "observed",
+        reviewThreadUrl: "https://example.test/pr/137#discussion_codex_then_coderabbit",
+        verificationEvidenceSummary: "verified_no_source_change",
+        missingProbeReason: null,
+        manualNextStep: "resolve_verified_no_source_change_configured_bot_threads_then_rerun_supervisor",
+        summary: "verified_no_source_change_configured_bot_thread_resolution_pending",
+      },
+    }),
+    false,
+  );
+});
+
+test("shouldAutoResolveVerifiedStaleReviewResidue requires every current signed configured thread to be recoverable", () => {
+  const headSha = "56e2d73eb2655c75d4c09f1a9517b7e8bc39ad6d";
+  const recoverableThread = createReviewThread({
+    id: "thread-recoverable-codex",
+    path: "scripts/evaluate_dataset.py",
+    line: 1593,
+    comments: {
+      nodes: [
+        {
+          id: "comment-recoverable-codex",
+          body: "P2: Codex residue was verified on the current head.",
+          createdAt: "2026-06-29T13:26:35Z",
+          url: "https://example.test/pr/137#discussion_recoverable_codex",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const nonRecoverableThread = createReviewThread({
+    id: "thread-nonrecoverable-human",
+    path: "scripts/evaluate_dataset.py",
+    line: 1600,
+    comments: {
+      nodes: [
+        {
+          id: "comment-nonrecoverable-codex",
+          body: "P2: Another Codex residue was verified on the current head.",
+          createdAt: "2026-06-29T13:26:35Z",
+          url: "https://example.test/pr/137#discussion_nonrecoverable_human",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+        {
+          id: "comment-nonrecoverable-human",
+          body: "A human reviewer is still discussing this thread.",
+          createdAt: "2026-06-29T17:18:00Z",
+          url: "https://example.test/pr/137#discussion_nonrecoverable_human_followup",
+          author: {
+            login: "reviewer-human",
+            typeName: "User",
+          },
+        },
+      ],
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    verifiedNoSourceChangeReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    issue_number: 2397,
+    state: "blocked",
+    pr_number: 137,
+    last_head_sha: headSha,
+    blocked_reason: "stale_review_bot",
+    last_failure_context: {
+      category: "manual",
+      summary: "stale configured-bot residue",
+      signature: "stalled-bot:thread-recoverable-codex|stalled-bot:thread-nonrecoverable-human",
+      command: null,
+      details: [],
+      url: "https://example.test/pr/137#discussion_recoverable_codex",
+      updated_at: "2026-06-29T17:18:00Z",
+    },
+  });
+  const pr = createPullRequest({
+    number: 137,
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+
+  assert.equal(
+    shouldAutoResolveVerifiedStaleReviewResidue({
+      config,
+      record,
+      pr,
+      checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      reviewThreads: [recoverableThread, nonRecoverableThread],
+      remediation: {
+        issueNumber: record.issue_number,
+        prNumber: pr.number,
+        reasonCode: "stale_review_bot",
+        currentHeadSha: headSha,
+        processedOnCurrentHead: "yes",
+        codeCiState: "green",
+        classification: "verified_no_source_change_pending_thread_resolution",
+        codexCurrentHeadReviewState: "observed",
+        reviewThreadUrl: "https://example.test/pr/137#discussion_recoverable_codex",
+        verificationEvidenceSummary: "verified_no_source_change",
+        missingProbeReason: null,
+        manualNextStep: "resolve_verified_no_source_change_configured_bot_threads_then_rerun_supervisor",
+        summary: "verified_no_source_change_configured_bot_thread_resolution_pending",
+      },
+    }),
+    false,
+  );
+});
+
+test("shouldAutoResolveVerifiedStaleReviewResidue accepts signed Codex threads with later supervisor replies", () => {
+  const headSha = "56e2d73eb2655c75d4c09f1a9517b7e8bc39ad6d";
+  const thread = createReviewThread({
+    id: "thread-codex-then-supervisor",
+    path: "scripts/evaluate_dataset.py",
+    line: 1593,
+    comments: {
+      nodes: [
+        {
+          id: "comment-codex-before-supervisor",
+          body: "P2: Codex residue was verified on the current head.",
+          createdAt: "2026-06-29T13:26:35Z",
+          url: "https://example.test/pr/137#discussion_codex_then_supervisor",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+        {
+          id: "comment-supervisor-latest",
+          body: [
+            `The supervisor reprocessed this configured-bot finding on the current head \`${headSha}\` and classified it as stale.`,
+            "",
+            `Audit: issue=#2397 pr=#137 head=${headSha} thread=thread-codex-then-supervisor reason=verified_no_source_change_auto_resolve.`,
+            "",
+            "Under the configured verified no-source-change auto-resolve opt-in, the supervisor is auto-resolving this thread now.",
+          ].join("\n"),
+          createdAt: "2026-06-29T17:18:00Z",
+          url: "https://example.test/pr/137#discussion_codex_then_supervisor_followup",
+          author: {
+            login: "TommyKammy",
+            typeName: "User",
+          },
+        },
+      ],
+    },
+  });
+  const config = createConfig({
+    repoSlug: "TommyKammy/codex-supervisor",
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN, "coderabbitai"],
+    verifiedNoSourceChangeReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    issue_number: 2397,
+    state: "blocked",
+    pr_number: 137,
+    last_head_sha: headSha,
+    blocked_reason: "stale_review_bot",
+    last_failure_context: {
+      category: "manual",
+      summary: "stale configured-bot residue",
+      signature: "stalled-bot:thread-codex-then-supervisor",
+      command: null,
+      details: [],
+      url: "https://example.test/pr/137#discussion_codex_then_supervisor",
+      updated_at: "2026-06-29T17:18:00Z",
+    },
+  });
+  const pr = createPullRequest({
+    number: 137,
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+
+  assert.equal(
+    shouldAutoResolveVerifiedStaleReviewResidue({
+      config,
+      record,
+      pr,
+      checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      reviewThreads: [thread],
+      remediation: {
+        issueNumber: record.issue_number,
+        prNumber: pr.number,
+        reasonCode: "stale_review_bot",
+        currentHeadSha: headSha,
+        processedOnCurrentHead: "yes",
+        codeCiState: "green",
+        classification: "verified_no_source_change_pending_thread_resolution",
+        codexCurrentHeadReviewState: "observed",
+        reviewThreadUrl: "https://example.test/pr/137#discussion_codex_then_supervisor",
+        verificationEvidenceSummary: "verified_no_source_change",
+        missingProbeReason: null,
+        manualNextStep: "resolve_verified_no_source_change_configured_bot_threads_then_rerun_supervisor",
+        summary: "verified_no_source_change_configured_bot_thread_resolution_pending",
+      },
+    }),
+    true,
+  );
+});
+
+test("shouldAutoResolveVerifiedStaleReviewResidue requires signed thread context", () => {
+  const headSha = "56e2d73eb2655c75d4c09f1a9517b7e8bc39ad6d";
+  const thread = createReviewThread({
+    id: "thread-missing-signed-context",
+    path: "scripts/evaluate_dataset.py",
+    line: 1593,
+    comments: {
+      nodes: [
+        {
+          id: "comment-missing-signed-context",
+          body: "P2: Finding must not auto-resolve without a signed thread context.",
+          createdAt: "2026-06-29T13:26:35Z",
+          url: "https://example.test/pr/137#discussion_missing_signed_context",
+          author: {
+            login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    verifiedNoSourceChangeReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    issue_number: 2397,
+    state: "blocked",
+    pr_number: 137,
+    last_head_sha: headSha,
+    blocked_reason: "stale_review_bot",
+    last_failure_context: null,
+    last_failure_signature: null,
+  });
+  const pr = createPullRequest({
+    number: 137,
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+
+  assert.equal(
+    shouldAutoResolveVerifiedStaleReviewResidue({
+      config,
+      record,
+      pr,
+      checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      reviewThreads: [thread],
+      remediation: {
+        issueNumber: record.issue_number,
+        prNumber: pr.number,
+        reasonCode: "stale_review_bot",
+        currentHeadSha: headSha,
+        processedOnCurrentHead: "yes",
+        codeCiState: "green",
+        classification: "verified_no_source_change_pending_thread_resolution",
+        codexCurrentHeadReviewState: "observed",
+        reviewThreadUrl: "https://example.test/pr/137#discussion_missing_signed_context",
+        verificationEvidenceSummary: "verified_no_source_change",
+        missingProbeReason: null,
+        manualNextStep: "resolve_verified_no_source_change_configured_bot_threads_then_rerun_supervisor",
+        summary: "verified_no_source_change_configured_bot_thread_resolution_pending",
+      },
+    }),
+    false,
+  );
 });
 
 test("buildStaleReviewBotRemediation does not trust clean comments before required pre-merge evaluation", () => {

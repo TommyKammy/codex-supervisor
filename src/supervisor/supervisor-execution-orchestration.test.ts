@@ -1897,6 +1897,7 @@ test("runPreparedIssue auto-handles stale Codex Connector conversation residue b
   const fixture = await createSupervisorFixture();
   fixture.config.sameFailureSignatureRepeatLimit = 3;
   fixture.config.reviewBotLogins = ["chatgpt-codex-connector"];
+  fixture.config.staleConfiguredBotReviewPolicy = "reply_and_resolve";
   fixture.config.verifiedNoSourceChangeReviewThreadAutoResolve = true;
   fixture.config.configuredBotInitialGraceWaitSeconds = 0;
   fixture.config.configuredBotSettledWaitSeconds = 0;
@@ -1924,7 +1925,8 @@ test("runPreparedIssue auto-handles stale Codex Connector conversation residue b
     updated_at: "2026-05-24T01:00:00Z",
   };
   const initialRecord = createTrackedSupervisorRecord(fixture.config, fixture.workspaceRoot, issueNumber, {
-    state: "addressing_review",
+    state: "blocked",
+    blocked_reason: "stale_review_bot",
     workspace: workspacePath,
     branch,
     pr_number: prNumber,
@@ -2660,8 +2662,10 @@ test("runPreparedIssue marks active stale Codex Connector residue successful bef
       "",
     ],
   });
+  fixture.config.repoSlug = "TommyKammy/codex-supervisor";
   fixture.config.sameFailureSignatureRepeatLimit = 3;
   fixture.config.reviewBotLogins = ["chatgpt-codex-connector"];
+  fixture.config.staleConfiguredBotReviewPolicy = "reply_and_resolve";
   fixture.config.verifiedNoSourceChangeReviewThreadAutoResolve = true;
   fixture.config.configuredBotInitialGraceWaitSeconds = 0;
   fixture.config.configuredBotSettledWaitSeconds = 0;
@@ -2693,7 +2697,8 @@ test("runPreparedIssue marks active stale Codex Connector residue successful bef
     updated_at: "2026-05-24T01:00:00Z",
   };
   const initialRecord = createTrackedSupervisorRecord(fixture.config, fixture.workspaceRoot, issueNumber, {
-    state: "addressing_review",
+    state: "blocked",
+    blocked_reason: "stale_review_bot",
     workspace: workspacePath,
     branch,
     pr_number: prNumber,
@@ -2926,6 +2931,7 @@ test("runPreparedIssue recovers blocked stale Codex Connector residue with parti
       "",
     ],
   });
+  fixture.config.repoSlug = "TommyKammy/codex-supervisor";
   fixture.config.sameFailureSignatureRepeatLimit = 3;
   fixture.config.reviewBotLogins = ["chatgpt-codex-connector"];
   fixture.config.verifiedNoSourceChangeReviewThreadAutoResolve = true;
@@ -3157,8 +3163,10 @@ test("runPreparedIssue records provider success for HRCore stale residue before 
       "",
     ],
   });
+  fixture.config.repoSlug = "TommyKammy/codex-supervisor";
   fixture.config.sameFailureSignatureRepeatLimit = 3;
   fixture.config.reviewBotLogins = ["chatgpt-codex-connector"];
+  fixture.config.staleConfiguredBotReviewPolicy = "reply_and_resolve";
   fixture.config.verifiedNoSourceChangeReviewThreadAutoResolve = true;
   fixture.config.configuredBotInitialGraceWaitSeconds = 0;
   fixture.config.configuredBotSettledWaitSeconds = 0;
@@ -3168,7 +3176,7 @@ test("runPreparedIssue records provider success for HRCore stale residue before 
   const branch = branchName(fixture.config, issueNumber);
   const { workspacePath, journalPath } = trackedIssuePaths(fixture.workspaceRoot, issueNumber);
   const threadIds = Array.from({ length: 7 }, (_value, index) => `PRRT_hrcore_183_${index + 1}`);
-  const staleSignature = threadIds.join("|");
+  const staleSignature = threadIds.map((threadId) => `stalled-bot:${threadId}`).join("|");
   const staleFailureContext = {
     category: "review" as const,
     summary: "7 unresolved automated review thread(s) remain.",
@@ -3182,7 +3190,8 @@ test("runPreparedIssue records provider success for HRCore stale residue before 
     updated_at: "2026-05-25T03:31:40.462Z",
   };
   const initialRecord = createTrackedSupervisorRecord(fixture.config, fixture.workspaceRoot, issueNumber, {
-    state: "addressing_review",
+    state: "blocked",
+    blocked_reason: "stale_review_bot",
     workspace: workspacePath,
     branch,
     pr_number: prNumber,

@@ -57,8 +57,12 @@ import {
   manualReviewThreads,
 } from "../review-thread-reporting";
 import { RecoveryEvent } from "../run-once-cycle-prelude";
-import { buildStaleReviewBotRemediation } from "./stale-review-bot-remediation";
+import {
+  buildStaleReviewBotRemediation,
+  shouldAutoResolveVerifiedStaleReviewResidue,
+} from "./stale-review-bot-remediation";
 import { hasResolvedAllStaleConfiguredBotThreads } from "./stale-review-bot-recovery";
+import { loadReviewThreadFileContents } from "./review-thread-file-contents";
 
 export interface PreparedIssueRunContext extends PreparedIssueExecutionContext {
   state: SupervisorStateFile;
@@ -175,6 +179,9 @@ function shouldTryVerifiedStaleConfiguredBotAutoResolveBeforeRepeatStop(args: {
     return false;
   }
   return (
+    ((remediation.classification === "metadata_only" ||
+      remediation.classification === "metadata_only_current_head_converged") &&
+      args.config.staleConfiguredBotReviewPolicy === "reply_and_resolve") ||
     (remediation.classification === "verified_no_source_change_pending_thread_resolution" &&
       args.config.verifiedNoSourceChangeReviewThreadAutoResolve === true) ||
     (remediation.classification === "verified_current_head_repair_pending_thread_resolution" &&
@@ -207,6 +214,26 @@ function didAutoResolveStaleConfiguredBotBeforeRepeatStop(args: {
       headSha: args.pr.headRefOid,
       signature,
     })
+  );
+}
+
+export function hasCompletedVerifiedStaleResidueAutoResolve(args: {
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+}): boolean {
+  const signature = args.record.last_stale_review_bot_reply_signature;
+  if (!signature || args.record.last_stale_review_bot_reply_head_sha !== args.pr.headRefOid) {
+    return false;
+  }
+  if (args.record.last_failure_context === null && args.record.last_failure_signature === null) {
+    return true;
+  }
+  return Boolean(
+    hasResolvedAllStaleConfiguredBotThreads({
+      record: args.record,
+      headSha: args.pr.headRefOid,
+      signature,
+    }),
   );
 }
 
@@ -244,6 +271,7 @@ export async function runPreparedIssueFlow(
   let skipCodexAfterPreStopStaleConfiguredBotAutoResolve = false;
 
   if (pr) {
+    const recordBeforePullRequestLifecycle = record;
     const lifecycle = derivePullRequestLifecycleSnapshot(config, record, pr, checks, reviewThreads);
     const localReviewRepairSummary =
       lifecycle.nextState === "local_review_fix"
@@ -328,13 +356,12 @@ export async function runPreparedIssueFlow(
     if (effectiveFailureContext && (repeatedFailureSignatureStop || trackedPrReviewFailureStop)) {
       let handledStaleConfiguredBotResidueBeforeRepeatStop = false;
       const staleConfiguredBotRecoveryRecord = staleConfiguredBotRepeatStopRecoveryRecord({
-        record,
+        record: recordBeforePullRequestLifecycle,
         failureContext: effectiveFailureContext,
       });
       if (
         !options.dryRun &&
-        trackedPrRepeatFailureDisposition.shouldStop &&
-        trackedPrReviewFailureStop &&
+        (repeatedFailureSignatureStop || trackedPrReviewFailureStop) &&
         staleConfiguredBotRecoveryRecord !== null &&
         shouldTryVerifiedStaleConfiguredBotAutoResolveBeforeRepeatStop({
           config,
@@ -472,6 +499,69 @@ export async function runPreparedIssueFlow(
         await syncJournal(record);
         return prependRecoveryLog(
           `Issue #${record.issue_number} stopped after repeated identical failure signatures.`,
+          recoveryLog,
+        );
+      }
+    }
+    const verifiedStaleResidueFileContents = await loadReviewThreadFileContents({
+      defaultBranch: config.defaultBranch,
+      expectedHeadSha: pr.headRefOid,
+      branch: recordBeforePullRequestLifecycle.branch,
+      workspacePath,
+      issueJournalRelativePath: config.issueJournalRelativePath,
+      reviewThreads,
+    });
+    const verifiedStaleResidueRemediation = buildStaleReviewBotRemediation({
+      config,
+      record: recordBeforePullRequestLifecycle,
+      pr,
+      checks,
+      reviewThreads,
+      repositoryFileContents: verifiedStaleResidueFileContents,
+    });
+    const verifiedStaleResidueFailureContext = recordBeforePullRequestLifecycle.last_failure_context;
+    if (
+      !options.dryRun &&
+      !skipCodexAfterPreStopStaleConfiguredBotAutoResolve &&
+      verifiedStaleResidueFailureContext &&
+      shouldAutoResolveVerifiedStaleReviewResidue({
+        config,
+        record: recordBeforePullRequestLifecycle,
+        pr,
+        checks,
+        reviewThreads,
+        remediation: verifiedStaleResidueRemediation,
+      })
+    ) {
+      record = await syncTrackedPrPersistentStatusComment({
+        github,
+        stateStore,
+        state,
+        record: recordBeforePullRequestLifecycle,
+        pr,
+        checks,
+        reviewThreads,
+        syncJournal,
+        config,
+        failureContext: verifiedStaleResidueFailureContext,
+        summarizeChecks,
+        manualReviewThreadCount: manualReviewThreads(config, reviewThreads).length,
+        workspacePath,
+      });
+      if (hasCompletedVerifiedStaleResidueAutoResolve({ record, pr })) {
+        record = stateStore.touch(record, {
+          state: "pr_open",
+          blocked_reason: null,
+          last_error: null,
+          last_failure_kind: null,
+        });
+        skipCodexAfterPreStopStaleConfiguredBotAutoResolve = true;
+      } else {
+        state.issues[String(record.issue_number)] = record;
+        await stateStore.save(state);
+        await syncJournal(record);
+        return prependRecoveryLog(
+          `Issue #${record.issue_number} remains blocked; verified stale review residue auto-resolve did not complete.`,
           recoveryLog,
         );
       }

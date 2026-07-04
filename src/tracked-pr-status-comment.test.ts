@@ -260,6 +260,103 @@ test("handleStaleConfiguredBotReviewRemediation owns reply_only recovery decisio
   assert.equal(saveCalls, 2);
 });
 
+test("handleStaleConfiguredBotReviewRemediation keeps conversation-resolution recovery provider-neutral", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["coderabbitai"],
+    staleConfiguredBotReviewPolicy: "reply_and_resolve",
+    verifiedNoSourceChangeReviewThreadAutoResolve: true,
+  });
+  const pr = createPullRequest({
+    number: 117,
+    headRefOid: "head-117",
+    isDraft: false,
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+  });
+  const failureContext = {
+    category: "blocked" as const,
+    summary: "Required conversation resolution is blocking merge.",
+    signature: "stalled-bot:thread-coderabbit",
+    command: null,
+    details: ["reviewer=coderabbitai file=src/file.ts line=12 processed_on_current_head=yes"],
+    url: "https://example.test/pr/117#discussion_coderabbit",
+    updated_at: "2026-05-26T00:00:00Z",
+  };
+  const record = createRecord({
+    issue_number: 103,
+    pr_number: pr.number,
+    state: "pr_open",
+    last_head_sha: pr.headRefOid,
+    provider_success_head_sha: pr.headRefOid,
+    provider_success_observed_at: "2026-05-26T00:00:00Z",
+  });
+  const state = createSupervisorState({ issues: [record] });
+  const replyCalls: Array<{ threadId: string; body: string }> = [];
+  const resolveCalls: string[] = [];
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return {
+        ...current,
+        ...patch,
+        updated_at: "2026-05-26T00:01:00Z",
+      };
+    },
+    async save(nextState: SupervisorStateFile): Promise<void> {
+      assert.equal(nextState.issues[String(record.issue_number)]?.issue_number, record.issue_number);
+    },
+  };
+
+  const result = await handleStaleConfiguredBotReviewRemediation({
+    github: {
+      replyToReviewThread: async (threadId: string, body: string) => {
+        replyCalls.push({ threadId, body });
+      },
+      resolveReviewThread: async (threadId: string) => {
+        resolveCalls.push(threadId);
+      },
+    },
+    stateStore,
+    state,
+    record,
+    pr,
+    checks: [{ name: "verify-pre-pr", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [
+      createReviewThread({
+        id: "thread-coderabbit",
+        isOutdated: true,
+        comments: {
+          nodes: [
+            {
+              id: "comment-coderabbit",
+              body: "CodeRabbit finding is stale on the current head.",
+              createdAt: "2026-05-26T00:00:00Z",
+              url: "https://example.test/pr/117#discussion_coderabbit",
+              author: {
+                login: "coderabbitai",
+                typeName: "Bot",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+    syncJournal: async () => undefined,
+    config,
+    failureContext: null,
+    manualReviewThreadCount: 0,
+    statusCommentAvailable: true,
+    summarizeChecks: () => ({ hasPending: false, hasFailing: false }),
+    skipAutoHandleStaleConfiguredBotReview: false,
+    conversationResolutionBlocker: { failureContext },
+  });
+
+  assert.equal(result.handled, true);
+  assert.deepEqual(resolveCalls, ["thread-coderabbit"]);
+  assert.equal(replyCalls[0]?.threadId, "thread-coderabbit");
+  assert.match(replyCalls[0]?.body ?? "", /reason=stale_review_bot/);
+  assert.doesNotMatch(replyCalls[0]?.body ?? "", /reason=verified_no_source_change_auto_resolve/);
+});
+
 test("syncTrackedPrPersistentStatusComment preserves conversation-resolution blocker comment body", async () => {
   const config = createConfig({
     reviewBotLogins: ["chatgpt-codex-connector"],
