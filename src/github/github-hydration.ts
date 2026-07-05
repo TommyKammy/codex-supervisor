@@ -50,6 +50,9 @@ export interface PullRequestCopilotReviewLifecycleResponse {
     } | null>;
   } | null;
   comments?: {
+    pageInfo?: {
+      hasPreviousPage?: boolean | null;
+    } | null;
     nodes?: Array<{
       id?: string | null;
       databaseId?: number | null;
@@ -372,6 +375,9 @@ export function applyConfiguredBotReviewSummary(
     configuredBotDraftSkipAt: summary?.draftSkipAt ?? null,
     configuredBotTopLevelReviewStrength: summary?.topLevelReview.strength ?? null,
     configuredBotTopLevelReviewSubmittedAt: summary?.topLevelReview.submittedAt ?? null,
+    configuredBotTopLevelReviewFindingCount: summary?.topLevelReview.findingCount ?? null,
+    configuredBotTopLevelReviewHighestSeverity: summary?.topLevelReview.highestSeverity ?? null,
+    configuredBotTopLevelReviewFindings: summary?.topLevelReview.findings ?? null,
     configuredBotOnlyChangesRequestedReview: summary?.topLevelReview.configuredBotOnlyChangesRequestedReview ?? null,
   };
 }

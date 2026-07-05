@@ -1,4 +1,5 @@
 import type { GitHubPullRequest, IssueRunRecord, PullRequestCheck } from "./core/types";
+import { codexConnectorMustFixTopLevelReviewFindings } from "./codex-connector-top-level-review";
 import { summarizeChecks } from "./supervisor/supervisor-status-rendering";
 
 export function firstPassingCheckEvidence(checks: PullRequestCheck[]): string | null {
@@ -25,6 +26,7 @@ export function currentHeadConfiguredBotEvidence(
     | "configuredBotCurrentHeadObservedAt"
     | "configuredBotCurrentHeadStatusState"
     | "configuredBotTopLevelReviewStrength"
+    | "configuredBotTopLevelReviewFindings"
   >,
 ): string | null {
   if (!pr.configuredBotCurrentHeadObservedAt) {
@@ -37,9 +39,10 @@ export function currentHeadConfiguredBotEvidence(
     statusState === "pass" ||
     statusState === "passed";
   const topLevelPassed =
-    pr.configuredBotTopLevelReviewStrength === null ||
-    pr.configuredBotTopLevelReviewStrength === undefined ||
-    pr.configuredBotTopLevelReviewStrength === "nitpick_only";
+    codexConnectorMustFixTopLevelReviewFindings(pr.configuredBotTopLevelReviewFindings ?? []).length === 0 &&
+    (pr.configuredBotTopLevelReviewStrength === null ||
+      pr.configuredBotTopLevelReviewStrength === undefined ||
+      pr.configuredBotTopLevelReviewStrength === "nitpick_only");
 
   if (!statusPassed && !topLevelPassed) {
     return null;
@@ -55,6 +58,7 @@ export function trackedHandoffExternalProgressEvidence(args: {
     | "configuredBotCurrentHeadObservedAt"
     | "configuredBotCurrentHeadStatusState"
     | "configuredBotTopLevelReviewStrength"
+    | "configuredBotTopLevelReviewFindings"
     | "headRefOid"
   >;
   checks: PullRequestCheck[];

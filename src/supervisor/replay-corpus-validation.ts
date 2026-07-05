@@ -71,6 +71,7 @@ const TIMELINE_ARTIFACT_GATES = [
 const TIMELINE_ARTIFACT_OUTCOMES = ["passed", "failed", "not_configured", "repair_queued"] as const;
 const COPILOT_REVIEW_STATES = ["not_requested", "requested", "arrived"] as const;
 const CONFIGURED_BOT_TOP_LEVEL_REVIEW_STRENGTHS = ["nitpick_only", "blocking"] as const;
+const CODEX_CONNECTOR_P_SEVERITIES = ["P0", "P1", "P2", "P3"] as const;
 const TRACKED_PR_REPEAT_FAILURE_DECISIONS = ["retry_on_progress", "stop_no_progress"] as const;
 
 export function validationError(message: string): Error {
@@ -653,6 +654,27 @@ function validateReviewThread(
   };
 }
 
+function validateTopLevelReviewFinding(raw: unknown, context: string) {
+  const finding = expectObject(raw, context);
+  return {
+    id: expectString(finding.id, `${context} id`),
+    commentId: expectNullableString(finding.commentId, `${context} commentId`),
+    commentDatabaseId: expectNullableInteger(finding.commentDatabaseId, `${context} commentDatabaseId`),
+    commentCreatedAt: expectString(finding.commentCreatedAt, `${context} commentCreatedAt`),
+    commentUrl: expectNullableString(finding.commentUrl, `${context} commentUrl`),
+    sourceUrl: expectString(finding.sourceUrl, `${context} sourceUrl`),
+    path: expectString(finding.path, `${context} path`),
+    line: expectInteger(finding.line, `${context} line`),
+    lineEnd: expectInteger(finding.lineEnd, `${context} lineEnd`),
+    headSha: expectString(finding.headSha, `${context} headSha`),
+    severity: expectEnum(finding.severity, `${context} severity`, CODEX_CONNECTOR_P_SEVERITIES),
+    title: expectString(finding.title, `${context} title`),
+    body: expectStringValue(finding.body, `${context} body`),
+    authorLogin: expectString(finding.authorLogin, `${context} authorLogin`),
+    fingerprint: expectString(finding.fingerprint, `${context} fingerprint`),
+  };
+}
+
 function validatePullRequest(raw: unknown, context: string): ReplayCorpusInputSnapshot["github"]["pullRequest"] {
   if (raw === null) {
     return null;
@@ -718,6 +740,29 @@ function validatePullRequest(raw: unknown, context: string): ReplayCorpusInputSn
       pullRequest.configuredBotTopLevelReviewSubmittedAt,
       `${context} configuredBotTopLevelReviewSubmittedAt`,
     ),
+    configuredBotTopLevelReviewFindingCount:
+      pullRequest.configuredBotTopLevelReviewFindingCount === undefined
+        ? undefined
+        : expectNullableInteger(
+            pullRequest.configuredBotTopLevelReviewFindingCount,
+            `${context} configuredBotTopLevelReviewFindingCount`,
+          ),
+    configuredBotTopLevelReviewHighestSeverity: expectOptionalNullableEnum(
+      pullRequest.configuredBotTopLevelReviewHighestSeverity,
+      `${context} configuredBotTopLevelReviewHighestSeverity`,
+      CODEX_CONNECTOR_P_SEVERITIES,
+    ),
+    configuredBotTopLevelReviewFindings:
+      pullRequest.configuredBotTopLevelReviewFindings === undefined
+        ? undefined
+        : pullRequest.configuredBotTopLevelReviewFindings === null
+          ? null
+          : expectArray(
+              pullRequest.configuredBotTopLevelReviewFindings,
+              `${context} configuredBotTopLevelReviewFindings`,
+            ).map((finding, index) =>
+              validateTopLevelReviewFinding(finding, `${context} configuredBotTopLevelReviewFindings[${index}]`),
+            ),
     mergedAt: expectOptionalNullableString(pullRequest.mergedAt, `${context} mergedAt`),
   };
 }

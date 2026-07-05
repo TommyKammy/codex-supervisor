@@ -26,6 +26,10 @@ import {
   codexConnectorMustFixReviewThreads,
   latestCodexConnectorReviewCommentFingerprint,
 } from "./codex-connector-review-policy";
+import {
+  codexConnectorMustFixTopLevelReviewFindings,
+  codexConnectorTopLevelReviewFindingRetryTarget,
+} from "./codex-connector-top-level-review";
 import { codexConnectorStillValidReviewRepairThreads } from "./codex-connector-valid-review-repair";
 import {
   actionableConfiguredBotReviewThreads,
@@ -426,7 +430,7 @@ export function nextProcessedReviewThreadPatch(args: {
     IssueRunRecord,
     "processed_review_thread_ids" | "processed_review_thread_fingerprints" | "review_loop_retry_state"
   >;
-  currentPr: Pick<GitHubPullRequest, "number" | "headRefOid"> | null;
+  currentPr: Pick<GitHubPullRequest, "number" | "headRefOid" | "configuredBotTopLevelReviewFindings"> | null;
   evaluatedReviewHeadSha: string;
   reviewThreadsToProcess: ReviewThread[];
   persistVerifiedNoSourceChangeCurrentHead?: boolean;
@@ -474,6 +478,12 @@ export function nextProcessedReviewThreadPatch(args: {
     args.reviewThreadsToProcess,
   ).filter((thread) => !thread.isResolved && !thread.isOutdated);
   const codexMustFixThreadsToTrack = codexConnectorMustFixReviewThreads(unresolvedConfiguredThreadsToProcess);
+  const codexMustFixTopLevelFindingTargetsToTrack =
+    args.currentPr && args.currentPr.headRefOid === args.evaluatedReviewHeadSha
+      ? codexConnectorMustFixTopLevelReviewFindings(args.currentPr.configuredBotTopLevelReviewFindings ?? []).map(
+          codexConnectorTopLevelReviewFindingRetryTarget,
+        )
+      : [];
   const retryThreadsToTrack = uniqueReviewThreadsInOrder(
     unresolvedConfiguredThreadsToProcess,
     new Set([...actionableThreadsToTrack, ...codexMustFixThreadsToTrack].map((thread) => thread.id)),
@@ -483,18 +493,28 @@ export function nextProcessedReviewThreadPatch(args: {
     args.preRunState === "addressing_review" &&
     args.currentPr &&
     args.currentPr.headRefOid === args.evaluatedReviewHeadSha
-      ? retryThreadsToTrack.reduce(
-            (state, thread) =>
+      ? codexMustFixTopLevelFindingTargetsToTrack
+          .reduce(
+            (state, target) =>
               nextReviewLoopRetryStateForThread({
                 record: { review_loop_retry_state: state },
                 pr: args.currentPr!,
-                thread,
+                thread: target,
                 attemptedAt: args.attemptedAt ?? new Date().toISOString(),
-                latestCommentFingerprintOverride: codexMustFixThreadIdsToTrack.has(thread.id)
-                  ? latestCodexConnectorReviewCommentFingerprint(thread)
-                  : undefined,
               }),
-            args.record.review_loop_retry_state ?? [],
+            retryThreadsToTrack.reduce(
+              (state, thread) =>
+                nextReviewLoopRetryStateForThread({
+                  record: { review_loop_retry_state: state },
+                  pr: args.currentPr!,
+                  thread,
+                  attemptedAt: args.attemptedAt ?? new Date().toISOString(),
+                  latestCommentFingerprintOverride: codexMustFixThreadIdsToTrack.has(thread.id)
+                    ? latestCodexConnectorReviewCommentFingerprint(thread)
+                    : undefined,
+                }),
+              args.record.review_loop_retry_state ?? [],
+            ),
           )
           .slice(-200)
       : args.record.review_loop_retry_state ?? [];

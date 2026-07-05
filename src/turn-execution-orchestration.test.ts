@@ -179,6 +179,58 @@ test("nextProcessedReviewThreadPatch records Codex must-fix retries when a later
   ]);
 });
 
+test("nextProcessedReviewThreadPatch records top-level Codex finding retry attempts", () => {
+  const patch = nextProcessedReviewThreadPatch({
+    config: createConfig({ reviewBotLogins: ["chatgpt-codex-connector"] }),
+    preRunState: "addressing_review",
+    record: {
+      processed_review_thread_ids: [],
+      processed_review_thread_fingerprints: [],
+      review_loop_retry_state: [],
+    },
+    currentPr: createPullRequest({
+      number: 2270,
+      headRefOid: "head-a",
+      configuredBotTopLevelReviewFindings: [
+        {
+          id: "IC_kw:finding:1",
+          commentId: "IC_kw",
+          commentDatabaseId: 4884683854,
+          commentCreatedAt: "2026-07-05T03:19:37Z",
+          commentUrl: "https://example.test/pr/2270#issuecomment-4884683854",
+          sourceUrl: "https://example.test/blob/head-a/src/top-level.ts#L14-L15",
+          path: "src/top-level.ts",
+          line: 14,
+          lineEnd: 15,
+          headSha: "head-a",
+          severity: "P2",
+          title: "Keep the top-level finding under retry budget",
+          body: "A top-level Codex finding without a review thread should not retry forever.",
+          authorLogin: "chatgpt-codex-connector",
+          fingerprint: "IC_kw|head-a|src/top-level.ts|14|P2|retry",
+        },
+      ],
+    }),
+    evaluatedReviewHeadSha: "head-a",
+    attemptedAt: "2026-07-05T03:21:00Z",
+    reviewThreadsToProcess: [],
+  });
+
+  assert.deepEqual(patch.review_loop_retry_state, [
+    {
+      fingerprint:
+        "pr=2270|head=head-a|thread=codex-top-level-finding:IC_kw:finding:1|comment=IC_kw|head-a|src/top-level.ts|14|P2|retry",
+      pr_number: 2270,
+      head_sha: "head-a",
+      thread_id: "codex-top-level-finding:IC_kw:finding:1",
+      latest_comment_fingerprint: "IC_kw|head-a|src/top-level.ts|14|P2|retry",
+      attempts: 1,
+      first_attempted_at: "2026-07-05T03:21:00Z",
+      last_attempted_at: "2026-07-05T03:21:00Z",
+    },
+  ]);
+});
+
 test("nextProcessedReviewThreadPatch persists local-review no-change current-head verification evidence", () => {
   const headSha = "7a77d998712882166f79c3710dd4c567da6da779";
   const reviewThreads = [

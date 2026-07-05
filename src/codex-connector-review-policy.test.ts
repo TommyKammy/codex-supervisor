@@ -73,6 +73,86 @@ test("Codex Connector policy classifies must-fix, nitpick, and stale review comm
   });
 });
 
+test("Codex Connector convergence treats top-level Codex Review comment findings as must-fix", () => {
+  const config = createConfig({ reviewBotLogins: ["chatgpt-codex-connector"] });
+  const result = evaluateCodexConnectorConvergencePolicy(
+    config,
+    {
+      configuredBotCurrentHeadObservedAt: null,
+      configuredBotTopLevelReviewFindings: [
+        {
+          id: "IC_kw:finding:1",
+          commentId: "IC_kw",
+          commentDatabaseId: 4884683854,
+          commentCreatedAt: "2026-07-05T03:19:37Z",
+          commentUrl: "https://example.test/pr/219#issuecomment-4884683854",
+          sourceUrl: "https://example.test/blob/head-sha/datasets/poc_evaluation_manifest_v1.json#L139-L140",
+          path: "datasets/poc_evaluation_manifest_v1.json",
+          line: 139,
+          lineEnd: 140,
+          headSha: "head-sha",
+          severity: "P2",
+          title: "Link the text-PDF sample to a PDF fixture",
+          body: "The sample resolves to parser-output JSON instead of a real PDF upload.",
+          authorLogin: "chatgpt-codex-connector",
+          fingerprint: "IC_kw|head-sha|datasets/poc_evaluation_manifest_v1.json|139|P2|link",
+        },
+      ],
+    },
+    [],
+  );
+
+  assert.equal(result?.outcome, "must_fix_remaining");
+  assert.equal(result?.mergeEffect, "blocked");
+  assert.equal(result?.findingCount, 1);
+  assert.equal(result?.highestSeverity, "P2");
+});
+
+test("Codex Connector policy block reports top-level finding location when it owns the highest severity", () => {
+  const config = createConfig({ reviewBotLogins: ["chatgpt-codex-connector"] });
+  const p2Thread = codexThread({
+    id: "thread-p2",
+    path: "src/thread-target.ts",
+    line: 88,
+    body: "P2: Preserve failed restore cleanup as a blocking verification failure.",
+  });
+
+  assert.deepEqual(
+    buildCodexConnectorPolicyBlockDiagnostic(config, [p2Thread], {
+      headRefOid: "head-sha",
+      configuredBotCurrentHeadObservedAt: "2026-07-05T03:19:37Z",
+      configuredBotLatestReviewedCommitSha: "head-sha",
+      configuredBotTopLevelReviewFindings: [
+        {
+          id: "IC_kw:finding:1",
+          commentId: "IC_kw",
+          commentDatabaseId: 4884683854,
+          commentCreatedAt: "2026-07-05T03:19:37Z",
+          commentUrl: "https://example.test/pr/219#issuecomment-4884683854",
+          sourceUrl: "https://example.test/blob/head-sha/src/top-level-target.ts#L12-L13",
+          path: "src/top-level-target.ts",
+          line: 12,
+          lineEnd: 13,
+          headSha: "head-sha",
+          severity: "P0",
+          title: "Do not drop persisted review findings",
+          body: "This can drop blocking findings from replayed decisions.",
+          authorLogin: "chatgpt-codex-connector",
+          fingerprint: "IC_kw|head-sha|src/top-level-target.ts|12|P0|drop",
+        },
+      ],
+    }),
+    {
+      count: 2,
+      severity: "P0",
+      file: "src/top-level-target.ts",
+      line: "12-13",
+      threadUrl: "https://example.test/blob/head-sha/src/top-level-target.ts#L12-L13",
+      nextAction: "fix_on_new_head_or_wait_for_github_thread_resolution_or_use_explicit_manual_operator_path",
+    },
+  );
+});
+
 test("review policy input snapshots provider, PR, thread vocabulary, and processed evidence", () => {
   const config = createConfig({ reviewBotLogins: ["chatgpt-codex-connector"] });
   const p2Thread = codexThread({

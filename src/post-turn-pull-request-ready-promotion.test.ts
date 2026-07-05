@@ -187,6 +187,84 @@ test("handlePostTurnPullRequestTransitionsPhase refreshes PR state after marking
   assert.equal(syncJournalCalls, 3);
 });
 
+test("handlePostTurnPullRequestTransitionsPhase keeps draft PRs blocked by top-level Codex findings out of ready promotion", async () => {
+  const config = createConfig({ reviewBotLogins: ["chatgpt-codex-connector"] });
+  const issue = createIssue({ title: "Gate ready promotion on top-level Codex findings" });
+  const draftPr = createPullRequest({
+    title: "Top-level Codex finding gate",
+    isDraft: true,
+    headRefOid: "head-116",
+    configuredBotTopLevelReviewFindings: [
+      {
+        id: "IC_kw:finding:1",
+        commentId: "IC_kw",
+        commentDatabaseId: 4884683854,
+        commentCreatedAt: "2026-07-05T03:19:37Z",
+        commentUrl: "https://example.test/pr/116#issuecomment-4884683854",
+        sourceUrl: "https://example.test/blob/head-116/src/file.ts#L12",
+        path: "src/file.ts",
+        line: 12,
+        lineEnd: 12,
+        headSha: "head-116",
+        severity: "P2",
+        title: "Block ready promotion",
+        body: "Top-level Codex findings should block the same post-turn gates as review threads.",
+        authorLogin: "chatgpt-codex-connector",
+        fingerprint: "IC_kw|head-116|src/file.ts|12|P2|block",
+      },
+    ],
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: {
+      "102": createRecord({
+        state: "draft_pr",
+        pr_number: 116,
+        last_head_sha: "head-116",
+      }),
+    },
+  };
+  let readyCalls = 0;
+
+  const result = await handlePostTurnPullRequestTransitionsPhase({
+    config,
+    stateStore: createNoopStateStore(),
+    github: createDefaultGithub({
+      markPullRequestReady: async () => {
+        readyCalls += 1;
+      },
+    }),
+    context: {
+      state,
+      record: state.issues["102"]!,
+      issue,
+      workspacePath: "/tmp/workspace",
+      syncJournal: async () => undefined,
+      memoryArtifacts: TEST_MEMORY_ARTIFACTS,
+      pr: draftPr,
+      options: { dryRun: false },
+    },
+    derivePullRequestLifecycleSnapshot: (record) => createLifecycleSnapshot(record, "draft_pr"),
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    blockedReasonFromReviewState: () => null,
+    summarizeChecks,
+    configuredBotReviewThreads,
+    manualReviewThreads,
+    mergeConflictDetected: () => false,
+    loadOpenPullRequestSnapshot: async () => ({
+      pr: draftPr,
+      checks: [{ name: "build", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      reviewThreads: [],
+    }),
+  });
+
+  assert.equal(readyCalls, 0);
+  assert.equal(result.pr.isDraft, true);
+});
+
 test("handlePostTurnPullRequestTransitionsPhase clears stale ready-promotion blockers when refreshed state is waiting_ci", async (t) => {
   const { workspacePath, headSha } = await createTrackedIssueBranchRepo();
   t.after(async () => {

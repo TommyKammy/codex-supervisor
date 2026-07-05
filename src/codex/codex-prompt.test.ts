@@ -1637,6 +1637,65 @@ test("buildCodexConnectorReviewGuidance directly renders clustered churn as spec
   assert.deepEqual(labels, ["Codex Connector clustered root-cause repair"]);
 });
 
+test("buildCodexPrompt renders top-level Codex Review comment findings as must-fix repair targets", () => {
+  const pr = createPullRequest({
+    number: 219,
+    headRefOid: "b0642d776275b58f3d2918fa1a48cb522d6f21ce",
+    configuredBotTopLevelReviewStrength: "blocking",
+    configuredBotTopLevelReviewFindingCount: 1,
+    configuredBotTopLevelReviewHighestSeverity: "P2",
+    configuredBotTopLevelReviewFindings: [
+      {
+        id: "IC_kw:finding:1",
+        commentId: "IC_kw",
+        commentDatabaseId: 4884683854,
+        commentCreatedAt: "2026-07-05T03:19:37Z",
+        commentUrl: "https://example.test/pr/219#issuecomment-4884683854",
+        sourceUrl:
+          "https://github.com/TommyKammy/VeriDoc/blob/b0642d776275b58f3d2918fa1a48cb522d6f21ce/datasets/poc_evaluation_manifest_v1.json#L139-L140",
+        path: "datasets/poc_evaluation_manifest_v1.json",
+        line: 139,
+        lineEnd: 140,
+        headSha: "b0642d776275b58f3d2918fa1a48cb522d6f21ce",
+        severity: "P2",
+        title: "Link the text-PDF sample to a PDF fixture",
+        body: "The sample resolves to parser-output JSON instead of a real PDF upload, so PDF parsing coverage is lost.",
+        authorLogin: "chatgpt-codex-connector",
+        fingerprint: "IC_kw|head|datasets/poc_evaluation_manifest_v1.json|139|P2|link",
+      },
+    ],
+  });
+
+  const prompt = buildCodexPrompt({
+    kind: "start",
+    config: createConfig({ reviewBotLogins: ["chatgpt-codex-connector"] }),
+    repoSlug: "owner/repo",
+    issue,
+    branch: "codex/issue-2403",
+    workspacePath: "/tmp/workspaces/issue-2403",
+    state: "addressing_review" satisfies RunState,
+    record: {
+      repeated_failure_signature_count: 0,
+      blocked_verification_retry_count: 0,
+      timeout_retry_count: 0,
+    },
+    pr,
+    checks: [],
+    reviewThreads: [],
+    alwaysReadFiles: [],
+    onDemandMemoryFiles: [],
+    journalPath: "/tmp/workspaces/issue-2403/.codex-supervisor/issue-journal.md",
+  } satisfies AgentTurnContext);
+
+  assert.match(prompt, /Codex Connector actionable review-thread fast path:/);
+  assert.match(prompt, /Source: top_level_codex_review_comment/);
+  assert.match(prompt, /Severity: P2/);
+  assert.match(prompt, /File: datasets\/poc_evaluation_manifest_v1\.json/);
+  assert.match(prompt, /Line range: 139-140/);
+  assert.match(prompt, /Summary: Link the text-PDF sample to a PDF fixture/);
+  assert.doesNotMatch(prompt, /No unresolved configured-bot review threads\./);
+});
+
 test("buildCodexPrompt adds a stable same-file Codex Connector churn repair dossier", () => {
   const pr = createPullRequest({
     number: 2250,

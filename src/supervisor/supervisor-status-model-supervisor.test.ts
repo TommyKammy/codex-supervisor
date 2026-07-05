@@ -783,7 +783,7 @@ test("buildDetailedStatusModel counts only unresolved configured bot threads in 
 
   assert.ok(
     lines.includes(
-      "configured_bot_top_level_review strength=nitpick_only submitted_at=2026-03-11T14:06:00Z effect=softened",
+      "configured_bot_top_level_review strength=nitpick_only submitted_at=2026-03-11T14:06:00Z finding_count=0 must_fix_count=0 nitpick_count=0 highest_severity=none effect=softened",
     ),
   );
   assert.ok(lines.includes("review_threads bot_pending=0 bot_unresolved=0 bot_effective_unresolved=0 bot_outdated_unresolved=0 manual=0"));

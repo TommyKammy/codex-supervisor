@@ -21,6 +21,7 @@ import {
   CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
   createCodexConnectorTrackedReviewResidueScenario,
 } from "./codex-connector-tracked-pr-test-helpers";
+import { codexConnectorTopLevelReviewFindingRetryTarget } from "./codex-connector-top-level-review";
 import {
   currentHeadRepairProofSatisfiesConfiguredProviderSignal,
   hasConfiguredProviderSuccess,
@@ -31,6 +32,7 @@ import {
   VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET,
 } from "./supervisor/stale-review-bot-remediation";
 import { STILL_VALID_REVIEW_THREAD_REPAIR_TARGET } from "./codex-connector-valid-review-repair";
+import { reviewLoopRetryFingerprintForThread } from "./review-handling";
 
 test("inferStateFromPullRequest routes actionable high local-review retry into local_review_fix", () => {
   const config = createConfig({
@@ -283,6 +285,138 @@ test("inferStateFromPullRequest still blocks stronger configured-bot top-level c
   });
 
   assert.equal(inferStateFromPullRequest(config, createRecord({ state: "pr_open" }), pr, passingChecks(), []), "blocked");
+});
+
+test("inferStateFromPullRequest repairs top-level Codex must-fix findings even without aggregate reviewDecision", () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    humanReviewBlocksMerge: false,
+  });
+  const pr = createPullRequest({
+    reviewDecision: null,
+    copilotReviewState: "arrived",
+    copilotReviewRequestedAt: "2026-07-05T03:18:00Z",
+    copilotReviewArrivedAt: "2026-07-05T03:19:37Z",
+    configuredBotCurrentHeadObservedAt: "2026-07-05T03:19:37Z",
+    configuredBotCurrentHeadObservationSource: "codex_top_level_review_comment",
+    configuredBotTopLevelReviewStrength: "blocking",
+    configuredBotTopLevelReviewSubmittedAt: "2026-07-05T03:19:37Z",
+    configuredBotTopLevelReviewFindings: [
+      {
+        id: "IC_kw:finding:1",
+        commentId: "IC_kw",
+        commentDatabaseId: 4884683854,
+        commentCreatedAt: "2026-07-05T03:19:37Z",
+        commentUrl: "https://example.test/pr/219#issuecomment-4884683854",
+        sourceUrl: "https://example.test/blob/head123/datasets/poc_evaluation_manifest_v1.json#L139-L140",
+        path: "datasets/poc_evaluation_manifest_v1.json",
+        line: 139,
+        lineEnd: 140,
+        headSha: "head123",
+        severity: "P2",
+        title: "Link the text-PDF sample to a PDF fixture",
+        body: "The sample resolves to parser-output JSON instead of a real PDF upload.",
+        authorLogin: "chatgpt-codex-connector",
+        fingerprint: "IC_kw|head123|datasets/poc_evaluation_manifest_v1.json|139|P2|link",
+      },
+    ],
+  });
+
+  assert.equal(
+    inferStateFromPullRequest(config, createRecord({ state: "pr_open", last_head_sha: "head123" }), pr, passingChecks(), []),
+    "addressing_review",
+  );
+});
+
+test("inferStateFromPullRequest blocks top-level Codex findings after their retry budget is exhausted", () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    humanReviewBlocksMerge: false,
+  });
+  const finding = {
+    id: "IC_kw:finding:1",
+    commentId: "IC_kw",
+    commentDatabaseId: 4884683854,
+    commentCreatedAt: "2026-07-05T03:19:37Z",
+    commentUrl: "https://example.test/pr/219#issuecomment-4884683854",
+    sourceUrl: "https://example.test/blob/head123/datasets/poc_evaluation_manifest_v1.json#L139-L140",
+    path: "datasets/poc_evaluation_manifest_v1.json",
+    line: 139,
+    lineEnd: 140,
+    headSha: "head123",
+    severity: "P2" as const,
+    title: "Link the text-PDF sample to a PDF fixture",
+    body: "The sample resolves to parser-output JSON instead of a real PDF upload.",
+    authorLogin: "chatgpt-codex-connector",
+    fingerprint: "IC_kw|head123|datasets/poc_evaluation_manifest_v1.json|139|P2|link",
+  };
+  const pr = createPullRequest({
+    number: 219,
+    headRefOid: "head123",
+    reviewDecision: null,
+    copilotReviewState: "arrived",
+    copilotReviewRequestedAt: "2026-07-05T03:18:00Z",
+    copilotReviewArrivedAt: "2026-07-05T03:19:37Z",
+    configuredBotCurrentHeadObservedAt: "2026-07-05T03:19:37Z",
+    configuredBotCurrentHeadObservationSource: "codex_top_level_review_comment",
+    configuredBotTopLevelReviewStrength: "blocking",
+    configuredBotTopLevelReviewSubmittedAt: "2026-07-05T03:19:37Z",
+    configuredBotTopLevelReviewFindings: [finding],
+  });
+  const target = codexConnectorTopLevelReviewFindingRetryTarget(finding);
+  const fingerprint = reviewLoopRetryFingerprintForThread(pr, target);
+  assert.ok(fingerprint);
+
+  assert.equal(
+    inferStateFromPullRequest(
+      config,
+      createRecord({
+        state: "pr_open",
+        last_head_sha: "head123",
+        review_loop_retry_state: [
+          {
+            fingerprint,
+            pr_number: 219,
+            head_sha: "head123",
+            thread_id: target.id,
+            latest_comment_fingerprint: finding.fingerprint,
+            attempts: 1,
+            first_attempted_at: "2026-07-05T03:21:00Z",
+            last_attempted_at: "2026-07-05T03:21:00Z",
+          },
+        ],
+      }),
+      pr,
+      passingChecks(),
+      [],
+    ),
+    "blocked",
+  );
+  assert.equal(
+    blockedReasonFromReviewState(
+      config,
+      createRecord({
+        state: "pr_open",
+        last_head_sha: "head123",
+        review_loop_retry_state: [
+          {
+            fingerprint,
+            pr_number: 219,
+            head_sha: "head123",
+            thread_id: target.id,
+            latest_comment_fingerprint: finding.fingerprint,
+            attempts: 1,
+            first_attempted_at: "2026-07-05T03:21:00Z",
+            last_attempted_at: "2026-07-05T03:21:00Z",
+          },
+        ],
+      }),
+      pr,
+      passingChecks(),
+      [],
+    ),
+    "manual_review",
+  );
 });
 
 test("inferStateFromPullRequest allows a journal-only configured-bot thread when the PR is otherwise green and CodeRabbit status is SUCCESS", () => {

@@ -466,7 +466,7 @@ test("formatDetailedStatus explains softened nitpick-only configured-bot top-lev
 
   assert.match(
     status,
-    /configured_bot_top_level_review strength=nitpick_only submitted_at=2026-03-11T14:06:00Z effect=softened/,
+    /configured_bot_top_level_review strength=nitpick_only submitted_at=2026-03-11T14:06:00Z finding_count=0 must_fix_count=0 nitpick_count=0 highest_severity=none effect=softened/,
   );
 });
 

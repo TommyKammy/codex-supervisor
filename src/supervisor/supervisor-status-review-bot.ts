@@ -7,6 +7,11 @@ import {
 } from "../core/review-providers";
 import { GitHubPullRequest, IssueRunRecord, ReviewThread, SupervisorConfig } from "../core/types";
 import { localReviewDegradedNeedsBlock } from "../review-handling";
+import {
+  codexConnectorMustFixTopLevelReviewFindings,
+  codexConnectorNitpickTopLevelReviewFindings,
+  highestCodexConnectorPSeverity,
+} from "../codex-connector-top-level-review";
 import { classifyStaleReviewBotRecoverability, recoverabilityStatusToken } from "./stale-diagnostic-recoverability";
 import {
   configuredBotCurrentHeadSignalWaitWindow,
@@ -297,7 +302,15 @@ export function configuredBotTopLevelReviewEffect(
   reviewThreads: ReviewThread[],
   configuredBotReviewThreads: ReviewThreadClassifier,
 ): string {
-  if (!repoExpectsConfiguredBotReview(config) || !pr.configuredBotTopLevelReviewStrength) {
+  if (!repoExpectsConfiguredBotReview(config)) {
+    return "none";
+  }
+  const mustFixFindings = codexConnectorMustFixTopLevelReviewFindings(pr.configuredBotTopLevelReviewFindings ?? []);
+  if (mustFixFindings.length > 0) {
+    return "blocking";
+  }
+
+  if (!pr.configuredBotTopLevelReviewStrength) {
     return "none";
   }
 
@@ -308,4 +321,18 @@ export function configuredBotTopLevelReviewEffect(
   }
 
   return "blocking";
+}
+
+export function configuredBotTopLevelReviewSummary(pr: GitHubPullRequest): string {
+  const findings = pr.configuredBotTopLevelReviewFindings ?? [];
+  const mustFixFindings = codexConnectorMustFixTopLevelReviewFindings(findings);
+  const nitpickFindings = codexConnectorNitpickTopLevelReviewFindings(findings);
+  return [
+    `strength=${pr.configuredBotTopLevelReviewStrength ?? "none"}`,
+    `submitted_at=${pr.configuredBotTopLevelReviewSubmittedAt ?? "none"}`,
+    `finding_count=${findings.length}`,
+    `must_fix_count=${mustFixFindings.length}`,
+    `nitpick_count=${nitpickFindings.length}`,
+    `highest_severity=${highestCodexConnectorPSeverity(findings) ?? "none"}`,
+  ].join(" ");
 }

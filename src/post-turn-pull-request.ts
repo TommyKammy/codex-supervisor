@@ -49,6 +49,7 @@ import { maybePromoteDraftPullRequestToReady } from "./post-turn-ready-promotion
 import { effectiveConfiguredBotReviewThreadsForState } from "./pull-request-state-codex-residue-policy";
 import { getWorkspaceStatus } from "./core/workspace";
 import { projectCurrentHeadCodexRepairProof } from "./current-head-codex-repair-proof";
+import { codexConnectorMustFixTopLevelReviewFindings } from "./codex-connector-top-level-review";
 
 export { syncTrackedPrPersistentStatusComment } from "./tracked-pr-status-comment";
 
@@ -312,13 +313,16 @@ function hasEffectiveConfiguredBotReviewBlockers(args: {
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
 }): boolean {
-  return effectiveConfiguredBotReviewThreadsForState(
-    args.config,
-    args.record,
-    args.pr,
-    args.checks,
-    args.reviewThreads,
-  ).length > 0;
+  return (
+    effectiveConfiguredBotReviewThreadsForState(
+      args.config,
+      args.record,
+      args.pr,
+      args.checks,
+      args.reviewThreads,
+    ).length > 0 ||
+    codexConnectorMustFixTopLevelReviewFindings(args.pr.configuredBotTopLevelReviewFindings ?? []).length > 0
+  );
 }
 
 function staleReviewRepairProbeMayReadWorkspace(args: {

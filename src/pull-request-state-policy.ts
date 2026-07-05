@@ -19,6 +19,10 @@ import {
   codexConnectorMustFixReviewThreads,
   latestCodexConnectorReviewCommentFingerprint,
 } from "./codex-connector-review-policy";
+import {
+  codexConnectorMustFixTopLevelReviewFindings,
+  codexConnectorTopLevelReviewFindingRetryTarget,
+} from "./codex-connector-top-level-review";
 import { shouldReenterCodexConnectorValidReviewRepair } from "./codex-connector-valid-review-repair-selection";
 import {
   actionableConfiguredBotReviewThreads,
@@ -228,6 +232,14 @@ export function blockedReasonFromReviewState(
       reviewThreads,
     });
   const unresolvedBotThreads = effectiveConfiguredBotReviewThreadsForState(config, record, pr, checks, reviewThreads);
+  const codexConnectorMustFixTopLevelFindings = codexConnectorMustFixTopLevelReviewFindings(
+    pr.configuredBotTopLevelReviewFindings ?? [],
+  );
+  const codexConnectorMustFixTopLevelFindingsExhausted =
+    codexConnectorMustFixTopLevelFindings.length > 0 &&
+    codexConnectorMustFixTopLevelFindings
+      .map(codexConnectorTopLevelReviewFindingRetryTarget)
+      .every((target) => reviewLoopRetryBudgetExhaustedForThread(record, pr, target, 1));
   const botReviewDecisionResidueSatisfied = verifiedConfiguredBotReviewDecisionResidueSatisfied({
     verifiedCurrentHeadRepairResidue,
     effectiveConfiguredBotBlockerCount: unresolvedBotThreads.length,
@@ -270,6 +282,15 @@ export function blockedReasonFromReviewState(
   }
 
   if (unresolvedBotThreads.length > 0) {
+    return "manual_review";
+  }
+
+  if (
+    codexConnectorMustFixTopLevelFindingsExhausted &&
+    !checkSummary.hasPending &&
+    !checkSummary.hasFailing &&
+    !mergeConflictDetected(pr)
+  ) {
     return "manual_review";
   }
 
@@ -339,19 +360,29 @@ export function inferStateFromPullRequest(
   });
   const reviewDecisionSatisfiedForState = reviewSatisfied(pr) || botReviewDecisionResidueSatisfied;
   const codexConnectorMustFixThreads = codexConnectorMustFixReviewThreads(unresolvedBotThreads);
+  const codexConnectorMustFixTopLevelFindings = codexConnectorMustFixTopLevelReviewFindings(
+    pr.configuredBotTopLevelReviewFindings ?? [],
+  );
+  const codexConnectorMustFixTopLevelFindingTargets = codexConnectorMustFixTopLevelFindings.map(
+    codexConnectorTopLevelReviewFindingRetryTarget,
+  );
+  const hasCodexConnectorMustFixRepairTargets =
+    codexConnectorMustFixThreads.length > 0 || codexConnectorMustFixTopLevelFindings.length > 0;
   const codexConnectorMustFixThreadIds = new Set(codexConnectorMustFixThreads.map((thread) => thread.id));
   const retryFingerprintForThread = (thread: ReviewThread) =>
     codexConnectorMustFixThreadIds.has(thread.id) ? latestCodexConnectorReviewCommentFingerprint(thread) : undefined;
-  const reviewLoopRetryBudgetAvailable = (thread: ReviewThread) =>
+  const reviewLoopRetryBudgetAvailable = (thread: Pick<ReviewThread, "id" | "comments">) =>
+    !reviewLoopRetryBudgetExhaustedForThread(record, pr, thread, 1);
+  const reviewLoopRetryBudgetAvailableForThread = (thread: ReviewThread) =>
     !reviewLoopRetryBudgetExhaustedForThread(record, pr, thread, 1, retryFingerprintForThread(thread));
   const pendingBotThreads = pendingBotReviewThreads(config, record, pr, unresolvedBotThreads).filter(
-    reviewLoopRetryBudgetAvailable,
+    reviewLoopRetryBudgetAvailableForThread,
   );
   const botFollowUpState = configuredBotReviewFollowUpState(config, record, pr, unresolvedBotThreads);
   const actionableFollowUpThreads = actionableConfiguredBotReviewThreads(config, unresolvedBotThreads).filter(
     (thread) => !thread.isResolved && !thread.isOutdated,
   );
-  const availableActionableFollowUpThreads = actionableFollowUpThreads.filter(reviewLoopRetryBudgetAvailable);
+  const availableActionableFollowUpThreads = actionableFollowUpThreads.filter(reviewLoopRetryBudgetAvailableForThread);
   const botFollowUpStateEligibleWithRetryBudget =
     botFollowUpState === "eligible" && availableActionableFollowUpThreads.length > 0;
   const botFollowUpStateExhaustedByRetryBudget =
@@ -360,7 +391,14 @@ export function inferStateFromPullRequest(
     availableActionableFollowUpThreads.length === 0;
   const codexConnectorMustFixThreadsExhausted =
     codexConnectorMustFixThreads.length > 0 &&
-    codexConnectorMustFixThreads.every((thread) => !reviewLoopRetryBudgetAvailable(thread));
+    codexConnectorMustFixThreads.every((thread) => !reviewLoopRetryBudgetAvailableForThread(thread));
+  const codexConnectorMustFixTopLevelFindingsExhausted =
+    codexConnectorMustFixTopLevelFindingTargets.length > 0 &&
+    codexConnectorMustFixTopLevelFindingTargets.every((target) => !reviewLoopRetryBudgetAvailable(target));
+  const codexConnectorMustFixRepairTargetsExhausted =
+    hasCodexConnectorMustFixRepairTargets &&
+    (codexConnectorMustFixThreads.length === 0 || codexConnectorMustFixThreadsExhausted) &&
+    (codexConnectorMustFixTopLevelFindingTargets.length === 0 || codexConnectorMustFixTopLevelFindingsExhausted);
   const checkSummary = summarizeChecks(checks);
   const staleCodexWaitHasOnlyOutdatedResidue = staleSameHeadCodexWaitHasOnlyOutdatedResidue(
     config,
@@ -426,8 +464,8 @@ export function inferStateFromPullRequest(
 
     if (unresolvedBotThreads.length > 0 || pr.configuredBotTopLevelReviewStrength === "blocking") {
       if (
-        codexConnectorMustFixThreads.length > 0 &&
-        !codexConnectorMustFixThreadsExhausted &&
+        hasCodexConnectorMustFixRepairTargets &&
+        !codexConnectorMustFixRepairTargetsExhausted &&
         !checkSummary.hasFailing &&
         !checkSummary.hasPending &&
         (!config.humanReviewBlocksMerge || manualThreads.length === 0) &&
@@ -504,8 +542,8 @@ export function inferStateFromPullRequest(
 
   if (
     stillValidCodexRepairAvailable ||
-    codexConnectorMustFixThreads.length > 0 &&
-    !codexConnectorMustFixThreadsExhausted &&
+    hasCodexConnectorMustFixRepairTargets &&
+    !codexConnectorMustFixRepairTargetsExhausted &&
     !checkSummary.hasFailing &&
     !checkSummary.hasPending &&
     (!config.humanReviewBlocksMerge || manualThreads.length === 0) &&
@@ -515,7 +553,7 @@ export function inferStateFromPullRequest(
   }
 
   if (
-    codexConnectorMustFixThreadsExhausted &&
+    codexConnectorMustFixRepairTargetsExhausted &&
     pendingBotThreads.length === 0 &&
     !botFollowUpStateEligibleWithRetryBudget &&
     !checkSummary.hasFailing &&
