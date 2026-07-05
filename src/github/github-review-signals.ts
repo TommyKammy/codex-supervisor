@@ -861,6 +861,47 @@ function inferCurrentHeadCodexSuccessObservation(
     : null;
 }
 
+function inferCurrentHeadAnchoredCodexSuccessObservedAt(
+  facts: CopilotReviewLifecycleFacts,
+  reviewBotLogins: string[],
+  currentHeadOid: string | null | undefined,
+): string | null {
+  const normalizedCurrentHeadOid = currentHeadOid?.trim();
+  if (!normalizedCurrentHeadOid) {
+    return null;
+  }
+
+  const configuredReviewBots = new Set(normalizeReviewBotLogins(reviewBotLogins));
+  if (!hasConfiguredCodexConnectorLogin(configuredReviewBots)) {
+    return null;
+  }
+
+  let latest: { createdAt: string; createdAtMs: number } | null = null;
+  for (const comment of facts.issueComments) {
+    const authorLogin = normalizeLogin(comment.authorLogin);
+    const reviewedCommitSha = reviewedCommitFromBody(comment.body);
+    if (
+      !authorLogin ||
+      !isCodexConnectorLogin(authorLogin) ||
+      !isCodexConnectorPrSuccessCommentText(comment.body) ||
+      !commitShaMatchesByPrefix(reviewedCommitSha, normalizedCurrentHeadOid)
+    ) {
+      continue;
+    }
+
+    const createdAtMs = parseTimestamp(comment.createdAt);
+    if (createdAtMs === 0) {
+      continue;
+    }
+
+    if (!latest || createdAtMs >= latest.createdAtMs) {
+      latest = { createdAt: comment.createdAt!, createdAtMs };
+    }
+  }
+
+  return latest?.createdAt ?? null;
+}
+
 function inferConfiguredBotCurrentHeadActionableObservedAt(
   facts: CopilotReviewLifecycleFacts,
   reviewBotLogins: string[],
@@ -1109,7 +1150,7 @@ export function buildConfiguredBotReviewSummary(
   );
   const currentHeadCodexFindingSupersededAt = currentHeadCodexSuccessObservation?.reviewedCommitSha
     ? currentHeadCodexSuccessObservation.observedAt
-    : null;
+    : inferCurrentHeadAnchoredCodexSuccessObservedAt(facts, reviewBotLogins, currentHeadOid);
   const currentHeadActionableObservedAt = inferConfiguredBotCurrentHeadActionableObservedAt(
     facts,
     reviewBotLogins,
