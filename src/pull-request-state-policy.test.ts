@@ -392,6 +392,31 @@ test("inferStateFromPullRequest blocks top-level Codex findings after their retr
     ),
     "blocked",
   );
+  assert.equal(
+    blockedReasonFromReviewState(
+      config,
+      createRecord({
+        state: "pr_open",
+        last_head_sha: "head123",
+        review_loop_retry_state: [
+          {
+            fingerprint,
+            pr_number: 219,
+            head_sha: "head123",
+            thread_id: target.id,
+            latest_comment_fingerprint: finding.fingerprint,
+            attempts: 1,
+            first_attempted_at: "2026-07-05T03:21:00Z",
+            last_attempted_at: "2026-07-05T03:21:00Z",
+          },
+        ],
+      }),
+      pr,
+      passingChecks(),
+      [],
+    ),
+    "manual_review",
+  );
 });
 
 test("inferStateFromPullRequest allows a journal-only configured-bot thread when the PR is otherwise green and CodeRabbit status is SUCCESS", () => {

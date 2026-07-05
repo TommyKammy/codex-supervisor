@@ -232,6 +232,14 @@ export function blockedReasonFromReviewState(
       reviewThreads,
     });
   const unresolvedBotThreads = effectiveConfiguredBotReviewThreadsForState(config, record, pr, checks, reviewThreads);
+  const codexConnectorMustFixTopLevelFindings = codexConnectorMustFixTopLevelReviewFindings(
+    pr.configuredBotTopLevelReviewFindings ?? [],
+  );
+  const codexConnectorMustFixTopLevelFindingsExhausted =
+    codexConnectorMustFixTopLevelFindings.length > 0 &&
+    codexConnectorMustFixTopLevelFindings
+      .map(codexConnectorTopLevelReviewFindingRetryTarget)
+      .every((target) => reviewLoopRetryBudgetExhaustedForThread(record, pr, target, 1));
   const botReviewDecisionResidueSatisfied = verifiedConfiguredBotReviewDecisionResidueSatisfied({
     verifiedCurrentHeadRepairResidue,
     effectiveConfiguredBotBlockerCount: unresolvedBotThreads.length,
@@ -274,6 +282,15 @@ export function blockedReasonFromReviewState(
   }
 
   if (unresolvedBotThreads.length > 0) {
+    return "manual_review";
+  }
+
+  if (
+    codexConnectorMustFixTopLevelFindingsExhausted &&
+    !checkSummary.hasPending &&
+    !checkSummary.hasFailing &&
+    !mergeConflictDetected(pr)
+  ) {
     return "manual_review";
   }
 
