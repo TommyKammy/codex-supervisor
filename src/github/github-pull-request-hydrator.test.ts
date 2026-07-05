@@ -1380,7 +1380,7 @@ test("GitHubPullRequestHydrator pages issue comments before summarizing top-leve
   const hydrator = new GitHubPullRequestHydrator(config, async (args) => {
     commands.push(args.join(" "));
     const queryArg = args.find((arg) => arg.startsWith("query=")) ?? "";
-    if (queryArg.includes("pullRequest(number: $number)")) {
+    if (queryArg.includes("pullRequest(number: $number)") && queryArg.includes("comments(last: 100)")) {
       return {
         exitCode: 0,
         stdout: JSON.stringify({
@@ -1404,13 +1404,13 @@ test("GitHubPullRequestHydrator pages issue comments before summarizing top-leve
       };
     }
 
-    if (queryArg.includes("issue(number: $number)")) {
+    if (queryArg.includes("pullRequest(number: $number)") && queryArg.includes("comments(first: 100")) {
       return {
         exitCode: 0,
         stdout: JSON.stringify({
           data: {
             repository: {
-              issue: {
+              pullRequest: {
                 comments: {
                   nodes: [
                     {

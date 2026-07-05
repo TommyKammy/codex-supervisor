@@ -390,7 +390,7 @@ export class GitHubPullRequestHydrator {
       const query = `
         query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
           repository(owner: $owner, name: $repo) {
-            issue(number: $number) {
+            pullRequest(number: $number) {
               comments(first: 100, after: $cursor) {
                 nodes {
                   id
@@ -430,7 +430,7 @@ export class GitHubPullRequestHydrator {
       const payload = parseJson<{
         data?: {
           repository?: {
-            issue?: {
+            pullRequest?: {
               comments?: {
                 nodes?: Array<{
                   id?: string | null;
@@ -454,7 +454,7 @@ export class GitHubPullRequestHydrator {
         };
       }>(result.stdout, `gh api graphql issue comments issue=${issueNumber}`);
 
-      const connection = payload.data?.repository?.issue?.comments;
+      const connection = payload.data?.repository?.pullRequest?.comments;
       comments.push(
         ...(connection?.nodes?.flatMap((comment) =>
           comment?.id
