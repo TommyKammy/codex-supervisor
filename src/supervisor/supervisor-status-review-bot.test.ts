@@ -1069,6 +1069,51 @@ test("formatCodexConnectorConvergenceDiagnostic surfaces must-fix convergence st
   );
 });
 
+test("formatCodexConnectorConvergenceDiagnostic reports top-level Codex Review findings as must-fix", () => {
+  const config = createConfig({ reviewBotLogins: ["chatgpt-codex-connector"] });
+  const pr = createPr({
+    number: 219,
+    headRefOid: "b0642d776275b58f3d2918fa1a48cb522d6f21ce",
+    configuredBotCurrentHeadObservedAt: "2026-07-05T03:19:37Z",
+    configuredBotTopLevelReviewStrength: "blocking",
+    configuredBotTopLevelReviewFindings: [
+      {
+        id: "IC_kw:finding:1",
+        commentId: "IC_kw",
+        commentDatabaseId: 4884683854,
+        commentCreatedAt: "2026-07-05T03:19:37Z",
+        commentUrl: "https://example.test/pr/219#issuecomment-4884683854",
+        sourceUrl:
+          "https://example.test/blob/b0642d776275b58f3d2918fa1a48cb522d6f21ce/datasets/poc_evaluation_manifest_v1.json#L139-L140",
+        path: "datasets/poc_evaluation_manifest_v1.json",
+        line: 139,
+        lineEnd: 140,
+        headSha: "b0642d776275b58f3d2918fa1a48cb522d6f21ce",
+        severity: "P2",
+        title: "Link the text-PDF sample to a PDF fixture",
+        body: "The sample resolves to parser-output JSON instead of a real PDF upload.",
+        authorLogin: "chatgpt-codex-connector",
+        fingerprint: "IC_kw|head|datasets/poc_evaluation_manifest_v1.json|139|P2|link",
+      },
+    ],
+  });
+
+  assert.equal(
+    formatCodexConnectorConvergenceDiagnostic({
+      config,
+      record: createRecord({
+        state: "addressing_review",
+        pr_number: pr.number,
+        provider_success_head_sha: null,
+        provider_success_observed_at: null,
+      }),
+      pr,
+      reviewThreads: [],
+    }),
+    "codex_connector_convergence status=repairing_must_fix provider=codex current_head_sha=b0642d776275b58f3d2918fa1a48cb522d6f21ce current_head_observed_at=2026-07-05T03:19:37Z latest_signal_head_sha=b0642d776275b58f3d2918fa1a48cb522d6f21ce highest_severity=P2 finding_count=1 merge_effect=blocked next_action=repair_must_fix_findings",
+  );
+});
+
 test("formatCodexConnectorConvergenceDiagnostic distinguishes Codex Connector request lifecycle states", () => {
   const config = createConfig({
     reviewBotLogins: ["chatgpt-codex-connector"],

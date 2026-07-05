@@ -73,6 +73,41 @@ test("Codex Connector policy classifies must-fix, nitpick, and stale review comm
   });
 });
 
+test("Codex Connector convergence treats top-level Codex Review comment findings as must-fix", () => {
+  const config = createConfig({ reviewBotLogins: ["chatgpt-codex-connector"] });
+  const result = evaluateCodexConnectorConvergencePolicy(
+    config,
+    {
+      configuredBotCurrentHeadObservedAt: null,
+      configuredBotTopLevelReviewFindings: [
+        {
+          id: "IC_kw:finding:1",
+          commentId: "IC_kw",
+          commentDatabaseId: 4884683854,
+          commentCreatedAt: "2026-07-05T03:19:37Z",
+          commentUrl: "https://example.test/pr/219#issuecomment-4884683854",
+          sourceUrl: "https://example.test/blob/head-sha/datasets/poc_evaluation_manifest_v1.json#L139-L140",
+          path: "datasets/poc_evaluation_manifest_v1.json",
+          line: 139,
+          lineEnd: 140,
+          headSha: "head-sha",
+          severity: "P2",
+          title: "Link the text-PDF sample to a PDF fixture",
+          body: "The sample resolves to parser-output JSON instead of a real PDF upload.",
+          authorLogin: "chatgpt-codex-connector",
+          fingerprint: "IC_kw|head-sha|datasets/poc_evaluation_manifest_v1.json|139|P2|link",
+        },
+      ],
+    },
+    [],
+  );
+
+  assert.equal(result?.outcome, "must_fix_remaining");
+  assert.equal(result?.mergeEffect, "blocked");
+  assert.equal(result?.findingCount, 1);
+  assert.equal(result?.highestSeverity, "P2");
+});
+
 test("review policy input snapshots provider, PR, thread vocabulary, and processed evidence", () => {
   const config = createConfig({ reviewBotLogins: ["chatgpt-codex-connector"] });
   const p2Thread = codexThread({

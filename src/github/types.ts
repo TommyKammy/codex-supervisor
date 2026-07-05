@@ -50,6 +50,9 @@ export interface GitHubPullRequest {
   configuredBotDraftSkipAt?: string | null;
   configuredBotTopLevelReviewStrength?: "nitpick_only" | "blocking" | null;
   configuredBotTopLevelReviewSubmittedAt?: string | null;
+  configuredBotTopLevelReviewFindingCount?: number | null;
+  configuredBotTopLevelReviewHighestSeverity?: "P0" | "P1" | "P2" | "P3" | null;
+  configuredBotTopLevelReviewFindings?: import("../codex-connector-top-level-review").CodexConnectorTopLevelReviewFinding[] | null;
   configuredBotOnlyChangesRequestedReview?: boolean | null;
   requiredConversationResolution?: {
     state: "enabled" | "disabled" | "unavailable" | "unknown";

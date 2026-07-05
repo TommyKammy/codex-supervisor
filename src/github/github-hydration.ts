@@ -372,6 +372,9 @@ export function applyConfiguredBotReviewSummary(
     configuredBotDraftSkipAt: summary?.draftSkipAt ?? null,
     configuredBotTopLevelReviewStrength: summary?.topLevelReview.strength ?? null,
     configuredBotTopLevelReviewSubmittedAt: summary?.topLevelReview.submittedAt ?? null,
+    configuredBotTopLevelReviewFindingCount: summary?.topLevelReview.findingCount ?? null,
+    configuredBotTopLevelReviewHighestSeverity: summary?.topLevelReview.highestSeverity ?? null,
+    configuredBotTopLevelReviewFindings: summary?.topLevelReview.findings ?? null,
     configuredBotOnlyChangesRequestedReview: summary?.topLevelReview.configuredBotOnlyChangesRequestedReview ?? null,
   };
 }

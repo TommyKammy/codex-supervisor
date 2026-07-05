@@ -11,6 +11,14 @@ import {
   normalizeReviewProviderLogin,
 } from "../core/review-providers";
 import type { CopilotReviewState } from "./types";
+import {
+  codexConnectorCurrentHeadTopLevelReviewFindings,
+  codexConnectorMustFixTopLevelReviewFindings,
+  codexConnectorNitpickTopLevelReviewFindings,
+  highestCodexConnectorPSeverity,
+  parseCodexConnectorTopLevelReviewFindings,
+  type CodexConnectorTopLevelReviewFinding,
+} from "../codex-connector-top-level-review";
 
 export interface CopilotReviewLifecycleFacts {
   reviewsComplete?: boolean;
@@ -70,6 +78,9 @@ export interface CopilotReviewLifecycle {
 export interface ConfiguredBotTopLevelReviewSummary {
   strength: "nitpick_only" | "blocking" | null;
   submittedAt: string | null;
+  findingCount?: number | null;
+  highestSeverity?: "P0" | "P1" | "P2" | "P3" | null;
+  findings?: CodexConnectorTopLevelReviewFinding[];
   configuredBotOnlyChangesRequestedReview?: boolean | null;
 }
 
@@ -416,7 +427,10 @@ export function inferCopilotReviewLifecycle(
   });
   const matchingIssueCommentTimes = facts.issueComments.flatMap((comment) => {
     const authorLogin = normalizeLogin(comment.authorLogin);
-    return authorLogin && configuredReviewBots.has(authorLogin) && hasActionableReviewText(comment.body) && scopedToActiveRequest(comment.createdAt)
+    return authorLogin &&
+      configuredReviewBots.has(authorLogin) &&
+      (hasActionableReviewText(comment.body) || parseCodexConnectorTopLevelReviewFindings(comment).length > 0) &&
+      scopedToActiveRequest(comment.createdAt)
       ? [comment.createdAt]
       : [];
   });
@@ -461,6 +475,7 @@ export function inferCopilotReviewLifecycle(
 function inferConfiguredBotTopLevelReviewSummary(
   facts: CopilotReviewLifecycleFacts,
   reviewBotLogins: string[],
+  currentHeadOid: string | null | undefined,
 ): ConfiguredBotTopLevelReviewSummary {
   const configuredReviewBots = new Set(normalizeReviewBotLogins(reviewBotLogins));
   if (configuredReviewBots.size === 0) {
@@ -490,6 +505,36 @@ function inferConfiguredBotTopLevelReviewSummary(
       submittedAt: review.submittedAt,
     };
     latestConfiguredReviewMs = submittedAtMs;
+  }
+
+  const currentHeadCodexReviewComments = facts.issueComments.filter((comment) => {
+    const authorLogin = normalizeLogin(comment.authorLogin);
+    return Boolean(authorLogin && configuredReviewBots.has(authorLogin) && isCodexConnectorLogin(authorLogin));
+  });
+  const topLevelFindings = codexConnectorCurrentHeadTopLevelReviewFindings({
+    comments: currentHeadCodexReviewComments,
+    currentHeadSha: currentHeadOid,
+  });
+  const mustFixFindings = codexConnectorMustFixTopLevelReviewFindings(topLevelFindings);
+  const nitpickFindings = codexConnectorNitpickTopLevelReviewFindings(topLevelFindings);
+  if (mustFixFindings.length > 0 || nitpickFindings.length > 0) {
+    const latestFindingSubmittedAt = latestTimestamp(topLevelFindings.map((finding) => finding.commentCreatedAt));
+    const issueCommentSummary: ConfiguredBotTopLevelReviewSummary = {
+      strength: mustFixFindings.length > 0 ? "blocking" : "nitpick_only",
+      submittedAt: latestFindingSubmittedAt,
+      findingCount: topLevelFindings.length,
+      highestSeverity: highestCodexConnectorPSeverity(topLevelFindings),
+      findings: topLevelFindings,
+    };
+    if (!latestConfiguredReview.submittedAt || parseTimestamp(latestFindingSubmittedAt) >= latestConfiguredReviewMs) {
+      return issueCommentSummary;
+    }
+    return {
+      ...latestConfiguredReview,
+      findingCount: topLevelFindings.length,
+      highestSeverity: highestCodexConnectorPSeverity(topLevelFindings),
+      findings: topLevelFindings,
+    };
   }
 
   if (!latestConfiguredReview.strength) {
@@ -853,6 +898,17 @@ function inferConfiguredBotCurrentHeadActionableObservedAt(
     }
   }
 
+  const topLevelFindings = codexConnectorCurrentHeadTopLevelReviewFindings({
+    comments: facts.issueComments.filter((comment) => {
+      const authorLogin = normalizeLogin(comment.authorLogin);
+      return Boolean(authorLogin && configuredReviewBots.has(authorLogin) && isCodexConnectorLogin(authorLogin));
+    }),
+    currentHeadSha: normalizedCurrentHeadOid,
+  });
+  for (const finding of codexConnectorMustFixTopLevelReviewFindings(topLevelFindings)) {
+    currentHeadActionableTimes.push(finding.commentCreatedAt);
+  }
+
   return latestTimestamp(currentHeadActionableTimes);
 }
 
@@ -1035,7 +1091,7 @@ export function buildConfiguredBotReviewSummary(
     currentHeadOid,
     currentHeadCodexSuccessObservation?.observedAt ?? null,
   );
-  const topLevelReview = inferConfiguredBotTopLevelReviewSummary(facts, reviewBotLogins);
+  const topLevelReview = inferConfiguredBotTopLevelReviewSummary(facts, reviewBotLogins, currentHeadOid);
   Object.defineProperty(topLevelReview, "configuredBotOnlyChangesRequestedReview", {
     enumerable: false,
     value: inferConfiguredBotOnlyChangesRequestedReview(facts, reviewBotLogins),

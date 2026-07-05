@@ -10,6 +10,10 @@ import {
   codexConnectorStaleReviewCommitThreads,
   latestCodexConnectorPSeverity,
 } from "./codex-connector-review-policy";
+import {
+  codexConnectorMustFixTopLevelReviewFindings,
+  type CodexConnectorTopLevelReviewFinding,
+} from "./codex-connector-top-level-review";
 
 export interface CodexConnectorReviewChurnDiagnostic {
   mustFixCount: number;
@@ -166,10 +170,10 @@ function extractReviewCommentSummary(body: string): string {
 }
 
 export function buildCodexConnectorMustFixFindingDetails(args: {
-  pr: Pick<GitHubPullRequest, "number" | "headRefOid"> | null;
+  pr: Pick<GitHubPullRequest, "number" | "headRefOid" | "configuredBotTopLevelReviewFindings"> | null;
   reviewThreads: ReviewThread[];
 }): string[] {
-  return clusterConfiguredBotReviewThreads(codexConnectorMustFixReviewThreads(args.reviewThreads)).map((cluster, index) => {
+  const threadDetails = clusterConfiguredBotReviewThreads(codexConnectorMustFixReviewThreads(args.reviewThreads)).map((cluster, index) => {
     const representativeThread = cluster.threads[0];
     const latestComment = latestCodexConnectorReviewCommentNode(representativeThread) ?? latestReviewComment(representativeThread);
     const lineRange = representativeThread.line == null ? "unknown" : String(representativeThread.line);
@@ -197,6 +201,43 @@ export function buildCodexConnectorMustFixFindingDetails(args: {
         .join("; ")}`,
     ].join("\n");
   });
+  const topLevelFindings = codexConnectorMustFixTopLevelReviewFindings(
+    args.pr?.configuredBotTopLevelReviewFindings ?? [],
+  );
+  const topLevelDetails = topLevelFindings.map((finding, index) =>
+    formatTopLevelFindingDetail({
+      finding,
+      index: threadDetails.length + index + 1,
+      pr: args.pr,
+    }),
+  );
+  return [...threadDetails, ...topLevelDetails];
+}
+
+function formatTopLevelFindingDetail(args: {
+  finding: CodexConnectorTopLevelReviewFinding;
+  index: number;
+  pr: Pick<GitHubPullRequest, "number" | "headRefOid"> | null;
+}): string {
+  const lineRange =
+    args.finding.lineEnd > args.finding.line ? `${args.finding.line}-${args.finding.lineEnd}` : String(args.finding.line);
+  return [
+    `- Root-cause repair group ${args.index}`,
+    `  Policy: Codex Connector must_fix_remaining`,
+    `  Source: top_level_codex_review_comment`,
+    `  Severity: ${args.finding.severity}`,
+    `  PR: ${args.pr ? `#${args.pr.number}` : "unknown"}`,
+    `  Head SHA: ${args.pr?.headRefOid ?? args.finding.headSha}`,
+    `  Finding ID: ${args.finding.id}`,
+    `  Affected files: ${args.finding.path}`,
+    `  Representative source URLs: ${args.finding.sourceUrl}`,
+    `  Source URL: ${args.finding.commentUrl ?? args.finding.sourceUrl}`,
+    `  File: ${args.finding.path}`,
+    `  Line range: ${lineRange}`,
+    `  Summary: ${args.finding.title}`,
+    `  Latest relevant comment: ${extractReviewCommentSummary(args.finding.body)}`,
+    `  Evidence: ${args.finding.id} ${args.finding.path}:${lineRange} ${args.finding.sourceUrl}`,
+  ].join("\n");
 }
 
 export interface ConfiguredBotReviewThreadCluster {

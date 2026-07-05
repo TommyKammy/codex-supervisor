@@ -1312,6 +1312,59 @@ test("buildConfiguredBotReviewSummary recognizes live Codex Connector no-major-i
   });
 });
 
+test("buildConfiguredBotReviewSummary treats current-head Codex Review issue comments as blocking top-level findings", () => {
+  const headSha = "b0642d776275b58f3d2918fa1a48cb522d6f21ce";
+  const facts: CopilotReviewLifecycleFacts = {
+    reviewRequests: [],
+    reviews: [],
+    comments: [],
+    issueComments: [
+      {
+        id: "IC_kw",
+        databaseId: 4884683854,
+        authorLogin: "chatgpt-codex-connector",
+        createdAt: "2026-07-05T03:19:37Z",
+        url: "https://github.com/TommyKammy/VeriDoc/pull/219#issuecomment-4884683854",
+        body: [
+          "### Codex Review",
+          "",
+          `https://github.com/TommyKammy/VeriDoc/blob/${headSha}/datasets/fixtures/pdf/record-pdf-representative.pdf#L42-L43`,
+          "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Preserve the PDF fixture bytes across checkout**",
+          "",
+          "On Windows clones with core.autocrlf=true, checkout can rewrite LF to CRLF and corrupt the PDF xref offsets.",
+          "",
+          "---",
+          "",
+          `https://github.com/TommyKammy/VeriDoc/blob/${headSha}/datasets/poc_evaluation_manifest_v1.json#L139-L140`,
+          "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Link the text-PDF sample to a PDF fixture**",
+          "",
+          "The sample resolves to parser-output JSON instead of a real PDF upload, so PDF parsing coverage is lost.",
+          "",
+          "<details><summary>About Codex</summary></details>",
+        ].join("\n"),
+      },
+    ],
+    statusContexts: [],
+    timeline: [],
+  };
+
+  const summary = buildConfiguredBotReviewSummary(facts, ["chatgpt-codex-connector"], headSha);
+
+  assert.equal(summary.lifecycle.state, "arrived");
+  assert.equal(summary.topLevelReview.strength, "blocking");
+  assert.equal(summary.topLevelReview.submittedAt, "2026-07-05T03:19:37Z");
+  assert.equal(summary.topLevelReview.findingCount, 2);
+  assert.equal(summary.topLevelReview.highestSeverity, "P2");
+  assert.deepEqual(
+    summary.topLevelReview.findings?.map((finding) => `${finding.severity}:${finding.path}:${finding.line}-${finding.lineEnd}`),
+    [
+      "P2:datasets/fixtures/pdf/record-pdf-representative.pdf:42-43",
+      "P2:datasets/poc_evaluation_manifest_v1.json:139-140",
+    ],
+  );
+  assert.equal(summary.currentHeadActionableObservedAt, "2026-07-05T03:19:37Z");
+});
+
 test("buildConfiguredBotReviewSummary anchors Codex Connector no-major issue comments to reviewed commits", () => {
   const headSha = "647c90b90b820cb17b83d2d80b5dddd3e789028b";
   const facts: CopilotReviewLifecycleFacts = {

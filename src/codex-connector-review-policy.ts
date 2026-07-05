@@ -17,6 +17,10 @@ import {
   hasCodexConnectorStrongRiskWording,
   isCodexConnectorReviewer,
 } from "./external-review/external-review-normalization";
+import {
+  codexConnectorMustFixTopLevelReviewFindings,
+  codexConnectorNitpickTopLevelReviewFindings,
+} from "./codex-connector-top-level-review";
 
 export type ReviewPolicyThreadVocabulary =
   | "current_head_thread"
@@ -624,8 +628,15 @@ function codexConnectorPSeverityRank(severity: CodexConnectorPSeverity): number 
 }
 
 function maxCodexConnectorPSeverity(threads: ReviewThread[]): CodexConnectorPSeverity {
-  return threads
-    .map((thread) => latestCodexConnectorPSeverity(thread))
+  return maxCodexConnectorPSeverityFromValues(
+    threads
+      .map((thread) => latestCodexConnectorPSeverity(thread))
+      .filter((severity): severity is CodexConnectorPSeverity => severity !== null),
+  );
+}
+
+function maxCodexConnectorPSeverityFromValues(severities: CodexConnectorPSeverity[]): CodexConnectorPSeverity {
+  return severities
     .filter((severity): severity is CodexConnectorPSeverity => severity !== null)
     .sort((left, right) => codexConnectorPSeverityRank(left) - codexConnectorPSeverityRank(right))[0] ?? "P3";
 }
@@ -688,7 +699,10 @@ function buildDiagnosticReviewPolicyInput(
 
 export function evaluateCodexConnectorConvergencePolicy(
   config: SupervisorConfig,
-  pr: Pick<GitHubPullRequest, "configuredBotCurrentHeadObservedAt">,
+  pr: Pick<
+    GitHubPullRequest,
+    "configuredBotCurrentHeadObservedAt" | "configuredBotTopLevelReviewFindings"
+  >,
   reviewThreads: ReviewThread[],
 ): CodexConnectorConvergencePolicyResult | null {
   if (!configuredReviewProviderKinds(config).includes("codex")) {
@@ -696,8 +710,11 @@ export function evaluateCodexConnectorConvergencePolicy(
   }
 
   const mustFixThreads = codexConnectorMustFixReviewThreads(reviewThreads);
-  const mustFixCount = mustFixThreads.length;
-  const nitpickCount = codexConnectorNitpickOnlyReviewThreads(reviewThreads).length;
+  const topLevelFindings = pr.configuredBotTopLevelReviewFindings ?? [];
+  const mustFixTopLevelFindings = codexConnectorMustFixTopLevelReviewFindings(topLevelFindings);
+  const nitpickTopLevelFindings = codexConnectorNitpickTopLevelReviewFindings(topLevelFindings);
+  const mustFixCount = mustFixThreads.length + mustFixTopLevelFindings.length;
+  const nitpickCount = codexConnectorNitpickOnlyReviewThreads(reviewThreads).length + nitpickTopLevelFindings.length;
   const currentHeadObservedAt = validPolicyTimestamp(pr.configuredBotCurrentHeadObservedAt);
   const findingCount = mustFixCount + nitpickCount;
   if (mustFixCount > 0) {
@@ -706,7 +723,12 @@ export function evaluateCodexConnectorConvergencePolicy(
       currentHeadObservedAt,
       findingCount,
       mergeEffect: "blocked",
-      highestSeverity: maxCodexConnectorPSeverity(mustFixThreads),
+      highestSeverity: maxCodexConnectorPSeverityFromValues([
+        ...mustFixThreads
+          .map((thread) => latestCodexConnectorPSeverity(thread))
+          .filter((severity): severity is CodexConnectorPSeverity => severity !== null),
+        ...mustFixTopLevelFindings.map((finding) => finding.severity),
+      ]),
       nextAction: "repair_must_fix_findings",
       mustFixCount,
     };
@@ -748,28 +770,59 @@ export function evaluateCodexConnectorConvergencePolicy(
 export function buildCodexConnectorPolicyBlockDiagnostic(
   config: SupervisorConfig,
   reviewThreads: ReviewThread[],
-  pr?: Pick<GitHubPullRequest, "headRefOid" | "configuredBotCurrentHeadObservedAt" | "configuredBotLatestReviewedCommitSha">,
+  pr?: Pick<
+    GitHubPullRequest,
+    | "headRefOid"
+    | "configuredBotCurrentHeadObservedAt"
+    | "configuredBotLatestReviewedCommitSha"
+    | "configuredBotTopLevelReviewFindings"
+  >,
 ): CodexConnectorPolicyBlockDiagnostic | null {
   if (!configuredReviewProviderKinds(config).includes("codex")) {
     return null;
   }
   const policyInput = buildDiagnosticReviewPolicyInput(config, reviewThreads, pr);
+  const topLevelMustFixFindings = codexConnectorMustFixTopLevelReviewFindings(
+    pr?.configuredBotTopLevelReviewFindings ?? [],
+  );
   const currentHeadMustFixThreadIds = new Set(
     policyInput.threads
       .filter((thread) => thread.boundaryOutcome === "must_fix_current_head" || thread.boundaryOutcome === "escalated_p3")
       .map((thread) => thread.id),
   );
   const mustFixThreads = reviewThreads.filter((thread) => currentHeadMustFixThreadIds.has(thread.id));
-  if (mustFixThreads.length === 0) {
+  if (mustFixThreads.length === 0 && topLevelMustFixFindings.length === 0) {
     return null;
   }
 
-  const severity = maxCodexConnectorPSeverity(mustFixThreads);
+  if (mustFixThreads.length === 0) {
+    const severity = maxCodexConnectorPSeverityFromValues(topLevelMustFixFindings.map((finding) => finding.severity));
+    const representativeFinding =
+      topLevelMustFixFindings.find((finding) => finding.severity === severity) ?? topLevelMustFixFindings[0]!;
+    return {
+      count: topLevelMustFixFindings.length,
+      severity,
+      file: formatDiagnosticToken(representativeFinding.path),
+      line:
+        representativeFinding.lineEnd > representativeFinding.line
+          ? `${representativeFinding.line}-${representativeFinding.lineEnd}`
+          : String(representativeFinding.line),
+      threadUrl: formatDiagnosticToken(representativeFinding.sourceUrl),
+      nextAction: "fix_on_new_head_or_wait_for_github_thread_resolution_or_use_explicit_manual_operator_path",
+    };
+  }
+
+  const severity = maxCodexConnectorPSeverityFromValues([
+    ...mustFixThreads
+      .map((thread) => latestCodexConnectorPSeverity(thread))
+      .filter((candidate): candidate is CodexConnectorPSeverity => candidate !== null),
+    ...topLevelMustFixFindings.map((finding) => finding.severity),
+  ]);
   const representativeThread =
     mustFixThreads.find((thread) => latestCodexConnectorPSeverity(thread) === severity) ?? mustFixThreads[0];
   const latestComment = latestReviewComment(representativeThread);
   return {
-    count: mustFixThreads.length,
+    count: mustFixThreads.length + topLevelMustFixFindings.length,
     severity,
     file: formatDiagnosticToken(representativeThread.path ?? "unknown"),
     line: representativeThread.line == null ? "unknown" : String(representativeThread.line),
@@ -781,7 +834,13 @@ export function buildCodexConnectorPolicyBlockDiagnostic(
 export function buildCodexConnectorP2P3PolicyDiagnostic(
   config: SupervisorConfig,
   reviewThreads: ReviewThread[],
-  pr?: Pick<GitHubPullRequest, "headRefOid" | "configuredBotCurrentHeadObservedAt" | "configuredBotLatestReviewedCommitSha">,
+  pr?: Pick<
+    GitHubPullRequest,
+    | "headRefOid"
+    | "configuredBotCurrentHeadObservedAt"
+    | "configuredBotLatestReviewedCommitSha"
+    | "configuredBotTopLevelReviewFindings"
+  >,
 ): CodexConnectorP2P3PolicyDiagnostic | null {
   if (!configuredReviewProviderKinds(config).includes("codex")) {
     return null;
@@ -803,6 +862,16 @@ export function buildCodexConnectorP2P3PolicyDiagnostic(
     } else if (thread.boundaryOutcome === "escalated_p3") {
       diagnostic.p3Escalated += 1;
     } else if (thread.boundaryOutcome === "softened_p3_advisory") {
+      diagnostic.p3Softened += 1;
+    }
+  }
+
+  for (const finding of pr?.configuredBotTopLevelReviewFindings ?? []) {
+    if (finding.severity === "P2") {
+      diagnostic.p2Actionable += 1;
+    } else if (finding.severity === "P3" && hasCodexConnectorStrongRiskWording(`${finding.title}\n${finding.body}`)) {
+      diagnostic.p3Escalated += 1;
+    } else if (finding.severity === "P3") {
       diagnostic.p3Softened += 1;
     }
   }
