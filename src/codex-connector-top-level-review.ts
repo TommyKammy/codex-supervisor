@@ -4,6 +4,7 @@ import {
   hasCodexConnectorStrongRiskWording,
   isCodexConnectorReviewer,
 } from "./external-review/external-review-normalization";
+import type { ReviewThread } from "./core/types";
 
 export interface CodexConnectorTopLevelReviewCommentInput {
   id?: string | null;
@@ -43,6 +44,14 @@ function normalizeWhitespace(value: string): string {
 function normalizeCommitShaForComparison(sha: string | null | undefined): string | null {
   const normalized = sha?.trim();
   return normalized ? normalized.toLowerCase() : null;
+}
+
+function decodeReviewPath(encodedPath: string): string {
+  try {
+    return decodeURIComponent(encodedPath);
+  } catch {
+    return encodedPath;
+  }
 }
 
 export function codexConnectorReviewFindingMatchesHead(
@@ -175,7 +184,7 @@ export function parseCodexConnectorTopLevelReviewFindings(
       block,
       sourceUrl,
       headSha,
-      path: decodeURIComponent(encodedPath),
+      path: decodeReviewPath(encodedPath),
       line,
       lineEnd,
       comment,
@@ -208,6 +217,28 @@ export function codexConnectorNitpickTopLevelReviewFindings(
     (finding) =>
       finding.severity === "P3" && !hasCodexConnectorStrongRiskWording(`${finding.title}\n${finding.body}`),
   );
+}
+
+export function codexConnectorTopLevelReviewFindingRetryTarget(
+  finding: CodexConnectorTopLevelReviewFinding,
+): Pick<ReviewThread, "id" | "comments"> {
+  return {
+    id: `codex-top-level-finding:${finding.id}`,
+    comments: {
+      nodes: [
+        {
+          id: finding.fingerprint,
+          body: `${finding.severity}: ${finding.title}\n${finding.body}`.trim(),
+          createdAt: finding.commentCreatedAt,
+          url: finding.sourceUrl,
+          author: {
+            login: finding.authorLogin,
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  };
 }
 
 export function codexConnectorCurrentHeadTopLevelReviewFindings(args: {
