@@ -1294,3 +1294,88 @@ test("GitHubPullRequestHydrator hydrates large GraphQL payloads without parsing 
   assert.equal(pr?.configuredBotTopLevelReviewStrength, "blocking");
   assert.equal(pr?.configuredBotTopLevelReviewSubmittedAt, "2026-04-14T01:02:03Z");
 });
+
+test("GitHubPullRequestHydrator pages issue comments before summarizing top-level Codex findings", async () => {
+  const config = createConfig({ reviewBotLogins: ["chatgpt-codex-connector"] });
+  const headSha = "6dc3165c745feb07b5e67a9036366d4e4b3206d3";
+  const commands: string[] = [];
+  const hydrator = new GitHubPullRequestHydrator(config, async (args) => {
+    commands.push(args.join(" "));
+    const queryArg = args.find((arg) => arg.startsWith("query=")) ?? "";
+    if (queryArg.includes("pullRequest(number: $number)")) {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                reviewRequests: { nodes: [] },
+                reviews: { nodes: [] },
+                comments: {
+                  pageInfo: { hasPreviousPage: true },
+                  nodes: [],
+                },
+                reviewThreads: { nodes: [] },
+                timelineItems: { nodes: [] },
+                commits: { nodes: [] },
+              },
+            },
+          },
+        }),
+        stderr: "",
+      };
+    }
+
+    if (queryArg.includes("issue(number: $number)")) {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          data: {
+            repository: {
+              issue: {
+                comments: {
+                  nodes: [
+                    {
+                      id: "IC_kw",
+                      databaseId: 4884683854,
+                      createdAt: "2026-07-05T03:19:37Z",
+                      url: "https://example.test/pr/44#issuecomment-4884683854",
+                      viewerDidAuthor: false,
+                      author: {
+                        login: "chatgpt-codex-connector",
+                        __typename: "Bot",
+                      },
+                      body: [
+                        "### Codex Review",
+                        "",
+                        `https://github.com/owner/repo/blob/${headSha}/src/file.ts#L12`,
+                        "",
+                        "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub> Keep paged findings active**",
+                        "",
+                        "The current-head finding is outside the last-100 PR comment window.",
+                      ].join("\n"),
+                    },
+                  ],
+                  pageInfo: {
+                    hasNextPage: false,
+                    endCursor: null,
+                  },
+                },
+              },
+            },
+          },
+        }),
+        stderr: "",
+      };
+    }
+
+    throw new Error(`Unexpected args: ${args.join(" ")}`);
+  });
+
+  const pr = await hydrator.hydrate(createPullRequest({ headRefOid: headSha }));
+
+  assert.equal(commands.length, 2);
+  assert.equal(pr?.configuredBotTopLevelReviewStrength, "blocking");
+  assert.equal(pr?.configuredBotTopLevelReviewFindingCount, 1);
+  assert.equal(pr?.configuredBotTopLevelReviewFindings?.[0]?.title, "Keep paged findings active");
+});

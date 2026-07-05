@@ -250,7 +250,7 @@ export function codexConnectorCurrentHeadTopLevelReviewFindings(args: {
   return args.comments
     .flatMap((comment) => parseCodexConnectorTopLevelReviewFindings(comment))
     .filter((finding) => codexConnectorReviewFindingMatchesHead(finding, args.currentHeadSha))
-    .filter((finding) => !supersededAtMs || Date.parse(finding.commentCreatedAt) > supersededAtMs);
+    .filter((finding) => !supersededAtMs || Date.parse(finding.commentCreatedAt) >= supersededAtMs);
 }
 
 export function codexConnectorPSeverityRank(severity: CodexConnectorPSeverity): number {

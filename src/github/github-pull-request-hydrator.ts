@@ -7,7 +7,7 @@ import {
 import { ConfiguredBotReviewSummary } from "./github-review-signals";
 import { SupervisorConfig } from "../core/types";
 import { parseJson, truncate } from "../core/utils";
-import type { CopilotReviewState, GitHubPullRequest } from "./types";
+import type { CopilotReviewState, GitHubPullRequest, IssueComment } from "./types";
 
 const COPILOT_REVIEW_TRANSITION_CACHE_TTL_MS = 30_000;
 const COPILOT_REVIEW_CACHE_MAX_ENTRIES = 128;
@@ -207,6 +207,9 @@ export class GitHubPullRequestHydrator {
               }
             }
             comments(last: 100) {
+              pageInfo {
+                hasPreviousPage
+              }
               nodes {
                 id
                 databaseId
@@ -331,12 +334,146 @@ export class GitHubPullRequestHydrator {
       };
     }>(result.stdout, `gh api graphql copilot review lifecycle pr=${prNumber}`);
 
+    const lifecycle = payload.data?.repository?.pullRequest;
+    const issueComments = lifecycle?.comments?.pageInfo?.hasPreviousPage
+      ? await this.fetchIssueComments(prNumber)
+      : null;
+    let lifecycleWithPagedIssueComments: PullRequestCopilotReviewLifecycleResponse | null | undefined = lifecycle;
+    if (lifecycle && issueComments) {
+      lifecycleWithPagedIssueComments = {
+        ...lifecycle,
+        comments: {
+          ...lifecycle.comments,
+          nodes: issueComments.map((comment) => ({
+            id: comment.id,
+            databaseId: comment.databaseId,
+            createdAt: comment.createdAt,
+            body: comment.body,
+            url: comment.url,
+            viewerDidAuthor: comment.viewerDidAuthor,
+            author: comment.author
+              ? {
+                  login: comment.author.login,
+                }
+              : null,
+          })),
+        },
+      };
+    }
+
     return buildConfiguredBotReviewSummary(
-      payload.data?.repository?.pullRequest,
+      lifecycleWithPagedIssueComments,
       this.config.reviewBotLogins,
       currentHeadOid,
       { prNumber, headSha: currentHeadOid },
     );
+  }
+
+  private async fetchIssueComments(issueNumber: number): Promise<IssueComment[]> {
+    const { owner, repo } = repoOwnerAndName(this.config.repoSlug);
+    const comments: IssueComment[] = [];
+    let cursor: string | null = null;
+
+    while (true) {
+      const query = `
+        query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+          repository(owner: $owner, name: $repo) {
+            issue(number: $number) {
+              comments(first: 100, after: $cursor) {
+                nodes {
+                  id
+                  databaseId
+                  createdAt
+                  body
+                  url
+                  viewerDidAuthor
+                  author {
+                    login
+                    __typename
+                  }
+                }
+                pageInfo {
+                  hasNextPage
+                  endCursor
+                }
+              }
+            }
+          }
+        }
+      `;
+
+      const result = await this.runGhJsonCommand([
+        "api",
+        "graphql",
+        "-f",
+        `query=${query}`,
+        "-F",
+        `owner=${owner}`,
+        "-F",
+        `repo=${repo}`,
+        "-F",
+        `number=${issueNumber}`,
+        ...(cursor ? ["-F", `cursor=${cursor}`] : []),
+      ]);
+      const payload = parseJson<{
+        data?: {
+          repository?: {
+            issue?: {
+              comments?: {
+                nodes?: Array<{
+                  id?: string | null;
+                  databaseId?: number | null;
+                  createdAt?: string | null;
+                  body?: string | null;
+                  url?: string | null;
+                  viewerDidAuthor?: boolean | null;
+                  author?: {
+                    login?: string | null;
+                    __typename?: string | null;
+                  } | null;
+                } | null>;
+                pageInfo?: {
+                  hasNextPage?: boolean | null;
+                  endCursor?: string | null;
+                } | null;
+              } | null;
+            } | null;
+          };
+        };
+      }>(result.stdout, `gh api graphql issue comments issue=${issueNumber}`);
+
+      const connection = payload.data?.repository?.issue?.comments;
+      comments.push(
+        ...(connection?.nodes?.flatMap((comment) =>
+          comment?.id
+            ? [
+                {
+                  id: comment.id,
+                  databaseId: comment.databaseId ?? null,
+                  body: comment.body ?? "",
+                  createdAt: comment.createdAt ?? "",
+                  url: comment.url ?? null,
+                  viewerDidAuthor: comment.viewerDidAuthor ?? null,
+                  author: comment.author
+                    ? {
+                        login: comment.author.login ?? null,
+                        typeName: comment.author.__typename ?? null,
+                      }
+                    : null,
+                },
+              ]
+            : [],
+        ) ?? []),
+      );
+
+      const pageInfo = connection?.pageInfo;
+      if (!pageInfo?.hasNextPage || !pageInfo.endCursor) {
+        break;
+      }
+      cursor = pageInfo.endCursor;
+    }
+
+    return comments;
   }
 }
 

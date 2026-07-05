@@ -50,6 +50,9 @@ export interface PullRequestCopilotReviewLifecycleResponse {
     } | null>;
   } | null;
   comments?: {
+    pageInfo?: {
+      hasPreviousPage?: boolean | null;
+    } | null;
     nodes?: Array<{
       id?: string | null;
       databaseId?: number | null;
