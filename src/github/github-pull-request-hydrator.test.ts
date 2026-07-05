@@ -504,6 +504,84 @@ test("GitHubPullRequestHydrator reuses arrived configured-bot lifecycle for the 
   assert.equal(lifecycleCallCount, 1);
 });
 
+test("GitHubPullRequestHydrator refreshes Codex issue-comment findings after arrived status hydration", async () => {
+  const config = createConfig({ reviewBotLogins: ["chatgpt-codex-connector"] });
+  const headSha = "6dc3165c745feb07b5e67a9036366d4e4b3206d3";
+  let lifecycleCallCount = 0;
+  const pullRequestPayload = (comments: unknown[]) => ({
+    reviewRequests: { nodes: [] },
+    reviews: { nodes: [] },
+    comments: {
+      pageInfo: { hasPreviousPage: false },
+      nodes: comments,
+    },
+    reviewThreads: { nodes: [] },
+    timelineItems: { nodes: [] },
+    commits: { nodes: [] },
+  });
+  const hydrator = new GitHubPullRequestHydrator(config, async (args) => {
+    if (args[0] !== "api" || args[1] !== "graphql") {
+      throw new Error(`Unexpected args: ${args.join(" ")}`);
+    }
+    lifecycleCallCount += 1;
+    const comments =
+      lifecycleCallCount === 1
+        ? [
+            {
+              id: "IC_finding",
+              databaseId: 4884683854,
+              createdAt: "2026-07-05T03:19:37Z",
+              url: "https://example.test/pr/44#issuecomment-4884683854",
+              viewerDidAuthor: false,
+              author: { login: "chatgpt-codex-connector[bot]" },
+              body: [
+                "### Codex Review",
+                "",
+                `https://github.com/owner/repo/blob/${headSha}/src/file.ts#L12`,
+                "",
+                "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub> Keep cached findings fresh**",
+                "",
+                "The current-head finding should be refreshed on each Codex status hydration.",
+              ].join("\n"),
+            },
+          ]
+        : [
+            {
+              id: "IC_success",
+              databaseId: 4884683855,
+              createdAt: "2026-07-05T03:25:37Z",
+              url: "https://example.test/pr/44#issuecomment-4884683855",
+              viewerDidAuthor: false,
+              author: { login: "chatgpt-codex-connector[bot]" },
+              body: "Codex Review: no major issues found.",
+            },
+          ];
+    return {
+      exitCode: 0,
+      stdout: JSON.stringify({
+        data: {
+          repository: {
+            pullRequest: pullRequestPayload(comments),
+          },
+        },
+      }),
+      stderr: "",
+    };
+  });
+
+  const first = await hydrator.hydrate(createPullRequest({ headRefOid: headSha }));
+  const second = await hydrator.hydrate(createPullRequest({ headRefOid: headSha }));
+
+  assert.equal(first?.hydrationProvenance, "fresh");
+  assert.equal(first?.configuredBotTopLevelReviewStrength, "blocking");
+  assert.equal(first?.configuredBotTopLevelReviewFindingCount, 1);
+  assert.equal(second?.hydrationProvenance, "fresh");
+  assert.equal(second?.configuredBotTopLevelReviewStrength, null);
+  assert.equal(second?.configuredBotTopLevelReviewFindingCount, null);
+  assert.equal(second?.configuredBotCurrentHeadObservationSource, "codex_pr_success_comment");
+  assert.equal(lifecycleCallCount, 2);
+});
+
 test("GitHubPullRequestHydrator hydrates arrived lifecycle from actionable configured-bot issue comments", async () => {
   const config = createConfig({ reviewBotLogins: ["coderabbitai[bot]"] });
   let lifecycleQuery: string | null = null;

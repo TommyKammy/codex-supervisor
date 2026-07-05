@@ -5,6 +5,7 @@ import {
   PullRequestCopilotReviewLifecycleResponse,
 } from "./github-hydration";
 import { ConfiguredBotReviewSummary } from "./github-review-signals";
+import { configuredReviewProviderKinds } from "../core/review-providers";
 import { SupervisorConfig } from "../core/types";
 import { parseJson, truncate } from "../core/utils";
 import type { CopilotReviewState, GitHubPullRequest, IssueComment } from "./types";
@@ -131,6 +132,17 @@ export class GitHubPullRequestHydrator {
   async hydrateForStatus(pr: GitHubPullRequest | null): Promise<GitHubPullRequest | null> {
     if (!pr) {
       return null;
+    }
+
+    if (configuredReviewProviderKinds(this.config).includes("codex")) {
+      try {
+        const summary = await this.fetchConfiguredBotReviewSummary(pr.number, pr.headRefOid);
+        return withHydrationProvenance(applyConfiguredBotReviewSummary(pr, summary), "fresh");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn(`Failed to hydrate Copilot review lifecycle for PR #${pr.number}: ${truncate(message, 500) ?? "unknown error"}`);
+        return withHydrationProvenance(applyConfiguredBotReviewSummary(pr, null), "fresh");
+      }
     }
 
     const cacheKey = `${pr.number}:${pr.headRefOid}`;

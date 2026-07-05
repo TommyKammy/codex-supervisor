@@ -236,7 +236,7 @@ test("formatDetailedStatus renders core lines before appended summaries", () => 
       "external_signal_readiness status=repo_not_ready_for_expected_signals ci=repo_not_configured review=disabled workflows=absent",
       "copilot_review state=not_requested requested_at=none arrived_at=none timed_out_at=none timeout_action=none",
       "pr_hydration provenance=unknown head_sha=deadbeef",
-      "configured_bot_top_level_review strength=none submitted_at=none effect=none",
+      "configured_bot_top_level_review strength=none submitted_at=none finding_count=0 must_fix_count=0 nitpick_count=0 highest_severity=none effect=none",
       "pr_state=OPEN draft=no merge_state=CLEAN review_decision=none head_sha=deadbeef",
       "checks=none",
       "review_threads bot_pending=0 bot_unresolved=0 bot_effective_unresolved=0 bot_outdated_unresolved=0 manual=0",

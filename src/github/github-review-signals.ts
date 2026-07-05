@@ -532,7 +532,7 @@ function inferConfiguredBotTopLevelReviewSummary(
     if (
       mustFixFindings.length > 0 ||
       !latestConfiguredReview.submittedAt ||
-      parseTimestamp(latestFindingSubmittedAt) >= latestConfiguredReviewMs
+      (latestConfiguredReview.strength !== "blocking" && parseTimestamp(latestFindingSubmittedAt) >= latestConfiguredReviewMs)
     ) {
       return issueCommentSummary;
     }

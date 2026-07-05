@@ -1499,6 +1499,49 @@ test("buildConfiguredBotReviewSummary keeps active top-level must-fix findings b
   assert.equal(summary.topLevelReview.highestSeverity, "P2");
 });
 
+test("buildConfiguredBotReviewSummary preserves configured-bot blocking reviews when Codex only reports top-level nitpicks", () => {
+  const headSha = "b0642d776275b58f3d2918fa1a48cb522d6f21ce";
+  const facts: CopilotReviewLifecycleFacts = {
+    reviewRequests: [],
+    reviews: [
+      {
+        authorLogin: "coderabbitai[bot]",
+        submittedAt: "2026-07-05T03:19:37Z",
+        commitOid: headSha,
+        state: "CHANGES_REQUESTED",
+        body: "This migration can skip the required verification gate.",
+      },
+    ],
+    comments: [],
+    issueComments: [
+      {
+        id: "IC_nitpick",
+        databaseId: 4884683856,
+        authorLogin: "chatgpt-codex-connector[bot]",
+        createdAt: "2026-07-05T03:25:37Z",
+        url: "https://example.test/pr/219#issuecomment-4884683856",
+        body: [
+          "### Codex Review",
+          "",
+          `https://github.com/TommyKammy/VeriDoc/blob/${headSha}/src/file.ts#L12`,
+          "**<sub><sub>![P3 Badge](https://img.shields.io/badge/P3-blue?style=flat)</sub></sub>  Prefer a shorter helper name**",
+          "",
+          "Nitpick: this helper name is a little verbose.",
+        ].join("\n"),
+      },
+    ],
+    statusContexts: [],
+    timeline: [],
+  };
+
+  const summary = buildConfiguredBotReviewSummary(facts, ["coderabbitai[bot]", "chatgpt-codex-connector"], headSha);
+
+  assert.equal(summary.topLevelReview.strength, "blocking");
+  assert.equal(summary.topLevelReview.submittedAt, "2026-07-05T03:19:37Z");
+  assert.equal(summary.topLevelReview.findingCount, 1);
+  assert.equal(summary.topLevelReview.highestSeverity, "P3");
+});
+
 test("buildConfiguredBotReviewSummary anchors Codex Connector no-major issue comments to reviewed commits", () => {
   const headSha = "647c90b90b820cb17b83d2d80b5dddd3e789028b";
   const facts: CopilotReviewLifecycleFacts = {
