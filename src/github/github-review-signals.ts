@@ -105,6 +105,7 @@ export type ConfiguredBotCurrentHeadObservationSource =
   | "review_thread_comment"
   | "status_context"
   | "codex_pr_success_comment"
+  | "codex_top_level_review_comment"
   | null;
 
 export interface CodexConnectorReviewRequestObservation {
@@ -476,6 +477,7 @@ function inferConfiguredBotTopLevelReviewSummary(
   facts: CopilotReviewLifecycleFacts,
   reviewBotLogins: string[],
   currentHeadOid: string | null | undefined,
+  currentHeadCodexSuccessObservedAt: string | null | undefined,
 ): ConfiguredBotTopLevelReviewSummary {
   const configuredReviewBots = new Set(normalizeReviewBotLogins(reviewBotLogins));
   if (configuredReviewBots.size === 0) {
@@ -514,6 +516,7 @@ function inferConfiguredBotTopLevelReviewSummary(
   const topLevelFindings = codexConnectorCurrentHeadTopLevelReviewFindings({
     comments: currentHeadCodexReviewComments,
     currentHeadSha: currentHeadOid,
+    supersededAt: currentHeadCodexSuccessObservedAt,
   });
   const mustFixFindings = codexConnectorMustFixTopLevelReviewFindings(topLevelFindings);
   const nitpickFindings = codexConnectorNitpickTopLevelReviewFindings(topLevelFindings);
@@ -746,6 +749,20 @@ function inferConfiguredBotCurrentHeadObservation(
         currentHeadObservations.push({ observedAt: comment.createdAt, source: "codex_pr_success_comment" });
       }
     }
+
+    const topLevelFindings = codexConnectorCurrentHeadTopLevelReviewFindings({
+      comments: facts.issueComments.filter((comment) => {
+        const authorLogin = normalizeLogin(comment.authorLogin);
+        return Boolean(authorLogin && configuredReviewBots.has(authorLogin) && isCodexConnectorLogin(authorLogin));
+      }),
+      currentHeadSha: normalizedCurrentHeadOid,
+    });
+    for (const finding of topLevelFindings) {
+      currentHeadObservations.push({
+        observedAt: finding.commentCreatedAt,
+        source: "codex_top_level_review_comment",
+      });
+    }
   }
 
   const latestStrongCurrentHeadObservedAt = latestTimestamp(currentHeadObservations.map((observation) => observation.observedAt));
@@ -904,6 +921,7 @@ function inferConfiguredBotCurrentHeadActionableObservedAt(
       return Boolean(authorLogin && configuredReviewBots.has(authorLogin) && isCodexConnectorLogin(authorLogin));
     }),
     currentHeadSha: normalizedCurrentHeadOid,
+    supersededAt: currentHeadCodexSuccessObservedAt,
   });
   for (const finding of codexConnectorMustFixTopLevelReviewFindings(topLevelFindings)) {
     currentHeadActionableTimes.push(finding.commentCreatedAt);
@@ -1091,7 +1109,12 @@ export function buildConfiguredBotReviewSummary(
     currentHeadOid,
     currentHeadCodexSuccessObservation?.observedAt ?? null,
   );
-  const topLevelReview = inferConfiguredBotTopLevelReviewSummary(facts, reviewBotLogins, currentHeadOid);
+  const topLevelReview = inferConfiguredBotTopLevelReviewSummary(
+    facts,
+    reviewBotLogins,
+    currentHeadOid,
+    currentHeadCodexSuccessObservation?.observedAt ?? null,
+  );
   Object.defineProperty(topLevelReview, "configuredBotOnlyChangesRequestedReview", {
     enumerable: false,
     value: inferConfiguredBotOnlyChangesRequestedReview(facts, reviewBotLogins),

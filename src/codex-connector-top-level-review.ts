@@ -213,10 +213,13 @@ export function codexConnectorNitpickTopLevelReviewFindings(
 export function codexConnectorCurrentHeadTopLevelReviewFindings(args: {
   comments: CodexConnectorTopLevelReviewCommentInput[];
   currentHeadSha: string | null | undefined;
+  supersededAt?: string | null | undefined;
 }): CodexConnectorTopLevelReviewFinding[] {
+  const supersededAtMs = args.supersededAt ? Date.parse(args.supersededAt) : 0;
   return args.comments
     .flatMap((comment) => parseCodexConnectorTopLevelReviewFindings(comment))
-    .filter((finding) => codexConnectorReviewFindingMatchesHead(finding, args.currentHeadSha));
+    .filter((finding) => codexConnectorReviewFindingMatchesHead(finding, args.currentHeadSha))
+    .filter((finding) => !supersededAtMs || Date.parse(finding.commentCreatedAt) > supersededAtMs);
 }
 
 export function codexConnectorPSeverityRank(severity: CodexConnectorPSeverity): number {

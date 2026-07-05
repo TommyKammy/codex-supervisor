@@ -818,6 +818,21 @@ export function buildCodexConnectorPolicyBlockDiagnostic(
       .filter((candidate): candidate is CodexConnectorPSeverity => candidate !== null),
     ...topLevelMustFixFindings.map((finding) => finding.severity),
   ]);
+  const threadHasSelectedSeverity = mustFixThreads.some((thread) => latestCodexConnectorPSeverity(thread) === severity);
+  const representativeTopLevelFinding = topLevelMustFixFindings.find((finding) => finding.severity === severity) ?? null;
+  if (!threadHasSelectedSeverity && representativeTopLevelFinding) {
+    return {
+      count: mustFixThreads.length + topLevelMustFixFindings.length,
+      severity,
+      file: formatDiagnosticToken(representativeTopLevelFinding.path),
+      line:
+        representativeTopLevelFinding.lineEnd > representativeTopLevelFinding.line
+          ? `${representativeTopLevelFinding.line}-${representativeTopLevelFinding.lineEnd}`
+          : String(representativeTopLevelFinding.line),
+      threadUrl: formatDiagnosticToken(representativeTopLevelFinding.sourceUrl),
+      nextAction: "fix_on_new_head_or_wait_for_github_thread_resolution_or_use_explicit_manual_operator_path",
+    };
+  }
   const representativeThread =
     mustFixThreads.find((thread) => latestCodexConnectorPSeverity(thread) === severity) ?? mustFixThreads[0];
   const latestComment = latestReviewComment(representativeThread);

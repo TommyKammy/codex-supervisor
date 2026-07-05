@@ -1362,7 +1362,54 @@ test("buildConfiguredBotReviewSummary treats current-head Codex Review issue com
       "P2:datasets/poc_evaluation_manifest_v1.json:139-140",
     ],
   );
+  assert.equal(summary.currentHeadObservedAt, "2026-07-05T03:19:37Z");
+  assert.equal(summary.currentHeadObservationSource, "codex_top_level_review_comment");
   assert.equal(summary.currentHeadActionableObservedAt, "2026-07-05T03:19:37Z");
+});
+
+test("buildConfiguredBotReviewSummary lets later same-head Codex success supersede older top-level findings", () => {
+  const headSha = "b0642d776275b58f3d2918fa1a48cb522d6f21ce";
+  const facts: CopilotReviewLifecycleFacts = {
+    reviewRequests: [],
+    reviews: [],
+    comments: [],
+    issueComments: [
+      {
+        id: "IC_finding",
+        databaseId: 4884683854,
+        authorLogin: "chatgpt-codex-connector",
+        createdAt: "2026-07-05T03:19:37Z",
+        url: "https://example.test/pr/219#issuecomment-4884683854",
+        body: [
+          "### Codex Review",
+          "",
+          `https://github.com/TommyKammy/VeriDoc/blob/${headSha}/datasets/poc_evaluation_manifest_v1.json#L139-L140`,
+          "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Link the text-PDF sample to a PDF fixture**",
+          "",
+          "The sample resolves to parser-output JSON instead of a real PDF upload.",
+        ].join("\n"),
+      },
+      {
+        id: "IC_success",
+        databaseId: 4884683999,
+        authorLogin: "chatgpt-codex-connector",
+        createdAt: "2026-07-05T03:25:37Z",
+        url: "https://example.test/pr/219#issuecomment-4884683999",
+        body: `Codex Review: Didn't find any major issues. :tada:\n\n**Reviewed commit:** \`${headSha.slice(0, 10)}\``,
+      },
+    ],
+    statusContexts: [],
+    timeline: [],
+  };
+
+  const summary = buildConfiguredBotReviewSummary(facts, ["chatgpt-codex-connector"], headSha);
+
+  assert.equal(summary.topLevelReview.strength, null);
+  assert.equal(summary.topLevelReview.submittedAt, null);
+  assert.equal(summary.topLevelReview.findingCount, undefined);
+  assert.equal(summary.currentHeadObservedAt, "2026-07-05T03:25:37Z");
+  assert.equal(summary.currentHeadObservationSource, "codex_pr_success_comment");
+  assert.equal(summary.currentHeadActionableObservedAt, null);
 });
 
 test("buildConfiguredBotReviewSummary anchors Codex Connector no-major issue comments to reviewed commits", () => {

@@ -300,6 +300,42 @@ test("replay corpus validation backfills missing operator summaries from older s
   assert.equal(validated.operatorSummary, null);
 });
 
+test("replay corpus validation preserves top-level Codex Review finding metadata", () => {
+  const pr = createPr({
+    configuredBotTopLevelReviewFindingCount: 1,
+    configuredBotTopLevelReviewHighestSeverity: "P2",
+    configuredBotTopLevelReviewFindings: [
+      {
+        id: "IC_kw:finding:1",
+        commentId: "IC_kw",
+        commentDatabaseId: 4884683854,
+        commentCreatedAt: "2026-07-05T03:19:37Z",
+        commentUrl: "https://example.test/pr/219#issuecomment-4884683854",
+        sourceUrl: "https://example.test/blob/head-532/datasets/poc_evaluation_manifest_v1.json#L139-L140",
+        path: "datasets/poc_evaluation_manifest_v1.json",
+        line: 139,
+        lineEnd: 140,
+        headSha: "head-532",
+        severity: "P2",
+        title: "Link the text-PDF sample to a PDF fixture",
+        body: "The sample resolves to parser-output JSON instead of a real PDF upload.",
+        authorLogin: "chatgpt-codex-connector",
+        fingerprint: "IC_kw|head-532|datasets/poc_evaluation_manifest_v1.json|139|P2|link",
+      },
+    ],
+  });
+  const snapshot = createSnapshot({ pr });
+
+  const validated = validateReplayCorpusInputSnapshot(snapshot, "top-level-codex-review-finding");
+
+  assert.equal(validated.github.pullRequest?.configuredBotTopLevelReviewFindingCount, 1);
+  assert.equal(validated.github.pullRequest?.configuredBotTopLevelReviewHighestSeverity, "P2");
+  assert.deepEqual(
+    validated.github.pullRequest?.configuredBotTopLevelReviewFindings,
+    pr.configuredBotTopLevelReviewFindings,
+  );
+});
+
 test("replay corpus validation preserves host-local CI posture fields", () => {
   const snapshot = createSnapshot({
     record: createRecord({
