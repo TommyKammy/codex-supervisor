@@ -1322,7 +1322,7 @@ test("buildConfiguredBotReviewSummary treats current-head Codex Review issue com
       {
         id: "IC_kw",
         databaseId: 4884683854,
-        authorLogin: "chatgpt-codex-connector",
+        authorLogin: "chatgpt-codex-connector[bot]",
         createdAt: "2026-07-05T03:19:37Z",
         url: "https://github.com/TommyKammy/VeriDoc/pull/219#issuecomment-4884683854",
         body: [
