@@ -529,7 +529,11 @@ function inferConfiguredBotTopLevelReviewSummary(
       highestSeverity: highestCodexConnectorPSeverity(topLevelFindings),
       findings: topLevelFindings,
     };
-    if (!latestConfiguredReview.submittedAt || parseTimestamp(latestFindingSubmittedAt) >= latestConfiguredReviewMs) {
+    if (
+      mustFixFindings.length > 0 ||
+      !latestConfiguredReview.submittedAt ||
+      parseTimestamp(latestFindingSubmittedAt) >= latestConfiguredReviewMs
+    ) {
       return issueCommentSummary;
     }
     return {
@@ -812,7 +816,7 @@ function inferCurrentHeadCodexSuccessObservation(
   facts: CopilotReviewLifecycleFacts,
   reviewBotLogins: string[],
   currentHeadOid: string | null | undefined,
-): { observedAt: string; reviewedCommitSha: string } | null {
+): { observedAt: string; reviewedCommitSha: string | null } | null {
   const normalizedCurrentHeadOid = currentHeadOid?.trim();
   if (!normalizedCurrentHeadOid) {
     return null;
@@ -823,7 +827,7 @@ function inferCurrentHeadCodexSuccessObservation(
     return null;
   }
 
-  let latest: { createdAt: string; createdAtMs: number; reviewedCommitSha: string } | null = null;
+  let latest: { createdAt: string; createdAtMs: number; reviewedCommitSha: string | null } | null = null;
   for (const comment of facts.issueComments) {
     const authorLogin = normalizeLogin(comment.authorLogin);
     if (
@@ -835,7 +839,7 @@ function inferCurrentHeadCodexSuccessObservation(
     }
 
     const reviewedCommitSha = reviewedCommitFromBody(comment.body);
-    if (!commitShaMatchesByPrefix(reviewedCommitSha, normalizedCurrentHeadOid)) {
+    if (reviewedCommitSha && !commitShaMatchesByPrefix(reviewedCommitSha, normalizedCurrentHeadOid)) {
       continue;
     }
 
@@ -845,7 +849,7 @@ function inferCurrentHeadCodexSuccessObservation(
     }
 
     if (!latest || createdAtMs >= latest.createdAtMs) {
-      latest = { createdAt: comment.createdAt!, createdAtMs, reviewedCommitSha: reviewedCommitSha! };
+      latest = { createdAt: comment.createdAt!, createdAtMs, reviewedCommitSha };
     }
   }
 

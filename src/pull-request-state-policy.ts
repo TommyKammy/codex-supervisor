@@ -19,6 +19,7 @@ import {
   codexConnectorMustFixReviewThreads,
   latestCodexConnectorReviewCommentFingerprint,
 } from "./codex-connector-review-policy";
+import { codexConnectorMustFixTopLevelReviewFindings } from "./codex-connector-top-level-review";
 import { shouldReenterCodexConnectorValidReviewRepair } from "./codex-connector-valid-review-repair-selection";
 import {
   actionableConfiguredBotReviewThreads,
@@ -339,6 +340,11 @@ export function inferStateFromPullRequest(
   });
   const reviewDecisionSatisfiedForState = reviewSatisfied(pr) || botReviewDecisionResidueSatisfied;
   const codexConnectorMustFixThreads = codexConnectorMustFixReviewThreads(unresolvedBotThreads);
+  const codexConnectorMustFixTopLevelFindings = codexConnectorMustFixTopLevelReviewFindings(
+    pr.configuredBotTopLevelReviewFindings ?? [],
+  );
+  const hasCodexConnectorMustFixRepairTargets =
+    codexConnectorMustFixThreads.length > 0 || codexConnectorMustFixTopLevelFindings.length > 0;
   const codexConnectorMustFixThreadIds = new Set(codexConnectorMustFixThreads.map((thread) => thread.id));
   const retryFingerprintForThread = (thread: ReviewThread) =>
     codexConnectorMustFixThreadIds.has(thread.id) ? latestCodexConnectorReviewCommentFingerprint(thread) : undefined;
@@ -504,7 +510,7 @@ export function inferStateFromPullRequest(
 
   if (
     stillValidCodexRepairAvailable ||
-    codexConnectorMustFixThreads.length > 0 &&
+    hasCodexConnectorMustFixRepairTargets &&
     !codexConnectorMustFixThreadsExhausted &&
     !checkSummary.hasFailing &&
     !checkSummary.hasPending &&

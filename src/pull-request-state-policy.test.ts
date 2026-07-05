@@ -285,6 +285,47 @@ test("inferStateFromPullRequest still blocks stronger configured-bot top-level c
   assert.equal(inferStateFromPullRequest(config, createRecord({ state: "pr_open" }), pr, passingChecks(), []), "blocked");
 });
 
+test("inferStateFromPullRequest repairs top-level Codex must-fix findings even without aggregate reviewDecision", () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    humanReviewBlocksMerge: false,
+  });
+  const pr = createPullRequest({
+    reviewDecision: null,
+    copilotReviewState: "arrived",
+    copilotReviewRequestedAt: "2026-07-05T03:18:00Z",
+    copilotReviewArrivedAt: "2026-07-05T03:19:37Z",
+    configuredBotCurrentHeadObservedAt: "2026-07-05T03:19:37Z",
+    configuredBotCurrentHeadObservationSource: "codex_top_level_review_comment",
+    configuredBotTopLevelReviewStrength: "blocking",
+    configuredBotTopLevelReviewSubmittedAt: "2026-07-05T03:19:37Z",
+    configuredBotTopLevelReviewFindings: [
+      {
+        id: "IC_kw:finding:1",
+        commentId: "IC_kw",
+        commentDatabaseId: 4884683854,
+        commentCreatedAt: "2026-07-05T03:19:37Z",
+        commentUrl: "https://example.test/pr/219#issuecomment-4884683854",
+        sourceUrl: "https://example.test/blob/head123/datasets/poc_evaluation_manifest_v1.json#L139-L140",
+        path: "datasets/poc_evaluation_manifest_v1.json",
+        line: 139,
+        lineEnd: 140,
+        headSha: "head123",
+        severity: "P2",
+        title: "Link the text-PDF sample to a PDF fixture",
+        body: "The sample resolves to parser-output JSON instead of a real PDF upload.",
+        authorLogin: "chatgpt-codex-connector",
+        fingerprint: "IC_kw|head123|datasets/poc_evaluation_manifest_v1.json|139|P2|link",
+      },
+    ],
+  });
+
+  assert.equal(
+    inferStateFromPullRequest(config, createRecord({ state: "pr_open", last_head_sha: "head123" }), pr, passingChecks(), []),
+    "addressing_review",
+  );
+});
+
 test("inferStateFromPullRequest allows a journal-only configured-bot thread when the PR is otherwise green and CodeRabbit status is SUCCESS", () => {
   const config = createConfig({
     reviewBotLogins: ["coderabbitai", "coderabbitai[bot]"],
