@@ -23,6 +23,7 @@ const EXPECTED_TOP_LEVEL_ENTRIES = {
     "codex-connector-review-request-decision.ts",
     "codex-connector-review-request-identity.ts",
     "codex-connector-review-request-transition.ts",
+    "codex-connector-top-level-review.ts",
     "codex-connector-tracked-pr-test-helpers.ts",
     "codex-connector-valid-review-repair-selection.ts",
     "codex-connector-valid-review-repair.ts",
