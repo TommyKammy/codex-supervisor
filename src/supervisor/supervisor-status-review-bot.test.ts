@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   configuredBotTopLevelReviewEffect,
+  configuredBotTopLevelReviewSummary,
   externalSignalReadinessDiagnostics,
   configuredReviewStatusLabel,
   reviewBotDiagnostics,
@@ -710,6 +711,42 @@ test("configured review helpers preserve top-level status semantics", () => {
       configuredBotReviewThreads,
     ),
     "awaiting_thread_resolution",
+  );
+  const topLevelFindingPr = createPr({
+    configuredBotTopLevelReviewStrength: "nitpick_only",
+    configuredBotTopLevelReviewSubmittedAt: "2026-07-05T03:19:37Z",
+    configuredBotTopLevelReviewFindings: [
+      {
+        id: "finding-1",
+        commentId: "comment-1",
+        commentDatabaseId: 1,
+        commentCreatedAt: "2026-07-05T03:19:37Z",
+        commentUrl: "https://example.test/pr#issuecomment-1",
+        sourceUrl: "https://example.test/blob/head-sha/src/file.ts#L1-L2",
+        path: "src/file.ts",
+        line: 1,
+        lineEnd: 2,
+        headSha: "head-sha",
+        severity: "P2",
+        title: "Keep top-level blockers visible",
+        body: "The status effect should not soften while must-fix findings remain.",
+        authorLogin: "chatgpt-codex-connector",
+        fingerprint: "finding-1",
+      },
+    ],
+  });
+  assert.equal(
+    configuredBotTopLevelReviewEffect(
+      createConfig({ reviewBotLogins: ["coderabbitai[bot]"] }),
+      topLevelFindingPr,
+      [],
+      configuredBotReviewThreads,
+    ),
+    "blocking",
+  );
+  assert.equal(
+    configuredBotTopLevelReviewSummary(topLevelFindingPr),
+    "strength=nitpick_only submitted_at=2026-07-05T03:19:37Z finding_count=1 must_fix_count=1 nitpick_count=0 highest_severity=P2",
   );
 });
 
