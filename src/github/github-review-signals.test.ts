@@ -1412,7 +1412,7 @@ test("buildConfiguredBotReviewSummary lets later same-head Codex success superse
   assert.equal(summary.currentHeadActionableObservedAt, null);
 });
 
-test("buildConfiguredBotReviewSummary lets unanchored Codex success supersede older top-level findings consistently", () => {
+test("buildConfiguredBotReviewSummary does not let unanchored Codex success supersede current-head top-level findings", () => {
   const headSha = "b0642d776275b58f3d2918fa1a48cb522d6f21ce";
   const facts: CopilotReviewLifecycleFacts = {
     reviewRequests: [],
@@ -1449,10 +1449,13 @@ test("buildConfiguredBotReviewSummary lets unanchored Codex success supersede ol
 
   const summary = buildConfiguredBotReviewSummary(facts, ["chatgpt-codex-connector"], headSha);
 
-  assert.equal(summary.topLevelReview.strength, null);
-  assert.equal(summary.topLevelReview.submittedAt, null);
+  assert.equal(summary.topLevelReview.strength, "blocking");
+  assert.equal(summary.topLevelReview.submittedAt, "2026-07-05T03:19:37Z");
+  assert.equal(summary.topLevelReview.findingCount, 1);
+  assert.equal(summary.topLevelReview.highestSeverity, "P2");
   assert.equal(summary.currentHeadObservedAt, "2026-07-05T03:25:37Z");
   assert.equal(summary.currentHeadObservationSource, "codex_pr_success_comment");
+  assert.equal(summary.currentHeadActionableObservedAt, "2026-07-05T03:19:37Z");
   assert.equal(summary.currentHeadCodexSuccessReviewedCommitSha, null);
   assert.equal(summary.currentHeadCodexSuccessObservedAt, "2026-07-05T03:25:37Z");
 });

@@ -1107,17 +1107,20 @@ export function buildConfiguredBotReviewSummary(
     reviewBotLogins,
     currentHeadOid,
   );
+  const currentHeadCodexFindingSupersededAt = currentHeadCodexSuccessObservation?.reviewedCommitSha
+    ? currentHeadCodexSuccessObservation.observedAt
+    : null;
   const currentHeadActionableObservedAt = inferConfiguredBotCurrentHeadActionableObservedAt(
     facts,
     reviewBotLogins,
     currentHeadOid,
-    currentHeadCodexSuccessObservation?.observedAt ?? null,
+    currentHeadCodexFindingSupersededAt,
   );
   const topLevelReview = inferConfiguredBotTopLevelReviewSummary(
     facts,
     reviewBotLogins,
     currentHeadOid,
-    currentHeadCodexSuccessObservation?.observedAt ?? null,
+    currentHeadCodexFindingSupersededAt,
   );
   Object.defineProperty(topLevelReview, "configuredBotOnlyChangesRequestedReview", {
     enumerable: false,
