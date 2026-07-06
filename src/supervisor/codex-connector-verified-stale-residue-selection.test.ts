@@ -165,3 +165,102 @@ test("shouldReenterCodexConnectorVerifiedStaleResidueAutoResolve keeps proof-bas
     false,
   );
 });
+
+test("shouldReenterCodexConnectorVerifiedStaleResidueAutoResolve accepts blocked conversation-resolution stale supervisor replies", () => {
+  const headSha = "6522b240bae26d207fc802509aadb56fb547cd83";
+  const thread = createReviewThread({
+    id: "thread-current-head-proof-after-stale-supervisor-reply",
+    comments: {
+      nodes: [
+        {
+          id: "comment-codex-before-stale-supervisor",
+          body: "P2: This current-head residue is covered by the repair proof.",
+          createdAt: "2026-07-06T05:35:48Z",
+          url: "https://example.test/pr/2406#discussion_current_head_proof_after_stale_supervisor_reply",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+        {
+          id: "comment-stale-supervisor-latest",
+          body: [
+            `The supervisor reprocessed this configured-bot finding on the current head \`${headSha}\` and classified it as stale.`,
+            "",
+            `Audit: issue=#2405 pr=#2406 head=${headSha} thread=thread-current-head-proof-after-stale-supervisor-reply reason=stale_review_bot.`,
+            "",
+            "Under the configured `reply_and_resolve` policy, the supervisor is auto-resolving this stale thread now.",
+          ].join("\n"),
+          createdAt: "2026-07-06T05:45:00Z",
+          url: "https://example.test/pr/2406#discussion_stale_supervisor_latest",
+          author: {
+            login: "TommyKammy",
+            typeName: "User",
+          },
+        },
+      ],
+    },
+  });
+  const config = createConfig({
+    repoSlug: "TommyKammy/codex-supervisor",
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  });
+  const record = createRecord({
+    issue_number: 2405,
+    state: "blocked",
+    blocked_reason: "manual_review",
+    pr_number: 2406,
+    last_head_sha: headSha,
+    processed_review_thread_ids: [`${thread.id}@${headSha}`],
+    processed_review_thread_fingerprints: [`${thread.id}@${headSha}#comment-codex-before-stale-supervisor`],
+    last_failure_context: {
+      category: "manual",
+      summary: "stale configured-bot residue",
+      signature: `stalled-bot:${thread.id}`,
+      command: null,
+      details: ["required_conversation_resolution=enabled"],
+      url: thread.comments.nodes[0]!.url,
+      updated_at: "2026-07-06T05:46:00Z",
+    },
+    timeline_artifacts: [
+      {
+        type: "verification_result",
+        gate: "codex_turn",
+        command: "npm run build",
+        head_sha: headSha,
+        outcome: "passed",
+        remediation_target: null,
+        next_action: "continue",
+        summary: "Current head repair proof covers the unresolved Connector residue.",
+        recorded_at: "2026-07-06T05:47:00Z",
+        repair_targets: [VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET],
+        processed_review_thread_ids: [`${thread.id}@${headSha}`],
+        processed_review_thread_fingerprints: [`${thread.id}@${headSha}#comment-codex-before-stale-supervisor`],
+      },
+    ],
+  });
+  const pr = createPullRequest({
+    number: 2406,
+    headRefOid: headSha,
+    mergeStateStatus: "BLOCKED",
+    mergeable: "MERGEABLE",
+    currentHeadCiGreenAt: "2026-07-06T05:47:30Z",
+    configuredBotCurrentHeadObservedAt: "2026-07-06T05:48:00Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: headSha.slice(0, 10),
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-07-06T05:48:00Z",
+  });
+
+  assert.equal(
+    shouldReenterCodexConnectorVerifiedStaleResidueAutoResolve({
+      config,
+      record,
+      pr,
+      checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      reviewThreads: [thread],
+    }),
+    true,
+  );
+});

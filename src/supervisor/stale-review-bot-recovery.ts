@@ -253,7 +253,7 @@ export async function recoverStaleConfiguredBotReviewThreads(args: {
     args.resolveAfterReply && hasReplyProgressForThread(thread.id) && latestCommentIsTrustedSupervisorReply(thread)
       ? true
       : verifiedCodexAutoResolveReason
-      ? isRecoverableVerifiedCodexStaleResidueThread(args.config, thread)
+      ? isRecoverableVerifiedCodexStaleResidueThread(args.config, thread, args.pr)
       : latestReviewCommentAuthorIsAllowedBot(args.config, thread) ||
         latestCommentIsTrustedSupervisorMarker(thread),
   );
