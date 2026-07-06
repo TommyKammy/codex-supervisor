@@ -8,7 +8,14 @@ import {
   syncCopilotReviewTimeoutState,
   syncMergeLatencyVisibility,
 } from "./pull-request-state";
-import { GitHubPullRequest, IssueRunRecord, PullRequestCheck, SupervisorConfig } from "./core/types";
+import {
+  GitHubPullRequest,
+  IssueRunRecord,
+  PullRequestCheck,
+  ReviewThread,
+  SupervisorConfig,
+  TimelineArtifact,
+} from "./core/types";
 import {
   createConfig,
   createPullRequest,
@@ -34,6 +41,125 @@ import {
 } from "./supervisor/stale-review-bot-remediation";
 import { STILL_VALID_REVIEW_THREAD_REPAIR_TARGET } from "./codex-connector-valid-review-repair";
 import { reviewLoopRetryFingerprintForThread } from "./review-handling";
+
+const VERIDOC_FINDING_SET_HEAD_SHA = "7cbf3d07397c51cb7a4de4ff47875154cce6f6c6";
+const VERIDOC_FINDING_SET_VERIFICATION_RAN_AT = "2026-07-06T01:59:38Z";
+const VERIDOC_FINDING_SET_COMMAND = "python3 -m unittest tests.test_evaluate_dataset -q";
+const VERIDOC_FINDING_SET_FINDINGS = [
+  ["PRRT_veridoc_220_01", "PRRC_veridoc_220_01", 810, "Reject non-representative fixture links"],
+  ["PRRT_veridoc_220_02", "PRRC_veridoc_220_02", 824, "Fail rows that omit required IR or audit output"],
+  ["PRRT_veridoc_220_03", "PRRC_veridoc_220_03", 838, "Enforce no-LLM scenario stays LLM-free"],
+  ["PRRT_veridoc_220_04", "PRRC_veridoc_220_04", 852, "Reject duplicate primary artifacts"],
+  ["PRRT_veridoc_220_05", "PRRC_veridoc_220_05", 866, "Enforce required P9 source categories"],
+  ["PRRT_veridoc_220_06", "PRRC_veridoc_220_06", 880, "Reject missing or invalid conversion status"],
+  ["PRRT_veridoc_220_07", "PRRC_veridoc_220_07", 894, "Reject duplicate P9 sample IDs"],
+  ["PRRT_veridoc_220_08", "PRRC_veridoc_220_08", 908, "Resolve custom P9 manifests from the repo root"],
+  ["PRRT_veridoc_220_09", "PRRC_veridoc_220_09", 922, "Require DOCX paragraph lists to match exactly"],
+  ["PRRT_veridoc_220_10", "PRRC_veridoc_220_10", 936, "Reject usable P9 samples with missing fixture links"],
+  ["PRRT_veridoc_220_11", "PRRC_veridoc_220_11", 950, "Keep placeholder slots out of scored P9 results"],
+] as const;
+
+type FindingSetFixtureFinding = readonly [threadId: string, commentId: string, line: number, title: string];
+
+function createFindingSetProofScenario({
+  findings = VERIDOC_FINDING_SET_FINDINGS,
+  headSha = VERIDOC_FINDING_SET_HEAD_SHA,
+  verificationRanAt = VERIDOC_FINDING_SET_VERIFICATION_RAN_AT,
+  summary,
+  command = VERIDOC_FINDING_SET_COMMAND,
+  processedThreadEvidence = false,
+  configPatch = {},
+  recordPatch = {},
+  pullRequestPatch = {},
+  timelineArtifactPatch = {},
+}: {
+  findings?: readonly FindingSetFixtureFinding[];
+  headSha?: string;
+  verificationRanAt?: string;
+  summary?: string;
+  command?: string;
+  processedThreadEvidence?: boolean;
+  configPatch?: Partial<SupervisorConfig>;
+  recordPatch?: Partial<IssueRunRecord>;
+  pullRequestPatch?: Partial<GitHubPullRequest>;
+  timelineArtifactPatch?: Partial<TimelineArtifact>;
+} = {}): {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+} {
+  const scenarios = findings.map(([threadId, commentId, line, title]) =>
+    createCodexConnectorTrackedReviewResidueScenario({
+      issueNumber: 2407,
+      prNumber: 220,
+      headSha,
+      threadId,
+      commentId,
+      path: "scripts/evaluate_dataset.py",
+      line,
+      severity: "P2",
+      commentBody: `P2: ${title}.`,
+      discussionUrl: `https://example.test/pr/220#discussion_${threadId}`,
+      currentHeadNoMajorReview: {
+        requestedAt: "2026-07-06T02:09:23Z",
+        observedAt: "2026-07-06T02:15:17Z",
+      },
+    }),
+  );
+  const firstScenario = scenarios[0];
+  assert.ok(firstScenario);
+  const reviewThreads = scenarios.map((scenario) => scenario.reviewThread);
+  const processedReviewThreadIds = reviewThreads.map((thread) => `${thread.id}@${headSha}`);
+  const processedReviewThreadFingerprints = reviewThreads.map(
+    (thread) => `${thread.id}@${headSha}#${thread.comments.nodes[0]?.id}`,
+  );
+  const timeline_artifacts =
+    summary === undefined
+      ? []
+      : [
+          {
+            type: "verification_result",
+            gate: "codex_turn",
+            command,
+            head_sha: headSha,
+            outcome: "passed",
+            remediation_target: null,
+            next_action: "continue",
+            summary,
+            recorded_at: verificationRanAt,
+            ...timelineArtifactPatch,
+          } satisfies TimelineArtifact,
+        ];
+
+  return {
+    config: createConfig({
+      reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+      humanReviewBlocksMerge: true,
+      codexConnectorAutoMergeEnabled: true,
+      verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+      ...configPatch,
+    }),
+    record: createRecord({
+      ...firstScenario.recordPatch,
+      blocked_reason: "manual_review",
+      processed_review_thread_ids: processedThreadEvidence ? processedReviewThreadIds : [],
+      processed_review_thread_fingerprints: processedThreadEvidence ? processedReviewThreadFingerprints : [],
+      timeline_artifacts,
+      ...recordPatch,
+    }),
+    pr: createPullRequest({
+      ...firstScenario.pullRequestPatch,
+      mergeStateStatus: "CLEAN",
+      mergeable: "MERGEABLE",
+      reviewDecision: null,
+      ...pullRequestPatch,
+    }),
+    checks: firstScenario.passingChecks,
+    reviewThreads,
+  };
+}
 
 test("inferStateFromPullRequest routes actionable high local-review retry into local_review_fix", () => {
   const config = createConfig({
@@ -972,74 +1098,9 @@ test("thread-scoped current-head verification artifact proves repaired mixed P1 
 });
 
 test("head-scoped verification artifact proves code-resolved P2 finding-set metadata residue", () => {
-  const issueNumber = 2407;
-  const prNumber = 220;
-  const headSha = "7cbf3d07397c51cb7a4de4ff47875154cce6f6c6";
-  const verificationRanAt = "2026-07-06T01:59:38Z";
-  const findings = [
-    ["PRRT_veridoc_220_01", "PRRC_veridoc_220_01", 810, "Reject non-representative fixture links"],
-    ["PRRT_veridoc_220_02", "PRRC_veridoc_220_02", 824, "Fail rows that omit required IR or audit output"],
-    ["PRRT_veridoc_220_03", "PRRC_veridoc_220_03", 838, "Enforce no-LLM scenario stays LLM-free"],
-    ["PRRT_veridoc_220_04", "PRRC_veridoc_220_04", 852, "Reject duplicate primary artifacts"],
-    ["PRRT_veridoc_220_05", "PRRC_veridoc_220_05", 866, "Enforce required P9 source categories"],
-    ["PRRT_veridoc_220_06", "PRRC_veridoc_220_06", 880, "Reject missing or invalid conversion status"],
-    ["PRRT_veridoc_220_07", "PRRC_veridoc_220_07", 894, "Reject duplicate P9 sample IDs"],
-    ["PRRT_veridoc_220_08", "PRRC_veridoc_220_08", 908, "Resolve custom P9 manifests from the repo root"],
-    ["PRRT_veridoc_220_09", "PRRC_veridoc_220_09", 922, "Require DOCX paragraph lists to match exactly"],
-    ["PRRT_veridoc_220_10", "PRRC_veridoc_220_10", 936, "Reject usable P9 samples with missing fixture links"],
-    ["PRRT_veridoc_220_11", "PRRC_veridoc_220_11", 950, "Keep placeholder slots out of scored P9 results"],
-  ] as const;
-  const scenarios = findings.map(([threadId, commentId, line, title]) =>
-    createCodexConnectorTrackedReviewResidueScenario({
-      issueNumber,
-      prNumber,
-      headSha,
-      threadId,
-      commentId,
-      path: "scripts/evaluate_dataset.py",
-      line,
-      severity: "P2",
-      commentBody: `P2: ${title}.`,
-      discussionUrl: `https://example.test/pr/220#discussion_${threadId}`,
-      currentHeadNoMajorReview: {
-        requestedAt: "2026-07-06T02:09:23Z",
-        observedAt: "2026-07-06T02:15:17Z",
-      },
-    }),
-  );
-  const config = createConfig({
-    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
-    humanReviewBlocksMerge: true,
-    codexConnectorAutoMergeEnabled: true,
-    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
+  const { config, record, pr, checks, reviewThreads } = createFindingSetProofScenario({
+    summary: "Focused current-head verification covered the 11 VeriDoc P2 review findings and some extra smoke tests.",
   });
-  const reviewThreads = scenarios.map((scenario) => scenario.reviewThread);
-  const record = createRecord({
-    ...scenarios[0].recordPatch,
-    blocked_reason: "manual_review",
-    processed_review_thread_ids: [],
-    processed_review_thread_fingerprints: [],
-    timeline_artifacts: [
-      {
-        type: "verification_result",
-        gate: "codex_turn",
-        command: "python3 -m unittest tests.test_evaluate_dataset -q",
-        head_sha: headSha,
-        outcome: "passed",
-        remediation_target: null,
-        next_action: "continue",
-        summary: "Focused current-head verification covered the 11 VeriDoc P2 review findings and some extra smoke tests.",
-        recorded_at: verificationRanAt,
-      },
-    ],
-  });
-  const pr = createPullRequest({
-    ...scenarios[0].pullRequestPatch,
-    mergeStateStatus: "CLEAN",
-    mergeable: "MERGEABLE",
-    reviewDecision: null,
-  });
-  const checks = scenarios[0].passingChecks;
 
   assert.equal(
     hasVerifiedCurrentHeadRepairReviewMetadataResidue({
@@ -1074,83 +1135,93 @@ test("head-scoped verification artifact proves code-resolved P2 finding-set meta
     }) ?? "",
     /finding_set_current_head_verification:Focused current-head verification covered the 11 VeriDoc P2 review findings and some extra smoke tests.;codex_no_major_support=codex_pr_success_comment_after_current_head_request/u,
   );
+});
 
-  for (const summary of [
-    "Verified every review finding.",
-    "Every connector finding was covered.",
-    "All unresolved review findings were covered.",
-    "All remaining connector findings were verified.",
-  ]) {
-    const wholeSetRecord = createRecord({
-      ...scenarios[0].recordPatch,
-      blocked_reason: "manual_review",
-      processed_review_thread_ids: [],
-      processed_review_thread_fingerprints: [],
-      timeline_artifacts: [
-        {
-          type: "verification_result",
-          gate: "codex_turn",
-          command: "python3 -m unittest tests.test_evaluate_dataset -q",
-          head_sha: headSha,
-          outcome: "passed",
-          remediation_target: null,
-          next_action: "continue",
-          summary,
-          recorded_at: verificationRanAt,
-        },
-      ],
-    });
-
+for (const { name, summary } of [
+  { name: "every review finding", summary: "Verified every review finding." },
+  { name: "every connector finding", summary: "Every connector finding was covered." },
+  { name: "all unresolved review findings", summary: "All unresolved review findings were covered." },
+  { name: "all remaining connector findings", summary: "All remaining connector findings were verified." },
+]) {
+  test(`finding-set summary proof accepts ${name}`, () => {
+    const { config, record, pr, checks, reviewThreads } = createFindingSetProofScenario({ summary });
     assert.equal(
       hasVerifiedCurrentHeadRepairReviewMetadataResidue({
         config,
-        record: wholeSetRecord,
+        record,
         pr,
         checks,
         reviewThreads,
       }),
       true,
+      `expected summary to prove the finding set: ${summary}`,
     );
-  }
+  });
+}
 
-  for (const summary of [
-    "All review findings are listed below; current-head verification covered smoke tests.",
-    "Verified 2 of 11 review findings.",
-    "Covered 10/11 review findings.",
-    "Verified 10 out of 11 review findings.",
-  ]) {
-    const partialRecord = createRecord({
-      ...scenarios[0].recordPatch,
-      blocked_reason: "manual_review",
-      processed_review_thread_ids: [],
-      processed_review_thread_fingerprints: [],
-      timeline_artifacts: [
-        {
-          type: "verification_result",
-          gate: "codex_turn",
-          command: "python3 -m unittest tests.test_evaluate_dataset -q",
-          head_sha: headSha,
-          outcome: "passed",
-          remediation_target: null,
-          next_action: "continue",
-          summary,
-          recorded_at: verificationRanAt,
-        },
-      ],
+for (const { name, summary, command } of [
+  {
+    name: "listed findings without coverage",
+    summary: "All review findings are listed below; current-head verification covered smoke tests.",
+  },
+  { name: "explicit partial count", summary: "Verified 2 of 11 review findings." },
+  { name: "fractional partial count", summary: "Covered 10/11 review findings." },
+  { name: "worded partial count", summary: "Verified 10 out of 11 review findings." },
+  { name: "generic build artifact", summary: "Generic build passed.", command: "npm run build" },
+  { name: "focused verifier without findings", summary: "Focused verifier passed." },
+  { name: "covered smoke tests", summary: "Current-head verification covered the smoke tests.", command: "npm run test:smoke" },
+  { name: "pending repair wording", summary: "Repair review findings still pending.", command: "npm run build" },
+  { name: "negated coverage", summary: "Review findings not covered by this run.", command: "npm run build" },
+  { name: "unverified finding set", summary: "The finding set is not yet verified.", command: "npm run build" },
+  { name: "not verified connector findings", summary: "Not verified against the Connector findings.", command: "npm run build" },
+  { name: "not all covered", summary: "Not all review findings were covered by this run.", command: "npm run build" },
+  { name: "only some covered", summary: "Only some review findings were covered by this run.", command: "npm run build" },
+  { name: "partial coverage wording", summary: "Review findings were partially covered.", command: "npm run build" },
+  {
+    name: "exception coverage wording",
+    summary: "Review findings were covered except the second one.",
+    command: "npm run build",
+  },
+  {
+    name: "remaining open wording",
+    summary: "All review findings remain open; current-head verification covered smoke tests.",
+    command: "npm run build",
+  },
+  { name: "none count covered", summary: "None of the 2 review findings were covered by this run.", command: "npm run build" },
+  {
+    name: "neither count covered",
+    summary: "Neither of the 2 review findings were covered by this run.",
+    command: "npm run build",
+  },
+  {
+    name: "future repair wording",
+    summary: "All review findings will be repaired in the next run.",
+    command: "npm run build",
+  },
+  {
+    name: "needed future repair wording",
+    summary: "All review findings need to be repaired in the next run.",
+    command: "npm run build",
+  },
+]) {
+  test(`finding-set summary proof rejects ${name}`, () => {
+    const { config, record, pr, checks, reviewThreads } = createFindingSetProofScenario({
+      summary,
+      command: command ?? VERIDOC_FINDING_SET_COMMAND,
     });
-
     assert.equal(
       hasVerifiedCurrentHeadRepairReviewMetadataResidue({
         config,
-        record: partialRecord,
+        record,
         pr,
         checks,
         reviewThreads,
       }),
       false,
+      `expected summary not to prove the finding set: ${summary}`,
     );
-  }
-});
+  });
+}
 
 test("head-scoped finding-set proof requires no-major support after the latest P2 finding", () => {
   const headSha = "7cbf3d07397c51cb7a4de4ff47875154cce6f6c6";
@@ -1285,298 +1356,6 @@ test("head-scoped finding-set proof searches later artifacts for configured loca
     }) ?? "",
     /finding_set_current_head_verification:Configured local CI verified the finding set.;codex_no_major_support=codex_pr_success_comment_after_current_head_request;local_verification=scoped_repair_timeline_artifact_with_non_review_checks:Configured local CI verified the finding set.;current_head_checks_passed:build/u,
   );
-});
-
-test("generic head-scoped artifact does not prove P2 finding-set metadata residue", () => {
-  const headSha = "7cbf3d07397c51cb7a4de4ff47875154cce6f6c6";
-  const scenario = createCodexConnectorTrackedReviewResidueScenario({
-    issueNumber: 2407,
-    prNumber: 220,
-    headSha,
-    threadId: "PRRT_veridoc_220_generic_artifact",
-    commentId: "PRRC_veridoc_220_generic_artifact",
-    path: "scripts/evaluate_dataset.py",
-    line: 810,
-    severity: "P2",
-    commentBody: "P2: Reject non-representative fixture links.",
-    discussionUrl: "https://example.test/pr/220#discussion_generic_artifact",
-    currentHeadNoMajorReview: {
-      requestedAt: "2026-07-06T02:09:23Z",
-      observedAt: "2026-07-06T02:15:17Z",
-    },
-  });
-  const config = createConfig({
-    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
-    humanReviewBlocksMerge: true,
-    codexConnectorAutoMergeEnabled: true,
-  });
-  const record = createRecord({
-    ...scenario.recordPatch,
-    processed_review_thread_ids: [],
-    processed_review_thread_fingerprints: [],
-    timeline_artifacts: [
-      {
-        type: "verification_result",
-        gate: "codex_turn",
-        command: "npm run build",
-        head_sha: headSha,
-        outcome: "passed",
-        remediation_target: null,
-        next_action: "continue",
-        summary: "Generic build passed.",
-        recorded_at: "2026-07-06T02:20:00Z",
-      },
-    ],
-  });
-  const pr = createPullRequest(scenario.pullRequestPatch);
-
-  assert.equal(
-    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
-      config,
-      record,
-      pr,
-      checks: scenario.passingChecks,
-      reviewThreads: [scenario.reviewThread],
-    }),
-    false,
-  );
-});
-
-test("focused head-scoped artifact must mention review findings to prove P2 finding-set metadata residue", () => {
-  const headSha = "7cbf3d07397c51cb7a4de4ff47875154cce6f6c6";
-  const scenario = createCodexConnectorTrackedReviewResidueScenario({
-    issueNumber: 2407,
-    prNumber: 220,
-    headSha,
-    threadId: "PRRT_veridoc_220_focused_only",
-    commentId: "PRRC_veridoc_220_focused_only",
-    path: "scripts/evaluate_dataset.py",
-    line: 810,
-    severity: "P2",
-    commentBody: "P2: Reject non-representative fixture links.",
-    discussionUrl: "https://example.test/pr/220#discussion_focused_only",
-    currentHeadNoMajorReview: {
-      requestedAt: "2026-07-06T02:09:23Z",
-      observedAt: "2026-07-06T02:15:17Z",
-    },
-  });
-  const config = createConfig({
-    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
-    humanReviewBlocksMerge: true,
-    codexConnectorAutoMergeEnabled: true,
-  });
-  const record = createRecord({
-    ...scenario.recordPatch,
-    processed_review_thread_ids: [],
-    processed_review_thread_fingerprints: [],
-    timeline_artifacts: [
-      {
-        type: "verification_result",
-        gate: "codex_turn",
-        command: "python3 -m unittest tests.test_evaluate_dataset -q",
-        head_sha: headSha,
-        outcome: "passed",
-        remediation_target: null,
-        next_action: "continue",
-        summary: "Focused verifier passed.",
-        recorded_at: "2026-07-06T02:20:00Z",
-      },
-    ],
-  });
-  const pr = createPullRequest(scenario.pullRequestPatch);
-
-  assert.equal(
-    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
-      config,
-      record,
-      pr,
-      checks: scenario.passingChecks,
-      reviewThreads: [scenario.reviewThread],
-    }),
-    false,
-  );
-});
-
-test("covered head-scoped artifact must name review findings to prove P2 finding-set metadata residue", () => {
-  const headSha = "7cbf3d07397c51cb7a4de4ff47875154cce6f6c6";
-  const scenario = createCodexConnectorTrackedReviewResidueScenario({
-    issueNumber: 2407,
-    prNumber: 220,
-    headSha,
-    threadId: "PRRT_veridoc_220_smoke_covered",
-    commentId: "PRRC_veridoc_220_smoke_covered",
-    path: "scripts/evaluate_dataset.py",
-    line: 810,
-    severity: "P2",
-    commentBody: "P2: Reject non-representative fixture links.",
-    discussionUrl: "https://example.test/pr/220#discussion_smoke_covered",
-    currentHeadNoMajorReview: {
-      requestedAt: "2026-07-06T02:09:23Z",
-      observedAt: "2026-07-06T02:15:17Z",
-    },
-  });
-  const config = createConfig({
-    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
-    humanReviewBlocksMerge: true,
-    codexConnectorAutoMergeEnabled: true,
-  });
-  const record = createRecord({
-    ...scenario.recordPatch,
-    processed_review_thread_ids: [],
-    processed_review_thread_fingerprints: [],
-    timeline_artifacts: [
-      {
-        type: "verification_result",
-        gate: "codex_turn",
-        command: "npm run test:smoke",
-        head_sha: headSha,
-        outcome: "passed",
-        remediation_target: null,
-        next_action: "continue",
-        summary: "Current-head verification covered the smoke tests.",
-        recorded_at: "2026-07-06T02:20:00Z",
-      },
-    ],
-  });
-  const pr = createPullRequest(scenario.pullRequestPatch);
-
-  assert.equal(
-    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
-      config,
-      record,
-      pr,
-      checks: scenario.passingChecks,
-      reviewThreads: [scenario.reviewThread],
-    }),
-    false,
-  );
-});
-
-test("pending repair wording does not prove P2 finding-set metadata residue", () => {
-  const headSha = "7cbf3d07397c51cb7a4de4ff47875154cce6f6c6";
-  const scenario = createCodexConnectorTrackedReviewResidueScenario({
-    issueNumber: 2407,
-    prNumber: 220,
-    headSha,
-    threadId: "PRRT_veridoc_220_pending_repair",
-    commentId: "PRRC_veridoc_220_pending_repair",
-    path: "scripts/evaluate_dataset.py",
-    line: 810,
-    severity: "P2",
-    commentBody: "P2: Reject non-representative fixture links.",
-    discussionUrl: "https://example.test/pr/220#discussion_pending_repair",
-    currentHeadNoMajorReview: {
-      requestedAt: "2026-07-06T02:09:23Z",
-      observedAt: "2026-07-06T02:15:17Z",
-    },
-  });
-  const config = createConfig({
-    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
-    humanReviewBlocksMerge: true,
-    codexConnectorAutoMergeEnabled: true,
-  });
-  const record = createRecord({
-    ...scenario.recordPatch,
-    processed_review_thread_ids: [],
-    processed_review_thread_fingerprints: [],
-    timeline_artifacts: [
-      {
-        type: "verification_result",
-        gate: "codex_turn",
-        command: "npm run build",
-        head_sha: headSha,
-        outcome: "passed",
-        remediation_target: null,
-        next_action: "continue",
-        summary: "Repair review findings still pending.",
-        recorded_at: "2026-07-06T02:20:00Z",
-      },
-    ],
-  });
-  const pr = createPullRequest(scenario.pullRequestPatch);
-
-  assert.equal(
-    hasVerifiedCurrentHeadRepairReviewMetadataResidue({
-      config,
-      record,
-      pr,
-      checks: scenario.passingChecks,
-      reviewThreads: [scenario.reviewThread],
-    }),
-    false,
-  );
-});
-
-test("negated completion wording does not prove P2 finding-set metadata residue", () => {
-  const headSha = "7cbf3d07397c51cb7a4de4ff47875154cce6f6c6";
-  const scenario = createCodexConnectorTrackedReviewResidueScenario({
-    issueNumber: 2407,
-    prNumber: 220,
-    headSha,
-    threadId: "PRRT_veridoc_220_negated_completion",
-    commentId: "PRRC_veridoc_220_negated_completion",
-    path: "scripts/evaluate_dataset.py",
-    line: 810,
-    severity: "P2",
-    commentBody: "P2: Reject non-representative fixture links.",
-    discussionUrl: "https://example.test/pr/220#discussion_negated_completion",
-    currentHeadNoMajorReview: {
-      requestedAt: "2026-07-06T02:09:23Z",
-      observedAt: "2026-07-06T02:15:17Z",
-    },
-  });
-  const config = createConfig({
-    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
-    humanReviewBlocksMerge: true,
-    codexConnectorAutoMergeEnabled: true,
-  });
-  const pr = createPullRequest(scenario.pullRequestPatch);
-
-  for (const summary of [
-    "Review findings not covered by this run.",
-    "The finding set is not yet verified.",
-    "Not verified against the Connector findings.",
-    "Not all review findings were covered by this run.",
-    "Only some review findings were covered by this run.",
-    "Review findings were partially covered.",
-    "Review findings were covered except the second one.",
-    "All review findings remain open; current-head verification covered smoke tests.",
-    "None of the 2 review findings were covered by this run.",
-    "Neither of the 2 review findings were covered by this run.",
-    "All review findings will be repaired in the next run.",
-    "All review findings need to be repaired in the next run.",
-  ]) {
-    const record = createRecord({
-      ...scenario.recordPatch,
-      processed_review_thread_ids: [],
-      processed_review_thread_fingerprints: [],
-      timeline_artifacts: [
-        {
-          type: "verification_result",
-          gate: "codex_turn",
-          command: "npm run build",
-          head_sha: headSha,
-          outcome: "passed",
-          remediation_target: null,
-          next_action: "continue",
-          summary,
-          recorded_at: "2026-07-06T02:20:00Z",
-        },
-      ],
-    });
-
-    assert.equal(
-      hasVerifiedCurrentHeadRepairReviewMetadataResidue({
-        config,
-        record,
-        pr,
-        checks: scenario.passingChecks,
-        reviewThreads: [scenario.reviewThread],
-      }),
-      false,
-      summary,
-    );
-  }
 });
 
 test("singular finding wording does not prove a multi-thread P2 finding-set residue", () => {
