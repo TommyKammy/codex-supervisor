@@ -14,7 +14,8 @@ export function isSupervisorVerifiedStaleResidueAutoResolveComment(body: string)
 }
 
 function normalizedRepoOwnerLogin(config: SupervisorConfig): string | null {
-  const owner = config.repoSlug.split("/")[0]?.trim().toLowerCase();
+  const repoSlug = typeof config.repoSlug === "string" ? config.repoSlug : "";
+  const owner = repoSlug.split("/")[0]?.trim().toLowerCase();
   return owner || null;
 }
 

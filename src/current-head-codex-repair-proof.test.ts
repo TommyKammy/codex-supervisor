@@ -400,6 +400,70 @@ test("projectCurrentHeadCodexRepairProof rejects trusted supervisor stale reply 
   assert.equal(proof, null);
 });
 
+test("projectCurrentHeadCodexRepairProof treats supervisor replies as untrusted when repo owner is unavailable", () => {
+  const headSha = "7cbf3d07397c51cb7a4de4ff47875154cce6f6c6";
+  const thread = codexThread({
+    id: "PRRT_current_clean_missing_repo_slug",
+    commentId: "comment-codex-before-missing-repo-slug",
+    severity: "P2",
+    line: 810,
+  });
+  thread.comments.nodes.push({
+    id: "comment-supervisor-stale-reply-missing-repo-slug",
+    body: [
+      `The supervisor reprocessed this configured-bot finding on the current head \`${headSha}\` and classified it as stale.`,
+      `Audit: issue=#216 pr=#220 head=${headSha} thread=${thread.id} reason=stale_review_bot.`,
+    ].join("\n\n"),
+    createdAt: "2026-07-06T02:17:27Z",
+    url: "https://example.test/pr/220#discussion_r3526118511",
+    author: {
+      login: "TommyKammy",
+      typeName: "User",
+    },
+  });
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+  });
+  delete (config as { repoSlug?: string }).repoSlug;
+  const record = createRecord({
+    last_head_sha: headSha,
+    blocked_reason: "manual_review",
+    processed_review_thread_ids: [`${thread.id}@${headSha}`],
+    processed_review_thread_fingerprints: [`${thread.id}@${headSha}#comment-codex-before-missing-repo-slug`],
+    timeline_artifacts: [
+      {
+        type: "verification_result",
+        gate: "codex_turn",
+        command: "npm run build",
+        head_sha: headSha,
+        outcome: "passed",
+        remediation_target: null,
+        next_action: "continue",
+        summary: "Current head repair proof covers the unresolved Connector residue.",
+        recorded_at: "2026-07-06T02:16:30Z",
+      },
+    ],
+  });
+  const pr = createPullRequest({
+    headRefOid: headSha,
+    currentHeadCiGreenAt: "2026-07-06T01:59:38Z",
+    configuredBotCurrentHeadObservedAt: "2026-07-06T02:15:17Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "7cbf3d0739",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-07-06T02:15:17Z",
+  });
+
+  assert.equal(projectCurrentHeadCodexRepairProof({
+    config,
+    record,
+    pr,
+    checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [thread],
+    allowRecordProcessedThreadEvidence: true,
+  }), null);
+});
+
 test("projectCurrentHeadCodexRepairProof rejects record-scoped proof before latest thread comments", () => {
   const headSha = "74d44b0a48f7b65fbcc9361a6509727c3ba987dc";
   const threads = [
