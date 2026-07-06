@@ -208,6 +208,17 @@ test("projectCurrentHeadCodexRepairProof accepts record-scoped processed evidenc
       {
         type: "verification_result",
         gate: "codex_turn",
+        command: "npm run build",
+        head_sha: headSha,
+        outcome: "passed",
+        remediation_target: null,
+        next_action: "continue",
+        summary: "Generic build passed but did not satisfy configured local CI.",
+        recorded_at: "2026-07-01T06:51:31Z",
+      },
+      {
+        type: "verification_result",
+        gate: "codex_turn",
         command: "python3 -m pytest tests/test_desktop_api_auth.py tests/test_poc_web_api.py -q",
         head_sha: headSha,
         outcome: "passed",
@@ -243,6 +254,7 @@ test("projectCurrentHeadCodexRepairProof accepts record-scoped processed evidenc
   assert.equal(proof?.source, "record_processed_thread_evidence");
   assert.equal(proof?.localVerificationEvidenceSource, "scoped_repair_timeline_artifact_with_non_review_checks");
   assert.equal(proof?.processedThreadEvidenceCount, 4);
+  assert.match(proof?.summary ?? "", /Focused current-head probe covered the stale Connector findings/);
   assert.match(proof?.summary ?? "", /codex_no_major_support=codex_pr_success_comment_reviewed_current_head/);
 });
 

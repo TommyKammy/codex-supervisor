@@ -663,6 +663,38 @@ function formatThreadScopedVerificationSummary(args: {
   return details.join(";");
 }
 
+function firstProofArtifactWithRequiredLocalCiEvidence(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  artifacts: TimelineArtifact[];
+  configuredLocalCiRequired: boolean;
+}): {
+  artifact: TimelineArtifact;
+  localVerificationEvidence: CurrentHeadLocalVerificationEvidence | null;
+} | null {
+  for (const artifact of args.artifacts) {
+    const localVerificationEvidence = args.configuredLocalCiRequired
+      ? currentHeadLocalVerificationEvidence({
+          config: args.config,
+          record: args.record,
+          pr: args.pr,
+          checks: args.checks,
+          scopedTimelineArtifact: artifact,
+        })
+      : null;
+    if (args.configuredLocalCiRequired && !localVerificationEvidence) {
+      continue;
+    }
+    return {
+      artifact,
+      localVerificationEvidence,
+    };
+  }
+  return null;
+}
+
 function humanReviewBlocksProjection(
   config: SupervisorConfig,
   pr: GitHubPullRequest,
@@ -725,64 +757,34 @@ export function projectCurrentHeadCodexRepairProof(args: {
       )
     : repairResidueThreads;
   const configuredLocalCiRequired = hasConfiguredLocalCiCommand(args.config);
-  const structuredProof = currentHeadVerifiedRepairResidueArtifacts(args.config, args.record, args.pr, proofCoverageThreads)
-    .map((structuredArtifact) => {
-      const localVerificationEvidence = configuredLocalCiRequired
-        ? currentHeadLocalVerificationEvidence({
-            config: args.config,
-            record: args.record,
-            pr: args.pr,
-            checks: args.checks,
-            scopedTimelineArtifact: structuredArtifact,
-          })
-        : null;
-      if (configuredLocalCiRequired && !localVerificationEvidence) {
-        return null;
-      }
-      return {
-        structuredArtifact,
-        localVerificationEvidence,
-      };
-    })
-    .find((proof): proof is {
-      structuredArtifact: TimelineArtifact;
-      localVerificationEvidence: CurrentHeadLocalVerificationEvidence | null;
-    } => proof !== null);
+  const structuredProof = firstProofArtifactWithRequiredLocalCiEvidence({
+    config: args.config,
+    record: args.record,
+    pr: args.pr,
+    checks: args.checks,
+    artifacts: currentHeadVerifiedRepairResidueArtifacts(args.config, args.record, args.pr, proofCoverageThreads),
+    configuredLocalCiRequired,
+  });
   if (structuredProof) {
     return {
       source: "structured_artifact",
-      summary: structuredProof.structuredArtifact.summary || "verified_current_head_repair_review_thread_residue_artifact",
+      summary: structuredProof.artifact.summary || "verified_current_head_repair_review_thread_residue_artifact",
       localVerificationEvidenceSource: structuredProof.localVerificationEvidence?.source ?? null,
       localVerificationEvidenceSummary: structuredProof.localVerificationEvidence?.summary ?? null,
-      processedThreadEvidenceCount: structuredProof.structuredArtifact.processed_review_thread_ids?.length ?? 0,
+      processedThreadEvidenceCount: structuredProof.artifact.processed_review_thread_ids?.length ?? 0,
       currentConfiguredThreadCount: repairResidueThreads.length,
     };
   }
 
   const threadScopedProof = noMajorSupport
-    ? currentHeadThreadScopedVerificationArtifacts(args.config, args.record, args.pr, proofCoverageThreads)
-        .map((artifact) => {
-          const localVerificationEvidence = configuredLocalCiRequired
-            ? currentHeadLocalVerificationEvidence({
-                config: args.config,
-                record: args.record,
-                pr: args.pr,
-                checks: args.checks,
-                scopedTimelineArtifact: artifact,
-              })
-            : null;
-          if (configuredLocalCiRequired && !localVerificationEvidence) {
-            return null;
-          }
-          return {
-            artifact,
-            localVerificationEvidence,
-          };
-        })
-        .find((proof): proof is {
-          artifact: TimelineArtifact;
-          localVerificationEvidence: CurrentHeadLocalVerificationEvidence | null;
-        } => proof !== null)
+    ? firstProofArtifactWithRequiredLocalCiEvidence({
+        config: args.config,
+        record: args.record,
+        pr: args.pr,
+        checks: args.checks,
+        artifacts: currentHeadThreadScopedVerificationArtifacts(args.config, args.record, args.pr, proofCoverageThreads),
+        configuredLocalCiRequired,
+      })
     : null;
   if (threadScopedProof) {
     return {
@@ -809,35 +811,20 @@ export function projectCurrentHeadCodexRepairProof(args: {
     noMajorSupport &&
     allCodexConnectorRepairResidueThreadsAreP2(proofCoverageThreads)
   ) {
-    const findingSetProof = currentHeadFindingSetVerificationArtifacts(
-      args.config,
-      args.record,
-      args.pr,
-      proofCoverageThreads,
-      recordProcessedEvidenceCoversProofCoverageThreads,
-    )
-      .map((artifact) => {
-        const localVerificationEvidence = configuredLocalCiRequired
-          ? currentHeadLocalVerificationEvidence({
-              config: args.config,
-              record: args.record,
-              pr: args.pr,
-              checks: args.checks,
-              scopedTimelineArtifact: artifact,
-            })
-          : null;
-        if (configuredLocalCiRequired && !localVerificationEvidence) {
-          return null;
-        }
-        return {
-          artifact,
-          localVerificationEvidence,
-        };
-      })
-      .find((proof): proof is {
-        artifact: TimelineArtifact;
-        localVerificationEvidence: CurrentHeadLocalVerificationEvidence | null;
-      } => proof !== null);
+    const findingSetProof = firstProofArtifactWithRequiredLocalCiEvidence({
+      config: args.config,
+      record: args.record,
+      pr: args.pr,
+      checks: args.checks,
+      artifacts: currentHeadFindingSetVerificationArtifacts(
+        args.config,
+        args.record,
+        args.pr,
+        proofCoverageThreads,
+        recordProcessedEvidenceCoversProofCoverageThreads,
+      ),
+      configuredLocalCiRequired,
+    });
     if (findingSetProof) {
       return {
         source: "finding_set_verification_artifact",
@@ -861,34 +848,18 @@ export function projectCurrentHeadCodexRepairProof(args: {
     recordProcessedThreadEvidenceCount > 0 &&
     recordProcessedEvidenceCoversProofCoverageThreads
   ) {
-    const recordScopedProof = currentHeadPassedCodexTurnArtifacts(args.record, args.pr)
-      .filter((artifact) =>
+    const recordScopedProof = firstProofArtifactWithRequiredLocalCiEvidence({
+      config: args.config,
+      record: args.record,
+      pr: args.pr,
+      checks: args.checks,
+      artifacts: currentHeadPassedCodexTurnArtifacts(args.record, args.pr).filter((artifact) =>
         proofCoverageThreads.every((thread) =>
           latestReviewThreadCommentPredatesArtifact(args.config, args.pr, thread, artifact)
         )
-      )
-      .map((artifact) => {
-        const localVerificationEvidence = configuredLocalCiRequired
-          ? currentHeadLocalVerificationEvidence({
-              config: args.config,
-              record: args.record,
-              pr: args.pr,
-              checks: args.checks,
-              scopedTimelineArtifact: artifact,
-            })
-          : null;
-        if (configuredLocalCiRequired && !localVerificationEvidence) {
-          return null;
-        }
-        return {
-          artifact,
-          localVerificationEvidence,
-        };
-      })
-      .find((proof): proof is {
-        artifact: TimelineArtifact;
-        localVerificationEvidence: CurrentHeadLocalVerificationEvidence | null;
-      } => proof !== null);
+      ),
+      configuredLocalCiRequired,
+    });
     if (recordScopedProof) {
       return {
         source: "record_processed_thread_evidence",
