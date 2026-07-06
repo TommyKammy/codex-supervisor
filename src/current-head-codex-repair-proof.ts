@@ -175,19 +175,19 @@ function repairArtifactCoversCurrentThreads(
   const processedThreadFingerprints = artifact.processed_review_thread_fingerprints ?? [];
   return currentThreads.every((thread) => {
     const headScopedKey = processedReviewThreadKey(thread.id, pr.headRefOid);
-    const latestFingerprint = currentHeadRepairProofThreadFingerprint(config, pr, thread);
-    if (
-      latestFingerprint &&
+    const acceptedFingerprints = currentHeadRepairProofThreadFingerprints(config, pr, thread);
+    const matchedFingerprint = acceptedFingerprints.find((candidate) =>
       processedThreadFingerprints.includes(
-        processedReviewThreadFingerprintKey(thread.id, pr.headRefOid, latestFingerprint),
+        processedReviewThreadFingerprintKey(thread.id, pr.headRefOid, candidate.fingerprint),
       )
-    ) {
-      return latestReviewThreadCommentPredatesArtifact(config, pr, thread, artifact);
+    );
+    if (matchedFingerprint) {
+      return reviewThreadCommentPredatesArtifact(matchedFingerprint.comment, artifact);
     }
     if (!processedThreadIds.includes(headScopedKey)) {
       return false;
     }
-    if (!latestFingerprint) {
+    if (acceptedFingerprints.length === 0) {
       return true;
     }
 
@@ -208,6 +208,19 @@ function coveredCurrentThreadCount(
   return currentThreads.filter((thread) => repairArtifactCoversCurrentThreads(config, artifact, pr, [thread])).length;
 }
 
+function reviewThreadCommentPredatesArtifact(
+  comment: ReviewThreadComment,
+  artifact: Pick<TimelineArtifact, "recorded_at">,
+): boolean {
+  const latestCommentMs = Date.parse(comment.createdAt);
+  const artifactRecordedMs = Date.parse(artifact.recorded_at);
+  if (Number.isNaN(latestCommentMs) || Number.isNaN(artifactRecordedMs)) {
+    return false;
+  }
+
+  return latestCommentMs <= artifactRecordedMs;
+}
+
 function latestReviewThreadCommentPredatesArtifact(
   config: SupervisorConfig,
   pr: Pick<GitHubPullRequest, "headRefOid">,
@@ -215,17 +228,7 @@ function latestReviewThreadCommentPredatesArtifact(
   artifact: Pick<TimelineArtifact, "recorded_at">,
 ): boolean {
   const latestComment = currentHeadRepairProofReferenceComment(config, pr, thread);
-  if (!latestComment) {
-    return true;
-  }
-
-  const latestCommentMs = Date.parse(latestComment.createdAt);
-  const artifactRecordedMs = Date.parse(artifact.recorded_at);
-  if (Number.isNaN(latestCommentMs) || Number.isNaN(artifactRecordedMs)) {
-    return false;
-  }
-
-  return latestCommentMs <= artifactRecordedMs;
+  return latestComment ? reviewThreadCommentPredatesArtifact(latestComment, artifact) : true;
 }
 
 function supervisorStaleResidueAudit(body: string): {
@@ -318,13 +321,47 @@ function currentHeadRepairProofReferenceComment(
   return latestCodexConnectorReviewCommentNode(thread) ?? latestComment;
 }
 
+function reviewThreadCommentFingerprint(comment: ReviewThreadComment): string | null {
+  return comment.id || comment.createdAt || null;
+}
+
+function currentHeadRepairProofThreadFingerprints(
+  config: SupervisorConfig,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
+  thread: ReviewThread,
+): Array<{ fingerprint: string; comment: ReviewThreadComment }> {
+  const referenceComment = currentHeadRepairProofReferenceComment(config, pr, thread);
+  const fingerprints: Array<{ fingerprint: string; comment: ReviewThreadComment }> = [];
+  const appendComment = (comment: ReviewThreadComment | null) => {
+    if (!comment) {
+      return;
+    }
+    const fingerprint = reviewThreadCommentFingerprint(comment);
+    if (!fingerprint || fingerprints.some((candidate) => candidate.fingerprint === fingerprint)) {
+      return;
+    }
+    fingerprints.push({ fingerprint, comment });
+  };
+
+  appendComment(referenceComment);
+  const latestComment = latestReviewComment(thread);
+  if (
+    latestComment &&
+    latestComment !== referenceComment &&
+    isSupervisorStaleResidueComment(config, pr, thread, latestComment)
+  ) {
+    appendComment(latestComment);
+  }
+
+  return fingerprints;
+}
+
 export function currentHeadRepairProofThreadFingerprint(
   config: SupervisorConfig,
   pr: Pick<GitHubPullRequest, "headRefOid">,
   thread: ReviewThread,
 ): string | null {
-  const referenceComment = currentHeadRepairProofReferenceComment(config, pr, thread);
-  return referenceComment?.id || referenceComment?.createdAt || null;
+  return currentHeadRepairProofThreadFingerprints(config, pr, thread)[0]?.fingerprint ?? null;
 }
 
 function headScopedProcessedThreadEvidenceCount(
@@ -609,12 +646,8 @@ export function projectCurrentHeadCodexRepairProof(args: {
   if (
     repairResidueThreads.length > 0 &&
     !repairResidueThreads.every((thread) =>
-      hasProcessedReviewThread(
-        args.record,
-        args.pr,
-        thread,
-        currentHeadRepairProofThreadFingerprint(args.config, args.pr, thread),
-      )
+      currentHeadRepairProofThreadFingerprints(args.config, args.pr, thread)
+        .some((candidate) => hasProcessedReviewThread(args.record, args.pr, thread, candidate.fingerprint))
     )
   ) {
     return null;
@@ -702,12 +735,8 @@ export function projectCurrentHeadCodexRepairProof(args: {
     noMajorSupport &&
     recordProcessedThreadEvidenceCount > 0 &&
     proofCoverageThreads.every((thread) =>
-      hasProcessedReviewThread(
-        args.record,
-        args.pr,
-        thread,
-        currentHeadRepairProofThreadFingerprint(args.config, args.pr, thread),
-      )
+      currentHeadRepairProofThreadFingerprints(args.config, args.pr, thread)
+        .some((candidate) => hasProcessedReviewThread(args.record, args.pr, thread, candidate.fingerprint))
     )
   ) {
     const recordScopedProof = currentHeadPassedCodexTurnArtifacts(args.record, args.pr)
@@ -825,12 +854,8 @@ export function currentHeadCodexRepairProofRejectionReasons(args: {
   if (
     repairResidueThreads.length > 0 &&
     !repairResidueThreads.every((thread) =>
-      hasProcessedReviewThread(
-        args.record,
-        args.pr,
-        thread,
-        currentHeadRepairProofThreadFingerprint(args.config, args.pr, thread),
-      )
+      currentHeadRepairProofThreadFingerprints(args.config, args.pr, thread)
+        .some((candidate) => hasProcessedReviewThread(args.record, args.pr, thread, candidate.fingerprint))
     )
   ) {
     reasons.push("current_head_repair_proof_processed_thread_evidence_missing");

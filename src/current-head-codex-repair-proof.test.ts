@@ -323,6 +323,80 @@ test("projectCurrentHeadCodexRepairProof keeps processed Codex evidence after tr
   assert.equal(proof?.source, "record_processed_thread_evidence");
 });
 
+test("projectCurrentHeadCodexRepairProof accepts structured proof keyed by trusted supervisor stale reply", () => {
+  const headSha = "7cbf3d07397c51cb7a4de4ff47875154cce6f6c6";
+  const thread = codexThread({
+    id: "PRRT_current_clean_supervisor_fingerprint",
+    commentId: "comment-codex-before-supervisor-fingerprint",
+    severity: "P2",
+    line: 810,
+  });
+  thread.comments.nodes[0]!.createdAt = "2026-07-06T01:36:26Z";
+  thread.comments.nodes.push({
+    id: "comment-supervisor-fingerprint",
+    body: [
+      `The supervisor reprocessed this configured-bot finding on the current head \`${headSha}\` and classified it as stale.`,
+      `Audit: issue=#216 pr=#220 head=${headSha} thread=${thread.id} reason=stale_review_bot.`,
+      "Evidence: location=scripts/evaluate_dataset.py:810 processed_on_current_head=yes.",
+    ].join("\n\n"),
+    createdAt: "2026-07-06T02:17:27Z",
+    url: "https://example.test/pr/220#discussion_r3526118512",
+    author: {
+      login: "TommyKammy",
+      typeName: "User",
+    },
+  });
+  const config = createConfig({
+    repoSlug: "TommyKammy/VeriDoc",
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+  });
+  const record = createRecord({
+    last_head_sha: headSha,
+    blocked_reason: "manual_review",
+    processed_review_thread_ids: [`${thread.id}@${headSha}`],
+    processed_review_thread_fingerprints: [`${thread.id}@${headSha}#comment-supervisor-fingerprint`],
+    timeline_artifacts: [
+      {
+        type: "verification_result",
+        gate: "codex_turn",
+        command: "npm run build",
+        head_sha: headSha,
+        outcome: "passed",
+        remediation_target: null,
+        next_action: "continue",
+        summary: "Current-head proof was recorded after the supervisor stale reply.",
+        recorded_at: "2026-07-06T02:18:30Z",
+        repair_targets: [VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET],
+        processed_review_thread_ids: [`${thread.id}@${headSha}`],
+        processed_review_thread_fingerprints: [`${thread.id}@${headSha}#comment-supervisor-fingerprint`],
+      },
+    ],
+  });
+  const pr = createPullRequest({
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    reviewDecision: null,
+    currentHeadCiGreenAt: "2026-07-06T02:18:00Z",
+    configuredBotCurrentHeadObservedAt: "2026-07-06T02:15:17Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "7cbf3d0739",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-07-06T02:15:17Z",
+  });
+
+  const proof = projectCurrentHeadCodexRepairProof({
+    config,
+    record,
+    pr,
+    checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [thread],
+    allowRecordProcessedThreadEvidence: true,
+  });
+
+  assert.equal(proof?.source, "structured_artifact");
+});
+
 test("projectCurrentHeadCodexRepairProof rejects trusted supervisor stale reply from another thread", () => {
   const headSha = "7cbf3d07397c51cb7a4de4ff47875154cce6f6c6";
   const thread = codexThread({
