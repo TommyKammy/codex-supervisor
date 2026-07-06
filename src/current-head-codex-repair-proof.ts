@@ -9,7 +9,7 @@ import {
 } from "./codex-connector-review-policy";
 import { displayLocalCiCommand } from "./core/config";
 import { configuredReviewProviderKinds } from "./core/review-providers";
-import type { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig, TimelineArtifact } from "./core/types";
+import type { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, ReviewThreadComment, SupervisorConfig, TimelineArtifact } from "./core/types";
 import { hasCodexConnectorStrongRiskWording } from "./external-review/external-review-normalization";
 import {
   currentHeadLocalVerificationEvidence,
@@ -18,7 +18,6 @@ import {
 } from "./local-ci-policy";
 import {
   hasProcessedReviewThread,
-  latestReviewThreadCommentFingerprint,
   processedReviewThreadFingerprintKey,
   processedReviewThreadKey,
 } from "./review-handling";
@@ -29,6 +28,10 @@ import {
   latestReviewCommentAuthorIsAllowedBot,
   manualReviewThreads,
 } from "./review-thread-reporting";
+import {
+  isSupervisorVerifiedStaleResidueAutoResolveComment,
+  isTrustedSupervisorMarkerAuthor,
+} from "./supervisor/verified-stale-residue-review-thread";
 
 export const VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET =
   "verified_current_head_repair_review_thread_residue";
@@ -64,9 +67,14 @@ function unresolvedConfiguredBotThreadsAreCodexConnectorOnly(
   return configuredBotReviewThreads(config, reviewThreads)
     .filter((thread) => !thread.isResolved)
     .every(
-      (thread) =>
-        latestReviewCommentAuthorIsAllowedBot(config, thread) &&
-        hasCodexConnectorFindingReviewComment(thread),
+      (thread) => {
+        const latestComment = latestReviewComment(thread);
+        return (
+          (latestReviewCommentAuthorIsAllowedBot(config, thread) ||
+            Boolean(latestComment && isSupervisorStaleResidueComment(config, latestComment))) &&
+          hasCodexConnectorFindingReviewComment(thread)
+        );
+      },
     );
 }
 
@@ -76,6 +84,7 @@ function currentConfiguredBotThreads(config: SupervisorConfig, reviewThreads: Re
 }
 
 function currentHeadCodexTurnVerificationArtifact(
+  config: SupervisorConfig,
   record: Pick<IssueRunRecord, "timeline_artifacts">,
   pr: Pick<GitHubPullRequest, "headRefOid">,
   currentThreads: ReviewThread[],
@@ -87,7 +96,7 @@ function currentHeadCodexTurnVerificationArtifact(
       artifact.outcome === "passed" &&
       artifact.head_sha === pr.headRefOid &&
       artifact.repair_targets?.includes("verified_no_source_change_review_thread_residue") !== true &&
-      repairArtifactCoversCurrentThreads(artifact, pr, currentThreads),
+      repairArtifactCoversCurrentThreads(config, artifact, pr, currentThreads),
   ) ?? null;
 }
 
@@ -106,6 +115,7 @@ function currentHeadPassedCodexTurnArtifacts(
 }
 
 function currentHeadThreadScopedVerificationArtifacts(
+  config: SupervisorConfig,
   record: Pick<IssueRunRecord, "timeline_artifacts">,
   pr: Pick<GitHubPullRequest, "headRefOid">,
   currentThreads: ReviewThread[],
@@ -119,19 +129,12 @@ function currentHeadThreadScopedVerificationArtifacts(
       artifact.repair_targets?.includes("verified_no_source_change_review_thread_residue") !== true &&
       artifact.repair_targets?.includes(VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET) !== true &&
       artifactHeadScopedProcessedThreadEvidenceCount(artifact, pr) > 0 &&
-      repairArtifactCoversCurrentThreads(artifact, pr, currentThreads),
+      repairArtifactCoversCurrentThreads(config, artifact, pr, currentThreads),
   );
 }
 
-function currentHeadVerifiedRepairResidueArtifact(
-  record: Pick<IssueRunRecord, "timeline_artifacts">,
-  pr: Pick<GitHubPullRequest, "headRefOid">,
-  currentThreads?: ReviewThread[],
-): TimelineArtifact | null {
-  return currentHeadVerifiedRepairResidueArtifacts(record, pr, currentThreads)[0] ?? null;
-}
-
 function currentHeadVerifiedRepairResidueArtifacts(
+  config: SupervisorConfig,
   record: Pick<IssueRunRecord, "timeline_artifacts">,
   pr: Pick<GitHubPullRequest, "headRefOid">,
   currentThreads?: ReviewThread[],
@@ -143,7 +146,7 @@ function currentHeadVerifiedRepairResidueArtifacts(
       artifact.head_sha === pr.headRefOid &&
       artifact.repair_targets?.includes(VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET) === true &&
       artifactHeadScopedProcessedThreadEvidenceCount(artifact, pr) > 0 &&
-      (!currentThreads || repairArtifactCoversCurrentThreads(artifact, pr, currentThreads)),
+      (!currentThreads || repairArtifactCoversCurrentThreads(config, artifact, pr, currentThreads)),
   );
 }
 
@@ -159,6 +162,7 @@ function artifactHeadScopedProcessedThreadEvidenceCount(
 }
 
 function repairArtifactCoversCurrentThreads(
+  config: SupervisorConfig,
   artifact: TimelineArtifact,
   pr: Pick<GitHubPullRequest, "headRefOid">,
   currentThreads: ReviewThread[],
@@ -170,14 +174,14 @@ function repairArtifactCoversCurrentThreads(
   const processedThreadFingerprints = artifact.processed_review_thread_fingerprints ?? [];
   return currentThreads.every((thread) => {
     const headScopedKey = processedReviewThreadKey(thread.id, pr.headRefOid);
-    const latestFingerprint = latestReviewThreadCommentFingerprint(thread);
+    const latestFingerprint = currentHeadRepairProofThreadFingerprint(config, thread);
     if (
       latestFingerprint &&
       processedThreadFingerprints.includes(
         processedReviewThreadFingerprintKey(thread.id, pr.headRefOid, latestFingerprint),
       )
     ) {
-      return latestReviewThreadCommentPredatesArtifact(thread, artifact);
+      return latestReviewThreadCommentPredatesArtifact(config, thread, artifact);
     }
     if (!processedThreadIds.includes(headScopedKey)) {
       return false;
@@ -189,24 +193,26 @@ function repairArtifactCoversCurrentThreads(
     const threadFingerprintPrefix = `${headScopedKey}#`;
     return (
       !processedThreadFingerprints.some((key) => key.startsWith(threadFingerprintPrefix)) &&
-      latestReviewThreadCommentPredatesArtifact(thread, artifact)
+      latestReviewThreadCommentPredatesArtifact(config, thread, artifact)
     );
   });
 }
 
 function coveredCurrentThreadCount(
+  config: SupervisorConfig,
   artifact: TimelineArtifact,
   pr: Pick<GitHubPullRequest, "headRefOid">,
   currentThreads: ReviewThread[],
 ): number {
-  return currentThreads.filter((thread) => repairArtifactCoversCurrentThreads(artifact, pr, [thread])).length;
+  return currentThreads.filter((thread) => repairArtifactCoversCurrentThreads(config, artifact, pr, [thread])).length;
 }
 
 function latestReviewThreadCommentPredatesArtifact(
+  config: SupervisorConfig,
   thread: ReviewThread,
   artifact: Pick<TimelineArtifact, "recorded_at">,
 ): boolean {
-  const latestComment = latestReviewComment(thread);
+  const latestComment = currentHeadRepairProofReferenceComment(config, thread);
   if (!latestComment) {
     return true;
   }
@@ -218,6 +224,36 @@ function latestReviewThreadCommentPredatesArtifact(
   }
 
   return latestCommentMs <= artifactRecordedMs;
+}
+
+function isSupervisorStaleResidueComment(config: SupervisorConfig, comment: ReviewThreadComment): boolean {
+  return (
+    isTrustedSupervisorMarkerAuthor(config, comment) &&
+    (
+      isSupervisorVerifiedStaleResidueAutoResolveComment(comment.body) ||
+      (
+        /\bThe supervisor reprocessed this configured-bot finding on the current head\b/u.test(comment.body) &&
+        /\bAudit: issue=#\d+ pr=#\d+ head=[^\s]+ thread=[^\s]+ reason=stale_review_bot\b/u.test(comment.body)
+      )
+    )
+  );
+}
+
+function currentHeadRepairProofReferenceComment(
+  config: SupervisorConfig,
+  thread: ReviewThread,
+): ReviewThreadComment | null {
+  const latestComment = latestReviewComment(thread);
+  if (!latestComment || !isSupervisorStaleResidueComment(config, latestComment)) {
+    return latestComment;
+  }
+
+  return latestCodexConnectorReviewCommentNode(thread) ?? latestComment;
+}
+
+function currentHeadRepairProofThreadFingerprint(config: SupervisorConfig, thread: ReviewThread): string | null {
+  const referenceComment = currentHeadRepairProofReferenceComment(config, thread);
+  return referenceComment?.id || referenceComment?.createdAt || null;
 }
 
 function headScopedProcessedThreadEvidenceCount(
@@ -501,13 +537,20 @@ export function projectCurrentHeadCodexRepairProof(args: {
     : repairResidueThreads;
   if (
     repairResidueThreads.length > 0 &&
-    !repairResidueThreads.every((thread) => hasProcessedReviewThread(args.record, args.pr, thread))
+    !repairResidueThreads.every((thread) =>
+      hasProcessedReviewThread(
+        args.record,
+        args.pr,
+        thread,
+        currentHeadRepairProofThreadFingerprint(args.config, thread),
+      )
+    )
   ) {
     return null;
   }
 
   const configuredLocalCiRequired = hasConfiguredLocalCiCommand(args.config);
-  const structuredProof = currentHeadVerifiedRepairResidueArtifacts(args.record, args.pr, proofCoverageThreads)
+  const structuredProof = currentHeadVerifiedRepairResidueArtifacts(args.config, args.record, args.pr, proofCoverageThreads)
     .map((structuredArtifact) => {
       const localVerificationEvidence = configuredLocalCiRequired
         ? currentHeadLocalVerificationEvidence({
@@ -542,7 +585,7 @@ export function projectCurrentHeadCodexRepairProof(args: {
   }
 
   const threadScopedProof = noMajorSupport
-    ? currentHeadThreadScopedVerificationArtifacts(args.record, args.pr, proofCoverageThreads)
+    ? currentHeadThreadScopedVerificationArtifacts(args.config, args.record, args.pr, proofCoverageThreads)
         .map((artifact) => {
           const localVerificationEvidence = configuredLocalCiRequired
             ? currentHeadLocalVerificationEvidence({
@@ -587,11 +630,20 @@ export function projectCurrentHeadCodexRepairProof(args: {
     args.allowRecordProcessedThreadEvidence === true &&
     noMajorSupport &&
     recordProcessedThreadEvidenceCount > 0 &&
-    proofCoverageThreads.every((thread) => hasProcessedReviewThread(args.record, args.pr, thread))
+    proofCoverageThreads.every((thread) =>
+      hasProcessedReviewThread(
+        args.record,
+        args.pr,
+        thread,
+        currentHeadRepairProofThreadFingerprint(args.config, thread),
+      )
+    )
   ) {
     const recordScopedProof = currentHeadPassedCodexTurnArtifacts(args.record, args.pr)
       .filter((artifact) =>
-        proofCoverageThreads.every((thread) => latestReviewThreadCommentPredatesArtifact(thread, artifact))
+        proofCoverageThreads.every((thread) =>
+          latestReviewThreadCommentPredatesArtifact(args.config, thread, artifact)
+        )
       )
       .map((artifact) => {
         const localVerificationEvidence = configuredLocalCiRequired
@@ -652,7 +704,12 @@ export function projectCurrentHeadCodexRepairProof(args: {
     return null;
   }
 
-  const currentHeadVerification = currentHeadCodexTurnVerificationArtifact(args.record, args.pr, proofCoverageThreads);
+  const currentHeadVerification = currentHeadCodexTurnVerificationArtifact(
+    args.config,
+    args.record,
+    args.pr,
+    proofCoverageThreads,
+  );
   if (!currentHeadVerification) {
     return null;
   }
@@ -696,7 +753,14 @@ export function currentHeadCodexRepairProofRejectionReasons(args: {
   const reasons: string[] = [];
   if (
     repairResidueThreads.length > 0 &&
-    !repairResidueThreads.every((thread) => hasProcessedReviewThread(args.record, args.pr, thread))
+    !repairResidueThreads.every((thread) =>
+      hasProcessedReviewThread(
+        args.record,
+        args.pr,
+        thread,
+        currentHeadRepairProofThreadFingerprint(args.config, thread),
+      )
+    )
   ) {
     reasons.push("current_head_repair_proof_processed_thread_evidence_missing");
   }
@@ -714,17 +778,21 @@ export function currentHeadCodexRepairProofRejectionReasons(args: {
   );
   if (structuredArtifacts.length === 0) {
     const coveringUnmarkedArtifact = currentHeadPassedArtifacts.find((artifact) =>
-      repairArtifactCoversCurrentThreads(artifact, args.pr, proofCoverageThreads)
+      repairArtifactCoversCurrentThreads(args.config, artifact, args.pr, proofCoverageThreads)
     );
     reasons.push(
       coveringUnmarkedArtifact
         ? "current_head_repair_proof_repair_target_missing"
         : "current_head_repair_proof_structured_artifact_missing",
     );
-  } else if (!structuredArtifacts.some((artifact) => repairArtifactCoversCurrentThreads(artifact, args.pr, proofCoverageThreads))) {
+  } else if (!structuredArtifacts.some((artifact) =>
+    repairArtifactCoversCurrentThreads(args.config, artifact, args.pr, proofCoverageThreads)
+  )) {
     const bestCoverage = Math.max(
       0,
-      ...structuredArtifacts.map((artifact) => coveredCurrentThreadCount(artifact, args.pr, proofCoverageThreads)),
+      ...structuredArtifacts.map((artifact) =>
+        coveredCurrentThreadCount(args.config, artifact, args.pr, proofCoverageThreads)
+      ),
     );
     reasons.push(`current_head_repair_proof_thread_coverage_${bestCoverage}_of_${proofCoverageThreads.length}`);
   }
@@ -737,10 +805,10 @@ export function currentHeadCodexRepairProofRejectionReasons(args: {
     const configuredLocalCiCommand = displayLocalCiCommand(args.config.localCiCommand ?? undefined);
     const scopedProofArtifacts = [
       ...structuredArtifacts,
-      ...currentHeadThreadScopedVerificationArtifacts(args.record, args.pr, proofCoverageThreads),
+      ...currentHeadThreadScopedVerificationArtifacts(args.config, args.record, args.pr, proofCoverageThreads),
     ].filter((artifact, index, artifacts) => artifacts.findIndex((candidate) => candidate === artifact) === index);
     const coveringScopedProofArtifacts = scopedProofArtifacts.filter((artifact) =>
-      repairArtifactCoversCurrentThreads(artifact, args.pr, proofCoverageThreads)
+      repairArtifactCoversCurrentThreads(args.config, artifact, args.pr, proofCoverageThreads)
     );
     if (latestLocalCi?.head_sha === args.pr.headRefOid) {
       reasons.push("current_head_repair_proof_latest_local_ci_result_not_passed");
@@ -762,5 +830,19 @@ export function hasCurrentHeadVerifiedRepairResidueArtifact(
   record: Pick<IssueRunRecord, "timeline_artifacts">,
   pr: Pick<GitHubPullRequest, "headRefOid">,
 ): boolean {
-  return currentHeadVerifiedRepairResidueArtifact(record, pr) !== null;
+  return currentHeadVerifiedRepairResidueArtifactsPresent(record, pr);
+}
+
+function currentHeadVerifiedRepairResidueArtifactsPresent(
+  record: Pick<IssueRunRecord, "timeline_artifacts">,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
+): boolean {
+  return (record.timeline_artifacts ?? []).some(
+    (artifact) =>
+      artifact.type === "verification_result" &&
+      artifact.outcome === "passed" &&
+      artifact.head_sha === pr.headRefOid &&
+      artifact.repair_targets?.includes(VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET) === true &&
+      artifactHeadScopedProcessedThreadEvidenceCount(artifact, pr) > 0,
+  );
 }

@@ -604,11 +604,9 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
         hasOnlyOutdatedConfiguredBotResidue(config, reviewThreads);
       const blockedManualReviewProjectionRecoverableByCurrentHeadProof =
         projection.nextBlockedReason === "manual_review" &&
-        record.last_tracked_pr_repeat_failure_decision === "stop_no_progress" &&
         record.pre_merge_evaluation_outcome !== "manual_review_blocked";
       const sameHeadCurrentHeadRepairProofRecovery =
         record.blocked_reason === "manual_review" &&
-        record.last_tracked_pr_repeat_failure_decision === "stop_no_progress" &&
         record.last_head_sha === trackedPullRequest.headRefOid &&
         (nextState !== "blocked" || blockedManualReviewProjectionRecoverableByCurrentHeadProof) &&
         projectCurrentHeadCodexRepairProof({

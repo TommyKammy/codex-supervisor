@@ -4,6 +4,7 @@ import {
   buildStaleReviewBotRemediation,
   shouldAutoResolveVerifiedStaleReviewResidue,
 } from "./stale-review-bot-remediation";
+import { projectCurrentHeadCodexRepairProof } from "../current-head-codex-repair-proof";
 import {
   loadReviewThreadFileContents,
   type RepositoryFileContents,
@@ -26,6 +27,19 @@ export function shouldReenterCodexConnectorVerifiedStaleResidueAutoResolve(args:
     reviewThreads: args.reviewThreads,
     repositoryFileContents: args.repositoryFileContents,
   });
+  if (
+    args.config.verifiedCurrentHeadRepairReviewThreadAutoResolve === true &&
+    projectCurrentHeadCodexRepairProof({
+      config: args.config,
+      record: args.record,
+      pr: args.pr,
+      checks: args.checks,
+      reviewThreads: args.reviewThreads,
+      allowRecordProcessedThreadEvidence: true,
+    }) !== null
+  ) {
+    return true;
+  }
 
   return shouldAutoResolveVerifiedStaleReviewResidue({
     ...args,
