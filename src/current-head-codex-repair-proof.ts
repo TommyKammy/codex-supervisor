@@ -318,7 +318,7 @@ function currentHeadRepairProofReferenceComment(
   return latestCodexConnectorReviewCommentNode(thread) ?? latestComment;
 }
 
-function currentHeadRepairProofThreadFingerprint(
+export function currentHeadRepairProofThreadFingerprint(
   config: SupervisorConfig,
   pr: Pick<GitHubPullRequest, "headRefOid">,
   thread: ReviewThread,
