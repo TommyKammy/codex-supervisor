@@ -39,6 +39,7 @@ export const VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET =
 export type CurrentHeadCodexRepairProofSource =
   | "structured_artifact"
   | "thread_scoped_verification_artifact"
+  | "finding_set_verification_artifact"
   | "record_processed_thread_evidence"
   | "legacy_processed_thread_evidence";
 
@@ -113,6 +114,143 @@ function currentHeadPassedCodexTurnArtifacts(
       artifact.head_sha === pr.headRefOid &&
       artifact.repair_targets?.includes("verified_no_source_change_review_thread_residue") !== true,
   );
+}
+
+function timestampAtOrAfter(value: string | null | undefined, floor: string | null): boolean {
+  const parsedValue = Date.parse(value ?? "");
+  if (Number.isNaN(parsedValue)) {
+    return false;
+  }
+  if (!floor) {
+    return true;
+  }
+  const parsedFloor = Date.parse(floor);
+  return !Number.isNaN(parsedFloor) && parsedValue >= parsedFloor;
+}
+
+function allCodexConnectorRepairResidueThreadsAreP2(reviewThreads: ReviewThread[]): boolean {
+  return reviewThreads.length > 0 && reviewThreads.every((thread) => latestCodexConnectorPSeverity(thread) === "P2");
+}
+
+function textDeclaresAffirmativeFindingSetCompletion(
+  normalizedEvidenceText: string,
+  repairResidueThreadCount: number,
+  recordProcessedEvidenceCoversThreadSet: boolean,
+): boolean {
+  const findingSetPhrase = repairResidueThreadCount > 1
+    ? String.raw`\b(?:finding[- ]set|review findings|connector findings)\b`
+    : String.raw`\b(?:finding[- ]set|review finding|review findings|connector finding|connector findings)\b`;
+  const wholeSetQualifiedFindingSetPhrase = String.raw`\b(?:all|every|each|entire|full|complete)\s+(?:current\s+|unresolved\s+|remaining\s+|outstanding\s+|open\s+)?(?:finding[- ]set|review finding|review findings|connector finding|connector findings)\b`;
+  const scopedFindingSetPhrase = String.raw`(?:${findingSetPhrase}|${wholeSetQualifiedFindingSetPhrase})`;
+  const completionPhrase = String.raw`\b(?:verified|covered|repaired)\b`;
+  const nearbyClauseText = String.raw`[^.;:\n]{0,120}?`;
+  const nearbyText = String.raw`[\s\S]{0,120}?`;
+  const nearbyShortText = String.raw`[\s\S]{0,40}?`;
+  const negationPhrase = String.raw`\b(?:not|never|no|none|neither|without|isn't|isnt|aren't|arent|wasn't|wasnt|weren't|werent|cannot|can't|cant|failed to|fails to)\b`;
+  const incompletePhrase = String.raw`\b(?:not all|partial|partially|incomplete|except|excluding|exclude|missing|remain|remains|unaddressed|subset)\b`;
+  const partialFindingSetPhrase = String.raw`\b(?:only\s+some|some)(?:\s+of\s+(?:the\s+)?)?\s+(?:finding[- ]set|review findings|connector findings)\b`;
+  const futureCompletionPhrase = String.raw`\b(?:will be|needs to be|need to be|should be|must be|to be)\b`;
+  const affirmativeCompletion = new RegExp(
+    `(?:${completionPhrase}${nearbyClauseText}${scopedFindingSetPhrase}|${scopedFindingSetPhrase}${nearbyClauseText}${completionPhrase})`,
+    "u",
+  );
+  if (!affirmativeCompletion.test(normalizedEvidenceText)) {
+    return false;
+  }
+  if (new RegExp(
+    `(?:${scopedFindingSetPhrase}${nearbyText}${negationPhrase}${nearbyShortText}${completionPhrase}|${negationPhrase}${nearbyShortText}${completionPhrase}${nearbyText}${scopedFindingSetPhrase}|${negationPhrase}${nearbyShortText}${scopedFindingSetPhrase}${nearbyText}${completionPhrase})`,
+    "u",
+  ).test(normalizedEvidenceText)) {
+    return false;
+  }
+  if (new RegExp(
+    `(?:${partialFindingSetPhrase}|${incompletePhrase}${nearbyText}${findingSetPhrase}|${findingSetPhrase}${nearbyText}${incompletePhrase})`,
+    "u",
+  ).test(normalizedEvidenceText)) {
+    return false;
+  }
+  if (new RegExp(
+    `(?:${scopedFindingSetPhrase}${nearbyText}${futureCompletionPhrase}${nearbyShortText}${completionPhrase}|${futureCompletionPhrase}${nearbyShortText}${completionPhrase}${nearbyText}${scopedFindingSetPhrase})`,
+    "u",
+  ).test(normalizedEvidenceText)) {
+    return false;
+  }
+  const partialCountMatch = normalizedEvidenceText.match(
+    new RegExp(String.raw`\b(\d+)\s*(?:(?:out\s+)?of\s+(?:the\s+)?|/\s*)${repairResidueThreadCount}\b`, "u"),
+  );
+  if (partialCountMatch && Number(partialCountMatch[1]) !== repairResidueThreadCount) {
+    return false;
+  }
+  if (repairResidueThreadCount <= 1 || recordProcessedEvidenceCoversThreadSet) {
+    return true;
+  }
+
+  const countPhrase = String.raw`\b${repairResidueThreadCount}\b`;
+  const wholeSetPhrase = String.raw`\b(?:all|every|entire|full|complete)\b`;
+  return new RegExp(
+    `(?:\\bfinding[- ]set\\b|${wholeSetQualifiedFindingSetPhrase}|${wholeSetPhrase}${nearbyText}${findingSetPhrase}|${findingSetPhrase}${nearbyText}${wholeSetPhrase}|${countPhrase}${nearbyText}${findingSetPhrase}|${findingSetPhrase}${nearbyText}${countPhrase})`,
+    "u",
+  ).test(normalizedEvidenceText);
+}
+
+function artifactDeclaresFindingSetScope(
+  config: SupervisorConfig,
+  artifact: TimelineArtifact,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
+  repairResidueThreads: ReviewThread[],
+  recordProcessedEvidenceCoversThreadSet: boolean,
+): boolean {
+  if (artifactHeadScopedProcessedThreadEvidenceCount(artifact, pr) > 0) {
+    return repairArtifactCoversCurrentThreads(config, artifact, pr, repairResidueThreads);
+  }
+
+  return [artifact.summary, artifact.command].some((value) => {
+    const normalizedEvidenceText = value?.trim().toLowerCase();
+    return normalizedEvidenceText
+      ? textDeclaresAffirmativeFindingSetCompletion(
+          normalizedEvidenceText,
+          repairResidueThreads.length,
+          recordProcessedEvidenceCoversThreadSet,
+        )
+      : false;
+  });
+}
+
+function currentHeadFindingSetVerificationArtifacts(
+  config: SupervisorConfig,
+  record: Pick<IssueRunRecord, "timeline_artifacts">,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
+  repairResidueThreads: ReviewThread[],
+  recordProcessedEvidenceCoversThreadSet: boolean,
+): TimelineArtifact[] {
+  const latestMustFixObservedAt = latestCodexConnectorMustFixReviewCommentObservedAt(repairResidueThreads);
+  return currentHeadPassedCodexTurnArtifacts(record, pr).filter((artifact) =>
+    timestampAtOrAfter(artifact.recorded_at, latestMustFixObservedAt) &&
+    artifactDeclaresFindingSetScope(
+      config,
+      artifact,
+      pr,
+      repairResidueThreads,
+      recordProcessedEvidenceCoversThreadSet,
+    )
+  );
+}
+
+function formatFindingSetVerificationSummary(args: {
+  summary: string | null | undefined;
+  command: string | null | undefined;
+  noMajorSupport: string;
+  localVerificationEvidence: CurrentHeadLocalVerificationEvidence | null;
+}): string {
+  const proofSummary = args.summary || args.command || "current_head_finding_set_verification_passed";
+  const details = [
+    `finding_set_current_head_verification:${proofSummary}`,
+    `codex_no_major_support=${args.noMajorSupport}`,
+  ];
+  if (args.localVerificationEvidence) {
+    details.push(`local_verification=${args.localVerificationEvidence.source}:${args.localVerificationEvidence.summary}`);
+  }
+  return details.join(";");
 }
 
 function currentHeadThreadScopedVerificationArtifacts(
@@ -558,6 +696,10 @@ function currentHeadNoMajorSupportSummary(
   if (Date.parse(observedAt) < Date.parse(requestedAt)) {
     return null;
   }
+  const latestMustFixObservedAt = validTimestamp(latestCodexConnectorMustFixReviewCommentObservedAt(reviewThreads));
+  if (latestMustFixObservedAt && Date.parse(observedAt) < Date.parse(latestMustFixObservedAt)) {
+    return null;
+  }
   return "codex_pr_success_comment_after_current_head_request";
 }
 
@@ -643,16 +785,6 @@ export function projectCurrentHeadCodexRepairProof(args: {
         unresolvedCodexConnectorP1Threads(configuredBotReviewThreads(args.config, args.reviewThreads)),
       )
     : repairResidueThreads;
-  if (
-    repairResidueThreads.length > 0 &&
-    !repairResidueThreads.every((thread) =>
-      currentHeadRepairProofThreadFingerprints(args.config, args.pr, thread)
-        .some((candidate) => hasProcessedReviewThread(args.record, args.pr, thread, candidate.fingerprint))
-    )
-  ) {
-    return null;
-  }
-
   const configuredLocalCiRequired = hasConfiguredLocalCiCommand(args.config);
   const structuredProof = currentHeadVerifiedRepairResidueArtifacts(args.config, args.record, args.pr, proofCoverageThreads)
     .map((structuredArtifact) => {
@@ -730,14 +862,65 @@ export function projectCurrentHeadCodexRepairProof(args: {
   }
 
   const recordProcessedThreadEvidenceCount = headScopedProcessedThreadEvidenceCount(args.record, args.pr);
+  const recordProcessedEvidenceCoversProofCoverageThreads = proofCoverageThreads.every((thread) =>
+    currentHeadRepairProofThreadFingerprints(args.config, args.pr, thread)
+      .some((candidate) => hasProcessedReviewThread(args.record, args.pr, thread, candidate.fingerprint))
+  );
+  if (
+    noMajorSupport &&
+    allCodexConnectorRepairResidueThreadsAreP2(proofCoverageThreads)
+  ) {
+    const findingSetProof = currentHeadFindingSetVerificationArtifacts(
+      args.config,
+      args.record,
+      args.pr,
+      proofCoverageThreads,
+      recordProcessedEvidenceCoversProofCoverageThreads,
+    )
+      .map((artifact) => {
+        const localVerificationEvidence = configuredLocalCiRequired
+          ? currentHeadLocalVerificationEvidence({
+              config: args.config,
+              record: args.record,
+              pr: args.pr,
+              checks: args.checks,
+              scopedTimelineArtifact: artifact,
+            })
+          : null;
+        if (configuredLocalCiRequired && !localVerificationEvidence) {
+          return null;
+        }
+        return {
+          artifact,
+          localVerificationEvidence,
+        };
+      })
+      .find((proof): proof is {
+        artifact: TimelineArtifact;
+        localVerificationEvidence: CurrentHeadLocalVerificationEvidence | null;
+      } => proof !== null);
+    if (findingSetProof) {
+      return {
+        source: "finding_set_verification_artifact",
+        summary: formatFindingSetVerificationSummary({
+          summary: findingSetProof.artifact.summary,
+          command: findingSetProof.artifact.command,
+          noMajorSupport,
+          localVerificationEvidence: findingSetProof.localVerificationEvidence,
+        }),
+        localVerificationEvidenceSource: findingSetProof.localVerificationEvidence?.source ?? null,
+        localVerificationEvidenceSummary: findingSetProof.localVerificationEvidence?.summary ?? null,
+        processedThreadEvidenceCount: recordProcessedThreadEvidenceCount,
+        currentConfiguredThreadCount: repairResidueThreads.length,
+      };
+    }
+  }
+
   if (
     args.allowRecordProcessedThreadEvidence === true &&
     noMajorSupport &&
     recordProcessedThreadEvidenceCount > 0 &&
-    proofCoverageThreads.every((thread) =>
-      currentHeadRepairProofThreadFingerprints(args.config, args.pr, thread)
-        .some((candidate) => hasProcessedReviewThread(args.record, args.pr, thread, candidate.fingerprint))
-    )
+    recordProcessedEvidenceCoversProofCoverageThreads
   ) {
     const recordScopedProof = currentHeadPassedCodexTurnArtifacts(args.record, args.pr)
       .filter((artifact) =>
