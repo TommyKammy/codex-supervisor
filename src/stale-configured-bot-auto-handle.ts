@@ -13,6 +13,7 @@ import type {
   TimelineArtifact,
 } from "./core/types";
 import { codexConnectorMustFixReviewThreads } from "./codex-connector-review-policy";
+import { currentHeadRepairProofThreadFingerprint } from "./current-head-codex-repair-proof";
 import {
   buildStaleReviewBotRemediation,
   VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET,
@@ -22,7 +23,6 @@ import {
   STALE_CONFIGURED_BOT_REVIEW_REASON_CODE,
 } from "./supervisor/stale-review-bot-recovery";
 import {
-  latestReviewThreadCommentFingerprint,
   processedReviewThreadFingerprintKey,
   processedReviewThreadKey,
 } from "./review-handling";
@@ -41,6 +41,7 @@ export interface StaleConfiguredBotReviewRemediationResult {
 const MAX_VERIFIED_REPAIR_RESIDUE_ARTIFACT_KEYS = 200;
 
 function verifiedCurrentHeadRepairResidueArtifact(args: {
+  config: SupervisorConfig;
   pr: GitHubPullRequest;
   reviewThreads: ReviewThread[];
   verificationEvidenceSummary: string | null;
@@ -52,7 +53,7 @@ function verifiedCurrentHeadRepairResidueArtifact(args: {
 
   const processedThreadIds = repairThreads.map((thread) => processedReviewThreadKey(thread.id, args.pr.headRefOid));
   const processedThreadFingerprints = repairThreads.flatMap((thread) => {
-    const latestFingerprint = latestReviewThreadCommentFingerprint(thread);
+    const latestFingerprint = currentHeadRepairProofThreadFingerprint(args.config, args.pr, thread);
     return latestFingerprint
       ? [processedReviewThreadFingerprintKey(thread.id, args.pr.headRefOid, latestFingerprint)]
       : [];
@@ -252,6 +253,7 @@ export async function handleStaleConfiguredBotReviewRemediation(args: {
     (recoveryResult.status === "resolved" || recoveryResult.shouldRefreshPullRequest)
   ) {
     const artifact = verifiedCurrentHeadRepairResidueArtifact({
+      config: args.config,
       pr: args.pr,
       reviewThreads: args.reviewThreads,
       verificationEvidenceSummary: staleReviewBotRemediation.verificationEvidenceSummary,

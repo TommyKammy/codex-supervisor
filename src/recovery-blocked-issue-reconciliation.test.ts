@@ -3469,9 +3469,11 @@ test("reconcileRecoverableBlockedIssueStates persists current-head clean proof a
   const threadB = "PRRT_kwDOTAxt0M6NeErE";
   const command = "python3 -m pytest tests/test_desktop_api_auth.py tests/test_poc_web_api.py -q";
   const config = createConfig({
+    repoSlug: "TommyKammy/VeriDoc",
     reviewBotLogins: ["chatgpt-codex-connector"],
     localCiCommand: command,
-    staleConfiguredBotReviewPolicy: "reply_only",
+    staleConfiguredBotReviewPolicy: "reply_and_resolve",
+    verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
   });
   const original = createRecord({
     issue_number: 147,
@@ -3495,7 +3497,7 @@ test("reconcileRecoverableBlockedIssueStates persists current-head clean proof a
       verificationProbeOutcomes: [`codex_turn:${command}:passed:none`],
     }),
     last_tracked_pr_progress_summary: "no_meaningful_tracked_pr_progress",
-    last_tracked_pr_repeat_failure_decision: "stop_no_progress",
+    last_tracked_pr_repeat_failure_decision: null,
     processed_review_thread_ids: [`${threadA}@${headSha}`, `${threadB}@${headSha}`],
     processed_review_thread_fingerprints: [
       `${threadA}@${headSha}#comment-stale-p1`,
@@ -3552,13 +3554,27 @@ test("reconcileRecoverableBlockedIssueStates persists current-head clean proof a
           path: "apps/desktop/api_client.py",
           line: 494,
           comments: {
-            nodes: [{
-              id: "comment-stale-p1",
-              body: "P1: Allow result-save audits to recover cleanly.",
-              createdAt: "2026-07-01T03:52:01Z",
-              url: "https://example.test/pr/156#discussion_r3503170216",
-              author: { login: "chatgpt-codex-connector", typeName: "Bot" },
-            }],
+            nodes: [
+              {
+                id: "comment-stale-p1",
+                body: "P1: Allow result-save audits to recover cleanly.",
+                createdAt: "2026-07-01T03:52:01Z",
+                url: "https://example.test/pr/156#discussion_r3503170216",
+                author: { login: "chatgpt-codex-connector", typeName: "Bot" },
+              },
+              {
+                id: "comment-supervisor-stale-p1",
+                body: [
+                  `The supervisor reprocessed this configured-bot finding on the current head \`${headSha}\` and classified it as stale.`,
+                  `Audit: issue=#147 pr=#156 head=${headSha} thread=${threadA} reason=stale_review_bot.`,
+                  "Evidence: location=apps/desktop/api_client.py:494 processed_on_current_head=yes.",
+                  "Under the configured `reply_and_resolve` policy, the supervisor is auto-resolving this stale thread now.",
+                ].join("\n\n"),
+                createdAt: "2026-07-01T06:53:00Z",
+                url: "https://example.test/pr/156#discussion_r3503170216_followup",
+                author: { login: "TommyKammy", typeName: "User" },
+              },
+            ],
           },
         }),
         createReviewThread({
@@ -3788,7 +3804,7 @@ test("reconcileRecoverableBlockedIssueStates does not promote changes-requested 
   assert.equal(state.issues["150"].blocked_reason, "manual_review");
 });
 
-test("reconcileRecoverableBlockedIssueStates requires stop-no-progress for record-scoped proof recovery", async () => {
+test("reconcileRecoverableBlockedIssueStates accepts record-scoped proof recovery without stop-no-progress", async () => {
   const headSha = "74d44b0a48f7b65fbcc9361a6509727c3ba987dc";
   const threadId = "thread-non-terminal-proof";
   const commentId = "comment-non-terminal-proof";
@@ -3874,9 +3890,9 @@ test("reconcileRecoverableBlockedIssueStates requires stop-no-progress for recor
     },
   );
 
-  assert.equal(state.issues["151"].state, "addressing_review");
+  assert.equal(state.issues["151"].state, "ready_to_merge");
   assert.equal(state.issues["151"].blocked_reason, null);
-  assert.equal(state.issues["151"].provider_success_head_sha, null);
+  assert.equal(state.issues["151"].provider_success_head_sha, headSha);
 });
 
 test("reconcileRecoverableBlockedIssueStates preserves local manual review blocks despite record-scoped proof", async () => {

@@ -164,6 +164,15 @@ function hasCleanMergeState(pr: GitHubPullRequest): boolean {
   return pr.state === "OPEN" && !pr.isDraft && pr.mergeStateStatus === "CLEAN" && pr.mergeable === "MERGEABLE";
 }
 
+function hasAutoResolvableMergeState(pr: GitHubPullRequest): boolean {
+  return (
+    pr.state === "OPEN" &&
+    !pr.isDraft &&
+    pr.mergeable === "MERGEABLE" &&
+    (pr.mergeStateStatus === "CLEAN" || pr.mergeStateStatus === "BLOCKED")
+  );
+}
+
 function hasMergeConflictState(pr: GitHubPullRequest): boolean {
   return pr.state !== "OPEN" || pr.isDraft || pr.mergeStateStatus === "DIRTY" || pr.mergeable === "CONFLICTING";
 }
@@ -1314,18 +1323,17 @@ export function buildStaleReviewBotRemediation(args: {
   };
 }
 
-export function shouldAutoResolveVerifiedStaleReviewResidue(args: {
+export function verifiedStaleReviewResidueAutoResolveStaticGatesPass(args: {
   config: SupervisorConfig;
   record: IssueRunRecord;
   pr: GitHubPullRequest;
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
-  remediation: StaleReviewBotRemediationDto | null;
 }): boolean {
   const configuredThreads = configuredBotReviewThreads(args.config, args.reviewThreads);
   const recoverableCodexThreads = configuredThreads.filter(
     (thread) => hasCodexConnectorFindingReviewComment(thread) &&
-      isRecoverableVerifiedCodexStaleResidueThread(args.config, thread),
+      isRecoverableVerifiedCodexStaleResidueThread(args.config, thread, args.pr),
   );
   return Boolean(
     args.record.state === "blocked" &&
@@ -1333,7 +1341,7 @@ export function shouldAutoResolveVerifiedStaleReviewResidue(args: {
         args.record.blocked_reason === "stale_review_bot") &&
       args.record.pr_number === args.pr.number &&
       configuredReviewProviderKinds(args.config).includes("codex") &&
-      !hasMergeConflictState(args.pr) &&
+      hasAutoResolvableMergeState(args.pr) &&
       !hasPendingChecks(args.checks) &&
       !hasFailingChecks(args.checks) &&
       manualReviewThreads(args.config, args.reviewThreads).length === 0 &&
@@ -1344,7 +1352,20 @@ export function shouldAutoResolveVerifiedStaleReviewResidue(args: {
         pr: args.pr,
         configuredThreads,
         recoverableThreads: recoverableCodexThreads,
-      }) &&
+      }),
+  );
+}
+
+export function shouldAutoResolveVerifiedStaleReviewResidue(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+  remediation: StaleReviewBotRemediationDto | null;
+}): boolean {
+  return Boolean(
+    verifiedStaleReviewResidueAutoResolveStaticGatesPass(args) &&
       args.remediation &&
       ((isVerifiedStaleResidueClassification(args.remediation.classification) &&
         verifiedStaleReviewResidueAutoResolveEnabled(args.config, args.remediation.classification)) ||

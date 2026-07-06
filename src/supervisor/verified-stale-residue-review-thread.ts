@@ -1,4 +1,5 @@
-import type { ReviewThread, ReviewThreadComment, SupervisorConfig } from "../core/types";
+import { commitShasEqualForComparison } from "../codex-connector-review-policy";
+import type { GitHubPullRequest, ReviewThread, ReviewThreadComment, SupervisorConfig } from "../core/types";
 import { isCodexConnectorReviewer } from "../external-review/external-review-normalization";
 import {
   latestReviewComment,
@@ -14,7 +15,8 @@ export function isSupervisorVerifiedStaleResidueAutoResolveComment(body: string)
 }
 
 function normalizedRepoOwnerLogin(config: SupervisorConfig): string | null {
-  const owner = config.repoSlug.split("/")[0]?.trim().toLowerCase();
+  const repoSlug = typeof config.repoSlug === "string" ? config.repoSlug : "";
+  const owner = repoSlug.split("/")[0]?.trim().toLowerCase();
   return owner || null;
 }
 
@@ -24,9 +26,25 @@ export function isTrustedSupervisorMarkerAuthor(config: SupervisorConfig, commen
   return Boolean(login && owner && login === owner);
 }
 
+function supervisorStaleReviewBotAuditMatches(
+  body: string,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
+  thread: Pick<ReviewThread, "id">,
+): boolean {
+  const match = body.match(
+    /\bAudit: issue=#\d+ pr=#\d+ head=([^\s]+) thread=([^\s]+) reason=stale_review_bot\b/u,
+  );
+  return Boolean(
+    match &&
+      commitShasEqualForComparison(match[1], pr.headRefOid) &&
+      match[2] === thread.id,
+  );
+}
+
 export function isRecoverableVerifiedCodexStaleResidueThread(
   config: SupervisorConfig,
   thread: ReviewThread,
+  pr?: Pick<GitHubPullRequest, "headRefOid">,
 ): boolean {
   const hasCodexConnectorComment = thread.comments.nodes.some((comment) => {
     const login = comment.author?.login;
@@ -47,5 +65,8 @@ export function isRecoverableVerifiedCodexStaleResidueThread(
   }
 
   return isTrustedSupervisorMarkerAuthor(config, latestComment) &&
-    isSupervisorVerifiedStaleResidueAutoResolveComment(latestComment.body);
+    (
+      isSupervisorVerifiedStaleResidueAutoResolveComment(latestComment.body) ||
+      Boolean(pr && supervisorStaleReviewBotAuditMatches(latestComment.body, pr, thread))
+    );
 }

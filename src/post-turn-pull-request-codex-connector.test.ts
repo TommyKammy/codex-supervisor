@@ -2123,6 +2123,7 @@ test("handlePostTurnPullRequestTransitionsPhase keeps verified P1 no-source-chan
 
 test("handlePostTurnPullRequestTransitionsPhase resolves verified current-head repair Codex threads only with the repair opt-in", async () => {
   const config = createConfig({
+    repoSlug: "TommyKammy/codex-supervisor",
     reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
     configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
     verifiedCurrentHeadRepairReviewThreadAutoResolve: true,
@@ -2151,6 +2152,22 @@ test("handlePostTurnPullRequestTransitionsPhase resolves verified current-head r
     },
   });
   const pr = createPullRequest(scenario.pullRequestPatch);
+  scenario.reviewThread.comments.nodes.push({
+    id: "comment-supervisor-stale-reply",
+    body: [
+      "The supervisor reprocessed this configured-bot finding on the current head `head-1988` and classified it as stale.",
+      "",
+      "Audit: issue=#102 pr=#1988 head=head-1988 thread=thread-codex-repair reason=stale_review_bot.",
+      "",
+      "Under the configured `reply_and_resolve` policy, the supervisor is auto-resolving this stale thread now.",
+    ].join("\n"),
+    createdAt: "2026-05-15T00:19:00Z",
+    url: "https://example.test/pr/1988#discussion_supervisor_stale_reply",
+    author: {
+      login: "TommyKammy",
+      typeName: "User",
+    },
+  });
   const state: SupervisorStateFile = {
     activeIssueNumber: 102,
     issues: {
@@ -2228,6 +2245,23 @@ test("handlePostTurnPullRequestTransitionsPhase resolves verified current-head r
   assert.deepEqual(resolveCalls, ["thread-codex-repair"]);
   assert.match(replyCalls[0]?.body ?? "", /reason=verified_current_head_repair_auto_resolve/);
   assert.doesNotMatch(replyCalls[0]?.body ?? "", /verified_no_source_change_auto_resolve/);
+  const autoResolveArtifact = result.record.timeline_artifacts?.find(
+    (artifact) =>
+      artifact.gate === "workspace_preparation" &&
+      artifact.repair_targets?.includes(VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET) === true,
+  );
+  assert.equal(
+    autoResolveArtifact?.processed_review_thread_fingerprints?.includes(
+      "thread-codex-repair@head-1988#comment-codex-repair",
+    ),
+    true,
+  );
+  assert.equal(
+    autoResolveArtifact?.processed_review_thread_fingerprints?.includes(
+      "thread-codex-repair@head-1988#comment-supervisor-stale-reply",
+    ),
+    false,
+  );
   assert.equal(requestComments.length, 0);
 });
 
