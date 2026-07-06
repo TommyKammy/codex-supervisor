@@ -323,6 +323,83 @@ test("projectCurrentHeadCodexRepairProof keeps processed Codex evidence after tr
   assert.equal(proof?.source, "record_processed_thread_evidence");
 });
 
+test("projectCurrentHeadCodexRepairProof rejects trusted supervisor stale reply from another thread", () => {
+  const headSha = "7cbf3d07397c51cb7a4de4ff47875154cce6f6c6";
+  const thread = codexThread({
+    id: "PRRT_current_clean_supervisor_reply_mismatch",
+    commentId: "comment-codex-before-mismatched-supervisor",
+    severity: "P2",
+    line: 810,
+  });
+  thread.comments.nodes[0]!.createdAt = "2026-07-06T01:36:26Z";
+  thread.comments.nodes.push({
+    id: "comment-supervisor-stale-reply-wrong-thread",
+    body: [
+      `The supervisor reprocessed this configured-bot finding on the current head \`${headSha}\` and classified it as stale.`,
+      `Audit: issue=#216 pr=#220 head=${headSha} thread=PRRT_other_thread reason=stale_review_bot.`,
+      "Evidence: location=scripts/evaluate_dataset.py:810 processed_on_current_head=yes.",
+      "Under the configured `reply_and_resolve` policy, the supervisor is auto-resolving this stale thread now.",
+    ].join("\n\n"),
+    createdAt: "2026-07-06T02:17:27Z",
+    url: "https://example.test/pr/220#discussion_r3526118510",
+    author: {
+      login: "TommyKammy",
+      typeName: "User",
+    },
+  });
+  const config = createConfig({
+    repoSlug: "TommyKammy/VeriDoc",
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    localCiCommand: "python3 -m unittest tests.test_evaluate_dataset",
+  });
+  const record = createRecord({
+    last_head_sha: headSha,
+    blocked_reason: "manual_review",
+    codex_connector_review_requested_observed_at: "2026-07-06T02:09:23Z",
+    codex_connector_review_requested_head_sha: headSha,
+    processed_review_thread_ids: [`${thread.id}@${headSha}`],
+    processed_review_thread_fingerprints: [`${thread.id}@${headSha}#comment-codex-before-mismatched-supervisor`],
+    timeline_artifacts: [
+      {
+        type: "verification_result",
+        gate: "codex_turn",
+        command: "python3 -m unittest tests.test_evaluate_dataset",
+        head_sha: headSha,
+        outcome: "passed",
+        remediation_target: null,
+        next_action: "continue",
+        summary: "Reverified unresolved Connector review cluster as covered by existing P9 harness guards/tests.",
+        recorded_at: "2026-07-06T02:16:30Z",
+      },
+    ],
+  });
+  const pr = createPullRequest({
+    headRefOid: headSha,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    reviewDecision: null,
+    currentHeadCiGreenAt: "2026-07-06T01:59:38Z",
+    configuredBotCurrentHeadObservedAt: "2026-07-06T02:15:17Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "7cbf3d0739",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-07-06T02:15:17Z",
+    codexConnectorReviewRequestedAt: "2026-07-06T02:09:23Z",
+    codexConnectorReviewRequestedHeadSha: headSha,
+  });
+
+  const proof = projectCurrentHeadCodexRepairProof({
+    config,
+    record,
+    pr,
+    checks: [{ name: "Minimal checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+    reviewThreads: [thread],
+    allowRecordProcessedThreadEvidence: true,
+  });
+
+  assert.equal(proof, null);
+});
+
 test("projectCurrentHeadCodexRepairProof rejects record-scoped proof before latest thread comments", () => {
   const headSha = "74d44b0a48f7b65fbcc9361a6509727c3ba987dc";
   const threads = [

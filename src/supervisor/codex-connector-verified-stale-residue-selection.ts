@@ -3,6 +3,7 @@ import type { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread,
 import {
   buildStaleReviewBotRemediation,
   shouldAutoResolveVerifiedStaleReviewResidue,
+  verifiedStaleReviewResidueAutoResolveStaticGatesPass,
 } from "./stale-review-bot-remediation";
 import { projectCurrentHeadCodexRepairProof } from "../current-head-codex-repair-proof";
 import {
@@ -29,6 +30,7 @@ export function shouldReenterCodexConnectorVerifiedStaleResidueAutoResolve(args:
   });
   if (
     args.config.verifiedCurrentHeadRepairReviewThreadAutoResolve === true &&
+    verifiedStaleReviewResidueAutoResolveStaticGatesPass(args) &&
     projectCurrentHeadCodexRepairProof({
       config: args.config,
       record: args.record,

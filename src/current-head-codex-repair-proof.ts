@@ -62,6 +62,7 @@ function configuredReviewProvidersAreCodexOnly(config: SupervisorConfig): boolea
 
 function unresolvedConfiguredBotThreadsAreCodexConnectorOnly(
   config: SupervisorConfig,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
   reviewThreads: ReviewThread[],
 ): boolean {
   return configuredBotReviewThreads(config, reviewThreads)
@@ -71,7 +72,7 @@ function unresolvedConfiguredBotThreadsAreCodexConnectorOnly(
         const latestComment = latestReviewComment(thread);
         return (
           (latestReviewCommentAuthorIsAllowedBot(config, thread) ||
-            Boolean(latestComment && isSupervisorStaleResidueComment(config, latestComment))) &&
+            Boolean(latestComment && isSupervisorStaleResidueComment(config, pr, thread, latestComment))) &&
           hasCodexConnectorFindingReviewComment(thread)
         );
       },
@@ -174,14 +175,14 @@ function repairArtifactCoversCurrentThreads(
   const processedThreadFingerprints = artifact.processed_review_thread_fingerprints ?? [];
   return currentThreads.every((thread) => {
     const headScopedKey = processedReviewThreadKey(thread.id, pr.headRefOid);
-    const latestFingerprint = currentHeadRepairProofThreadFingerprint(config, thread);
+    const latestFingerprint = currentHeadRepairProofThreadFingerprint(config, pr, thread);
     if (
       latestFingerprint &&
       processedThreadFingerprints.includes(
         processedReviewThreadFingerprintKey(thread.id, pr.headRefOid, latestFingerprint),
       )
     ) {
-      return latestReviewThreadCommentPredatesArtifact(config, thread, artifact);
+      return latestReviewThreadCommentPredatesArtifact(config, pr, thread, artifact);
     }
     if (!processedThreadIds.includes(headScopedKey)) {
       return false;
@@ -193,7 +194,7 @@ function repairArtifactCoversCurrentThreads(
     const threadFingerprintPrefix = `${headScopedKey}#`;
     return (
       !processedThreadFingerprints.some((key) => key.startsWith(threadFingerprintPrefix)) &&
-      latestReviewThreadCommentPredatesArtifact(config, thread, artifact)
+      latestReviewThreadCommentPredatesArtifact(config, pr, thread, artifact)
     );
   });
 }
@@ -209,10 +210,11 @@ function coveredCurrentThreadCount(
 
 function latestReviewThreadCommentPredatesArtifact(
   config: SupervisorConfig,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
   thread: ReviewThread,
   artifact: Pick<TimelineArtifact, "recorded_at">,
 ): boolean {
-  const latestComment = currentHeadRepairProofReferenceComment(config, thread);
+  const latestComment = currentHeadRepairProofReferenceComment(config, pr, thread);
   if (!latestComment) {
     return true;
   }
@@ -226,33 +228,102 @@ function latestReviewThreadCommentPredatesArtifact(
   return latestCommentMs <= artifactRecordedMs;
 }
 
-function isSupervisorStaleResidueComment(config: SupervisorConfig, comment: ReviewThreadComment): boolean {
-  return (
-    isTrustedSupervisorMarkerAuthor(config, comment) &&
-    (
-      isSupervisorVerifiedStaleResidueAutoResolveComment(comment.body) ||
-      (
-        /\bThe supervisor reprocessed this configured-bot finding on the current head\b/u.test(comment.body) &&
-        /\bAudit: issue=#\d+ pr=#\d+ head=[^\s]+ thread=[^\s]+ reason=stale_review_bot\b/u.test(comment.body)
-      )
+function supervisorStaleResidueAudit(body: string): {
+  headSha: string;
+  threadId: string;
+  reason: string;
+} | null {
+  const match = body.match(
+    /\bAudit: issue=#\d+ pr=#\d+ head=([^\s]+) thread=([^\s]+) reason=([a-z0-9_]+)\b/u,
+  );
+  if (!match) {
+    return null;
+  }
+  return {
+    headSha: match[1]!,
+    threadId: match[2]!,
+    reason: match[3]!,
+  };
+}
+
+function supervisorStaleResidueAuditMatches(args: {
+  body: string;
+  pr: Pick<GitHubPullRequest, "headRefOid">;
+  thread: Pick<ReviewThread, "id">;
+  allowedReasons: string[];
+}): boolean {
+  const audit = supervisorStaleResidueAudit(args.body);
+  return Boolean(
+    audit &&
+      args.allowedReasons.includes(audit.reason) &&
+      commitShasEqualForComparison(audit.headSha, args.pr.headRefOid) &&
+      audit.threadId === args.thread.id,
+  );
+}
+
+function isSupervisorStaleResidueComment(
+  config: SupervisorConfig,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
+  thread: Pick<ReviewThread, "id">,
+  comment: ReviewThreadComment,
+): boolean {
+  if (!isTrustedSupervisorMarkerAuthor(config, comment)) {
+    return false;
+  }
+  const verifiedResidueMarker = isSupervisorVerifiedStaleResidueAutoResolveComment(comment.body);
+  if (
+    verifiedResidueMarker &&
+    supervisorStaleResidueAuditMatches({
+      body: comment.body,
+      pr,
+      thread,
+      allowedReasons: [
+        "verified_no_source_change_auto_resolve",
+        "verified_current_head_repair_auto_resolve",
+      ],
+    })
+  ) {
+    return true;
+  }
+  if (
+    verifiedResidueMarker &&
+    /\bSupervisor confirmed this stale Codex Connector finding is covered by the current-head success signal\b/u.test(
+      comment.body,
     )
+  ) {
+    return true;
+  }
+
+  return (
+    /\bThe supervisor reprocessed this configured-bot finding on the current head\b/u.test(comment.body) &&
+    supervisorStaleResidueAuditMatches({
+      body: comment.body,
+      pr,
+      thread,
+      allowedReasons: ["stale_review_bot"],
+    })
   );
 }
 
 function currentHeadRepairProofReferenceComment(
   config: SupervisorConfig,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
   thread: ReviewThread,
 ): ReviewThreadComment | null {
   const latestComment = latestReviewComment(thread);
-  if (!latestComment || !isSupervisorStaleResidueComment(config, latestComment)) {
+  if (!latestComment || !isSupervisorStaleResidueComment(config, pr, thread, latestComment)) {
     return latestComment;
   }
 
   return latestCodexConnectorReviewCommentNode(thread) ?? latestComment;
 }
 
-function currentHeadRepairProofThreadFingerprint(config: SupervisorConfig, thread: ReviewThread): string | null {
-  const referenceComment = currentHeadRepairProofReferenceComment(config, thread);
+function currentHeadRepairProofThreadFingerprint(
+  config: SupervisorConfig,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
+  thread: ReviewThread,
+): string | null {
+  const referenceComment = currentHeadRepairProofReferenceComment(config, pr, thread);
   return referenceComment?.id || referenceComment?.createdAt || null;
 }
 
@@ -499,7 +570,7 @@ function projectionSafetyGatesPass(args: {
     checksPresentAndGreen(args.checks) &&
     args.record.last_head_sha === args.pr.headRefOid &&
     !humanReviewBlocksProjection(args.config, args.pr, args.reviewThreads) &&
-    unresolvedConfiguredBotThreadsAreCodexConnectorOnly(args.config, args.reviewThreads)
+    unresolvedConfiguredBotThreadsAreCodexConnectorOnly(args.config, args.pr, args.reviewThreads)
   );
 }
 
@@ -542,7 +613,7 @@ export function projectCurrentHeadCodexRepairProof(args: {
         args.record,
         args.pr,
         thread,
-        currentHeadRepairProofThreadFingerprint(args.config, thread),
+        currentHeadRepairProofThreadFingerprint(args.config, args.pr, thread),
       )
     )
   ) {
@@ -635,14 +706,14 @@ export function projectCurrentHeadCodexRepairProof(args: {
         args.record,
         args.pr,
         thread,
-        currentHeadRepairProofThreadFingerprint(args.config, thread),
+        currentHeadRepairProofThreadFingerprint(args.config, args.pr, thread),
       )
     )
   ) {
     const recordScopedProof = currentHeadPassedCodexTurnArtifacts(args.record, args.pr)
       .filter((artifact) =>
         proofCoverageThreads.every((thread) =>
-          latestReviewThreadCommentPredatesArtifact(args.config, thread, artifact)
+          latestReviewThreadCommentPredatesArtifact(args.config, args.pr, thread, artifact)
         )
       )
       .map((artifact) => {
@@ -758,7 +829,7 @@ export function currentHeadCodexRepairProofRejectionReasons(args: {
         args.record,
         args.pr,
         thread,
-        currentHeadRepairProofThreadFingerprint(args.config, thread),
+        currentHeadRepairProofThreadFingerprint(args.config, args.pr, thread),
       )
     )
   ) {
