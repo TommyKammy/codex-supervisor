@@ -11,6 +11,7 @@ import { displayLocalCiCommand } from "./core/config";
 import { configuredReviewProviderKinds } from "./core/review-providers";
 import type { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, ReviewThreadComment, SupervisorConfig, TimelineArtifact } from "./core/types";
 import { hasCodexConnectorStrongRiskWording } from "./external-review/external-review-normalization";
+import { evaluateFindingSetProofText } from "./finding-set-proof-text-evaluator";
 import {
   currentHeadLocalVerificationEvidence,
   hasConfiguredLocalCiCommand,
@@ -132,67 +133,6 @@ function allCodexConnectorRepairResidueThreadsAreP2(reviewThreads: ReviewThread[
   return reviewThreads.length > 0 && reviewThreads.every((thread) => latestCodexConnectorPSeverity(thread) === "P2");
 }
 
-function textDeclaresAffirmativeFindingSetCompletion(
-  normalizedEvidenceText: string,
-  repairResidueThreadCount: number,
-  recordProcessedEvidenceCoversThreadSet: boolean,
-): boolean {
-  const findingSetPhrase = repairResidueThreadCount > 1
-    ? String.raw`\b(?:finding[- ]set|review findings|connector findings)\b`
-    : String.raw`\b(?:finding[- ]set|review finding|review findings|connector finding|connector findings)\b`;
-  const wholeSetQualifiedFindingSetPhrase = String.raw`\b(?:all|every|each|entire|full|complete)\s+(?:current\s+|unresolved\s+|remaining\s+|outstanding\s+|open\s+)?(?:finding[- ]set|review finding|review findings|connector finding|connector findings)\b`;
-  const scopedFindingSetPhrase = String.raw`(?:${findingSetPhrase}|${wholeSetQualifiedFindingSetPhrase})`;
-  const completionPhrase = String.raw`\b(?:verified|covered|repaired)\b`;
-  const nearbyClauseText = String.raw`[^.;:\n]{0,120}?`;
-  const nearbyText = String.raw`[\s\S]{0,120}?`;
-  const nearbyShortText = String.raw`[\s\S]{0,40}?`;
-  const negationPhrase = String.raw`\b(?:not|never|no|none|neither|without|isn't|isnt|aren't|arent|wasn't|wasnt|weren't|werent|cannot|can't|cant|failed to|fails to)\b`;
-  const incompletePhrase = String.raw`\b(?:not all|partial|partially|incomplete|except|excluding|exclude|missing|remain|remains|unaddressed|subset)\b`;
-  const partialFindingSetPhrase = String.raw`\b(?:only\s+some|some)(?:\s+of\s+(?:the\s+)?)?\s+(?:finding[- ]set|review findings|connector findings)\b`;
-  const futureCompletionPhrase = String.raw`\b(?:will be|needs to be|need to be|should be|must be|to be)\b`;
-  const affirmativeCompletion = new RegExp(
-    `(?:${completionPhrase}${nearbyClauseText}${scopedFindingSetPhrase}|${scopedFindingSetPhrase}${nearbyClauseText}${completionPhrase})`,
-    "u",
-  );
-  if (!affirmativeCompletion.test(normalizedEvidenceText)) {
-    return false;
-  }
-  if (new RegExp(
-    `(?:${scopedFindingSetPhrase}${nearbyText}${negationPhrase}${nearbyShortText}${completionPhrase}|${negationPhrase}${nearbyShortText}${completionPhrase}${nearbyText}${scopedFindingSetPhrase}|${negationPhrase}${nearbyShortText}${scopedFindingSetPhrase}${nearbyText}${completionPhrase})`,
-    "u",
-  ).test(normalizedEvidenceText)) {
-    return false;
-  }
-  if (new RegExp(
-    `(?:${partialFindingSetPhrase}|${incompletePhrase}${nearbyText}${findingSetPhrase}|${findingSetPhrase}${nearbyText}${incompletePhrase})`,
-    "u",
-  ).test(normalizedEvidenceText)) {
-    return false;
-  }
-  if (new RegExp(
-    `(?:${scopedFindingSetPhrase}${nearbyText}${futureCompletionPhrase}${nearbyShortText}${completionPhrase}|${futureCompletionPhrase}${nearbyShortText}${completionPhrase}${nearbyText}${scopedFindingSetPhrase})`,
-    "u",
-  ).test(normalizedEvidenceText)) {
-    return false;
-  }
-  const partialCountMatch = normalizedEvidenceText.match(
-    new RegExp(String.raw`\b(\d+)\s*(?:(?:out\s+)?of\s+(?:the\s+)?|/\s*)${repairResidueThreadCount}\b`, "u"),
-  );
-  if (partialCountMatch && Number(partialCountMatch[1]) !== repairResidueThreadCount) {
-    return false;
-  }
-  if (repairResidueThreadCount <= 1 || recordProcessedEvidenceCoversThreadSet) {
-    return true;
-  }
-
-  const countPhrase = String.raw`\b${repairResidueThreadCount}\b`;
-  const wholeSetPhrase = String.raw`\b(?:all|every|entire|full|complete)\b`;
-  return new RegExp(
-    `(?:\\bfinding[- ]set\\b|${wholeSetQualifiedFindingSetPhrase}|${wholeSetPhrase}${nearbyText}${findingSetPhrase}|${findingSetPhrase}${nearbyText}${wholeSetPhrase}|${countPhrase}${nearbyText}${findingSetPhrase}|${findingSetPhrase}${nearbyText}${countPhrase})`,
-    "u",
-  ).test(normalizedEvidenceText);
-}
-
 function artifactDeclaresFindingSetScope(
   config: SupervisorConfig,
   artifact: TimelineArtifact,
@@ -205,13 +145,12 @@ function artifactDeclaresFindingSetScope(
   }
 
   return [artifact.summary, artifact.command].some((value) => {
-    const normalizedEvidenceText = value?.trim().toLowerCase();
-    return normalizedEvidenceText
-      ? textDeclaresAffirmativeFindingSetCompletion(
-          normalizedEvidenceText,
-          repairResidueThreads.length,
+    return value?.trim()
+      ? evaluateFindingSetProofText({
+          evidenceText: value,
+          repairResidueThreadCount: repairResidueThreads.length,
           recordProcessedEvidenceCoversThreadSet,
-        )
+        }).accepted
       : false;
   });
 }
