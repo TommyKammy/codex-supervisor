@@ -4092,6 +4092,78 @@ test("inferStateFromPullRequest clears unresolved same-provider Codex finding af
   assert.equal(syncMergeLatencyVisibility(config, record, pr, checks, reviewThreads).provider_success_head_sha, currentHeadSha);
 });
 
+test("inferStateFromPullRequest accepts preserved anchored Codex success with later status context and nitpicks", () => {
+  const currentHeadSha = "ae3831568705a3a3be8cbf8c0cd6ec58d1f2d8e6";
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    humanReviewBlocksMerge: true,
+    configuredBotInitialGraceWaitSeconds: 0,
+  });
+  const record = createRecord({
+    state: "addressing_review",
+    blocked_reason: "manual_review",
+    last_head_sha: currentHeadSha,
+    review_wait_started_at: "2026-07-07T01:05:00Z",
+    review_wait_head_sha: currentHeadSha,
+  });
+  const pr = createPullRequest({
+    headRefOid: currentHeadSha,
+    configuredBotCurrentHeadObservedAt: "2026-07-07T01:12:00Z",
+    configuredBotCurrentHeadObservationSource: "status_context",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: currentHeadSha,
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-07-07T01:10:00Z",
+    configuredBotTopLevelReviewStrength: null,
+    currentHeadCiGreenAt: "2026-07-07T01:08:00Z",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+  const reviewThreads = [
+    createReviewThread({
+      id: "thread-unresolved-codex-p1",
+      isOutdated: false,
+      comments: {
+        nodes: [
+          {
+            id: "comment-unresolved-codex-p1",
+            body: "P1: Earlier Codex Connector finding that should be superseded by the anchored no-major current-head signal.",
+            createdAt: "2026-07-07T01:00:00Z",
+            url: "https://example.test/pr/2426#discussion_r2426",
+            author: {
+              login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+    createReviewThread({
+      id: "thread-current-codex-nitpick",
+      isOutdated: false,
+      comments: {
+        nodes: [
+          {
+            id: "comment-current-codex-nitpick",
+            body: "P3: Consider a shorter helper name.",
+            createdAt: "2026-07-07T01:11:00Z",
+            url: "https://example.test/pr/2426#discussion_r2428",
+            author: {
+              login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN,
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  ];
+  const checks = passingChecks();
+
+  assert.equal(inferStateFromPullRequest(config, record, pr, checks, reviewThreads), "ready_to_merge");
+  assert.equal(blockedReasonFromReviewState(config, record, pr, checks, reviewThreads), null);
+  assert.equal(effectiveConfiguredBotReviewThreadsForState(config, record, pr, checks, reviewThreads).length, 0);
+  assert.equal(syncMergeLatencyVisibility(config, record, pr, checks, reviewThreads).provider_success_head_sha, currentHeadSha);
+});
+
 test("inferStateFromPullRequest keeps unresolved Codex findings guarded without valid anchored current-head no-major success", () => {
   const currentHeadSha = "ae3831568705a3a3be8cbf8c0cd6ec58d1f2d8e6";
   const config = createConfig({
@@ -4154,6 +4226,25 @@ test("inferStateFromPullRequest keeps unresolved Codex findings guarded without 
       ],
     },
   });
+  const humanReplyThread = createReviewThread({
+    ...codexThread,
+    id: "thread-human-replied-codex-p1",
+    comments: {
+      nodes: [
+        ...codexThread.comments.nodes,
+        {
+          id: "comment-human-replied-codex-p1",
+          body: "Leaving this unresolved until a maintainer confirms the Codex finding is no longer actionable.",
+          createdAt: "2026-07-07T01:11:00Z",
+          url: "https://example.test/pr/2426#discussion_r2428",
+          author: {
+            login: "maintainer",
+            typeName: "User",
+          },
+        },
+      ],
+    },
+  });
   const cases = [
     {
       name: "missing reviewed commit",
@@ -4172,6 +4263,12 @@ test("inferStateFromPullRequest keeps unresolved Codex findings guarded without 
       pr: basePr,
       checks: passingChecks(),
       reviewThreads: [laterCodexThread],
+    },
+    {
+      name: "human reply after success",
+      pr: basePr,
+      checks: passingChecks(),
+      reviewThreads: [humanReplyThread],
     },
     {
       name: "checks are pending",

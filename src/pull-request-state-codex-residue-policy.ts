@@ -282,7 +282,7 @@ export function anchoredCurrentHeadCodexSuccessSupersedesUnresolvedFindings(args
     mergeConflictDetected(args.pr) ||
     !summarizeChecks(args.checks).allPassing ||
     manualReviewThreads(args.config, args.reviewThreads).length > 0 ||
-    !hasCodexConnectorPrSuccessCurrentHeadObservation(args.pr) ||
+    args.pr.configuredBotTopLevelReviewStrength === "blocking" ||
     !hasFreshCurrentHeadCodexSuccessReviewedCommit(args.pr, args.reviewThreads)
   ) {
     return false;
@@ -297,10 +297,20 @@ export function anchoredCurrentHeadCodexSuccessSupersedesUnresolvedFindings(args
     return false;
   }
 
+  if (!configuredThreads.every((thread) => latestReviewCommentAuthorIsAllowedBot(args.config, thread))) {
+    return false;
+  }
+
   const mustFixThreads = codexConnectorMustFixReviewThreads(configuredThreads);
+  const nitpickOnlyThreadIds = new Set(
+    codexConnectorNitpickOnlyReviewThreads(configuredThreads).map((thread) => thread.id),
+  );
   return (
-    mustFixThreads.length === configuredThreads.length &&
-    configuredThreads.every((thread) => hasCodexConnectorFindingReviewComment(thread))
+    mustFixThreads.length > 0 &&
+    mustFixThreads.every((thread) => hasCodexConnectorFindingReviewComment(thread)) &&
+    configuredThreads.every((thread) =>
+      mustFixThreads.includes(thread) || nitpickOnlyThreadIds.has(thread.id)
+    )
   );
 }
 
