@@ -264,6 +264,7 @@ const EXPECTED_FAMILY_FILES = {
     "stale-review-bot-diagnostics-presenter.ts",
     "stale-review-bot-recovery.ts",
     "stale-review-bot-remediation.ts",
+    "stale-review-current-head-evidence.ts",
     "stale-review-repository-path-repair-evidence.ts",
     "supervisor-active-detailed-status-presenters.ts",
     "supervisor-cycle-replay.ts",
