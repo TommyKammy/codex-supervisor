@@ -13,6 +13,7 @@ import {
 } from "./stale-review-bot-remediation";
 import { STILL_VALID_REVIEW_THREAD_REPAIR_TARGET } from "../codex-connector-valid-review-repair";
 import {
+  classifyStaleReviewBotRemediation,
   classifyStaleReviewBotAutoRepairSuppressionPolicy,
   classifyStaleReviewBotRemediationPolicy,
   type StaleReviewBotClassificationPolicyArgs,
@@ -138,6 +139,49 @@ test("classifyStaleReviewBotRemediationPolicy requires clean merge state for cle
       classification: "unknown_needs_operator",
       summary: "code_or_ci_green_but_review_thread_metadata_unresolved",
       missingProbeReason: "current_head_verification_evidence_missing",
+    },
+  );
+});
+
+test("classifyStaleReviewBotRemediation keeps configured-bot metadata-only decisions behind policy boundary", () => {
+  const headSha = "head-policy-boundary";
+  const thread = createReviewThread({
+    id: "thread-policy-boundary",
+    comments: {
+      nodes: [
+        {
+          id: "comment-policy-boundary",
+          body: "P2: stale configured-bot finding.",
+          createdAt: "2026-06-29T17:14:09Z",
+          url: "https://example.test/pr/116#discussion_policy_boundary",
+          author: {
+            login: "quality-review-bot",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(
+    classifyStaleReviewBotRemediation({
+      config: createConfig({ reviewBotLogins: ["quality-review-bot"] }),
+      record: createRecord({
+        last_head_sha: headSha,
+        repair_attempt_count: 1,
+        processed_review_thread_ids: [`${thread.id}@${headSha}`],
+      }),
+      pr: createPullRequest({
+        headRefOid: headSha,
+        configuredBotCurrentHeadObservedAt: "2026-06-29T17:20:00Z",
+        configuredBotCurrentHeadStatusState: "SUCCESS",
+      }),
+      checks: [{ name: "Focused checks", state: "SUCCESS", bucket: "pass", workflow: "CI" }],
+      reviewThreads: [thread],
+    }),
+    {
+      classification: "metadata_only",
+      summary: "stale_configured_bot_thread_metadata_only",
     },
   );
 });
