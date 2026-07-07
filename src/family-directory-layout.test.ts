@@ -262,6 +262,7 @@ const EXPECTED_FAMILY_FILES = {
     "stale-diagnostic-recoverability.ts",
     "stale-review-bot-classification-policy.ts",
     "stale-review-bot-diagnostics-presenter.ts",
+    "stale-review-bot-diagnostics.ts",
     "stale-review-bot-recovery.ts",
     "stale-review-bot-remediation.ts",
     "stale-review-current-head-evidence.ts",

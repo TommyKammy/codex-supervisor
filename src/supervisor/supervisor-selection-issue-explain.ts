@@ -75,12 +75,14 @@ import {
   recoverabilityStatusToken,
 } from "./stale-diagnostic-recoverability";
 import {
-  buildStaleReviewBotThreadDiagnostics,
   buildStaleReviewBotRemediation,
   isProvenStaleReviewMetadataClassification,
   type StaleReviewBotRemediationDto,
-  type StaleReviewBotThreadDiagnosticsDto,
 } from "./stale-review-bot-remediation";
+import {
+  buildStaleReviewBotThreadDiagnostics,
+  type StaleReviewBotThreadDiagnosticsDto,
+} from "./stale-review-bot-diagnostics";
 import {
   formatStaleReviewBotRemediationLine,
   formatStaleReviewBotRepairTargetLine,

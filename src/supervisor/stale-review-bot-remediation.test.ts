@@ -7,10 +7,10 @@ import {
 } from "../codex-connector-tracked-pr-test-helpers";
 import {
   buildStaleReviewBotRemediation,
-  buildStaleReviewBotThreadDiagnostics,
   shouldAutoResolveVerifiedStaleReviewResidue,
   VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET,
 } from "./stale-review-bot-remediation";
+import { buildStaleReviewBotThreadDiagnostics } from "./stale-review-bot-diagnostics";
 import { STILL_VALID_REVIEW_THREAD_REPAIR_TARGET } from "../codex-connector-valid-review-repair";
 import {
   classifyStaleReviewBotRemediation,

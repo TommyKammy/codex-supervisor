@@ -1,9 +1,11 @@
 import {
   isProvenStaleReviewMetadataClassification,
-  formatStaleReviewBotTokenValue,
   type StaleReviewBotRemediationDto,
-  type StaleReviewBotThreadDiagnosticsDto,
 } from "./stale-review-bot-remediation";
+import {
+  formatStaleReviewBotTokenValue,
+  type StaleReviewBotThreadDiagnosticsDto,
+} from "./stale-review-bot-diagnostics";
 import type { CodexConnectorValidReviewRepairTarget } from "../codex-connector-valid-review-repair";
 import { GitHubPullRequest, PullRequestCheck } from "../core/types";
 
