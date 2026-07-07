@@ -56,6 +56,7 @@ import {
 } from "./pull-request-state-current-head-policy";
 import { reviewLoopRetryBudgetExhaustedForThread } from "./review-handling";
 import {
+  anchoredCurrentHeadCodexSuccessSupersedesUnresolvedFindings,
   effectiveConfiguredBotReviewThreadsForState,
   currentHeadRepairProofSatisfiesConfiguredProviderSignal,
   hasConfiguredProviderSuccess,
@@ -232,6 +233,14 @@ export function blockedReasonFromReviewState(
       reviewThreads,
     });
   const unresolvedBotThreads = effectiveConfiguredBotReviewThreadsForState(config, record, pr, checks, reviewThreads);
+  const anchoredCurrentHeadCodexSuccessSupersedesFindings =
+    anchoredCurrentHeadCodexSuccessSupersedesUnresolvedFindings({
+      config,
+      record,
+      pr,
+      checks,
+      reviewThreads,
+    });
   const codexConnectorMustFixTopLevelFindings = codexConnectorMustFixTopLevelReviewFindings(
     pr.configuredBotTopLevelReviewFindings ?? [],
   );
@@ -241,7 +250,8 @@ export function blockedReasonFromReviewState(
       .map(codexConnectorTopLevelReviewFindingRetryTarget)
       .every((target) => reviewLoopRetryBudgetExhaustedForThread(record, pr, target, 1));
   const botReviewDecisionResidueSatisfied = verifiedConfiguredBotReviewDecisionResidueSatisfied({
-    verifiedCurrentHeadRepairResidue,
+    verifiedCurrentHeadRepairResidue:
+      verifiedCurrentHeadRepairResidue || anchoredCurrentHeadCodexSuccessSupersedesFindings,
     effectiveConfiguredBotBlockerCount: unresolvedBotThreads.length,
     effectiveHumanBlockerCount: manualThreads.length,
     pr,
@@ -352,8 +362,17 @@ export function inferStateFromPullRequest(
       reviewThreads,
     });
   const unresolvedBotThreads = effectiveConfiguredBotReviewThreadsForState(config, record, pr, checks, reviewThreads);
+  const anchoredCurrentHeadCodexSuccessSupersedesFindings =
+    anchoredCurrentHeadCodexSuccessSupersedesUnresolvedFindings({
+      config,
+      record,
+      pr,
+      checks,
+      reviewThreads,
+    });
   const botReviewDecisionResidueSatisfied = verifiedConfiguredBotReviewDecisionResidueSatisfied({
-    verifiedCurrentHeadRepairResidue,
+    verifiedCurrentHeadRepairResidue:
+      verifiedCurrentHeadRepairResidue || anchoredCurrentHeadCodexSuccessSupersedesFindings,
     effectiveConfiguredBotBlockerCount: unresolvedBotThreads.length,
     effectiveHumanBlockerCount: manualThreads.length,
     pr,
@@ -413,6 +432,7 @@ export function inferStateFromPullRequest(
     pr,
     checks,
     reviewThreads,
+    repairReviewThreads: unresolvedBotThreads,
   });
 
   if (pr.mergedAt || pr.state === "MERGED") {
