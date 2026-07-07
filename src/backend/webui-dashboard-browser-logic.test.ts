@@ -18,6 +18,10 @@ import {
   formatRecoveryLoopSummary,
   formatRetryContextSummary,
   formatTrackedIssues,
+  normalizeDashboardPanelOrder,
+  restoreDashboardPanelOrder,
+  serializeDashboardPanelOrder,
+  applyDashboardPanelDrop,
   parseRenderedOperatorAction,
   parseSelectedIssueNumber,
   type DashboardStatusLike,
@@ -27,6 +31,60 @@ import {
   DEFAULT_DASHBOARD_PANEL_LAYOUT,
   resolveDashboardPanelLayout,
 } from "./webui-dashboard-panel-layout";
+
+test("dashboard panel order helpers normalize stored layouts before rendering", () => {
+  const defaultOrder = ["status", "doctor", "issue-details", "tracked-history"] as const;
+
+  assert.deepEqual(
+    normalizeDashboardPanelOrder(["tracked-history", "unknown", "doctor", "doctor"], defaultOrder),
+    ["tracked-history", "doctor", "status", "issue-details"],
+  );
+  assert.deepEqual(restoreDashboardPanelOrder(JSON.stringify({ order: ["issue-details", "status"] }), defaultOrder), [
+    "issue-details",
+    "status",
+    "doctor",
+    "tracked-history",
+  ]);
+  assert.deepEqual(restoreDashboardPanelOrder(JSON.stringify(["doctor", "status"]), defaultOrder), [
+    "doctor",
+    "status",
+    "issue-details",
+    "tracked-history",
+  ]);
+  assert.deepEqual(restoreDashboardPanelOrder("{not-json", defaultOrder), [
+    "status",
+    "doctor",
+    "issue-details",
+    "tracked-history",
+  ]);
+  assert.equal(
+    serializeDashboardPanelOrder(["tracked-history", "unknown", "status"], defaultOrder),
+    JSON.stringify({ order: ["tracked-history", "status", "doctor", "issue-details"] }),
+  );
+});
+
+test("dashboard panel order helpers apply safe drag and drop reordering", () => {
+  const defaultOrder = ["status", "doctor", "issue-details", "tracked-history"] as const;
+
+  assert.deepEqual(applyDashboardPanelDrop(["status", "doctor", "issue-details"], "issue-details", "status", defaultOrder), [
+    "issue-details",
+    "status",
+    "doctor",
+    "tracked-history",
+  ]);
+  assert.deepEqual(applyDashboardPanelDrop(["status", "doctor"], "missing", "status", defaultOrder), [
+    "status",
+    "doctor",
+    "issue-details",
+    "tracked-history",
+  ]);
+  assert.deepEqual(applyDashboardPanelDrop(["status", "doctor"], "doctor", "doctor", defaultOrder), [
+    "status",
+    "doctor",
+    "issue-details",
+    "tracked-history",
+  ]);
+});
 
 test("buildStatusLines summarizes tracked history as a count instead of dumping each tracked issue", () => {
   const lines = buildStatusLines({
