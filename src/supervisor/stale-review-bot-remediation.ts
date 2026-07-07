@@ -34,6 +34,7 @@ import { isRecoverableVerifiedCodexStaleResidueThread } from "./verified-stale-r
 import { configuredReviewProviderKinds } from "../core/review-providers";
 import {
   currentHeadCodexRepairProofRejectionReasons,
+  currentHeadRepairProofThreadFingerprint,
   hasFreshCurrentHeadCodexSuccessReviewedCommit,
   projectCurrentHeadCodexRepairProof,
 } from "../current-head-codex-repair-proof";
@@ -395,6 +396,25 @@ function hasCurrentHeadNoSourceChangeCodexTurnVerification(
         reviewThreads,
       }),
   );
+}
+
+function hasProcessedCurrentHeadRepairProofReviewThread(
+  config: SupervisorConfig,
+  record: Pick<
+    IssueRunRecord,
+    "processed_review_thread_ids" | "processed_review_thread_fingerprints" | "last_head_sha"
+  >,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
+  thread: ReviewThread,
+): boolean {
+  if (hasProcessedReviewThread(record, pr, thread)) {
+    return true;
+  }
+
+  const repairProofFingerprint = currentHeadRepairProofThreadFingerprint(config, pr, thread);
+  return repairProofFingerprint
+    ? hasProcessedReviewThread(record, pr, thread, repairProofFingerprint)
+    : false;
 }
 
 function hasCurrentHeadMarkedNoSourceChangeCodexTurnVerification(
@@ -1092,7 +1112,7 @@ function classifyCodexMetadataOnly(args: {
   const verifiedRepairArtifactEvidenceSummary =
     currentHeadVerifiedRepairResidueArtifactEvidenceSummary(args);
   const hasUnprocessedMustFix = mustFixReviewThreads.some((thread) =>
-    !hasProcessedReviewThread(args.record, args.pr, thread)
+    !hasProcessedCurrentHeadRepairProofReviewThread(args.config, args.record, args.pr, thread)
   );
   const unprocessedMustFixCanUseRepairProof =
     allCodexConnectorRepairResidueThreadsAreP2(mustFixReviewThreads) &&
@@ -1120,7 +1140,7 @@ function classifyCodexMetadataOnly(args: {
     pendingBotThreadCount: pendingBotReviewThreads(args.config, args.record, args.pr, currentConfiguredThreads).length,
     followUpState: configuredBotReviewFollowUpState(args.config, args.record, args.pr, currentConfiguredThreads),
     allCurrentConfiguredThreadsProcessed: currentConfiguredThreads.every((thread) =>
-      hasProcessedReviewThread(args.record, args.pr, thread),
+      hasProcessedCurrentHeadRepairProofReviewThread(args.config, args.record, args.pr, thread),
     ),
     convergenceOutcome: policy?.outcome ?? null,
     hasUnprocessedMustFix,
