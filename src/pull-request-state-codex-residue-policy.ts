@@ -13,6 +13,7 @@ import {
   hasCodexConnectorPrSuccessCurrentHeadObservation,
   latestCodexConnectorReviewCommentFingerprint,
 } from "./codex-connector-review-policy";
+import { codexConnectorMustFixTopLevelReviewFindings } from "./codex-connector-top-level-review";
 import {
   IssueRunRecord,
   GitHubPullRequest,
@@ -114,6 +115,18 @@ function effectiveConfiguredBotReviewThreads(
   const threadsAfterOutdatedClearance = clearOutdatedCodexConnectorThreads
     ? effectiveThreads.filter((thread) => !isClearableOutdatedCodexConnectorResidueThread(config, thread))
     : effectiveThreads;
+  if (
+    anchoredCurrentHeadCodexSuccessSupersedesUnresolvedFindings({
+      config,
+      record,
+      pr,
+      checks,
+      reviewThreads,
+      configuredThreads: threadsAfterOutdatedClearance,
+    })
+  ) {
+    return [];
+  }
   return allowJournalOnlyConfiguredBotThreadException(config, pr, checks, threadsAfterOutdatedClearance)
     ? threadsAfterOutdatedClearance.filter((thread) => !isIssueJournalThreadPath(thread))
     : threadsAfterOutdatedClearance;
@@ -252,6 +265,42 @@ export function staleSameHeadCodexWaitHasOnlyOutdatedResidue(
   return (
     threadsAfterConvergencePolicy.length > 0 &&
     threadsAfterConvergencePolicy.every((thread) => isClearableOutdatedCodexConnectorResidueThread(config, thread))
+  );
+}
+
+export function anchoredCurrentHeadCodexSuccessSupersedesUnresolvedFindings(args: {
+  config: SupervisorConfig;
+  record: IssueRunRecord;
+  pr: GitHubPullRequest;
+  checks: PullRequestCheck[];
+  reviewThreads: ReviewThread[];
+  configuredThreads?: ReviewThread[];
+}): boolean {
+  if (
+    !configuredReviewProvidersAreCodexOnly(args.config) ||
+    !pullRequestHeadMatchesRecord(args.record, args.pr) ||
+    mergeConflictDetected(args.pr) ||
+    !summarizeChecks(args.checks).allPassing ||
+    manualReviewThreads(args.config, args.reviewThreads).length > 0 ||
+    !hasCodexConnectorPrSuccessCurrentHeadObservation(args.pr) ||
+    !hasFreshCurrentHeadCodexSuccessReviewedCommit(args.pr, args.reviewThreads)
+  ) {
+    return false;
+  }
+
+  if (codexConnectorMustFixTopLevelReviewFindings(args.pr.configuredBotTopLevelReviewFindings ?? []).length > 0) {
+    return false;
+  }
+
+  const configuredThreads = args.configuredThreads ?? configuredBotReviewThreads(args.config, args.reviewThreads);
+  if (configuredThreads.length === 0) {
+    return false;
+  }
+
+  const mustFixThreads = codexConnectorMustFixReviewThreads(configuredThreads);
+  return (
+    mustFixThreads.length === configuredThreads.length &&
+    configuredThreads.every((thread) => hasCodexConnectorFindingReviewComment(thread))
   );
 }
 
@@ -576,6 +625,18 @@ export function hasConfiguredProviderSuccess(
   if (
     configuredReviewProvidersAreCodexOnly(config) &&
     hasProvenCodexConnectorStaleReviewMetadata({ config, record, pr, checks, reviewThreads })
+  ) {
+    return true;
+  }
+
+  if (
+    anchoredCurrentHeadCodexSuccessSupersedesUnresolvedFindings({
+      config,
+      record,
+      pr,
+      checks,
+      reviewThreads,
+    })
   ) {
     return true;
   }
