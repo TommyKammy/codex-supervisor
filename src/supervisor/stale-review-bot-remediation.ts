@@ -1,14 +1,11 @@
 import type { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "../core/types";
 import {
   hasProcessedReviewThread,
-  latestReviewThreadCommentFingerprint,
   localReviewBlocksMerge,
   localReviewDegradedNeedsBlock,
   localReviewHighSeverityNeedsBlock,
   localReviewHighSeverityNeedsRetry,
   localReviewRequiresManualReview,
-  processedReviewThreadFingerprintKey,
-  processedReviewThreadKey,
   reviewLoopRetryBudgetExhaustedForThread,
 } from "../review-handling";
 import { reviewDecisionBlocksCurrentHeadRepairProjection } from "../review-decision-blocking-policy";
@@ -22,7 +19,6 @@ import {
   hasCodexConnectorFindingReviewComment,
   latestCodexConnectorReviewCommentNode,
   latestCodexConnectorReviewCommentFingerprint,
-  latestCodexConnectorPSeverity,
   latestCodexConnectorReviewComment,
 } from "../codex-connector-review-policy";
 import {
@@ -38,6 +34,7 @@ import { isRecoverableVerifiedCodexStaleResidueThread } from "./verified-stale-r
 import { configuredReviewProviderKinds } from "../core/review-providers";
 import {
   currentHeadCodexRepairProofRejectionReasons,
+  currentHeadRepairProofThreadFingerprint,
   hasFreshCurrentHeadCodexSuccessReviewedCommit,
   projectCurrentHeadCodexRepairProof,
 } from "../current-head-codex-repair-proof";
@@ -47,6 +44,10 @@ import {
   buildCodexConnectorStillValidReviewRepairTargets,
   type CodexConnectorValidReviewRepairTarget,
 } from "../codex-connector-valid-review-repair";
+import {
+  allCodexConnectorRepairResidueThreadsAreP2,
+  timelineArtifactCoversReviewThreads,
+} from "../codex-connector-review-repair-coverage";
 import {
   STALE_REVIEW_BOT_MANUAL_NEXT_STEP,
   VERIFIED_CURRENT_HEAD_REPAIR_SUMMARY,
@@ -389,8 +390,31 @@ function hasCurrentHeadNoSourceChangeCodexTurnVerification(
       artifact.outcome === "passed" &&
       artifact.head_sha === pr.headRefOid &&
       artifact.repair_targets?.includes("verified_no_source_change_review_thread_residue") === true &&
-      noSourceChangeArtifactCoversReviewThreads(artifact, pr, reviewThreads),
+      timelineArtifactCoversReviewThreads({
+        artifact,
+        pr,
+        reviewThreads,
+      }),
   );
+}
+
+function hasProcessedCurrentHeadRepairProofReviewThread(
+  config: SupervisorConfig,
+  record: Pick<
+    IssueRunRecord,
+    "processed_review_thread_ids" | "processed_review_thread_fingerprints" | "last_head_sha"
+  >,
+  pr: Pick<GitHubPullRequest, "headRefOid">,
+  thread: ReviewThread,
+): boolean {
+  if (hasProcessedReviewThread(record, pr, thread)) {
+    return true;
+  }
+
+  const repairProofFingerprint = currentHeadRepairProofThreadFingerprint(config, pr, thread);
+  return repairProofFingerprint
+    ? hasProcessedReviewThread(record, pr, thread, repairProofFingerprint)
+    : false;
 }
 
 function hasCurrentHeadMarkedNoSourceChangeCodexTurnVerification(
@@ -405,34 +429,6 @@ function hasCurrentHeadMarkedNoSourceChangeCodexTurnVerification(
       artifact.head_sha === pr.headRefOid &&
       artifact.repair_targets?.includes("verified_no_source_change_review_thread_residue") === true,
   );
-}
-
-function allCodexConnectorRepairResidueThreadsAreP2(reviewThreads: ReviewThread[]): boolean {
-  return reviewThreads.length > 0 && reviewThreads.every((thread) => latestCodexConnectorPSeverity(thread) === "P2");
-}
-
-function noSourceChangeArtifactCoversReviewThreads(
-  artifact: NonNullable<IssueRunRecord["timeline_artifacts"]>[number],
-  pr: Pick<GitHubPullRequest, "headRefOid">,
-  reviewThreads: ReviewThread[],
-): boolean {
-  if (reviewThreads.length === 0) {
-    return false;
-  }
-  const processedThreadIds = artifact.processed_review_thread_ids ?? [];
-  const processedThreadFingerprints = artifact.processed_review_thread_fingerprints ?? [];
-  if (processedThreadIds.length === 0 && processedThreadFingerprints.length === 0) {
-    return false;
-  }
-  return reviewThreads.every((thread) => {
-    const latestFingerprint = latestReviewThreadCommentFingerprint(thread);
-    if (latestFingerprint) {
-      return processedThreadFingerprints.includes(
-        processedReviewThreadFingerprintKey(thread.id, pr.headRefOid, latestFingerprint),
-      );
-    }
-    return processedThreadIds.includes(processedReviewThreadKey(thread.id, pr.headRefOid));
-  });
 }
 
 function normalizeRepositoryPath(value: string): string {
@@ -1115,7 +1111,16 @@ function classifyCodexMetadataOnly(args: {
   );
   const verifiedRepairArtifactEvidenceSummary =
     currentHeadVerifiedRepairResidueArtifactEvidenceSummary(args);
-  if (verifiedRepairArtifactEvidenceSummary) {
+  const hasUnprocessedMustFix = mustFixReviewThreads.some((thread) =>
+    !hasProcessedCurrentHeadRepairProofReviewThread(args.config, args.record, args.pr, thread)
+  );
+  const unprocessedMustFixCanUseRepairProof =
+    allCodexConnectorRepairResidueThreadsAreP2(mustFixReviewThreads) &&
+    projectCurrentHeadCodexRepairProof(args)?.source === "finding_set_verification_artifact";
+  if (
+    verifiedRepairArtifactEvidenceSummary &&
+    (!hasUnprocessedMustFix || unprocessedMustFixCanUseRepairProof)
+  ) {
     return {
       classification: "verified_current_head_repair_pending_thread_resolution",
       summary: VERIFIED_CURRENT_HEAD_REPAIR_SUMMARY,
@@ -1135,10 +1140,10 @@ function classifyCodexMetadataOnly(args: {
     pendingBotThreadCount: pendingBotReviewThreads(args.config, args.record, args.pr, currentConfiguredThreads).length,
     followUpState: configuredBotReviewFollowUpState(args.config, args.record, args.pr, currentConfiguredThreads),
     allCurrentConfiguredThreadsProcessed: currentConfiguredThreads.every((thread) =>
-      hasProcessedReviewThread(args.record, args.pr, thread),
+      hasProcessedCurrentHeadRepairProofReviewThread(args.config, args.record, args.pr, thread),
     ),
     convergenceOutcome: policy?.outcome ?? null,
-    hasUnprocessedMustFix: mustFixReviewThreads.some((thread) => !hasProcessedReviewThread(args.record, args.pr, thread)),
+    hasUnprocessedMustFix,
     verificationEvidenceSummary,
     noMajorSignalEvidence: currentHeadCodexNoMajorSignalEvidence({
       record: args.record,

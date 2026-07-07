@@ -20,8 +20,12 @@ import {
 import {
   hasProcessedReviewThread,
   processedReviewThreadFingerprintKey,
-  processedReviewThreadKey,
 } from "./review-handling";
+import {
+  allCodexConnectorRepairResidueThreadsAreP2,
+  headScopedProcessedThreadEvidenceCount,
+  timelineArtifactCoversReviewThread,
+} from "./codex-connector-review-repair-coverage";
 import { reviewDecisionBlocksCurrentHeadRepairProjection } from "./review-decision-blocking-policy";
 import {
   configuredBotReviewThreads,
@@ -129,10 +133,6 @@ function timestampAtOrAfter(value: string | null | undefined, floor: string | nu
   return !Number.isNaN(parsedFloor) && parsedValue >= parsedFloor;
 }
 
-function allCodexConnectorRepairResidueThreadsAreP2(reviewThreads: ReviewThread[]): boolean {
-  return reviewThreads.length > 0 && reviewThreads.every((thread) => latestCodexConnectorPSeverity(thread) === "P2");
-}
-
 function artifactDeclaresFindingSetScope(
   config: SupervisorConfig,
   artifact: TimelineArtifact,
@@ -140,7 +140,7 @@ function artifactDeclaresFindingSetScope(
   repairResidueThreads: ReviewThread[],
   recordProcessedEvidenceCoversThreadSet: boolean,
 ): boolean {
-  if (artifactHeadScopedProcessedThreadEvidenceCount(artifact, pr) > 0) {
+  if (headScopedProcessedThreadEvidenceCount(artifact, pr) > 0) {
     return repairArtifactCoversCurrentThreads(config, artifact, pr, repairResidueThreads);
   }
 
@@ -206,7 +206,7 @@ function currentHeadThreadScopedVerificationArtifacts(
       artifact.head_sha === pr.headRefOid &&
       artifact.repair_targets?.includes("verified_no_source_change_review_thread_residue") !== true &&
       artifact.repair_targets?.includes(VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET) !== true &&
-      artifactHeadScopedProcessedThreadEvidenceCount(artifact, pr) > 0 &&
+      headScopedProcessedThreadEvidenceCount(artifact, pr) > 0 &&
       repairArtifactCoversCurrentThreads(config, artifact, pr, currentThreads),
   );
 }
@@ -223,19 +223,8 @@ function currentHeadVerifiedRepairResidueArtifacts(
       artifact.outcome === "passed" &&
       artifact.head_sha === pr.headRefOid &&
       artifact.repair_targets?.includes(VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET) === true &&
-      artifactHeadScopedProcessedThreadEvidenceCount(artifact, pr) > 0 &&
+      headScopedProcessedThreadEvidenceCount(artifact, pr) > 0 &&
       (!currentThreads || repairArtifactCoversCurrentThreads(config, artifact, pr, currentThreads)),
-  );
-}
-
-function artifactHeadScopedProcessedThreadEvidenceCount(
-  artifact: Pick<TimelineArtifact, "processed_review_thread_ids" | "processed_review_thread_fingerprints">,
-  pr: Pick<GitHubPullRequest, "headRefOid">,
-): number {
-  const headToken = `@${pr.headRefOid}`;
-  return (
-    (artifact.processed_review_thread_ids ?? []).filter((key) => key.includes(headToken)).length +
-    (artifact.processed_review_thread_fingerprints ?? []).filter((key) => key.includes(headToken)).length
   );
 }
 
@@ -246,13 +235,22 @@ function repairArtifactCoversCurrentThreads(
   currentThreads: ReviewThread[],
 ): boolean {
   if (currentThreads.length === 0) {
-    return artifactHeadScopedProcessedThreadEvidenceCount(artifact, pr) > 0;
+    return headScopedProcessedThreadEvidenceCount(artifact, pr) > 0;
   }
-  const processedThreadIds = artifact.processed_review_thread_ids ?? [];
   const processedThreadFingerprints = artifact.processed_review_thread_fingerprints ?? [];
   return currentThreads.every((thread) => {
-    const headScopedKey = processedReviewThreadKey(thread.id, pr.headRefOid);
     const acceptedFingerprints = currentHeadRepairProofThreadFingerprints(config, pr, thread);
+    if (
+      !timelineArtifactCoversReviewThread({
+        artifact,
+        pr,
+        thread,
+        acceptedFingerprints,
+        allowHeadScopedIdWhenFingerprintsExist: true,
+      })
+    ) {
+      return false;
+    }
     const matchedFingerprint = acceptedFingerprints.find((candidate) =>
       processedThreadFingerprints.includes(
         processedReviewThreadFingerprintKey(thread.id, pr.headRefOid, candidate.fingerprint),
@@ -261,18 +259,10 @@ function repairArtifactCoversCurrentThreads(
     if (matchedFingerprint) {
       return reviewThreadCommentPredatesArtifact(matchedFingerprint.comment, artifact);
     }
-    if (!processedThreadIds.includes(headScopedKey)) {
-      return false;
-    }
     if (acceptedFingerprints.length === 0) {
       return true;
     }
-
-    const threadFingerprintPrefix = `${headScopedKey}#`;
-    return (
-      !processedThreadFingerprints.some((key) => key.startsWith(threadFingerprintPrefix)) &&
-      latestReviewThreadCommentPredatesArtifact(config, pr, thread, artifact)
-    );
+    return latestReviewThreadCommentPredatesArtifact(config, pr, thread, artifact);
   });
 }
 
@@ -439,17 +429,6 @@ export function currentHeadRepairProofThreadFingerprint(
   thread: ReviewThread,
 ): string | null {
   return currentHeadRepairProofThreadFingerprints(config, pr, thread)[0]?.fingerprint ?? null;
-}
-
-function headScopedProcessedThreadEvidenceCount(
-  record: Pick<IssueRunRecord, "processed_review_thread_ids" | "processed_review_thread_fingerprints">,
-  pr: Pick<GitHubPullRequest, "headRefOid">,
-): number {
-  const headToken = `@${pr.headRefOid}`;
-  return (
-    (record.processed_review_thread_ids ?? []).filter((key) => key.includes(headToken)).length +
-    (record.processed_review_thread_fingerprints ?? []).filter((key) => key.includes(headToken)).length
-  );
 }
 
 function currentRepairResidueThreads(currentThreads: ReviewThread[], p1ProofAllowed: boolean): ReviewThread[] | null {
@@ -1032,6 +1011,6 @@ function currentHeadVerifiedRepairResidueArtifactsPresent(
       artifact.outcome === "passed" &&
       artifact.head_sha === pr.headRefOid &&
       artifact.repair_targets?.includes(VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET) === true &&
-      artifactHeadScopedProcessedThreadEvidenceCount(artifact, pr) > 0,
+      headScopedProcessedThreadEvidenceCount(artifact, pr) > 0,
   );
 }

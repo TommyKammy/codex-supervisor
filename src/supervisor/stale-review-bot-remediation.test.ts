@@ -2077,6 +2077,72 @@ test("buildStaleReviewBotRemediation fails closed when current-head no-major has
   assert.equal(remediation?.missingProbeReason, null);
 });
 
+test("buildStaleReviewBotRemediation accepts repair-proof fingerprints after trusted supervisor stale reply", () => {
+  const issueNumber = 2413;
+  const prNumber = 2418;
+  const headSha = "1c8ff7429f8c2e2787d15fa4b9d3718a70e30c1a";
+  const scenario = createCodexConnectorTrackedReviewResidueScenario({
+    issueNumber,
+    prNumber,
+    headSha,
+    threadId: "PRRT_processed_codex_then_supervisor",
+    commentId: "comment-codex-before-supervisor",
+    path: "src/supervisor/stale-review-bot-remediation.ts",
+    line: 1096,
+    severity: "P2",
+    commentBody: "P2: Use repair-proof fingerprints for processed must-fix checks.",
+    discussionUrl: "https://example.test/pr/2418#discussion_processed_codex_then_supervisor",
+    verifiedRepair: {
+      summary: "Current-head stale-review repair proof covered the processed P2 residue.",
+      ranAt: "2026-07-07T00:20:00Z",
+      command: "npx tsx --test src/supervisor/stale-review-bot-remediation.test.ts",
+      evidenceSource: "codex_turn_timeline_artifact",
+    },
+    currentHeadNoMajorReview: {
+      requestedAt: "2026-07-07T00:12:00Z",
+      observedAt: "2026-07-07T00:19:00Z",
+    },
+  });
+  scenario.reviewThread.comments.nodes.push({
+    id: "comment-supervisor-stale-reply-latest",
+    body: [
+      `The supervisor reprocessed this configured-bot finding on the current head \`${headSha}\` and classified it as stale.`,
+      `Audit: issue=#${issueNumber} pr=#${prNumber} head=${headSha} thread=${scenario.reviewThread.id} reason=stale_review_bot.`,
+      "Evidence: location=src/supervisor/stale-review-bot-remediation.ts:1096 processed_on_current_head=yes.",
+    ].join("\n\n"),
+    createdAt: "2026-07-07T00:21:00Z",
+    url: "https://example.test/pr/2418#discussion_processed_codex_then_supervisor_followup",
+    author: {
+      login: "TommyKammy",
+      typeName: "User",
+    },
+  });
+  const config = createConfig({
+    repoSlug: "TommyKammy/codex-supervisor",
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+  });
+  const record = createRecord(scenario.recordPatch);
+  const pr = createPullRequest({
+    ...scenario.pullRequestPatch,
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: headSha,
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-07-07T00:19:00Z",
+  });
+
+  const remediation = buildStaleReviewBotRemediation({
+    config,
+    record,
+    pr,
+    checks: scenario.passingChecks,
+    reviewThreads: [scenario.reviewThread],
+  });
+
+  assert.equal(remediation?.classification, "verified_current_head_repair_pending_thread_resolution");
+  assert.match(
+    remediation?.verificationEvidenceSummary ?? "",
+    /Current-head stale-review repair proof covered the processed P2 residue/u,
+  );
+});
+
 test("buildStaleReviewBotRemediation ignores unprocessed outdated Codex threads when probing missing verification", () => {
   const issueNumber = 1701;
   const prNumber = 1801;

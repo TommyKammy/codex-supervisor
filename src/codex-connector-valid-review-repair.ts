@@ -1,17 +1,14 @@
 import type { GitHubPullRequest, IssueRunRecord, ReviewThread, TimelineArtifact } from "./core/types";
 import { VERIFIED_CURRENT_HEAD_REPAIR_REVIEW_THREAD_RESIDUE_TARGET } from "./current-head-codex-repair-proof";
 import {
-  latestReviewThreadCommentFingerprint,
-  processedReviewThreadFingerprintKey,
-  processedReviewThreadKey,
-} from "./review-handling";
-import {
   codexConnectorMustFixReviewThreads,
   latestCodexConnectorPSeverity,
   latestCodexConnectorReviewComment,
   latestCodexConnectorReviewCommentFingerprint,
   latestCodexConnectorReviewCommentNode,
 } from "./codex-connector-review-policy";
+import { timelineArtifactCoversReviewThread } from "./codex-connector-review-repair-coverage";
+import { latestReviewThreadCommentFingerprint } from "./review-handling";
 
 export const STILL_VALID_REVIEW_THREAD_REPAIR_TARGET =
   "still_valid_review_thread_repair";
@@ -28,38 +25,6 @@ export interface CodexConnectorValidReviewRepairTarget {
   evidenceSummary: string;
 }
 
-function timelineArtifactCoversReviewThread(args: {
-  artifact: TimelineArtifact;
-  pr: Pick<GitHubPullRequest, "headRefOid">;
-  thread: Pick<ReviewThread, "id" | "comments">;
-}): boolean {
-  const processedThreadIds = args.artifact.processed_review_thread_ids ?? [];
-  const processedThreadFingerprints = args.artifact.processed_review_thread_fingerprints ?? [];
-  const headScopedThreadId = processedReviewThreadKey(args.thread.id, args.pr.headRefOid);
-  const latestCommentFingerprints = [
-    latestCodexConnectorReviewCommentFingerprint(args.thread as ReviewThread),
-    latestReviewThreadCommentFingerprint(args.thread),
-  ].filter((fingerprint): fingerprint is string => Boolean(fingerprint));
-  const acceptedFingerprintKeys = new Set(
-    latestCommentFingerprints.map((fingerprint) =>
-      processedReviewThreadFingerprintKey(args.thread.id, args.pr.headRefOid, fingerprint),
-    ),
-  );
-  if (processedThreadFingerprints.some((fingerprint) => acceptedFingerprintKeys.has(fingerprint))) {
-    return true;
-  }
-
-  if (!processedThreadIds.includes(headScopedThreadId)) {
-    return false;
-  }
-  if (latestCommentFingerprints.length === 0) {
-    return true;
-  }
-
-  const threadFingerprintPrefix = `${headScopedThreadId}#`;
-  return !processedThreadFingerprints.some((key) => key.startsWith(threadFingerprintPrefix));
-}
-
 function isCurrentHeadCodexTurnArtifact(args: {
   artifact: TimelineArtifact;
   pr: Pick<GitHubPullRequest, "headRefOid">;
@@ -69,7 +34,14 @@ function isCurrentHeadCodexTurnArtifact(args: {
     args.artifact.type === "verification_result" &&
     args.artifact.gate === "codex_turn" &&
     args.artifact.head_sha === args.pr.headRefOid &&
-    timelineArtifactCoversReviewThread(args)
+    timelineArtifactCoversReviewThread({
+      ...args,
+      acceptedFingerprints: [
+        latestCodexConnectorReviewCommentFingerprint(args.thread),
+        latestReviewThreadCommentFingerprint(args.thread),
+      ].filter((fingerprint): fingerprint is string => Boolean(fingerprint)).map((fingerprint) => ({ fingerprint })),
+      allowHeadScopedIdWhenFingerprintsExist: true,
+    })
   );
 }
 
