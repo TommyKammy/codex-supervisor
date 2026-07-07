@@ -28,9 +28,9 @@ import {
 } from "./supervisor-status-review-bot";
 import {
   buildStaleReviewBotRemediation,
-  buildStaleReviewBotThreadDiagnostics,
   isProvenStaleReviewMetadataClassification,
 } from "./stale-review-bot-remediation";
+import { buildStaleReviewBotThreadDiagnostics } from "./stale-review-bot-diagnostics";
 import {
   formatStaleReviewBotRemediationLine,
   formatStaleReviewBotRepairTargetLine,

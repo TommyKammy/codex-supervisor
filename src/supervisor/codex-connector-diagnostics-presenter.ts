@@ -35,9 +35,9 @@ import {
   verifiedCurrentHeadRepairResidueAllowsMergeReadyAction,
 } from "./stale-review-bot-diagnostics-presenter";
 import {
-  buildStaleReviewBotThreadDiagnostics,
   type StaleReviewBotRemediationDto,
 } from "./stale-review-bot-remediation";
+import { buildStaleReviewBotThreadDiagnostics } from "./stale-review-bot-diagnostics";
 
 function addMinutes(timestamp: string, minutes: number): string | null {
   const parsed = Date.parse(timestamp);
