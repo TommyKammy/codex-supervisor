@@ -1,14 +1,11 @@
 import type { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "../core/types";
 import {
   hasProcessedReviewThread,
-  latestReviewThreadCommentFingerprint,
   localReviewBlocksMerge,
   localReviewDegradedNeedsBlock,
   localReviewHighSeverityNeedsBlock,
   localReviewHighSeverityNeedsRetry,
   localReviewRequiresManualReview,
-  processedReviewThreadFingerprintKey,
-  processedReviewThreadKey,
   reviewLoopRetryBudgetExhaustedForThread,
 } from "../review-handling";
 import { reviewDecisionBlocksCurrentHeadRepairProjection } from "../review-decision-blocking-policy";
@@ -22,7 +19,6 @@ import {
   hasCodexConnectorFindingReviewComment,
   latestCodexConnectorReviewCommentNode,
   latestCodexConnectorReviewCommentFingerprint,
-  latestCodexConnectorPSeverity,
   latestCodexConnectorReviewComment,
 } from "../codex-connector-review-policy";
 import {
@@ -47,6 +43,10 @@ import {
   buildCodexConnectorStillValidReviewRepairTargets,
   type CodexConnectorValidReviewRepairTarget,
 } from "../codex-connector-valid-review-repair";
+import {
+  allCodexConnectorRepairResidueThreadsAreP2,
+  timelineArtifactCoversReviewThreads,
+} from "../codex-connector-review-repair-coverage";
 import {
   STALE_REVIEW_BOT_MANUAL_NEXT_STEP,
   VERIFIED_CURRENT_HEAD_REPAIR_SUMMARY,
@@ -389,7 +389,11 @@ function hasCurrentHeadNoSourceChangeCodexTurnVerification(
       artifact.outcome === "passed" &&
       artifact.head_sha === pr.headRefOid &&
       artifact.repair_targets?.includes("verified_no_source_change_review_thread_residue") === true &&
-      noSourceChangeArtifactCoversReviewThreads(artifact, pr, reviewThreads),
+      timelineArtifactCoversReviewThreads({
+        artifact,
+        pr,
+        reviewThreads,
+      }),
   );
 }
 
@@ -405,34 +409,6 @@ function hasCurrentHeadMarkedNoSourceChangeCodexTurnVerification(
       artifact.head_sha === pr.headRefOid &&
       artifact.repair_targets?.includes("verified_no_source_change_review_thread_residue") === true,
   );
-}
-
-function allCodexConnectorRepairResidueThreadsAreP2(reviewThreads: ReviewThread[]): boolean {
-  return reviewThreads.length > 0 && reviewThreads.every((thread) => latestCodexConnectorPSeverity(thread) === "P2");
-}
-
-function noSourceChangeArtifactCoversReviewThreads(
-  artifact: NonNullable<IssueRunRecord["timeline_artifacts"]>[number],
-  pr: Pick<GitHubPullRequest, "headRefOid">,
-  reviewThreads: ReviewThread[],
-): boolean {
-  if (reviewThreads.length === 0) {
-    return false;
-  }
-  const processedThreadIds = artifact.processed_review_thread_ids ?? [];
-  const processedThreadFingerprints = artifact.processed_review_thread_fingerprints ?? [];
-  if (processedThreadIds.length === 0 && processedThreadFingerprints.length === 0) {
-    return false;
-  }
-  return reviewThreads.every((thread) => {
-    const latestFingerprint = latestReviewThreadCommentFingerprint(thread);
-    if (latestFingerprint) {
-      return processedThreadFingerprints.includes(
-        processedReviewThreadFingerprintKey(thread.id, pr.headRefOid, latestFingerprint),
-      );
-    }
-    return processedThreadIds.includes(processedReviewThreadKey(thread.id, pr.headRefOid));
-  });
 }
 
 function normalizeRepositoryPath(value: string): string {
@@ -1115,7 +1091,16 @@ function classifyCodexMetadataOnly(args: {
   );
   const verifiedRepairArtifactEvidenceSummary =
     currentHeadVerifiedRepairResidueArtifactEvidenceSummary(args);
-  if (verifiedRepairArtifactEvidenceSummary) {
+  const hasUnprocessedMustFix = mustFixReviewThreads.some((thread) =>
+    !hasProcessedReviewThread(args.record, args.pr, thread)
+  );
+  const unprocessedMustFixCanUseRepairProof =
+    allCodexConnectorRepairResidueThreadsAreP2(mustFixReviewThreads) &&
+    projectCurrentHeadCodexRepairProof(args)?.source === "finding_set_verification_artifact";
+  if (
+    verifiedRepairArtifactEvidenceSummary &&
+    (!hasUnprocessedMustFix || unprocessedMustFixCanUseRepairProof)
+  ) {
     return {
       classification: "verified_current_head_repair_pending_thread_resolution",
       summary: VERIFIED_CURRENT_HEAD_REPAIR_SUMMARY,
@@ -1138,7 +1123,7 @@ function classifyCodexMetadataOnly(args: {
       hasProcessedReviewThread(args.record, args.pr, thread),
     ),
     convergenceOutcome: policy?.outcome ?? null,
-    hasUnprocessedMustFix: mustFixReviewThreads.some((thread) => !hasProcessedReviewThread(args.record, args.pr, thread)),
+    hasUnprocessedMustFix,
     verificationEvidenceSummary,
     noMajorSignalEvidence: currentHeadCodexNoMajorSignalEvidence({
       record: args.record,
