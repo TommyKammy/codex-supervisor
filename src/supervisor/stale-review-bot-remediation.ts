@@ -1,31 +1,22 @@
 import type { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread, SupervisorConfig } from "../core/types";
 import {
-  hasProcessedReviewThread,
   reviewLoopRetryBudgetExhaustedForThread,
 } from "../review-handling";
 import {
-  clusterConfiguredBotReviewThreads,
-} from "../codex-connector-review-churn";
-import {
   codexConnectorMustFixReviewThreads,
-  evaluateCodexConnectorConvergencePolicy,
   hasCodexConnectorFindingReviewComment,
   latestCodexConnectorReviewCommentFingerprint,
-  latestCodexConnectorReviewComment,
 } from "../codex-connector-review-policy";
 import {
   configuredBotReviewFollowUpState,
   configuredBotReviewThreads,
   manualReviewThreads,
-  nonActionableConfiguredBotReviewThreads,
   pendingBotReviewThreads,
 } from "../review-thread-reporting";
 import { isRecoverableVerifiedCodexStaleResidueThread } from "./verified-stale-residue-review-thread";
 import { configuredReviewProviderKinds } from "../core/review-providers";
 import {
   currentHeadCodexRepairProofRejectionReasons,
-  currentHeadRepairProofThreadFingerprint,
-  hasFreshCurrentHeadCodexSuccessReviewedCommit,
   projectCurrentHeadCodexRepairProof,
 } from "../current-head-codex-repair-proof";
 import {
@@ -33,33 +24,23 @@ import {
   type CodexConnectorValidReviewRepairTarget,
 } from "../codex-connector-valid-review-repair";
 import {
-  allCodexConnectorRepairResidueThreadsAreP2,
-} from "../codex-connector-review-repair-coverage";
-import {
-  buildCurrentHeadCleanCommentResidueEvidence,
-  buildCurrentHeadCodexNoMajorSignalEvidence,
-  buildCurrentHeadVerificationEvidenceSummary,
-  buildCurrentHeadVerifiedRepairResidueArtifactEvidenceSummary,
-  hasCurrentHeadCodexTurnVerification,
-  hasCurrentHeadLocalCiVerification,
-  hasCurrentHeadMarkedNoSourceChangeCodexTurnVerification,
-  hasCurrentHeadNoSourceChangeCodexTurnVerification,
   hasCurrentHeadSuccessSignal,
 } from "./stale-review-current-head-evidence";
 import {
-  deterministicRepositoryPathRepairProbeEvidence,
-  requiresDeterministicRepositoryPathRepairProbeEvidence,
   type RepositoryFileContents,
 } from "./stale-review-repository-path-repair-evidence";
 import {
   STALE_REVIEW_BOT_MANUAL_NEXT_STEP,
-  VERIFIED_CURRENT_HEAD_REPAIR_SUMMARY,
   VERIFIED_CURRENT_HEAD_REPAIR_MANUAL_NEXT_STEP,
   VERIFIED_NO_SOURCE_CHANGE_MANUAL_NEXT_STEP,
-  classifyStaleReviewBotAutoRepairSuppressionPolicy,
-  classifyStaleReviewBotRemediationPolicy,
+  classifyStaleReviewBotAutoRepairSuppression,
+  classifyStaleReviewBotRemediation,
+  codexConnectorCurrentHeadReviewState,
+  isPolicyResolvableStaleReviewBotClassification,
+  isVerifiedStaleResidueClassification,
   type StaleReviewBotAutoRepairSuppressedReason,
-  type StaleReviewBotClassificationPolicyDecision,
+  type StaleReviewBotClassificationOutcome,
+  verifiedStaleReviewResidueAutoResolveEnabled,
 } from "./stale-review-bot-classification-policy";
 import { staleConfiguredBotReplyThreadIds } from "./stale-review-bot-recovery";
 
@@ -70,6 +51,11 @@ export {
 export {
   buildCurrentHeadVerifiedRepairResidueArtifactEvidenceSummary as currentHeadVerifiedRepairResidueArtifactEvidenceSummary,
 } from "./stale-review-current-head-evidence";
+export {
+  isProvenStaleReviewMetadataClassification,
+  isVerifiedStaleResidueClassification,
+  verifiedStaleReviewResidueAutoResolveEnabled,
+} from "./stale-review-bot-classification-policy";
 
 export interface StaleReviewBotRemediationDto {
   issueNumber: number;
@@ -79,14 +65,7 @@ export interface StaleReviewBotRemediationDto {
   processedOnCurrentHead: "yes" | "no" | "unknown";
   codeCiState: "green" | "not_green" | "unknown";
   classification:
-    | "actionable_current_diff"
-    | "metadata_only"
-    | "metadata_only_missing_current_head_review"
-    | "metadata_only_current_head_converged"
-    | "verified_no_source_change_pending_thread_resolution"
-    | "verified_current_head_repair_pending_thread_resolution"
-    | "unresolved_work"
-    | "unknown_needs_operator";
+    StaleReviewBotClassificationOutcome;
   codexCurrentHeadReviewState: "observed" | "requested" | "missing" | "not_applicable";
   reviewThreadUrl: string | null;
   verificationEvidenceSummary: string | null;
@@ -153,20 +132,12 @@ function codeCiState(
   return pr?.currentHeadCiGreenAt ? "green" : "unknown";
 }
 
-function allChecksPassing(checks: Pick<PullRequestCheck, "bucket">[]): boolean {
-  return checks.length > 0 && checks.every((check) => check.bucket === "pass" || check.bucket === "skipping");
-}
-
 function hasFailingChecks(checks: Pick<PullRequestCheck, "bucket">[]): boolean {
   return checks.some((check) => check.bucket === "fail");
 }
 
 function hasPendingChecks(checks: Pick<PullRequestCheck, "bucket">[]): boolean {
   return checks.some((check) => check.bucket === "pending" || check.bucket === "cancel");
-}
-
-function hasCleanMergeState(pr: GitHubPullRequest): boolean {
-  return pr.state === "OPEN" && !pr.isDraft && pr.mergeStateStatus === "CLEAN" && pr.mergeable === "MERGEABLE";
 }
 
 function hasAutoResolvableMergeState(pr: GitHubPullRequest): boolean {
@@ -178,53 +149,11 @@ function hasAutoResolvableMergeState(pr: GitHubPullRequest): boolean {
   );
 }
 
-function hasMergeConflictState(pr: GitHubPullRequest): boolean {
-  return pr.state !== "OPEN" || pr.isDraft || pr.mergeStateStatus === "DIRTY" || pr.mergeable === "CONFLICTING";
-}
-
 function currentHeadSuccess(pr: GitHubPullRequest | null): StaleReviewBotThreadDiagnosticsDto["currentHeadSuccess"] {
   if (!pr) {
     return "unknown";
   }
   return hasCurrentHeadSuccessSignal(pr) ? "yes" : "no";
-}
-
-export function isProvenStaleReviewMetadataClassification(
-  classification: StaleReviewBotRemediationDto["classification"],
-): boolean {
-  return (
-    classification === "metadata_only" ||
-    classification === "metadata_only_current_head_converged" ||
-    classification === "verified_no_source_change_pending_thread_resolution" ||
-    classification === "verified_current_head_repair_pending_thread_resolution"
-  );
-}
-
-export function isVerifiedStaleResidueClassification(
-  classification: StaleReviewBotRemediationDto["classification"],
-): boolean {
-  return (
-    classification === "verified_no_source_change_pending_thread_resolution" ||
-    classification === "verified_current_head_repair_pending_thread_resolution"
-  );
-}
-
-function isPolicyResolvableStaleReviewBotClassification(
-  classification: StaleReviewBotRemediationDto["classification"],
-): boolean {
-  return classification === "metadata_only" || classification === "metadata_only_current_head_converged";
-}
-
-export function verifiedStaleReviewResidueAutoResolveEnabled(
-  config: SupervisorConfig,
-  classification: StaleReviewBotRemediationDto["classification"],
-): boolean {
-  return (
-    (classification === "verified_no_source_change_pending_thread_resolution" &&
-      config.verifiedNoSourceChangeReviewThreadAutoResolve === true) ||
-    (classification === "verified_current_head_repair_pending_thread_resolution" &&
-      config.verifiedCurrentHeadRepairReviewThreadAutoResolve === true)
-  );
 }
 
 function hasRecoverableStaleReviewThreadContext(args: {
@@ -244,263 +173,6 @@ function hasRecoverableStaleReviewThreadContext(args: {
   const currentSignedThreadIds = signedThreadIds.filter((threadId) => unresolvedConfiguredThreadIds.has(threadId));
   return currentSignedThreadIds.length > 0 &&
     currentSignedThreadIds.every((threadId) => recoverableThreadIds.has(threadId));
-}
-
-function classifyAutoRepairSuppression(args: {
-  config: SupervisorConfig | null;
-  record: IssueRunRecord;
-  pr: GitHubPullRequest | null;
-  checks: PullRequestCheck[];
-  reviewThreads: ReviewThread[];
-  remediation: StaleReviewBotRemediationDto;
-  actionableMustFixThreads: ReviewThread[];
-  repeatStopExhausted: boolean;
-}): StaleReviewBotAutoRepairSuppressedReason {
-  const { config, pr, checks, remediation } = args;
-  return classifyStaleReviewBotAutoRepairSuppressionPolicy({
-    hasConfigAndPr: Boolean(config && pr),
-    repeatStopExhausted: args.repeatStopExhausted,
-    manualOrUnconfiguredReviewThreads: Boolean(
-      config &&
-        (manualReviewThreads(config, args.reviewThreads).length > 0 ||
-          nonActionableConfiguredBotReviewThreads(config, args.reviewThreads).length > 0),
-    ),
-    mergeConflictState: Boolean(pr && hasMergeConflictState(pr)),
-    failingChecks: hasFailingChecks(checks),
-    pendingChecks: hasPendingChecks(checks),
-    missingProbeReason: remediation.missingProbeReason,
-    verifiedStaleResidue: isVerifiedStaleResidueClassification(remediation.classification),
-    actionableClusterCount: clusterConfiguredBotReviewThreads(args.actionableMustFixThreads).length,
-    verifiedAutoResolveEnabled: Boolean(config && verifiedStaleReviewResidueAutoResolveEnabled(config, remediation.classification)),
-  });
-}
-
-function codexConnectorCurrentHeadReviewState(args: {
-  config: SupervisorConfig | null;
-  record: IssueRunRecord;
-  pr: GitHubPullRequest;
-  reviewThreads: ReviewThread[];
-}): "observed" | "requested" | "missing" | "not_applicable" {
-  if (!args.config || !configuredReviewProviderKinds(args.config).includes("codex")) {
-    return "not_applicable";
-  }
-
-  if (hasFreshCurrentHeadCodexSuccessReviewedCommit(args.pr, args.reviewThreads)) {
-    return "observed";
-  }
-
-  if (
-    args.pr.configuredBotCurrentHeadObservationSource === "codex_pr_success_comment" &&
-    args.pr.configuredBotCurrentHeadObservedAt
-  ) {
-    return "observed";
-  }
-
-  const recordRequestedSha = args.record.codex_connector_review_requested_head_sha;
-  const prRequestedSha = args.pr.codexConnectorReviewRequestedHeadSha;
-  if (
-    (args.record.codex_connector_review_requested_observed_at || args.pr.codexConnectorReviewRequestedAt) &&
-    (recordRequestedSha ?? prRequestedSha) === args.pr.headRefOid
-  ) {
-    return "requested";
-  }
-
-  return "missing";
-}
-
-function hasProcessedCurrentHeadRepairProofReviewThread(
-  config: SupervisorConfig,
-  record: Pick<
-    IssueRunRecord,
-    "processed_review_thread_ids" | "processed_review_thread_fingerprints" | "last_head_sha"
-  >,
-  pr: Pick<GitHubPullRequest, "headRefOid">,
-  thread: ReviewThread,
-): boolean {
-  if (hasProcessedReviewThread(record, pr, thread)) {
-    return true;
-  }
-
-  const repairProofFingerprint = currentHeadRepairProofThreadFingerprint(config, pr, thread);
-  return repairProofFingerprint
-    ? hasProcessedReviewThread(record, pr, thread, repairProofFingerprint)
-    : false;
-}
-
-function classifyCodexMetadataOnly(args: {
-  config: SupervisorConfig;
-  record: IssueRunRecord;
-  pr: GitHubPullRequest;
-  checks: PullRequestCheck[];
-  reviewThreads: ReviewThread[];
-  repositoryFileContents?: RepositoryFileContents;
-}): StaleReviewBotClassificationPolicyDecision {
-  const configuredThreads = configuredBotReviewThreads(args.config, args.reviewThreads);
-  const currentConfiguredThreads = configuredThreads.filter((thread) => !thread.isOutdated);
-  const policy = evaluateCodexConnectorConvergencePolicy(args.config, args.pr, args.reviewThreads);
-  const mustFixReviewThreads = codexConnectorMustFixReviewThreads(args.reviewThreads);
-  const currentHeadCleanCommentResidueEvidence = buildCurrentHeadCleanCommentResidueEvidence({
-    config: args.config,
-    record: args.record,
-    pr: args.pr,
-    reviewThreads: args.reviewThreads,
-    currentConfiguredThreads,
-    mustFixReviewThreads,
-  });
-  const hasMarkedNoSourceChangeRepair = hasCurrentHeadMarkedNoSourceChangeCodexTurnVerification(
-    args.record,
-    args.pr,
-  );
-  const hasCurrentHeadCodexTurnRepairVerification = hasCurrentHeadCodexTurnVerification(args.record, args.pr);
-  const checkEvidenceCanProveRepair = args.record.repair_attempt_count > 0;
-  const verificationEvidenceSummary = buildCurrentHeadVerificationEvidenceSummary({
-    config: args.config,
-    record: args.record,
-    pr: args.pr,
-    checks: args.checks,
-    allowCheckEvidence: checkEvidenceCanProveRepair,
-  });
-  const verifiedRepairArtifactEvidenceSummary =
-    buildCurrentHeadVerifiedRepairResidueArtifactEvidenceSummary(args);
-  const hasUnprocessedMustFix = mustFixReviewThreads.some((thread) =>
-    !hasProcessedCurrentHeadRepairProofReviewThread(args.config, args.record, args.pr, thread)
-  );
-  const unprocessedMustFixCanUseRepairProof =
-    allCodexConnectorRepairResidueThreadsAreP2(mustFixReviewThreads) &&
-    projectCurrentHeadCodexRepairProof(args)?.source === "finding_set_verification_artifact";
-  if (
-    verifiedRepairArtifactEvidenceSummary &&
-    (!hasUnprocessedMustFix || unprocessedMustFixCanUseRepairProof)
-  ) {
-    return {
-      classification: "verified_current_head_repair_pending_thread_resolution",
-      summary: VERIFIED_CURRENT_HEAD_REPAIR_SUMMARY,
-      verificationEvidenceSummary: verifiedRepairArtifactEvidenceSummary,
-    };
-  }
-
-  return classifyStaleReviewBotRemediationPolicy({
-    provider: "codex",
-    configuredThreadCount: configuredThreads.length,
-    currentConfiguredThreadCount: currentConfiguredThreads.length,
-    manualThreadCount: manualReviewThreads(args.config, args.reviewThreads).length,
-    sameHead: args.record.last_head_sha === args.pr.headRefOid,
-    allChecksPassing: allChecksPassing(args.checks),
-    cleanMergeState: hasCleanMergeState(args.pr),
-    mergeConflictState: hasMergeConflictState(args.pr),
-    pendingBotThreadCount: pendingBotReviewThreads(args.config, args.record, args.pr, currentConfiguredThreads).length,
-    followUpState: configuredBotReviewFollowUpState(args.config, args.record, args.pr, currentConfiguredThreads),
-    allCurrentConfiguredThreadsProcessed: currentConfiguredThreads.every((thread) =>
-      hasProcessedCurrentHeadRepairProofReviewThread(args.config, args.record, args.pr, thread),
-    ),
-    convergenceOutcome: policy?.outcome ?? null,
-    hasUnprocessedMustFix,
-    verificationEvidenceSummary,
-    noMajorSignalEvidence: buildCurrentHeadCodexNoMajorSignalEvidence({
-      record: args.record,
-      pr: args.pr,
-      reviewThreads: args.reviewThreads,
-      currentConfiguredThreads,
-    }),
-    currentHeadCleanCommentResidueEvidence,
-    deterministicProbeEvidence: deterministicRepositoryPathRepairProbeEvidence({
-      reviewThreads: args.reviewThreads,
-      repositoryFileContents: args.repositoryFileContents,
-    }),
-    hasMarkedNoSourceChangeRepair,
-    verifiedNoSourceChangeRepair: hasCurrentHeadNoSourceChangeCodexTurnVerification(
-      args.record,
-      args.pr,
-      mustFixReviewThreads,
-    ),
-    hasExplicitCurrentHeadRepairVerification: hasCurrentHeadCodexTurnRepairVerification,
-    hasCurrentHeadRepairCheckVerification:
-      !hasMarkedNoSourceChangeRepair && hasCurrentHeadLocalCiVerification(args.record, args.pr),
-    repairAttemptCount: args.record.repair_attempt_count,
-    allMustFixRepairResidueThreadsAreP2: allCodexConnectorRepairResidueThreadsAreP2(mustFixReviewThreads),
-    requiresDeterministicRepairProbeEvidence: requiresDeterministicRepositoryPathRepairProbeEvidence(args.reviewThreads),
-    currentHeadSuccess: hasCurrentHeadSuccessSignal(args.pr),
-  });
-}
-
-function classifyRemediation(args: {
-  config: SupervisorConfig | null;
-  record: IssueRunRecord;
-  pr: GitHubPullRequest | null;
-  checks: PullRequestCheck[];
-  reviewThreads: ReviewThread[];
-  repositoryFileContents?: RepositoryFileContents;
-}): StaleReviewBotClassificationPolicyDecision {
-  if (!args.config || !args.pr) {
-    return classifyStaleReviewBotRemediationPolicy({
-      provider: "configured_bot",
-      configuredThreadCount: 0,
-      currentConfiguredThreadCount: 0,
-      manualThreadCount: 0,
-      sameHead: false,
-      allChecksPassing: false,
-      cleanMergeState: false,
-      mergeConflictState: false,
-      pendingBotThreadCount: 0,
-      followUpState: "inactive",
-      allCurrentConfiguredThreadsProcessed: false,
-      convergenceOutcome: null,
-      hasUnprocessedMustFix: false,
-      verificationEvidenceSummary: null,
-      noMajorSignalEvidence: null,
-      currentHeadCleanCommentResidueEvidence: null,
-      deterministicProbeEvidence: null,
-      hasMarkedNoSourceChangeRepair: false,
-      verifiedNoSourceChangeRepair: false,
-      hasExplicitCurrentHeadRepairVerification: false,
-      hasCurrentHeadRepairCheckVerification: false,
-      repairAttemptCount: 0,
-      allMustFixRepairResidueThreadsAreP2: false,
-      requiresDeterministicRepairProbeEvidence: false,
-      currentHeadSuccess: false,
-    });
-  }
-
-  const { config, record, pr, checks, reviewThreads } = args;
-  const configuredThreads = configuredBotReviewThreads(config, reviewThreads);
-  if (configuredReviewProviderKinds(config).includes("codex")) {
-    return classifyCodexMetadataOnly({
-      config,
-      record,
-      pr,
-      checks,
-      reviewThreads,
-      repositoryFileContents: args.repositoryFileContents,
-    });
-  }
-
-  return classifyStaleReviewBotRemediationPolicy({
-    provider: "configured_bot",
-    configuredThreadCount: configuredThreads.length,
-    currentConfiguredThreadCount: configuredThreads.length,
-    manualThreadCount: manualReviewThreads(config, reviewThreads).length,
-    sameHead: record.last_head_sha === pr.headRefOid,
-    allChecksPassing: allChecksPassing(checks),
-    cleanMergeState: hasCleanMergeState(pr),
-    mergeConflictState: hasMergeConflictState(pr),
-    pendingBotThreadCount: pendingBotReviewThreads(config, record, pr, configuredThreads).length,
-    followUpState: configuredBotReviewFollowUpState(config, record, pr, configuredThreads),
-    allCurrentConfiguredThreadsProcessed: configuredThreads.every((thread) => hasProcessedReviewThread(record, pr, thread)),
-    convergenceOutcome: null,
-    hasUnprocessedMustFix: false,
-    verificationEvidenceSummary: null,
-    noMajorSignalEvidence: null,
-    currentHeadCleanCommentResidueEvidence: null,
-    deterministicProbeEvidence: null,
-    hasMarkedNoSourceChangeRepair: false,
-    verifiedNoSourceChangeRepair: false,
-    hasExplicitCurrentHeadRepairVerification: false,
-    hasCurrentHeadRepairCheckVerification: false,
-    repairAttemptCount: record.repair_attempt_count,
-    allMustFixRepairResidueThreadsAreP2: false,
-    requiresDeterministicRepairProbeEvidence: false,
-    currentHeadSuccess: Boolean(pr.configuredBotCurrentHeadObservedAt && pr.configuredBotCurrentHeadStatusState === "SUCCESS"),
-  });
 }
 
 export function buildStaleReviewBotRemediation(args: {
@@ -533,7 +205,7 @@ export function buildStaleReviewBotRemediation(args: {
   if (!currentHeadSha) {
     return null;
   }
-  const classification = classifyRemediation({
+  const classification = classifyStaleReviewBotRemediation({
       config: args.config ?? null,
       record: args.record,
       pr: args.pr,
@@ -730,13 +402,14 @@ export function buildStaleReviewBotThreadDiagnostics(args: {
     verifiedStaleResidueThreads,
     missingVerificationEvidenceThreads,
     repeatStopExhausted: repeatStopExhausted ? "yes" : "no",
-    autoRepairSuppressedReason: classifyAutoRepairSuppression({
+    autoRepairSuppressedReason: classifyStaleReviewBotAutoRepairSuppression({
       config,
       record: args.record,
       pr: args.pr,
       checks: args.checks,
       reviewThreads,
-      remediation,
+      classification: remediation.classification,
+      missingProbeReason: remediation.missingProbeReason,
       actionableMustFixThreads,
       repeatStopExhausted,
     }),
