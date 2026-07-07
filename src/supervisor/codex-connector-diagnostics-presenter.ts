@@ -38,6 +38,7 @@ import {
   buildStaleReviewBotThreadDiagnostics,
   type StaleReviewBotRemediationDto,
 } from "./stale-review-bot-remediation";
+import { hasFreshCurrentHeadCodexSuccessReviewedCommit } from "../current-head-codex-repair-proof";
 
 function addMinutes(timestamp: string, minutes: number): string | null {
   const parsed = Date.parse(timestamp);
@@ -424,6 +425,13 @@ export function formatCodexConnectorConvergenceDiagnostic(args: {
   const currentHeadSha = args.pr.headRefOid;
   const staleReviewCommitThreads = codexConnectorStaleReviewCommitThreads(args.pr, args.reviewThreads);
   const staleReviewCommitThreadIds = staleReviewCommitThreads.map((thread) => thread.id).join(",");
+  const supersededMustFixThreads = codexConnectorMustFixReviewThreads(args.reviewThreads);
+  const supersededByAnchoredCurrentHeadSuccess =
+    policy.outcome === "must_fix_remaining" &&
+    supersededMustFixThreads.length > 0 &&
+    supersededMustFixThreads.length === policy.findingCount &&
+    hasFreshCurrentHeadCodexSuccessReviewedCommit(args.pr, args.reviewThreads);
+  const supersededMustFixThreadIds = supersededMustFixThreads.map((thread) => thread.id).join(",");
   const hasCurrentHeadProviderSuccess = Boolean(
     args.record.provider_success_observed_at && commitShasEqualForComparison(args.record.provider_success_head_sha, currentHeadSha),
   );
@@ -469,6 +477,7 @@ export function formatCodexConnectorConvergenceDiagnostic(args: {
 
   let status:
     | "contradictory_evidence"
+    | "superseded_by_anchored_current_head_success"
     | "stale_review_commit_residue"
     | "stale_head"
     | "repairing_must_fix"
@@ -488,7 +497,11 @@ export function formatCodexConnectorConvergenceDiagnostic(args: {
     | "merge_or_follow_up_nitpicks"
     | "merge_ready";
 
-  if (staleReviewCommitThreads.length > 0 && policy.outcome === "must_fix_remaining") {
+  if (supersededByAnchoredCurrentHeadSuccess) {
+    status = "superseded_by_anchored_current_head_success";
+    mergeEffect = "ready";
+    nextAction = "merge_ready";
+  } else if (staleReviewCommitThreads.length > 0 && policy.outcome === "must_fix_remaining") {
     status = "stale_review_commit_residue";
     mergeEffect = "blocked";
     nextAction = staleReviewCommitNextAction;
@@ -528,10 +541,17 @@ export function formatCodexConnectorConvergenceDiagnostic(args: {
     `current_head_sha=${currentHeadSha}`,
     `current_head_observed_at=${policy.currentHeadObservedAt ?? "none"}`,
     `latest_signal_head_sha=${latestSignalHeadSha}`,
-    `highest_severity=${highestSeverity}`,
-    `finding_count=${findingCount}`,
+    `highest_severity=${supersededByAnchoredCurrentHeadSuccess ? "none" : highestSeverity}`,
+    `finding_count=${supersededByAnchoredCurrentHeadSuccess ? 0 : findingCount}`,
     `merge_effect=${mergeEffect}`,
     `next_action=${nextAction}`,
+    ...(supersededByAnchoredCurrentHeadSuccess
+      ? [
+          "note=anchored_current_head_codex_success_superseded_unresolved_findings",
+          `superseded_review_threads=${supersededMustFixThreads.length}`,
+          `superseded_review_thread_ids=${supersededMustFixThreadIds}`,
+        ]
+      : []),
     ...(staleReviewCommitThreads.length > 0
       ? [
           `stale_review_commit_threads=${staleReviewCommitThreads.length}`,
@@ -699,6 +719,26 @@ export function buildCodexConnectorDiagnosticBundle(args: {
       pr: args.pr,
     })
     : null;
+  const convergenceSummary = staleReviewBotRemediation
+    ? suppressStaleReviewMetadataConvergence
+      ? null
+      : staleReviewMetadataConvergenceSummary ??
+      (staleReviewBotRemediation.missingProbeReason
+        ? null
+        : formatCodexConnectorConvergenceDiagnostic({
+          config: args.config,
+          record: args.record,
+          pr: args.pr,
+          reviewThreads: args.reviewThreads,
+        }))
+    : formatCodexConnectorConvergenceDiagnostic({
+      config: args.config,
+      record: args.record,
+      pr: args.pr,
+      reviewThreads: args.reviewThreads,
+    });
+  const suppressOperatorDiagnosticAfterAnchoredSupersession =
+    convergenceSummary?.includes("status=superseded_by_anchored_current_head_success") === true;
   return {
     policyBlockSummary: policyBlock ? formatCodexConnectorPolicyBlockDiagnostic(policyBlock) : null,
     p2p3PolicySummary: p2p3Policy ? formatCodexConnectorP2P3PolicyDiagnostic(p2p3Policy) : null,
@@ -733,26 +773,10 @@ export function buildCodexConnectorDiagnosticBundle(args: {
       pr: args.pr,
       checks: args.checks,
     }),
-    convergenceSummary:
-      staleReviewBotRemediation
-        ? suppressStaleReviewMetadataConvergence
-          ? null
-          : staleReviewMetadataConvergenceSummary ??
-          (staleReviewBotRemediation.missingProbeReason
-            ? null
-            : formatCodexConnectorConvergenceDiagnostic({
-              config: args.config,
-              record: args.record,
-              pr: args.pr,
-              reviewThreads: args.reviewThreads,
-            }))
-        : formatCodexConnectorConvergenceDiagnostic({
-          config: args.config,
-          record: args.record,
-          pr: args.pr,
-          reviewThreads: args.reviewThreads,
-        }),
-    operatorDiagnosticSummary: staleReviewBotRemediation
+    convergenceSummary,
+    operatorDiagnosticSummary: suppressOperatorDiagnosticAfterAnchoredSupersession
+      ? null
+      : staleReviewBotRemediation
       ? formatStaleReviewResidueOperatorDiagnostic({
         remediation: staleReviewBotRemediation,
         verifiedCurrentHeadRepairResidueMergeReady,
