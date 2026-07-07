@@ -719,6 +719,26 @@ export function buildCodexConnectorDiagnosticBundle(args: {
       pr: args.pr,
     })
     : null;
+  const convergenceSummary = staleReviewBotRemediation
+    ? suppressStaleReviewMetadataConvergence
+      ? null
+      : staleReviewMetadataConvergenceSummary ??
+      (staleReviewBotRemediation.missingProbeReason
+        ? null
+        : formatCodexConnectorConvergenceDiagnostic({
+          config: args.config,
+          record: args.record,
+          pr: args.pr,
+          reviewThreads: args.reviewThreads,
+        }))
+    : formatCodexConnectorConvergenceDiagnostic({
+      config: args.config,
+      record: args.record,
+      pr: args.pr,
+      reviewThreads: args.reviewThreads,
+    });
+  const suppressOperatorDiagnosticAfterAnchoredSupersession =
+    convergenceSummary?.includes("status=superseded_by_anchored_current_head_success") === true;
   return {
     policyBlockSummary: policyBlock ? formatCodexConnectorPolicyBlockDiagnostic(policyBlock) : null,
     p2p3PolicySummary: p2p3Policy ? formatCodexConnectorP2P3PolicyDiagnostic(p2p3Policy) : null,
@@ -753,26 +773,10 @@ export function buildCodexConnectorDiagnosticBundle(args: {
       pr: args.pr,
       checks: args.checks,
     }),
-    convergenceSummary:
-      staleReviewBotRemediation
-        ? suppressStaleReviewMetadataConvergence
-          ? null
-          : staleReviewMetadataConvergenceSummary ??
-          (staleReviewBotRemediation.missingProbeReason
-            ? null
-            : formatCodexConnectorConvergenceDiagnostic({
-              config: args.config,
-              record: args.record,
-              pr: args.pr,
-              reviewThreads: args.reviewThreads,
-            }))
-        : formatCodexConnectorConvergenceDiagnostic({
-          config: args.config,
-          record: args.record,
-          pr: args.pr,
-          reviewThreads: args.reviewThreads,
-        }),
-    operatorDiagnosticSummary: staleReviewBotRemediation
+    convergenceSummary,
+    operatorDiagnosticSummary: suppressOperatorDiagnosticAfterAnchoredSupersession
+      ? null
+      : staleReviewBotRemediation
       ? formatStaleReviewResidueOperatorDiagnostic({
         remediation: staleReviewBotRemediation,
         verifiedCurrentHeadRepairResidueMergeReady,

@@ -11,6 +11,7 @@ import {
   reviewBotDiagnostics,
 } from "./supervisor-status-review-bot";
 import {
+  buildCodexConnectorDiagnosticBundle,
   formatCodexConnectorConvergenceDiagnostic,
   formatCodexConnectorReviewFallbackDiagnostic,
 } from "./codex-connector-diagnostics-presenter";
@@ -1154,6 +1155,62 @@ test("formatCodexConnectorConvergenceDiagnostic reports anchored current-head Co
     }),
     "codex_connector_convergence status=superseded_by_anchored_current_head_success provider=codex current_head_sha=ae3831568705a3a3be8cbf8c0cd6ec58d1f2d8e6 current_head_observed_at=2026-07-07T01:10:00Z latest_signal_head_sha=ae3831568705a3a3be8cbf8c0cd6ec58d1f2d8e6 highest_severity=none finding_count=0 merge_effect=ready next_action=merge_ready note=anchored_current_head_codex_success_superseded_unresolved_findings superseded_review_threads=1 superseded_review_thread_ids=thread-unresolved-codex-p1",
   );
+});
+
+test("buildCodexConnectorDiagnosticBundle suppresses operator repair diagnostics after anchored supersession", () => {
+  const headSha = "ae3831568705a3a3be8cbf8c0cd6ec58d1f2d8e6";
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    configuredBotCurrentHeadSignalTimeoutMinutes: 10,
+    configuredBotCurrentHeadSignalTimeoutAction: "request_review_comment",
+  });
+  const pr = createPr({
+    headRefOid: headSha,
+    configuredBotCurrentHeadObservedAt: "2026-07-07T01:10:00Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: "SUCCESS",
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: headSha,
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-07-07T01:10:00Z",
+    configuredBotTopLevelReviewStrength: null,
+  });
+  const reviewThreads = [
+    createThread({
+      id: "thread-unresolved-codex-p1",
+      comments: {
+        nodes: [
+          {
+            id: "comment-unresolved-codex-p1",
+            body: "P1: Earlier Codex Connector finding superseded by anchored current-head success.",
+            createdAt: "2026-07-07T01:00:00Z",
+            url: "https://example.test/pr/2426#discussion_r2426",
+            author: {
+              login: "chatgpt-codex-connector[bot]",
+              typeName: "Bot",
+            },
+          },
+        ],
+      },
+    }),
+  ];
+
+  const bundle = buildCodexConnectorDiagnosticBundle({
+    config,
+    record: createRecord({
+      state: "pr_open",
+      pr_number: pr.number,
+      provider_success_head_sha: headSha,
+      provider_success_observed_at: "2026-07-07T01:12:00Z",
+    }),
+    pr,
+    checks: [],
+    reviewThreads,
+  });
+
+  assert.equal(
+    bundle.convergenceSummary,
+    "codex_connector_convergence status=superseded_by_anchored_current_head_success provider=codex current_head_sha=ae3831568705a3a3be8cbf8c0cd6ec58d1f2d8e6 current_head_observed_at=2026-07-07T01:10:00Z latest_signal_head_sha=ae3831568705a3a3be8cbf8c0cd6ec58d1f2d8e6 highest_severity=none finding_count=0 merge_effect=ready next_action=merge_ready note=anchored_current_head_codex_success_superseded_unresolved_findings superseded_review_threads=1 superseded_review_thread_ids=thread-unresolved-codex-p1",
+  );
+  assert.equal(bundle.operatorDiagnosticSummary, null);
 });
 
 test("formatCodexConnectorConvergenceDiagnostic reports top-level Codex Review findings as must-fix", () => {

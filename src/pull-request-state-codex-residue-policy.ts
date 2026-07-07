@@ -282,7 +282,6 @@ export function anchoredCurrentHeadCodexSuccessSupersedesUnresolvedFindings(args
     mergeConflictDetected(args.pr) ||
     !summarizeChecks(args.checks).allPassing ||
     manualReviewThreads(args.config, args.reviewThreads).length > 0 ||
-    args.pr.configuredBotTopLevelReviewStrength === "blocking" ||
     !hasFreshCurrentHeadCodexSuccessReviewedCommit(args.pr, args.reviewThreads)
   ) {
     return false;

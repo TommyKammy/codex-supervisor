@@ -2,6 +2,7 @@ import type { GitHubPullRequest, IssueRunRecord, PullRequestCheck, ReviewThread,
 import { configuredReviewProviderKinds } from "./core/review-providers";
 import { manualReviewThreads } from "./review-thread-reporting";
 import { buildCodexConnectorStillValidReviewRepairTargets } from "./codex-connector-valid-review-repair";
+import { effectiveConfiguredBotReviewThreadsForState } from "./pull-request-state-codex-residue-policy";
 
 function allChecksGreen(checks: Pick<PullRequestCheck, "bucket">[]): boolean {
   return checks.every((check) => check.bucket === "pass" || check.bucket === "skipping");
@@ -17,7 +18,10 @@ export function shouldReenterCodexConnectorValidReviewRepair(args: {
   pr: GitHubPullRequest;
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
+  repairReviewThreads?: ReviewThread[];
 }): boolean {
+  const repairReviewThreads = args.repairReviewThreads ??
+    effectiveConfiguredBotReviewThreadsForState(args.config, args.record, args.pr, args.checks, args.reviewThreads);
   return (
     args.record.pr_number === args.pr.number &&
     configuredReviewProviderKinds(args.config).includes("codex") &&
@@ -27,7 +31,7 @@ export function shouldReenterCodexConnectorValidReviewRepair(args: {
     buildCodexConnectorStillValidReviewRepairTargets({
       record: args.record,
       pr: args.pr,
-      reviewThreads: args.reviewThreads,
+      reviewThreads: repairReviewThreads,
     }).length > 0
   );
 }
