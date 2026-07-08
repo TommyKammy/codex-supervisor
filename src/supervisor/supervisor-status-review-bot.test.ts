@@ -624,6 +624,118 @@ test("externalSignalReadinessDiagnostics treats blocking configured-bot top-leve
   );
 });
 
+test("externalSignalReadinessDiagnostics treats current-head Codex nitpick-only residue as observed signal", async (t) => {
+  const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-codex-nitpick-"));
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+  await fs.mkdir(path.join(repoPath, ".github", "workflows"), { recursive: true });
+  await fs.writeFile(path.join(repoPath, ".github", "workflows", "ci.yml"), "name: CI\n");
+  const pr = createPr({
+    configuredBotCurrentHeadObservedAt: "2026-03-16T00:10:00Z",
+    configuredBotTopLevelReviewStrength: "nitpick_only",
+    configuredBotTopLevelReviewSubmittedAt: "2026-03-16T00:10:00Z",
+  });
+  const nitpickThread = createThread({
+    comments: {
+      nodes: [
+        {
+          id: "comment-codex-p3",
+          body: "**<sub><sub>![P3 Badge](https://img.shields.io/badge/P3-lightgrey?style=flat)</sub></sub>  Prefer a shorter helper name**\n\nThis is a style-only suggestion.",
+          createdAt: "2026-03-16T00:10:00Z",
+          url: "https://example.test/pr/340#discussion_r1",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.equal(
+    configuredBotTopLevelReviewEffect(
+      createConfig({
+        repoPath,
+        reviewBotLogins: ["chatgpt-codex-connector"],
+      }),
+      pr,
+      [nitpickThread],
+      configuredBotReviewThreads,
+    ),
+    "softened",
+  );
+  assert.deepEqual(
+    externalSignalReadinessDiagnostics(
+      createConfig({
+        repoPath,
+        reviewBotLogins: ["chatgpt-codex-connector"],
+      }),
+      createRecord(),
+      pr,
+      [{ bucket: "pass" }],
+      [nitpickThread],
+      configuredBotReviewThreads,
+    ),
+    {
+      status: "signals_observed",
+      ci: "passing",
+      review: "signal_observed",
+      workflows: "present",
+    },
+  );
+});
+
+test("externalSignalReadinessDiagnostics keeps escalated Codex P3 residue blocking", async (t) => {
+  const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-codex-p3-risk-"));
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+  await fs.mkdir(path.join(repoPath, ".github", "workflows"), { recursive: true });
+  await fs.writeFile(path.join(repoPath, ".github", "workflows", "ci.yml"), "name: CI\n");
+  const pr = createPr({
+    configuredBotCurrentHeadObservedAt: "2026-03-16T00:10:00Z",
+    configuredBotTopLevelReviewStrength: "nitpick_only",
+    configuredBotTopLevelReviewSubmittedAt: "2026-03-16T00:10:00Z",
+  });
+  const riskThread = createThread({
+    comments: {
+      nodes: [
+        {
+          id: "comment-codex-p3-risk",
+          body: "P3: Missing verification can cause a regression in the restore path.",
+          createdAt: "2026-03-16T00:10:00Z",
+          url: "https://example.test/pr/340#discussion_r2",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(
+    externalSignalReadinessDiagnostics(
+      createConfig({
+        repoPath,
+        reviewBotLogins: ["chatgpt-codex-connector"],
+      }),
+      createRecord(),
+      pr,
+      [{ bucket: "pass" }],
+      [riskThread],
+      configuredBotReviewThreads,
+    ),
+    {
+      status: "blocked_by_ci_or_review_feedback",
+      ci: "passing",
+      review: "feedback_present",
+      workflows: "present",
+    },
+  );
+});
+
 test("externalSignalReadinessDiagnostics preserves CI repo-readiness gaps after softened review signals arrive", async (t) => {
   const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-softened-review-"));
   t.after(async () => {

@@ -12,6 +12,7 @@ import {
   codexConnectorNitpickTopLevelReviewFindings,
   highestCodexConnectorPSeverity,
 } from "../codex-connector-top-level-review";
+import { codexConnectorNitpickOnlyReviewThreads } from "../codex-connector-review-policy";
 import { classifyStaleReviewBotRecoverability, recoverabilityStatusToken } from "./stale-diagnostic-recoverability";
 import {
   configuredBotCurrentHeadSignalWaitWindow,
@@ -104,6 +105,11 @@ export function configuredReviewStatusLabel(config: SupervisorConfig): string {
 
 function unresolvedReviewThreads(reviewThreads: ReviewThread[]): ReviewThread[] {
   return reviewThreads.filter((thread) => !thread.isResolved && !thread.isOutdated);
+}
+
+function blockingConfiguredBotReviewThreads(reviewThreads: ReviewThread[]): ReviewThread[] {
+  const nitpickOnlyThreads = new Set(codexConnectorNitpickOnlyReviewThreads(reviewThreads));
+  return reviewThreads.filter((thread) => !nitpickOnlyThreads.has(thread));
 }
 
 function staleProviderSignalObservation(activeRecord: IssueRunRecord, pr: GitHubPullRequest): string | null {
@@ -233,6 +239,7 @@ export function externalSignalReadinessDiagnostics(
   const hasPendingChecks = checks.some((check) => check.bucket === "pending" || check.bucket === "cancel");
   const hasPassingChecks = checks.some((check) => check.bucket === "pass" || check.bucket === "skipping");
   const unresolvedConfiguredThreads = unresolvedReviewThreads(configuredBotReviewThreads(config, reviewThreads));
+  const blockingConfiguredThreads = blockingConfiguredBotReviewThreads(unresolvedConfiguredThreads);
   const observed = summarizeObservedReviewSignal(config, activeRecord, pr, reviewThreads, configuredBotReviewThreads);
   const topLevelReviewEffect = configuredBotTopLevelReviewEffect(config, pr, reviewThreads, configuredBotReviewThreads);
   const hasExternalProviderActivity = hasAuthoritativeExternalProviderActivity(
@@ -265,7 +272,7 @@ export function externalSignalReadinessDiagnostics(
         ? "local_review_blocked"
       : configuredBotReviewNotExpectedWhileDraft(config, pr)
         ? "not_expected_while_draft"
-      : unresolvedConfiguredThreads.length > 0 || topLevelReviewEffect === "blocking"
+      : blockingConfiguredThreads.length > 0 || topLevelReviewEffect === "blocking"
         ? "feedback_present"
       : observed.hasSignal || topLevelReviewEffect !== "none"
           ? "signal_observed"
@@ -315,7 +322,8 @@ export function configuredBotTopLevelReviewEffect(
   }
 
   if (pr.configuredBotTopLevelReviewStrength === "nitpick_only") {
-    return unresolvedReviewThreads(configuredBotReviewThreads(config, reviewThreads)).length === 0
+    const unresolvedConfiguredThreads = unresolvedReviewThreads(configuredBotReviewThreads(config, reviewThreads));
+    return blockingConfiguredBotReviewThreads(unresolvedConfiguredThreads).length === 0
       ? "softened"
       : "awaiting_thread_resolution";
   }
