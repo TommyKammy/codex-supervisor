@@ -91,6 +91,7 @@ export interface ConfiguredBotReviewSummary {
   currentHeadObservedAt: string | null;
   currentHeadObservationSource: ConfiguredBotCurrentHeadObservationSource;
   currentHeadObservationAuthorLogin?: string | null;
+  currentHeadCodexObservedAt?: string | null;
   currentHeadActionableObservedAt?: string | null;
   currentHeadCodexSuccessReviewedCommitSha?: string | null;
   currentHeadCodexSuccessObservedAt?: string | null;
@@ -689,15 +690,16 @@ function inferConfiguredBotCurrentHeadObservation(
   observedAt: string | null;
   source: ConfiguredBotCurrentHeadObservationSource;
   authorLogin: string | null;
+  codexObservedAt: string | null;
 } {
   const normalizedCurrentHeadOid = currentHeadOid?.trim();
   if (!normalizedCurrentHeadOid) {
-    return { observedAt: null, source: null, authorLogin: null };
+    return { observedAt: null, source: null, authorLogin: null, codexObservedAt: null };
   }
 
   const configuredReviewBots = new Set(normalizeReviewBotLogins(reviewBotLogins));
   if (configuredReviewBots.size === 0) {
-    return { observedAt: null, source: null, authorLogin: null };
+    return { observedAt: null, source: null, authorLogin: null, codexObservedAt: null };
   }
 
   const currentHeadObservations: Array<{
@@ -783,8 +785,14 @@ function inferConfiguredBotCurrentHeadObservation(
 
   const latestStrongCurrentHeadObservedAt = latestTimestamp(currentHeadObservations.map((observation) => observation.observedAt));
   if (!latestStrongCurrentHeadObservedAt) {
-    return { observedAt: null, source: null, authorLogin: null };
+    return { observedAt: null, source: null, authorLogin: null, codexObservedAt: null };
   }
+  const latestCodexCurrentHeadObservedAt = latestTimestamp(
+    currentHeadObservations.flatMap((observation) => {
+      const authorLogin = normalizeLogin(observation.authorLogin);
+      return authorLogin && isCodexConnectorLogin(authorLogin) ? [observation.observedAt] : [];
+    }),
+  );
 
   const latestStrongCurrentHeadObservedAtMs = parseTimestamp(latestStrongCurrentHeadObservedAt);
   const weaklyAnchoredCodeRabbitComments = facts.comments.flatMap((comment) => {
@@ -819,6 +827,7 @@ function inferConfiguredBotCurrentHeadObservation(
     observedAt: latestObservedAt,
     source: latestObservation?.source ?? null,
     authorLogin: latestObservation?.authorLogin ?? null,
+    codexObservedAt: latestCodexCurrentHeadObservedAt,
   };
 }
 
@@ -1199,6 +1208,10 @@ export function buildConfiguredBotReviewSummary(
   Object.defineProperty(summary, "currentHeadObservationAuthorLogin", {
     enumerable: false,
     value: currentHeadObservation.authorLogin,
+  });
+  Object.defineProperty(summary, "currentHeadCodexObservedAt", {
+    enumerable: false,
+    value: currentHeadObservation.codexObservedAt,
   });
   Object.defineProperty(summary, "currentHeadActionableObservedAt", {
     enumerable: false,

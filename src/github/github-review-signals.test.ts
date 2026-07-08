@@ -982,6 +982,43 @@ test("buildConfiguredBotReviewSummary extends current-head observation with late
   });
 });
 
+test("buildConfiguredBotReviewSummary preserves earlier Codex current-head evidence after later CodeRabbit activity", () => {
+  const facts: CopilotReviewLifecycleFacts = {
+    reviewRequests: [],
+    reviews: [
+      {
+        authorLogin: "chatgpt-codex-connector",
+        submittedAt: "2026-03-13T02:02:00Z",
+        commitOid: "head-44",
+        state: "COMMENTED",
+        body: "Codex reviewed this pull request.",
+      },
+      {
+        authorLogin: "coderabbitai[bot]",
+        submittedAt: "2026-03-13T02:03:00Z",
+        commitOid: "head-44",
+        state: "COMMENTED",
+        body: "## Summary\nCodeRabbit reviewed this pull request and found no actionable issues.",
+      },
+    ],
+    comments: [
+      {
+        authorLogin: "coderabbitai[bot]",
+        createdAt: "2026-03-13T02:04:00Z",
+        originalCommitOid: null,
+      },
+    ],
+    issueComments: [],
+    timeline: [],
+  };
+
+  const summary = buildConfiguredBotReviewSummary(facts, ["chatgpt-codex-connector", "coderabbitai[bot]"], "head-44");
+
+  assert.equal(summary.currentHeadObservedAt, "2026-03-13T02:04:00Z");
+  assert.equal(summary.currentHeadObservationAuthorLogin, "coderabbitai[bot]");
+  assert.equal(summary.currentHeadCodexObservedAt, "2026-03-13T02:02:00Z");
+});
+
 test("buildConfiguredBotReviewSummary keeps weakly anchored CodeRabbit review comments from stale-head history out of current-head observation", () => {
   const facts: CopilotReviewLifecycleFacts = {
     reviewRequests: [],

@@ -365,6 +365,7 @@ export function applyConfiguredBotReviewSummary(
     configuredBotCurrentHeadObservedAt: summary?.currentHeadObservedAt ?? null,
     configuredBotCurrentHeadObservationSource: summary?.currentHeadObservationSource ?? null,
     configuredBotCurrentHeadObservationAuthorLogin: summary?.currentHeadObservationAuthorLogin ?? null,
+    configuredBotCurrentHeadCodexObservedAt: summary?.currentHeadCodexObservedAt ?? null,
     configuredBotCurrentHeadActionableObservedAt: summary?.currentHeadActionableObservedAt ?? null,
     configuredBotCurrentHeadCodexSuccessReviewedCommitSha:
       summary?.currentHeadCodexSuccessReviewedCommitSha ?? null,
