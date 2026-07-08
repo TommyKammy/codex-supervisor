@@ -764,6 +764,127 @@ test("externalSignalReadinessDiagnostics keeps Codex nitpick residue blocking be
   );
 });
 
+test("externalSignalReadinessDiagnostics does not soften Codex nitpicks from non-Codex current-head signals", async (t) => {
+  const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-mixed-provider-nitpick-"));
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+  await fs.mkdir(path.join(repoPath, ".github", "workflows"), { recursive: true });
+  await fs.writeFile(path.join(repoPath, ".github", "workflows", "ci.yml"), "name: CI\n");
+  const config = createConfig({
+    repoPath,
+    reviewBotLogins: ["chatgpt-codex-connector", "coderabbitai[bot]"],
+  });
+  const pr = createPr({
+    configuredBotCurrentHeadObservedAt: "2026-03-16T00:10:00Z",
+    configuredBotCurrentHeadObservationSource: "review_thread_comment",
+    configuredBotTopLevelReviewStrength: "nitpick_only",
+    configuredBotTopLevelReviewSubmittedAt: "2026-03-16T00:10:00Z",
+  });
+  const nitpickThread = createThread({
+    comments: {
+      nodes: [
+        {
+          id: "comment-codex-p3-mixed",
+          body: "P3: Nitpick: prefer a shorter helper name for readability.",
+          createdAt: "2026-03-16T00:10:00Z",
+          url: "https://example.test/pr/340#discussion_r4",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.equal(
+    configuredBotTopLevelReviewEffect(config, pr, [nitpickThread], configuredBotReviewThreads),
+    "awaiting_thread_resolution",
+  );
+  assert.deepEqual(
+    externalSignalReadinessDiagnostics(
+      config,
+      createRecord(),
+      pr,
+      [{ bucket: "pass" }],
+      [nitpickThread],
+      configuredBotReviewThreads,
+    ),
+    {
+      status: "blocked_by_ci_or_review_feedback",
+      ci: "passing",
+      review: "feedback_present",
+      workflows: "present",
+    },
+  );
+});
+
+test("externalSignalReadinessDiagnostics keeps Codex P3 threads blocking after newer non-Codex replies", async (t) => {
+  const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-updated-codex-p3-"));
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+  await fs.mkdir(path.join(repoPath, ".github", "workflows"), { recursive: true });
+  await fs.writeFile(path.join(repoPath, ".github", "workflows", "ci.yml"), "name: CI\n");
+  const config = createConfig({
+    repoPath,
+    reviewBotLogins: ["chatgpt-codex-connector"],
+  });
+  const pr = createPr({
+    configuredBotCurrentHeadObservedAt: "2026-03-16T00:10:00Z",
+    configuredBotTopLevelReviewStrength: "nitpick_only",
+    configuredBotTopLevelReviewSubmittedAt: "2026-03-16T00:10:00Z",
+  });
+  const updatedThread = createThread({
+    comments: {
+      nodes: [
+        {
+          id: "comment-codex-p3-before-human",
+          body: "P3: Nitpick: prefer a shorter helper name for readability.",
+          createdAt: "2026-03-16T00:10:00Z",
+          url: "https://example.test/pr/340#discussion_r5",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+        {
+          id: "comment-human-after-codex",
+          body: "This still needs operator attention before merge.",
+          createdAt: "2026-03-16T00:11:00Z",
+          url: "https://example.test/pr/340#discussion_r6",
+          author: {
+            login: "reviewer",
+            typeName: "User",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.equal(
+    configuredBotTopLevelReviewEffect(config, pr, [updatedThread], configuredBotReviewThreads),
+    "awaiting_thread_resolution",
+  );
+  assert.deepEqual(
+    externalSignalReadinessDiagnostics(
+      config,
+      createRecord(),
+      pr,
+      [{ bucket: "pass" }],
+      [updatedThread],
+      configuredBotReviewThreads,
+    ),
+    {
+      status: "blocked_by_ci_or_review_feedback",
+      ci: "passing",
+      review: "feedback_present",
+      workflows: "present",
+    },
+  );
+});
+
 test("externalSignalReadinessDiagnostics keeps escalated Codex P3 residue blocking", async (t) => {
   const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-codex-p3-risk-"));
   t.after(async () => {

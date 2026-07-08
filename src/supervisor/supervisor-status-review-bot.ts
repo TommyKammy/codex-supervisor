@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   configuredReviewBotLogins,
+  configuredReviewProviderKinds,
   repoExpectsConfiguredBotReview,
   repoUsesCopilotOnlyReviewBot,
 } from "../core/review-providers";
@@ -12,7 +13,11 @@ import {
   codexConnectorNitpickTopLevelReviewFindings,
   highestCodexConnectorPSeverity,
 } from "../codex-connector-top-level-review";
-import { codexConnectorNitpickOnlyReviewThreads } from "../codex-connector-review-policy";
+import {
+  extractCodexConnectorPSeverity,
+  hasCodexConnectorStrongRiskWording,
+  isCodexConnectorReviewer,
+} from "../external-review/external-review-normalization";
 import { classifyStaleReviewBotRecoverability, recoverabilityStatusToken } from "./stale-diagnostic-recoverability";
 import {
   configuredBotCurrentHeadSignalWaitWindow,
@@ -115,13 +120,49 @@ function validStatusTimestamp(value: string | null | undefined): string | null {
   return Number.isNaN(Date.parse(value)) ? null : value;
 }
 
-function blockingConfiguredBotReviewThreads(pr: GitHubPullRequest, reviewThreads: ReviewThread[]): ReviewThread[] {
+function hasCodexCurrentHeadObservation(config: SupervisorConfig, pr: GitHubPullRequest): boolean {
   if (!validStatusTimestamp(pr.configuredBotCurrentHeadObservedAt)) {
+    return false;
+  }
+
+  const providerKinds = configuredReviewProviderKinds(config);
+  if (providerKinds.length > 0 && providerKinds.every((kind) => kind === "codex")) {
+    return true;
+  }
+
+  return (
+    pr.configuredBotCurrentHeadObservationSource === "codex_pr_success_comment" ||
+    pr.configuredBotCurrentHeadObservationSource === "codex_top_level_review_comment"
+  );
+}
+
+function latestCommentIsSoftenedCodexP3Thread(thread: ReviewThread): boolean {
+  const latestComment = thread.comments.nodes[thread.comments.nodes.length - 1] ?? null;
+  const latestLogin = latestComment?.author?.login;
+  const allCommentsAreCodexConnector = thread.comments.nodes.every((comment) => {
+    const login = comment.author?.login;
+    return Boolean(login && isCodexConnectorReviewer(login));
+  });
+  return Boolean(
+    allCommentsAreCodexConnector &&
+      latestLogin &&
+      latestComment &&
+      isCodexConnectorReviewer(latestLogin) &&
+      extractCodexConnectorPSeverity(latestComment.body) === "P3" &&
+      !hasCodexConnectorStrongRiskWording(latestComment.body),
+  );
+}
+
+function blockingConfiguredBotReviewThreads(
+  config: SupervisorConfig,
+  pr: GitHubPullRequest,
+  reviewThreads: ReviewThread[],
+): ReviewThread[] {
+  if (!hasCodexCurrentHeadObservation(config, pr)) {
     return reviewThreads;
   }
 
-  const nitpickOnlyThreads = new Set(codexConnectorNitpickOnlyReviewThreads(reviewThreads));
-  return reviewThreads.filter((thread) => !nitpickOnlyThreads.has(thread));
+  return reviewThreads.filter((thread) => !latestCommentIsSoftenedCodexP3Thread(thread));
 }
 
 function staleProviderSignalObservation(activeRecord: IssueRunRecord, pr: GitHubPullRequest): string | null {
@@ -174,7 +215,7 @@ export function reviewBotDiagnostics(
   }
 
   const unresolvedConfiguredThreads = unresolvedReviewThreads(configuredBotReviewThreads(config, reviewThreads));
-  const blockingConfiguredThreads = blockingConfiguredBotReviewThreads(pr, unresolvedConfiguredThreads);
+  const blockingConfiguredThreads = blockingConfiguredBotReviewThreads(config, pr, unresolvedConfiguredThreads);
   const topLevelReviewEffect = configuredBotTopLevelReviewEffect(config, pr, reviewThreads, configuredBotReviewThreads);
   if (blockingConfiguredThreads.length > 0 || topLevelReviewEffect === "blocking") {
     return {
@@ -252,7 +293,7 @@ export function externalSignalReadinessDiagnostics(
   const hasPendingChecks = checks.some((check) => check.bucket === "pending" || check.bucket === "cancel");
   const hasPassingChecks = checks.some((check) => check.bucket === "pass" || check.bucket === "skipping");
   const unresolvedConfiguredThreads = unresolvedReviewThreads(configuredBotReviewThreads(config, reviewThreads));
-  const blockingConfiguredThreads = blockingConfiguredBotReviewThreads(pr, unresolvedConfiguredThreads);
+  const blockingConfiguredThreads = blockingConfiguredBotReviewThreads(config, pr, unresolvedConfiguredThreads);
   const observed = summarizeObservedReviewSignal(config, activeRecord, pr, reviewThreads, configuredBotReviewThreads);
   const topLevelReviewEffect = configuredBotTopLevelReviewEffect(config, pr, reviewThreads, configuredBotReviewThreads);
   const hasExternalProviderActivity = hasAuthoritativeExternalProviderActivity(
@@ -336,7 +377,7 @@ export function configuredBotTopLevelReviewEffect(
 
   if (pr.configuredBotTopLevelReviewStrength === "nitpick_only") {
     const unresolvedConfiguredThreads = unresolvedReviewThreads(configuredBotReviewThreads(config, reviewThreads));
-    return blockingConfiguredBotReviewThreads(pr, unresolvedConfiguredThreads).length === 0
+    return blockingConfiguredBotReviewThreads(config, pr, unresolvedConfiguredThreads).length === 0
       ? "softened"
       : "awaiting_thread_resolution";
   }
