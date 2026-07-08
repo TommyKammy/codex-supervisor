@@ -107,7 +107,19 @@ function unresolvedReviewThreads(reviewThreads: ReviewThread[]): ReviewThread[] 
   return reviewThreads.filter((thread) => !thread.isResolved && !thread.isOutdated);
 }
 
-function blockingConfiguredBotReviewThreads(reviewThreads: ReviewThread[]): ReviewThread[] {
+function validStatusTimestamp(value: string | null | undefined): string | null {
+  if (typeof value !== "string" || value.length === 0) {
+    return null;
+  }
+
+  return Number.isNaN(Date.parse(value)) ? null : value;
+}
+
+function blockingConfiguredBotReviewThreads(pr: GitHubPullRequest, reviewThreads: ReviewThread[]): ReviewThread[] {
+  if (!validStatusTimestamp(pr.configuredBotCurrentHeadObservedAt)) {
+    return reviewThreads;
+  }
+
   const nitpickOnlyThreads = new Set(codexConnectorNitpickOnlyReviewThreads(reviewThreads));
   return reviewThreads.filter((thread) => !nitpickOnlyThreads.has(thread));
 }
@@ -162,15 +174,16 @@ export function reviewBotDiagnostics(
   }
 
   const unresolvedConfiguredThreads = unresolvedReviewThreads(configuredBotReviewThreads(config, reviewThreads));
+  const blockingConfiguredThreads = blockingConfiguredBotReviewThreads(pr, unresolvedConfiguredThreads);
   const topLevelReviewEffect = configuredBotTopLevelReviewEffect(config, pr, reviewThreads, configuredBotReviewThreads);
-  if (unresolvedConfiguredThreads.length > 0 || topLevelReviewEffect === "blocking") {
+  if (blockingConfiguredThreads.length > 0 || topLevelReviewEffect === "blocking") {
     return {
       status: "actionable_provider_review",
-      observedReview: unresolvedConfiguredThreads.length > 0 ? "review_thread" : "top_level_review",
+      observedReview: blockingConfiguredThreads.length > 0 ? "review_thread" : "top_level_review",
       nextCheck: "address_review",
       recentObservation:
-        unresolvedConfiguredThreads.length > 0
-          ? `unresolved_threads:${unresolvedConfiguredThreads.length}`
+        blockingConfiguredThreads.length > 0
+          ? `unresolved_threads:${blockingConfiguredThreads.length}`
           : `top_level_review:${pr.configuredBotTopLevelReviewSubmittedAt ?? "unknown"}`,
     };
   }
@@ -239,7 +252,7 @@ export function externalSignalReadinessDiagnostics(
   const hasPendingChecks = checks.some((check) => check.bucket === "pending" || check.bucket === "cancel");
   const hasPassingChecks = checks.some((check) => check.bucket === "pass" || check.bucket === "skipping");
   const unresolvedConfiguredThreads = unresolvedReviewThreads(configuredBotReviewThreads(config, reviewThreads));
-  const blockingConfiguredThreads = blockingConfiguredBotReviewThreads(unresolvedConfiguredThreads);
+  const blockingConfiguredThreads = blockingConfiguredBotReviewThreads(pr, unresolvedConfiguredThreads);
   const observed = summarizeObservedReviewSignal(config, activeRecord, pr, reviewThreads, configuredBotReviewThreads);
   const topLevelReviewEffect = configuredBotTopLevelReviewEffect(config, pr, reviewThreads, configuredBotReviewThreads);
   const hasExternalProviderActivity = hasAuthoritativeExternalProviderActivity(
@@ -323,7 +336,7 @@ export function configuredBotTopLevelReviewEffect(
 
   if (pr.configuredBotTopLevelReviewStrength === "nitpick_only") {
     const unresolvedConfiguredThreads = unresolvedReviewThreads(configuredBotReviewThreads(config, reviewThreads));
-    return blockingConfiguredBotReviewThreads(unresolvedConfiguredThreads).length === 0
+    return blockingConfiguredBotReviewThreads(pr, unresolvedConfiguredThreads).length === 0
       ? "softened"
       : "awaiting_thread_resolution";
   }

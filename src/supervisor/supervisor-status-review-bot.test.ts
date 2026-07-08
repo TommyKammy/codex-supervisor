@@ -666,6 +666,23 @@ test("externalSignalReadinessDiagnostics treats current-head Codex nitpick-only 
     "softened",
   );
   assert.deepEqual(
+    reviewBotDiagnostics(
+      createConfig({
+        repoPath,
+        reviewBotLogins: ["chatgpt-codex-connector"],
+      }),
+      createRecord(),
+      pr,
+      [nitpickThread],
+      configuredBotReviewThreads,
+    ),
+    {
+      status: "review_signal_observed",
+      observedReview: "review_thread",
+      nextCheck: "none",
+    },
+  );
+  assert.deepEqual(
     externalSignalReadinessDiagnostics(
       createConfig({
         repoPath,
@@ -681,6 +698,67 @@ test("externalSignalReadinessDiagnostics treats current-head Codex nitpick-only 
       status: "signals_observed",
       ci: "passing",
       review: "signal_observed",
+      workflows: "present",
+    },
+  );
+});
+
+test("externalSignalReadinessDiagnostics keeps Codex nitpick residue blocking before current-head review", async (t) => {
+  const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-codex-nitpick-stale-"));
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+  await fs.mkdir(path.join(repoPath, ".github", "workflows"), { recursive: true });
+  await fs.writeFile(path.join(repoPath, ".github", "workflows", "ci.yml"), "name: CI\n");
+  const config = createConfig({
+    repoPath,
+    reviewBotLogins: ["chatgpt-codex-connector"],
+  });
+  const pr = createPr({
+    configuredBotCurrentHeadObservedAt: null,
+    configuredBotTopLevelReviewStrength: "nitpick_only",
+    configuredBotTopLevelReviewSubmittedAt: "2026-03-16T00:10:00Z",
+  });
+  const nitpickThread = createThread({
+    comments: {
+      nodes: [
+        {
+          id: "comment-codex-p3-stale",
+          body: "P3: Nitpick: prefer a shorter helper name for readability.",
+          createdAt: "2026-03-16T00:10:00Z",
+          url: "https://example.test/pr/340#discussion_r3",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.equal(
+    configuredBotTopLevelReviewEffect(config, pr, [nitpickThread], configuredBotReviewThreads),
+    "awaiting_thread_resolution",
+  );
+  assert.deepEqual(reviewBotDiagnostics(config, createRecord(), pr, [nitpickThread], configuredBotReviewThreads), {
+    status: "actionable_provider_review",
+    observedReview: "review_thread",
+    nextCheck: "address_review",
+    recentObservation: "unresolved_threads:1",
+  });
+  assert.deepEqual(
+    externalSignalReadinessDiagnostics(
+      config,
+      createRecord(),
+      pr,
+      [{ bucket: "pass" }],
+      [nitpickThread],
+      configuredBotReviewThreads,
+    ),
+    {
+      status: "blocked_by_ci_or_review_feedback",
+      ci: "passing",
+      review: "feedback_present",
       workflows: "present",
     },
   );
