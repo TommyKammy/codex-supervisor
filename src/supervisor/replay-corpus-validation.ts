@@ -715,6 +715,10 @@ function validatePullRequest(raw: unknown, context: string): ReplayCorpusInputSn
       pullRequest.configuredBotCurrentHeadObservationSource,
       `${context} configuredBotCurrentHeadObservationSource`,
     ),
+    configuredBotCurrentHeadObservationAuthorLogin: expectOptionalNullableString(
+      pullRequest.configuredBotCurrentHeadObservationAuthorLogin,
+      `${context} configuredBotCurrentHeadObservationAuthorLogin`,
+    ),
     configuredBotCurrentHeadStatusState: expectOptionalNullableString(
       pullRequest.configuredBotCurrentHeadStatusState,
       `${context} configuredBotCurrentHeadStatusState`,

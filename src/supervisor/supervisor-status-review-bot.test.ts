@@ -820,6 +820,65 @@ test("externalSignalReadinessDiagnostics does not soften Codex nitpicks from non
   );
 });
 
+test("externalSignalReadinessDiagnostics softens Codex nitpicks from Codex inline current-head signals", async (t) => {
+  const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-mixed-provider-codex-inline-"));
+  t.after(async () => {
+    await fs.rm(repoPath, { recursive: true, force: true });
+  });
+  await fs.mkdir(path.join(repoPath, ".github", "workflows"), { recursive: true });
+  await fs.writeFile(path.join(repoPath, ".github", "workflows", "ci.yml"), "name: CI\n");
+  const config = createConfig({
+    repoPath,
+    reviewBotLogins: ["chatgpt-codex-connector", "coderabbitai[bot]"],
+  });
+  const pr = createPr({
+    configuredBotCurrentHeadObservedAt: "2026-03-16T00:10:00Z",
+    configuredBotCurrentHeadObservationSource: "review_thread_comment",
+    configuredBotCurrentHeadObservationAuthorLogin: "chatgpt-codex-connector",
+    configuredBotTopLevelReviewStrength: "nitpick_only",
+    configuredBotTopLevelReviewSubmittedAt: "2026-03-16T00:10:00Z",
+  });
+  const nitpickThread = createThread({
+    comments: {
+      nodes: [
+        {
+          id: "comment-codex-p3-current-head",
+          body: "P3: Nitpick: prefer a shorter helper name for readability.",
+          createdAt: "2026-03-16T00:10:00Z",
+          url: "https://example.test/pr/340#discussion_r5",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.equal(configuredBotTopLevelReviewEffect(config, pr, [nitpickThread], configuredBotReviewThreads), "softened");
+  assert.deepEqual(reviewBotDiagnostics(config, createRecord(), pr, [nitpickThread], configuredBotReviewThreads), {
+    status: "review_signal_observed",
+    observedReview: "review_thread",
+    nextCheck: "none",
+  });
+  assert.deepEqual(
+    externalSignalReadinessDiagnostics(
+      config,
+      createRecord(),
+      pr,
+      [{ bucket: "pass" }],
+      [nitpickThread],
+      configuredBotReviewThreads,
+    ),
+    {
+      status: "signals_observed",
+      ci: "passing",
+      review: "signal_observed",
+      workflows: "present",
+    },
+  );
+});
+
 test("externalSignalReadinessDiagnostics keeps Codex P3 threads blocking after newer non-Codex replies", async (t) => {
   const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-updated-codex-p3-"));
   t.after(async () => {

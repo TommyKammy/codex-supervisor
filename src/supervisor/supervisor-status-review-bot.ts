@@ -130,6 +130,14 @@ function hasCodexCurrentHeadObservation(config: SupervisorConfig, pr: GitHubPull
     return true;
   }
 
+  const observationAuthorLogin = pr.configuredBotCurrentHeadObservationAuthorLogin;
+  if (observationAuthorLogin && isCodexConnectorReviewer(observationAuthorLogin)) {
+    return (
+      pr.configuredBotCurrentHeadObservationSource === "review" ||
+      pr.configuredBotCurrentHeadObservationSource === "review_thread_comment"
+    );
+  }
+
   return (
     pr.configuredBotCurrentHeadObservationSource === "codex_pr_success_comment" ||
     pr.configuredBotCurrentHeadObservationSource === "codex_top_level_review_comment"

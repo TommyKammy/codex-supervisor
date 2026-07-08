@@ -801,7 +801,9 @@ test("buildConfiguredBotReviewSummary records the latest configured-bot observat
     timeline: [],
   };
 
-  assert.deepEqual(buildConfiguredBotReviewSummary(facts, ["coderabbitai[bot]"], "head-44"), {
+  const summary = buildConfiguredBotReviewSummary(facts, ["coderabbitai[bot]"], "head-44");
+
+  assert.deepEqual(summary, {
     lifecycle: {
       state: "arrived",
       requestedAt: null,
@@ -818,6 +820,7 @@ test("buildConfiguredBotReviewSummary records the latest configured-bot observat
     rateLimitWarningAt: null,
     draftSkipAt: null,
   });
+  assert.equal(summary.currentHeadObservationAuthorLogin, "coderabbitai[bot]");
 });
 
 test("buildConfiguredBotReviewSummary extracts Codex Connector reviewed commit from review body", () => {
