@@ -296,7 +296,7 @@ export function buildActiveReviewBotProviderLines(
   }
   lines.push(`pr_hydration provenance=${pr.hydrationProvenance ?? "unknown"} head_sha=${pr.headRefOid}`);
   lines.push(
-    `configured_bot_top_level_review ${configuredBotTopLevelReviewSummary(pr)} effect=${configuredBotTopLevelReviewEffect(config, pr, reviewThreads, configuredBotReviewThreads)}`,
+    `configured_bot_top_level_review ${configuredBotTopLevelReviewSummary(pr)} effect=${configuredBotTopLevelReviewEffect(config, pr, reviewThreads, configuredBotReviewThreads, activeRecord)}`,
   );
   const configuredBotRateLimit = configuredBotRateLimitWaitWindow(config, pr);
   if (configuredBotRateLimit.observedAt) {

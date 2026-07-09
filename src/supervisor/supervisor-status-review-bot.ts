@@ -2,16 +2,23 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   configuredReviewBotLogins,
+  configuredReviewProviderKinds,
   repoExpectsConfiguredBotReview,
   repoUsesCopilotOnlyReviewBot,
 } from "../core/review-providers";
 import { GitHubPullRequest, IssueRunRecord, ReviewThread, SupervisorConfig } from "../core/types";
 import { localReviewDegradedNeedsBlock } from "../review-handling";
+import { currentHeadTimestampSatisfiesActiveWait } from "../pull-request-state-current-head-policy";
 import {
   codexConnectorMustFixTopLevelReviewFindings,
   codexConnectorNitpickTopLevelReviewFindings,
   highestCodexConnectorPSeverity,
 } from "../codex-connector-top-level-review";
+import {
+  extractCodexConnectorPSeverity,
+  hasCodexConnectorStrongRiskWording,
+  isCodexConnectorReviewer,
+} from "../external-review/external-review-normalization";
 import { classifyStaleReviewBotRecoverability, recoverabilityStatusToken } from "./stale-diagnostic-recoverability";
 import {
   configuredBotCurrentHeadSignalWaitWindow,
@@ -106,6 +113,84 @@ function unresolvedReviewThreads(reviewThreads: ReviewThread[]): ReviewThread[] 
   return reviewThreads.filter((thread) => !thread.isResolved && !thread.isOutdated);
 }
 
+function validStatusTimestamp(value: string | null | undefined): string | null {
+  if (typeof value !== "string" || value.length === 0) {
+    return null;
+  }
+
+  return Number.isNaN(Date.parse(value)) ? null : value;
+}
+
+function codexCurrentHeadObservedAt(config: SupervisorConfig, pr: GitHubPullRequest): string | null {
+  const codexObservedAt = validStatusTimestamp(pr.configuredBotCurrentHeadCodexObservedAt);
+  if (codexObservedAt) {
+    return codexObservedAt;
+  }
+  const latestObservedAt = validStatusTimestamp(pr.configuredBotCurrentHeadObservedAt);
+  if (!latestObservedAt) {
+    return null;
+  }
+  const providerKinds = configuredReviewProviderKinds(config);
+  if (providerKinds.length > 0 && providerKinds.every((kind) => kind === "codex")) {
+    return latestObservedAt;
+  }
+
+  const observationAuthorLogin = pr.configuredBotCurrentHeadObservationAuthorLogin;
+  if (observationAuthorLogin && isCodexConnectorReviewer(observationAuthorLogin)) {
+    return (
+      pr.configuredBotCurrentHeadObservationSource === "review" ||
+      pr.configuredBotCurrentHeadObservationSource === "review_thread_comment"
+    )
+      ? latestObservedAt
+      : null;
+  }
+
+  return (
+    pr.configuredBotCurrentHeadObservationSource === "codex_pr_success_comment" ||
+    pr.configuredBotCurrentHeadObservationSource === "codex_top_level_review_comment"
+  )
+    ? latestObservedAt
+    : null;
+}
+
+function hasCodexCurrentHeadObservation(
+  config: SupervisorConfig,
+  pr: GitHubPullRequest,
+  activeRecord?: Pick<IssueRunRecord, "review_wait_started_at" | "review_wait_head_sha"> | null,
+): boolean {
+  const observedAt = codexCurrentHeadObservedAt(config, pr);
+  if (!observedAt) {
+    return false;
+  }
+
+  return activeRecord ? currentHeadTimestampSatisfiesActiveWait(activeRecord, pr, observedAt) : true;
+}
+
+function latestCommentIsSoftenedCodexP3Thread(thread: ReviewThread): boolean {
+  const latestComment = thread.comments.nodes[thread.comments.nodes.length - 1] ?? null;
+  const latestLogin = latestComment?.author?.login;
+  return Boolean(
+    latestLogin &&
+      latestComment &&
+      isCodexConnectorReviewer(latestLogin) &&
+      extractCodexConnectorPSeverity(latestComment.body) === "P3" &&
+      !hasCodexConnectorStrongRiskWording(latestComment.body),
+  );
+}
+
+function blockingConfiguredBotReviewThreads(
+  config: SupervisorConfig,
+  pr: GitHubPullRequest,
+  reviewThreads: ReviewThread[],
+  activeRecord?: Pick<IssueRunRecord, "review_wait_started_at" | "review_wait_head_sha"> | null,
+): ReviewThread[] {
+  if (!hasCodexCurrentHeadObservation(config, pr, activeRecord)) {
+    return reviewThreads;
+  }
+
+  return reviewThreads.filter((thread) => !latestCommentIsSoftenedCodexP3Thread(thread));
+}
+
 function staleProviderSignalObservation(activeRecord: IssueRunRecord, pr: GitHubPullRequest): string | null {
   if (activeRecord.external_review_head_sha && activeRecord.external_review_head_sha !== pr.headRefOid) {
     return `external_review_record:${activeRecord.external_review_head_sha}->${pr.headRefOid}`;
@@ -156,15 +241,22 @@ export function reviewBotDiagnostics(
   }
 
   const unresolvedConfiguredThreads = unresolvedReviewThreads(configuredBotReviewThreads(config, reviewThreads));
-  const topLevelReviewEffect = configuredBotTopLevelReviewEffect(config, pr, reviewThreads, configuredBotReviewThreads);
-  if (unresolvedConfiguredThreads.length > 0 || topLevelReviewEffect === "blocking") {
+  const blockingConfiguredThreads = blockingConfiguredBotReviewThreads(config, pr, unresolvedConfiguredThreads, activeRecord);
+  const topLevelReviewEffect = configuredBotTopLevelReviewEffect(
+    config,
+    pr,
+    reviewThreads,
+    configuredBotReviewThreads,
+    activeRecord,
+  );
+  if (blockingConfiguredThreads.length > 0 || topLevelReviewEffect === "blocking") {
     return {
       status: "actionable_provider_review",
-      observedReview: unresolvedConfiguredThreads.length > 0 ? "review_thread" : "top_level_review",
+      observedReview: blockingConfiguredThreads.length > 0 ? "review_thread" : "top_level_review",
       nextCheck: "address_review",
       recentObservation:
-        unresolvedConfiguredThreads.length > 0
-          ? `unresolved_threads:${unresolvedConfiguredThreads.length}`
+        blockingConfiguredThreads.length > 0
+          ? `unresolved_threads:${blockingConfiguredThreads.length}`
           : `top_level_review:${pr.configuredBotTopLevelReviewSubmittedAt ?? "unknown"}`,
     };
   }
@@ -233,8 +325,15 @@ export function externalSignalReadinessDiagnostics(
   const hasPendingChecks = checks.some((check) => check.bucket === "pending" || check.bucket === "cancel");
   const hasPassingChecks = checks.some((check) => check.bucket === "pass" || check.bucket === "skipping");
   const unresolvedConfiguredThreads = unresolvedReviewThreads(configuredBotReviewThreads(config, reviewThreads));
+  const blockingConfiguredThreads = blockingConfiguredBotReviewThreads(config, pr, unresolvedConfiguredThreads, activeRecord);
   const observed = summarizeObservedReviewSignal(config, activeRecord, pr, reviewThreads, configuredBotReviewThreads);
-  const topLevelReviewEffect = configuredBotTopLevelReviewEffect(config, pr, reviewThreads, configuredBotReviewThreads);
+  const topLevelReviewEffect = configuredBotTopLevelReviewEffect(
+    config,
+    pr,
+    reviewThreads,
+    configuredBotReviewThreads,
+    activeRecord,
+  );
   const hasExternalProviderActivity = hasAuthoritativeExternalProviderActivity(
     activeRecord,
     pr,
@@ -265,7 +364,7 @@ export function externalSignalReadinessDiagnostics(
         ? "local_review_blocked"
       : configuredBotReviewNotExpectedWhileDraft(config, pr)
         ? "not_expected_while_draft"
-      : unresolvedConfiguredThreads.length > 0 || topLevelReviewEffect === "blocking"
+      : blockingConfiguredThreads.length > 0 || topLevelReviewEffect === "blocking"
         ? "feedback_present"
       : observed.hasSignal || topLevelReviewEffect !== "none"
           ? "signal_observed"
@@ -301,6 +400,7 @@ export function configuredBotTopLevelReviewEffect(
   pr: GitHubPullRequest,
   reviewThreads: ReviewThread[],
   configuredBotReviewThreads: ReviewThreadClassifier,
+  activeRecord?: Pick<IssueRunRecord, "review_wait_started_at" | "review_wait_head_sha"> | null,
 ): string {
   if (!repoExpectsConfiguredBotReview(config)) {
     return "none";
@@ -315,7 +415,8 @@ export function configuredBotTopLevelReviewEffect(
   }
 
   if (pr.configuredBotTopLevelReviewStrength === "nitpick_only") {
-    return unresolvedReviewThreads(configuredBotReviewThreads(config, reviewThreads)).length === 0
+    const unresolvedConfiguredThreads = unresolvedReviewThreads(configuredBotReviewThreads(config, reviewThreads));
+    return blockingConfiguredBotReviewThreads(config, pr, unresolvedConfiguredThreads, activeRecord).length === 0
       ? "softened"
       : "awaiting_thread_resolution";
   }
