@@ -31,6 +31,7 @@ import {
 import { codexConnectorTopLevelReviewFindingRetryTarget } from "./codex-connector-top-level-review";
 import {
   currentHeadRepairProofSatisfiesConfiguredProviderSignal,
+  hasActualCurrentHeadCodexNoMajorSupport,
   hasConfiguredProviderSuccess,
   hasVerifiedCurrentHeadRepairReviewMetadataResidue,
 } from "./pull-request-state-codex-residue-policy";
@@ -932,6 +933,54 @@ test("verified current-head repair residue evidence can replace Codex no-major e
   );
   assert.equal(inferStateFromPullRequest(config, record, pr, scenario.passingChecks, []), "ready_to_merge");
   assert.equal(inferGitHubWaitStep(config, record, pr, scenario.passingChecks, []), null);
+});
+
+test("Codex convergence no-major support requires a Codex-owned current-head observation", () => {
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN, "coderabbitai"],
+    configuredBotRequireCurrentHeadSignal: true,
+    codexConnectorAutoMergeEnabled: true,
+  });
+  const record = createRecord({
+    state: "ready_to_merge",
+    last_head_sha: "head-codex-gated",
+    provider_success_head_sha: "head-codex-gated",
+    provider_success_observed_at: "2026-03-13T06:30:00Z",
+    review_wait_started_at: "2026-03-13T06:20:00Z",
+    review_wait_head_sha: "head-codex-gated",
+  });
+  const aggregateOnlyPr = createPullRequest({
+    headRefOid: "head-codex-gated",
+    configuredBotCurrentHeadObservedAt: "2026-03-13T06:30:00Z",
+    configuredBotCurrentHeadObservationAuthorLogin: "coderabbitai",
+    configuredBotCurrentHeadObservationSource: "review_thread_comment",
+    configuredBotCurrentHeadCodexObservedAt: null,
+  });
+  const codexObservedPr = createPullRequest({
+    ...aggregateOnlyPr,
+    configuredBotCurrentHeadCodexObservedAt: "2026-03-13T06:31:00Z",
+  });
+
+  assert.equal(
+    hasActualCurrentHeadCodexNoMajorSupport({
+      config,
+      record,
+      pr: aggregateOnlyPr,
+      checks: passingChecks(),
+      reviewThreads: [],
+    }),
+    false,
+  );
+  assert.equal(
+    hasActualCurrentHeadCodexNoMajorSupport({
+      config,
+      record,
+      pr: codexObservedPr,
+      checks: passingChecks(),
+      reviewThreads: [],
+    }),
+    true,
+  );
 });
 
 test("thread-scoped current-head verification artifact proves repaired Codex P2 residue", () => {

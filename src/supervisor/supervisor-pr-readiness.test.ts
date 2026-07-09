@@ -1746,6 +1746,7 @@ test("handlePostTurnMergeAndCompletion accepts current-head Codex nitpick-only c
     headRefOid: headSha,
     mergedAt: null,
     configuredBotCurrentHeadObservedAt: "2026-03-13T06:30:00Z",
+    configuredBotCurrentHeadCodexObservedAt: "2026-03-13T06:30:00Z",
     configuredBotCurrentHeadObservationSource: "review_thread_comment",
     configuredBotTopLevelReviewStrength: "nitpick_only",
     currentHeadCiGreenAt: "2026-03-13T06:31:00Z",
