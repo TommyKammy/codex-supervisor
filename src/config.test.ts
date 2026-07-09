@@ -1937,12 +1937,39 @@ test("shipped CodeRabbit starter profile uses a fail-fast repoSlug placeholder",
   assertCodeRabbitStarterRepoSlugPlaceholder(raw);
 });
 
+test("shipped Codex profiles and AtlasPM examples resolve codexBinary through PATH", async () => {
+  const rootDir = path.resolve(__dirname, "..");
+  const jsonPaths = [
+    "supervisor.config.codex.json",
+    "supervisor.config.coderabbit.json",
+    path.join("docs", "examples", "atlaspm.supervisor.config.example.json"),
+  ];
+
+  for (const relativePath of jsonPaths) {
+    const raw = await readShippedProfileJson(rootDir, relativePath);
+    assert.equal(
+      raw.codexBinary,
+      "codex",
+      `${relativePath} should resolve the Codex CLI through PATH`,
+    );
+  }
+
+  const markdownPath = path.join(rootDir, "docs", "examples", "atlaspm.md");
+  const markdown = await fs.readFile(markdownPath, "utf8");
+  assert.match(markdown, /"codexBinary": "codex"/u);
+  assert.doesNotMatch(
+    markdown,
+    /\/Applications\/(?:Codex|ChatGPT)\.app\/Contents\/Resources\/codex/u,
+    "the AtlasPM example should not pin the Codex CLI to a desktop application bundle",
+  );
+});
+
 test("shipped starter profiles fail closed with first-run placeholder guidance", async () => {
   const rootDir = path.resolve(__dirname, "..");
   const expectedInvalidFields = new Map<string, string[]>([
     ["supervisor.config.example.json", ["repoPath", "repoSlug", "workspaceRoot", "codexBinary"]],
     ["supervisor.config.copilot.json", ["repoPath", "repoSlug", "workspaceRoot", "codexBinary"]],
-    ["supervisor.config.codex.json", ["repoPath", "repoSlug", "workspaceRoot", "codexBinary"]],
+    ["supervisor.config.codex.json", ["repoPath", "repoSlug", "workspaceRoot"]],
     ["supervisor.config.coderabbit.json", ["repoSlug"]],
     ["supervisor.config.typescript-node.json", ["repoPath", "repoSlug", "workspaceRoot", "codexBinary"]],
     ["supervisor.config.nextjs.json", ["repoPath", "repoSlug", "workspaceRoot", "codexBinary"]],

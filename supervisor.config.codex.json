@@ -6,7 +6,7 @@
   "stateBackend": "json",
   "stateFile": "./.local/state.json",
   "stateBootstrapFile": "",
-  "codexBinary": "/absolute/path/to/codex",
+  "codexBinary": "codex",
   "trustMode": "trusted_repo_and_authors",
   "executionSafetyMode": "unsandboxed_autonomous",
   "codexModelStrategy": "inherit",

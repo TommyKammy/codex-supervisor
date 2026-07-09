@@ -12,7 +12,7 @@ This is one concrete way to use `codex-supervisor` against a local checkout of `
   "workspaceRoot": "/Users/yourname/Dev/atlaspm-worktrees",
   "stateBackend": "json",
   "stateFile": "/Users/yourname/Dev/codex-supervisor/.local/state.json",
-  "codexBinary": "/Applications/Codex.app/Contents/Resources/codex",
+  "codexBinary": "codex",
   "codexModelStrategy": "inherit",
   "codexModel": "",
   "boundedRepairModelStrategy": "",
