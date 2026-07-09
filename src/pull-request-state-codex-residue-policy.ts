@@ -468,6 +468,18 @@ export function hasActualCurrentHeadCodexNoMajorSupport(args: {
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
 }): boolean {
+  const codexConnectorPolicy = evaluateCodexConnectorConvergencePolicy(
+    args.config,
+    args.pr,
+    configuredBotReviewThreads(args.config, args.reviewThreads),
+  );
+  if (
+    (codexConnectorPolicy?.outcome === "converged" || codexConnectorPolicy?.outcome === "nitpick_only") &&
+    currentHeadTimestampSatisfiesActiveWait(args.record, args.pr, codexConnectorPolicy.currentHeadObservedAt)
+  ) {
+    return true;
+  }
+
   if (
     hasFreshCurrentHeadCodexSuccessReviewedCommit(args.pr, args.reviewThreads) &&
     currentHeadTimestampSatisfiesActiveWait(

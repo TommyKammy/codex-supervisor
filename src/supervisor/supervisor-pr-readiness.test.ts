@@ -1575,6 +1575,8 @@ test("handlePostTurnMergeAndCompletion blocks auto-merge when required check evi
   assert.equal(result.state, "blocked");
   assert.equal(result.blocked_reason, "verification");
   assert.equal(result.last_failure_context?.signature, "auto-merge-refused:head-122:required_checks_missing");
+  assert.equal(result.last_error, "Final auto-merge guard refused PR #122.");
+  assert.equal(result.last_auto_merge_guard_context?.summary, "Final auto-merge guard evaluated PR #122.");
   assert.equal(autoMergeCalls, 0);
 });
 
@@ -1681,6 +1683,144 @@ test("handlePostTurnMergeAndCompletion uses effective Codex thread blockers at t
   assert.equal(result.state, "merging");
   assert.equal(result.last_auto_merge_guard_context?.details.includes("configured_bot_blockers=0"), true);
   assert.equal(autoMergeCalls, 1);
+});
+
+test("handlePostTurnMergeAndCompletion accepts current-head Codex nitpick-only convergence as no-major evidence", async () => {
+  const fixture = await createSupervisorFixture();
+  const config = createConfig({
+    ...fixture.config,
+    codexConnectorAutoMergeEnabled: true,
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    localCiCommand: "npm run verify:pre-pr",
+  });
+  const issueNumber = 2433;
+  const headSha = "head-codex-nitpick-only";
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "ready_to_merge",
+        last_head_sha: headSha,
+        provider_success_observed_at: "2026-03-13T06:30:00Z",
+        provider_success_head_sha: headSha,
+        review_wait_started_at: "2026-03-13T06:20:00Z",
+        review_wait_head_sha: headSha,
+        blocked_reason: null,
+        last_error: null,
+        last_failure_context: null,
+        last_failure_signature: null,
+        latest_local_ci_result: {
+          outcome: "passed",
+          summary: "Configured local CI command passed before auto-merging PR #254.",
+          ran_at: "2026-03-13T06:32:00Z",
+          head_sha: headSha,
+          execution_mode: "shell",
+          command: "npm run verify:pre-pr",
+          failure_class: null,
+          remediation_target: null,
+        },
+      }),
+    },
+  };
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Auto-merge Codex nitpick-only convergence",
+    body: "",
+    createdAt: "2026-03-13T00:00:00Z",
+    updatedAt: "2026-03-13T00:00:00Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+  const pr: GitHubPullRequest = {
+    number: 254,
+    title: "Codex nitpick-only ready PR",
+    url: "https://example.test/pr/254",
+    state: "OPEN",
+    createdAt: "2026-03-13T06:20:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-249",
+    headRefOid: headSha,
+    mergedAt: null,
+    configuredBotCurrentHeadObservedAt: "2026-03-13T06:30:00Z",
+    configuredBotCurrentHeadObservationSource: "review_thread_comment",
+    configuredBotTopLevelReviewStrength: "nitpick_only",
+    currentHeadCiGreenAt: "2026-03-13T06:31:00Z",
+  };
+  const nitpickCodexThread: ReviewThread = {
+    id: "thread-codex-nitpick-only",
+    isResolved: false,
+    isOutdated: false,
+    path: "src/file.ts",
+    line: 12,
+    comments: {
+      nodes: [
+        {
+          id: "comment-codex-nitpick-only",
+          body: "P3: Nitpick: Preserve success styling for completed jobs.",
+          createdAt: "2026-03-13T06:30:00Z",
+          url: "https://example.test/pr/254#discussion_r1",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  };
+
+  let autoMergeCalls = 0;
+  const comments: Array<{ issueNumber: number; body: string }> = [];
+  const supervisor = new Supervisor(config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getPullRequest: async (prNumber: number) => {
+      assert.equal(prNumber, 254);
+      return pr;
+    },
+    getChecks: async (prNumber: number) => {
+      assert.equal(prNumber, 254);
+      return passingChecks("Minimal checks");
+    },
+    getUnresolvedReviewThreads: async (prNumber: number) => {
+      assert.equal(prNumber, 254);
+      return [nitpickCodexThread];
+    },
+    addIssueComment: async (commentIssueNumber: number, body: string) => {
+      comments.push({ issueNumber: commentIssueNumber, body });
+    },
+    enableAutoMerge: async (prNumber: number, mergeHeadSha: string) => {
+      assert.equal(prNumber, 254);
+      assert.equal(mergeHeadSha, headSha);
+      autoMergeCalls += 1;
+    },
+  };
+
+  const result = await (
+    supervisor as unknown as {
+      handlePostTurnMergeAndCompletion: (
+        state: SupervisorStateFile,
+        issue: GitHubIssue,
+        record: ReturnType<typeof createRecord>,
+        pr: GitHubPullRequest,
+        options: { dryRun: boolean },
+      ) => Promise<ReturnType<typeof createRecord>>;
+    }
+  ).handlePostTurnMergeAndCompletion(state, issue, state.issues[String(issueNumber)]!, pr, { dryRun: false });
+
+  assert.equal(result.state, "merging");
+  assert.equal(result.blocked_reason, null);
+  assert.equal(result.last_error, null);
+  assert.equal(result.last_failure_context, null);
+  assert.equal(result.last_failure_signature, null);
+  assert.equal(result.last_auto_merge_guard_context?.details.includes("codex_current_head_no_major=yes"), true);
+  assert.equal(result.last_auto_merge_guard_context?.details.includes("codex_current_head_merge_proof=connector_no_major"), true);
+  assert.equal(result.last_auto_merge_guard_context?.details.includes("configured_bot_blockers=0"), true);
+  assert.equal(result.last_auto_merge_guard_context?.details.includes("local_ci=passed head_sha=head-codex-nitpick-only"), true);
+  assert.equal(autoMergeCalls, 1);
+  assert.equal(comments.length, 1);
 });
 
 test("handlePostTurnMergeAndCompletion blocks Codex auto-merge on aggregate human review decisions", async () => {

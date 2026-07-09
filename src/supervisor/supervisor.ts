@@ -221,10 +221,13 @@ interface FinalAutoMergeGuardResult {
   refusal: FailureContext | null;
 }
 
-function buildAutoMergeEvidenceContext(details: string[], pr: GitHubPullRequest): FailureContext {
+function buildAutoMergeEvidenceContext(details: string[], pr: GitHubPullRequest, outcome: "passed" | "refused"): FailureContext {
   return {
     category: null,
-    summary: `Final auto-merge guard passed for PR #${pr.number}.`,
+    summary:
+      outcome === "passed"
+        ? `Final auto-merge guard passed for PR #${pr.number}.`
+        : `Final auto-merge guard evaluated PR #${pr.number}.`,
     signature: `auto-merge-ready:${pr.headRefOid}`,
     command: null,
     details,
@@ -348,14 +351,13 @@ function finalAutoMergeGuard(args: {
     localCiMissing ? "missing_current_head_local_ci_success" : null,
   ].filter((detail): detail is string => detail !== null);
 
-  const evidence = buildAutoMergeEvidenceContext(evidenceDetails, currentPr);
-
   if (details.length === 0) {
+    const evidence = buildAutoMergeEvidenceContext(evidenceDetails, currentPr, "passed");
     return { evidence, refusal: null };
   }
 
   return {
-    evidence,
+    evidence: buildAutoMergeEvidenceContext(evidenceDetails, currentPr, "refused"),
     refusal: buildAutoMergeRefusalContext(
       `Final auto-merge guard refused PR #${currentPr.number}.`,
       details,
