@@ -178,3 +178,65 @@ test("resolveCodexExecutionPolicy escalates only an unconsumed stable Codex Conn
     },
   );
 });
+
+test("resolveCodexExecutionPolicy escalates xhigh to max for GPT-5.6 Sol", () => {
+  const config = createConfig({
+    codexModel: "gpt-5.6-sol",
+    codexReasoningEffortByState: { implementing: "xhigh" },
+  });
+
+  assert.deepEqual(
+    resolveCodexExecutionPolicy(config, "implementing", {
+      repeated_failure_signature_count: 1,
+      blocked_verification_retry_count: 0,
+      timeout_retry_count: 0,
+    }),
+    {
+      model: "gpt-5.6-sol",
+      reasoningEffort: "max",
+    },
+  );
+});
+
+test("resolveCodexExecutionPolicy clamps max to each model family's highest supported effort", () => {
+  const maxConfig = {
+    codexReasoningEffortByState: { implementing: "max" as const },
+  };
+
+  assert.deepEqual(resolveCodexExecutionPolicy(createConfig(maxConfig), "implementing"), {
+    model: "gpt-5-codex",
+    reasoningEffort: "xhigh",
+    requestedReasoningEffort: "max",
+  });
+  assert.deepEqual(
+    resolveCodexExecutionPolicy(createConfig({ ...maxConfig, codexModel: "gpt-5-pro" }), "implementing"),
+    {
+      model: "gpt-5-pro",
+      reasoningEffort: "high",
+      requestedReasoningEffort: "max",
+    },
+  );
+});
+
+test("resolveCodexExecutionPolicy applies inherited host-model capabilities without forcing a model override", () => {
+  const config = createConfig({
+    codexModelStrategy: "inherit",
+    codexModel: undefined,
+    codexReasoningEffortByState: { implementing: "max" },
+  });
+
+  assert.deepEqual(
+    resolveCodexExecutionPolicy(config, "implementing", undefined, "supervisor", {
+      inheritedModel: "gpt-5.6-sol",
+    }),
+    {
+      model: null,
+      reasoningEffort: "max",
+    },
+  );
+  assert.deepEqual(resolveCodexExecutionPolicy(config, "implementing"), {
+    model: null,
+    reasoningEffort: "xhigh",
+    requestedReasoningEffort: "max",
+  });
+});

@@ -214,6 +214,40 @@ test("loadConfig leaves bare codexBinary values unresolved for PATH lookup", asy
   assert.equal(config.stateFile, path.join(tempDir, "state.json"));
 });
 
+test("loadConfig preserves max as a configured reasoning effort", async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
+  t.after(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+  const configPath = path.join(tempDir, "supervisor.config.json");
+
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      repoPath: ".",
+      repoSlug: "owner/repo",
+      defaultBranch: "main",
+      workspaceRoot: "./workspaces",
+      stateFile: "./state.json",
+      codexBinary: "codex",
+      branchPrefix: "codex/issue-",
+      codexReasoningEffortByState: {
+        implementing: "max",
+        repairing_ci: "xhigh",
+        planning: "unsupported",
+      },
+    }),
+    "utf8",
+  );
+
+  const config = loadConfig(configPath);
+
+  assert.deepEqual(config.codexReasoningEffortByState, {
+    implementing: "max",
+    repairing_ci: "xhigh",
+  });
+});
+
 test("loadConfigSummary reports missing required fields without throwing", async (t) => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
   t.after(async () => {

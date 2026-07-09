@@ -675,6 +675,9 @@ Practical rule of thumb:
 - use `inherit` unless you have a strong reason not to
 - leave `boundedRepairModelStrategy` unset unless you intentionally want smaller models for repair turns
 - reserve `xhigh` for escalation paths rather than using it everywhere
+- reasoning escalation follows `none < low < medium < high < xhigh < max`
+- `max` is currently emitted only for `gpt-5.6-sol`; unsupported models fall back to `xhigh`, while GPT-5 Pro remains capped at `high`
+- `status` and `doctor` report the requested and effective efforts when capability clamping changes the request
 
 ## Operator Dashboard
 

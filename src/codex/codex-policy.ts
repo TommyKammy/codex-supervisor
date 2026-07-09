@@ -4,7 +4,7 @@ import {
   isCodexConnectorStableSameFileChurn,
 } from "../codex-connector-review-churn";
 
-const REASONING_ORDER: ReasoningEffort[] = ["none", "low", "medium", "high", "xhigh"];
+const REASONING_ORDER: ReasoningEffort[] = ["none", "low", "medium", "high", "xhigh", "max"];
 
 const DEFAULT_REASONING_BY_STATE: Record<RunState, ReasoningEffort> = {
   queued: "low",
@@ -30,6 +30,11 @@ const DEFAULT_REASONING_BY_STATE: Record<RunState, ReasoningEffort> = {
 export interface CodexExecutionPolicy {
   model: string | null;
   reasoningEffort: ReasoningEffort;
+  requestedReasoningEffort?: ReasoningEffort;
+}
+
+export interface CodexExecutionPolicyContext {
+  inheritedModel?: string | null;
 }
 
 type CodexExecutionPolicyConfig = Pick<
@@ -76,7 +81,20 @@ function bumpReasoningEffort(effort: ReasoningEffort, steps = 1): ReasoningEffor
   return REASONING_ORDER[nextIndex] ?? effort;
 }
 
+function supportsMaxReasoningEffort(model: string | null): boolean {
+  const normalized = model?.trim().toLowerCase();
+  return normalized === "gpt-5.6-sol" || normalized?.startsWith("gpt-5.6-sol-") === true;
+}
+
 function clampReasoningEffortForModel(model: string | null, effort: ReasoningEffort): ReasoningEffort {
+  if (effort === "max") {
+    if (supportsMaxReasoningEffort(model)) {
+      return "max";
+    }
+
+    return model?.toLowerCase().includes("gpt-5-pro") ? "high" : "xhigh";
+  }
+
   if (!model) {
     return effort;
   }
@@ -182,13 +200,15 @@ export function resolveCodexExecutionPolicy(
     | "codex_connector_stable_churn_dossier_consumed_signature"
   > | null,
   target: CodexExecutionTarget = "supervisor",
+  context: CodexExecutionPolicyContext = {},
 ): CodexExecutionPolicy {
   const model = resolveConfiguredModel(config, state, target);
   const requestedEffort = resolveRequestedReasoningEffort(config, state, record);
-  const reasoningEffort = clampReasoningEffortForModel(model, requestedEffort);
+  const reasoningEffort = clampReasoningEffortForModel(model ?? context.inheritedModel ?? null, requestedEffort);
   return {
     model,
     reasoningEffort,
+    ...(reasoningEffort === requestedEffort ? {} : { requestedReasoningEffort: requestedEffort }),
   };
 }
 

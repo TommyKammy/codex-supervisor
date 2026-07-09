@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { runCommand } from "../core/command";
 import { buildCodexConfigOverrideArgs, buildCodexExecutionSafetyArgs, resolveCodexExecutionPolicy } from "../codex/codex-policy";
+import { resolveHostCodexDefaultModel } from "../codex/codex-model-policy";
 import { loadRelevantExternalReviewMissPatterns, type ExternalReviewMissPattern } from "../external-review/external-review-misses";
 import { reviewDir } from "./artifacts";
 import { buildRolePrompt, buildVerifierPrompt, parseRoleFooter, parseVerifierFooter } from "./prompt";
@@ -35,8 +36,15 @@ export type LocalReviewTurnExecutor = (args: LocalReviewTurnRequest) => Promise<
 export async function runCodexReviewTurn(args: LocalReviewTurnRequest): Promise<LocalReviewTurnResult> {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-review-"));
   const messageFile = path.join(tempDir, args.outputFileName);
+  const hostDefault = await resolveHostCodexDefaultModel();
   const overrideArgs = buildCodexConfigOverrideArgs(
-    resolveCodexExecutionPolicy(args.config, "local_review", undefined, args.executionTarget),
+    resolveCodexExecutionPolicy(
+      args.config,
+      "local_review",
+      undefined,
+      args.executionTarget,
+      { inheritedModel: hostDefault.model },
+    ),
   );
   const executionSafetyArgs = buildCodexExecutionSafetyArgs(args.config);
   const result = await runCommand(
