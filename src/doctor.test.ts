@@ -110,6 +110,52 @@ test("diagnoseSupervisorHost reports representative auth, state, and workspace f
   );
 });
 
+test("diagnoseSupervisorHost resolves bare Codex commands on PATH and reports missing commands", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-doctor-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = path.join(root, "repo");
+  const workspaceRoot = path.join(root, "workspaces");
+  const stateFile = path.join(root, "state.json");
+  await fs.mkdir(repoPath, { recursive: true });
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  execFileSync("git", ["init", "-b", "main"], { cwd: repoPath });
+
+  const diagnose = (codexBinary: string) => diagnoseSupervisorHost({
+    config: createConfig({
+      repoPath,
+      workspaceRoot,
+      stateFile,
+      codexBinary,
+    }),
+    authStatus: async () => ({ ok: true, message: null }),
+    loadState: async () => ({ activeIssueNumber: null, issues: {} }),
+    github: {
+      getCandidateDiscoveryDiagnostics: async () => ({
+        fetchWindow: 250,
+        observedMatchingOpenIssues: 0,
+        truncated: false,
+      }),
+    },
+  });
+
+  const resolved = await diagnose("node");
+  const resolvedCheck = resolved.checks.find((check) => check.name === "codex_cli");
+  assert.equal(resolvedCheck?.status, "pass");
+  assert.match(resolvedCheck?.summary ?? "", /^Resolved node on PATH: /u);
+
+  const missingCommand = `codex-supervisor-missing-command-${process.pid}`;
+  const missing = await diagnose(missingCommand);
+  const missingCheck = missing.checks.find((check) => check.name === "codex_cli");
+  assert.equal(missingCheck?.status, "fail");
+  assert.equal(
+    missingCheck?.summary,
+    `Configured Codex binary was not found on PATH: ${missingCommand}`,
+  );
+});
+
 test("renderDoctorReport surfaces explicit release publication gate posture", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-doctor-"));
   t.after(async () => {
