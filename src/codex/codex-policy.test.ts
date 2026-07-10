@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolveCodexExecutionPolicy } from "./codex-policy";
+import { buildCodexConfigOverrideArgs, resolveCodexExecutionPolicy } from "./codex-policy";
 import { type SupervisorConfig } from "../core/types";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
@@ -274,6 +274,41 @@ test("resolveCodexExecutionPolicy clamps every unsupported effort to the live ca
   assert.equal(resolveCodexExecutionPolicy(maxConfig, "implementing", undefined, "supervisor", {
     reasoningLevelsByModel: capabilities,
   }).reasoningEffort, "xhigh");
+});
+
+test("resolveCodexExecutionPolicy lets live catalogs override legacy Pro clamps", () => {
+  const policy = resolveCodexExecutionPolicy(
+    createConfig({
+      codexModel: "gpt-5-pro",
+      codexReasoningEffortByState: { implementing: "xhigh" },
+    }),
+    "implementing",
+    undefined,
+    "supervisor",
+    { reasoningLevelsByModel: new Map([["gpt-5-pro", new Set(["high", "xhigh"] as const)]]) },
+  );
+
+  assert.deepEqual(policy, { model: "gpt-5-pro", reasoningEffort: "xhigh" });
+});
+
+test("resolveCodexExecutionPolicy suppresses reasoning overrides for empty live capability sets", () => {
+  const policy = resolveCodexExecutionPolicy(
+    createConfig({
+      codexModel: "catalog-model",
+      codexReasoningEffortByState: { implementing: "high" },
+    }),
+    "implementing",
+    undefined,
+    "supervisor",
+    { reasoningLevelsByModel: new Map([["catalog-model", new Set()]]) },
+  );
+
+  assert.deepEqual(policy, {
+    model: "catalog-model",
+    reasoningEffort: null,
+    requestedReasoningEffort: "high",
+  });
+  assert.deepEqual(buildCodexConfigOverrideArgs(policy), ["-m", "catalog-model"]);
 });
 
 test("resolveCodexExecutionPolicy applies inherited host-model capabilities without forcing a model override", () => {

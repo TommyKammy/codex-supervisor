@@ -165,7 +165,7 @@ export interface LocalReviewGuardrailProvenance {
 export interface LocalReviewExecutionRouting {
   target: CodexExecutionTarget;
   model: string | null;
-  reasoningEffort: ReasoningEffort;
+  reasoningEffort: ReasoningEffort | null;
 }
 
 export interface LocalReviewArtifact {

@@ -29,7 +29,7 @@ const DEFAULT_REASONING_BY_STATE: Record<RunState, ReasoningEffort> = {
 
 export interface CodexExecutionPolicy {
   model: string | null;
-  reasoningEffort: ReasoningEffort;
+  reasoningEffort: ReasoningEffort | null;
   requestedReasoningEffort?: ReasoningEffort;
 }
 
@@ -89,12 +89,8 @@ function reasoningEffortAtLeast(effort: ReasoningEffort, minimum: ReasoningEffor
 
 function supportsMaxReasoningEffort(
   model: string | null,
-  reasoningLevelsByModel?: ReadonlyMap<string, ReadonlySet<ReasoningEffort>>,
 ): boolean {
   const normalized = model?.trim().toLowerCase();
-  if (normalized && reasoningLevelsByModel?.has(normalized)) {
-    return reasoningLevelsByModel.get(normalized)?.has("max") === true;
-  }
   return normalized === "gpt-5.6-sol" || normalized?.startsWith("gpt-5.6-sol-") === true;
 }
 
@@ -102,10 +98,28 @@ function clampReasoningEffortForModel(
   model: string | null,
   effort: ReasoningEffort,
   reasoningLevelsByModel?: ReadonlyMap<string, ReadonlySet<ReasoningEffort>>,
-): ReasoningEffort {
+): ReasoningEffort | null {
+  const normalized = model?.trim().toLowerCase();
+  const supported = normalized ? reasoningLevelsByModel?.get(normalized) : undefined;
+  if (supported) {
+    if (supported.size === 0) return null;
+    if (supported.has(effort)) return effort;
+
+    const requestedIndex = REASONING_ORDER.indexOf(effort);
+    for (let index = requestedIndex - 1; index >= 0; index -= 1) {
+      const candidate = REASONING_ORDER[index];
+      if (candidate && supported.has(candidate)) return candidate;
+    }
+    for (let index = requestedIndex + 1; index < REASONING_ORDER.length; index += 1) {
+      const candidate = REASONING_ORDER[index];
+      if (candidate && supported.has(candidate)) return candidate;
+    }
+    return null;
+  }
+
   let clamped = effort;
   if (effort === "max") {
-    if (supportsMaxReasoningEffort(model, reasoningLevelsByModel)) {
+    if (supportsMaxReasoningEffort(model)) {
       clamped = "max";
     } else {
       clamped = model?.toLowerCase().includes("gpt-5-pro") ? "high" : "xhigh";
@@ -124,21 +138,6 @@ function clampReasoningEffortForModel(
     }
   }
 
-  const normalized = model?.trim().toLowerCase();
-  const supported = normalized ? reasoningLevelsByModel?.get(normalized) : undefined;
-  if (!supported || supported.size === 0 || supported.has(clamped)) {
-    return clamped;
-  }
-
-  const requestedIndex = REASONING_ORDER.indexOf(clamped);
-  for (let index = requestedIndex - 1; index >= 0; index -= 1) {
-    const candidate = REASONING_ORDER[index];
-    if (candidate && supported.has(candidate)) return candidate;
-  }
-  for (let index = requestedIndex + 1; index < REASONING_ORDER.length; index += 1) {
-    const candidate = REASONING_ORDER[index];
-    if (candidate && supported.has(candidate)) return candidate;
-  }
   return clamped;
 }
 
@@ -246,7 +245,9 @@ export function buildCodexConfigOverrideArgs(policy: CodexExecutionPolicy): stri
     args.push("-m", policy.model);
   }
 
-  args.push("-c", `model_reasoning_effort="${policy.reasoningEffort}"`);
+  if (policy.reasoningEffort !== null) {
+    args.push("-c", `model_reasoning_effort="${policy.reasoningEffort}"`);
+  }
   return args;
 }
 

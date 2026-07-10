@@ -3,6 +3,36 @@ import test from "node:test";
 import { finalizeLocalReview } from "./finalize";
 import { createConfig, createDetectedRoles } from "./test-helpers";
 
+test("finalizeLocalReview records catalog-aware reasoning for generated artifacts", () => {
+  const result = finalizeLocalReview({
+    config: createConfig({
+      localReviewModelStrategy: "fixed",
+      localReviewModel: "gpt-5.6-terra",
+      codexReasoningEffortByState: { local_review: "max" },
+    }),
+    issueNumber: 38,
+    prNumber: 12,
+    branch: "codex/issue-38",
+    headSha: "catalog123456",
+    roleResults: [{
+      role: "reviewer",
+      summary: "No findings.",
+      recommendation: "ready",
+      degraded: false,
+      exitCode: 0,
+      rawOutput: "review raw output",
+      findings: [],
+    }],
+    verifierReport: null,
+    ranAt: "2026-07-11T00:00:00Z",
+    reasoningLevelsByModel: new Map([
+      ["gpt-5.6-terra", new Set(["high", "xhigh", "max"] as const)],
+    ]),
+  });
+
+  assert.equal(result.artifact.roleReports[0]?.routing.reasoningEffort, "max");
+});
+
 test("finalizeLocalReview keeps raw high-severity findings separate from dismissed verifier results", () => {
   const result = finalizeLocalReview({
     config: createConfig({ localReviewConfidenceThreshold: 0.7 }),

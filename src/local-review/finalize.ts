@@ -1,6 +1,6 @@
 import { type LocalReviewRoleSelection } from "../review-role-detector";
 import { resolveCodexExecutionPolicy } from "../codex/codex-policy";
-import { type CodexExecutionTarget } from "../core/types";
+import { type CodexExecutionTarget, type ReasoningEffort } from "../core/types";
 import { type SupervisorConfig } from "../core/types";
 import { truncate } from "../core/utils";
 import { findingMeetsReviewerThreshold, reviewerTypeForRole, thresholdsForReviewerType } from "./thresholds";
@@ -233,13 +233,17 @@ function resolveLocalReviewExecutionRouting(args: {
   >;
   target: CodexExecutionTarget;
   inheritedModel?: string | null;
+  reasoningLevelsByModel?: ReadonlyMap<string, ReadonlySet<ReasoningEffort>>;
 }): LocalReviewExecutionRouting {
   const policy = resolveCodexExecutionPolicy(
     args.config,
     "local_review",
     undefined,
     args.target,
-    { inheritedModel: args.inheritedModel },
+    {
+      inheritedModel: args.inheritedModel,
+      reasoningLevelsByModel: args.reasoningLevelsByModel,
+    },
   );
   return {
     target: args.target,
@@ -270,6 +274,7 @@ export function finalizeLocalReview(args: {
   ranAt: string;
   guardrailProvenance?: LocalReviewGuardrailProvenance;
   inheritedModel?: string | null;
+  reasoningLevelsByModel?: ReadonlyMap<string, ReadonlySet<ReasoningEffort>>;
 }): FinalizedLocalReview {
   const roles = args.roleResults.map((result) => result.role);
   const allFindings = args.roleResults.flatMap((result) => result.findings);
@@ -284,6 +289,7 @@ export function finalizeLocalReview(args: {
       config: args.config,
       target: localReviewExecutionTargetForRole(reviewerTypeArgs),
       inheritedModel: args.inheritedModel,
+      reasoningLevelsByModel: args.reasoningLevelsByModel,
     });
     const actionableFindingsCount = result.findings.filter((finding) =>
       findingMeetsReviewerThreshold({
@@ -388,6 +394,7 @@ export function finalizeLocalReview(args: {
             config: args.config,
             target: "local_review_verifier",
             inheritedModel: args.inheritedModel,
+            reasoningLevelsByModel: args.reasoningLevelsByModel,
           }),
           exitCode: args.verifierReport.exitCode,
           degraded: args.verifierReport.degraded,

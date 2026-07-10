@@ -32,8 +32,8 @@ export interface CodexModelPolicySnapshot {
   activeRoute: CodexModelRouteResolution & {
     state: RunState;
     target: CodexExecutionTarget;
-    requestedReasoningEffort: ReasoningEffort;
-    reasoningEffort: ReasoningEffort;
+    requestedReasoningEffort: ReasoningEffort | null;
+    reasoningEffort: ReasoningEffort | null;
   };
 }
 
@@ -271,7 +271,7 @@ export function renderDoctorCodexModelPolicyLines(snapshot: CodexModelPolicySnap
     `doctor_codex_model_policy default=${summarizeRoute(snapshot.defaultRoute)}`,
     `doctor_codex_route_overrides repair=${summarizeRoute(snapshot.boundedRepairRoute)} local_review=${summarizeRoute(snapshot.localReviewRoute)}`,
     `doctor_codex_host_default model=${snapshot.hostDefault.model ?? "unresolved"} source=${snapshot.hostDefault.source ?? "unresolved"}`,
-    `doctor_codex_reasoning active=${snapshot.activeRoute.target} requested=${snapshot.activeRoute.requestedReasoningEffort} effective=${snapshot.activeRoute.reasoningEffort} capability_source=${snapshot.capabilities.source} fallback_reason=${snapshot.capabilities.fallbackReason ?? "none"}`,
+    `doctor_codex_reasoning active=${snapshot.activeRoute.target} requested=${snapshot.activeRoute.requestedReasoningEffort ?? "default"} effective=${snapshot.activeRoute.reasoningEffort ?? "default"} capability_source=${snapshot.capabilities.source} fallback_reason=${snapshot.capabilities.fallbackReason ?? "none"}`,
   ];
 }
 
@@ -280,7 +280,7 @@ export function renderStatusCodexModelPolicyLines(snapshot: CodexModelPolicySnap
     ? ""
     : ` requested_reasoning=${snapshot.activeRoute.requestedReasoningEffort}`;
   return [
-    `codex_execution_policy active=${snapshot.activeRoute.target}:${summarizeRoute(snapshot.activeRoute)} reasoning=${snapshot.activeRoute.reasoningEffort}${requestedSuffix} capability_source=${snapshot.capabilities.source} fallback_reason=${snapshot.capabilities.fallbackReason ?? "none"}`,
+    `codex_execution_policy active=${snapshot.activeRoute.target}:${summarizeRoute(snapshot.activeRoute)} reasoning=${snapshot.activeRoute.reasoningEffort ?? "default"}${requestedSuffix} capability_source=${snapshot.capabilities.source} fallback_reason=${snapshot.capabilities.fallbackReason ?? "none"}`,
     `codex_route_overrides repair=${summarizeRoute(snapshot.boundedRepairRoute)} local_review=${summarizeRoute(snapshot.localReviewRoute)}`,
   ];
 }
