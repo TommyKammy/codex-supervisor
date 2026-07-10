@@ -474,7 +474,7 @@ test("renderStatusCodexModelPolicyLines reports inherited host defaults and over
   );
 
   assert.deepEqual(lines, [
-    "codex_execution_policy active=supervisor:inherit->gpt-5.4@inherited_host_default reasoning=xhigh requested_reasoning=max",
+    "codex_execution_policy active=supervisor:inherit->gpt-5.4@inherited_host_default reasoning=xhigh requested_reasoning=max capability_source=fallback fallback_reason=catalog_probe_unavailable",
     "codex_route_overrides repair=alias:gpt-5.4-mini@bounded_repair_override local_review=alias:local-review-fast@local_review_override",
   ]);
 });
@@ -512,7 +512,7 @@ test("buildCodexModelPolicySnapshot keeps the default route independent from act
   });
   assert.equal(
     renderStatusCodexModelPolicyLines(snapshot)[0],
-    "codex_execution_policy active=supervisor:alias:gpt-5.4-mini@bounded_repair_override reasoning=medium",
+    "codex_execution_policy active=supervisor:alias:gpt-5.4-mini@bounded_repair_override reasoning=medium capability_source=fallback fallback_reason=catalog_probe_unavailable",
   );
 });
 
@@ -544,7 +544,7 @@ test("buildCodexModelPolicySnapshot uses the local-review route for active local
   );
 
   assert.deepEqual(lines, [
-    "codex_execution_policy active=local_review_generic:alias:local-review-fast@local_review_override reasoning=low",
+    "codex_execution_policy active=local_review_generic:alias:local-review-fast@local_review_override reasoning=low capability_source=fallback fallback_reason=catalog_probe_unavailable",
     "codex_route_overrides repair=default_route(gpt-5.4) local_review=alias:local-review-fast@local_review_override",
   ]);
 });

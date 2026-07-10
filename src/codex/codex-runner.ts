@@ -4,6 +4,7 @@ import path from "node:path";
 import { runCommand } from "../core/command";
 import { buildCodexConfigOverrideArgs, buildCodexExecutionSafetyArgs, resolveCodexExecutionPolicy } from "./codex-policy";
 import { resolveHostCodexDefaultModel } from "./codex-model-policy";
+import { resolveCodexModelCapabilities } from "./codex-model-capabilities";
 import { CodexTurnResult, IssueRunRecord, RunState, SupervisorConfig } from "../core/types";
 
 function extractSessionId(stdout: string, sessionId?: string | null): string | null {
@@ -46,9 +47,15 @@ export async function runCodexTurn(
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-"));
   const messageFile = path.join(tempDir, "last-message.txt");
   try {
-    const hostDefault = await resolveHostCodexDefaultModel();
+    const [hostDefault, capabilities] = await Promise.all([
+      resolveHostCodexDefaultModel(),
+      resolveCodexModelCapabilities(config.codexBinary),
+    ]);
     const overrideArgs = buildCodexConfigOverrideArgs(
-      resolveCodexExecutionPolicy(config, state, record, "supervisor", { inheritedModel: hostDefault.model }),
+      resolveCodexExecutionPolicy(config, state, record, "supervisor", {
+        inheritedModel: hostDefault.model,
+        reasoningLevelsByModel: capabilities.reasoningLevelsByModel,
+      }),
     );
     const executionSafetyArgs = buildCodexExecutionSafetyArgs(config);
     const commandArgs = sessionId

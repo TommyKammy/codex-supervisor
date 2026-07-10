@@ -35,6 +35,7 @@ export interface CodexExecutionPolicy {
 
 export interface CodexExecutionPolicyContext {
   inheritedModel?: string | null;
+  reasoningLevelsByModel?: ReadonlyMap<string, ReadonlySet<ReasoningEffort>>;
 }
 
 type CodexExecutionPolicyConfig = Pick<
@@ -86,14 +87,24 @@ function reasoningEffortAtLeast(effort: ReasoningEffort, minimum: ReasoningEffor
   return REASONING_ORDER[index] ?? effort;
 }
 
-function supportsMaxReasoningEffort(model: string | null): boolean {
+function supportsMaxReasoningEffort(
+  model: string | null,
+  reasoningLevelsByModel?: ReadonlyMap<string, ReadonlySet<ReasoningEffort>>,
+): boolean {
   const normalized = model?.trim().toLowerCase();
+  if (normalized && reasoningLevelsByModel?.has(normalized)) {
+    return reasoningLevelsByModel.get(normalized)?.has("max") === true;
+  }
   return normalized === "gpt-5.6-sol" || normalized?.startsWith("gpt-5.6-sol-") === true;
 }
 
-function clampReasoningEffortForModel(model: string | null, effort: ReasoningEffort): ReasoningEffort {
+function clampReasoningEffortForModel(
+  model: string | null,
+  effort: ReasoningEffort,
+  reasoningLevelsByModel?: ReadonlyMap<string, ReadonlySet<ReasoningEffort>>,
+): ReasoningEffort {
   if (effort === "max") {
-    if (supportsMaxReasoningEffort(model)) {
+    if (supportsMaxReasoningEffort(model, reasoningLevelsByModel)) {
       return "max";
     }
 
@@ -207,7 +218,11 @@ export function resolveCodexExecutionPolicy(
 ): CodexExecutionPolicy {
   const model = resolveConfiguredModel(config, state, target);
   const requestedEffort = resolveRequestedReasoningEffort(config, state, record);
-  const reasoningEffort = clampReasoningEffortForModel(model ?? context.inheritedModel ?? null, requestedEffort);
+  const reasoningEffort = clampReasoningEffortForModel(
+    model ?? context.inheritedModel ?? null,
+    requestedEffort,
+    context.reasoningLevelsByModel,
+  );
   return {
     model,
     reasoningEffort,

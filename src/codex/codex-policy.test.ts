@@ -238,6 +238,19 @@ test("resolveCodexExecutionPolicy clamps max to each model family's highest supp
   );
 });
 
+test("resolveCodexExecutionPolicy allows catalog-backed Terra and Luna routes to emit max", () => {
+  const capabilities = new Map([
+    ["gpt-5.6-terra", new Set(["high", "xhigh", "max"] as const)],
+    ["gpt-5.6-luna", new Set(["high", "xhigh", "max"] as const)],
+  ]);
+  for (const model of capabilities.keys()) {
+    const config = createConfig({ codexModel: model, codexReasoningEffortByState: { implementing: "max" } });
+    assert.equal(resolveCodexExecutionPolicy(config, "implementing", undefined, "supervisor", {
+      reasoningLevelsByModel: capabilities,
+    }).reasoningEffort, "max");
+  }
+});
+
 test("resolveCodexExecutionPolicy applies inherited host-model capabilities without forcing a model override", () => {
   const config = createConfig({
     codexModelStrategy: "inherit",

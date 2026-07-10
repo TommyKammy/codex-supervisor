@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { resolveCodexExecutionPolicy } from "./codex-policy";
+import { CodexModelCapabilities, resolveCodexModelCapabilities } from "./codex-model-capabilities";
 import { CodexExecutionTarget, CodexModelStrategy, IssueRunRecord, ReasoningEffort, RunState, SupervisorConfig } from "../core/types";
 
 export interface HostCodexDefaultModelResolution {
@@ -23,6 +24,7 @@ interface CodexModelRouteResolution {
 }
 
 export interface CodexModelPolicySnapshot {
+  capabilities: Pick<CodexModelCapabilities, "source" | "fallbackReason">;
   hostDefault: HostCodexDefaultModelResolution;
   defaultRoute: CodexModelRouteResolution;
   boundedRepairRoute: CodexModelRouteResolution;
@@ -184,6 +186,7 @@ export async function buildCodexModelPolicySnapshot(args: {
     | "localReviewModel"
     | "codexReasoningEffortByState"
     | "codexReasoningEscalateOnRepeatedFailure"
+    | "codexBinary"
   >;
   activeState: RunState;
   activeRecord?: Pick<
@@ -191,7 +194,10 @@ export async function buildCodexModelPolicySnapshot(args: {
     "repeated_failure_signature_count" | "blocked_verification_retry_count" | "timeout_retry_count"
   > | null;
 }): Promise<CodexModelPolicySnapshot> {
-  const hostDefault = await resolveHostCodexDefaultModel();
+  const [hostDefault, capabilities] = await Promise.all([
+    resolveHostCodexDefaultModel(),
+    resolveCodexModelCapabilities(args.config.codexBinary),
+  ]);
   const defaultRoute: CodexModelRouteResolution = {
     strategy: args.config.codexModelStrategy,
     configuredModel: args.config.codexModel ?? null,
@@ -232,7 +238,10 @@ export async function buildCodexModelPolicySnapshot(args: {
     args.activeState,
     args.activeRecord,
     activeTarget,
-    { inheritedModel: hostDefault.model },
+    {
+      inheritedModel: hostDefault.model,
+      reasoningLevelsByModel: capabilities.reasoningLevelsByModel,
+    },
   );
   const activeRoute = {
     ...activeBaseRoute,
@@ -243,6 +252,7 @@ export async function buildCodexModelPolicySnapshot(args: {
   };
 
   return {
+    capabilities: { source: capabilities.source, fallbackReason: capabilities.fallbackReason },
     hostDefault,
     defaultRoute,
     boundedRepairRoute,
@@ -256,7 +266,7 @@ export function renderDoctorCodexModelPolicyLines(snapshot: CodexModelPolicySnap
     `doctor_codex_model_policy default=${summarizeRoute(snapshot.defaultRoute)}`,
     `doctor_codex_route_overrides repair=${summarizeRoute(snapshot.boundedRepairRoute)} local_review=${summarizeRoute(snapshot.localReviewRoute)}`,
     `doctor_codex_host_default model=${snapshot.hostDefault.model ?? "unresolved"} source=${snapshot.hostDefault.source ?? "unresolved"}`,
-    `doctor_codex_reasoning active=${snapshot.activeRoute.target} requested=${snapshot.activeRoute.requestedReasoningEffort} effective=${snapshot.activeRoute.reasoningEffort}`,
+    `doctor_codex_reasoning active=${snapshot.activeRoute.target} requested=${snapshot.activeRoute.requestedReasoningEffort} effective=${snapshot.activeRoute.reasoningEffort} capability_source=${snapshot.capabilities.source} fallback_reason=${snapshot.capabilities.fallbackReason ?? "none"}`,
   ];
 }
 
@@ -265,7 +275,7 @@ export function renderStatusCodexModelPolicyLines(snapshot: CodexModelPolicySnap
     ? ""
     : ` requested_reasoning=${snapshot.activeRoute.requestedReasoningEffort}`;
   return [
-    `codex_execution_policy active=${snapshot.activeRoute.target}:${summarizeRoute(snapshot.activeRoute)} reasoning=${snapshot.activeRoute.reasoningEffort}${requestedSuffix}`,
+    `codex_execution_policy active=${snapshot.activeRoute.target}:${summarizeRoute(snapshot.activeRoute)} reasoning=${snapshot.activeRoute.reasoningEffort}${requestedSuffix} capability_source=${snapshot.capabilities.source} fallback_reason=${snapshot.capabilities.fallbackReason ?? "none"}`,
     `codex_route_overrides repair=${summarizeRoute(snapshot.boundedRepairRoute)} local_review=${summarizeRoute(snapshot.localReviewRoute)}`,
   ];
 }
