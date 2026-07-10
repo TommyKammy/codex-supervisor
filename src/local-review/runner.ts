@@ -39,7 +39,7 @@ export async function runCodexReviewTurn(args: LocalReviewTurnRequest): Promise<
   const messageFile = path.join(tempDir, args.outputFileName);
   const [hostDefault, capabilities] = await Promise.all([
     resolveHostCodexDefaultModel(),
-    resolveCodexModelCapabilities(args.config.codexBinary),
+    resolveCodexModelCapabilities(args.config.codexBinary, args.workspacePath),
   ]);
   const overrideArgs = buildCodexConfigOverrideArgs(
     resolveCodexExecutionPolicy(

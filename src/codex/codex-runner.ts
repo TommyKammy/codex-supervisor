@@ -49,7 +49,7 @@ export async function runCodexTurn(
   try {
     const [hostDefault, capabilities] = await Promise.all([
       resolveHostCodexDefaultModel(),
-      resolveCodexModelCapabilities(config.codexBinary),
+      resolveCodexModelCapabilities(config.codexBinary, workspacePath),
     ]);
     const overrideArgs = buildCodexConfigOverrideArgs(
       resolveCodexExecutionPolicy(config, state, record, "supervisor", {

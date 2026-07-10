@@ -103,33 +103,43 @@ function clampReasoningEffortForModel(
   effort: ReasoningEffort,
   reasoningLevelsByModel?: ReadonlyMap<string, ReadonlySet<ReasoningEffort>>,
 ): ReasoningEffort {
+  let clamped = effort;
   if (effort === "max") {
     if (supportsMaxReasoningEffort(model, reasoningLevelsByModel)) {
-      return "max";
+      clamped = "max";
+    } else {
+      clamped = model?.toLowerCase().includes("gpt-5-pro") ? "high" : "xhigh";
     }
-
-    return model?.toLowerCase().includes("gpt-5-pro") ? "high" : "xhigh";
+  } else if (model) {
+    const normalized = model.toLowerCase();
+    if (normalized.includes("gpt-5-pro")) {
+      clamped = effort === "xhigh" ? "high" : effort;
+    } else if (
+      normalized.includes("gpt-5.3-codex") ||
+      normalized.includes("gpt-5.2-codex") ||
+      normalized.includes("gpt-5.1-codex") ||
+      normalized.includes("codex")
+    ) {
+      clamped = effort === "none" ? "low" : effort;
+    }
   }
 
-  if (!model) {
-    return effort;
+  const normalized = model?.trim().toLowerCase();
+  const supported = normalized ? reasoningLevelsByModel?.get(normalized) : undefined;
+  if (!supported || supported.size === 0 || supported.has(clamped)) {
+    return clamped;
   }
 
-  const normalized = model.toLowerCase();
-  if (normalized.includes("gpt-5-pro")) {
-    return effort === "xhigh" ? "high" : effort;
+  const requestedIndex = REASONING_ORDER.indexOf(clamped);
+  for (let index = requestedIndex - 1; index >= 0; index -= 1) {
+    const candidate = REASONING_ORDER[index];
+    if (candidate && supported.has(candidate)) return candidate;
   }
-
-  if (
-    normalized.includes("gpt-5.3-codex") ||
-    normalized.includes("gpt-5.2-codex") ||
-    normalized.includes("gpt-5.1-codex") ||
-    normalized.includes("codex")
-  ) {
-    return effort === "none" ? "low" : effort;
+  for (let index = requestedIndex + 1; index < REASONING_ORDER.length; index += 1) {
+    const candidate = REASONING_ORDER[index];
+    if (candidate && supported.has(candidate)) return candidate;
   }
-
-  return effort;
+  return clamped;
 }
 
 function resolveRequestedReasoningEffort(

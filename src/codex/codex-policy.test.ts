@@ -251,6 +251,31 @@ test("resolveCodexExecutionPolicy allows catalog-backed Terra and Luna routes to
   }
 });
 
+test("resolveCodexExecutionPolicy clamps every unsupported effort to the live catalog", () => {
+  const capabilities = new Map([
+    ["gpt-5.6-terra", new Set(["low", "medium", "high", "xhigh"] as const)],
+  ]);
+  const noneConfig = createConfig({
+    codexModel: "gpt-5.6-terra",
+    codexReasoningEffortByState: { implementing: "none" },
+  });
+  assert.deepEqual(resolveCodexExecutionPolicy(noneConfig, "implementing", undefined, "supervisor", {
+    reasoningLevelsByModel: capabilities,
+  }), {
+    model: "gpt-5.6-terra",
+    reasoningEffort: "low",
+    requestedReasoningEffort: "none",
+  });
+
+  const maxConfig = createConfig({
+    codexModel: "gpt-5.6-terra",
+    codexReasoningEffortByState: { implementing: "max" },
+  });
+  assert.equal(resolveCodexExecutionPolicy(maxConfig, "implementing", undefined, "supervisor", {
+    reasoningLevelsByModel: capabilities,
+  }).reasoningEffort, "xhigh");
+});
+
 test("resolveCodexExecutionPolicy applies inherited host-model capabilities without forcing a model override", () => {
   const config = createConfig({
     codexModelStrategy: "inherit",

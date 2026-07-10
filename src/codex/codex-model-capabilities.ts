@@ -1,3 +1,4 @@
+import path from "node:path";
 import { CommandExecutionError, runCommand } from "../core/command";
 import { ReasoningEffort } from "../core/types";
 
@@ -26,6 +27,7 @@ function parseReasoningLevel(value: unknown): ReasoningEffort | null | undefined
       ? (value as { effort?: unknown }).effort
       : null;
   if (typeof candidate !== "string") return null;
+  if (candidate === "ultra") return "max";
   return REASONING_LEVELS.has(candidate as ReasoningEffort) ? candidate as ReasoningEffort : undefined;
 }
 
@@ -61,9 +63,14 @@ export function parseCodexModelCatalog(raw: string): ReadonlyMap<string, Readonl
 export async function probeCodexModelCapabilities(
   codexBinary: string,
   timeoutMs = 5_000,
+  cwd?: string,
 ): Promise<CodexModelCapabilities> {
   try {
-    const result = await runCommand(codexBinary, ["debug", "models"], { timeoutMs });
+    const result = await runCommand(codexBinary, ["debug", "models"], {
+      cwd,
+      timeoutMs,
+      stdoutCaptureLimitBytes: null,
+    });
     const models = parseCodexModelCatalog(result.stdout);
     return models
       ? { reasoningLevelsByModel: models, source: "live_catalog", fallbackReason: null }
@@ -76,11 +83,15 @@ export async function probeCodexModelCapabilities(
   }
 }
 
-export function resolveCodexModelCapabilities(codexBinary: string): Promise<CodexModelCapabilities> {
-  const existing = cache.get(codexBinary);
+export function resolveCodexModelCapabilities(
+  codexBinary: string,
+  cwd = process.cwd(),
+): Promise<CodexModelCapabilities> {
+  const cacheKey = JSON.stringify([codexBinary, path.resolve(cwd)]);
+  const existing = cache.get(cacheKey);
   if (existing) return existing;
-  const pending = probeCodexModelCapabilities(codexBinary);
-  cache.set(codexBinary, pending);
+  const pending = probeCodexModelCapabilities(codexBinary, 5_000, cwd);
+  cache.set(cacheKey, pending);
   return pending;
 }
 
