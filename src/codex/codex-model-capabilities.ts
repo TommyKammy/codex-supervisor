@@ -92,6 +92,11 @@ export function resolveCodexModelCapabilities(
   if (existing) return existing;
   const pending = probeCodexModelCapabilities(codexBinary, 5_000, cwd);
   cache.set(cacheKey, pending);
+  void pending.then((result) => {
+    if (result.source === "fallback" && cache.get(cacheKey) === pending) {
+      cache.delete(cacheKey);
+    }
+  });
   return pending;
 }
 

@@ -859,13 +859,6 @@ export async function diagnoseSupervisorHost(args: DiagnoseSupervisorHostArgs): 
   const candidateDiscoveryWarning = formatCandidateDiscoveryWarningDetail(
     await github.getCandidateDiscoveryDiagnostics().catch(() => null),
   );
-  const codexModelPolicyLines = renderDoctorCodexModelPolicyLines(
-    await buildCodexModelPolicySnapshot({
-      config: args.config,
-      activeState: "reproducing",
-      activeRecord: null,
-    }),
-  );
   let state: SupervisorStateFile | null = null;
   let finalRawDiagnostics = rawDiagnostics;
   try {
@@ -875,6 +868,17 @@ export async function diagnoseSupervisorHost(args: DiagnoseSupervisorHostArgs): 
       withReconciliationBacklogStateReadFailure(rawDiagnostics.checks, args.config, error),
     );
   }
+
+  const activeRecord = state?.activeIssueNumber === null || state?.activeIssueNumber === undefined
+    ? null
+    : state.issues[String(state.activeIssueNumber)] ?? null;
+  const codexModelPolicyLines = renderDoctorCodexModelPolicyLines(
+    await buildCodexModelPolicySnapshot({
+      config: args.config,
+      activeState: activeRecord?.state ?? "reproducing",
+      activeRecord,
+    }),
+  );
 
   const decisionSurface = buildDoctorOperatorDecisionSurface(finalRawDiagnostics);
 

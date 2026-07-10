@@ -38,7 +38,7 @@ export async function runCodexReviewTurn(args: LocalReviewTurnRequest): Promise<
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-review-"));
   const messageFile = path.join(tempDir, args.outputFileName);
   const [hostDefault, capabilities] = await Promise.all([
-    resolveHostCodexDefaultModel(),
+    resolveHostCodexDefaultModel(args.workspacePath),
     resolveCodexModelCapabilities(args.config.codexBinary, args.workspacePath),
   ]);
   const overrideArgs = buildCodexConfigOverrideArgs(

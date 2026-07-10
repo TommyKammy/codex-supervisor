@@ -479,6 +479,36 @@ test("renderStatusCodexModelPolicyLines reports inherited host defaults and over
   ]);
 });
 
+test("buildCodexModelPolicySnapshot probes and resolves inherited models from the active workspace", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "status-codex-policy-workspace-"));
+  const workspace = path.join(root, "workspace");
+  const codexBinary = path.join(root, "fake-codex.sh");
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  await fs.mkdir(path.join(workspace, ".codex"), { recursive: true });
+  await fs.writeFile(path.join(workspace, ".codex", "config.toml"), 'model = "gpt-5.6-terra"\n', "utf8");
+  await fs.writeFile(codexBinary, `#!/bin/sh
+if [ ! -f .codex/config.toml ]; then
+  exit 9
+fi
+printf '{"models":[{"slug":"gpt-5.6-terra","supported_reasoning_levels":["max"]}]}'
+`, { mode: 0o755 });
+
+  const snapshot = await buildCodexModelPolicySnapshot({
+    config: createConfig({
+      codexBinary,
+      codexModelStrategy: "inherit",
+      codexReasoningEffortByState: { implementing: "max" },
+    }),
+    activeState: "implementing",
+    activeRecord: createRecord({ workspace, state: "implementing" }),
+  });
+
+  assert.equal(snapshot.hostDefault.model, "gpt-5.6-terra");
+  assert.equal(snapshot.hostDefault.source, path.join(workspace, ".codex", "config.toml"));
+  assert.equal(snapshot.capabilities.source, "live_catalog");
+  assert.equal(snapshot.activeRoute.reasoningEffort, "max");
+});
+
 test("buildCodexModelPolicySnapshot keeps the default route independent from active repair overrides", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "status-codex-policy-default-route-"));
   const previousCodexHome = process.env.CODEX_HOME;

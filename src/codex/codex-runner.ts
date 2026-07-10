@@ -48,7 +48,7 @@ export async function runCodexTurn(
   const messageFile = path.join(tempDir, "last-message.txt");
   try {
     const [hostDefault, capabilities] = await Promise.all([
-      resolveHostCodexDefaultModel(),
+      resolveHostCodexDefaultModel(workspacePath),
       resolveCodexModelCapabilities(config.codexBinary, workspacePath),
     ]);
     const overrideArgs = buildCodexConfigOverrideArgs(

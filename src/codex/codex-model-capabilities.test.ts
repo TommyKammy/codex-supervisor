@@ -60,6 +60,28 @@ printf '{"models":[{"slug":"%s","supported_reasoning_levels":["low"]}]}' "$slug"
   assert.equal(second.reasoningLevelsByModel.has("workspace-b"), true);
 });
 
+test("resolveCodexModelCapabilities retries after a transient fallback result", async (t) => {
+  clearCodexModelCapabilitiesCacheForTests();
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-model-capabilities-retry-"));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const binary = path.join(root, "recovering-catalog");
+  await fs.writeFile(binary, `#!/bin/sh
+marker="$PWD/.catalog-ready"
+if [ ! -f "$marker" ]; then
+  touch "$marker"
+  exit 7
+fi
+printf '{"models":[{"slug":"gpt-5.6-terra","supported_reasoning_levels":["max"]}]}'
+`, { mode: 0o755 });
+
+  const first = await resolveCodexModelCapabilities(binary, root);
+  const second = await resolveCodexModelCapabilities(binary, root);
+  assert.equal(first.source, "fallback");
+  assert.equal(first.fallbackReason, "catalog_probe_exit_7");
+  assert.equal(second.source, "live_catalog");
+  assert.equal(second.reasoningLevelsByModel.get("gpt-5.6-terra")?.has("max"), true);
+});
+
 test("probeCodexModelCapabilities falls back deterministically for malformed, non-zero, and timed-out probes", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-model-capabilities-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));

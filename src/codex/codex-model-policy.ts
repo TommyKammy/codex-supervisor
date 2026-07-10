@@ -111,21 +111,25 @@ function parseTopLevelTomlString(contents: string, key: string): string | null {
   return null;
 }
 
-export async function resolveHostCodexDefaultModel(): Promise<HostCodexDefaultModelResolution> {
-  const configPath = path.join(resolveCodexConfigDir(), "config.toml");
-  let raw: string;
-  try {
-    raw = await fs.readFile(configPath, "utf8");
-  } catch {
-    return {
-      model: null,
-      source: null,
-    };
+export async function resolveHostCodexDefaultModel(cwd?: string): Promise<HostCodexDefaultModelResolution> {
+  const configPaths = [
+    ...(cwd ? [path.join(path.resolve(cwd), ".codex", "config.toml")] : []),
+    path.join(resolveCodexConfigDir(), "config.toml"),
+  ];
+  for (const configPath of configPaths) {
+    try {
+      const model = parseTopLevelTomlString(await fs.readFile(configPath, "utf8"), "model");
+      if (model !== null) {
+        return { model, source: configPath };
+      }
+    } catch {
+      continue;
+    }
   }
 
   return {
-    model: parseTopLevelTomlString(raw, "model"),
-    source: configPath,
+    model: null,
+    source: null,
   };
 }
 
@@ -191,12 +195,13 @@ export async function buildCodexModelPolicySnapshot(args: {
   activeState: RunState;
   activeRecord?: Pick<
     IssueRunRecord,
-    "repeated_failure_signature_count" | "blocked_verification_retry_count" | "timeout_retry_count"
+    "workspace" | "repeated_failure_signature_count" | "blocked_verification_retry_count" | "timeout_retry_count"
   > | null;
 }): Promise<CodexModelPolicySnapshot> {
+  const workspace = args.activeRecord?.workspace;
   const [hostDefault, capabilities] = await Promise.all([
-    resolveHostCodexDefaultModel(),
-    resolveCodexModelCapabilities(args.config.codexBinary),
+    resolveHostCodexDefaultModel(workspace),
+    resolveCodexModelCapabilities(args.config.codexBinary, workspace),
   ]);
   const defaultRoute: CodexModelRouteResolution = {
     strategy: args.config.codexModelStrategy,
