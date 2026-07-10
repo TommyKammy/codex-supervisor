@@ -103,7 +103,7 @@ This is one concrete way to use `codex-supervisor` against a local checkout of `
 - `atlaspm` uses canonical `Part of: #...`, `Depends on: ...`, and `## Execution order`, so the built-in sequencing logic is enough.
 - If you use GSD for upstream planning, enable `gsdEnabled` and point `gsdPlanningFiles` at `PROJECT.md`, `REQUIREMENTS.md`, `ROADMAP.md`, and `STATE.md`.
 - Copilot review is expected to start automatically after the PR is marked ready.
-- Leave `boundedRepairModelStrategy` unset unless you explicitly want `repairing_ci` and `addressing_review` turns to use a smaller bounded-repair model such as `gpt-5.4-mini`.
+- Leave `boundedRepairModelStrategy` unset unless you explicitly want `repairing_ci` and `addressing_review` turns to use a supported smaller model or alias.
 - Leave `localReviewModelStrategy` unset unless you explicitly want generic local-review turns to use a separate review model.
 - Keep `workspacePreparationCommand` and `localCiCommand` explicit when the repo owns host-local setup and verification entrypoints; otherwise leave them unset instead of expecting the supervisor to infer a contract.
 - The shipped starter profiles keep local review disabled by default. This atlaspm example intentionally shows the recommended once-enabled posture.
@@ -121,9 +121,9 @@ This is one concrete way to use `codex-supervisor` against a local checkout of `
 - Switch to `localReviewHighSeverityAction: "retry"` when your team explicitly wants the supervisor to start another repair pass automatically after verifier-confirmed high-severity findings.
 - Findings below the configured confidence threshold stay in the raw role reports but are not counted as actionable.
 - Even with multiple local review roles, the reviewer turn should still read the generated context index and issue journal first, then open durable memory files only on demand.
-- `codexModelStrategy: "inherit"` means the supervisor follows the Codex CLI/App default model automatically. In practice, set the Codex default model to `GPT-5.4` and let the supervisor inherit it.
-- For most atlaspm-style implementation loops, there is little reason to rotate through older Codex 5.1 to 5.3 variants. Tune reasoning effort first.
-- Keep `xhigh` out of the default state policy. It is better reserved for exceptional repeated-failure escalation only.
+- `codexModelStrategy: "inherit"` means the supervisor follows the model available through the host Codex CLI/App configuration. Keep this posture unless atlaspm has a measured reason to pin a model, and confirm the effective route with `doctor` or `status`.
+- Preview access is workspace-dependent. Do not pin GPT-5.6 merely because it appears in current documentation or in another operator's account; see the central [Model and Reasoning Guidance](../configuration.md#model-and-reasoning-guidance).
+- Tune reasoning effort before adding model-routing complexity. Keep `xhigh` and `max` out of the default state policy; `max` is emitted only for supported GPT-5.6 Sol routes and is intended for deliberate deep-reasoning or escalation paths.
 - Only configured review bots are auto-addressed. Human review comments block merge and require manual follow-up.
 - `Epic:` title prefixes are skipped as direct work items because the supervisor closes epics after all child issues close.
 - Generated context index and `AGENTS.generated.md` artifacts are written under the supervisor state directory, not into the managed repo.

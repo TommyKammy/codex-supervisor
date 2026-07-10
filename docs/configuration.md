@@ -271,9 +271,11 @@ Choose `fixed` when one supervisor profile must pin a model and ignore the host 
 ```json
 {
   "codexModelStrategy": "fixed",
-  "codexModel": "gpt-5.4"
+  "codexModel": "supported-model-id"
 }
 ```
+
+Replace `supported-model-id` with a model ID available to the Codex account or workspace that runs this supervisor.
 
 If you prefer an alias instead of a fixed model name:
 
@@ -292,7 +294,7 @@ Use this when implementation turns should inherit the main route, but `repairing
 {
   "codexModelStrategy": "inherit",
   "boundedRepairModelStrategy": "fixed",
-  "boundedRepairModel": "gpt-5.4-mini"
+  "boundedRepairModel": "supported-repair-model-id"
 }
 ```
 
@@ -666,9 +668,10 @@ That posture is deliberate. Choose `localReviewPosture: "repair_high_severity"` 
 
 Recommended default:
 
-- set your Codex default model to `GPT-5.4`
+- choose a host Codex model that the current CLI version and workspace can access
 - use `codexModelStrategy: "inherit"`
 - tune cost and depth through `codexReasoningEffortByState`
+- confirm the effective host and route models with `doctor` or `status` instead of treating one versioned model as a universal default
 
 Practical rule of thumb:
 
@@ -678,6 +681,43 @@ Practical rule of thumb:
 - reasoning escalation follows `none < low < medium < high < xhigh < max`
 - `max` is currently emitted only for `gpt-5.6-sol`; unsupported models fall back to `xhigh`, while GPT-5 Pro remains capped at `high`
 - `status` and `doctor` report the requested and effective efforts when capability clamping changes the request
+
+### ChatGPT desktop app and the Codex CLI
+
+The macOS desktop bundle may be installed as `ChatGPT.app` rather than the older `Codex.app`. This is an app packaging and branding change, not a migration away from the Codex execution contract: `codex-supervisor` still launches the `codex` CLI, and OpenAI documents the ChatGPT desktop app in Codex mode alongside the Codex CLI, IDE extension, and web surfaces.
+
+Prefer `"codexBinary": "codex"` when the CLI is available on `PATH`. If an absolute executable path is required, point it at the bundle actually installed on that host and run `doctor`; do not copy a stale `/Applications/Codex.app/...` path from another machine. The supervisor's binary resolution supports both current ChatGPT and legacy Codex desktop bundles.
+
+### GPT-5.6 preview and access boundaries
+
+OpenAI's current preview documentation lists these model IDs:
+
+| Model | Model ID | Supervisor reasoning note |
+| --- | --- | --- |
+| GPT-5.6 Sol | `gpt-5.6-sol` | Supports the supervisor's `max` reasoning effort. |
+| GPT-5.6 Terra | `gpt-5.6-terra` | `max` is clamped to the highest supported fallback. |
+| GPT-5.6 Luna | `gpt-5.6-luna` | `max` is clamped to the highest supported fallback. |
+
+Do not infer access from a model name appearing in documentation or from having a paid ChatGPT plan. During the documented preview, access is limited to selected organizations and scoped separately to approved API organizations and Codex workspaces; API approval does not imply Codex approval, and the preview is distinct from general ChatGPT availability. Keep `codexModelStrategy: "inherit"` as the resilient default so model changes do not require supervisor config churn, and pin a GPT-5.6 model only after confirming access in the exact account or workspace used by the supervisor.
+
+Availability is time-sensitive. Check the current OpenAI sources rather than copying this preview status into automation:
+
+- [Previewing GPT-5.6 Sol: a next-generation model](https://openai.com/index/previewing-gpt-5-6-sol/)
+- [A preview of GPT-5.6 Sol, Terra, and Luna](https://help.openai.com/en/articles/20001325-a-preview-of-gpt-5-6-sol-terra-and-luna)
+- [Using Codex with your ChatGPT plan](https://help.openai.com/en/articles/11369540-using-codex-with-chatgpt)
+
+### Additional safety checks and timeout evidence
+
+OpenAI documents that some biological or cybersecurity requests can take longer, pause for an additional automated safety check, or return no content. A slow request is not by itself evidence that the supervisor timeout is wrong.
+
+When diagnosing a suspected safety-check timeout:
+
+1. Record the exact CLI event or error, the elapsed time, the model, and whether the run used Codex or the API.
+2. Preserve the date, time zone, request ID when available, and a brief redacted task description. Do not collect secrets or proprietary prompt content in public artifacts.
+3. Keep the existing `codexExecTimeoutMinutes` value for the first reproduction.
+4. Increase `codexExecTimeoutMinutes` only when repeated, allowed workloads show that the current limit ends otherwise successful requests. Document the observed duration and chosen margin.
+
+See [OpenAI's additional safety checks guidance](https://help.openai.com/en/articles/20001326-additional-safety-checks-for-biological-and-cybersecurity-requests-in-api-and-codex) for the current behavior and support evidence. This operational guidance does not change the shipped runtime default.
 
 ## Operator Dashboard
 

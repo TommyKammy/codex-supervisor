@@ -101,6 +101,12 @@ At minimum, set these first-run fields before the first run:
 
 The setup/readiness report stays `ready: false` until these required first-run blockers, including the explicit trust posture decisions, are resolved.
 
+### Codex client and model defaults
+
+Prefer `"codexBinary": "codex"` when the Codex CLI is available on `PATH`. On macOS, the desktop bundle may now be named `ChatGPT.app` instead of `Codex.app`; the ChatGPT desktop app still provides the Codex coding surface, and `codex-supervisor` still invokes the Codex CLI. This branding change does not require an API, runner, or config-schema migration. If you must use an absolute binary path, use the bundle installed on that host and verify it with `doctor`.
+
+Keep `codexModelStrategy: "inherit"` unless the workflow requires a deliberate pin. The inherited model depends on the installed CLI, its configuration, and workspace access, so do not assume that a versioned model is a universal default. GPT-5.6 preview access is account- and workspace-dependent and is separate from general ChatGPT availability. See [Model and Reasoning Guidance](./configuration.md#model-and-reasoning-guidance) for current model IDs, `max` reasoning behavior, and evidence-driven timeout troubleshooting.
+
 The shipped CodeRabbit profile intentionally uses a non-loadable `repoSlug` placeholder so operators must replace it before the first run.
 
 For TypeScript and Node repositories, [supervisor.config.typescript-node.json](../supervisor.config.typescript-node.json) publishes an npm-oriented starter profile. It uses `npm ci` for worktree preparation and `npm run verify:pre-pr` for the repo-owned local CI gate; see the [TypeScript and Node starter profile](./examples/typescript-node.md) for the expected scripts and a first issue example.

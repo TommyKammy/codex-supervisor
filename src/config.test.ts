@@ -2433,14 +2433,24 @@ test("getting started links to focused configuration and local review references
   assert.match(configuration, /^## Model Routing Quick Recipes$/m);
   assert.match(configuration, /authoritative fields for Codex model selection/i);
   assert.match(configuration, /"codexModelStrategy": "inherit"/);
+  assert.match(configuration, /"codexModel": "supported-model-id"/);
   assert.match(configuration, /"boundedRepairModelStrategy": "fixed"/);
-  assert.match(configuration, /"boundedRepairModel": "gpt-5\.4-mini"/);
+  assert.match(configuration, /"boundedRepairModel": "supported-repair-model-id"/);
   assert.match(configuration, /"localReviewModelStrategy": "alias"/);
   assert.match(configuration, /"localReviewModel": "local-review-fast"/);
   assert.match(configuration, /fixed` and `alias`.*fail closed unless the matching model field is set explicitly/i);
   assert.match(configuration, /requires `codexModel`/i);
   assert.match(configuration, /requires `boundedRepairModel`/i);
   assert.match(configuration, /requires `localReviewModel`/i);
+  assert.doesNotMatch(configuration, /set (?:your|the) Codex default model to `GPT-5\.4`/i);
+  assert.match(configuration, /`gpt-5\.6-sol`/);
+  assert.match(configuration, /`gpt-5\.6-terra`/);
+  assert.match(configuration, /`gpt-5\.6-luna`/);
+  assert.match(configuration, /ChatGPT\.app/);
+  assert.match(configuration, /`codexExecTimeoutMinutes`/);
+  assert.match(configuration, /additional safety checks guidance/i);
+  assert.match(gettingStarted, /codexModelStrategy: "inherit"/);
+  assert.match(gettingStarted, /GPT-5\.6 preview access is account- and workspace-dependent/i);
 
   assert.match(configuration, /\| Profile \| Start from \| Choose when \| Supervisor watches \| First-run caveat \|/);
   assert.match(configuration, /\| Copilot \| \[supervisor\.config\.copilot\.json\]\(\.\.\/supervisor\.config\.copilot\.json\) \|/);
