@@ -13,6 +13,7 @@ import {
 } from "./preparation";
 import { GitHubIssue, GitHubPullRequest, SupervisorConfig } from "../core/types";
 import { type LocalReviewResult } from "./types";
+import { resolveHostCodexDefaultModel } from "../codex/codex-model-policy";
 
 export type {
   ActionableSeverity,
@@ -123,6 +124,7 @@ export async function runLocalReview(args: {
   const ranAt = nowIso();
   const dirPath = reviewDir(args.config, args.issue.number);
   await ensureDir(dirPath);
+  const hostDefault = await resolveHostCodexDefaultModel();
   const finalized = finalizeLocalReview({
     config: args.config,
     issueNumber: args.issue.number,
@@ -133,6 +135,7 @@ export async function runLocalReview(args: {
     roleResults,
     verifierReport,
     ranAt,
+    inheritedModel: hostDefault.model,
     guardrailProvenance: prepareLocalReviewGuardrailProvenance({
       config: args.config,
       verifierReport,

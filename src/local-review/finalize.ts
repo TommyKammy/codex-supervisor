@@ -232,8 +232,15 @@ function resolveLocalReviewExecutionRouting(args: {
     | "codexReasoningEscalateOnRepeatedFailure"
   >;
   target: CodexExecutionTarget;
+  inheritedModel?: string | null;
 }): LocalReviewExecutionRouting {
-  const policy = resolveCodexExecutionPolicy(args.config, "local_review", undefined, args.target);
+  const policy = resolveCodexExecutionPolicy(
+    args.config,
+    "local_review",
+    undefined,
+    args.target,
+    { inheritedModel: args.inheritedModel },
+  );
   return {
     target: args.target,
     model: policy.model,
@@ -262,6 +269,7 @@ export function finalizeLocalReview(args: {
   verifierReport: LocalReviewVerifierReport | null;
   ranAt: string;
   guardrailProvenance?: LocalReviewGuardrailProvenance;
+  inheritedModel?: string | null;
 }): FinalizedLocalReview {
   const roles = args.roleResults.map((result) => result.role);
   const allFindings = args.roleResults.flatMap((result) => result.findings);
@@ -275,6 +283,7 @@ export function finalizeLocalReview(args: {
     const routing = resolveLocalReviewExecutionRouting({
       config: args.config,
       target: localReviewExecutionTargetForRole(reviewerTypeArgs),
+      inheritedModel: args.inheritedModel,
     });
     const actionableFindingsCount = result.findings.filter((finding) =>
       findingMeetsReviewerThreshold({
@@ -378,6 +387,7 @@ export function finalizeLocalReview(args: {
           routing: resolveLocalReviewExecutionRouting({
             config: args.config,
             target: "local_review_verifier",
+            inheritedModel: args.inheritedModel,
           }),
           exitCode: args.verifierReport.exitCode,
           degraded: args.verifierReport.degraded,

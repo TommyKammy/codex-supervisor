@@ -778,6 +778,7 @@ test("diagnoseSupervisorHost reports inherited host Codex defaults in doctor out
       stateFile,
       codexBinary: process.execPath,
       codexModelStrategy: "inherit",
+      codexReasoningEffortByState: { reproducing: "max" },
     }),
     authStatus: async () => ({ ok: true, message: null }),
     loadState: async () => ({ activeIssueNumber: null, issues: {} }),
@@ -794,6 +795,7 @@ test("diagnoseSupervisorHost reports inherited host Codex defaults in doctor out
   assert.match(report, /doctor_codex_model_policy default=inherit->gpt-5\.4@inherited_host_default/);
   assert.match(report, /doctor_codex_route_overrides repair=default_route\(gpt-5\.4\) local_review=default_route\(gpt-5\.4\)/);
   assert.match(report, new RegExp(`doctor_codex_host_default model=gpt-5\\.4 source=${codexHome.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}/config\\.toml`));
+  assert.match(report, /doctor_codex_reasoning active=supervisor requested=max effective=xhigh/);
 });
 
 test("diagnoseSupervisorHost surfaces orphan prune candidates and representative eligibility reasons", async (t) => {

@@ -336,6 +336,51 @@ exit 0
   assert.equal(args[5], workspacePath);
 });
 
+test("runCodexReviewTurn emits max reasoning for GPT-5.6 Sol", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "local-review-runner-test-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+  const workspacePath = path.join(root, "workspace");
+  const codexBinary = path.join(root, "fake-codex.sh");
+  const argsPath = path.join(root, "args.log");
+  await fs.mkdir(workspacePath, { recursive: true });
+  await fs.writeFile(
+    codexBinary,
+    `#!/bin/sh
+set -eu
+printf '%s\n' "$@" > "${argsPath}"
+exit 0
+`,
+    "utf8",
+  );
+  await fs.chmod(codexBinary, 0o755);
+
+  await runCodexReviewTurn({
+    config: createConfig({
+      codexBinary,
+      codexModelStrategy: "fixed",
+      codexModel: "gpt-5.6-sol",
+      localReviewModelStrategy: "inherit",
+      codexReasoningEffortByState: { local_review: "max" },
+    }),
+    workspacePath,
+    role: "reviewer",
+    outputFileName: "reviewer.txt",
+    prompt: "max local review prompt",
+    executionTarget: "local_review_generic",
+  });
+  const args = (await fs.readFile(argsPath, "utf8")).trim().split("\n");
+
+  assert.deepEqual(args.slice(0, 5), [
+    "exec",
+    "-m",
+    "gpt-5.6-sol",
+    "-c",
+    'model_reasoning_effort="max"',
+  ]);
+});
+
 test("runRoleReview accepts empty fake-runner output as a configured result", async () => {
   const fakeRunner = createFakeLocalReviewRunner({
     reviewer: "",

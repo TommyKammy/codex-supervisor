@@ -218,6 +218,93 @@ exit 0
   assert.equal(args[5], workspacePath);
 });
 
+test("runCodexTurn emits max reasoning when bounded repair inherits a fixed GPT-5.6 Sol route", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-runner-test-"));
+  const workspacePath = path.join(root, "workspace");
+  const codexBinary = path.join(root, "fake-codex.sh");
+  const argsPath = path.join(root, "args.log");
+  await fs.mkdir(workspacePath, { recursive: true });
+
+  await writeExecutableScript(
+    codexBinary,
+    `#!/bin/sh
+set -eu
+printf '%s\n' "$@" > "${argsPath}"
+exit 0
+`,
+  );
+
+  await runCodexTurn(
+    createConfig({
+      codexBinary,
+      codexModelStrategy: "fixed",
+      codexModel: "gpt-5.6-sol",
+      boundedRepairModelStrategy: "inherit",
+      codexReasoningEffortByState: { repairing_ci: "max" },
+    }),
+    workspacePath,
+    "max prompt",
+    "repairing_ci",
+  );
+  const args = (await fs.readFile(argsPath, "utf8")).trim().split("\n");
+
+  assert.deepEqual(args.slice(0, 5), [
+    "exec",
+    "-m",
+    "gpt-5.6-sol",
+    "-c",
+    'model_reasoning_effort="max"',
+  ]);
+});
+
+test("runCodexTurn emits max reasoning for an inherited GPT-5.6 Sol host route", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-runner-test-"));
+  const workspacePath = path.join(root, "workspace");
+  const codexHome = path.join(root, "codex-home");
+  const codexBinary = path.join(root, "fake-codex.sh");
+  const argsPath = path.join(root, "args.log");
+  const previousCodexHome = process.env.CODEX_HOME;
+  t.after(async () => {
+    if (previousCodexHome === undefined) {
+      delete process.env.CODEX_HOME;
+    } else {
+      process.env.CODEX_HOME = previousCodexHome;
+    }
+    await fs.rm(root, { recursive: true, force: true });
+  });
+  await fs.mkdir(workspacePath, { recursive: true });
+  await fs.mkdir(codexHome, { recursive: true });
+  await fs.writeFile(path.join(codexHome, "config.toml"), 'model = "gpt-5.6-sol"\n', "utf8");
+  process.env.CODEX_HOME = codexHome;
+
+  await writeExecutableScript(
+    codexBinary,
+    `#!/bin/sh
+set -eu
+printf '%s\n' "$@" > "${argsPath}"
+exit 0
+`,
+  );
+
+  await runCodexTurn(
+    createConfig({
+      codexBinary,
+      codexReasoningEffortByState: { implementing: "max" },
+    }),
+    workspacePath,
+    "inherited max prompt",
+    "implementing",
+  );
+  const args = (await fs.readFile(argsPath, "utf8")).trim().split("\n");
+
+  assert.equal(args.includes("-m"), false);
+  assert.deepEqual(args.slice(0, 3), [
+    "exec",
+    "-c",
+    'model_reasoning_effort="max"',
+  ]);
+});
+
 test("runCodexTurn removes its temp dir when command execution fails", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-runner-test-"));
   const workspacePath = path.join(root, "workspace");

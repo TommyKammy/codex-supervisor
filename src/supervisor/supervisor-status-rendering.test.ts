@@ -464,6 +464,7 @@ test("renderStatusCodexModelPolicyLines reports inherited host defaults and over
         boundedRepairModel: "gpt-5.4-mini",
         localReviewModelStrategy: "alias",
         localReviewModel: "local-review-fast",
+        codexReasoningEffortByState: { reproducing: "max" },
       }),
       activeState: "reproducing",
       activeRecord: createRecord({
@@ -473,7 +474,7 @@ test("renderStatusCodexModelPolicyLines reports inherited host defaults and over
   );
 
   assert.deepEqual(lines, [
-    "codex_execution_policy active=supervisor:inherit->gpt-5.4@inherited_host_default reasoning=high",
+    "codex_execution_policy active=supervisor:inherit->gpt-5.4@inherited_host_default reasoning=xhigh requested_reasoning=max",
     "codex_route_overrides repair=alias:gpt-5.4-mini@bounded_repair_override local_review=alias:local-review-fast@local_review_override",
   ]);
 });

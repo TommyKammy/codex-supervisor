@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { resolveCodexExecutionPolicy } from "./codex-policy";
-import { CodexExecutionTarget, CodexModelStrategy, IssueRunRecord, RunState, SupervisorConfig } from "../core/types";
+import { CodexExecutionTarget, CodexModelStrategy, IssueRunRecord, ReasoningEffort, RunState, SupervisorConfig } from "../core/types";
 
 export interface HostCodexDefaultModelResolution {
   model: string | null;
@@ -30,7 +30,8 @@ export interface CodexModelPolicySnapshot {
   activeRoute: CodexModelRouteResolution & {
     state: RunState;
     target: CodexExecutionTarget;
-    reasoningEffort: string;
+    requestedReasoningEffort: ReasoningEffort;
+    reasoningEffort: ReasoningEffort;
   };
 }
 
@@ -220,28 +221,26 @@ export async function buildCodexModelPolicySnapshot(args: {
   const activeTarget: CodexExecutionTarget = args.activeState === "local_review"
     ? "local_review_generic"
     : "supervisor";
-  const activePolicy = resolveCodexExecutionPolicy(args.config, args.activeState, args.activeRecord, activeTarget);
-  const activeRoute =
+  const activeBaseRoute =
     args.activeState === "repairing_ci" || args.activeState === "addressing_review"
-      ? {
-        ...boundedRepairRoute,
-        state: args.activeState,
-        target: activeTarget,
-        reasoningEffort: activePolicy.reasoningEffort,
-      }
+      ? boundedRepairRoute
       : args.activeState === "local_review"
-      ? {
-        ...localReviewRoute,
-        state: args.activeState,
-        target: activeTarget,
-        reasoningEffort: activePolicy.reasoningEffort,
-      }
-      : {
-        ...defaultRoute,
-        state: args.activeState,
-        target: activeTarget,
-        reasoningEffort: activePolicy.reasoningEffort,
-      };
+      ? localReviewRoute
+      : defaultRoute;
+  const activePolicy = resolveCodexExecutionPolicy(
+    args.config,
+    args.activeState,
+    args.activeRecord,
+    activeTarget,
+    { inheritedModel: hostDefault.model },
+  );
+  const activeRoute = {
+    ...activeBaseRoute,
+    state: args.activeState,
+    target: activeTarget,
+    requestedReasoningEffort: activePolicy.requestedReasoningEffort ?? activePolicy.reasoningEffort,
+    reasoningEffort: activePolicy.reasoningEffort,
+  };
 
   return {
     hostDefault,
@@ -257,12 +256,16 @@ export function renderDoctorCodexModelPolicyLines(snapshot: CodexModelPolicySnap
     `doctor_codex_model_policy default=${summarizeRoute(snapshot.defaultRoute)}`,
     `doctor_codex_route_overrides repair=${summarizeRoute(snapshot.boundedRepairRoute)} local_review=${summarizeRoute(snapshot.localReviewRoute)}`,
     `doctor_codex_host_default model=${snapshot.hostDefault.model ?? "unresolved"} source=${snapshot.hostDefault.source ?? "unresolved"}`,
+    `doctor_codex_reasoning active=${snapshot.activeRoute.target} requested=${snapshot.activeRoute.requestedReasoningEffort} effective=${snapshot.activeRoute.reasoningEffort}`,
   ];
 }
 
 export function renderStatusCodexModelPolicyLines(snapshot: CodexModelPolicySnapshot): string[] {
+  const requestedSuffix = snapshot.activeRoute.requestedReasoningEffort === snapshot.activeRoute.reasoningEffort
+    ? ""
+    : ` requested_reasoning=${snapshot.activeRoute.requestedReasoningEffort}`;
   return [
-    `codex_execution_policy active=${snapshot.activeRoute.target}:${summarizeRoute(snapshot.activeRoute)} reasoning=${snapshot.activeRoute.reasoningEffort}`,
+    `codex_execution_policy active=${snapshot.activeRoute.target}:${summarizeRoute(snapshot.activeRoute)} reasoning=${snapshot.activeRoute.reasoningEffort}${requestedSuffix}`,
     `codex_route_overrides repair=${summarizeRoute(snapshot.boundedRepairRoute)} local_review=${summarizeRoute(snapshot.localReviewRoute)}`,
   ];
 }
