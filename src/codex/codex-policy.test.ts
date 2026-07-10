@@ -177,6 +177,26 @@ test("resolveCodexExecutionPolicy escalates only an unconsumed stable Codex Conn
       reasoningEffort: "medium",
     },
   );
+  assert.deepEqual(
+    resolveCodexExecutionPolicy(
+      createConfig({
+        codexModel: "gpt-5.6-sol",
+        codexReasoningEffortByState: { addressing_review: "max" },
+      }),
+      "addressing_review",
+      {
+        repeated_failure_signature_count: 0,
+        blocked_verification_retry_count: 0,
+        timeout_retry_count: 0,
+        last_tracked_pr_progress_snapshot: stableSnapshot,
+        codex_connector_stable_churn_dossier_consumed_signature: null,
+      },
+    ),
+    {
+      model: "gpt-5.6-sol",
+      reasoningEffort: "max",
+    },
+  );
 });
 
 test("resolveCodexExecutionPolicy escalates xhigh to max for GPT-5.6 Sol", () => {
@@ -238,5 +258,26 @@ test("resolveCodexExecutionPolicy applies inherited host-model capabilities with
     model: null,
     reasoningEffort: "xhigh",
     requestedReasoningEffort: "max",
+  });
+});
+
+test("resolveCodexExecutionPolicy inherits a fixed default model for explicit route-level inherit", () => {
+  const config = createConfig({
+    codexModel: "gpt-5.6-sol",
+    boundedRepairModelStrategy: "inherit",
+    localReviewModelStrategy: "inherit",
+    codexReasoningEffortByState: {
+      repairing_ci: "max",
+      local_review: "max",
+    },
+  });
+
+  assert.deepEqual(resolveCodexExecutionPolicy(config, "repairing_ci"), {
+    model: "gpt-5.6-sol",
+    reasoningEffort: "max",
+  });
+  assert.deepEqual(resolveCodexExecutionPolicy(config, "local_review", undefined, "local_review_generic"), {
+    model: "gpt-5.6-sol",
+    reasoningEffort: "max",
   });
 });

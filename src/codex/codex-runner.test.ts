@@ -218,7 +218,7 @@ exit 0
   assert.equal(args[5], workspacePath);
 });
 
-test("runCodexTurn emits max reasoning for a fixed GPT-5.6 Sol route", async () => {
+test("runCodexTurn emits max reasoning when bounded repair inherits a fixed GPT-5.6 Sol route", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-runner-test-"));
   const workspacePath = path.join(root, "workspace");
   const codexBinary = path.join(root, "fake-codex.sh");
@@ -239,11 +239,12 @@ exit 0
       codexBinary,
       codexModelStrategy: "fixed",
       codexModel: "gpt-5.6-sol",
-      codexReasoningEffortByState: { implementing: "max" },
+      boundedRepairModelStrategy: "inherit",
+      codexReasoningEffortByState: { repairing_ci: "max" },
     }),
     workspacePath,
     "max prompt",
-    "implementing",
+    "repairing_ci",
   );
   const args = (await fs.readFile(argsPath, "utf8")).trim().split("\n");
 

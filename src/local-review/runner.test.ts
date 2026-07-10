@@ -361,6 +361,7 @@ exit 0
       codexBinary,
       codexModelStrategy: "fixed",
       codexModel: "gpt-5.6-sol",
+      localReviewModelStrategy: "inherit",
       codexReasoningEffortByState: { local_review: "max" },
     }),
     workspacePath,

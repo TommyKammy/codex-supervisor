@@ -81,6 +81,11 @@ function bumpReasoningEffort(effort: ReasoningEffort, steps = 1): ReasoningEffor
   return REASONING_ORDER[nextIndex] ?? effort;
 }
 
+function reasoningEffortAtLeast(effort: ReasoningEffort, minimum: ReasoningEffort): ReasoningEffort {
+  const index = Math.max(REASONING_ORDER.indexOf(effort), REASONING_ORDER.indexOf(minimum));
+  return REASONING_ORDER[index] ?? effort;
+}
+
 function supportsMaxReasoningEffort(model: string | null): boolean {
   const normalized = model?.trim().toLowerCase();
   return normalized === "gpt-5.6-sol" || normalized?.startsWith("gpt-5.6-sol-") === true;
@@ -132,7 +137,7 @@ function resolveRequestedReasoningEffort(
   let effort = configured ?? DEFAULT_REASONING_BY_STATE[state];
 
   if (state === "addressing_review" && activeStableSameFileChurnDossierSignature(record)) {
-    return "xhigh";
+    return reasoningEffortAtLeast(effort, "xhigh");
   }
 
   if (
@@ -165,9 +170,11 @@ function resolveConfiguredModel(
   state: RunState,
   target: CodexExecutionTarget,
 ): string | null {
+  const defaultModel = config.codexModelStrategy === "inherit" ? null : (config.codexModel ?? null);
+
   if (target === "local_review_generic" && config.localReviewModelStrategy) {
     if (config.localReviewModelStrategy === "inherit") {
-      return null;
+      return defaultModel;
     }
 
     return config.localReviewModel ?? null;
@@ -175,17 +182,13 @@ function resolveConfiguredModel(
 
   if (usesBoundedRepairRouting(state, target) && config.boundedRepairModelStrategy) {
     if (config.boundedRepairModelStrategy === "inherit") {
-      return null;
+      return defaultModel;
     }
 
     return config.boundedRepairModel ?? null;
   }
 
-  if (config.codexModelStrategy === "inherit") {
-    return null;
-  }
-
-  return config.codexModel ?? null;
+  return defaultModel;
 }
 
 export function resolveCodexExecutionPolicy(
