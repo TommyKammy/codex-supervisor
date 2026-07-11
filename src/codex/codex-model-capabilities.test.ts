@@ -5,10 +5,15 @@ import path from "node:path";
 import test from "node:test";
 import {
   clearCodexModelCapabilitiesCacheForTests,
+  DEFAULT_CODEX_MODEL_CATALOG_PROBE_TIMEOUT_MS,
   parseCodexModelCatalog,
   probeCodexModelCapabilities,
   resolveCodexModelCapabilities,
 } from "./codex-model-capabilities";
+
+test("model catalog probes allow a bounded remote refresh window", () => {
+  assert.equal(DEFAULT_CODEX_MODEL_CATALOG_PROBE_TIMEOUT_MS, 15_000);
+});
 
 test("parseCodexModelCatalog resolves GPT-5.6 reasoning levels and ignores unsupported future levels", async () => {
   const fixture = await fs.readFile(path.join(process.cwd(), "src/codex/fixtures/model-catalog-gpt-5.6.json"), "utf8");

@@ -15,6 +15,7 @@ const FALLBACK = new Map<string, ReadonlySet<ReasoningEffort>>([
   ["gpt-5.6-sol", new Set<ReasoningEffort>(["low", "medium", "high", "xhigh", "max"])],
 ]);
 const LIVE_CATALOG_CACHE_TTL_MS = 60_000;
+export const DEFAULT_CODEX_MODEL_CATALOG_PROBE_TIMEOUT_MS = 15_000;
 
 interface CapabilityCacheEntry {
   expiresAt: number;
@@ -68,7 +69,7 @@ export function parseCodexModelCatalog(raw: string): ReadonlyMap<string, Readonl
 
 export async function probeCodexModelCapabilities(
   codexBinary: string,
-  timeoutMs = 5_000,
+  timeoutMs = DEFAULT_CODEX_MODEL_CATALOG_PROBE_TIMEOUT_MS,
   cwd?: string,
 ): Promise<CodexModelCapabilities> {
   try {
@@ -98,7 +99,7 @@ export function resolveCodexModelCapabilities(
   const now = Date.now();
   const existing = cache.get(cacheKey);
   if (existing && cacheTtlMs > 0 && existing.expiresAt > now) return existing.pending;
-  const pending = probeCodexModelCapabilities(codexBinary, 5_000, cwd);
+  const pending = probeCodexModelCapabilities(codexBinary, DEFAULT_CODEX_MODEL_CATALOG_PROBE_TIMEOUT_MS, cwd);
   cache.set(cacheKey, { pending, expiresAt: now + Math.max(0, cacheTtlMs) });
   void pending.then((result) => {
     if (result.source === "fallback" && cache.get(cacheKey)?.pending === pending) {

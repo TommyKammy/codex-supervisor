@@ -53,6 +53,64 @@ function countTrailingBackslashes(value: string, endExclusive: number): number {
   return count;
 }
 
+function decodeTomlBasicString(value: string): string | null {
+  let decoded = "";
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+    if (character !== "\\") {
+      decoded += character;
+      continue;
+    }
+
+    const escape = value[index + 1];
+    if (escape === undefined) {
+      return null;
+    }
+    index += 1;
+    switch (escape) {
+      case "b":
+        decoded += "\b";
+        break;
+      case "t":
+        decoded += "\t";
+        break;
+      case "n":
+        decoded += "\n";
+        break;
+      case "f":
+        decoded += "\f";
+        break;
+      case "r":
+        decoded += "\r";
+        break;
+      case `"`:
+        decoded += `"`;
+        break;
+      case "\\":
+        decoded += "\\";
+        break;
+      case "u":
+      case "U": {
+        const length = escape === "u" ? 4 : 8;
+        const hex = value.slice(index + 1, index + 1 + length);
+        if (hex.length !== length || !/^[0-9a-fA-F]+$/u.test(hex)) {
+          return null;
+        }
+        const codePoint = Number.parseInt(hex, 16);
+        if (codePoint > 0x10ffff || (codePoint >= 0xd800 && codePoint <= 0xdfff)) {
+          return null;
+        }
+        decoded += String.fromCodePoint(codePoint);
+        index += length;
+        break;
+      }
+      default:
+        return null;
+    }
+  }
+  return decoded;
+}
+
 function parseTomlQuotedString(value: string): string | null {
   const trimmed = value.trim();
   const quote = trimmed[0];
@@ -72,7 +130,8 @@ function parseTomlQuotedString(value: string): string | null {
     if (trailing !== "" && !trailing.startsWith("#")) {
       return null;
     }
-    return trimmed.slice(1, index);
+    const parsed = trimmed.slice(1, index);
+    return quote === `"` ? decodeTomlBasicString(parsed) : parsed;
   }
 
   return null;
