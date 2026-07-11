@@ -19,6 +19,7 @@
     "postbuild": "node dist/build-freshness.js",
     "guardrails:check": "tsx src/committed-guardrails-cli.ts check",
     "guardrails:fix": "tsx src/committed-guardrails-cli.ts fix",
+    "evaluate:local-review-model-routing": "tsx src/local-review/model-routing-evaluation-cli.ts",
     "verify:paths": "tsx scripts/check-workstation-local-paths.ts",
     "verify:subprocess-safety": "tsx scripts/check-subprocess-safety.ts",
     "verify:supervisor-pre-pr": "npm run verify:paths && npm run verify:subprocess-safety && npm run build",

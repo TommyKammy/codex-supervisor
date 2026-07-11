@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildCodexConfigOverrideArgs, resolveCodexExecutionPolicy } from "./codex-policy";
+import {
+  buildCodexConfigOverrideArgs,
+  resolveCodexExecutionDecision,
+  resolveCodexExecutionPolicy,
+} from "./codex-policy";
 import { type SupervisorConfig } from "../core/types";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
@@ -95,6 +99,193 @@ test("resolveCodexExecutionPolicy applies explicit local-review routing only to 
     model: "gpt-5-codex",
     reasoningEffort: "low",
   });
+});
+
+test("resolveCodexExecutionDecision gives canonical per-target routes precedence over legacy model fields", () => {
+  const config = createConfig({
+    codexModelStrategy: "fixed",
+    codexModel: "legacy-supervisor",
+    localReviewModelStrategy: "alias",
+    localReviewModel: "legacy-generic",
+    codexModelRoutingByTarget: {
+      supervisor: { strategy: "fixed", model: "gpt-5.6-sol" },
+      local_review_generic: { strategy: "alias", model: "gpt-5.6-luna" },
+      local_review_specialist: { strategy: "fixed", model: "gpt-5.6-terra" },
+      local_review_verifier: { strategy: "alias", model: "verifier-model-alias" },
+    },
+  });
+
+  const expectedByTarget = {
+    supervisor: { strategy: "fixed", model: "gpt-5.6-sol" },
+    local_review_generic: { strategy: "alias", model: "gpt-5.6-luna" },
+    local_review_specialist: { strategy: "fixed", model: "gpt-5.6-terra" },
+    local_review_verifier: { strategy: "alias", model: "verifier-model-alias" },
+  } as const;
+
+  for (const [target, expected] of Object.entries(expectedByTarget)) {
+    const decision = resolveCodexExecutionDecision(
+      config,
+      target === "supervisor" ? "implementing" : "local_review",
+      undefined,
+      target as keyof typeof expectedByTarget,
+      { inheritedModel: "host-default-model" },
+    );
+    assert.equal(decision.policy.model, expected.model);
+    assert.deepEqual(decision.modelRouting, {
+      target,
+      strategy: expected.strategy,
+      requestedModel: expected.model,
+      effectiveModel: expected.model,
+      modelOverride: expected.model,
+      source: "per_target_override",
+      fallbackSource: null,
+    });
+  }
+});
+
+test("resolveCodexExecutionDecision lets explicit target inherit bypass the legacy generic override", () => {
+  const decision = resolveCodexExecutionDecision(
+    createConfig({
+      codexModelStrategy: "fixed",
+      codexModel: "gpt-5.6-sol",
+      localReviewModelStrategy: "alias",
+      localReviewModel: "legacy-generic",
+      codexModelRoutingByTarget: {
+        local_review_generic: { strategy: "inherit" },
+      },
+    }),
+    "local_review",
+    undefined,
+    "local_review_generic",
+  );
+
+  assert.deepEqual(decision.modelRouting, {
+    target: "local_review_generic",
+    strategy: "inherit",
+    requestedModel: null,
+    effectiveModel: "gpt-5.6-sol",
+    modelOverride: "gpt-5.6-sol",
+    source: "per_target_override",
+    fallbackSource: "supervisor_config",
+  });
+  assert.equal(decision.policy.model, "gpt-5.6-sol");
+});
+
+test("resolveCodexExecutionDecision keeps bounded repair precedence and inherit compatibility over a canonical supervisor route", () => {
+  const baseConfig = createConfig({
+    codexModelStrategy: "fixed",
+    codexModel: "legacy-supervisor",
+    codexModelRoutingByTarget: {
+      supervisor: { strategy: "fixed", model: "gpt-5.6-sol" },
+    },
+  });
+  const overrideDecision = resolveCodexExecutionDecision(
+    createConfig({
+      ...baseConfig,
+      boundedRepairModelStrategy: "alias",
+      boundedRepairModel: "repair-model-alias",
+    }),
+    "repairing_ci",
+  );
+  assert.deepEqual(overrideDecision.modelRouting, {
+    target: "supervisor",
+    strategy: "alias",
+    requestedModel: "repair-model-alias",
+    effectiveModel: "repair-model-alias",
+    modelOverride: "repair-model-alias",
+    source: "bounded_repair_override",
+    fallbackSource: null,
+  });
+
+  const inheritDecision = resolveCodexExecutionDecision(
+    createConfig({
+      ...baseConfig,
+      boundedRepairModelStrategy: "inherit",
+    }),
+    "repairing_ci",
+  );
+  assert.deepEqual(inheritDecision.modelRouting, {
+    target: "supervisor",
+    strategy: "inherit",
+    requestedModel: null,
+    effectiveModel: "gpt-5.6-sol",
+    modelOverride: "gpt-5.6-sol",
+    source: "default_route",
+    fallbackSource: "per_target_override",
+  });
+});
+
+test("resolveCodexExecutionDecision clamps reasoning after resolving each target's effective model", () => {
+  const decision = resolveCodexExecutionDecision(
+    createConfig({
+      codexModelRoutingByTarget: {
+        local_review_specialist: { strategy: "fixed", model: "gpt-5.6-terra" },
+      },
+      codexReasoningEffortByState: { local_review: "max" },
+    }),
+    "local_review",
+    undefined,
+    "local_review_specialist",
+    {
+      inheritedModel: "gpt-5.6-sol",
+      reasoningLevelsByModel: new Map([
+        ["gpt-5.6-sol", new Set(["high", "xhigh", "max"] as const)],
+        ["gpt-5.6-terra", new Set(["high"] as const)],
+      ]),
+    },
+  );
+
+  assert.equal(decision.modelRouting.effectiveModel, "gpt-5.6-terra");
+  assert.deepEqual(decision.policy, {
+    model: "gpt-5.6-terra",
+    reasoningEffort: "high",
+    requestedReasoningEffort: "max",
+    reasoningEffortFallbackReason: "unsupported_reasoning_effort",
+  });
+});
+
+test("resolveCodexExecutionDecision preserves unknown aliases instead of substituting another model tier", () => {
+  const decision = resolveCodexExecutionDecision(
+    createConfig({
+      codexModelRoutingByTarget: {
+        local_review_verifier: { strategy: "alias", model: "unknown-review-tier" },
+      },
+      codexReasoningEffortByState: { local_review: "max" },
+    }),
+    "local_review",
+    undefined,
+    "local_review_verifier",
+    {
+      inheritedModel: "gpt-5.6-sol",
+      reasoningLevelsByModel: new Map([
+        ["gpt-5.6-sol", new Set(["high", "xhigh", "max"] as const)],
+      ]),
+      modelCapabilitySource: "live_catalog",
+      modelCapabilityFallbackReason: null,
+    },
+  );
+
+  assert.deepEqual(decision.modelRouting, {
+    target: "local_review_verifier",
+    strategy: "alias",
+    requestedModel: "unknown-review-tier",
+    effectiveModel: "unknown-review-tier",
+    modelOverride: "unknown-review-tier",
+    source: "per_target_override",
+    fallbackSource: null,
+  });
+  assert.deepEqual(decision.policy, {
+    model: "unknown-review-tier",
+    reasoningEffort: "xhigh",
+    requestedReasoningEffort: "max",
+    reasoningEffortFallbackReason: "unsupported_reasoning_effort",
+  });
+  assert.equal(decision.modelCapabilitySource, "fallback");
+  assert.equal(decision.modelCapabilityFallbackReason, "model_not_in_catalog");
+  assert.deepEqual(buildCodexConfigOverrideArgs(decision.policy).slice(0, 2), [
+    "-m",
+    "unknown-review-tier",
+  ]);
 });
 
 test("resolveCodexExecutionPolicy routes bounded repair states to the explicit mini model without changing broader implementation defaults", () => {

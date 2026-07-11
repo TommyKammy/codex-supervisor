@@ -15,6 +15,7 @@ This is one concrete way to use `codex-supervisor` against a local checkout of `
   "codexBinary": "codex",
   "codexModelStrategy": "inherit",
   "codexModel": "",
+  "codexModelRoutingByTarget": {},
   "boundedRepairModelStrategy": "",
   "boundedRepairModel": "",
   "localReviewModelStrategy": "",

@@ -1148,7 +1148,54 @@ test("diagnoseSetupReadiness fails closed when fixed model routing is missing an
   );
 });
 
-test("diagnoseSetupReadiness reports fully explicit model routing when every route is overridden", async (t) => {
+test("diagnoseSetupReadiness fails closed for a canonical target route with a missing model", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = await createTrackedRepo(root);
+  const workspaceRoot = path.join(root, "workspaces");
+  const configPath = path.join(root, "supervisor.config.json");
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      ...buildConfigDocument({
+        repoPath,
+        workspaceRoot,
+        stateFile: path.join(root, "state.json"),
+        workspacePreparationCommand: undefined,
+      }),
+      codexModelRoutingByTarget: {
+        local_review_specialist: { strategy: "fixed" },
+      },
+    }),
+    "utf8",
+  );
+
+  const summary = await diagnoseSetupReadiness({
+    configPath,
+    authStatus: async () => ({ ok: true, message: null }),
+  });
+
+  assert.equal(summary.overallStatus, "invalid");
+  assert.equal(summary.modelRoutingPosture?.invalid, true);
+  const specialistTarget = summary.modelRoutingPosture?.targets.find(
+    (target) => target.key === "local_review_specialist",
+  );
+  assert.equal(specialistTarget?.missingExplicitModel, true);
+  assert.match(
+    specialistTarget?.guidance ?? "",
+    /codexModelRoutingByTarget\.local_review_specialist\.model value/i,
+  );
+  const blocker = summary.blockers.find(
+    (entry) => entry.code === "missing_codex_model_routing_by_target_local_review_specialist_model",
+  );
+  assert.deepEqual(blocker?.fieldKeys, ["codexModelRoutingByTarget"]);
+});
+
+test("diagnoseSetupReadiness keeps legacy model routes while canonical specialist and verifier routes inherit", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
   t.after(async () => {
     await fs.rm(root, { recursive: true, force: true });
@@ -1186,7 +1233,133 @@ test("diagnoseSetupReadiness reports fully explicit model routing when every rou
   assert.equal(summary.modelRoutingPosture.invalid, false);
   assert.equal(
     summary.modelRoutingPosture.summary,
+    "Model routing mixes inherited defaults with explicit per-target overrides.",
+  );
+  assert.equal(
+    summary.modelRoutingPosture.targets.find((target) => target.key === "local_review_specialist")?.strategy,
+    "inherit",
+  );
+  assert.equal(
+    summary.modelRoutingPosture.targets.find((target) => target.key === "local_review_verifier")?.strategy,
+    "inherit",
+  );
+});
+
+test("diagnoseSetupReadiness gives canonical generic inherit precedence over the legacy generic override", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = await createTrackedRepo(root);
+  const workspaceRoot = path.join(root, "workspaces");
+  const configPath = path.join(root, "supervisor.config.json");
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      ...buildConfigDocument({
+        repoPath,
+        workspaceRoot,
+        stateFile: path.join(root, "state.json"),
+        workspacePreparationCommand: undefined,
+      }),
+      localReviewModelStrategy: "fixed",
+      localReviewModel: "legacy-generic",
+      codexModelRoutingByTarget: {
+        local_review_generic: { strategy: "inherit" },
+      },
+    }),
+    "utf8",
+  );
+
+  const summary = await diagnoseSetupReadiness({
+    configPath,
+    authStatus: async () => ({ ok: true, message: null }),
+  });
+
+  assert.ok(summary.modelRoutingPosture);
+  const genericTarget = summary.modelRoutingPosture.targets.find(
+    (target) => target.key === "local_review",
+  );
+  assert.equal(genericTarget?.strategy, "inherit");
+  assert.equal(genericTarget?.model, null);
+  assert.equal(genericTarget?.overrideConfigured, true);
+  assert.equal(
+    genericTarget?.strategyField,
+    "codexModelRoutingByTarget.local_review_generic.strategy",
+  );
+  assert.match(genericTarget?.summary ?? "", /explicitly inherit the default Codex route/i);
+  assert.equal(
+    summary.modelRoutingPosture.targets.find((target) => target.key === "local_review_specialist")?.overrideConfigured,
+    false,
+  );
+  assert.equal(
+    summary.modelRoutingPosture.targets.find((target) => target.key === "local_review_verifier")?.overrideConfigured,
+    false,
+  );
+});
+
+test("diagnoseSetupReadiness reports every canonical target when the route matrix is explicit", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const repoPath = await createTrackedRepo(root);
+  const workspaceRoot = path.join(root, "workspaces");
+  const configPath = path.join(root, "supervisor.config.json");
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      ...buildConfigDocument({
+        repoPath,
+        workspaceRoot,
+        stateFile: path.join(root, "state.json"),
+        workspacePreparationCommand: undefined,
+      }),
+      codexModelStrategy: "fixed",
+      codexModel: "legacy-supervisor",
+      boundedRepairModelStrategy: "alias",
+      boundedRepairModel: "repair-tier",
+      localReviewModelStrategy: "fixed",
+      localReviewModel: "legacy-generic",
+      codexModelRoutingByTarget: {
+        supervisor: { strategy: "fixed", model: "canonical-supervisor" },
+        local_review_generic: { strategy: "alias", model: "generic-tier" },
+        local_review_specialist: { strategy: "fixed", model: "gpt-5.6-terra" },
+        local_review_verifier: { strategy: "fixed", model: "gpt-5.6-sol" },
+      },
+    }),
+    "utf8",
+  );
+
+  const summary = await diagnoseSetupReadiness({
+    configPath,
+    authStatus: async () => ({ ok: true, message: null }),
+  });
+
+  assert.ok(summary.modelRoutingPosture);
+  assert.equal(summary.modelRoutingPosture.invalid, false);
+  assert.equal(
+    summary.modelRoutingPosture.summary,
     "Model routing uses explicit per-target overrides for every route.",
+  );
+  assert.deepEqual(
+    summary.modelRoutingPosture.targets.map((target) => [
+      target.key,
+      target.strategy,
+      target.model,
+      target.overrideConfigured,
+    ]),
+    [
+      ["codex", "fixed", "canonical-supervisor", true],
+      ["bounded_repair", "alias", "repair-tier", true],
+      ["local_review", "alias", "generic-tier", true],
+      ["local_review_specialist", "fixed", "gpt-5.6-terra", true],
+      ["local_review_verifier", "fixed", "gpt-5.6-sol", true],
+    ],
   );
 });
 

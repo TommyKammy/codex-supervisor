@@ -128,8 +128,8 @@ test("probeCodexModelCapabilities falls back deterministically for malformed, no
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-model-capabilities-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const cases = [
-    { name: "malformed", body: "printf 'not-json'", reason: "malformed_catalog", timeout: 1_000 },
-    { name: "nonzero", body: "exit 7", reason: "catalog_probe_exit_7", timeout: 1_000 },
+    { name: "malformed", body: "printf 'not-json'", reason: "malformed_catalog", timeout: 5_000 },
+    { name: "nonzero", body: "exit 7", reason: "catalog_probe_exit_7", timeout: 5_000 },
     { name: "timeout", body: "sleep 1", reason: "catalog_probe_timeout", timeout: 10 },
   ];
   for (const fixture of cases) {

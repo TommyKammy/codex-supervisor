@@ -193,6 +193,31 @@ When you add or update an entry, use the deterministic repo workflow:
 2. Run `npm run guardrails:fix` to normalize ordering and formatting.
 3. Run `npm run guardrails:check` to catch malformed updates, duplicate verifier `id` values, duplicate external-review `fingerprint` values, or formatting drift before committing.
 
+## Evaluate per-target model routes
+
+Keep every target on `inherit` until a repository-specific evaluation supports an override. The checked-in representative evaluation compares that baseline with two explicit hypotheses:
+
+- inherited generic turns, GPT-5.6 Terra specialists, and a GPT-5.6 Sol verifier
+- GPT-5.6 Luna generic turns, GPT-5.6 Terra specialists, and a GPT-5.6 Sol verifier
+
+These combinations are hypotheses only. The fixture does not contain production measurements, does not change any maintained profile, and does not recommend a default role matrix.
+
+Run the deterministic evaluation from the repository root:
+
+```bash
+npm run evaluate:local-review-model-routing
+```
+
+The command validates [the representative fixture](../replay-corpus/local-review-model-routing/representative-evaluation.json), recomputes its metrics, and fails if [the machine-readable summary](../replay-corpus/local-review-model-routing/representative-summary.json) is stale. After intentionally changing the fixture, regenerate the summary with:
+
+```bash
+npm run evaluate:local-review-model-routing -- --write
+```
+
+The evaluator records correctness, confirmed findings, false positives, verifier agreement, latency, retries, and token/cost observations when supplied. Correctness is the Jaccard score of verifier-confirmed findings against expected findings. False positives are reviewer findings absent from the expected set, including findings later dismissed by the verifier. Verifier agreement is the confirmed share of all verifier verdicts, and retry rate is the share of cases with at least one retry. Token and cost totals remain `null` unless coverage is complete; `none`, `partial`, and `complete` coverage prevent missing observations from being reported as zero.
+
+Each non-baseline candidate must define a unique route matrix that differs from the all-inherit baseline. It must also include non-empty expected-finding and verifier-verdict evidence, satisfy the documented absolute quality thresholds, avoid regression against the baseline, and show the configured minimum latency or cost benefit. Missing quality signal is reported as `insufficient_quality_evidence` instead of passing vacuously. Representative fixture evidence still leaves `eligibleForDefault` false. Recorded-run evidence may make a candidate eligible for an operator decision, but the evaluator always emits `defaultDecision.changed: false` and never mutates configuration automatically.
+
 ## Related docs
 
 - [Getting started](./getting-started.md)

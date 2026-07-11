@@ -63,6 +63,7 @@ const CONFIG_FIELD_POSTURE_METADATA_ENTRIES = [
   advanced("stateBackend", "Durable state backend selection."),
   advanced("stateBootstrapFile", "Optional bootstrap state source."),
   advanced("codexModel", "Explicit default Codex model value."),
+  advanced("codexModelRoutingByTarget", "Explicit per-execution-target Codex model routing."),
   advanced("boundedRepairModelStrategy", "Bounded repair model routing override."),
   advanced("boundedRepairModel", "Bounded repair model value."),
   advanced("localReviewModelStrategy", "Generic local-review model routing override."),

@@ -49,6 +49,15 @@ export function collectMissingRequiredFields(raw: Record<string, unknown>): stri
   ) {
     missing.push("localReviewModel");
   }
+  if (raw.codexModelRoutingByTarget && typeof raw.codexModelRoutingByTarget === "object" && !Array.isArray(raw.codexModelRoutingByTarget)) {
+    for (const [target, rawRoute] of Object.entries(raw.codexModelRoutingByTarget as Record<string, unknown>)) {
+      if (!rawRoute || typeof rawRoute !== "object" || Array.isArray(rawRoute)) continue;
+      const route = rawRoute as Record<string, unknown>;
+      if ((route.strategy === "fixed" || route.strategy === "alias") && !hasNonEmptyString(route.model)) {
+        missing.push(`codexModelRoutingByTarget.${target}.model`);
+      }
+    }
+  }
 
   return missing;
 }

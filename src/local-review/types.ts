@@ -1,6 +1,9 @@
 import { type LocalReviewRoleSelection } from "../review-role-detector";
 import {
   type CodexExecutionTarget,
+  type CodexModelCapabilitySource,
+  type CodexModelRouteSource,
+  type CodexModelStrategy,
   type ReasoningEffort,
   type ReasoningEffortFallbackReason,
 } from "../core/config-types";
@@ -171,6 +174,13 @@ export interface LocalReviewGuardrailProvenance {
 export interface LocalReviewExecutionRouting {
   target: CodexExecutionTarget;
   model: string | null;
+  modelStrategy?: CodexModelStrategy;
+  requestedModel?: string | null;
+  effectiveModel?: string | null;
+  modelRouteSource?: CodexModelRouteSource;
+  modelFallbackSource?: CodexModelRouteSource | null;
+  modelCapabilitySource?: CodexModelCapabilitySource;
+  modelCapabilityFallbackReason?: string | null;
   reasoningEffort: ReasoningEffort | null;
   requestedReasoningEffort?: ReasoningEffort | null;
   reasoningEffortFallbackReason?: ReasoningEffortFallbackReason | null;

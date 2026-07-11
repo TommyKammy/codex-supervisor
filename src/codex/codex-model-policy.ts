@@ -1,11 +1,16 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { resolveCodexExecutionPolicy } from "./codex-policy";
+import {
+  type CodexModelRoutingDecision,
+  resolveCodexExecutionDecision,
+} from "./codex-policy";
 import { CodexModelCapabilities, resolveCodexModelCapabilities } from "./codex-model-capabilities";
 import { resolveTrackedIssueHostPaths } from "../core/journal";
 import {
   CodexExecutionTarget,
+  CodexModelCapabilitySource,
+  CodexModelRouteSource,
   CodexModelStrategy,
   IssueRunRecord,
   ReasoningEffort,
@@ -23,13 +28,16 @@ interface CodexModelRouteResolution {
   strategy: CodexModelStrategy;
   configuredModel: string | null;
   effectiveModel: string | null;
-  source:
-    | "supervisor_config"
-    | "bounded_repair_override"
-    | "local_review_override"
-    | "inherited_host_default"
-    | "inherited_host_default_unresolved"
-    | "default_route";
+  source: CodexModelRouteSource;
+  fallbackSource: CodexModelRouteSource | null;
+}
+
+interface CodexTargetRouteResolution extends CodexModelRouteResolution {
+  requestedReasoningEffort: ReasoningEffort | null;
+  reasoningEffort: ReasoningEffort | null;
+  reasoningEffortFallbackReason: ReasoningEffortFallbackReason | null;
+  capabilitySource: CodexModelCapabilitySource;
+  capabilityFallbackReason: string | null;
 }
 
 export interface CodexModelPolicySnapshot {
@@ -38,12 +46,10 @@ export interface CodexModelPolicySnapshot {
   defaultRoute: CodexModelRouteResolution;
   boundedRepairRoute: CodexModelRouteResolution;
   localReviewRoute: CodexModelRouteResolution;
-  activeRoute: CodexModelRouteResolution & {
+  targetRoutes: Record<CodexExecutionTarget, CodexTargetRouteResolution>;
+  activeRoute: CodexTargetRouteResolution & {
     state: RunState;
     target: CodexExecutionTarget;
-    requestedReasoningEffort: ReasoningEffort | null;
-    reasoningEffort: ReasoningEffort | null;
-    reasoningEffortFallbackReason: ReasoningEffortFallbackReason | null;
   };
 }
 
@@ -236,38 +242,26 @@ export async function resolveHostCodexDefaultModel(cwd?: string): Promise<HostCo
   };
 }
 
-function defaultRouteSource(
-  config: Pick<SupervisorConfig, "codexModelStrategy">,
-  hostDefault: HostCodexDefaultModelResolution,
-): CodexModelRouteResolution["source"] {
-  if (config.codexModelStrategy === "inherit") {
-    return hostDefault.model ? "inherited_host_default" : "inherited_host_default_unresolved";
-  }
-
-  return "supervisor_config";
+function routeFromDecision(route: CodexModelRoutingDecision): CodexModelRouteResolution {
+  return {
+    strategy: route.strategy,
+    configuredModel: route.requestedModel,
+    effectiveModel: route.effectiveModel,
+    source: route.source,
+    fallbackSource: route.fallbackSource,
+  };
 }
 
-function resolveRoute(args: {
-  strategy: CodexModelStrategy;
-  configuredModel: string | null;
-  fallbackSource: CodexModelRouteResolution["source"];
-  explicitOverrideSource: "bounded_repair_override" | "local_review_override";
-  hostDefault: HostCodexDefaultModelResolution;
-}): CodexModelRouteResolution {
-  if (args.strategy === "inherit") {
-    return {
-      strategy: "inherit",
-      configuredModel: null,
-      effectiveModel: args.hostDefault.model,
-      source: args.fallbackSource,
-    };
-  }
-
+function targetRouteFromDecision(
+  decision: ReturnType<typeof resolveCodexExecutionDecision>,
+): CodexTargetRouteResolution {
   return {
-    strategy: args.strategy,
-    configuredModel: args.configuredModel,
-    effectiveModel: args.configuredModel,
-    source: args.explicitOverrideSource,
+    ...routeFromDecision(decision.modelRouting),
+    requestedReasoningEffort: decision.policy.requestedReasoningEffort ?? decision.policy.reasoningEffort,
+    reasoningEffort: decision.policy.reasoningEffort,
+    reasoningEffortFallbackReason: decision.policy.reasoningEffortFallbackReason ?? null,
+    capabilitySource: decision.modelCapabilitySource,
+    capabilityFallbackReason: decision.modelCapabilityFallbackReason,
   };
 }
 
@@ -282,11 +276,23 @@ function summarizeRoute(route: CodexModelRouteResolution): string {
   return `${routeLabel}@${route.source}`;
 }
 
+function renderTargetRouteLine(
+  prefix: "doctor_codex_target_route" | "codex_target_route",
+  target: CodexExecutionTarget,
+  route: CodexTargetRouteResolution,
+): string {
+  const requestedModel = route.strategy === "inherit"
+    ? "inherit"
+    : route.configuredModel ?? "unresolved";
+  return `${prefix} target=${target} strategy=${route.strategy} requested_model=${requestedModel} effective_model=${route.effectiveModel ?? "unresolved"} route_source=${route.source} fallback_source=${route.fallbackSource ?? "none"} requested_reasoning=${route.requestedReasoningEffort ?? "default"} effective_reasoning=${route.reasoningEffort ?? "default"} reasoning_fallback_reason=${route.reasoningEffortFallbackReason ?? "none"} capability_source=${route.capabilitySource} fallback_reason=${route.capabilityFallbackReason ?? "none"}`;
+}
+
 export async function buildCodexModelPolicySnapshot(args: {
   config: Pick<
     SupervisorConfig,
     | "codexModelStrategy"
     | "codexModel"
+    | "codexModelRoutingByTarget"
     | "boundedRepairModelStrategy"
     | "boundedRepairModel"
     | "localReviewModelStrategy"
@@ -315,58 +321,73 @@ export async function buildCodexModelPolicySnapshot(args: {
     resolveHostCodexDefaultModel(workspace),
     resolveCodexModelCapabilities(args.config.codexBinary, workspace),
   ]);
-  const defaultRoute: CodexModelRouteResolution = {
-    strategy: args.config.codexModelStrategy,
-    configuredModel: args.config.codexModel ?? null,
-    effectiveModel: args.config.codexModelStrategy === "inherit" ? hostDefault.model : (args.config.codexModel ?? null),
-    source: defaultRouteSource(args.config, hostDefault),
+  const policyContext = {
+    inheritedModel: hostDefault.model,
+    reasoningLevelsByModel: capabilities.reasoningLevelsByModel,
+    modelCapabilitySource: capabilities.source,
+    modelCapabilityFallbackReason: capabilities.fallbackReason,
   };
-  const boundedRepairRoute = resolveRoute({
-    strategy: args.config.boundedRepairModelStrategy ?? "inherit",
-    configuredModel: args.config.boundedRepairModel ?? null,
-    fallbackSource: "default_route",
-    explicitOverrideSource: "bounded_repair_override",
-    hostDefault: {
-      model: defaultRoute.effectiveModel,
-      source: hostDefault.source,
-    },
-  });
-  const localReviewRoute = resolveRoute({
-    strategy: args.config.localReviewModelStrategy ?? "inherit",
-    configuredModel: args.config.localReviewModel ?? null,
-    fallbackSource: "default_route",
-    explicitOverrideSource: "local_review_override",
-    hostDefault: {
-      model: defaultRoute.effectiveModel,
-      source: hostDefault.source,
-    },
-  });
+  const defaultDecision = resolveCodexExecutionDecision(
+    args.config,
+    "implementing",
+    undefined,
+    "supervisor",
+    policyContext,
+  );
+  const boundedRepairDecision = resolveCodexExecutionDecision(
+    args.config,
+    "repairing_ci",
+    undefined,
+    "supervisor",
+    policyContext,
+  );
+  const targetDecisions: Record<CodexExecutionTarget, ReturnType<typeof resolveCodexExecutionDecision>> = {
+    supervisor: defaultDecision,
+    local_review_generic: resolveCodexExecutionDecision(
+      args.config,
+      "local_review",
+      undefined,
+      "local_review_generic",
+      policyContext,
+    ),
+    local_review_specialist: resolveCodexExecutionDecision(
+      args.config,
+      "local_review",
+      undefined,
+      "local_review_specialist",
+      policyContext,
+    ),
+    local_review_verifier: resolveCodexExecutionDecision(
+      args.config,
+      "local_review",
+      undefined,
+      "local_review_verifier",
+      policyContext,
+    ),
+  };
+  const defaultRoute = routeFromDecision(defaultDecision.modelRouting);
+  const boundedRepairRoute = routeFromDecision(boundedRepairDecision.modelRouting);
+  const targetRoutes: Record<CodexExecutionTarget, CodexTargetRouteResolution> = {
+    supervisor: targetRouteFromDecision(defaultDecision),
+    local_review_generic: targetRouteFromDecision(targetDecisions.local_review_generic),
+    local_review_specialist: targetRouteFromDecision(targetDecisions.local_review_specialist),
+    local_review_verifier: targetRouteFromDecision(targetDecisions.local_review_verifier),
+  };
+  const localReviewRoute = targetRoutes.local_review_generic;
   const activeTarget: CodexExecutionTarget = args.activeState === "local_review"
     ? "local_review_generic"
     : "supervisor";
-  const activeBaseRoute =
-    args.activeState === "repairing_ci" || args.activeState === "addressing_review"
-      ? boundedRepairRoute
-      : args.activeState === "local_review"
-      ? localReviewRoute
-      : defaultRoute;
-  const activePolicy = resolveCodexExecutionPolicy(
+  const activeDecision = resolveCodexExecutionDecision(
     args.config,
     args.activeState,
     args.activeRecord,
     activeTarget,
-    {
-      inheritedModel: hostDefault.model,
-      reasoningLevelsByModel: capabilities.reasoningLevelsByModel,
-    },
+    policyContext,
   );
   const activeRoute = {
-    ...activeBaseRoute,
+    ...targetRouteFromDecision(activeDecision),
     state: args.activeState,
     target: activeTarget,
-    requestedReasoningEffort: activePolicy.requestedReasoningEffort ?? activePolicy.reasoningEffort,
-    reasoningEffort: activePolicy.reasoningEffort,
-    reasoningEffortFallbackReason: activePolicy.reasoningEffortFallbackReason ?? null,
   };
 
   return {
@@ -375,22 +396,31 @@ export async function buildCodexModelPolicySnapshot(args: {
     defaultRoute,
     boundedRepairRoute,
     localReviewRoute,
+    targetRoutes,
     activeRoute,
   };
 }
 
 export function renderDoctorCodexModelPolicyLines(snapshot: CodexModelPolicySnapshot): string[] {
-  return [
+  const lines = [
     `doctor_codex_model_policy default=${summarizeRoute(snapshot.defaultRoute)}`,
     `doctor_codex_route_overrides repair=${summarizeRoute(snapshot.boundedRepairRoute)} local_review=${summarizeRoute(snapshot.localReviewRoute)}`,
     `doctor_codex_host_default model=${snapshot.hostDefault.model ?? "unresolved"} source=${snapshot.hostDefault.source ?? "unresolved"}`,
-    `doctor_codex_reasoning active=${snapshot.activeRoute.target} requested=${snapshot.activeRoute.requestedReasoningEffort ?? "default"} effective=${snapshot.activeRoute.reasoningEffort ?? "default"} reasoning_fallback_reason=${snapshot.activeRoute.reasoningEffortFallbackReason ?? "none"} capability_source=${snapshot.capabilities.source} fallback_reason=${snapshot.capabilities.fallbackReason ?? "none"}`,
+    `doctor_codex_reasoning active=${snapshot.activeRoute.target} requested=${snapshot.activeRoute.requestedReasoningEffort ?? "default"} effective=${snapshot.activeRoute.reasoningEffort ?? "default"} reasoning_fallback_reason=${snapshot.activeRoute.reasoningEffortFallbackReason ?? "none"} capability_source=${snapshot.activeRoute.capabilitySource} fallback_reason=${snapshot.activeRoute.capabilityFallbackReason ?? "none"}`,
   ];
+  for (const target of ["supervisor", "local_review_generic", "local_review_specialist", "local_review_verifier"] as const) {
+    lines.push(renderTargetRouteLine("doctor_codex_target_route", target, snapshot.targetRoutes[target]));
+  }
+  return lines;
 }
 
 export function renderStatusCodexModelPolicyLines(snapshot: CodexModelPolicySnapshot): string[] {
-  return [
-    `codex_execution_policy active=${snapshot.activeRoute.target}:${summarizeRoute(snapshot.activeRoute)} reasoning=${snapshot.activeRoute.reasoningEffort ?? "default"} requested_reasoning=${snapshot.activeRoute.requestedReasoningEffort ?? "default"} effective_reasoning=${snapshot.activeRoute.reasoningEffort ?? "default"} reasoning_fallback_reason=${snapshot.activeRoute.reasoningEffortFallbackReason ?? "none"} capability_source=${snapshot.capabilities.source} fallback_reason=${snapshot.capabilities.fallbackReason ?? "none"}`,
+  const lines = [
+    `codex_execution_policy active=${snapshot.activeRoute.target}:${summarizeRoute(snapshot.activeRoute)} reasoning=${snapshot.activeRoute.reasoningEffort ?? "default"} requested_reasoning=${snapshot.activeRoute.requestedReasoningEffort ?? "default"} effective_reasoning=${snapshot.activeRoute.reasoningEffort ?? "default"} reasoning_fallback_reason=${snapshot.activeRoute.reasoningEffortFallbackReason ?? "none"} capability_source=${snapshot.activeRoute.capabilitySource} fallback_reason=${snapshot.activeRoute.capabilityFallbackReason ?? "none"}`,
     `codex_route_overrides repair=${summarizeRoute(snapshot.boundedRepairRoute)} local_review=${summarizeRoute(snapshot.localReviewRoute)}`,
   ];
+  for (const target of ["supervisor", "local_review_generic", "local_review_specialist", "local_review_verifier"] as const) {
+    lines.push(renderTargetRouteLine("codex_target_route", target, snapshot.targetRoutes[target]));
+  }
+  return lines;
 }

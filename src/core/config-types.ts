@@ -3,6 +3,19 @@ import type { RunState } from "./types";
 
 export type CodexModelStrategy = "inherit" | "fixed" | "alias";
 export type CodexExecutionTarget = "supervisor" | "local_review_generic" | "local_review_specialist" | "local_review_verifier";
+export type CodexTargetModelRoute =
+  | { strategy: "inherit" }
+  | { strategy: "fixed" | "alias"; model: string };
+export type CodexModelRoutingByTarget = Partial<Record<CodexExecutionTarget, CodexTargetModelRoute>>;
+export type CodexModelRouteSource =
+  | "supervisor_config"
+  | "bounded_repair_override"
+  | "local_review_override"
+  | "per_target_override"
+  | "inherited_host_default"
+  | "inherited_host_default_unresolved"
+  | "default_route";
+export type CodexModelCapabilitySource = "live_catalog" | "fallback";
 
 export type ReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
 export type ReasoningEffortFallbackReason = "unsupported_reasoning_effort" | "nested_delegation_blocked";
@@ -162,9 +175,12 @@ export interface SupervisorConfig {
   executionSafetyMode?: ExecutionSafetyMode;
   codexModelStrategy: CodexModelStrategy;
   codexModel?: string;
+  codexModelRoutingByTarget?: CodexModelRoutingByTarget;
   boundedRepairModelStrategy?: CodexModelStrategy;
   boundedRepairModel?: string;
+  /** @deprecated Use codexModelRoutingByTarget.local_review_generic. */
   localReviewModelStrategy?: CodexModelStrategy;
+  /** @deprecated Use codexModelRoutingByTarget.local_review_generic. */
   localReviewModel?: string;
   codexReasoningEffortByState: Partial<Record<RunState, ReasoningEffort>>;
   codexReasoningEscalateOnRepeatedFailure: boolean;

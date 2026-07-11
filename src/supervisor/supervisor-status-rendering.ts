@@ -266,6 +266,10 @@ function describeGenericLocalReviewRouting(
   routing: LocalReviewExecutionRouting,
 ): string {
   const reasoning = describeRoutingReasoning(routing);
+  const persistedModel = describePersistedRoutingModel(routing);
+  if (persistedModel !== null) {
+    return `${persistedModel}${reasoning}`;
+  }
   if (!config.localReviewModelStrategy || config.localReviewModelStrategy === "inherit") {
     return `${routing.model ? `inherit->${routing.model}` : "inherit"}${reasoning}`;
   }
@@ -274,14 +278,25 @@ function describeGenericLocalReviewRouting(
 }
 
 function describeResolvedRouting(routing: LocalReviewExecutionRouting | null | undefined): string {
-  return routing ? `${routing.model ?? "inherit"}${describeRoutingReasoning(routing)}` : "inherit";
+  if (!routing) return "inherit";
+  return `${describePersistedRoutingModel(routing) ?? routing.model ?? "inherit"}${describeRoutingReasoning(routing)}`;
+}
+
+function describePersistedRoutingModel(routing: LocalReviewExecutionRouting): string | null {
+  if (!routing.modelStrategy) return null;
+  if (routing.modelStrategy === "inherit") {
+    return routing.effectiveModel ? `inherit->${routing.effectiveModel}` : "inherit";
+  }
+  return routing.effectiveModel ?? routing.model ?? "unresolved";
 }
 
 function describeRoutingReasoning(routing: LocalReviewExecutionRouting): string {
+  const requestedModel = routing.requestedModel ?? (routing.modelStrategy === "inherit" ? "inherit" : routing.model ?? "inherit");
+  const effectiveModel = routing.effectiveModel ?? routing.model ?? "unresolved";
   const requested = routing.requestedReasoningEffort ?? routing.reasoningEffort ?? "default";
   const effective = routing.reasoningEffort ?? "default";
   const reason = routing.reasoningEffortFallbackReason ?? "none";
-  return `(requested_reasoning=${requested},effective_reasoning=${effective},reasoning_fallback_reason=${reason})`;
+  return `(requested_model=${requestedModel},effective_model=${effectiveModel},model_route_source=${routing.modelRouteSource ?? "unavailable"},model_fallback_source=${routing.modelFallbackSource ?? "none"},model_capability_source=${routing.modelCapabilitySource ?? "unavailable"},model_capability_fallback_reason=${routing.modelCapabilityFallbackReason ?? "none"},requested_reasoning=${requested},effective_reasoning=${effective},reasoning_fallback_reason=${reason})`;
 }
 
 export async function buildLocalReviewRoutingStatusLine(args: {

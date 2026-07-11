@@ -314,6 +314,10 @@ test("runCodexReviewTurn omits bypass flags when execution safety mode is operat
     codexBinary,
     `#!/bin/sh
 set -eu
+if [ "$1" = "debug" ] && [ "$2" = "models" ]; then
+  printf '{"models":[{"slug":"gpt-5.6-luna","supported_reasoning_levels":["low"]}]}'
+  exit 0
+fi
 printf '%s\n' "$@" > "${argsPath}"
 out=""
 while [ "$#" -gt 0 ]; do
@@ -339,6 +343,9 @@ exit 0
     config: createConfig({
       codexBinary,
       executionSafetyMode: "operator_gated",
+      codexModelRoutingByTarget: {
+        local_review_generic: { strategy: "fixed", model: "gpt-5.6-luna" },
+      },
     }),
     workspacePath,
     role: "reviewer",
@@ -352,20 +359,29 @@ exit 0
   assert.match(result.rawOutput, /Operator gated local review ran/);
   assert.deepEqual(result.routing, {
     target: "local_review_generic",
-    model: null,
+    model: "gpt-5.6-luna",
+    modelStrategy: "fixed",
+    requestedModel: "gpt-5.6-luna",
+    effectiveModel: "gpt-5.6-luna",
+    modelRouteSource: "per_target_override",
+    modelFallbackSource: null,
+    modelCapabilitySource: "live_catalog",
+    modelCapabilityFallbackReason: null,
     reasoningEffort: "low",
     requestedReasoningEffort: "low",
     reasoningEffortFallbackReason: null,
   });
   assert.equal(args.includes("--dangerously-bypass-approvals-and-sandbox"), false);
-  assert.deepEqual(args.slice(0, 5), [
+  assert.deepEqual(args.slice(0, 7), [
     "exec",
+    "-m",
+    "gpt-5.6-luna",
     "-c",
     'model_reasoning_effort="low"',
     "--json",
     "-C",
   ]);
-  assert.equal(args[5], workspacePath);
+  assert.equal(args[7], workspacePath);
 });
 
 test("runCodexReviewTurn emits max reasoning for GPT-5.6 Sol", async (t) => {
@@ -381,6 +397,10 @@ test("runCodexReviewTurn emits max reasoning for GPT-5.6 Sol", async (t) => {
     codexBinary,
     `#!/bin/sh
 set -eu
+if [ "$1" = "debug" ] && [ "$2" = "models" ]; then
+  printf '{"models":[{"slug":"gpt-5.6-sol","supported_reasoning_levels":["high","max"]}]}'
+  exit 0
+fi
 printf '%s\n' "$@" > "${argsPath}"
 exit 0
 `,
@@ -392,8 +412,10 @@ exit 0
     config: createConfig({
       codexBinary,
       codexModelStrategy: "fixed",
-      codexModel: "gpt-5.6-sol",
-      localReviewModelStrategy: "inherit",
+      codexModel: "legacy-supervisor-model",
+      codexModelRoutingByTarget: {
+        local_review_generic: { strategy: "alias", model: "gpt-5.6-sol" },
+      },
       codexReasoningEffortByState: { local_review: "max" },
     }),
     workspacePath,
@@ -407,6 +429,13 @@ exit 0
   assert.deepEqual(result.routing, {
     target: "local_review_generic",
     model: "gpt-5.6-sol",
+    modelStrategy: "alias",
+    requestedModel: "gpt-5.6-sol",
+    effectiveModel: "gpt-5.6-sol",
+    modelRouteSource: "per_target_override",
+    modelFallbackSource: null,
+    modelCapabilitySource: "live_catalog",
+    modelCapabilityFallbackReason: null,
     reasoningEffort: "max",
     requestedReasoningEffort: "max",
     reasoningEffortFallbackReason: null,
@@ -422,11 +451,12 @@ exit 0
 });
 
 test("runCodexReviewTurn blocks nested ultra delegation for every local-review target", async (t) => {
-  const targets: LocalReviewTurnRequest["executionTarget"][] = [
-    "local_review_generic",
-    "local_review_specialist",
-    "local_review_verifier",
-  ];
+  const routeByTarget = {
+    local_review_generic: { strategy: "alias" as const, model: "gpt-5.6-luna" },
+    local_review_specialist: { strategy: "fixed" as const, model: "gpt-5.6-terra" },
+    local_review_verifier: { strategy: "alias" as const, model: "gpt-5.6-sol" },
+  };
+  const targets = Object.keys(routeByTarget) as LocalReviewTurnRequest["executionTarget"][];
 
   for (const executionTarget of targets) {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), `local-review-runner-ultra-${executionTarget}-`));
@@ -442,7 +472,7 @@ test("runCodexReviewTurn blocks nested ultra delegation for every local-review t
       `#!/bin/sh
 set -eu
 if [ "$1" = "debug" ] && [ "$2" = "models" ]; then
-  printf '{"models":[{"slug":"gpt-5.6-terra","supported_reasoning_levels":["high","xhigh","max","ultra"]}]}'
+  printf '{"models":[{"slug":"gpt-5.6-sol","supported_reasoning_levels":["high","xhigh","max","ultra"]},{"slug":"gpt-5.6-terra","supported_reasoning_levels":["high","xhigh","max","ultra"]},{"slug":"gpt-5.6-luna","supported_reasoning_levels":["high","xhigh","max","ultra"]}]}'
   exit 0
 fi
 printf '%s\n' "$@" > "${argsPath}"
@@ -451,12 +481,15 @@ exit 0
       { mode: 0o755 },
     );
 
+    const configuredRoute = routeByTarget[executionTarget];
     const result = await runCodexReviewTurn({
       config: createConfig({
         codexBinary,
         codexModelStrategy: "fixed",
-        codexModel: "gpt-5.6-terra",
-        localReviewModelStrategy: "inherit",
+        codexModel: "legacy-supervisor-model",
+        localReviewModelStrategy: "alias",
+        localReviewModel: "legacy-generic-model",
+        codexModelRoutingByTarget: routeByTarget,
         codexReasoningEffortByState: { local_review: "ultra" },
       }),
       workspacePath,
@@ -469,7 +502,14 @@ exit 0
 
     assert.deepEqual(result.routing, {
       target: executionTarget,
-      model: "gpt-5.6-terra",
+      model: configuredRoute.model,
+      modelStrategy: configuredRoute.strategy,
+      requestedModel: configuredRoute.model,
+      effectiveModel: configuredRoute.model,
+      modelRouteSource: "per_target_override",
+      modelFallbackSource: null,
+      modelCapabilitySource: "live_catalog",
+      modelCapabilityFallbackReason: null,
       reasoningEffort: "max",
       requestedReasoningEffort: "ultra",
       reasoningEffortFallbackReason: "nested_delegation_blocked",
@@ -478,11 +518,56 @@ exit 0
     assert.deepEqual(args.slice(0, 5), [
       "exec",
       "-m",
-      "gpt-5.6-terra",
+      configuredRoute.model,
       "-c",
       'model_reasoning_effort="max"',
     ]);
   }
+});
+
+test("runCodexReviewTurn reports target fallback when a live catalog omits the configured alias", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "local-review-runner-unknown-alias-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+  const workspacePath = path.join(root, "workspace");
+  const codexBinary = path.join(root, "fake-codex.sh");
+  const argsPath = path.join(root, "args.log");
+  await fs.mkdir(workspacePath, { recursive: true });
+  await fs.writeFile(
+    codexBinary,
+    `#!/bin/sh
+set -eu
+if [ "$1" = "debug" ] && [ "$2" = "models" ]; then
+  printf '{"models":[{"slug":"gpt-5.6-sol","supported_reasoning_levels":["high","xhigh","max"]}]}'
+  exit 0
+fi
+printf '%s\n' "$@" > "${argsPath}"
+exit 0
+`,
+    { mode: 0o755 },
+  );
+
+  const result = await runCodexReviewTurn({
+    config: createConfig({
+      codexBinary,
+      codexModelRoutingByTarget: {
+        local_review_verifier: { strategy: "alias", model: "unknown-review-tier" },
+      },
+      codexReasoningEffortByState: { local_review: "max" },
+    }),
+    workspacePath,
+    role: "verifier",
+    outputFileName: "verifier.txt",
+    prompt: "unknown alias provenance",
+    executionTarget: "local_review_verifier",
+  });
+
+  assert.equal(result.routing.effectiveModel, "unknown-review-tier");
+  assert.equal(result.routing.modelCapabilitySource, "fallback");
+  assert.equal(result.routing.modelCapabilityFallbackReason, "model_not_in_catalog");
+  assert.equal(result.routing.reasoningEffort, "xhigh");
+  assert.equal(result.routing.reasoningEffortFallbackReason, "unsupported_reasoning_effort");
 });
 
 test("runCodexReviewTurn returns the same routing used for a transient catalog fallback", async (t) => {
@@ -524,6 +609,13 @@ exit 0
   assert.deepEqual(result.routing, {
     target: "local_review_generic",
     model: "gpt-5.6-terra",
+    modelStrategy: "inherit",
+    requestedModel: null,
+    effectiveModel: "gpt-5.6-terra",
+    modelRouteSource: "default_route",
+    modelFallbackSource: "supervisor_config",
+    modelCapabilitySource: "fallback",
+    modelCapabilityFallbackReason: "malformed_catalog",
     reasoningEffort: "xhigh",
     requestedReasoningEffort: "max",
     reasoningEffortFallbackReason: "unsupported_reasoning_effort",

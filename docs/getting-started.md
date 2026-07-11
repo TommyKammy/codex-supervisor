@@ -146,7 +146,7 @@ Recommended model posture for a first operator profile:
 
 - keep `codexModelStrategy: "inherit"` so the supervisor follows the host Codex CLI/App default model
 - set the host Codex default model intentionally before you trust `loop`
-- leave the bounded repair and local-review model overrides unset unless you intentionally want a separate route
+- leave `codexModelRoutingByTarget` plus the bounded-repair and legacy generic local-review overrides unset unless you intentionally want an evaluated separate route
 - switch to `fixed` only when this profile must pin one model and ignore the host default model
 
 Use the configuration guide as the source of truth for model routing details and validation rules rather than copying a second policy into local notes.
