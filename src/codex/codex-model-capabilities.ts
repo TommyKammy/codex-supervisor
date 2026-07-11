@@ -10,7 +10,7 @@ export interface CodexModelCapabilities {
   fallbackReason: string | null;
 }
 
-const REASONING_LEVELS = new Set<ReasoningEffort>(["none", "low", "medium", "high", "xhigh", "max"]);
+const REASONING_LEVELS = new Set<ReasoningEffort>(["none", "low", "medium", "high", "xhigh", "max", "ultra"]);
 const FALLBACK = new Map<string, ReadonlySet<ReasoningEffort>>([
   ["gpt-5.6-sol", new Set<ReasoningEffort>(["low", "medium", "high", "xhigh", "max"])],
 ]);

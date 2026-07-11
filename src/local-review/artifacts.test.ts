@@ -15,7 +15,9 @@ import { createConfig } from "./test-helpers";
 const GENERIC_ROUTING = {
   target: "local_review_generic" as const,
   model: null,
+  requestedReasoningEffort: null,
   reasoningEffort: null,
+  reasoningEffortFallbackReason: null,
 };
 
 test("writeLocalReviewArtifacts renders durable guardrail provenance compactly", async () => {
@@ -111,7 +113,9 @@ test("writeLocalReviewArtifacts records deterministic model routing for generic,
       routing: {
         target: "local_review_generic" as const,
         model: "local-review-fast",
-        reasoningEffort: "low" as const,
+        requestedReasoningEffort: "ultra" as const,
+        reasoningEffort: "max" as const,
+        reasoningEffortFallbackReason: "nested_delegation_blocked" as const,
       },
       exitCode: 0,
       rawOutput: "review raw output",
@@ -138,7 +142,9 @@ test("writeLocalReviewArtifacts records deterministic model routing for generic,
       routing: {
         target: "local_review_specialist" as const,
         model: "gpt-5-codex",
+        requestedReasoningEffort: "low" as const,
         reasoningEffort: "low" as const,
+        reasoningEffortFallbackReason: null,
       },
       exitCode: 0,
       rawOutput: "specialist raw output",
@@ -170,7 +176,9 @@ test("writeLocalReviewArtifacts records deterministic model routing for generic,
       routing: {
         target: "local_review_verifier",
         model: "gpt-5-codex",
-        reasoningEffort: "low",
+        requestedReasoningEffort: "ultra",
+        reasoningEffort: "max",
+        reasoningEffortFallbackReason: "nested_delegation_blocked",
       },
       exitCode: 0,
       rawOutput: "verifier raw output",
@@ -204,7 +212,9 @@ test("writeLocalReviewArtifacts records deterministic model routing for generic,
       routing: {
         target: "local_review_verifier",
         model: "gpt-5-codex",
-        reasoningEffort: "low",
+        requestedReasoningEffort: "ultra",
+        reasoningEffort: "max",
+        reasoningEffortFallbackReason: "nested_delegation_blocked",
       },
       exitCode: 0,
       rawOutput: "verifier raw output",
@@ -221,11 +231,20 @@ test("writeLocalReviewArtifacts records deterministic model routing for generic,
   const findings = JSON.parse(await fs.readFile(artifacts.findingsPath, "utf8"));
 
   assert.match(summary, /## Model routing/);
-  assert.match(summary, /- reviewer: target=local_review_generic model=local-review-fast reasoning=low/);
-  assert.match(summary, /- prisma_postgres_reviewer: target=local_review_specialist model=gpt-5-codex reasoning=low/);
-  assert.match(summary, /- verifier: target=local_review_verifier model=gpt-5-codex reasoning=low/);
+  assert.match(
+    summary,
+    /- reviewer: target=local_review_generic model=local-review-fast reasoning=max requested_reasoning=ultra effective_reasoning=max reasoning_fallback_reason=nested_delegation_blocked/,
+  );
+  assert.match(
+    summary,
+    /- prisma_postgres_reviewer: target=local_review_specialist model=gpt-5-codex reasoning=low requested_reasoning=low effective_reasoning=low reasoning_fallback_reason=none/,
+  );
+  assert.match(
+    summary,
+    /- verifier: target=local_review_verifier model=gpt-5-codex reasoning=max requested_reasoning=ultra effective_reasoning=max reasoning_fallback_reason=nested_delegation_blocked/,
+  );
   assert.deepEqual(
-    findings.roleReports.map((report: { role: string; routing: { target: string; model: string | null; reasoningEffort: string } }) => ({
+    findings.roleReports.map((report: { role: string; routing: Record<string, unknown> }) => ({
       role: report.role,
       routing: report.routing,
     })),
@@ -235,7 +254,9 @@ test("writeLocalReviewArtifacts records deterministic model routing for generic,
         routing: {
           target: "local_review_generic",
           model: "local-review-fast",
-          reasoningEffort: "low",
+          requestedReasoningEffort: "ultra",
+          reasoningEffort: "max",
+          reasoningEffortFallbackReason: "nested_delegation_blocked",
         },
       },
       {
@@ -243,7 +264,9 @@ test("writeLocalReviewArtifacts records deterministic model routing for generic,
         routing: {
           target: "local_review_specialist",
           model: "gpt-5-codex",
+          requestedReasoningEffort: "low",
           reasoningEffort: "low",
+          reasoningEffortFallbackReason: null,
         },
       },
     ],
@@ -251,7 +274,9 @@ test("writeLocalReviewArtifacts records deterministic model routing for generic,
   assert.deepEqual(findings.verifierReport?.routing, {
     target: "local_review_verifier",
     model: "gpt-5-codex",
-    reasoningEffort: "low",
+    requestedReasoningEffort: "ultra",
+    reasoningEffort: "max",
+    reasoningEffortFallbackReason: "nested_delegation_blocked",
   });
 });
 

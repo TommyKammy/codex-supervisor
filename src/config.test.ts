@@ -214,7 +214,7 @@ test("loadConfig leaves bare codexBinary values unresolved for PATH lookup", asy
   assert.equal(config.stateFile, path.join(tempDir, "state.json"));
 });
 
-test("loadConfig preserves max as a configured reasoning effort", async (t) => {
+test("loadConfig preserves explicit ultra and max reasoning efforts", async (t) => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-config-"));
   t.after(async () => {
     await fs.rm(tempDir, { recursive: true, force: true });
@@ -232,8 +232,8 @@ test("loadConfig preserves max as a configured reasoning effort", async (t) => {
       codexBinary: "codex",
       branchPrefix: "codex/issue-",
       codexReasoningEffortByState: {
-        implementing: "max",
-        repairing_ci: "xhigh",
+        implementing: "ultra",
+        repairing_ci: "max",
         planning: "unsupported",
       },
     }),
@@ -243,8 +243,8 @@ test("loadConfig preserves max as a configured reasoning effort", async (t) => {
   const config = loadConfig(configPath);
 
   assert.deepEqual(config.codexReasoningEffortByState, {
-    implementing: "max",
-    repairing_ci: "xhigh",
+    implementing: "ultra",
+    repairing_ci: "max",
   });
 });
 

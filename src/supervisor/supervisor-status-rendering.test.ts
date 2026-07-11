@@ -348,7 +348,9 @@ test("buildLocalReviewRoutingStatusLine summarizes explicit mini routing for gen
           routing: {
             target: "local_review_generic",
             model: "gpt-5.4-mini",
-            reasoningEffort: "low",
+            requestedReasoningEffort: "ultra",
+            reasoningEffort: "max",
+            reasoningEffortFallbackReason: "nested_delegation_blocked",
           },
         },
         {
@@ -365,7 +367,9 @@ test("buildLocalReviewRoutingStatusLine summarizes explicit mini routing for gen
         routing: {
           target: "local_review_verifier",
           model: "gpt-5-codex",
-          reasoningEffort: "low",
+          requestedReasoningEffort: "ultra",
+          reasoningEffort: "max",
+          reasoningEffortFallbackReason: "nested_delegation_blocked",
         },
       },
     },
@@ -384,7 +388,7 @@ test("buildLocalReviewRoutingStatusLine summarizes explicit mini routing for gen
         local_review_summary_path: summaryPath,
       }),
     }),
-    "local_review_routing generic=gpt-5.4-mini(1) specialists=gpt-5-codex(1) verifier=gpt-5-codex",
+    "local_review_routing generic=gpt-5.4-mini(requested_reasoning=ultra,effective_reasoning=max,reasoning_fallback_reason=nested_delegation_blocked)(1) specialists=gpt-5-codex(requested_reasoning=low,effective_reasoning=low,reasoning_fallback_reason=none)(1) verifier=gpt-5-codex(requested_reasoning=ultra,effective_reasoning=max,reasoning_fallback_reason=nested_delegation_blocked)",
   );
 });
 
@@ -437,7 +441,7 @@ test("buildLocalReviewRoutingStatusLine labels inherited generic local-review ro
         local_review_summary_path: summaryPath,
       }),
     }),
-    "local_review_routing generic=inherit->gpt-5-codex(1) specialists=gpt-5-codex(1) verifier=gpt-5-codex",
+    "local_review_routing generic=inherit->gpt-5-codex(requested_reasoning=low,effective_reasoning=low,reasoning_fallback_reason=none)(1) specialists=gpt-5-codex(requested_reasoning=low,effective_reasoning=low,reasoning_fallback_reason=none)(1) verifier=gpt-5-codex(requested_reasoning=low,effective_reasoning=low,reasoning_fallback_reason=none)",
   );
 });
 
@@ -474,9 +478,84 @@ test("renderStatusCodexModelPolicyLines reports inherited host defaults and over
   );
 
   assert.deepEqual(lines, [
-    "codex_execution_policy active=supervisor:inherit->gpt-5.4@inherited_host_default reasoning=xhigh requested_reasoning=max capability_source=fallback fallback_reason=catalog_probe_unavailable",
+    "codex_execution_policy active=supervisor:inherit->gpt-5.4@inherited_host_default reasoning=xhigh requested_reasoning=max effective_reasoning=xhigh reasoning_fallback_reason=unsupported_reasoning_effort capability_source=fallback fallback_reason=catalog_probe_unavailable",
     "codex_route_overrides repair=alias:gpt-5.4-mini@bounded_repair_override local_review=alias:local-review-fast@local_review_override",
   ]);
+});
+
+test("renderStatusCodexModelPolicyLines preserves ultra provenance for supported, unsupported, and nested routes", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "status-codex-policy-ultra-"));
+  const previousCodexHome = process.env.CODEX_HOME;
+  t.after(async () => {
+    if (previousCodexHome === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = previousCodexHome;
+    await fs.rm(root, { recursive: true, force: true });
+  });
+  process.env.CODEX_HOME = path.join(root, "codex-home");
+  await fs.mkdir(process.env.CODEX_HOME, { recursive: true });
+
+  async function writeCatalogBinary(name: string, models: unknown[]): Promise<string> {
+    const binary = path.join(root, name);
+    await fs.writeFile(
+      binary,
+      `#!/usr/bin/env node\nprocess.stdout.write(${JSON.stringify(JSON.stringify({ models }))});\n`,
+      { mode: 0o755 },
+    );
+    return binary;
+  }
+
+  const solBinary = await writeCatalogBinary("sol-catalog", [
+    { slug: "gpt-5.6-sol", supported_reasoning_levels: ["max", "ultra"] },
+  ]);
+  const lunaBinary = await writeCatalogBinary("luna-catalog", [
+    { slug: "gpt-5.6-luna", supported_reasoning_levels: ["xhigh", "max"] },
+  ]);
+
+  const supported = await buildCodexModelPolicySnapshot({
+    config: createConfig({
+      codexBinary: solBinary,
+      codexModelStrategy: "fixed",
+      codexModel: "gpt-5.6-sol",
+      codexReasoningEffortByState: { implementing: "ultra" },
+    }),
+    activeState: "implementing",
+    activeRecord: null,
+  });
+  assert.equal(
+    renderStatusCodexModelPolicyLines(supported)[0],
+    "codex_execution_policy active=supervisor:fixed:gpt-5.6-sol@supervisor_config reasoning=ultra requested_reasoning=ultra effective_reasoning=ultra reasoning_fallback_reason=none capability_source=live_catalog fallback_reason=none",
+  );
+
+  const unsupported = await buildCodexModelPolicySnapshot({
+    config: createConfig({
+      codexBinary: lunaBinary,
+      codexModelStrategy: "fixed",
+      codexModel: "gpt-5.6-luna",
+      codexReasoningEffortByState: { implementing: "ultra" },
+    }),
+    activeState: "implementing",
+    activeRecord: null,
+  });
+  assert.equal(
+    renderStatusCodexModelPolicyLines(unsupported)[0],
+    "codex_execution_policy active=supervisor:fixed:gpt-5.6-luna@supervisor_config reasoning=max requested_reasoning=ultra effective_reasoning=max reasoning_fallback_reason=unsupported_reasoning_effort capability_source=live_catalog fallback_reason=none",
+  );
+
+  const nested = await buildCodexModelPolicySnapshot({
+    config: createConfig({
+      codexBinary: solBinary,
+      codexModelStrategy: "fixed",
+      codexModel: "gpt-5.6-sol",
+      localReviewModelStrategy: "inherit",
+      codexReasoningEffortByState: { local_review: "ultra" },
+    }),
+    activeState: "local_review",
+    activeRecord: null,
+  });
+  assert.equal(
+    renderStatusCodexModelPolicyLines(nested)[0],
+    "codex_execution_policy active=local_review_generic:default_route(gpt-5.6-sol) reasoning=max requested_reasoning=ultra effective_reasoning=max reasoning_fallback_reason=nested_delegation_blocked capability_source=live_catalog fallback_reason=none",
+  );
 });
 
 test("buildCodexModelPolicySnapshot probes and resolves inherited models from the active workspace", async (t) => {
@@ -611,7 +690,7 @@ test("buildCodexModelPolicySnapshot keeps the default route independent from act
   });
   assert.equal(
     renderStatusCodexModelPolicyLines(snapshot)[0],
-    "codex_execution_policy active=supervisor:alias:gpt-5.4-mini@bounded_repair_override reasoning=medium capability_source=fallback fallback_reason=catalog_probe_unavailable",
+    "codex_execution_policy active=supervisor:alias:gpt-5.4-mini@bounded_repair_override reasoning=medium requested_reasoning=medium effective_reasoning=medium reasoning_fallback_reason=none capability_source=fallback fallback_reason=catalog_probe_unavailable",
   );
 });
 
@@ -643,7 +722,7 @@ test("buildCodexModelPolicySnapshot uses the local-review route for active local
   );
 
   assert.deepEqual(lines, [
-    "codex_execution_policy active=local_review_generic:alias:local-review-fast@local_review_override reasoning=low capability_source=fallback fallback_reason=catalog_probe_unavailable",
+    "codex_execution_policy active=local_review_generic:alias:local-review-fast@local_review_override reasoning=low requested_reasoning=low effective_reasoning=low reasoning_fallback_reason=none capability_source=fallback fallback_reason=catalog_probe_unavailable",
     "codex_route_overrides repair=default_route(gpt-5.4) local_review=alias:local-review-fast@local_review_override",
   ]);
 });

@@ -10,6 +10,7 @@ import { normalizeDurableTrackedArtifactContent } from "../core/journal";
 import { createPostMergeAuditResult, renderPostMergeAuditContractSummary } from "./post-merge-audit";
 import {
   type FinalizedLocalReview,
+  type LocalReviewExecutionRouting,
   type LocalReviewFinding,
   type LocalReviewResult,
   type LocalReviewRoleResult,
@@ -78,14 +79,16 @@ function summarizeGuardrailProvenance(provenance: FinalizedLocalReview["artifact
 }
 
 function summarizeModelRouting(finalized: FinalizedLocalReview): string[] {
+  const summarizeRouting = (routing: LocalReviewExecutionRouting): string =>
+    `target=${routing.target} model=${routing.model ?? "inherit"} reasoning=${routing.reasoningEffort ?? "default"} requested_reasoning=${routing.requestedReasoningEffort ?? routing.reasoningEffort ?? "default"} effective_reasoning=${routing.reasoningEffort ?? "default"} reasoning_fallback_reason=${routing.reasoningEffortFallbackReason ?? "none"}`;
   const lines = finalized.artifact.roleReports.map(
     (report) =>
-      `- ${report.role}: target=${report.routing.target} model=${report.routing.model ?? "inherit"} reasoning=${report.routing.reasoningEffort ?? "default"}`,
+      `- ${report.role}: ${summarizeRouting(report.routing)}`,
   );
 
   if (finalized.artifact.verifierReport) {
     lines.push(
-      `- verifier: target=${finalized.artifact.verifierReport.routing.target} model=${finalized.artifact.verifierReport.routing.model ?? "inherit"} reasoning=${finalized.artifact.verifierReport.routing.reasoningEffort ?? "default"}`,
+      `- verifier: ${summarizeRouting(finalized.artifact.verifierReport.routing)}`,
     );
   }
 

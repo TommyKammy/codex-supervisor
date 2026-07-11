@@ -795,7 +795,7 @@ test("diagnoseSupervisorHost reports inherited host Codex defaults in doctor out
   assert.match(report, /doctor_codex_model_policy default=inherit->gpt-5\.4@inherited_host_default/);
   assert.match(report, /doctor_codex_route_overrides repair=default_route\(gpt-5\.4\) local_review=default_route\(gpt-5\.4\)/);
   assert.match(report, new RegExp(`doctor_codex_host_default model=gpt-5\\.4 source=${codexHome.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}/config\\.toml`));
-  assert.match(report, /doctor_codex_reasoning active=supervisor requested=max effective=xhigh/);
+  assert.match(report, /doctor_codex_reasoning active=supervisor requested=max effective=xhigh reasoning_fallback_reason=unsupported_reasoning_effort/);
 });
 
 test("diagnoseSupervisorHost reports the active workspace Codex model and catalog", async (t) => {
@@ -827,7 +827,7 @@ test("diagnoseSupervisorHost reports the active workspace Codex model and catalo
 if [ ! -f .codex/config.toml ]; then
   exit 9
 fi
-printf '{"models":[{"slug":"gpt-5.6-terra","supported_reasoning_levels":["max"]}]}'
+printf '{"models":[{"slug":"gpt-5.6-terra","supported_reasoning_levels":["max","ultra"]}]}'
 `, { mode: 0o755 });
   await fs.mkdir(repoPath, { recursive: true });
   execFileSync("git", ["init", "-b", "main"], { cwd: repoPath });
@@ -841,7 +841,7 @@ printf '{"models":[{"slug":"gpt-5.6-terra","supported_reasoning_levels":["max"]}
       stateFile: path.join(root, "state.json"),
       codexBinary,
       codexModelStrategy: "inherit",
-      codexReasoningEffortByState: { implementing: "max" },
+      codexReasoningEffortByState: { implementing: "ultra" },
     }),
     authStatus: async () => ({ ok: true, message: null }),
     loadState: async () => ({ activeIssueNumber: activeRecord.issue_number, issues: { [activeRecord.issue_number]: activeRecord } }),
@@ -853,7 +853,7 @@ printf '{"models":[{"slug":"gpt-5.6-terra","supported_reasoning_levels":["max"]}
   const report = renderDoctorReport(diagnostics);
   assert.match(report, /doctor_codex_model_policy default=inherit->gpt-5\.6-terra@inherited_host_default/);
   assert.match(report, /doctor_codex_host_default model=gpt-5\.6-terra/);
-  assert.match(report, /doctor_codex_reasoning active=supervisor requested=max effective=max capability_source=live_catalog/);
+  assert.match(report, /doctor_codex_reasoning active=supervisor requested=ultra effective=ultra reasoning_fallback_reason=none capability_source=live_catalog/);
 });
 
 test("diagnoseSupervisorHost surfaces orphan prune candidates and representative eligibility reasons", async (t) => {

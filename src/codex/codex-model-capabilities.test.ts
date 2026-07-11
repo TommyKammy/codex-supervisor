@@ -18,20 +18,20 @@ test("model catalog probes allow a bounded remote refresh window", () => {
 test("parseCodexModelCatalog resolves GPT-5.6 reasoning levels and ignores unsupported future levels", async () => {
   const fixture = await fs.readFile(path.join(process.cwd(), "src/codex/fixtures/model-catalog-gpt-5.6.json"), "utf8");
   const catalog = parseCodexModelCatalog(fixture);
-  assert.deepEqual([...catalog?.get("gpt-5.6-sol") ?? []], ["high", "xhigh", "max"]);
-  assert.deepEqual([...catalog?.get("gpt-5.6-terra") ?? []], ["high", "xhigh", "max"]);
+  assert.deepEqual([...catalog?.get("gpt-5.6-sol") ?? []], ["high", "xhigh", "max", "ultra"]);
+  assert.deepEqual([...catalog?.get("gpt-5.6-terra") ?? []], ["high", "xhigh", "max", "ultra"]);
   assert.deepEqual([...catalog?.get("gpt-5.6-luna") ?? []], ["high", "xhigh", "max"]);
 });
 
-test("parseCodexModelCatalog preserves the distinction between unsupported ultra and max", () => {
+test("parseCodexModelCatalog preserves ultra and ignores unknown future reasoning levels", () => {
   const catalog = parseCodexModelCatalog(JSON.stringify({
     models: [
-      { slug: "gpt-5.6-terra", supported_reasoning_levels: [{ effort: "ultra" }] },
+      { slug: "gpt-5.6-terra", supported_reasoning_levels: [{ effort: "ultra" }, { effort: "hyper" }] },
       { slug: "gpt-5.6-sol", supported_reasoning_levels: [{ effort: "ultra" }, { effort: "max" }] },
     ],
   }));
-  assert.deepEqual([...catalog?.get("gpt-5.6-terra") ?? []], []);
-  assert.deepEqual([...catalog?.get("gpt-5.6-sol") ?? []], ["max"]);
+  assert.deepEqual([...catalog?.get("gpt-5.6-terra") ?? []], ["ultra"]);
+  assert.deepEqual([...catalog?.get("gpt-5.6-sol") ?? []], ["ultra", "max"]);
 });
 
 test("parseCodexModelCatalog skips malformed unrelated entries without discarding valid capabilities", () => {

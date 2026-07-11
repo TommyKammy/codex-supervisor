@@ -22,6 +22,8 @@ Core behavior:
 - generated Markdown and JSON artifacts are marked as trusted durable artifacts so downstream promotion and path-hygiene checks can distinguish them from ordinary publishable content
 - the same memory budget policy still applies: read the compact context index and issue journal first, then open durable memory only on demand
 
+The swarm above is codex-supervisor role orchestration: generic reviewers, specialists, and the verifier each run in their own Codex turn. It is separate from Codex-native automatic task delegation. If `codexReasoningEffortByState` explicitly requests `ultra`, every local-review execution target clamps it to the highest supported non-delegating effort and records `nested_delegation_blocked`; local-review turns never forward `ultra`. This prevents nested delegation from multiplying the swarm's concurrency, latency, and cost.
+
 Policy guidance:
 
 - `off` disables local review and keeps the default conservative posture

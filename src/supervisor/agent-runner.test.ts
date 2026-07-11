@@ -402,6 +402,13 @@ test("createCodexAgentRunner adapts normalized start and resume turn contexts to
         ].join("\n"),
         stderr: sessionId ? "resume failed" : "",
         stdout: sessionId ? "resume output" : "fresh output",
+        routing: {
+          target: "supervisor",
+          model: "gpt-5.6-terra",
+          requestedReasoningEffort: "ultra",
+          reasoningEffort: "ultra",
+          reasoningEffortFallbackReason: null,
+        },
       };
     },
   });
@@ -479,6 +486,13 @@ test("createCodexAgentRunner adapts normalized start and resume turn contexts to
   assert.equal(startResult.structuredResult?.stateHint, "implementing");
   assert.equal(startResult.structuredResult?.blockedReason, null);
   assert.equal(startResult.structuredResult?.tests, "npx tsx --test src/supervisor/agent-runner.test.ts");
+  assert.deepEqual(startResult.routing, {
+    target: "supervisor",
+    model: "gpt-5.6-terra",
+    requestedReasoningEffort: "ultra",
+    reasoningEffort: "ultra",
+    reasoningEffortFallbackReason: null,
+  });
   assert.equal(resumeResult.sessionId, "session-123");
   assert.equal(resumeResult.failureKind, "codex_exit");
   assert.equal(resumeResult.structuredResult, null);

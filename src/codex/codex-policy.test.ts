@@ -197,6 +197,7 @@ test("resolveCodexExecutionPolicy escalates only an unconsumed stable Codex Conn
       reasoningEffort: "max",
     },
   );
+
 });
 
 test("resolveCodexExecutionPolicy escalates xhigh to max for GPT-5.6 Sol", () => {
@@ -210,6 +211,10 @@ test("resolveCodexExecutionPolicy escalates xhigh to max for GPT-5.6 Sol", () =>
       repeated_failure_signature_count: 1,
       blocked_verification_retry_count: 0,
       timeout_retry_count: 0,
+    }, "supervisor", {
+      reasoningLevelsByModel: new Map([
+        ["gpt-5.6-sol", new Set(["high", "xhigh", "max", "ultra"] as const)],
+      ]),
     }),
     {
       model: "gpt-5.6-sol",
@@ -227,6 +232,7 @@ test("resolveCodexExecutionPolicy clamps max to each model family's highest supp
     model: "gpt-5-codex",
     reasoningEffort: "xhigh",
     requestedReasoningEffort: "max",
+    reasoningEffortFallbackReason: "unsupported_reasoning_effort",
   });
   assert.deepEqual(
     resolveCodexExecutionPolicy(createConfig({ ...maxConfig, codexModel: "gpt-5-pro" }), "implementing"),
@@ -234,6 +240,7 @@ test("resolveCodexExecutionPolicy clamps max to each model family's highest supp
       model: "gpt-5-pro",
       reasoningEffort: "high",
       requestedReasoningEffort: "max",
+      reasoningEffortFallbackReason: "unsupported_reasoning_effort",
     },
   );
 });
@@ -299,6 +306,7 @@ test("resolveCodexExecutionPolicy clamps every unsupported effort to the live ca
     model: "gpt-5.6-terra",
     reasoningEffort: "low",
     requestedReasoningEffort: "none",
+    reasoningEffortFallbackReason: "unsupported_reasoning_effort",
   });
 
   const maxConfig = createConfig({
@@ -341,6 +349,7 @@ test("resolveCodexExecutionPolicy suppresses reasoning overrides for empty live 
     model: "catalog-model",
     reasoningEffort: null,
     requestedReasoningEffort: "high",
+    reasoningEffortFallbackReason: "unsupported_reasoning_effort",
   });
   assert.deepEqual(buildCodexConfigOverrideArgs(policy), ["-m", "catalog-model"]);
 });
@@ -365,7 +374,164 @@ test("resolveCodexExecutionPolicy applies inherited host-model capabilities with
     model: null,
     reasoningEffort: "xhigh",
     requestedReasoningEffort: "max",
+    reasoningEffortFallbackReason: "unsupported_reasoning_effort",
   });
+});
+
+test("resolveCodexExecutionPolicy forwards explicit ultra only for catalog-supported supervisor routes", () => {
+  const capabilities = new Map([
+    ["gpt-5.6-sol", new Set(["high", "xhigh", "max", "ultra"] as const)],
+    ["gpt-5.6-terra", new Set(["high", "xhigh", "max", "ultra"] as const)],
+    ["gpt-5.6-luna", new Set(["high", "xhigh", "max"] as const)],
+  ]);
+
+  for (const model of ["gpt-5.6-sol", "gpt-5.6-terra"]) {
+    const policy = resolveCodexExecutionPolicy(
+      createConfig({ codexModel: model, codexReasoningEffortByState: { implementing: "ultra" } }),
+      "implementing",
+      undefined,
+      "supervisor",
+      { reasoningLevelsByModel: capabilities },
+    );
+    assert.deepEqual(policy, { model, reasoningEffort: "ultra" });
+    assert.deepEqual(buildCodexConfigOverrideArgs(policy), [
+      "-m",
+      model,
+      "-c",
+      'model_reasoning_effort="ultra"',
+    ]);
+  }
+
+  assert.deepEqual(
+    resolveCodexExecutionPolicy(
+      createConfig({
+        codexModel: "gpt-5.6-luna",
+        codexReasoningEffortByState: { implementing: "ultra" },
+      }),
+      "implementing",
+      undefined,
+      "supervisor",
+      { reasoningLevelsByModel: capabilities },
+    ),
+    {
+      model: "gpt-5.6-luna",
+      reasoningEffort: "max",
+      requestedReasoningEffort: "ultra",
+      reasoningEffortFallbackReason: "unsupported_reasoning_effort",
+    },
+  );
+
+  assert.deepEqual(
+    resolveCodexExecutionPolicy(
+      createConfig({
+        codexModel: "future-model",
+        codexReasoningEffortByState: { implementing: "ultra" },
+      }),
+      "implementing",
+      undefined,
+      "supervisor",
+      { reasoningLevelsByModel: capabilities },
+    ),
+    {
+      model: "future-model",
+      reasoningEffort: "xhigh",
+      requestedReasoningEffort: "ultra",
+      reasoningEffortFallbackReason: "unsupported_reasoning_effort",
+    },
+  );
+});
+
+test("resolveCodexExecutionPolicy blocks ultra for every local-review execution target", () => {
+  const capabilities = new Map([
+    ["gpt-5.6-sol", new Set(["high", "xhigh", "max", "ultra"] as const)],
+  ]);
+  const config = createConfig({
+    codexModel: "gpt-5.6-sol",
+    codexReasoningEffortByState: { local_review: "ultra" },
+  });
+
+  for (const target of ["local_review_generic", "local_review_specialist", "local_review_verifier"] as const) {
+    assert.deepEqual(
+      resolveCodexExecutionPolicy(config, "local_review", undefined, target, {
+        reasoningLevelsByModel: capabilities,
+      }),
+      {
+        model: "gpt-5.6-sol",
+        reasoningEffort: "max",
+        requestedReasoningEffort: "ultra",
+        reasoningEffortFallbackReason: "nested_delegation_blocked",
+      },
+    );
+  }
+
+  assert.deepEqual(
+    resolveCodexExecutionPolicy(config, "local_review", undefined, "local_review_specialist", {
+      reasoningLevelsByModel: new Map([
+        ["gpt-5.6-sol", new Set(["high", "ultra"] as const)],
+      ]),
+    }),
+    {
+      model: "gpt-5.6-sol",
+      reasoningEffort: "high",
+      requestedReasoningEffort: "ultra",
+      reasoningEffortFallbackReason: "nested_delegation_blocked",
+    },
+  );
+});
+
+test("resolveCodexExecutionPolicy never upgrades non-ultra requests or escalation beyond max", () => {
+  const capabilities = new Map([
+    ["ultra-only", new Set(["ultra"] as const)],
+    ["gpt-5.6-sol", new Set(["high", "xhigh", "max", "ultra"] as const)],
+  ]);
+  const unsupportedPolicy = resolveCodexExecutionPolicy(
+    createConfig({ codexModel: "ultra-only", codexReasoningEffortByState: { implementing: "max" } }),
+    "implementing",
+    undefined,
+    "supervisor",
+    { reasoningLevelsByModel: capabilities },
+  );
+  assert.deepEqual(unsupportedPolicy, {
+    model: "ultra-only",
+    reasoningEffort: null,
+    requestedReasoningEffort: "max",
+    reasoningEffortFallbackReason: "unsupported_reasoning_effort",
+  });
+
+  for (const configured of ["max", "ultra"] as const) {
+    const policy = resolveCodexExecutionPolicy(
+      createConfig({
+        codexModel: "gpt-5.6-sol",
+        codexReasoningEffortByState: { implementing: configured },
+      }),
+      "implementing",
+      {
+        repeated_failure_signature_count: 1,
+        blocked_verification_retry_count: 0,
+        timeout_retry_count: 0,
+      },
+      "supervisor",
+      { reasoningLevelsByModel: capabilities },
+    );
+    assert.equal(policy.reasoningEffort, configured);
+  }
+});
+
+test("resolveCodexExecutionPolicy preserves inherited catalog-supported ultra without forcing a model override", () => {
+  const config = createConfig({
+    codexModelStrategy: "inherit",
+    codexModel: undefined,
+    codexReasoningEffortByState: { implementing: "ultra" },
+  });
+  assert.deepEqual(
+    resolveCodexExecutionPolicy(config, "implementing", undefined, "supervisor", {
+      inheritedModel: "gpt-5.6-sol",
+      reasoningLevelsByModel: new Map([
+        ["gpt-5.6-sol", new Set(["high", "xhigh", "max", "ultra"] as const)],
+      ]),
+    }),
+    { model: null, reasoningEffort: "ultra" },
+  );
 });
 
 test("resolveCodexExecutionPolicy inherits a fixed default model for explicit route-level inherit", () => {
