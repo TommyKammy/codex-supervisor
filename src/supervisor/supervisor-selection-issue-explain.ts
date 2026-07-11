@@ -10,6 +10,8 @@ import {
 } from "../issue-metadata";
 import {
   attemptBudgetForLane,
+  attemptLane,
+  attemptsUsedForLane,
   formatExecutionReadyMissingFields,
   hasAttemptBudgetRemaining,
   isEligibleForSelection,
@@ -299,9 +301,10 @@ export function buildNonRunnableLocalStateReasons(record: IssueRunRecord, config
     ) {
       reasons.push(`manual_block ${record.blocked_reason}`);
     } else if (record.blocked_reason === "verification" && !shouldAutoRetryBlockedVerification(record, config)) {
-      if (!hasAttemptBudgetRemaining(record, config, "implementation")) {
+      const retryLane = attemptLane(record, null);
+      if (!hasAttemptBudgetRemaining(record, config, retryLane)) {
         reasons.push(
-          `retry_budget implementation_attempt_count=${record.implementation_attempt_count}/${attemptBudgetForLane(config, "implementation")}`,
+          `retry_budget ${retryLane}_attempt_count=${attemptsUsedForLane(record, retryLane)}/${attemptBudgetForLane(config, retryLane)}`,
         );
       }
       if (record.blocked_verification_retry_count >= config.blockedVerificationRetryLimit) {

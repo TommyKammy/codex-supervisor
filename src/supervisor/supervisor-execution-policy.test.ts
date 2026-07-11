@@ -153,7 +153,37 @@ test("shouldAutoRetryBlockedVerification respects implementation budgets and rep
       }),
       config,
     ),
+    false,
+  );
+  assert.equal(
+    shouldAutoRetryBlockedVerification(
+      createRecord({
+        last_error: "Verification blocked: prerequisite not satisfied.",
+        blocked_reason: "verification",
+        last_failure_context: {
+          category: "blocked",
+          summary: "Codex reported blocked for issue #102.",
+          signature: "verification:images",
+          command: "npm run verify:images",
+          details: ["structured_blocked_reason=verification"],
+          url: null,
+          updated_at: "2026-07-11T12:40:00Z",
+        },
+      }),
+      config,
+    ),
     true,
+  );
+  assert.equal(
+    shouldAutoRetryBlockedVerification(
+      createRecord({
+        last_error:
+          "Tracked durable artifacts failed workstation-local path hygiene before publication.",
+        blocked_reason: "verification",
+      }),
+      config,
+    ),
+    false,
   );
   assert.equal(
     shouldAutoRetryBlockedVerification(
@@ -180,6 +210,15 @@ test("shouldAutoRetryBlockedVerification respects implementation budgets and rep
       createRecord({
         last_error: "Verification blocked: prerequisite not satisfied.",
         blocked_reason: "verification",
+        last_failure_context: {
+          category: "blocked",
+          summary: "Codex reported blocked for issue #102.",
+          signature: "verification:images",
+          command: "npm run verify:images",
+          details: ["structured_blocked_reason=verification"],
+          url: null,
+          updated_at: "2026-07-11T12:40:00Z",
+        },
         pr_number: null,
         last_tracked_pr_progress_summary:
           "blocked_turn_pr_reconciliation=absent branch=codex/issue-102",
@@ -198,7 +237,10 @@ test("shouldAutoRetryBlockedVerification respects implementation budgets and rep
           summary: "Independent verifier remains blocked.",
           signature: "verification:images",
           command: "npm run verify:images",
-          details: ["review_repair_terminal_blocked_reason=secrets"],
+          details: [
+            "structured_blocked_reason=verification",
+            "review_repair_terminal_blocked_reason=secrets",
+          ],
           url: null,
           updated_at: "2026-07-11T12:40:00Z",
         },
@@ -238,6 +280,15 @@ test("shouldAutoRetryBlockedVerification respects implementation budgets and rep
       createRecord({
         last_error: "Verification blocked: prerequisite not satisfied.",
         blocked_reason: "verification",
+        last_failure_context: {
+          category: "blocked",
+          summary: "Codex reported blocked for issue #102.",
+          signature: "verification:images",
+          command: "npm run verify:images",
+          details: ["structured_blocked_reason=verification"],
+          url: null,
+          updated_at: "2026-07-11T12:40:00Z",
+        },
         pr_number: null,
         last_tracked_pr_progress_summary:
           "blocked_turn_pr_reconciliation=ambiguous branch=codex/issue-102 reason=no_unique_canonical_open_pr candidates=#201,#202",

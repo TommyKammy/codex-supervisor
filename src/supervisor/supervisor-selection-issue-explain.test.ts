@@ -365,6 +365,35 @@ test("buildNonRunnableLocalStateReasons keeps retry-budget ordering stable", () 
   ]);
 });
 
+test("buildNonRunnableLocalStateReasons reports exhausted repair budget for tracked verification retries", () => {
+  const config = createConfig({
+    maxImplementationAttemptsPerIssue: 5,
+    maxRepairAttemptsPerIssue: 2,
+  });
+  const reasons = buildNonRunnableLocalStateReasons(
+    createRecord({
+      issue_number: 605,
+      blocked_reason: "verification",
+      pr_number: 42,
+      implementation_attempt_count: 1,
+      repair_attempt_count: config.maxRepairAttemptsPerIssue,
+      last_error: "Verification failed: vitest assertion still failing.",
+      last_failure_kind: null,
+      last_failure_context: null,
+      last_failure_signature: "verification-failure",
+      blocked_verification_retry_count: 0,
+      repeated_blocker_count: 0,
+      repeated_failure_signature_count: 0,
+    }),
+    config,
+  );
+
+  assert.deepEqual(reasons, [
+    `retry_budget repair_attempt_count=${config.maxRepairAttemptsPerIssue}/${config.maxRepairAttemptsPerIssue}`,
+    "local_state blocked",
+  ]);
+});
+
 test("buildIssueExplainSummary reports retryable timeout failures as timeout_retry pending", async () => {
   const config = createConfig({
     timeoutRetryLimit: 2,

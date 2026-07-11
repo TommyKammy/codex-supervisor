@@ -27,6 +27,15 @@ function hasPreservedReviewRepairHardBlocker(record: IssueRunRecord): boolean {
   );
 }
 
+function hasStructuredVerificationBlockedReason(record: IssueRunRecord): boolean {
+  return (
+    record.blocked_reason === "verification" &&
+    record.last_failure_context?.details.includes(
+      "structured_blocked_reason=verification",
+    ) === true
+  );
+}
+
 export function formatExecutionReadyMissingFields(fields: string[]): string {
   return fields.join(", ");
 }
@@ -77,11 +86,11 @@ export function shouldAutoRetryBlockedVerification(record: IssueRunRecord, confi
   return (
     record.state === "blocked" &&
     !unresolvedBlockedTurnPullRequest &&
+    !hasPreservedReviewRepairHardBlocker(record) &&
     (
       (
-        record.blocked_reason === "verification" &&
-        !hasVerificationRetryHardBlocker(record.last_error) &&
-        !hasPreservedReviewRepairHardBlocker(record)
+        hasStructuredVerificationBlockedReason(record) &&
+        !hasVerificationRetryHardBlocker(record.last_error)
       ) ||
       isVerificationBlockedMessage(record.last_error)
     ) &&
