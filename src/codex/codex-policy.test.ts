@@ -264,6 +264,27 @@ test("resolveCodexExecutionPolicy uses Codex-style alias and dated-suffix catalo
   }
 });
 
+test("resolveCodexExecutionPolicy maps the unsuffixed GPT-5.6 alias to Sol catalog capabilities", () => {
+  const capabilities = new Map([
+    ["gpt-5.6-sol", new Set(["high", "xhigh", "max"] as const)],
+  ]);
+  for (const model of ["gpt-5.6", "openai/gpt-5.6"]) {
+    const config = createConfig({ codexModel: model, codexReasoningEffortByState: { implementing: "max" } });
+    assert.equal(resolveCodexExecutionPolicy(config, "implementing", undefined, "supervisor", {
+      reasoningLevelsByModel: capabilities,
+    }).reasoningEffort, "max");
+  }
+
+  const directAliasCapabilities = new Map(capabilities).set("gpt-5.6", new Set(["high"] as const));
+  const directAliasConfig = createConfig({
+    codexModel: "gpt-5.6",
+    codexReasoningEffortByState: { implementing: "max" },
+  });
+  assert.equal(resolveCodexExecutionPolicy(directAliasConfig, "implementing", undefined, "supervisor", {
+    reasoningLevelsByModel: directAliasCapabilities,
+  }).reasoningEffort, "high");
+});
+
 test("resolveCodexExecutionPolicy clamps every unsupported effort to the live catalog", () => {
   const capabilities = new Map([
     ["gpt-5.6-terra", new Set(["low", "medium", "high", "xhigh"] as const)],

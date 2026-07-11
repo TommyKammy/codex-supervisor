@@ -5,6 +5,9 @@ import {
 } from "../codex-connector-review-churn";
 
 const REASONING_ORDER: ReasoningEffort[] = ["none", "low", "medium", "high", "xhigh", "max"];
+const CODEX_MODEL_CATALOG_ALIASES: Readonly<Record<string, string>> = {
+  "gpt-5.6": "gpt-5.6-sol",
+};
 
 const DEFAULT_REASONING_BY_STATE: Record<RunState, ReasoningEffort> = {
   queued: "low",
@@ -107,6 +110,10 @@ function resolveCatalogReasoningLevels(
     : model;
   const namespacedExact = reasoningLevelsByModel.get(lookupModel);
   if (namespacedExact) return namespacedExact;
+
+  const aliasedModel = CODEX_MODEL_CATALOG_ALIASES[lookupModel];
+  const aliasedExact = aliasedModel ? reasoningLevelsByModel.get(aliasedModel) : undefined;
+  if (aliasedExact) return aliasedExact;
 
   let longestPrefix: string | null = null;
   for (const catalogModel of reasoningLevelsByModel.keys()) {
