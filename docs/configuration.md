@@ -678,9 +678,11 @@ Practical rule of thumb:
 - use `inherit` unless you have a strong reason not to
 - leave `boundedRepairModelStrategy` unset unless you intentionally want smaller models for repair turns
 - reserve `xhigh` for escalation paths rather than using it everywhere
-- reasoning escalation follows `none < low < medium < high < xhigh < max`
+- automatic reasoning escalation follows `none < low < medium < high < xhigh < max`; it never selects `ultra`
 - `max` is emitted when the active Codex CLI model catalog reports support; if the catalog probe fails, a conservative built-in fallback permits it only for `gpt-5.6-sol`. Unsupported models fall back to `xhigh`, while GPT-5 Pro remains capped at `high`.
-- `status` and `doctor` report the requested and effective efforts when capability clamping changes the request
+- `ultra` is explicit-only through `codexReasoningEffortByState`. It is forwarded only for the `supervisor` execution target when the effective model's live catalog reports `ultra`; unsupported supervisor routes and every local-review route clamp to a supported non-delegating effort and report the fallback reason.
+- `ultra` is Codex-native automatic task delegation, not codex-supervisor's local-review role orchestration. Expect potentially higher latency, concurrent work, and cost, and enable it only after evaluating those tradeoffs for the managed repository.
+- `status`, `doctor`, supervisor execution-routing summaries, and local-review artifacts report requested/effective effort plus `reasoning_fallback_reason=unsupported_reasoning_effort|nested_delegation_blocked|none`
 
 ### ChatGPT desktop app and the Codex CLI
 
@@ -694,9 +696,9 @@ OpenAI's current preview documentation lists these model IDs:
 
 | Model | Model ID | Supervisor reasoning note |
 | --- | --- | --- |
-| GPT-5.6 Sol | `gpt-5.6-sol` | Active-catalog reasoning levels are honored; the offline fallback permits `max`. |
-| GPT-5.6 Terra | `gpt-5.6-terra` | Active-catalog reasoning levels are honored, including `max` when reported. |
-| GPT-5.6 Luna | `gpt-5.6-luna` | Active-catalog reasoning levels are honored, including `max` when reported. |
+| GPT-5.6 Sol | `gpt-5.6-sol` | Active-catalog reasoning levels are honored; catalog-backed `ultra` remains bounded to supervisor turns, and the offline fallback permits only `max`. |
+| GPT-5.6 Terra | `gpt-5.6-terra` | Active-catalog reasoning levels are honored; catalog-backed `ultra` remains bounded to supervisor turns. |
+| GPT-5.6 Luna | `gpt-5.6-luna` | Active-catalog reasoning levels are honored; without reported `ultra` support, explicit requests fall back safely. |
 
 Do not infer access from a model name appearing in documentation or from having a paid ChatGPT plan. During the documented preview, access is limited to selected organizations and scoped separately to approved API organizations and Codex workspaces; API approval does not imply Codex approval, and the preview is distinct from general ChatGPT availability. Keep `codexModelStrategy: "inherit"` as the resilient default so model changes do not require supervisor config churn, and pin a GPT-5.6 model only after confirming access in the exact account or workspace used by the supervisor.
 

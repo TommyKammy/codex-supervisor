@@ -54,7 +54,12 @@ import {
   listChangedTrackedFilesBetween,
   pushBranch,
 } from "./core/workspace";
-import { AgentRunner, createCodexAgentRunner, parseAgentTurnStructuredResult } from "./supervisor/agent-runner";
+import {
+  AgentRunner,
+  type AgentTurnResult,
+  createCodexAgentRunner,
+  parseAgentTurnStructuredResult,
+} from "./supervisor/agent-runner";
 import {
   executionMetricsRetentionRootPath,
   syncExecutionMetricsRunSummarySafely,
@@ -117,6 +122,25 @@ export interface CodexTurnResult {
 
 const TRUSTED_DURABLE_ARTIFACT_NORMALIZATION_COMMIT_MESSAGE =
   "Normalize trusted durable artifacts for path hygiene";
+
+export function renderCodexExecutionSummary(
+  turnResult: Pick<AgentTurnResult, "supervisorMessage" | "routing">,
+): string {
+  if (!turnResult.routing) {
+    return turnResult.supervisorMessage;
+  }
+
+  const routing = turnResult.routing;
+  const routingSummary = [
+    "codex_execution_routing",
+    `target=${routing.target}`,
+    `model=${routing.model ?? "inherit"}`,
+    `requested_reasoning=${routing.requestedReasoningEffort ?? "default"}`,
+    `effective_reasoning=${routing.reasoningEffort ?? "default"}`,
+    `reasoning_fallback_reason=${routing.reasoningEffortFallbackReason ?? "none"}`,
+  ].join(" ");
+  return [routingSummary, turnResult.supervisorMessage.trim()].filter(Boolean).join("\n\n");
+}
 
 export interface CodexTurnShortCircuit {
   kind: "returned";
@@ -465,7 +489,7 @@ export async function executeCodexTurnPhase(
         record = stateStore.touch(record, {
           ...dossierConsumptionPatch,
           codex_session_id: turnResult.sessionId,
-          last_codex_summary: truncate(turnResult.supervisorMessage),
+          last_codex_summary: truncate(renderCodexExecutionSummary(turnResult)),
           last_failure_kind: turnResult.failureKind,
           last_error:
             turnResult.exitCode === 0

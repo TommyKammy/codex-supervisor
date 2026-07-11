@@ -265,15 +265,23 @@ function describeGenericLocalReviewRouting(
   config: Pick<SupervisorConfig, "localReviewModelStrategy">,
   routing: LocalReviewExecutionRouting,
 ): string {
+  const reasoning = describeRoutingReasoning(routing);
   if (!config.localReviewModelStrategy || config.localReviewModelStrategy === "inherit") {
-    return routing.model ? `inherit->${routing.model}` : "inherit";
+    return `${routing.model ? `inherit->${routing.model}` : "inherit"}${reasoning}`;
   }
 
-  return routing.model ?? "inherit";
+  return `${routing.model ?? "inherit"}${reasoning}`;
 }
 
 function describeResolvedRouting(routing: LocalReviewExecutionRouting | null | undefined): string {
-  return routing?.model ?? "inherit";
+  return routing ? `${routing.model ?? "inherit"}${describeRoutingReasoning(routing)}` : "inherit";
+}
+
+function describeRoutingReasoning(routing: LocalReviewExecutionRouting): string {
+  const requested = routing.requestedReasoningEffort ?? routing.reasoningEffort ?? "default";
+  const effective = routing.reasoningEffort ?? "default";
+  const reason = routing.reasoningEffortFallbackReason ?? "none";
+  return `(requested_reasoning=${requested},effective_reasoning=${effective},reasoning_fallback_reason=${reason})`;
 }
 
 export async function buildLocalReviewRoutingStatusLine(args: {

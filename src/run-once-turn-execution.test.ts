@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { executeCodexTurnPhase } from "./run-once-turn-execution";
+import { executeCodexTurnPhase, renderCodexExecutionSummary } from "./run-once-turn-execution";
 import {
   FailureContextCategory,
   GitHubIssue,
@@ -31,6 +31,29 @@ import { WORKSTATION_LOCAL_PATH_HYGIENE_REPAIRABLE_PUBLICATION_SIGNATURE } from 
 
 const SAMPLE_UNIX_WORKSTATION_PATH = `/${"home"}/alice/dev/private-repo`;
 const SAMPLE_MACOS_WORKSTATION_PATH = `/${"Users"}/alice/Dev/private-repo`;
+
+test("renderCodexExecutionSummary preserves requested and effective reasoning provenance", () => {
+  assert.equal(
+    renderCodexExecutionSummary({
+      supervisorMessage: "Summary: implemented the bounded ultra route.",
+      routing: {
+        target: "supervisor",
+        model: "gpt-5.6-luna",
+        requestedReasoningEffort: "ultra",
+        reasoningEffort: "max",
+        reasoningEffortFallbackReason: "unsupported_reasoning_effort",
+      },
+    }),
+    [
+      "codex_execution_routing target=supervisor model=gpt-5.6-luna requested_reasoning=ultra effective_reasoning=max reasoning_fallback_reason=unsupported_reasoning_effort",
+      "Summary: implemented the bounded ultra route.",
+    ].join("\n\n"),
+  );
+  assert.equal(
+    renderCodexExecutionSummary({ supervisorMessage: "Legacy runner summary." }),
+    "Legacy runner summary.",
+  );
+});
 
 test("run-once turn execution does not import Decision Kernel v2 action decisions", async () => {
   const source = await fs.readFile(path.join(process.cwd(), "src", "run-once-turn-execution.ts"), "utf8");

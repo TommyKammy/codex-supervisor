@@ -360,6 +360,58 @@ exit 0
   ]);
 });
 
+test("runCodexTurn forwards explicit ultra reasoning for a supported supervisor route", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-runner-ultra-"));
+  const workspacePath = path.join(root, "workspace");
+  const codexBinary = path.join(root, "fake-codex.sh");
+  const argsPath = path.join(root, "args.log");
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+  await fs.mkdir(workspacePath, { recursive: true });
+
+  await writeExecutableScript(
+    codexBinary,
+    `#!/bin/sh
+set -eu
+if [ "$1" = "debug" ] && [ "$2" = "models" ]; then
+  printf '{"models":[{"slug":"gpt-5.6-terra","supported_reasoning_levels":["high","xhigh","max","ultra"]}]}'
+  exit 0
+fi
+printf '%s\n' "$@" > "${argsPath}"
+exit 0
+`,
+  );
+
+  const result = await runCodexTurn(
+    createConfig({
+      codexBinary,
+      codexModelStrategy: "fixed",
+      codexModel: "gpt-5.6-terra",
+      codexReasoningEffortByState: { implementing: "ultra" },
+    }),
+    workspacePath,
+    "supported ultra prompt",
+    "implementing",
+  );
+  const args = (await fs.readFile(argsPath, "utf8")).trim().split("\n");
+
+  assert.deepEqual(args.slice(0, 5), [
+    "exec",
+    "-m",
+    "gpt-5.6-terra",
+    "-c",
+    'model_reasoning_effort="ultra"',
+  ]);
+  assert.deepEqual(result.routing, {
+    target: "supervisor",
+    model: "gpt-5.6-terra",
+    requestedReasoningEffort: "ultra",
+    reasoningEffort: "ultra",
+    reasoningEffortFallbackReason: null,
+  });
+});
+
 test("runCodexTurn removes its temp dir when command execution fails", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-runner-test-"));
   const workspacePath = path.join(root, "workspace");

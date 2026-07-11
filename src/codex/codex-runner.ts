@@ -51,12 +51,18 @@ export async function runCodexTurn(
       resolveHostCodexDefaultModel(workspacePath),
       resolveCodexModelCapabilities(config.codexBinary, workspacePath),
     ]);
-    const overrideArgs = buildCodexConfigOverrideArgs(
-      resolveCodexExecutionPolicy(config, state, record, "supervisor", {
-        inheritedModel: hostDefault.model,
-        reasoningLevelsByModel: capabilities.reasoningLevelsByModel,
-      }),
-    );
+    const policy = resolveCodexExecutionPolicy(config, state, record, "supervisor", {
+      inheritedModel: hostDefault.model,
+      reasoningLevelsByModel: capabilities.reasoningLevelsByModel,
+    });
+    const routing = {
+      target: "supervisor" as const,
+      model: policy.model,
+      requestedReasoningEffort: policy.requestedReasoningEffort ?? policy.reasoningEffort,
+      reasoningEffort: policy.reasoningEffort,
+      reasoningEffortFallbackReason: policy.reasoningEffortFallbackReason ?? null,
+    };
+    const overrideArgs = buildCodexConfigOverrideArgs(policy);
     const executionSafetyArgs = buildCodexExecutionSafetyArgs(config);
     const commandArgs = sessionId
       ? [
@@ -105,6 +111,7 @@ export async function runCodexTurn(
       lastMessage: lastMessage.trim(),
       stderr: result.stderr,
       stdout: result.stdout,
+      routing,
     };
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });

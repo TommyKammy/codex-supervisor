@@ -354,6 +354,8 @@ exit 0
     target: "local_review_generic",
     model: null,
     reasoningEffort: "low",
+    requestedReasoningEffort: "low",
+    reasoningEffortFallbackReason: null,
   });
   assert.equal(args.includes("--dangerously-bypass-approvals-and-sandbox"), false);
   assert.deepEqual(args.slice(0, 5), [
@@ -406,6 +408,8 @@ exit 0
     target: "local_review_generic",
     model: "gpt-5.6-sol",
     reasoningEffort: "max",
+    requestedReasoningEffort: "max",
+    reasoningEffortFallbackReason: null,
   });
 
   assert.deepEqual(args.slice(0, 5), [
@@ -415,6 +419,70 @@ exit 0
     "-c",
     'model_reasoning_effort="max"',
   ]);
+});
+
+test("runCodexReviewTurn blocks nested ultra delegation for every local-review target", async (t) => {
+  const targets: LocalReviewTurnRequest["executionTarget"][] = [
+    "local_review_generic",
+    "local_review_specialist",
+    "local_review_verifier",
+  ];
+
+  for (const executionTarget of targets) {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), `local-review-runner-ultra-${executionTarget}-`));
+    const workspacePath = path.join(root, "workspace");
+    const codexBinary = path.join(root, "fake-codex.sh");
+    const argsPath = path.join(root, "args.log");
+    t.after(async () => {
+      await fs.rm(root, { recursive: true, force: true });
+    });
+    await fs.mkdir(workspacePath, { recursive: true });
+    await fs.writeFile(
+      codexBinary,
+      `#!/bin/sh
+set -eu
+if [ "$1" = "debug" ] && [ "$2" = "models" ]; then
+  printf '{"models":[{"slug":"gpt-5.6-terra","supported_reasoning_levels":["high","xhigh","max","ultra"]}]}'
+  exit 0
+fi
+printf '%s\n' "$@" > "${argsPath}"
+exit 0
+`,
+      { mode: 0o755 },
+    );
+
+    const result = await runCodexReviewTurn({
+      config: createConfig({
+        codexBinary,
+        codexModelStrategy: "fixed",
+        codexModel: "gpt-5.6-terra",
+        localReviewModelStrategy: "inherit",
+        codexReasoningEffortByState: { local_review: "ultra" },
+      }),
+      workspacePath,
+      role: executionTarget,
+      outputFileName: `${executionTarget}.txt`,
+      prompt: `nested delegation guard for ${executionTarget}`,
+      executionTarget,
+    });
+    const args = (await fs.readFile(argsPath, "utf8")).trim().split("\n");
+
+    assert.deepEqual(result.routing, {
+      target: executionTarget,
+      model: "gpt-5.6-terra",
+      reasoningEffort: "max",
+      requestedReasoningEffort: "ultra",
+      reasoningEffortFallbackReason: "nested_delegation_blocked",
+    });
+    assert.equal(args.includes('model_reasoning_effort="ultra"'), false);
+    assert.deepEqual(args.slice(0, 5), [
+      "exec",
+      "-m",
+      "gpt-5.6-terra",
+      "-c",
+      'model_reasoning_effort="max"',
+    ]);
+  }
 });
 
 test("runCodexReviewTurn returns the same routing used for a transient catalog fallback", async (t) => {
@@ -457,6 +525,8 @@ exit 0
     target: "local_review_generic",
     model: "gpt-5.6-terra",
     reasoningEffort: "xhigh",
+    requestedReasoningEffort: "max",
+    reasoningEffortFallbackReason: "unsupported_reasoning_effort",
   });
   assert.deepEqual(args.slice(0, 5), [
     "exec",

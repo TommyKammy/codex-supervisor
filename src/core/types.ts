@@ -1,8 +1,11 @@
 import type { GitHubIssue } from "../github/types";
 import type {
+  CodexExecutionTarget,
   CopilotReviewTimeoutAction,
   LatestLocalCiResult,
   LocalCiRemediationTarget,
+  ReasoningEffort,
+  ReasoningEffortFallbackReason,
   SupervisorConfig,
 } from "./config-types";
 
@@ -44,6 +47,7 @@ export type {
   LocalReviewPosturePreset,
   LocalReviewPostureSummary,
   ReasoningEffort,
+  ReasoningEffortFallbackReason,
   ReleaseReadinessGatePosture,
   ReleaseReadinessGateSummary,
   ShellLocalCiCommandConfig,
@@ -373,6 +377,15 @@ export interface CodexTurnResult {
   lastMessage: string;
   stderr: string;
   stdout: string;
+  routing?: CodexExecutionRouting;
+}
+
+export interface CodexExecutionRouting {
+  target: CodexExecutionTarget;
+  model: string | null;
+  requestedReasoningEffort: ReasoningEffort | null;
+  reasoningEffort: ReasoningEffort | null;
+  reasoningEffortFallbackReason: ReasoningEffortFallbackReason | null;
 }
 
 export interface CliOptions {

@@ -1,10 +1,18 @@
-import { CodexExecutionTarget, IssueRunRecord, ReasoningEffort, RunState, SupervisorConfig } from "../core/types";
+import {
+  CodexExecutionTarget,
+  IssueRunRecord,
+  ReasoningEffort,
+  ReasoningEffortFallbackReason,
+  RunState,
+  SupervisorConfig,
+} from "../core/types";
 import {
   codexConnectorStableSameFileChurnSignature,
   isCodexConnectorStableSameFileChurn,
 } from "../codex-connector-review-churn";
 
-const REASONING_ORDER: ReasoningEffort[] = ["none", "low", "medium", "high", "xhigh", "max"];
+const NON_DELEGATING_REASONING_ORDER: ReasoningEffort[] = ["none", "low", "medium", "high", "xhigh", "max"];
+const REASONING_ORDER: ReasoningEffort[] = [...NON_DELEGATING_REASONING_ORDER, "ultra"];
 const CODEX_MODEL_CATALOG_ALIASES: Readonly<Record<string, string>> = {
   "gpt-5.6": "gpt-5.6-sol",
 };
@@ -34,6 +42,7 @@ export interface CodexExecutionPolicy {
   model: string | null;
   reasoningEffort: ReasoningEffort | null;
   requestedReasoningEffort?: ReasoningEffort;
+  reasoningEffortFallbackReason?: ReasoningEffortFallbackReason;
 }
 
 export interface CodexExecutionPolicyContext {
@@ -80,9 +89,10 @@ function activeStableSameFileChurnDossierSignature(
 }
 
 function bumpReasoningEffort(effort: ReasoningEffort, steps = 1): ReasoningEffort {
-  const index = REASONING_ORDER.indexOf(effort);
-  const nextIndex = Math.min(REASONING_ORDER.length - 1, Math.max(0, index) + steps);
-  return REASONING_ORDER[nextIndex] ?? effort;
+  if (effort === "ultra") return effort;
+  const index = NON_DELEGATING_REASONING_ORDER.indexOf(effort);
+  const nextIndex = Math.min(NON_DELEGATING_REASONING_ORDER.length - 1, Math.max(0, index) + steps);
+  return NON_DELEGATING_REASONING_ORDER[nextIndex] ?? effort;
 }
 
 function reasoningEffortAtLeast(effort: ReasoningEffort, minimum: ReasoningEffort): ReasoningEffort {
@@ -130,26 +140,72 @@ function resolveCatalogReasoningLevels(
 function clampReasoningEffortForModel(
   model: string | null,
   effort: ReasoningEffort,
+  target: CodexExecutionTarget,
   reasoningLevelsByModel?: ReadonlyMap<string, ReadonlySet<ReasoningEffort>>,
-): ReasoningEffort | null {
+): Pick<CodexExecutionPolicy, "reasoningEffort" | "reasoningEffortFallbackReason"> {
   const normalized = model?.trim().toLowerCase();
   const supported = normalized && reasoningLevelsByModel
     ? resolveCatalogReasoningLevels(normalized, reasoningLevelsByModel)
     : undefined;
-  if (supported) {
-    if (supported.size === 0) return null;
-    if (supported.has(effort)) return effort;
 
-    const requestedIndex = REASONING_ORDER.indexOf(effort);
+  if (effort === "ultra") {
+    if (target === "supervisor" && supported?.has("ultra")) {
+      return { reasoningEffort: "ultra" };
+    }
+
+    let fallbackEffort: ReasoningEffort | null = null;
+    if (supported) {
+      for (let index = NON_DELEGATING_REASONING_ORDER.length - 1; index >= 0; index -= 1) {
+        const candidate = NON_DELEGATING_REASONING_ORDER[index];
+        if (candidate && supported.has(candidate)) {
+          fallbackEffort = candidate;
+          break;
+        }
+      }
+    } else {
+      fallbackEffort = clampReasoningEffortForModel(model, "max", target).reasoningEffort;
+    }
+
+    return {
+      reasoningEffort: fallbackEffort,
+      reasoningEffortFallbackReason: target === "supervisor"
+        ? "unsupported_reasoning_effort"
+        : "nested_delegation_blocked",
+    };
+  }
+
+  if (supported) {
+    if (supported.size === 0) {
+      return {
+        reasoningEffort: null,
+        reasoningEffortFallbackReason: "unsupported_reasoning_effort",
+      };
+    }
+    if (supported.has(effort)) return { reasoningEffort: effort };
+
+    const requestedIndex = NON_DELEGATING_REASONING_ORDER.indexOf(effort);
     for (let index = requestedIndex - 1; index >= 0; index -= 1) {
-      const candidate = REASONING_ORDER[index];
-      if (candidate && supported.has(candidate)) return candidate;
+      const candidate = NON_DELEGATING_REASONING_ORDER[index];
+      if (candidate && supported.has(candidate)) {
+        return {
+          reasoningEffort: candidate,
+          reasoningEffortFallbackReason: "unsupported_reasoning_effort",
+        };
+      }
     }
-    for (let index = requestedIndex + 1; index < REASONING_ORDER.length; index += 1) {
-      const candidate = REASONING_ORDER[index];
-      if (candidate && supported.has(candidate)) return candidate;
+    for (let index = requestedIndex + 1; index < NON_DELEGATING_REASONING_ORDER.length; index += 1) {
+      const candidate = NON_DELEGATING_REASONING_ORDER[index];
+      if (candidate && supported.has(candidate)) {
+        return {
+          reasoningEffort: candidate,
+          reasoningEffortFallbackReason: "unsupported_reasoning_effort",
+        };
+      }
     }
-    return null;
+    return {
+      reasoningEffort: null,
+      reasoningEffortFallbackReason: "unsupported_reasoning_effort",
+    };
   }
 
   let clamped = effort;
@@ -173,7 +229,10 @@ function clampReasoningEffortForModel(
     }
   }
 
-  return clamped;
+  return {
+    reasoningEffort: clamped,
+    ...(clamped === effort ? {} : { reasoningEffortFallbackReason: "unsupported_reasoning_effort" as const }),
+  };
 }
 
 function resolveRequestedReasoningEffort(
@@ -262,15 +321,19 @@ export function resolveCodexExecutionPolicy(
 ): CodexExecutionPolicy {
   const model = resolveConfiguredModel(config, state, target);
   const requestedEffort = resolveRequestedReasoningEffort(config, state, record);
-  const reasoningEffort = clampReasoningEffortForModel(
+  const reasoningResolution = clampReasoningEffortForModel(
     model ?? context.inheritedModel ?? null,
     requestedEffort,
+    target,
     context.reasoningLevelsByModel,
   );
   return {
     model,
-    reasoningEffort,
-    ...(reasoningEffort === requestedEffort ? {} : { requestedReasoningEffort: requestedEffort }),
+    reasoningEffort: reasoningResolution.reasoningEffort,
+    ...(reasoningResolution.reasoningEffort === requestedEffort ? {} : { requestedReasoningEffort: requestedEffort }),
+    ...(reasoningResolution.reasoningEffortFallbackReason
+      ? { reasoningEffortFallbackReason: reasoningResolution.reasoningEffortFallbackReason }
+      : {}),
   };
 }
 

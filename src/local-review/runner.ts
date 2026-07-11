@@ -61,6 +61,8 @@ export async function runCodexReviewTurn(args: LocalReviewTurnRequest): Promise<
     target: args.executionTarget,
     model: policy.model,
     reasoningEffort: policy.reasoningEffort,
+    requestedReasoningEffort: policy.requestedReasoningEffort ?? policy.reasoningEffort,
+    reasoningEffortFallbackReason: policy.reasoningEffortFallbackReason ?? null,
   };
   const overrideArgs = buildCodexConfigOverrideArgs(policy);
   const executionSafetyArgs = buildCodexExecutionSafetyArgs(args.config);

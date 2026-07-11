@@ -25,7 +25,7 @@ import { mapConfiguredReviewProviders, normalizeReviewBotLogins } from "./review
 import { isValidGitRefName, resolveMaybeRelative } from "./utils";
 import { DEFAULT_CANDIDATE_DISCOVERY_FETCH_WINDOW } from "./config-constants";
 
-const VALID_REASONING_EFFORTS = new Set<ReasoningEffort>(["none", "low", "medium", "high", "xhigh", "max"]);
+const VALID_REASONING_EFFORTS = new Set<ReasoningEffort>(["none", "low", "medium", "high", "xhigh", "max", "ultra"]);
 const VALID_TRUST_MODES = new Set<TrustMode>(["trusted_repo_and_authors", "untrusted_or_mixed"]);
 const VALID_EXECUTION_SAFETY_MODES = new Set<ExecutionSafetyMode>(["unsandboxed_autonomous", "operator_gated"]);
 const VALID_LOCAL_REVIEW_POLICIES = new Set<LocalReviewPolicy>(["advisory", "block_ready", "block_merge"]);

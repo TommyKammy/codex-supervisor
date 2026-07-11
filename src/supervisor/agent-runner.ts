@@ -9,6 +9,7 @@ import {
 import { truncatePreservingStartAndEnd } from "../core/utils";
 import type {
   BlockedReason,
+  CodexExecutionRouting,
   FailureContext,
   FailureKind,
   GitHubIssue,
@@ -100,6 +101,7 @@ export interface AgentTurnResult {
   supervisorMessage: string;
   stderr: string;
   stdout: string;
+  routing?: CodexExecutionRouting | null;
   // Structured output is only the normalized machine-readable footer from a
   // successful turn. Runner failures must be expressed via failureKind and
   // failureContext instead of mixing both channels.
@@ -211,6 +213,7 @@ export function createCodexAgentRunner(options: CreateCodexAgentRunnerOptions = 
           supervisorMessage: result.lastMessage,
           stderr: result.stderr,
           stdout: result.stdout,
+          routing: result.routing ?? null,
           structuredResult,
           failureKind,
           failureContext:
@@ -231,6 +234,7 @@ export function createCodexAgentRunner(options: CreateCodexAgentRunnerOptions = 
           supervisorMessage: "",
           stderr: message,
           stdout: "",
+          routing: null,
           structuredResult: null,
           failureKind: classifyFailureImpl(message),
           failureContext: buildFailureContextImpl("codex", "Codex turn execution failed.", [

@@ -4,7 +4,8 @@ import type { RunState } from "./types";
 export type CodexModelStrategy = "inherit" | "fixed" | "alias";
 export type CodexExecutionTarget = "supervisor" | "local_review_generic" | "local_review_specialist" | "local_review_verifier";
 
-export type ReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh" | "max";
+export type ReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+export type ReasoningEffortFallbackReason = "unsupported_reasoning_effort" | "nested_delegation_blocked";
 export type TrustMode = "trusted_repo_and_authors" | "untrusted_or_mixed";
 export type ExecutionSafetyMode = "unsandboxed_autonomous" | "operator_gated";
 export type LocalReviewPolicy = "advisory" | "block_ready" | "block_merge";
