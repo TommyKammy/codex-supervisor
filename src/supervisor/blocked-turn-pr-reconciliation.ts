@@ -34,6 +34,31 @@ export type BlockedTurnPullRequestReconciliation =
       pullRequest: null;
     };
 
+export function hasBlockedTurnVerificationProvenance(
+  record: Pick<
+    IssueRunRecord,
+    "blocked_reason" | "issue_number" | "last_error" | "last_failure_context"
+  >,
+): boolean {
+  if (record.blocked_reason !== "verification") {
+    return false;
+  }
+
+  if (
+    record.last_failure_context?.details.includes(
+      "structured_blocked_reason=verification",
+    ) === true
+  ) {
+    return true;
+  }
+
+  const canonicalSummary = `Codex reported blocked for issue #${record.issue_number}.`;
+  return (
+    record.last_failure_context?.summary === canonicalSummary ||
+    record.last_error === canonicalSummary
+  );
+}
+
 export function blockedTurnPullRequestReconciliationStatusLine(
   record: Pick<
     IssueRunRecord,

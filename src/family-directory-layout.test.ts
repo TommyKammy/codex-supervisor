@@ -238,6 +238,7 @@ const EXPECTED_FAMILY_FILES = {
     "execution-metrics-lifecycle.ts",
     "execution-metrics-run-summary.ts",
     "execution-metrics-schema.ts",
+    "independent-verification-blocker.ts",
     "index.ts",
     "post-merge-audit-artifact.ts",
     "post-merge-audit-summary-aggregation.ts",

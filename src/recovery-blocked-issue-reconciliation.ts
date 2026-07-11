@@ -59,7 +59,10 @@ import {
   trackedHandoffExternalProgressEvidence,
 } from "./recovery-current-head-evidence";
 import { applyRecoveryEvent, buildRecoveryEvent, needsRecordUpdate } from "./recovery-event-patch";
-import { reconcileBlockedTurnPullRequest } from "./supervisor/blocked-turn-pr-reconciliation";
+import {
+  hasBlockedTurnVerificationProvenance,
+  reconcileBlockedTurnPullRequest,
+} from "./supervisor/blocked-turn-pr-reconciliation";
 
 export { codexConnectorChurnStopEvidenceSource } from "./recovery-codex-connector-churn";
 
@@ -334,7 +337,7 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
           record.blocked_reason === null ||
           record.blocked_reason === "manual_review" ||
           record.blocked_reason === "unknown" ||
-          record.blocked_reason === "verification"
+          hasBlockedTurnVerificationProvenance(record)
         ) &&
         github.findOpenPullRequestsForBranch !== undefined;
       if (shouldReconcileUntrackedBlockedTurnPullRequest) {

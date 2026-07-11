@@ -198,6 +198,19 @@ test("shouldAutoRetryBlockedVerification respects implementation budgets and rep
   assert.equal(
     shouldAutoRetryBlockedVerification(
       createRecord({
+        last_error: "Verification failed: vitest assertion still failing.",
+        blocked_reason: "unknown",
+        pr_number: null,
+        last_tracked_pr_progress_summary:
+          "blocked_turn_pr_reconciliation=absent branch=codex/issue-102",
+      }),
+      config,
+    ),
+    false,
+  );
+  assert.equal(
+    shouldAutoRetryBlockedVerification(
+      createRecord({
         last_error: "Prerequisite not satisfied.",
         blocked_reason: "unknown",
       }),

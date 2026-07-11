@@ -5,6 +5,11 @@ import path from "node:path";
 import { Supervisor } from "./supervisor";
 import { StateStore } from "../core/state-store";
 import {
+  isRestartRunOnce,
+  prepareIssueExecutionContext,
+} from "../run-once-issue-preparation";
+import type { PreparedIssueRunContext } from "./prepared-issue-runner";
+import {
   GitHubIssue,
   GitHubPullRequest,
   IssueRunRecord,
@@ -18,6 +23,7 @@ import {
   createIssue,
   createPullRequest,
   createRecord,
+  createReviewThread,
   createSupervisorFixture,
   executionReadyBody,
   git,
@@ -142,6 +148,225 @@ test("executeCodexTurn does not consume attempts when the Codex session lock is 
   assert.equal(persisted.issues[String(issueNumber)]?.attempt_count, 4);
   assert.equal(persisted.issues[String(issueNumber)]?.implementation_attempt_count, 3);
   assert.equal(persisted.issues[String(issueNumber)]?.repair_attempt_count, 1);
+});
+
+test("recovered independent verification survives preparation and Supervisor pre-turn reprojection", async () => {
+  const fixture = await createSupervisorFixture();
+  fixture.config.reviewBotLogins = ["copilot-pull-request-reviewer"];
+  const issueNumber = 122;
+  const branch = branchName(fixture.config, issueNumber);
+  const workspacePath = path.join(fixture.workspaceRoot, `issue-${issueNumber}`);
+  const journalPath = path.join(
+    workspacePath,
+    fixture.config.issueJournalRelativePath,
+  );
+  git([
+    "-C",
+    fixture.repoPath,
+    "worktree",
+    "add",
+    "-b",
+    branch,
+    workspacePath,
+    "origin/main",
+  ]);
+  const headSha = git(["-C", workspacePath, "rev-parse", "HEAD"]);
+  await fs.mkdir(path.dirname(journalPath), { recursive: true });
+  await fs.writeFile(
+    journalPath,
+    [
+      "## Codex Working Notes",
+      "### Current Handoff",
+      "- Hypothesis: repair the review without losing the independent verifier.",
+    ].join("\n"),
+    "utf8",
+  );
+
+  const failureContext = {
+    category: "blocked" as const,
+    summary: "Image verification remains blocked.",
+    signature: "verification:images",
+    command: "npm run verify:images",
+    details: ["structured_blocked_reason=verification"],
+    url: null,
+    updated_at: "2026-07-11T12:40:00Z",
+  };
+  const recoveredRecord = createRecord({
+    issue_number: issueNumber,
+    state: "addressing_review",
+    branch,
+    pr_number: 222,
+    workspace: workspacePath,
+    journal_path: journalPath,
+    codex_session_id: null,
+    last_head_sha: headSha,
+    blocked_reason: "verification",
+    last_error: failureContext.summary,
+    last_failure_context: failureContext,
+    last_failure_signature: failureContext.signature,
+    repeated_failure_signature_count: 2,
+    last_blocker_signature: "verification:images",
+    repeated_blocker_count: 2,
+    blocked_verification_retry_count: 1,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: { [String(issueNumber)]: recoveredRecord },
+  };
+  await fs.writeFile(
+    fixture.stateFile,
+    `${JSON.stringify(state, null, 2)}\n`,
+    "utf8",
+  );
+  const issue = createIssue({
+    number: issueNumber,
+    title: "Carry an independent verifier through production dispatch",
+  });
+  const pr = createPullRequest({
+    number: 222,
+    headRefName: branch,
+    headRefOid: headSha,
+  });
+  const reviewThread = createReviewThread();
+  const workspaceStatus = {
+    branch,
+    headSha,
+    hasUncommittedChanges: false,
+    baseAhead: 0,
+    baseBehind: 0,
+    remoteBranchExists: true,
+    remoteAhead: 0,
+    remoteBehind: 0,
+  };
+  const stateStore = new StateStore(fixture.stateFile, {
+    backend: fixture.config.stateBackend,
+    bootstrapFilePath: fixture.config.stateBootstrapFile,
+  });
+  const prepared = await prepareIssueExecutionContext({
+    github: {
+      resolvePullRequestForBranch: async () => pr,
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [reviewThread],
+      createPullRequest: async () => {
+        throw new Error("unexpected createPullRequest call");
+      },
+    },
+    config: fixture.config,
+    stateStore,
+    state,
+    record: recoveredRecord,
+    issue,
+    options: { dryRun: false },
+    ensureWorkspace: async () => workspacePath,
+    syncIssueJournal: async () => undefined,
+    syncMemoryArtifacts: async () => ({
+      contextIndexPath: path.join(workspacePath, "context-index.md"),
+      agentsPath: path.join(workspacePath, "AGENTS.generated.md"),
+      alwaysReadFiles: [journalPath],
+      onDemandFiles: [],
+    }),
+    getWorkspaceStatus: async () => workspaceStatus,
+    writeSupervisorCycleDecisionSnapshot: async () =>
+      path.join(workspacePath, "decision.json"),
+    writePreMergeAssessmentSnapshot: async () =>
+      path.join(workspacePath, "assessment.json"),
+  });
+  assert.equal(typeof prepared, "object");
+  assert.ok(
+    prepared &&
+      !isRestartRunOnce(prepared) &&
+      typeof prepared !== "string",
+  );
+
+  let blockedReasonAtAgentDispatch: IssueRunRecord["blocked_reason"] =
+    "verification";
+  let agentDispatched = false;
+  const supervisor = new Supervisor(fixture.config, {
+    agentRunner: {
+      capabilities: {
+        supportsResume: false,
+        supportsStructuredResult: true,
+      },
+      async runTurn() {
+        agentDispatched = true;
+        blockedReasonAtAgentDispatch =
+          state.issues[String(issueNumber)]?.blocked_reason ?? null;
+        await fs.writeFile(
+          journalPath,
+          [
+            "## Codex Working Notes",
+            "### Current Handoff",
+            "- Hypothesis: repair the review without losing the independent verifier.",
+            "- What changed: review repair stopped on a token boundary.",
+          ].join("\n"),
+          "utf8",
+        );
+        return {
+          exitCode: 0,
+          sessionId: "session-122",
+          supervisorMessage: "Need token before continuing review repair.",
+          stderr: "",
+          stdout: "",
+          structuredResult: {
+            summary: "Review repair stopped on a token boundary.",
+            stateHint: "blocked" as const,
+            blockedReason: "secrets" as const,
+            failureSignature: "secrets:review-repair",
+            nextAction: "provide the token",
+            tests: "not run",
+          },
+          failureKind: null,
+          failureContext: null,
+        };
+      },
+    },
+  });
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    findOpenPullRequestsForBranch: async () => [pr],
+    resolvePullRequestForBranch: async () => pr,
+    getPullRequestIfExists: async () => pr,
+    getChecks: async () => [],
+    getUnresolvedReviewThreads: async () => [reviewThread],
+    getExternalReviewSurface: async () => ({ issueComments: [], reviews: [] }),
+    createPullRequest: async () => {
+      throw new Error("unexpected createPullRequest call");
+    },
+  };
+
+  const message = await (
+    supervisor as unknown as {
+      runPreparedIssue: (context: PreparedIssueRunContext) => Promise<string>;
+    }
+  ).runPreparedIssue({
+    ...prepared,
+    state,
+    issue,
+    options: { dryRun: false },
+    recoveryEvents: [],
+    recoveryLog: null,
+  });
+
+  assert.equal(
+    agentDispatched,
+    true,
+    `${message}\n${JSON.stringify(state.issues[String(issueNumber)])}`,
+  );
+  assert.match(message, /Codex reported blocked for issue #122/);
+  assert.equal(blockedReasonAtAgentDispatch, null);
+  const updated = state.issues[String(issueNumber)]!;
+  assert.equal(updated.state, "blocked");
+  assert.equal(updated.blocked_reason, "verification");
+  assert.equal(updated.last_failure_context?.command, "npm run verify:images");
+  assert.equal(updated.last_failure_signature, failureContext.signature);
+  assert.equal(updated.repeated_failure_signature_count, 2);
+  assert.equal(updated.last_blocker_signature, "verification:images");
+  assert.equal(updated.repeated_blocker_count, 2);
+  assert.equal(updated.blocked_verification_retry_count, 1);
+  assert.ok(
+    updated.last_failure_context?.details.includes(
+      "review_repair_terminal_blocked_reason=secrets",
+    ),
+  );
 });
 
 test("runPreparedIssue skips pre-turn persistence when the Codex session lock is already held", async () => {

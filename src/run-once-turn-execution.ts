@@ -88,6 +88,10 @@ import {
 } from "./turn-execution-post-publication-review";
 import { runSameTurnDurableArtifactRepairRetry } from "./turn-execution-same-turn-repair";
 import { reconcileBlockedTurnPullRequest } from "./supervisor/blocked-turn-pr-reconciliation";
+import {
+  independentVerificationBlockerSnapshot,
+  type IndependentVerificationBlockerSnapshot,
+} from "./supervisor/independent-verification-blocker";
 
 export {
   handlePostTurnPullRequestTransitionsPhase,
@@ -112,6 +116,7 @@ export interface CodexTurnContext {
   checks: PullRequestCheck[];
   reviewThreads: ReviewThread[];
   options: { dryRun: boolean };
+  independentVerificationBlocker?: IndependentVerificationBlockerSnapshot | null;
 }
 
 export interface CodexTurnResult {
@@ -425,21 +430,8 @@ export async function executeCodexTurnPhase(
 
       const preRunState = record.state;
       const carriedVerificationBlocker =
-        preRunState === "addressing_review" &&
-        record.blocked_reason === "verification" &&
-        record.last_failure_context !== null
-          ? {
-              lastError: record.last_error,
-              lastBlockerSignature: record.last_blocker_signature,
-              lastFailureContext: record.last_failure_context,
-              lastFailureSignature: record.last_failure_signature,
-              repeatedFailureSignatureCount:
-                record.repeated_failure_signature_count,
-              repeatedBlockerCount: record.repeated_blocker_count,
-              blockedVerificationRetryCount:
-                record.blocked_verification_retry_count,
-            }
-          : null;
+        args.context.independentVerificationBlocker ??
+        independentVerificationBlockerSnapshot(record);
       const shouldResumeTurn = shouldResumeAgentTurn({
         record,
         agentRunnerCapabilities: agentRunner.capabilities,

@@ -61,6 +61,7 @@ import {
   type PullRequestCheck,
   type SupervisorStateFile,
 } from "./recovery-reconciliation-test-helpers";
+import { shouldAutoRetryBlockedVerification } from "./supervisor/supervisor-execution-policy";
 
 test("reconcileRecoverableBlockedIssueStates requeues open no-PR handoff-missing issues without dropping repeat tracking", async () => {
   const config = createConfig();
@@ -6469,13 +6470,10 @@ test("reconcileRecoverableBlockedIssueStates binds a legacy no-PR verification b
   const headSha = "head-current-400";
   const failureContext = {
     category: "blocked" as const,
-    summary: "Codex reported blocked after the image verifier stopped.",
+    summary: `Codex reported blocked for issue #${issueNumber}.`,
     signature: "gitops-images-high-critical",
     command: "npm run verify:images",
-    details: [
-      "Verification blocked: prerequisite not satisfied.",
-      "structured_blocked_reason=verification",
-    ],
+    details: ["Verification blocked: prerequisite not satisfied."],
     url: null,
     updated_at: "2026-07-11T11:00:00Z",
   };
@@ -6763,6 +6761,69 @@ test("reconcileRecoverableBlockedIssueStates keeps an independent verifier block
   assert.equal(recoveryEvents.length, 1);
 });
 
+test("reconcileRecoverableBlockedIssueStates leaves ordinary internal verification retryable without a PR lookup", async () => {
+  const issueNumber = 415;
+  const original = createRecord({
+    issue_number: issueNumber,
+    branch: `codex/issue-${issueNumber}`,
+    state: "blocked",
+    blocked_reason: "verification",
+    pr_number: null,
+    last_error: "Verification failed: local CI assertion still failing.",
+    last_failure_context: {
+      category: "blocked",
+      summary: "Local CI remains red before draft PR creation.",
+      signature: "local-ci-pre-pr-failure",
+      command: "npm run test:local",
+      details: ["gate=local_ci"],
+      url: null,
+      updated_at: "2026-07-12T01:00:00Z",
+    },
+    last_failure_signature: "local-ci-pre-pr-failure",
+    last_tracked_pr_progress_summary:
+      `blocked_turn_pr_reconciliation=absent branch=codex/issue-${issueNumber}`,
+    blocked_verification_retry_count: 0,
+    repeated_blocker_count: 0,
+    repeated_failure_signature_count: 0,
+  });
+  const state = createSupervisorState({ issues: [original] });
+  const config = createConfig();
+  const issue = createIssue({ number: issueNumber });
+  const stateStore = createCountingStateStore("2026-07-12T01:01:00Z");
+  let branchLookupCalls = 0;
+
+  const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
+    {
+      findOpenPullRequestsForBranch: async () => {
+        branchLookupCalls += 1;
+        return [];
+      },
+      getPullRequestIfExists: async () => {
+        throw new Error("unexpected tracked PR lookup");
+      },
+      getIssue: async () => issue,
+      getChecks: async () => {
+        throw new Error("unexpected checks lookup");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected review lookup");
+      },
+    },
+    stateStore.stateStore,
+    state,
+    config,
+    [issue],
+    { shouldAutoRetryHandoffMissing },
+  );
+
+  const updated = state.issues[String(issueNumber)]!;
+  assert.equal(branchLookupCalls, 0);
+  assert.deepEqual(updated, original);
+  assert.equal(shouldAutoRetryBlockedVerification(updated, config), true);
+  assert.deepEqual(recoveryEvents, []);
+  assert.equal(stateStore.saveCalls, 0);
+});
+
 test("reconcileRecoverableBlockedIssueStates leaves ambiguous branch PR matches unbound with explicit diagnostics", async () => {
   const issueNumber = 394;
   const branch = `codex/issue-${issueNumber}`;
@@ -6772,6 +6833,15 @@ test("reconcileRecoverableBlockedIssueStates leaves ambiguous branch PR matches 
     state: "blocked",
     blocked_reason: "verification",
     pr_number: null,
+    last_failure_context: {
+      category: "blocked",
+      summary: "Structured blocked turn may have created more than one PR.",
+      signature: "structured-blocked-turn-ambiguous-pr",
+      command: "npm run verify:images",
+      details: ["structured_blocked_reason=verification"],
+      url: null,
+      updated_at: "2026-07-11T11:19:00Z",
+    },
   });
   const state = createSupervisorState({ issues: [original] });
   const config = createConfig();
@@ -6825,6 +6895,7 @@ test("reconcileRecoverableBlockedIssueStates leaves ambiguous branch PR matches 
     updated.last_tracked_pr_progress_summary ?? "",
     /candidates=#401,#402/,
   );
+  assert.equal(shouldAutoRetryBlockedVerification(updated, config), false);
   assert.deepEqual(recoveryEvents, []);
   assert.equal(stateStore.saveCalls, 1);
 });
@@ -6838,6 +6909,15 @@ test("reconcileRecoverableBlockedIssueStates leaves an absent branch PR unbound 
     state: "blocked",
     blocked_reason: "verification",
     pr_number: null,
+    last_failure_context: {
+      category: "blocked",
+      summary: "Structured blocked turn completed before PR binding.",
+      signature: "structured-blocked-turn-absent-pr",
+      command: "npm run verify:images",
+      details: ["structured_blocked_reason=verification"],
+      url: null,
+      updated_at: "2026-07-11T11:21:00Z",
+    },
   });
   const state = createSupervisorState({ issues: [original] });
   const config = createConfig();
@@ -6876,6 +6956,7 @@ test("reconcileRecoverableBlockedIssueStates leaves an absent branch PR unbound 
     updated.last_tracked_pr_progress_summary,
     `blocked_turn_pr_reconciliation=absent branch=${branch}`,
   );
+  assert.equal(shouldAutoRetryBlockedVerification(updated, config), false);
   assert.deepEqual(recoveryEvents, []);
   assert.equal(stateStore.saveCalls, 1);
 });
@@ -6889,6 +6970,15 @@ test("reconcileRecoverableBlockedIssueStates leaves PR lookup errors fail-closed
     state: "blocked",
     blocked_reason: "verification",
     pr_number: null,
+    last_failure_context: {
+      category: "blocked",
+      summary: "Structured blocked turn requires a fail-closed PR lookup.",
+      signature: "structured-blocked-turn-pr-lookup-error",
+      command: "npm run verify:images",
+      details: ["structured_blocked_reason=verification"],
+      url: null,
+      updated_at: "2026-07-11T11:23:00Z",
+    },
   });
   const state = createSupervisorState({ issues: [original] });
   const config = createConfig();
@@ -6925,6 +7015,7 @@ test("reconcileRecoverableBlockedIssueStates leaves PR lookup errors fail-closed
     updated.last_tracked_pr_progress_summary,
     `blocked_turn_pr_reconciliation=error branch=${branch} detail=GitHub_lookup_unavailable`,
   );
+  assert.equal(shouldAutoRetryBlockedVerification(updated, config), false);
   assert.deepEqual(recoveryEvents, []);
   assert.equal(stateStore.saveCalls, 1);
 });

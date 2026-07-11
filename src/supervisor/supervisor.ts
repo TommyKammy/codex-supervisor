@@ -49,6 +49,7 @@ import {
   CodexTurnShortCircuit,
   executeCodexTurnPhase,
 } from "../run-once-turn-execution";
+import { independentVerificationBlockerSnapshot } from "./independent-verification-blocker";
 import {
   handlePostTurnPullRequestTransitionsPhase,
   PostTurnPullRequestContext,
@@ -630,6 +631,9 @@ export class Supervisor {
 
   private async executeCodexTurn(context: CodexTurnContext): Promise<CodexTurnResult | CodexTurnShortCircuit> {
     let { state, record, pr, checks, reviewThreads, workspaceStatus, syncJournal, options } = context;
+    const independentVerificationBlocker =
+      context.independentVerificationBlocker ??
+      independentVerificationBlockerSnapshot(record);
     const nextState = pr
       ? inferStateFromPullRequest(this.config, record, pr, checks, reviewThreads)
       : inferStateWithoutPullRequest(record, workspaceStatus);
@@ -678,6 +682,7 @@ export class Supervisor {
           ...context,
           record,
           reviewThreads,
+          independentVerificationBlocker,
         },
         sessionLock,
         acquireSessionLock: async (sessionId) => acquireFileLock(

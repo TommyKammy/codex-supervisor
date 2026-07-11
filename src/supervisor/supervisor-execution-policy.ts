@@ -1,6 +1,7 @@
 import { shouldAutoRetryTimeout } from "./supervisor-failure-helpers";
 import { GitHubPullRequest, IssueRunRecord, SupervisorConfig } from "../core/types";
 import { isTerminalState } from "../core/utils";
+import { hasBlockedTurnVerificationProvenance } from "./blocked-turn-pr-reconciliation";
 
 export type AttemptLane = "implementation" | "repair";
 
@@ -78,10 +79,16 @@ export function hasAttemptBudgetRemaining(
 }
 
 export function shouldAutoRetryBlockedVerification(record: IssueRunRecord, config: SupervisorConfig): boolean {
-  const unresolvedBlockedTurnPullRequest =
+  const hasUnresolvedBlockedTurnPullRequestDiagnostic =
     record.pr_number === null &&
     /(?:^| \| )blocked_turn_pr_reconciliation=(?:absent|ambiguous|error)\b/u.test(
       record.last_tracked_pr_progress_summary ?? "",
+    );
+  const unresolvedBlockedTurnPullRequest =
+    hasUnresolvedBlockedTurnPullRequestDiagnostic &&
+    (
+      record.blocked_reason !== "verification" ||
+      hasBlockedTurnVerificationProvenance(record)
     );
   return (
     record.state === "blocked" &&

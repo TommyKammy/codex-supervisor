@@ -38,6 +38,10 @@ import {
   syncExecutionMetricsRunSummarySafely,
 } from "./supervisor/execution-metrics-run-summary";
 import { syncPostMergeAuditArtifactSafely } from "./supervisor/post-merge-audit-artifact";
+import {
+  independentVerificationBlockerSnapshot,
+  type IndependentVerificationBlockerSnapshot,
+} from "./supervisor/independent-verification-blocker";
 
 export type IssueJournalSync = (record: IssueRunRecord) => Promise<void>;
 export type MemoryArtifacts = Awaited<ReturnType<typeof syncMemoryArtifactsImpl>>;
@@ -52,6 +56,7 @@ export interface PreparedWorkspaceContext {
   syncJournal: IssueJournalSync;
   memoryArtifacts: MemoryArtifacts;
   workspaceStatus: WorkspaceStatus;
+  independentVerificationBlocker?: IndependentVerificationBlockerSnapshot | null;
 }
 
 export interface HydratedPullRequestContext {
@@ -222,16 +227,32 @@ async function prepareWorkspaceContext(
       maxChars: args.config.issueJournalMaxChars,
     });
   };
+  const independentVerificationBlocker =
+    args.record.pr_number === null
+      ? null
+      : independentVerificationBlockerSnapshot(args.record);
+  const preserveIndependentVerificationBlocker =
+    independentVerificationBlocker !== null;
 
   const preparedRecord = args.stateStore.touch(args.record, {
     workspace: workspacePath,
     journal_path: journalPath,
-    state: args.record.implementation_attempt_count === 0 ? "planning" : args.record.state,
+    state:
+      args.record.implementation_attempt_count === 0 &&
+      !preserveIndependentVerificationBlocker
+        ? "planning"
+        : args.record.state,
     workspace_restore_source: ensuredWorkspace.restore.source,
     workspace_restore_ref: ensuredWorkspace.restore.ref,
-    last_error: shouldPreserveNoPrFailureTracking(args.record) ? args.record.last_error : null,
+    last_error:
+      shouldPreserveNoPrFailureTracking(args.record) ||
+        preserveIndependentVerificationBlocker
+        ? args.record.last_error
+        : null,
     last_failure_kind: null,
-    blocked_reason: null,
+    blocked_reason: preserveIndependentVerificationBlocker
+      ? "verification"
+      : null,
   });
   args.state.issues[String(preparedRecord.issue_number)] = preparedRecord;
   await args.stateStore.save(args.state);
@@ -265,6 +286,7 @@ async function prepareWorkspaceContext(
     syncJournal,
     memoryArtifacts,
     workspaceStatus,
+    independentVerificationBlocker,
   };
 }
 

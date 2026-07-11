@@ -259,6 +259,7 @@ export async function runPreparedIssueFlow(
     journalPath,
     syncJournal,
     memoryArtifacts,
+    independentVerificationBlocker,
     options,
     recoveryLog,
     recoveryEvents,
@@ -594,6 +595,7 @@ export async function runPreparedIssueFlow(
       checks,
       reviewThreads,
       options,
+      independentVerificationBlocker,
     });
     if (codexTurn.kind === "returned") {
       return prependRecoveryLog(codexTurn.message, recoveryLog);
