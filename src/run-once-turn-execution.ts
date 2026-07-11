@@ -75,6 +75,7 @@ import { applyCodexTurnPublicationGate } from "./turn-execution-publication-gate
 import {
   explicitFailedCodexTurnVerificationCommand,
   explicitPassingCodexTurnVerificationCommand,
+  codexTurnVerificationIncludesCommand,
 } from "./run-once-turn-verification-evidence";
 import {
   persistPublicationPathHygieneBlocked,
@@ -85,6 +86,7 @@ import {
   buildPostPublicationReviewPersistence,
 } from "./turn-execution-post-publication-review";
 import { runSameTurnDurableArtifactRepairRetry } from "./turn-execution-same-turn-repair";
+import { reconcileBlockedTurnPullRequest } from "./supervisor/blocked-turn-pr-reconciliation";
 
 export {
   handlePostTurnPullRequestTransitionsPhase,
@@ -181,7 +183,13 @@ interface ExecuteCodexTurnPhaseArgs {
     | "getChecks"
     | "getUnresolvedReviewThreads"
     | "getExternalReviewSurface"
-  >;
+  > &
+    Partial<
+      Pick<
+        GitHubClient,
+        "findOpenPullRequestsForBranch" | "getPullRequestIfExists"
+      >
+    >;
   context: CodexTurnContext;
   sessionLock?: LockHandle | null;
   acquireSessionLock: (sessionId: string) => Promise<LockHandle | null>;
@@ -309,6 +317,16 @@ interface ExecuteCodexTurnPhaseArgs {
     hintedState: "blocked" | "failed";
     hintedBlockedReason: IssueRunRecord["blocked_reason"];
     hintedFailureSignature: string | null;
+    hintedVerificationCommand?: string | null;
+    preservedVerificationBlocker?: {
+      blockedVerificationRetryCount: number;
+      lastBlockerSignature: string | null;
+      lastError: string | null;
+      lastFailureContext: FailureContext;
+      lastFailureSignature: string | null;
+      repeatedBlockerCount: number;
+      repeatedFailureSignatureCount: number;
+    } | null;
     buildCodexFailureContext: (
       category: FailureContext["category"],
       summary: string,
@@ -405,6 +423,22 @@ export async function executeCodexTurnPhase(
       }
 
       const preRunState = record.state;
+      const carriedVerificationBlocker =
+        preRunState === "addressing_review" &&
+        record.blocked_reason === "verification" &&
+        record.last_failure_context !== null
+          ? {
+              lastError: record.last_error,
+              lastBlockerSignature: record.last_blocker_signature,
+              lastFailureContext: record.last_failure_context,
+              lastFailureSignature: record.last_failure_signature,
+              repeatedFailureSignatureCount:
+                record.repeated_failure_signature_count,
+              repeatedBlockerCount: record.repeated_blocker_count,
+              blockedVerificationRetryCount:
+                record.blocked_verification_retry_count,
+            }
+          : null;
       const shouldResumeTurn = shouldResumeAgentTurn({
         record,
         agentRunnerCapabilities: agentRunner.capabilities,
@@ -477,6 +511,10 @@ export async function executeCodexTurnPhase(
         const hintedBlockedReason = structuredResult?.blockedReason ?? null;
         const hintedFailureSignature =
           structuredResult?.failureSignature ?? null;
+        const hintedVerificationCommand =
+          explicitFailedCodexTurnVerificationCommand(structuredResult?.tests);
+        const hintedPassingVerificationCommand =
+          explicitPassingCodexTurnVerificationCommand(structuredResult?.tests);
         const preTurnFailureContext = record.last_failure_context;
         const preTurnFailureSignature = record.last_failure_signature;
         const preTurnStaleNoPrRecoveryCount =
@@ -589,6 +627,68 @@ export async function executeCodexTurnPhase(
         }
 
         if (hintedState === "blocked" || hintedState === "failed") {
+          const preservesCarriedVerificationBlocker =
+            carriedVerificationBlocker !== null &&
+            !(
+              hintedPassingVerificationCommand !== null &&
+              codexTurnVerificationIncludesCommand(
+                hintedPassingVerificationCommand,
+                carriedVerificationBlocker.lastFailureContext.command,
+              )
+            );
+          let workspaceReconciliationDiagnostic: string | null = null;
+          let reconciledWorkspaceHeadSha: string | null = null;
+          try {
+            workspaceStatus = await getWorkspaceStatusImpl(
+              workspacePath,
+              record.branch,
+              config.defaultBranch,
+            );
+            reconciledWorkspaceHeadSha = workspaceStatus.headSha;
+          } catch (error) {
+            const detail = (error instanceof Error ? error.message : String(error))
+              .replace(/\s+/g, "_")
+              .slice(0, 300);
+            workspaceReconciliationDiagnostic =
+              `blocked_turn_workspace_reconciliation=error branch=${record.branch} ` +
+              `detail=${detail || "unknown"}`;
+          }
+
+          const pullRequestReconciliation =
+            await reconcileBlockedTurnPullRequest({
+              github,
+              state,
+              record,
+              defaultBranch: config.defaultBranch,
+              repoSlug: config.repoSlug,
+              purpose: "action",
+            });
+          const reconciledPullRequest =
+            pullRequestReconciliation.kind === "bound"
+              ? pullRequestReconciliation.pullRequest
+              : null;
+          const terminalReconciliationDiagnostic = [
+            pullRequestReconciliation.diagnostic,
+            workspaceReconciliationDiagnostic,
+          ]
+            .filter((value): value is string => value !== null)
+            .join(" | ");
+          if (reconciledPullRequest) {
+            pr = reconciledPullRequest;
+          }
+          record = stateStore.touch(record, {
+            ...(reconciledPullRequest || reconciledWorkspaceHeadSha
+              ? {
+                  last_head_sha:
+                    reconciledPullRequest?.headRefOid ??
+                    reconciledWorkspaceHeadSha,
+                }
+              : {}),
+            ...(reconciledPullRequest
+              ? { pr_number: reconciledPullRequest.number }
+              : {}),
+            last_tracked_pr_progress_summary: terminalReconciliationDiagnostic,
+          });
           record = await persistHintedCodexTurnStateImpl({
             stateStore,
             state,
@@ -600,6 +700,10 @@ export async function executeCodexTurnPhase(
             hintedState,
             hintedBlockedReason,
             hintedFailureSignature,
+            hintedVerificationCommand,
+            preservedVerificationBlocker: preservesCarriedVerificationBlocker
+              ? carriedVerificationBlocker
+              : null,
             buildCodexFailureContext: args.buildCodexFailureContext,
             applyFailureSignature: args.applyFailureSignature,
             normalizeBlockerSignature: args.normalizeBlockerSignature,
@@ -948,10 +1052,25 @@ export async function executeCodexTurnPhase(
               },
             )
           : null;
-        const postRunState = postRunSnapshot
+        const lifecyclePostRunState = postRunSnapshot
           ? postRunSnapshot.nextState
           : (hintedState ??
             args.inferStateWithoutPullRequest(record, workspaceStatus));
+        const carriedVerificationCommandPassed =
+          carriedVerificationBlocker !== null &&
+          codexVerificationCommand !== null &&
+          codexTurnVerificationIncludesCommand(
+            codexVerificationCommand,
+            carriedVerificationBlocker.lastFailureContext.command,
+          );
+        const preserveCarriedVerificationBlocker =
+          carriedVerificationBlocker !== null &&
+          !carriedVerificationCommandPassed;
+        const postRunState =
+          preserveCarriedVerificationBlocker &&
+          lifecyclePostRunState !== "addressing_review"
+            ? "blocked"
+            : lifecyclePostRunState;
         const codexTurnVerificationTimelineArtifacts =
           buildPostPublicationCodexVerificationTimelineArtifacts({
             record,
@@ -988,23 +1107,38 @@ export async function executeCodexTurnPhase(
           ...processedReviewThreadPatch,
           ...reviewFollowUpPatch,
           blocked_verification_retry_count: pr
-            ? 0
+            ? preserveCarriedVerificationBlocker
+              ? carriedVerificationBlocker.blockedVerificationRetryCount
+              : 0
             : record.blocked_verification_retry_count,
-          repeated_blocker_count: 0,
+          repeated_blocker_count: preserveCarriedVerificationBlocker
+            ? carriedVerificationBlocker.repeatedBlockerCount
+            : 0,
           last_blocker_signature: null,
           stale_stabilizing_no_pr_recovery_count:
             preserveStaleNoPrRecoveryTracking
               ? preTurnStaleNoPrRecoveryCount
               : 0,
-          last_error: preserveStaleNoPrRecoveryTracking
+          last_error: preserveCarriedVerificationBlocker
+            ? carriedVerificationBlocker.lastError
+            : preserveStaleNoPrRecoveryTracking
             ? preTurnLastError
             : postRunState === "blocked" && postRunSnapshot?.failureContext
               ? truncate(postRunSnapshot.failureContext.summary, 1000)
               : record.last_error,
-          last_failure_context: preserveStaleNoPrRecoveryTracking
+          last_failure_context: preserveCarriedVerificationBlocker
+            ? carriedVerificationBlocker.lastFailureContext
+            : preserveStaleNoPrRecoveryTracking
             ? preTurnFailureContext
             : (postRunSnapshot?.failureContext ?? null),
-          ...(preserveStaleNoPrRecoveryTracking
+          ...(preserveCarriedVerificationBlocker
+            ? {
+                last_failure_signature:
+                  carriedVerificationBlocker.lastFailureSignature,
+                repeated_failure_signature_count:
+                  carriedVerificationBlocker.repeatedFailureSignatureCount,
+              }
+            : preserveStaleNoPrRecoveryTracking
             ? {
                 last_failure_signature: preTurnFailureSignature,
                 repeated_failure_signature_count: 0,
@@ -1014,7 +1148,9 @@ export async function executeCodexTurnPhase(
                 postRunSnapshot?.failureContext ?? null,
               )),
           blocked_reason:
-            pr && postRunState === "blocked"
+            preserveCarriedVerificationBlocker
+              ? "verification"
+              : pr && postRunState === "blocked"
               ? args.blockedReasonFromReviewState(
                   postRunSnapshot?.recordForState ?? record,
                   pr,

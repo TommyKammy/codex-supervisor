@@ -69,10 +69,30 @@ function codexTurnVerificationCommandEntries(value: string | null | undefined): 
   return [...new Set([normalized, ...splitEntries])];
 }
 
+function splitCodexTurnVerificationEntries(value: string): string[] {
+  return value
+    .split(/[\n;]+/)
+    .map(normalizeCodexTurnVerificationCommandEntry)
+    .filter((candidate) => candidate.length > 0);
+}
+
+function stripVerificationOutcomeSuffix(value: string): string {
+  return normalizeCodexTurnVerificationCommandEntry(
+    value.replace(
+      /(?:\s*:\s*|\s+(?:-|—)\s+|\s*\(\s*)(?:passed|pass|success|succeeded|failed|failure|error|timeout|blocked)\b.*$/iu,
+      "",
+    ),
+  );
+}
+
 function verificationCommandComparisonVariants(value: string): string[] {
   const normalized = normalizeCodexTurnVerificationCommandEntry(value);
-  const withoutRtk = normalized.replace(/^rtk\s+/u, "").trim();
-  return [...new Set([normalized, withoutRtk].filter((candidate) => candidate.length > 0))];
+  const withoutOutcome = stripVerificationOutcomeSuffix(normalized);
+  return [normalized, withoutOutcome]
+    .flatMap((candidate) => [candidate, candidate.replace(/^rtk\s+/u, "").trim()])
+    .filter((candidate, index, candidates) =>
+      candidate.length > 0 && candidates.indexOf(candidate) === index
+    );
 }
 
 export function codexTurnVerificationIncludesCommand(
@@ -145,7 +165,27 @@ export function explicitFailedCodexTurnVerificationCommand(
   if (!hasExplicitFailedCodexTurnVerificationOutcome(value)) {
     return null;
   }
-  return value;
+  const entries = splitCodexTurnVerificationEntries(value);
+  const explicitCommands: string[] = [];
+  for (const [index, entry] of entries.entries()) {
+    const strippedEntry = stripVerificationOutcomeSuffix(entry);
+    const hasInlineFailure =
+      strippedEntry !== normalizeCodexTurnVerificationCommandEntry(entry) &&
+      hasExplicitFailedCodexTurnVerificationOutcome(entry);
+    const nextEntry = entries[index + 1] ?? "";
+    const hasAdjacentFailure =
+      CODEX_TURN_VERIFICATION_COMMAND_PATTERN.test(entry) &&
+      /^(?:failed|failure|error|timeout|blocked)\b/iu.test(nextEntry);
+    const command = hasInlineFailure
+      ? strippedEntry
+      : hasAdjacentFailure
+        ? entry
+        : null;
+    if (command && CODEX_TURN_VERIFICATION_COMMAND_PATTERN.test(command)) {
+      explicitCommands.push(command);
+    }
+  }
+  return explicitCommands[0] ?? null;
 }
 
 export function conciseCodexVerificationSummary(summary: string | null | undefined): string {

@@ -66,7 +66,15 @@ type RecoveryGitHubLike = Pick<
   | "getPullRequestIfExists"
   | "getUnresolvedReviewThreads"
 > & Partial<
-  Pick<import("./github").GitHubClient, "addIssueComment" | "getExternalReviewSurface" | "getIssueComments" | "updateIssueComment">
+  Pick<
+    import("./github").GitHubClient,
+    | "addIssueComment"
+    | "findOpenPullRequestsForBranch"
+    | "getExternalReviewSurface"
+    | "getIssueComments"
+    | "resolvePullRequestForBranch"
+    | "updateIssueComment"
+  >
 >;
 
 async function fetchOriginDefaultBranch(
@@ -769,7 +777,17 @@ export async function reconcileStaleDoneIssueStates(
 
 export async function reconcileRecoverableBlockedIssueStates(
   github: Pick<RecoveryGitHubLike, "getPullRequestIfExists" | "getIssue" | "getChecks" | "getUnresolvedReviewThreads">
-    & Partial<Pick<RecoveryGitHubLike, "addIssueComment" | "getExternalReviewSurface" | "getIssueComments" | "updateIssueComment">>,
+    & Partial<
+      Pick<
+        RecoveryGitHubLike,
+        | "addIssueComment"
+        | "findOpenPullRequestsForBranch"
+        | "getExternalReviewSurface"
+        | "getIssueComments"
+        | "resolvePullRequestForBranch"
+        | "updateIssueComment"
+      >
+    >,
   stateStore: StateStoreLike,
   state: SupervisorStateFile,
   config: SupervisorConfig,

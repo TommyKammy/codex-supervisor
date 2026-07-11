@@ -68,6 +68,7 @@ import {
   maybeBuildIssueActivityContext,
   type SupervisorIssueActivityContextDto,
 } from "./supervisor-operator-activity-context";
+import { blockedTurnPullRequestReconciliationStatusLine } from "./blocked-turn-pr-reconciliation";
 import { formatPreMergeEvaluationStatusLine, loadPreMergeEvaluationDto } from "./supervisor-pre-merge-evaluation";
 import { summarizePreservedPartialWork } from "./supervisor-preserved-partial-work";
 import {
@@ -147,6 +148,7 @@ export interface SupervisorExplainDto {
   codexConnectorConvergenceSummary?: string | null;
   noActiveTrackedRecordSummary?: string | null;
   trackedPrRetryabilitySummary?: string | null;
+  blockedTurnPrReconciliationSummary?: string | null;
   trackedPrReadyPromotionMaintenanceSummary?: string | null;
   trackedPrMismatchSummary: string | null;
   trackedPrMismatchDetailLines?: string[];
@@ -684,6 +686,8 @@ export async function buildIssueExplainDto(
           `signal=${record.last_tracked_pr_progress_summary.replace(/\s+/g, "_")}`,
         ].join(" ")
         : null,
+    blockedTurnPrReconciliationSummary:
+      blockedTurnPullRequestReconciliationStatusLine(record ?? null),
     trackedPrReadyPromotionMaintenanceSummary,
     trackedPrMismatchSummary: trackedPrMismatch?.summaryLine ?? null,
     trackedPrMismatchDetailLines: trackedPrMismatch?.detailLines ?? [],
@@ -782,6 +786,9 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
     ...(dto.codexConnectorConvergenceSummary ? [dto.codexConnectorConvergenceSummary] : []),
     ...(dto.noActiveTrackedRecordSummary ? [dto.noActiveTrackedRecordSummary] : []),
     ...(dto.trackedPrRetryabilitySummary ? [dto.trackedPrRetryabilitySummary] : []),
+    ...(dto.blockedTurnPrReconciliationSummary
+      ? [dto.blockedTurnPrReconciliationSummary]
+      : []),
     ...(dto.trackedPrReadyPromotionMaintenanceSummary ? [dto.trackedPrReadyPromotionMaintenanceSummary] : []),
     ...(dto.trackedPrMismatchSummary ? [dto.trackedPrMismatchSummary] : []),
     ...(dto.trackedPrMismatchDetailLines ? dto.trackedPrMismatchDetailLines : []),

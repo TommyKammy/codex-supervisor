@@ -230,6 +230,7 @@ const EXPECTED_FAMILY_FILES = {
   supervisor: [
     "agent-runner.ts",
     "artifact-test-helpers.ts",
+    "blocked-turn-pr-reconciliation.ts",
     "codex-connector-diagnostics-presenter.ts",
     "codex-connector-verified-stale-residue-selection.ts",
     "execution-metrics-aggregation.ts",

@@ -148,6 +148,94 @@ test("shouldAutoRetryBlockedVerification respects implementation budgets and rep
   assert.equal(
     shouldAutoRetryBlockedVerification(
       createRecord({
+        last_error: "Verification blocked: prerequisite not satisfied.",
+        blocked_reason: "verification",
+      }),
+      config,
+    ),
+    true,
+  );
+  assert.equal(
+    shouldAutoRetryBlockedVerification(
+      createRecord({
+        last_error: "Verification failed: vitest assertion still failing.",
+        blocked_reason: "unknown",
+      }),
+      config,
+    ),
+    true,
+  );
+  assert.equal(
+    shouldAutoRetryBlockedVerification(
+      createRecord({
+        last_error: "Prerequisite not satisfied.",
+        blocked_reason: "unknown",
+      }),
+      config,
+    ),
+    false,
+  );
+  assert.equal(
+    shouldAutoRetryBlockedVerification(
+      createRecord({
+        last_error: "Need token before continuing.",
+        blocked_reason: "verification",
+        last_failure_context: {
+          category: "blocked",
+          summary: "Independent verifier remains blocked.",
+          signature: "verification:images",
+          command: "npm run verify:images",
+          details: ["review_repair_terminal_blocked_reason=secrets"],
+          url: null,
+          updated_at: "2026-07-11T12:40:00Z",
+        },
+      }),
+      config,
+    ),
+    false,
+  );
+  assert.equal(
+    shouldAutoRetryBlockedVerification(
+      createRecord({
+        implementation_attempt_count: config.maxImplementationAttemptsPerIssue,
+        repair_attempt_count: 0,
+        pr_number: 42,
+        last_error: "Verification failed: vitest assertion still failing.",
+        blocked_reason: "verification",
+      }),
+      config,
+    ),
+    true,
+  );
+  assert.equal(
+    shouldAutoRetryBlockedVerification(
+      createRecord({
+        implementation_attempt_count: 0,
+        repair_attempt_count: config.maxRepairAttemptsPerIssue,
+        pr_number: 42,
+        last_error: "Verification failed: vitest assertion still failing.",
+        blocked_reason: "verification",
+      }),
+      config,
+    ),
+    false,
+  );
+  assert.equal(
+    shouldAutoRetryBlockedVerification(
+      createRecord({
+        last_error: "Verification blocked: prerequisite not satisfied.",
+        blocked_reason: "verification",
+        pr_number: null,
+        last_tracked_pr_progress_summary:
+          "blocked_turn_pr_reconciliation=ambiguous branch=codex/issue-102 reason=no_unique_canonical_open_pr candidates=#201,#202",
+      }),
+      config,
+    ),
+    false,
+  );
+  assert.equal(
+    shouldAutoRetryBlockedVerification(
+      createRecord({
         last_error: "Verification failed: vitest assertion still failing.",
         blocked_reason: "verification",
       }),

@@ -820,3 +820,76 @@ test("formatDetailedStatus renders a compact latest recovery summary for the act
     /latest_recovery issue=#91 at=2026-03-13T00:20:00Z reason=tracked_pr_head_advanced detail=resumed issue #91 from blocked to reproducing after tracked PR #191 advanced from head-old-191 to head-new-191/,
   );
 });
+
+test("formatDetailedStatus distinguishes scheduled blocked-turn repair from diagnostic-only PR reconciliation", () => {
+  const scheduledRecord = createRecord({
+    issue_number: 1700,
+    state: "addressing_review",
+    branch: "codex/issue-1700",
+    pr_number: 1701,
+    blocked_reason: "verification",
+    last_failure_context: {
+      category: "blocked",
+      summary: "Independent verification remains blocked.",
+      signature: "verification:independent",
+      command: "npm run verify:images",
+      details: ["structured_blocked_reason=verification"],
+      url: null,
+      updated_at: "2026-07-11T12:45:00Z",
+    },
+  });
+  const scheduledStatus = formatDetailedStatus({
+    config: createConfig(),
+    activeRecord: scheduledRecord,
+    latestRecord: scheduledRecord,
+    latestRecoveryRecord: null,
+    trackedIssueCount: 1,
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+  });
+
+  assert.match(scheduledStatus, /^state=addressing_review$/m);
+  assert.match(
+    scheduledStatus,
+    /^blocked_turn_pr_reconciliation=scheduled_review_repair issue=#1700 pr=#1701 independent_verification_blocker=carried$/m,
+  );
+  assert.doesNotMatch(
+    scheduledStatus,
+    /no_active_tracked_record .*classification=manual_review_required/,
+  );
+
+  const diagnosticRecord = createRecord({
+    issue_number: 1702,
+    state: "blocked",
+    branch: "codex/issue-1702",
+    pr_number: null,
+    blocked_reason: "verification",
+    last_tracked_pr_progress_summary:
+      "blocked_turn_pr_reconciliation=ambiguous branch=codex/issue-1702 reason=no_unique_canonical_open_pr candidates=#1703,#1704",
+  });
+  const diagnosticStatus = formatDetailedStatus({
+    config: createConfig(),
+    activeRecord: null,
+    latestRecord: diagnosticRecord,
+    latestRecoveryRecord: null,
+    trackedIssueCount: 1,
+    pr: null,
+    checks: [],
+    reviewThreads: [],
+  });
+
+  assert.match(diagnosticStatus, /^No active issue\.$/m);
+  assert.match(
+    diagnosticStatus,
+    /^no_active_tracked_record issue=#1702 classification=manual_review_required state=blocked reason=verification$/m,
+  );
+  assert.match(
+    diagnosticStatus,
+    /^blocked_turn_pr_reconciliation=ambiguous branch=codex\/issue-1702 reason=no_unique_canonical_open_pr candidates=#1703,#1704$/m,
+  );
+  assert.doesNotMatch(
+    diagnosticStatus,
+    /blocked_turn_pr_reconciliation=scheduled_review_repair/,
+  );
+});

@@ -80,6 +80,16 @@ interface PersistHintedCodexTurnStateArgs {
   hintedState: "blocked" | "failed";
   hintedBlockedReason: IssueRunRecord["blocked_reason"];
   hintedFailureSignature: string | null;
+  hintedVerificationCommand?: string | null;
+  preservedVerificationBlocker?: {
+    blockedVerificationRetryCount: number;
+    lastBlockerSignature: string | null;
+    lastError: string | null;
+    lastFailureContext: FailureContext;
+    lastFailureSignature: string | null;
+    repeatedBlockerCount: number;
+    repeatedFailureSignatureCount: number;
+  } | null;
   buildCodexFailureContext: (
     category: FailureContext["category"],
     summary: string,
@@ -258,9 +268,35 @@ export async function persistHintedCodexTurnState(args: PersistHintedCodexTurnSt
     `Codex reported ${args.hintedState} for issue #${args.issueNumber}.`,
     [truncate(args.lastMessage, 2000) ?? "No additional summary."],
   );
+  if (
+    args.hintedState === "blocked" &&
+    args.hintedBlockedReason === "verification"
+  ) {
+    failureContext.details = [
+      ...failureContext.details,
+      "structured_blocked_reason=verification",
+    ];
+  }
   if (args.hintedFailureSignature) {
     failureContext.signature = args.hintedFailureSignature;
   }
+  if (args.hintedVerificationCommand) {
+    failureContext.command = args.hintedVerificationCommand;
+  }
+
+  const preservedVerificationBlocker = args.preservedVerificationBlocker ?? null;
+  const preservedFailureContext = preservedVerificationBlocker
+    ? {
+        ...preservedVerificationBlocker.lastFailureContext,
+        details: [
+          ...preservedVerificationBlocker.lastFailureContext.details,
+          `review_repair_terminal_state=${args.hintedState}`,
+          `review_repair_terminal_blocked_reason=${args.hintedBlockedReason ?? "unknown"}`,
+          ...failureContext.details,
+        ],
+        updated_at: failureContext.updated_at,
+      }
+    : null;
 
   return persistTurnFailurePatch({
     stateStore: args.stateStore,
@@ -270,14 +306,49 @@ export async function persistHintedCodexTurnState(args: PersistHintedCodexTurnSt
     syncJournal: args.syncJournal,
     retentionRootPath: args.retentionRootPath,
     patch: {
-      state: args.hintedState,
-      last_error: truncate(args.lastMessage),
-      last_failure_kind: args.hintedState === "failed" ? "codex_failed" : null,
-      last_failure_context: failureContext,
-      ...args.applyFailureSignature(args.record, failureContext),
-      ...nextBlockerTracking(args.record, args.hintedState, args.lastMessage, args.normalizeBlockerSignature),
-      blocked_reason:
-        args.hintedState === "blocked"
+      state: preservedVerificationBlocker ? "blocked" : args.hintedState,
+      last_error: preservedVerificationBlocker
+        ? truncate(
+            [
+              preservedVerificationBlocker.lastError,
+              `Review repair turn reported ${args.hintedState} (${args.hintedBlockedReason ?? "unknown"}): ${args.lastMessage}`,
+            ]
+              .filter((value): value is string => Boolean(value))
+              .join("\n"),
+          )
+        : truncate(args.lastMessage),
+      last_failure_kind:
+        preservedVerificationBlocker
+          ? null
+          : args.hintedState === "failed"
+            ? "codex_failed"
+            : null,
+      last_failure_context: preservedFailureContext ?? failureContext,
+      ...(preservedVerificationBlocker
+        ? {
+            last_failure_signature:
+              preservedVerificationBlocker.lastFailureSignature,
+            repeated_failure_signature_count:
+              preservedVerificationBlocker.repeatedFailureSignatureCount,
+            last_blocker_signature:
+              preservedVerificationBlocker.lastBlockerSignature,
+            repeated_blocker_count:
+              preservedVerificationBlocker.repeatedBlockerCount,
+            blocked_verification_retry_count:
+              preservedVerificationBlocker.blockedVerificationRetryCount,
+          }
+        : {
+            ...args.applyFailureSignature(args.record, failureContext),
+            ...nextBlockerTracking(
+              args.record,
+              args.hintedState,
+              args.lastMessage,
+              args.normalizeBlockerSignature,
+            ),
+          }),
+      blocked_reason: preservedVerificationBlocker
+        ? "verification"
+        : args.hintedState === "blocked"
           ? args.hintedBlockedReason ??
             (args.isVerificationBlockedMessage(args.lastMessage) ? "verification" : "unknown")
           : null,
