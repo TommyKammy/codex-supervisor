@@ -522,6 +522,62 @@ printf '{"models":[{"slug":"gpt-5.6-terra","supported_reasoning_levels":["max"]}
   assert.equal(snapshot.activeRoute.reasoningEffort, "max");
 });
 
+test("buildCodexModelPolicySnapshot resolves migrated records through the canonical workspace", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "status-codex-policy-canonical-workspace-"));
+  const workspaceRoot = path.join(root, "workspaces");
+  const canonicalWorkspace = path.join(workspaceRoot, "issue-366");
+  const persistedWorkspace = path.join(root, "other-host", "issue-366");
+  const codexHome = path.join(root, "codex-home");
+  const codexBinary = path.join(root, "fake-codex.sh");
+  const previousCodexHome = process.env.CODEX_HOME;
+  t.after(async () => {
+    if (previousCodexHome === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = previousCodexHome;
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  process.env.CODEX_HOME = codexHome;
+  await fs.mkdir(path.join(canonicalWorkspace, ".codex"), { recursive: true });
+  await fs.writeFile(path.join(canonicalWorkspace, ".git"), "gitdir: /tmp/fake\n", "utf8");
+  await fs.mkdir(codexHome, { recursive: true });
+  await fs.writeFile(
+    path.join(canonicalWorkspace, ".codex", "config.toml"),
+    'model = "gpt-5.6-terra"\n',
+    "utf8",
+  );
+  await fs.writeFile(
+    path.join(codexHome, "config.toml"),
+    `model = "gpt-5.6-sol"\n\n[projects.${JSON.stringify(canonicalWorkspace)}]\ntrust_level = "trusted"\n`,
+    "utf8",
+  );
+  await fs.writeFile(codexBinary, `#!/bin/sh
+if [ ! -f .codex/config.toml ]; then
+  exit 9
+fi
+printf '{"models":[{"slug":"gpt-5.6-terra","supported_reasoning_levels":["max"]}]}'
+`, { mode: 0o755 });
+
+  const snapshot = await buildCodexModelPolicySnapshot({
+    config: createConfig({
+      workspaceRoot,
+      codexBinary,
+      codexModelStrategy: "inherit",
+      codexReasoningEffortByState: { implementing: "max" },
+    }),
+    activeState: "implementing",
+    activeRecord: createRecord({
+      workspace: persistedWorkspace,
+      journal_path: path.join(persistedWorkspace, ".codex-supervisor", "issue-journal.md"),
+      state: "implementing",
+    }),
+  });
+
+  assert.equal(snapshot.hostDefault.model, "gpt-5.6-terra");
+  assert.equal(snapshot.hostDefault.source, path.join(canonicalWorkspace, ".codex", "config.toml"));
+  assert.equal(snapshot.capabilities.source, "live_catalog");
+  assert.equal(snapshot.activeRoute.reasoningEffort, "max");
+});
+
 test("buildCodexModelPolicySnapshot keeps the default route independent from active repair overrides", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "status-codex-policy-default-route-"));
   const previousCodexHome = process.env.CODEX_HOME;

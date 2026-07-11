@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { resolveCodexExecutionPolicy } from "./codex-policy";
 import { CodexModelCapabilities, resolveCodexModelCapabilities } from "./codex-model-capabilities";
+import { resolveTrackedIssueHostPaths } from "../core/journal";
 import { CodexExecutionTarget, CodexModelStrategy, IssueRunRecord, ReasoningEffort, RunState, SupervisorConfig } from "../core/types";
 
 export interface HostCodexDefaultModelResolution {
@@ -284,14 +285,23 @@ export async function buildCodexModelPolicySnapshot(args: {
     | "codexReasoningEffortByState"
     | "codexReasoningEscalateOnRepeatedFailure"
     | "codexBinary"
+    | "workspaceRoot"
+    | "issueJournalRelativePath"
   >;
   activeState: RunState;
   activeRecord?: Pick<
     IssueRunRecord,
-    "workspace" | "repeated_failure_signature_count" | "blocked_verification_retry_count" | "timeout_retry_count"
+    | "issue_number"
+    | "workspace"
+    | "journal_path"
+    | "repeated_failure_signature_count"
+    | "blocked_verification_retry_count"
+    | "timeout_retry_count"
   > | null;
 }): Promise<CodexModelPolicySnapshot> {
-  const workspace = args.activeRecord?.workspace;
+  const workspace = args.activeRecord
+    ? resolveTrackedIssueHostPaths(args.config, args.activeRecord).workspace
+    : undefined;
   const [hostDefault, capabilities] = await Promise.all([
     resolveHostCodexDefaultModel(workspace),
     resolveCodexModelCapabilities(args.config.codexBinary, workspace),
