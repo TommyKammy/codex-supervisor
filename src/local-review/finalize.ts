@@ -1,6 +1,4 @@
 import { type LocalReviewRoleSelection } from "../review-role-detector";
-import { resolveCodexExecutionPolicy } from "../codex/codex-policy";
-import { type CodexExecutionTarget } from "../core/types";
 import { type SupervisorConfig } from "../core/types";
 import { truncate } from "../core/utils";
 import { findingMeetsReviewerThreshold, reviewerTypeForRole, thresholdsForReviewerType } from "./thresholds";
@@ -10,7 +8,6 @@ import {
   type LocalReviewGuardrailProvenance,
   type LocalReviewArtifact,
   type LocalReviewFinding,
-  type LocalReviewExecutionRouting,
   type LocalReviewResult,
   type LocalReviewRootCauseSummary,
   type LocalReviewRoleResult,
@@ -212,53 +209,11 @@ function maxSeverity(findings: LocalReviewFinding[]): LocalReviewSeverity {
   return "none";
 }
 
-function localReviewExecutionTargetForRole(args: {
-  role: string;
-  detectedRoles?: LocalReviewRoleSelection[];
-}): CodexExecutionTarget {
-  return reviewerTypeForRole(args) === "generic"
-    ? "local_review_generic"
-    : "local_review_specialist";
-}
-
-function resolveLocalReviewExecutionRouting(args: {
-  config: Pick<
-    SupervisorConfig,
-    | "codexModelStrategy"
-    | "codexModel"
-    | "localReviewModelStrategy"
-    | "localReviewModel"
-    | "codexReasoningEffortByState"
-    | "codexReasoningEscalateOnRepeatedFailure"
-  >;
-  target: CodexExecutionTarget;
-  inheritedModel?: string | null;
-}): LocalReviewExecutionRouting {
-  const policy = resolveCodexExecutionPolicy(
-    args.config,
-    "local_review",
-    undefined,
-    args.target,
-    { inheritedModel: args.inheritedModel },
-  );
-  return {
-    target: args.target,
-    model: policy.model,
-    reasoningEffort: policy.reasoningEffort,
-  };
-}
-
 export function finalizeLocalReview(args: {
   config: Pick<
     SupervisorConfig,
     | "localReviewConfidenceThreshold"
     | "localReviewReviewerThresholds"
-    | "codexModelStrategy"
-    | "codexModel"
-    | "localReviewModelStrategy"
-    | "localReviewModel"
-    | "codexReasoningEffortByState"
-    | "codexReasoningEscalateOnRepeatedFailure"
   >;
   issueNumber: number;
   prNumber: number;
@@ -269,7 +224,6 @@ export function finalizeLocalReview(args: {
   verifierReport: LocalReviewVerifierReport | null;
   ranAt: string;
   guardrailProvenance?: LocalReviewGuardrailProvenance;
-  inheritedModel?: string | null;
 }): FinalizedLocalReview {
   const roles = args.roleResults.map((result) => result.role);
   const allFindings = args.roleResults.flatMap((result) => result.findings);
@@ -280,11 +234,6 @@ export function finalizeLocalReview(args: {
     };
     const reviewerType = reviewerTypeForRole(reviewerTypeArgs);
     const thresholds = thresholdsForReviewerType(args.config, reviewerType);
-    const routing = resolveLocalReviewExecutionRouting({
-      config: args.config,
-      target: localReviewExecutionTargetForRole(reviewerTypeArgs),
-      inheritedModel: args.inheritedModel,
-    });
     const actionableFindingsCount = result.findings.filter((finding) =>
       findingMeetsReviewerThreshold({
         finding,
@@ -295,7 +244,7 @@ export function finalizeLocalReview(args: {
 
     return {
       role: result.role,
-      routing,
+      routing: result.routing,
       reviewerType,
       confidenceThreshold: thresholds.confidenceThreshold,
       minimumSeverity: thresholds.minimumSeverity,
@@ -384,11 +333,7 @@ export function finalizeLocalReview(args: {
     verifierReport: args.verifierReport
       ? {
           role: args.verifierReport.role,
-          routing: resolveLocalReviewExecutionRouting({
-            config: args.config,
-            target: "local_review_verifier",
-            inheritedModel: args.inheritedModel,
-          }),
+          routing: args.verifierReport.routing,
           exitCode: args.verifierReport.exitCode,
           degraded: args.verifierReport.degraded,
           summary: args.verifierReport.summary,

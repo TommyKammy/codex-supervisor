@@ -3,6 +3,54 @@ import test from "node:test";
 import { finalizeLocalReview } from "./finalize";
 import { createConfig, createDetectedRoles } from "./test-helpers";
 
+const GENERIC_ROUTING = {
+  target: "local_review_generic" as const,
+  model: null,
+  reasoningEffort: null,
+};
+const SPECIALIST_ROUTING = {
+  target: "local_review_specialist" as const,
+  model: null,
+  reasoningEffort: null,
+};
+const VERIFIER_ROUTING = {
+  target: "local_review_verifier" as const,
+  model: null,
+  reasoningEffort: null,
+};
+
+test("finalizeLocalReview preserves the routing captured by the review turn", () => {
+  const result = finalizeLocalReview({
+    config: createConfig({
+      localReviewModelStrategy: "fixed",
+      localReviewModel: "gpt-5.6-terra",
+      codexReasoningEffortByState: { local_review: "max" },
+    }),
+    issueNumber: 38,
+    prNumber: 12,
+    branch: "codex/issue-38",
+    headSha: "catalog123456",
+    roleResults: [{
+      role: "reviewer",
+      summary: "No findings.",
+      recommendation: "ready",
+      degraded: false,
+      routing: {
+        target: "local_review_generic",
+        model: "gpt-5.6-terra",
+        reasoningEffort: "xhigh",
+      },
+      exitCode: 0,
+      rawOutput: "review raw output",
+      findings: [],
+    }],
+    verifierReport: null,
+    ranAt: "2026-07-11T00:00:00Z",
+  });
+
+  assert.equal(result.artifact.roleReports[0]?.routing.reasoningEffort, "xhigh");
+});
+
 test("finalizeLocalReview keeps raw high-severity findings separate from dismissed verifier results", () => {
   const result = finalizeLocalReview({
     config: createConfig({ localReviewConfidenceThreshold: 0.7 }),
@@ -16,6 +64,7 @@ test("finalizeLocalReview keeps raw high-severity findings separate from dismiss
         summary: "Flagged one high issue and one medium issue.",
         recommendation: "changes_requested",
         degraded: false,
+        routing: GENERIC_ROUTING,
         exitCode: 0,
         rawOutput: "review raw output",
         findings: [
@@ -51,6 +100,7 @@ test("finalizeLocalReview keeps raw high-severity findings separate from dismiss
       summary: "Dismissed the high-severity finding after re-check.",
       recommendation: "ready",
       degraded: false,
+      routing: VERIFIER_ROUTING,
       exitCode: 0,
       rawOutput: "verifier raw output",
       findings: [
@@ -86,6 +136,7 @@ test("finalizeLocalReview propagates verifier degradation to top-level result", 
         summary: "Flagged one high issue.",
         recommendation: "changes_requested",
         degraded: false,
+        routing: GENERIC_ROUTING,
         exitCode: 0,
         rawOutput: "review raw output",
         findings: [
@@ -109,6 +160,7 @@ test("finalizeLocalReview propagates verifier degradation to top-level result", 
       summary: "Verifier failed to complete.",
       recommendation: "unknown",
       degraded: true,
+      routing: VERIFIER_ROUTING,
       exitCode: 1,
       rawOutput: "verifier raw output",
       findings: [],
@@ -136,6 +188,7 @@ test("finalizeLocalReview includes auto-detect reasons in the artifact", () => {
         summary: "No issues found.",
         recommendation: "ready",
         degraded: false,
+        routing: GENERIC_ROUTING,
         exitCode: 0,
         rawOutput: "review raw output",
         findings: [],
@@ -145,6 +198,7 @@ test("finalizeLocalReview includes auto-detect reasons in the artifact", () => {
         summary: "Checked schema and migrations.",
         recommendation: "ready",
         degraded: false,
+        routing: SPECIALIST_ROUTING,
         exitCode: 0,
         rawOutput: "prisma raw output",
         findings: [],
@@ -183,6 +237,7 @@ test("finalizeLocalReview uses stricter confidence thresholds for specialist rev
         summary: "Flagged a generic concern below the generic threshold.",
         recommendation: "changes_requested",
         degraded: false,
+        routing: GENERIC_ROUTING,
         exitCode: 0,
         rawOutput: "generic raw output",
         findings: [
@@ -205,6 +260,7 @@ test("finalizeLocalReview uses stricter confidence thresholds for specialist rev
         summary: "Flagged a specialist concern at the specialist threshold.",
         recommendation: "changes_requested",
         degraded: false,
+        routing: SPECIALIST_ROUTING,
         exitCode: 0,
         rawOutput: "specialist raw output",
         findings: [
@@ -228,6 +284,7 @@ test("finalizeLocalReview uses stricter confidence thresholds for specialist rev
       summary: "Confirmed the specialist issue.",
       recommendation: "changes_requested",
       degraded: false,
+      routing: VERIFIER_ROUTING,
       exitCode: 0,
       rawOutput: "verifier raw output",
       findings: [
@@ -263,6 +320,7 @@ test("finalizeLocalReview compresses overlapping findings into a root-cause summ
         summary: "Flagged missing nil handling in the same path.",
         recommendation: "changes_requested",
         degraded: false,
+        routing: GENERIC_ROUTING,
         exitCode: 0,
         rawOutput: "review raw output",
         findings: [
@@ -285,6 +343,7 @@ test("finalizeLocalReview compresses overlapping findings into a root-cause summ
         summary: "Found the same bug from the repair prompt side.",
         recommendation: "changes_requested",
         degraded: false,
+        routing: GENERIC_ROUTING,
         exitCode: 0,
         rawOutput: "explorer raw output",
         findings: [
@@ -327,6 +386,7 @@ test("finalizeLocalReview merges root-cause groups connected by a bridging findi
         summary: "Found repeated auth-refresh failures.",
         recommendation: "changes_requested",
         degraded: false,
+        routing: GENERIC_ROUTING,
         exitCode: 0,
         rawOutput: "review raw output",
         findings: [
@@ -391,6 +451,7 @@ test("finalizeLocalReview does not compress findings without file locations", ()
         summary: "Found two similar unscoped concerns.",
         recommendation: "changes_requested",
         degraded: false,
+        routing: GENERIC_ROUTING,
         exitCode: 0,
         rawOutput: "review raw output",
         findings: [

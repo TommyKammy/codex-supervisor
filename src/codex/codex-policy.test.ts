@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolveCodexExecutionPolicy } from "./codex-policy";
+import { buildCodexConfigOverrideArgs, resolveCodexExecutionPolicy } from "./codex-policy";
 import { type SupervisorConfig } from "../core/types";
 
 function createConfig(overrides: Partial<SupervisorConfig> = {}): SupervisorConfig {
@@ -236,6 +236,113 @@ test("resolveCodexExecutionPolicy clamps max to each model family's highest supp
       requestedReasoningEffort: "max",
     },
   );
+});
+
+test("resolveCodexExecutionPolicy allows catalog-backed Terra and Luna routes to emit max", () => {
+  const capabilities = new Map([
+    ["gpt-5.6-terra", new Set(["high", "xhigh", "max"] as const)],
+    ["gpt-5.6-luna", new Set(["high", "xhigh", "max"] as const)],
+  ]);
+  for (const model of capabilities.keys()) {
+    const config = createConfig({ codexModel: model, codexReasoningEffortByState: { implementing: "max" } });
+    assert.equal(resolveCodexExecutionPolicy(config, "implementing", undefined, "supervisor", {
+      reasoningLevelsByModel: capabilities,
+    }).reasoningEffort, "max");
+  }
+});
+
+test("resolveCodexExecutionPolicy uses Codex-style alias and dated-suffix catalog matching", () => {
+  const capabilities = new Map([
+    ["gpt-5.6", new Set(["high"] as const)],
+    ["gpt-5.6-terra", new Set(["high", "xhigh", "max"] as const)],
+  ]);
+  for (const model of ["openai/gpt-5.6-terra", "gpt-5.6-terra-2026-07-10"]) {
+    const config = createConfig({ codexModel: model, codexReasoningEffortByState: { implementing: "max" } });
+    assert.equal(resolveCodexExecutionPolicy(config, "implementing", undefined, "supervisor", {
+      reasoningLevelsByModel: capabilities,
+    }).reasoningEffort, "max");
+  }
+});
+
+test("resolveCodexExecutionPolicy maps the unsuffixed GPT-5.6 alias to Sol catalog capabilities", () => {
+  const capabilities = new Map([
+    ["gpt-5.6-sol", new Set(["high", "xhigh", "max"] as const)],
+  ]);
+  for (const model of ["gpt-5.6", "openai/gpt-5.6"]) {
+    const config = createConfig({ codexModel: model, codexReasoningEffortByState: { implementing: "max" } });
+    assert.equal(resolveCodexExecutionPolicy(config, "implementing", undefined, "supervisor", {
+      reasoningLevelsByModel: capabilities,
+    }).reasoningEffort, "max");
+  }
+
+  const directAliasCapabilities = new Map(capabilities).set("gpt-5.6", new Set(["high"] as const));
+  const directAliasConfig = createConfig({
+    codexModel: "gpt-5.6",
+    codexReasoningEffortByState: { implementing: "max" },
+  });
+  assert.equal(resolveCodexExecutionPolicy(directAliasConfig, "implementing", undefined, "supervisor", {
+    reasoningLevelsByModel: directAliasCapabilities,
+  }).reasoningEffort, "high");
+});
+
+test("resolveCodexExecutionPolicy clamps every unsupported effort to the live catalog", () => {
+  const capabilities = new Map([
+    ["gpt-5.6-terra", new Set(["low", "medium", "high", "xhigh"] as const)],
+  ]);
+  const noneConfig = createConfig({
+    codexModel: "gpt-5.6-terra",
+    codexReasoningEffortByState: { implementing: "none" },
+  });
+  assert.deepEqual(resolveCodexExecutionPolicy(noneConfig, "implementing", undefined, "supervisor", {
+    reasoningLevelsByModel: capabilities,
+  }), {
+    model: "gpt-5.6-terra",
+    reasoningEffort: "low",
+    requestedReasoningEffort: "none",
+  });
+
+  const maxConfig = createConfig({
+    codexModel: "gpt-5.6-terra",
+    codexReasoningEffortByState: { implementing: "max" },
+  });
+  assert.equal(resolveCodexExecutionPolicy(maxConfig, "implementing", undefined, "supervisor", {
+    reasoningLevelsByModel: capabilities,
+  }).reasoningEffort, "xhigh");
+});
+
+test("resolveCodexExecutionPolicy lets live catalogs override legacy Pro clamps", () => {
+  const policy = resolveCodexExecutionPolicy(
+    createConfig({
+      codexModel: "gpt-5-pro",
+      codexReasoningEffortByState: { implementing: "xhigh" },
+    }),
+    "implementing",
+    undefined,
+    "supervisor",
+    { reasoningLevelsByModel: new Map([["gpt-5-pro", new Set(["high", "xhigh"] as const)]]) },
+  );
+
+  assert.deepEqual(policy, { model: "gpt-5-pro", reasoningEffort: "xhigh" });
+});
+
+test("resolveCodexExecutionPolicy suppresses reasoning overrides for empty live capability sets", () => {
+  const policy = resolveCodexExecutionPolicy(
+    createConfig({
+      codexModel: "catalog-model",
+      codexReasoningEffortByState: { implementing: "high" },
+    }),
+    "implementing",
+    undefined,
+    "supervisor",
+    { reasoningLevelsByModel: new Map([["catalog-model", new Set()]]) },
+  );
+
+  assert.deepEqual(policy, {
+    model: "catalog-model",
+    reasoningEffort: null,
+    requestedReasoningEffort: "high",
+  });
+  assert.deepEqual(buildCodexConfigOverrideArgs(policy), ["-m", "catalog-model"]);
 });
 
 test("resolveCodexExecutionPolicy applies inherited host-model capabilities without forcing a model override", () => {

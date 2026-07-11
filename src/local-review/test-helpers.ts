@@ -186,11 +186,19 @@ export function createFakeLocalReviewRunner(outputs: Record<
   executeTurn: LocalReviewTurnExecutor;
 } {
   const requests: LocalReviewTurnRequest[] = [];
-  const normalizeResult = (value: LocalReviewTurnResult | string): LocalReviewTurnResult =>
+  const normalizeResult = (
+    value: LocalReviewTurnResult | string,
+    request: LocalReviewTurnRequest,
+  ): LocalReviewTurnResult =>
     typeof value === "string"
       ? {
           exitCode: 0,
           rawOutput: value,
+          routing: {
+            target: request.executionTarget,
+            model: null,
+            reasoningEffort: null,
+          },
         }
       : value;
 
@@ -207,6 +215,7 @@ export function createFakeLocalReviewRunner(outputs: Record<
         typeof output === "function"
           ? await output(request)
           : output,
+        request,
       );
     },
   };

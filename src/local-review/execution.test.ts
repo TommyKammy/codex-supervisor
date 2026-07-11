@@ -110,6 +110,11 @@ function createRoleResult(overrides: Partial<LocalReviewRoleResult> = {}): Local
     rawOutput: "raw",
     exitCode: 0,
     degraded: false,
+    routing: {
+      target: "local_review_generic",
+      model: null,
+      reasoningEffort: null,
+    },
     ...overrides,
   };
 }
@@ -303,6 +308,11 @@ test("runLocalReviewExecution invokes verifier only when actionable high-severit
         rawOutput: "raw",
         exitCode: 0,
         degraded: false,
+        routing: {
+          target: "local_review_verifier",
+          model: null,
+          reasoningEffort: null,
+        },
       };
     },
   });
@@ -351,6 +361,11 @@ test("runLocalReviewExecution invokes verifier only when actionable high-severit
       rawOutput: "raw",
       exitCode: 0,
       degraded: false,
+      routing: {
+        target: "local_review_verifier",
+        model: null,
+        reasoningEffort: null,
+      },
     }),
   });
 

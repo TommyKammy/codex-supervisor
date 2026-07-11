@@ -679,7 +679,7 @@ Practical rule of thumb:
 - leave `boundedRepairModelStrategy` unset unless you intentionally want smaller models for repair turns
 - reserve `xhigh` for escalation paths rather than using it everywhere
 - reasoning escalation follows `none < low < medium < high < xhigh < max`
-- `max` is currently emitted only for `gpt-5.6-sol`; unsupported models fall back to `xhigh`, while GPT-5 Pro remains capped at `high`
+- `max` is emitted when the active Codex CLI model catalog reports support; if the catalog probe fails, a conservative built-in fallback permits it only for `gpt-5.6-sol`. Unsupported models fall back to `xhigh`, while GPT-5 Pro remains capped at `high`.
 - `status` and `doctor` report the requested and effective efforts when capability clamping changes the request
 
 ### ChatGPT desktop app and the Codex CLI
@@ -694,9 +694,9 @@ OpenAI's current preview documentation lists these model IDs:
 
 | Model | Model ID | Supervisor reasoning note |
 | --- | --- | --- |
-| GPT-5.6 Sol | `gpt-5.6-sol` | Supports the supervisor's `max` reasoning effort. |
-| GPT-5.6 Terra | `gpt-5.6-terra` | `max` is clamped to the highest supported fallback. |
-| GPT-5.6 Luna | `gpt-5.6-luna` | `max` is clamped to the highest supported fallback. |
+| GPT-5.6 Sol | `gpt-5.6-sol` | Active-catalog reasoning levels are honored; the offline fallback permits `max`. |
+| GPT-5.6 Terra | `gpt-5.6-terra` | Active-catalog reasoning levels are honored, including `max` when reported. |
+| GPT-5.6 Luna | `gpt-5.6-luna` | Active-catalog reasoning levels are honored, including `max` when reported. |
 
 Do not infer access from a model name appearing in documentation or from having a paid ChatGPT plan. During the documented preview, access is limited to selected organizations and scoped separately to approved API organizations and Codex workspaces; API approval does not imply Codex approval, and the preview is distinct from general ChatGPT availability. Keep `codexModelStrategy: "inherit"` as the resilient default so model changes do not require supervisor config churn, and pin a GPT-5.6 model only after confirming access in the exact account or workspace used by the supervisor.
 

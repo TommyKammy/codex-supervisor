@@ -305,6 +305,61 @@ exit 0
   ]);
 });
 
+test("runCodexTurn resolves inherited models from the target workspace before clamping", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-runner-workspace-model-"));
+  const workspacePath = path.join(root, "workspace");
+  const codexHome = path.join(root, "codex-home");
+  const codexBinary = path.join(root, "fake-codex.sh");
+  const argsPath = path.join(root, "args.log");
+  const previousCodexHome = process.env.CODEX_HOME;
+  t.after(async () => {
+    if (previousCodexHome === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = previousCodexHome;
+    await fs.rm(root, { recursive: true, force: true });
+  });
+  process.env.CODEX_HOME = codexHome;
+  await fs.mkdir(path.join(workspacePath, ".codex"), { recursive: true });
+  await fs.mkdir(codexHome, { recursive: true });
+  await fs.writeFile(path.join(workspacePath, ".codex", "config.toml"), 'model = "gpt-5.6-terra"\n', "utf8");
+  await fs.writeFile(
+    path.join(codexHome, "config.toml"),
+    `[projects.${JSON.stringify(workspacePath)}]\ntrust_level = "trusted"\n`,
+    "utf8",
+  );
+
+  await writeExecutableScript(
+    codexBinary,
+    `#!/bin/sh
+set -eu
+if [ "$1" = "debug" ] && [ "$2" = "models" ]; then
+  printf '{"models":[{"slug":"gpt-5.6-terra","supported_reasoning_levels":["high","xhigh","max"]}]}'
+  exit 0
+fi
+printf '%s\n' "$@" > "${argsPath}"
+exit 0
+`,
+  );
+
+  await runCodexTurn(
+    createConfig({
+      codexBinary,
+      codexModelStrategy: "inherit",
+      codexReasoningEffortByState: { implementing: "max" },
+    }),
+    workspacePath,
+    "workspace inherited max prompt",
+    "implementing",
+  );
+  const args = (await fs.readFile(argsPath, "utf8")).trim().split("\n");
+
+  assert.equal(args.includes("-m"), false);
+  assert.deepEqual(args.slice(0, 3), [
+    "exec",
+    "-c",
+    'model_reasoning_effort="max"',
+  ]);
+});
+
 test("runCodexTurn removes its temp dir when command execution fails", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-runner-test-"));
   const workspacePath = path.join(root, "workspace");

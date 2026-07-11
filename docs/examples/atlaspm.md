@@ -123,7 +123,7 @@ This is one concrete way to use `codex-supervisor` against a local checkout of `
 - Even with multiple local review roles, the reviewer turn should still read the generated context index and issue journal first, then open durable memory files only on demand.
 - `codexModelStrategy: "inherit"` means the supervisor follows the model available through the host Codex CLI/App configuration. Keep this posture unless atlaspm has a measured reason to pin a model, and confirm the effective route with `doctor` or `status`.
 - Preview access is workspace-dependent. Do not pin GPT-5.6 merely because it appears in current documentation or in another operator's account; see the central [Model and Reasoning Guidance](../configuration.md#model-and-reasoning-guidance).
-- Tune reasoning effort before adding model-routing complexity. Keep `xhigh` and `max` out of the default state policy; `max` is emitted only for supported GPT-5.6 Sol routes and is intended for deliberate deep-reasoning or escalation paths.
+- Tune reasoning effort before adding model-routing complexity. Keep `xhigh` and `max` out of the default state policy; `max` is emitted only when supported by the active Codex model catalog (or the conservative offline fallback) and is intended for deliberate deep-reasoning or escalation paths.
 - Only configured review bots are auto-addressed. Human review comments block merge and require manual follow-up.
 - `Epic:` title prefixes are skipped as direct work items because the supervisor closes epics after all child issues close.
 - Generated context index and `AGENTS.generated.md` artifacts are written under the supervisor state directory, not into the managed repo.

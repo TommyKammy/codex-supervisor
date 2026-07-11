@@ -798,6 +798,64 @@ test("diagnoseSupervisorHost reports inherited host Codex defaults in doctor out
   assert.match(report, /doctor_codex_reasoning active=supervisor requested=max effective=xhigh/);
 });
 
+test("diagnoseSupervisorHost reports the active workspace Codex model and catalog", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-doctor-workspace-model-"));
+  const codexHome = path.join(root, "codex-home");
+  const repoPath = path.join(root, "repo");
+  const workspaceRoot = path.join(root, "workspaces");
+  const workspace = path.join(workspaceRoot, "issue-102");
+  const codexBinary = path.join(root, "fake-codex.sh");
+  const previousCodexHome = process.env.CODEX_HOME;
+  t.after(async () => {
+    if (previousCodexHome === undefined) {
+      delete process.env.CODEX_HOME;
+    } else {
+      process.env.CODEX_HOME = previousCodexHome;
+    }
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  await fs.mkdir(codexHome, { recursive: true });
+  await fs.writeFile(
+    path.join(codexHome, "config.toml"),
+    `model = "gpt-5.6-sol"\n\n[projects.${JSON.stringify(workspace)}]\ntrust_level = "trusted"\n`,
+    "utf8",
+  );
+  await fs.mkdir(path.join(workspace, ".codex"), { recursive: true });
+  await fs.writeFile(path.join(workspace, ".codex", "config.toml"), 'model = "gpt-5.6-terra"\n', "utf8");
+  await fs.writeFile(codexBinary, `#!/bin/sh
+if [ ! -f .codex/config.toml ]; then
+  exit 9
+fi
+printf '{"models":[{"slug":"gpt-5.6-terra","supported_reasoning_levels":["max"]}]}'
+`, { mode: 0o755 });
+  await fs.mkdir(repoPath, { recursive: true });
+  execFileSync("git", ["init", "-b", "main"], { cwd: repoPath });
+  process.env.CODEX_HOME = codexHome;
+
+  const activeRecord = createRecord({ state: "implementing", workspace });
+  const diagnostics = await diagnoseSupervisorHost({
+    config: createConfig({
+      repoPath,
+      workspaceRoot,
+      stateFile: path.join(root, "state.json"),
+      codexBinary,
+      codexModelStrategy: "inherit",
+      codexReasoningEffortByState: { implementing: "max" },
+    }),
+    authStatus: async () => ({ ok: true, message: null }),
+    loadState: async () => ({ activeIssueNumber: activeRecord.issue_number, issues: { [activeRecord.issue_number]: activeRecord } }),
+    github: {
+      getCandidateDiscoveryDiagnostics: async () => ({ fetchWindow: 100, observedMatchingOpenIssues: 0, truncated: false }),
+    },
+  });
+
+  const report = renderDoctorReport(diagnostics);
+  assert.match(report, /doctor_codex_model_policy default=inherit->gpt-5\.6-terra@inherited_host_default/);
+  assert.match(report, /doctor_codex_host_default model=gpt-5\.6-terra/);
+  assert.match(report, /doctor_codex_reasoning active=supervisor requested=max effective=max capability_source=live_catalog/);
+});
+
 test("diagnoseSupervisorHost surfaces orphan prune candidates and representative eligibility reasons", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-doctor-"));
   t.after(async () => {

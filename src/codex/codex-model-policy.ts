@@ -2,6 +2,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { resolveCodexExecutionPolicy } from "./codex-policy";
+import { CodexModelCapabilities, resolveCodexModelCapabilities } from "./codex-model-capabilities";
+import { resolveTrackedIssueHostPaths } from "../core/journal";
 import { CodexExecutionTarget, CodexModelStrategy, IssueRunRecord, ReasoningEffort, RunState, SupervisorConfig } from "../core/types";
 
 export interface HostCodexDefaultModelResolution {
@@ -23,6 +25,7 @@ interface CodexModelRouteResolution {
 }
 
 export interface CodexModelPolicySnapshot {
+  capabilities: Pick<CodexModelCapabilities, "source" | "fallbackReason">;
   hostDefault: HostCodexDefaultModelResolution;
   defaultRoute: CodexModelRouteResolution;
   boundedRepairRoute: CodexModelRouteResolution;
@@ -30,8 +33,8 @@ export interface CodexModelPolicySnapshot {
   activeRoute: CodexModelRouteResolution & {
     state: RunState;
     target: CodexExecutionTarget;
-    requestedReasoningEffort: ReasoningEffort;
-    reasoningEffort: ReasoningEffort;
+    requestedReasoningEffort: ReasoningEffort | null;
+    reasoningEffort: ReasoningEffort | null;
   };
 }
 
@@ -49,6 +52,64 @@ function countTrailingBackslashes(value: string, endExclusive: number): number {
     count += 1;
   }
   return count;
+}
+
+function decodeTomlBasicString(value: string): string | null {
+  let decoded = "";
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+    if (character !== "\\") {
+      decoded += character;
+      continue;
+    }
+
+    const escape = value[index + 1];
+    if (escape === undefined) {
+      return null;
+    }
+    index += 1;
+    switch (escape) {
+      case "b":
+        decoded += "\b";
+        break;
+      case "t":
+        decoded += "\t";
+        break;
+      case "n":
+        decoded += "\n";
+        break;
+      case "f":
+        decoded += "\f";
+        break;
+      case "r":
+        decoded += "\r";
+        break;
+      case `"`:
+        decoded += `"`;
+        break;
+      case "\\":
+        decoded += "\\";
+        break;
+      case "u":
+      case "U": {
+        const length = escape === "u" ? 4 : 8;
+        const hex = value.slice(index + 1, index + 1 + length);
+        if (hex.length !== length || !/^[0-9a-fA-F]+$/u.test(hex)) {
+          return null;
+        }
+        const codePoint = Number.parseInt(hex, 16);
+        if (codePoint > 0x10ffff || (codePoint >= 0xd800 && codePoint <= 0xdfff)) {
+          return null;
+        }
+        decoded += String.fromCodePoint(codePoint);
+        index += length;
+        break;
+      }
+      default:
+        return null;
+    }
+  }
+  return decoded;
 }
 
 function parseTomlQuotedString(value: string): string | null {
@@ -70,7 +131,8 @@ function parseTomlQuotedString(value: string): string | null {
     if (trailing !== "" && !trailing.startsWith("#")) {
       return null;
     }
-    return trimmed.slice(1, index);
+    const parsed = trimmed.slice(1, index);
+    return quote === `"` ? decodeTomlBasicString(parsed) : parsed;
   }
 
   return null;
@@ -109,21 +171,59 @@ function parseTopLevelTomlString(contents: string, key: string): string | null {
   return null;
 }
 
-export async function resolveHostCodexDefaultModel(): Promise<HostCodexDefaultModelResolution> {
-  const configPath = path.join(resolveCodexConfigDir(), "config.toml");
-  let raw: string;
+function isCodexProjectTrusted(contents: string, cwd: string): boolean {
+  const resolvedCwd = path.resolve(cwd);
+  let currentProject: string | null = null;
+  for (const rawLine of contents.split(/\r?\n/u)) {
+    const line = rawLine.trim();
+    const projectHeader = /^\[projects\.(.+)\](?:\s+#.*)?$/u.exec(line);
+    if (projectHeader) {
+      const parsedProject = parseTomlQuotedString(projectHeader[1] ?? "");
+      currentProject = parsedProject === null ? null : path.resolve(parsedProject);
+      continue;
+    }
+    if (line.startsWith("[")) {
+      currentProject = null;
+      continue;
+    }
+    if (currentProject !== resolvedCwd) continue;
+
+    const separatorIndex = line.indexOf("=");
+    if (separatorIndex === -1 || line.slice(0, separatorIndex).trim() !== "trust_level") continue;
+    return parseTomlQuotedString(line.slice(separatorIndex + 1)) === "trusted";
+  }
+  return false;
+}
+
+export async function resolveHostCodexDefaultModel(cwd?: string): Promise<HostCodexDefaultModelResolution> {
+  const userConfigPath = path.join(resolveCodexConfigDir(), "config.toml");
+  let userConfigContents: string | null = null;
   try {
-    raw = await fs.readFile(configPath, "utf8");
+    userConfigContents = await fs.readFile(userConfigPath, "utf8");
   } catch {
-    return {
-      model: null,
-      source: null,
-    };
+    // A missing user config also means there is no persisted project trust.
+  }
+
+  const configPaths = cwd && userConfigContents && isCodexProjectTrusted(userConfigContents, cwd)
+    ? [path.join(path.resolve(cwd), ".codex", "config.toml"), userConfigPath]
+    : [userConfigPath];
+  for (const configPath of configPaths) {
+    try {
+      const contents = configPath === userConfigPath && userConfigContents !== null
+        ? userConfigContents
+        : await fs.readFile(configPath, "utf8");
+      const model = parseTopLevelTomlString(contents, "model");
+      if (model !== null) {
+        return { model, source: configPath };
+      }
+    } catch {
+      continue;
+    }
   }
 
   return {
-    model: parseTopLevelTomlString(raw, "model"),
-    source: configPath,
+    model: null,
+    source: null,
   };
 }
 
@@ -184,14 +284,28 @@ export async function buildCodexModelPolicySnapshot(args: {
     | "localReviewModel"
     | "codexReasoningEffortByState"
     | "codexReasoningEscalateOnRepeatedFailure"
+    | "codexBinary"
+    | "workspaceRoot"
+    | "issueJournalRelativePath"
   >;
   activeState: RunState;
   activeRecord?: Pick<
     IssueRunRecord,
-    "repeated_failure_signature_count" | "blocked_verification_retry_count" | "timeout_retry_count"
+    | "issue_number"
+    | "workspace"
+    | "journal_path"
+    | "repeated_failure_signature_count"
+    | "blocked_verification_retry_count"
+    | "timeout_retry_count"
   > | null;
 }): Promise<CodexModelPolicySnapshot> {
-  const hostDefault = await resolveHostCodexDefaultModel();
+  const workspace = args.activeRecord
+    ? resolveTrackedIssueHostPaths(args.config, args.activeRecord).workspace
+    : undefined;
+  const [hostDefault, capabilities] = await Promise.all([
+    resolveHostCodexDefaultModel(workspace),
+    resolveCodexModelCapabilities(args.config.codexBinary, workspace),
+  ]);
   const defaultRoute: CodexModelRouteResolution = {
     strategy: args.config.codexModelStrategy,
     configuredModel: args.config.codexModel ?? null,
@@ -232,7 +346,10 @@ export async function buildCodexModelPolicySnapshot(args: {
     args.activeState,
     args.activeRecord,
     activeTarget,
-    { inheritedModel: hostDefault.model },
+    {
+      inheritedModel: hostDefault.model,
+      reasoningLevelsByModel: capabilities.reasoningLevelsByModel,
+    },
   );
   const activeRoute = {
     ...activeBaseRoute,
@@ -243,6 +360,7 @@ export async function buildCodexModelPolicySnapshot(args: {
   };
 
   return {
+    capabilities: { source: capabilities.source, fallbackReason: capabilities.fallbackReason },
     hostDefault,
     defaultRoute,
     boundedRepairRoute,
@@ -256,7 +374,7 @@ export function renderDoctorCodexModelPolicyLines(snapshot: CodexModelPolicySnap
     `doctor_codex_model_policy default=${summarizeRoute(snapshot.defaultRoute)}`,
     `doctor_codex_route_overrides repair=${summarizeRoute(snapshot.boundedRepairRoute)} local_review=${summarizeRoute(snapshot.localReviewRoute)}`,
     `doctor_codex_host_default model=${snapshot.hostDefault.model ?? "unresolved"} source=${snapshot.hostDefault.source ?? "unresolved"}`,
-    `doctor_codex_reasoning active=${snapshot.activeRoute.target} requested=${snapshot.activeRoute.requestedReasoningEffort} effective=${snapshot.activeRoute.reasoningEffort}`,
+    `doctor_codex_reasoning active=${snapshot.activeRoute.target} requested=${snapshot.activeRoute.requestedReasoningEffort ?? "default"} effective=${snapshot.activeRoute.reasoningEffort ?? "default"} capability_source=${snapshot.capabilities.source} fallback_reason=${snapshot.capabilities.fallbackReason ?? "none"}`,
   ];
 }
 
@@ -265,7 +383,7 @@ export function renderStatusCodexModelPolicyLines(snapshot: CodexModelPolicySnap
     ? ""
     : ` requested_reasoning=${snapshot.activeRoute.requestedReasoningEffort}`;
   return [
-    `codex_execution_policy active=${snapshot.activeRoute.target}:${summarizeRoute(snapshot.activeRoute)} reasoning=${snapshot.activeRoute.reasoningEffort}${requestedSuffix}`,
+    `codex_execution_policy active=${snapshot.activeRoute.target}:${summarizeRoute(snapshot.activeRoute)} reasoning=${snapshot.activeRoute.reasoningEffort ?? "default"}${requestedSuffix} capability_source=${snapshot.capabilities.source} fallback_reason=${snapshot.capabilities.fallbackReason ?? "none"}`,
     `codex_route_overrides repair=${summarizeRoute(snapshot.boundedRepairRoute)} local_review=${summarizeRoute(snapshot.localReviewRoute)}`,
   ];
 }

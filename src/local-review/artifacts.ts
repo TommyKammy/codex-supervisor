@@ -80,12 +80,12 @@ function summarizeGuardrailProvenance(provenance: FinalizedLocalReview["artifact
 function summarizeModelRouting(finalized: FinalizedLocalReview): string[] {
   const lines = finalized.artifact.roleReports.map(
     (report) =>
-      `- ${report.role}: target=${report.routing.target} model=${report.routing.model ?? "inherit"} reasoning=${report.routing.reasoningEffort}`,
+      `- ${report.role}: target=${report.routing.target} model=${report.routing.model ?? "inherit"} reasoning=${report.routing.reasoningEffort ?? "default"}`,
   );
 
   if (finalized.artifact.verifierReport) {
     lines.push(
-      `- verifier: target=${finalized.artifact.verifierReport.routing.target} model=${finalized.artifact.verifierReport.routing.model ?? "inherit"} reasoning=${finalized.artifact.verifierReport.routing.reasoningEffort}`,
+      `- verifier: target=${finalized.artifact.verifierReport.routing.target} model=${finalized.artifact.verifierReport.routing.model ?? "inherit"} reasoning=${finalized.artifact.verifierReport.routing.reasoningEffort ?? "default"}`,
     );
   }
 

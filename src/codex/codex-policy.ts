@@ -5,6 +5,9 @@ import {
 } from "../codex-connector-review-churn";
 
 const REASONING_ORDER: ReasoningEffort[] = ["none", "low", "medium", "high", "xhigh", "max"];
+const CODEX_MODEL_CATALOG_ALIASES: Readonly<Record<string, string>> = {
+  "gpt-5.6": "gpt-5.6-sol",
+};
 
 const DEFAULT_REASONING_BY_STATE: Record<RunState, ReasoningEffort> = {
   queued: "low",
@@ -29,12 +32,13 @@ const DEFAULT_REASONING_BY_STATE: Record<RunState, ReasoningEffort> = {
 
 export interface CodexExecutionPolicy {
   model: string | null;
-  reasoningEffort: ReasoningEffort;
+  reasoningEffort: ReasoningEffort | null;
   requestedReasoningEffort?: ReasoningEffort;
 }
 
 export interface CodexExecutionPolicyContext {
   inheritedModel?: string | null;
+  reasoningLevelsByModel?: ReadonlyMap<string, ReadonlySet<ReasoningEffort>>;
 }
 
 type CodexExecutionPolicyConfig = Pick<
@@ -86,39 +90,90 @@ function reasoningEffortAtLeast(effort: ReasoningEffort, minimum: ReasoningEffor
   return REASONING_ORDER[index] ?? effort;
 }
 
-function supportsMaxReasoningEffort(model: string | null): boolean {
+function supportsMaxReasoningEffort(
+  model: string | null,
+): boolean {
   const normalized = model?.trim().toLowerCase();
   return normalized === "gpt-5.6-sol" || normalized?.startsWith("gpt-5.6-sol-") === true;
 }
 
-function clampReasoningEffortForModel(model: string | null, effort: ReasoningEffort): ReasoningEffort {
+function resolveCatalogReasoningLevels(
+  model: string,
+  reasoningLevelsByModel: ReadonlyMap<string, ReadonlySet<ReasoningEffort>>,
+): ReadonlySet<ReasoningEffort> | undefined {
+  const exact = reasoningLevelsByModel.get(model);
+  if (exact) return exact;
+
+  const namespaceSeparator = model.indexOf("/");
+  const lookupModel = namespaceSeparator > 0 && namespaceSeparator === model.lastIndexOf("/")
+    ? model.slice(namespaceSeparator + 1)
+    : model;
+  const namespacedExact = reasoningLevelsByModel.get(lookupModel);
+  if (namespacedExact) return namespacedExact;
+
+  const aliasedModel = CODEX_MODEL_CATALOG_ALIASES[lookupModel];
+  const aliasedExact = aliasedModel ? reasoningLevelsByModel.get(aliasedModel) : undefined;
+  if (aliasedExact) return aliasedExact;
+
+  let longestPrefix: string | null = null;
+  for (const catalogModel of reasoningLevelsByModel.keys()) {
+    if (
+      lookupModel.startsWith(`${catalogModel}-`)
+      && (longestPrefix === null || catalogModel.length > longestPrefix.length)
+    ) {
+      longestPrefix = catalogModel;
+    }
+  }
+  return longestPrefix === null ? undefined : reasoningLevelsByModel.get(longestPrefix);
+}
+
+function clampReasoningEffortForModel(
+  model: string | null,
+  effort: ReasoningEffort,
+  reasoningLevelsByModel?: ReadonlyMap<string, ReadonlySet<ReasoningEffort>>,
+): ReasoningEffort | null {
+  const normalized = model?.trim().toLowerCase();
+  const supported = normalized && reasoningLevelsByModel
+    ? resolveCatalogReasoningLevels(normalized, reasoningLevelsByModel)
+    : undefined;
+  if (supported) {
+    if (supported.size === 0) return null;
+    if (supported.has(effort)) return effort;
+
+    const requestedIndex = REASONING_ORDER.indexOf(effort);
+    for (let index = requestedIndex - 1; index >= 0; index -= 1) {
+      const candidate = REASONING_ORDER[index];
+      if (candidate && supported.has(candidate)) return candidate;
+    }
+    for (let index = requestedIndex + 1; index < REASONING_ORDER.length; index += 1) {
+      const candidate = REASONING_ORDER[index];
+      if (candidate && supported.has(candidate)) return candidate;
+    }
+    return null;
+  }
+
+  let clamped = effort;
   if (effort === "max") {
     if (supportsMaxReasoningEffort(model)) {
-      return "max";
+      clamped = "max";
+    } else {
+      clamped = model?.toLowerCase().includes("gpt-5-pro") ? "high" : "xhigh";
     }
-
-    return model?.toLowerCase().includes("gpt-5-pro") ? "high" : "xhigh";
+  } else if (model) {
+    const normalized = model.toLowerCase();
+    if (normalized.includes("gpt-5-pro")) {
+      clamped = effort === "xhigh" ? "high" : effort;
+    } else if (
+      normalized.includes("gpt-5.3-codex") ||
+      normalized.includes("gpt-5.2-codex") ||
+      normalized.includes("gpt-5.1-codex") ||
+      normalized.includes("codex")
+    ) {
+      clamped = effort === "none" ? "low" : effort;
+    }
   }
 
-  if (!model) {
-    return effort;
-  }
-
-  const normalized = model.toLowerCase();
-  if (normalized.includes("gpt-5-pro")) {
-    return effort === "xhigh" ? "high" : effort;
-  }
-
-  if (
-    normalized.includes("gpt-5.3-codex") ||
-    normalized.includes("gpt-5.2-codex") ||
-    normalized.includes("gpt-5.1-codex") ||
-    normalized.includes("codex")
-  ) {
-    return effort === "none" ? "low" : effort;
-  }
-
-  return effort;
+  return clamped;
 }
 
 function resolveRequestedReasoningEffort(
@@ -207,7 +262,11 @@ export function resolveCodexExecutionPolicy(
 ): CodexExecutionPolicy {
   const model = resolveConfiguredModel(config, state, target);
   const requestedEffort = resolveRequestedReasoningEffort(config, state, record);
-  const reasoningEffort = clampReasoningEffortForModel(model ?? context.inheritedModel ?? null, requestedEffort);
+  const reasoningEffort = clampReasoningEffortForModel(
+    model ?? context.inheritedModel ?? null,
+    requestedEffort,
+    context.reasoningLevelsByModel,
+  );
   return {
     model,
     reasoningEffort,
@@ -221,7 +280,9 @@ export function buildCodexConfigOverrideArgs(policy: CodexExecutionPolicy): stri
     args.push("-m", policy.model);
   }
 
-  args.push("-c", `model_reasoning_effort="${policy.reasoningEffort}"`);
+  if (policy.reasoningEffort !== null) {
+    args.push("-c", `model_reasoning_effort="${policy.reasoningEffort}"`);
+  }
   return args;
 }
 

@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { runCodexReviewTurn, runRoleReview, runVerifierReview, type LocalReviewTurnRequest } from "./runner";
+import { type LocalReviewExecutionRouting } from "./types";
 import {
   createConfig,
   createFakeLocalReviewRunner,
@@ -11,6 +12,18 @@ import {
   createMissPattern,
   createPullRequest,
 } from "./test-helpers";
+
+function routingForRequest(
+  request: LocalReviewTurnRequest,
+  model: string | null = null,
+  reasoningEffort: LocalReviewExecutionRouting["reasoningEffort"] = null,
+): LocalReviewExecutionRouting {
+  return {
+    target: request.executionTarget,
+    model,
+    reasoningEffort,
+  };
+}
 
 test("runRoleReview routes reviewer turns through the injected execution contract", async () => {
   const requests: LocalReviewTurnRequest[] = [];
@@ -30,6 +43,7 @@ test("runRoleReview routes reviewer turns through the injected execution contrac
       requests.push(request);
       return {
         exitCode: 0,
+        routing: routingForRequest(request, "reviewer-turn-model", "xhigh"),
         rawOutput: [
           "Review summary: Runner-backed reviewer result",
           "Recommendation: changes_requested",
@@ -103,6 +117,11 @@ test("runRoleReview routes reviewer turns through the injected execution contrac
     ].join("\n"),
     exitCode: 0,
     degraded: false,
+    routing: {
+      target: "local_review_generic",
+      model: "reviewer-turn-model",
+      reasoningEffort: "xhigh",
+    },
   });
 });
 
@@ -130,6 +149,7 @@ test("runRoleReview routes docs researcher turns through the generic local-revie
       requests.push(request);
       return {
         exitCode: 0,
+        routing: routingForRequest(request),
         rawOutput: [
           "Review summary: Docs researcher ran",
           "Recommendation: ready",
@@ -170,6 +190,7 @@ test("runRoleReview keeps specialist local-review turns on the specialist execut
       requests.push(request);
       return {
         exitCode: 0,
+        routing: routingForRequest(request),
         rawOutput: [
           "Review summary: Specialist reviewer ran",
           "Recommendation: ready",
@@ -216,6 +237,7 @@ test("runVerifierReview routes verifier turns through the injected execution con
         requests.push(request);
         return {
           exitCode: 0,
+          routing: routingForRequest(request, "verifier-turn-model", "max"),
           rawOutput: [
             "Verification summary: Runner-backed verifier result",
             "Recommendation: changes_requested",
@@ -233,8 +255,6 @@ test("runVerifierReview routes verifier turns through the injected execution con
           ].join("\n"),
         };
       },
-    } as Parameters<typeof runVerifierReview>[0] & {
-      executeTurn: (request: LocalReviewTurnRequest) => Promise<{ exitCode: number; rawOutput: string }>;
     });
 
     assert.equal(requests.length, 1);
@@ -272,6 +292,11 @@ test("runVerifierReview routes verifier turns through the injected execution con
       ].join("\n"),
       exitCode: 0,
       degraded: false,
+      routing: {
+        target: "local_review_verifier",
+        model: "verifier-turn-model",
+        reasoningEffort: "max",
+      },
       verifierGuardrails: [],
     });
   } finally {
@@ -325,6 +350,11 @@ exit 0
 
   assert.equal(result.exitCode, 0);
   assert.match(result.rawOutput, /Operator gated local review ran/);
+  assert.deepEqual(result.routing, {
+    target: "local_review_generic",
+    model: null,
+    reasoningEffort: "low",
+  });
   assert.equal(args.includes("--dangerously-bypass-approvals-and-sandbox"), false);
   assert.deepEqual(args.slice(0, 5), [
     "exec",
@@ -356,7 +386,7 @@ exit 0
   );
   await fs.chmod(codexBinary, 0o755);
 
-  await runCodexReviewTurn({
+  const result = await runCodexReviewTurn({
     config: createConfig({
       codexBinary,
       codexModelStrategy: "fixed",
@@ -372,12 +402,68 @@ exit 0
   });
   const args = (await fs.readFile(argsPath, "utf8")).trim().split("\n");
 
+  assert.deepEqual(result.routing, {
+    target: "local_review_generic",
+    model: "gpt-5.6-sol",
+    reasoningEffort: "max",
+  });
+
   assert.deepEqual(args.slice(0, 5), [
     "exec",
     "-m",
     "gpt-5.6-sol",
     "-c",
     'model_reasoning_effort="max"',
+  ]);
+});
+
+test("runCodexReviewTurn returns the same routing used for a transient catalog fallback", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "local-review-runner-fallback-"));
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+  const workspacePath = path.join(root, "workspace");
+  const codexBinary = path.join(root, "fake-codex.sh");
+  const argsPath = path.join(root, "args.log");
+  await fs.mkdir(workspacePath, { recursive: true });
+  await fs.writeFile(
+    codexBinary,
+    `#!/bin/sh
+set -eu
+printf '%s\n' "$@" > "${argsPath}"
+exit 0
+`,
+    "utf8",
+  );
+  await fs.chmod(codexBinary, 0o755);
+
+  const result = await runCodexReviewTurn({
+    config: createConfig({
+      codexBinary,
+      codexModelStrategy: "fixed",
+      codexModel: "gpt-5.6-terra",
+      localReviewModelStrategy: "inherit",
+      codexReasoningEffortByState: { local_review: "max" },
+    }),
+    workspacePath,
+    role: "reviewer",
+    outputFileName: "reviewer.txt",
+    prompt: "fallback local review prompt",
+    executionTarget: "local_review_generic",
+  });
+  const args = (await fs.readFile(argsPath, "utf8")).trim().split("\n");
+
+  assert.deepEqual(result.routing, {
+    target: "local_review_generic",
+    model: "gpt-5.6-terra",
+    reasoningEffort: "xhigh",
+  });
+  assert.deepEqual(args.slice(0, 5), [
+    "exec",
+    "-m",
+    "gpt-5.6-terra",
+    "-c",
+    'model_reasoning_effort="xhigh"',
   ]);
 });
 

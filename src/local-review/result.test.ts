@@ -9,6 +9,17 @@ import {
 import { finalizeLocalReview } from "./finalize";
 import { createConfig, createMissPattern } from "./test-helpers";
 
+const GENERIC_ROUTING = {
+  target: "local_review_generic" as const,
+  model: null,
+  reasoningEffort: null,
+};
+const VERIFIER_ROUTING = {
+  target: "local_review_verifier" as const,
+  model: null,
+  reasoningEffort: null,
+};
+
 test("prepareLocalReviewGuardrailProvenance groups runtime sources and keeps artifact-relative paths", () => {
   const config = createConfig({
     localReviewArtifactDir: "/tmp/reviews",
@@ -21,6 +32,7 @@ test("prepareLocalReviewGuardrailProvenance groups runtime sources and keeps art
       summary: "verified",
       recommendation: "ready",
       degraded: false,
+      routing: VERIFIER_ROUTING,
       exitCode: 0,
       rawOutput: "verifier raw output",
       verifierGuardrails: [{ id: "rule-1", title: "Rule", summary: "Summary", file: "src/file.ts", line: 12, rationale: "Because" }],
@@ -95,6 +107,7 @@ test("formatLocalReviewResult preserves finalized summary fields and blocker sum
         summary: "Flagged one medium issue.",
         recommendation: "changes_requested",
         degraded: false,
+        routing: GENERIC_ROUTING,
         exitCode: 0,
         rawOutput: "review raw output",
         findings: [
@@ -178,6 +191,7 @@ test("buildLocalReviewBlockerSummary summarizes the leading root cause compactly
         summary: "Found two retry-path defects.",
         recommendation: "changes_requested",
         degraded: false,
+        routing: GENERIC_ROUTING,
         exitCode: 0,
         rawOutput: "review raw output",
         findings: [
