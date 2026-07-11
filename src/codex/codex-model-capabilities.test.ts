@@ -18,11 +18,15 @@ test("parseCodexModelCatalog resolves GPT-5.6 reasoning levels and ignores unsup
   assert.deepEqual([...catalog?.get("gpt-5.6-luna") ?? []], ["high", "xhigh", "max"]);
 });
 
-test("parseCodexModelCatalog normalizes catalog ultra support to max", () => {
+test("parseCodexModelCatalog preserves the distinction between unsupported ultra and max", () => {
   const catalog = parseCodexModelCatalog(JSON.stringify({
-    models: [{ slug: "gpt-5.6-terra", supported_reasoning_levels: [{ effort: "ultra" }] }],
+    models: [
+      { slug: "gpt-5.6-terra", supported_reasoning_levels: [{ effort: "ultra" }] },
+      { slug: "gpt-5.6-sol", supported_reasoning_levels: [{ effort: "ultra" }, { effort: "max" }] },
+    ],
   }));
-  assert.deepEqual([...catalog?.get("gpt-5.6-terra") ?? []], ["max"]);
+  assert.deepEqual([...catalog?.get("gpt-5.6-terra") ?? []], []);
+  assert.deepEqual([...catalog?.get("gpt-5.6-sol") ?? []], ["max"]);
 });
 
 test("probeCodexModelCapabilities captures catalogs larger than the default command output limit", async (t) => {

@@ -27,7 +27,6 @@ function parseReasoningLevel(value: unknown): ReasoningEffort | null | undefined
       ? (value as { effort?: unknown }).effort
       : null;
   if (typeof candidate !== "string") return null;
-  if (candidate === "ultra") return "max";
   return REASONING_LEVELS.has(candidate as ReasoningEffort) ? candidate as ReasoningEffort : undefined;
 }
 
