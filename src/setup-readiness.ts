@@ -204,6 +204,7 @@ export interface SetupReadinessModelRoutingPosture {
   summary: string;
   invalid: boolean;
   targets: SetupReadinessModelRoutingTarget[];
+  routeMapError?: string;
 }
 
 export interface SetupReadinessReport {
@@ -605,17 +606,18 @@ function buildCanonicalModelRoutingTarget(args: {
 
 function buildModelRoutingPosture(args: {
   rawConfig: RawConfigDocument;
-  config: ReturnType<typeof loadConfigSummary>["config"];
+  configSummary: ReturnType<typeof loadConfigSummary>;
 }): SetupReadinessModelRoutingPosture {
   const rawConfig = args.rawConfig ?? {};
+  const config = args.configSummary.config;
   const hasCanonicalSupervisor = hasCanonicalModelRoute({
     rawConfig,
-    config: args.config,
+    config,
     target: "supervisor",
   });
   const hasCanonicalGeneric = hasCanonicalModelRoute({
     rawConfig,
-    config: args.config,
+    config,
     target: "local_review_generic",
   });
   const targets: SetupReadinessModelRoutingTarget[] = [
@@ -625,7 +627,7 @@ function buildModelRoutingPosture(args: {
           label: "Default Codex route",
           target: "supervisor",
           rawConfig,
-          config: args.config,
+          config,
         })
       : buildModelRoutingTarget({
           key: "codex",
@@ -633,7 +635,7 @@ function buildModelRoutingPosture(args: {
           strategyField: "codexModelStrategy",
           modelField: "codexModel",
           rawConfig,
-          config: args.config,
+          config,
         }),
     buildModelRoutingTarget({
       key: "bounded_repair",
@@ -641,7 +643,7 @@ function buildModelRoutingPosture(args: {
       strategyField: "boundedRepairModelStrategy",
       modelField: "boundedRepairModel",
       rawConfig,
-      config: args.config,
+      config,
     }),
     hasCanonicalGeneric
       ? buildCanonicalModelRoutingTarget({
@@ -649,7 +651,7 @@ function buildModelRoutingPosture(args: {
           label: "Generic local-review override",
           target: "local_review_generic",
           rawConfig,
-          config: args.config,
+          config,
         })
       : buildModelRoutingTarget({
           key: "local_review",
@@ -657,37 +659,50 @@ function buildModelRoutingPosture(args: {
           strategyField: "localReviewModelStrategy",
           modelField: "localReviewModel",
           rawConfig,
-          config: args.config,
+          config,
         }),
     buildCanonicalModelRoutingTarget({
       key: "local_review_specialist",
       label: "Specialist local-review override",
       target: "local_review_specialist",
       rawConfig,
-      config: args.config,
+      config,
     }),
     buildCanonicalModelRoutingTarget({
       key: "local_review_verifier",
       label: "Verifier local-review override",
       target: "local_review_verifier",
       rawConfig,
-      config: args.config,
+      config,
     }),
   ];
-  const invalid = targets.some((target) => target.invalidStrategy || target.missingExplicitModel);
+  const targetSpecificInvalid = targets.some(
+    (target) => target.invalidStrategy || target.missingExplicitModel,
+  );
+  const routeMapError =
+    !targetSpecificInvalid &&
+    args.configSummary.status === "invalid_config" &&
+    args.configSummary.invalidFields.includes("codexModelRoutingByTarget")
+      ? args.configSummary.error ?? "Invalid codexModelRoutingByTarget configuration."
+      : null;
+  const invalid = targetSpecificInvalid || routeMapError !== null;
   const inheritedCount = targets.filter((target) => target.strategy === "inherit").length;
-  const summary = invalid
-    ? "Model routing is invalid until every strategy is supported and every fixed or alias strategy has an explicit model value."
-    : inheritedCount === targets.length
-      ? "Model routing follows the host Codex default model unless you opt into a per-target override."
-      : inheritedCount === 0
-        ? "Model routing uses explicit per-target overrides for every route."
-      : "Model routing mixes inherited defaults with explicit per-target overrides.";
+  const summary =
+    routeMapError !== null
+      ? `Model routing is invalid: ${routeMapError}`
+      : invalid
+        ? "Model routing is invalid until every strategy is supported and every fixed or alias strategy has an explicit model value."
+        : inheritedCount === targets.length
+          ? "Model routing follows the host Codex default model unless you opt into a per-target override."
+          : inheritedCount === 0
+            ? "Model routing uses explicit per-target overrides for every route."
+            : "Model routing mixes inherited defaults with explicit per-target overrides.";
 
   return {
     summary,
     invalid,
     targets,
+    ...(routeMapError === null ? {} : { routeMapError }),
   };
 }
 
@@ -812,6 +827,19 @@ function buildBlockers(args: {
         kind: "edit_config",
         summary: target.guidance,
         fieldKeys: [modelFieldKey],
+      },
+    });
+  }
+
+  if (args.modelRoutingPosture.routeMapError) {
+    blockers.push({
+      code: "invalid_codex_model_routing_by_target",
+      message: args.modelRoutingPosture.routeMapError,
+      fieldKeys: ["codexModelRoutingByTarget"],
+      remediation: {
+        kind: "edit_config",
+        summary: args.modelRoutingPosture.routeMapError,
+        fieldKeys: ["codexModelRoutingByTarget"],
       },
     });
   }
@@ -982,7 +1010,7 @@ export async function diagnoseSetupReadiness(
   });
   const modelRoutingPosture = buildModelRoutingPosture({
     rawConfig,
-    config: configSummary.config,
+    configSummary,
   });
   const configPostureGroups = buildConfigPostureGroups({
     rawConfig,

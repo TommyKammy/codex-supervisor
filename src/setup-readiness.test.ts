@@ -1195,6 +1195,78 @@ test("diagnoseSetupReadiness fails closed for a canonical target route with a mi
   assert.deepEqual(blocker?.fieldKeys, ["codexModelRoutingByTarget"]);
 });
 
+test("diagnoseSetupReadiness fails closed for invalid route-map syntax without a target-specific blocker", async (t) => {
+  const fixtures = [
+    {
+      name: "unsupported target",
+      routes: { unsupported_target: { strategy: "inherit" } },
+    },
+    {
+      name: "inherit route with model",
+      routes: {
+        local_review_verifier: { strategy: "inherit", model: "gpt-5.6-sol" },
+      },
+    },
+  ];
+
+  for (const fixture of fixtures) {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
+    t.after(async () => {
+      await fs.rm(root, { recursive: true, force: true });
+    });
+    const repoPath = await createTrackedRepo(root);
+    const workspaceRoot = path.join(root, "workspaces");
+    const configPath = path.join(root, "supervisor.config.json");
+    await fs.mkdir(workspaceRoot, { recursive: true });
+    await fs.writeFile(
+      configPath,
+      JSON.stringify({
+        ...buildConfigDocument({
+          repoPath,
+          workspaceRoot,
+          stateFile: path.join(root, "state.json"),
+          workspacePreparationCommand: undefined,
+        }),
+        codexModelRoutingByTarget: fixture.routes,
+      }),
+      "utf8",
+    );
+
+    const summary = await diagnoseSetupReadiness({
+      configPath,
+      authStatus: async () => ({ ok: true, message: null }),
+    });
+
+    assert.equal(summary.ready, false, fixture.name);
+    assert.equal(summary.overallStatus, "invalid", fixture.name);
+    assert.equal(summary.modelRoutingPosture?.invalid, true, fixture.name);
+    assert.match(
+      summary.modelRoutingPosture?.routeMapError ?? "",
+      /Invalid config field: codexModelRoutingByTarget/i,
+      fixture.name,
+    );
+    const blocker = summary.blockers.find(
+      (entry) => entry.code === "invalid_codex_model_routing_by_target",
+    );
+    assert.ok(blocker, fixture.name);
+    assert.deepEqual(blocker.fieldKeys, ["codexModelRoutingByTarget"], fixture.name);
+    assert.deepEqual(
+      blocker.remediation.fieldKeys,
+      ["codexModelRoutingByTarget"],
+      fixture.name,
+    );
+    assert.ok(
+      summary.nextActions.some(
+        (action) =>
+          action.source === "invalid_codex_model_routing_by_target" &&
+          action.required &&
+          action.fieldKeys.includes("codexModelRoutingByTarget"),
+      ),
+      fixture.name,
+    );
+  }
+});
+
 test("diagnoseSetupReadiness keeps legacy model routes while canonical specialist and verifier routes inherit", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-supervisor-setup-readiness-"));
   t.after(async () => {
