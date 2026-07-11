@@ -9,7 +9,12 @@ import { loadRelevantExternalReviewMissPatterns, type ExternalReviewMissPattern 
 import { reviewDir } from "./artifacts";
 import { buildRolePrompt, buildVerifierPrompt, parseRoleFooter, parseVerifierFooter } from "./prompt";
 import { reviewerTypeForRole } from "./thresholds";
-import { type LocalReviewFinding, type LocalReviewRoleResult, type LocalReviewVerifierReport } from "./types";
+import {
+  type LocalReviewExecutionRouting,
+  type LocalReviewFinding,
+  type LocalReviewRoleResult,
+  type LocalReviewVerifierReport,
+} from "./types";
 import { type LocalReviewRoleSelection } from "../review-role-detector";
 import { type GitHubIssue, type GitHubPullRequest, type SupervisorConfig } from "../core/types";
 import { loadRelevantVerifierGuardrails } from "../verifier-guardrails";
@@ -30,6 +35,7 @@ export interface LocalReviewTurnRequest {
 export interface LocalReviewTurnResult {
   exitCode: number;
   rawOutput: string;
+  routing: LocalReviewExecutionRouting;
 }
 
 export type LocalReviewTurnExecutor = (args: LocalReviewTurnRequest) => Promise<LocalReviewTurnResult>;
@@ -41,18 +47,22 @@ export async function runCodexReviewTurn(args: LocalReviewTurnRequest): Promise<
     resolveHostCodexDefaultModel(args.workspacePath),
     resolveCodexModelCapabilities(args.config.codexBinary, args.workspacePath),
   ]);
-  const overrideArgs = buildCodexConfigOverrideArgs(
-    resolveCodexExecutionPolicy(
-      args.config,
-      "local_review",
-      undefined,
-      args.executionTarget,
-      {
-        inheritedModel: hostDefault.model,
-        reasoningLevelsByModel: capabilities.reasoningLevelsByModel,
-      },
-    ),
+  const policy = resolveCodexExecutionPolicy(
+    args.config,
+    "local_review",
+    undefined,
+    args.executionTarget,
+    {
+      inheritedModel: hostDefault.model,
+      reasoningLevelsByModel: capabilities.reasoningLevelsByModel,
+    },
   );
+  const routing: LocalReviewExecutionRouting = {
+    target: args.executionTarget,
+    model: policy.model,
+    reasoningEffort: policy.reasoningEffort,
+  };
+  const overrideArgs = buildCodexConfigOverrideArgs(policy);
   const executionSafetyArgs = buildCodexExecutionSafetyArgs(args.config);
   const result = await runCommand(
     args.config.codexBinary,
@@ -90,6 +100,7 @@ export async function runCodexReviewTurn(args: LocalReviewTurnRequest): Promise<
   return {
     exitCode: result.exitCode,
     rawOutput,
+    routing,
   };
 }
 
@@ -137,6 +148,7 @@ export async function runRoleReview(args: {
     rawOutput: result.rawOutput,
     exitCode: result.exitCode,
     degraded: result.exitCode !== 0,
+    routing: result.routing,
     ...parsed,
   };
 }
@@ -198,6 +210,7 @@ export async function runVerifierReview(args: {
     rawOutput: result.rawOutput,
     exitCode: result.exitCode,
     degraded: result.exitCode !== 0,
+    routing: result.routing,
     verifierGuardrails,
     ...parsed,
   };

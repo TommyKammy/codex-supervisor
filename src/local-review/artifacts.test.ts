@@ -12,6 +12,12 @@ import { writeLocalReviewArtifacts } from "./artifacts";
 import { finalizeLocalReview } from "./finalize";
 import { createConfig } from "./test-helpers";
 
+const GENERIC_ROUTING = {
+  target: "local_review_generic" as const,
+  model: null,
+  reasoningEffort: null,
+};
+
 test("writeLocalReviewArtifacts renders durable guardrail provenance compactly", async () => {
   const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), "local-review-workspace-"));
   const config = createConfig({
@@ -23,6 +29,7 @@ test("writeLocalReviewArtifacts renders durable guardrail provenance compactly",
       summary: "No actionable findings.",
       recommendation: "ready" as const,
       degraded: false,
+      routing: GENERIC_ROUTING,
       exitCode: 0,
       rawOutput: "review raw output",
       findings: [],
@@ -101,6 +108,11 @@ test("writeLocalReviewArtifacts records deterministic model routing for generic,
       summary: "Flagged one high-severity issue.",
       recommendation: "changes_requested" as const,
       degraded: false,
+      routing: {
+        target: "local_review_generic" as const,
+        model: "local-review-fast",
+        reasoningEffort: "low" as const,
+      },
       exitCode: 0,
       rawOutput: "review raw output",
       findings: [
@@ -123,6 +135,11 @@ test("writeLocalReviewArtifacts records deterministic model routing for generic,
       summary: "Checked the specialist path.",
       recommendation: "ready" as const,
       degraded: false,
+      routing: {
+        target: "local_review_specialist" as const,
+        model: "gpt-5-codex",
+        reasoningEffort: "low" as const,
+      },
       exitCode: 0,
       rawOutput: "specialist raw output",
       findings: [],
@@ -150,6 +167,11 @@ test("writeLocalReviewArtifacts records deterministic model routing for generic,
       summary: "Confirmed the generic finding.",
       recommendation: "changes_requested",
       degraded: false,
+      routing: {
+        target: "local_review_verifier",
+        model: "gpt-5-codex",
+        reasoningEffort: "low",
+      },
       exitCode: 0,
       rawOutput: "verifier raw output",
       findings: [
@@ -179,6 +201,11 @@ test("writeLocalReviewArtifacts records deterministic model routing for generic,
       summary: "Confirmed the generic finding.",
       recommendation: "changes_requested",
       degraded: false,
+      routing: {
+        target: "local_review_verifier",
+        model: "gpt-5-codex",
+        reasoningEffort: "low",
+      },
       exitCode: 0,
       rawOutput: "verifier raw output",
       findings: [
@@ -244,6 +271,7 @@ test("writeLocalReviewArtifacts rewrites repo-local absolute paths and redacts h
       summary: "Flagged one location-sensitive issue.",
       recommendation: "changes_requested" as const,
       degraded: false,
+      routing: GENERIC_ROUTING,
       exitCode: 0,
       rawOutput: `Absolute repo path: ${repoFilePath}\nHost-local note: ${leakedHostPath}`,
       findings: [],

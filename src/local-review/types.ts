@@ -134,6 +134,7 @@ export interface LocalReviewRoleResult {
   rawOutput: string;
   exitCode: number;
   degraded: boolean;
+  routing: LocalReviewExecutionRouting;
 }
 
 export interface LocalReviewVerifierReport {
@@ -144,6 +145,7 @@ export interface LocalReviewVerifierReport {
   rawOutput: string;
   exitCode: number;
   degraded: boolean;
+  routing: LocalReviewExecutionRouting;
   verifierGuardrails?: VerifierGuardrailRule[];
 }
 
