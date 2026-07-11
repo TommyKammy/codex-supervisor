@@ -54,14 +54,14 @@ export function parseCodexModelCatalog(raw: string): ReadonlyMap<string, Readonl
 
   const models = new Map<string, ReadonlySet<ReasoningEffort>>();
   for (const entry of entries) {
-    if (!entry || typeof entry !== "object") return null;
+    if (!entry || typeof entry !== "object") continue;
     const { slug, supported_reasoning_levels: levels } = entry as {
       slug?: unknown;
       supported_reasoning_levels?: unknown;
     };
-    if (typeof slug !== "string" || slug.trim() === "" || !Array.isArray(levels)) return null;
+    if (typeof slug !== "string" || slug.trim() === "" || !Array.isArray(levels)) continue;
     const parsedLevels = levels.map(parseReasoningLevel);
-    if (parsedLevels.some((level) => level === null)) return null;
+    if (parsedLevels.some((level) => level === null)) continue;
     models.set(slug.trim().toLowerCase(), new Set(parsedLevels.filter((level) => level !== undefined) as ReasoningEffort[]));
   }
   return models.size > 0 ? models : null;
@@ -101,11 +101,6 @@ export function resolveCodexModelCapabilities(
   if (existing && cacheTtlMs > 0 && existing.expiresAt > now) return existing.pending;
   const pending = probeCodexModelCapabilities(codexBinary, DEFAULT_CODEX_MODEL_CATALOG_PROBE_TIMEOUT_MS, cwd);
   cache.set(cacheKey, { pending, expiresAt: now + Math.max(0, cacheTtlMs) });
-  void pending.then((result) => {
-    if (result.source === "fallback" && cache.get(cacheKey)?.pending === pending) {
-      cache.delete(cacheKey);
-    }
-  });
   return pending;
 }
 

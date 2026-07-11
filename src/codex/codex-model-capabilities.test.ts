@@ -34,6 +34,20 @@ test("parseCodexModelCatalog preserves the distinction between unsupported ultra
   assert.deepEqual([...catalog?.get("gpt-5.6-sol") ?? []], ["max"]);
 });
 
+test("parseCodexModelCatalog skips malformed unrelated entries without discarding valid capabilities", () => {
+  const catalog = parseCodexModelCatalog(JSON.stringify({
+    models: [
+      { slug: "legacy-model" },
+      null,
+      { slug: "gpt-5.6-terra", supported_reasoning_levels: ["high", "max"] },
+      { slug: "malformed-levels", supported_reasoning_levels: [{}] },
+    ],
+  }));
+  assert.deepEqual([...catalog?.get("gpt-5.6-terra") ?? []], ["high", "max"]);
+  assert.equal(catalog?.has("legacy-model"), false);
+  assert.equal(catalog?.has("malformed-levels"), false);
+});
+
 test("probeCodexModelCapabilities captures catalogs larger than the default command output limit", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-model-capabilities-large-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
@@ -86,7 +100,7 @@ test("resolveCodexModelCapabilities refreshes an expired live catalog", async (t
   assert.equal(refreshed.reasoningLevelsByModel.get("gpt-5.6-terra")?.has("max"), true);
 });
 
-test("resolveCodexModelCapabilities retries after a transient fallback result", async (t) => {
+test("resolveCodexModelCapabilities caches fallback results within the TTL and permits a forced refresh", async (t) => {
   clearCodexModelCapabilitiesCacheForTests();
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-model-capabilities-retry-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
@@ -101,11 +115,13 @@ printf '{"models":[{"slug":"gpt-5.6-terra","supported_reasoning_levels":["max"]}
 `, { mode: 0o755 });
 
   const first = await resolveCodexModelCapabilities(binary, root);
-  const second = await resolveCodexModelCapabilities(binary, root);
+  const cached = await resolveCodexModelCapabilities(binary, root);
+  const refreshed = await resolveCodexModelCapabilities(binary, root, 0);
   assert.equal(first.source, "fallback");
   assert.equal(first.fallbackReason, "catalog_probe_exit_7");
-  assert.equal(second.source, "live_catalog");
-  assert.equal(second.reasoningLevelsByModel.get("gpt-5.6-terra")?.has("max"), true);
+  assert.strictEqual(cached, first);
+  assert.equal(refreshed.source, "live_catalog");
+  assert.equal(refreshed.reasoningLevelsByModel.get("gpt-5.6-terra")?.has("max"), true);
 });
 
 test("probeCodexModelCapabilities falls back deterministically for malformed, non-zero, and timed-out probes", async (t) => {
