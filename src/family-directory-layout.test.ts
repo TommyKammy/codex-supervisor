@@ -125,6 +125,7 @@ const EXPECTED_TOP_LEVEL_ENTRIES = {
 const EXPECTED_FAMILY_FILES = {
   codex: [
     "codex-connector-review-loop-prompt.ts",
+    "codex-model-capabilities.ts",
     "codex-model-policy.ts",
     "codex-output-parser.ts",
     "codex-policy.ts",
