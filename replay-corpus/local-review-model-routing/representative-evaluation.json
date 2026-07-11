@@ -1,0 +1,271 @@
+{
+  "schemaVersion": 1,
+  "evaluationId": "gpt-5.6-local-review-role-routing-representative",
+  "evidenceKind": "representative_fixture",
+  "recordedAt": "2026-07-11T00:00:00.000Z",
+  "baselineCandidateId": "all-inherit",
+  "guardrails": {
+    "minimumCorrectnessRate": 0.9,
+    "maximumFalsePositiveRate": 0.25,
+    "minimumVerifierAgreementRate": 0.75,
+    "maximumRetryRate": 0.25,
+    "minimumLatencyOrCostImprovementPercent": 10
+  },
+  "cases": [
+    {
+      "id": "auth-boundary",
+      "expectedFindingKeys": [
+        "auth-missing-signature"
+      ]
+    },
+    {
+      "id": "migration-rollback",
+      "expectedFindingKeys": [
+        "migration-missing-rollback",
+        "transaction-partial-write"
+      ]
+    },
+    {
+      "id": "documentation-only",
+      "expectedFindingKeys": []
+    }
+  ],
+  "candidates": [
+    {
+      "id": "all-inherit",
+      "label": "All targets inherit the active supervisor route",
+      "routes": {
+        "supervisor": {
+          "strategy": "inherit"
+        },
+        "local_review_generic": {
+          "strategy": "inherit"
+        },
+        "local_review_specialist": {
+          "strategy": "inherit"
+        },
+        "local_review_verifier": {
+          "strategy": "inherit"
+        }
+      },
+      "observations": [
+        {
+          "caseId": "auth-boundary",
+          "observedFindingKeys": [
+            "auth-missing-signature"
+          ],
+          "verifierFindings": [
+            {
+              "findingKey": "auth-missing-signature",
+              "verdict": "confirmed"
+            }
+          ],
+          "latencyMs": 1200,
+          "retryCount": 0,
+          "tokenUsage": {
+            "inputTokens": 1200,
+            "outputTokens": 180
+          },
+          "estimatedCostUsd": 0.03
+        },
+        {
+          "caseId": "migration-rollback",
+          "observedFindingKeys": [
+            "migration-missing-rollback",
+            "transaction-partial-write"
+          ],
+          "verifierFindings": [
+            {
+              "findingKey": "migration-missing-rollback",
+              "verdict": "confirmed"
+            },
+            {
+              "findingKey": "transaction-partial-write",
+              "verdict": "confirmed"
+            }
+          ],
+          "latencyMs": 1800,
+          "retryCount": 0,
+          "tokenUsage": {
+            "inputTokens": 1800,
+            "outputTokens": 260
+          },
+          "estimatedCostUsd": 0.05
+        },
+        {
+          "caseId": "documentation-only",
+          "observedFindingKeys": [
+            "docs-link-noise"
+          ],
+          "verifierFindings": [
+            {
+              "findingKey": "docs-link-noise",
+              "verdict": "dismissed"
+            }
+          ],
+          "latencyMs": 900,
+          "retryCount": 0,
+          "tokenUsage": {
+            "inputTokens": 700,
+            "outputTokens": 90
+          },
+          "estimatedCostUsd": 0.015
+        }
+      ]
+    },
+    {
+      "id": "terra-specialists-sol-verifier",
+      "label": "Hypothesis: Terra specialists and Sol verifier with inherited generic turns",
+      "routes": {
+        "supervisor": {
+          "strategy": "inherit"
+        },
+        "local_review_generic": {
+          "strategy": "inherit"
+        },
+        "local_review_specialist": {
+          "strategy": "fixed",
+          "model": "gpt-5.6-terra"
+        },
+        "local_review_verifier": {
+          "strategy": "fixed",
+          "model": "gpt-5.6-sol"
+        }
+      },
+      "observations": [
+        {
+          "caseId": "auth-boundary",
+          "observedFindingKeys": [
+            "auth-missing-signature"
+          ],
+          "verifierFindings": [
+            {
+              "findingKey": "auth-missing-signature",
+              "verdict": "confirmed"
+            }
+          ],
+          "latencyMs": 980,
+          "retryCount": 0,
+          "tokenUsage": {
+            "inputTokens": 1000,
+            "outputTokens": 150
+          },
+          "estimatedCostUsd": 0.024
+        },
+        {
+          "caseId": "migration-rollback",
+          "observedFindingKeys": [
+            "migration-missing-rollback",
+            "transaction-partial-write"
+          ],
+          "verifierFindings": [
+            {
+              "findingKey": "migration-missing-rollback",
+              "verdict": "confirmed"
+            },
+            {
+              "findingKey": "transaction-partial-write",
+              "verdict": "confirmed"
+            }
+          ],
+          "latencyMs": 1450,
+          "retryCount": 0,
+          "tokenUsage": {
+            "inputTokens": 1500,
+            "outputTokens": 230
+          },
+          "estimatedCostUsd": 0.041
+        },
+        {
+          "caseId": "documentation-only",
+          "observedFindingKeys": [],
+          "verifierFindings": [],
+          "latencyMs": 650,
+          "retryCount": 0,
+          "tokenUsage": {
+            "inputTokens": 580,
+            "outputTokens": 70
+          },
+          "estimatedCostUsd": 0.012
+        }
+      ]
+    },
+    {
+      "id": "luna-generic-terra-specialists-sol-verifier",
+      "label": "Hypothesis: Luna generic, Terra specialists, and Sol verifier",
+      "routes": {
+        "supervisor": {
+          "strategy": "inherit"
+        },
+        "local_review_generic": {
+          "strategy": "fixed",
+          "model": "gpt-5.6-luna"
+        },
+        "local_review_specialist": {
+          "strategy": "fixed",
+          "model": "gpt-5.6-terra"
+        },
+        "local_review_verifier": {
+          "strategy": "fixed",
+          "model": "gpt-5.6-sol"
+        }
+      },
+      "observations": [
+        {
+          "caseId": "auth-boundary",
+          "observedFindingKeys": [
+            "auth-missing-signature"
+          ],
+          "verifierFindings": [
+            {
+              "findingKey": "auth-missing-signature",
+              "verdict": "confirmed"
+            }
+          ],
+          "latencyMs": 800,
+          "retryCount": 0,
+          "tokenUsage": {
+            "inputTokens": 820,
+            "outputTokens": 130
+          },
+          "estimatedCostUsd": 0.02
+        },
+        {
+          "caseId": "migration-rollback",
+          "observedFindingKeys": [
+            "migration-missing-rollback"
+          ],
+          "verifierFindings": [
+            {
+              "findingKey": "migration-missing-rollback",
+              "verdict": "confirmed"
+            }
+          ],
+          "latencyMs": 1100,
+          "retryCount": 1,
+          "tokenUsage": null,
+          "estimatedCostUsd": null
+        },
+        {
+          "caseId": "documentation-only",
+          "observedFindingKeys": [
+            "docs-link-noise"
+          ],
+          "verifierFindings": [
+            {
+              "findingKey": "docs-link-noise",
+              "verdict": "dismissed"
+            }
+          ],
+          "latencyMs": 500,
+          "retryCount": 0,
+          "tokenUsage": {
+            "inputTokens": 450,
+            "outputTokens": 60
+          },
+          "estimatedCostUsd": 0.01
+        }
+      ]
+    }
+  ]
+}

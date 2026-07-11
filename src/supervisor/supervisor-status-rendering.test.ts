@@ -348,6 +348,13 @@ test("buildLocalReviewRoutingStatusLine summarizes explicit mini routing for gen
           routing: {
             target: "local_review_generic",
             model: "gpt-5.4-mini",
+            modelStrategy: "alias",
+            requestedModel: "gpt-5.4-mini",
+            effectiveModel: "gpt-5.4-mini",
+            modelRouteSource: "per_target_override",
+            modelFallbackSource: null,
+            modelCapabilitySource: "live_catalog",
+            modelCapabilityFallbackReason: null,
             requestedReasoningEffort: "ultra",
             reasoningEffort: "max",
             reasoningEffortFallbackReason: "nested_delegation_blocked",
@@ -357,7 +364,14 @@ test("buildLocalReviewRoutingStatusLine summarizes explicit mini routing for gen
           role: "prisma_postgres_reviewer",
           routing: {
             target: "local_review_specialist",
-            model: "gpt-5-codex",
+            model: "gpt-5.6-terra",
+            modelStrategy: "fixed",
+            requestedModel: "gpt-5.6-terra",
+            effectiveModel: "gpt-5.6-terra",
+            modelRouteSource: "per_target_override",
+            modelFallbackSource: null,
+            modelCapabilitySource: "live_catalog",
+            modelCapabilityFallbackReason: null,
             reasoningEffort: "low",
           },
         },
@@ -366,7 +380,14 @@ test("buildLocalReviewRoutingStatusLine summarizes explicit mini routing for gen
         role: "verifier",
         routing: {
           target: "local_review_verifier",
-          model: "gpt-5-codex",
+          model: "gpt-5.6-sol",
+          modelStrategy: "alias",
+          requestedModel: "gpt-5.6-sol",
+          effectiveModel: "gpt-5.6-sol",
+          modelRouteSource: "per_target_override",
+          modelFallbackSource: null,
+          modelCapabilitySource: "live_catalog",
+          modelCapabilityFallbackReason: null,
           requestedReasoningEffort: "ultra",
           reasoningEffort: "max",
           reasoningEffortFallbackReason: "nested_delegation_blocked",
@@ -388,7 +409,7 @@ test("buildLocalReviewRoutingStatusLine summarizes explicit mini routing for gen
         local_review_summary_path: summaryPath,
       }),
     }),
-    "local_review_routing generic=gpt-5.4-mini(requested_reasoning=ultra,effective_reasoning=max,reasoning_fallback_reason=nested_delegation_blocked)(1) specialists=gpt-5-codex(requested_reasoning=low,effective_reasoning=low,reasoning_fallback_reason=none)(1) verifier=gpt-5-codex(requested_reasoning=ultra,effective_reasoning=max,reasoning_fallback_reason=nested_delegation_blocked)",
+    "local_review_routing generic=gpt-5.4-mini(requested_model=gpt-5.4-mini,effective_model=gpt-5.4-mini,model_route_source=per_target_override,model_fallback_source=none,model_capability_source=live_catalog,model_capability_fallback_reason=none,requested_reasoning=ultra,effective_reasoning=max,reasoning_fallback_reason=nested_delegation_blocked)(1) specialists=gpt-5.6-terra(requested_model=gpt-5.6-terra,effective_model=gpt-5.6-terra,model_route_source=per_target_override,model_fallback_source=none,model_capability_source=live_catalog,model_capability_fallback_reason=none,requested_reasoning=low,effective_reasoning=low,reasoning_fallback_reason=none)(1) verifier=gpt-5.6-sol(requested_model=gpt-5.6-sol,effective_model=gpt-5.6-sol,model_route_source=per_target_override,model_fallback_source=none,model_capability_source=live_catalog,model_capability_fallback_reason=none,requested_reasoning=ultra,effective_reasoning=max,reasoning_fallback_reason=nested_delegation_blocked)",
   );
 });
 
@@ -441,7 +462,7 @@ test("buildLocalReviewRoutingStatusLine labels inherited generic local-review ro
         local_review_summary_path: summaryPath,
       }),
     }),
-    "local_review_routing generic=inherit->gpt-5-codex(requested_reasoning=low,effective_reasoning=low,reasoning_fallback_reason=none)(1) specialists=gpt-5-codex(requested_reasoning=low,effective_reasoning=low,reasoning_fallback_reason=none)(1) verifier=gpt-5-codex(requested_reasoning=low,effective_reasoning=low,reasoning_fallback_reason=none)",
+    "local_review_routing generic=inherit->gpt-5-codex(requested_model=gpt-5-codex,effective_model=gpt-5-codex,model_route_source=unavailable,model_fallback_source=none,model_capability_source=unavailable,model_capability_fallback_reason=none,requested_reasoning=low,effective_reasoning=low,reasoning_fallback_reason=none)(1) specialists=gpt-5-codex(requested_model=gpt-5-codex,effective_model=gpt-5-codex,model_route_source=unavailable,model_fallback_source=none,model_capability_source=unavailable,model_capability_fallback_reason=none,requested_reasoning=low,effective_reasoning=low,reasoning_fallback_reason=none)(1) verifier=gpt-5-codex(requested_model=gpt-5-codex,effective_model=gpt-5-codex,model_route_source=unavailable,model_fallback_source=none,model_capability_source=unavailable,model_capability_fallback_reason=none,requested_reasoning=low,effective_reasoning=low,reasoning_fallback_reason=none)",
   );
 });
 
@@ -480,6 +501,10 @@ test("renderStatusCodexModelPolicyLines reports inherited host defaults and over
   assert.deepEqual(lines, [
     "codex_execution_policy active=supervisor:inherit->gpt-5.4@inherited_host_default reasoning=xhigh requested_reasoning=max effective_reasoning=xhigh reasoning_fallback_reason=unsupported_reasoning_effort capability_source=fallback fallback_reason=catalog_probe_unavailable",
     "codex_route_overrides repair=alias:gpt-5.4-mini@bounded_repair_override local_review=alias:local-review-fast@local_review_override",
+    "codex_target_route target=supervisor strategy=inherit requested_model=inherit effective_model=gpt-5.4 route_source=inherited_host_default fallback_source=none requested_reasoning=high effective_reasoning=high reasoning_fallback_reason=none capability_source=fallback fallback_reason=catalog_probe_unavailable",
+    "codex_target_route target=local_review_generic strategy=alias requested_model=local-review-fast effective_model=local-review-fast route_source=local_review_override fallback_source=none requested_reasoning=low effective_reasoning=low reasoning_fallback_reason=none capability_source=fallback fallback_reason=catalog_probe_unavailable",
+    "codex_target_route target=local_review_specialist strategy=inherit requested_model=inherit effective_model=gpt-5.4 route_source=default_route fallback_source=inherited_host_default requested_reasoning=low effective_reasoning=low reasoning_fallback_reason=none capability_source=fallback fallback_reason=catalog_probe_unavailable",
+    "codex_target_route target=local_review_verifier strategy=inherit requested_model=inherit effective_model=gpt-5.4 route_source=default_route fallback_source=inherited_host_default requested_reasoning=low effective_reasoning=low reasoning_fallback_reason=none capability_source=fallback fallback_reason=catalog_probe_unavailable",
   ]);
 });
 
@@ -687,6 +712,7 @@ test("buildCodexModelPolicySnapshot keeps the default route independent from act
     configuredModel: null,
     effectiveModel: "gpt-5.4",
     source: "inherited_host_default",
+    fallbackSource: null,
   });
   assert.equal(
     renderStatusCodexModelPolicyLines(snapshot)[0],
@@ -724,6 +750,10 @@ test("buildCodexModelPolicySnapshot uses the local-review route for active local
   assert.deepEqual(lines, [
     "codex_execution_policy active=local_review_generic:alias:local-review-fast@local_review_override reasoning=low requested_reasoning=low effective_reasoning=low reasoning_fallback_reason=none capability_source=fallback fallback_reason=catalog_probe_unavailable",
     "codex_route_overrides repair=default_route(gpt-5.4) local_review=alias:local-review-fast@local_review_override",
+    "codex_target_route target=supervisor strategy=inherit requested_model=inherit effective_model=gpt-5.4 route_source=inherited_host_default fallback_source=none requested_reasoning=high effective_reasoning=high reasoning_fallback_reason=none capability_source=fallback fallback_reason=catalog_probe_unavailable",
+    "codex_target_route target=local_review_generic strategy=alias requested_model=local-review-fast effective_model=local-review-fast route_source=local_review_override fallback_source=none requested_reasoning=low effective_reasoning=low reasoning_fallback_reason=none capability_source=fallback fallback_reason=catalog_probe_unavailable",
+    "codex_target_route target=local_review_specialist strategy=inherit requested_model=inherit effective_model=gpt-5.4 route_source=default_route fallback_source=inherited_host_default requested_reasoning=low effective_reasoning=low reasoning_fallback_reason=none capability_source=fallback fallback_reason=catalog_probe_unavailable",
+    "codex_target_route target=local_review_verifier strategy=inherit requested_model=inherit effective_model=gpt-5.4 route_source=default_route fallback_source=inherited_host_default requested_reasoning=low effective_reasoning=low reasoning_fallback_reason=none capability_source=fallback fallback_reason=catalog_probe_unavailable",
   ]);
 });
 

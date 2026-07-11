@@ -1,6 +1,10 @@
 import {
   CodexExecutionTarget,
   IssueRunRecord,
+  CodexModelCapabilitySource,
+  CodexModelRouteSource,
+  CodexModelStrategy,
+  CodexTargetModelRoute,
   ReasoningEffort,
   ReasoningEffortFallbackReason,
   RunState,
@@ -48,12 +52,32 @@ export interface CodexExecutionPolicy {
 export interface CodexExecutionPolicyContext {
   inheritedModel?: string | null;
   reasoningLevelsByModel?: ReadonlyMap<string, ReadonlySet<ReasoningEffort>>;
+  modelCapabilitySource?: CodexModelCapabilitySource;
+  modelCapabilityFallbackReason?: string | null;
+}
+
+export interface CodexModelRoutingDecision {
+  target: CodexExecutionTarget;
+  strategy: CodexModelStrategy;
+  requestedModel: string | null;
+  effectiveModel: string | null;
+  modelOverride: string | null;
+  source: CodexModelRouteSource;
+  fallbackSource: CodexModelRouteSource | null;
+}
+
+export interface CodexExecutionDecision {
+  policy: CodexExecutionPolicy;
+  modelRouting: CodexModelRoutingDecision;
+  modelCapabilitySource: CodexModelCapabilitySource;
+  modelCapabilityFallbackReason: string | null;
 }
 
 type CodexExecutionPolicyConfig = Pick<
   SupervisorConfig,
   | "codexModelStrategy"
   | "codexModel"
+  | "codexModelRoutingByTarget"
   | "boundedRepairModelStrategy"
   | "boundedRepairModel"
   | "localReviewModelStrategy"
@@ -142,15 +166,53 @@ function clampReasoningEffortForModel(
   effort: ReasoningEffort,
   target: CodexExecutionTarget,
   reasoningLevelsByModel?: ReadonlyMap<string, ReadonlySet<ReasoningEffort>>,
-): Pick<CodexExecutionPolicy, "reasoningEffort" | "reasoningEffortFallbackReason"> {
+  capabilitySource?: CodexModelCapabilitySource,
+  capabilityFallbackReason?: string | null,
+): Pick<CodexExecutionPolicy, "reasoningEffort" | "reasoningEffortFallbackReason"> & {
+  modelCapabilitySource: CodexModelCapabilitySource;
+  modelCapabilityFallbackReason: string | null;
+} {
   const normalized = model?.trim().toLowerCase();
   const supported = normalized && reasoningLevelsByModel
     ? resolveCatalogReasoningLevels(normalized, reasoningLevelsByModel)
     : undefined;
+  const capabilityResolution: {
+    modelCapabilitySource: CodexModelCapabilitySource;
+    modelCapabilityFallbackReason: string | null;
+  } = capabilitySource === "fallback"
+    ? {
+        modelCapabilitySource: "fallback",
+        modelCapabilityFallbackReason: capabilityFallbackReason ?? "catalog_probe_unavailable",
+      }
+    : !normalized
+      ? {
+          modelCapabilitySource: "fallback",
+          modelCapabilityFallbackReason: "effective_model_unresolved",
+        }
+      : supported !== undefined
+        ? {
+            modelCapabilitySource: "live_catalog",
+            modelCapabilityFallbackReason: null,
+          }
+        : reasoningLevelsByModel
+          ? {
+              modelCapabilitySource: "fallback",
+              modelCapabilityFallbackReason: "model_not_in_catalog",
+            }
+          : {
+              modelCapabilitySource: "fallback",
+              modelCapabilityFallbackReason: capabilityFallbackReason ?? "capability_catalog_unavailable",
+            };
+  const withCapability = (
+    resolution: Pick<CodexExecutionPolicy, "reasoningEffort" | "reasoningEffortFallbackReason">,
+  ): Pick<CodexExecutionPolicy, "reasoningEffort" | "reasoningEffortFallbackReason"> & typeof capabilityResolution => ({
+    ...resolution,
+    ...capabilityResolution,
+  });
 
   if (effort === "ultra") {
     if (target === "supervisor" && supported?.has("ultra")) {
-      return { reasoningEffort: "ultra" };
+      return withCapability({ reasoningEffort: "ultra" });
     }
 
     let fallbackEffort: ReasoningEffort | null = null;
@@ -166,46 +228,46 @@ function clampReasoningEffortForModel(
       fallbackEffort = clampReasoningEffortForModel(model, "max", target).reasoningEffort;
     }
 
-    return {
+    return withCapability({
       reasoningEffort: fallbackEffort,
       reasoningEffortFallbackReason: target === "supervisor"
         ? "unsupported_reasoning_effort"
         : "nested_delegation_blocked",
-    };
+    });
   }
 
   if (supported) {
     if (supported.size === 0) {
-      return {
+      return withCapability({
         reasoningEffort: null,
         reasoningEffortFallbackReason: "unsupported_reasoning_effort",
-      };
+      });
     }
-    if (supported.has(effort)) return { reasoningEffort: effort };
+    if (supported.has(effort)) return withCapability({ reasoningEffort: effort });
 
     const requestedIndex = NON_DELEGATING_REASONING_ORDER.indexOf(effort);
     for (let index = requestedIndex - 1; index >= 0; index -= 1) {
       const candidate = NON_DELEGATING_REASONING_ORDER[index];
       if (candidate && supported.has(candidate)) {
-        return {
+        return withCapability({
           reasoningEffort: candidate,
           reasoningEffortFallbackReason: "unsupported_reasoning_effort",
-        };
+        });
       }
     }
     for (let index = requestedIndex + 1; index < NON_DELEGATING_REASONING_ORDER.length; index += 1) {
       const candidate = NON_DELEGATING_REASONING_ORDER[index];
       if (candidate && supported.has(candidate)) {
-        return {
+        return withCapability({
           reasoningEffort: candidate,
           reasoningEffortFallbackReason: "unsupported_reasoning_effort",
-        };
+        });
       }
     }
-    return {
+    return withCapability({
       reasoningEffort: null,
       reasoningEffortFallbackReason: "unsupported_reasoning_effort",
-    };
+    });
   }
 
   let clamped = effort;
@@ -229,10 +291,10 @@ function clampReasoningEffortForModel(
     }
   }
 
-  return {
+  return withCapability({
     reasoningEffort: clamped,
     ...(clamped === effort ? {} : { reasoningEffortFallbackReason: "unsupported_reasoning_effort" as const }),
-  };
+  });
 }
 
 function resolveRequestedReasoningEffort(
@@ -271,11 +333,93 @@ function usesBoundedRepairRouting(state: RunState, target: CodexExecutionTarget)
   return target === "supervisor" && (state === "repairing_ci" || state === "addressing_review");
 }
 
-function resolveConfiguredModel(
+function inheritedHostRoute(
+  target: CodexExecutionTarget,
+  inheritedModel: string | null,
+): CodexModelRoutingDecision {
+  return {
+    target,
+    strategy: "inherit",
+    requestedModel: null,
+    effectiveModel: inheritedModel,
+    modelOverride: null,
+    source: inheritedModel ? "inherited_host_default" : "inherited_host_default_unresolved",
+    fallbackSource: null,
+  };
+}
+
+function resolveRouteConfig(
+  target: CodexExecutionTarget,
+  route: CodexTargetModelRoute,
+  inheritedRoute: CodexModelRoutingDecision,
+  source: CodexModelRouteSource,
+  inheritSource: CodexModelRouteSource = source,
+): CodexModelRoutingDecision {
+  if (route.strategy === "inherit") {
+    return {
+      target,
+      strategy: "inherit",
+      requestedModel: null,
+      effectiveModel: inheritedRoute.effectiveModel,
+      modelOverride: inheritedRoute.modelOverride,
+      source: inheritSource,
+      fallbackSource: inheritedRoute.source,
+    };
+  }
+
+  return {
+    target,
+    strategy: route.strategy,
+    requestedModel: route.model,
+    effectiveModel: route.model,
+    modelOverride: route.model,
+    source,
+    fallbackSource: null,
+  };
+}
+
+function resolveSupervisorBaseRoute(
   config: Pick<
     SupervisorConfig,
     | "codexModelStrategy"
     | "codexModel"
+    | "codexModelRoutingByTarget"
+  >,
+  inheritedModel: string | null,
+): CodexModelRoutingDecision {
+  const hostRoute = inheritedHostRoute("supervisor", inheritedModel);
+  const configuredRoute = config.codexModelRoutingByTarget?.supervisor;
+  if (configuredRoute) {
+    return resolveRouteConfig(
+      "supervisor",
+      configuredRoute,
+      hostRoute,
+      "per_target_override",
+    );
+  }
+
+  if (config.codexModelStrategy === "inherit") {
+    return hostRoute;
+  }
+
+  const model = config.codexModel ?? null;
+  return {
+    target: "supervisor",
+    strategy: config.codexModelStrategy,
+    requestedModel: model,
+    effectiveModel: model,
+    modelOverride: model,
+    source: "supervisor_config",
+    fallbackSource: null,
+  };
+}
+
+export function resolveCodexModelRouting(
+  config: Pick<
+    SupervisorConfig,
+    | "codexModelStrategy"
+    | "codexModel"
+    | "codexModelRoutingByTarget"
     | "boundedRepairModelStrategy"
     | "boundedRepairModel"
     | "localReviewModelStrategy"
@@ -283,26 +427,114 @@ function resolveConfiguredModel(
   >,
   state: RunState,
   target: CodexExecutionTarget,
-): string | null {
-  const defaultModel = config.codexModelStrategy === "inherit" ? null : (config.codexModel ?? null);
+  inheritedModel: string | null = null,
+): CodexModelRoutingDecision {
+  const supervisorRoute = resolveSupervisorBaseRoute(config, inheritedModel);
+
+  if (usesBoundedRepairRouting(state, target)) {
+    if (config.boundedRepairModelStrategy) {
+      const route: CodexTargetModelRoute = config.boundedRepairModelStrategy === "inherit"
+        ? { strategy: "inherit" }
+        : {
+            strategy: config.boundedRepairModelStrategy,
+            model: config.boundedRepairModel ?? "",
+          };
+      return resolveRouteConfig(
+        target,
+        route,
+        supervisorRoute,
+        "bounded_repair_override",
+        "default_route",
+      );
+    }
+    return resolveRouteConfig(
+      target,
+      { strategy: "inherit" },
+      supervisorRoute,
+      "default_route",
+    );
+  }
+
+  if (target === "supervisor") {
+    return supervisorRoute;
+  }
+
+  const configuredRoute = config.codexModelRoutingByTarget?.[target];
+  if (configuredRoute) {
+    return resolveRouteConfig(
+      target,
+      configuredRoute,
+      supervisorRoute,
+      "per_target_override",
+    );
+  }
 
   if (target === "local_review_generic" && config.localReviewModelStrategy) {
-    if (config.localReviewModelStrategy === "inherit") {
-      return defaultModel;
-    }
-
-    return config.localReviewModel ?? null;
+    const legacyRoute: CodexTargetModelRoute = config.localReviewModelStrategy === "inherit"
+      ? { strategy: "inherit" }
+      : {
+          strategy: config.localReviewModelStrategy,
+          model: config.localReviewModel ?? "",
+        };
+    return resolveRouteConfig(
+      target,
+      legacyRoute,
+      supervisorRoute,
+      "local_review_override",
+      "default_route",
+    );
   }
 
-  if (usesBoundedRepairRouting(state, target) && config.boundedRepairModelStrategy) {
-    if (config.boundedRepairModelStrategy === "inherit") {
-      return defaultModel;
-    }
+  return resolveRouteConfig(
+    target,
+    { strategy: "inherit" },
+    supervisorRoute,
+    "default_route",
+  );
+}
 
-    return config.boundedRepairModel ?? null;
-  }
-
-  return defaultModel;
+export function resolveCodexExecutionDecision(
+  config: CodexExecutionPolicyConfig,
+  state: RunState,
+  record?: Pick<
+    IssueRunRecord,
+    | "repeated_failure_signature_count"
+    | "blocked_verification_retry_count"
+    | "timeout_retry_count"
+    | "last_tracked_pr_progress_snapshot"
+    | "codex_connector_stable_churn_dossier_consumed_signature"
+  > | null,
+  target: CodexExecutionTarget = "supervisor",
+  context: CodexExecutionPolicyContext = {},
+): CodexExecutionDecision {
+  const modelRouting = resolveCodexModelRouting(
+    config,
+    state,
+    target,
+    context.inheritedModel ?? null,
+  );
+  const requestedEffort = resolveRequestedReasoningEffort(config, state, record);
+  const reasoningResolution = clampReasoningEffortForModel(
+    modelRouting.effectiveModel,
+    requestedEffort,
+    target,
+    context.reasoningLevelsByModel,
+    context.modelCapabilitySource,
+    context.modelCapabilityFallbackReason,
+  );
+  return {
+    policy: {
+      model: modelRouting.modelOverride,
+      reasoningEffort: reasoningResolution.reasoningEffort,
+      ...(reasoningResolution.reasoningEffort === requestedEffort ? {} : { requestedReasoningEffort: requestedEffort }),
+      ...(reasoningResolution.reasoningEffortFallbackReason
+        ? { reasoningEffortFallbackReason: reasoningResolution.reasoningEffortFallbackReason }
+        : {}),
+    },
+    modelRouting,
+    modelCapabilitySource: reasoningResolution.modelCapabilitySource,
+    modelCapabilityFallbackReason: reasoningResolution.modelCapabilityFallbackReason,
+  };
 }
 
 export function resolveCodexExecutionPolicy(
@@ -319,22 +551,7 @@ export function resolveCodexExecutionPolicy(
   target: CodexExecutionTarget = "supervisor",
   context: CodexExecutionPolicyContext = {},
 ): CodexExecutionPolicy {
-  const model = resolveConfiguredModel(config, state, target);
-  const requestedEffort = resolveRequestedReasoningEffort(config, state, record);
-  const reasoningResolution = clampReasoningEffortForModel(
-    model ?? context.inheritedModel ?? null,
-    requestedEffort,
-    target,
-    context.reasoningLevelsByModel,
-  );
-  return {
-    model,
-    reasoningEffort: reasoningResolution.reasoningEffort,
-    ...(reasoningResolution.reasoningEffort === requestedEffort ? {} : { requestedReasoningEffort: requestedEffort }),
-    ...(reasoningResolution.reasoningEffortFallbackReason
-      ? { reasoningEffortFallbackReason: reasoningResolution.reasoningEffortFallbackReason }
-      : {}),
-  };
+  return resolveCodexExecutionDecision(config, state, record, target, context).policy;
 }
 
 export function buildCodexConfigOverrideArgs(policy: CodexExecutionPolicy): string[] {

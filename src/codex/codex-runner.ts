@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { runCommand } from "../core/command";
-import { buildCodexConfigOverrideArgs, buildCodexExecutionSafetyArgs, resolveCodexExecutionPolicy } from "./codex-policy";
+import { buildCodexConfigOverrideArgs, buildCodexExecutionSafetyArgs, resolveCodexExecutionDecision } from "./codex-policy";
 import { resolveHostCodexDefaultModel } from "./codex-model-policy";
 import { resolveCodexModelCapabilities } from "./codex-model-capabilities";
 import { CodexTurnResult, IssueRunRecord, RunState, SupervisorConfig } from "../core/types";
@@ -51,13 +51,23 @@ export async function runCodexTurn(
       resolveHostCodexDefaultModel(workspacePath),
       resolveCodexModelCapabilities(config.codexBinary, workspacePath),
     ]);
-    const policy = resolveCodexExecutionPolicy(config, state, record, "supervisor", {
+    const decision = resolveCodexExecutionDecision(config, state, record, "supervisor", {
       inheritedModel: hostDefault.model,
       reasoningLevelsByModel: capabilities.reasoningLevelsByModel,
+      modelCapabilitySource: capabilities.source,
+      modelCapabilityFallbackReason: capabilities.fallbackReason,
     });
+    const { policy, modelRouting } = decision;
     const routing = {
       target: "supervisor" as const,
       model: policy.model,
+      modelStrategy: modelRouting.strategy,
+      requestedModel: modelRouting.requestedModel,
+      effectiveModel: modelRouting.effectiveModel,
+      modelRouteSource: modelRouting.source,
+      modelFallbackSource: modelRouting.fallbackSource,
+      modelCapabilitySource: decision.modelCapabilitySource,
+      modelCapabilityFallbackReason: decision.modelCapabilityFallbackReason,
       requestedReasoningEffort: policy.requestedReasoningEffort ?? policy.reasoningEffort,
       reasoningEffort: policy.reasoningEffort,
       reasoningEffortFallbackReason: policy.reasoningEffortFallbackReason ?? null,

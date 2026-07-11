@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { runCommand } from "../core/command";
-import { buildCodexConfigOverrideArgs, buildCodexExecutionSafetyArgs, resolveCodexExecutionPolicy } from "../codex/codex-policy";
+import { buildCodexConfigOverrideArgs, buildCodexExecutionSafetyArgs, resolveCodexExecutionDecision } from "../codex/codex-policy";
 import { resolveHostCodexDefaultModel } from "../codex/codex-model-policy";
 import { resolveCodexModelCapabilities } from "../codex/codex-model-capabilities";
 import { loadRelevantExternalReviewMissPatterns, type ExternalReviewMissPattern } from "../external-review/external-review-misses";
@@ -47,7 +47,7 @@ export async function runCodexReviewTurn(args: LocalReviewTurnRequest): Promise<
     resolveHostCodexDefaultModel(args.workspacePath),
     resolveCodexModelCapabilities(args.config.codexBinary, args.workspacePath),
   ]);
-  const policy = resolveCodexExecutionPolicy(
+  const decision = resolveCodexExecutionDecision(
     args.config,
     "local_review",
     undefined,
@@ -55,11 +55,21 @@ export async function runCodexReviewTurn(args: LocalReviewTurnRequest): Promise<
     {
       inheritedModel: hostDefault.model,
       reasoningLevelsByModel: capabilities.reasoningLevelsByModel,
+      modelCapabilitySource: capabilities.source,
+      modelCapabilityFallbackReason: capabilities.fallbackReason,
     },
   );
+  const { policy, modelRouting } = decision;
   const routing: LocalReviewExecutionRouting = {
     target: args.executionTarget,
     model: policy.model,
+    modelStrategy: modelRouting.strategy,
+    requestedModel: modelRouting.requestedModel,
+    effectiveModel: modelRouting.effectiveModel,
+    modelRouteSource: modelRouting.source,
+    modelFallbackSource: modelRouting.fallbackSource,
+    modelCapabilitySource: decision.modelCapabilitySource,
+    modelCapabilityFallbackReason: decision.modelCapabilityFallbackReason,
     reasoningEffort: policy.reasoningEffort,
     requestedReasoningEffort: policy.requestedReasoningEffort ?? policy.reasoningEffort,
     reasoningEffortFallbackReason: policy.reasoningEffortFallbackReason ?? null,

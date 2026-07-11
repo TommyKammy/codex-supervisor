@@ -1,0 +1,240 @@
+{
+  "schemaVersion": 1,
+  "evaluationId": "gpt-5.6-local-review-role-routing-representative",
+  "sourceFixture": "replay-corpus/local-review-model-routing/representative-evaluation.json",
+  "evidenceKind": "representative_fixture",
+  "recordedAt": "2026-07-11T00:00:00.000Z",
+  "baselineCandidateId": "all-inherit",
+  "guardrails": {
+    "minimumCorrectnessRate": 0.9,
+    "maximumFalsePositiveRate": 0.25,
+    "minimumVerifierAgreementRate": 0.75,
+    "maximumRetryRate": 0.25,
+    "minimumLatencyOrCostImprovementPercent": 10
+  },
+  "candidates": [
+    {
+      "id": "all-inherit",
+      "label": "All targets inherit the active supervisor route",
+      "routes": {
+        "supervisor": {
+          "strategy": "inherit"
+        },
+        "local_review_generic": {
+          "strategy": "inherit"
+        },
+        "local_review_specialist": {
+          "strategy": "inherit"
+        },
+        "local_review_verifier": {
+          "strategy": "inherit"
+        }
+      },
+      "metrics": {
+        "runCount": 3,
+        "expectedFindingCount": 3,
+        "observedFindingCount": 4,
+        "confirmedFindingCount": 3,
+        "dismissedFindingCount": 1,
+        "unclearFindingCount": 0,
+        "truePositiveCount": 3,
+        "falsePositiveCount": 1,
+        "confirmedFalsePositiveCount": 0,
+        "falseNegativeCount": 0,
+        "correctnessRate": 1,
+        "falsePositiveRate": 0.25,
+        "verifierAgreementRate": 0.75,
+        "retriedRunCount": 0,
+        "retryCount": 0,
+        "retryRate": 0,
+        "latencyMs": {
+          "total": 3900,
+          "average": 1300
+        },
+        "tokenUsage": {
+          "coverage": "complete",
+          "observedRunCount": 3,
+          "inputTokens": 3700,
+          "outputTokens": 530,
+          "totalTokens": 4230
+        },
+        "estimatedCost": {
+          "coverage": "complete",
+          "observedRunCount": 3,
+          "totalUsd": 0.095,
+          "averageUsd": 0.031667
+        }
+      },
+      "comparisonToBaseline": {
+        "correctnessRateDelta": 0,
+        "falsePositiveRateDelta": 0,
+        "verifierAgreementRateDelta": 0,
+        "retryRateDelta": 0,
+        "averageLatencyImprovementPercent": 0,
+        "averageCostImprovementPercent": 0
+      },
+      "qualityEvidenceSufficient": true,
+      "absoluteQualityGuardrailsPassed": true,
+      "qualityNonRegression": true,
+      "qualityGuardrailsPassed": true,
+      "measurableLatencyOrCostBenefit": false,
+      "eligibleForDefault": false,
+      "defaultGateReasons": [
+        "baseline_candidate"
+      ]
+    },
+    {
+      "id": "terra-specialists-sol-verifier",
+      "label": "Hypothesis: Terra specialists and Sol verifier with inherited generic turns",
+      "routes": {
+        "supervisor": {
+          "strategy": "inherit"
+        },
+        "local_review_generic": {
+          "strategy": "inherit"
+        },
+        "local_review_specialist": {
+          "strategy": "fixed",
+          "model": "gpt-5.6-terra"
+        },
+        "local_review_verifier": {
+          "strategy": "fixed",
+          "model": "gpt-5.6-sol"
+        }
+      },
+      "metrics": {
+        "runCount": 3,
+        "expectedFindingCount": 3,
+        "observedFindingCount": 3,
+        "confirmedFindingCount": 3,
+        "dismissedFindingCount": 0,
+        "unclearFindingCount": 0,
+        "truePositiveCount": 3,
+        "falsePositiveCount": 0,
+        "confirmedFalsePositiveCount": 0,
+        "falseNegativeCount": 0,
+        "correctnessRate": 1,
+        "falsePositiveRate": 0,
+        "verifierAgreementRate": 1,
+        "retriedRunCount": 0,
+        "retryCount": 0,
+        "retryRate": 0,
+        "latencyMs": {
+          "total": 3080,
+          "average": 1026.67
+        },
+        "tokenUsage": {
+          "coverage": "complete",
+          "observedRunCount": 3,
+          "inputTokens": 3080,
+          "outputTokens": 450,
+          "totalTokens": 3530
+        },
+        "estimatedCost": {
+          "coverage": "complete",
+          "observedRunCount": 3,
+          "totalUsd": 0.077,
+          "averageUsd": 0.025667
+        }
+      },
+      "comparisonToBaseline": {
+        "correctnessRateDelta": 0,
+        "falsePositiveRateDelta": -0.25,
+        "verifierAgreementRateDelta": 0.25,
+        "retryRateDelta": 0,
+        "averageLatencyImprovementPercent": 21.03,
+        "averageCostImprovementPercent": 18.95
+      },
+      "qualityEvidenceSufficient": true,
+      "absoluteQualityGuardrailsPassed": true,
+      "qualityNonRegression": true,
+      "qualityGuardrailsPassed": true,
+      "measurableLatencyOrCostBenefit": true,
+      "eligibleForDefault": false,
+      "defaultGateReasons": [
+        "representative_fixture_only"
+      ]
+    },
+    {
+      "id": "luna-generic-terra-specialists-sol-verifier",
+      "label": "Hypothesis: Luna generic, Terra specialists, and Sol verifier",
+      "routes": {
+        "supervisor": {
+          "strategy": "inherit"
+        },
+        "local_review_generic": {
+          "strategy": "fixed",
+          "model": "gpt-5.6-luna"
+        },
+        "local_review_specialist": {
+          "strategy": "fixed",
+          "model": "gpt-5.6-terra"
+        },
+        "local_review_verifier": {
+          "strategy": "fixed",
+          "model": "gpt-5.6-sol"
+        }
+      },
+      "metrics": {
+        "runCount": 3,
+        "expectedFindingCount": 3,
+        "observedFindingCount": 3,
+        "confirmedFindingCount": 2,
+        "dismissedFindingCount": 1,
+        "unclearFindingCount": 0,
+        "truePositiveCount": 2,
+        "falsePositiveCount": 1,
+        "confirmedFalsePositiveCount": 0,
+        "falseNegativeCount": 1,
+        "correctnessRate": 0.6667,
+        "falsePositiveRate": 0.3333,
+        "verifierAgreementRate": 0.6667,
+        "retriedRunCount": 1,
+        "retryCount": 1,
+        "retryRate": 0.3333,
+        "latencyMs": {
+          "total": 2400,
+          "average": 800
+        },
+        "tokenUsage": {
+          "coverage": "partial",
+          "observedRunCount": 2,
+          "inputTokens": null,
+          "outputTokens": null,
+          "totalTokens": null
+        },
+        "estimatedCost": {
+          "coverage": "partial",
+          "observedRunCount": 2,
+          "totalUsd": null,
+          "averageUsd": null
+        }
+      },
+      "comparisonToBaseline": {
+        "correctnessRateDelta": -0.3333,
+        "falsePositiveRateDelta": 0.0833,
+        "verifierAgreementRateDelta": -0.0833,
+        "retryRateDelta": 0.3333,
+        "averageLatencyImprovementPercent": 38.46,
+        "averageCostImprovementPercent": null
+      },
+      "qualityEvidenceSufficient": true,
+      "absoluteQualityGuardrailsPassed": false,
+      "qualityNonRegression": false,
+      "qualityGuardrailsPassed": false,
+      "measurableLatencyOrCostBenefit": true,
+      "eligibleForDefault": false,
+      "defaultGateReasons": [
+        "absolute_quality_guardrails_failed",
+        "baseline_quality_regression",
+        "representative_fixture_only"
+      ]
+    }
+  ],
+  "eligibleCandidateIds": [],
+  "defaultDecision": {
+    "changed": false,
+    "selectedCandidateId": null,
+    "reason": "representative_fixture_only"
+  }
+}

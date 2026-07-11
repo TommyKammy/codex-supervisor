@@ -1,6 +1,8 @@
 import path from "node:path";
 import {
   CopilotReviewTimeoutAction,
+  CodexExecutionTarget,
+  CodexModelRoutingByTarget,
   ExecutionSafetyMode,
   LocalCiCommandConfig,
   LocalReviewHighSeverityAction,
@@ -26,6 +28,13 @@ import { isValidGitRefName, resolveMaybeRelative } from "./utils";
 import { DEFAULT_CANDIDATE_DISCOVERY_FETCH_WINDOW } from "./config-constants";
 
 const VALID_REASONING_EFFORTS = new Set<ReasoningEffort>(["none", "low", "medium", "high", "xhigh", "max", "ultra"]);
+const CODEX_EXECUTION_TARGETS: CodexExecutionTarget[] = [
+  "supervisor",
+  "local_review_generic",
+  "local_review_specialist",
+  "local_review_verifier",
+];
+const VALID_CODEX_EXECUTION_TARGETS = new Set<CodexExecutionTarget>(CODEX_EXECUTION_TARGETS);
 const VALID_TRUST_MODES = new Set<TrustMode>(["trusted_repo_and_authors", "untrusted_or_mixed"]);
 const VALID_EXECUTION_SAFETY_MODES = new Set<ExecutionSafetyMode>(["unsandboxed_autonomous", "operator_gated"]);
 const VALID_LOCAL_REVIEW_POLICIES = new Set<LocalReviewPolicy>(["advisory", "block_ready", "block_merge"]);
@@ -294,6 +303,45 @@ function parseReasoningPolicy(value: unknown): Partial<Record<RunState, Reasonin
   return Object.fromEntries(entries) as Partial<Record<RunState, ReasoningEffort>>;
 }
 
+function parseCodexModelRoutingByTarget(value: unknown): CodexModelRoutingByTarget | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Invalid config field: codexModelRoutingByTarget (expected an object keyed by execution target)");
+  }
+
+  const routes: CodexModelRoutingByTarget = {};
+  for (const [rawTarget, rawRoute] of Object.entries(value as Record<string, unknown>)) {
+    if (!VALID_CODEX_EXECUTION_TARGETS.has(rawTarget as CodexExecutionTarget)) {
+      throw new Error(`Invalid config field: codexModelRoutingByTarget (unsupported target: ${rawTarget})`);
+    }
+    if (!rawRoute || typeof rawRoute !== "object" || Array.isArray(rawRoute)) {
+      throw new Error(`Invalid config field: codexModelRoutingByTarget (route for ${rawTarget} must be an object)`);
+    }
+
+    const route = rawRoute as Record<string, unknown>;
+    if (route.strategy === "inherit") {
+      if (route.model !== undefined) {
+        throw new Error(`Invalid config field: codexModelRoutingByTarget (inherit route for ${rawTarget} must not set model)`);
+      }
+      routes[rawTarget as CodexExecutionTarget] = { strategy: "inherit" };
+      continue;
+    }
+    if (route.strategy !== "fixed" && route.strategy !== "alias") {
+      throw new Error(`Invalid config field: codexModelRoutingByTarget (unsupported strategy for ${rawTarget}: ${String(route.strategy)})`);
+    }
+    if (typeof route.model !== "string" || route.model.trim() === "") {
+      throw new Error(`Invalid config field: codexModelRoutingByTarget (model is required for ${rawTarget} strategy=${route.strategy})`);
+    }
+    routes[rawTarget as CodexExecutionTarget] = {
+      strategy: route.strategy,
+      model: route.model.trim(),
+    };
+  }
+  return routes;
+}
+
 function parseLocalReviewPosturePreset(value: unknown): LocalReviewPosturePreset | undefined {
   if (value === undefined) {
     return undefined;
@@ -458,6 +506,7 @@ export function parseSupervisorConfigDocument(raw: Record<string, unknown>, reso
       typeof raw.codexModel === "string" && raw.codexModel.trim() !== ""
         ? raw.codexModel.trim()
         : undefined,
+    codexModelRoutingByTarget: parseCodexModelRoutingByTarget(raw.codexModelRoutingByTarget),
     boundedRepairModelStrategy:
       raw.boundedRepairModelStrategy === "fixed" ||
       raw.boundedRepairModelStrategy === "alias" ||

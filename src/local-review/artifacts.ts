@@ -80,7 +80,7 @@ function summarizeGuardrailProvenance(provenance: FinalizedLocalReview["artifact
 
 function summarizeModelRouting(finalized: FinalizedLocalReview): string[] {
   const summarizeRouting = (routing: LocalReviewExecutionRouting): string =>
-    `target=${routing.target} model=${routing.model ?? "inherit"} reasoning=${routing.reasoningEffort ?? "default"} requested_reasoning=${routing.requestedReasoningEffort ?? routing.reasoningEffort ?? "default"} effective_reasoning=${routing.reasoningEffort ?? "default"} reasoning_fallback_reason=${routing.reasoningEffortFallbackReason ?? "none"}`;
+    `target=${routing.target} model=${routing.model ?? "inherit"} requested_model=${routing.requestedModel ?? (routing.modelStrategy === "inherit" ? "inherit" : routing.model ?? "inherit")} effective_model=${routing.effectiveModel ?? routing.model ?? "unresolved"} model_route_source=${routing.modelRouteSource ?? "unavailable"} model_fallback_source=${routing.modelFallbackSource ?? "none"} model_capability_source=${routing.modelCapabilitySource ?? "unavailable"} model_capability_fallback_reason=${routing.modelCapabilityFallbackReason ?? "none"} reasoning=${routing.reasoningEffort ?? "default"} requested_reasoning=${routing.requestedReasoningEffort ?? routing.reasoningEffort ?? "default"} effective_reasoning=${routing.reasoningEffort ?? "default"} reasoning_fallback_reason=${routing.reasoningEffortFallbackReason ?? "none"}`;
   const lines = finalized.artifact.roleReports.map(
     (report) =>
       `- ${report.role}: ${summarizeRouting(report.routing)}`,

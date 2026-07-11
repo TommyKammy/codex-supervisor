@@ -242,15 +242,18 @@ These are the authoritative fields for Codex model selection:
 
 - `codexModelStrategy`
 - `codexModel`
+- `codexModelRoutingByTarget`
 - `boundedRepairModelStrategy`
 - `boundedRepairModel`
 - `localReviewModelStrategy`
 - `localReviewModel`
 
+`codexModelRoutingByTarget` is the canonical per-target override map. The flat `localReviewModelStrategy` and `localReviewModel` fields are deprecated compatibility inputs for `local_review_generic`; they remain supported, and a canonical generic entry takes precedence when both forms are present.
+
 Recommended default:
 
 - use `codexModelStrategy: "inherit"`
-- leave `boundedRepairModelStrategy` and `localReviewModelStrategy` unset unless you intentionally want overrides
+- leave `codexModelRoutingByTarget`, `boundedRepairModelStrategy`, and `localReviewModelStrategy` unset unless you intentionally want overrides
 - treat `fixed` and `alias` the same way for validation: both fail closed unless the matching model field is set explicitly
 
 ### Inherit the host default model
@@ -310,11 +313,29 @@ Use this when the main route should stay unchanged, but generic local-review tur
 }
 ```
 
+### Evaluate distinct local-review targets
+
+Use the canonical map only after recording a representative evaluation. Missing entries inherit the main supervisor route, and `inherit` remains the recommended default.
+
+```json
+{
+  "codexModelStrategy": "inherit",
+  "codexModelRoutingByTarget": {
+    "local_review_generic": { "strategy": "alias", "model": "candidate-generic" },
+    "local_review_specialist": { "strategy": "fixed", "model": "candidate-specialist" },
+    "local_review_verifier": { "strategy": "fixed", "model": "candidate-verifier" }
+  }
+}
+```
+
+The supported keys are `supervisor`, `local_review_generic`, `local_review_specialist`, and `local_review_verifier`. A `supervisor` entry replaces the base supervisor route; an existing bounded-repair override still takes precedence for `repairing_ci` and `addressing_review`. A target entry with `strategy: "inherit"` must omit `model`. Fixed and alias routes forward the configured model token unchanged; unavailable models and unknown aliases are not silently replaced with another tier.
+
 Validation rule:
 
 - `codexModelStrategy: "fixed"` or `codexModelStrategy: "alias"` requires `codexModel`
 - `boundedRepairModelStrategy: "fixed"` or `boundedRepairModelStrategy: "alias"` requires `boundedRepairModel`
 - `localReviewModelStrategy: "fixed"` or `localReviewModelStrategy: "alias"` requires `localReviewModel`
+- every `codexModelRoutingByTarget` fixed or alias entry requires a non-empty `model`; inherit entries must omit it
 
 ## The Config Questions Most Beginners Ask
 
@@ -676,6 +697,7 @@ Recommended default:
 Practical rule of thumb:
 
 - use `inherit` unless you have a strong reason not to
+- leave `codexModelRoutingByTarget` unset until a fixture or recorded evaluation shows quality guardrails plus a measurable latency or cost benefit
 - leave `boundedRepairModelStrategy` unset unless you intentionally want smaller models for repair turns
 - reserve `xhigh` for escalation paths rather than using it everywhere
 - automatic reasoning escalation follows `none < low < medium < high < xhigh < max`; it never selects `ultra`
@@ -683,6 +705,7 @@ Practical rule of thumb:
 - `ultra` is explicit-only through `codexReasoningEffortByState`. It is forwarded only for the `supervisor` execution target when the effective model's live catalog reports `ultra`; unsupported supervisor routes and every local-review route clamp to a supported non-delegating effort and report the fallback reason.
 - `ultra` is Codex-native automatic task delegation, not codex-supervisor's local-review role orchestration. Expect potentially higher latency, concurrent work, and cost, and enable it only after evaluating those tradeoffs for the managed repository.
 - `status`, `doctor`, supervisor execution-routing summaries, and local-review artifacts report requested/effective effort plus `reasoning_fallback_reason=unsupported_reasoning_effort|nested_delegation_blocked|none`
+- the same diagnostics report requested/effective model, route/fallback source, and catalog capability source for each execution target; a live catalog that omits the effective model is recorded as `capability_source=fallback fallback_reason=model_not_in_catalog`, while an unresolved inherited model uses `effective_model_unresolved`
 
 ### ChatGPT desktop app and the Codex CLI
 
@@ -701,6 +724,8 @@ OpenAI's current preview documentation lists these model IDs:
 | GPT-5.6 Luna | `gpt-5.6-luna` | Active-catalog reasoning levels are honored; without reported `ultra` support, explicit requests fall back safely. |
 
 Do not infer access from a model name appearing in documentation or from having a paid ChatGPT plan. During the documented preview, access is limited to selected organizations and scoped separately to approved API organizations and Codex workspaces; API approval does not imply Codex approval, and the preview is distinct from general ChatGPT availability. Keep `codexModelStrategy: "inherit"` as the resilient default so model changes do not require supervisor config churn, and pin a GPT-5.6 model only after confirming access in the exact account or workspace used by the supervisor.
+
+Treat Sol-for-verifier, Terra-for-specialists, and Luna-or-Terra-for-generic as evaluation hypotheses only. They are not maintained defaults or recommendations without recorded correctness, false-positive, verifier-agreement, retry, latency, and cost evidence.
 
 Availability is time-sensitive. Check the current OpenAI sources rather than copying this preview status into automation:
 

@@ -387,7 +387,10 @@ exit 0
     createConfig({
       codexBinary,
       codexModelStrategy: "fixed",
-      codexModel: "gpt-5.6-terra",
+      codexModel: "legacy-supervisor-model",
+      codexModelRoutingByTarget: {
+        supervisor: { strategy: "alias", model: "gpt-5.6-terra" },
+      },
       codexReasoningEffortByState: { implementing: "ultra" },
     }),
     workspacePath,
@@ -406,6 +409,13 @@ exit 0
   assert.deepEqual(result.routing, {
     target: "supervisor",
     model: "gpt-5.6-terra",
+    modelStrategy: "alias",
+    requestedModel: "gpt-5.6-terra",
+    effectiveModel: "gpt-5.6-terra",
+    modelRouteSource: "per_target_override",
+    modelFallbackSource: null,
+    modelCapabilitySource: "live_catalog",
+    modelCapabilityFallbackReason: null,
     requestedReasoningEffort: "ultra",
     reasoningEffort: "ultra",
     reasoningEffortFallbackReason: null,

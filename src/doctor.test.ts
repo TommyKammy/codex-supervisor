@@ -796,6 +796,16 @@ test("diagnoseSupervisorHost reports inherited host Codex defaults in doctor out
   assert.match(report, /doctor_codex_route_overrides repair=default_route\(gpt-5\.4\) local_review=default_route\(gpt-5\.4\)/);
   assert.match(report, new RegExp(`doctor_codex_host_default model=gpt-5\\.4 source=${codexHome.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}/config\\.toml`));
   assert.match(report, /doctor_codex_reasoning active=supervisor requested=max effective=xhigh reasoning_fallback_reason=unsupported_reasoning_effort/);
+  assert.match(
+    report,
+    /doctor_codex_target_route target=supervisor strategy=inherit requested_model=inherit effective_model=gpt-5\.4 route_source=inherited_host_default fallback_source=none requested_reasoning=high effective_reasoning=high reasoning_fallback_reason=none capability_source=fallback/,
+  );
+  assert.match(
+    report,
+    /doctor_codex_target_route target=local_review_generic strategy=inherit requested_model=inherit effective_model=gpt-5\.4 route_source=default_route fallback_source=inherited_host_default requested_reasoning=low effective_reasoning=low reasoning_fallback_reason=none capability_source=fallback/,
+  );
+  assert.match(report, /doctor_codex_target_route target=local_review_specialist /);
+  assert.match(report, /doctor_codex_target_route target=local_review_verifier /);
 });
 
 test("diagnoseSupervisorHost reports the active workspace Codex model and catalog", async (t) => {
@@ -854,6 +864,14 @@ printf '{"models":[{"slug":"gpt-5.6-terra","supported_reasoning_levels":["max","
   assert.match(report, /doctor_codex_model_policy default=inherit->gpt-5\.6-terra@inherited_host_default/);
   assert.match(report, /doctor_codex_host_default model=gpt-5\.6-terra/);
   assert.match(report, /doctor_codex_reasoning active=supervisor requested=ultra effective=ultra reasoning_fallback_reason=none capability_source=live_catalog/);
+  assert.match(
+    report,
+    /doctor_codex_target_route target=supervisor strategy=inherit requested_model=inherit effective_model=gpt-5\.6-terra route_source=inherited_host_default fallback_source=none requested_reasoning=ultra effective_reasoning=ultra reasoning_fallback_reason=none capability_source=live_catalog fallback_reason=none/,
+  );
+  assert.match(
+    report,
+    /doctor_codex_target_route target=local_review_verifier strategy=inherit requested_model=inherit effective_model=gpt-5\.6-terra route_source=default_route fallback_source=inherited_host_default/,
+  );
 });
 
 test("diagnoseSupervisorHost surfaces orphan prune candidates and representative eligibility reasons", async (t) => {

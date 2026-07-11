@@ -215,6 +215,8 @@ const EXPECTED_FAMILY_FILES = {
     "final-evaluation.ts",
     "finalize.ts",
     "index.ts",
+    "model-routing-evaluation-cli.ts",
+    "model-routing-evaluation.ts",
     "post-merge-audit.ts",
     "preparation.ts",
     "prompt.ts",

@@ -39,13 +39,20 @@ test("renderCodexExecutionSummary preserves requested and effective reasoning pr
       routing: {
         target: "supervisor",
         model: "gpt-5.6-luna",
+        modelStrategy: "alias",
+        requestedModel: "gpt-5.6-luna",
+        effectiveModel: "gpt-5.6-luna",
+        modelRouteSource: "per_target_override",
+        modelFallbackSource: null,
+        modelCapabilitySource: "live_catalog",
+        modelCapabilityFallbackReason: null,
         requestedReasoningEffort: "ultra",
         reasoningEffort: "max",
         reasoningEffortFallbackReason: "unsupported_reasoning_effort",
       },
     }),
     [
-      "codex_execution_routing target=supervisor model=gpt-5.6-luna requested_reasoning=ultra effective_reasoning=max reasoning_fallback_reason=unsupported_reasoning_effort",
+      "codex_execution_routing target=supervisor model=gpt-5.6-luna requested_model=gpt-5.6-luna effective_model=gpt-5.6-luna model_route_source=per_target_override model_fallback_source=none model_capability_source=live_catalog model_capability_fallback_reason=none requested_reasoning=ultra effective_reasoning=max reasoning_fallback_reason=unsupported_reasoning_effort",
       "Summary: implemented the bounded ultra route.",
     ].join("\n\n"),
   );

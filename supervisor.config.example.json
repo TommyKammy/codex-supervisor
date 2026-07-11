@@ -11,6 +11,7 @@
   "executionSafetyMode": "operator_gated",
   "codexModelStrategy": "inherit",
   "codexModel": "",
+  "codexModelRoutingByTarget": {},
   "boundedRepairModelStrategy": "",
   "boundedRepairModel": "",
   "localReviewModelStrategy": "",

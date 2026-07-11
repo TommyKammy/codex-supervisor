@@ -76,6 +76,7 @@ const KNOWN_CONFIG_KEYS = new Set([
   "executionSafetyMode",
   "codexModelStrategy",
   "codexModel",
+  "codexModelRoutingByTarget",
   "boundedRepairModelStrategy",
   "boundedRepairModel",
   "localReviewModelStrategy",

@@ -185,3 +185,106 @@ test("buildCodexModelPolicySnapshot preserves ultra provenance across supported,
     },
   );
 });
+
+test("buildCodexModelPolicySnapshot reports requested and effective routes for every execution target", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-model-policy-targets-"));
+  const codexHome = path.join(root, "codex-home");
+  const codexBinary = path.join(root, "catalog.js");
+  const previousCodexHome = process.env.CODEX_HOME;
+  t.after(async () => {
+    if (previousCodexHome === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = previousCodexHome;
+    await fs.rm(root, { recursive: true, force: true });
+  });
+  process.env.CODEX_HOME = codexHome;
+  await fs.mkdir(codexHome, { recursive: true });
+  await fs.writeFile(
+    codexBinary,
+    `#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify({models:[\n` +
+      `{slug:"gpt-5.6-sol",supported_reasoning_levels:["high","max"]},\n` +
+      `{slug:"gpt-5.6-terra",supported_reasoning_levels:["high","max"]},\n` +
+      `{slug:"gpt-5.6-luna",supported_reasoning_levels:["high","max"]}\n` +
+      `]}));\n`,
+    { mode: 0o755 },
+  );
+
+  const snapshot = await buildCodexModelPolicySnapshot({
+    config: createConfig({
+      codexBinary,
+      codexModelStrategy: "fixed",
+      codexModel: "legacy-supervisor",
+      localReviewModelStrategy: "alias",
+      localReviewModel: "legacy-generic",
+      codexModelRoutingByTarget: {
+        supervisor: { strategy: "fixed", model: "gpt-5.6-sol" },
+        local_review_generic: { strategy: "alias", model: "gpt-5.6-luna" },
+        local_review_specialist: { strategy: "fixed", model: "gpt-5.6-terra" },
+        local_review_verifier: { strategy: "inherit" },
+      },
+      codexReasoningEffortByState: { local_review: "max" },
+    }),
+    activeState: "local_review",
+    activeRecord: null,
+  });
+
+  assert.deepEqual(snapshot.targetRoutes, {
+    supervisor: {
+      strategy: "fixed",
+      configuredModel: "gpt-5.6-sol",
+      effectiveModel: "gpt-5.6-sol",
+      source: "per_target_override",
+      fallbackSource: null,
+      requestedReasoningEffort: "high",
+      reasoningEffort: "high",
+      reasoningEffortFallbackReason: null,
+      capabilitySource: "live_catalog",
+      capabilityFallbackReason: null,
+    },
+    local_review_generic: {
+      strategy: "alias",
+      configuredModel: "gpt-5.6-luna",
+      effectiveModel: "gpt-5.6-luna",
+      source: "per_target_override",
+      fallbackSource: null,
+      requestedReasoningEffort: "max",
+      reasoningEffort: "max",
+      reasoningEffortFallbackReason: null,
+      capabilitySource: "live_catalog",
+      capabilityFallbackReason: null,
+    },
+    local_review_specialist: {
+      strategy: "fixed",
+      configuredModel: "gpt-5.6-terra",
+      effectiveModel: "gpt-5.6-terra",
+      source: "per_target_override",
+      fallbackSource: null,
+      requestedReasoningEffort: "max",
+      reasoningEffort: "max",
+      reasoningEffortFallbackReason: null,
+      capabilitySource: "live_catalog",
+      capabilityFallbackReason: null,
+    },
+    local_review_verifier: {
+      strategy: "inherit",
+      configuredModel: null,
+      effectiveModel: "gpt-5.6-sol",
+      source: "per_target_override",
+      fallbackSource: "per_target_override",
+      requestedReasoningEffort: "max",
+      reasoningEffort: "max",
+      reasoningEffortFallbackReason: null,
+      capabilitySource: "live_catalog",
+      capabilityFallbackReason: null,
+    },
+  });
+
+  const doctorLines = renderDoctorCodexModelPolicyLines(snapshot);
+  assert.match(
+    doctorLines.join("\n"),
+    /doctor_codex_target_route target=local_review_generic strategy=alias requested_model=gpt-5\.6-luna effective_model=gpt-5\.6-luna route_source=per_target_override fallback_source=none requested_reasoning=max effective_reasoning=max reasoning_fallback_reason=none capability_source=live_catalog fallback_reason=none/,
+  );
+  assert.match(
+    doctorLines.join("\n"),
+    /doctor_codex_target_route target=local_review_verifier strategy=inherit requested_model=inherit effective_model=gpt-5\.6-sol route_source=per_target_override fallback_source=per_target_override/,
+  );
+});

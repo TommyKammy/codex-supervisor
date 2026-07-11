@@ -1,6 +1,9 @@
 import type { GitHubIssue } from "../github/types";
 import type {
   CodexExecutionTarget,
+  CodexModelCapabilitySource,
+  CodexModelRouteSource,
+  CodexModelStrategy,
   CopilotReviewTimeoutAction,
   LatestLocalCiResult,
   LocalCiRemediationTarget,
@@ -27,7 +30,11 @@ export type {
   CadenceDiagnosticsSummary,
   CandidateDiscoveryDiagnostics,
   CodexExecutionTarget,
+  CodexModelRouteSource,
+  CodexModelCapabilitySource,
+  CodexModelRoutingByTarget,
   CodexModelStrategy,
+  CodexTargetModelRoute,
   ConfiguredReviewProvider,
   ConfiguredReviewProviderKind,
   ConfiguredReviewSignalSource,
@@ -383,6 +390,13 @@ export interface CodexTurnResult {
 export interface CodexExecutionRouting {
   target: CodexExecutionTarget;
   model: string | null;
+  modelStrategy?: CodexModelStrategy;
+  requestedModel?: string | null;
+  effectiveModel?: string | null;
+  modelRouteSource?: CodexModelRouteSource;
+  modelFallbackSource?: CodexModelRouteSource | null;
+  modelCapabilitySource?: CodexModelCapabilitySource;
+  modelCapabilityFallbackReason?: string | null;
   requestedReasoningEffort: ReasoningEffort | null;
   reasoningEffort: ReasoningEffort | null;
   reasoningEffortFallbackReason: ReasoningEffortFallbackReason | null;
