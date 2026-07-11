@@ -6599,6 +6599,170 @@ test("reconcileRecoverableBlockedIssueStates binds a legacy no-PR verification b
   assert.match(recoveryEvents[0]?.reason ?? "", /scheduled_review_repair=yes/);
 });
 
+test("reconcileRecoverableBlockedIssueStates applies progressing projections when binding legacy manual-review PRs", async () => {
+  const projectedStates = ["pr_open", "waiting_ci", "ready_to_merge"] as const;
+
+  for (const [index, projectedState] of projectedStates.entries()) {
+    const issueNumber = 406 + index;
+    const prNumber = 410 + index;
+    const branch = `codex/issue-${issueNumber}`;
+    const headSha = `head-${prNumber}`;
+    const staleManualContext = {
+      category: "review" as const,
+      summary: "Legacy manual review blocker remained after the PR advanced.",
+      signature: `legacy-manual-review-${issueNumber}`,
+      command: null,
+      details: ["legacy no-PR manual review state"],
+      url: null,
+      updated_at: "2026-07-12T00:00:00Z",
+    };
+    const original = createRecord({
+      issue_number: issueNumber,
+      branch,
+      state: "blocked",
+      blocked_reason: "manual_review",
+      pr_number: null,
+      last_error: staleManualContext.summary,
+      last_failure_context: staleManualContext,
+      last_failure_signature: staleManualContext.signature,
+      repeated_failure_signature_count: 2,
+    });
+    const state = createSupervisorState({ issues: [original] });
+    const config = createConfig();
+    const issue = createIssue({ number: issueNumber });
+    const pullRequest = createPullRequest({
+      number: prNumber,
+      baseRefName: config.defaultBranch,
+      headRefName: branch,
+      headRefOid: headSha,
+      headRepositoryOwner: { login: "owner" },
+      isCrossRepository: false,
+      state: "OPEN",
+      mergedAt: null,
+    });
+    const stateStore = createCountingStateStore("2026-07-12T00:01:00Z");
+
+    const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
+      {
+        findOpenPullRequestsForBranch: async () => [pullRequest],
+        getPullRequestIfExists: async () => pullRequest,
+        getIssue: async () => issue,
+        getChecks: async () => [],
+        getUnresolvedReviewThreads: async () => [],
+      },
+      stateStore.stateStore,
+      state,
+      config,
+      [issue],
+      {
+        shouldAutoRetryHandoffMissing,
+        inferStateFromPullRequest: () => projectedState,
+        inferFailureContext: () => null,
+        blockedReasonForLifecycleState: () => null,
+        isOpenPullRequest,
+        syncReviewWaitWindow: () => ({}),
+        syncCopilotReviewRequestObservation: () => ({}),
+        syncCopilotReviewTimeoutState: noCopilotReviewTimeoutPatch,
+      },
+    );
+
+    const updated = state.issues[String(issueNumber)]!;
+    assert.equal(updated.state, projectedState);
+    assert.equal(updated.blocked_reason, null);
+    assert.equal(updated.pr_number, prNumber);
+    assert.equal(updated.last_head_sha, headSha);
+    assert.equal(updated.last_error, null);
+    assert.equal(updated.last_failure_context, null);
+    assert.equal(updated.last_failure_signature, null);
+    assert.equal(updated.repeated_failure_signature_count, 0);
+    assert.equal(stateStore.saveCalls, 1);
+    assert.equal(recoveryEvents.length, 1);
+  }
+});
+
+test("reconcileRecoverableBlockedIssueStates keeps an independent verifier blocked when a unique PR projects open", async () => {
+  const issueNumber = 413;
+  const prNumber = 414;
+  const branch = `codex/issue-${issueNumber}`;
+  const headSha = `head-${prNumber}`;
+  const failureContext = {
+    category: "blocked" as const,
+    summary: "Independent verifier remains blocked.",
+    signature: "independent-verifier-blocked",
+    command: "npm run verify:images",
+    details: ["structured_blocked_reason=verification"],
+    url: null,
+    updated_at: "2026-07-12T00:02:00Z",
+  };
+  const original = createRecord({
+    issue_number: issueNumber,
+    branch,
+    state: "blocked",
+    blocked_reason: "verification",
+    pr_number: null,
+    last_head_sha: "head-before-414",
+    last_error: failureContext.summary,
+    last_failure_context: failureContext,
+    last_failure_signature: failureContext.signature,
+    repeated_failure_signature_count: 2,
+    repeated_blocker_count: 2,
+    blocked_verification_retry_count: 1,
+  });
+  const state = createSupervisorState({ issues: [original] });
+  const config = createConfig();
+  const issue = createIssue({ number: issueNumber });
+  const pullRequest = createPullRequest({
+    number: prNumber,
+    baseRefName: config.defaultBranch,
+    headRefName: branch,
+    headRefOid: headSha,
+    headRepositoryOwner: { login: "owner" },
+    isCrossRepository: false,
+    state: "OPEN",
+    mergedAt: null,
+  });
+  const stateStore = createCountingStateStore("2026-07-12T00:03:00Z");
+
+  const recoveryEvents = await reconcileRecoverableBlockedIssueStates(
+    {
+      findOpenPullRequestsForBranch: async () => [pullRequest],
+      getPullRequestIfExists: async () => pullRequest,
+      getIssue: async () => issue,
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    stateStore.stateStore,
+    state,
+    config,
+    [issue],
+    {
+      shouldAutoRetryHandoffMissing,
+      inferStateFromPullRequest: () => "pr_open",
+      inferFailureContext: () => null,
+      blockedReasonForLifecycleState: () => null,
+      isOpenPullRequest,
+      syncReviewWaitWindow: () => ({}),
+      syncCopilotReviewRequestObservation: () => ({}),
+      syncCopilotReviewTimeoutState: noCopilotReviewTimeoutPatch,
+    },
+  );
+
+  const updated = state.issues[String(issueNumber)]!;
+  assert.equal(updated.state, "blocked");
+  assert.equal(updated.blocked_reason, "verification");
+  assert.equal(updated.pr_number, prNumber);
+  assert.equal(updated.last_head_sha, headSha);
+  assert.equal(updated.last_error, failureContext.summary);
+  assert.deepEqual(updated.last_failure_context, failureContext);
+  assert.equal(updated.last_failure_signature, failureContext.signature);
+  assert.match(
+    updated.last_tracked_pr_progress_summary ?? "",
+    /scheduled_review_repair=no/,
+  );
+  assert.equal(stateStore.saveCalls, 1);
+  assert.equal(recoveryEvents.length, 1);
+});
+
 test("reconcileRecoverableBlockedIssueStates leaves ambiguous branch PR matches unbound with explicit diagnostics", async () => {
   const issueNumber = 394;
   const branch = `codex/issue-${issueNumber}`;

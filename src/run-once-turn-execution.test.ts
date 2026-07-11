@@ -32,6 +32,7 @@ import {
   codexTurnVerificationIncludesCommand,
   explicitFailedCodexTurnVerificationCommand,
   explicitPassingCodexTurnVerificationCommand,
+  explicitSinglePassingCodexTurnVerificationCommand,
 } from "./run-once-turn-verification-evidence";
 
 const SAMPLE_UNIX_WORKSTATION_PATH = `/${"home"}/alice/dev/private-repo`;
@@ -141,6 +142,40 @@ test("failed structured verification retains a command identity that later passi
       "npm run verify:images passed; npm test failed",
     ),
     "npm run verify:images",
+  );
+  assert.equal(
+    explicitSinglePassingCodexTurnVerificationCommand(
+      "npm run verify:images",
+    ),
+    "npm run verify:images",
+  );
+  assert.equal(
+    explicitSinglePassingCodexTurnVerificationCommand(
+      "npm run verify:images; passed",
+    ),
+    "npm run verify:images",
+  );
+  assert.equal(
+    explicitSinglePassingCodexTurnVerificationCommand("passed"),
+    null,
+  );
+  assert.equal(
+    explicitSinglePassingCodexTurnVerificationCommand(
+      "npm run verify:images passed; npm test failed",
+    ),
+    null,
+  );
+  assert.equal(
+    explicitSinglePassingCodexTurnVerificationCommand(
+      "npm run verify:images; ambiguous",
+    ),
+    null,
+  );
+  assert.equal(
+    explicitSinglePassingCodexTurnVerificationCommand(
+      "npm run verify:images; npm test",
+    ),
+    null,
   );
 });
 
@@ -5534,14 +5569,28 @@ test(`executeCodexTurnPhase binds a uniquely resolved open PR before persisting 
 });
 }
 
-test("executeCodexTurnPhase preserves an independent verifier when review repair ends with a structured terminal hint", async () => {
+for (const terminalVerifierScenario of [
+  {
+    name: "preserves an independent verifier when review repair ends with a structured terminal hint",
+    legacyCommand: "npm run verify:images",
+    tests: "not run",
+    preserves: true,
+  },
+  {
+    name: "replaces a legacy commandless verifier after one passing command and a structured terminal hint",
+    legacyCommand: null,
+    tests: "npm run verify:images",
+    preserves: false,
+  },
+] as const) {
+test(`executeCodexTurnPhase ${terminalVerifierScenario.name}`, async () => {
   const branch = "codex/issue-103";
   const repairedHead = "head-repaired-103";
   const failureContext = {
     category: "blocked" as const,
     summary: "Image verification remains blocked.",
     signature: "gitops-images-high-critical",
-    command: "npm run verify:images",
+    command: terminalVerifierScenario.legacyCommand,
     details: ["structured_blocked_reason=verification"],
     url: null,
     updated_at: "2026-07-11T12:35:00Z",
@@ -5665,7 +5714,7 @@ test("executeCodexTurnPhase preserves an independent verifier when review repair
         blockedReason: "secrets",
         failureSignature: "secrets:review-repair",
         nextAction: "provide the token",
-        tests: "not run",
+        tests: terminalVerifierScenario.tests,
       },
       failureKind: null,
       failureContext: null,
@@ -5675,22 +5724,49 @@ test("executeCodexTurnPhase preserves an independent verifier when review repair
   const updated = state.issues["103"]!;
   assert.equal(result.kind, "returned");
   assert.equal(updated.state, "blocked");
-  assert.equal(updated.blocked_reason, "verification");
+  assert.equal(
+    updated.blocked_reason,
+    terminalVerifierScenario.preserves ? "verification" : "secrets",
+  );
   assert.equal(updated.pr_number, 203);
   assert.equal(updated.last_head_sha, repairedHead);
-  assert.equal(updated.last_failure_context?.command, "npm run verify:images");
-  assert.equal(updated.last_failure_signature, failureContext.signature);
-  assert.equal(updated.repeated_failure_signature_count, 3);
-  assert.equal(updated.last_blocker_signature, "verification:images");
-  assert.equal(updated.repeated_blocker_count, 2);
-  assert.equal(updated.blocked_verification_retry_count, 1);
+  assert.equal(
+    updated.last_failure_context?.command,
+    terminalVerifierScenario.preserves ? "npm run verify:images" : null,
+  );
+  assert.equal(
+    updated.last_failure_signature,
+    terminalVerifierScenario.preserves
+      ? failureContext.signature
+      : "secrets:review-repair",
+  );
+  assert.equal(
+    updated.repeated_failure_signature_count,
+    terminalVerifierScenario.preserves ? 3 : 1,
+  );
+  assert.equal(
+    updated.last_blocker_signature,
+    terminalVerifierScenario.preserves
+      ? "verification:images"
+      : "secrets:review-repair",
+  );
+  assert.equal(
+    updated.repeated_blocker_count,
+    terminalVerifierScenario.preserves ? 2 : 1,
+  );
+  assert.equal(
+    updated.blocked_verification_retry_count,
+    terminalVerifierScenario.preserves ? 1 : 0,
+  );
   assert.match(updated.last_error ?? "", /Need token/);
-  assert.ok(
+  assert.equal(
     updated.last_failure_context?.details.includes(
       "review_repair_terminal_blocked_reason=secrets",
     ),
+    terminalVerifierScenario.preserves,
   );
 });
+}
 
 for (const verifierScenario of [
   { name: "keeps an unverified blocker", tests: "not run", preserves: true },
@@ -5699,6 +5775,36 @@ for (const verifierScenario of [
     name: "clears a blocker when its command passes in mixed results",
     tests: "npm run verify:images passed; npm test failed",
     preserves: false,
+  },
+  {
+    name: "clears a legacy commandless blocker after one passing command",
+    tests: "npm run verify:images",
+    preserves: false,
+    legacyCommandMissing: true,
+  },
+  {
+    name: "keeps a legacy commandless blocker after an arbitrary pass",
+    tests: "passed",
+    preserves: true,
+    legacyCommandMissing: true,
+  },
+  {
+    name: "keeps a legacy commandless blocker after mixed results",
+    tests: "npm run verify:images passed; npm test failed",
+    preserves: true,
+    legacyCommandMissing: true,
+  },
+  {
+    name: "keeps a legacy commandless blocker after multiple passing commands",
+    tests: "npm run verify:images; npm test",
+    preserves: true,
+    legacyCommandMissing: true,
+  },
+  {
+    name: "keeps a legacy commandless blocker after ambiguous evidence",
+    tests: "npm run verify:images; ambiguous",
+    preserves: true,
+    legacyCommandMissing: true,
   },
 ] as const) {
 test(`executeCodexTurnPhase ${verifierScenario.name} after review repair advances the PR head`, async () => {
@@ -5709,7 +5815,10 @@ test(`executeCodexTurnPhase ${verifierScenario.name} after review repair advance
     category: "blocked" as const,
     summary: "Image verification remains blocked.",
     signature: "gitops-images-high-critical",
-    command: "npm run verify:images",
+    command: "legacyCommandMissing" in verifierScenario &&
+        verifierScenario.legacyCommandMissing
+      ? null
+      : "npm run verify:images",
     details: ["structured_blocked_reason=verification"],
     url: null,
     updated_at: "2026-07-11T12:35:00Z",

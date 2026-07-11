@@ -408,9 +408,11 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
           schedulesReviewRepair &&
           record.blocked_reason === "verification" &&
           record.last_failure_context !== null;
-        const rehydratesUnknownBlocker = record.blocked_reason === "unknown";
-        const projectedUnknownFailureContext =
-          rehydratesUnknownBlocker && projection.nextState === "blocked"
+        const rehydratesProjectedLifecycle =
+          !projection.shouldSuppressRecovery &&
+          record.blocked_reason !== "verification";
+        const projectedFailureContext =
+          rehydratesProjectedLifecycle && projection.nextState === "blocked"
             ? inferFailureContextImpl(
               config,
               projection.recordForState,
@@ -424,13 +426,13 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
           `blocked_turn_pr_reconciled: bound issue #${record.issue_number} to PR #${trackedPullRequest.number} ` +
             `at head ${trackedPullRequest.headRefOid} scheduled_review_repair=${schedulesReviewRepair ? "yes" : "no"}`,
         );
-        const boundPatch: Partial<IssueRunRecord> = rehydratesUnknownBlocker
+        const boundPatch: Partial<IssueRunRecord> = rehydratesProjectedLifecycle
           ? {
             ...buildTrackedPrStaleFailureConvergencePatch({
               record,
               pr: trackedPullRequest,
               nextState: projection.nextState,
-              failureContext: projectedUnknownFailureContext,
+              failureContext: projectedFailureContext,
               blockedReason: projection.nextBlockedReason,
               reviewWaitPatch: projection.reviewWaitPatch,
               codexConnectorReviewRequestObservationPatch:

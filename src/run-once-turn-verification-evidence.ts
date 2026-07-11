@@ -251,6 +251,46 @@ export function explicitPassingCodexTurnVerificationCommand(
   return value;
 }
 
+export function explicitSinglePassingCodexTurnVerificationCommand(
+  tests: string | null | undefined,
+): string | null {
+  const value = tests?.trim();
+  if (
+    !value ||
+    hasExplicitNegativeCodexTurnVerificationOutcome(value)
+  ) {
+    return null;
+  }
+
+  const entries = splitCodexTurnVerificationEntries(value);
+  const commands: string[] = [];
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index]!;
+    if (!CODEX_TURN_VERIFICATION_COMMAND_PATTERN.test(entry)) {
+      return null;
+    }
+
+    const inlineOutcome = splitVerificationOutcomeSuffix(entry);
+    if (inlineOutcome?.outcome === "failed") {
+      return null;
+    }
+    if (
+      hasSpaceSeparatedOutcomeSuffix(entry) &&
+      inlineOutcome === null
+    ) {
+      return null;
+    }
+
+    const nextEntry = entries[index + 1] ?? "";
+    if (/^(?:passed|pass|success|succeeded)[.!]?$/iu.test(nextEntry)) {
+      index += 1;
+    }
+    commands.push(inlineOutcome?.command ?? entry);
+  }
+
+  return commands.length === 1 ? commands[0]! : null;
+}
+
 export function explicitFailedCodexTurnVerificationCommand(
   tests: string | null | undefined,
 ): string | null {

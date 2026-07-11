@@ -75,6 +75,7 @@ import { applyCodexTurnPublicationGate } from "./turn-execution-publication-gate
 import {
   explicitFailedCodexTurnVerificationCommand,
   explicitPassingCodexTurnVerificationCommand,
+  explicitSinglePassingCodexTurnVerificationCommand,
   codexTurnVerificationIncludesCommand,
 } from "./run-once-turn-verification-evidence";
 import {
@@ -515,6 +516,10 @@ export async function executeCodexTurnPhase(
           explicitFailedCodexTurnVerificationCommand(structuredResult?.tests);
         const hintedPassingVerificationCommand =
           explicitPassingCodexTurnVerificationCommand(structuredResult?.tests);
+        const hintedSinglePassingVerificationCommand =
+          explicitSinglePassingCodexTurnVerificationCommand(
+            structuredResult?.tests,
+          );
         const preTurnFailureContext = record.last_failure_context;
         const preTurnFailureSignature = record.last_failure_signature;
         const preTurnStaleNoPrRecoveryCount =
@@ -630,11 +635,13 @@ export async function executeCodexTurnPhase(
           const preservesCarriedVerificationBlocker =
             carriedVerificationBlocker !== null &&
             !(
-              hintedPassingVerificationCommand !== null &&
-              codexTurnVerificationIncludesCommand(
-                hintedPassingVerificationCommand,
-                carriedVerificationBlocker.lastFailureContext.command,
-              )
+              carriedVerificationBlocker.lastFailureContext.command === null
+                ? hintedSinglePassingVerificationCommand !== null
+                : hintedPassingVerificationCommand !== null &&
+                  codexTurnVerificationIncludesCommand(
+                    hintedPassingVerificationCommand,
+                    carriedVerificationBlocker.lastFailureContext.command,
+                  )
             );
           let workspaceReconciliationDiagnostic: string | null = null;
           let reconciledWorkspaceHeadSha: string | null = null;
@@ -686,6 +693,10 @@ export async function executeCodexTurnPhase(
               : {}),
             ...(reconciledPullRequest
               ? { pr_number: reconciledPullRequest.number }
+              : {}),
+            ...(carriedVerificationBlocker !== null &&
+                !preservesCarriedVerificationBlocker
+              ? { blocked_verification_retry_count: 0 }
               : {}),
             last_tracked_pr_progress_summary: terminalReconciliationDiagnostic,
           });
@@ -1011,6 +1022,10 @@ export async function executeCodexTurnPhase(
 
         const codexVerificationCommand =
           explicitPassingCodexTurnVerificationCommand(structuredResult?.tests);
+        const singlePassingCodexVerificationCommand =
+          explicitSinglePassingCodexTurnVerificationCommand(
+            structuredResult?.tests,
+          );
         const failedCodexVerificationCommand =
           explicitFailedCodexTurnVerificationCommand(structuredResult?.tests);
         const changedFilesAfterPublication =
@@ -1058,11 +1073,13 @@ export async function executeCodexTurnPhase(
             args.inferStateWithoutPullRequest(record, workspaceStatus));
         const carriedVerificationCommandPassed =
           carriedVerificationBlocker !== null &&
-          codexVerificationCommand !== null &&
-          codexTurnVerificationIncludesCommand(
-            codexVerificationCommand,
-            carriedVerificationBlocker.lastFailureContext.command,
-          );
+          (carriedVerificationBlocker.lastFailureContext.command === null
+            ? singlePassingCodexVerificationCommand !== null
+            : codexVerificationCommand !== null &&
+              codexTurnVerificationIncludesCommand(
+                codexVerificationCommand,
+                carriedVerificationBlocker.lastFailureContext.command,
+              ));
         const preserveCarriedVerificationBlocker =
           carriedVerificationBlocker !== null &&
           !carriedVerificationCommandPassed;
