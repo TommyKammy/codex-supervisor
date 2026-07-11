@@ -327,70 +327,125 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
       continue;
     }
 
-    const shouldReconcileUntrackedBlockedTurnPullRequest =
-      record.pr_number === null &&
-      (
-        record.blocked_reason === null ||
-        record.blocked_reason === "manual_review" ||
-        record.blocked_reason === "unknown" ||
-        record.blocked_reason === "verification"
-      ) &&
-      github.findOpenPullRequestsForBranch !== undefined;
-    if (shouldReconcileUntrackedBlockedTurnPullRequest) {
-      const reconciliation = await reconcileBlockedTurnPullRequest({
-        github,
-        state,
-        record,
-        defaultBranch: config.defaultBranch,
-        repoSlug: config.repoSlug,
-        purpose: "action",
-      });
-      if (reconciliation.kind !== "bound") {
-        const diagnosticPatch: Partial<IssueRunRecord> = {
-          last_tracked_pr_progress_summary: reconciliation.diagnostic,
-        };
-        if (needsRecordUpdate(record, diagnosticPatch)) {
-          const updated = stateStore.touch(record, diagnosticPatch);
-          state.issues[String(record.issue_number)] = updated;
-          changed = true;
+    untrackedBlockedTurnPullRequest: {
+      const shouldReconcileUntrackedBlockedTurnPullRequest =
+        record.pr_number === null &&
+        (
+          record.blocked_reason === null ||
+          record.blocked_reason === "manual_review" ||
+          record.blocked_reason === "unknown" ||
+          record.blocked_reason === "verification"
+        ) &&
+        github.findOpenPullRequestsForBranch !== undefined;
+      if (shouldReconcileUntrackedBlockedTurnPullRequest) {
+        const reconciliation = await reconcileBlockedTurnPullRequest({
+          github,
+          state,
+          record,
+          defaultBranch: config.defaultBranch,
+          repoSlug: config.repoSlug,
+          purpose: "action",
+        });
+        if (reconciliation.kind !== "bound") {
+          const diagnosticPatch: Partial<IssueRunRecord> = {
+            last_tracked_pr_progress_summary: reconciliation.diagnostic,
+          };
+          if (needsRecordUpdate(record, diagnosticPatch)) {
+            const updated = stateStore.touch(record, diagnosticPatch);
+            state.issues[String(record.issue_number)] = updated;
+            changed = true;
+          }
+          const absentCanUseExistingNoPrRecovery =
+            reconciliation.kind === "absent" &&
+            (
+              shouldReconsiderBlockedNoPrStaleManualStop(record, issue) ||
+              shouldReconsiderGenericNoPrIssueDefinitionChange(record, issue)
+            );
+          if (absentCanUseExistingNoPrRecovery) {
+            break untrackedBlockedTurnPullRequest;
+          }
+          continue;
         }
-        continue;
-      }
 
-      const trackedPullRequest = reconciliation.pullRequest;
-      const checks = await github.getChecks(trackedPullRequest.number);
-      const reviewThreads = await github.getUnresolvedReviewThreads(
-        trackedPullRequest.number,
-      );
-      const projection = projectTrackedPrLifecycle({
-        config,
-        record,
-        pr: trackedPullRequest,
-        checks,
-        reviewThreads,
-        inferStateFromPullRequest: inferStateFromPullRequestImpl,
-        blockedReasonForLifecycleState: blockedReasonForLifecycleStateImpl,
-        syncReviewWaitWindow: syncReviewWaitWindowImpl,
-        syncCopilotReviewRequestObservation:
-          syncCopilotReviewRequestObservationImpl,
-        syncCopilotReviewTimeoutState: syncCopilotReviewTimeoutStateImpl,
-      });
-      const schedulesReviewRepair =
-        !projection.shouldSuppressRecovery &&
-        projection.nextState === "addressing_review";
-      const preserveIndependentVerificationBlocker =
-        schedulesReviewRepair &&
-        record.blocked_reason === "verification" &&
-        record.last_failure_context !== null;
-      const recoveryEvent = buildRecoveryEvent(
-        record.issue_number,
-        `blocked_turn_pr_reconciled: bound issue #${record.issue_number} to PR #${trackedPullRequest.number} ` +
-          `at head ${trackedPullRequest.headRefOid} scheduled_review_repair=${schedulesReviewRepair ? "yes" : "no"}`,
-      );
-      const updated = stateStore.touch(
-        record,
-        applyRecoveryEvent(
-          {
+        const trackedPullRequest = reconciliation.pullRequest;
+        const checks = await github.getChecks(trackedPullRequest.number);
+        const reviewThreads = await github.getUnresolvedReviewThreads(
+          trackedPullRequest.number,
+        );
+        const projection = projectTrackedPrLifecycle({
+          config,
+          record,
+          pr: trackedPullRequest,
+          checks,
+          reviewThreads,
+          inferStateFromPullRequest: inferStateFromPullRequestImpl,
+          blockedReasonForLifecycleState: blockedReasonForLifecycleStateImpl,
+          syncReviewWaitWindow: syncReviewWaitWindowImpl,
+          syncCopilotReviewRequestObservation:
+            syncCopilotReviewRequestObservationImpl,
+          syncCopilotReviewTimeoutState: syncCopilotReviewTimeoutStateImpl,
+        });
+        if (
+          record.blocked_reason === "unknown" &&
+          projection.shouldSuppressRecovery
+        ) {
+          const suppressionPatch: Partial<IssueRunRecord> = {
+            last_tracked_pr_progress_summary:
+              `${reconciliation.diagnostic} projection_suppressed=yes`,
+          };
+          if (needsRecordUpdate(record, suppressionPatch)) {
+            const updated = stateStore.touch(record, suppressionPatch);
+            state.issues[String(record.issue_number)] = updated;
+            changed = true;
+          }
+          continue;
+        }
+
+        const schedulesReviewRepair =
+          !projection.shouldSuppressRecovery &&
+          projection.nextState === "addressing_review";
+        const preserveIndependentVerificationBlocker =
+          schedulesReviewRepair &&
+          record.blocked_reason === "verification" &&
+          record.last_failure_context !== null;
+        const rehydratesUnknownBlocker = record.blocked_reason === "unknown";
+        const projectedUnknownFailureContext =
+          rehydratesUnknownBlocker && projection.nextState === "blocked"
+            ? inferFailureContextImpl(
+              config,
+              projection.recordForState,
+              trackedPullRequest,
+              checks,
+              reviewThreads,
+            )
+            : null;
+        const recoveryEvent = buildRecoveryEvent(
+          record.issue_number,
+          `blocked_turn_pr_reconciled: bound issue #${record.issue_number} to PR #${trackedPullRequest.number} ` +
+            `at head ${trackedPullRequest.headRefOid} scheduled_review_repair=${schedulesReviewRepair ? "yes" : "no"}`,
+        );
+        const boundPatch: Partial<IssueRunRecord> = rehydratesUnknownBlocker
+          ? {
+            ...buildTrackedPrStaleFailureConvergencePatch({
+              record,
+              pr: trackedPullRequest,
+              nextState: projection.nextState,
+              failureContext: projectedUnknownFailureContext,
+              blockedReason: projection.nextBlockedReason,
+              reviewWaitPatch: projection.reviewWaitPatch,
+              codexConnectorReviewRequestObservationPatch:
+                projection.codexConnectorReviewRequestObservationPatch,
+              copilotReviewRequestObservationPatch:
+                projection.copilotReviewRequestObservationPatch,
+              copilotReviewTimeoutPatch: projection.copilotReviewTimeoutPatch,
+              mergeLatencyVisibilityPatch: projection.mergeLatencyVisibilityPatch,
+            }),
+            codex_session_id: null,
+            last_tracked_pr_progress_summary:
+              `${reconciliation.diagnostic} ` +
+              `scheduled_review_repair=${schedulesReviewRepair ? "yes" : "no"}`,
+          }
+          : {
             state: schedulesReviewRepair ? "addressing_review" : "blocked",
             blocked_reason: preserveIndependentVerificationBlocker
               ? "verification"
@@ -414,14 +469,16 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
             ...projection.copilotReviewRequestObservationPatch,
             ...projection.copilotReviewTimeoutPatch,
             ...projection.mergeLatencyVisibilityPatch,
-          },
-          recoveryEvent,
-        ),
-      );
-      state.issues[String(record.issue_number)] = updated;
-      changed = true;
-      recoveryEvents.push(recoveryEvent);
-      continue;
+          };
+        const updated = stateStore.touch(
+          record,
+          applyRecoveryEvent(boundPatch, recoveryEvent),
+        );
+        state.issues[String(record.issue_number)] = updated;
+        changed = true;
+        recoveryEvents.push(recoveryEvent);
+        continue;
+      }
     }
 
     if (shouldReconsiderBlockedNoPrStaleManualStop(record, issue)) {
@@ -710,17 +767,6 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
         syncCopilotReviewTimeoutState: syncCopilotReviewTimeoutStateImpl,
       });
       let nextState = projection.nextState;
-      if (
-        nextState === "pr_open" &&
-        trackedPullRequest.reviewDecision === "REVIEW_REQUIRED"
-      ) {
-        nextState = "addressing_review";
-      } else if (
-        nextState === "pr_open" &&
-        trackedPullRequest.reviewDecision === "CHANGES_REQUESTED"
-      ) {
-        nextState = "blocked";
-      }
       if (projection.shouldSuppressRecovery) {
         continue;
       }
@@ -885,9 +931,7 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
         ?? (preserveDraftReadyPromotionBlocker ? record.last_failure_context : null);
       const nextBlockedReason = preserveDraftReadyPromotionBlocker
         ? "verification"
-        : trackedPullRequest.reviewDecision === "CHANGES_REQUESTED"
-          ? "manual_review"
-          : projection.nextBlockedReason;
+        : projection.nextBlockedReason;
 
       if (nextState === "blocked" || preserveDraftReadyPromotionBlocker) {
         const headAdvanceResetPatch = resetTrackedPrHeadScopedStateOnAdvance(record, trackedPullRequest.headRefOid);

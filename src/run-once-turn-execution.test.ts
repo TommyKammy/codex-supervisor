@@ -31,6 +31,7 @@ import { WORKSTATION_LOCAL_PATH_HYGIENE_REPAIRABLE_PUBLICATION_SIGNATURE } from 
 import {
   codexTurnVerificationIncludesCommand,
   explicitFailedCodexTurnVerificationCommand,
+  explicitPassingCodexTurnVerificationCommand,
 } from "./run-once-turn-verification-evidence";
 
 const SAMPLE_UNIX_WORKSTATION_PATH = `/${"home"}/alice/dev/private-repo`;
@@ -94,6 +95,52 @@ test("failed structured verification retains a command identity that later passi
       selectorCommand,
     ),
     false,
+  );
+  assert.equal(
+    explicitFailedCodexTurnVerificationCommand("npm run verify:images failed"),
+    "npm run verify:images",
+  );
+  assert.equal(
+    explicitFailedCodexTurnVerificationCommand("npm test failed"),
+    "npm test",
+  );
+  assert.equal(
+    explicitFailedCodexTurnVerificationCommand("pytest -k failed"),
+    null,
+  );
+  assert.equal(
+    explicitFailedCodexTurnVerificationCommand("pytest -k smoke failed"),
+    null,
+  );
+  assert.equal(
+    explicitFailedCodexTurnVerificationCommand("npx vitest failed"),
+    null,
+  );
+  assert.equal(
+    explicitFailedCodexTurnVerificationCommand("npm run failed"),
+    null,
+  );
+  assert.equal(
+    explicitFailedCodexTurnVerificationCommand("npm test -- failed"),
+    null,
+  );
+  assert.equal(
+    explicitFailedCodexTurnVerificationCommand("npx vitest failed: failed"),
+    "npx vitest failed",
+  );
+  assert.equal(
+    explicitPassingCodexTurnVerificationCommand("npx vitest passed"),
+    null,
+  );
+  assert.equal(
+    explicitPassingCodexTurnVerificationCommand("npm test passed"),
+    "npm test",
+  );
+  assert.equal(
+    explicitPassingCodexTurnVerificationCommand(
+      "npm run verify:images passed; npm test failed",
+    ),
+    "npm run verify:images",
   );
 });
 
@@ -5648,6 +5695,11 @@ test("executeCodexTurnPhase preserves an independent verifier when review repair
 for (const verifierScenario of [
   { name: "keeps an unverified blocker", tests: "not run", preserves: true },
   { name: "clears a verified blocker", tests: "npm run verify:images", preserves: false },
+  {
+    name: "clears a blocker when its command passes in mixed results",
+    tests: "npm run verify:images passed; npm test failed",
+    preserves: false,
+  },
 ] as const) {
 test(`executeCodexTurnPhase ${verifierScenario.name} after review repair advances the PR head`, async () => {
   const branch = "codex/issue-102";
@@ -5672,6 +5724,7 @@ test(`executeCodexTurnPhase ${verifierScenario.name} after review repair advance
     last_failure_context: failureContext,
     last_failure_signature: failureContext.signature,
     repeated_failure_signature_count: 2,
+    last_blocker_signature: "verification:images",
     repeated_blocker_count: 2,
     blocked_verification_retry_count: 1,
   });
@@ -5823,6 +5876,10 @@ test(`executeCodexTurnPhase ${verifierScenario.name} after review repair advance
     verifierScenario.preserves ? 2 : 0,
   );
   assert.equal(updated.repeated_blocker_count, verifierScenario.preserves ? 2 : 0);
+  assert.equal(
+    updated.last_blocker_signature,
+    verifierScenario.preserves ? "verification:images" : null,
+  );
   assert.equal(
     updated.blocked_verification_retry_count,
     verifierScenario.preserves ? 1 : 0,

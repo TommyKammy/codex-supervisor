@@ -178,6 +178,19 @@ test("shouldAutoRetryBlockedVerification respects implementation budgets and rep
   assert.equal(
     shouldAutoRetryBlockedVerification(
       createRecord({
+        last_error: "Verification blocked: prerequisite not satisfied.",
+        blocked_reason: "verification",
+        pr_number: null,
+        last_tracked_pr_progress_summary:
+          "blocked_turn_pr_reconciliation=absent branch=codex/issue-102",
+      }),
+      config,
+    ),
+    false,
+  );
+  assert.equal(
+    shouldAutoRetryBlockedVerification(
+      createRecord({
         last_error: "Need token before continuing.",
         blocked_reason: "verification",
         last_failure_context: {

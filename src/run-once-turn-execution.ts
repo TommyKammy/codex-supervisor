@@ -1114,7 +1114,9 @@ export async function executeCodexTurnPhase(
           repeated_blocker_count: preserveCarriedVerificationBlocker
             ? carriedVerificationBlocker.repeatedBlockerCount
             : 0,
-          last_blocker_signature: null,
+          last_blocker_signature: preserveCarriedVerificationBlocker
+            ? carriedVerificationBlocker.lastBlockerSignature
+            : null,
           stale_stabilizing_no_pr_recovery_count:
             preserveStaleNoPrRecoveryTracking
               ? preTurnStaleNoPrRecoveryCount
