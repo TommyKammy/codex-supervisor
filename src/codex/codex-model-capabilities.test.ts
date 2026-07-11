@@ -64,6 +64,23 @@ printf '{"models":[{"slug":"%s","supported_reasoning_levels":["low"]}]}' "$slug"
   assert.equal(second.reasoningLevelsByModel.has("workspace-b"), true);
 });
 
+test("resolveCodexModelCapabilities refreshes an expired live catalog", async (t) => {
+  clearCodexModelCapabilitiesCacheForTests();
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-model-capabilities-refresh-"));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const binary = path.join(root, "mutable-catalog");
+  const catalog = path.join(root, "catalog.json");
+  await fs.writeFile(binary, "#!/bin/sh\ncat \"$PWD/catalog.json\"\n", { mode: 0o755 });
+  await fs.writeFile(catalog, '{"models":[{"slug":"gpt-5.6-terra","supported_reasoning_levels":["xhigh"]}]}');
+
+  const first = await resolveCodexModelCapabilities(binary, root);
+  await fs.writeFile(catalog, '{"models":[{"slug":"gpt-5.6-terra","supported_reasoning_levels":["max"]}]}');
+  const cached = await resolveCodexModelCapabilities(binary, root);
+  const refreshed = await resolveCodexModelCapabilities(binary, root, 0);
+  assert.strictEqual(cached, first);
+  assert.equal(refreshed.reasoningLevelsByModel.get("gpt-5.6-terra")?.has("max"), true);
+});
+
 test("resolveCodexModelCapabilities retries after a transient fallback result", async (t) => {
   clearCodexModelCapabilitiesCacheForTests();
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-model-capabilities-retry-"));

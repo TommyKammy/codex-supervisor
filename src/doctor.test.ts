@@ -816,7 +816,11 @@ test("diagnoseSupervisorHost reports the active workspace Codex model and catalo
   });
 
   await fs.mkdir(codexHome, { recursive: true });
-  await fs.writeFile(path.join(codexHome, "config.toml"), 'model = "gpt-5.6-sol"\n', "utf8");
+  await fs.writeFile(
+    path.join(codexHome, "config.toml"),
+    `model = "gpt-5.6-sol"\n\n[projects.${JSON.stringify(workspace)}]\ntrust_level = "trusted"\n`,
+    "utf8",
+  );
   await fs.mkdir(path.join(workspace, ".codex"), { recursive: true });
   await fs.writeFile(path.join(workspace, ".codex", "config.toml"), 'model = "gpt-5.6-terra"\n', "utf8");
   await fs.writeFile(codexBinary, `#!/bin/sh

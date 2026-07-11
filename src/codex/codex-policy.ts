@@ -94,13 +94,41 @@ function supportsMaxReasoningEffort(
   return normalized === "gpt-5.6-sol" || normalized?.startsWith("gpt-5.6-sol-") === true;
 }
 
+function resolveCatalogReasoningLevels(
+  model: string,
+  reasoningLevelsByModel: ReadonlyMap<string, ReadonlySet<ReasoningEffort>>,
+): ReadonlySet<ReasoningEffort> | undefined {
+  const exact = reasoningLevelsByModel.get(model);
+  if (exact) return exact;
+
+  const namespaceSeparator = model.indexOf("/");
+  const lookupModel = namespaceSeparator > 0 && namespaceSeparator === model.lastIndexOf("/")
+    ? model.slice(namespaceSeparator + 1)
+    : model;
+  const namespacedExact = reasoningLevelsByModel.get(lookupModel);
+  if (namespacedExact) return namespacedExact;
+
+  let longestPrefix: string | null = null;
+  for (const catalogModel of reasoningLevelsByModel.keys()) {
+    if (
+      lookupModel.startsWith(`${catalogModel}-`)
+      && (longestPrefix === null || catalogModel.length > longestPrefix.length)
+    ) {
+      longestPrefix = catalogModel;
+    }
+  }
+  return longestPrefix === null ? undefined : reasoningLevelsByModel.get(longestPrefix);
+}
+
 function clampReasoningEffortForModel(
   model: string | null,
   effort: ReasoningEffort,
   reasoningLevelsByModel?: ReadonlyMap<string, ReadonlySet<ReasoningEffort>>,
 ): ReasoningEffort | null {
   const normalized = model?.trim().toLowerCase();
-  const supported = normalized ? reasoningLevelsByModel?.get(normalized) : undefined;
+  const supported = normalized && reasoningLevelsByModel
+    ? resolveCatalogReasoningLevels(normalized, reasoningLevelsByModel)
+    : undefined;
   if (supported) {
     if (supported.size === 0) return null;
     if (supported.has(effort)) return effort;

@@ -251,6 +251,19 @@ test("resolveCodexExecutionPolicy allows catalog-backed Terra and Luna routes to
   }
 });
 
+test("resolveCodexExecutionPolicy uses Codex-style alias and dated-suffix catalog matching", () => {
+  const capabilities = new Map([
+    ["gpt-5.6", new Set(["high"] as const)],
+    ["gpt-5.6-terra", new Set(["high", "xhigh", "max"] as const)],
+  ]);
+  for (const model of ["openai/gpt-5.6-terra", "gpt-5.6-terra-2026-07-10"]) {
+    const config = createConfig({ codexModel: model, codexReasoningEffortByState: { implementing: "max" } });
+    assert.equal(resolveCodexExecutionPolicy(config, "implementing", undefined, "supervisor", {
+      reasoningLevelsByModel: capabilities,
+    }).reasoningEffort, "max");
+  }
+});
+
 test("resolveCodexExecutionPolicy clamps every unsupported effort to the live catalog", () => {
   const capabilities = new Map([
     ["gpt-5.6-terra", new Set(["low", "medium", "high", "xhigh"] as const)],

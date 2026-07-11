@@ -14,7 +14,14 @@ const REASONING_LEVELS = new Set<ReasoningEffort>(["none", "low", "medium", "hig
 const FALLBACK = new Map<string, ReadonlySet<ReasoningEffort>>([
   ["gpt-5.6-sol", new Set<ReasoningEffort>(["low", "medium", "high", "xhigh", "max"])],
 ]);
-const cache = new Map<string, Promise<CodexModelCapabilities>>();
+const LIVE_CATALOG_CACHE_TTL_MS = 60_000;
+
+interface CapabilityCacheEntry {
+  expiresAt: number;
+  pending: Promise<CodexModelCapabilities>;
+}
+
+const cache = new Map<string, CapabilityCacheEntry>();
 
 function fallback(reason: string): CodexModelCapabilities {
   return { reasoningLevelsByModel: FALLBACK, source: "fallback", fallbackReason: reason };
@@ -85,14 +92,16 @@ export async function probeCodexModelCapabilities(
 export function resolveCodexModelCapabilities(
   codexBinary: string,
   cwd = process.cwd(),
+  cacheTtlMs = LIVE_CATALOG_CACHE_TTL_MS,
 ): Promise<CodexModelCapabilities> {
   const cacheKey = JSON.stringify([codexBinary, path.resolve(cwd)]);
+  const now = Date.now();
   const existing = cache.get(cacheKey);
-  if (existing) return existing;
+  if (existing && cacheTtlMs > 0 && existing.expiresAt > now) return existing.pending;
   const pending = probeCodexModelCapabilities(codexBinary, 5_000, cwd);
-  cache.set(cacheKey, pending);
+  cache.set(cacheKey, { pending, expiresAt: now + Math.max(0, cacheTtlMs) });
   void pending.then((result) => {
-    if (result.source === "fallback" && cache.get(cacheKey) === pending) {
+    if (result.source === "fallback" && cache.get(cacheKey)?.pending === pending) {
       cache.delete(cacheKey);
     }
   });

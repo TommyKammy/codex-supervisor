@@ -111,14 +111,48 @@ function parseTopLevelTomlString(contents: string, key: string): string | null {
   return null;
 }
 
+function isCodexProjectTrusted(contents: string, cwd: string): boolean {
+  const resolvedCwd = path.resolve(cwd);
+  let currentProject: string | null = null;
+  for (const rawLine of contents.split(/\r?\n/u)) {
+    const line = rawLine.trim();
+    const projectHeader = /^\[projects\.(.+)\](?:\s+#.*)?$/u.exec(line);
+    if (projectHeader) {
+      const parsedProject = parseTomlQuotedString(projectHeader[1] ?? "");
+      currentProject = parsedProject === null ? null : path.resolve(parsedProject);
+      continue;
+    }
+    if (line.startsWith("[")) {
+      currentProject = null;
+      continue;
+    }
+    if (currentProject !== resolvedCwd) continue;
+
+    const separatorIndex = line.indexOf("=");
+    if (separatorIndex === -1 || line.slice(0, separatorIndex).trim() !== "trust_level") continue;
+    return parseTomlQuotedString(line.slice(separatorIndex + 1)) === "trusted";
+  }
+  return false;
+}
+
 export async function resolveHostCodexDefaultModel(cwd?: string): Promise<HostCodexDefaultModelResolution> {
-  const configPaths = [
-    ...(cwd ? [path.join(path.resolve(cwd), ".codex", "config.toml")] : []),
-    path.join(resolveCodexConfigDir(), "config.toml"),
-  ];
+  const userConfigPath = path.join(resolveCodexConfigDir(), "config.toml");
+  let userConfigContents: string | null = null;
+  try {
+    userConfigContents = await fs.readFile(userConfigPath, "utf8");
+  } catch {
+    // A missing user config also means there is no persisted project trust.
+  }
+
+  const configPaths = cwd && userConfigContents && isCodexProjectTrusted(userConfigContents, cwd)
+    ? [path.join(path.resolve(cwd), ".codex", "config.toml"), userConfigPath]
+    : [userConfigPath];
   for (const configPath of configPaths) {
     try {
-      const model = parseTopLevelTomlString(await fs.readFile(configPath, "utf8"), "model");
+      const contents = configPath === userConfigPath && userConfigContents !== null
+        ? userConfigContents
+        : await fs.readFile(configPath, "utf8");
+      const model = parseTopLevelTomlString(contents, "model");
       if (model !== null) {
         return { model, source: configPath };
       }
