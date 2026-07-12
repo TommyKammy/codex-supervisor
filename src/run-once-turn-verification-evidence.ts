@@ -69,10 +69,106 @@ function codexTurnVerificationCommandEntries(value: string | null | undefined): 
   return [...new Set([normalized, ...splitEntries])];
 }
 
+function splitCodexTurnVerificationEntries(value: string): string[] {
+  return value
+    .split(/[\n;]+/)
+    .map(normalizeCodexTurnVerificationCommandEntry)
+    .filter((candidate) => candidate.length > 0);
+}
+
+type CodexTurnVerificationOutcome = "passed" | "failed";
+
+function normalizedCodexTurnVerificationOutcome(
+  value: string,
+): CodexTurnVerificationOutcome {
+  return /^(?:passed|pass|success|succeeded)$/iu.test(value)
+    ? "passed"
+    : "failed";
+}
+
+function isUnambiguousSpaceSeparatedOutcomeCommand(value: string): boolean {
+  const normalized = value.replace(/^rtk\s+/u, "").trim();
+  return /^(?:npm|pnpm|yarn|bun)\s+(?:test|run\s+\S+)$/u.test(normalized);
+}
+
+function hasSpaceSeparatedOutcomeSuffix(value: string): boolean {
+  return /\s+(?:passed|pass|success|succeeded|failed|failure|error|timeout|blocked|skipped|skip|not\s+run)[.!]?$/iu.test(
+    normalizeCodexTurnVerificationCommandEntry(value),
+  );
+}
+
+function splitVerificationOutcomeSuffix(value: string): {
+  command: string;
+  outcome: CodexTurnVerificationOutcome;
+} | null {
+  const normalized = normalizeCodexTurnVerificationCommandEntry(value);
+  const delimitedOutcome = normalized.match(
+    /^(.*\S)(?:\s*:\s+|\s+(?:-|—)\s+|\s*\(\s*)(passed|pass|success|succeeded|failed|failure|error|timeout|blocked|skipped|skip|not\s+run)(?=$|[\s:.,;)]).*$/iu,
+  );
+  if (delimitedOutcome?.[1] && delimitedOutcome[2]) {
+    return {
+      command: normalizeCodexTurnVerificationCommandEntry(delimitedOutcome[1]),
+      outcome: normalizedCodexTurnVerificationOutcome(delimitedOutcome[2]),
+    };
+  }
+
+  const spaceSeparatedOutcome = normalized.match(
+    /^(.*\S)\s+(passed|pass|success|succeeded|failed|failure|error|timeout|blocked|skipped|skip|not\s+run)[.!]?$/iu,
+  );
+  const command = spaceSeparatedOutcome?.[1]?.trim() ?? "";
+  const outcome = spaceSeparatedOutcome?.[2] ?? "";
+  if (
+    !command ||
+    !outcome ||
+    !isUnambiguousSpaceSeparatedOutcomeCommand(command)
+  ) {
+    return null;
+  }
+  return {
+    command: normalizeCodexTurnVerificationCommandEntry(command),
+    outcome: normalizedCodexTurnVerificationOutcome(outcome),
+  };
+}
+
+function stripVerificationOutcomeSuffix(value: string): string {
+  const entries = splitCodexTurnVerificationEntries(value);
+  if (
+    entries.length === 2 &&
+    CODEX_TURN_VERIFICATION_COMMAND_PATTERN.test(entries[0]!) &&
+    /^(?:passed|pass|success|succeeded|failed|failure|error|timeout|blocked|skipped|skip|not\s+run)[.!]?$/iu.test(
+      entries[1]!,
+    )
+  ) {
+    return entries[0]!;
+  }
+  return splitVerificationOutcomeSuffix(value)?.command ??
+    normalizeCodexTurnVerificationCommandEntry(value);
+}
+
 function verificationCommandComparisonVariants(value: string): string[] {
   const normalized = normalizeCodexTurnVerificationCommandEntry(value);
-  const withoutRtk = normalized.replace(/^rtk\s+/u, "").trim();
-  return [...new Set([normalized, withoutRtk].filter((candidate) => candidate.length > 0))];
+  const withoutOutcome = stripVerificationOutcomeSuffix(normalized);
+  return [normalized, withoutOutcome]
+    .flatMap((candidate) => [candidate, candidate.replace(/^rtk\s+/u, "").trim()])
+    .filter((candidate, index, candidates) =>
+      candidate.length > 0 && candidates.indexOf(candidate) === index
+    );
+}
+
+function verificationCommandsMatch(left: string, right: string): boolean {
+  const rightVariants = new Set(verificationCommandComparisonVariants(right));
+  return verificationCommandComparisonVariants(left)
+    .some((candidate) => rightVariants.has(candidate));
+}
+
+function uniqueVerificationCommands(commands: readonly string[]): string[] {
+  const uniqueCommands: string[] = [];
+  for (const command of commands) {
+    if (!uniqueCommands.some((candidate) => verificationCommandsMatch(candidate, command))) {
+      uniqueCommands.push(command);
+    }
+  }
+  return uniqueCommands;
 }
 
 export function codexTurnVerificationIncludesCommand(
@@ -123,13 +219,111 @@ export function explicitPassingCodexTurnVerificationCommand(
   if (!value) {
     return null;
   }
-  if (hasExplicitNegativeCodexTurnVerificationOutcome(value)) {
-    return null;
-  }
   if (!hasExplicitCodexTurnVerificationCommandEvidence(value)) {
     return null;
   }
+  const entries = splitCodexTurnVerificationEntries(value);
+  const passingCommands: string[] = [];
+  const failedCommands: string[] = [];
+  for (const [index, entry] of entries.entries()) {
+    const inlineOutcome = splitVerificationOutcomeSuffix(entry);
+    const nextEntry = entries[index + 1] ?? "";
+    const hasAdjacentPassingOutcome =
+      CODEX_TURN_VERIFICATION_COMMAND_PATTERN.test(entry) &&
+      /^(?:passed|pass|success|succeeded)\b/iu.test(nextEntry);
+    const hasAdjacentFailedOutcome =
+      CODEX_TURN_VERIFICATION_COMMAND_PATTERN.test(entry) &&
+      /^(?:failed|failure|error|timeout|blocked|skipped|skip|not\s+run)\b/iu.test(nextEntry);
+    if (
+      inlineOutcome?.outcome === "passed" ||
+      hasAdjacentPassingOutcome
+    ) {
+      const command = inlineOutcome?.command ?? entry;
+      if (CODEX_TURN_VERIFICATION_COMMAND_PATTERN.test(command)) {
+        passingCommands.push(command);
+      }
+    }
+    if (
+      inlineOutcome?.outcome === "failed" ||
+      hasAdjacentFailedOutcome
+    ) {
+      const command = inlineOutcome?.command ?? entry;
+      if (CODEX_TURN_VERIFICATION_COMMAND_PATTERN.test(command)) {
+        failedCommands.push(command);
+      }
+    }
+  }
+  const confirmedPassingCommands = uniqueVerificationCommands(passingCommands)
+    .filter((passingCommand) =>
+      !failedCommands.some((failedCommand) =>
+        verificationCommandsMatch(passingCommand, failedCommand)
+      )
+    );
+  if (failedCommands.length > 0) {
+    return confirmedPassingCommands.length > 0
+      ? confirmedPassingCommands.join("; ")
+      : null;
+  }
+  if (hasExplicitNegativeCodexTurnVerificationOutcome(value)) {
+    return confirmedPassingCommands.length > 0
+      ? confirmedPassingCommands.join("; ")
+      : null;
+  }
+  if (
+    entries.some(
+      (entry) =>
+        hasSpaceSeparatedOutcomeSuffix(entry) &&
+        splitVerificationOutcomeSuffix(entry) === null,
+    )
+  ) {
+    return confirmedPassingCommands.length > 0
+      ? confirmedPassingCommands.join("; ")
+      : null;
+  }
+  if (confirmedPassingCommands.length > 0) {
+    return confirmedPassingCommands.join("; ");
+  }
   return value;
+}
+
+export function explicitSinglePassingCodexTurnVerificationCommand(
+  tests: string | null | undefined,
+): string | null {
+  const value = tests?.trim();
+  if (
+    !value ||
+    hasExplicitNegativeCodexTurnVerificationOutcome(value)
+  ) {
+    return null;
+  }
+
+  const entries = splitCodexTurnVerificationEntries(value);
+  const commands: string[] = [];
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index]!;
+    if (!CODEX_TURN_VERIFICATION_COMMAND_PATTERN.test(entry)) {
+      return null;
+    }
+
+    const inlineOutcome = splitVerificationOutcomeSuffix(entry);
+    if (inlineOutcome?.outcome === "failed") {
+      return null;
+    }
+    if (
+      hasSpaceSeparatedOutcomeSuffix(entry) &&
+      inlineOutcome === null
+    ) {
+      return null;
+    }
+
+    const nextEntry = entries[index + 1] ?? "";
+    if (/^(?:passed|pass|success|succeeded)[.!]?$/iu.test(nextEntry)) {
+      index += 1;
+    }
+    commands.push(inlineOutcome?.command ?? entry);
+  }
+
+  return commands.length === 1 ? commands[0]! : null;
 }
 
 export function explicitFailedCodexTurnVerificationCommand(
@@ -142,10 +336,27 @@ export function explicitFailedCodexTurnVerificationCommand(
   if (!hasExplicitCodexTurnVerificationCommandEvidence(value)) {
     return null;
   }
-  if (!hasExplicitFailedCodexTurnVerificationOutcome(value)) {
+  if (!hasExplicitNegativeCodexTurnVerificationOutcome(value)) {
     return null;
   }
-  return value;
+  const entries = splitCodexTurnVerificationEntries(value);
+  const explicitCommands: string[] = [];
+  for (const [index, entry] of entries.entries()) {
+    const inlineOutcome = splitVerificationOutcomeSuffix(entry);
+    const nextEntry = entries[index + 1] ?? "";
+    const hasAdjacentFailure =
+      CODEX_TURN_VERIFICATION_COMMAND_PATTERN.test(entry) &&
+      /^(?:failed|failure|error|timeout|blocked|skipped|skip|not\s+run)\b/iu.test(nextEntry);
+    const command = inlineOutcome?.outcome === "failed"
+      ? inlineOutcome.command
+      : hasAdjacentFailure
+        ? entry
+        : null;
+    if (command && CODEX_TURN_VERIFICATION_COMMAND_PATTERN.test(command)) {
+      explicitCommands.push(command);
+    }
+  }
+  return explicitCommands[0] ?? null;
 }
 
 export function conciseCodexVerificationSummary(summary: string | null | undefined): string {

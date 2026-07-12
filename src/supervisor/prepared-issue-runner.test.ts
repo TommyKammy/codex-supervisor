@@ -18,6 +18,200 @@ import {
   createSupervisorState,
 } from "./supervisor-test-helpers";
 
+async function runTrackedIndependentVerificationRetryCase(
+  verificationPassed: boolean,
+): Promise<{
+  dispatchedState: IssueRunRecord["state"] | null;
+  postTurnTransitionCount: number;
+  postTurnMergeCount: number;
+  savedRecord: IssueRunRecord;
+}> {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "prepared-verifier-retry-"));
+  try {
+    const stateFile = path.join(root, "state.json");
+    const config = createConfig({
+      repoPath: path.join(root, "repo"),
+      stateFile,
+      workspaceRoot: path.join(root, "workspaces"),
+    });
+    const failureContext = {
+      category: "blocked" as const,
+      summary: "Codex reported blocked for issue #2086.",
+      signature: "verification:images",
+      command: "npm run verify:images",
+      details: ["structured_blocked_reason=verification"],
+      url: null,
+      updated_at: "2026-07-11T12:40:00Z",
+    };
+    const record = createRecord({
+      issue_number: 2086,
+      state: "queued",
+      branch: "codex/issue-2086",
+      pr_number: 2086,
+      workspace: path.join(config.workspaceRoot, "issue-2086"),
+      journal_path: path.join(
+        config.workspaceRoot,
+        "issue-2086",
+        ".codex-supervisor",
+        "issue-journal.md",
+      ),
+      blocked_reason: "verification",
+      last_error: "Auto-retrying after verification failure (2/3).",
+      last_failure_context: failureContext,
+      last_failure_signature: failureContext.signature,
+      last_blocker_signature: failureContext.signature,
+      blocked_verification_retry_count: 2,
+    });
+    const state = createSupervisorState({
+      activeIssueNumber: record.issue_number,
+      issues: [record],
+    });
+    const stateStore = new StateStore(stateFile, { backend: "json" });
+    const pr = createPullRequest({
+      number: record.pr_number ?? 2086,
+      headRefName: record.branch,
+      headRefOid: "head-2086",
+      isDraft: false,
+      mergeStateStatus: "CLEAN",
+    });
+    const workspaceStatus = {
+      branch: record.branch,
+      headSha: pr.headRefOid,
+      hasUncommittedChanges: false,
+      baseAhead: 1,
+      baseBehind: 0,
+      remoteBranchExists: true,
+      remoteAhead: 0,
+      remoteBehind: 0,
+    };
+    const independentVerificationBlocker = {
+      lastError: record.last_error,
+      lastBlockerSignature: record.last_blocker_signature,
+      lastFailureContext: failureContext,
+      lastFailureSignature: record.last_failure_signature,
+      repeatedFailureSignatureCount: record.repeated_failure_signature_count,
+      repeatedBlockerCount: record.repeated_blocker_count,
+      blockedVerificationRetryCount: record.blocked_verification_retry_count,
+    };
+    let dispatchedState: IssueRunRecord["state"] | null = null;
+    let postTurnTransitionCount = 0;
+    let postTurnMergeCount = 0;
+
+    await runPreparedIssueFlow(
+      {
+        config,
+        stateStore,
+        github: {} as GitHubClient,
+        executeCodexTurn: async (context) => {
+          dispatchedState = context.record.state;
+          return {
+            kind: "completed",
+            record: verificationPassed
+              ? {
+                  ...context.record,
+                  state: "ready_to_merge",
+                  blocked_reason: null,
+                  last_error: null,
+                  last_failure_context: null,
+                  last_failure_signature: null,
+                  last_blocker_signature: null,
+                }
+              : {
+                  ...context.record,
+                  state: "addressing_review",
+                  blocked_reason: "verification",
+                  last_error: failureContext.summary,
+                  last_failure_context: failureContext,
+                  last_failure_signature: failureContext.signature,
+                  last_blocker_signature: failureContext.signature,
+                },
+            workspaceStatus,
+            pr,
+            checks: [],
+            reviewThreads: [],
+          };
+        },
+        handlePostTurnPullRequestTransitions: async (context) => {
+          postTurnTransitionCount += 1;
+          state.issues[String(context.record.issue_number)] = context.record;
+          await stateStore.save(state);
+          return {
+            record: context.record,
+            pr: context.pr,
+            checks: [],
+            reviewThreads: [],
+          };
+        },
+        handlePostTurnMergeAndCompletion: async (_state, _issue, postTurnRecord) => {
+          postTurnMergeCount += 1;
+          return postTurnRecord;
+        },
+      },
+      {
+        state,
+        record,
+        issue: createIssue({ number: record.issue_number }),
+        previousCodexSummary: null,
+        previousError: failureContext.summary,
+        workspacePath: record.workspace,
+        journalPath:
+          record.journal_path ??
+          path.join(record.workspace, ".codex-supervisor", "issue-journal.md"),
+        syncJournal: async () => undefined,
+        memoryArtifacts: {
+          alwaysReadFiles: [],
+          onDemandFiles: [],
+          contextIndexPath: path.join(root, "context-index.md"),
+          agentsPath: path.join(root, "AGENTS.generated.md"),
+        },
+        workspaceStatus,
+        pr,
+        checks: [],
+        reviewThreads: [],
+        independentVerificationBlocker,
+        options: { dryRun: false },
+        recoveryEvents: [],
+        recoveryLog: null,
+      },
+    );
+
+    const savedState = JSON.parse(await fs.readFile(stateFile, "utf8")) as {
+      issues: Record<string, IssueRunRecord>;
+    };
+    return {
+      dispatchedState,
+      postTurnTransitionCount,
+      postTurnMergeCount,
+      savedRecord: savedState.issues[String(record.issue_number)]!,
+    };
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+}
+
+test("runPreparedIssueFlow dispatches a tracked independent verifier before clean PR lifecycle projection and stops while it remains blocked", async () => {
+  const result = await runTrackedIndependentVerificationRetryCase(false);
+
+  assert.equal(result.dispatchedState, "queued");
+  assert.equal(result.postTurnTransitionCount, 0);
+  assert.equal(result.postTurnMergeCount, 0);
+  assert.equal(result.savedRecord.state, "blocked");
+  assert.equal(result.savedRecord.blocked_reason, "verification");
+  assert.equal(
+    result.savedRecord.last_failure_context?.command,
+    "npm run verify:images",
+  );
+});
+
+test("runPreparedIssueFlow resumes tracked PR transitions after the independent verifier passes", async () => {
+  const result = await runTrackedIndependentVerificationRetryCase(true);
+
+  assert.equal(result.dispatchedState, "queued");
+  assert.equal(result.postTurnTransitionCount, 1);
+  assert.equal(result.postTurnMergeCount, 1);
+  assert.equal(result.savedRecord.blocked_reason, null);
+});
+
 test("runPreparedIssueFlow persists no-PR prepared issues without dispatching Codex when lifecycle says to wait", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "prepared-issue-runner-"));
   try {

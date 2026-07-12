@@ -47,6 +47,24 @@ export class GitHubReviewSurfaceClient {
     branch: string,
     options: { purpose?: "status" | "action" } = {},
   ): Promise<GitHubPullRequest | null> {
+    const pullRequests = await this.listOpenPullRequestsForBranch(branch, 1);
+    return this.hydratePullRequestForPurpose(
+      pullRequests[0] ?? null,
+      options.purpose ?? "status",
+    );
+  }
+
+  async findOpenPullRequestsForBranch(
+    branch: string,
+    _options: { purpose?: "status" | "action" } = {},
+  ): Promise<GitHubPullRequest[]> {
+    return this.listOpenPullRequestsForBranch(branch, 2);
+  }
+
+  private async listOpenPullRequestsForBranch(
+    branch: string,
+    limit: 1 | 2,
+  ): Promise<GitHubPullRequest[]> {
     const result = await this.runGhJsonCommand([
       "pr",
       "list",
@@ -57,12 +75,14 @@ export class GitHubReviewSurfaceClient {
       "--head",
       branch,
       "--limit",
-      "1",
+      String(limit),
       "--json",
-      "number,title,url,state,createdAt,updatedAt,isDraft,reviewDecision,mergeStateStatus,mergeable,baseRefName,headRefName,headRefOid,mergedAt",
+      "number,title,url,state,createdAt,updatedAt,isDraft,reviewDecision,mergeStateStatus,mergeable,baseRefName,headRefName,headRefOid,headRepositoryOwner,isCrossRepository,mergedAt",
     ]);
-    const pullRequests = parseJson<GitHubPullRequest[]>(result.stdout, `gh pr list --head ${branch}`);
-    return this.hydratePullRequestForPurpose(pullRequests[0] ?? null, options.purpose ?? "status");
+    return parseJson<GitHubPullRequest[]>(
+      result.stdout,
+      `gh pr list --head ${branch}`,
+    );
   }
 
   async findLatestPullRequestForBranch(

@@ -560,6 +560,48 @@ test("GitHubClient forwards unbounded stdout capture options through review-surf
   assert.equal(pullRequest?.copilotReviewState, "arrived");
 });
 
+test("GitHubClient bounds open branch PR discovery at two candidates for ambiguity checks", async () => {
+  const config = createConfig();
+  let observedArgs: string[] = [];
+  const candidates = [
+    createPullRequest({
+      number: 2447,
+      headRefName: "codex/issue-2447",
+      headRepositoryOwner: { login: "owner" },
+      isCrossRepository: false,
+    }),
+    createPullRequest({
+      number: 2448,
+      headRefName: "codex/issue-2447",
+      headRepositoryOwner: { login: "fork-owner" },
+      isCrossRepository: true,
+    }),
+  ];
+  const client = new GitHubClient(config, async (_command, args) => {
+    observedArgs = args;
+    assert.deepEqual(args.slice(0, 2), ["pr", "list"]);
+    return {
+      exitCode: 0,
+      stdout: JSON.stringify(candidates),
+      stderr: "",
+    };
+  });
+
+  const pullRequests = await client.findOpenPullRequestsForBranch(
+    "codex/issue-2447",
+    { purpose: "action" },
+  );
+
+  assert.deepEqual(pullRequests, candidates);
+  assert.deepEqual(
+    observedArgs.slice(observedArgs.indexOf("--head"), observedArgs.indexOf("--json")),
+    ["--head", "codex/issue-2447", "--limit", "2"],
+  );
+  const jsonFields = observedArgs[observedArgs.indexOf("--json") + 1] ?? "";
+  assert.match(jsonFields, /headRepositoryOwner/);
+  assert.match(jsonFields, /isCrossRepository/);
+});
+
 test("GitHubClient refreshes unresolved review threads when the review surface version changes", async () => {
   const config = createConfig();
   let graphqlCalls = 0;

@@ -4,7 +4,11 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { executeCodexTurnPhase, renderCodexExecutionSummary } from "./run-once-turn-execution";
+import {
+  executeCodexTurnPhase,
+  renderCodexExecutionSummary,
+  unresolvedIndependentVerificationBlockerAfterTurnEvidence,
+} from "./run-once-turn-execution";
 import {
   FailureContextCategory,
   GitHubIssue,
@@ -28,6 +32,13 @@ import { stableSameFileCodexConnectorChurnDossierConsumptionPatch } from "./supe
 import { interruptedTurnMarkerPath } from "./interrupted-turn-marker";
 import type { GitHubClient } from "./github";
 import { WORKSTATION_LOCAL_PATH_HYGIENE_REPAIRABLE_PUBLICATION_SIGNATURE } from "./workstation-local-path-gate";
+import type { IndependentVerificationBlockerSnapshot } from "./supervisor/independent-verification-blocker";
+import {
+  codexTurnVerificationIncludesCommand,
+  explicitFailedCodexTurnVerificationCommand,
+  explicitPassingCodexTurnVerificationCommand,
+  explicitSinglePassingCodexTurnVerificationCommand,
+} from "./run-once-turn-verification-evidence";
 
 const SAMPLE_UNIX_WORKSTATION_PATH = `/${"home"}/alice/dev/private-repo`;
 const SAMPLE_MACOS_WORKSTATION_PATH = `/${"Users"}/alice/Dev/private-repo`;
@@ -59,6 +70,269 @@ test("renderCodexExecutionSummary preserves requested and effective reasoning pr
   assert.equal(
     renderCodexExecutionSummary({ supervisorMessage: "Legacy runner summary." }),
     "Legacy runner summary.",
+  );
+});
+
+test("failed structured verification retains a command identity that later passing evidence can match", () => {
+  const failedCommand = explicitFailedCodexTurnVerificationCommand(
+    "npm run verify:images; failed",
+  );
+  assert.equal(failedCommand, "npm run verify:images");
+  assert.equal(
+    codexTurnVerificationIncludesCommand(
+      "npm run verify:images",
+      failedCommand,
+    ),
+    true,
+  );
+  assert.equal(
+    explicitFailedCodexTurnVerificationCommand(
+      "npm run verify:images; failed\nnpm test; passed",
+    ),
+    "npm run verify:images",
+  );
+  const selectorCommand = explicitFailedCodexTurnVerificationCommand(
+    "pytest -k failed: failed",
+  );
+  assert.equal(selectorCommand, "pytest -k failed");
+  assert.equal(
+    codexTurnVerificationIncludesCommand(
+      "pytest -k passed: passed",
+      selectorCommand,
+    ),
+    false,
+  );
+  assert.equal(
+    explicitFailedCodexTurnVerificationCommand("npm run verify:images failed"),
+    "npm run verify:images",
+  );
+  assert.equal(
+    explicitFailedCodexTurnVerificationCommand("npm test failed"),
+    "npm test",
+  );
+  assert.equal(
+    explicitFailedCodexTurnVerificationCommand("pytest -k failed"),
+    null,
+  );
+  assert.equal(
+    explicitFailedCodexTurnVerificationCommand("pytest -k smoke failed"),
+    null,
+  );
+  assert.equal(
+    explicitFailedCodexTurnVerificationCommand("npx vitest failed"),
+    null,
+  );
+  assert.equal(
+    explicitFailedCodexTurnVerificationCommand("npm run failed"),
+    null,
+  );
+  assert.equal(
+    explicitFailedCodexTurnVerificationCommand("npm test -- failed"),
+    null,
+  );
+  assert.equal(
+    explicitFailedCodexTurnVerificationCommand("npx vitest failed: failed"),
+    "npx vitest failed",
+  );
+  assert.equal(
+    explicitPassingCodexTurnVerificationCommand("npx vitest passed"),
+    null,
+  );
+  assert.equal(
+    explicitPassingCodexTurnVerificationCommand("npm test passed"),
+    "npm test",
+  );
+  assert.equal(
+    explicitPassingCodexTurnVerificationCommand(
+      "npm run verify:images passed; npm test failed",
+    ),
+    "npm run verify:images",
+  );
+  assert.equal(
+    explicitSinglePassingCodexTurnVerificationCommand(
+      "npm run verify:images",
+    ),
+    "npm run verify:images",
+  );
+  assert.equal(
+    explicitSinglePassingCodexTurnVerificationCommand(
+      "npm run verify:images; passed",
+    ),
+    "npm run verify:images",
+  );
+  assert.equal(
+    explicitSinglePassingCodexTurnVerificationCommand("passed"),
+    null,
+  );
+  assert.equal(
+    explicitSinglePassingCodexTurnVerificationCommand(
+      "npm run verify:images passed; npm test failed",
+    ),
+    null,
+  );
+  assert.equal(
+    explicitSinglePassingCodexTurnVerificationCommand(
+      "npm run verify:images; ambiguous",
+    ),
+    null,
+  );
+  assert.equal(
+    explicitSinglePassingCodexTurnVerificationCommand(
+      "npm run verify:images; npm test",
+    ),
+    null,
+  );
+});
+
+test("passing verification evidence is command-scoped and failed outcomes dominate equivalent passes", () => {
+  const cases: Array<{
+    name: string;
+    evidence: string;
+    expected: string | null;
+  }> = [
+    {
+      name: "same inline command passes then fails",
+      evidence: "npm test: passed; npm test: failed",
+      expected: null,
+    },
+    {
+      name: "same inline command fails then passes",
+      evidence: "npm test: failed; npm test: passed",
+      expected: null,
+    },
+    {
+      name: "rtk wrapper and outcome delimiter variants still identify one command",
+      evidence: "rtk npm test (passed); npm test — failed",
+      expected: null,
+    },
+    {
+      name: "adjacent outcome entries still give failure precedence",
+      evidence: "$ npm test; passed; rtk npm test; failure",
+      expected: null,
+    },
+    {
+      name: "space-separated outcome variants still give failure precedence",
+      evidence: "npm run verify:images passed; rtk npm run verify:images failed",
+      expected: null,
+    },
+    {
+      name: "a skipped result conflicts with a pass for the same command",
+      evidence: "npm run verify:images passed; npm run verify:images skipped",
+      expected: null,
+    },
+    {
+      name: "a not-run result conflicts with a pass for the same command",
+      evidence: "npm run verify:images: passed; npm run verify:images: not run",
+      expected: null,
+    },
+    {
+      name: "an adjacent skipped result conflicts with an adjacent pass",
+      evidence: "$ npm test; passed; rtk npm test; skipped",
+      expected: null,
+    },
+    {
+      name: "a failed command does not suppress a different passing command",
+      evidence: "npm run verify:images failed; npm test passed",
+      expected: "npm test",
+    },
+    {
+      name: "an independent pass survives alongside a conflicting command",
+      evidence: "npm test passed; rtk npm test failed; npm run verify:images passed",
+      expected: "npm run verify:images",
+    },
+    {
+      name: "equivalent passing variants are de-duplicated",
+      evidence: "rtk npm test: passed; npm test: passed",
+      expected: "rtk npm test",
+    },
+  ];
+
+  for (const fixture of cases) {
+    assert.equal(
+      explicitPassingCodexTurnVerificationCommand(fixture.evidence),
+      fixture.expected,
+      fixture.name,
+    );
+  }
+
+  assert.equal(
+    explicitSinglePassingCodexTurnVerificationCommand(
+      "rtk npm run verify:images",
+    ),
+    "rtk npm run verify:images",
+    "a commandless carried blocker can still be cleared by one unambiguous pass",
+  );
+  assert.equal(
+    explicitSinglePassingCodexTurnVerificationCommand(
+      "rtk npm run verify:images: passed; npm run verify:images: failed",
+    ),
+    null,
+    "mixed outcomes are never accepted as a single passing command",
+  );
+  assert.equal(
+    codexTurnVerificationIncludesCommand(
+      "npm run verify:images",
+      "npm run verify:images; failed",
+    ),
+    true,
+    "legacy adjacent failure outcomes are stripped before command matching",
+  );
+  assert.equal(
+    explicitFailedCodexTurnVerificationCommand(
+      "npm run verify:images; skipped",
+    ),
+    "npm run verify:images",
+    "skipped verifier outcomes retain their command identity",
+  );
+  assert.equal(
+    explicitFailedCodexTurnVerificationCommand(
+      "npm run verify:images\nnot run",
+    ),
+    "npm run verify:images",
+    "not-run verifier outcomes retain their command identity",
+  );
+});
+
+test("matching turn evidence permanently resolves only the carried verifier command", () => {
+  const blocker: IndependentVerificationBlockerSnapshot = {
+    lastError: "Independent image verification remains blocked.",
+    lastBlockerSignature: "verification:images",
+    lastFailureContext: {
+      category: "blocked",
+      summary: "Independent image verification remains blocked.",
+      signature: "verification:images",
+      command: "npm run verify:images",
+      details: ["structured_blocked_reason=verification"],
+      url: null,
+      updated_at: "2026-07-12T00:00:00Z",
+    },
+    lastFailureSignature: "verification:images",
+    repeatedFailureSignatureCount: 3,
+    repeatedBlockerCount: 2,
+    blockedVerificationRetryCount: 1,
+  };
+
+  assert.equal(
+    unresolvedIndependentVerificationBlockerAfterTurnEvidence(
+      blocker,
+      "npm run verify:images passed; npm test failed",
+    ),
+    null,
+  );
+  assert.equal(
+    unresolvedIndependentVerificationBlockerAfterTurnEvidence(
+      blocker,
+      "npm test passed; npm run verify:images failed",
+    ),
+    blocker,
+  );
+  assert.equal(
+    unresolvedIndependentVerificationBlockerAfterTurnEvidence(
+      null,
+      "not run",
+    ),
+    null,
+    "a later same-turn retry cannot resurrect a verifier that already passed",
   );
 });
 
@@ -96,6 +370,245 @@ function git(cwd: string, ...args: string[]): string {
     encoding: "utf8",
   });
 }
+
+test("executeCodexTurnPhase carries an independent verifier through a timeout persistence path", async () => {
+  await withTempWorkspace("run-once-carried-verifier-timeout-", async (workspacePath) => {
+    const issueNumber = 2447;
+    const journalPath = path.join(
+      workspacePath,
+      ".codex-supervisor",
+      "issue-journal.md",
+    );
+    await fs.mkdir(path.dirname(journalPath), { recursive: true });
+    await fs.writeFile(
+      journalPath,
+      "## Codex Working Notes\n### Current Handoff\n- Hypothesis: repair review feedback.\n",
+      "utf8",
+    );
+    const failureContext = {
+      category: "blocked" as const,
+      summary: "Independent image verification remains blocked.",
+      signature: "verification:images",
+      command: "npm run verify:images",
+      details: ["structured_blocked_reason=verification"],
+      url: null,
+      updated_at: "2026-07-12T00:00:00Z",
+    };
+    const record = createRecord({
+      issue_number: issueNumber,
+      state: "addressing_review",
+      branch: `codex/issue-${issueNumber}`,
+      workspace: workspacePath,
+      journal_path: journalPath,
+      pr_number: 2451,
+      last_head_sha: "head-2451",
+      blocked_reason: "verification",
+      last_error: failureContext.summary,
+      last_failure_context: failureContext,
+      last_failure_signature: failureContext.signature,
+      repeated_failure_signature_count: 3,
+      last_blocker_signature: "verification:images",
+      repeated_blocker_count: 2,
+      blocked_verification_retry_count: 1,
+      timeout_retry_count: 2,
+    });
+    const state: SupervisorStateFile = {
+      activeIssueNumber: issueNumber,
+      issues: { [String(issueNumber)]: record },
+    };
+    const issue = createIssue({ number: issueNumber });
+    const pr = createPullRequest({
+      number: 2451,
+      headRefName: record.branch,
+      headRefOid: "head-2451",
+      state: "OPEN",
+      mergedAt: null,
+    });
+
+    const result = await executeCodexTurnPhase({
+      config: createConfig(),
+      stateStore: {
+        touch: (current, patch) => ({
+          ...current,
+          ...patch,
+          updated_at: "2026-07-12T00:05:00Z",
+        }),
+        save: async () => undefined,
+      },
+      github: {
+        findOpenPullRequestsForBranch: async () => [pr],
+        getPullRequestIfExists: async () => pr,
+        resolvePullRequestForBranch: async () => pr,
+        createPullRequest: async () => {
+          throw new Error("unexpected createPullRequest call");
+        },
+        getChecks: async () => [],
+        getUnresolvedReviewThreads: async () => [],
+        getExternalReviewSurface: async () => ({ reviews: [], issueComments: [] }),
+      },
+      context: createCodexTurnContext({
+        state,
+        record,
+        issue,
+        pr,
+        workspacePath,
+        journalPath,
+        workspaceStatus: {
+          branch: record.branch,
+          headSha: "head-2451",
+        },
+      }),
+      acquireSessionLock: async () => null,
+      classifyFailure: () => "timeout",
+      buildCodexFailureContext: (category, summary, details) => ({
+        category,
+        summary,
+        signature: `${category}:${summary}`,
+        command: null,
+        details,
+        url: null,
+        updated_at: "2026-07-12T00:05:00Z",
+      }),
+      applyFailureSignature: () => ({
+        last_failure_signature: "superseding-timeout",
+        repeated_failure_signature_count: 1,
+      }),
+      normalizeBlockerSignature: () => "timeout:review-repair",
+      isVerificationBlockedMessage: () => false,
+      derivePullRequestLifecycleSnapshot: () => {
+        throw new Error("unexpected lifecycle projection");
+      },
+      inferStateWithoutPullRequest: () => "stabilizing",
+      blockedReasonFromReviewState: () => null,
+      recoverUnexpectedCodexTurnFailure: async ({ error }) => {
+        throw error instanceof Error ? error : new Error(String(error));
+      },
+      readIssueJournal: async () =>
+        "## Codex Working Notes\n### Current Handoff\n- Hypothesis: repair review feedback.\n",
+      agentRunner: createSuccessfulAgentRunner(async () => ({
+        exitCode: 1,
+        sessionId: "session-2447",
+        supervisorMessage: "Review repair timed out before verification.",
+        stderr: "Command timed out after 1800000ms: codex exec",
+        stdout: "",
+        structuredResult: {
+          summary: "Review repair timed out.",
+          stateHint: "failed",
+          blockedReason: null,
+          failureSignature: "timeout:review-repair",
+          nextAction: "retry review repair",
+          tests: "not run",
+        },
+        failureKind: "timeout",
+        failureContext: null,
+      })),
+    });
+
+    const updated = state.issues[String(issueNumber)]!;
+    assert.equal(result.kind, "returned");
+    assert.equal(updated.state, "blocked");
+    assert.equal(updated.blocked_reason, "verification");
+    assert.equal(updated.last_failure_context?.command, "npm run verify:images");
+    assert.equal(updated.last_failure_signature, "verification:images");
+    assert.equal(updated.repeated_failure_signature_count, 3);
+    assert.equal(updated.last_blocker_signature, "verification:images");
+    assert.equal(updated.repeated_blocker_count, 2);
+    assert.equal(updated.blocked_verification_retry_count, 1);
+    assert.equal(updated.timeout_retry_count, 3);
+    assert.match(
+      updated.last_failure_context?.details.join("\n") ?? "",
+      /review_repair_interruption_detail=.*timed out/i,
+    );
+  });
+});
+
+test("executeCodexTurnPhase passes the pre-preparation verifier to unexpected recovery", async () => {
+  const failureContext = {
+    category: "blocked" as const,
+    summary: "Independent image verification remains blocked.",
+    signature: "verification:images",
+    command: "npm run verify:images",
+    details: ["structured_blocked_reason=verification"],
+    url: null,
+    updated_at: "2026-07-12T00:00:00Z",
+  };
+  const record = createRecord({
+    issue_number: 2447,
+    state: "addressing_review",
+    pr_number: 2451,
+    blocked_reason: "verification",
+    last_error: failureContext.summary,
+    last_failure_context: failureContext,
+    last_failure_signature: failureContext.signature,
+    repeated_failure_signature_count: 3,
+    last_blocker_signature: "verification:images",
+    repeated_blocker_count: 2,
+    blocked_verification_retry_count: 1,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 2447,
+    issues: { "2447": record },
+  };
+  let recoveredVerifier: IndependentVerificationBlockerSnapshot | null = null;
+
+  const result = await executeCodexTurnPhase({
+    config: createConfig(),
+    stateStore: {
+      touch: (current, patch) => ({ ...current, ...patch }),
+      save: async () => undefined,
+    },
+    github: {
+      resolvePullRequestForBranch: async () => null,
+      createPullRequest: async () => {
+        throw new Error("unexpected createPullRequest call");
+      },
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+      getExternalReviewSurface: async () => ({ reviews: [], issueComments: [] }),
+    },
+    context: createCodexTurnContext({ state, record }),
+    acquireSessionLock: async () => null,
+    classifyFailure: () => "command_error",
+    buildCodexFailureContext: (category, summary, details) => ({
+      category,
+      summary,
+      signature: `${category}:${summary}`,
+      command: null,
+      details,
+      url: null,
+      updated_at: "2026-07-12T00:05:00Z",
+    }),
+    applyFailureSignature: () => ({
+      last_failure_signature: null,
+      repeated_failure_signature_count: 0,
+    }),
+    normalizeBlockerSignature: () => null,
+    isVerificationBlockedMessage: () => false,
+    derivePullRequestLifecycleSnapshot: () => {
+      throw new Error("unexpected lifecycle projection");
+    },
+    inferStateWithoutPullRequest: () => "stabilizing",
+    blockedReasonFromReviewState: () => null,
+    recoverUnexpectedCodexTurnFailure: async (args) => {
+      recoveredVerifier = args.independentVerificationBlocker ?? null;
+      return args.record;
+    },
+    readIssueJournal: async () => {
+      throw new Error("journal read exploded before prompt preparation");
+    },
+    agentRunner: createSuccessfulAgentRunner(async () => {
+      throw new Error("unexpected runTurn call");
+    }),
+  });
+
+  const recovered = recoveredVerifier as IndependentVerificationBlockerSnapshot | null;
+  assert.ok(recovered);
+  assert.equal(result.kind, "returned");
+  assert.equal(recovered.lastFailureContext.command, "npm run verify:images");
+  assert.equal(recovered.lastFailureSignature, "verification:images");
+  assert.equal(recovered.repeatedFailureSignatureCount, 3);
+  assert.equal(recovered.blockedVerificationRetryCount, 1);
+});
 
 async function createTrackedRepo(): Promise<string> {
   const repoPath = await fs.mkdtemp(
@@ -5286,3 +5799,595 @@ test("executeCodexTurnPhase normalizes workstation-local paths from a journal-on
     assert.match(content, /<redacted-local-path>/);
   });
 });
+
+for (const terminalState of ["blocked", "failed"] as const) {
+test(`executeCodexTurnPhase binds a uniquely resolved open PR before persisting structured ${terminalState}`, async () => {
+  const branch = "codex/issue-102";
+  const publishedHead = "head-published-102";
+  const record = createRecord({
+    state: "implementing",
+    branch,
+    pr_number: null,
+    last_head_sha: "head-before-102",
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: { "102": record },
+  };
+  const issue = createIssue({ number: 102 });
+  const pr = createPullRequest({
+    number: 202,
+    baseRefName: "main",
+    headRefName: branch,
+    headRefOid: publishedHead,
+    headRepositoryOwner: { login: "owner" },
+    isCrossRepository: false,
+    state: "OPEN",
+    mergedAt: null,
+  });
+  const context = createCodexTurnContext({
+    state,
+    record,
+    issue,
+    pr: null,
+    workspaceStatus: {
+      branch,
+      headSha: "head-before-102",
+    },
+  });
+  let workspaceReads = 0;
+  let pullRequestReads = 0;
+  let journalReads = 0;
+
+  const result = await executeCodexTurnPhase({
+    config: createConfig(),
+    stateStore: {
+      touch: (current, patch) => ({
+        ...current,
+        ...patch,
+        updated_at: current.updated_at,
+      }),
+      save: async () => undefined,
+    },
+    github: {
+      findOpenPullRequestsForBranch: async (resolvedBranch, options) => {
+        pullRequestReads += 1;
+        assert.equal(resolvedBranch, branch);
+        assert.equal(options?.purpose, "action");
+        return [pr];
+      },
+      getPullRequestIfExists: async (prNumber, options) => {
+        assert.equal(prNumber, pr.number);
+        assert.equal(options?.purpose, "action");
+        return pr;
+      },
+      resolvePullRequestForBranch: async () => {
+        throw new Error("unexpected fallback PR resolution");
+      },
+      createPullRequest: async () => {
+        throw new Error("unexpected createPullRequest call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+      getExternalReviewSurface: async () => {
+        throw new Error("unexpected getExternalReviewSurface call");
+      },
+    },
+    context,
+    acquireSessionLock: async () => null,
+    classifyFailure: () => "command_error",
+    buildCodexFailureContext: (category, summary, details) => ({
+      category,
+      summary,
+      signature: null,
+      command: null,
+      details,
+      url: null,
+      updated_at: "2026-07-11T12:30:00Z",
+    }),
+    applyFailureSignature: (_current, failureContext) => ({
+      last_failure_signature: failureContext?.signature ?? null,
+      repeated_failure_signature_count: failureContext ? 1 : 0,
+    }),
+    normalizeBlockerSignature: () => "verification:prerequisite",
+    isVerificationBlockedMessage: () => false,
+    derivePullRequestLifecycleSnapshot: () => {
+      throw new Error("unexpected lifecycle projection");
+    },
+    inferStateWithoutPullRequest: () => "stabilizing",
+    blockedReasonFromReviewState: () => null,
+    recoverUnexpectedCodexTurnFailure: async ({ error }) => {
+      throw error instanceof Error ? error : new Error(String(error));
+    },
+    getWorkspaceStatus: async () => {
+      workspaceReads += 1;
+      return createWorkspaceStatus({
+        branch,
+        headSha: publishedHead,
+      });
+    },
+    pushBranch: async () => {
+      throw new Error("unexpected pushBranch call");
+    },
+    readIssueJournal: async () => {
+      journalReads += 1;
+      return journalReads === 1
+        ? "## Codex Working Notes\n### Current Handoff\n- Hypothesis: publish the implementation.\n"
+        : "## Codex Working Notes\n### Current Handoff\n- Hypothesis: publish the implementation.\n- What changed: opened PR #202 before verification stopped.\n";
+    },
+    agentRunner: createSuccessfulAgentRunner(async () => ({
+      exitCode: 0,
+      sessionId: "session-102",
+      supervisorMessage: "Verification blocked: prerequisite not satisfied.",
+      stderr: "",
+      stdout: "",
+      structuredResult: {
+        summary: "Published the PR before the verifier stopped.",
+        stateHint: terminalState,
+        blockedReason: "verification",
+        failureSignature: "gitops-images-high-critical",
+        nextAction: "repair the verification prerequisite",
+        tests: "npm run verify:images; failed",
+      },
+      failureKind: null,
+      failureContext: null,
+    })),
+  });
+
+  const updated = state.issues["102"]!;
+  assert.equal(result.kind, "returned");
+  assert.equal(result.message, `Codex reported ${terminalState} for issue #102.`);
+  assert.equal(workspaceReads, 1);
+  assert.equal(pullRequestReads, 1);
+  assert.equal(updated.state, terminalState);
+  assert.equal(
+    updated.blocked_reason,
+    terminalState === "blocked" ? "verification" : null,
+  );
+  assert.equal(updated.pr_number, pr.number);
+  assert.equal(updated.last_head_sha, publishedHead);
+  assert.match(
+    updated.last_tracked_pr_progress_summary ?? "",
+    /blocked_turn_pr_reconciliation=bound/,
+  );
+  assert.equal(updated.last_failure_signature, "gitops-images-high-critical");
+  assert.equal(
+    updated.last_failure_context?.details.includes(
+      "structured_blocked_reason=verification",
+    ),
+    terminalState === "blocked",
+  );
+  assert.match(updated.last_failure_context?.command ?? "", /npm run verify:images/);
+});
+}
+
+for (const terminalVerifierScenario of [
+  {
+    name: "preserves an independent verifier when review repair ends with a structured terminal hint",
+    legacyCommand: "npm run verify:images",
+    tests: "not run",
+    preserves: true,
+  },
+  {
+    name: "replaces a legacy commandless verifier after one passing command and a structured terminal hint",
+    legacyCommand: null,
+    tests: "npm run verify:images",
+    preserves: false,
+  },
+] as const) {
+test(`executeCodexTurnPhase ${terminalVerifierScenario.name}`, async () => {
+  const branch = "codex/issue-103";
+  const repairedHead = "head-repaired-103";
+  const failureContext = {
+    category: "blocked" as const,
+    summary: "Image verification remains blocked.",
+    signature: "gitops-images-high-critical",
+    command: terminalVerifierScenario.legacyCommand,
+    details: ["structured_blocked_reason=verification"],
+    url: null,
+    updated_at: "2026-07-11T12:35:00Z",
+  };
+  const record = createRecord({
+    issue_number: 103,
+    state: "addressing_review",
+    branch,
+    pr_number: 203,
+    last_head_sha: "head-old-103",
+    blocked_reason: "verification",
+    last_error: failureContext.summary,
+    last_failure_context: failureContext,
+    last_failure_signature: failureContext.signature,
+    repeated_failure_signature_count: 3,
+    last_blocker_signature: "verification:images",
+    repeated_blocker_count: 2,
+    blocked_verification_retry_count: 1,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 103,
+    issues: { "103": record },
+  };
+  const issue = createIssue({ number: 103 });
+  const pr = createPullRequest({
+    number: 203,
+    baseRefName: "main",
+    headRefName: branch,
+    headRefOid: repairedHead,
+    headRepositoryOwner: { login: "owner" },
+    isCrossRepository: false,
+    state: "OPEN",
+    mergedAt: null,
+  });
+  let journalReads = 0;
+
+  const result = await executeCodexTurnPhase({
+    config: createConfig(),
+    stateStore: {
+      touch: (current, patch) => ({
+        ...current,
+        ...patch,
+        updated_at: current.updated_at,
+      }),
+      save: async () => undefined,
+    },
+    github: {
+      findOpenPullRequestsForBranch: async () => [pr],
+      getPullRequestIfExists: async () => pr,
+      resolvePullRequestForBranch: async () => pr,
+      createPullRequest: async () => {
+        throw new Error("unexpected createPullRequest call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected review thread lookup");
+      },
+      getExternalReviewSurface: async () => {
+        throw new Error("unexpected external review lookup");
+      },
+    },
+    context: createCodexTurnContext({
+      state,
+      record,
+      issue,
+      pr: createPullRequest({
+        number: 203,
+        baseRefName: "main",
+        headRefName: branch,
+        headRefOid: "head-old-103",
+      }),
+      workspaceStatus: { branch, headSha: "head-old-103" },
+    }),
+    acquireSessionLock: async () => null,
+    classifyFailure: () => "command_error",
+    buildCodexFailureContext: (category, summary, details) => ({
+      category,
+      summary,
+      signature: null,
+      command: null,
+      details,
+      url: null,
+      updated_at: "2026-07-11T12:40:00Z",
+    }),
+    applyFailureSignature: (_current, nextFailureContext) => ({
+      last_failure_signature: nextFailureContext?.signature ?? null,
+      repeated_failure_signature_count: nextFailureContext ? 1 : 0,
+    }),
+    normalizeBlockerSignature: () => "secrets:review-repair",
+    isVerificationBlockedMessage: () => false,
+    derivePullRequestLifecycleSnapshot: () => {
+      throw new Error("unexpected lifecycle projection");
+    },
+    inferStateWithoutPullRequest: () => "stabilizing",
+    blockedReasonFromReviewState: () => null,
+    recoverUnexpectedCodexTurnFailure: async ({ error }) => {
+      throw error instanceof Error ? error : new Error(String(error));
+    },
+    getWorkspaceStatus: async () =>
+      createWorkspaceStatus({ branch, headSha: repairedHead }),
+    pushBranch: async () => {
+      throw new Error("unexpected pushBranch call");
+    },
+    readIssueJournal: async () => {
+      journalReads += 1;
+      return journalReads === 1
+        ? "## Codex Working Notes\n### Current Handoff\n- Hypothesis: repair review findings.\n"
+        : "## Codex Working Notes\n### Current Handoff\n- Hypothesis: repair review findings.\n- What changed: repair stopped on a permission boundary.\n";
+    },
+    agentRunner: createSuccessfulAgentRunner(async () => ({
+      exitCode: 0,
+      sessionId: "session-103",
+      supervisorMessage: "Need token before the review repair can continue.",
+      stderr: "",
+      stdout: "",
+      structuredResult: {
+        summary: "Review repair stopped before the verifier ran.",
+        stateHint: "blocked",
+        blockedReason: "secrets",
+        failureSignature: "secrets:review-repair",
+        nextAction: "provide the token",
+        tests: terminalVerifierScenario.tests,
+      },
+      failureKind: null,
+      failureContext: null,
+    })),
+  });
+
+  const updated = state.issues["103"]!;
+  assert.equal(result.kind, "returned");
+  assert.equal(updated.state, "blocked");
+  assert.equal(
+    updated.blocked_reason,
+    terminalVerifierScenario.preserves ? "verification" : "secrets",
+  );
+  assert.equal(updated.pr_number, 203);
+  assert.equal(updated.last_head_sha, repairedHead);
+  assert.equal(
+    updated.last_failure_context?.command,
+    terminalVerifierScenario.preserves ? "npm run verify:images" : null,
+  );
+  assert.equal(
+    updated.last_failure_signature,
+    terminalVerifierScenario.preserves
+      ? failureContext.signature
+      : "secrets:review-repair",
+  );
+  assert.equal(
+    updated.repeated_failure_signature_count,
+    terminalVerifierScenario.preserves ? 3 : 1,
+  );
+  assert.equal(
+    updated.last_blocker_signature,
+    terminalVerifierScenario.preserves
+      ? "verification:images"
+      : "secrets:review-repair",
+  );
+  assert.equal(
+    updated.repeated_blocker_count,
+    terminalVerifierScenario.preserves ? 2 : 1,
+  );
+  assert.equal(
+    updated.blocked_verification_retry_count,
+    terminalVerifierScenario.preserves ? 1 : 0,
+  );
+  assert.match(updated.last_error ?? "", /Need token/);
+  assert.equal(
+    updated.last_failure_context?.details.includes(
+      "review_repair_terminal_blocked_reason=secrets",
+    ),
+    terminalVerifierScenario.preserves,
+  );
+});
+}
+
+for (const verifierScenario of [
+  { name: "keeps an unverified blocker", tests: "not run", preserves: true },
+  { name: "clears a verified blocker", tests: "npm run verify:images", preserves: false },
+  {
+    name: "clears a blocker when its command passes in mixed results",
+    tests: "npm run verify:images passed; npm test failed",
+    preserves: false,
+  },
+  {
+    name: "clears a legacy commandless blocker after one passing command",
+    tests: "npm run verify:images",
+    preserves: false,
+    legacyCommandMissing: true,
+  },
+  {
+    name: "keeps a legacy commandless blocker after an arbitrary pass",
+    tests: "passed",
+    preserves: true,
+    legacyCommandMissing: true,
+  },
+  {
+    name: "keeps a legacy commandless blocker after mixed results",
+    tests: "npm run verify:images passed; npm test failed",
+    preserves: true,
+    legacyCommandMissing: true,
+  },
+  {
+    name: "keeps a legacy commandless blocker after multiple passing commands",
+    tests: "npm run verify:images; npm test",
+    preserves: true,
+    legacyCommandMissing: true,
+  },
+  {
+    name: "keeps a legacy commandless blocker after ambiguous evidence",
+    tests: "npm run verify:images; ambiguous",
+    preserves: true,
+    legacyCommandMissing: true,
+  },
+] as const) {
+test(`executeCodexTurnPhase ${verifierScenario.name} after review repair advances the PR head`, async () => {
+  const branch = "codex/issue-102";
+  const oldHead = "head-old-102";
+  const repairedHead = "head-repaired-102";
+  const failureContext = {
+    category: "blocked" as const,
+    summary: "Image verification remains blocked.",
+    signature: "gitops-images-high-critical",
+    command: "legacyCommandMissing" in verifierScenario &&
+        verifierScenario.legacyCommandMissing
+      ? null
+      : "npm run verify:images",
+    details: ["structured_blocked_reason=verification"],
+    url: null,
+    updated_at: "2026-07-11T12:35:00Z",
+  };
+  const record = createRecord({
+    state: "addressing_review",
+    branch,
+    pr_number: 202,
+    last_head_sha: oldHead,
+    blocked_reason: "verification",
+    last_error: failureContext.summary,
+    last_failure_context: failureContext,
+    last_failure_signature: failureContext.signature,
+    repeated_failure_signature_count: 2,
+    last_blocker_signature: "verification:images",
+    repeated_blocker_count: 2,
+    blocked_verification_retry_count: 1,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: { "102": record },
+  };
+  const issue = createIssue({ number: 102 });
+  const repairedPr = createPullRequest({
+    number: 202,
+    baseRefName: "main",
+    headRefName: branch,
+    headRefOid: repairedHead,
+    state: "OPEN",
+    mergedAt: null,
+  });
+  let journalReads = 0;
+
+  await executeCodexTurnPhase({
+    config: createConfig(),
+    stateStore: {
+      touch: (current, patch) => ({
+        ...current,
+        ...patch,
+        updated_at: current.updated_at,
+      }),
+      save: async () => undefined,
+    },
+    github: {
+      resolvePullRequestForBranch: async (_branch, _prNumber, options) => {
+        assert.equal(options?.purpose, "action");
+        return repairedPr;
+      },
+      createPullRequest: async () => {
+        throw new Error("unexpected createPullRequest call");
+      },
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+      getExternalReviewSurface: async () => ({
+        issueComments: [],
+        reviews: [],
+      }),
+    },
+    context: createCodexTurnContext({
+      state,
+      record,
+      issue,
+      pr: createPullRequest({
+        number: 202,
+        baseRefName: "main",
+        headRefName: branch,
+        headRefOid: oldHead,
+      }),
+      workspaceStatus: { branch, headSha: oldHead },
+    }),
+    acquireSessionLock: async () => null,
+    classifyFailure: () => "command_error",
+    buildCodexFailureContext: (category, summary, details) => ({
+      category,
+      summary,
+      signature: null,
+      command: null,
+      details,
+      url: null,
+      updated_at: "2026-07-11T12:40:00Z",
+    }),
+    applyFailureSignature: (_current, context) => ({
+      last_failure_signature: context?.signature ?? null,
+      repeated_failure_signature_count: context ? 1 : 0,
+    }),
+    normalizeBlockerSignature: () => null,
+    isVerificationBlockedMessage: () => false,
+    derivePullRequestLifecycleSnapshot: (current) => ({
+      recordForState: current,
+      nextState: "pr_open",
+      failureContext: null,
+      reviewWaitPatch: {},
+      codexConnectorRequestObservationPatch: {},
+      copilotRequestObservationPatch: {},
+      copilotTimeoutPatch: {
+        copilot_review_timed_out_at: null,
+        copilot_review_timeout_action: null,
+        copilot_review_timeout_reason: null,
+      },
+      mergeLatencyVisibilityPatch: {
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        merge_readiness_last_evaluated_at: null,
+      },
+    }),
+    inferStateWithoutPullRequest: () => "stabilizing",
+    blockedReasonFromReviewState: () => null,
+    recoverUnexpectedCodexTurnFailure: async ({ error }) => {
+      throw error instanceof Error ? error : new Error(String(error));
+    },
+    getWorkspaceStatus: async () =>
+      createWorkspaceStatus({ branch, headSha: repairedHead }),
+    listChangedTrackedFilesBetween: async () => ["src/repaired.ts"],
+    pushBranch: async () => {
+      throw new Error("unexpected pushBranch call");
+    },
+    readIssueJournal: async () => {
+      journalReads += 1;
+      return journalReads === 1
+        ? "## Codex Working Notes\n### Current Handoff\n- Hypothesis: repair the review.\n"
+        : "## Codex Working Notes\n### Current Handoff\n- Hypothesis: repair the review.\n- What changed: pushed the review repair.\n";
+    },
+    agentRunner: createSuccessfulAgentRunner(async () => ({
+      exitCode: 0,
+      sessionId: "session-review-102",
+      supervisorMessage: "Applied the current-head review repair.",
+      stderr: "",
+      stdout: "",
+      structuredResult: {
+        summary: "Applied the current-head review repair.",
+        stateHint: "pr_open",
+        blockedReason: null,
+        failureSignature: null,
+        nextAction: "rerun the independent verifier",
+        tests: verifierScenario.tests,
+      },
+      failureKind: null,
+      failureContext: null,
+    })),
+  });
+
+  const updated = state.issues["102"]!;
+  assert.equal(updated.state, verifierScenario.preserves ? "blocked" : "pr_open");
+  assert.equal(
+    updated.blocked_reason,
+    verifierScenario.preserves ? "verification" : null,
+  );
+  assert.equal(updated.pr_number, repairedPr.number);
+  assert.equal(updated.last_head_sha, repairedHead);
+  assert.equal(
+    updated.last_error,
+    verifierScenario.preserves ? failureContext.summary : null,
+  );
+  assert.deepEqual(
+    updated.last_failure_context,
+    verifierScenario.preserves ? failureContext : null,
+  );
+  assert.equal(
+    updated.last_failure_signature,
+    verifierScenario.preserves ? failureContext.signature : null,
+  );
+  assert.equal(
+    updated.repeated_failure_signature_count,
+    verifierScenario.preserves ? 2 : 0,
+  );
+  assert.equal(updated.repeated_blocker_count, verifierScenario.preserves ? 2 : 0);
+  assert.equal(
+    updated.last_blocker_signature,
+    verifierScenario.preserves ? "verification:images" : null,
+  );
+  assert.equal(
+    updated.blocked_verification_retry_count,
+    verifierScenario.preserves ? 1 : 0,
+  );
+});
+}

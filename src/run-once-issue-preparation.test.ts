@@ -313,6 +313,138 @@ test("prepareIssueExecutionContext prepares workspace, journal, memory, and head
   ]);
 });
 
+test("prepareIssueExecutionContext preserves a recovered independent verifier for the review turn", async () => {
+  const failureContext = {
+    category: "blocked" as const,
+    summary: "Image verification remains blocked.",
+    signature: "verification:images",
+    command: "npm run verify:images",
+    details: ["structured_blocked_reason=verification"],
+    url: null,
+    updated_at: "2026-07-11T12:40:00Z",
+  };
+  const record = createRecord({
+    state: "addressing_review",
+    pr_number: 240,
+    implementation_attempt_count: 0,
+    blocked_reason: "verification",
+    last_error: failureContext.summary,
+    last_failure_context: failureContext,
+    last_failure_signature: failureContext.signature,
+    repeated_failure_signature_count: 2,
+    last_blocker_signature: "verification:images",
+    repeated_blocker_count: 2,
+    blocked_verification_retry_count: 1,
+  });
+  const state = createState(record);
+  const pr = createPullRequest({ headRefOid: "pr-head-240" });
+
+  const result = await prepareIssueExecutionContext({
+    github: {
+      resolvePullRequestForBranch: async () => pr,
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+      createPullRequest: async () => {
+        throw new Error("unexpected createPullRequest call");
+      },
+    },
+    config: createConfig(),
+    stateStore: {
+      touch: (currentRecord, patch) => ({ ...currentRecord, ...patch }),
+      save: async () => undefined,
+    },
+    state,
+    record,
+    issue: createIssue(),
+    options: { dryRun: false },
+    ensureWorkspace: async () => "/tmp/workspaces/issue-240",
+    syncIssueJournal: async () => undefined,
+    syncMemoryArtifacts: async ({ journalPath }) => ({
+      contextIndexPath: "/tmp/context-index.md",
+      agentsPath: "/tmp/AGENTS.generated.md",
+      alwaysReadFiles: [journalPath],
+      onDemandFiles: [],
+    }),
+    getWorkspaceStatus: async () =>
+      createWorkspaceStatus({
+        headSha: "pr-head-240",
+        remoteBranchExists: true,
+      }),
+    writeSupervisorCycleDecisionSnapshot: async () => "/tmp/decision.json",
+    writePreMergeAssessmentSnapshot: async () => "/tmp/assessment.json",
+  });
+
+  assert.equal(typeof result, "object");
+  assert.ok(result && !isRestartRunOnce(result) && typeof result !== "string");
+  assert.equal(result.record.state, "addressing_review");
+  assert.equal(result.record.blocked_reason, "verification");
+  assert.equal(result.record.last_error, failureContext.summary);
+  assert.deepEqual(result.record.last_failure_context, failureContext);
+  assert.equal(result.record.last_failure_signature, failureContext.signature);
+  assert.equal(result.record.repeated_failure_signature_count, 2);
+  assert.equal(result.record.last_blocker_signature, "verification:images");
+  assert.equal(result.record.repeated_blocker_count, 2);
+  assert.equal(result.record.blocked_verification_retry_count, 1);
+  assert.equal(result.pr?.number, 240);
+  assert.equal(state.issues["240"]?.blocked_reason, "verification");
+});
+
+test("prepareIssueExecutionContext drops a carried verifier after stale PR hydration clears the binding", async () => {
+  const failureContext = {
+    category: "blocked" as const,
+    summary: "Image verification remains blocked.",
+    signature: "verification:images",
+    command: "npm run verify:images",
+    details: ["structured_blocked_reason=verification"],
+    url: null,
+    updated_at: "2026-07-11T12:40:00Z",
+  };
+  const record = createRecord({
+    state: "addressing_review",
+    pr_number: 240,
+    blocked_reason: "verification",
+    last_error: failureContext.summary,
+    last_failure_context: failureContext,
+    last_failure_signature: failureContext.signature,
+  });
+  const state = createState(record);
+
+  const result = await prepareIssueExecutionContext({
+    github: {
+      resolvePullRequestForBranch: async () => null,
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+      createPullRequest: async () => {
+        throw new Error("unexpected createPullRequest call");
+      },
+    },
+    config: createConfig(),
+    stateStore: {
+      touch: (currentRecord, patch) => ({ ...currentRecord, ...patch }),
+      save: async () => undefined,
+    },
+    state,
+    record,
+    issue: createIssue(),
+    options: { dryRun: true },
+    ensureWorkspace: async () => "/tmp/workspaces/issue-240",
+    syncIssueJournal: async () => undefined,
+    syncMemoryArtifacts: async ({ journalPath }) => ({
+      contextIndexPath: "/tmp/context-index.md",
+      agentsPath: "/tmp/AGENTS.generated.md",
+      alwaysReadFiles: [journalPath],
+      onDemandFiles: [],
+    }),
+    getWorkspaceStatus: async () => createWorkspaceStatus(),
+    writeSupervisorCycleDecisionSnapshot: async () => "/tmp/decision.json",
+    writePreMergeAssessmentSnapshot: async () => "/tmp/assessment.json",
+  });
+
+  assert.ok(result && !isRestartRunOnce(result) && typeof result !== "string");
+  assert.equal(result.record.pr_number, null);
+  assert.equal(result.independentVerificationBlocker, null);
+});
+
 test("prepareIssueExecutionContext records the workspace restore source for later diagnostics", async () => {
   const record = createRecord();
   const state = createState(record);
@@ -529,9 +661,23 @@ test("prepareIssueExecutionContext blocks remote-ahead publication when tracked 
   );
   git(workspacePath, "add", "docs/guide.md");
 
+  const verifierFailureContext = {
+    category: "blocked" as const,
+    summary: "Image verification remains blocked.",
+    signature: "verification:images",
+    command: "npm run verify:images",
+    details: ["structured_blocked_reason=verification"],
+    url: null,
+    updated_at: "2026-07-12T01:30:00Z",
+  };
   const record = createRecord({
     implementation_attempt_count: 2,
-    state: "stabilizing",
+    state: "addressing_review",
+    pr_number: 240,
+    blocked_reason: "verification",
+    last_error: verifierFailureContext.summary,
+    last_failure_context: verifierFailureContext,
+    last_failure_signature: verifierFailureContext.signature,
     workspace: workspacePath,
     journal_path: path.join(workspacePath, ".codex-supervisor", "issue-journal.md"),
   });
@@ -592,7 +738,16 @@ test("prepareIssueExecutionContext blocks remote-ahead publication when tracked 
   assert.equal(resolvePullRequestCalls, 0);
   assert.equal(state.issues["240"]?.state, "blocked");
   assert.equal(state.issues["240"]?.blocked_reason, "verification");
-  assert.equal(state.issues["240"]?.last_failure_signature, "workstation-local-path-hygiene-failed");
+  assert.equal(state.issues["240"]?.last_failure_signature, "verification:images");
+  assert.equal(
+    state.issues["240"]?.last_failure_context?.command,
+    "npm run verify:images",
+  );
+  assert.ok(
+    state.issues["240"]?.last_failure_context?.details.some((detail) =>
+      detail.includes("workstation-local path hygiene")
+    ),
+  );
 });
 
 test("prepareIssueExecutionContext restarts when a tracked PR already merged", async () => {

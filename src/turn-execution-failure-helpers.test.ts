@@ -1,9 +1,15 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import test, { mock } from "node:test";
-import { persistCodexTurnExitFailure, persistHintedCodexTurnState } from "./turn-execution-failure-helpers";
-import { SupervisorStateFile } from "./core/types";
+import {
+  persistCodexTurnExecutionFailure,
+  persistCodexTurnExitFailure,
+  persistHintedCodexTurnState,
+  persistMissingCodexJournalHandoff,
+} from "./turn-execution-failure-helpers";
+import { FailureContext, SupervisorStateFile } from "./core/types";
 import { createRecord } from "./turn-execution-test-helpers";
+import { independentVerificationBlockerSnapshot } from "./supervisor/independent-verification-blocker";
 
 test("persistHintedCodexTurnState records blocked reasons and repeated blocker bookkeeping from Codex hints", async () => {
   const state: SupervisorStateFile = {
@@ -259,4 +265,145 @@ test("persistCodexTurnExitFailure skips issue-definition freshness when labels a
   assert.equal(updated.state, "failed");
   assert.equal(updated.issue_definition_fingerprint, "existing-fingerprint");
   assert.equal(updated.issue_definition_updated_at, "2026-03-24T02:59:00Z");
+});
+
+test("early Codex failure persistence keeps a carried verifier across timeout, nonzero exit, and missing handoff", async () => {
+  const verifierContext = {
+    category: "blocked" as const,
+    summary: "Independent image verification remains blocked.",
+    signature: "verification:images",
+    command: "npm run verify:images",
+    details: ["structured_blocked_reason=verification"],
+    url: null,
+    updated_at: "2026-07-12T00:00:00Z",
+  };
+  const carriedRecord = createRecord({
+    issue_number: 2447,
+    state: "addressing_review",
+    pr_number: 2451,
+    blocked_reason: "verification",
+    last_error: verifierContext.summary,
+    last_failure_context: verifierContext,
+    last_failure_signature: verifierContext.signature,
+    repeated_failure_signature_count: 3,
+    last_blocker_signature: "verification:images",
+    repeated_blocker_count: 2,
+    blocked_verification_retry_count: 1,
+    timeout_retry_count: 2,
+  });
+  const carriedVerifier = independentVerificationBlockerSnapshot(carriedRecord);
+  assert.ok(carriedVerifier);
+  const buildCodexFailureContext = (
+    category: FailureContext["category"],
+    summary: string,
+    details: string[],
+  ) => ({
+    category,
+    summary,
+    signature: `${category}:${summary}`,
+    command: null,
+    details,
+    url: null,
+    updated_at: "2026-07-12T00:05:00Z",
+  });
+  const applyFailureSignature = () => ({
+    last_failure_signature: "superseding-failure",
+    repeated_failure_signature_count: 1,
+  });
+  const stateStore = {
+    touch: (record: typeof carriedRecord, patch: Partial<typeof carriedRecord>) => ({
+      ...record,
+      ...patch,
+      updated_at: "2026-07-12T00:05:00Z",
+    }),
+    save: async () => undefined,
+  };
+
+  const scenarios = [
+    {
+      name: "timeout",
+      run: async (state: SupervisorStateFile) =>
+        persistCodexTurnExecutionFailure({
+          stateStore,
+          state,
+          record: carriedRecord,
+          issue: { createdAt: "2026-07-11T00:00:00Z" },
+          syncJournal: async () => undefined,
+          issueNumber: 2447,
+          error: new Error("Command timed out after 1800000ms: codex exec"),
+          classifyFailure: () => "timeout",
+          buildCodexFailureContext,
+          applyFailureSignature,
+          preservedVerificationBlocker: carriedVerifier,
+        }),
+      expectedDetail: /review_repair_interruption_detail=.*timed out/i,
+      expectedTimeoutCount: 3,
+    },
+    {
+      name: "nonzero exit",
+      run: async (state: SupervisorStateFile) =>
+        persistCodexTurnExitFailure({
+          stateStore,
+          state,
+          record: carriedRecord,
+          issue: { createdAt: "2026-07-11T00:00:00Z" },
+          syncJournal: async () => undefined,
+          issueNumber: 2447,
+          codexResult: {
+            lastMessage: "Review repair command failed.",
+            stderr: "permission denied",
+            stdout: "",
+          },
+          classifyFailure: () => "command_error",
+          buildCodexFailureContext,
+          applyFailureSignature,
+          preservedVerificationBlocker: carriedVerifier,
+        }),
+      expectedDetail: /review_repair_interruption_detail=.*permission denied/i,
+      expectedTimeoutCount: 2,
+    },
+    {
+      name: "missing handoff",
+      run: async (state: SupervisorStateFile) =>
+        persistMissingCodexJournalHandoff({
+          stateStore,
+          state,
+          record: carriedRecord,
+          issue: { createdAt: "2026-07-11T00:00:00Z" },
+          syncJournal: async () => undefined,
+          issueNumber: 2447,
+          buildCodexFailureContext,
+          applyFailureSignature,
+          preservedVerificationBlocker: carriedVerifier,
+        }),
+      expectedDetail: /review_repair_interruption_blocked_reason=handoff_missing/,
+      expectedTimeoutCount: 2,
+    },
+  ];
+
+  for (const scenario of scenarios) {
+    const state: SupervisorStateFile = {
+      activeIssueNumber: 2447,
+      issues: { "2447": carriedRecord },
+    };
+    const updated = await scenario.run(state);
+    assert.equal(updated.state, "blocked", scenario.name);
+    assert.equal(updated.blocked_reason, "verification", scenario.name);
+    assert.equal(
+      updated.last_failure_context?.command,
+      "npm run verify:images",
+      scenario.name,
+    );
+    assert.equal(updated.last_failure_signature, "verification:images", scenario.name);
+    assert.equal(updated.repeated_failure_signature_count, 3, scenario.name);
+    assert.equal(updated.last_blocker_signature, "verification:images", scenario.name);
+    assert.equal(updated.repeated_blocker_count, 2, scenario.name);
+    assert.equal(updated.blocked_verification_retry_count, 1, scenario.name);
+    assert.equal(updated.timeout_retry_count, scenario.expectedTimeoutCount, scenario.name);
+    assert.match(
+      updated.last_failure_context?.details.join("\n") ?? "",
+      scenario.expectedDetail,
+      scenario.name,
+    );
+  }
 });

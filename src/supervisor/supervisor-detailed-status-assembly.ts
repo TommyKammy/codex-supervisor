@@ -22,6 +22,7 @@ import { classifyStaleReviewBotRecoverability } from "./stale-diagnostic-recover
 import { isWorkstationLocalPathHygieneFailureSignature } from "../workstation-local-path-gate";
 import { formatLatestRecoveryStatusLine, sanitizeStatusValue } from "./supervisor-detailed-status-formatting";
 import { currentHeadLocalCiMissing, hasConfiguredLocalCiCommand } from "../local-ci-policy";
+import { blockedTurnPullRequestReconciliationStatusLine } from "./blocked-turn-pr-reconciliation";
 
 export { buildActiveDetailedStatusLines } from "./supervisor-active-detailed-status-presenters";
 export { formatLatestRecoveryStatusLine, sanitizeStatusValue } from "./supervisor-detailed-status-formatting";
@@ -192,6 +193,11 @@ export function buildInactiveDetailedStatusLines(
   const classificationLine = formatNoActiveTrackedRecordClassificationLine(config, latestRecord, staleReviewBotRemediation);
   if (classificationLine) {
     lines.push(classificationLine);
+  }
+  const blockedTurnPrReconciliation =
+    blockedTurnPullRequestReconciliationStatusLine(latestRecord);
+  if (blockedTurnPrReconciliation) {
+    lines.push(blockedTurnPrReconciliation);
   }
   if (latestRecord && staleReviewBotRemediation) {
     lines.push(formatStaleReviewBotRemediationLine(staleReviewBotRemediation));

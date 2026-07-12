@@ -30,6 +30,10 @@ export interface GitHubPullRequest {
   baseRefName?: string | null;
   headRefName: string;
   headRefOid: string;
+  headRepositoryOwner?: {
+    login?: string | null;
+  } | null;
+  isCrossRepository?: boolean;
   copilotReviewState?: CopilotReviewState | null;
   copilotReviewRequestedAt?: string | null;
   copilotReviewArrivedAt?: string | null;

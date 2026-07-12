@@ -4,6 +4,7 @@ import path from "node:path";
 import test, { mock } from "node:test";
 import { GitHubIssue, GitHubPullRequest, IssueRunRecord, SupervisorStateFile } from "../core/types";
 import { recoverUnexpectedCodexTurnFailure } from "./supervisor-failure-helpers";
+import { independentVerificationBlockerSnapshot } from "./independent-verification-blocker";
 import { Supervisor } from "./supervisor";
 import {
   branchName,
@@ -100,6 +101,103 @@ test("recoverUnexpectedCodexTurnFailure fails closed when post-turn refresh blow
   ]);
   assert.equal(state.issues[String(issueNumber)], updated);
   assert.equal(syncedRecord, updated);
+});
+
+test("recoverUnexpectedCodexTurnFailure restores a pre-preparation verifier and nests the unexpected failure", async () => {
+  const issueNumber = 2447;
+  const failureContext = {
+    category: "blocked" as const,
+    summary: "Independent image verification remains blocked.",
+    signature: "verification:images",
+    command: "npm run verify:images",
+    details: ["structured_blocked_reason=verification"],
+    url: null,
+    updated_at: "2026-07-12T00:00:00Z",
+  };
+  const prePreparationRecord = createRecord({
+    issue_number: issueNumber,
+    state: "addressing_review",
+    pr_number: 2451,
+    blocked_reason: "verification",
+    last_error: failureContext.summary,
+    last_failure_context: failureContext,
+    last_failure_signature: failureContext.signature,
+    repeated_failure_signature_count: 3,
+    last_blocker_signature: "verification:images",
+    repeated_blocker_count: 2,
+    blocked_verification_retry_count: 1,
+  });
+  const carriedVerifier = independentVerificationBlockerSnapshot(
+    prePreparationRecord,
+  );
+  assert.ok(carriedVerifier);
+  const preparedRecord = createRecord({
+    ...prePreparationRecord,
+    state: "addressing_review",
+    blocked_reason: null,
+    last_error: null,
+    last_failure_context: null,
+    last_failure_signature: null,
+    repeated_failure_signature_count: 0,
+    last_blocker_signature: null,
+    repeated_blocker_count: 0,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: { [String(issueNumber)]: preparedRecord },
+  };
+  const stateStore = {
+    touch(current: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return { ...current, ...patch, updated_at: "2026-07-12T00:05:00Z" };
+    },
+    async save(): Promise<void> {
+      return undefined;
+    },
+  };
+
+  const updated = await recoverUnexpectedCodexTurnFailure({
+    config: { stateFile: "/tmp/state.json" },
+    stateStore: stateStore as unknown as Parameters<
+      typeof recoverUnexpectedCodexTurnFailure
+    >[0]["stateStore"],
+    state,
+    record: preparedRecord,
+    issue: {
+      number: issueNumber,
+      title: "Carry verifier through unexpected failure",
+      body: runnableCodexIssueBody("Carry verifier through unexpected failure."),
+      createdAt: "2026-07-11T00:00:00Z",
+      updatedAt: "2026-07-12T00:00:00Z",
+      url: `https://example.test/issues/${issueNumber}`,
+      labels: [],
+      state: "OPEN",
+    },
+    journalSync: async () => undefined,
+    error: new Error("preparePrompt exploded before the verifier ran"),
+    workspaceStatus: {
+      hasUncommittedChanges: false,
+      headSha: "head-2451",
+    },
+    pr: {
+      number: 2451,
+      headRefOid: "head-2451",
+      createdAt: "2026-07-11T00:00:00Z",
+      mergedAt: null,
+    },
+    independentVerificationBlocker: carriedVerifier,
+  });
+
+  assert.equal(updated.state, "blocked");
+  assert.equal(updated.blocked_reason, "verification");
+  assert.equal(updated.last_failure_context?.command, "npm run verify:images");
+  assert.equal(updated.last_failure_signature, "verification:images");
+  assert.equal(updated.repeated_failure_signature_count, 3);
+  assert.equal(updated.blocked_verification_retry_count, 1);
+  assert.match(updated.last_runtime_error ?? "", /preparePrompt exploded/);
+  assert.match(
+    updated.last_failure_context?.details.join("\n") ?? "",
+    /review_repair_interruption_detail=.*preparePrompt exploded/,
+  );
 });
 
 test("recoverUnexpectedCodexTurnFailure preserves dirty recovery context and timeout bookkeeping", async () => {

@@ -365,6 +365,35 @@ test("buildNonRunnableLocalStateReasons keeps retry-budget ordering stable", () 
   ]);
 });
 
+test("buildNonRunnableLocalStateReasons reports exhausted repair budget for tracked verification retries", () => {
+  const config = createConfig({
+    maxImplementationAttemptsPerIssue: 5,
+    maxRepairAttemptsPerIssue: 2,
+  });
+  const reasons = buildNonRunnableLocalStateReasons(
+    createRecord({
+      issue_number: 605,
+      blocked_reason: "verification",
+      pr_number: 42,
+      implementation_attempt_count: 1,
+      repair_attempt_count: config.maxRepairAttemptsPerIssue,
+      last_error: "Verification failed: vitest assertion still failing.",
+      last_failure_kind: null,
+      last_failure_context: null,
+      last_failure_signature: "verification-failure",
+      blocked_verification_retry_count: 0,
+      repeated_blocker_count: 0,
+      repeated_failure_signature_count: 0,
+    }),
+    config,
+  );
+
+  assert.deepEqual(reasons, [
+    `retry_budget repair_attempt_count=${config.maxRepairAttemptsPerIssue}/${config.maxRepairAttemptsPerIssue}`,
+    "local_state blocked",
+  ]);
+});
+
 test("buildIssueExplainSummary reports retryable timeout failures as timeout_retry pending", async () => {
   const config = createConfig({
     timeoutRetryLimit: 2,
@@ -1622,6 +1651,141 @@ test("buildIssueExplainDto marks still-valid Codex review repair targets runnabl
   assert.match(rendered, /^runnable=yes$/m);
   assert.match(rendered, /^stale_review_bot_repair_target .*next_action=repair_still_valid_review_thread$/m);
   assert.doesNotMatch(rendered, /^reason_\d+=local_state blocked$/m);
+});
+
+test("issue explain distinguishes scheduled blocked-turn review repair from diagnostic-only PR lookup", async () => {
+  const config = createConfig({
+    reviewBotLogins: ["chatgpt-codex-connector"],
+  });
+  const scheduledIssue = createIssue({
+    number: 1700,
+    title: "Resume blocked-turn review repair",
+  });
+  const scheduledBranch = "codex/issue-1700";
+  const scheduledPr = createPullRequest({
+    number: 1701,
+    headRefName: scheduledBranch,
+    headRefOid: "head-1701",
+  });
+  const scheduledState = createSupervisorState({
+    activeIssueNumber: null,
+    issues: [
+      createRecord({
+        issue_number: scheduledIssue.number,
+        branch: scheduledBranch,
+        state: "addressing_review",
+        blocked_reason: "verification",
+        pr_number: scheduledPr.number,
+        last_head_sha: scheduledPr.headRefOid,
+        last_failure_context: {
+          category: "blocked",
+          summary: "Independent verifier remains blocked.",
+          signature: "gitops-images-high-critical",
+          command: "npm run verify:images",
+          details: ["structured_blocked_reason=verification"],
+          url: null,
+          updated_at: "2026-07-11T12:00:00Z",
+        },
+      }),
+    ],
+  });
+  const scheduledRendered = renderIssueExplainDto(
+    await buildIssueExplainDto(
+      {
+        getIssue: async () => scheduledIssue,
+        listAllIssues: async () => [scheduledIssue],
+        listCandidateIssues: async () => [scheduledIssue],
+        resolvePullRequestForBranch: async () => scheduledPr,
+        getChecks: async () => [],
+        getUnresolvedReviewThreads: async () => [],
+      },
+      config,
+      scheduledState,
+      scheduledIssue.number,
+    ),
+  );
+  assert.match(scheduledRendered, /^state=addressing_review$/m);
+  assert.match(scheduledRendered, /^runnable=yes$/m);
+  assert.match(
+    scheduledRendered,
+    /^blocked_turn_pr_reconciliation=scheduled_review_repair issue=#1700 pr=#1701 independent_verification_blocker=carried$/m,
+  );
+  assert.doesNotMatch(
+    scheduledRendered,
+    /no_active_tracked_record .*classification=manual_review_required/,
+  );
+
+  const diagnosticIssue = createIssue({
+    number: 1702,
+    title: "Diagnose ambiguous blocked-turn PR",
+  });
+  const diagnosticHead = "head-1703";
+  const diagnosticPr = createPullRequest({
+    number: 1703,
+    headRefName: "codex/issue-1702",
+    headRefOid: diagnosticHead,
+    configuredBotCurrentHeadObservedAt: "2026-07-11T12:50:00Z",
+    configuredBotLatestReviewedCommitSha: diagnosticHead,
+  });
+  const diagnosticThread = createReviewThread({
+    id: "thread-1703-p2",
+    path: "src/recovery.ts",
+    line: 42,
+    comments: {
+      nodes: [
+        {
+          id: "comment-1703-p2",
+          body: "P2: Repair the current-head lifecycle gap.",
+          createdAt: "2026-07-11T12:50:00Z",
+          url: "https://example.test/pr/1703#discussion_r1",
+          author: {
+            login: "chatgpt-codex-connector",
+            typeName: "Bot",
+          },
+        },
+      ],
+    },
+  });
+  const diagnosticState = createSupervisorState({
+    activeIssueNumber: null,
+    issues: [
+      createRecord({
+        issue_number: diagnosticIssue.number,
+        branch: "codex/issue-1702",
+        state: "blocked",
+        blocked_reason: "verification",
+        pr_number: null,
+        last_head_sha: diagnosticHead,
+        last_tracked_pr_progress_summary:
+          "blocked_turn_pr_reconciliation=ambiguous branch=codex/issue-1702 reason=no_unique_canonical_open_pr candidates=#1703,#1704",
+      }),
+    ],
+  });
+  const diagnosticRendered = renderIssueExplainDto(
+    await buildIssueExplainDto(
+      {
+        getIssue: async () => diagnosticIssue,
+        listAllIssues: async () => [diagnosticIssue],
+        listCandidateIssues: async () => [diagnosticIssue],
+        resolvePullRequestForBranch: async () => diagnosticPr,
+        getChecks: async () => [],
+        getUnresolvedReviewThreads: async () => [diagnosticThread],
+      },
+      config,
+      diagnosticState,
+      diagnosticIssue.number,
+    ),
+  );
+  assert.match(diagnosticRendered, /^state=blocked$/m);
+  assert.match(diagnosticRendered, /^runnable=no$/m);
+  assert.match(
+    diagnosticRendered,
+    /^blocked_turn_pr_reconciliation=ambiguous branch=codex\/issue-1702 reason=no_unique_canonical_open_pr candidates=#1703,#1704$/m,
+  );
+  assert.match(
+    diagnosticRendered,
+    /^codex_connector_operator_diagnostic .* next_action=repair_must_fix_findings$/m,
+  );
 });
 
 test("buildIssueExplainDto reports dependency root blockers for stale configured-bot predecessors", async () => {

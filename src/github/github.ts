@@ -131,6 +131,13 @@ export class GitHubClient {
     return this.reviewSurface.findOpenPullRequest(branch, options);
   }
 
+  async findOpenPullRequestsForBranch(
+    branch: string,
+    options: { purpose?: "status" | "action" } = {},
+  ): Promise<GitHubPullRequest[]> {
+    return this.reviewSurface.findOpenPullRequestsForBranch(branch, options);
+  }
+
   async findLatestPullRequestForBranch(
     branch: string,
     options: { purpose?: "status" | "action" } = {},

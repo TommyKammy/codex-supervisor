@@ -39,6 +39,7 @@ import {
 import { IssueJournalSync, MemoryArtifacts } from "./run-once-issue-preparation";
 import { StateStore } from "./core/state-store";
 import {
+  FailureContext,
   GitHubIssue,
   GitHubPullRequest,
   IssueRunRecord,
@@ -288,6 +289,7 @@ export async function prepareCodexTurnPrompt(args: {
   checks: import("./core/types").PullRequestCheck[];
   reviewThreads: ReviewThread[];
   github: Pick<GitHubClient, "getExternalReviewSurface">;
+  failureContextOverride?: FailureContext | null;
   agentRunnerCapabilities?: Pick<AgentRunnerCapabilities, "supportsResume">;
   loadChangedFiles?: (config: SupervisorConfig, workspacePath: string) => Promise<string[]>;
 }): Promise<{
@@ -383,7 +385,10 @@ export async function prepareCodexTurnPrompt(args: {
     branch: record.branch,
     journalPath: args.journalPath,
     journalExcerpt: truncate(args.journalContent, 5000),
-    failureContext: record.last_failure_context,
+    failureContext:
+      args.failureContextOverride === undefined
+        ? record.last_failure_context
+        : args.failureContextOverride,
     previousSummary: args.previousCodexSummary,
     previousError: args.previousError,
   };

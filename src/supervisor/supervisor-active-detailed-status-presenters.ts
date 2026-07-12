@@ -44,6 +44,7 @@ import { summarizePreservedPartialWork } from "./supervisor-preserved-partial-wo
 import { buildConversationResolutionBlockerDiagnostic } from "../conversation-resolution-blocker-diagnostics";
 import { sanitizeStatusValue } from "./supervisor-detailed-status-formatting";
 import { currentHeadLocalCiMissing, hasConfiguredLocalCiCommand } from "../local-ci-policy";
+import { blockedTurnPullRequestReconciliationStatusLine } from "./blocked-turn-pr-reconciliation";
 
 type ActiveDetailedStatusArgs = Omit<BuildDetailedStatusModelArgs, "latestRecord" | "trackedIssueCount"> & {
   activeRecord: NonNullable<BuildDetailedStatusModelArgs["activeRecord"]>;
@@ -57,6 +58,8 @@ function unresolvedReviewThreads(reviewThreads: BuildDetailedStatusModelArgs["re
 
 export function buildActiveRecordBaselineLines(args: Pick<ActiveDetailedStatusArgs, "activeRecord">): string[] {
   const { activeRecord } = args;
+  const blockedTurnPrReconciliation =
+    blockedTurnPullRequestReconciliationStatusLine(activeRecord);
   return [
     `issue=#${activeRecord.issue_number}`,
     `state=${activeRecord.state}`,
@@ -80,6 +83,7 @@ export function buildActiveRecordBaselineLines(args: Pick<ActiveDetailedStatusAr
     `last_failure_signature=${activeRecord.last_failure_signature ?? "none"}`,
     `merge_latency provider_success_observed_at=${activeRecord.provider_success_observed_at ?? "none"} provider_success_head_sha=${activeRecord.provider_success_head_sha ?? "none"} merge_readiness_last_evaluated_at=${activeRecord.merge_readiness_last_evaluated_at ?? "none"}`,
     `retries timeout=${activeRecord.timeout_retry_count} verification=${activeRecord.blocked_verification_retry_count} same_blocker=${activeRecord.repeated_blocker_count} same_failure_signature=${activeRecord.repeated_failure_signature_count}`,
+    ...(blockedTurnPrReconciliation ? [blockedTurnPrReconciliation] : []),
   ];
 }
 

@@ -10,6 +10,8 @@ import {
 } from "../issue-metadata";
 import {
   attemptBudgetForLane,
+  attemptLane,
+  attemptsUsedForLane,
   formatExecutionReadyMissingFields,
   hasAttemptBudgetRemaining,
   isEligibleForSelection,
@@ -68,6 +70,7 @@ import {
   maybeBuildIssueActivityContext,
   type SupervisorIssueActivityContextDto,
 } from "./supervisor-operator-activity-context";
+import { blockedTurnPullRequestReconciliationStatusLine } from "./blocked-turn-pr-reconciliation";
 import { formatPreMergeEvaluationStatusLine, loadPreMergeEvaluationDto } from "./supervisor-pre-merge-evaluation";
 import { summarizePreservedPartialWork } from "./supervisor-preserved-partial-work";
 import {
@@ -147,6 +150,7 @@ export interface SupervisorExplainDto {
   codexConnectorConvergenceSummary?: string | null;
   noActiveTrackedRecordSummary?: string | null;
   trackedPrRetryabilitySummary?: string | null;
+  blockedTurnPrReconciliationSummary?: string | null;
   trackedPrReadyPromotionMaintenanceSummary?: string | null;
   trackedPrMismatchSummary: string | null;
   trackedPrMismatchDetailLines?: string[];
@@ -297,9 +301,10 @@ export function buildNonRunnableLocalStateReasons(record: IssueRunRecord, config
     ) {
       reasons.push(`manual_block ${record.blocked_reason}`);
     } else if (record.blocked_reason === "verification" && !shouldAutoRetryBlockedVerification(record, config)) {
-      if (!hasAttemptBudgetRemaining(record, config, "implementation")) {
+      const retryLane = attemptLane(record, null);
+      if (!hasAttemptBudgetRemaining(record, config, retryLane)) {
         reasons.push(
-          `retry_budget implementation_attempt_count=${record.implementation_attempt_count}/${attemptBudgetForLane(config, "implementation")}`,
+          `retry_budget ${retryLane}_attempt_count=${attemptsUsedForLane(record, retryLane)}/${attemptBudgetForLane(config, retryLane)}`,
         );
       }
       if (record.blocked_verification_retry_count >= config.blockedVerificationRetryLimit) {
@@ -684,6 +689,8 @@ export async function buildIssueExplainDto(
           `signal=${record.last_tracked_pr_progress_summary.replace(/\s+/g, "_")}`,
         ].join(" ")
         : null,
+    blockedTurnPrReconciliationSummary:
+      blockedTurnPullRequestReconciliationStatusLine(record ?? null),
     trackedPrReadyPromotionMaintenanceSummary,
     trackedPrMismatchSummary: trackedPrMismatch?.summaryLine ?? null,
     trackedPrMismatchDetailLines: trackedPrMismatch?.detailLines ?? [],
@@ -782,6 +789,9 @@ export function renderIssueExplainDto(dto: SupervisorExplainDto): string {
     ...(dto.codexConnectorConvergenceSummary ? [dto.codexConnectorConvergenceSummary] : []),
     ...(dto.noActiveTrackedRecordSummary ? [dto.noActiveTrackedRecordSummary] : []),
     ...(dto.trackedPrRetryabilitySummary ? [dto.trackedPrRetryabilitySummary] : []),
+    ...(dto.blockedTurnPrReconciliationSummary
+      ? [dto.blockedTurnPrReconciliationSummary]
+      : []),
     ...(dto.trackedPrReadyPromotionMaintenanceSummary ? [dto.trackedPrReadyPromotionMaintenanceSummary] : []),
     ...(dto.trackedPrMismatchSummary ? [dto.trackedPrMismatchSummary] : []),
     ...(dto.trackedPrMismatchDetailLines ? dto.trackedPrMismatchDetailLines : []),

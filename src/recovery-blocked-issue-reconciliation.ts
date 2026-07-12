@@ -59,6 +59,10 @@ import {
   trackedHandoffExternalProgressEvidence,
 } from "./recovery-current-head-evidence";
 import { applyRecoveryEvent, buildRecoveryEvent, needsRecordUpdate } from "./recovery-event-patch";
+import {
+  hasBlockedTurnVerificationProvenance,
+  reconcileBlockedTurnPullRequest,
+} from "./supervisor/blocked-turn-pr-reconciliation";
 
 export { codexConnectorChurnStopEvidenceSource } from "./recovery-codex-connector-churn";
 
@@ -71,7 +75,15 @@ type RecoveryGitHubLike = Pick<
   | "getPullRequestIfExists"
   | "getUnresolvedReviewThreads"
 > & Partial<
-  Pick<import("./github").GitHubClient, "addIssueComment" | "getExternalReviewSurface" | "getIssueComments" | "updateIssueComment">
+  Pick<
+    import("./github").GitHubClient,
+    | "addIssueComment"
+    | "findOpenPullRequestsForBranch"
+    | "getExternalReviewSurface"
+    | "getIssueComments"
+    | "resolvePullRequestForBranch"
+    | "updateIssueComment"
+  >
 >;
 
 function latestFiniteTimestamp(...values: Array<string | null | undefined>): number | null {
@@ -227,7 +239,17 @@ function hasSupervisorVerifiedNoSourceChangeStaleAcknowledgement(normalizedBody:
 
 export async function reconcileRecoverableBlockedIssueStatesInModule(
   github: Pick<RecoveryGitHubLike, "getPullRequestIfExists" | "getIssue" | "getChecks" | "getUnresolvedReviewThreads">
-    & Partial<Pick<RecoveryGitHubLike, "addIssueComment" | "getExternalReviewSurface" | "getIssueComments" | "updateIssueComment">>,
+    & Partial<
+      Pick<
+        RecoveryGitHubLike,
+        | "addIssueComment"
+        | "findOpenPullRequestsForBranch"
+        | "getExternalReviewSurface"
+        | "getIssueComments"
+        | "resolvePullRequestForBranch"
+        | "updateIssueComment"
+      >
+    >,
   stateStore: StateStoreLike,
   state: SupervisorStateFile,
   config: SupervisorConfig,
@@ -306,6 +328,162 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
       changed = true;
       recoveryEvents.push(recoveryEvent);
       continue;
+    }
+
+    untrackedBlockedTurnPullRequest: {
+      const shouldReconcileUntrackedBlockedTurnPullRequest =
+        record.pr_number === null &&
+        (
+          record.blocked_reason === null ||
+          record.blocked_reason === "manual_review" ||
+          record.blocked_reason === "unknown" ||
+          hasBlockedTurnVerificationProvenance(record)
+        ) &&
+        github.findOpenPullRequestsForBranch !== undefined;
+      if (shouldReconcileUntrackedBlockedTurnPullRequest) {
+        const reconciliation = await reconcileBlockedTurnPullRequest({
+          github,
+          state,
+          record,
+          defaultBranch: config.defaultBranch,
+          repoSlug: config.repoSlug,
+          purpose: "action",
+        });
+        if (reconciliation.kind !== "bound") {
+          const diagnosticPatch: Partial<IssueRunRecord> = {
+            last_tracked_pr_progress_summary: reconciliation.diagnostic,
+          };
+          if (needsRecordUpdate(record, diagnosticPatch)) {
+            const updated = stateStore.touch(record, diagnosticPatch);
+            state.issues[String(record.issue_number)] = updated;
+            changed = true;
+          }
+          const absentCanUseExistingNoPrRecovery =
+            reconciliation.kind === "absent" &&
+            (
+              shouldReconsiderBlockedNoPrStaleManualStop(record, issue) ||
+              shouldReconsiderGenericNoPrIssueDefinitionChange(record, issue)
+            );
+          if (absentCanUseExistingNoPrRecovery) {
+            break untrackedBlockedTurnPullRequest;
+          }
+          continue;
+        }
+
+        const trackedPullRequest = reconciliation.pullRequest;
+        const checks = await github.getChecks(trackedPullRequest.number);
+        const reviewThreads = await github.getUnresolvedReviewThreads(
+          trackedPullRequest.number,
+        );
+        const projection = projectTrackedPrLifecycle({
+          config,
+          record,
+          pr: trackedPullRequest,
+          checks,
+          reviewThreads,
+          inferStateFromPullRequest: inferStateFromPullRequestImpl,
+          blockedReasonForLifecycleState: blockedReasonForLifecycleStateImpl,
+          syncReviewWaitWindow: syncReviewWaitWindowImpl,
+          syncCopilotReviewRequestObservation:
+            syncCopilotReviewRequestObservationImpl,
+          syncCopilotReviewTimeoutState: syncCopilotReviewTimeoutStateImpl,
+        });
+        if (
+          record.blocked_reason === "unknown" &&
+          projection.shouldSuppressRecovery
+        ) {
+          const suppressionPatch: Partial<IssueRunRecord> = {
+            last_tracked_pr_progress_summary:
+              `${reconciliation.diagnostic} projection_suppressed=yes`,
+          };
+          if (needsRecordUpdate(record, suppressionPatch)) {
+            const updated = stateStore.touch(record, suppressionPatch);
+            state.issues[String(record.issue_number)] = updated;
+            changed = true;
+          }
+          continue;
+        }
+
+        const schedulesReviewRepair =
+          !projection.shouldSuppressRecovery &&
+          projection.nextState === "addressing_review";
+        const preserveIndependentVerificationBlocker =
+          schedulesReviewRepair &&
+          record.blocked_reason === "verification" &&
+          record.last_failure_context !== null;
+        const rehydratesProjectedLifecycle =
+          !projection.shouldSuppressRecovery &&
+          record.blocked_reason !== "verification";
+        const projectedFailureContext =
+          rehydratesProjectedLifecycle && projection.nextState === "blocked"
+            ? inferFailureContextImpl(
+              config,
+              projection.recordForState,
+              trackedPullRequest,
+              checks,
+              reviewThreads,
+            )
+            : null;
+        const recoveryEvent = buildRecoveryEvent(
+          record.issue_number,
+          `blocked_turn_pr_reconciled: bound issue #${record.issue_number} to PR #${trackedPullRequest.number} ` +
+            `at head ${trackedPullRequest.headRefOid} scheduled_review_repair=${schedulesReviewRepair ? "yes" : "no"}`,
+        );
+        const boundPatch: Partial<IssueRunRecord> = rehydratesProjectedLifecycle
+          ? {
+            ...buildTrackedPrStaleFailureConvergencePatch({
+              record,
+              pr: trackedPullRequest,
+              nextState: projection.nextState,
+              failureContext: projectedFailureContext,
+              blockedReason: projection.nextBlockedReason,
+              reviewWaitPatch: projection.reviewWaitPatch,
+              codexConnectorReviewRequestObservationPatch:
+                projection.codexConnectorReviewRequestObservationPatch,
+              copilotReviewRequestObservationPatch:
+                projection.copilotReviewRequestObservationPatch,
+              copilotReviewTimeoutPatch: projection.copilotReviewTimeoutPatch,
+              mergeLatencyVisibilityPatch: projection.mergeLatencyVisibilityPatch,
+            }),
+            codex_session_id: null,
+            last_tracked_pr_progress_summary:
+              `${reconciliation.diagnostic} ` +
+              `scheduled_review_repair=${schedulesReviewRepair ? "yes" : "no"}`,
+          }
+          : {
+            state: schedulesReviewRepair ? "addressing_review" : "blocked",
+            blocked_reason: preserveIndependentVerificationBlocker
+              ? "verification"
+              : schedulesReviewRepair
+                ? null
+                : record.blocked_reason,
+            pr_number: trackedPullRequest.number,
+            last_head_sha: trackedPullRequest.headRefOid,
+            codex_session_id: schedulesReviewRepair
+              ? null
+              : record.codex_session_id,
+            last_tracked_pr_progress_summary:
+              `${reconciliation.diagnostic} ` +
+              `scheduled_review_repair=${schedulesReviewRepair ? "yes" : "no"}`,
+            ...resetTrackedPrHeadScopedStateOnAdvance(
+              record,
+              trackedPullRequest.headRefOid,
+            ),
+            ...projection.reviewWaitPatch,
+            ...projection.codexConnectorReviewRequestObservationPatch,
+            ...projection.copilotReviewRequestObservationPatch,
+            ...projection.copilotReviewTimeoutPatch,
+            ...projection.mergeLatencyVisibilityPatch,
+          };
+        const updated = stateStore.touch(
+          record,
+          applyRecoveryEvent(boundPatch, recoveryEvent),
+        );
+        state.issues[String(record.issue_number)] = updated;
+        changed = true;
+        recoveryEvents.push(recoveryEvent);
+        continue;
+      }
     }
 
     if (shouldReconsiderBlockedNoPrStaleManualStop(record, issue)) {
@@ -819,6 +997,10 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
         continue;
       }
 
+      const carryIndependentVerificationBlocker =
+        nextState === "addressing_review" &&
+        record.last_failure_context !== null &&
+        hasBlockedTurnVerificationProvenance(record);
       const patch = buildTrackedPrStaleFailureConvergencePatch({
         record,
         pr: trackedPullRequest,
@@ -845,6 +1027,26 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
         patch.last_tracked_pr_progress_snapshot = null;
         patch.last_tracked_pr_progress_summary = null;
         patch.last_tracked_pr_repeat_failure_decision = null;
+      }
+      if (carryIndependentVerificationBlocker) {
+        Object.assign(patch, {
+          blocked_reason: "verification",
+          last_error: record.last_error,
+          last_failure_kind: record.last_failure_kind,
+          last_failure_context: record.last_failure_context,
+          last_blocker_signature: record.last_blocker_signature,
+          last_failure_signature: record.last_failure_signature,
+          repeated_failure_signature_count:
+            record.repeated_failure_signature_count,
+          repeated_blocker_count: record.repeated_blocker_count,
+          timeout_retry_count: record.timeout_retry_count,
+          blocked_verification_retry_count:
+            record.blocked_verification_retry_count,
+          last_tracked_pr_progress_summary:
+            `scheduled_review_repair_with_independent_verification_blocker ` +
+            `pr=#${trackedPullRequest.number} head=${trackedPullRequest.headRefOid} ` +
+            `command=${record.last_failure_context!.command ?? "unknown"}`,
+        } satisfies Partial<IssueRunRecord>);
       }
       const recoveryEvent = staleLocalManualReviewResidueRecovery
         ? buildRecoveryEvent(

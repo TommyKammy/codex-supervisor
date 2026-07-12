@@ -49,6 +49,7 @@ import {
   CodexTurnShortCircuit,
   executeCodexTurnPhase,
 } from "../run-once-turn-execution";
+import { independentVerificationBlockerSnapshot } from "./independent-verification-blocker";
 import {
   handlePostTurnPullRequestTransitionsPhase,
   PostTurnPullRequestContext,
@@ -630,12 +631,17 @@ export class Supervisor {
 
   private async executeCodexTurn(context: CodexTurnContext): Promise<CodexTurnResult | CodexTurnShortCircuit> {
     let { state, record, pr, checks, reviewThreads, workspaceStatus, syncJournal, options } = context;
+    const independentVerificationBlocker =
+      context.independentVerificationBlocker ??
+      independentVerificationBlockerSnapshot(record);
     const nextState = pr
       ? inferStateFromPullRequest(this.config, record, pr, checks, reviewThreads)
       : inferStateWithoutPullRequest(record, workspaceStatus);
 
     if (options.dryRun) {
-      record = this.stateStore.touch(record, { state: nextState });
+      if (!independentVerificationBlocker) {
+        record = this.stateStore.touch(record, { state: nextState });
+      }
       state.issues[String(record.issue_number)] = record;
       await this.stateStore.save(state);
       return {
@@ -663,8 +669,34 @@ export class Supervisor {
         state: nextState,
         ...incrementAttemptCounters(record, preRunAttemptLane),
         ...addressingReviewStrategyPatch(record, nextState),
-        last_failure_context: inferFailureContext(this.config, record, pr, checks, reviewThreads),
-        blocked_reason: null,
+        ...(independentVerificationBlocker
+          ? {
+              last_error: independentVerificationBlocker.lastError,
+              last_failure_kind: null,
+              last_failure_context:
+                independentVerificationBlocker.lastFailureContext,
+              last_failure_signature:
+                independentVerificationBlocker.lastFailureSignature,
+              repeated_failure_signature_count:
+                independentVerificationBlocker.repeatedFailureSignatureCount,
+              last_blocker_signature:
+                independentVerificationBlocker.lastBlockerSignature,
+              repeated_blocker_count:
+                independentVerificationBlocker.repeatedBlockerCount,
+              blocked_verification_retry_count:
+                independentVerificationBlocker.blockedVerificationRetryCount,
+              blocked_reason: "verification" as const,
+            }
+          : {
+              last_failure_context: inferFailureContext(
+                this.config,
+                record,
+                pr,
+                checks,
+                reviewThreads,
+              ),
+              blocked_reason: null,
+            }),
       });
       state.issues[String(record.issue_number)] = record;
       await this.stateStore.save(state);
@@ -678,6 +710,7 @@ export class Supervisor {
           ...context,
           record,
           reviewThreads,
+          independentVerificationBlocker,
         },
         sessionLock,
         acquireSessionLock: async (sessionId) => acquireFileLock(

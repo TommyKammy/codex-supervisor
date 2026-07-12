@@ -1,10 +1,32 @@
 import { shouldAutoRetryTimeout } from "./supervisor-failure-helpers";
 import { GitHubPullRequest, IssueRunRecord, SupervisorConfig } from "../core/types";
 import { isTerminalState } from "../core/utils";
+import { hasBlockedTurnVerificationProvenance } from "./blocked-turn-pr-reconciliation";
 
 export type AttemptLane = "implementation" | "repair";
 
 const VERIFICATION_KEYWORD_PATTERN = /\b(playwright|e2e|vitest|assertion|verification|tests?)\b/;
+
+function hasVerificationRetryHardBlocker(
+  message: string | null | undefined,
+): boolean {
+  const lower = message?.toLowerCase() ?? "";
+  return (
+    lower.includes("missing permissions") ||
+    lower.includes("missing secrets") ||
+    lower.includes("unclear requirements")
+  );
+}
+
+function hasPreservedReviewRepairHardBlocker(record: IssueRunRecord): boolean {
+  return (
+    record.last_failure_context?.details.some((detail) =>
+      /^review_repair_(?:interruption|terminal)_blocked_reason=(?:permissions|secrets|requirements|clarification)$/u.test(
+        detail,
+      )
+    ) ?? false
+  );
+}
 
 export function formatExecutionReadyMissingFields(fields: string[]): string {
   return fields.join(", ");
@@ -22,10 +44,7 @@ export function isVerificationBlockedMessage(message: string | null | undefined)
     lower.includes("failing") ||
     lower.includes("failed") ||
     lower.includes("still failing");
-  const hardBlocker =
-    lower.includes("missing permissions") ||
-    lower.includes("missing secrets") ||
-    lower.includes("unclear requirements");
+  const hardBlocker = hasVerificationRetryHardBlocker(message);
 
   return mentionsVerification && mentionsFailure && !hardBlocker;
 }
@@ -51,10 +70,29 @@ export function hasAttemptBudgetRemaining(
 }
 
 export function shouldAutoRetryBlockedVerification(record: IssueRunRecord, config: SupervisorConfig): boolean {
+  const hasUnresolvedBlockedTurnPullRequestDiagnostic =
+    record.pr_number === null &&
+    /(?:^| \| )blocked_turn_pr_reconciliation=(?:absent|ambiguous|error)\b/u.test(
+      record.last_tracked_pr_progress_summary ?? "",
+    );
+  const unresolvedBlockedTurnPullRequest =
+    hasUnresolvedBlockedTurnPullRequestDiagnostic &&
+    (
+      record.blocked_reason !== "verification" ||
+      hasBlockedTurnVerificationProvenance(record)
+    );
   return (
     record.state === "blocked" &&
-    isVerificationBlockedMessage(record.last_error) &&
-    hasAttemptBudgetRemaining(record, config, "implementation") &&
+    !unresolvedBlockedTurnPullRequest &&
+    !hasPreservedReviewRepairHardBlocker(record) &&
+    (
+      (
+        hasBlockedTurnVerificationProvenance(record) &&
+        !hasVerificationRetryHardBlocker(record.last_error)
+      ) ||
+      isVerificationBlockedMessage(record.last_error)
+    ) &&
+    hasAttemptBudgetRemaining(record, config, attemptLane(record, null)) &&
     record.blocked_verification_retry_count < config.blockedVerificationRetryLimit &&
     record.repeated_blocker_count < config.sameBlockerRepeatLimit &&
     record.repeated_failure_signature_count < config.sameFailureSignatureRepeatLimit
