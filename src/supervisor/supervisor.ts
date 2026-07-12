@@ -669,8 +669,34 @@ export class Supervisor {
         state: nextState,
         ...incrementAttemptCounters(record, preRunAttemptLane),
         ...addressingReviewStrategyPatch(record, nextState),
-        last_failure_context: inferFailureContext(this.config, record, pr, checks, reviewThreads),
-        blocked_reason: null,
+        ...(independentVerificationBlocker
+          ? {
+              last_error: independentVerificationBlocker.lastError,
+              last_failure_kind: null,
+              last_failure_context:
+                independentVerificationBlocker.lastFailureContext,
+              last_failure_signature:
+                independentVerificationBlocker.lastFailureSignature,
+              repeated_failure_signature_count:
+                independentVerificationBlocker.repeatedFailureSignatureCount,
+              last_blocker_signature:
+                independentVerificationBlocker.lastBlockerSignature,
+              repeated_blocker_count:
+                independentVerificationBlocker.repeatedBlockerCount,
+              blocked_verification_retry_count:
+                independentVerificationBlocker.blockedVerificationRetryCount,
+              blocked_reason: "verification" as const,
+            }
+          : {
+              last_failure_context: inferFailureContext(
+                this.config,
+                record,
+                pr,
+                checks,
+                reviewThreads,
+              ),
+              blocked_reason: null,
+            }),
       });
       state.issues[String(record.issue_number)] = record;
       await this.stateStore.save(state);

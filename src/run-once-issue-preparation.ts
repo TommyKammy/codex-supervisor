@@ -612,5 +612,9 @@ export async function prepareIssueExecutionContext(
   return {
     ...preparedWorkspace,
     ...hydratedPullRequest,
+    independentVerificationBlocker:
+      hydratedPullRequest.record.pr_number === null
+        ? null
+        : independentVerificationBlockerSnapshot(hydratedPullRequest.record),
   };
 }

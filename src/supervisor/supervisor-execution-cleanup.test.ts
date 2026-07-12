@@ -360,7 +360,7 @@ test("recovered independent verification survives preparation and Supervisor pre
     `${message}\n${JSON.stringify(state.issues[String(issueNumber)])}`,
   );
   assert.match(message, /Codex reported blocked for issue #122/);
-  assert.equal(blockedReasonAtAgentDispatch, null);
+  assert.equal(blockedReasonAtAgentDispatch, "verification");
   const updated = state.issues[String(issueNumber)]!;
   assert.equal(updated.state, "blocked");
   assert.equal(updated.blocked_reason, "verification");

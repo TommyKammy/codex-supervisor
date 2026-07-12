@@ -7036,12 +7036,13 @@ test("reconcileRecoverableBlockedIssueStates carries a tracked legacy canonical 
     state: "blocked",
     blocked_reason: "verification",
     pr_number: 403,
-    last_head_sha: "head-403",
+    last_head_sha: "head-402",
     last_error: failureContext.summary,
     last_failure_context: failureContext,
     last_failure_signature: failureContext.signature,
     repeated_failure_signature_count: 2,
     repeated_blocker_count: 2,
+    repair_attempt_count: 3,
     blocked_verification_retry_count: 1,
   });
   const state = createSupervisorState({ issues: [record] });
@@ -7089,6 +7090,7 @@ test("reconcileRecoverableBlockedIssueStates carries a tracked legacy canonical 
   assert.equal(updated.repeated_failure_signature_count, 2);
   assert.equal(updated.repeated_blocker_count, 2);
   assert.equal(updated.blocked_verification_retry_count, 1);
+  assert.equal(updated.repair_attempt_count, 0);
 });
 
 test("reconcileRecoverableBlockedIssueStates rehydrates an untracked unknown blocker after a unique PR bind", async () => {

@@ -1038,7 +1038,6 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
           repeated_failure_signature_count:
             record.repeated_failure_signature_count,
           repeated_blocker_count: record.repeated_blocker_count,
-          repair_attempt_count: record.repair_attempt_count,
           timeout_retry_count: record.timeout_retry_count,
           blocked_verification_retry_count:
             record.blocked_verification_retry_count,

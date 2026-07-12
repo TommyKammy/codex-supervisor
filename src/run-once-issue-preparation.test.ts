@@ -389,6 +389,62 @@ test("prepareIssueExecutionContext preserves a recovered independent verifier fo
   assert.equal(state.issues["240"]?.blocked_reason, "verification");
 });
 
+test("prepareIssueExecutionContext drops a carried verifier after stale PR hydration clears the binding", async () => {
+  const failureContext = {
+    category: "blocked" as const,
+    summary: "Image verification remains blocked.",
+    signature: "verification:images",
+    command: "npm run verify:images",
+    details: ["structured_blocked_reason=verification"],
+    url: null,
+    updated_at: "2026-07-11T12:40:00Z",
+  };
+  const record = createRecord({
+    state: "addressing_review",
+    pr_number: 240,
+    blocked_reason: "verification",
+    last_error: failureContext.summary,
+    last_failure_context: failureContext,
+    last_failure_signature: failureContext.signature,
+  });
+  const state = createState(record);
+
+  const result = await prepareIssueExecutionContext({
+    github: {
+      resolvePullRequestForBranch: async () => null,
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+      createPullRequest: async () => {
+        throw new Error("unexpected createPullRequest call");
+      },
+    },
+    config: createConfig(),
+    stateStore: {
+      touch: (currentRecord, patch) => ({ ...currentRecord, ...patch }),
+      save: async () => undefined,
+    },
+    state,
+    record,
+    issue: createIssue(),
+    options: { dryRun: true },
+    ensureWorkspace: async () => "/tmp/workspaces/issue-240",
+    syncIssueJournal: async () => undefined,
+    syncMemoryArtifacts: async ({ journalPath }) => ({
+      contextIndexPath: "/tmp/context-index.md",
+      agentsPath: "/tmp/AGENTS.generated.md",
+      alwaysReadFiles: [journalPath],
+      onDemandFiles: [],
+    }),
+    getWorkspaceStatus: async () => createWorkspaceStatus(),
+    writeSupervisorCycleDecisionSnapshot: async () => "/tmp/decision.json",
+    writePreMergeAssessmentSnapshot: async () => "/tmp/assessment.json",
+  });
+
+  assert.ok(result && !isRestartRunOnce(result) && typeof result !== "string");
+  assert.equal(result.record.pr_number, null);
+  assert.equal(result.independentVerificationBlocker, null);
+});
+
 test("prepareIssueExecutionContext records the workspace restore source for later diagnostics", async () => {
   const record = createRecord();
   const state = createState(record);

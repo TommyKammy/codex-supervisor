@@ -92,7 +92,7 @@ function isUnambiguousSpaceSeparatedOutcomeCommand(value: string): boolean {
 }
 
 function hasSpaceSeparatedOutcomeSuffix(value: string): boolean {
-  return /\s+(?:passed|pass|success|succeeded|failed|failure|error|timeout|blocked)[.!]?$/iu.test(
+  return /\s+(?:passed|pass|success|succeeded|failed|failure|error|timeout|blocked|skipped|skip|not\s+run)[.!]?$/iu.test(
     normalizeCodexTurnVerificationCommandEntry(value),
   );
 }
@@ -103,7 +103,7 @@ function splitVerificationOutcomeSuffix(value: string): {
 } | null {
   const normalized = normalizeCodexTurnVerificationCommandEntry(value);
   const delimitedOutcome = normalized.match(
-    /^(.*\S)(?:\s*:\s+|\s+(?:-|—)\s+|\s*\(\s*)(passed|pass|success|succeeded|failed|failure|error|timeout|blocked)(?=$|[\s:.,;)]).*$/iu,
+    /^(.*\S)(?:\s*:\s+|\s+(?:-|—)\s+|\s*\(\s*)(passed|pass|success|succeeded|failed|failure|error|timeout|blocked|skipped|skip|not\s+run)(?=$|[\s:.,;)]).*$/iu,
   );
   if (delimitedOutcome?.[1] && delimitedOutcome[2]) {
     return {
@@ -113,7 +113,7 @@ function splitVerificationOutcomeSuffix(value: string): {
   }
 
   const spaceSeparatedOutcome = normalized.match(
-    /^(.*\S)\s+(passed|pass|success|succeeded|failed|failure|error|timeout|blocked)[.!]?$/iu,
+    /^(.*\S)\s+(passed|pass|success|succeeded|failed|failure|error|timeout|blocked|skipped|skip|not\s+run)[.!]?$/iu,
   );
   const command = spaceSeparatedOutcome?.[1]?.trim() ?? "";
   const outcome = spaceSeparatedOutcome?.[2] ?? "";
@@ -223,7 +223,7 @@ export function explicitPassingCodexTurnVerificationCommand(
       /^(?:passed|pass|success|succeeded)\b/iu.test(nextEntry);
     const hasAdjacentFailedOutcome =
       CODEX_TURN_VERIFICATION_COMMAND_PATTERN.test(entry) &&
-      /^(?:failed|failure|error|timeout|blocked)\b/iu.test(nextEntry);
+      /^(?:failed|failure|error|timeout|blocked|skipped|skip|not\s+run)\b/iu.test(nextEntry);
     if (
       inlineOutcome?.outcome === "passed" ||
       hasAdjacentPassingOutcome

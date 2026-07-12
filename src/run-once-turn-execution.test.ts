@@ -216,6 +216,21 @@ test("passing verification evidence is command-scoped and failed outcomes domina
       expected: null,
     },
     {
+      name: "a skipped result conflicts with a pass for the same command",
+      evidence: "npm run verify:images passed; npm run verify:images skipped",
+      expected: null,
+    },
+    {
+      name: "a not-run result conflicts with a pass for the same command",
+      evidence: "npm run verify:images: passed; npm run verify:images: not run",
+      expected: null,
+    },
+    {
+      name: "an adjacent skipped result conflicts with an adjacent pass",
+      evidence: "$ npm test; passed; rtk npm test; skipped",
+      expected: null,
+    },
+    {
       name: "a failed command does not suppress a different passing command",
       evidence: "npm run verify:images failed; npm test passed",
       expected: "npm test",
