@@ -7,6 +7,7 @@ import {
 } from "../durable-artifact-provenance";
 import {
   extractIssueJournalHandoff,
+  normalizeDurableTrackedArtifactJson,
   normalizeDurableTrackedArtifactContent,
   readIssueJournal,
   type IssueJournalHandoff,
@@ -511,13 +512,11 @@ export async function syncPostMergeAuditArtifact(args: {
     issueNumber: args.issue.number,
     headSha: args.pullRequest.headRefOid,
   });
-  const normalizedArtifact = JSON.parse(
-    normalizeDurableTrackedArtifactContent(
-      `${JSON.stringify(artifact, null, 2)}\n`,
-      args.nextRecord.workspace,
-      [args.config.localReviewArtifactDir],
-    ),
-  ) as PostMergeAuditArtifact;
+  const normalizedArtifact = normalizeDurableTrackedArtifactJson(
+    artifact,
+    args.nextRecord.workspace,
+    [args.config.localReviewArtifactDir],
+  );
   return writePostMergeAuditArtifactSafely(args.issue.number, artifactPath, normalizedArtifact);
 }
 

@@ -339,6 +339,9 @@ test("writeLocalReviewArtifacts rewrites repo-local absolute paths and redacts h
     localReviewArtifactDir: await fs.mkdtemp(path.join(os.tmpdir(), "local-review-artifacts-")),
   });
   const leakedHostPath = `/${"Users"}/alice/Documents/AegisOps-phase5-6-review-files/blocker.md`;
+  const windowsHomePath = ["C:", "Users", "me", "repo"].join("\\");
+  const escapedTomlProjectKey =
+    `[projects."${windowsHomePath.replace(/\\/g, "\\\\")}"]`;
   const roleResults = [
     {
       role: "reviewer",
@@ -348,7 +351,20 @@ test("writeLocalReviewArtifacts rewrites repo-local absolute paths and redacts h
       routing: GENERIC_ROUTING,
       exitCode: 0,
       rawOutput: `Absolute repo path: ${repoFilePath}\nHost-local note: ${leakedHostPath}`,
-      findings: [],
+      findings: [
+        {
+          role: "reviewer",
+          title: "Normalize quoted TOML project keys",
+          body: escapedTomlProjectKey,
+          file: "config.toml",
+          start: 1,
+          end: 1,
+          severity: "medium" as const,
+          confidence: 0.9,
+          category: "portability",
+          evidence: escapedTomlProjectKey,
+        },
+      ],
     },
   ];
   const finalized = finalizeLocalReview({
@@ -376,9 +392,22 @@ test("writeLocalReviewArtifacts rewrites repo-local absolute paths and redacts h
     verifierReport: null,
   });
   const summary = await fs.readFile(artifacts.summaryPath, "utf8");
+  const findingsDocument = await fs.readFile(artifacts.findingsPath, "utf8");
+  const findingsArtifact = JSON.parse(findingsDocument) as {
+    actionableFindings: Array<{ body: string; evidence: string }>;
+  };
 
   assert.match(summary, /Absolute repo path: src\/auth\.ts/);
   assert.match(summary, /Host-local note: <redacted-local-path>/);
   assert.doesNotMatch(summary, new RegExp(repoFilePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.doesNotMatch(summary, new RegExp(leakedHostPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.equal(
+    findingsArtifact.actionableFindings[0]?.body,
+    '[projects."<redacted-local-path>"]',
+  );
+  assert.equal(
+    findingsArtifact.actionableFindings[0]?.evidence,
+    '[projects."<redacted-local-path>"]',
+  );
+  assert.doesNotMatch(findingsDocument, /C:\\\\Users/u);
 });

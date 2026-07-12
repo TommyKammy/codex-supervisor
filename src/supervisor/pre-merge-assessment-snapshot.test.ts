@@ -291,3 +291,56 @@ test("writePreMergeAssessmentSnapshot captures typed PR, CI, review, local-revie
   assert.equal(snapshot.localReview.summary.finalEvaluationOutcome, "fix_blocked");
   assert.equal(snapshot.localReview.artifact.finalEvaluation.mustFixCount, 1);
 });
+
+test("writePreMergeAssessmentSnapshot fails soft on malformed local-review JSON", async () => {
+  const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), "pre-merge-malformed-review-"));
+  const reviewDir = path.join(workspacePath, "reviews");
+  const summaryPath = path.join(reviewDir, "head-head-916.md");
+  const artifactPath = path.join(reviewDir, "head-head-916.json");
+  const malformedDocument = '{"actionableFindings":[{"body":"unterminated}]';
+  await fs.mkdir(reviewDir, { recursive: true });
+  await fs.writeFile(summaryPath, "# local review\n", "utf8");
+  await fs.writeFile(artifactPath, malformedDocument, "utf8");
+
+  const persistedPath = await writePreMergeAssessmentSnapshot({
+    config: createConfig({ localReviewArtifactDir: reviewDir }),
+    capturedAt: "2026-03-24T00:15:00Z",
+    issue: createIssue(),
+    record: createRecord(summaryPath),
+    workspacePath,
+    pr: createPullRequest(),
+    checks: [],
+    reviewThreads: [],
+  });
+
+  const snapshot = JSON.parse(await fs.readFile(persistedPath, "utf8"));
+  assert.equal(snapshot.pullRequest.number, 930);
+  assert.equal(snapshot.localReview.summary.available, false);
+  assert.equal(snapshot.localReview.artifact, null);
+  assert.deepEqual(snapshot.localReview.summary.artifactWarning, {
+    code: "malformed_local_review_artifact",
+    artifactPath,
+    parseFailureClass: "SyntaxError",
+  });
+  assert.equal(await fs.readFile(artifactPath, "utf8"), malformedDocument);
+
+  await fs.writeFile(
+    artifactPath,
+    `${JSON.stringify({ finalEvaluation: { outcome: "mergeable" } })}\n`,
+    "utf8",
+  );
+  const recoveredPath = await writePreMergeAssessmentSnapshot({
+    config: createConfig({ localReviewArtifactDir: reviewDir }),
+    capturedAt: "2026-03-24T00:16:00Z",
+    issue: createIssue(),
+    record: createRecord(summaryPath),
+    workspacePath,
+    pr: createPullRequest(),
+    checks: [],
+    reviewThreads: [],
+  });
+  const recovered = JSON.parse(await fs.readFile(recoveredPath, "utf8"));
+  assert.equal(recovered.localReview.summary.available, true);
+  assert.equal(recovered.localReview.summary.artifactWarning, null);
+  assert.equal(recovered.localReview.summary.finalEvaluationOutcome, "mergeable");
+});

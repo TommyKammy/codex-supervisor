@@ -6,7 +6,10 @@ import {
   prependTrustedGeneratedDurableArtifactMarkdownMarker,
   withTrustedGeneratedDurableArtifactProvenance,
 } from "../durable-artifact-provenance";
-import { normalizeDurableTrackedArtifactContent } from "../core/journal";
+import {
+  normalizeDurableTrackedArtifactContent,
+  writeDurableTrackedArtifactJsonAtomic,
+} from "../core/journal";
 import { createPostMergeAuditResult, renderPostMergeAuditContractSummary } from "./post-merge-audit";
 import {
   type FinalizedLocalReview,
@@ -243,11 +246,11 @@ export async function writeLocalReviewArtifacts(args: {
     "utf8",
   );
 
-  const findingsDocument = `${JSON.stringify(withTrustedGeneratedDurableArtifactProvenance(args.finalized.artifact), null, 2)}\n`;
-  await fs.writeFile(
+  await writeDurableTrackedArtifactJsonAtomic(
     findingsPath,
-    normalizeDurableTrackedArtifactContent(findingsDocument, args.workspacePath, [args.config.localReviewArtifactDir]),
-    "utf8",
+    withTrustedGeneratedDurableArtifactProvenance(args.finalized.artifact),
+    args.workspacePath,
+    [args.config.localReviewArtifactDir],
   );
 
   return { summaryPath, findingsPath, rawOutput };
