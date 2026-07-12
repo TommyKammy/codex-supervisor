@@ -1,7 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { ensureDir } from "../core/utils";
-import { normalizeDurableTrackedArtifactContent } from "../core/journal";
+import {
+  normalizeDurableTrackedArtifactContent,
+  writeDurableTrackedArtifactJsonAtomic,
+} from "../core/journal";
 import {
   classifyExternalReviewFinding,
   type LocalReviewArtifactLike,
@@ -77,10 +80,10 @@ export async function writeExternalReviewMissArtifact(args: {
     localReviewHeadSha: localArtifact.headSha ?? null,
   });
 
-  await fs.writeFile(
+  await writeDurableTrackedArtifactJsonAtomic(
     artifactPath,
-    normalizeDurableTrackedArtifactContent(`${JSON.stringify(artifact, null, 2)}\n`, args.artifactDir),
-    "utf8",
+    artifact,
+    args.artifactDir,
   );
   await fs.writeFile(digestPath, normalizeDurableTrackedArtifactContent(digest, args.artifactDir), "utf8");
 

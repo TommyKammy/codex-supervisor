@@ -2,7 +2,7 @@ import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { GitHubIssue, IssueRunRecord, SupervisorConfig } from "./types";
-import { ensureDir, truncate, writeFileAtomic } from "./utils";
+import { ensureDir, truncate, writeFileAtomic, writeJsonAtomic } from "./utils";
 
 const NOTES_MARKER = "## Codex Working Notes";
 export const DEFAULT_ISSUE_JOURNAL_RELATIVE_PATH = ".codex-supervisor/issues/{issueNumber}/issue-journal.md";
@@ -363,6 +363,36 @@ export function normalizeDurableTrackedArtifactContent(
   additionalSafeRoots: Iterable<string> = [],
 ): string {
   return normalizeDurableJournalText(content, workspacePath, additionalSafeRoots);
+}
+
+export function normalizeDurableTrackedArtifactJson<T>(
+  value: T,
+  workspacePath: string,
+  additionalSafeRoots: Iterable<string> = [],
+): T {
+  const safeRoots = [...additionalSafeRoots];
+  return JSON.parse(
+    JSON.stringify(value, (_key, nestedValue) =>
+      typeof nestedValue === "string"
+        ? normalizeDurableTrackedArtifactContent(nestedValue, workspacePath, safeRoots)
+        : nestedValue
+    ),
+  ) as T;
+}
+
+export async function writeDurableTrackedArtifactJsonAtomic<T>(
+  filePath: string,
+  value: T,
+  workspacePath: string,
+  additionalSafeRoots: Iterable<string> = [],
+): Promise<T> {
+  const normalized = normalizeDurableTrackedArtifactJson(
+    value,
+    workspacePath,
+    additionalSafeRoots,
+  );
+  await writeJsonAtomic(filePath, normalized);
+  return normalized;
 }
 
 function truncateSummaryBody(summary: string, maxLength: number): string {

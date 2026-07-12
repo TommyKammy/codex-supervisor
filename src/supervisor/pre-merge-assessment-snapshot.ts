@@ -90,6 +90,11 @@ export interface PreMergeAssessmentSnapshot {
       verifiedMaxSeverity: IssueRunRecord["local_review_verified_max_severity"];
       degraded: boolean;
       finalEvaluationOutcome: LocalReviewArtifact["finalEvaluation"]["outcome"] | null;
+      artifactWarning: {
+        code: "malformed_local_review_artifact";
+        artifactPath: string;
+        parseFailureClass: string;
+      } | null;
     };
     artifact: LocalReviewArtifact | null;
   };
@@ -107,16 +112,39 @@ function localReviewArtifactPath(summaryPath: string | null): string | null {
 async function loadLocalReviewArtifact(record: Pick<IssueRunRecord, "local_review_summary_path">): Promise<{
   artifactPath: string | null;
   artifact: LocalReviewArtifact | null;
+  artifactWarning: PreMergeAssessmentSnapshot["localReview"]["summary"]["artifactWarning"];
 }> {
   const artifactPath = localReviewArtifactPath(record.local_review_summary_path);
   if (!artifactPath) {
-    return { artifactPath: null, artifact: null };
+    return { artifactPath: null, artifact: null, artifactWarning: null };
   }
 
-  return {
-    artifactPath,
-    artifact: await readJsonIfExists<LocalReviewArtifact>(artifactPath),
-  };
+  try {
+    return {
+      artifactPath,
+      artifact: await readJsonIfExists<LocalReviewArtifact>(artifactPath),
+      artifactWarning: null,
+    };
+  } catch (error) {
+    const parseError = error instanceof SyntaxError
+      ? error
+      : error instanceof Error && error.cause instanceof SyntaxError
+        ? error.cause
+        : null;
+    if (!parseError) {
+      throw error;
+    }
+    const artifactWarning = {
+      code: "malformed_local_review_artifact" as const,
+      artifactPath,
+      parseFailureClass: parseError.name,
+    };
+    console.warn(
+      "Malformed local-review artifact is unavailable for pre-merge assessment.",
+      artifactWarning,
+    );
+    return { artifactPath, artifact: null, artifactWarning };
+  }
 }
 
 function summarizeCheckBuckets(checks: PullRequestCheck[]): PreMergeAssessmentSnapshot["checks"]["summary"] {
@@ -172,6 +200,7 @@ export function buildPreMergeAssessmentSnapshot(args: {
   reviewThreads: ReviewThread[];
   localReviewArtifactPath: string | null;
   localReviewArtifact: LocalReviewArtifact | null;
+  localReviewArtifactWarning?: PreMergeAssessmentSnapshot["localReview"]["summary"]["artifactWarning"];
 }): PreMergeAssessmentSnapshot {
   const { config, capturedAt, issue, record, pr, checks, reviewThreads, localReviewArtifactPath, localReviewArtifact } = args;
   const manualThreads = manualReviewThreads(config, reviewThreads);
@@ -250,6 +279,7 @@ export function buildPreMergeAssessmentSnapshot(args: {
         verifiedMaxSeverity: record.local_review_verified_max_severity,
         degraded: record.local_review_degraded,
         finalEvaluationOutcome: localReviewArtifact?.finalEvaluation.outcome ?? null,
+        artifactWarning: args.localReviewArtifactWarning ?? null,
       },
       artifact: localReviewArtifact,
     },
@@ -271,6 +301,7 @@ export async function writePreMergeAssessmentSnapshot(args: {
     ...args,
     localReviewArtifactPath: localReview.artifactPath,
     localReviewArtifact: localReview.artifact,
+    localReviewArtifactWarning: localReview.artifactWarning,
   });
   const artifactPath = preMergeAssessmentSnapshotPath(args.workspacePath);
   await writeJsonAtomic(artifactPath, snapshot);
