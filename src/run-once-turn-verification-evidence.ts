@@ -145,6 +145,22 @@ function verificationCommandComparisonVariants(value: string): string[] {
     );
 }
 
+function verificationCommandsMatch(left: string, right: string): boolean {
+  const rightVariants = new Set(verificationCommandComparisonVariants(right));
+  return verificationCommandComparisonVariants(left)
+    .some((candidate) => rightVariants.has(candidate));
+}
+
+function uniqueVerificationCommands(commands: readonly string[]): string[] {
+  const uniqueCommands: string[] = [];
+  for (const command of commands) {
+    if (!uniqueCommands.some((candidate) => verificationCommandsMatch(candidate, command))) {
+      uniqueCommands.push(command);
+    }
+  }
+  return uniqueCommands;
+}
+
 export function codexTurnVerificationIncludesCommand(
   tests: string | null | undefined,
   expectedCommand: string | null | undefined,
@@ -198,7 +214,7 @@ export function explicitPassingCodexTurnVerificationCommand(
   }
   const entries = splitCodexTurnVerificationEntries(value);
   const passingCommands: string[] = [];
-  let hasExplicitFailure = false;
+  const failedCommands: string[] = [];
   for (const [index, entry] of entries.entries()) {
     const inlineOutcome = splitVerificationOutcomeSuffix(entry);
     const nextEntry = entries[index + 1] ?? "";
@@ -221,17 +237,26 @@ export function explicitPassingCodexTurnVerificationCommand(
       inlineOutcome?.outcome === "failed" ||
       hasAdjacentFailedOutcome
     ) {
-      hasExplicitFailure = true;
+      const command = inlineOutcome?.command ?? entry;
+      if (CODEX_TURN_VERIFICATION_COMMAND_PATTERN.test(command)) {
+        failedCommands.push(command);
+      }
     }
   }
-  if (hasExplicitFailure) {
-    return passingCommands.length > 0
-      ? [...new Set(passingCommands)].join("; ")
+  const confirmedPassingCommands = uniqueVerificationCommands(passingCommands)
+    .filter((passingCommand) =>
+      !failedCommands.some((failedCommand) =>
+        verificationCommandsMatch(passingCommand, failedCommand)
+      )
+    );
+  if (failedCommands.length > 0) {
+    return confirmedPassingCommands.length > 0
+      ? confirmedPassingCommands.join("; ")
       : null;
   }
   if (hasExplicitNegativeCodexTurnVerificationOutcome(value)) {
-    return passingCommands.length > 0
-      ? [...new Set(passingCommands)].join("; ")
+    return confirmedPassingCommands.length > 0
+      ? confirmedPassingCommands.join("; ")
       : null;
   }
   if (
@@ -241,12 +266,12 @@ export function explicitPassingCodexTurnVerificationCommand(
         splitVerificationOutcomeSuffix(entry) === null,
     )
   ) {
-    return passingCommands.length > 0
-      ? [...new Set(passingCommands)].join("; ")
+    return confirmedPassingCommands.length > 0
+      ? confirmedPassingCommands.join("; ")
       : null;
   }
-  if (passingCommands.length > 0) {
-    return [...new Set(passingCommands)].join("; ");
+  if (confirmedPassingCommands.length > 0) {
+    return confirmedPassingCommands.join("; ");
   }
   return value;
 }

@@ -2377,6 +2377,81 @@ test("prepareCodexTurnPrompt falls back to the full start prompt when the runner
   assert.match(prompt, /The fresh session still needs the issue body\./);
 });
 
+test("prepareCodexTurnPrompt projects an independent verifier override into the prompt without mutating lifecycle state", async () => {
+  const failureContextOverride = {
+    category: "blocked" as const,
+    summary: "Codex reported blocked for issue #102.",
+    signature: "verification:images",
+    command: "npm run verify:images",
+    details: ["structured_blocked_reason=verification"],
+    url: null,
+    updated_at: "2026-07-11T12:40:00Z",
+  };
+  const record = createRecord({
+    state: "ready_to_merge",
+    pr_number: 202,
+    blocked_reason: null,
+    last_error: null,
+    last_failure_context: null,
+    last_failure_signature: null,
+  });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 102,
+    issues: { "102": record },
+  };
+
+  const prepared = await prepareCodexTurnPrompt({
+    config: createConfig(),
+    stateStore: {
+      touch: (currentRecord, patch) => ({
+        ...currentRecord,
+        ...patch,
+        updated_at: currentRecord.updated_at,
+      }),
+      save: async () => undefined,
+    },
+    state,
+    record,
+    issue: createIssue({
+      title: "Retry the independent image verifier",
+      body: "## Summary\nRerun the exact carried verifier before PR promotion.",
+    }),
+    previousCodexSummary: null,
+    previousError: failureContextOverride.summary,
+    workspacePath: path.join("/tmp/workspaces", "issue-102"),
+    journalPath: path.join(
+      "/tmp/workspaces",
+      "issue-102/.codex-supervisor/issue-journal.md",
+    ),
+    journalContent: "## Codex Working Notes\n### Current Handoff\n- Rerun the carried verifier.",
+    syncJournal: async () => undefined,
+    memoryArtifacts: {
+      alwaysReadFiles: [],
+      onDemandFiles: [],
+      contextIndexPath: "/tmp/context-index.md",
+      agentsPath: "/tmp/AGENTS.generated.md",
+    },
+    pr: createPullRequest({ number: 202, headRefOid: "head-202" }),
+    checks: [],
+    reviewThreads: [],
+    github: {
+      getExternalReviewSurface: async () => {
+        throw new Error("unexpected getExternalReviewSurface call");
+      },
+    },
+    failureContextOverride,
+    agentRunnerCapabilities: { supportsResume: false },
+    loadChangedFiles: async () => [],
+  });
+
+  assert.equal(
+    prepared.turnContext.failureContext?.command,
+    "npm run verify:images",
+  );
+  assert.equal(prepared.record.last_failure_context, null);
+  assert.match(buildCodexPrompt(prepared.turnContext), /npm run verify:images/);
+});
+
 test("prepareCodexTurnPrompt computes change classes for start prompts", async () => {
   const state: SupervisorStateFile = {
     activeIssueNumber: 102,

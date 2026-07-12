@@ -639,7 +639,9 @@ export class Supervisor {
       : inferStateWithoutPullRequest(record, workspaceStatus);
 
     if (options.dryRun) {
-      record = this.stateStore.touch(record, { state: nextState });
+      if (!independentVerificationBlocker) {
+        record = this.stateStore.touch(record, { state: nextState });
+      }
       state.issues[String(record.issue_number)] = record;
       await this.stateStore.save(state);
       return {

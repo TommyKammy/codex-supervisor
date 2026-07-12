@@ -21,19 +21,10 @@ function hasVerificationRetryHardBlocker(
 function hasPreservedReviewRepairHardBlocker(record: IssueRunRecord): boolean {
   return (
     record.last_failure_context?.details.some((detail) =>
-      /^review_repair_terminal_blocked_reason=(?:permissions|secrets|requirements|clarification)$/u.test(
+      /^review_repair_(?:interruption|terminal)_blocked_reason=(?:permissions|secrets|requirements|clarification)$/u.test(
         detail,
       )
     ) ?? false
-  );
-}
-
-function hasStructuredVerificationBlockedReason(record: IssueRunRecord): boolean {
-  return (
-    record.blocked_reason === "verification" &&
-    record.last_failure_context?.details.includes(
-      "structured_blocked_reason=verification",
-    ) === true
   );
 }
 
@@ -96,7 +87,7 @@ export function shouldAutoRetryBlockedVerification(record: IssueRunRecord, confi
     !hasPreservedReviewRepairHardBlocker(record) &&
     (
       (
-        hasStructuredVerificationBlockedReason(record) &&
+        hasBlockedTurnVerificationProvenance(record) &&
         !hasVerificationRetryHardBlocker(record.last_error)
       ) ||
       isVerificationBlockedMessage(record.last_error)

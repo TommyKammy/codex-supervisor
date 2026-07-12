@@ -158,6 +158,28 @@ test("shouldAutoRetryBlockedVerification respects implementation budgets and rep
   assert.equal(
     shouldAutoRetryBlockedVerification(
       createRecord({
+        last_error: "Need permission before continuing.",
+        blocked_reason: "verification",
+        last_failure_context: {
+          category: "blocked",
+          summary: "Independent verifier remains blocked.",
+          signature: "verification:images",
+          command: "npm run verify:images",
+          details: [
+            "structured_blocked_reason=verification",
+            "review_repair_interruption_blocked_reason=permissions",
+          ],
+          url: null,
+          updated_at: "2026-07-11T12:40:00Z",
+        },
+      }),
+      config,
+    ),
+    false,
+  );
+  assert.equal(
+    shouldAutoRetryBlockedVerification(
+      createRecord({
         last_error: "Verification blocked: prerequisite not satisfied.",
         blocked_reason: "verification",
         last_failure_context: {
@@ -166,6 +188,27 @@ test("shouldAutoRetryBlockedVerification respects implementation budgets and rep
           signature: "verification:images",
           command: "npm run verify:images",
           details: ["structured_blocked_reason=verification"],
+          url: null,
+          updated_at: "2026-07-11T12:40:00Z",
+        },
+      }),
+      config,
+    ),
+    true,
+  );
+  assert.equal(
+    shouldAutoRetryBlockedVerification(
+      createRecord({
+        issue_number: 102,
+        pr_number: 42,
+        last_error: "Codex reported blocked for issue #102.",
+        blocked_reason: "verification",
+        last_failure_context: {
+          category: "blocked",
+          summary: "Codex reported blocked for issue #102.",
+          signature: "verification:images",
+          command: "npm run verify:images",
+          details: [],
           url: null,
           updated_at: "2026-07-11T12:40:00Z",
         },

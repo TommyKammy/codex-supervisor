@@ -90,6 +90,7 @@ import { runSameTurnDurableArtifactRepairRetry } from "./turn-execution-same-tur
 import { reconcileBlockedTurnPullRequest } from "./supervisor/blocked-turn-pr-reconciliation";
 import {
   independentVerificationBlockerSnapshot,
+  preserveIndependentVerificationBlockerPatch,
   type IndependentVerificationBlockerSnapshot,
 } from "./supervisor/independent-verification-blocker";
 
@@ -156,6 +157,26 @@ export function renderCodexExecutionSummary(
   return [routingSummary, turnResult.supervisorMessage.trim()].filter(Boolean).join("\n\n");
 }
 
+export function unresolvedIndependentVerificationBlockerAfterTurnEvidence(
+  blocker: IndependentVerificationBlockerSnapshot | null,
+  tests: string | null | undefined,
+): IndependentVerificationBlockerSnapshot | null {
+  if (blocker === null) {
+    return null;
+  }
+  const passingCommand = explicitPassingCodexTurnVerificationCommand(tests);
+  const singlePassingCommand =
+    explicitSinglePassingCodexTurnVerificationCommand(tests);
+  const passed = blocker.lastFailureContext.command === null
+    ? singlePassingCommand !== null
+    : passingCommand !== null &&
+      codexTurnVerificationIncludesCommand(
+        passingCommand,
+        blocker.lastFailureContext.command,
+      );
+  return passed ? null : blocker;
+}
+
 export interface CodexTurnShortCircuit {
   kind: "returned";
   message: string;
@@ -177,6 +198,7 @@ interface RecoverUnexpectedCodexTurnFailureArgs {
     GitHubPullRequest,
     "number" | "headRefOid" | "createdAt" | "mergedAt"
   > | null;
+  independentVerificationBlocker?: IndependentVerificationBlockerSnapshot | null;
 }
 
 interface ExecuteCodexTurnPhaseArgs {
@@ -262,6 +284,7 @@ interface ExecuteCodexTurnPhaseArgs {
       "last_failure_signature" | "repeated_failure_signature_count"
     >;
     retentionRootPath?: string;
+    preservedVerificationBlocker?: IndependentVerificationBlockerSnapshot | null;
   }) => Promise<IssueRunRecord>;
   persistCodexTurnExitFailure?: (args: {
     stateStore: Pick<StateStore, "touch" | "save">;
@@ -290,6 +313,7 @@ interface ExecuteCodexTurnPhaseArgs {
       "last_failure_signature" | "repeated_failure_signature_count"
     >;
     retentionRootPath?: string;
+    preservedVerificationBlocker?: IndependentVerificationBlockerSnapshot | null;
   }) => Promise<IssueRunRecord>;
   persistMissingCodexJournalHandoff?: (args: {
     stateStore: Pick<StateStore, "touch" | "save">;
@@ -311,6 +335,7 @@ interface ExecuteCodexTurnPhaseArgs {
       "last_failure_signature" | "repeated_failure_signature_count"
     >;
     retentionRootPath?: string;
+    preservedVerificationBlocker?: IndependentVerificationBlockerSnapshot | null;
   }) => Promise<IssueRunRecord>;
   persistHintedCodexTurnState?: (args: {
     stateStore: Pick<StateStore, "touch" | "save">;
@@ -324,15 +349,7 @@ interface ExecuteCodexTurnPhaseArgs {
     hintedBlockedReason: IssueRunRecord["blocked_reason"];
     hintedFailureSignature: string | null;
     hintedVerificationCommand?: string | null;
-    preservedVerificationBlocker?: {
-      blockedVerificationRetryCount: number;
-      lastBlockerSignature: string | null;
-      lastError: string | null;
-      lastFailureContext: FailureContext;
-      lastFailureSignature: string | null;
-      repeatedBlockerCount: number;
-      repeatedFailureSignatureCount: number;
-    } | null;
+    preservedVerificationBlocker?: IndependentVerificationBlockerSnapshot | null;
     buildCodexFailureContext: (
       category: FailureContext["category"],
       summary: string,
@@ -407,6 +424,26 @@ export async function executeCodexTurnPhase(
   const turnStartHeadSha = workspaceStatus.headSha;
   let usedSameTurnPathRepairRetry = false;
   let artifactOnlyChangedFilesAfterPublication: string[] = [];
+  const carriedVerificationBlocker =
+    args.context.independentVerificationBlocker ??
+    independentVerificationBlockerSnapshot(record);
+  let unresolvedCarriedVerificationBlocker = carriedVerificationBlocker;
+  const earlyFailureStateStore: Pick<StateStore, "touch" | "save"> = {
+    touch: (currentRecord, patch) =>
+      stateStore.touch(
+        currentRecord,
+        unresolvedCarriedVerificationBlocker !== null &&
+            (patch.state === "blocked" ||
+              patch.state === "failed" ||
+              patch.state === "repairing_ci")
+          ? preserveIndependentVerificationBlockerPatch(
+              unresolvedCarriedVerificationBlocker,
+              patch,
+            )
+          : patch,
+      ),
+    save: (nextState) => stateStore.save(nextState),
+  };
 
   const rememberArtifactOnlyChangedFilesAfterPublication = (
     filePaths: readonly string[],
@@ -429,9 +466,6 @@ export async function executeCodexTurnPhase(
       }
 
       const preRunState = record.state;
-      const carriedVerificationBlocker =
-        args.context.independentVerificationBlocker ??
-        independentVerificationBlockerSnapshot(record);
       const shouldResumeTurn = shouldResumeAgentTurn({
         record,
         agentRunnerCapabilities: agentRunner.capabilities,
@@ -456,7 +490,9 @@ export async function executeCodexTurnPhase(
         }
         const effectiveJournalContent = journalContent ?? "";
         const previousCodexSummary = record.last_codex_summary;
-        const previousError = record.last_error;
+        const previousError =
+          unresolvedCarriedVerificationBlocker?.lastError ??
+          record.last_error;
 
         const preparedTurn = await prepareCodexTurnPrompt({
           config,
@@ -466,6 +502,8 @@ export async function executeCodexTurnPhase(
           issue,
           previousCodexSummary,
           previousError,
+          failureContextOverride:
+            unresolvedCarriedVerificationBlocker?.lastFailureContext,
           workspacePath,
           journalPath,
           journalContent: effectiveJournalContent,
@@ -506,10 +544,9 @@ export async function executeCodexTurnPhase(
           structuredResult?.failureSignature ?? null;
         const hintedVerificationCommand =
           explicitFailedCodexTurnVerificationCommand(structuredResult?.tests);
-        const hintedPassingVerificationCommand =
-          explicitPassingCodexTurnVerificationCommand(structuredResult?.tests);
-        const hintedSinglePassingVerificationCommand =
-          explicitSinglePassingCodexTurnVerificationCommand(
+        unresolvedCarriedVerificationBlocker =
+          unresolvedIndependentVerificationBlockerAfterTurnEvidence(
+            unresolvedCarriedVerificationBlocker,
             structuredResult?.tests,
           );
         const preTurnFailureContext = record.last_failure_context;
@@ -557,6 +594,7 @@ export async function executeCodexTurnPhase(
             issueNumber: record.issue_number,
             buildCodexFailureContext: args.buildCodexFailureContext,
             applyFailureSignature: args.applyFailureSignature,
+            preservedVerificationBlocker: unresolvedCarriedVerificationBlocker,
             retentionRootPath: executionMetricsRetentionRootPath(
               args.config.stateFile,
             ),
@@ -587,6 +625,7 @@ export async function executeCodexTurnPhase(
             classifyFailure: args.classifyFailure,
             buildCodexFailureContext: args.buildCodexFailureContext,
             applyFailureSignature: args.applyFailureSignature,
+            preservedVerificationBlocker: unresolvedCarriedVerificationBlocker,
             retentionRootPath: executionMetricsRetentionRootPath(
               args.config.stateFile,
             ),
@@ -613,6 +652,7 @@ export async function executeCodexTurnPhase(
             classifyFailure: args.classifyFailure,
             buildCodexFailureContext: args.buildCodexFailureContext,
             applyFailureSignature: args.applyFailureSignature,
+            preservedVerificationBlocker: unresolvedCarriedVerificationBlocker,
             retentionRootPath: executionMetricsRetentionRootPath(
               args.config.stateFile,
             ),
@@ -625,16 +665,7 @@ export async function executeCodexTurnPhase(
 
         if (hintedState === "blocked" || hintedState === "failed") {
           const preservesCarriedVerificationBlocker =
-            carriedVerificationBlocker !== null &&
-            !(
-              carriedVerificationBlocker.lastFailureContext.command === null
-                ? hintedSinglePassingVerificationCommand !== null
-                : hintedPassingVerificationCommand !== null &&
-                  codexTurnVerificationIncludesCommand(
-                    hintedPassingVerificationCommand,
-                    carriedVerificationBlocker.lastFailureContext.command,
-                  )
-            );
+            unresolvedCarriedVerificationBlocker !== null;
           let workspaceReconciliationDiagnostic: string | null = null;
           let reconciledWorkspaceHeadSha: string | null = null;
           try {
@@ -705,7 +736,7 @@ export async function executeCodexTurnPhase(
             hintedFailureSignature,
             hintedVerificationCommand,
             preservedVerificationBlocker: preservesCarriedVerificationBlocker
-              ? carriedVerificationBlocker
+              ? unresolvedCarriedVerificationBlocker
               : null,
             buildCodexFailureContext: args.buildCodexFailureContext,
             applyFailureSignature: args.applyFailureSignature,
@@ -791,7 +822,7 @@ export async function executeCodexTurnPhase(
                 ...(pathHygieneGate.rewrittenTrustedGeneratedArtifactPaths ?? []),
               ];
               const retryResult = await runSameTurnDurableArtifactRepairRetry({
-                stateStore,
+                stateStore: earlyFailureStateStore,
                 state,
                 record,
                 issue,
@@ -822,7 +853,7 @@ export async function executeCodexTurnPhase(
             if (repairFailureContext !== null) {
               const persistenceResult =
                 await persistPublicationPathHygieneRepairQueued({
-                  stateStore,
+                  stateStore: earlyFailureStateStore,
                   state,
                   record,
                   issue,
@@ -843,7 +874,7 @@ export async function executeCodexTurnPhase(
             }
             const persistenceResult =
               await persistPublicationPathHygieneBlocked({
-                stateStore,
+                stateStore: earlyFailureStateStore,
                 state,
                 record,
                 issue,
@@ -892,7 +923,7 @@ export async function executeCodexTurnPhase(
               });
               const persistenceResult =
                 await persistPublicationPathHygieneBlocked({
-                  stateStore,
+                  stateStore: earlyFailureStateStore,
                   state,
                   record,
                   issue,
@@ -943,7 +974,7 @@ export async function executeCodexTurnPhase(
 
         const publicationGate = await applyCodexTurnPublicationGate({
           config,
-          stateStore,
+          stateStore: earlyFailureStateStore,
           state,
           record,
           issue,
@@ -971,7 +1002,7 @@ export async function executeCodexTurnPhase(
         record = publicationGate.record;
         if (publicationGate.kind === "same_turn_repair") {
           const retryResult = await runSameTurnDurableArtifactRepairRetry({
-            stateStore,
+            stateStore: earlyFailureStateStore,
             state,
             record,
             issue,
@@ -1014,10 +1045,6 @@ export async function executeCodexTurnPhase(
 
         const codexVerificationCommand =
           explicitPassingCodexTurnVerificationCommand(structuredResult?.tests);
-        const singlePassingCodexVerificationCommand =
-          explicitSinglePassingCodexTurnVerificationCommand(
-            structuredResult?.tests,
-          );
         const failedCodexVerificationCommand =
           explicitFailedCodexTurnVerificationCommand(structuredResult?.tests);
         const changedFilesAfterPublication =
@@ -1063,20 +1090,10 @@ export async function executeCodexTurnPhase(
           ? postRunSnapshot.nextState
           : (hintedState ??
             args.inferStateWithoutPullRequest(record, workspaceStatus));
-        const carriedVerificationCommandPassed =
-          carriedVerificationBlocker !== null &&
-          (carriedVerificationBlocker.lastFailureContext.command === null
-            ? singlePassingCodexVerificationCommand !== null
-            : codexVerificationCommand !== null &&
-              codexTurnVerificationIncludesCommand(
-                codexVerificationCommand,
-                carriedVerificationBlocker.lastFailureContext.command,
-              ));
-        const preserveCarriedVerificationBlocker =
-          carriedVerificationBlocker !== null &&
-          !carriedVerificationCommandPassed;
+        const preservedCarriedVerificationBlocker =
+          unresolvedCarriedVerificationBlocker;
         const postRunState =
-          preserveCarriedVerificationBlocker &&
+          preservedCarriedVerificationBlocker !== null &&
           lifecyclePostRunState !== "addressing_review"
             ? "blocked"
             : lifecyclePostRunState;
@@ -1116,38 +1133,38 @@ export async function executeCodexTurnPhase(
           ...processedReviewThreadPatch,
           ...reviewFollowUpPatch,
           blocked_verification_retry_count: pr
-            ? preserveCarriedVerificationBlocker
-              ? carriedVerificationBlocker.blockedVerificationRetryCount
+            ? preservedCarriedVerificationBlocker !== null
+              ? preservedCarriedVerificationBlocker.blockedVerificationRetryCount
               : 0
             : record.blocked_verification_retry_count,
-          repeated_blocker_count: preserveCarriedVerificationBlocker
-            ? carriedVerificationBlocker.repeatedBlockerCount
+          repeated_blocker_count: preservedCarriedVerificationBlocker !== null
+            ? preservedCarriedVerificationBlocker.repeatedBlockerCount
             : 0,
-          last_blocker_signature: preserveCarriedVerificationBlocker
-            ? carriedVerificationBlocker.lastBlockerSignature
+          last_blocker_signature: preservedCarriedVerificationBlocker !== null
+            ? preservedCarriedVerificationBlocker.lastBlockerSignature
             : null,
           stale_stabilizing_no_pr_recovery_count:
             preserveStaleNoPrRecoveryTracking
               ? preTurnStaleNoPrRecoveryCount
               : 0,
-          last_error: preserveCarriedVerificationBlocker
-            ? carriedVerificationBlocker.lastError
+          last_error: preservedCarriedVerificationBlocker !== null
+            ? preservedCarriedVerificationBlocker.lastError
             : preserveStaleNoPrRecoveryTracking
             ? preTurnLastError
             : postRunState === "blocked" && postRunSnapshot?.failureContext
               ? truncate(postRunSnapshot.failureContext.summary, 1000)
               : record.last_error,
-          last_failure_context: preserveCarriedVerificationBlocker
-            ? carriedVerificationBlocker.lastFailureContext
+          last_failure_context: preservedCarriedVerificationBlocker !== null
+            ? preservedCarriedVerificationBlocker.lastFailureContext
             : preserveStaleNoPrRecoveryTracking
             ? preTurnFailureContext
             : (postRunSnapshot?.failureContext ?? null),
-          ...(preserveCarriedVerificationBlocker
+          ...(preservedCarriedVerificationBlocker !== null
             ? {
                 last_failure_signature:
-                  carriedVerificationBlocker.lastFailureSignature,
+                  preservedCarriedVerificationBlocker.lastFailureSignature,
                 repeated_failure_signature_count:
-                  carriedVerificationBlocker.repeatedFailureSignatureCount,
+                  preservedCarriedVerificationBlocker.repeatedFailureSignatureCount,
               }
             : preserveStaleNoPrRecoveryTracking
             ? {
@@ -1159,7 +1176,7 @@ export async function executeCodexTurnPhase(
                 postRunSnapshot?.failureContext ?? null,
               )),
           blocked_reason:
-            preserveCarriedVerificationBlocker
+            preservedCarriedVerificationBlocker !== null
               ? "verification"
               : pr && postRunState === "blocked"
               ? args.blockedReasonFromReviewState(
@@ -1215,6 +1232,7 @@ export async function executeCodexTurnPhase(
       error,
       workspaceStatus,
       pr,
+      independentVerificationBlocker: unresolvedCarriedVerificationBlocker,
     });
     return {
       kind: "returned",

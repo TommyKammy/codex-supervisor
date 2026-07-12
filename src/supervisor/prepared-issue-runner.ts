@@ -270,8 +270,11 @@ export async function runPreparedIssueFlow(
   let checks = context.checks;
   let reviewThreads = context.reviewThreads;
   let skipCodexAfterPreStopStaleConfiguredBotAutoResolve = false;
+  const hasIndependentVerificationRetryIntent = Boolean(
+    independentVerificationBlocker,
+  );
 
-  if (pr) {
+  if (pr && !hasIndependentVerificationRetryIntent) {
     const recordBeforePullRequestLifecycle = record;
     const lifecycle = derivePullRequestLifecycleSnapshot(config, record, pr, checks, reviewThreads);
     const localReviewRepairSummary =
@@ -567,7 +570,7 @@ export async function runPreparedIssueFlow(
         );
       }
     }
-  } else {
+  } else if (!pr) {
     const nextState = inferStateWithoutPullRequest(record, workspaceStatus);
     record = stateStore.touch(record, {
       state: nextState,
@@ -575,7 +578,9 @@ export async function runPreparedIssueFlow(
     });
   }
   const shouldExecuteCodex =
-    !skipCodexAfterPreStopStaleConfiguredBotAutoResolve && shouldRunCodex(record, pr, checks, reviewThreads, config);
+    hasIndependentVerificationRetryIntent ||
+    (!skipCodexAfterPreStopStaleConfiguredBotAutoResolve &&
+      shouldRunCodex(record, pr, checks, reviewThreads, config));
 
   if (shouldExecuteCodex) {
     state.issues[String(record.issue_number)] = record;
@@ -610,6 +615,19 @@ export async function runPreparedIssueFlow(
     state.issues[String(record.issue_number)] = record;
     await stateStore.save(state);
     await syncJournal(record);
+  }
+
+  if (
+    hasIndependentVerificationRetryIntent &&
+    record.blocked_reason === "verification"
+  ) {
+    if (record.state !== "blocked") {
+      record = stateStore.touch(record, { state: "blocked" });
+    }
+    state.issues[String(record.issue_number)] = record;
+    await stateStore.save(state);
+    await syncJournal(record);
+    return prependRecoveryLog(formatPreparedIssueStatus(record, state), recoveryLog);
   }
 
   if (pr) {

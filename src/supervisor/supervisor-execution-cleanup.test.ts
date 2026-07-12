@@ -287,8 +287,16 @@ test("recovered independent verification survives preparation and Supervisor pre
         supportsResume: false,
         supportsStructuredResult: true,
       },
-      async runTurn() {
+      async runTurn(turnContext) {
         agentDispatched = true;
+        assert.equal(
+          turnContext.failureContext?.command,
+          "npm run verify:images",
+        );
+        assert.match(
+          turnContext.previousError ?? "",
+          /Image verification remains blocked/,
+        );
         blockedReasonAtAgentDispatch =
           state.issues[String(issueNumber)]?.blocked_reason ?? null;
         await fs.writeFile(
@@ -369,22 +377,38 @@ test("recovered independent verification survives preparation and Supervisor pre
   );
 });
 
-test("runPreparedIssue skips pre-turn persistence when the Codex session lock is already held", async () => {
+test("runPreparedIssue preserves tracked verifier intent across a held session lock and dry run", async () => {
   const fixture = await createSupervisorFixture();
   const issueNumber = 122;
   const branch = branchName(fixture.config, issueNumber);
   const workspacePath = path.join(fixture.workspaceRoot, `issue-${issueNumber}`);
   const journalPath = path.join(workspacePath, ".codex-supervisor/issue-journal.md");
+  const failureContext = {
+    category: "blocked" as const,
+    summary: `Codex reported blocked for issue #${issueNumber}.`,
+    signature: "verification:images",
+    command: "npm run verify:images",
+    details: ["structured_blocked_reason=verification"],
+    url: null,
+    updated_at: "2026-07-11T12:40:00Z",
+  };
   const initialRecord = createRecord({
     issue_number: issueNumber,
-    state: "stabilizing",
+    state: "queued",
     branch,
+    pr_number: 222,
     workspace: workspacePath,
     journal_path: journalPath,
     codex_session_id: "session-122",
     attempt_count: 4,
     implementation_attempt_count: 3,
     repair_attempt_count: 1,
+    blocked_verification_retry_count: 1,
+    blocked_reason: "verification",
+    last_error: failureContext.summary,
+    last_failure_context: failureContext,
+    last_failure_signature: failureContext.signature,
+    last_blocker_signature: failureContext.signature,
   });
   const state: SupervisorStateFile = {
     activeIssueNumber: issueNumber,
@@ -413,42 +437,20 @@ test("runPreparedIssue skips pre-turn persistence when the Codex session lock is
     url: `https://example.test/issues/${issueNumber}`,
     state: "OPEN",
   };
+  const pr = createPullRequest({
+    number: 222,
+    headRefName: branch,
+    headRefOid: "head-122",
+    isDraft: false,
+    mergeStateStatus: "CLEAN",
+  });
 
-  const result = await (
+  const runPreparedIssue = (
     supervisor as unknown as {
-      runPreparedIssue: (context: {
-        state: SupervisorStateFile;
-        record: IssueRunRecord;
-        issue: GitHubIssue;
-        previousCodexSummary: string | null;
-        previousError: string | null;
-        workspacePath: string;
-        journalPath: string;
-        syncJournal: (record: IssueRunRecord) => Promise<void>;
-        memoryArtifacts: {
-          alwaysReadFiles: string[];
-          onDemandFiles: string[];
-          contextIndexPath: string;
-          agentsPath: string;
-        };
-        workspaceStatus: {
-          branch: string;
-          headSha: string;
-          hasUncommittedChanges: boolean;
-          baseAhead: number;
-          baseBehind: number;
-          remoteBranchExists: boolean;
-          remoteAhead: number;
-          remoteBehind: number;
-        };
-        pr: GitHubPullRequest | null;
-        checks: PullRequestCheck[];
-        reviewThreads: ReviewThread[];
-        options: { dryRun: boolean };
-        recoveryLog: string | null;
-      }) => Promise<string>;
+      runPreparedIssue: (context: PreparedIssueRunContext) => Promise<string>;
     }
-  ).runPreparedIssue({
+  ).runPreparedIssue.bind(supervisor);
+  const preparedContext: PreparedIssueRunContext = {
     state,
     record: initialRecord,
     issue,
@@ -475,12 +477,25 @@ test("runPreparedIssue skips pre-turn persistence when the Codex session lock is
       remoteAhead: 0,
       remoteBehind: 0,
     },
-    pr: null,
+    pr,
     checks: [],
     reviewThreads: [],
+    independentVerificationBlocker: {
+      lastError: failureContext.summary,
+      lastBlockerSignature: failureContext.signature,
+      lastFailureContext: failureContext,
+      lastFailureSignature: failureContext.signature,
+      repeatedFailureSignatureCount:
+        initialRecord.repeated_failure_signature_count,
+      repeatedBlockerCount: initialRecord.repeated_blocker_count,
+      blockedVerificationRetryCount:
+        initialRecord.blocked_verification_retry_count,
+    },
     options: { dryRun: false },
+    recoveryEvents: [],
     recoveryLog: null,
-  });
+  };
+  const result = await runPreparedIssue(preparedContext);
 
   assert.match(result, /Skipped issue #122: lock held by pid/);
   assert.equal(syncJournalCalls, 0);
@@ -492,6 +507,51 @@ test("runPreparedIssue skips pre-turn persistence when the Codex session lock is
   assert.equal(persisted.issues[String(issueNumber)]?.attempt_count, 4);
   assert.equal(persisted.issues[String(issueNumber)]?.implementation_attempt_count, 3);
   assert.equal(persisted.issues[String(issueNumber)]?.repair_attempt_count, 1);
+  assert.equal(persisted.issues[String(issueNumber)]?.state, "queued");
+  assert.equal(
+    persisted.issues[String(issueNumber)]?.blocked_reason,
+    "verification",
+  );
+  assert.equal(
+    persisted.issues[String(issueNumber)]?.last_failure_context?.command,
+    "npm run verify:images",
+  );
+  assert.equal(
+    persisted.issues[String(issueNumber)]?.last_failure_signature,
+    "verification:images",
+  );
+  assert.equal(
+    persisted.issues[String(issueNumber)]?.blocked_verification_retry_count,
+    1,
+  );
+
+  const dryRunResult = await runPreparedIssue({
+    ...preparedContext,
+    options: { dryRun: true },
+  });
+  assert.match(dryRunResult, /Dry run: would invoke Codex for issue #122/);
+  const persistedAfterDryRun = JSON.parse(
+    await fs.readFile(fixture.stateFile, "utf8"),
+  ) as SupervisorStateFile;
+  assert.equal(persistedAfterDryRun.issues[String(issueNumber)]?.state, "queued");
+  assert.equal(
+    persistedAfterDryRun.issues[String(issueNumber)]?.blocked_reason,
+    "verification",
+  );
+  assert.equal(
+    persistedAfterDryRun.issues[String(issueNumber)]?.last_failure_context
+      ?.command,
+    "npm run verify:images",
+  );
+  assert.equal(
+    persistedAfterDryRun.issues[String(issueNumber)]?.attempt_count,
+    4,
+  );
+  assert.equal(
+    persistedAfterDryRun.issues[String(issueNumber)]
+      ?.blocked_verification_retry_count,
+    1,
+  );
 });
 
 test("runPreparedIssue refreshes current-head manual-review repair state before a dry-run turn", async () => {

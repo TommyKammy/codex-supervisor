@@ -14,6 +14,10 @@ import {
   executionMetricsRetentionRootPath,
   syncExecutionMetricsRunSummarySafely,
 } from "./execution-metrics-run-summary";
+import {
+  preserveIndependentVerificationBlockerPatch,
+  type IndependentVerificationBlockerSnapshot,
+} from "./independent-verification-blocker";
 
 type AuthFailureGitHub = Pick<GitHubClient, "authStatus">;
 type FailureHelperStateStore = Pick<StateStore, "save" | "touch">;
@@ -132,6 +136,7 @@ export async function recoverUnexpectedCodexTurnFailure(args: {
   error: unknown;
   workspaceStatus: Pick<WorkspaceStatus, "hasUncommittedChanges" | "headSha"> | null;
   pr: Pick<GitHubPullRequest, "number" | "headRefOid" | "createdAt" | "mergedAt"> | null;
+  independentVerificationBlocker?: IndependentVerificationBlockerSnapshot | null;
 }): Promise<IssueRunRecord> {
   const { config, stateStore, state, record, issue, journalSync, error, workspaceStatus, pr } = args;
   const message = error instanceof Error ? error.stack ?? error.message : String(error);
@@ -152,7 +157,7 @@ export async function recoverUnexpectedCodexTurnFailure(args: {
     ],
   );
 
-  const updated = stateStore.touch(record, {
+  const recoveryPatch: Partial<IssueRunRecord> = {
     state: record.pr_number !== null ? record.state : "failed",
     last_error: record.pr_number !== null ? record.last_error : truncatePreservingStartAndEnd(message),
     last_failure_kind: record.pr_number !== null ? record.last_failure_kind : failureKind,
@@ -166,7 +171,27 @@ export async function recoverUnexpectedCodexTurnFailure(args: {
     blocked_reason: record.pr_number !== null ? record.blocked_reason : null,
     timeout_retry_count:
       failureKind === "timeout" ? record.timeout_retry_count + 1 : record.timeout_retry_count,
-  });
+  };
+  const carrierAwareRecoveryPatch = args.independentVerificationBlocker
+    ? {
+        ...recoveryPatch,
+        state: "failed" as const,
+        last_error: truncatePreservingStartAndEnd(message),
+        last_failure_kind: failureKind,
+        last_failure_context: failureContext,
+        ...applyFailureSignature(record, failureContext),
+        blocked_reason: null,
+      }
+    : recoveryPatch;
+  const updated = stateStore.touch(
+    record,
+    args.independentVerificationBlocker
+      ? preserveIndependentVerificationBlockerPatch(
+          args.independentVerificationBlocker,
+          carrierAwareRecoveryPatch,
+        )
+      : carrierAwareRecoveryPatch,
+  );
   state.issues[String(record.issue_number)] = updated;
   if (state.activeIssueNumber === record.issue_number) {
     state.activeIssueNumber = null;

@@ -7020,13 +7020,13 @@ test("reconcileRecoverableBlockedIssueStates leaves PR lookup errors fail-closed
   assert.equal(stateStore.saveCalls, 1);
 });
 
-test("reconcileRecoverableBlockedIssueStates carries a tracked structured verifier while scheduling review repair", async () => {
+test("reconcileRecoverableBlockedIssueStates carries a tracked legacy canonical verifier while scheduling review repair", async () => {
   const failureContext = {
     category: "blocked" as const,
-    summary: "Codex reported blocked after the verifier stopped.",
+    summary: "Codex reported blocked for issue #395.",
     signature: "gitops-images-high-critical",
     command: "npm run verify:images",
-    details: ["structured_blocked_reason=verification"],
+    details: [],
     url: null,
     updated_at: "2026-07-11T11:00:00Z",
   };
