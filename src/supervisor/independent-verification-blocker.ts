@@ -21,7 +21,9 @@ export function independentVerificationBlockerSnapshot(
 ): IndependentVerificationBlockerSnapshot | null {
   const carriesTrackedReviewRepairVerifier =
     record.state === "addressing_review" ||
-    (record.state === "queued" && record.pr_number !== null);
+    (record.pr_number !== null &&
+      (record.state === "queued" ||
+        (record.state === "blocked" && record.blocked_reason === "verification")));
   if (
     !carriesTrackedReviewRepairVerifier ||
     record.last_failure_context === null ||

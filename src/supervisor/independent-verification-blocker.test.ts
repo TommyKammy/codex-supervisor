@@ -47,6 +47,19 @@ test("independentVerificationBlockerSnapshot carries a queued tracked verifier i
     ),
     null,
   );
+  assert.ok(
+    independentVerificationBlockerSnapshot(
+      createRecord({ ...tracked, state: "blocked" }),
+    ),
+    "a blocked tracked verifier remains authoritative for the next selection",
+  );
+  assert.equal(
+    independentVerificationBlockerSnapshot(
+      createRecord({ ...tracked, state: "blocked", blocked_reason: "secrets" }),
+    ),
+    null,
+    "unrelated tracked blockers are not treated as verifier snapshots",
+  );
 });
 
 test("preserveIndependentVerificationBlockerPatch nests a later hard blocker without replacing the verifier", () => {
