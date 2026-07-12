@@ -7093,6 +7093,59 @@ test("reconcileRecoverableBlockedIssueStates carries a tracked legacy canonical 
   assert.equal(updated.repair_attempt_count, 0);
 });
 
+test("reconcileRecoverableBlockedIssueStates does not carry a legacy verifier without failure context", async () => {
+  const record = createRecord({
+    issue_number: 397,
+    branch: "codex/issue-397",
+    state: "blocked",
+    blocked_reason: "verification",
+    pr_number: 405,
+    last_head_sha: "head-404",
+    last_error: "Codex reported blocked for issue #397.",
+    last_failure_context: null,
+  });
+  const state = createSupervisorState({ issues: [record] });
+  const config = createConfig();
+  const issue = createIssue({ number: 397 });
+  const pr = createPullRequest({
+    number: 405,
+    baseRefName: config.defaultBranch,
+    headRefName: record.branch,
+    headRefOid: "head-405",
+    state: "OPEN",
+    mergedAt: null,
+  });
+  const stateStore = createCountingStateStore("2026-07-12T01:35:00Z");
+
+  await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => pr,
+      getIssue: async () => issue,
+      getChecks: async () => [],
+      getUnresolvedReviewThreads: async () => [],
+    },
+    stateStore.stateStore,
+    state,
+    config,
+    [issue],
+    {
+      shouldAutoRetryHandoffMissing,
+      inferStateFromPullRequest: () => "addressing_review",
+      inferFailureContext,
+      blockedReasonForLifecycleState,
+      isOpenPullRequest,
+      syncReviewWaitWindow,
+      syncCopilotReviewRequestObservation,
+      syncCopilotReviewTimeoutState,
+    },
+  );
+
+  const updated = state.issues["397"]!;
+  assert.equal(updated.state, "addressing_review");
+  assert.equal(updated.last_failure_context, null);
+  assert.equal(updated.blocked_reason, null);
+});
+
 test("reconcileRecoverableBlockedIssueStates rehydrates an untracked unknown blocker after a unique PR bind", async () => {
   const issueNumber = 398;
   const issue = createIssue({

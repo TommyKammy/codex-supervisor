@@ -40,6 +40,7 @@ import {
 import { syncPostMergeAuditArtifactSafely } from "./supervisor/post-merge-audit-artifact";
 import {
   independentVerificationBlockerSnapshot,
+  preserveIndependentVerificationBlockerPatch,
   type IndependentVerificationBlockerSnapshot,
 } from "./supervisor/independent-verification-blocker";
 
@@ -296,6 +297,7 @@ async function hydratePullRequestContext(
     workspacePath: string;
     workspaceStatus: WorkspaceStatus;
     syncJournal: IssueJournalSync;
+    independentVerificationBlocker: IndependentVerificationBlockerSnapshot | null;
   },
 ): Promise<HydratedPullRequestContext | RestartRunOnce | string> {
   const pushBranch = args.pushBranch ?? pushBranchImpl;
@@ -320,7 +322,7 @@ async function hydratePullRequestContext(
 
     const failureContext = pathHygieneGate.failureContext;
     const previousRecord = record;
-    const blockedRecord = args.stateStore.touch(record, {
+    const failurePatch: Partial<IssueRunRecord> = {
       state: "blocked",
       last_error:
         failureContext?.summary ??
@@ -329,7 +331,17 @@ async function hydratePullRequestContext(
       last_failure_context: failureContext,
       ...applyFailureSignature(record, failureContext),
       blocked_reason: "verification",
-    });
+    };
+    const blockedRecord = args.stateStore.touch(
+      record,
+      args.independentVerificationBlocker
+        ? preserveIndependentVerificationBlockerPatch(
+            args.independentVerificationBlocker,
+            failurePatch,
+            { diagnosticPrefix: "review_repair_interruption" },
+          )
+        : failurePatch,
+    );
     record = blockedRecord;
     args.state.issues[String(blockedRecord.issue_number)] = blockedRecord;
     await args.stateStore.save(args.state);
@@ -601,6 +613,8 @@ export async function prepareIssueExecutionContext(
     workspacePath: preparedWorkspace.workspacePath,
     workspaceStatus: preparedWorkspace.workspaceStatus,
     syncJournal: preparedWorkspace.syncJournal,
+    independentVerificationBlocker:
+      preparedWorkspace.independentVerificationBlocker ?? null,
   });
   if (typeof hydratedPullRequest === "string") {
     return hydratedPullRequest;

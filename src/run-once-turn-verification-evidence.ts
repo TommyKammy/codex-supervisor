@@ -131,6 +131,16 @@ function splitVerificationOutcomeSuffix(value: string): {
 }
 
 function stripVerificationOutcomeSuffix(value: string): string {
+  const entries = splitCodexTurnVerificationEntries(value);
+  if (
+    entries.length === 2 &&
+    CODEX_TURN_VERIFICATION_COMMAND_PATTERN.test(entries[0]!) &&
+    /^(?:passed|pass|success|succeeded|failed|failure|error|timeout|blocked|skipped|skip|not\s+run)[.!]?$/iu.test(
+      entries[1]!,
+    )
+  ) {
+    return entries[0]!;
+  }
   return splitVerificationOutcomeSuffix(value)?.command ??
     normalizeCodexTurnVerificationCommandEntry(value);
 }
@@ -326,7 +336,7 @@ export function explicitFailedCodexTurnVerificationCommand(
   if (!hasExplicitCodexTurnVerificationCommandEvidence(value)) {
     return null;
   }
-  if (!hasExplicitFailedCodexTurnVerificationOutcome(value)) {
+  if (!hasExplicitNegativeCodexTurnVerificationOutcome(value)) {
     return null;
   }
   const entries = splitCodexTurnVerificationEntries(value);
@@ -336,7 +346,7 @@ export function explicitFailedCodexTurnVerificationCommand(
     const nextEntry = entries[index + 1] ?? "";
     const hasAdjacentFailure =
       CODEX_TURN_VERIFICATION_COMMAND_PATTERN.test(entry) &&
-      /^(?:failed|failure|error|timeout|blocked)\b/iu.test(nextEntry);
+      /^(?:failed|failure|error|timeout|blocked|skipped|skip|not\s+run)\b/iu.test(nextEntry);
     const command = inlineOutcome?.outcome === "failed"
       ? inlineOutcome.command
       : hasAdjacentFailure

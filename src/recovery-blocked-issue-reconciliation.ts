@@ -999,6 +999,7 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
 
       const carryIndependentVerificationBlocker =
         nextState === "addressing_review" &&
+        record.last_failure_context !== null &&
         hasBlockedTurnVerificationProvenance(record);
       const patch = buildTrackedPrStaleFailureConvergencePatch({
         record,

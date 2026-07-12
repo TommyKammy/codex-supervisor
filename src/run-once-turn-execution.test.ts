@@ -269,6 +269,28 @@ test("passing verification evidence is command-scoped and failed outcomes domina
     null,
     "mixed outcomes are never accepted as a single passing command",
   );
+  assert.equal(
+    codexTurnVerificationIncludesCommand(
+      "npm run verify:images",
+      "npm run verify:images; failed",
+    ),
+    true,
+    "legacy adjacent failure outcomes are stripped before command matching",
+  );
+  assert.equal(
+    explicitFailedCodexTurnVerificationCommand(
+      "npm run verify:images; skipped",
+    ),
+    "npm run verify:images",
+    "skipped verifier outcomes retain their command identity",
+  );
+  assert.equal(
+    explicitFailedCodexTurnVerificationCommand(
+      "npm run verify:images\nnot run",
+    ),
+    "npm run verify:images",
+    "not-run verifier outcomes retain their command identity",
+  );
 });
 
 test("matching turn evidence permanently resolves only the carried verifier command", () => {

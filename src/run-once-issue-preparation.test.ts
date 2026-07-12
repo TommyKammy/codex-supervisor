@@ -661,9 +661,23 @@ test("prepareIssueExecutionContext blocks remote-ahead publication when tracked 
   );
   git(workspacePath, "add", "docs/guide.md");
 
+  const verifierFailureContext = {
+    category: "blocked" as const,
+    summary: "Image verification remains blocked.",
+    signature: "verification:images",
+    command: "npm run verify:images",
+    details: ["structured_blocked_reason=verification"],
+    url: null,
+    updated_at: "2026-07-12T01:30:00Z",
+  };
   const record = createRecord({
     implementation_attempt_count: 2,
-    state: "stabilizing",
+    state: "addressing_review",
+    pr_number: 240,
+    blocked_reason: "verification",
+    last_error: verifierFailureContext.summary,
+    last_failure_context: verifierFailureContext,
+    last_failure_signature: verifierFailureContext.signature,
     workspace: workspacePath,
     journal_path: path.join(workspacePath, ".codex-supervisor", "issue-journal.md"),
   });
@@ -724,7 +738,16 @@ test("prepareIssueExecutionContext blocks remote-ahead publication when tracked 
   assert.equal(resolvePullRequestCalls, 0);
   assert.equal(state.issues["240"]?.state, "blocked");
   assert.equal(state.issues["240"]?.blocked_reason, "verification");
-  assert.equal(state.issues["240"]?.last_failure_signature, "workstation-local-path-hygiene-failed");
+  assert.equal(state.issues["240"]?.last_failure_signature, "verification:images");
+  assert.equal(
+    state.issues["240"]?.last_failure_context?.command,
+    "npm run verify:images",
+  );
+  assert.ok(
+    state.issues["240"]?.last_failure_context?.details.some((detail) =>
+      detail.includes("workstation-local path hygiene")
+    ),
+  );
 });
 
 test("prepareIssueExecutionContext restarts when a tracked PR already merged", async () => {
