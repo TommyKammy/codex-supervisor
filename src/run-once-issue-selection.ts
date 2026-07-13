@@ -209,9 +209,17 @@ async function loadSelectableIssueInventory(
   const issues = await github.listCandidateIssues();
   const recoveryIssues = await discoverTrackedPrRecoveryInventoryIssues(github, config, state, issues);
   const candidates = sortIssuesForSelection([...issues, ...recoveryIssues]);
+  const dependencyCandidates = candidates.filter(
+    (issue) => !config.skipTitlePrefixes.some((prefix) => issue.title.startsWith(prefix)),
+  );
+  const initialDependencyIssues = [...candidates, ...dependencyRoots];
   return {
     candidates,
-    dependencyIssues: await hydrateDependencyIssueInventory(github, [...candidates, ...dependencyRoots]),
+    dependencyIssues: await hydrateDependencyIssueInventory(
+      github,
+      initialDependencyIssues,
+      [...dependencyCandidates, ...dependencyRoots],
+    ),
   };
 }
 
@@ -889,9 +897,11 @@ export async function resolveRunnableIssueContext(
         await issueLock.release();
         return { kind: "restart" };
       }
-    } else {
-      const selectionInventory = await loadSelectableIssueInventory(github, config, state, [issue]);
-      const blockingIssue = findBlockingIssue(issue, selectionInventory.dependencyIssues, state);
+    } else if (hasSequencingConstraints) {
+      const dependencyIssues = metadata.executionOrderIndex !== null && metadata.executionOrderIndex > 1
+        ? (await loadSelectableIssueInventory(github, config, state, [issue])).dependencyIssues
+        : await hydrateDependencyIssueInventory(github, [issue]);
+      const blockingIssue = findBlockingIssue(issue, dependencyIssues, state);
       if (blockingIssue) {
         record = stateStore.touch(record, {
           state: "queued",

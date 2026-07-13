@@ -795,7 +795,7 @@ Parallelizable: No
       }),
       syncIssueJournal: async () => {},
     }),
-    /Failed to fetch recoverable tracked PR issue #281/,
+    /Failed to resolve dependency issue #281 referenced by issue #282/,
   );
   assert.equal(lockAcquired, true);
 });
@@ -3023,4 +3023,80 @@ test("resolveRunnableIssueContext rechecks out-of-window dependencies before con
   assert.match(state.issues["92"]?.last_error ?? "", /Waiting for depends on #91/);
   assert.equal(released, true);
   assert.equal(savedStates.length, 1);
+});
+
+test("resolveRunnableIssueContext skips title-filtered dependency hydration before reserving a later candidate", async () => {
+  const skippedIssue = selectionIssue(91, {
+    title: "[skip] stale backlog item",
+    body: `${executionReadyBody("Do not hydrate this skipped issue.")}\n\nDepends on: #999999`,
+  });
+  const readyIssue = selectionIssue(92, {
+    body: `${executionReadyBody("Reserve the later ready issue.")}\n\nDepends on: none\nParallelizable: No\n\n## Execution order\n1 of 1`,
+  });
+  const requestedIssueNumbers: number[] = [];
+
+  const result = await resolveRunnableIssueContext({
+    github: {
+      listCandidateIssues: async () => [skippedIssue, readyIssue],
+      getIssue: async (issueNumber) => {
+        requestedIssueNumbers.push(issueNumber);
+        assert.equal(issueNumber, 92);
+        return readyIssue;
+      },
+    },
+    config: createConfig({ skipTitlePrefixes: ["[skip]"] }),
+    stateStore: createTouchStateStore([]),
+    state: { activeIssueNumber: null, issues: {} },
+    currentRecord: null,
+    acquireIssueLock: async () => ({ acquired: true, release: async () => {} }),
+    ensureRecordJournalContext: async (record) => ({
+      workspace: record.workspace,
+      journal_path: `/tmp/workspaces/issue-${record.issue_number}/.codex-supervisor/issue-journal.md`,
+    }),
+    syncIssueJournal: async () => {},
+  });
+
+  assert.ok(typeof result !== "string");
+  assert.equal(result.kind, "ready");
+  assert.equal(result.issue.number, 92);
+  assert.deepEqual(requestedIssueNumbers, [92]);
+});
+
+test("resolveRunnableIssueContext does not hydrate unrelated candidates while continuing an unsequenced active issue", async () => {
+  const activeIssue = selectionIssue(92, { labels: [] });
+  const unrelatedIssue = selectionIssue(91, {
+    body: `${executionReadyBody("Unrelated stale dependency.")}\n\nDepends on: #999999`,
+  });
+  const record = createRecord(92);
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 92,
+    issues: { "92": record },
+  };
+  let candidateListCalls = 0;
+  const requestedIssueNumbers: number[] = [];
+
+  const result = await resolveRunnableIssueContext({
+    github: {
+      listCandidateIssues: async () => {
+        candidateListCalls += 1;
+        return [unrelatedIssue];
+      },
+      getIssue: async (issueNumber) => {
+        requestedIssueNumbers.push(issueNumber);
+        assert.equal(issueNumber, 92);
+        return activeIssue;
+      },
+    },
+    config: createConfig({ issueLabel: "codex" }),
+    stateStore: createTouchStateStore([]),
+    state,
+    currentRecord: record,
+    acquireIssueLock: async () => ({ acquired: true, release: async () => {} }),
+  });
+
+  assert.ok(typeof result !== "string");
+  assert.equal(result.kind, "ready");
+  assert.equal(result.issue.number, 92);
+  assert.equal(candidateListCalls, 0);
+  assert.deepEqual(requestedIssueNumbers, [92]);
 });

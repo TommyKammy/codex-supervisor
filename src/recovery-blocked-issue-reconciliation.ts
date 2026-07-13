@@ -283,8 +283,7 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
 ): Promise<RecoveryEvent[]> {
   let changed = false;
   const recoveryEvents: RecoveryEvent[] = [];
-  const dependencyIssues = await hydrateDependencyIssueInventory(github, issues);
-  const issuesByNumber = new Map(dependencyIssues.map((issue) => [issue.number, issue]));
+  const issuesByNumber = new Map(issues.map((issue) => [issue.number, issue]));
   const inferStateFromPullRequestImpl = deps.inferStateFromPullRequest ?? inferStateFromPullRequest;
   const inferFailureContextImpl = deps.inferFailureContext ?? inferFailureContext;
   const blockedReasonForLifecycleStateImpl =
@@ -1090,6 +1089,8 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
         continue;
       }
 
+      const initialDependencyIssues = issuesByNumber.has(issue.number) ? issues : [...issues, issue];
+      const dependencyIssues = await hydrateDependencyIssueInventory(github, initialDependencyIssues, [issue]);
       if (findBlockingIssue(issue, dependencyIssues, state)) {
         continue;
       }

@@ -511,6 +511,47 @@ test("reconcileRecoverableBlockedIssueStates does not requeue an issue after its
   assert.equal(saveCalls, 0);
 });
 
+test("reconcileRecoverableBlockedIssueStates does not hydrate unrelated dependencies during tracked-PR-only recovery", async () => {
+  const unrelatedIssue = createIssue({
+    number: 92,
+    body: executionReadyBody("Unrelated dependency during tracked PR recovery.")
+      .replace("Depends on: none", "Depends on: #999999"),
+  });
+  let dependencyLookups = 0;
+
+  const events = await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => {
+        throw new Error("unexpected getPullRequestIfExists call");
+      },
+      getIssue: async () => {
+        dependencyLookups += 1;
+        throw new Error("unexpected getIssue call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+    },
+    {
+      touch: (record: IssueRunRecord, patch: Partial<IssueRunRecord>) => ({ ...record, ...patch }),
+      save: async () => {
+        throw new Error("unexpected save call");
+      },
+    },
+    createSupervisorState(),
+    createConfig({ issueLabel: "codex" }),
+    [unrelatedIssue],
+    { shouldAutoRetryHandoffMissing },
+    { onlyTrackedPrStates: true },
+  );
+
+  assert.deepEqual(events, []);
+  assert.equal(dependencyLookups, 0);
+});
+
 test("reconcileRecoverableBlockedIssueStates resumes conflicted tracked PR handoff-missing issues into conflict repair", async () => {
   const config = createConfig();
   const state: SupervisorStateFile = createSupervisorState({
