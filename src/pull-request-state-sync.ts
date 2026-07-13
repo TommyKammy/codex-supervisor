@@ -79,18 +79,29 @@ export function syncCodexConnectorReviewRequestObservation(
   record: IssueRunRecord,
   pr: GitHubPullRequest,
 ): Pick<
-  IssueRunRecord,
-  | "codex_connector_review_requested_observed_at"
-  | "codex_connector_review_requested_head_sha"
-  | "codex_connector_review_request_comment_identity_status"
-  | "codex_connector_review_request_comment_database_id"
-  | "codex_connector_review_request_comment_node_id"
-  | "codex_connector_review_request_comment_url"
-> {
+    IssueRunRecord,
+    | "codex_connector_review_requested_observed_at"
+    | "codex_connector_review_requested_head_sha"
+    | "codex_connector_review_request_comment_identity_status"
+    | "codex_connector_review_request_comment_database_id"
+    | "codex_connector_review_request_comment_node_id"
+    | "codex_connector_review_request_comment_url"
+  > &
+    Partial<
+      Pick<
+        IssueRunRecord,
+        | "codex_connector_review_request_retry_count"
+        | "codex_connector_review_request_retry_head_sha"
+        | "codex_connector_review_request_last_retried_at"
+      >
+    > {
   if (pr.configuredBotCurrentHeadObservedAt) {
     return {
       codex_connector_review_requested_observed_at: null,
       codex_connector_review_requested_head_sha: null,
+      codex_connector_review_request_retry_count: 0,
+      codex_connector_review_request_retry_head_sha: null,
+      codex_connector_review_request_last_retried_at: null,
       codex_connector_review_request_comment_identity_status: null,
       codex_connector_review_request_comment_database_id: null,
       codex_connector_review_request_comment_node_id: null,
@@ -102,32 +113,53 @@ export function syncCodexConnectorReviewRequestObservation(
     pr.codexConnectorReviewRequestedAt &&
     pr.codexConnectorReviewRequestedHeadSha === pr.headRefOid
   ) {
+    const currentHeadRetryCount =
+      record.codex_connector_review_request_retry_head_sha === pr.headRefOid
+        ? record.codex_connector_review_request_retry_count ?? 0
+        : 0;
+    const preserveLatestRetryIdentity = currentHeadRetryCount > 0;
     return {
       codex_connector_review_requested_observed_at: pr.codexConnectorReviewRequestedAt,
       codex_connector_review_requested_head_sha: pr.headRefOid,
       codex_connector_review_request_comment_identity_status:
-        pr.codexConnectorReviewRequestCommentDatabaseId ||
-        pr.codexConnectorReviewRequestCommentNodeId ||
-        pr.codexConnectorReviewRequestCommentUrl
-          ? "available"
-          : record.codex_connector_review_requested_head_sha === pr.headRefOid
-            ? record.codex_connector_review_request_comment_identity_status ?? null
-            : null,
+        preserveLatestRetryIdentity
+          ? record.codex_connector_review_request_comment_identity_status ?? null
+          : pr.codexConnectorReviewRequestCommentDatabaseId ||
+              pr.codexConnectorReviewRequestCommentNodeId ||
+              pr.codexConnectorReviewRequestCommentUrl
+            ? "available"
+            : record.codex_connector_review_requested_head_sha === pr.headRefOid
+              ? record.codex_connector_review_request_comment_identity_status ?? null
+              : null,
       codex_connector_review_request_comment_database_id:
-        pr.codexConnectorReviewRequestCommentDatabaseId ??
-        (record.codex_connector_review_requested_head_sha === pr.headRefOid
+        preserveLatestRetryIdentity
           ? record.codex_connector_review_request_comment_database_id ?? null
-          : null),
+          : pr.codexConnectorReviewRequestCommentDatabaseId ??
+            (record.codex_connector_review_requested_head_sha === pr.headRefOid
+              ? record.codex_connector_review_request_comment_database_id ?? null
+              : null),
       codex_connector_review_request_comment_node_id:
-        pr.codexConnectorReviewRequestCommentNodeId ??
-        (record.codex_connector_review_requested_head_sha === pr.headRefOid
+        preserveLatestRetryIdentity
           ? record.codex_connector_review_request_comment_node_id ?? null
-          : null),
+          : pr.codexConnectorReviewRequestCommentNodeId ??
+            (record.codex_connector_review_requested_head_sha === pr.headRefOid
+              ? record.codex_connector_review_request_comment_node_id ?? null
+              : null),
       codex_connector_review_request_comment_url:
-        pr.codexConnectorReviewRequestCommentUrl ??
-        (record.codex_connector_review_requested_head_sha === pr.headRefOid
+        preserveLatestRetryIdentity
           ? record.codex_connector_review_request_comment_url ?? null
-          : null),
+          : pr.codexConnectorReviewRequestCommentUrl ??
+            (record.codex_connector_review_requested_head_sha === pr.headRefOid
+              ? record.codex_connector_review_request_comment_url ?? null
+              : null),
+      ...(preserveLatestRetryIdentity
+        ? {
+            codex_connector_review_request_retry_count: currentHeadRetryCount,
+            codex_connector_review_request_retry_head_sha: pr.headRefOid,
+            codex_connector_review_request_last_retried_at:
+              record.codex_connector_review_request_last_retried_at ?? null,
+          }
+        : {}),
     };
   }
 

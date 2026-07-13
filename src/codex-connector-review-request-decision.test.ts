@@ -154,6 +154,7 @@ test("codexConnectorReviewRequestPolicy returns retry outcome after the no-respo
   assert.deepEqual(
     policy({
       recordRequest: { requestedAt: "2026-05-08T03:10:00Z", headSha: "head-1995" },
+      hasRequestCommentIdentity: true,
       retryAnchorAt: "2026-05-08T03:10:00Z",
     }),
     {
@@ -505,7 +506,7 @@ test("codexConnectorReviewRequestAction selects retry after the same-head reques
   });
 });
 
-test("codexConnectorReviewRequestAction suppresses retry when the same-head request comment is still tracked", () => {
+test("codexConnectorReviewRequestAction retries after the wait when the same-head initial comment is tracked", () => {
   const scenario = createCodexConnectorRequestRetryScenario();
 
   assert.deepEqual(
@@ -524,11 +525,11 @@ test("codexConnectorReviewRequestAction suppresses retry when the same-head requ
       configuredThreads: scenario.configuredThreads,
       now: scenario.now,
     }),
-    { kind: "none" },
+    { kind: "retry", retryCount: 0, retryAttempt: 1 },
   );
 });
 
-test("codexConnectorReviewRequestAction suppresses retry when the same-head request comment is hydrated from GitHub", () => {
+test("codexConnectorReviewRequestAction retries after the wait when the same-head initial comment is hydrated", () => {
   const scenario = createCodexConnectorRequestRetryScenario();
 
   assert.deepEqual(
@@ -543,7 +544,39 @@ test("codexConnectorReviewRequestAction suppresses retry when the same-head requ
       configuredThreads: scenario.configuredThreads,
       now: scenario.now,
     }),
-    { kind: "none" },
+    { kind: "retry", retryCount: 0, retryAttempt: 1 },
+  );
+});
+
+test("codexConnectorReviewRequestPolicy dedupes a tracked same-head request before the retry wait expires", () => {
+  assert.deepEqual(
+    policy({
+      recordRequest: { requestedAt: "2026-05-08T03:25:00Z", headSha: "head-1995" },
+      hasRequestCommentIdentity: true,
+      retryAnchorAt: "2026-05-08T03:25:00Z",
+    }),
+    {
+      outcome: "advisory",
+      reason: "request_comment_identity_present",
+      action: { kind: "none" },
+    },
+  );
+});
+
+test("codexConnectorReviewRequestPolicy allows the next configured attempt after its retry wait", () => {
+  assert.deepEqual(
+    policy({
+      recordRequest: { requestedAt: "2026-05-08T03:00:00Z", headSha: "head-1995" },
+      hasRequestCommentIdentity: true,
+      retryLimit: 2,
+      retryCountForCurrentHead: 1,
+      retryAnchorAt: "2026-05-08T03:10:00Z",
+    }),
+    {
+      outcome: "request_retry",
+      reason: "retry_ready",
+      action: { kind: "retry", retryCount: 1, retryAttempt: 2 },
+    },
   );
 });
 

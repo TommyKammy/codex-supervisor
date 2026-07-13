@@ -38,10 +38,7 @@ export interface TrackedPrLifecycleProjection {
   recordForState: IssueRunRecord;
   reviewWaitPatch: Partial<IssueRunRecord>;
   copilotReviewRequestObservationPatch: Partial<IssueRunRecord>;
-  codexConnectorReviewRequestObservationPatch: Pick<
-    IssueRunRecord,
-    "codex_connector_review_requested_observed_at" | "codex_connector_review_requested_head_sha"
-  >;
+  codexConnectorReviewRequestObservationPatch: ReturnType<typeof syncCodexConnectorReviewRequestObservation>;
   copilotReviewTimeoutPatch: Pick<
     IssueRunRecord,
     "copilot_review_timed_out_at" | "copilot_review_timeout_action" | "copilot_review_timeout_reason"

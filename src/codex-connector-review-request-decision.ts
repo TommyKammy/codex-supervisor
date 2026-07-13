@@ -345,14 +345,6 @@ export function codexConnectorReviewRequestPolicy(
     };
   }
 
-  if (args.hasRequestCommentIdentity) {
-    return {
-      outcome: "advisory",
-      reason: "request_comment_identity_present",
-      action: { kind: "none" },
-    };
-  }
-
   if (args.retryLimit <= 0) {
     return {
       outcome: "wait",
@@ -371,6 +363,14 @@ export function codexConnectorReviewRequestPolicy(
 
   const waitUntil = args.retryAnchorAt ? addMinutes(args.retryAnchorAt, args.retryNoResponseMinutes) : null;
   if (!waitUntil || args.nowMs < Date.parse(waitUntil)) {
+    if (args.hasRequestCommentIdentity) {
+      return {
+        outcome: "advisory",
+        reason: "request_comment_identity_present",
+        action: { kind: "none" },
+      };
+    }
+
     return {
       outcome: "wait",
       reason: "retry_wait_not_elapsed",

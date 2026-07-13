@@ -153,6 +153,11 @@ test("explain surfaces Codex Connector review-request fallback lifecycle for the
         last_head_sha: "head-1925",
         codex_connector_review_requested_observed_at: "2026-05-08T03:30:00Z",
         codex_connector_review_requested_head_sha: "head-1925",
+        codex_connector_review_request_comment_identity_status: "available",
+        codex_connector_review_request_comment_database_id: 2925001,
+        codex_connector_review_request_comment_node_id: "IC_head_1925_initial",
+        codex_connector_review_request_comment_url:
+          "https://github.com/owner/repo/pull/2925#issuecomment-2925001",
       }),
     },
   };
@@ -197,7 +202,7 @@ test("explain surfaces Codex Connector review-request fallback lifecycle for the
 
   assert.match(
     explanation,
-    /^codex_connector_review_fallback status=request_posted_no_current_head_signal provider=codex current_head_sha=head-1925 current_head_observed_at=none required_checks_green_at=2026-05-08T03:09:36Z timeout_action=request_review_comment requested_at=2026-05-08T03:30:00Z requested_head_sha=head-1925 review_signal=missing note=request_comment_is_not_review_completion retry_status=eligible retry_count=0 retry_limit=1 retry_wait_until=2026-05-08T03:40:00\.000Z request_comment_identity=unavailable next_action=retry_request_review_comment wait_until=2026-05-08T03:19:36\.000Z$/m,
+    /^codex_connector_review_fallback status=request_posted_no_current_head_signal provider=codex current_head_sha=head-1925 current_head_observed_at=none required_checks_green_at=2026-05-08T03:09:36Z timeout_action=request_review_comment requested_at=2026-05-08T03:30:00Z requested_head_sha=head-1925 review_signal=missing note=request_comment_is_not_review_completion retry_status=eligible retry_count=0 retry_limit=1 retry_wait_until=2026-05-08T03:40:00\.000Z request_comment_identity=database_id=2925001,node_id=IC_head_1925_initial,url=https:\/\/github\.com\/owner\/repo\/pull\/2925#issuecomment-2925001 next_action=retry_request_review_comment wait_until=2026-05-08T03:19:36\.000Z$/m,
   );
   assert.match(
     explanation,
