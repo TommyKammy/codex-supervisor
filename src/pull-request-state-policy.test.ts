@@ -4141,6 +4141,92 @@ test("inferStateFromPullRequest clears unresolved same-provider Codex finding af
   assert.equal(syncMergeLatencyVisibility(config, record, pr, checks, reviewThreads).provider_success_head_sha, currentHeadSha);
 });
 
+test("provider success uses the safely cleared thread scope before anchored Codex supersession", () => {
+  const currentHeadSha = "9ef7585296f2622821f30fac436b6a794d71ed81";
+  const config = createConfig({
+    reviewBotLogins: [CODEX_CONNECTOR_REVIEW_BOT_LOGIN],
+    humanReviewBlocksMerge: true,
+    configuredBotInitialGraceWaitSeconds: 0,
+  });
+  const record = createRecord({
+    state: "blocked",
+    blocked_reason: "verification",
+    last_head_sha: currentHeadSha,
+    review_wait_started_at: "2026-07-12T23:29:43.233Z",
+    review_wait_head_sha: currentHeadSha,
+    provider_success_observed_at: null,
+    provider_success_head_sha: null,
+  });
+  const pr = createPullRequest({
+    headRefOid: currentHeadSha,
+    configuredBotCurrentHeadObservedAt: "2026-07-12T23:42:40Z",
+    configuredBotCurrentHeadCodexObservedAt: "2026-07-12T23:42:40Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "9ef7585296",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-07-12T23:42:40Z",
+    configuredBotTopLevelReviewStrength: null,
+    currentHeadCiGreenAt: "2026-07-12T23:44:33.394Z",
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+  });
+  const reviewThreads = [
+    createReviewThread({
+      id: "PRRT_kwDOTAxt0M6QPo_h",
+      isOutdated: true,
+      comments: {
+        nodes: [
+          {
+            id: "PRRC_kwDOTAxt0M7UoSaX",
+            body: "P2: Check OCR rejection before LLM rejection.",
+            createdAt: "2026-07-12T23:19:03Z",
+            url: "https://example.test/pr/295#discussion_r3567330967",
+            author: { login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN, typeName: "Bot" },
+          },
+        ],
+      },
+    }),
+    createReviewThread({
+      id: "PRRT_kwDOTAxt0M6QPo_i",
+      isOutdated: true,
+      comments: {
+        nodes: [
+          {
+            id: "PRRC_kwDOTAxt0M7UoSaZ",
+            body: "P2: Reject OCR on source-less job requests.",
+            createdAt: "2026-07-12T23:19:03Z",
+            url: "https://example.test/pr/295#discussion_r3567330969",
+            author: { login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN, typeName: "Bot" },
+          },
+        ],
+      },
+    }),
+    createReviewThread({
+      id: "PRRT_kwDOTAxt0M6QPo_j",
+      isOutdated: false,
+      comments: {
+        nodes: [
+          {
+            id: "PRRC_kwDOTAxt0M7UoSab",
+            body: "P3: Include LLM status in OCR rejection audits because the UI shows an extra error line.",
+            createdAt: "2026-07-12T23:19:03Z",
+            url: "https://example.test/pr/295#discussion_r3567330971",
+            author: { login: CODEX_CONNECTOR_REVIEW_BOT_LOGIN, typeName: "Bot" },
+          },
+        ],
+      },
+    }),
+  ];
+  const checks = passingChecks();
+
+  assert.equal(effectiveConfiguredBotReviewThreadsForState(config, record, pr, checks, reviewThreads).length, 0);
+  assert.equal(hasConfiguredProviderSuccess(config, record, pr, checks, reviewThreads), true);
+  const visibility = syncMergeLatencyVisibility(config, record, pr, checks, reviewThreads);
+  assert.equal(visibility.provider_success_head_sha, currentHeadSha);
+  assert.notEqual(visibility.provider_success_observed_at, null);
+  assert.notEqual(visibility.merge_readiness_last_evaluated_at, null);
+});
+
 test("inferStateFromPullRequest accepts preserved anchored Codex success with later status context and nitpicks", () => {
   const currentHeadSha = "ae3831568705a3a3be8cbf8c0cd6ec58d1f2d8e6";
   const config = createConfig({

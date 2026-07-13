@@ -96,7 +96,7 @@ function configuredReviewProvidersAreCodexOnly(config: SupervisorConfig): boolea
   return providerKinds.length > 0 && providerKinds.every((kind) => kind === "codex");
 }
 
-function effectiveConfiguredBotReviewThreads(
+function configuredBotReviewThreadsAfterSafeClearance(
   config: SupervisorConfig,
   record: IssueRunRecord,
   pr: GitHubPullRequest,
@@ -111,10 +111,32 @@ function effectiveConfiguredBotReviewThreads(
     checks,
     reviewThreads,
   );
-  const effectiveThreads = codexConnectorThreadsAfterConvergencePolicy(config, pr, unresolvedConfiguredBotThreads);
-  const threadsAfterOutdatedClearance = clearOutdatedCodexConnectorThreads
-    ? effectiveThreads.filter((thread) => !isClearableOutdatedCodexConnectorResidueThread(config, thread))
-    : effectiveThreads;
+  const threadsAfterConvergencePolicy = codexConnectorThreadsAfterConvergencePolicy(
+    config,
+    pr,
+    unresolvedConfiguredBotThreads,
+  );
+  return clearOutdatedCodexConnectorThreads
+    ? threadsAfterConvergencePolicy.filter(
+        (thread) => !isClearableOutdatedCodexConnectorResidueThread(config, thread),
+      )
+    : threadsAfterConvergencePolicy;
+}
+
+function effectiveConfiguredBotReviewThreads(
+  config: SupervisorConfig,
+  record: IssueRunRecord,
+  pr: GitHubPullRequest,
+  checks: PullRequestCheck[],
+  reviewThreads: ReviewThread[],
+): ReviewThread[] {
+  const threadsAfterOutdatedClearance = configuredBotReviewThreadsAfterSafeClearance(
+    config,
+    record,
+    pr,
+    checks,
+    reviewThreads,
+  );
   if (
     anchoredCurrentHeadCodexSuccessSupersedesUnresolvedFindings({
       config,
@@ -652,6 +674,14 @@ export function hasConfiguredProviderSuccess(
     return true;
   }
 
+  const configuredThreadsAfterSafeClearance = configuredBotReviewThreadsAfterSafeClearance(
+    config,
+    record,
+    pr,
+    checks,
+    reviewThreads,
+  );
+
   if (
     anchoredCurrentHeadCodexSuccessSupersedesUnresolvedFindings({
       config,
@@ -659,6 +689,7 @@ export function hasConfiguredProviderSuccess(
       pr,
       checks,
       reviewThreads,
+      configuredThreads: configuredThreadsAfterSafeClearance,
     })
   ) {
     return true;
