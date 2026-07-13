@@ -112,6 +112,23 @@ ${summary}
 - npm test -- src/run-once-issue-selection.test.ts`;
 }
 
+function selectionIssue(
+  number: number,
+  overrides: Partial<GitHubIssue> = {},
+): GitHubIssue {
+  return {
+    number,
+    title: `Issue ${number}`,
+    body: executionReadyBody(`Implement issue ${number}.`),
+    createdAt: `2026-07-14T00:${String(number % 60).padStart(2, "0")}:00Z`,
+    updatedAt: `2026-07-14T00:${String(number % 60).padStart(2, "0")}:00Z`,
+    url: `https://example.test/issues/${number}`,
+    labels: [{ name: "codex" }],
+    state: "OPEN",
+    ...overrides,
+  };
+}
+
 function createTouchStateStore(savedStates: SupervisorStateFile[]) {
   return {
     touch(record: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
@@ -2871,5 +2888,139 @@ Execution order: 2 of 2`,
   assert.deepEqual(requestedIssueNumbers, [93]);
   assert.equal(state.activeIssueNumber, 93);
   assert.equal(state.issues["92"], undefined);
+  assert.equal(savedStates.length, 1);
+});
+
+test("resolveRunnableIssueContext blocks a labeled child on an open unlabeled dependency outside the candidate inventory", async () => {
+  const config = createConfig({ issueLabel: "codex" });
+  const dependencyIssue = selectionIssue(91, { labels: [] });
+  const childIssue = selectionIssue(92, {
+    body: `${executionReadyBody("Keep the child blocked.")}\n\nDepends on: #91`,
+  });
+  const requestedIssueNumbers: number[] = [];
+
+  const result = await resolveRunnableIssueContext({
+    github: {
+      listCandidateIssues: async () => [childIssue],
+      getIssue: async (issueNumber) => {
+        requestedIssueNumbers.push(issueNumber);
+        assert.equal(issueNumber, 91);
+        return dependencyIssue;
+      },
+    },
+    config,
+    stateStore: createTouchStateStore([]),
+    state: { activeIssueNumber: null, issues: {} },
+    currentRecord: null,
+  });
+
+  assert.equal(result, "No matching open issue found.");
+  assert.deepEqual(requestedIssueNumbers, [91]);
+});
+
+test("resolveRunnableIssueContext hydrates transitive unlabeled dependencies without making them selectable", async () => {
+  const config = createConfig({ issueLabel: "codex" });
+  const rootDependency = selectionIssue(91, { labels: [] });
+  const unlabeledParent = selectionIssue(92, {
+    labels: [],
+    body: `${executionReadyBody("Wait for the root dependency.")}\n\nDepends on: #91`,
+  });
+  const grandchild = selectionIssue(93, {
+    body: `${executionReadyBody("Wait for the parent.")}\n\nDepends on: #92`,
+  });
+  const issuesByNumber = new Map([
+    [91, rootDependency],
+    [92, unlabeledParent],
+  ]);
+  const requestedIssueNumbers: number[] = [];
+
+  const result = await resolveRunnableIssueContext({
+    github: {
+      listCandidateIssues: async () => [grandchild],
+      getIssue: async (issueNumber) => {
+        requestedIssueNumbers.push(issueNumber);
+        const issue = issuesByNumber.get(issueNumber);
+        assert.ok(issue);
+        return issue;
+      },
+    },
+    config,
+    stateStore: createTouchStateStore([]),
+    state: { activeIssueNumber: null, issues: {} },
+    currentRecord: null,
+  });
+
+  assert.equal(result, "No matching open issue found.");
+  assert.deepEqual(requestedIssueNumbers, [92, 91]);
+});
+
+test("resolveRunnableIssueContext fails closed when an out-of-window dependency lookup fails", async () => {
+  const childIssue = selectionIssue(92, {
+    body: `${executionReadyBody("Keep lookup failures blocked.")}\n\nDepends on: #91`,
+  });
+
+  await assert.rejects(
+    resolveRunnableIssueContext({
+      github: {
+        listCandidateIssues: async () => [childIssue],
+        getIssue: async () => {
+          throw new Error("GitHub lookup unavailable");
+        },
+      },
+      config: createConfig({ issueLabel: "codex" }),
+      stateStore: createTouchStateStore([]),
+      state: { activeIssueNumber: null, issues: {} },
+      currentRecord: null,
+    }),
+    /Failed to resolve dependency issue #91 referenced by issue #92; refusing to continue without authoritative dependency state: GitHub lookup unavailable/,
+  );
+});
+
+test("resolveRunnableIssueContext rechecks out-of-window dependencies before continuing an active reservation", async () => {
+  const dependencyIssue = selectionIssue(91, { labels: [] });
+  const childIssue = selectionIssue(92, {
+    labels: [],
+    body: `${executionReadyBody("Recheck the active issue dependency.")}\n\nDepends on: #91`,
+  });
+  const record = createRecord(92, { implementation_attempt_count: 7 });
+  const state: SupervisorStateFile = {
+    activeIssueNumber: 92,
+    issues: { "92": record },
+  };
+  const savedStates: SupervisorStateFile[] = [];
+  const requestedIssueNumbers: number[] = [];
+  let released = false;
+
+  const result = await resolveRunnableIssueContext({
+    github: {
+      listCandidateIssues: async () => [],
+      getIssue: async (issueNumber) => {
+        requestedIssueNumbers.push(issueNumber);
+        if (issueNumber === 92) {
+          return childIssue;
+        }
+        assert.equal(issueNumber, 91);
+        return dependencyIssue;
+      },
+    },
+    config: createConfig({ issueLabel: "codex" }),
+    stateStore: createTouchStateStore(savedStates),
+    state,
+    currentRecord: record,
+    acquireIssueLock: async () => ({
+      acquired: true,
+      release: async () => {
+        released = true;
+      },
+    }),
+  });
+
+  assert.ok(typeof result !== "string");
+  assert.equal(result.kind, "restart");
+  assert.deepEqual(requestedIssueNumbers, [92, 91]);
+  assert.equal(state.activeIssueNumber, null);
+  assert.equal(state.issues["92"]?.implementation_attempt_count, 7);
+  assert.match(state.issues["92"]?.last_error ?? "", /Waiting for depends on #91/);
+  assert.equal(released, true);
   assert.equal(savedStates.length, 1);
 });

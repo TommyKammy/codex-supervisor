@@ -14,10 +14,12 @@ import {
   shouldReconcileTrackedPrUnknownAuthBlocker,
 } from "./supervisor/supervisor-execution-policy";
 import {
+  findBlockingIssue,
   findHighRiskBlockingAmbiguity,
   hasAvailableIssueLabels,
   lintExecutionReadyIssueBody,
 } from "./issue-metadata";
+import { hydrateDependencyIssueInventory } from "./issue-metadata/dependency-issue-inventory";
 import { buildIssueDefinitionFingerprint, issueDefinitionFreshnessPatch } from "./issue-definition-freshness";
 import { RecoveryEvent } from "./run-once-cycle-prelude";
 import { StateStore } from "./core/state-store";
@@ -63,6 +65,17 @@ import {
   hasBlockedTurnVerificationProvenance,
   reconcileBlockedTurnPullRequest,
 } from "./supervisor/blocked-turn-pr-reconciliation";
+
+function hasConfiguredCandidateLabel(config: SupervisorConfig, issue: GitHubIssue): boolean {
+  if (!config.issueLabel) {
+    return true;
+  }
+
+  const normalizedIssueLabel = config.issueLabel.trim().toLowerCase();
+  return (issue.labels ?? []).some(
+    (label) => label.name.trim().toLowerCase() === normalizedIssueLabel,
+  );
+}
 
 export { codexConnectorChurnStopEvidenceSource } from "./recovery-codex-connector-churn";
 
@@ -270,7 +283,8 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
 ): Promise<RecoveryEvent[]> {
   let changed = false;
   const recoveryEvents: RecoveryEvent[] = [];
-  const issuesByNumber = new Map(issues.map((issue) => [issue.number, issue]));
+  const dependencyIssues = await hydrateDependencyIssueInventory(github, issues);
+  const issuesByNumber = new Map(dependencyIssues.map((issue) => [issue.number, issue]));
   const inferStateFromPullRequestImpl = deps.inferStateFromPullRequest ?? inferStateFromPullRequest;
   const inferFailureContextImpl = deps.inferFailureContext ?? inferFailureContext;
   const blockedReasonForLifecycleStateImpl =
@@ -1067,7 +1081,7 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
     }
 
     if (record.state === "blocked" && record.blocked_reason === "requirements") {
-      if (!hasAvailableIssueLabels(issue)) {
+      if (!hasAvailableIssueLabels(issue) || !hasConfiguredCandidateLabel(config, issue)) {
         continue;
       }
 
@@ -1076,9 +1090,13 @@ export async function reconcileRecoverableBlockedIssueStatesInModule(
         continue;
       }
 
+      if (findBlockingIssue(issue, dependencyIssues, state)) {
+        continue;
+      }
+
       const recoveryEvent = buildRecoveryEvent(
         record.issue_number,
-        `requirements_recovered: requeued issue #${record.issue_number} after execution-ready metadata was added`,
+        `requirements_recovered: requeued issue #${record.issue_number} after execution-ready metadata and dependency gates became satisfied`,
       );
       const updated = stateStore.touch(record, {
         state: "queued",

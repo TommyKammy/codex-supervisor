@@ -661,7 +661,7 @@ test("runOnceCyclePrelude requeues rehydrated requirements-blocked no-PR records
   const calls: string[] = [];
   const recoveryEvent: RecoveryEvent = {
     issueNumber: 77,
-    reason: "requirements_recovered: requeued issue #77 after execution-ready metadata was added",
+    reason: "requirements_recovered: requeued issue #77 after execution-ready metadata and dependency gates became satisfied",
     at: "2026-03-26T00:06:00Z",
   };
 
