@@ -1685,6 +1685,156 @@ test("handlePostTurnMergeAndCompletion uses effective Codex thread blockers at t
   assert.equal(autoMergeCalls, 1);
 });
 
+test("handlePostTurnMergeAndCompletion preserves anchored success after clearing outdated Codex residue", async () => {
+  const fixture = await createSupervisorFixture();
+  const config = createConfig({
+    ...fixture.config,
+    codexConnectorAutoMergeEnabled: true,
+    reviewBotLogins: ["chatgpt-codex-connector"],
+    localCiCommand: "npm run verify:pre-pr",
+    humanReviewBlocksMerge: true,
+    configuredBotInitialGraceWaitSeconds: 0,
+  });
+  const issueNumber = 2453;
+  const headSha = "9ef7585296f2622821f30fac436b6a794d71ed81";
+  const state: SupervisorStateFile = {
+    activeIssueNumber: issueNumber,
+    issues: {
+      [String(issueNumber)]: createRecord({
+        issue_number: issueNumber,
+        state: "ready_to_merge",
+        pr_number: 295,
+        last_head_sha: headSha,
+        provider_success_observed_at: null,
+        provider_success_head_sha: null,
+        review_wait_started_at: "2026-07-12T23:29:43.233Z",
+        review_wait_head_sha: headSha,
+        blocked_reason: null,
+        last_error: null,
+        last_failure_context: null,
+        last_failure_signature: null,
+        latest_local_ci_result: {
+          outcome: "passed",
+          summary: "Configured local CI command passed before auto-merging PR #295.",
+          ran_at: "2026-07-12T23:44:33.394Z",
+          head_sha: headSha,
+          execution_mode: "shell",
+          command: "npm run verify:pre-pr",
+          failure_class: null,
+          remediation_target: null,
+        },
+      }),
+    },
+  };
+  const issue: GitHubIssue = {
+    number: issueNumber,
+    title: "Keep provider-success and blocker evidence aligned",
+    body: "",
+    createdAt: "2026-07-13T00:43:02Z",
+    updatedAt: "2026-07-13T00:43:02Z",
+    url: `https://example.test/issues/${issueNumber}`,
+    state: "OPEN",
+  };
+  const pr: GitHubPullRequest = {
+    number: 295,
+    title: "VeriDoc PR 295",
+    url: "https://example.test/pr/295",
+    state: "OPEN",
+    createdAt: "2026-07-12T23:00:00Z",
+    isDraft: false,
+    reviewDecision: null,
+    mergeStateStatus: "CLEAN",
+    mergeable: "MERGEABLE",
+    headRefName: "codex/issue-280",
+    headRefOid: headSha,
+    mergedAt: null,
+    configuredBotCurrentHeadObservedAt: "2026-07-12T23:42:40Z",
+    configuredBotCurrentHeadCodexObservedAt: "2026-07-12T23:42:40Z",
+    configuredBotCurrentHeadObservationSource: "codex_pr_success_comment",
+    configuredBotCurrentHeadStatusState: null,
+    configuredBotCurrentHeadCodexSuccessReviewedCommitSha: "9ef7585296",
+    configuredBotCurrentHeadCodexSuccessObservedAt: "2026-07-12T23:42:40Z",
+    configuredBotTopLevelReviewStrength: null,
+    currentHeadCiGreenAt: "2026-07-12T23:44:33.394Z",
+  };
+  const reviewThreads = [
+    createReviewThread({
+      id: "PRRT_kwDOTAxt0M6QPo_h",
+      isOutdated: true,
+      comments: {
+        nodes: [{
+          id: "PRRC_kwDOTAxt0M7UoSaX",
+          body: "P2: Check OCR rejection before LLM rejection.",
+          createdAt: "2026-07-12T23:19:03Z",
+          url: "https://example.test/pr/295#discussion_r3567330967",
+          author: { login: "chatgpt-codex-connector", typeName: "Bot" },
+        }],
+      },
+    }),
+    createReviewThread({
+      id: "PRRT_kwDOTAxt0M6QPo_i",
+      isOutdated: true,
+      comments: {
+        nodes: [{
+          id: "PRRC_kwDOTAxt0M7UoSaZ",
+          body: "P2: Reject OCR on source-less job requests.",
+          createdAt: "2026-07-12T23:19:03Z",
+          url: "https://example.test/pr/295#discussion_r3567330969",
+          author: { login: "chatgpt-codex-connector", typeName: "Bot" },
+        }],
+      },
+    }),
+    createReviewThread({
+      id: "PRRT_kwDOTAxt0M6QPo_j",
+      isOutdated: false,
+      comments: {
+        nodes: [{
+          id: "PRRC_kwDOTAxt0M7UoSab",
+          body: "P3: Include LLM status in OCR rejection audits because the UI shows an extra error line.",
+          createdAt: "2026-07-12T23:19:03Z",
+          url: "https://example.test/pr/295#discussion_r3567330971",
+          author: { login: "chatgpt-codex-connector", typeName: "Bot" },
+        }],
+      },
+    }),
+  ];
+
+  let autoMergeCalls = 0;
+  const supervisor = new Supervisor(config);
+  (supervisor as unknown as { github: Record<string, unknown> }).github = {
+    getPullRequest: async () => pr,
+    getChecks: async () => passingChecks("Minimal checks"),
+    getUnresolvedReviewThreads: async () => reviewThreads,
+    addIssueComment: async () => undefined,
+    enableAutoMerge: async (prNumber: number, mergeHeadSha: string) => {
+      assert.equal(prNumber, 295);
+      assert.equal(mergeHeadSha, headSha);
+      autoMergeCalls += 1;
+    },
+  };
+
+  const result = await (
+    supervisor as unknown as {
+      handlePostTurnMergeAndCompletion: (
+        state: SupervisorStateFile,
+        issue: GitHubIssue,
+        record: ReturnType<typeof createRecord>,
+        pr: GitHubPullRequest,
+        options: { dryRun: boolean },
+      ) => Promise<ReturnType<typeof createRecord>>;
+    }
+  ).handlePostTurnMergeAndCompletion(state, issue, state.issues[String(issueNumber)]!, pr, { dryRun: false });
+
+  assert.equal(result.state, "merging");
+  assert.equal(result.blocked_reason, null);
+  assert.equal(result.provider_success_head_sha, headSha);
+  assert.notEqual(result.provider_success_observed_at, null);
+  assert.equal(result.last_failure_signature, null);
+  assert.equal(result.last_auto_merge_guard_context?.details.includes("codex_current_head_no_major=yes"), true);
+  assert.equal(result.last_auto_merge_guard_context?.details.includes("configured_bot_blockers=0"), true);
+  assert.equal(autoMergeCalls, 1);
+});
+
 test("handlePostTurnMergeAndCompletion accepts current-head Codex nitpick-only convergence as no-major evidence", async () => {
   const fixture = await createSupervisorFixture();
   const config = createConfig({
