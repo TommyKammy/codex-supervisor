@@ -182,9 +182,9 @@ test("handlePostTurnPullRequestTransitionsPhase does not request Codex Connector
   }
 });
 
-test("handlePostTurnPullRequestTransitionsPhase retries Codex Connector review once after same-head request gets no response", async () => {
+test("handlePostTurnPullRequestTransitionsPhase retries VeriDoc #301 once when the tracked initial request gets no response", async () => {
   const originalDateNow = Date.now;
-  Date.now = () => Date.parse("2026-05-08T04:00:00Z");
+  Date.now = () => Date.parse("2026-07-13T21:35:58Z");
   try {
     const config = createConfig({
       reviewBotLogins: ["chatgpt-codex-connector"],
@@ -195,31 +195,41 @@ test("handlePostTurnPullRequestTransitionsPhase retries Codex Connector review o
       codexConnectorReviewRequestRetryLimit: 1,
       codexConnectorReviewRequestRetryMode: "plain",
     });
-    const issue = createIssue({ number: 1976, title: "Retry Codex Connector review after no response" });
+    const issue = createIssue({ number: 286, title: "P12-12: accessibility and keyboard review" });
     const pr = createPullRequest({
-      number: 1976,
-      title: "Retry Codex Connector review after no response",
+      number: 301,
+      title: "P12-12: accessibility and keyboard review",
       isDraft: false,
-      headRefOid: "head-1976",
-      currentHeadCiGreenAt: "2026-05-08T03:09:36Z",
+      headRefOid: "2105e73f653a58c5621113e25f475fb4ef14250d",
+      currentHeadCiGreenAt: "2026-07-13T15:23:37Z",
       configuredBotCurrentHeadObservedAt: null,
-      codexConnectorReviewRequestedAt: "2026-05-08T03:30:00Z",
-      codexConnectorReviewRequestedHeadSha: "head-1976",
+      configuredBotLatestReviewedCommitSha: "90ad7184cf",
+      codexConnectorReviewRequestedAt: "2026-07-13T15:36:06Z",
+      codexConnectorReviewRequestedHeadSha: "2105e73f653a58c5621113e25f475fb4ef14250d",
+      codexConnectorReviewRequestCommentDatabaseId: 4959714385,
+      codexConnectorReviewRequestCommentNodeId: "IC_veridoc_301_initial",
+      codexConnectorReviewRequestCommentUrl:
+        "https://github.com/TommyKammy/VeriDoc/pull/301#issuecomment-4959714385",
     });
     const record = createRecord({
       issue_number: issue.number,
       state: "waiting_ci",
       pr_number: pr.number,
       last_head_sha: pr.headRefOid,
-      review_wait_started_at: "2026-05-08T03:09:36Z",
+      review_wait_started_at: "2026-07-13T15:29:08.765Z",
       review_wait_head_sha: pr.headRefOid,
-      copilot_review_timed_out_at: "2026-05-08T03:19:36.000Z",
+      copilot_review_timed_out_at: "2026-07-13T15:35:38.765Z",
       copilot_review_timeout_action: "request_review_comment",
-      codex_connector_review_requested_observed_at: "2026-05-08T03:30:00Z",
+      codex_connector_review_requested_observed_at: "2026-07-13T15:36:06Z",
       codex_connector_review_requested_head_sha: pr.headRefOid,
       codex_connector_review_request_retry_count: 0,
       codex_connector_review_request_retry_head_sha: null,
       codex_connector_review_request_last_retried_at: null,
+      codex_connector_review_request_comment_identity_status: "available",
+      codex_connector_review_request_comment_database_id: 4959714385,
+      codex_connector_review_request_comment_node_id: "IC_veridoc_301_initial",
+      codex_connector_review_request_comment_url:
+        "https://github.com/TommyKammy/VeriDoc/pull/301#issuecomment-4959714385",
     });
     const state: SupervisorStateFile = {
       activeIssueNumber: issue.number,
@@ -234,16 +244,16 @@ test("handlePostTurnPullRequestTransitionsPhase retries Codex Connector review o
         addIssueComment: async (issueNumber, body) => {
           comments.push({ issueNumber, body });
           return {
-            databaseId: 1924001,
-            nodeId: "IC_kwDOissue1924_request",
-            url: "https://github.com/owner/repo/issues/1924#issuecomment-1924001",
+            databaseId: 4959999999,
+            nodeId: "IC_veridoc_301_retry_1",
+            url: "https://github.com/TommyKammy/VeriDoc/pull/301#issuecomment-4959999999",
           };
         },
       }),
       context: createPostTurnContext({
         issue,
         pr,
-        workspacePath: "/tmp/workspaces/issue-1976",
+        workspacePath: "/tmp/workspaces/issue-286",
         state,
         record,
       }),
@@ -265,17 +275,17 @@ test("handlePostTurnPullRequestTransitionsPhase retries Codex Connector review o
 
     assert.deepEqual(comments, [{ issueNumber: pr.number, body: "@codex review" }]);
     assert.equal(result.record.state, "waiting_ci");
-    assert.equal(result.record.codex_connector_review_requested_observed_at, "2026-05-08T03:30:00Z");
+    assert.equal(result.record.codex_connector_review_requested_observed_at, "2026-07-13T15:36:06Z");
     assert.equal(result.record.codex_connector_review_requested_head_sha, pr.headRefOid);
     assert.equal(result.record.codex_connector_review_request_retry_count, 1);
     assert.equal(result.record.codex_connector_review_request_retry_head_sha, pr.headRefOid);
     assert.ok(result.record.codex_connector_review_request_last_retried_at);
     assert.equal(result.record.codex_connector_review_request_comment_identity_status, "available");
-    assert.equal(result.record.codex_connector_review_request_comment_database_id, 1924001);
-    assert.equal(result.record.codex_connector_review_request_comment_node_id, "IC_kwDOissue1924_request");
+    assert.equal(result.record.codex_connector_review_request_comment_database_id, 4959999999);
+    assert.equal(result.record.codex_connector_review_request_comment_node_id, "IC_veridoc_301_retry_1");
     assert.equal(
       result.record.codex_connector_review_request_comment_url,
-      "https://github.com/owner/repo/issues/1924#issuecomment-1924001",
+      "https://github.com/TommyKammy/VeriDoc/pull/301#issuecomment-4959999999",
     );
 
     const duplicateCycle = await handlePostTurnPullRequestTransitionsPhase({
@@ -289,7 +299,7 @@ test("handlePostTurnPullRequestTransitionsPhase retries Codex Connector review o
       context: createPostTurnContext({
         issue,
         pr,
-        workspacePath: "/tmp/workspaces/issue-1976",
+        workspacePath: "/tmp/workspaces/issue-286",
         state,
         record: result.record,
       }),
@@ -311,6 +321,8 @@ test("handlePostTurnPullRequestTransitionsPhase retries Codex Connector review o
 
     assert.equal(comments.length, 1);
     assert.equal(duplicateCycle.record.codex_connector_review_request_retry_count, 1);
+    assert.equal(duplicateCycle.record.codex_connector_review_request_comment_database_id, 4959999999);
+    assert.equal(duplicateCycle.record.codex_connector_review_request_comment_node_id, "IC_veridoc_301_retry_1");
   } finally {
     Date.now = originalDateNow;
   }

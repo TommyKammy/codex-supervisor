@@ -146,6 +146,9 @@ test("syncCodexConnectorReviewRequestObservation clears request identity after c
       codex_connector_review_request_comment_database_id: 44001,
       codex_connector_review_request_comment_node_id: "IC_head_current",
       codex_connector_review_request_comment_url: "https://github.com/owner/repo/issues/44#issuecomment-44001",
+      codex_connector_review_request_retry_count: 1,
+      codex_connector_review_request_retry_head_sha: "head-current",
+      codex_connector_review_request_last_retried_at: "2026-03-13T01:05:00Z",
     }),
     createPullRequest({
       number: 44,
@@ -162,9 +165,50 @@ test("syncCodexConnectorReviewRequestObservation clears request identity after c
   assert.deepEqual(cleared, {
     codex_connector_review_requested_observed_at: null,
     codex_connector_review_requested_head_sha: null,
+    codex_connector_review_request_retry_count: 0,
+    codex_connector_review_request_retry_head_sha: null,
+    codex_connector_review_request_last_retried_at: null,
     codex_connector_review_request_comment_identity_status: null,
     codex_connector_review_request_comment_database_id: null,
     codex_connector_review_request_comment_node_id: null,
     codex_connector_review_request_comment_url: null,
+  });
+});
+
+test("syncCodexConnectorReviewRequestObservation preserves latest retry identity over hydrated initial identity", () => {
+  const patch = syncCodexConnectorReviewRequestObservation(
+    createRecord({
+      issue_number: 1923,
+      codex_connector_review_requested_observed_at: "2026-03-13T01:00:00Z",
+      codex_connector_review_requested_head_sha: "head-current",
+      codex_connector_review_request_retry_count: 1,
+      codex_connector_review_request_retry_head_sha: "head-current",
+      codex_connector_review_request_last_retried_at: "2026-03-13T01:10:00Z",
+      codex_connector_review_request_comment_identity_status: "available",
+      codex_connector_review_request_comment_database_id: 44002,
+      codex_connector_review_request_comment_node_id: "IC_head_current_retry_1",
+      codex_connector_review_request_comment_url: "https://github.com/owner/repo/issues/44#issuecomment-44002",
+    }),
+    createPullRequest({
+      number: 44,
+      headRefOid: "head-current",
+      codexConnectorReviewRequestedAt: "2026-03-13T01:00:00Z",
+      codexConnectorReviewRequestedHeadSha: "head-current",
+      codexConnectorReviewRequestCommentDatabaseId: 44001,
+      codexConnectorReviewRequestCommentNodeId: "IC_head_current_initial",
+      codexConnectorReviewRequestCommentUrl: "https://github.com/owner/repo/issues/44#issuecomment-44001",
+    }),
+  );
+
+  assert.deepEqual(patch, {
+    codex_connector_review_requested_observed_at: "2026-03-13T01:00:00Z",
+    codex_connector_review_requested_head_sha: "head-current",
+    codex_connector_review_request_retry_count: 1,
+    codex_connector_review_request_retry_head_sha: "head-current",
+    codex_connector_review_request_last_retried_at: "2026-03-13T01:10:00Z",
+    codex_connector_review_request_comment_identity_status: "available",
+    codex_connector_review_request_comment_database_id: 44002,
+    codex_connector_review_request_comment_node_id: "IC_head_current_retry_1",
+    codex_connector_review_request_comment_url: "https://github.com/owner/repo/issues/44#issuecomment-44002",
   });
 });

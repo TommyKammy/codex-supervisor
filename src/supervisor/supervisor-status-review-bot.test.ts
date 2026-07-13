@@ -1532,7 +1532,7 @@ test("formatCodexConnectorReviewFallbackDiagnostic surfaces Codex Connector wait
         }),
         pr: waitingPr,
       }),
-      "codex_connector_review_fallback status=request_posted provider=codex current_head_sha=head-340 current_head_observed_at=none required_checks_green_at=2026-03-16T00:10:00.000Z timeout_action=request_review_comment requested_at=2026-03-16T00:00:00.000Z requested_head_sha=head-340 review_signal=missing note=request_comment_is_not_review_completion wait_until=2026-03-16T00:20:00.000Z",
+      "codex_connector_review_fallback status=request_posted_no_current_head_signal provider=codex current_head_sha=head-340 current_head_observed_at=none required_checks_green_at=2026-03-16T00:10:00.000Z timeout_action=request_review_comment requested_at=2026-03-16T00:00:00.000Z requested_head_sha=head-340 review_signal=missing note=request_comment_is_not_review_completion retry_status=eligible retry_count=0 retry_limit=1 retry_wait_until=2026-03-16T00:10:00.000Z request_comment_identity=database_id=340001,node_id=IC_kwDOhead340,url=https://github.com/owner/repo/issues/340#issuecomment-340001 next_action=retry_request_review_comment wait_until=2026-03-16T00:20:00.000Z",
     );
 
     assert.equal(
@@ -1544,10 +1544,14 @@ test("formatCodexConnectorReviewFallbackDiagnostic surfaces Codex Connector wait
           codex_connector_review_request_retry_count: 1,
           codex_connector_review_request_retry_head_sha: "head-340",
           codex_connector_review_request_last_retried_at: "2026-03-16T00:01:00.000Z",
+          codex_connector_review_request_comment_identity_status: "available",
+          codex_connector_review_request_comment_database_id: 340002,
+          codex_connector_review_request_comment_node_id: "IC_kwDOhead340_retry1",
+          codex_connector_review_request_comment_url: "https://github.com/owner/repo/issues/340#issuecomment-340002",
         }),
         pr: waitingPr,
       }),
-      "codex_connector_review_fallback status=request_retry_exhausted provider=codex current_head_sha=head-340 current_head_observed_at=none required_checks_green_at=2026-03-16T00:10:00.000Z timeout_action=request_review_comment requested_at=2026-03-16T00:00:00.000Z requested_head_sha=head-340 review_signal=missing note=request_comment_is_not_review_completion retry_status=exhausted retry_count=1 retry_limit=1 retry_wait_until=2026-03-16T00:11:00.000Z request_comment_identity=unavailable next_action=operator_manual_review wait_until=2026-03-16T00:20:00.000Z",
+      "codex_connector_review_fallback status=request_retry_exhausted provider=codex current_head_sha=head-340 current_head_observed_at=none required_checks_green_at=2026-03-16T00:10:00.000Z timeout_action=request_review_comment requested_at=2026-03-16T00:00:00.000Z requested_head_sha=head-340 review_signal=missing note=request_comment_is_not_review_completion retry_status=exhausted retry_count=1 retry_limit=1 retry_wait_until=2026-03-16T00:11:00.000Z request_comment_identity=database_id=340002,node_id=IC_kwDOhead340_retry1,url=https://github.com/owner/repo/issues/340#issuecomment-340002 next_action=operator_manual_review wait_until=2026-03-16T00:20:00.000Z",
     );
 
     assert.equal(
