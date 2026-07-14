@@ -3062,6 +3062,50 @@ test("resolveRunnableIssueContext skips title-filtered dependency hydration befo
   assert.deepEqual(requestedIssueNumbers, [92]);
 });
 
+test("resolveRunnableIssueContext skips dependency hydration for terminal ineligible candidates", async () => {
+  const blockedIssue = selectionIssue(91, {
+    body: `${executionReadyBody("Do not hydrate this terminal blocked issue.")}\n\nDepends on: #999999`,
+  });
+  const readyIssue = selectionIssue(92, {
+    body: `${executionReadyBody("Reserve the later ready issue.")}\n\nDepends on: none\nParallelizable: No\n\n## Execution order\n1 of 1`,
+  });
+  const requestedIssueNumbers: number[] = [];
+
+  const result = await resolveRunnableIssueContext({
+    github: {
+      listCandidateIssues: async () => [blockedIssue, readyIssue],
+      getIssue: async (issueNumber) => {
+        requestedIssueNumbers.push(issueNumber);
+        assert.equal(issueNumber, 92);
+        return readyIssue;
+      },
+    },
+    config: createConfig(),
+    stateStore: createTouchStateStore([]),
+    state: {
+      activeIssueNumber: null,
+      issues: {
+        "91": createRecord(91, {
+          state: "blocked",
+          blocked_reason: "requirements",
+        }),
+      },
+    },
+    currentRecord: null,
+    acquireIssueLock: async () => ({ acquired: true, release: async () => {} }),
+    ensureRecordJournalContext: async (record) => ({
+      workspace: record.workspace,
+      journal_path: `/tmp/workspaces/issue-${record.issue_number}/.codex-supervisor/issue-journal.md`,
+    }),
+    syncIssueJournal: async () => {},
+  });
+
+  assert.ok(typeof result !== "string");
+  assert.equal(result.kind, "ready");
+  assert.equal(result.issue.number, 92);
+  assert.deepEqual(requestedIssueNumbers, [92]);
+});
+
 test("resolveRunnableIssueContext does not hydrate unrelated candidates while continuing an unsequenced active issue", async () => {
   const activeIssue = selectionIssue(92, { labels: [] });
   const unrelatedIssue = selectionIssue(91, {

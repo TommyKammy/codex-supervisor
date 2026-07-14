@@ -205,6 +205,7 @@ async function loadSelectableIssueInventory(
   config: SupervisorConfig,
   state: SupervisorStateFile,
   dependencyRoots: GitHubIssue[] = [],
+  hydrateCandidateDependencies = true,
 ): Promise<SelectableIssueInventory> {
   const issues = await github.listCandidateIssues();
   const recoveryIssues = await discoverTrackedPrRecoveryInventoryIssues(github, config, state, issues);
@@ -215,11 +216,13 @@ async function loadSelectableIssueInventory(
   const initialDependencyIssues = [...candidates, ...dependencyRoots];
   return {
     candidates,
-    dependencyIssues: await hydrateDependencyIssueInventory(
-      github,
-      initialDependencyIssues,
-      [...dependencyCandidates, ...dependencyRoots],
-    ),
+    dependencyIssues: hydrateCandidateDependencies
+      ? await hydrateDependencyIssueInventory(
+        github,
+        initialDependencyIssues,
+        [...dependencyCandidates, ...dependencyRoots],
+      )
+      : initialDependencyIssues,
   };
 }
 
@@ -526,14 +529,10 @@ async function selectIssueRecord(
   }
 
   if (!record || !isEligibleForSelection(record, config)) {
-    const selectionInventory = await loadSelectableIssueInventory(github, config, state);
+    const selectionInventory = await loadSelectableIssueInventory(github, config, state, [], false);
     record = null;
     for (const issue of selectionInventory.candidates) {
       if (config.skipTitlePrefixes.some((prefix) => issue.title.startsWith(prefix))) {
-        continue;
-      }
-
-      if (findBlockingIssue(issue, selectionInventory.dependencyIssues, state)) {
         continue;
       }
 
@@ -570,6 +569,15 @@ async function selectIssueRecord(
         })) &&
         !(isAutonomousExecutionTrustBlockedRecord(existing) && trustDecision.allowed)
       ) {
+        continue;
+      }
+
+      selectionInventory.dependencyIssues = await hydrateDependencyIssueInventory(
+        github,
+        selectionInventory.dependencyIssues,
+        [issue],
+      );
+      if (findBlockingIssue(issue, selectionInventory.dependencyIssues, state)) {
         continue;
       }
 
