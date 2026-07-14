@@ -5,6 +5,7 @@ import test, { mock } from "node:test";
 import { StateStore } from "../core/state-store";
 import { GitHubIssue, SupervisorStateFile } from "../core/types";
 import { renderSupervisorStatusDto } from "./supervisor-status-report";
+import { resolveRunnableIssueContext } from "../run-once-issue-selection";
 import { Supervisor } from "./supervisor";
 import {
   branchName,
@@ -419,6 +420,30 @@ Depends on: #91`,
   ]);
   assert.match(report.readinessLines.join("\n"), /runnable_issues=none/);
   assert.match(report.readinessLines.join("\n"), /blocked_issues=#92 blocked_by=depends on #91/);
+
+  const reservationState: SupervisorStateFile = {
+    activeIssueNumber: null,
+    issues: {},
+  };
+  const reservationResult = await resolveRunnableIssueContext({
+    github: {
+      listCandidateIssues: async () => [candidateIssue],
+      getIssue: async (issueNumber) => {
+        assert.equal(issueNumber, 91);
+        return dependencyIssue;
+      },
+    },
+    config: fixture.config,
+    stateStore: {
+      touch: (record, patch) => ({ ...record, ...patch }),
+      save: async () => {},
+    },
+    state: reservationState,
+    currentRecord: null,
+  });
+
+  assert.equal(reservationResult, "No matching open issue found.");
+  assert.equal(reservationState.activeIssueNumber, null);
 });
 
 test("status marks skipped readiness checks explicitly and uses non-conflicting inner separators", async () => {

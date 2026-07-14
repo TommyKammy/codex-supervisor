@@ -1143,7 +1143,7 @@ Parallelizable: No
         last_failure_context: null,
         last_failure_signature: null,
         repeated_failure_signature_count: 0,
-        last_recovery_reason: `requirements_recovered: requeued issue #${issueNumber} after execution-ready metadata was added`,
+        last_recovery_reason: `requirements_recovered: requeued issue #${issueNumber} after execution-ready metadata and dependency gates became satisfied`,
         last_recovery_at: "2026-04-17T00:21:00Z",
         branch: branchName(config, issueNumber),
         workspace: `/tmp/other-host/issue-${issueNumber}`,
@@ -1169,7 +1169,7 @@ Parallelizable: No
   assert.match(explanation, /^selection_reason=ready /m);
   assert.match(
     explanation,
-    /^latest_recovery issue=#610 at=2026-04-17T00:21:00Z reason=requirements_recovered detail=requeued issue #610 after execution-ready metadata was added$/m,
+    /^latest_recovery issue=#610 at=2026-04-17T00:21:00Z reason=requirements_recovered detail=requeued issue #610 after execution-ready metadata and dependency gates became satisfied$/m,
   );
   assert.match(
     explanation,

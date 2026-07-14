@@ -194,7 +194,7 @@ test("blocked recovery boundary requeues requirements blockers without aggregate
   assert.equal(state.issues["366"]?.last_failure_signature, null);
   assert.equal(state.issues["366"]?.repeated_failure_signature_count, 0);
   assert.deepEqual(recoveryEvents.map((event) => event.reason), [
-    "requirements_recovered: requeued issue #366 after execution-ready metadata was added",
+    "requirements_recovered: requeued issue #366 after execution-ready metadata and dependency gates became satisfied",
   ]);
 });
 

@@ -47,6 +47,7 @@ import {
 } from "./supervisor/supervisor-events";
 import { findLatestBlockedPreservedPartialWorkIncident } from "./supervisor/supervisor-preserved-partial-work";
 import { codexConnectorReviewRequestAction } from "./codex-connector-review-request-decision";
+import { hydrateDependencyIssueInventory } from "./issue-metadata/dependency-issue-inventory";
 import { shouldSelectCodexConnectorValidReviewRepair } from "./codex-connector-valid-review-repair-selection";
 import { shouldSelectCodexConnectorVerifiedStaleResidueAutoResolve } from "./supervisor/codex-connector-verified-stale-residue-selection";
 import { configuredBotReviewThreads, manualReviewThreads } from "./review-thread-reporting";
@@ -65,8 +66,8 @@ export interface RestartRunOnce {
 
 type IssueSelectionResult = ReadyIssueContext | RestartRunOnce | string;
 
-type IssueSelectionCandidateGitHub = Pick<GitHubClient, "listCandidateIssues"> &
-  Partial<Pick<GitHubClient, "getIssue" | "getPullRequestIfExists" | "getChecks" | "getUnresolvedReviewThreads">>;
+type IssueSelectionCandidateGitHub = Pick<GitHubClient, "listCandidateIssues" | "getIssue"> &
+  Partial<Pick<GitHubClient, "getPullRequestIfExists" | "getChecks" | "getUnresolvedReviewThreads">>;
 type IssueSelectionGitHub = IssueSelectionCandidateGitHub
   & Pick<GitHubClient, "getIssue">
   & Partial<Pick<GitHubClient, "addIssueComment" | "getIssueComments" | "updateIssueComment">>;
@@ -194,14 +195,35 @@ async function discoverTrackedPrRecoveryInventoryIssues(
   return recoveryIssues;
 }
 
-async function listSelectableIssuesWithRecoveredBlockers(
+interface SelectableIssueInventory {
+  candidates: GitHubIssue[];
+  dependencyIssues: GitHubIssue[];
+}
+
+async function loadSelectableIssueInventory(
   github: IssueSelectionCandidateGitHub,
   config: SupervisorConfig,
   state: SupervisorStateFile,
-): Promise<GitHubIssue[]> {
+  dependencyRoots: GitHubIssue[] = [],
+  hydrateCandidateDependencies = true,
+): Promise<SelectableIssueInventory> {
   const issues = await github.listCandidateIssues();
   const recoveryIssues = await discoverTrackedPrRecoveryInventoryIssues(github, config, state, issues);
-  return sortIssuesForSelection([...issues, ...recoveryIssues]);
+  const candidates = sortIssuesForSelection([...issues, ...recoveryIssues]);
+  const dependencyCandidates = candidates.filter(
+    (issue) => !config.skipTitlePrefixes.some((prefix) => issue.title.startsWith(prefix)),
+  );
+  const initialDependencyIssues = [...candidates, ...dependencyRoots];
+  return {
+    candidates,
+    dependencyIssues: hydrateCandidateDependencies
+      ? await hydrateDependencyIssueInventory(
+        github,
+        initialDependencyIssues,
+        [...dependencyCandidates, ...dependencyRoots],
+      )
+      : initialDependencyIssues,
+  };
 }
 
 interface SelectedIssueRecord {
@@ -243,7 +265,7 @@ interface ResolveRunnableIssueContextArgs {
 }
 
 interface ReserveRunnableIssueSelectionArgs {
-  github: Pick<IssueSelectionGitHub, "listCandidateIssues">;
+  github: IssueSelectionCandidateGitHub;
   config: SupervisorConfig;
   stateStore: Pick<IssueSelectionStateStore, "save">;
   state: SupervisorStateFile;
@@ -507,14 +529,10 @@ async function selectIssueRecord(
   }
 
   if (!record || !isEligibleForSelection(record, config)) {
-    const selectableIssues = await listSelectableIssuesWithRecoveredBlockers(github, config, state);
+    const selectionInventory = await loadSelectableIssueInventory(github, config, state, [], false);
     record = null;
-    for (const issue of selectableIssues) {
+    for (const issue of selectionInventory.candidates) {
       if (config.skipTitlePrefixes.some((prefix) => issue.title.startsWith(prefix))) {
-        continue;
-      }
-
-      if (findBlockingIssue(issue, selectableIssues, state)) {
         continue;
       }
 
@@ -551,6 +569,15 @@ async function selectIssueRecord(
         })) &&
         !(isAutonomousExecutionTrustBlockedRecord(existing) && trustDecision.allowed)
       ) {
+        continue;
+      }
+
+      selectionInventory.dependencyIssues = await hydrateDependencyIssueInventory(
+        github,
+        selectionInventory.dependencyIssues,
+        [issue],
+      );
+      if (findBlockingIssue(issue, selectionInventory.dependencyIssues, state)) {
         continue;
       }
 
@@ -878,9 +905,11 @@ export async function resolveRunnableIssueContext(
         await issueLock.release();
         return { kind: "restart" };
       }
-    } else {
-      const selectableIssues = await listSelectableIssuesWithRecoveredBlockers(github, config, state);
-      const blockingIssue = findBlockingIssue(issue, selectableIssues, state);
+    } else if (hasSequencingConstraints) {
+      const dependencyIssues = metadata.executionOrderIndex !== null && metadata.executionOrderIndex > 1
+        ? (await loadSelectableIssueInventory(github, config, state, [issue])).dependencyIssues
+        : await hydrateDependencyIssueInventory(github, [issue]);
+      const blockingIssue = findBlockingIssue(issue, dependencyIssues, state);
       if (blockingIssue) {
         record = stateStore.touch(record, {
           state: "queued",

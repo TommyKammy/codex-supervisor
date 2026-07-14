@@ -280,11 +280,11 @@ test("reconcileRecoverableBlockedIssueStates requeues requirements-blocked issue
   assert.equal(updated.last_failure_context, null);
   assert.equal(updated.last_failure_signature, null);
   assert.equal(updated.repeated_failure_signature_count, 0);
-  assert.equal(updated.last_recovery_reason, "requirements_recovered: requeued issue #366 after execution-ready metadata was added");
+  assert.equal(updated.last_recovery_reason, "requirements_recovered: requeued issue #366 after execution-ready metadata and dependency gates became satisfied");
   assert.ok(updated.last_recovery_at);
   assert.equal(saveCalls, 1);
   assert.deepEqual(recoveryEvents.map((event) => event.reason), [
-    "requirements_recovered: requeued issue #366 after execution-ready metadata was added",
+    "requirements_recovered: requeued issue #366 after execution-ready metadata and dependency gates became satisfied",
   ]);
 });
 
@@ -377,6 +377,179 @@ test("reconcileRecoverableBlockedIssueStates clears the machine-managed requirem
   assert.equal(updatedComments[0]?.commentId, 3661);
   assert.match(updatedComments[0]?.body ?? "", /no longer current/i);
   assert.match(updatedComments[0]?.body ?? "", /execution-ready/i);
+});
+
+test("reconcileRecoverableBlockedIssueStates keeps requirements blocked until an authoritative dependency becomes done", async () => {
+  const config = createConfig({ issueLabel: "codex" });
+  const blockedRecord = createRecord({
+    issue_number: 92,
+    state: "blocked",
+    blocked_reason: "requirements",
+    last_error: "Waiting for depends on #91.",
+  });
+  const state = createSupervisorState({ issues: [blockedRecord] });
+  const dependencyIssue = createIssue({
+    number: 91,
+    labels: [],
+    state: "OPEN",
+  });
+  const blockedIssue = createIssue({
+    number: 92,
+    labels: [{ name: "codex" }],
+    body: executionReadyBody("Wait for the dependency.").replace("Depends on: none", "Depends on: #91"),
+  });
+  let saveCalls = 0;
+  const stateStore = {
+    touch(record: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+      return { ...record, ...patch, updated_at: "2026-07-14T00:00:00Z" };
+    },
+    async save(): Promise<void> {
+      saveCalls += 1;
+    },
+  };
+  const github = {
+    getPullRequestIfExists: async () => {
+      throw new Error("unexpected getPullRequestIfExists call");
+    },
+    getIssue: async () => {
+      throw new Error("unexpected getIssue call");
+    },
+    getChecks: async () => {
+      throw new Error("unexpected getChecks call");
+    },
+    getUnresolvedReviewThreads: async () => {
+      throw new Error("unexpected getUnresolvedReviewThreads call");
+    },
+  };
+
+  const blockedEvents = await reconcileRecoverableBlockedIssueStates(
+    github,
+    stateStore,
+    state,
+    config,
+    [dependencyIssue, blockedIssue],
+    { shouldAutoRetryHandoffMissing },
+  );
+
+  assert.deepEqual(blockedEvents, []);
+  assert.equal(state.issues["92"]?.state, "blocked");
+  assert.equal(state.issues["92"]?.implementation_attempt_count, blockedRecord.implementation_attempt_count);
+  assert.equal(saveCalls, 0);
+
+  state.issues["91"] = createRecord({ issue_number: 91, state: "done" });
+  const recoveredEvents = await reconcileRecoverableBlockedIssueStates(
+    github,
+    stateStore,
+    state,
+    config,
+    [{ ...dependencyIssue, state: "CLOSED" }, blockedIssue],
+    { shouldAutoRetryHandoffMissing },
+  );
+
+  assert.equal(state.issues["92"]?.state, "queued");
+  assert.equal(saveCalls, 1);
+  assert.deepEqual(recoveredEvents.map((event) => event.reason), [
+    "requirements_recovered: requeued issue #92 after execution-ready metadata and dependency gates became satisfied",
+  ]);
+});
+
+test("reconcileRecoverableBlockedIssueStates does not requeue an issue after its configured candidate label is removed", async () => {
+  const config = createConfig({ issueLabel: "codex" });
+  const blockedRecord = createRecord({
+    issue_number: 92,
+    state: "blocked",
+    blocked_reason: "requirements",
+  });
+  const state = createSupervisorState({
+    issues: [
+      createRecord({ issue_number: 91, state: "done" }),
+      blockedRecord,
+    ],
+  });
+  const issues = [
+    createIssue({ number: 91, labels: [], state: "CLOSED" }),
+    createIssue({
+      number: 92,
+      labels: [{ name: "status:blocked-upstream" }],
+      body: executionReadyBody("Keep the issue out of the candidate queue.")
+        .replace("Depends on: none", "Depends on: #91"),
+    }),
+  ];
+  let saveCalls = 0;
+
+  const events = await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => {
+        throw new Error("unexpected getPullRequestIfExists call");
+      },
+      getIssue: async () => {
+        throw new Error("unexpected getIssue call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+    },
+    {
+      touch(record: IssueRunRecord, patch: Partial<IssueRunRecord>): IssueRunRecord {
+        return { ...record, ...patch };
+      },
+      async save(): Promise<void> {
+        saveCalls += 1;
+      },
+    },
+    state,
+    config,
+    issues,
+    { shouldAutoRetryHandoffMissing },
+  );
+
+  assert.deepEqual(events, []);
+  assert.equal(state.issues["92"]?.state, "blocked");
+  assert.equal(saveCalls, 0);
+});
+
+test("reconcileRecoverableBlockedIssueStates does not hydrate unrelated dependencies during tracked-PR-only recovery", async () => {
+  const unrelatedIssue = createIssue({
+    number: 92,
+    body: executionReadyBody("Unrelated dependency during tracked PR recovery.")
+      .replace("Depends on: none", "Depends on: #999999"),
+  });
+  let dependencyLookups = 0;
+
+  const events = await reconcileRecoverableBlockedIssueStates(
+    {
+      getPullRequestIfExists: async () => {
+        throw new Error("unexpected getPullRequestIfExists call");
+      },
+      getIssue: async () => {
+        dependencyLookups += 1;
+        throw new Error("unexpected getIssue call");
+      },
+      getChecks: async () => {
+        throw new Error("unexpected getChecks call");
+      },
+      getUnresolvedReviewThreads: async () => {
+        throw new Error("unexpected getUnresolvedReviewThreads call");
+      },
+    },
+    {
+      touch: (record: IssueRunRecord, patch: Partial<IssueRunRecord>) => ({ ...record, ...patch }),
+      save: async () => {
+        throw new Error("unexpected save call");
+      },
+    },
+    createSupervisorState(),
+    createConfig({ issueLabel: "codex" }),
+    [unrelatedIssue],
+    { shouldAutoRetryHandoffMissing },
+    { onlyTrackedPrStates: true },
+  );
+
+  assert.deepEqual(events, []);
+  assert.equal(dependencyLookups, 0);
 });
 
 test("reconcileRecoverableBlockedIssueStates resumes conflicted tracked PR handoff-missing issues into conflict repair", async () => {

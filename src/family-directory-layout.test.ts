@@ -199,6 +199,7 @@ const EXPECTED_FAMILY_FILES = {
     "types.ts",
   ],
   "issue-metadata": [
+    "dependency-issue-inventory.ts",
     "index.ts",
     "issue-metadata-change-classification.ts",
     "issue-metadata-change-risk-decision.ts",
